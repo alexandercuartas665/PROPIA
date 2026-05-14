@@ -1,0 +1,131 @@
+@page "/login"
+@layout AuthLayout
+@rendermode InteractiveServer
+@using System.ComponentModel.DataAnnotations
+@using System.Net.Http.Json
+@using Propia.Shared.Auth
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+
+<PageTitle>Iniciar sesion - PROPIA</PageTitle>
+
+<h2 class="h4 mb-1 text-center">Bienvenido</h2>
+<p class="text-muted text-center mb-4">Ingresa tus credenciales para continuar</p>
+
+<EditForm Model="@_model" OnValidSubmit="HandleLoginAsync" FormName="login">
+    <DataAnnotationsValidator />
+
+    <div class="mb-3">
+        <label for="email" class="form-label">Correo electronico</label>
+        <InputText id="email" @bind-Value="_model.Email" class="form-control" placeholder="tu@correo.com" autocomplete="username" />
+        <ValidationMessage For="@(() => _model.Email)" class="text-danger small mt-1" />
+    </div>
+
+    <div class="mb-3">
+        <label for="password" class="form-label">Contrasena</label>
+        <InputText type="password" id="password" @bind-Value="_model.Password" class="form-control" placeholder="********" autocomplete="current-password" />
+        <ValidationMessage For="@(() => _model.Password)" class="text-danger small mt-1" />
+    </div>
+
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="alert alert-danger py-2 mb-3" role="alert">
+            @_errorMessage
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_successMessage))
+    {
+        <div class="alert alert-success py-2 mb-3" role="alert">
+            @_successMessage
+        </div>
+    }
+
+    <button type="submit" class="btn w-100 mb-3" style="background-color: #5955D1; color: white;" disabled="@_isSubmitting">
+        @if (_isSubmitting)
+        {
+            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+            <span>Iniciando...</span>
+        }
+        else
+        {
+            <span>Iniciar sesion</span>
+        }
+    </button>
+</EditForm>
+
+<div class="text-center mt-3">
+    <a href="/" class="small text-decoration-none text-muted">Volver al inicio</a>
+</div>
+
+@code {
+    private LoginModel _model = new();
+    private bool _isSubmitting;
+    private string? _errorMessage;
+    private string? _successMessage;
+
+    private class LoginModel
+    {
+        [Required(ErrorMessage = "El correo es obligatorio")]
+        [EmailAddress(ErrorMessage = "Correo invalido")]
+        public string Email { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "La contrasena es obligatoria")]
+        [MinLength(8, ErrorMessage = "Minimo 8 caracteres")]
+        public string Password { get; set; } = string.Empty;
+    }
+
+    private async Task HandleLoginAsync()
+    {
+        _errorMessage = null;
+        _successMessage = null;
+        _isSubmitting = true;
+        try
+        {
+            var http = HttpClientFactory.CreateClient("PropiaApi");
+            var resp = await http.PostAsJsonAsync("/connect/token", new LoginRequestDto(_model.Email, _model.Password));
+
+            if (resp.IsSuccessStatusCode)
+            {
+                var login = await resp.Content.ReadFromJsonAsync<LoginResponseDto>();
+                if (login is null)
+                {
+                    _errorMessage = "Respuesta inesperada del servidor.";
+                    return;
+                }
+
+                if (login.AvailableTenants.Count == 0)
+                {
+                    _errorMessage = "Tu usuario no tiene copropiedades activas. Contacta a tu administrador.";
+                    return;
+                }
+
+                if (login.ActiveTenantId.HasValue)
+                {
+                    _successMessage = $"Login exitoso. Copropiedad activa: {login.AvailableTenants.First(t => t.TenantId == login.ActiveTenantId.Value).Nombre}";
+                    // Aqui en paso 8 se guardara el JWT en cookie HttpOnly y se hara navigate.
+                }
+                else
+                {
+                    _successMessage = $"Login exitoso. Tienes {login.AvailableTenants.Count} copropiedades - elige una (selector tipo Slack proximo paso).";
+                }
+            }
+            else if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                _errorMessage = "Credenciales invalidas.";
+            }
+            else
+            {
+                _errorMessage = $"Error inesperado: {(int)resp.StatusCode}.";
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            _errorMessage = $"No se pudo conectar al API: {ex.Message}";
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+}
