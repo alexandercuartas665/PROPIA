@@ -4,7 +4,22 @@ namespace Propia.Application.SuperAdmin;
 
 // ----- Auth -----
 public record SuperAdminLoginRequest(string Email, string Password);
-public record SuperAdminLoginResponse(string AccessToken, DateTimeOffset ExpiresAt, Guid UserId, string Email, RolSuperAdmin Rol);
+
+/// <summary>
+/// Respuesta unificada del login del SuperAdmin Console.
+/// - Si RequiresMfa = false: AccessToken + datos del usuario (login completo).
+/// - Si RequiresMfa = true: solo MfaTicket - el cliente debe pedir codigo y llamar
+///   a /admin/mfa/verify-login para obtener el JWT real.
+/// </summary>
+public record SuperAdminLoginResponse(
+    bool RequiresMfa,
+    string? AccessToken,
+    DateTimeOffset? ExpiresAt,
+    Guid? UserId,
+    string? Email,
+    RolSuperAdmin? Rol,
+    string? MfaTicket,
+    DateTimeOffset? MfaTicketExpiresAt);
 
 // ----- Organizaciones -----
 public record OrganizacionDto(Guid Id, string Nombre, TipoOrganizacion Tipo, string? Nit, string? Email, int CopropiedadesCount, DateTimeOffset CreatedAt);

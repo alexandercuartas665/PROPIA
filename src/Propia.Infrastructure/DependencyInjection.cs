@@ -56,6 +56,7 @@ public static class DependencyInjection
 
         // Super Admin (modulo 0.1) - usa tabla separada super_admin_usuarios
         services.AddScoped<IPasswordHasher<SuperAdminUsuario>, PasswordHasher<SuperAdminUsuario>>();
+        services.AddSingleton<ITotpService, TotpService>();  // sin estado
         services.AddScoped<ISuperAdminAuthService, SuperAdminAuthService>();
         services.AddScoped<ISuperAdminService, SuperAdminService>();
 

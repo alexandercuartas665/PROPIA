@@ -17,40 +17,49 @@
 
         <div class="card border-0 shadow-lg">
             <div class="card-body p-4 p-md-5">
-                <h2 class="h5 text-center mb-4">Acceso interno</h2>
+                @if (_step == Step.Credentials)
+                {
+                    <h2 class="h5 text-center mb-4">Acceso interno</h2>
 
-                <EditForm Model="@_model" OnValidSubmit="HandleLoginAsync" FormName="adminLogin">
-                    <DataAnnotationsValidator />
-
-                    <div class="mb-3">
-                        <label for="email" class="form-label">Email corporativo</label>
-                        <InputText id="email" @bind-Value="_model.Email" class="form-control" autocomplete="username" />
-                        <ValidationMessage For="@(() => _model.Email)" class="text-danger small mt-1" />
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="password" class="form-label">Contrasena</label>
-                        <InputText type="password" id="password" @bind-Value="_model.Password" class="form-control" autocomplete="current-password" />
-                        <ValidationMessage For="@(() => _model.Password)" class="text-danger small mt-1" />
-                    </div>
-
-                    @if (!string.IsNullOrEmpty(_error))
-                    {
-                        <div class="alert alert-danger py-2 mb-3" role="alert">@_error</div>
-                    }
-
-                    <button type="submit" class="btn btn-dark w-100" disabled="@_busy">
-                        @if (_busy)
-                        {
-                            <span class="spinner-border spinner-border-sm me-2"></span>
-                            <span>Verificando...</span>
-                        }
-                        else
-                        {
-                            <span>Ingresar</span>
-                        }
-                    </button>
-                </EditForm>
+                    <EditForm Model="@_model" OnValidSubmit="HandleLoginAsync" FormName="adminLogin">
+                        <DataAnnotationsValidator />
+                        <div class="mb-3">
+                            <label for="email" class="form-label">Email corporativo</label>
+                            <InputText id="email" @bind-Value="_model.Email" class="form-control" autocomplete="username" />
+                            <ValidationMessage For="@(() => _model.Email)" class="text-danger small mt-1" />
+                        </div>
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Contrasena</label>
+                            <InputText type="password" id="password" @bind-Value="_model.Password" class="form-control" autocomplete="current-password" />
+                            <ValidationMessage For="@(() => _model.Password)" class="text-danger small mt-1" />
+                        </div>
+                        @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger py-2 mb-3">@_error</div> }
+                        <button type="submit" class="btn btn-dark w-100" disabled="@_busy">
+                            @(_busy ? "Verificando..." : "Ingresar")
+                        </button>
+                    </EditForm>
+                }
+                else
+                {
+                    <h2 class="h5 text-center mb-3">Codigo de verificacion</h2>
+                    <p class="text-muted small text-center mb-4">
+                        Ingresa el codigo de 6 digitos de tu app autenticadora.
+                    </p>
+                    <EditForm Model="@_mfaModel" OnValidSubmit="HandleMfaAsync" FormName="adminMfa">
+                        <DataAnnotationsValidator />
+                        <div class="mb-3">
+                            <InputText id="code" @bind-Value="_mfaModel.Code"
+                                       class="form-control form-control-lg text-center"
+                                       maxlength="6" autocomplete="one-time-code" />
+                            <ValidationMessage For="@(() => _mfaModel.Code)" class="text-danger small mt-1" />
+                        </div>
+                        @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger py-2 mb-3">@_error</div> }
+                        <button type="submit" class="btn btn-dark w-100 mb-2" disabled="@_busy">
+                            @(_busy ? "Verificando..." : "Confirmar")
+                        </button>
+                        <button type="button" class="btn btn-link w-100" @onclick="VolverACredenciales">Volver</button>
+                    </EditForm>
+                }
 
                 <div class="text-center mt-3 small text-muted">
                     Solo personal autorizado de A&D GROUP S.A.S
@@ -61,43 +70,86 @@
 </div>
 
 @code {
+    private enum Step { Credentials, Mfa }
+    private Step _step = Step.Credentials;
     private LoginModel _model = new();
+    private MfaModel _mfaModel = new();
+    private string? _mfaTicket;
     private string? _error;
     private bool _busy;
 
     private class LoginModel
     {
-        [Required] [EmailAddress] public string Email { get; set; } = string.Empty;
-        [Required] [MinLength(8)] public string Password { get; set; } = string.Empty;
+        [Required, EmailAddress] public string Email { get; set; } = string.Empty;
+        [Required, MinLength(8)] public string Password { get; set; } = string.Empty;
+    }
+
+    private class MfaModel
+    {
+        [Required, StringLength(6, MinimumLength = 6, ErrorMessage = "6 digitos")]
+        public string Code { get; set; } = string.Empty;
     }
 
     private async Task HandleLoginAsync()
     {
-        _error = null;
-        _busy = true;
+        _error = null; _busy = true;
         try
         {
             var http = HttpFactory.CreateClient("PropiaApi");
             var resp = await http.PostAsJsonAsync("/admin/login", new SuperAdminLoginRequest(_model.Email, _model.Password));
             if (!resp.IsSuccessStatusCode)
             {
-                _error = resp.StatusCode == System.Net.HttpStatusCode.Unauthorized
-                    ? "Credenciales invalidas."
-                    : $"Error: {(int)resp.StatusCode}";
+                _error = resp.StatusCode == System.Net.HttpStatusCode.Unauthorized ? "Credenciales invalidas." : $"Error: {(int)resp.StatusCode}";
                 return;
             }
             var login = await resp.Content.ReadFromJsonAsync<SuperAdminLoginResponse>();
             if (login is null) { _error = "Respuesta inesperada."; return; }
-            Session.SetSession(login.AccessToken, login.ExpiresAt, login.Email, login.Rol.ToString());
+
+            if (login.RequiresMfa)
+            {
+                _mfaTicket = login.MfaTicket;
+                _step = Step.Mfa;
+                _mfaModel = new MfaModel();
+                _error = null;
+                return;
+            }
+
+            Session.SetSession(login.AccessToken!, login.ExpiresAt!.Value, login.Email!, login.Rol!.ToString()!);
             Nav.NavigateTo("/dashboard");
         }
         catch (HttpRequestException ex)
         {
             _error = $"No se pudo conectar al API: {ex.Message}";
         }
-        finally
+        finally { _busy = false; }
+    }
+
+    private async Task HandleMfaAsync()
+    {
+        if (string.IsNullOrEmpty(_mfaTicket)) { _error = "Sesion invalida, vuelve a ingresar."; _step = Step.Credentials; return; }
+        _error = null; _busy = true;
+        try
         {
-            _busy = false;
+            var http = HttpFactory.CreateClient("PropiaApi");
+            var resp = await http.PostAsJsonAsync("/admin/mfa/verify-login",
+                new VerifyMfaLoginRequest(_mfaTicket, _mfaModel.Code.Trim()));
+            if (!resp.IsSuccessStatusCode)
+            {
+                _error = "Codigo invalido o ticket expirado.";
+                return;
+            }
+            var login = await resp.Content.ReadFromJsonAsync<SuperAdminLoginResponse>();
+            if (login is null || login.AccessToken is null) { _error = "Respuesta inesperada."; return; }
+            Session.SetSession(login.AccessToken, login.ExpiresAt!.Value, login.Email!, login.Rol!.ToString()!);
+            Nav.NavigateTo("/dashboard");
         }
+        finally { _busy = false; }
+    }
+
+    private void VolverACredenciales()
+    {
+        _step = Step.Credentials;
+        _mfaTicket = null;
+        _error = null;
     }
 }

@@ -55,13 +55,15 @@ public class SuperAdminFlowTests : IAsyncLifetime
     {
         var client = _factory.CreateClient();
 
-        // 1) Login
+        // 1) Login (founder no tiene MFA configurado aun -> JWT directo)
         var loginResp = await client.PostAsJsonAsync("/admin/login",
             new SuperAdminLoginRequest("founder@adgroup.com.co", "PropiaFounder2026!"));
         Assert.Equal(HttpStatusCode.OK, loginResp.StatusCode);
         var login = await loginResp.Content.ReadFromJsonAsync<SuperAdminLoginResponse>();
         Assert.NotNull(login);
-        Assert.Equal(RolSuperAdmin.SuperAdmin, login!.Rol);
+        Assert.False(login!.RequiresMfa);
+        Assert.NotNull(login.AccessToken);
+        Assert.Equal(RolSuperAdmin.SuperAdmin, login.Rol);
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", login.AccessToken);
 
         // 2) Crear organizacion
@@ -156,7 +158,8 @@ public class SuperAdminFlowTests : IAsyncLifetime
         var loginResp = await client.PostAsJsonAsync("/admin/login",
             new SuperAdminLoginRequest("founder@adgroup.com.co", "PropiaFounder2026!"));
         var login = await loginResp.Content.ReadFromJsonAsync<SuperAdminLoginResponse>();
-        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", login!.AccessToken);
+        Assert.False(login!.RequiresMfa);
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", login.AccessToken);
         return client;
     }
 

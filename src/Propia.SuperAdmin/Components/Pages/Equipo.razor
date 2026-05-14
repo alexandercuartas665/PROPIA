@@ -1,0 +1,196 @@
+@page "/equipo"
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpFactory
+@inject SuperAdminSession Session
+@inject NavigationManager Nav
+
+<PageTitle>Equipo A&D GROUP - Super Admin</PageTitle>
+
+@if (!Session.IsAuthenticated) { Nav.NavigateTo("/login", forceLoad: true); return; }
+
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <h1 class="h3 mb-0">Equipo A&D GROUP</h1>
+    <button class="btn btn-dark" @onclick="MostrarFormulario">+ Nuevo miembro</button>
+</div>
+
+@if (_mostrarForm)
+{
+    <div class="card mb-4 border-dark">
+        <div class="card-body">
+            <h5>Nuevo miembro del equipo</h5>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Email corporativo</label>
+                    <input class="form-control" @bind="_nuevo.Email" placeholder="nombre@adgroup.com.co" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Rol</label>
+                    <select class="form-select" @bind="_nuevo.Rol">
+                        <option value="@RolSuperAdmin.SuperAdmin">SuperAdmin</option>
+                        <option value="@RolSuperAdmin.Soporte">Soporte</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Contrasena inicial</label>
+                    <input class="form-control" type="password" @bind="_nuevo.Password" />
+                </div>
+                <div class="col-12">
+                    @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger py-2">@_error</div> }
+                    <button class="btn btn-dark me-2" @onclick="CrearAsync" disabled="@_busy">@(_busy ? "Creando..." : "Crear")</button>
+                    <button class="btn btn-outline-secondary" @onclick="() => _mostrarForm = false">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_cargando)
+{
+    <div class="text-center py-5"><div class="spinner-border"></div></div>
+}
+else
+{
+    <div class="card border-0 shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Email</th>
+                        <th>Rol</th>
+                        <th>Estado</th>
+                        <th>Ultimo acceso</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var u in _equipo)
+                    {
+                        <tr>
+                            <td><strong>@u.Email</strong></td>
+                            <td><span class="badge @(u.Rol == RolSuperAdmin.SuperAdmin ? "bg-danger" : "bg-info text-dark")">@u.Rol</span></td>
+                            <td>
+                                @if (u.Activo)
+                                {
+                                    <span class="badge bg-success">Activo</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-secondary">Inactivo</span>
+                                }
+                            </td>
+                            <td><small>@(u.UltimoAcceso?.ToString("yyyy-MM-dd HH:mm") ?? "Nunca")</small></td>
+                            <td>
+                                @if (u.Activo)
+                                {
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => DesactivarAsync(u)" disabled="@_busyId.HasValue">
+                                        Desactivar
+                                    </button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_actionMsg))
+    {
+        <div class="alert @_actionMsgClass mt-3">@_actionMsg</div>
+    }
+}
+
+@code {
+    private bool _cargando = true;
+    private bool _mostrarForm;
+    private bool _busy;
+    private Guid? _busyId;
+    private string? _error;
+    private string? _actionMsg;
+    private string _actionMsgClass = "alert-info";
+    private List<SuperAdminUsuarioDto> _equipo = new();
+    private MiembroForm _nuevo = new();
+
+    private class MiembroForm
+    {
+        public string Email { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+        public RolSuperAdmin Rol { get; set; } = RolSuperAdmin.Soporte;
+    }
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        try
+        {
+            var http = AuthorizedClient();
+            _equipo = await http.GetFromJsonAsync<List<SuperAdminUsuarioDto>>("/admin/equipo") ?? new();
+        }
+        finally { _cargando = false; }
+    }
+
+    private void MostrarFormulario()
+    {
+        _nuevo = new MiembroForm();
+        _error = null;
+        _mostrarForm = true;
+    }
+
+    private async Task CrearAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevo.Email) || _nuevo.Password.Length < 8)
+        {
+            _error = "Email obligatorio y password de al menos 8 caracteres.";
+            return;
+        }
+        _busy = true; _error = null;
+        try
+        {
+            var http = AuthorizedClient();
+            var req = new CrearSuperAdminUsuarioRequest(_nuevo.Email, _nuevo.Password, _nuevo.Rol);
+            var resp = await http.PostAsJsonAsync("/admin/equipo", req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _error = $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}";
+                return;
+            }
+            _mostrarForm = false;
+            _actionMsg = $"Miembro {_nuevo.Email} creado.";
+            _actionMsgClass = "alert-success";
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task DesactivarAsync(SuperAdminUsuarioDto u)
+    {
+        _busyId = u.Id;
+        try
+        {
+            var http = AuthorizedClient();
+            var resp = await http.PutAsync($"/admin/equipo/{u.Id}/desactivar", null);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                _actionMsg = body.Contains("ultimo SuperAdmin")
+                    ? "No se puede desactivar el ultimo SuperAdmin activo del sistema."
+                    : $"Error {(int)resp.StatusCode}: {body}";
+                _actionMsgClass = "alert-danger";
+                return;
+            }
+            _actionMsg = $"Miembro {u.Email} desactivado.";
+            _actionMsgClass = "alert-success";
+            await CargarAsync();
+        }
+        finally { _busyId = null; }
+    }
+
+    private HttpClient AuthorizedClient()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Session.AccessToken!);
+        return http;
+    }
+}

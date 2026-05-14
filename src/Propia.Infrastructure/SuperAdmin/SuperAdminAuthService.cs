@@ -15,16 +15,28 @@ namespace Propia.Infrastructure.SuperAdmin;
 
 public class SuperAdminAuthService : ISuperAdminAuthService
 {
+    private const string MfaAudience = "propia-mfa-challenge";
+    private const string Issuer = "propia-api";
+    private const string AuthIssuer = "PROPIA Super Admin";
+
     private readonly PropiaDbContext _db;
     private readonly IPasswordHasher<SuperAdminUsuario> _hasher;
+    private readonly ITotpService _totp;
     private readonly JwtSettings _jwt;
 
-    public SuperAdminAuthService(PropiaDbContext db, IPasswordHasher<SuperAdminUsuario> hasher, IOptions<JwtSettings> jwt)
+    public SuperAdminAuthService(
+        PropiaDbContext db,
+        IPasswordHasher<SuperAdminUsuario> hasher,
+        ITotpService totp,
+        IOptions<JwtSettings> jwt)
     {
         _db = db;
         _hasher = hasher;
+        _totp = totp;
         _jwt = jwt.Value;
     }
+
+    // ----------------------------------- LOGIN -----------------------------------
 
     public async Task<SuperAdminLoginResponse?> LoginAsync(SuperAdminLoginRequest request, string? ip, CancellationToken ct)
     {
@@ -35,35 +47,94 @@ public class SuperAdminAuthService : ISuperAdminAuthService
         var verify = _hasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
         if (verify == PasswordVerificationResult.Failed) return null;
 
-        // Re-hash si Identity sugiere actualizar (formato viejo)
         if (verify == PasswordVerificationResult.SuccessRehashNeeded)
         {
             user.PasswordHash = _hasher.HashPassword(user, request.Password);
         }
 
+        // Si tiene MFA configurado: devolver MfaTicket en lugar de JWT
+        if (user.MfaConfigurado && !string.IsNullOrEmpty(user.MfaSecret))
+        {
+            var (ticket, ticketExpires) = IssueMfaTicket(user);
+            await LogAsync(user, "SUPER_ADMIN_LOGIN_MFA_CHALLENGED", ip, ct);
+            return new SuperAdminLoginResponse(
+                RequiresMfa: true,
+                AccessToken: null, ExpiresAt: null, UserId: null, Email: null, Rol: null,
+                MfaTicket: ticket, MfaTicketExpiresAt: ticketExpires);
+        }
+
+        // Sin MFA configurado: JWT directo (caso del founder en su primer login)
+        return await FinalizarLoginAsync(user, ip, "SUPER_ADMIN_LOGIN", ct);
+    }
+
+    public async Task<SuperAdminLoginResponse?> VerifyMfaLoginAsync(VerifyMfaLoginRequest request, string? ip, CancellationToken ct)
+    {
+        var userId = ValidateMfaTicket(request.MfaTicket);
+        if (userId is null) return null;
+
+        var user = await _db.SuperAdminUsuarios.FirstOrDefaultAsync(u => u.Id == userId.Value && u.Activo, ct);
+        if (user is null || !user.MfaConfigurado || string.IsNullOrEmpty(user.MfaSecret)) return null;
+
+        if (!_totp.VerifyCode(user.MfaSecret, request.Code))
+        {
+            await LogAsync(user, "SUPER_ADMIN_LOGIN_MFA_FAILED", ip, ct);
+            return null;
+        }
+
+        return await FinalizarLoginAsync(user, ip, "SUPER_ADMIN_LOGIN_MFA_OK", ct);
+    }
+
+    // ----------------------------------- ENROLL MFA -----------------------------------
+
+    public async Task<MfaEnrollResponse> EnrollMfaAsync(Guid userId, CancellationToken ct)
+    {
+        var user = await _db.SuperAdminUsuarios.FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (user is null) throw new InvalidOperationException("Usuario no encontrado.");
+
+        // Generamos un secret NUEVO cada vez que se hace enroll - si el user reescanea, el viejo deja de servir.
+        var secret = _totp.GenerateSecret();
+        user.MfaSecret = secret;
+        user.MfaConfigurado = false;  // se confirmara con VerifyEnrollMfaAsync
+        await _db.SaveChangesAsync(ct);
+
+        var otpAuthUri = _totp.BuildOtpAuthUri(secret, user.Email, AuthIssuer);
+        return new MfaEnrollResponse(secret, otpAuthUri);
+    }
+
+    public async Task<bool> VerifyEnrollMfaAsync(Guid userId, VerifyMfaEnrollRequest request, string? ip, CancellationToken ct)
+    {
+        var user = await _db.SuperAdminUsuarios.FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (user is null || string.IsNullOrEmpty(user.MfaSecret)) return false;
+
+        if (!_totp.VerifyCode(user.MfaSecret, request.Code)) return false;
+
+        user.MfaConfigurado = true;
+        await _db.SaveChangesAsync(ct);
+        await LogAsync(user, "MFA_ENROLLED", ip, ct);
+        return true;
+    }
+
+    // ----------------------------------- Helpers -----------------------------------
+
+    private async Task<SuperAdminLoginResponse> FinalizarLoginAsync(SuperAdminUsuario user, string? ip, string accion, CancellationToken ct)
+    {
         user.UltimoAcceso = DateTimeOffset.UtcNow;
         user.UltimaIp = ip;
         await _db.SaveChangesAsync(ct);
+        await LogAsync(user, accion, ip, ct);
 
-        // Log de login
-        _db.SuperAdminLogs.Add(new SuperAdminLog
-        {
-            ActorId = user.Id,
-            ActorEmail = user.Email,
-            Accion = "SUPER_ADMIN_LOGIN",
-            Ip = ip
-        });
-        await _db.SaveChangesAsync(ct);
-
-        var (token, expires) = IssueToken(user);
-        return new SuperAdminLoginResponse(token, expires, user.Id, user.Email, user.Rol);
+        var (token, expires) = IssueAccessToken(user);
+        return new SuperAdminLoginResponse(
+            RequiresMfa: false,
+            AccessToken: token, ExpiresAt: expires,
+            UserId: user.Id, Email: user.Email, Rol: user.Rol,
+            MfaTicket: null, MfaTicketExpiresAt: null);
     }
 
-    private (string token, DateTimeOffset expires) IssueToken(SuperAdminUsuario user)
+    private (string token, DateTimeOffset expires) IssueAccessToken(SuperAdminUsuario user)
     {
         var now = DateTimeOffset.UtcNow;
-        // Sesion corta para super admins (4h max - spec del modulo 0.1)
-        var expires = now.AddHours(4);
+        var expires = now.AddHours(4);  // spec 0.1: max 4h
 
         var claims = new List<Claim>
         {
@@ -75,17 +146,78 @@ public class SuperAdminAuthService : ISuperAdminAuthService
             new("super_admin_rol", user.Rol.ToString())
         };
 
+        return IssueJwt(claims, now, expires, _jwt.Audience);
+    }
+
+    private (string ticket, DateTimeOffset expires) IssueMfaTicket(SuperAdminUsuario user)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var expires = now.AddMinutes(5);  // ticket corto - solo para completar MFA
+
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new("user_id", user.Id.ToString()),
+            new("token_purpose", "mfa_challenge")
+        };
+
+        return IssueJwt(claims, now, expires, MfaAudience);
+    }
+
+    private Guid? ValidateMfaTicket(string ticket)
+    {
+        if (string.IsNullOrWhiteSpace(ticket)) return null;
+        try
+        {
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwt.SigningKey));
+            var validation = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+                ValidIssuer = _jwt.Issuer,
+                ValidAudience = MfaAudience,  // distinta de la audience de un JWT normal
+                IssuerSigningKey = key,
+                ClockSkew = TimeSpan.FromSeconds(30)
+            };
+            var handler = new JwtSecurityTokenHandler();
+            var principal = handler.ValidateToken(ticket, validation, out _);
+            var idStr = principal.FindFirstValue("user_id");
+            return Guid.TryParse(idStr, out var id) ? id : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private (string token, DateTimeOffset expires) IssueJwt(List<Claim> claims, DateTimeOffset notBefore, DateTimeOffset expires, string audience)
+    {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwt.SigningKey));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
         var token = new JwtSecurityToken(
             issuer: _jwt.Issuer,
-            audience: _jwt.Audience,
+            audience: audience,
             claims: claims,
-            notBefore: now.UtcDateTime,
+            notBefore: notBefore.UtcDateTime,
             expires: expires.UtcDateTime,
             signingCredentials: creds);
 
         return (new JwtSecurityTokenHandler().WriteToken(token), expires);
+    }
+
+    private async Task LogAsync(SuperAdminUsuario user, string accion, string? ip, CancellationToken ct)
+    {
+        _db.SuperAdminLogs.Add(new SuperAdminLog
+        {
+            ActorId = user.Id,
+            ActorEmail = user.Email,
+            Accion = accion,
+            Ip = ip
+        });
+        await _db.SaveChangesAsync(ct);
     }
 }

@@ -1,0 +1,270 @@
+@page "/tenants"
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpFactory
+@inject SuperAdminSession Session
+@inject NavigationManager Nav
+
+<PageTitle>Copropiedades - Super Admin</PageTitle>
+
+@if (!Session.IsAuthenticated) { Nav.NavigateTo("/login", forceLoad: true); return; }
+
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <h1 class="h3 mb-0">Copropiedades (Tenants)</h1>
+    <button class="btn btn-dark" @onclick="MostrarFormulario">+ Crear copropiedad</button>
+</div>
+
+@if (_mostrarForm)
+{
+    <div class="card mb-4 border-dark">
+        <div class="card-body">
+            <h5>Nueva copropiedad</h5>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Nombre</label>
+                    <input class="form-control" @bind="_nuevo.Nombre" placeholder="Conjunto Porton del Sol" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">NIT</label>
+                    <input class="form-control" @bind="_nuevo.Nit" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Codigo PROPIA</label>
+                    <input class="form-control" @bind="_nuevo.CodigoPropia" placeholder="CP-001" />
+                </div>
+                <div class="col-md-9">
+                    <label class="form-label">Direccion</label>
+                    <input class="form-control" @bind="_nuevo.Direccion" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Organizacion (opcional)</label>
+                    <select class="form-select" @bind="_orgIdSelected">
+                        <option value="">- Sin organizacion -</option>
+                        @foreach (var o in _organizaciones)
+                        {
+                            <option value="@o.Id">@o.Nombre</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12">
+                    @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger py-2">@_error</div> }
+                    <button class="btn btn-dark me-2" @onclick="CrearAsync" disabled="@_busy">@(_busy ? "Creando..." : "Crear")</button>
+                    <button class="btn btn-outline-secondary" @onclick="() => _mostrarForm = false">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_estadoTenantId is not null)
+{
+    <div class="card mb-4 border-warning">
+        <div class="card-body">
+            <h5>Cambiar estado de "@_estadoTenantNombre"</h5>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Nuevo estado</label>
+                    <select class="form-select" @bind="_estadoNuevo">
+                        <option value="@EstadoCopropiedad.Activa">Activa</option>
+                        <option value="@EstadoCopropiedad.Suspendida">Suspendida</option>
+                        <option value="@EstadoCopropiedad.EnCancelacion">En cancelacion</option>
+                        <option value="@EstadoCopropiedad.CanceladoArchivado">Cancelado/Archivado</option>
+                    </select>
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label">Justificacion <span class="text-danger">(obligatoria)</span></label>
+                    <input class="form-control" @bind="_estadoJustificacion" placeholder="Ej. Mora superior a 60 dias" />
+                </div>
+                <div class="col-12">
+                    @if (!string.IsNullOrEmpty(_estadoError)) { <div class="alert alert-danger py-2">@_estadoError</div> }
+                    <button class="btn btn-warning me-2" @onclick="AplicarEstadoAsync" disabled="@_estadoBusy">
+                        @(_estadoBusy ? "Aplicando..." : "Aplicar cambio")
+                    </button>
+                    <button class="btn btn-outline-secondary" @onclick="CancelarEstado">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_cargando)
+{
+    <div class="text-center py-5"><div class="spinner-border"></div></div>
+}
+else
+{
+    <div class="card border-0 shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Nombre</th>
+                        <th>NIT</th>
+                        <th>Codigo</th>
+                        <th>Estado</th>
+                        <th>Custodia</th>
+                        <th>Organizacion</th>
+                        <th>Activada</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var t in _tenants)
+                    {
+                        <tr>
+                            <td><strong>@t.Nombre</strong></td>
+                            <td><small>@t.Nit</small></td>
+                            <td><small>@t.CodigoPropia</small></td>
+                            <td>@EstadoBadge(t.Estado)</td>
+                            <td><small>@t.EstadoCustodia</small></td>
+                            <td>@(t.OrganizacionNombre ?? "-")</td>
+                            <td><small>@(t.FechaActivacion?.ToString("yyyy-MM-dd") ?? "-")</small></td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-warning" @onclick="() => MostrarFormEstado(t)">
+                                    Cambiar estado
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                    @if (_tenants.Count == 0)
+                    {
+                        <tr><td colspan="8" class="text-center text-muted py-4">Sin copropiedades aun.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _cargando = true;
+    private bool _mostrarForm;
+    private bool _busy;
+    private string? _error;
+    private List<TenantDto> _tenants = new();
+    private List<OrganizacionDto> _organizaciones = new();
+    private TenantForm _nuevo = new();
+    private string _orgIdSelected = "";
+
+    private class TenantForm
+    {
+        public string Nombre { get; set; } = string.Empty;
+        public string? Nit { get; set; }
+        public string? Direccion { get; set; }
+        public string? CodigoPropia { get; set; }
+    }
+
+    // Cambio de estado
+    private Guid? _estadoTenantId;
+    private string? _estadoTenantNombre;
+    private EstadoCopropiedad _estadoNuevo = EstadoCopropiedad.Activa;
+    private string _estadoJustificacion = "";
+    private string? _estadoError;
+    private bool _estadoBusy;
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        try
+        {
+            var http = AuthorizedClient();
+            _tenants = await http.GetFromJsonAsync<List<TenantDto>>("/admin/tenants") ?? new();
+            _organizaciones = await http.GetFromJsonAsync<List<OrganizacionDto>>("/admin/organizaciones") ?? new();
+        }
+        finally { _cargando = false; }
+    }
+
+    private void MostrarFormulario()
+    {
+        _nuevo = new TenantForm();
+        _orgIdSelected = "";
+        _error = null;
+        _mostrarForm = true;
+    }
+
+    private async Task CrearAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevo.Nombre)) { _error = "El nombre es obligatorio."; return; }
+        _busy = true;
+        _error = null;
+        try
+        {
+            Guid? orgId = Guid.TryParse(_orgIdSelected, out var g) ? g : null;
+            var req = new CrearTenantRequest(_nuevo.Nombre, _nuevo.Nit, _nuevo.Direccion, _nuevo.CodigoPropia, orgId);
+            var http = AuthorizedClient();
+            var resp = await http.PostAsJsonAsync("/admin/tenants", req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _error = $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}";
+                return;
+            }
+            _mostrarForm = false;
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private void MostrarFormEstado(TenantDto t)
+    {
+        _estadoTenantId = t.Id;
+        _estadoTenantNombre = t.Nombre;
+        _estadoNuevo = t.Estado;
+        _estadoJustificacion = "";
+        _estadoError = null;
+    }
+
+    private void CancelarEstado()
+    {
+        _estadoTenantId = null;
+        _estadoTenantNombre = null;
+    }
+
+    private async Task AplicarEstadoAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_estadoJustificacion))
+        {
+            _estadoError = "La justificacion es obligatoria.";
+            return;
+        }
+        _estadoBusy = true;
+        _estadoError = null;
+        try
+        {
+            var http = AuthorizedClient();
+            var resp = await http.PutAsJsonAsync($"/admin/tenants/{_estadoTenantId}/estado",
+                new CambiarEstadoTenantRequest(_estadoNuevo, _estadoJustificacion));
+            if (!resp.IsSuccessStatusCode)
+            {
+                _estadoError = $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}";
+                return;
+            }
+            CancelarEstado();
+            await CargarAsync();
+        }
+        finally { _estadoBusy = false; }
+    }
+
+    private RenderFragment EstadoBadge(EstadoCopropiedad e) => __builder =>
+    {
+        var cls = e switch
+        {
+            EstadoCopropiedad.Activa => "bg-success",
+            EstadoCopropiedad.Suspendida => "bg-warning text-dark",
+            EstadoCopropiedad.EnCancelacion => "bg-secondary",
+            EstadoCopropiedad.CanceladoArchivado => "bg-dark",
+            _ => "bg-light text-dark"
+        };
+        __builder.OpenElement(0, "span");
+        __builder.AddAttribute(1, "class", $"badge {cls}");
+        __builder.AddContent(2, e.ToString());
+        __builder.CloseElement();
+    };
+
+    private HttpClient AuthorizedClient()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Session.AccessToken!);
+        return http;
+    }
+}

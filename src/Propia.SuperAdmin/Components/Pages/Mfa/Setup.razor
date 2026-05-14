@@ -1,0 +1,134 @@
+@page "/mfa/setup"
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpFactory
+@inject SuperAdminSession Session
+@inject NavigationManager Nav
+
+<PageTitle>Configurar MFA - Super Admin</PageTitle>
+
+@if (!Session.IsAuthenticated) { Nav.NavigateTo("/login", forceLoad: true); return; }
+
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <h1 class="h3 mb-1">Configurar autenticacion en 2 pasos (MFA)</h1>
+        <p class="text-muted mb-4">
+            Obligatorio para acceder al Super Admin Console (modulo 0.1 - regla critica de seguridad).
+            Necesitas una app autenticadora: <strong>Google Authenticator</strong>, <strong>Microsoft Authenticator</strong> o <strong>Authy</strong>.
+        </p>
+
+        @if (_enroll is null)
+        {
+            <div class="card">
+                <div class="card-body">
+                    <p>Generaremos un secret nuevo y un codigo QR para que escanees con tu app autenticadora.</p>
+                    <button class="btn btn-dark" @onclick="StartEnrollAsync" disabled="@_busy">
+                        @(_busy ? "Generando..." : "Iniciar configuracion")
+                    </button>
+                    @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger mt-3">@_error</div> }
+                </div>
+            </div>
+        }
+        else if (!_verified)
+        {
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="mb-3">Paso 1 - Escanear con tu app autenticadora</h5>
+                    <div class="text-center mb-3">
+                        <img src="@QrUrl" alt="QR para MFA" class="border" style="max-width: 240px;" />
+                    </div>
+                    <p class="small text-muted text-center mb-3">
+                        Si no puedes escanear, ingresa este secret manualmente:<br />
+                        <code class="user-select-all">@_enroll.Secret</code>
+                    </p>
+
+                    <hr />
+
+                    <h5 class="mb-3">Paso 2 - Confirma con un codigo de tu app</h5>
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-6">
+                            <label class="form-label">Codigo TOTP (6 digitos)</label>
+                            <input class="form-control form-control-lg text-center" maxlength="6"
+                                   @bind="_codigo" placeholder="123456" />
+                        </div>
+                        <div class="col-md-6">
+                            <button class="btn btn-dark btn-lg w-100" @onclick="VerifyAsync" disabled="@_busy">
+                                @(_busy ? "Verificando..." : "Confirmar")
+                            </button>
+                        </div>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger mt-3">@_error</div> }
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="card border-success">
+                <div class="card-body text-center">
+                    <h5 class="text-success mb-3">MFA configurado correctamente</h5>
+                    <p class="text-muted">
+                        A partir del proximo login te pediremos el codigo de tu app autenticadora ademas de la contrasena.
+                    </p>
+                    <a href="/dashboard" class="btn btn-dark">Volver al dashboard</a>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private MfaEnrollResponse? _enroll;
+    private bool _verified;
+    private string _codigo = "";
+    private bool _busy;
+    private string? _error;
+
+    private string QrUrl => _enroll is null
+        ? ""
+        : $"https://api.qrserver.com/v1/create-qr-code/?size=240x240&data={Uri.EscapeDataString(_enroll.OtpAuthUri)}";
+
+    private async Task StartEnrollAsync()
+    {
+        _busy = true; _error = null;
+        try
+        {
+            var http = AuthorizedClient();
+            var resp = await http.PostAsync("/admin/mfa/enroll", null);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _error = $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}";
+                return;
+            }
+            _enroll = await resp.Content.ReadFromJsonAsync<MfaEnrollResponse>();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task VerifyAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_codigo) || _codigo.Length != 6)
+        {
+            _error = "Ingresa el codigo de 6 digitos.";
+            return;
+        }
+        _busy = true; _error = null;
+        try
+        {
+            var http = AuthorizedClient();
+            var resp = await http.PostAsJsonAsync("/admin/mfa/verify-enroll", new VerifyMfaEnrollRequest(_codigo.Trim()));
+            if (!resp.IsSuccessStatusCode)
+            {
+                _error = "Codigo invalido. Verifica que tu app este sincronizada y vuelve a intentar.";
+                return;
+            }
+            _verified = true;
+        }
+        finally { _busy = false; }
+    }
+
+    private HttpClient AuthorizedClient()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Session.AccessToken!);
+        return http;
+    }
+}

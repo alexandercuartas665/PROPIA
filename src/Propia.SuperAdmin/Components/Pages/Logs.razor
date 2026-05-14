@@ -1,0 +1,78 @@
+@page "/logs"
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpFactory
+@inject SuperAdminSession Session
+@inject NavigationManager Nav
+
+<PageTitle>Logs - Super Admin</PageTitle>
+
+@if (!Session.IsAuthenticated) { Nav.NavigateTo("/login", forceLoad: true); return; }
+
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+        <h1 class="h3 mb-0">Log de auditoria</h1>
+        <p class="text-muted mb-0">Append-only - garantizado por trigger PostgreSQL inmutable</p>
+    </div>
+    <button class="btn btn-outline-dark" @onclick="CargarAsync">Refrescar</button>
+</div>
+
+@if (_cargando)
+{
+    <div class="text-center py-5"><div class="spinner-border"></div></div>
+}
+else
+{
+    <div class="card border-0 shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Actor</th>
+                        <th>Accion</th>
+                        <th>Entidad</th>
+                        <th>Justificacion</th>
+                        <th>IP</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var l in _logs)
+                    {
+                        <tr>
+                            <td><small>@l.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</small></td>
+                            <td><small>@l.ActorEmail</small></td>
+                            <td><span class="badge bg-secondary">@l.Accion</span></td>
+                            <td><small>@l.EntidadAfectada</small></td>
+                            <td><small>@l.Justificacion</small></td>
+                            <td><small>@l.Ip</small></td>
+                        </tr>
+                    }
+                    @if (_logs.Count == 0)
+                    {
+                        <tr><td colspan="6" class="text-center text-muted py-4">Sin logs.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <small class="text-muted d-block mt-2">Mostrando ultimas @_logs.Count entradas.</small>
+}
+
+@code {
+    private bool _cargando = true;
+    private List<SuperAdminLogDto> _logs = new();
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        try
+        {
+            var http = HttpFactory.CreateClient("PropiaApi");
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Session.AccessToken!);
+            _logs = await http.GetFromJsonAsync<List<SuperAdminLogDto>>("/admin/logs?take=200") ?? new();
+        }
+        finally { _cargando = false; }
+    }
+}

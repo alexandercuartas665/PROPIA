@@ -51,6 +51,42 @@ public class AdminController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Segundo paso del login cuando el user tiene MFA: valida ticket + codigo TOTP.</summary>
+    [HttpPost("mfa/verify-login")]
+    [AllowAnonymous]
+    public async Task<IActionResult> VerifyMfaLogin([FromBody] VerifyMfaLoginRequest req, CancellationToken ct)
+    {
+        var result = await _auth.VerifyMfaLoginAsync(req, Ip(), ct);
+        if (result is null) return Unauthorized(new { error = "mfa_invalido" });
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Inicia el enrollment de MFA para el usuario autenticado. Devuelve secret + URI otpauth://
+    /// para que el cliente lo muestre como QR. NO marca como configurado hasta VerifyEnrollMfa.
+    /// </summary>
+    [HttpPost("mfa/enroll")]
+    [Authorize(Policy = SuperAdminPolicy)]
+    public async Task<IActionResult> EnrollMfa(CancellationToken ct)
+    {
+        var (id, _) = Actor();
+        if (id == Guid.Empty) return Unauthorized();
+        var result = await _auth.EnrollMfaAsync(id, ct);
+        return Ok(result);
+    }
+
+    /// <summary>Verifica el codigo TOTP del primer escaneo y marca MfaConfigurado = true.</summary>
+    [HttpPost("mfa/verify-enroll")]
+    [Authorize(Policy = SuperAdminPolicy)]
+    public async Task<IActionResult> VerifyEnrollMfa([FromBody] VerifyMfaEnrollRequest req, CancellationToken ct)
+    {
+        var (id, _) = Actor();
+        if (id == Guid.Empty) return Unauthorized();
+        var ok = await _auth.VerifyEnrollMfaAsync(id, req, Ip(), ct);
+        if (!ok) return BadRequest(new { error = "codigo_invalido" });
+        return Ok(new { mfaConfigurado = true });
+    }
+
     // -------------------- Organizaciones --------------------
 
     [HttpGet("organizaciones")]
