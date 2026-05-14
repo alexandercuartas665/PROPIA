@@ -1,15 +1,513 @@
 @page "/mi-copropiedad"
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+
 <PageTitle>Mi Copropiedad - PROPIA</PageTitle>
 
-<ModuloPlaceholder
-    Codigo="2.3"
-    Nombre="Mi Copropiedad"
-    Descripcion="Ficha viva completa de la copropiedad. Corazon del producto y paso de configuracion antes de operar."
-    Estado="EstadoModulo.EnDiseno"
-    Features='new[] {
-        "Secciones colapsables: Identidad, Distribucion, Equipo de trabajo, Gobierno, Servicios, Zonas Comunes, Equipos y Finanzas",
-        "Cada entidad (unidad, persona, zona, equipo) con su propia ficha navegable",
-        "Patron CRM aplicado - fichas vivas con todas sus relaciones",
-        "Fuente de verdad de datos maestros - 2.6, 2.7, 2.8, 2.11, 2.13 consumen desde aqui"
-    }'
-    NotaSpec="01. REQUERIMIENTO/Capa 2. Copropiedad/2.3. Mi Copropiedad_v1.0.md" />
+@* Modulo 2.3 Mi Copropiedad - ficha viva con secciones colapsables.
+   En MVP el JWT se pega manualmente (la auth completa del cliente vendra en 2.5). *@
+
+<div class="mb-4">
+    <h1 class="h3 mb-1 fw-semibold">Mi Copropiedad</h1>
+    <p class="text-muted mb-0">Ficha viva de la PH - configura aqui, los modulos consumen desde aqui</p>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <div class="card border-warning p-4">
+        <h5>Necesitas un JWT con tenant activo</h5>
+        <p class="text-muted mb-3">Mi Copropiedad consume el API autenticado. En este MVP pegamos el JWT manualmente
+            mientras se completa el login del cliente (modulo 2.5).</p>
+        <div class="d-flex gap-2 mb-3">
+            <a class="btn btn-dark" href="/onboarding">Crear cuenta nueva</a>
+            <a class="btn btn-outline-dark" href="/login">Iniciar sesion</a>
+        </div>
+        <details>
+            <summary class="text-muted small">Pegar JWT manualmente (modo demo)</summary>
+            <p class="small text-muted mt-2">El JWT debe traer el claim <code>tenant_id</code>. Se obtiene del onboarding al final del wizard, o de /connect/token + /connect/switch-tenant.</p>
+            <textarea class="form-control form-control-sm font-monospace" rows="3" @bind="_jwtInput" placeholder="eyJ..."></textarea>
+            <button class="btn btn-sm btn-outline-dark mt-2" @onclick="SetJwt">Usar este JWT</button>
+        </details>
+    </div>
+    return;
+}
+
+@if (_resumen is null)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+}
+else
+{
+    @* Hero card con identidad *@
+    <div class="card hero-card mb-3">
+        <div class="card-body">
+            <div class="row align-items-center g-3">
+                <div class="col-md-2 text-center">
+                    @if (!string.IsNullOrEmpty(_resumen.Identidad.LogoUrl))
+                    {
+                        <img src="@_resumen.Identidad.LogoUrl" alt="logo" class="img-fluid rounded" style="max-height: 100px;" />
+                    }
+                    else
+                    {
+                        <div class="hero-logo-placeholder">@(_resumen.Identidad.Nombre is { Length: > 0 } n ? n[..1].ToUpper() : "P")</div>
+                    }
+                </div>
+                <div class="col-md-7">
+                    <h2 class="h3 mb-1">@_resumen.Identidad.Nombre</h2>
+                    <p class="text-muted mb-1">
+                        @(string.IsNullOrEmpty(_resumen.Identidad.Direccion) ? "Sin direccion" : _resumen.Identidad.Direccion)
+                        @(string.IsNullOrEmpty(_resumen.Identidad.Ciudad) ? "" : $" · {_resumen.Identidad.Ciudad}")
+                    </p>
+                    <div class="d-flex flex-wrap gap-2 small">
+                        @if (_resumen.Identidad.Tipo.HasValue) { <span class="badge bg-light text-dark border">@_resumen.Identidad.Tipo</span> }
+                        @if (_resumen.Identidad.Estrato.HasValue) { <span class="badge bg-light text-dark border">Estrato @((int)_resumen.Identidad.Estrato.Value)</span> }
+                        @if (!string.IsNullOrEmpty(_resumen.Identidad.Nit)) { <span class="badge bg-light text-dark border">NIT @_resumen.Identidad.Nit</span> }
+                        @if (!string.IsNullOrEmpty(_resumen.Identidad.CodigoPropia)) { <span class="badge bg-light text-dark border">@_resumen.Identidad.CodigoPropia</span> }
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="hero-stats">
+                        <div><strong>@_resumen.CantidadUnidades</strong><small class="text-muted d-block">unidades</small></div>
+                        <div><strong>@_resumen.CantidadTorres</strong><small class="text-muted d-block">torres</small></div>
+                        <div><strong>@_resumen.CantidadZonasComunes</strong><small class="text-muted d-block">zonas</small></div>
+                    </div>
+                </div>
+            </div>
+            <hr />
+            <div class="d-flex align-items-center gap-3">
+                <div class="flex-grow-1">
+                    <div class="d-flex justify-content-between small mb-1">
+                        <span class="text-muted">Completitud general</span>
+                        <strong>@_resumen.CompletitudPct%</strong>
+                    </div>
+                    <div class="progress" style="height: 6px;">
+                        <div class="progress-bar" style="width: @_resumen.CompletitudPct%; background: var(--propia-primary);"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* Seccion 1 - Identidad *@
+    <SeccionCard Titulo="1. Identidad" Completa="@CompIdentidad" Abierta="@_secciones[SecIdent]" OnToggle="() => ToggleSec(SecIdent)">
+        <EditForm Model="@_identForm" OnValidSubmit="GuardarIdentidad" FormName="identidad">
+            <div class="row g-2">
+                <div class="col-md-6"><label class="form-label">Nombre</label><InputText @bind-Value="_identForm.Nombre" class="form-control" /></div>
+                <div class="col-md-3"><label class="form-label">NIT</label><InputText @bind-Value="_identForm.Nit" class="form-control" /></div>
+                <div class="col-md-3"><label class="form-label">DV</label><InputText @bind-Value="_identForm.DigitoVerificacion" class="form-control" /></div>
+                <div class="col-md-6"><label class="form-label">Direccion</label><InputText @bind-Value="_identForm.Direccion" class="form-control" /></div>
+                <div class="col-md-3"><label class="form-label">Ciudad</label><InputText @bind-Value="_identForm.Ciudad" class="form-control" /></div>
+                <div class="col-md-3"><label class="form-label">Departamento</label><InputText @bind-Value="_identForm.Departamento" class="form-control" /></div>
+                <div class="col-md-4"><label class="form-label">Tipo</label>
+                    <InputSelect @bind-Value="_identForm.Tipo" class="form-select">
+                        <option value="">- Seleccionar -</option>
+                        <option value="@TipoCopropiedad.Residencial">Residencial</option>
+                        <option value="@TipoCopropiedad.Comercial">Comercial</option>
+                        <option value="@TipoCopropiedad.Mixto">Mixto</option>
+                        <option value="@TipoCopropiedad.Conjunto">Conjunto</option>
+                    </InputSelect>
+                </div>
+                <div class="col-md-4"><label class="form-label">Estrato</label>
+                    <InputSelect @bind-Value="_identForm.Estrato" class="form-select">
+                        <option value="">- Seleccionar -</option>
+                        <option value="@Estrato.Uno">1</option><option value="@Estrato.Dos">2</option>
+                        <option value="@Estrato.Tres">3</option><option value="@Estrato.Cuatro">4</option>
+                        <option value="@Estrato.Cinco">5</option><option value="@Estrato.Seis">6</option>
+                    </InputSelect>
+                </div>
+                <div class="col-md-4"><label class="form-label">Logo URL</label><InputText @bind-Value="_identForm.LogoUrl" class="form-control" placeholder="https://..." /></div>
+                <div class="col-12"><label class="form-label">Descripcion</label><InputTextArea @bind-Value="_identForm.Descripcion" class="form-control" rows="2" /></div>
+            </div>
+            <button type="submit" class="btn btn-sm mt-3" style="background: var(--propia-primary); color: white;" disabled="@_busy">@(_busy ? "Guardando..." : "Guardar identidad")</button>
+        </EditForm>
+    </SeccionCard>
+
+    @* Seccion 2 - Distribucion *@
+    <SeccionCard Titulo="2. Distribucion (Torres y Unidades)" Completa="@CompDistribucion" Abierta="@_secciones[SecDistrib]" OnToggle="() => ToggleSec(SecDistrib)">
+        <h6 class="mb-2">Torres</h6>
+        @if (_torres.Count == 0) { <p class="text-muted small mb-2">Sin torres aun.</p> }
+        else
+        {
+            <ul class="list-group mb-3">
+                @foreach (var t in _torres)
+                {
+                    <li class="list-group-item d-flex justify-content-between align-items-center small">
+                        <span><strong>@t.Nombre</strong> @(t.CantidadPisos.HasValue ? $"· {t.CantidadPisos} pisos" : "") · @t.CantidadUnidades unidades</span>
+                        <button class="btn btn-sm btn-outline-danger" @onclick="() => EliminarTorre(t.Id)">Quitar</button>
+                    </li>
+                }
+            </ul>
+        }
+        <div class="row g-2 mb-3">
+            <div class="col-md-5"><InputText @bind-Value="_nuevaTorre.Nombre" class="form-control form-control-sm" placeholder="Nombre torre (Torre A)" /></div>
+            <div class="col-md-3"><input type="number" class="form-control form-control-sm" @bind="_nuevaTorre.CantidadPisos" placeholder="Pisos" /></div>
+            <div class="col-md-4"><button class="btn btn-sm btn-outline-dark w-100" @onclick="CrearTorre">+ Agregar torre</button></div>
+        </div>
+
+        <hr />
+        <h6 class="mb-2">Unidades privadas</h6>
+        @if (_unidades.Count == 0) { <p class="text-muted small mb-2">Sin unidades aun.</p> }
+        else
+        {
+            <div class="table-responsive mb-3">
+                <table class="table table-sm align-middle">
+                    <thead class="small text-muted">
+                        <tr><th>Numero</th><th>Tipo</th><th>Torre</th><th>Piso</th><th class="text-end">Coef %</th><th></th></tr>
+                    </thead>
+                    <tbody class="small">
+                        @foreach (var u in _unidades)
+                        {
+                            <tr>
+                                <td><strong>@u.Numero</strong></td>
+                                <td>@u.Tipo</td>
+                                <td>@(u.TorreNombre ?? "-")</td>
+                                <td>@u.Piso</td>
+                                <td class="text-end">@u.CoeficientePropiedad.ToString("0.0000")</td>
+                                <td><button class="btn btn-sm btn-outline-danger" @onclick="() => EliminarUnidad(u.Id)">X</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot class="small">
+                        <tr><td colspan="4" class="text-end fw-semibold">Suma:</td><td class="text-end fw-semibold @(Math.Abs(_resumen.CoeficientesTotalPct - 100m) > 1m ? "text-danger" : "text-success")">@_resumen.CoeficientesTotalPct.ToString("0.0000")%</td><td></td></tr>
+                    </tfoot>
+                </table>
+            </div>
+        }
+        <div class="row g-2">
+            <div class="col-md-2"><InputText @bind-Value="_nuevaUnidad.Numero" class="form-control form-control-sm" placeholder="101" /></div>
+            <div class="col-md-2">
+                <InputSelect @bind-Value="_nuevaUnidad.Tipo" class="form-select form-select-sm">
+                    <option value="@TipoUnidad.Apartamento">Apartamento</option>
+                    <option value="@TipoUnidad.Local">Local</option>
+                    <option value="@TipoUnidad.Casa">Casa</option>
+                    <option value="@TipoUnidad.Oficina">Oficina</option>
+                    <option value="@TipoUnidad.Parqueadero">Parqueadero</option>
+                </InputSelect>
+            </div>
+            <div class="col-md-2">
+                <InputSelect @bind-Value="_nuevaUnidad.TorreId" class="form-select form-select-sm">
+                    <option value="">- Torre -</option>
+                    @foreach (var t in _torres) { <option value="@t.Id">@t.Nombre</option> }
+                </InputSelect>
+            </div>
+            <div class="col-md-1"><input type="number" class="form-control form-control-sm" @bind="_nuevaUnidad.Piso" placeholder="Piso" /></div>
+            <div class="col-md-2"><input type="number" step="0.0001" class="form-control form-control-sm" @bind="_nuevaUnidad.Coef" placeholder="Coef %" /></div>
+            <div class="col-md-3"><button class="btn btn-sm btn-outline-dark w-100" @onclick="CrearUnidad">+ Unidad</button></div>
+        </div>
+    </SeccionCard>
+
+    @* Seccion 4 - Gobierno *@
+    <SeccionCard Titulo="4. Gobierno (Consejo)" Completa="@CompGobierno" Abierta="@_secciones[SecGob]" OnToggle="() => ToggleSec(SecGob)">
+        @if (_consejo.Count == 0) { <p class="text-muted small mb-2">Sin miembros del consejo configurados.</p> }
+        else
+        {
+            <ul class="list-group mb-3">
+                @foreach (var m in _consejo)
+                {
+                    <li class="list-group-item d-flex justify-content-between align-items-center small">
+                        <span><strong>@m.PersonaNombre</strong> · <span class="badge bg-light text-dark border">@m.Cargo</span> · @(m.Activo ? "Activo" : "Inactivo")</span>
+                        @if (m.Activo) { <button class="btn btn-sm btn-outline-danger" @onclick="() => DesactivarConsejo(m.Id)">Desactivar</button> }
+                    </li>
+                }
+            </ul>
+        }
+        <p class="text-muted small mb-0">El alta de miembros se hace via 2.4 Directorio (en construccion).</p>
+    </SeccionCard>
+
+    @* Seccion 5 - Servicios *@
+    <SeccionCard Titulo="5. Servicios (Contratos)" Completa="@CompServicios" Abierta="@_secciones[SecSrv]" OnToggle="() => ToggleSec(SecSrv)">
+        @if (_contratos.Count == 0) { <p class="text-muted small mb-2">Sin contratos vigentes.</p> }
+        else
+        {
+            <div class="table-responsive mb-3">
+                <table class="table table-sm">
+                    <thead class="small text-muted"><tr><th>Tipo</th><th>Proveedor</th><th>Inicio</th><th>Fin</th><th class="text-end">Valor</th><th></th></tr></thead>
+                    <tbody class="small">
+                        @foreach (var c in _contratos)
+                        {
+                            <tr>
+                                <td><span class="badge bg-light text-dark border">@c.Tipo</span></td>
+                                <td>@c.Proveedor</td>
+                                <td>@c.FechaInicio</td>
+                                <td>@(c.FechaFin?.ToString() ?? "-")</td>
+                                <td class="text-end">@(c.ValorMensual?.ToString("N0") ?? "-")</td>
+                                <td><button class="btn btn-sm btn-outline-danger" @onclick="() => EliminarContrato(c.Id)">X</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        <div class="row g-2">
+            <div class="col-md-2">
+                <InputSelect @bind-Value="_nuevoContrato.Tipo" class="form-select form-select-sm">
+                    @foreach (var t in Enum.GetValues<TipoServicio>()) { <option value="@t">@t</option> }
+                </InputSelect>
+            </div>
+            <div class="col-md-3"><InputText @bind-Value="_nuevoContrato.Proveedor" class="form-control form-control-sm" placeholder="Proveedor" /></div>
+            <div class="col-md-2"><input type="date" class="form-control form-control-sm" @bind="_nuevoContrato.FechaInicio" /></div>
+            <div class="col-md-2"><input type="date" class="form-control form-control-sm" @bind="_nuevoContrato.FechaFin" /></div>
+            <div class="col-md-2"><input type="number" class="form-control form-control-sm" @bind="_nuevoContrato.ValorMensual" placeholder="COP" /></div>
+            <div class="col-md-1"><button class="btn btn-sm btn-outline-dark w-100" @onclick="CrearContrato">+</button></div>
+        </div>
+    </SeccionCard>
+
+    @* Seccion 6 - Zonas Comunes *@
+    <SeccionCard Titulo="6. Zonas Comunes" Completa="@CompZonasComunes" Abierta="@_secciones[SecZon]" OnToggle="() => ToggleSec(SecZon)">
+        @if (_zonas.Count == 0) { <p class="text-muted small mb-2">Sin zonas configuradas.</p> }
+        else
+        {
+            <ul class="list-group mb-3">
+                @foreach (var z in _zonas)
+                {
+                    <li class="list-group-item d-flex justify-content-between align-items-center small">
+                        <span><strong>@z.Nombre</strong> · <span class="badge bg-light text-dark border">@z.Categoria</span> @(z.EsReservable ? "· Reservable" : "")</span>
+                        <button class="btn btn-sm btn-outline-danger" @onclick="() => EliminarZona(z.Id)">X</button>
+                    </li>
+                }
+            </ul>
+        }
+        <div class="row g-2">
+            <div class="col-md-4"><InputText @bind-Value="_nuevaZona.Nombre" class="form-control form-control-sm" placeholder="Nombre" /></div>
+            <div class="col-md-3">
+                <InputSelect @bind-Value="_nuevaZona.Categoria" class="form-select form-select-sm">
+                    @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c">@c</option> }
+                </InputSelect>
+            </div>
+            <div class="col-md-2 form-check ms-2 mt-1"><input type="checkbox" class="form-check-input" @bind="_nuevaZona.Reservable" id="zonaRes" /><label for="zonaRes" class="form-check-label small">Reservable</label></div>
+            <div class="col-md-2"><input type="number" class="form-control form-control-sm" @bind="_nuevaZona.Capacidad" placeholder="Capacidad" /></div>
+            <div class="col-md-1"><button class="btn btn-sm btn-outline-dark w-100" @onclick="CrearZona">+</button></div>
+        </div>
+    </SeccionCard>
+
+    @* Seccion 7 - Equipos *@
+    <SeccionCard Titulo="7. Equipos y Activos" Completa="@CompEquipos" Abierta="@_secciones[SecEq]" OnToggle="() => ToggleSec(SecEq)">
+        @if (_equipos.Count == 0) { <p class="text-muted small mb-2">Sin equipos registrados.</p> }
+        else
+        {
+            <ul class="list-group mb-3">
+                @foreach (var e in _equipos)
+                {
+                    <li class="list-group-item d-flex justify-content-between align-items-center small">
+                        <span><strong>@e.Nombre</strong> · <span class="badge bg-light text-dark border">@e.Categoria</span> @(string.IsNullOrEmpty(e.Marca) ? "" : $"· {e.Marca}")</span>
+                        <button class="btn btn-sm btn-outline-danger" @onclick="() => EliminarEquipo(e.Id)">X</button>
+                    </li>
+                }
+            </ul>
+        }
+        <div class="row g-2">
+            <div class="col-md-4"><InputText @bind-Value="_nuevoEquipo.Nombre" class="form-control form-control-sm" placeholder="Nombre" /></div>
+            <div class="col-md-3">
+                <InputSelect @bind-Value="_nuevoEquipo.Categoria" class="form-select form-select-sm">
+                    @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c">@c</option> }
+                </InputSelect>
+            </div>
+            <div class="col-md-3"><InputText @bind-Value="_nuevoEquipo.Marca" class="form-control form-control-sm" placeholder="Marca" /></div>
+            <div class="col-md-2"><button class="btn btn-sm btn-outline-dark w-100" @onclick="CrearEquipo">+</button></div>
+        </div>
+    </SeccionCard>
+
+    @if (!string.IsNullOrEmpty(_actionMsg))
+    {
+        <div class="alert @_actionMsgClass mt-3">@_actionMsg</div>
+    }
+}
+
+<style>
+    .hero-card { border: none; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+    .hero-logo-placeholder {
+        width: 90px; height: 90px; border-radius: 12px;
+        background: linear-gradient(135deg, var(--propia-primary), var(--propia-primary-light));
+        color: white; font-size: 2.5rem; font-weight: 700;
+        display: inline-flex; align-items: center; justify-content: center;
+    }
+    .hero-stats { display: flex; gap: 1rem; text-align: center; justify-content: end; }
+    .hero-stats div strong { font-size: 1.4rem; }
+</style>
+
+@code {
+    private const string SecIdent = "ident";
+    private const string SecDistrib = "distrib";
+    private const string SecGob = "gob";
+    private const string SecSrv = "srv";
+    private const string SecZon = "zon";
+    private const string SecEq = "eq";
+
+    private string? _jwt;
+    private string _jwtInput = "";
+    private bool _busy;
+    private string? _actionMsg;
+    private string _actionMsgClass = "alert-info";
+
+    private Dictionary<string, bool> _secciones = new()
+    {
+        [SecIdent] = true, [SecDistrib] = true,
+        [SecGob] = false, [SecSrv] = false, [SecZon] = false, [SecEq] = false
+    };
+
+    private ResumenMiCopropiedadDto? _resumen;
+    private IdentForm _identForm = new();
+    private List<TorreDto> _torres = new();
+    private List<UnidadDto> _unidades = new();
+    private List<MiembroConsejoDto> _consejo = new();
+    private List<ContratoServicioDto> _contratos = new();
+    private List<ZonaComunDto> _zonas = new();
+    private List<EquipoActivoDto> _equipos = new();
+
+    private NuevaTorre _nuevaTorre = new();
+    private NuevaUnidad _nuevaUnidad = new();
+    private NuevoContrato _nuevoContrato = new() { FechaInicio = DateTime.Today };
+    private NuevaZona _nuevaZona = new();
+    private NuevoEquipo _nuevoEquipo = new();
+
+    private void ToggleSec(string s) => _secciones[s] = !_secciones[s];
+
+    private bool Comp(string key) => _resumen?.SeccionesCompletas?.GetValueOrDefault(key) ?? false;
+    private bool CompIdentidad => Comp("Identidad");
+    private bool CompDistribucion => Comp("Distribucion");
+    private bool CompGobierno => Comp("Gobierno");
+    private bool CompServicios => Comp("Servicios");
+    private bool CompZonasComunes => Comp("ZonasComunes");
+    private bool CompEquipos => Comp("Equipos");
+
+    private async Task SetJwt()
+    {
+        if (string.IsNullOrWhiteSpace(_jwtInput)) return;
+        _jwt = _jwtInput.Trim();
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        _busy = true;
+        try
+        {
+            var http = Auth();
+            _resumen = await http.GetFromJsonAsync<ResumenMiCopropiedadDto>("/api/mi-copropiedad/resumen");
+            if (_resumen is null) return;
+            _identForm = new IdentForm
+            {
+                Nombre = _resumen.Identidad.Nombre,
+                Nit = _resumen.Identidad.Nit,
+                DigitoVerificacion = _resumen.Identidad.DigitoVerificacion,
+                Direccion = _resumen.Identidad.Direccion,
+                Ciudad = _resumen.Identidad.Ciudad,
+                Departamento = _resumen.Identidad.Departamento,
+                Tipo = _resumen.Identidad.Tipo,
+                Estrato = _resumen.Identidad.Estrato,
+                LogoUrl = _resumen.Identidad.LogoUrl,
+                Descripcion = _resumen.Identidad.Descripcion
+            };
+            _torres = await http.GetFromJsonAsync<List<TorreDto>>("/api/mi-copropiedad/torres") ?? new();
+            _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
+            _consejo = await http.GetFromJsonAsync<List<MiembroConsejoDto>>("/api/mi-copropiedad/consejo") ?? new();
+            _contratos = await http.GetFromJsonAsync<List<ContratoServicioDto>>("/api/mi-copropiedad/contratos") ?? new();
+            _zonas = await http.GetFromJsonAsync<List<ZonaComunDto>>("/api/mi-copropiedad/zonas") ?? new();
+            _equipos = await http.GetFromJsonAsync<List<EquipoActivoDto>>("/api/mi-copropiedad/equipos") ?? new();
+        }
+        catch (Exception ex) { Msg(ex.Message, false); }
+        finally { _busy = false; }
+    }
+
+    private async Task GuardarIdentidad()
+    {
+        _busy = true;
+        var http = Auth();
+        var req = new ActualizarIdentidadRequest(_identForm.Nombre, _identForm.Nit, _identForm.DigitoVerificacion,
+            _identForm.Direccion, _identForm.Ciudad, _identForm.Departamento,
+            _identForm.Tipo, _identForm.Estrato,
+            null, _identForm.LogoUrl, _identForm.Descripcion);
+        var resp = await http.PutAsJsonAsync("/api/mi-copropiedad/identidad", req);
+        if (resp.IsSuccessStatusCode) { Msg("Identidad guardada", true); await CargarAsync(); }
+        else Msg(await resp.Content.ReadAsStringAsync(), false);
+        _busy = false;
+    }
+
+    private async Task CrearTorre()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevaTorre.Nombre)) return;
+        var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/torres",
+            new CrearTorreRequest(_nuevaTorre.Nombre, _nuevaTorre.CantidadPisos, null));
+        if (resp.IsSuccessStatusCode) { _nuevaTorre = new(); await CargarAsync(); }
+        else Msg(await resp.Content.ReadAsStringAsync(), false);
+    }
+    private async Task EliminarTorre(Guid id) { await Auth().DeleteAsync($"/api/mi-copropiedad/torres/{id}"); await CargarAsync(); }
+
+    private async Task CrearUnidad()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevaUnidad.Numero)) return;
+        var req = new CrearUnidadRequest(_nuevaUnidad.Numero, _nuevaUnidad.Tipo,
+            _nuevaUnidad.TorreId, _nuevaUnidad.Piso, _nuevaUnidad.Coef ?? 0,
+            null, null, null, null, null, null);
+        var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/unidades", req);
+        if (resp.IsSuccessStatusCode) { _nuevaUnidad = new(); await CargarAsync(); }
+        else Msg(await resp.Content.ReadAsStringAsync(), false);
+    }
+    private async Task EliminarUnidad(Guid id) { await Auth().DeleteAsync($"/api/mi-copropiedad/unidades/{id}"); await CargarAsync(); }
+
+    private async Task DesactivarConsejo(Guid id) { await Auth().PutAsync($"/api/mi-copropiedad/consejo/{id}/desactivar", null); await CargarAsync(); }
+
+    private async Task CrearContrato()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevoContrato.Proveedor)) return;
+        var req = new CrearContratoServicioRequest(_nuevoContrato.Tipo, _nuevoContrato.Proveedor, null, null,
+            DateOnly.FromDateTime(_nuevoContrato.FechaInicio),
+            _nuevoContrato.FechaFin.HasValue ? DateOnly.FromDateTime(_nuevoContrato.FechaFin.Value) : null,
+            _nuevoContrato.ValorMensual, null);
+        var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/contratos", req);
+        if (resp.IsSuccessStatusCode) { _nuevoContrato = new() { FechaInicio = DateTime.Today }; await CargarAsync(); }
+        else Msg(await resp.Content.ReadAsStringAsync(), false);
+    }
+    private async Task EliminarContrato(Guid id) { await Auth().DeleteAsync($"/api/mi-copropiedad/contratos/{id}"); await CargarAsync(); }
+
+    private async Task CrearZona()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevaZona.Nombre)) return;
+        var req = new CrearZonaComunRequest(_nuevaZona.Nombre, _nuevaZona.Categoria, null,
+            _nuevaZona.Reservable, null, _nuevaZona.Capacidad, null, null);
+        var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/zonas", req);
+        if (resp.IsSuccessStatusCode) { _nuevaZona = new(); await CargarAsync(); }
+        else Msg(await resp.Content.ReadAsStringAsync(), false);
+    }
+    private async Task EliminarZona(Guid id) { await Auth().DeleteAsync($"/api/mi-copropiedad/zonas/{id}"); await CargarAsync(); }
+
+    private async Task CrearEquipo()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevoEquipo.Nombre)) return;
+        var req = new CrearEquipoActivoRequest(_nuevoEquipo.Nombre, _nuevoEquipo.Categoria,
+            _nuevoEquipo.Marca, null, null, null, null, null, null);
+        var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/equipos", req);
+        if (resp.IsSuccessStatusCode) { _nuevoEquipo = new(); await CargarAsync(); }
+        else Msg(await resp.Content.ReadAsStringAsync(), false);
+    }
+    private async Task EliminarEquipo(Guid id) { await Auth().DeleteAsync($"/api/mi-copropiedad/equipos/{id}"); await CargarAsync(); }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+
+    private void Msg(string m, bool exito) { _actionMsg = m; _actionMsgClass = exito ? "alert-success" : "alert-danger"; }
+
+    private class IdentForm
+    {
+        public string Nombre { get; set; } = "";
+        public string? Nit { get; set; }
+        public string? DigitoVerificacion { get; set; }
+        public string? Direccion { get; set; }
+        public string? Ciudad { get; set; }
+        public string? Departamento { get; set; }
+        public TipoCopropiedad? Tipo { get; set; }
+        public Estrato? Estrato { get; set; }
+        public string? LogoUrl { get; set; }
+        public string? Descripcion { get; set; }
+    }
+    private class NuevaTorre { public string Nombre { get; set; } = ""; public int? CantidadPisos { get; set; } }
+    private class NuevaUnidad { public string Numero { get; set; } = ""; public TipoUnidad Tipo { get; set; } = TipoUnidad.Apartamento; public Guid? TorreId { get; set; } public int? Piso { get; set; } public decimal? Coef { get; set; } }
+    private class NuevoContrato { public TipoServicio Tipo { get; set; } = TipoServicio.Aseo; public string Proveedor { get; set; } = ""; public DateTime FechaInicio { get; set; } public DateTime? FechaFin { get; set; } public decimal? ValorMensual { get; set; } }
+    private class NuevaZona { public string Nombre { get; set; } = ""; public CategoriaZonaComun Categoria { get; set; } = CategoriaZonaComun.Social; public bool Reservable { get; set; } public int? Capacidad { get; set; } }
+    private class NuevoEquipo { public string Nombre { get; set; } = ""; public CategoriaEquipo Categoria { get; set; } = CategoriaEquipo.Otros; public string? Marca { get; set; } }
+}

@@ -1,0 +1,430 @@
+@page "/onboarding"
+@layout WizardLayout
+@rendermode InteractiveServer
+@using System.ComponentModel.DataAnnotations
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+
+<PageTitle>Bienvenido a PROPIA</PageTitle>
+
+@* Wizard 2.1 de 5 pasos: Registro -> Confirmar email -> Clasificacion -> Organizacion -> Copropiedad -> Activacion *@
+
+<div class="wizard-content">
+    <ProgressBar Paso="@_paso" />
+
+    @if (_paso == 1)
+    {
+        <h2 class="h3 mb-2 fw-semibold text-center">Bienvenido a PROPIA</h2>
+        <p class="text-muted text-center mb-4">Crea tu cuenta en menos de 2 minutos</p>
+        <EditForm Model="@_reg" OnValidSubmit="Paso1Registrar" FormName="paso1">
+            <DataAnnotationsValidator />
+            <div class="mb-3">
+                <label class="form-label">Nombre completo</label>
+                <InputText @bind-Value="_reg.NombreCompleto" class="form-control form-control-lg" placeholder="Tu nombre y apellidos" />
+                <ValidationMessage For="@(() => _reg.NombreCompleto)" class="text-danger small mt-1" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Correo electronico</label>
+                <InputText @bind-Value="_reg.Email" class="form-control form-control-lg" placeholder="tu@correo.com" autocomplete="email" />
+                <ValidationMessage For="@(() => _reg.Email)" class="text-danger small mt-1" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Contrasena</label>
+                <InputText type="password" @bind-Value="_reg.Password" class="form-control form-control-lg" placeholder="Minimo 10 caracteres" />
+                <ValidationMessage For="@(() => _reg.Password)" class="text-danger small mt-1" />
+            </div>
+            @ErrorAlert
+            <button type="submit" class="btn btn-lg w-100" style="background: var(--propia-primary); color: white;" disabled="@_busy">
+                @(_busy ? "Creando cuenta..." : "Crear mi cuenta")
+            </button>
+            <p class="text-center text-muted small mt-3 mb-0">
+                Al continuar aceptas los <a href="#">terminos</a> y la <a href="#">politica de privacidad</a>.
+            </p>
+        </EditForm>
+    }
+    else if (_paso == 2)
+    {
+        <h2 class="h3 mb-2 fw-semibold text-center">Verifica tu correo</h2>
+        <p class="text-muted text-center mb-4">
+            Enviamos un codigo a <strong>@_reg.Email</strong>.<br />
+            <small class="text-muted">(MVP: confirmacion automatica - ingresa cualquier codigo y continua)</small>
+        </p>
+        <EditForm Model="@_emailCode" OnValidSubmit="Paso1ConfirmarEmail" FormName="paso1confirmar">
+            <div class="mb-3">
+                <label class="form-label">Codigo de verificacion</label>
+                <InputText @bind-Value="_emailCode.Codigo" class="form-control form-control-lg text-center" maxlength="6" placeholder="123456" />
+            </div>
+            @ErrorAlert
+            <button type="submit" class="btn btn-lg w-100" style="background: var(--propia-primary); color: white;" disabled="@_busy">
+                @(_busy ? "Verificando..." : "Continuar")
+            </button>
+        </EditForm>
+    }
+    else if (_paso == 3)
+    {
+        <h2 class="h3 mb-2 fw-semibold text-center">Cuentanos tu perfil</h2>
+        <p class="text-muted text-center mb-4">Asi configuramos PROPIA para tu caso</p>
+        <div class="perfil-grid">
+            @foreach (var (val, titulo, desc) in PerfilOpciones)
+            {
+                <button class="perfil-card @(_clasificacion.Perfil == val ? "perfil-card-selected" : "")"
+                        @onclick="() => SelectPerfil(val)">
+                    <strong>@titulo</strong>
+                    <small class="text-muted">@desc</small>
+                </button>
+            }
+        </div>
+        @ErrorAlert
+        <button class="btn btn-lg w-100 mt-3" style="background: var(--propia-primary); color: white;"
+                @onclick="Paso2Clasificar" disabled="@(_busy || _clasificacion.Perfil is null)">
+            @(_busy ? "Guardando..." : "Continuar")
+        </button>
+    }
+    else if (_paso == 4)
+    {
+        <h2 class="h3 mb-2 fw-semibold text-center">Datos de tu organizacion</h2>
+        <p class="text-muted text-center mb-4">
+            @(_clasificacion.Perfil == TipoPerfilCliente.Autoadministrada
+                ? "Tu copropiedad se autoadministra - este paso es opcional"
+                : "Informacion de la empresa o administradora")
+        </p>
+        <EditForm Model="@_org" OnValidSubmit="Paso3Organizacion" FormName="paso3">
+            <div class="mb-3">
+                <label class="form-label">Nombre de la organizacion @(_clasificacion.Perfil == TipoPerfilCliente.Autoadministrada ? "(opcional)" : "")</label>
+                <InputText @bind-Value="_org.Nombre" class="form-control form-control-lg" placeholder="Empresa Administradora SAS" />
+            </div>
+            <div class="row g-2">
+                <div class="col-md-6">
+                    <label class="form-label">NIT</label>
+                    <InputText @bind-Value="_org.Nit" class="form-control" placeholder="900123456" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Telefono</label>
+                    <InputText @bind-Value="_org.Telefono" class="form-control" placeholder="+57 300 1234567" />
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Email de contacto</label>
+                    <InputText @bind-Value="_org.Email" class="form-control" placeholder="contacto@empresa.com" />
+                </div>
+            </div>
+            @ErrorAlert
+            <div class="d-flex gap-2 mt-3">
+                <button type="button" class="btn btn-outline-secondary flex-grow-1" @onclick="() => _paso = 3">Atras</button>
+                <button type="submit" class="btn flex-grow-1" style="background: var(--propia-primary); color: white;" disabled="@_busy">
+                    @(_busy ? "Guardando..." : "Continuar")
+                </button>
+            </div>
+        </EditForm>
+    }
+    else if (_paso == 5)
+    {
+        <h2 class="h3 mb-2 fw-semibold text-center">Tu primera copropiedad</h2>
+        <p class="text-muted text-center mb-4">Datos basicos - puedes completar mas detalles luego en Mi Copropiedad</p>
+        <EditForm Model="@_cp" OnValidSubmit="Paso4Copropiedad" FormName="paso4">
+            <DataAnnotationsValidator />
+            <div class="mb-3">
+                <label class="form-label">Nombre de la copropiedad</label>
+                <InputText @bind-Value="_cp.Nombre" class="form-control form-control-lg" placeholder="Conjunto Residencial Porton del Sol" />
+                <ValidationMessage For="@(() => _cp.Nombre)" class="text-danger small mt-1" />
+            </div>
+            <div class="row g-2">
+                <div class="col-md-6">
+                    <label class="form-label">NIT</label>
+                    <InputText @bind-Value="_cp.Nit" class="form-control" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Ciudad</label>
+                    <InputText @bind-Value="_cp.Ciudad" class="form-control" placeholder="Cali" />
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Direccion</label>
+                    <InputText @bind-Value="_cp.Direccion" class="form-control" placeholder="Cra. 45 #23-18" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Tipo</label>
+                    <InputSelect @bind-Value="_cp.Tipo" class="form-select">
+                        <option value="">- Seleccionar -</option>
+                        <option value="@TipoCopropiedad.Residencial">Residencial</option>
+                        <option value="@TipoCopropiedad.Comercial">Comercial</option>
+                        <option value="@TipoCopropiedad.Mixto">Mixto</option>
+                        <option value="@TipoCopropiedad.Conjunto">Conjunto</option>
+                    </InputSelect>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Estrato</label>
+                    <InputSelect @bind-Value="_cp.Estrato" class="form-select">
+                        <option value="">- Seleccionar -</option>
+                        <option value="@Estrato.Uno">1</option>
+                        <option value="@Estrato.Dos">2</option>
+                        <option value="@Estrato.Tres">3</option>
+                        <option value="@Estrato.Cuatro">4</option>
+                        <option value="@Estrato.Cinco">5</option>
+                        <option value="@Estrato.Seis">6</option>
+                    </InputSelect>
+                </div>
+            </div>
+            @ErrorAlert
+            <div class="d-flex gap-2 mt-3">
+                <button type="button" class="btn btn-outline-secondary flex-grow-1" @onclick="() => _paso = 4">Atras</button>
+                <button type="submit" class="btn flex-grow-1" style="background: var(--propia-primary); color: white;" disabled="@_busy">
+                    @(_busy ? "Guardando..." : "Continuar")
+                </button>
+            </div>
+        </EditForm>
+    }
+    else if (_paso == 6)
+    {
+        <h2 class="h3 mb-2 fw-semibold text-center">Listo para activar!</h2>
+        <p class="text-muted text-center mb-4">Revisa los datos y activa tu cuenta</p>
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="row small">
+                    <div class="col-4 text-muted">Cuenta:</div>
+                    <div class="col-8"><strong>@_reg.NombreCompleto</strong> · @_reg.Email</div>
+                    <div class="col-4 text-muted mt-2">Perfil:</div>
+                    <div class="col-8 mt-2">@(_clasificacion.Perfil?.ToString())</div>
+                    @if (!string.IsNullOrEmpty(_org.Nombre))
+                    {
+                        <div class="col-4 text-muted mt-2">Organizacion:</div>
+                        <div class="col-8 mt-2">@_org.Nombre</div>
+                    }
+                    <div class="col-4 text-muted mt-2">Copropiedad:</div>
+                    <div class="col-8 mt-2"><strong>@_cp.Nombre</strong> @(string.IsNullOrEmpty(_cp.Ciudad) ? "" : $"· {_cp.Ciudad}")</div>
+                </div>
+            </div>
+        </div>
+        @ErrorAlert
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary flex-grow-1" @onclick="() => _paso = 5">Atras</button>
+            <button class="btn flex-grow-1" style="background: var(--propia-primary); color: white;" @onclick="Paso5Activar" disabled="@_busy">
+                @(_busy ? "Activando..." : "Activar mi cuenta")
+            </button>
+        </div>
+    }
+    else if (_paso == 99)
+    {
+        <div class="text-center py-4">
+            <div class="success-check">OK</div>
+            <h2 class="h3 mb-2 mt-3 fw-semibold">Cuenta creada</h2>
+            <p class="text-muted mb-4">
+                Tu copropiedad <strong>@_cp.Nombre</strong> ha sido activada.<br />
+                Redirigiendote a Mi Copropiedad...
+            </p>
+        </div>
+    }
+</div>
+
+<style>
+    .wizard-content {
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        padding: 2.5rem;
+        width: 100%;
+        max-width: 560px;
+    }
+
+    .perfil-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+    }
+
+    .perfil-card {
+        background: white;
+        border: 2px solid #e6e6ee;
+        border-radius: 12px;
+        padding: 1rem;
+        text-align: left;
+        cursor: pointer;
+        transition: all 0.15s;
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+    }
+    .perfil-card:hover { border-color: var(--propia-primary-light); }
+    .perfil-card-selected {
+        border-color: var(--propia-primary);
+        background: linear-gradient(135deg, rgba(89,85,209,0.05), rgba(122,119,224,0.05));
+    }
+
+    .success-check {
+        width: 64px; height: 64px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #10b981, #34d399);
+        color: white; font-weight: 700; font-size: 1.5rem;
+        display: inline-flex; align-items: center; justify-content: center;
+    }
+</style>
+
+@code {
+    private int _paso = 1;
+    private bool _busy;
+    private string? _error;
+    private Guid? _sessionId;
+
+    private RegistroModel _reg = new();
+    private CodeModel _emailCode = new();
+    private ClasificacionModel _clasificacion = new();
+    private OrgModel _org = new();
+    private CopropiedadModel _cp = new();
+
+    private static readonly (TipoPerfilCliente Val, string Titulo, string Desc)[] PerfilOpciones = new[]
+    {
+        (TipoPerfilCliente.EmpresaAdministradora, "Empresa administradora", "Administro varias copropiedades como negocio"),
+        (TipoPerfilCliente.AdministradorIndependiente, "Administrador independiente", "Soy administrador independiente (persona natural)"),
+        (TipoPerfilCliente.Autoadministrada, "Mi copropiedad se autoadministra", "Soy miembro del Consejo y gestionamos sin empresa externa")
+    };
+
+    private RenderFragment ErrorAlert => __builder =>
+    {
+        if (!string.IsNullOrEmpty(_error))
+        {
+            __builder.OpenElement(0, "div");
+            __builder.AddAttribute(1, "class", "alert alert-danger py-2 small mt-2 mb-0");
+            __builder.AddContent(2, _error);
+            __builder.CloseElement();
+        }
+    };
+
+    private async Task Paso1Registrar()
+    {
+        _busy = true; _error = null;
+        try
+        {
+            var http = HttpFactory.CreateClient("PropiaApi");
+            var resp = await http.PostAsJsonAsync("/api/onboarding/paso1/registrar",
+                new RegistroRequest(_reg.NombreCompleto, _reg.Email, _reg.Password));
+            if (!resp.IsSuccessStatusCode)
+            {
+                _error = await ExtractError(resp);
+                return;
+            }
+            var r = await resp.Content.ReadFromJsonAsync<RegistroResponse>();
+            _sessionId = r!.OnboardingSessionId;
+            _paso = 2;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task Paso1ConfirmarEmail()
+    {
+        _busy = true; _error = null;
+        try
+        {
+            var http = HttpFactory.CreateClient("PropiaApi");
+            var resp = await http.PostAsJsonAsync("/api/onboarding/paso1/confirmar-email",
+                new ConfirmarEmailRequest(_sessionId!.Value, _emailCode.Codigo));
+            if (!resp.IsSuccessStatusCode) { _error = await ExtractError(resp); return; }
+            _paso = 3;
+        }
+        finally { _busy = false; }
+    }
+
+    private void SelectPerfil(TipoPerfilCliente p) { _clasificacion.Perfil = p; _error = null; }
+
+    private async Task Paso2Clasificar()
+    {
+        _busy = true; _error = null;
+        try
+        {
+            var http = HttpFactory.CreateClient("PropiaApi");
+            var resp = await http.PostAsJsonAsync("/api/onboarding/paso2/clasificar",
+                new ClasificacionRequest(_sessionId!.Value, _clasificacion.Perfil!.Value));
+            if (!resp.IsSuccessStatusCode) { _error = await ExtractError(resp); return; }
+            _paso = 4;
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task Paso3Organizacion()
+    {
+        _busy = true; _error = null;
+        try
+        {
+            // Si autoadministrada y no llenó nombre, saltamos al paso 5 sin crear organización
+            if (_clasificacion.Perfil == TipoPerfilCliente.Autoadministrada && string.IsNullOrWhiteSpace(_org.Nombre))
+            {
+                _paso = 5;
+                return;
+            }
+            var http = HttpFactory.CreateClient("PropiaApi");
+            var resp = await http.PostAsJsonAsync("/api/onboarding/paso3/organizacion",
+                new DatosOrganizacionRequest(_sessionId!.Value, _org.Nombre!, _org.Nit, _org.Email, _org.Telefono));
+            if (!resp.IsSuccessStatusCode) { _error = await ExtractError(resp); return; }
+            _paso = 5;
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task Paso4Copropiedad()
+    {
+        _busy = true; _error = null;
+        try
+        {
+            var http = HttpFactory.CreateClient("PropiaApi");
+            var resp = await http.PostAsJsonAsync("/api/onboarding/paso4/copropiedad",
+                new DatosCopropiedadRequest(_sessionId!.Value, _cp.Nombre, _cp.Nit, _cp.Direccion, _cp.Ciudad, _cp.Tipo, _cp.Estrato));
+            if (!resp.IsSuccessStatusCode) { _error = await ExtractError(resp); return; }
+            _paso = 6;
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task Paso5Activar()
+    {
+        _busy = true; _error = null;
+        try
+        {
+            var http = HttpFactory.CreateClient("PropiaApi");
+            var resp = await http.PostAsJsonAsync("/api/onboarding/paso5/activar",
+                new ActivacionRequest(_sessionId!.Value, null));
+            if (!resp.IsSuccessStatusCode) { _error = await ExtractError(resp); return; }
+            var r = await resp.Content.ReadFromJsonAsync<ActivacionResponse>();
+            _paso = 99;
+            StateHasChanged();
+            await Task.Delay(2000);
+            Nav.NavigateTo("/mi-copropiedad", forceLoad: true);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private static async Task<string> ExtractError(HttpResponseMessage resp)
+    {
+        var body = await resp.Content.ReadAsStringAsync();
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("error", out var e)) return e.GetString() ?? body;
+        }
+        catch { }
+        return $"Error {(int)resp.StatusCode}: {body}";
+    }
+
+    private class RegistroModel
+    {
+        [Required(ErrorMessage = "Nombre obligatorio")] public string NombreCompleto { get; set; } = "";
+        [Required, EmailAddress] public string Email { get; set; } = "";
+        [Required, MinLength(10, ErrorMessage = "Minimo 10 caracteres")] public string Password { get; set; } = "";
+    }
+    private class CodeModel { public string Codigo { get; set; } = ""; }
+    private class ClasificacionModel { public TipoPerfilCliente? Perfil { get; set; } }
+    private class OrgModel
+    {
+        public string? Nombre { get; set; }
+        public string? Nit { get; set; }
+        public string? Email { get; set; }
+        public string? Telefono { get; set; }
+    }
+    private class CopropiedadModel
+    {
+        [Required] public string Nombre { get; set; } = "";
+        public string? Nit { get; set; }
+        public string? Direccion { get; set; }
+        public string? Ciudad { get; set; }
+        public TipoCopropiedad? Tipo { get; set; }
+        public Estrato? Estrato { get; set; }
+    }
+}

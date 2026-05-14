@@ -13,8 +13,18 @@ public class Tenant : BaseEntity
 {
     public string Nombre { get; set; } = string.Empty;
     public string? Nit { get; set; }
+    public string? DigitoVerificacion { get; set; }
     public string? Direccion { get; set; }
+    public string? Ciudad { get; set; }
+    public string? Departamento { get; set; }
     public string? CodigoPropia { get; set; }  // Codigo legible asignado por la plataforma
+
+    // Datos para el modulo 2.3 Mi Copropiedad - seccion Identidad
+    public TipoCopropiedad? TipoCopropiedad { get; set; }
+    public Estrato? Estrato { get; set; }
+    public string? FotoFachadaUrl { get; set; }
+    public string? LogoUrl { get; set; }
+    public string? Descripcion { get; set; }
 
     public EstadoCopropiedad Estado { get; set; } = EstadoCopropiedad.Activa;
     public EstadoCustodia EstadoCustodia { get; set; } = EstadoCustodia.SinAdmin;
