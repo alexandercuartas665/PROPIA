@@ -1,0 +1,23 @@
+using Propia.Domain.Enums;
+
+namespace Propia.Application.SuperAdmin;
+
+// ----- Auth -----
+public record SuperAdminLoginRequest(string Email, string Password);
+public record SuperAdminLoginResponse(string AccessToken, DateTimeOffset ExpiresAt, Guid UserId, string Email, RolSuperAdmin Rol);
+
+// ----- Organizaciones -----
+public record OrganizacionDto(Guid Id, string Nombre, TipoOrganizacion Tipo, string? Nit, string? Email, int CopropiedadesCount, DateTimeOffset CreatedAt);
+public record CrearOrganizacionRequest(string Nombre, TipoOrganizacion Tipo, string? Nit, string? Email, string? Telefono);
+
+// ----- Tenants (Copropiedades) -----
+public record TenantDto(Guid Id, string Nombre, string? Nit, string? CodigoPropia, EstadoCopropiedad Estado, EstadoCustodia EstadoCustodia, Guid? OrganizacionId, string? OrganizacionNombre, DateTimeOffset? FechaActivacion);
+public record CrearTenantRequest(string Nombre, string? Nit, string? Direccion, string? CodigoPropia, Guid? OrganizacionId);
+public record CambiarEstadoTenantRequest(EstadoCopropiedad NuevoEstado, string Justificacion);
+
+// ----- Equipo A&D GROUP -----
+public record SuperAdminUsuarioDto(Guid Id, string Email, RolSuperAdmin Rol, bool Activo, DateTimeOffset? UltimoAcceso);
+public record CrearSuperAdminUsuarioRequest(string Email, string Password, RolSuperAdmin Rol);
+
+// ----- Logs -----
+public record SuperAdminLogDto(Guid Id, string ActorEmail, string Accion, string? EntidadAfectada, string? Justificacion, string? Ip, DateTimeOffset CreatedAt);

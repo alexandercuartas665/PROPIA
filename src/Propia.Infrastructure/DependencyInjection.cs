@@ -4,9 +4,11 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Propia.Application.Auth;
 using Propia.Application.Common;
+using Propia.Application.SuperAdmin;
 using Propia.Domain.Entities;
 using Propia.Infrastructure.Auth;
 using Propia.Infrastructure.Persistence;
+using Propia.Infrastructure.SuperAdmin;
 
 namespace Propia.Infrastructure;
 
@@ -51,6 +53,11 @@ public static class DependencyInjection
         services.Configure<JwtSettings>(configuration.GetSection("Jwt"));
         services.AddScoped<ITokenService, TokenService>();
         services.AddScoped<IAuthService, AuthService>();
+
+        // Super Admin (modulo 0.1) - usa tabla separada super_admin_usuarios
+        services.AddScoped<IPasswordHasher<SuperAdminUsuario>, PasswordHasher<SuperAdminUsuario>>();
+        services.AddScoped<ISuperAdminAuthService, SuperAdminAuthService>();
+        services.AddScoped<ISuperAdminService, SuperAdminService>();
 
         return services;
     }

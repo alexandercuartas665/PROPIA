@@ -1,0 +1,133 @@
+@page "/dashboard"
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpFactory
+@inject SuperAdminSession Session
+@inject NavigationManager Nav
+
+<PageTitle>Dashboard - Super Admin</PageTitle>
+
+@if (!Session.IsAuthenticated)
+{
+    <div class="p-4">
+        <p>Sesion no autenticada. <a href="/login">Ingresar</a></p>
+    </div>
+    return;
+}
+
+<div class="container-fluid py-4">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+            <h1 class="h3 mb-1">Dashboard A&D GROUP</h1>
+            <p class="text-muted mb-0">
+                Sesion: @Session.Email (@Session.Rol) - expira @Session.ExpiresAt?.ToString("HH:mm")
+            </p>
+        </div>
+        <button class="btn btn-outline-secondary" @onclick="Logout">Cerrar sesion</button>
+    </div>
+
+    @if (_cargando)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border" role="status"></div>
+        </div>
+    }
+    else
+    {
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body">
+                        <div class="text-muted small mb-1">Organizaciones</div>
+                        <div class="h2 mb-0">@_organizaciones.Count</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body">
+                        <div class="text-muted small mb-1">Copropiedades (tenants)</div>
+                        <div class="h2 mb-0">@_tenants.Count</div>
+                        <small class="text-muted">@_tenants.Count(t => t.Estado == EstadoCopropiedad.Activa) activas</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body">
+                        <div class="text-muted small mb-1">Equipo A&D GROUP</div>
+                        <div class="h2 mb-0">@_equipo.Count</div>
+                        <small class="text-muted">@_equipo.Count(u => u.Activo) activos</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white">
+                <strong>Ultimas acciones registradas (log inmutable)</strong>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Actor</th>
+                            <th>Accion</th>
+                            <th>Entidad</th>
+                            <th>Justificacion</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var log in _logs.Take(20))
+                        {
+                            <tr>
+                                <td><small>@log.CreatedAt.ToString("yyyy-MM-dd HH:mm")</small></td>
+                                <td><small>@log.ActorEmail</small></td>
+                                <td><span class="badge bg-secondary">@log.Accion</span></td>
+                                <td><small>@log.EntidadAfectada</small></td>
+                                <td><small>@log.Justificacion</small></td>
+                            </tr>
+                        }
+                        @if (_logs.Count == 0)
+                        {
+                            <tr><td colspan="5" class="text-center text-muted py-3">Sin logs aun.</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool _cargando = true;
+    private List<OrganizacionDto> _organizaciones = new();
+    private List<TenantDto> _tenants = new();
+    private List<SuperAdminUsuarioDto> _equipo = new();
+    private List<SuperAdminLogDto> _logs = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Session.IsAuthenticated) return;
+        try
+        {
+            var http = HttpFactory.CreateClient("PropiaApi");
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Session.AccessToken!);
+
+            _organizaciones = await http.GetFromJsonAsync<List<OrganizacionDto>>("/admin/organizaciones") ?? new();
+            _tenants = await http.GetFromJsonAsync<List<TenantDto>>("/admin/tenants") ?? new();
+            _equipo = await http.GetFromJsonAsync<List<SuperAdminUsuarioDto>>("/admin/equipo") ?? new();
+            _logs = await http.GetFromJsonAsync<List<SuperAdminLogDto>>("/admin/logs?take=50") ?? new();
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private void Logout()
+    {
+        Session.Clear();
+        Nav.NavigateTo("/login");
+    }
+}

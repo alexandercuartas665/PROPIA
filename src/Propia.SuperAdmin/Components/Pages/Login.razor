@@ -1,0 +1,103 @@
+@page "/login"
+@layout Layout.EmptyLayout
+@rendermode InteractiveServer
+@using System.ComponentModel.DataAnnotations
+@inject IHttpClientFactory HttpFactory
+@inject SuperAdminSession Session
+@inject NavigationManager Nav
+
+<PageTitle>Login - Super Admin Console (A&D GROUP)</PageTitle>
+
+<div class="d-flex align-items-center justify-content-center min-vh-100" style="background:#1a1a2e;">
+    <div style="width: 100%; max-width: 400px;">
+        <div class="text-center text-white mb-4">
+            <h1 class="h3 fw-bold mb-1">PROPIA</h1>
+            <p class="mb-0" style="color:#a0a0b0;">Super Admin Console - A&D GROUP S.A.S</p>
+        </div>
+
+        <div class="card border-0 shadow-lg">
+            <div class="card-body p-4 p-md-5">
+                <h2 class="h5 text-center mb-4">Acceso interno</h2>
+
+                <EditForm Model="@_model" OnValidSubmit="HandleLoginAsync" FormName="adminLogin">
+                    <DataAnnotationsValidator />
+
+                    <div class="mb-3">
+                        <label for="email" class="form-label">Email corporativo</label>
+                        <InputText id="email" @bind-Value="_model.Email" class="form-control" autocomplete="username" />
+                        <ValidationMessage For="@(() => _model.Email)" class="text-danger small mt-1" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Contrasena</label>
+                        <InputText type="password" id="password" @bind-Value="_model.Password" class="form-control" autocomplete="current-password" />
+                        <ValidationMessage For="@(() => _model.Password)" class="text-danger small mt-1" />
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(_error))
+                    {
+                        <div class="alert alert-danger py-2 mb-3" role="alert">@_error</div>
+                    }
+
+                    <button type="submit" class="btn btn-dark w-100" disabled="@_busy">
+                        @if (_busy)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                            <span>Verificando...</span>
+                        }
+                        else
+                        {
+                            <span>Ingresar</span>
+                        }
+                    </button>
+                </EditForm>
+
+                <div class="text-center mt-3 small text-muted">
+                    Solo personal autorizado de A&D GROUP S.A.S
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private LoginModel _model = new();
+    private string? _error;
+    private bool _busy;
+
+    private class LoginModel
+    {
+        [Required] [EmailAddress] public string Email { get; set; } = string.Empty;
+        [Required] [MinLength(8)] public string Password { get; set; } = string.Empty;
+    }
+
+    private async Task HandleLoginAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var http = HttpFactory.CreateClient("PropiaApi");
+            var resp = await http.PostAsJsonAsync("/admin/login", new SuperAdminLoginRequest(_model.Email, _model.Password));
+            if (!resp.IsSuccessStatusCode)
+            {
+                _error = resp.StatusCode == System.Net.HttpStatusCode.Unauthorized
+                    ? "Credenciales invalidas."
+                    : $"Error: {(int)resp.StatusCode}";
+                return;
+            }
+            var login = await resp.Content.ReadFromJsonAsync<SuperAdminLoginResponse>();
+            if (login is null) { _error = "Respuesta inesperada."; return; }
+            Session.SetSession(login.AccessToken, login.ExpiresAt, login.Email, login.Rol.ToString());
+            Nav.NavigateTo("/dashboard");
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = $"No se pudo conectar al API: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

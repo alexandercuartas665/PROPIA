@@ -2,9 +2,11 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using Propia.Api.Controllers;
 using Propia.Api.Middleware;
 using Propia.Infrastructure;
 using Propia.Infrastructure.Auth;
+using Propia.Infrastructure.SuperAdmin;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -40,9 +42,21 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    // Policy "SuperAdmin": requiere claim is_super_admin=true emitido por SuperAdminAuthService.
+    options.AddPolicy(AdminController.SuperAdminPolicy, policy =>
+        policy.RequireAuthenticatedUser()
+              .RequireClaim("is_super_admin", "true"));
+});
 
 var app = builder.Build();
+
+// Seed dev del founder SuperAdmin (solo en Development)
+if (app.Environment.IsDevelopment())
+{
+    await SuperAdminSeeder.EnsureDevFounderAsync(app.Services);
+}
 
 if (app.Environment.IsDevelopment())
 {
