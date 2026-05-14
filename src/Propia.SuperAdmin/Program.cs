@@ -18,9 +18,10 @@ builder.Services.AddHttpClient("PropiaApi", client =>
     ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
 });
 
-// Estado de sesion en memoria (server-side) - SuperAdmin no soporta multi-instancia aun.
-// En produccion: cookie HttpOnly + sesion distribuida (Redis).
-builder.Services.AddScoped<Propia.SuperAdmin.Services.SuperAdminSession>();
+// Estado de sesion en memoria del proceso. Singleton porque las pages del SuperAdmin
+// se acceden via Blazor SSR + full-load navigation, y un scoped service perderia
+// el JWT entre circuitos. En produccion: cookie HttpOnly + Redis para multi-instancia.
+builder.Services.AddSingleton<Propia.SuperAdmin.Services.SuperAdminSession>();
 
 var app = builder.Build();
 
