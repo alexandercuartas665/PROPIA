@@ -1,0 +1,202 @@
+@page "/billing/facturas"
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpFactory
+@inject SuperAdminSession Session
+@inject NavigationManager Nav
+
+<PageTitle>Facturas - Billing</PageTitle>
+
+@if (!Session.IsAuthenticated) { Nav.NavigateTo("/login", forceLoad: true); return; }
+
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+        <h1 class="h3 mb-0">Facturas</h1>
+        <p class="text-muted mb-0">PROPIA solo almacena metadatos. El PDF lo custodia Siigo/Alegra (no integrado aun).</p>
+    </div>
+    <button class="btn btn-dark" @onclick="MostrarFormulario">+ Generar factura</button>
+</div>
+
+@if (_mostrarForm)
+{
+    <div class="card mb-4 border-dark">
+        <div class="card-body">
+            <h5>Generar factura manual</h5>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Suscripcion</label>
+                    <select class="form-select" @bind="_form.SuscripcionIdStr">
+                        <option value="">- Suscripcion -</option>
+                        @foreach (var s in _suscripciones)
+                        {
+                            <option value="@s.Id">@(s.OrganizacionNombre ?? s.CopropiedadNombre) - @s.PlanNombre (@s.Ciclo)</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Periodo desde</label>
+                    <input type="date" class="form-control" @bind="_form.PeriodoDesde" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Periodo hasta</label>
+                    <input type="date" class="form-control" @bind="_form.PeriodoHasta" />
+                </div>
+                <div class="col-12">
+                    @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger py-2">@_error</div> }
+                    <button class="btn btn-dark me-2" @onclick="GenerarAsync" disabled="@_busy">@(_busy ? "Generando..." : "Generar")</button>
+                    <button class="btn btn-outline-secondary" @onclick="() => _mostrarForm = false">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_cargando)
+{
+    <div class="text-center py-5"><div class="spinner-border"></div></div>
+}
+else
+{
+    <div class="card border-0 shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Numero</th>
+                        <th>Cliente / Suscripcion</th>
+                        <th>Periodo</th>
+                        <th class="text-end">Subtotal</th>
+                        <th class="text-end">Total</th>
+                        <th>Estado</th>
+                        <th>Emision</th>
+                        <th>Vencimiento</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var f in _facturas)
+                    {
+                        <tr>
+                            <td><small>@(f.NumeroFactura ?? f.Id.ToString()[..8])</small></td>
+                            <td>
+                                <small>@LookupSuscripcion(f.SuscripcionId)</small>
+                            </td>
+                            <td><small>@f.PeriodoDesde a @f.PeriodoHasta</small></td>
+                            <td class="text-end">@f.Subtotal.ToString("N0")</td>
+                            <td class="text-end"><strong>@f.Total.ToString("N0")</strong></td>
+                            <td>@EstadoBadge(f.Estado)</td>
+                            <td><small>@f.FechaEmision.ToString("yyyy-MM-dd")</small></td>
+                            <td><small>@f.FechaVencimiento</small></td>
+                            <td>
+                                @if (f.Estado != EstadoFactura.Pagada)
+                                {
+                                    <button class="btn btn-sm btn-outline-success" @onclick="() => RegistrarPagoAsync(f.Id)">Marcar pagada</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    @if (_facturas.Count == 0)
+                    {
+                        <tr><td colspan="9" class="text-center text-muted py-4">Sin facturas aun.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _cargando = true;
+    private bool _mostrarForm;
+    private bool _busy;
+    private string? _error;
+    private List<FacturaDto> _facturas = new();
+    private List<SuscripcionDto> _suscripciones = new();
+    private FacturaForm _form = new();
+
+    private class FacturaForm
+    {
+        public string SuscripcionIdStr { get; set; } = "";
+        public DateTime PeriodoDesde { get; set; } = DateTime.Today.AddDays(-30);
+        public DateTime PeriodoHasta { get; set; } = DateTime.Today;
+    }
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        try
+        {
+            var http = AuthorizedClient();
+            _facturas = await http.GetFromJsonAsync<List<FacturaDto>>("/admin/billing/facturas") ?? new();
+            _suscripciones = await http.GetFromJsonAsync<List<SuscripcionDto>>("/admin/billing/suscripciones") ?? new();
+        }
+        finally { _cargando = false; }
+    }
+
+    private void MostrarFormulario()
+    {
+        _form = new FacturaForm();
+        _error = null;
+        _mostrarForm = true;
+    }
+
+    private async Task GenerarAsync()
+    {
+        _error = null;
+        if (!Guid.TryParse(_form.SuscripcionIdStr, out var sId)) { _error = "Selecciona suscripcion."; return; }
+        _busy = true;
+        try
+        {
+            var http = AuthorizedClient();
+            var req = new GenerarFacturaRequest(sId,
+                DateOnly.FromDateTime(_form.PeriodoDesde),
+                DateOnly.FromDateTime(_form.PeriodoHasta));
+            var resp = await http.PostAsJsonAsync("/admin/billing/facturas/generar", req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _error = $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}";
+                return;
+            }
+            _mostrarForm = false;
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task RegistrarPagoAsync(Guid facturaId)
+    {
+        var http = AuthorizedClient();
+        var req = new RegistrarPagoFacturaRequest(null, null);
+        var resp = await http.PostAsJsonAsync($"/admin/billing/facturas/{facturaId}/registrar-pago", req);
+        if (resp.IsSuccessStatusCode) await CargarAsync();
+    }
+
+    private string LookupSuscripcion(Guid sId)
+    {
+        var s = _suscripciones.FirstOrDefault(x => x.Id == sId);
+        return s is null ? sId.ToString()[..8] : $"{s.OrganizacionNombre ?? s.CopropiedadNombre} / {s.PlanNombre}";
+    }
+
+    private RenderFragment EstadoBadge(EstadoFactura e) => __builder =>
+    {
+        var cls = e switch
+        {
+            EstadoFactura.Pagada => "bg-success",
+            EstadoFactura.Pendiente => "bg-info text-dark",
+            EstadoFactura.Vencida => "bg-danger",
+            _ => "bg-secondary"
+        };
+        __builder.OpenElement(0, "span");
+        __builder.AddAttribute(1, "class", $"badge {cls}");
+        __builder.AddContent(2, e.ToString());
+        __builder.CloseElement();
+    };
+
+    private HttpClient AuthorizedClient()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Session.AccessToken!);
+        return http;
+    }
+}

@@ -30,20 +30,16 @@ public class SuperAdminFlowTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         _factory = new ApiFactory(_fx.OwnerConnectionString);
-        // Crear founder SuperAdmin para los tests
+        // Founder es seedeado por SuperAdminSeeder al levantar el host (Development env).
+        // Aqui solo aseguramos que NO tiene MFA configurado (otros tests pudieron tocarlo).
         await using var scope = _factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<PropiaDbContext>();
-        var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher<SuperAdminUsuario>>();
-        if (!await db.SuperAdminUsuarios.AnyAsync(u => u.Email == "founder@adgroup.com.co"))
+        var founder = await db.SuperAdminUsuarios.FirstOrDefaultAsync(u => u.Email == "founder@adgroup.com.co");
+        if (founder is not null && (founder.MfaConfigurado || !founder.Activo))
         {
-            var founder = new SuperAdminUsuario
-            {
-                Email = "founder@adgroup.com.co",
-                Rol = RolSuperAdmin.SuperAdmin,
-                Activo = true
-            };
-            founder.PasswordHash = hasher.HashPassword(founder, "PropiaFounder2026!");
-            db.SuperAdminUsuarios.Add(founder);
+            founder.MfaConfigurado = false;
+            founder.MfaSecret = null;
+            founder.Activo = true;
             await db.SaveChangesAsync();
         }
     }

@@ -3,10 +3,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Propia.Application.Auth;
+using Propia.Application.Billing;
 using Propia.Application.Common;
 using Propia.Application.SuperAdmin;
 using Propia.Domain.Entities;
 using Propia.Infrastructure.Auth;
+using Propia.Infrastructure.Billing;
 using Propia.Infrastructure.Persistence;
 using Propia.Infrastructure.SuperAdmin;
 
@@ -59,6 +61,9 @@ public static class DependencyInjection
         services.AddSingleton<ITotpService, TotpService>();  // sin estado
         services.AddScoped<ISuperAdminAuthService, SuperAdminAuthService>();
         services.AddScoped<ISuperAdminService, SuperAdminService>();
+
+        // Modulo 0.2 Billing y Suscripciones
+        services.AddScoped<IBillingService, BillingService>();
 
         return services;
     }
