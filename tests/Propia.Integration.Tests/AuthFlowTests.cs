@@ -53,7 +53,8 @@ public class AuthFlowTests : IAsyncLifetime
         {
             TipoDocumento = TipoDocumento.CC,
             Documento = $"D{Guid.NewGuid():N}".Substring(0, 18),
-            Nombres = "Auth", Apellidos = "Tester"
+            Nombres = "Auth",
+            Apellidos = "Tester"
         };
         db.Personas.Add(persona);
         var tA = new Tenant { Nombre = "CP Alfa", Estado = EstadoCopropiedad.Activa, EstadoCustodia = EstadoCustodia.SinAdmin };
@@ -109,12 +110,11 @@ public class AuthFlowTests : IAsyncLifetime
         var forbiddenResp = await client.PostAsJsonAsync("/connect/switch-tenant", new SwitchTenantRequest(Guid.NewGuid()));
         Assert.Equal(HttpStatusCode.Forbidden, forbiddenResp.StatusCode);
 
-        // Cleanup
-        await db.Database.ExecuteSqlRawAsync($@"
-            DELETE FROM asp_net_users WHERE id = '{user.Id}';
-            DELETE FROM usuarios_tenant WHERE persona_id = '{persona.Id}';
-            DELETE FROM personas WHERE id = '{persona.Id}';
-            DELETE FROM tenants WHERE id IN ('{tA.Id}', '{tB.Id}');");
+        // Cleanup - ExecuteSqlAsync parametriza valores, Guid sin comillas, statements separados.
+        await db.Database.ExecuteSqlAsync($"DELETE FROM asp_net_users WHERE id = {user.Id}");
+        await db.Database.ExecuteSqlAsync($"DELETE FROM usuarios_tenant WHERE persona_id = {persona.Id}");
+        await db.Database.ExecuteSqlAsync($"DELETE FROM personas WHERE id = {persona.Id}");
+        await db.Database.ExecuteSqlAsync($"DELETE FROM tenants WHERE id IN ({tA.Id}, {tB.Id})");
     }
 
     [Fact]
@@ -138,7 +138,7 @@ public class AuthFlowTests : IAsyncLifetime
 
         // Cleanup
         var db = scope.ServiceProvider.GetRequiredService<PropiaDbContext>();
-        await db.Database.ExecuteSqlRawAsync($"DELETE FROM asp_net_users WHERE id = '{user.Id}';");
+        await db.Database.ExecuteSqlAsync($"DELETE FROM asp_net_users WHERE id = {user.Id}");
     }
 
     /// <summary>

@@ -124,12 +124,14 @@ public class TenantIsolationTests
         ctx.Personas.AddRange(p1, p2);
         await ctx.SaveChangesAsync();
 
-        // Insertar via SQL para evitar las query filters del context (que requieren tenant activo)
-        await ctx.Database.ExecuteSqlRawAsync($@"
+        // Insertar via SQL para evitar las query filters del context (que requieren tenant activo).
+        // ExecuteSqlAsync parametriza valores - los Guid van SIN comillas (EF los parametriza como uuid).
+        var id1 = Guid.NewGuid();
+        var id2 = Guid.NewGuid();
+        await ctx.Database.ExecuteSqlAsync($@"
             INSERT INTO usuarios_tenant (id, tenant_id, persona_id, rol, estado, created_at)
-            VALUES ('{Guid.NewGuid()}', '{t1.Id}', '{p1.Id}', 'Residente', 1, now()),
-                   ('{Guid.NewGuid()}', '{t2.Id}', '{p2.Id}', 'Residente', 1, now());
-        ");
+            VALUES ({id1}, {t1.Id}, {p1.Id}, 'Residente', 1, now()),
+                   ({id2}, {t2.Id}, {p2.Id}, 'Residente', 1, now());");
 
         return (t1.Id, t2.Id, p1.Id, p2.Id);
     }
@@ -161,10 +163,12 @@ public class TenantIsolationTests
             .UseNpgsql(_fx.OwnerConnectionString)
             .Options;
         await using var ctx = new PropiaDbContext(options, new TenantContext());
-        await ctx.Database.ExecuteSqlRawAsync($@"
-            DELETE FROM usuarios_tenant WHERE tenant_id IN ('{t1}', '{t2}');
-            DELETE FROM personas WHERE id IN ('{p1}'{(p2 == Guid.Empty ? "" : $", '{p2}'")});
-            DELETE FROM tenants WHERE id IN ('{t1}', '{t2}');
-        ");
+        // ExecuteSqlAsync parametriza - Guid van SIN comillas. Statements separados.
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM usuarios_tenant WHERE tenant_id IN ({t1}, {t2})");
+        if (p2 != Guid.Empty)
+            await ctx.Database.ExecuteSqlAsync($"DELETE FROM personas WHERE id IN ({p1}, {p2})");
+        else
+            await ctx.Database.ExecuteSqlAsync($"DELETE FROM personas WHERE id = {p1}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM tenants WHERE id IN ({t1}, {t2})");
     }
 }
