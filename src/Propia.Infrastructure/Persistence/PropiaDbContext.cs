@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Propia.Application.Common;
@@ -12,8 +14,13 @@ namespace Propia.Infrastructure.Persistence;
 /// 2. Asignacion automatica de TenantId a entidades TenantEntity nuevas.
 /// 3. HasQueryFilter por tenant en todas las TenantEntity como red de seguridad.
 ///    (La red final es Row-Level Security de PostgreSQL, configurada en migracion posterior.)
+///
+/// Hereda de IdentityDbContext para integrar ASP.NET Core Identity (paso 6).
+/// Las tablas de Identity (asp_net_users, asp_net_roles, ...) son GLOBALES,
+/// no llevan tenant_id. La gestion de quien tiene acceso a que copropiedad
+/// vive en UsuarioTenant (modulo 2.5).
 /// </summary>
-public class PropiaDbContext : DbContext
+public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>
 {
     private readonly ITenantContext _tenantContext;
 
@@ -128,6 +135,16 @@ public class PropiaDbContext : DbContext
             b.HasIndex(x => x.ActorId);
             b.HasIndex(x => x.CreatedAt);
             // Inmutabilidad: trigger PostgreSQL agregado en migracion posterior.
+        });
+
+        // ApplicationUser - relacion opcional con Persona del Directorio
+        modelBuilder.Entity<ApplicationUser>(b =>
+        {
+            b.HasOne(x => x.Persona)
+                .WithMany()
+                .HasForeignKey(x => x.PersonaId)
+                .OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(x => x.PersonaId);
         });
     }
 

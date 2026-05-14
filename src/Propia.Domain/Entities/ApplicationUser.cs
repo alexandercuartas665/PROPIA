@@ -1,0 +1,23 @@
+using Microsoft.AspNetCore.Identity;
+
+namespace Propia.Domain.Entities;
+
+/// <summary>
+/// Usuario de la plataforma (login + credenciales). Entidad GLOBAL.
+/// El ApplicationUser representa LA CREDENCIAL de acceso. La identidad humana
+/// vive en Persona (modulo 2.4 Directorio). Una Persona puede tener UNA
+/// ApplicationUser (login) o cero (si solo es contacto sin acceso).
+///
+/// El vinculo Usuario -> Tenant lo gestiona UsuarioTenant (modulo 2.5).
+/// Una misma ApplicationUser puede tener N UsuarioTenant (multi-copropiedad
+/// tipo Slack).
+/// </summary>
+public class ApplicationUser : IdentityUser<Guid>
+{
+    /// <summary>
+    /// Persona del Directorio asociada a este login (si existe).
+    /// Puede ser null para usuarios temporales o invitados antes de completar perfil.
+    /// </summary>
+    public Guid? PersonaId { get; set; }
+    public Persona? Persona { get; set; }
+}

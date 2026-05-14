@@ -1,7 +1,11 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Propia.Application.Auth;
 using Propia.Application.Common;
+using Propia.Domain.Entities;
+using Propia.Infrastructure.Auth;
 using Propia.Infrastructure.Persistence;
 
 namespace Propia.Infrastructure;
@@ -26,6 +30,27 @@ public static class DependencyInjection
                 npgsql.MigrationsAssembly(typeof(PropiaDbContext).Assembly.FullName);
             });
         });
+
+        // ASP.NET Core Identity - solo el core (sin cookies, JWT only)
+        services.AddIdentityCore<ApplicationUser>(opts =>
+            {
+                opts.Password.RequiredLength = 10;
+                opts.Password.RequireDigit = true;
+                opts.Password.RequireUppercase = true;
+                opts.Password.RequireNonAlphanumeric = false;
+                opts.User.RequireUniqueEmail = true;
+                opts.SignIn.RequireConfirmedEmail = false;  // Para MVP - habilitar en Fase 2 con email service
+                opts.Lockout.MaxFailedAccessAttempts = 5;
+                opts.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
+            })
+            .AddRoles<IdentityRole<Guid>>()
+            .AddEntityFrameworkStores<PropiaDbContext>()
+            .AddDefaultTokenProviders();
+
+        // Auth services
+        services.Configure<JwtSettings>(configuration.GetSection("Jwt"));
+        services.AddScoped<ITokenService, TokenService>();
+        services.AddScoped<IAuthService, AuthService>();
 
         return services;
     }
