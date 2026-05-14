@@ -106,7 +106,7 @@ No saltarse pasos sin justificacion. Ver `INVENTARIO GENERAL.md` seccion 4 para 
 
 | Servicio | Puerto host | Puerto interno | URL |
 |----------|-------------|----------------|-----|
-| PostgreSQL | 5433 | 5432 | `Host=localhost;Port=5433;Database=propia_dev;Username=propia` |
+| PostgreSQL | 5433 | 5432 | Owner: `Username=propia` (superuser - solo migraciones). App: `Username=propia_app;Password=PropiaAppDev2026!` (runtime - respeta RLS) |
 | Redis | 6380 | 6379 | `localhost:6380` |
 | pgAdmin | 5050 | 80 | http://localhost:5050 (login `admin@propia.com.co`) |
 
