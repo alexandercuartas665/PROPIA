@@ -15,6 +15,20 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddInfrastructure(builder.Configuration);
 
+// CORS para el frontend Web (Blazor Web App). En Dev permitimos localhost.
+// En produccion el frontend hace fetch via IHttpClientFactory server-side (no necesita CORS),
+// pero algunos scripts cliente (theme toggle) llaman directamente al Api.
+builder.Services.AddCors(opts =>
+{
+    opts.AddDefaultPolicy(p => p
+        .WithOrigins(
+            "https://localhost:7113", "http://localhost:5105",
+            "https://app.propia.cubot.com.co")
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials());
+});
+
 // Autenticacion JWT - configurada via IOptions<JwtSettings> (resolucion lazy)
 // para que coincida exactamente con lo que TokenService usa al firmar.
 // Sin esto: en tests el JwtBearer lee la SigningKey en construccion del host,
@@ -64,6 +78,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// CORS antes de Authentication para preflight OPTIONS
+app.UseCors();
 
 // Servir imagenes subidas via /uploads/* (modulo 2.3 - logos, fachadas, portadas).
 // En produccion esto se mueve a un bucket S3/Azure con CDN.
