@@ -178,7 +178,9 @@ public class UsuariosAccesosFlowTests : IAsyncLifetime
         {
             TipoDocumento = TipoDocumento.CC,
             Documento = $"DOC{Guid.NewGuid():N}".Substring(0, 18),
-            Nombres = "Exp", Apellidos = "irada", Email = $"e.{Guid.NewGuid():N}@test.co"
+            Nombres = "Exp",
+            Apellidos = "irada",
+            Email = $"e.{Guid.NewGuid():N}@test.co"
         };
         db.Personas.Add(persona);
         await db.SaveChangesAsync();
@@ -295,7 +297,8 @@ public class UsuariosAccesosFlowTests : IAsyncLifetime
         {
             TipoDocumento = TipoDocumento.CC,
             Documento = $"DOC{Guid.NewGuid():N}".Substring(0, 18),
-            Nombres = rolNombre, Apellidos = "Test",
+            Nombres = rolNombre,
+            Apellidos = "Test",
             Email = $"{rolNombre.ToLower()}.{Guid.NewGuid():N}@test.co"
         };
         db.Personas.Add(persona);

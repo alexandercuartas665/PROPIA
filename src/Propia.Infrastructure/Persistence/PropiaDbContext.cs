@@ -142,6 +142,14 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<EleccionCandidato> EleccionCandidatos => Set<EleccionCandidato>();
     public DbSet<AsambleaConfig> AsambleaConfigs => Set<AsambleaConfig>();
 
+    // Modulo 2.14 Comunicaciones (mezcla: ComunicadoPlantilla con TenantId nullable para globales)
+    public DbSet<ComunicadoPlantilla> ComunicadoPlantillas => Set<ComunicadoPlantilla>();
+    public DbSet<Comunicado> Comunicados => Set<Comunicado>();
+    public DbSet<ComunicadoSegmento> ComunicadoSegmentos => Set<ComunicadoSegmento>();
+    public DbSet<ComunicadoAdjunto> ComunicadoAdjuntos => Set<ComunicadoAdjunto>();
+    public DbSet<ComunicadoDestinatario> ComunicadoDestinatarios => Set<ComunicadoDestinatario>();
+    public DbSet<ComunicadoAcuse> ComunicadoAcuses => Set<ComunicadoAcuse>();
+
     // Modulo 0.2 - Billing y Suscripciones (todo GLOBAL, sin tenant_id)
     public DbSet<Plan> Planes => Set<Plan>();
     public DbSet<Cupon> Cupones => Set<Cupon>();
@@ -1151,6 +1159,84 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasOne(x => x.Persona).WithMany().HasForeignKey(x => x.PersonaId).OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.EleccionId, x.PersonaId });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // -------------------- Modulo 2.14 Comunicaciones --------------------
+
+        modelBuilder.Entity<ComunicadoPlantilla>(b =>
+        {
+            b.ToTable("comunicado_plantillas");
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(150);
+            b.Property(x => x.AsuntoModelo).IsRequired().HasMaxLength(150);
+            b.Property(x => x.CuerpoModelo).IsRequired().HasColumnType("text");
+            b.Property(x => x.TipoComunicado).HasConversion<int>();
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Nombre });
+            // Query filter: globales (TenantId null) son visibles para todos; tenant solo ve los suyos.
+            b.HasQueryFilter(x => x.TenantId == null
+                                  || _tenantContext.CurrentTenantId == null
+                                  || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<Comunicado>(b =>
+        {
+            b.ToTable("comunicados");
+            b.Property(x => x.Asunto).IsRequired().HasMaxLength(150);
+            b.Property(x => x.CuerpoHtml).IsRequired().HasColumnType("text");
+            b.Property(x => x.CuerpoTextoPlano).IsRequired().HasColumnType("text");
+            b.Property(x => x.TipoComunicado).HasConversion<int>();
+            b.Property(x => x.Estado).HasConversion<int>();
+            b.HasOne(x => x.Plantilla).WithMany().HasForeignKey(x => x.PlantillaId).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Estado });
+            b.HasIndex(x => new { x.TenantId, x.FechaProgramada });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<ComunicadoSegmento>(b =>
+        {
+            b.ToTable("comunicado_segmentos");
+            b.Property(x => x.TipoSegmento).HasConversion<int>();
+            b.Property(x => x.ValorJson).IsRequired().HasColumnType("text");
+            b.HasOne(x => x.Comunicado).WithMany(c => c.Segmentos).HasForeignKey(x => x.ComunicadoId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.ComunicadoId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<ComunicadoAdjunto>(b =>
+        {
+            b.ToTable("comunicado_adjuntos");
+            b.Property(x => x.NombreArchivo).IsRequired().HasMaxLength(255);
+            b.Property(x => x.TipoMime).IsRequired().HasMaxLength(100);
+            b.Property(x => x.UrlStorage).IsRequired().HasMaxLength(1000);
+            b.HasOne(x => x.Comunicado).WithMany(c => c.Adjuntos).HasForeignKey(x => x.ComunicadoId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.ComunicadoId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<ComunicadoDestinatario>(b =>
+        {
+            b.ToTable("comunicado_destinatarios");
+            b.Property(x => x.EstadoEntrega).HasConversion<int>();
+            b.HasOne(x => x.Comunicado).WithMany(c => c.Destinatarios).HasForeignKey(x => x.ComunicadoId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Persona).WithMany().HasForeignKey(x => x.PersonaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.Token).IsUnique();  // RN-08
+            b.HasIndex(x => new { x.ComunicadoId, x.PersonaId }).IsUnique();  // RN-03 deduplicacion
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<ComunicadoAcuse>(b =>
+        {
+            b.ToTable("comunicado_acuses");
+            b.Property(x => x.Dispositivo).HasConversion<int>();
+            b.HasOne(x => x.Comunicado).WithMany().HasForeignKey(x => x.ComunicadoId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Destinatario).WithMany(d => d.Acuses).HasForeignKey(x => x.DestinatarioId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.ComunicadoId, x.PersonaId });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

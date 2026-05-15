@@ -1,0 +1,92 @@
+@page "/c/{Token:guid}"
+@rendermode InteractiveServer
+@using Propia.Application.Comunicaciones
+@inject IHttpClientFactory HttpFactory
+
+<PageTitle>Comunicado - PROPIA</PageTitle>
+
+@if (_view is null && _error is null)
+{
+    <div class="container py-5 text-center">
+        <div class="spinner-border" style="color: var(--propia-primary);"></div>
+        <p class="text-muted mt-3 small">Cargando comunicado...</p>
+    </div>
+}
+else if (_error is not null)
+{
+    <div class="container py-5">
+        <div class="card border-warning p-4 text-center">
+            <h4>Comunicado no disponible</h4>
+            <p class="text-muted">@_error</p>
+            <p class="small text-muted">Si recibiste este enlace por WhatsApp y crees que es un error, contacta a la administracion de tu copropiedad.</p>
+        </div>
+    </div>
+}
+else if (_view is not null)
+{
+    <div class="container py-4" style="max-width: 720px;">
+        <div class="text-center mb-3">
+            <small class="text-muted">@_view.CopropiedadNombre</small>
+            <h2 class="mb-1">@_view.Asunto</h2>
+            <small class="text-muted">
+                @RenderTipo(_view.TipoComunicado) &middot; @_view.FechaEnvio.LocalDateTime.ToString("dddd dd MMM yyyy &middot; HH:mm")
+            </small>
+        </div>
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <div>@((MarkupString)_view.CuerpoHtml)</div>
+                @if (_view.Adjuntos.Count > 0)
+                {
+                    <hr>
+                    <h6 class="small text-muted">Adjuntos</h6>
+                    <ul>
+                        @foreach (var a in _view.Adjuntos)
+                        {
+                            <li><a href="@a.UrlStorage" target="_blank" rel="noopener">@a.NombreArchivo</a> <small class="text-muted">(@(a.TamanoBytes / 1024) KB)</small></li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+        <p class="text-center text-muted mt-4 small">
+            Has recibido este comunicado en tu calidad de residente o propietario de @_view.CopropiedadNombre.
+        </p>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Token { get; set; }
+
+    private VistaPublicaComunicadoDto? _view;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var http = HttpFactory.CreateClient("PropiaApi");
+            var resp = await http.GetAsync($"/api/comunicaciones/c/{Token}");
+            if (!resp.IsSuccessStatusCode)
+            {
+                _error = resp.StatusCode == System.Net.HttpStatusCode.NotFound
+                    ? "El enlace ha expirado o no es valido."
+                    : "No se pudo cargar el comunicado.";
+                return;
+            }
+            _view = await resp.Content.ReadFromJsonAsync<VistaPublicaComunicadoDto>();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private MarkupString RenderTipo(Propia.Domain.Enums.TipoComunicadoBase t) => t switch
+    {
+        Propia.Domain.Enums.TipoComunicadoBase.Circular => new MarkupString("<span class='badge bg-secondary'>Circular</span>"),
+        Propia.Domain.Enums.TipoComunicadoBase.AvisoOperativo => new MarkupString("<span class='badge bg-info'>Aviso operativo</span>"),
+        Propia.Domain.Enums.TipoComunicadoBase.AnuncioGeneral => new MarkupString("<span class='badge bg-primary'>Anuncio</span>"),
+        Propia.Domain.Enums.TipoComunicadoBase.ComunicadoUrgente => new MarkupString("<span class='badge bg-danger'>Urgente</span>"),
+        _ => new MarkupString("")
+    };
+}

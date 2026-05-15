@@ -106,6 +106,9 @@ public static class DependencyInjection
         // Modulo 2.8 Asambleas y Organos de Gobierno
         services.AddScoped<Application.Asambleas.IAsambleaService, Asambleas.AsambleaService>();
 
+        // Modulo 2.14 Comunicaciones
+        services.AddScoped<Application.Comunicaciones.IComunicacionesService, Comunicaciones.ComunicacionesService>();
+
         return services;
     }
 }
