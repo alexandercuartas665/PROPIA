@@ -103,9 +103,27 @@
         if (!toggler || !menubar) return;
         if (toggler.dataset.bound === '1') return;
         toggler.dataset.bound = '1';
+        // Restaurar estado guardado
+        try {
+            var saved = localStorage.getItem('propia_sidebar_mode');
+            if (saved === 'mini' && window.innerWidth >= 1200) {
+                docEl.setAttribute('data-app-sidebar', 'mini');
+                toggler.classList.add('active');
+            }
+        } catch (e) { }
         toggler.addEventListener('click', function () {
-            menubar.classList.toggle('open');
-            toggler.classList.toggle('active');
+            if (window.innerWidth >= 1200) {
+                // Desktop: colapsa/expande el panel textual (modo "mini")
+                var current = docEl.getAttribute('data-app-sidebar');
+                var next = current === 'mini' ? 'full' : 'mini';
+                docEl.setAttribute('data-app-sidebar', next);
+                toggler.classList.toggle('active', next === 'mini');
+                try { localStorage.setItem('propia_sidebar_mode', next); } catch (e) { }
+            } else {
+                // Mobile/tablet: muestra/oculta el cajon
+                menubar.classList.toggle('open');
+                toggler.classList.toggle('active');
+            }
         });
     }
 
