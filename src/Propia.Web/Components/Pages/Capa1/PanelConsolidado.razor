@@ -1,16 +1,198 @@
+@page "/org/panel"
 @page "/org/panel-consolidado"
+@rendermode InteractiveServer
+@using Propia.Application.PanelConsolidado
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
 <PageTitle>Panel Consolidado - PROPIA</PageTitle>
 
-<ModuloPlaceholder
-    Codigo="1.1"
-    Nombre="Panel y Dashboard Consolidado"
-    Descripcion="Vista unificada de TODAS las copropiedades del portafolio de una organizacion administradora."
-    Estado="EstadoModulo.EnDiseno"
-    Features='new[] {
-        "Cards KPI cross-tenant: cartera consolidada, PQRS sin responder, asambleas proximas",
-        "Alertas cruzadas: copropiedades en mora, tareas vencidas, integraciones caidas",
-        "Filtros por copropiedad, por estado, por rango de fechas",
-        "Comparativos entre PHs gestionadas (benchmarking interno)",
-        "Acceso desde el selector de contexto tipo Slack a cada copropiedad individual"
-    }'
-    NotaSpec="01. REQUERIMIENTO/Capa 1. Administrador Multi-tenant/1.1. Panel-dashboard-consolidado_v1_0.md" />
+<div class="mb-4 d-flex justify-content-between align-items-start">
+    <div>
+        <h1 class="h3 mb-1 fw-semibold">Panel Consolidado</h1>
+        <p class="text-muted mb-0">Modulo 1.1 - radar operativo del portafolio de la organizacion</p>
+    </div>
+    <button class="btn btn-outline-dark btn-sm" @onclick="Recalcular" disabled="@_busy">@(_busy ? "Recalculando..." : "Recalcular snapshots")</button>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <div class="card border-warning p-4"><h5>Necesitas iniciar sesion</h5><a class="btn btn-dark mt-2" href="/login">Iniciar sesion</a></div>
+    return;
+}
+
+@if (_resumen is null)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    return;
+}
+
+@* Banda de alertas cruzadas (RN-03 - solo si hay) *@
+@if (_resumen.AlertasCruzadas.Any())
+{
+    <div class="card border-danger mb-3">
+        <div class="card-body py-2">
+            <div class="d-flex flex-wrap gap-2 small">
+                @foreach (var a in _resumen.AlertasCruzadas)
+                {
+                    <span class="badge bg-danger me-1">@a.Cantidad @a.Tipo</span>
+                    <span class="text-muted me-3">@a.Resumen</span>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+        <div class="text-muted small">Total copropiedades</div>
+        <h3 class="mb-0">@_resumen.Kpis.TotalCopropiedadesActivas</h3>
+    </div></div></div>
+    <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+        <div class="text-muted small">En estado critico</div>
+        <h3 class="mb-0 text-danger">@_resumen.Kpis.CopropiedadesEnCritico</h3>
+    </div></div></div>
+    <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+        <div class="text-muted small">Tareas vencidas</div>
+        <h3 class="mb-0 text-warning">@_resumen.Kpis.TotalTareasVencidas</h3>
+    </div></div></div>
+    <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+        <div class="text-muted small">Recaudo promedio</div>
+        <h3 class="mb-0">@_resumen.Kpis.RecaudoPromedioMes.ToString("0.0")%</h3>
+    </div></div></div>
+</div>
+
+@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+@if (_resumen.Tarjetas.Count == 0)
+{
+    <div class="card p-5 text-center text-muted">Aun no tienes copropiedades en esta organizacion.</div>
+}
+else
+{
+    <div class="row g-3">
+        @foreach (var t in _resumen.Tarjetas)
+        {
+            var color = SaludColor(t.EstadoSalud);
+            var tid = t.TenantId;
+            <div class="col-md-6 col-lg-4">
+                <div class="card" style="border-left: 4px solid @color;">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div>
+                                <h6 class="mb-0">@t.CopropiedadNombre</h6>
+                                <small class="text-muted">
+                                    @t.Ciudad
+                                    @if (!string.IsNullOrEmpty(t.Tipo)) { <text> &middot; @t.Tipo</text> }
+                                    @if (t.TotalUnidades > 0) { <text> &middot; @t.TotalUnidades und.</text> }
+                                </small>
+                            </div>
+                            <span class="badge" style="background:@color; color:white;">@t.EstadoSalud</span>
+                        </div>
+                        <div class="row g-2 small">
+                            <div class="col-4 text-center">
+                                <div class="text-muted">Alertas</div>
+                                <strong class="@(t.AlertasCriticas > 0 ? "text-danger" : "")">@t.AlertasCriticas</strong>
+                            </div>
+                            <div class="col-4 text-center">
+                                <div class="text-muted">Tareas</div>
+                                <strong class="@(t.TareasVencidas > 0 ? "text-warning" : "")">@t.TareasVencidas</strong>
+                            </div>
+                            <div class="col-4 text-center">
+                                <div class="text-muted">Recaudo</div>
+                                <strong>@(t.RecaudoMesPorcentaje.HasValue ? $"{t.RecaudoMesPorcentaje.Value:0.0}%" : "-")</strong>
+                            </div>
+                        </div>
+                        <hr class="my-2" />
+                        <div class="d-flex justify-content-between">
+                            <button class="btn btn-sm btn-outline-dark" @onclick="() => IrADashboard(tid)">Ir al dashboard</button>
+                            <small class="text-muted">@t.CalculadoAt.LocalDateTime.ToString("HH:mm")</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<style>
+    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
+</style>
+
+@code {
+    private string? _jwt;
+    private bool _busy;
+    private string? _msg; private string _msgClass = "alert-info";
+    private PanelResumenDto? _resumen;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task CargarAsync()
+    {
+        try { _resumen = await Auth().GetFromJsonAsync<PanelResumenDto>("/api/panel"); }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task Recalcular()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Auth().PostAsync("/api/panel/recalcular", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                _msg = "Snapshots actualizados."; _msgClass = "alert-success";
+                await CargarAsync();
+            }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task IrADashboard(Guid tenantId)
+    {
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/connect/switch-tenant", new { tenantId });
+            if (resp.IsSuccessStatusCode)
+            {
+                var json = await resp.Content.ReadAsStringAsync();
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("accessToken", out var tok))
+                    await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_jwt", tok.GetString()!);
+            }
+        }
+        catch { }
+        Nav.NavigateTo("/dashboard-ph", true);
+    }
+
+    private static string SaludColor(EstadoSaludCopropiedad e) => e switch
+    {
+        EstadoSaludCopropiedad.Verde => "#22c55e",
+        EstadoSaludCopropiedad.Amarillo => "#f59e0b",
+        EstadoSaludCopropiedad.Rojo => "#ef4444",
+        _ => "#94a3b8"
+    };
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

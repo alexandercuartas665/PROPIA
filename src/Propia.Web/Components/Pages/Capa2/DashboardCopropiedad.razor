@@ -1,0 +1,190 @@
+@page "/dashboard-ph"
+@page "/dashboard-copropiedad"
+@rendermode InteractiveServer
+@using Propia.Application.DashboardCopropiedad
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<PageTitle>Dashboard de la Copropiedad - PROPIA</PageTitle>
+
+<div class="mb-4">
+    <h1 class="h3 mb-1 fw-semibold">Dashboard de la Copropiedad</h1>
+    <p class="text-muted mb-0">Modulo 2.2 - pantalla de trabajo diaria</p>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <div class="card border-warning p-4"><h5>Necesitas iniciar sesion</h5><a class="btn btn-dark mt-2" href="/login">Iniciar sesion</a></div>
+    return;
+}
+
+@if (_d is null)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    return;
+}
+
+@* Banda alertas criticas (solo si hay) *@
+@if (_d.Alertas.Any())
+{
+    <div class="card border-danger mb-3">
+        <div class="card-body py-2">
+            <div class="d-flex justify-content-between">
+                <strong class="text-danger">Alertas criticas (@_d.Alertas.Count)</strong>
+                <small class="text-muted">@_d.Alertas.First().CreatedAt.LocalDateTime.ToString("HH:mm")</small>
+            </div>
+            <div class="small mt-1">
+                @foreach (var a in _d.Alertas)
+                {
+                    var aid = a.Id;
+                    <div class="d-flex justify-content-between border-bottom py-1">
+                        <span><span class="badge bg-danger me-1">@a.Tipo</span> @a.Titulo - @a.Descripcion</span>
+                        <button class="btn btn-sm btn-outline-dark" @onclick="() => Resolver(aid)">Resolver</button>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+<div class="row g-3 mb-4">
+    @* Bloque financiero *@
+    <div class="col-md-4">
+        <div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Recaudo del mes</div>
+            <h3 class="mb-0">@(_d.RecaudoMesPorcentaje.HasValue ? $"{_d.RecaudoMesPorcentaje.Value:0.0}%" : "-")</h3>
+            <small class="text-muted">@_d.UnidadesEnMora unidades en mora</small>
+        </div></div>
+    </div>
+    <div class="col-md-4">
+        <div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Tareas activas</div>
+            <h3 class="mb-0">@_d.TareasTotalActivas</h3>
+            <small class="text-danger">@_d.TareasVencidas vencidas</small>
+        </div></div>
+    </div>
+    <div class="col-md-4">
+        <div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Resumen copropiedad</div>
+            <h3 class="mb-0">@_d.TotalUnidades</h3>
+            <small class="text-muted">unidades &middot; @_d.TorresTotal torres &middot; @_d.ZonasComunesTotal zonas</small>
+        </div></div>
+    </div>
+</div>
+
+@* Acciones rapidas *@
+<div class="card mb-3"><div class="card-body py-2">
+    <strong class="me-3 small">Acciones rapidas:</strong>
+    <a class="btn btn-sm btn-outline-dark me-2" href="/tareas">+ Nueva tarea</a>
+    @if (!_d.ModuloPresupuestoConfigurado)
+    {
+        <span class="badge bg-warning text-dark">Configura el presupuesto para activar mas widgets</span>
+    }
+</div></div>
+
+<div class="row g-3">
+    <div class="col-md-7">
+        @* Tareas urgentes *@
+        <div class="card"><div class="card-body">
+            <h6 class="mb-2">Tareas urgentes</h6>
+            @if (_d.TareasUrgentes.Count == 0)
+            {
+                <p class="text-muted small mb-0">Sin tareas urgentes. <a href="/tareas">Crear una</a></p>
+            }
+            else
+            {
+                <ul class="list-unstyled small mb-0">
+                    @foreach (var t in _d.TareasUrgentes)
+                    {
+                        <li class="border-bottom py-1">
+                            <span class="text-muted">@t.NumeroTarea</span>
+                            &middot; <a href="@($"/tareas/{t.Id}")" class="text-decoration-none">@t.Titulo</a>
+                            <span class="badge bg-light text-dark border ms-1">@t.Estado</span>
+                            @if (t.FechaVencimiento.HasValue)
+                            {
+                                <small class="@(t.Vencida ? "text-danger fw-bold" : "text-muted") ms-1">Vence @t.FechaVencimiento.Value.ToString("yyyy-MM-dd")</small>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+        </div></div>
+    </div>
+
+    <div class="col-md-5">
+        @* Feed actividad *@
+        <div class="card"><div class="card-body">
+            <h6 class="mb-2">Actividad reciente</h6>
+            @if (_d.Feed.Count == 0)
+            {
+                <p class="text-muted small mb-0">Sin actividad reciente.</p>
+            }
+            else
+            {
+                <ul class="list-unstyled small mb-0">
+                    @foreach (var f in _d.Feed)
+                    {
+                        <li class="mb-1">
+                            <span class="text-muted">@f.OcurridoAt.LocalDateTime.ToString("MM-dd HH:mm")</span>
+                            &middot; <span class="badge bg-light text-dark border">@f.Tipo</span>
+                            &middot; @f.Descripcion
+                        </li>
+                    }
+                </ul>
+            }
+        </div></div>
+    </div>
+</div>
+
+<style>
+    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
+</style>
+
+@code {
+    private string? _jwt;
+    private string? _msg; private string _msgClass = "alert-info";
+    private DashboardResumenDto? _d;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task CargarAsync()
+    {
+        try { _d = await Auth().GetFromJsonAsync<DashboardResumenDto>("/api/dashboard"); }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task Resolver(Guid alertaId)
+    {
+        try
+        {
+            var resp = await Auth().PutAsync($"/api/dashboard/alertas/{alertaId}/resolver", null);
+            if (resp.IsSuccessStatusCode) await CargarAsync();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

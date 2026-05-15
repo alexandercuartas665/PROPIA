@@ -1,0 +1,212 @@
+@page "/tareas/{Id:guid}"
+@rendermode InteractiveServer
+@using Propia.Application.Tareas
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<PageTitle>Ficha de tarea - PROPIA</PageTitle>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <div class="card border-warning p-4"><h5>Necesitas iniciar sesion</h5><a class="btn btn-dark mt-2" href="/login">Iniciar sesion</a></div>
+    return;
+}
+
+<div class="mb-3"><a href="/tareas" class="text-decoration-none text-muted small">&larr; Tareas</a></div>
+
+@if (_t is null)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    return;
+}
+
+@* Hero card *@
+<div class="card mb-3" style="border-left: 4px solid @(_t.Estado.Color ?? "#94a3b8");">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start">
+            <div>
+                <div class="text-muted small">@_t.NumeroTarea &middot; @_t.Origen</div>
+                <h3 class="mb-1">@_t.Titulo</h3>
+                <div class="mb-1">
+                    <span class="badge me-1" style="background:@(_t.Estado.Color ?? "#94a3b8"); color:white;">@_t.Estado.Nombre</span>
+                    @RenderPrioridad(_t.Prioridad)
+                    @foreach (var e in _t.Etiquetas)
+                    {
+                        <span class="badge ms-1" style="background:@(e.Color ?? "#94a3b8"); color:white;">@e.Nombre</span>
+                    }
+                </div>
+                <div class="small text-muted">
+                    @if (_t.AsignadoNombre is not null) { <span>Asignado a <strong>@_t.AsignadoNombre</strong> &middot; </span> }
+                    @if (_t.FechaVencimiento.HasValue) { <span>Vence @_t.FechaVencimiento.Value.ToString("yyyy-MM-dd") &middot; </span> }
+                    Creada @_t.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")
+                </div>
+            </div>
+            <div>
+                <select class="form-select form-select-sm" value="@_t.Estado.Id" @onchange="CambiarEstado">
+                    @if (_estados is not null) { @foreach (var e in _estados) { <option value="@e.Id">@e.Nombre</option> } }
+                </select>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_t.Descripcion))
+        {
+            <hr />
+            <p class="mb-0 small">@_t.Descripcion</p>
+        }
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+<div class="row g-3">
+    <div class="col-md-7">
+        @* Comentarios *@
+        <div class="card mb-3">
+            <div class="card-body">
+                <h6 class="mb-2">Comentarios (@_t.Comentarios.Count)</h6>
+                <div class="mb-2">
+                    <textarea class="form-control form-control-sm mb-2" rows="2" placeholder="Agregar un comentario..." @bind="_comentarioTexto"></textarea>
+                    <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="AgregarComentario" disabled="@(_busy || string.IsNullOrWhiteSpace(_comentarioTexto))">Comentar</button>
+                </div>
+                <hr class="my-2" />
+                @foreach (var c in _t.Comentarios)
+                {
+                    <div class="border-bottom py-2 small">
+                        <div class="d-flex justify-content-between">
+                            <strong class="text-muted">Usuario @c.AutorUsuarioId.ToString()[..8]</strong>
+                            <small class="text-muted">@c.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</small>
+                        </div>
+                        <div class="mt-1">@c.Texto</div>
+                    </div>
+                }
+                @if (_t.Comentarios.Count == 0)
+                {
+                    <p class="text-muted small mb-0">Sin comentarios aun.</p>
+                }
+            </div>
+        </div>
+
+        @* Subtareas *@
+        @if (_t.Subtareas.Any())
+        {
+            <div class="card mb-3"><div class="card-body">
+                <h6 class="mb-2">Subtareas (@_t.Subtareas.Count)</h6>
+                <ul class="list-unstyled small mb-0">
+                    @foreach (var s in _t.Subtareas)
+                    {
+                        <li class="border-bottom py-1">
+                            <a href="@($"/tareas/{s.Id}")" class="text-decoration-none">
+                                <span class="badge me-1" style="background:@(s.EstadoColor ?? "#94a3b8"); color:white;">@s.EstadoNombre</span>
+                                <strong>@s.NumeroTarea</strong> @s.Titulo
+                            </a>
+                        </li>
+                    }
+                </ul>
+            </div></div>
+        }
+    </div>
+
+    <div class="col-md-5">
+        @* Historial *@
+        <div class="card">
+            <div class="card-body">
+                <h6 class="mb-2">Historial (@_t.Historial.Count)</h6>
+                <ul class="list-unstyled small mb-0">
+                    @foreach (var h in _t.Historial.Take(15))
+                    {
+                        <li class="mb-1">
+                            <span class="text-muted">@h.OcurridoAt.LocalDateTime.ToString("MM-dd HH:mm")</span>
+                            &middot; <span class="badge bg-light text-dark border">@h.TipoEvento</span>
+                            &middot; @h.Descripcion
+                        </li>
+                    }
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private string? _jwt;
+    private bool _busy;
+    private string? _msg; private string _msgClass = "alert-info";
+    private TareaDetalleDto? _t;
+    private List<EstadoTareaDto>? _estados;
+    private string? _comentarioTexto;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = Auth();
+            _t = await http.GetFromJsonAsync<TareaDetalleDto>($"/api/tareas/{Id}");
+            _estados ??= await http.GetFromJsonAsync<List<EstadoTareaDto>>("/api/tareas/estados") ?? new();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task CambiarEstado(ChangeEventArgs e)
+    {
+        if (e.Value is null) return;
+        if (!Guid.TryParse(e.Value.ToString(), out var newId)) return;
+        if (_t is null || newId == _t.Estado.Id) return;
+        _busy = true;
+        try
+        {
+            var nuevoEstado = _estados?.FirstOrDefault(x => x.Id == newId);
+            var req = new CambiarEstadoRequest(newId, nuevoEstado?.Nombre == "Cancelada" ? "Cancelado desde UI" : null);
+            var resp = await Auth().PutAsJsonAsync($"/api/tareas/{Id}/estado", req);
+            if (resp.IsSuccessStatusCode) await CargarAsync();
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task AgregarComentario()
+    {
+        if (string.IsNullOrWhiteSpace(_comentarioTexto)) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/tareas/{Id}/comentarios", new CrearComentarioRequest(_comentarioTexto));
+            if (resp.IsSuccessStatusCode) { _comentarioTexto = null; await CargarAsync(); }
+        }
+        finally { _busy = false; }
+    }
+
+    private MarkupString RenderPrioridad(PrioridadTarea p) => p switch
+    {
+        PrioridadTarea.Urgente => new MarkupString("<span class='badge bg-danger'>Urgente</span>"),
+        PrioridadTarea.Alta => new MarkupString("<span class='badge bg-warning text-dark'>Alta</span>"),
+        PrioridadTarea.Normal => new MarkupString("<span class='badge bg-primary'>Normal</span>"),
+        PrioridadTarea.Baja => new MarkupString("<span class='badge bg-secondary'>Baja</span>"),
+        _ => new MarkupString("")
+    };
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

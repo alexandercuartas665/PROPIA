@@ -1,0 +1,68 @@
+namespace Propia.Domain.Enums;
+
+/// <summary>
+/// Prioridades fijas de plataforma (no configurables). Spec 2.10 v1.0 seccion 5.
+/// </summary>
+public enum PrioridadTarea
+{
+    Urgente = 1,
+    Alta = 2,
+    Normal = 3,
+    Baja = 4
+}
+
+/// <summary>
+/// Origen de la creacion de la tarea. Spec 2.10 v1.0 seccion 6.1 (campo `origen`).
+/// </summary>
+public enum OrigenTarea
+{
+    Manual = 1,
+    WhatsappIa = 2,
+    ModuloExterno = 3
+}
+
+/// <summary>
+/// Estados base predefinidos. La copropiedad puede renombrar/agregar, pero estos vienen
+/// sembrados al activar el modulo. Spec 2.10 v1.0 seccion 4.
+/// </summary>
+public static class EstadoTareaBase
+{
+    public const string Pendiente = "Pendiente";
+    public const string EnProgreso = "En progreso";
+    public const string EnRevision = "En revision";
+    public const string Bloqueada = "Bloqueada";
+    public const string Completada = "Completada";
+    public const string Cancelada = "Cancelada";
+
+    /// <summary>Estados terminales no eliminables ni renombrables.</summary>
+    public static readonly string[] Terminales = new[] { Completada, Cancelada };
+
+    /// <summary>Catalogo base con (Nombre, Orden, EsTerminal).</summary>
+    public static readonly (string Nombre, int Orden, bool EsTerminal)[] Base = new[]
+    {
+        (Pendiente, 1, false),
+        (EnProgreso, 2, false),
+        (EnRevision, 3, false),
+        (Bloqueada, 4, false),
+        (Completada, 5, true),
+        (Cancelada, 6, true)
+    };
+}
+
+/// <summary>Tipo de evento en el historial de la tarea (append-only). Spec 2.10 v1.0.</summary>
+public enum TipoEventoTarea
+{
+    Creada = 1,
+    EstadoCambiado = 2,
+    AsignacionCambiada = 3,
+    FechaCambiada = 4,
+    PrioridadCambiada = 5,
+    EtiquetaAsignada = 6,
+    EtiquetaRemovida = 7,
+    ColaboradorAgregado = 8,
+    ColaboradorRemovido = 9,
+    ComentarioAgregado = 10,
+    AdjuntoAgregado = 11,
+    Cancelada = 12,
+    Reabierta = 13
+}

@@ -1,18 +1,261 @@
 @page "/tareas"
+@rendermode InteractiveServer
+@using Propia.Application.Tareas
+@using Propia.Application.Directorio
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
 <PageTitle>Tareas y Proyectos - PROPIA</PageTitle>
 
-<ModuloPlaceholder
-    Codigo="2.10"
-    Nombre="Tareas y Proyectos (Estrella)"
-    Descripcion="Gestion operativa central de la copropiedad. Cualquier modulo puede generar tareas - el seguimiento operativo vive aqui."
-    Estado="EstadoModulo.EnDiseno"
-    Features='new[] {
-        "Tareas simples y proyectos con subtareas",
-        "Asignacion a cualquier persona del directorio",
-        "Etiquetas, campos personalizados, valores de presupuesto informativos, % de avance",
-        "Vistas: Kanban, Calendario, Lista, Gantt",
-        "Creacion via WhatsApp a traves del agente IA (modulo 0.4)",
-        "Se nutre de Mantenimiento (2.11), PQRS (2.9) y Asambleas (2.8)",
-        "Informes de gestion para el consejo"
-    }'
-    NotaSpec="01. REQUERIMIENTO/Capa 2. Copropiedad/2.10. Tareas-proyectos_v1_0.md" />
+<div class="mb-4 d-flex justify-content-between align-items-start">
+    <div>
+        <h1 class="h3 mb-1 fw-semibold">Tareas y Proyectos</h1>
+        <p class="text-muted mb-0">Modulo 2.10 (estrella) - eje operativo central de la copropiedad</p>
+    </div>
+    <button class="btn" style="background: var(--propia-primary); color: white;" @onclick="() => _showCrear = true">+ Nueva tarea</button>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <div class="card border-warning p-4"><h5>Necesitas iniciar sesion</h5><a class="btn btn-dark mt-2" href="/login">Iniciar sesion</a></div>
+    return;
+}
+
+@if (_resumen is not null)
+{
+    <div class="row g-3 mb-3">
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Total</div><h3 class="mb-0">@_resumen.Total</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Pendientes</div><h3 class="mb-0">@_resumen.Pendientes</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">En progreso</div><h3 class="mb-0 text-info">@_resumen.EnProgreso</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Vencidas</div><h3 class="mb-0 text-danger">@_resumen.Vencidas</h3>
+        </div></div></div>
+    </div>
+}
+
+<div class="row g-2 mb-3">
+    <div class="col-md-6">
+        <input class="form-control form-control-sm" placeholder="Buscar por titulo o numero..." @bind="_query" @bind:event="oninput" @onkeyup="CargarAsync" />
+    </div>
+    <div class="col-md-3">
+        <select class="form-select form-select-sm" @bind="_filtroEstado" @bind:after="CargarAsync">
+            <option value="">Todos los estados</option>
+            @if (_estados is not null)
+            {
+                @foreach (var e in _estados) { <option value="@e.Id">@e.Nombre</option> }
+            }
+        </select>
+    </div>
+    <div class="col-md-3">
+        <select class="form-select form-select-sm" @bind="_filtroPrioridad" @bind:after="CargarAsync">
+            <option value="">Todas las prioridades</option>
+            @foreach (var p in Enum.GetValues<PrioridadTarea>()) { <option value="@p">@p</option> }
+        </select>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+@if (_tareas is null)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+}
+else if (_tareas.Count == 0)
+{
+    <div class="card p-4 text-center text-muted">Sin tareas que coincidan con los filtros.</div>
+}
+else
+{
+    <div class="card">
+        <table class="table table-hover mb-0 align-middle">
+            <thead class="bg-light small text-muted">
+                <tr><th>Numero</th><th>Tarea</th><th>Estado</th><th>Prioridad</th><th>Asignado</th><th>Vencimiento</th><th></th></tr>
+            </thead>
+            <tbody class="small">
+                @foreach (var t in _tareas)
+                {
+                    var tid = t.Id;
+                    <tr style="cursor:pointer;" @onclick="() => Ir(tid)">
+                        <td class="text-muted">@t.NumeroTarea</td>
+                        <td>
+                            <strong>@t.Titulo</strong>
+                            @if (t.CantidadSubtareas > 0) { <small class="text-muted ms-1">@t.CantidadSubtareas subtareas</small> }
+                            @foreach (var et in t.Etiquetas)
+                            {
+                                <span class="badge ms-1" style="background:@(et.Color ?? "#94a3b8"); color:white;">@et.Nombre</span>
+                            }
+                        </td>
+                        <td><span class="badge" style="background:@(t.EstadoColor ?? "#94a3b8"); color:white;">@t.EstadoNombre</span></td>
+                        <td>@RenderPrioridad(t.Prioridad)</td>
+                        <td>@(t.AsignadoNombre ?? "-")</td>
+                        <td>
+                            @if (t.FechaVencimiento.HasValue)
+                            {
+                                <span class="@(t.Vencida ? "text-danger fw-bold" : "")">@t.FechaVencimiento.Value.ToString("yyyy-MM-dd")</span>
+                            }
+                            else { <span class="text-muted">-</span> }
+                        </td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-dark" href="@($"/tareas/{t.Id}")">Ver</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@* Modal crear tarea *@
+@if (_showCrear)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Nueva tarea</h5>
+                    <button type="button" class="btn-close" @onclick="CerrarCrear"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-2">
+                        <div class="col-md-12"><label class="form-label small">Titulo *</label>
+                            <input class="form-control form-control-sm" @bind="_crearTitulo" /></div>
+                        <div class="col-md-12"><label class="form-label small">Descripcion</label>
+                            <textarea class="form-control form-control-sm" rows="3" @bind="_crearDesc"></textarea></div>
+                        <div class="col-md-4"><label class="form-label small">Prioridad</label>
+                            <select class="form-select form-select-sm" @bind="_crearPrioridad">
+                                @foreach (var p in Enum.GetValues<PrioridadTarea>()) { <option value="@p">@p</option> }
+                            </select></div>
+                        <div class="col-md-4"><label class="form-label small">Fecha vencimiento</label>
+                            <input type="date" class="form-control form-control-sm" value="@(_crearFecha?.ToString("yyyy-MM-dd"))"
+                                   @onchange="(e) => _crearFecha = string.IsNullOrEmpty(e.Value?.ToString()) ? null : DateOnly.Parse(e.Value!.ToString()!)" /></div>
+                        <div class="col-md-4"><label class="form-label small">Asignar a</label>
+                            <select class="form-select form-select-sm" @bind="_crearAsignado">
+                                <option value="">Sin asignar</option>
+                                @if (_personas is not null) { @foreach (var p in _personas) { <option value="@p.Id">@p.Nombres @p.Apellidos</option> } }
+                            </select></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="CerrarCrear">Cancelar</button>
+                    <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="ConfirmarCrear" disabled="@(_busy || string.IsNullOrWhiteSpace(_crearTitulo))">
+                        @(_busy ? "Creando..." : "Crear tarea")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
+</style>
+
+@code {
+    private string? _jwt;
+    private bool _busy;
+    private string? _msg; private string _msgClass = "alert-info";
+
+    private List<TareaListaDto>? _tareas;
+    private List<EstadoTareaDto>? _estados;
+    private List<PersonaResumenDto>? _personas;
+    private ResumenTareasDto? _resumen;
+
+    private string _filtroEstado = "";
+    private string _filtroPrioridad = "";
+    private string? _query;
+
+    private bool _showCrear;
+    private string? _crearTitulo;
+    private string? _crearDesc;
+    private PrioridadTarea _crearPrioridad = PrioridadTarea.Normal;
+    private DateOnly? _crearFecha;
+    private string? _crearAsignado;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = Auth();
+            _estados = await http.GetFromJsonAsync<List<EstadoTareaDto>>("/api/tareas/estados") ?? new();
+            _resumen = await http.GetFromJsonAsync<ResumenTareasDto>("/api/tareas/resumen");
+
+            var url = "/api/tareas?soloRaiz=true";
+            if (!string.IsNullOrEmpty(_filtroEstado)) url += $"&estadoId={_filtroEstado}";
+            if (!string.IsNullOrEmpty(_filtroPrioridad)) url += $"&prioridad={_filtroPrioridad}";
+            if (!string.IsNullOrEmpty(_query)) url += $"&q={Uri.EscapeDataString(_query)}";
+            _tareas = await http.GetFromJsonAsync<List<TareaListaDto>>(url) ?? new();
+
+            if (_personas is null)
+            {
+                _personas = await http.GetFromJsonAsync<List<PersonaResumenDto>>("/api/directorio/personas") ?? new();
+            }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private void CerrarCrear()
+    {
+        _showCrear = false;
+        _crearTitulo = _crearDesc = _crearAsignado = null;
+        _crearFecha = null;
+        _crearPrioridad = PrioridadTarea.Normal;
+    }
+
+    private async Task ConfirmarCrear()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            Guid? asignado = Guid.TryParse(_crearAsignado, out var a) ? a : null;
+            var req = new CrearTareaRequest(_crearTitulo!, _crearDesc, _crearPrioridad, null, asignado, null, _crearFecha, null, null);
+            var resp = await Auth().PostAsJsonAsync("/api/tareas", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _msg = "Tarea creada."; _msgClass = "alert-success";
+            CerrarCrear();
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private MarkupString RenderPrioridad(PrioridadTarea p) => p switch
+    {
+        PrioridadTarea.Urgente => new MarkupString("<span class='badge bg-danger'>Urgente</span>"),
+        PrioridadTarea.Alta => new MarkupString("<span class='badge bg-warning text-dark'>Alta</span>"),
+        PrioridadTarea.Normal => new MarkupString("<span class='badge bg-primary'>Normal</span>"),
+        PrioridadTarea.Baja => new MarkupString("<span class='badge bg-secondary'>Baja</span>"),
+        _ => new MarkupString("")
+    };
+
+    private void Ir(Guid id) => Nav.NavigateTo($"/tareas/{id}");
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

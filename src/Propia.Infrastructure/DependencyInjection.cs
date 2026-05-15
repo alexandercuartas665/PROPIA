@@ -88,6 +88,15 @@ public static class DependencyInjection
         // Modulo 1.3 Gestion de Equipo
         services.AddScoped<Application.EquipoOrg.IEquipoOrgService, EquipoOrg.EquipoOrgService>();
 
+        // Modulo 1.1 Panel y Dashboard Consolidado
+        services.AddScoped<Application.PanelConsolidado.IPanelConsolidadoService, PanelConsolidado.PanelConsolidadoService>();
+
+        // Modulo 2.2 Dashboard de la Copropiedad
+        services.AddScoped<Application.DashboardCopropiedad.IDashboardCopropiedadService, DashboardCopropiedad.DashboardCopropiedadService>();
+
+        // Modulo 2.10 Tareas y Proyectos
+        services.AddScoped<Application.Tareas.ITareasService, Tareas.TareasService>();
+
         return services;
     }
 }
