@@ -1,17 +1,165 @@
 @page "/asambleas"
+@rendermode InteractiveServer
+@using Propia.Application.Asambleas
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
 <PageTitle>Asambleas - PROPIA</PageTitle>
 
-<ModuloPlaceholder
-    Codigo="2.8"
-    Nombre="Asambleas y Organos de Gobierno"
-    Descripcion="Ciclo completo de asambleas segun Ley 675 de 2001: convocatorias, quorum, votaciones digitales y actas."
-    Estado="EstadoModulo.EnDiseno"
-    Features='new[] {
-        "Convocatorias con plantillas + envio masivo por WhatsApp y email",
-        "Quorum en tiempo real (coeficientes de propiedad)",
-        "Votaciones digitales con valor probatorio - registro inmutable",
-        "Generacion de acta con firma electronica (propia o por integracion)",
-        "Historial completo de asambleas con busqueda full-text",
-        "Composicion del Consejo y Comites se configura en 2.3 - aqui se opera la eleccion formal"
-    }'
-    NotaSpec="01. REQUERIMIENTO/Capa 2. Copropiedad/2.8. Asambleas-organos-gobierno_v1_0.md" />
+<div class="mb-4 d-flex justify-content-between align-items-start">
+    <div>
+        <h1 class="h3 mb-1 fw-semibold">Asambleas y Organos de Gobierno</h1>
+        <p class="text-muted mb-0">Modulo 2.8 - ciclo documental Ley 675/2001 + Decreto 1074/2015</p>
+    </div>
+    <a class="btn" style="background: var(--propia-primary); color:white;" href="/asambleas/nueva">+ Nueva sesion</a>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <div class="card border-warning p-4"><h5>Necesitas iniciar sesion</h5><a class="btn btn-dark mt-2" href="/login">Iniciar sesion</a></div>
+    return;
+}
+
+@if (_b is null)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    return;
+}
+
+@* KPIs *@
+<div class="row g-3 mb-3">
+    <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+        <div class="text-muted small">Total</div><h4 class="mb-0">@_b.Kpis.Total</h4>
+    </div></div></div>
+    <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+        <div class="text-muted small">Borradores</div><h4 class="mb-0">@_b.Kpis.Borradores</h4>
+    </div></div></div>
+    <div class="col-md-3"><div class="card kpi-mini @(_b.Kpis.EnCurso > 0 ? "border-info" : "")"><div class="card-body py-3">
+        <div class="text-muted small">En curso</div><h4 class="mb-0 text-info">@_b.Kpis.EnCurso</h4>
+    </div></div></div>
+    <div class="col-md-3"><div class="card kpi-mini @(_b.Kpis.Proximas > 0 ? "border-warning" : "")"><div class="card-body py-3">
+        <div class="text-muted small">Proximas (7 dias)</div><h4 class="mb-0">@_b.Kpis.Proximas</h4>
+        <small class="text-muted">Cerradas: @_b.Kpis.Cerradas &middot; Fallidas: @_b.Kpis.QuorumFallido</small>
+    </div></div></div>
+</div>
+
+@* Filtros *@
+<div class="row g-2 mb-3">
+    <div class="col-md-6">
+        <select class="form-select form-select-sm" @bind="_filtroEstado" @bind:after="CargarAsync">
+            <option value="">Todos los estados</option>
+            @foreach (var e in Enum.GetValues<EstadoSesion>()) { <option value="@e">@e</option> }
+        </select>
+    </div>
+    <div class="col-md-6">
+        <select class="form-select form-select-sm" @bind="_filtroTipo" @bind:after="CargarAsync">
+            <option value="">Todos los tipos</option>
+            @foreach (var t in Enum.GetValues<TipoSesion>()) { <option value="@t">@t</option> }
+        </select>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+@if (_b.Items.Count == 0)
+{
+    <div class="card p-5 text-center text-muted">
+        Sin sesiones registradas. <a href="/asambleas/nueva">Crear la primera</a>
+    </div>
+}
+else
+{
+    <div class="card">
+        <table class="table table-hover mb-0 align-middle">
+            <thead class="bg-light small text-muted">
+                <tr><th>Titulo</th><th>Tipo</th><th>Modalidad</th><th>Fecha</th><th>Estado</th><th class="text-end">Puntos</th><th class="text-end">Participantes</th><th></th></tr>
+            </thead>
+            <tbody class="small">
+                @foreach (var s in _b.Items)
+                {
+                    var sid = s.Id;
+                    <tr style="cursor:pointer;" @onclick="() => Ir(sid)">
+                        <td>
+                            <strong>@s.Titulo</strong>
+                            @if (s.SegundaConvocatoria) { <span class="badge bg-warning text-dark ms-1">2da convocatoria</span> }
+                            @if (s.ActaPublicada) { <span class="badge bg-success ms-1">Acta publicada</span> }
+                        </td>
+                        <td><span class="badge bg-light text-dark border">@s.Tipo</span></td>
+                        <td>@s.Modalidad</td>
+                        <td>@s.FechaSesion.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>@RenderEstado(s.Estado)</td>
+                        <td class="text-end">@s.CantidadPuntos</td>
+                        <td class="text-end">@s.CantidadParticipantes</td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-dark" href="@($"/asambleas/{s.Id}")">Ver</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<style>
+    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
+</style>
+
+@code {
+    private string? _jwt;
+    private string? _msg; private string _msgClass = "alert-info";
+    private SesionBandejaDto? _b;
+    private string _filtroEstado = "";
+    private string _filtroTipo = "";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var url = "/api/asambleas";
+            var qs = new List<string>();
+            if (!string.IsNullOrEmpty(_filtroEstado)) qs.Add($"estado={_filtroEstado}");
+            if (!string.IsNullOrEmpty(_filtroTipo)) qs.Add($"tipo={_filtroTipo}");
+            if (qs.Any()) url += "?" + string.Join("&", qs);
+            _b = await Auth().GetFromJsonAsync<SesionBandejaDto>(url);
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private MarkupString RenderEstado(EstadoSesion e) => e switch
+    {
+        EstadoSesion.Borrador => new MarkupString("<span class='badge bg-light text-dark border'>Borrador</span>"),
+        EstadoSesion.Citada => new MarkupString("<span class='badge bg-info text-dark'>Citada</span>"),
+        EstadoSesion.EnCurso => new MarkupString("<span class='badge bg-primary'>En curso</span>"),
+        EstadoSesion.Cerrada => new MarkupString("<span class='badge bg-success'>Cerrada</span>"),
+        EstadoSesion.QuorumFallido => new MarkupString("<span class='badge bg-warning text-dark'>Quorum fallido</span>"),
+        EstadoSesion.Cancelada => new MarkupString("<span class='badge bg-secondary'>Cancelada</span>"),
+        _ => new MarkupString("")
+    };
+
+    private void Ir(Guid id) => Nav.NavigateTo($"/asambleas/{id}");
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

@@ -128,6 +128,20 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<PqrsdComiteSesion> PqrsdComiteSesiones => Set<PqrsdComiteSesion>();
     public DbSet<PqrsdComiteMiembroSesion> PqrsdComiteMiembros => Set<PqrsdComiteMiembroSesion>();
 
+    // Modulo 2.8 Asambleas y Organos de Gobierno (TenantEntity con RLS)
+    public DbSet<Sesion> Sesiones => Set<Sesion>();
+    public DbSet<SesionPunto> SesionPuntos => Set<SesionPunto>();
+    public DbSet<SesionDocumento> SesionDocumentos => Set<SesionDocumento>();
+    public DbSet<SesionParticipante> SesionParticipantes => Set<SesionParticipante>();
+    public DbSet<SesionPoder> SesionPoderes => Set<SesionPoder>();
+    public DbSet<SesionQuorumLog> SesionQuorumLog => Set<SesionQuorumLog>();
+    public DbSet<Votacion> Votaciones => Set<Votacion>();
+    public DbSet<Voto> Votos => Set<Voto>();
+    public DbSet<Acta> Actas => Set<Acta>();
+    public DbSet<EleccionConsejo> ElectionesConsejo => Set<EleccionConsejo>();
+    public DbSet<EleccionCandidato> EleccionCandidatos => Set<EleccionCandidato>();
+    public DbSet<AsambleaConfig> AsambleaConfigs => Set<AsambleaConfig>();
+
     // Modulo 0.2 - Billing y Suscripciones (todo GLOBAL, sin tenant_id)
     public DbSet<Plan> Planes => Set<Plan>();
     public DbSet<Cupon> Cupones => Set<Cupon>();
@@ -990,6 +1004,153 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasOne(x => x.Persona).WithMany().HasForeignKey(x => x.PersonaId).OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.SesionId, x.PersonaId }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // -------------------- Modulo 2.8 Asambleas y Organos de Gobierno --------------------
+
+        modelBuilder.Entity<AsambleaConfig>(b =>
+        {
+            b.ToTable("asamblea_config");
+            b.HasIndex(x => x.TenantId).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<Sesion>(b =>
+        {
+            b.ToTable("sesiones");
+            b.Property(x => x.Titulo).IsRequired().HasMaxLength(255);
+            b.Property(x => x.LugarFisico).HasMaxLength(500);
+            b.Property(x => x.EnlaceVideo).HasMaxLength(500);
+            b.Property(x => x.QuorumRequeridoPct).HasPrecision(5, 2);
+            b.HasOne(x => x.SesionPadre).WithMany().HasForeignKey(x => x.SesionPadreId).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Estado });
+            b.HasIndex(x => new { x.TenantId, x.FechaSesion });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<SesionPunto>(b =>
+        {
+            b.ToTable("sesion_puntos");
+            b.Property(x => x.Titulo).IsRequired().HasMaxLength(255);
+            b.Property(x => x.Descripcion).HasMaxLength(2000);
+            b.Property(x => x.MayoriaPct).HasPrecision(5, 2);
+            b.Property(x => x.OpcionesVoto).HasColumnType("text");
+            b.Property(x => x.NarrativaSecretario).HasColumnType("text");
+            b.HasOne(x => x.Sesion).WithMany(s => s.Puntos).HasForeignKey(x => x.SesionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.SesionId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<SesionDocumento>(b =>
+        {
+            b.ToTable("sesion_documentos");
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(255);
+            b.Property(x => x.Descripcion).HasMaxLength(500);
+            b.Property(x => x.UrlStorage).IsRequired().HasMaxLength(500);
+            b.Property(x => x.TipoArchivo).HasMaxLength(50);
+            b.HasOne(x => x.Sesion).WithMany(s => s.Documentos).HasForeignKey(x => x.SesionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Punto).WithMany().HasForeignKey(x => x.PuntoId).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.SesionId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<SesionParticipante>(b =>
+        {
+            b.ToTable("sesion_participantes");
+            b.Property(x => x.Coeficiente).HasPrecision(10, 6);
+            b.HasOne(x => x.Sesion).WithMany(s => s.Participantes).HasForeignKey(x => x.SesionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Persona).WithMany().HasForeignKey(x => x.PersonaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(x => x.UnidadPrivada).WithMany().HasForeignKey(x => x.UnidadPrivadaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.SesionId, x.UnidadPrivadaId }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<SesionPoder>(b =>
+        {
+            b.ToTable("sesion_poderes");
+            b.Property(x => x.DocumentoUrl).HasMaxLength(500);
+            b.Property(x => x.HashPoder).HasMaxLength(255);
+            b.Property(x => x.FirmanteIp).HasMaxLength(50);
+            b.Property(x => x.NotaRechazo).HasMaxLength(500);
+            b.HasOne(x => x.Sesion).WithMany(s => s.Poderes).HasForeignKey(x => x.SesionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.ApoderadoPersona).WithMany().HasForeignKey(x => x.ApoderadoPersonaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.SesionId, x.OtorganteUnidadId });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<SesionQuorumLog>(b =>
+        {
+            b.ToTable("sesion_quorum_log");
+            b.Property(x => x.Coeficiente).HasPrecision(10, 6);
+            b.Property(x => x.QuorumAcumuladoPct).HasPrecision(5, 2);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.SesionId, x.CreatedAt });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<Votacion>(b =>
+        {
+            b.ToTable("votaciones");
+            b.Property(x => x.QuorumAlAbrirPct).HasPrecision(5, 2);
+            b.Property(x => x.CoeficienteTotalSala).HasPrecision(10, 6);
+            b.Property(x => x.ResultadoOpcion).HasMaxLength(100);
+            b.Property(x => x.ResultadoPct).HasPrecision(5, 2);
+            b.HasOne(x => x.Sesion).WithMany().HasForeignKey(x => x.SesionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Punto).WithMany().HasForeignKey(x => x.PuntoId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.PuntoId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<Voto>(b =>
+        {
+            b.ToTable("votos");
+            b.Property(x => x.CoeficienteAportado).HasPrecision(10, 6);
+            b.Property(x => x.Opcion).IsRequired().HasMaxLength(100);
+            b.HasOne(x => x.Votacion).WithMany(v => v.Votos).HasForeignKey(x => x.VotacionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.VotacionId, x.UnidadPrivadaId }).IsUnique();  // RN-09: un voto por unidad
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<Acta>(b =>
+        {
+            b.ToTable("actas");
+            b.Property(x => x.ContenidoGenerado).HasColumnType("text");
+            b.Property(x => x.NarrativaSecretario).HasColumnType("text");
+            b.Property(x => x.DocumentoUrl).HasMaxLength(500);
+            b.Property(x => x.HashDocumento).HasMaxLength(255);
+            b.Property(x => x.FirmanteIp).HasMaxLength(50);
+            b.HasOne(x => x.Sesion).WithOne(s => s.Acta).HasForeignKey<Acta>(x => x.SesionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.SesionId).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<EleccionConsejo>(b =>
+        {
+            b.ToTable("elecciones_consejo");
+            b.Property(x => x.Estado).HasMaxLength(20);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.SesionId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<EleccionCandidato>(b =>
+        {
+            b.ToTable("eleccion_candidatos");
+            b.Property(x => x.Cargo).HasMaxLength(100);
+            b.Property(x => x.VotosCoeficiente).HasPrecision(10, 6);
+            b.HasOne(x => x.Eleccion).WithMany(e => e.Candidatos).HasForeignKey(x => x.EleccionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Persona).WithMany().HasForeignKey(x => x.PersonaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.EleccionId, x.PersonaId });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

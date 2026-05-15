@@ -1,0 +1,525 @@
+@page "/asambleas/{Id:guid}"
+@rendermode InteractiveServer
+@using Propia.Application.Asambleas
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<PageTitle>Asamblea - PROPIA</PageTitle>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <div class="card border-warning p-4"><h5>Necesitas iniciar sesion</h5><a class="btn btn-dark mt-2" href="/login">Iniciar sesion</a></div>
+    return;
+}
+
+<div class="mb-3"><a href="/asambleas" class="text-decoration-none text-muted small">&larr; Asambleas</a></div>
+
+@if (_s is null)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    return;
+}
+
+@* Hero card *@
+<div class="card mb-3" style="border-left: 4px solid @EstadoColor(_s.Estado);">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start">
+            <div>
+                <div class="text-muted small">@_s.Tipo &middot; @_s.Modalidad</div>
+                <h3 class="mb-1">@_s.Titulo</h3>
+                <div class="mb-1">
+                    @RenderEstado(_s.Estado)
+                    @if (_s.SegundaConvocatoria) { <span class="badge bg-warning text-dark ms-1">2da convocatoria</span> }
+                </div>
+                <div class="small text-muted">
+                    @_s.FechaSesion.LocalDateTime.ToString("yyyy-MM-dd HH:mm")
+                    @if (!string.IsNullOrEmpty(_s.LugarFisico)) { <text> &middot; @_s.LugarFisico</text> }
+                    @if (!string.IsNullOrEmpty(_s.EnlaceVideo))
+                    {
+                        <text> &middot; <a href="@_s.EnlaceVideo" target="_blank">Enlace video</a></text>
+                    }
+                </div>
+            </div>
+            <div class="text-end">
+                @if (_s.Estado == EstadoSesion.Borrador)
+                {
+                    <button class="btn btn-sm" style="background: var(--propia-primary); color:white;" @onclick="Citar" disabled="@_busy">Citar (envia citacion)</button>
+                }
+                @if (_s.Estado == EstadoSesion.Citada)
+                {
+                    <button class="btn btn-sm btn-success" @onclick="AbrirSala" disabled="@_busy">Abrir sala</button>
+                }
+                @if (_s.Estado == EstadoSesion.EnCurso)
+                {
+                    <button class="btn btn-sm btn-danger" @onclick="() => _showCerrar = true" disabled="@_busy">Cerrar sesion</button>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+@* Panel de Quorum - solo visible si la sala esta abierta o cerrada *@
+@if (_s.Estado == EstadoSesion.EnCurso || _s.Estado == EstadoSesion.Cerrada || _s.Estado == EstadoSesion.QuorumFallido)
+{
+    <div class="card mb-3"><div class="card-body py-3">
+        <div class="d-flex justify-content-between mb-2">
+            <h6 class="mb-0">Quorum</h6>
+            <div>
+                @if (_s.QuorumActual.Alcanzado)
+                {
+                    <span class="badge bg-success">Alcanzado</span>
+                }
+                else
+                {
+                    <span class="badge bg-warning text-dark">Insuficiente</span>
+                }
+            </div>
+        </div>
+        <div class="d-flex justify-content-between small mb-1">
+            <span><strong>@_s.QuorumActual.PctRepresentado.ToString("0.00")%</strong> representado @if (_s.QuorumActual.PctRequerido.HasValue) { <text>(requerido: @_s.QuorumActual.PctRequerido.Value.ToString("0.00")%)</text> }</span>
+            <span>@_s.QuorumActual.ParticipantesPresentes / @_s.QuorumActual.ParticipantesTotales unidades</span>
+        </div>
+        <div class="progress" style="height: 8px;">
+            <div class="progress-bar @(_s.QuorumActual.Alcanzado ? "bg-success" : "bg-warning")" style="width: @Math.Min(100, (double)_s.QuorumActual.PctRepresentado)%;"></div>
+        </div>
+    </div></div>
+}
+
+<div class="row g-3">
+    @* Puntos del orden del dia *@
+    <div class="col-md-7">
+        <div class="card mb-3"><div class="card-body">
+            <h6 class="mb-3">Orden del dia (@_s.Puntos.Count puntos)</h6>
+            @foreach (var p in _s.Puntos)
+            {
+                var pid = p.Id;
+                <div class="border-bottom py-2">
+                    <div class="d-flex justify-content-between mb-1">
+                        <strong>@p.Numero. @p.Titulo</strong>
+                        <span class="small">@RenderEstadoPunto(p.Estado)</span>
+                    </div>
+                    @if (!string.IsNullOrEmpty(p.Descripcion)) { <p class="small text-muted mb-1">@p.Descripcion</p> }
+                    <div class="small text-muted mb-1">
+                        @if (p.RequiereVotacion)
+                        {
+                            <span class="badge bg-light text-dark border me-1">@p.TipoMayoria @p.MayoriaPct%</span>
+                            <span class="badge bg-light text-dark border me-1">@p.ModalidadVoto</span>
+                        }
+                        else { <em>No requiere votacion formal</em> }
+                    </div>
+
+                    @* Votacion *@
+                    @if (p.Votacion is not null)
+                    {
+                        var v = p.Votacion;
+                        <div class="card bg-light mb-1"><div class="card-body py-2 small">
+                            <div class="d-flex justify-content-between">
+                                <span>
+                                    <strong>Votacion @v.Estado</strong>
+                                    @if (v.ResultadoFinal.HasValue)
+                                    {
+                                        var rcol = v.ResultadoFinal == ResultadoVotacion.Aprobado ? "success" : "danger";
+                                        <span class="badge bg-@rcol ms-1">@v.ResultadoFinal</span>
+                                        <span class="ms-1">@v.ResultadoOpcion (@v.ResultadoPct?.ToString("0.00")%)</span>
+                                    }
+                                </span>
+                                @if (v.Estado == EstadoVotacion.Abierta)
+                                {
+                                    var vid = v.Id;
+                                    <button class="btn btn-sm btn-outline-dark" @onclick="() => CerrarVotacion(vid)">Cerrar votacion</button>
+                                }
+                            </div>
+                            <div class="mt-1 text-muted">@v.Votos.Count votos &middot; abierta @v.HoraApertura.LocalDateTime.ToString("HH:mm")</div>
+                            @if (v.Estado == EstadoVotacion.Abierta)
+                            {
+                                <div class="mt-2 d-flex flex-wrap gap-1">
+                                    @foreach (var op in p.OpcionesVoto)
+                                    {
+                                        var vid2 = v.Id;
+                                        var opcion = op;
+                                        <button class="btn btn-sm btn-outline-primary" @onclick="() => MostrarModalVotar(vid2, opcion)">@opcion</button>
+                                    }
+                                </div>
+                            }
+                        </div></div>
+                    }
+
+                    @if (_s.Estado == EstadoSesion.EnCurso && p.RequiereVotacion && p.Votacion is null)
+                    {
+                        <button class="btn btn-sm btn-outline-primary" @onclick="() => AbrirVotacion(pid)" disabled="@_busy">Abrir votacion</button>
+                    }
+                </div>
+            }
+        </div></div>
+
+        @* Acta *@
+        @if (_s.Acta is not null)
+        {
+            <div class="card"><div class="card-body">
+                <div class="d-flex justify-content-between mb-2">
+                    <h6 class="mb-0">Acta @RenderEstadoActa(_s.Acta.Estado)</h6>
+                    <div>
+                        @if (_s.Acta.Estado == EstadoActa.Borrador)
+                        {
+                            <button class="btn btn-sm btn-success" @onclick="() => _showFirmar = true">Firmar</button>
+                        }
+                        @if (_s.Acta.Estado == EstadoActa.Firmada && _s.Acta.PublicadaEn is null)
+                        {
+                            <button class="btn btn-sm" style="background: var(--propia-primary); color:white;" @onclick="PublicarActa">Publicar</button>
+                        }
+                    </div>
+                </div>
+                @if (_s.Acta.Estado == EstadoActa.Firmada)
+                {
+                    <div class="small text-muted mb-2">
+                        Firmada @_s.Acta.TimestampFirma?.LocalDateTime.ToString("yyyy-MM-dd HH:mm") &middot;
+                        Hash: <code class="small">@(_s.Acta.HashDocumento is null ? "" : _s.Acta.HashDocumento[..16])...</code>
+                        @if (_s.Acta.PublicadaEn.HasValue) { <text> &middot; <span class="badge bg-success">Publicada @_s.Acta.PublicadaEn.Value.LocalDateTime.ToString("yyyy-MM-dd")</span></text> }
+                    </div>
+                }
+                <details class="small">
+                    <summary class="text-muted">Contenido del acta (JSON)</summary>
+                    <pre class="bg-light p-2 mt-2 small" style="max-height: 300px; overflow:auto;">@_s.Acta.ContenidoGenerado</pre>
+                </details>
+                @if (!string.IsNullOrEmpty(_s.Acta.NarrativaSecretario))
+                {
+                    <hr class="my-2" />
+                    <div class="small"><strong>Narrativa del secretario:</strong></div>
+                    <p class="small mb-0">@_s.Acta.NarrativaSecretario</p>
+                }
+            </div></div>
+        }
+    </div>
+
+    @* Participantes + poderes *@
+    <div class="col-md-5">
+        <div class="card mb-3"><div class="card-body">
+            <h6 class="mb-2">Participantes (@_s.Participantes.Count)</h6>
+            @if (_s.Participantes.Count == 0)
+            {
+                <p class="text-muted small mb-0">Aun no se ha citado la sesion.</p>
+            }
+            else
+            {
+                <table class="table table-sm mb-0 small">
+                    <thead class="text-muted"><tr><th>Unidad</th><th>Persona</th><th class="text-end">Coef.</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var p in _s.Participantes)
+                        {
+                            var uid = p.UnidadPrivadaId;
+                            <tr>
+                                <td><strong>@p.UnidadNumero</strong></td>
+                                <td>@p.Nombre</td>
+                                <td class="text-end">@p.Coeficiente.ToString("0.0000")</td>
+                                <td>
+                                    @if (_s.Estado == EstadoSesion.EnCurso)
+                                    {
+                                        var presente = p.Presente;
+                                        <button class="btn btn-sm @(presente ? "btn-success" : "btn-outline-secondary")"
+                                                @onclick="() => CheckIn(uid, !presente)" disabled="@_busy">
+                                            @(presente ? "Presente" : "Ausente")
+                                        </button>
+                                    }
+                                    else if (p.Presente)
+                                    {
+                                        <span class="badge bg-success">Presente</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div></div>
+
+        @if (_s.Poderes.Any())
+        {
+            <div class="card mb-3"><div class="card-body">
+                <h6 class="mb-2">Poderes (@_s.Poderes.Count)</h6>
+                <ul class="list-unstyled small mb-0">
+                    @foreach (var p in _s.Poderes)
+                    {
+                        <li class="mb-1">
+                            <span class="badge me-1" style="background:@(p.Estado == EstadoPoder.Aprobado ? "#22c55e" : "#94a3b8"); color:white;">@p.Estado</span>
+                            <strong>@p.OtorganteUnidadNumero</strong> &rarr; @p.ApoderadoNombre
+                        </li>
+                    }
+                </ul>
+            </div></div>
+        }
+    </div>
+</div>
+
+@* Modal Cerrar sesion *@
+@if (_showCerrar)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title">Cerrar sesion</h5>
+                    <button type="button" class="btn-close" @onclick="() => _showCerrar = false"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="small">El sistema generara automaticamente el borrador del acta si el quorum se alcanzo.</p>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" @bind="_quorumAlcanzado" id="qa">
+                        <label class="form-check-label" for="qa">El quorum fue alcanzado durante la sesion</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _showCerrar = false">Cancelar</button>
+                    <button class="btn btn-sm btn-danger" @onclick="ConfirmarCerrar" disabled="@_busy">Cerrar sesion</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Modal Firmar acta *@
+@if (_showFirmar)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title">Firmar acta</h5>
+                    <button type="button" class="btn-close" @onclick="() => _showFirmar = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning py-2 small">Tras firmar, el acta es <strong>inmutable</strong> (RN-10). Se generara un hash SHA-256 del contenido.</div>
+                    <label class="form-label small">Narrativa del secretario (opcional)</label>
+                    <textarea class="form-control form-control-sm" rows="4" @bind="_narrativa" @bind:event="oninput"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _showFirmar = false">Cancelar</button>
+                    <button class="btn btn-sm btn-success" @onclick="ConfirmarFirma" disabled="@_busy">Firmar acta</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Modal Votar *@
+@if (_showVotar)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title">Emitir voto: @_opcionVotar</h5>
+                    <button type="button" class="btn-close" @onclick="() => _showVotar = false"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="small">Selecciona la unidad que emite el voto.</p>
+                    <select class="form-select form-select-sm" @bind="_unidadVotarId">
+                        <option value="">Selecciona unidad...</option>
+                        @if (_s is not null)
+                        {
+                            @foreach (var p in _s.Participantes.Where(p => p.Presente))
+                            {
+                                <option value="@p.UnidadPrivadaId">@p.UnidadNumero - @p.Nombre (coef @p.Coeficiente.ToString("0.0000"))</option>
+                            }
+                        }
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _showVotar = false">Cancelar</button>
+                    <button class="btn btn-sm btn-primary" @onclick="ConfirmarVoto" disabled="@(_busy || string.IsNullOrEmpty(_unidadVotarId))">Confirmar voto</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private string? _jwt;
+    private bool _busy;
+    private string? _msg; private string _msgClass = "alert-info";
+    private SesionDetalleDto? _s;
+
+    private bool _showCerrar;
+    private bool _quorumAlcanzado = true;
+    private bool _showFirmar;
+    private string? _narrativa;
+    private bool _showVotar;
+    private Guid _votacionId;
+    private string? _opcionVotar;
+    private string? _unidadVotarId;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored)) { _jwt = stored; await CargarAsync(); StateHasChanged(); }
+        }
+        catch { }
+    }
+
+    private async Task CargarAsync()
+    {
+        try { _s = await Auth().GetFromJsonAsync<SesionDetalleDto>($"/api/asambleas/{Id}"); }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task Citar()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/asambleas/{Id}/citar", new EnviarCitacionRequest(null));
+            if (resp.IsSuccessStatusCode) { _msg = "Sesion citada. Se registraron los participantes."; _msgClass = "alert-success"; await CargarAsync(); }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task AbrirSala()
+    {
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PutAsync($"/api/asambleas/{Id}/abrir-sala", null);
+            if (resp.IsSuccessStatusCode) await CargarAsync();
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task CheckIn(Guid unidadId, bool presente)
+    {
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/asambleas/{Id}/check-in", new CheckInParticipanteRequest(unidadId, presente));
+            if (resp.IsSuccessStatusCode) await CargarAsync();
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task AbrirVotacion(Guid puntoId)
+    {
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/asambleas/{Id}/votaciones", new AbrirVotacionRequest(puntoId));
+            if (resp.IsSuccessStatusCode) await CargarAsync();
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private void MostrarModalVotar(Guid votacionId, string opcion)
+    {
+        _votacionId = votacionId;
+        _opcionVotar = opcion;
+        _unidadVotarId = null;
+        _showVotar = true;
+    }
+
+    private async Task ConfirmarVoto()
+    {
+        if (!Guid.TryParse(_unidadVotarId, out var uid)) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/asambleas/votaciones/{_votacionId}/votar",
+                new EmitirVotoRequest(uid, _opcionVotar!));
+            if (resp.IsSuccessStatusCode) { _showVotar = false; await CargarAsync(); }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task CerrarVotacion(Guid votacionId)
+    {
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PutAsync($"/api/asambleas/votaciones/{votacionId}/cerrar", null);
+            if (resp.IsSuccessStatusCode) await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ConfirmarCerrar()
+    {
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/asambleas/{Id}/cerrar", new CerrarSesionRequest(_quorumAlcanzado));
+            if (resp.IsSuccessStatusCode) { _showCerrar = false; _msg = "Sesion cerrada. Borrador del acta generado."; _msgClass = "alert-success"; await CargarAsync(); }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ConfirmarFirma()
+    {
+        if (_s?.Acta is null) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/asambleas/actas/{_s.Acta.Id}/firmar",
+                new FirmarActaRequest(_narrativa, TipoFirmaActa.ElectronicaNativa));
+            if (resp.IsSuccessStatusCode) { _showFirmar = false; await CargarAsync(); }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task PublicarActa()
+    {
+        if (_s?.Acta is null) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PutAsync($"/api/asambleas/actas/{_s.Acta.Id}/publicar", null);
+            if (resp.IsSuccessStatusCode) await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private static string EstadoColor(EstadoSesion e) => e switch
+    {
+        EstadoSesion.Borrador => "#94a3b8",
+        EstadoSesion.Citada => "#3b82f6",
+        EstadoSesion.EnCurso => "#a855f7",
+        EstadoSesion.Cerrada => "#22c55e",
+        EstadoSesion.QuorumFallido => "#f59e0b",
+        EstadoSesion.Cancelada => "#6b7280",
+        _ => "#94a3b8"
+    };
+
+    private MarkupString RenderEstado(EstadoSesion e) =>
+        new MarkupString($"<span class='badge' style='background:{EstadoColor(e)}; color:white;'>{e}</span>");
+
+    private MarkupString RenderEstadoPunto(EstadoPunto e) => e switch
+    {
+        EstadoPunto.Pendiente => new MarkupString("<span class='badge bg-light text-dark border'>Pendiente</span>"),
+        EstadoPunto.EnDiscusion => new MarkupString("<span class='badge bg-info text-dark'>En discusion</span>"),
+        EstadoPunto.EnVotacion => new MarkupString("<span class='badge bg-primary'>En votacion</span>"),
+        EstadoPunto.Cerrado => new MarkupString("<span class='badge bg-success'>Cerrado</span>"),
+        _ => new MarkupString("")
+    };
+
+    private MarkupString RenderEstadoActa(EstadoActa e) => e switch
+    {
+        EstadoActa.Borrador => new MarkupString("<span class='badge bg-warning text-dark'>Borrador</span>"),
+        EstadoActa.Firmada => new MarkupString("<span class='badge bg-success'>Firmada</span>"),
+        _ => new MarkupString("")
+    };
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}
