@@ -1,0 +1,48 @@
+@inject IJSRuntime Js
+
+@* Componente reutilizable que reemplaza el cartel "Necesitas iniciar sesion" en
+   todas las paginas autenticadas. Durante el primer render server-side (SSR) el
+   JWT del sessionStorage no esta disponible, por lo que mostrar el cartel
+   directamente genera un "flash" molesto de 1-2 segundos al navegar entre paginas.
+
+   Este componente muestra un spinner mientras se hace el chequeo en el cliente
+   (Js interop solo funciona despues del primer firstRender). Si el JWT existe,
+   la pagina padre lo lee y vuelve a renderizar sin pasar por este componente.
+   Si NO existe, este componente muestra el cartel para invitar al login. *@
+
+@if (_estado == Estado.Checking)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border" style="color: var(--propia-primary);" role="status"></div>
+    </div>
+}
+else if (_estado == Estado.NoAuth)
+{
+    <div class="card border-warning p-4">
+        <h5>Necesitas iniciar sesion</h5>
+        <a class="btn btn-dark mt-2" href="/login">Iniciar sesion</a>
+    </div>
+}
+
+@code {
+    private enum Estado { Checking, NoAuth }
+    private Estado _estado = Estado.Checking;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _estado != Estado.Checking) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                // Hay token - la pagina padre lo leera tambien en su propio OnAfterRender
+                // y se volvera a renderizar sin pasar por este componente. No hacemos nada.
+                return;
+            }
+        }
+        catch { }
+        _estado = Estado.NoAuth;
+        StateHasChanged();
+    }
+}
