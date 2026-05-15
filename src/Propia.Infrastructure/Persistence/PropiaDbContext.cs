@@ -82,6 +82,14 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<EjecucionPresupuestal> EjecucionesPresupuestales => Set<EjecucionPresupuestal>();
     public DbSet<AuditLogPresupuesto> AuditLogPresupuestos => Set<AuditLogPresupuesto>();
 
+    // Modulo 1.3 Gestion de Equipo (Capa 1 - todas GLOBAL, FK a Organizacion)
+    public DbSet<OrgCargo> OrgCargos => Set<OrgCargo>();
+    public DbSet<OrgCargoPermiso> OrgCargoPermisos => Set<OrgCargoPermiso>();
+    public DbSet<OrgColaborador> OrgColaboradores => Set<OrgColaborador>();
+    public DbSet<OrgColaboradorPermiso> OrgColaboradorPermisos => Set<OrgColaboradorPermiso>();
+    public DbSet<OrgColaboradorCopropiedad> OrgColaboradorCopropiedades => Set<OrgColaboradorCopropiedad>();
+    public DbSet<OrgColaboradorHistorial> OrgColaboradorHistorial => Set<OrgColaboradorHistorial>();
+
     // Modulo 0.2 - Billing y Suscripciones (todo GLOBAL, sin tenant_id)
     public DbSet<Plan> Planes => Set<Plan>();
     public DbSet<Cupon> Cupones => Set<Cupon>();
@@ -532,6 +540,71 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasIndex(x => new { x.Entidad, x.EntidadId });
             b.HasIndex(x => x.CreatedAt);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // -------------------- Modulo 1.3 Gestion de Equipo --------------------
+        // Todas las entidades son GLOBAL (Capa 1) - sin tenant_id ni HasQueryFilter.
+        // El aislamiento por organizacion se hace a nivel servicio (WHERE org_id = ...).
+
+        modelBuilder.Entity<OrgCargo>(b =>
+        {
+            b.ToTable("org_cargos");
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(100);
+            b.Property(x => x.Descripcion).HasMaxLength(500);
+            b.HasOne(x => x.Organizacion).WithMany().HasForeignKey(x => x.OrganizacionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.OrganizacionId);
+            b.HasIndex(x => new { x.OrganizacionId, x.Nombre }).IsUnique();  // RN-07
+        });
+
+        modelBuilder.Entity<OrgCargoPermiso>(b =>
+        {
+            b.ToTable("org_cargo_permisos");
+            b.HasOne(x => x.Cargo).WithMany(c => c.Permisos).HasForeignKey(x => x.CargoId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.CargoId);
+            b.HasIndex(x => new { x.CargoId, x.Modulo }).IsUnique();
+        });
+
+        modelBuilder.Entity<OrgColaborador>(b =>
+        {
+            b.ToTable("org_colaboradores");
+            b.Property(x => x.NotasIa).HasMaxLength(2000);
+            b.HasOne(x => x.Organizacion).WithMany().HasForeignKey(x => x.OrganizacionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Persona).WithMany().HasForeignKey(x => x.PersonaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(x => x.Cargo).WithMany(c => c.Colaboradores).HasForeignKey(x => x.CargoId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => x.OrganizacionId);
+            b.HasIndex(x => new { x.OrganizacionId, x.PersonaId }).IsUnique();  // RN-01 (una sola fila por persona por org)
+            b.HasIndex(x => new { x.OrganizacionId, x.Estado });
+            b.HasIndex(x => x.CargoId);
+        });
+
+        modelBuilder.Entity<OrgColaboradorPermiso>(b =>
+        {
+            b.ToTable("org_colaborador_permisos");
+            b.HasOne(x => x.Colaborador).WithMany(c => c.PermisosIndividuales).HasForeignKey(x => x.ColaboradorId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.ColaboradorId);
+            b.HasIndex(x => new { x.ColaboradorId, x.Modulo }).IsUnique();
+        });
+
+        modelBuilder.Entity<OrgColaboradorCopropiedad>(b =>
+        {
+            b.ToTable("org_colaborador_copropiedades");
+            b.HasOne(x => x.Colaborador).WithMany(c => c.Asignaciones).HasForeignKey(x => x.ColaboradorId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Tenant).WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.RolCapa2).WithMany().HasForeignKey(x => x.RolCapa2Id).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => x.ColaboradorId);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.ColaboradorId, x.TenantId }).IsUnique();  // RN-08 (una asignacion por par)
+        });
+
+        modelBuilder.Entity<OrgColaboradorHistorial>(b =>
+        {
+            b.ToTable("org_colaborador_historial");
+            b.Property(x => x.Descripcion).IsRequired().HasMaxLength(300);
+            b.Property(x => x.ValorAnterior).HasColumnType("text");
+            b.Property(x => x.ValorNuevo).HasColumnType("text");
+            b.HasOne(x => x.Colaborador).WithMany(c => c.Historial).HasForeignKey(x => x.ColaboradorId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.ColaboradorId);
+            b.HasIndex(x => new { x.ColaboradorId, x.OcurridoAt });
         });
 
         // UsuarioTenant (TenantEntity)

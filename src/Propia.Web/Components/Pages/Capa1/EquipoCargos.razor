@@ -1,0 +1,214 @@
+@page "/org/equipo/cargos"
+@rendermode InteractiveServer
+@using Propia.Application.EquipoOrg
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<PageTitle>Cargos de la organizacion - PROPIA</PageTitle>
+
+<div class="mb-3">
+    <a href="/org/equipo" class="text-decoration-none text-muted small">&larr; Equipo</a>
+</div>
+
+<div class="mb-4 d-flex justify-content-between align-items-start">
+    <div>
+        <h1 class="h3 mb-1 fw-semibold">Cargos de la organizacion</h1>
+        <p class="text-muted mb-0">Modulo 1.3 - 6 cargos por defecto editables, plantillas de permisos Capa 1.</p>
+    </div>
+    <button class="btn" style="background: var(--propia-primary); color: white;" @onclick="() => _showCrear = true">+ Nuevo cargo</button>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <div class="card border-warning p-4"><h5>Necesitas iniciar sesion</h5><a class="btn btn-dark mt-2" href="/login">Iniciar sesion</a></div>
+    return;
+}
+
+@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+@if (_showCrear)
+{
+    <div class="card border-primary mb-3"><div class="card-body bg-light">
+        <h6>Nuevo cargo</h6>
+        <div class="row g-2">
+            <div class="col-md-5"><label class="form-label small">Nombre</label>
+                <input class="form-control form-control-sm" @bind="_crearNombre" /></div>
+            <div class="col-md-7"><label class="form-label small">Descripcion</label>
+                <input class="form-control form-control-sm" @bind="_crearDesc" /></div>
+        </div>
+        <div class="mt-2">
+            <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="Crear" disabled="@_busy">@(_busy ? "Creando..." : "Crear")</button>
+            <button class="btn btn-sm btn-outline-dark ms-2" @onclick="CerrarCrear">Cancelar</button>
+        </div>
+    </div></div>
+}
+
+@if (_cargos is null)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+}
+else
+{
+    <div class="row g-3">
+        @foreach (var c in _cargos)
+        {
+            var id = c.Id;
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div>
+                                <h6 class="mb-0">@c.Nombre @(c.EsDefault ? "" : "")</h6>
+                                <small class="text-muted">@c.CantidadColaboradores colaborador(es)</small>
+                                @if (c.EsDefault) { <span class="badge bg-light text-dark border ms-1 small">Por defecto</span> }
+                                @if (!c.Activo) { <span class="badge bg-secondary ms-1 small">Inactivo</span> }
+                            </div>
+                            <div>
+                                <button class="btn btn-sm btn-outline-dark" @onclick="() => Editar(id)">Editar</button>
+                                @if (!c.EsDefault)
+                                {
+                                    <button class="btn btn-sm btn-outline-danger ms-1" @onclick="() => Eliminar(id)" disabled="@(c.CantidadColaboradores > 0)">Eliminar</button>
+                                }
+                            </div>
+                        </div>
+                        @if (_detalleSel?.Id == id && _detalleSel is not null)
+                        {
+                            <table class="table table-sm mb-0 small">
+                                <thead class="text-muted"><tr><th>Modulo</th><th>Nivel plantilla</th></tr></thead>
+                                <tbody>
+                                    @foreach (var p in _detalleSel.Permisos)
+                                    {
+                                        var modulo = p.Modulo;
+                                        <tr>
+                                            <td>@RenderModulo(p.Modulo)</td>
+                                            <td>
+                                                <select class="form-select form-select-sm" style="max-width:170px;"
+                                                        value="@p.Nivel" @onchange="(e) => AjustarPermiso(id, modulo, e.Value?.ToString())">
+                                                    @foreach (var n in Enum.GetValues<NivelPermisoCapa1>())
+                                                    {
+                                                        <option value="@n">@RenderNivelTexto(n)</option>
+                                                    }
+                                                </select>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private string? _jwt;
+    private bool _busy;
+    private string? _msg; private string _msgClass = "alert-info";
+
+    private List<CargoDto>? _cargos;
+    private CargoDetalleDto? _detalleSel;
+
+    private bool _showCrear;
+    private string? _crearNombre;
+    private string? _crearDesc;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = Auth();
+            _cargos = await http.GetFromJsonAsync<List<CargoDto>>("/api/equipo-org/cargos") ?? new();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task Editar(Guid id)
+    {
+        if (_detalleSel?.Id == id) { _detalleSel = null; return; }
+        var http = Auth();
+        _detalleSel = await http.GetFromJsonAsync<CargoDetalleDto>($"/api/equipo-org/cargos/{id}");
+    }
+
+    private void CerrarCrear() { _showCrear = false; _crearNombre = _crearDesc = null; }
+
+    private async Task Crear()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var http = Auth();
+            var resp = await http.PostAsJsonAsync("/api/equipo-org/cargos",
+                new CrearCargoRequest(_crearNombre ?? "", _crearDesc));
+            if (resp.IsSuccessStatusCode) { CerrarCrear(); await CargarAsync(); }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task Eliminar(Guid id)
+    {
+        var http = Auth();
+        var resp = await http.DeleteAsync($"/api/equipo-org/cargos/{id}");
+        if (resp.IsSuccessStatusCode) await CargarAsync();
+        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+    }
+
+    private async Task AjustarPermiso(Guid cargoId, ModuloCapa1 modulo, string? value)
+    {
+        if (!Enum.TryParse<NivelPermisoCapa1>(value, out var nivel)) return;
+        var http = Auth();
+        var resp = await http.PutAsJsonAsync($"/api/equipo-org/cargos/{cargoId}/permisos",
+            new AjustarPermisoCargoRequest(modulo, nivel));
+        if (resp.IsSuccessStatusCode)
+        {
+            _detalleSel = await http.GetFromJsonAsync<CargoDetalleDto>($"/api/equipo-org/cargos/{cargoId}");
+        }
+        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+    }
+
+    private static string RenderModulo(ModuloCapa1 m) => m switch
+    {
+        ModuloCapa1.PanelConsolidado => "1.1 Panel",
+        ModuloCapa1.CalendarioMultiPh => "1.2 Calendario",
+        ModuloCapa1.GestionEquipo => "1.3 Equipo",
+        ModuloCapa1.ReportesConsolidados => "1.4 Reportes",
+        ModuloCapa1.TransferenciaCustodia => "1.5 Custodia",
+        _ => m.ToString()
+    };
+
+    private static string RenderNivelTexto(NivelPermisoCapa1 n) => n switch
+    {
+        NivelPermisoCapa1.Completo => "Completo",
+        NivelPermisoCapa1.Lectura => "Lectura",
+        NivelPermisoCapa1.Asignado => "Asignado",
+        NivelPermisoCapa1.SinAcceso => "Sin acceso",
+        _ => n.ToString()
+    };
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

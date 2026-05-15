@@ -27,6 +27,8 @@ public static class DependencyInjection
 
         services.AddScoped<ITenantContext, TenantContext>();
         services.AddScoped<Persistence.TenantConnectionInterceptor>();
+        // Necesario para EquipoOrgService que lee claims del JWT en runtime.
+        services.AddHttpContextAccessor();
 
         services.AddDbContext<PropiaDbContext>((sp, options) =>
         {
@@ -82,6 +84,9 @@ public static class DependencyInjection
 
         // Modulo 2.6 Presupuesto, Cuotas y Pagos
         services.AddScoped<Application.Presupuesto.IPresupuestoService, Presupuesto.PresupuestoService>();
+
+        // Modulo 1.3 Gestion de Equipo
+        services.AddScoped<Application.EquipoOrg.IEquipoOrgService, EquipoOrg.EquipoOrgService>();
 
         return services;
     }

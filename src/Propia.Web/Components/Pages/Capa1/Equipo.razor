@@ -1,17 +1,356 @@
 @page "/org/equipo"
-<PageTitle>Equipo de Trabajo - PROPIA</PageTitle>
+@rendermode InteractiveServer
+@using Propia.Application.EquipoOrg
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
 
-<ModuloPlaceholder
-    Codigo="1.3"
-    Nombre="Gestion de Equipo (Organizacion)"
-    Descripcion="Administracion del equipo de la organizacion: coordinadores, asistentes y personal asignado a cada copropiedad."
-    Estado="EstadoModulo.EnDiseno"
-    Features='new[] {
-        "CRUD de colaboradores de la administradora",
-        "Asignacion de colaboradores a copropiedades (uno a varias)",
-        "Roles globales de organizacion (Coordinador, Asistente Junior, etc.)",
-        "Productividad: tareas asignadas, completadas, vencidas por colaborador",
-        "Onboarding de nuevos colaboradores (wizard)",
-        "Se proyecta sobre 2.5 Usuarios y Roles de cada copropiedad"
-    }'
-    NotaSpec="01. REQUERIMIENTO/Capa 1. Administrador Multi-tenant/1.3. Gestion-equipo_v1_0.md" />
+<PageTitle>Equipo de la organizacion - PROPIA</PageTitle>
+
+<div class="mb-4 d-flex justify-content-between align-items-start">
+    <div>
+        <h1 class="h3 mb-1 fw-semibold">Equipo de la organizacion</h1>
+        <p class="text-muted mb-0">Modulo 1.3 - Capa 1 - colaboradores, cargos y asignaciones a copropiedades</p>
+    </div>
+    <a class="btn btn-outline-dark" href="/org/equipo/cargos">Configurar cargos</a>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <div class="card border-warning p-4"><h5>Necesitas iniciar sesion</h5><a class="btn btn-dark mt-2" href="/login">Iniciar sesion</a></div>
+    return;
+}
+
+@* KPIs por estado *@
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card kpi-mini @(_tab == EstadoColaborador.Activo ? "border-primary" : "")" style="cursor:pointer;" @onclick="() => SetTab(EstadoColaborador.Activo)">
+            <div class="card-body py-3">
+                <div class="text-muted small">Activos</div>
+                <h3 class="mb-0">@(_colaboradores?.Count(c => c.Estado == EstadoColaborador.Activo) ?? 0)</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card kpi-mini @(_tab == EstadoColaborador.Pendiente ? "border-primary" : "")" style="cursor:pointer;" @onclick="() => SetTab(EstadoColaborador.Pendiente)">
+            <div class="card-body py-3">
+                <div class="text-muted small">Pendientes</div>
+                <h3 class="mb-0">@(_colaboradores?.Count(c => c.Estado == EstadoColaborador.Pendiente) ?? 0)</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card kpi-mini @(_tab == EstadoColaborador.Inactivo ? "border-primary" : "")" style="cursor:pointer;" @onclick="() => SetTab(EstadoColaborador.Inactivo)">
+            <div class="card-body py-3">
+                <div class="text-muted small">Inactivos</div>
+                <h3 class="mb-0">@(_colaboradores?.Count(c => c.Estado == EstadoColaborador.Inactivo) ?? 0)</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 d-flex align-items-center justify-content-end">
+        <button class="btn" style="background: var(--propia-primary); color: white;" @onclick="() => _showAgregar = true">+ Agregar colaborador</button>
+    </div>
+</div>
+
+@* Buscador *@
+<div class="mb-3">
+    <input class="form-control" placeholder="Buscar por nombre, cedula, email..." @bind="_query" @bind:event="oninput" @onkeyup="CargarAsync" />
+</div>
+
+@if (!string.IsNullOrEmpty(_msg))
+{
+    <div class="alert @_msgClass py-2 small">@_msg</div>
+}
+
+@if (_colaboradores is null)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+}
+else
+{
+    var filtrados = _colaboradores.Where(c => c.Estado == _tab).ToList();
+    if (filtrados.Count == 0)
+    {
+        <div class="card p-4 text-center text-muted">Sin colaboradores en este estado.</div>
+    }
+    else
+    {
+        <div class="card">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="small text-muted bg-light">
+                    <tr>
+                        <th>Colaborador</th><th>Documento</th><th>Cargo</th>
+                        <th class="text-end">PHs asignadas</th><th>Estado</th><th></th>
+                    </tr>
+                </thead>
+                <tbody class="small">
+                    @foreach (var c in filtrados)
+                    {
+                        var id = c.Id;
+                        <tr style="cursor: pointer;" @onclick="() => Ir(id)">
+                            <td>
+                                <strong>@c.Nombres @c.Apellidos</strong>
+                                <div class="text-muted">@c.Email</div>
+                            </td>
+                            <td>@c.TipoDocumento @c.Documento</td>
+                            <td><span class="badge bg-light text-dark border">@c.Cargo</span></td>
+                            <td class="text-end">@c.CantidadCopropiedadesAsignadas</td>
+                            <td>@RenderEstado(c.Estado)</td>
+                            <td class="text-end">
+                                <a class="btn btn-sm btn-outline-dark" href="@($"/org/equipo/{c.Id}")">Ver</a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@* Modal agregar colaborador *@
+@if (_showAgregar)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Agregar colaborador</h5>
+                    <button type="button" class="btn-close" @onclick="CerrarAgregar"></button>
+                </div>
+                <div class="modal-body">
+                    @if (_busquedaIdentidad is null && !_personaNueva)
+                    {
+                        <p class="text-muted small">Busca primero por cedula o email - la plataforma reusa identidades existentes (RN-01).</p>
+                        <div class="row g-2 align-items-end">
+                            <div class="col-md-3">
+                                <label class="form-label small">Tipo doc</label>
+                                <select class="form-select form-select-sm" @bind="_buscarTipoDoc">
+                                    @foreach (var td in Enum.GetValues<TipoDocumento>())
+                                    {
+                                        <option value="@td">@td</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small">Documento</label>
+                                <input class="form-control form-control-sm" @bind="_buscarDoc" />
+                            </div>
+                            <div class="col-md-5">
+                                <label class="form-label small">Email (alternativa)</label>
+                                <input class="form-control form-control-sm" @bind="_buscarEmail" />
+                            </div>
+                            <div class="col-12">
+                                <button class="btn btn-sm btn-outline-dark" @onclick="BuscarIdentidad" disabled="@_busy">@(_busy ? "Buscando..." : "Buscar")</button>
+                                <button class="btn btn-sm btn-link" @onclick="() => _personaNueva = true">Persona nueva (no esta en PropIA)</button>
+                            </div>
+                        </div>
+                    }
+                    @if (_busquedaIdentidad is not null)
+                    {
+                        <div class="alert alert-info py-2 small">
+                            Encontre: <strong>@_busquedaIdentidad.Nombres @_busquedaIdentidad.Apellidos</strong>
+                            (@_busquedaIdentidad.TipoDocumento @_busquedaIdentidad.Documento - @_busquedaIdentidad.Email).
+                            @if (_busquedaIdentidad.YaVinculadoAEstaOrganizacion)
+                            {
+                                <span class="text-danger">Esta persona ya es colaborador.</span>
+                            }
+                        </div>
+                    }
+                    @if (_personaNueva)
+                    {
+                        <div class="row g-2">
+                            <div class="col-md-3"><label class="form-label small">Tipo doc</label>
+                                <select class="form-select form-select-sm" @bind="_nuevoTipoDoc">
+                                    @foreach (var td in Enum.GetValues<TipoDocumento>()) { <option value="@td">@td</option> }
+                                </select></div>
+                            <div class="col-md-3"><label class="form-label small">Documento *</label>
+                                <input class="form-control form-control-sm" @bind="_nuevoDoc" /></div>
+                            <div class="col-md-3"><label class="form-label small">Nombres *</label>
+                                <input class="form-control form-control-sm" @bind="_nuevoNombres" /></div>
+                            <div class="col-md-3"><label class="form-label small">Apellidos *</label>
+                                <input class="form-control form-control-sm" @bind="_nuevoApellidos" /></div>
+                            <div class="col-md-6"><label class="form-label small">Email *</label>
+                                <input class="form-control form-control-sm" @bind="_nuevoEmail" /></div>
+                            <div class="col-md-6"><label class="form-label small">Telefono</label>
+                                <input class="form-control form-control-sm" @bind="_nuevoTel" /></div>
+                        </div>
+                    }
+                    @if (_busquedaIdentidad is not null || _personaNueva)
+                    {
+                        <hr />
+                        <h6 class="small text-muted">Cargo y asignacion</h6>
+                        <div class="row g-2">
+                            <div class="col-md-6"><label class="form-label small">Cargo *</label>
+                                <select class="form-select form-select-sm" @bind="_cargoSeleccionado">
+                                    @if (_cargos is not null)
+                                    {
+                                        <option value="">Selecciona...</option>
+                                        @foreach (var c in _cargos.Where(c => c.Activo))
+                                        {
+                                            <option value="@c.Id">@c.Nombre</option>
+                                        }
+                                    }
+                                </select></div>
+                            <div class="col-md-6 d-flex align-items-end">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" @bind="_asignarATodas" id="aTodas">
+                                    <label class="form-check-label small" for="aTodas">Asignar a todas las copropiedades</label>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="CerrarAgregar">Cancelar</button>
+                    @if (_busquedaIdentidad is not null || _personaNueva)
+                    {
+                        <button class="btn btn-sm" style="background: var(--propia-primary); color: white;"
+                                @onclick="ConfirmarAgregar" disabled="@(_busy || string.IsNullOrEmpty(_cargoSeleccionado))">
+                            @(_busy ? "Agregando..." : "Agregar al equipo")
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
+</style>
+
+@code {
+    private string? _jwt;
+    private bool _busy;
+    private string? _msg; private string _msgClass = "alert-info";
+
+    private EstadoColaborador _tab = EstadoColaborador.Activo;
+    private string? _query;
+
+    private List<ColaboradorListaDto>? _colaboradores;
+    private List<CargoDto>? _cargos;
+
+    // Modal agregar
+    private bool _showAgregar;
+    private TipoDocumento _buscarTipoDoc = TipoDocumento.CC;
+    private string? _buscarDoc;
+    private string? _buscarEmail;
+    private BusquedaIdentidadDto? _busquedaIdentidad;
+    private bool _personaNueva;
+    private TipoDocumento _nuevoTipoDoc = TipoDocumento.CC;
+    private string? _nuevoDoc;
+    private string? _nuevoNombres;
+    private string? _nuevoApellidos;
+    private string? _nuevoEmail;
+    private string? _nuevoTel;
+    private string? _cargoSeleccionado;
+    private bool _asignarATodas;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = Auth();
+            var q = string.IsNullOrWhiteSpace(_query) ? "" : $"?q={Uri.EscapeDataString(_query)}";
+            _colaboradores = await http.GetFromJsonAsync<List<ColaboradorListaDto>>($"/api/equipo-org/colaboradores{q}") ?? new();
+            _cargos = await http.GetFromJsonAsync<List<CargoDto>>("/api/equipo-org/cargos") ?? new();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private void SetTab(EstadoColaborador e) { _tab = e; }
+
+    private void CerrarAgregar()
+    {
+        _showAgregar = false;
+        _busquedaIdentidad = null;
+        _personaNueva = false;
+        _buscarDoc = _buscarEmail = _nuevoDoc = _nuevoNombres = _nuevoApellidos = _nuevoEmail = _nuevoTel = null;
+        _cargoSeleccionado = null;
+        _asignarATodas = false;
+    }
+
+    private async Task BuscarIdentidad()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var http = Auth();
+            var url = $"/api/equipo-org/identidad/buscar?tipo={_buscarTipoDoc}";
+            if (!string.IsNullOrWhiteSpace(_buscarDoc)) url += $"&documento={Uri.EscapeDataString(_buscarDoc)}";
+            if (!string.IsNullOrWhiteSpace(_buscarEmail)) url += $"&email={Uri.EscapeDataString(_buscarEmail)}";
+            var resp = await http.GetAsync(url);
+            if (resp.IsSuccessStatusCode)
+                _busquedaIdentidad = await resp.Content.ReadFromJsonAsync<BusquedaIdentidadDto>();
+            else
+            {
+                _msg = "No se encontro la persona. Puedes crear un registro nuevo.";
+                _msgClass = "alert-warning";
+            }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _busy = false; }
+    }
+
+    private async Task ConfirmarAgregar()
+    {
+        if (!Guid.TryParse(_cargoSeleccionado, out var cargoId)) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var http = Auth();
+            var req = new AgregarColaboradorRequest(
+                _busquedaIdentidad?.PersonaId,
+                _personaNueva ? _nuevoTipoDoc : null,
+                _personaNueva ? _nuevoDoc : null,
+                _personaNueva ? _nuevoNombres : null,
+                _personaNueva ? _nuevoApellidos : null,
+                _personaNueva ? _nuevoEmail : null,
+                _personaNueva ? _nuevoTel : null,
+                cargoId, null, _asignarATodas, null);
+            var resp = await http.PostAsJsonAsync("/api/equipo-org/colaboradores", req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return;
+            }
+            _msg = "Colaborador agregado."; _msgClass = "alert-success";
+            CerrarAgregar();
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private MarkupString RenderEstado(EstadoColaborador e) => e switch
+    {
+        EstadoColaborador.Activo => new MarkupString("<span class='badge bg-success'>Activo</span>"),
+        EstadoColaborador.Pendiente => new MarkupString("<span class='badge bg-warning text-dark'>Pendiente</span>"),
+        EstadoColaborador.Inactivo => new MarkupString("<span class='badge bg-secondary'>Inactivo</span>"),
+        _ => new MarkupString("")
+    };
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+
+    private void Ir(Guid id) => Nav.NavigateTo($"/org/equipo/{id}");
+}

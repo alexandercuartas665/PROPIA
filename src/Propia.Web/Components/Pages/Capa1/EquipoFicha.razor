@@ -1,0 +1,323 @@
+@page "/org/equipo/{Id:guid}"
+@rendermode InteractiveServer
+@using Propia.Application.EquipoOrg
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<PageTitle>Ficha colaborador - PROPIA</PageTitle>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <div class="card border-warning p-4"><h5>Necesitas iniciar sesion</h5><a class="btn btn-dark mt-2" href="/login">Iniciar sesion</a></div>
+    return;
+}
+
+<div class="mb-3">
+    <a href="/org/equipo" class="text-decoration-none text-muted small">&larr; Equipo</a>
+</div>
+
+@if (_c is null)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    return;
+}
+
+@* Hero card *@
+<div class="card mb-3" style="border-left: 4px solid var(--propia-primary);">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start">
+            <div>
+                <h3 class="mb-1">@_c.Nombres @_c.Apellidos</h3>
+                <div class="text-muted">
+                    <span class="badge bg-light text-dark border me-1">@_c.Cargo</span>
+                    @RenderEstado(_c.Estado)
+                    <span class="ms-2 small">Activo desde @_c.FechaVinculacion.ToString("dd MMM yyyy")</span>
+                </div>
+                <div class="small text-muted mt-1">
+                    @_c.TipoDocumento @_c.Documento &middot; @_c.Email
+                    @if (!string.IsNullOrEmpty(_c.Telefono)) { <text> &middot; @_c.Telefono</text> }
+                </div>
+            </div>
+            <div>
+                @if (_c.Estado == EstadoColaborador.Inactivo)
+                {
+                    <button class="btn btn-sm btn-outline-success" @onclick="Reactivar" disabled="@_busy">Reactivar</button>
+                }
+                else
+                {
+                    <button class="btn btn-sm btn-outline-danger" @onclick="() => _showDesact = true">Desactivar colaborador</button>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+@* Copropiedades asignadas *@
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="d-flex justify-content-between mb-2">
+            <h6 class="mb-0">Copropiedades asignadas (@_c.Asignaciones.Count)</h6>
+        </div>
+        @if (_c.Asignaciones.Count == 0)
+        {
+            <p class="text-muted small mb-0">Sin asignaciones activas.</p>
+        }
+        else
+        {
+            <table class="table table-sm mb-0 align-middle small">
+                <thead class="text-muted">
+                    <tr><th>Copropiedad</th><th>Codigo</th><th>Rol Capa 2</th><th>Desde</th><th></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var a in _c.Asignaciones)
+                    {
+                        var aid = a.Id;
+                        <tr>
+                            <td><strong>@a.CopropiedadNombre</strong></td>
+                            <td>@a.CodigoPropia</td>
+                            <td>@a.RolCapa2Nombre</td>
+                            <td>@a.FechaDesde.ToString("yyyy-MM-dd")</td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => QuitarAsignacion(aid)" disabled="@_busy">Quitar</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+@* Permisos efectivos *@
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="d-flex justify-content-between mb-2">
+            <h6 class="mb-0">Permisos efectivos en Capa 1</h6>
+            <button class="btn btn-sm btn-outline-dark" @onclick="ResetearPermisos" disabled="@_busy">Resetear a la plantilla del cargo</button>
+        </div>
+        <table class="table table-sm mb-0 align-middle small">
+            <thead class="text-muted">
+                <tr><th>Modulo</th><th>Plantilla (cargo)</th><th>Override</th><th>Efectivo</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var p in _c.PermisosEfectivos)
+                {
+                    var modulo = p.Modulo;
+                    <tr>
+                        <td>@RenderModulo(p.Modulo)</td>
+                        <td>@RenderNivel(p.NivelCargo)</td>
+                        <td>
+                            <select class="form-select form-select-sm" style="max-width:160px;"
+                                    value="@(p.TieneOverride ? p.NivelOverride!.Value.ToString() : "")"
+                                    @onchange="(e) => SetOverride(modulo, e.Value?.ToString())">
+                                <option value="">(usar plantilla)</option>
+                                @foreach (var n in Enum.GetValues<NivelPermisoCapa1>())
+                                {
+                                    <option value="@n">@RenderNivelTexto(n)</option>
+                                }
+                            </select>
+                        </td>
+                        <td><strong>@RenderNivel(p.NivelEfectivo)</strong></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@* Historial *@
+<div class="card">
+    <div class="card-body">
+        <h6 class="mb-2">Historial (@_c.Historial.Count entradas)</h6>
+        <ul class="list-unstyled small mb-0">
+            @foreach (var h in _c.Historial.Take(12))
+            {
+                <li class="mb-1">
+                    <span class="text-muted">@h.OcurridoAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
+                    &middot; <span class="badge bg-light text-dark border">@h.TipoEvento</span>
+                    &middot; @h.Descripcion
+                </li>
+            }
+        </ul>
+    </div>
+</div>
+
+@* Modal Desactivar *@
+@if (_showDesact)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title">Desactivar colaborador</h5>
+                    <button type="button" class="btn-close" @onclick="() => _showDesact = false"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Perdera acceso inmediatamente a todas las copropiedades asignadas. El historial se conserva.</p>
+                    <label class="form-label small">Motivo (opcional)</label>
+                    <input class="form-control form-control-sm mb-2" @bind="_motivoDesact" />
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _showDesact = false">Cancelar</button>
+                    <button class="btn btn-sm btn-danger" @onclick="Desactivar" disabled="@_busy">@(_busy ? "Procesando..." : "Confirmar desactivacion")</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private string? _jwt;
+    private bool _busy;
+    private string? _msg; private string _msgClass = "alert-info";
+
+    private ColaboradorDetalleDto? _c;
+    private bool _showDesact;
+    private string? _motivoDesact;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = Auth();
+            _c = await http.GetFromJsonAsync<ColaboradorDetalleDto>($"/api/equipo-org/colaboradores/{Id}");
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task SetOverride(ModuloCapa1 modulo, string? value)
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var http = Auth();
+            if (string.IsNullOrEmpty(value))
+            {
+                // No hay endpoint para borrar un solo override - resetear todos es muy fuerte
+                // Por ahora, no soportamos remover individuales desde la UI - solo override completo
+                _msg = "Para quitar un override usa 'Resetear a plantilla del cargo'.";
+                _msgClass = "alert-info"; return;
+            }
+            if (!Enum.TryParse<NivelPermisoCapa1>(value, out var nivel)) return;
+            var resp = await http.PutAsJsonAsync($"/api/equipo-org/colaboradores/{Id}/permisos",
+                new AjustarPermisoColaboradorRequest(modulo, nivel));
+            if (resp.IsSuccessStatusCode) await CargarAsync();
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ResetearPermisos()
+    {
+        _busy = true;
+        try
+        {
+            var http = Auth();
+            var resp = await http.PutAsync($"/api/equipo-org/colaboradores/{Id}/permisos/reset", null);
+            if (resp.IsSuccessStatusCode) await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task QuitarAsignacion(Guid aid)
+    {
+        _busy = true;
+        try
+        {
+            var http = Auth();
+            var resp = await http.DeleteAsync($"/api/equipo-org/asignaciones/{aid}");
+            if (resp.IsSuccessStatusCode) await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task Desactivar()
+    {
+        _busy = true;
+        try
+        {
+            var http = Auth();
+            var resp = await http.PutAsJsonAsync($"/api/equipo-org/colaboradores/{Id}/desactivar",
+                new DesactivarColaboradorRequest(_motivoDesact, null));
+            if (resp.IsSuccessStatusCode) { _showDesact = false; await CargarAsync(); }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task Reactivar()
+    {
+        _busy = true;
+        try
+        {
+            var http = Auth();
+            var resp = await http.PutAsync($"/api/equipo-org/colaboradores/{Id}/reactivar", null);
+            if (resp.IsSuccessStatusCode) await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private MarkupString RenderEstado(EstadoColaborador e) => e switch
+    {
+        EstadoColaborador.Activo => new MarkupString("<span class='badge bg-success ms-1'>Activo</span>"),
+        EstadoColaborador.Pendiente => new MarkupString("<span class='badge bg-warning text-dark ms-1'>Pendiente</span>"),
+        EstadoColaborador.Inactivo => new MarkupString("<span class='badge bg-secondary ms-1'>Inactivo</span>"),
+        _ => new MarkupString("")
+    };
+
+    private static string RenderModulo(ModuloCapa1 m) => m switch
+    {
+        ModuloCapa1.PanelConsolidado => "1.1 Panel Consolidado",
+        ModuloCapa1.CalendarioMultiPh => "1.2 Calendario Multi-PH",
+        ModuloCapa1.GestionEquipo => "1.3 Gestion de Equipo",
+        ModuloCapa1.ReportesConsolidados => "1.4 Reportes Consolidados",
+        ModuloCapa1.TransferenciaCustodia => "1.5 Transferencia de Custodia",
+        _ => m.ToString()
+    };
+
+    private MarkupString RenderNivel(NivelPermisoCapa1 n) => n switch
+    {
+        NivelPermisoCapa1.Completo => new MarkupString("<span class='badge bg-success'>Completo</span>"),
+        NivelPermisoCapa1.Lectura => new MarkupString("<span class='badge bg-info text-dark'>Lectura</span>"),
+        NivelPermisoCapa1.Asignado => new MarkupString("<span class='badge bg-primary'>Asignado</span>"),
+        NivelPermisoCapa1.SinAcceso => new MarkupString("<span class='badge bg-light text-muted border'>Sin acceso</span>"),
+        _ => new MarkupString("")
+    };
+
+    private static string RenderNivelTexto(NivelPermisoCapa1 n) => n switch
+    {
+        NivelPermisoCapa1.Completo => "Completo",
+        NivelPermisoCapa1.Lectura => "Lectura",
+        NivelPermisoCapa1.Asignado => "Asignado",
+        NivelPermisoCapa1.SinAcceso => "Sin acceso",
+        _ => n.ToString()
+    };
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}
