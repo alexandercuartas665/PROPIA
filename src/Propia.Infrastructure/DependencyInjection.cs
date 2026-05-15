@@ -10,6 +10,7 @@ using Propia.Domain.Entities;
 using Propia.Infrastructure.Auth;
 using Propia.Infrastructure.Billing;
 using Propia.Infrastructure.Persistence;
+using Propia.Infrastructure.Storage;
 using Propia.Infrastructure.SuperAdmin;
 
 namespace Propia.Infrastructure;
@@ -105,6 +106,20 @@ public static class DependencyInjection
 
         // Modulo 2.8 Asambleas y Organos de Gobierno
         services.AddScoped<Application.Asambleas.IAsambleaService, Asambleas.AsambleaService>();
+
+        // Storage de blobs (logos, fachadas, portadas, futuros adjuntos).
+        // Provider seleccionado por config: "R2" en produccion, cualquier otro valor (o ausente)
+        // cae a filesystem local (wwwroot/uploads). Asi Development y tests no requieren credenciales.
+        services.Configure<R2Options>(configuration.GetSection(R2Options.SectionName));
+        var storageProvider = configuration["Storage:Provider"] ?? "Local";
+        if (string.Equals(storageProvider, "R2", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddSingleton<IBlobStorage, R2BlobStorage>();
+        }
+        else
+        {
+            services.AddSingleton<IBlobStorage, LocalBlobStorage>();
+        }
 
         return services;
     }

@@ -1,19 +1,61 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Propia.Api.Controllers;
 using Propia.Api.Middleware;
 using Propia.Infrastructure;
 using Propia.Infrastructure.Auth;
+using Propia.Infrastructure.Persistence;
 using Propia.Infrastructure.SuperAdmin;
+using Serilog;
+using Serilog.Formatting.Compact;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Servicios
+// ---- Logging estructurado a stdout (Railway captura nativamente) ----
+builder.Host.UseSerilog((ctx, lc) => lc
+    .ReadFrom.Configuration(ctx.Configuration)
+    .Enrich.FromLogContext()
+    .WriteTo.Console(new CompactJsonFormatter()));
+
+// ---- Servicios ----
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddInfrastructure(builder.Configuration);
+
+// ---- Forwarded Headers (proxy de Railway o cualquier reverse proxy) ----
+// Necesario para que el HTTPS redirect y los esquemas de URL respeten el origen.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    // En PaaS no conocemos el rango de IP del proxy, asi que limpiamos los defaults
+    // y confiamos en todos los proxies (terminacion TLS del PaaS).
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
+// ---- CORS: solo permitido el origen de Propia.Web (configurable por env var) ----
+var allowedOrigins = (builder.Configuration["Cors:AllowedOrigins"] ?? "")
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+builder.Services.AddCors(o => o.AddDefaultPolicy(policy =>
+{
+    if (allowedOrigins.Length > 0)
+    {
+        policy.WithOrigins(allowedOrigins)
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    }
+    else
+    {
+        // En Development sin config explicita: cualquiera. En Production debe estar configurado.
+        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+    }
+}));
 
 // Autenticacion JWT - configurada via IOptions<JwtSettings> (resolucion lazy)
 // para que coincida exactamente con lo que TokenService usa al firmar.
@@ -52,33 +94,62 @@ builder.Services.AddAuthorization(options =>
 
 var app = builder.Build();
 
+// ---- Pipeline ----
+
+// ForwardedHeaders DEBE ir antes de cualquier middleware que use HttpContext.Request.Scheme
+app.UseForwardedHeaders();
+
 // Seed dev del founder SuperAdmin (solo en Development)
 if (app.Environment.IsDevelopment())
 {
     await SuperAdminSeeder.EnsureDevFounderAsync(app.Services);
-}
-
-if (app.Environment.IsDevelopment())
-{
     app.MapOpenApi();
+    app.UseHttpsRedirection();  // Local dev usa cert self-signed en puerto HTTPS
+
+    // Servir imagenes subidas via /uploads/* (solo Development, en Production R2 sirve directo).
+    Directory.CreateDirectory(Path.Combine(app.Environment.ContentRootPath, "wwwroot", "uploads"));
+    app.UseStaticFiles();
+}
+else
+{
+    app.UseHsts();  // HSTS solo en !Development. NO usamos UseHttpsRedirection en Production:
+                    // el proxy de Railway termina TLS afuera, el contenedor solo escucha HTTP.
 }
 
-app.UseHttpsRedirection();
-
-// Servir imagenes subidas via /uploads/* (modulo 2.3 - logos, fachadas, portadas).
-// En produccion esto se mueve a un bucket S3/Azure con CDN.
-Directory.CreateDirectory(Path.Combine(app.Environment.ContentRootPath, "wwwroot", "uploads"));
-app.UseStaticFiles();
+app.UseCors();
 
 // IMPORTANTE: Authentication PRIMERO, despues Authorization, despues TenantMiddleware
 // (necesita el claim ya validado), despues MapControllers.
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseMiddleware<TenantMiddleware>();
+
+// TenantMiddleware no debe correr en endpoints de health (no requieren DB ni JWT).
+// UseWhen aplica el middleware solo cuando el path NO empieza por /health.
+app.UseWhen(
+    ctx => !ctx.Request.Path.StartsWithSegments("/health"),
+    branch => branch.UseMiddleware<TenantMiddleware>());
+
 app.MapControllers();
 
-// Endpoint smoke test - no requiere auth
-app.MapGet("/health", () => Results.Ok(new { status = "ok", version = "0.1.0-dev" }));
+// ---- Health checks ----
+// /health: liveness simple (responde si el proceso esta vivo)
+app.MapGet("/health", () => Results.Ok(new { status = "ok", version = "0.1.0-pilot" }));
+
+// /health/ready: readiness con check de DB
+app.MapGet("/health/ready", async (PropiaDbContext db, CancellationToken ct) =>
+{
+    try
+    {
+        var canConnect = await db.Database.CanConnectAsync(ct);
+        return canConnect
+            ? Results.Ok(new { status = "ok", db = "ok", version = "0.1.0-pilot" })
+            : Results.StatusCode(503);
+    }
+    catch
+    {
+        return Results.StatusCode(503);
+    }
+});
 
 app.Run();
 
