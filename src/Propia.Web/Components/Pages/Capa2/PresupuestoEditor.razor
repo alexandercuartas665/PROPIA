@@ -1,0 +1,413 @@
+@page "/presupuesto/{Id:guid}"
+@rendermode InteractiveServer
+@using Propia.Application.Presupuesto
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<PageTitle>Editor Presupuesto - PROPIA</PageTitle>
+
+<div class="mb-3 small text-muted">
+    <a href="/presupuesto" class="text-decoration-none">Presupuesto</a> <span class="mx-1">/</span>
+    <strong>@(_p?.Nombre ?? "Cargando...")</strong>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <div class="card border-warning p-4"><h5>Necesitas iniciar sesion</h5><a class="btn btn-dark mt-2" href="/login">Iniciar sesion</a></div>
+    return;
+}
+
+@if (_p is null)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    return;
+}
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h1 class="h3 mb-1 fw-semibold">@_p.Nombre</h1>
+        <p class="text-muted mb-0 small">
+            @_p.VigenciaInicio.ToString("d MMM yyyy") - @_p.VigenciaFin.ToString("d MMM yyyy")
+            &middot; @RenderEstado(_p.Estado)
+        </p>
+    </div>
+    <div class="d-flex gap-2">
+        @if (_p.Estado == EstadoPresupuesto.Borrador)
+        {
+            <button class="btn btn-sm btn-outline-dark" @onclick="EnviarAprobacion" disabled="@_busy">Enviar a aprobacion</button>
+            <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="() => _showAprobar = true">Aprobar manualmente</button>
+        }
+        else if (_p.Estado == EstadoPresupuesto.Aprobado)
+        {
+            <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="Activar" disabled="@_busy">Activar vigencia</button>
+        }
+        else if (_p.Estado == EstadoPresupuesto.EnEjecucion)
+        {
+            <button class="btn btn-sm btn-outline-dark" @onclick="() => _showLiquidar = true">Emitir liquidacion del mes</button>
+            <button class="btn btn-sm btn-outline-danger" @onclick="Cerrar" disabled="@_busy">Cerrar vigencia</button>
+        }
+    </div>
+</div>
+
+@* Resumen + advertencia Fondo Imprevistos *@
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Total presupuesto</div>
+            <h3 class="mb-0">$@_p.MontoTotal.ToString("N0")</h3>
+            <small class="text-muted">@_p.Rubros.Count(r => r.Activo) rubros activos</small>
+        </div></div>
+    </div>
+    <div class="col-md-4">
+        <div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Cuota promedio mes</div>
+            <h3 class="mb-0">$@_p.CuotaProyectadaPromedioMes.ToString("N0")</h3>
+            <small class="text-muted">por unidad</small>
+        </div></div>
+    </div>
+    <div class="col-md-4">
+        <div class="card kpi-mini @(_p.CumpleMinimoFondoImprevistos ? "border-success" : "border-warning")">
+            <div class="card-body py-3">
+                <div class="text-muted small">Fondo de Imprevistos</div>
+                <h3 class="mb-0">$@_p.MontoFondoImprevistos.ToString("N0")</h3>
+                @if (_p.CumpleMinimoFondoImprevistos)
+                {
+                    <small class="text-success">Cumple minimo 1% (Art. 39 Ley 675)</small>
+                }
+                else
+                {
+                    <small class="text-warning">Recomendado minimo: $@_p.MontoFondoImprevistosMinimoLegal.ToString("N0")</small>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_msg))
+{
+    <div class="alert @_msgClass py-2 small">@_msg</div>
+}
+
+@* Tabla editable de rubros *@
+<div class="card mb-3">
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0 align-middle">
+            <thead class="bg-light small text-muted">
+                <tr>
+                    <th style="width:5%">#</th><th>Rubro</th>
+                    <th class="text-end">Monto anual</th>
+                    <th>Base liquidacion</th>
+                    <th class="text-center">Activo</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody class="small">
+                @foreach (var r in _p.Rubros)
+                {
+                    var rr = r;
+                    var edit = _enEdicion == r.Id;
+                    <tr class="@(r.EsFondoImprevistos ? "table-warning" : "")">
+                        <td>@r.Orden</td>
+                        <td>
+                            @if (edit && !r.EsObligatorio)
+                            { <input class="form-control form-control-sm" @bind="_editNombre" /> }
+                            else
+                            {
+                                <strong>@r.Nombre</strong>
+                                @if (r.EsFondoImprevistos) { <span class="badge bg-warning text-dark ms-1">Obligatorio</span> }
+                            }
+                        </td>
+                        <td class="text-end">
+                            @if (edit)
+                            { <input type="number" step="1000" class="form-control form-control-sm text-end" @bind="_editMonto" /> }
+                            else
+                            { @($"${r.MontoAnual:N0}") }
+                        </td>
+                        <td>
+                            @if (edit)
+                            {
+                                <select class="form-select form-select-sm" @bind="_editBase">
+                                    <option value="@BaseLiquidacion.Coeficiente">Coeficiente</option>
+                                    <option value="@BaseLiquidacion.CuotaFijaPorTipo">Cuota fija por tipo</option>
+                                </select>
+                            }
+                            else
+                            { @r.BaseLiquidacion }
+                        </td>
+                        <td class="text-center">
+                            @if (edit && !r.EsFondoImprevistos)
+                            { <input type="checkbox" @bind="_editActivo" /> }
+                            else
+                            { @(r.Activo ? "Si" : "No") }
+                        </td>
+                        <td class="text-end">
+                            @if (_p.Estado is EstadoPresupuesto.Borrador or EstadoPresupuesto.EnAprobacion)
+                            {
+                                @if (edit)
+                                {
+                                    <button class="btn btn-sm btn-success me-1" @onclick="() => GuardarRubro(rr)">Guardar</button>
+                                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _enEdicion = null">X</button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-sm btn-outline-dark" @onclick="() => EditarRubro(rr)">Editar</button>
+                                    @if (!r.EsObligatorio)
+                                    {
+                                        <button class="btn btn-sm btn-outline-danger ms-1" @onclick="() => EliminarRubro(rr.Id)">X</button>
+                                    }
+                                }
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+            <tfoot class="fw-semibold bg-light">
+                <tr><td colspan="2">TOTAL</td><td class="text-end">$@_p.MontoTotal.ToString("N0")</td><td colspan="3"></td></tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+@if (_p.Estado is EstadoPresupuesto.Borrador or EstadoPresupuesto.EnAprobacion)
+{
+    <div class="card border-primary"><div class="card-body bg-light">
+        <h6 class="mb-2">Agregar rubro personalizado</h6>
+        <div class="row g-2">
+            <div class="col-md-5"><input class="form-control form-control-sm" @bind="_nuevoNombre" placeholder="Nombre del rubro" /></div>
+            <div class="col-md-3"><input type="number" class="form-control form-control-sm" @bind="_nuevoMonto" placeholder="Monto anual" /></div>
+            <div class="col-md-2">
+                <select class="form-select form-select-sm" @bind="_nuevoBase">
+                    <option value="@BaseLiquidacion.Coeficiente">Coeficiente</option>
+                    <option value="@BaseLiquidacion.CuotaFijaPorTipo">Cuota fija</option>
+                </select>
+            </div>
+            <div class="col-md-2"><button class="btn btn-sm btn-outline-dark w-100" @onclick="AgregarRubro" disabled="@_busy">+ Agregar</button></div>
+        </div>
+    </div></div>
+}
+
+@* Modal Aprobar manual *@
+@if (_showAprobar)
+{
+    <div class="card border-primary mt-3"><div class="card-body bg-light">
+        <h6>Aprobar manualmente</h6>
+        <p class="text-muted small">Para presupuestos ya aprobados en asamblea antes de PROPIA. Adjunta el acta o referencia.</p>
+        <div class="row g-2">
+            <div class="col-md-3"><label class="form-label small">Fecha aprobacion</label>
+                <input type="date" class="form-control form-control-sm" value="@_aprFecha.ToString("yyyy-MM-dd")" @onchange="(e) => _aprFecha = DateOnly.Parse(e.Value!.ToString()!)" /></div>
+            <div class="col-md-7"><label class="form-label small">URL del acta (opcional)</label>
+                <input class="form-control form-control-sm" @bind="_aprActa" placeholder="https://..." /></div>
+        </div>
+        <button class="btn btn-sm mt-3" style="background: var(--propia-primary); color: white;" @onclick="AprobarManual" disabled="@_busy">Aprobar</button>
+        <button class="btn btn-sm btn-outline-dark ms-2" @onclick="() => _showAprobar = false">Cancelar</button>
+    </div></div>
+}
+
+@* Modal Emitir liquidacion *@
+@if (_showLiquidar)
+{
+    <div class="card border-primary mt-3"><div class="card-body bg-light">
+        <h6>Emitir liquidacion del mes</h6>
+        <p class="text-muted small">El motor calcula la cuota de cada unidad segun coeficiente y la base de cada rubro. Snapshot inmutable.</p>
+        <div class="row g-2">
+            <div class="col-md-4"><label class="form-label small">Periodo</label>
+                <input type="month" class="form-control form-control-sm" value="@_liqPeriodo" @onchange="(e) => _liqPeriodo = e.Value!.ToString()!" /></div>
+        </div>
+        <button class="btn btn-sm mt-3" style="background: var(--propia-primary); color: white;" @onclick="EmitirLiquidacion" disabled="@_busy">@(_busy ? "Calculando..." : "Emitir")</button>
+        <button class="btn btn-sm btn-outline-dark ms-2" @onclick="() => _showLiquidar = false">Cancelar</button>
+    </div></div>
+}
+
+<style>
+    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
+</style>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private string? _jwt;
+    private bool _busy;
+    private string? _msg; private string _msgClass = "alert-info";
+    private PresupuestoDetalleDto? _p;
+
+    // Edicion inline de rubro
+    private Guid? _enEdicion;
+    private string _editNombre = "";
+    private decimal _editMonto;
+    private BaseLiquidacion _editBase;
+    private bool _editActivo;
+
+    // Agregar rubro nuevo
+    private string _nuevoNombre = "";
+    private decimal _nuevoMonto;
+    private BaseLiquidacion _nuevoBase = BaseLiquidacion.Coeficiente;
+
+    // Aprobar manual
+    private bool _showAprobar;
+    private DateOnly _aprFecha = DateOnly.FromDateTime(DateTime.UtcNow);
+    private string _aprActa = "";
+
+    // Liquidar
+    private bool _showLiquidar;
+    private string _liqPeriodo = $"{DateTime.UtcNow:yyyy-MM}";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = Auth();
+            _p = await http.GetFromJsonAsync<PresupuestoDetalleDto>($"/api/presupuesto/{Id}");
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private void EditarRubro(RubroDto r)
+    {
+        _enEdicion = r.Id;
+        _editNombre = r.Nombre;
+        _editMonto = r.MontoAnual;
+        _editBase = r.BaseLiquidacion;
+        _editActivo = r.Activo;
+    }
+
+    private async Task GuardarRubro(RubroDto r)
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var http = Auth();
+            var resp = await http.PutAsJsonAsync($"/api/presupuesto/rubros/{r.Id}",
+                new ActualizarRubroRequest(_editNombre, _editMonto, _editBase, _editActivo, r.Orden, null));
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _enEdicion = null;
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task AgregarRubro()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevoNombre) || _nuevoMonto <= 0) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var http = Auth();
+            var resp = await http.PostAsJsonAsync($"/api/presupuesto/{Id}/rubros",
+                new AgregarRubroPersonalizadoRequest(_nuevoNombre, _nuevoMonto, _nuevoBase));
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _nuevoNombre = ""; _nuevoMonto = 0;
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task EliminarRubro(Guid id)
+    {
+        _busy = true;
+        try
+        {
+            var http = Auth();
+            var resp = await http.DeleteAsync($"/api/presupuesto/rubros/{id}");
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task EnviarAprobacion()
+    {
+        _busy = true;
+        var http = Auth();
+        var resp = await http.PutAsync($"/api/presupuesto/{Id}/enviar-aprobacion", null);
+        if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; _busy = false; return; }
+        _msg = "Presupuesto enviado a aprobacion."; _msgClass = "alert-success";
+        await CargarAsync(); _busy = false;
+    }
+
+    private async Task AprobarManual()
+    {
+        _busy = true;
+        var http = Auth();
+        var resp = await http.PutAsJsonAsync($"/api/presupuesto/{Id}/aprobar",
+            new AprobarPresupuestoRequest(TipoAprobacion.Manual, _aprFecha,
+                string.IsNullOrWhiteSpace(_aprActa) ? null : _aprActa, null));
+        if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; _busy = false; return; }
+        _msg = "Presupuesto aprobado."; _msgClass = "alert-success";
+        _showAprobar = false;
+        await CargarAsync(); _busy = false;
+    }
+
+    private async Task Activar()
+    {
+        _busy = true;
+        var http = Auth();
+        var resp = await http.PutAsync($"/api/presupuesto/{Id}/activar", null);
+        if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; _busy = false; return; }
+        _msg = "Vigencia activa. Ya puedes emitir liquidaciones (RN-01)."; _msgClass = "alert-success";
+        await CargarAsync(); _busy = false;
+    }
+
+    private async Task Cerrar()
+    {
+        _busy = true;
+        var http = Auth();
+        await http.PutAsync($"/api/presupuesto/{Id}/cerrar", null);
+        _msg = "Vigencia cerrada."; _msgClass = "alert-success";
+        await CargarAsync(); _busy = false;
+    }
+
+    private async Task EmitirLiquidacion()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var http = Auth();
+            var partes = _liqPeriodo.Split('-');
+            var year = int.Parse(partes[0]);
+            var month = int.Parse(partes[1]);
+            var periodo = new DateOnly(year, month, 1);
+            var resp = await http.PostAsJsonAsync("/api/presupuesto/liquidaciones",
+                new EmitirLiquidacionRequest(Id, periodo));
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            var liq = await resp.Content.ReadFromJsonAsync<LiquidacionDto>();
+            _msg = $"Liquidacion emitida: {liq?.CantidadUnidades} unidades, total $({liq?.MontoTotal:N0})"; _msgClass = "alert-success";
+            _showLiquidar = false;
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+
+    private static MarkupString RenderEstado(EstadoPresupuesto e) => e switch
+    {
+        EstadoPresupuesto.Borrador => new MarkupString("<span class='badge bg-light text-dark border'>Borrador</span>"),
+        EstadoPresupuesto.EnAprobacion => new MarkupString("<span class='badge bg-warning text-dark'>En aprobacion</span>"),
+        EstadoPresupuesto.Aprobado => new MarkupString("<span class='badge bg-info text-dark'>Aprobado</span>"),
+        EstadoPresupuesto.EnEjecucion => new MarkupString("<span class='badge bg-success'>En ejecucion</span>"),
+        EstadoPresupuesto.Cerrado => new MarkupString("<span class='badge bg-secondary'>Cerrado</span>"),
+        _ => new MarkupString("")
+    };
+}

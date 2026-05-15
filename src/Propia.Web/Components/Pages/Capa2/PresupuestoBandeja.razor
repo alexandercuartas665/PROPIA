@@ -1,0 +1,241 @@
+@page "/presupuesto"
+@rendermode InteractiveServer
+@using Propia.Application.Presupuesto
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<PageTitle>Presupuesto y Pagos - PROPIA</PageTitle>
+
+<div class="mb-4">
+    <h1 class="h3 mb-1 fw-semibold">Presupuesto y Pagos</h1>
+    <p class="text-muted mb-0">Motor financiero del modulo 2.6 - editor de presupuesto, motor de liquidacion y panel de recaudo</p>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <div class="card border-warning p-4"><h5>Necesitas iniciar sesion</h5><a class="btn btn-dark mt-2" href="/login">Iniciar sesion</a></div>
+    return;
+}
+
+@* Vigencia activa + KPIs de recaudo *@
+@if (_vigenciaActiva is not null)
+{
+    <div class="card mb-3" style="border-left: 4px solid var(--propia-primary);">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="text-muted small">Vigencia activa</div>
+                    <h4 class="mb-1">@_vigenciaActiva.Nombre <span class="badge bg-success ms-2">En ejecucion</span></h4>
+                    <p class="text-muted small mb-0">
+                        @_vigenciaActiva.VigenciaInicio.ToString("MMM yyyy") - @_vigenciaActiva.VigenciaFin.ToString("MMM yyyy") &middot;
+                        Presupuesto total: <strong>@_vigenciaActiva.MontoTotal.ToString("N0") COP</strong>
+                    </p>
+                </div>
+                <a class="btn btn-sm btn-outline-dark" href="@($"/presupuesto/{_vigenciaActiva.Id}")">Ver/Editar</a>
+            </div>
+        </div>
+    </div>
+
+    @if (_recaudo is not null)
+    {
+        <div class="row g-3 mb-4">
+            <div class="col-md-3">
+                <div class="card kpi-mini"><div class="card-body py-3">
+                    <div class="text-muted small">Esperado del mes</div>
+                    <h4 class="mb-0">$@_recaudo.Esperado.ToString("N0")</h4>
+                    <small class="text-muted">@_recaudo.Periodo.ToString("MMMM yyyy")</small>
+                </div></div>
+            </div>
+            <div class="col-md-3">
+                <div class="card kpi-mini"><div class="card-body py-3">
+                    <div class="text-muted small">Recibido</div>
+                    <h4 class="mb-0 text-success">$@_recaudo.Recibido.ToString("N0")</h4>
+                    <small class="text-muted">@_recaudo.PorcentajeRecaudo.ToString("0.0")%</small>
+                </div></div>
+            </div>
+            <div class="col-md-3">
+                <div class="card kpi-mini"><div class="card-body py-3">
+                    <div class="text-muted small">Pendiente</div>
+                    <h4 class="mb-0 text-warning">$@_recaudo.Pendiente.ToString("N0")</h4>
+                    <small class="text-muted">@_recaudo.UnidadesPendientes unidades</small>
+                </div></div>
+            </div>
+            <div class="col-md-3">
+                <div class="card kpi-mini"><div class="card-body py-3">
+                    <div class="text-muted small">Vencidas</div>
+                    <h4 class="mb-0 text-danger">@_recaudo.UnidadesVencidas</h4>
+                    <small class="text-muted">de @_recaudo.UnidadesTotales unidades</small>
+                </div></div>
+            </div>
+        </div>
+    }
+}
+else if (_vigenciaActiva is null && _presupuestos is not null)
+{
+    <div class="card border-warning mb-3"><div class="card-body">
+        <h5 class="mb-2">Sin vigencia activa</h5>
+        <p class="text-muted mb-2">Crea tu primer presupuesto para empezar a liquidar cuotas a las unidades.</p>
+    </div></div>
+}
+
+@* Boton crear + lista de presupuestos *@
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0">Historial de vigencias</h5>
+    <button class="btn" style="background: var(--propia-primary); color: white;" @onclick="() => _showCrear = true">+ Nuevo presupuesto</button>
+</div>
+
+@if (_showCrear)
+{
+    <div class="card border-primary mb-3"><div class="card-body bg-light">
+        <h6 class="mb-2">Crear nuevo presupuesto</h6>
+        <div class="row g-2">
+            <div class="col-md-4"><label class="form-label small">Nombre</label>
+                <input class="form-control form-control-sm" @bind="_crear.Nombre" placeholder="Presupuesto 2026" /></div>
+            <div class="col-md-3"><label class="form-label small">Inicio vigencia</label>
+                <input type="date" class="form-control form-control-sm" @bind="_crear.Inicio" /></div>
+            <div class="col-md-3"><label class="form-label small">Fin vigencia</label>
+                <input type="date" class="form-control form-control-sm" @bind="_crear.Fin" /></div>
+            <div class="col-md-2"><label class="form-label small">&nbsp;</label>
+                <div class="form-check"><input class="form-check-input" type="checkbox" @bind="_crear.Catalogo" id="cat">
+                    <label class="form-check-label small" for="cat">Catalogo base</label></div></div>
+        </div>
+        <div class="mt-3">
+            <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="CrearPresupuesto" disabled="@_busy">@(_busy ? "Creando..." : "Crear")</button>
+            <button class="btn btn-sm btn-outline-dark ms-2" @onclick="() => _showCrear = false">Cancelar</button>
+        </div>
+    </div></div>
+}
+
+@if (!string.IsNullOrEmpty(_msg))
+{
+    <div class="alert @_msgClass py-2 small">@_msg</div>
+}
+
+@if (_presupuestos is null)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+}
+else if (_presupuestos.Count == 0)
+{
+    <div class="card p-4 text-center text-muted">Sin presupuestos creados aun.</div>
+}
+else
+{
+    <div class="card"><table class="table table-hover mb-0 align-middle">
+        <thead class="bg-light small text-muted">
+            <tr><th>Nombre</th><th>Vigencia</th><th>Estado</th><th class="text-end">Total</th><th class="text-end">Rubros</th><th class="text-end">Liquidaciones</th><th></th></tr>
+        </thead>
+        <tbody class="small">
+            @foreach (var p in _presupuestos)
+            {
+                var id = p.Id;
+                <tr style="cursor: pointer;" @onclick="() => Ir(id)">
+                    <td><strong>@p.Nombre</strong></td>
+                    <td>@p.VigenciaInicio.ToString("MMM yyyy") - @p.VigenciaFin.ToString("MMM yyyy")</td>
+                    <td>@RenderEstado(p.Estado)</td>
+                    <td class="text-end">$@p.MontoTotal.ToString("N0")</td>
+                    <td class="text-end">@p.CantidadRubrosActivos</td>
+                    <td class="text-end">@p.CantidadLiquidaciones</td>
+                    <td><a class="btn btn-sm btn-outline-dark" href="@($"/presupuesto/{p.Id}")">Editar</a></td>
+                </tr>
+            }
+        </tbody>
+    </table></div>
+}
+
+<style>
+    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
+</style>
+
+@code {
+    private string? _jwt;
+    private bool _busy;
+    private string? _msg; private string _msgClass = "alert-info";
+
+    private List<PresupuestoDto>? _presupuestos;
+    private PresupuestoDto? _vigenciaActiva;
+    private RecaudoResumenDto? _recaudo;
+
+    private bool _showCrear;
+    private CrearForm _crear = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = Auth();
+            _presupuestos = await http.GetFromJsonAsync<List<PresupuestoDto>>("/api/presupuesto") ?? new();
+            _vigenciaActiva = _presupuestos.FirstOrDefault(p => p.Estado == EstadoPresupuesto.EnEjecucion);
+            if (_vigenciaActiva is not null)
+            {
+                var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+                _recaudo = await http.GetFromJsonAsync<RecaudoResumenDto>($"/api/presupuesto/recaudo?periodo={hoy:yyyy-MM-dd}");
+            }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task CrearPresupuesto()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var http = Auth();
+            var resp = await http.PostAsJsonAsync("/api/presupuesto",
+                new CrearPresupuestoRequest(_crear.Nombre, _crear.Inicio, _crear.Fin, _crear.Catalogo));
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            var p = await resp.Content.ReadFromJsonAsync<PresupuestoDto>();
+            _msg = "Presupuesto creado."; _msgClass = "alert-success";
+            _showCrear = false;
+            _crear = new();
+            await CargarAsync();
+            if (p is not null) Nav.NavigateTo($"/presupuesto/{p.Id}");
+        }
+        finally { _busy = false; }
+    }
+
+    private static MarkupString RenderEstado(EstadoPresupuesto e) => e switch
+    {
+        EstadoPresupuesto.Borrador => new MarkupString("<span class='badge bg-light text-dark border'>Borrador</span>"),
+        EstadoPresupuesto.EnAprobacion => new MarkupString("<span class='badge bg-warning text-dark'>En aprobacion</span>"),
+        EstadoPresupuesto.Aprobado => new MarkupString("<span class='badge bg-info text-dark'>Aprobado</span>"),
+        EstadoPresupuesto.EnEjecucion => new MarkupString("<span class='badge bg-success'>En ejecucion</span>"),
+        EstadoPresupuesto.Cerrado => new MarkupString("<span class='badge bg-secondary'>Cerrado</span>"),
+        _ => new MarkupString("")
+    };
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+
+    private void Ir(Guid id) => Nav.NavigateTo($"/presupuesto/{id}");
+
+    private class CrearForm
+    {
+        public string Nombre { get; set; } = $"Presupuesto {DateTime.UtcNow.Year}";
+        public DateOnly Inicio { get; set; } = new DateOnly(DateTime.UtcNow.Year, 1, 1);
+        public DateOnly Fin { get; set; } = new DateOnly(DateTime.UtcNow.Year, 12, 31);
+        public bool Catalogo { get; set; } = true;
+    }
+}
