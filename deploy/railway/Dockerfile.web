@@ -1,0 +1,56 @@
+# syntax=docker/dockerfile:1.7
+#
+# Variante de deploy/railway/Dockerfile con defaults para Propia.Web.
+# Identico al Dockerfile principal salvo por los ARG defaults.
+#
+# Existe porque Railway no expone build args como first-class en su UI;
+# en su lugar el servicio elige el Dockerfile por path. Asi:
+#   propia-api  -> deploy/railway/Dockerfile      (defaults Propia.Api)
+#   propia-web  -> deploy/railway/Dockerfile.web  (defaults Propia.Web)
+
+ARG PROJECT=Propia.Web
+ARG PROJECT_DIR=src/Propia.Web
+
+# ---------- Build stage ----------
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+ARG PROJECT
+ARG PROJECT_DIR
+WORKDIR /src
+
+COPY Propia.sln ./
+COPY src/Propia.Domain/Propia.Domain.csproj          src/Propia.Domain/
+COPY src/Propia.Application/Propia.Application.csproj src/Propia.Application/
+COPY src/Propia.Infrastructure/Propia.Infrastructure.csproj src/Propia.Infrastructure/
+COPY src/Propia.Shared/Propia.Shared.csproj          src/Propia.Shared/
+COPY src/Propia.Api/Propia.Api.csproj                src/Propia.Api/
+COPY src/Propia.Web/Propia.Web.csproj                src/Propia.Web/
+COPY src/Propia.Web.Client/Propia.Web.Client.csproj  src/Propia.Web.Client/
+COPY src/Propia.Workers/Propia.Workers.csproj        src/Propia.Workers/
+COPY src/Propia.SuperAdmin/Propia.SuperAdmin.csproj  src/Propia.SuperAdmin/
+COPY tests/Propia.Domain.Tests/Propia.Domain.Tests.csproj           tests/Propia.Domain.Tests/
+COPY tests/Propia.Application.Tests/Propia.Application.Tests.csproj tests/Propia.Application.Tests/
+COPY tests/Propia.Integration.Tests/Propia.Integration.Tests.csproj tests/Propia.Integration.Tests/
+
+RUN dotnet restore "${PROJECT_DIR}/${PROJECT}.csproj"
+
+COPY . .
+RUN dotnet publish "${PROJECT_DIR}/${PROJECT}.csproj" \
+    -c Release \
+    --no-restore \
+    -o /app/publish \
+    /p:UseAppHost=false
+
+# ---------- Runtime stage ----------
+FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS runtime
+ARG PROJECT
+WORKDIR /app
+COPY --from=build /app/publish .
+
+ENV ASPNETCORE_URLS=http://+:8080
+ENV ASPNETCORE_HTTP_PORTS=8080
+ENV DOTNET_RUNNING_IN_CONTAINER=true
+ENV PROJECT_DLL=${PROJECT}.dll
+
+EXPOSE 8080
+
+ENTRYPOINT dotnet ${PROJECT_DLL}
