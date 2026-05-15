@@ -203,7 +203,7 @@ public class EquipoOrgFlowTests : IAsyncLifetime
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             svc.EliminarCargoAsync(asistente.Id, CancellationToken.None));
-        Assert.Contains("colaboradores activos", ex.Message);
+        Assert.Contains("colaboradores", ex.Message);
 
         await CleanupOrgAsync(orgId, tenantId);
     }

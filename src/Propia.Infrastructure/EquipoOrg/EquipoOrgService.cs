@@ -174,12 +174,17 @@ public class EquipoOrgService : IEquipoOrgService
             x => x.Id == cargoId && x.OrganizacionId == orgId, ct);
         if (c is null) return false;
 
-        // RN-06: bloqueo si hay colaboradores activos
-        var hayActivos = await _db.OrgColaboradores.AnyAsync(
-            x => x.CargoId == cargoId && x.Estado != EstadoColaborador.Inactivo, ct);
-        if (hayActivos)
+        // RN-06: bloqueo si hay CUALQUIER colaborador vinculado al cargo (activo,
+        // pendiente o inactivo). Aunque la spec dice "activos", la FK
+        // org_colaboradores.cargo_id usa DeleteBehavior.Restrict para preservar el
+        // historial de quien tuvo cada cargo, asi que ningun DELETE es viable si
+        // hay registros - validamos en aplicacion para devolver un 400 limpio en
+        // vez de un 500 por violacion de FK.
+        var hayColaboradores = await _db.OrgColaboradores.AnyAsync(
+            x => x.CargoId == cargoId, ct);
+        if (hayColaboradores)
             throw new InvalidOperationException(
-                "No puedes eliminar un cargo con colaboradores activos. Reasignalos primero.");
+                "No puedes eliminar un cargo con colaboradores vinculados (activos, pendientes o historicos). Reasigna o renombra el cargo en su lugar.");
 
         _db.OrgCargos.Remove(c);
         await _db.SaveChangesAsync(ct);
