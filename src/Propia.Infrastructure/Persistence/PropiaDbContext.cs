@@ -162,6 +162,15 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<DocumentoAuditoria> DocumentoAuditorias => Set<DocumentoAuditoria>();
     public DbSet<DocumentoConsumo> DocumentoConsumos => Set<DocumentoConsumo>();
 
+    // Modulo 2.16 Reportes e Indicadores
+    // (Categoria y Catalogo con TenantId nullable para mezclar globales PropIA + tenant)
+    public DbSet<ReporteCategoria> ReporteCategorias => Set<ReporteCategoria>();
+    public DbSet<ReporteCatalogo> ReporteCatalogo => Set<ReporteCatalogo>();
+    public DbSet<ReporteGenerado> ReporteGenerados => Set<ReporteGenerado>();
+    public DbSet<ReporteProgramacion> ReporteProgramaciones => Set<ReporteProgramacion>();
+    public DbSet<ReporteProgramacionDestinatario> ReporteProgramacionDestinatarios => Set<ReporteProgramacionDestinatario>();
+    public DbSet<ReporteSemaforoConfig> ReporteSemaforoConfigs => Set<ReporteSemaforoConfig>();
+
     // Modulo 0.2 - Billing y Suscripciones (todo GLOBAL, sin tenant_id)
     public DbSet<Plan> Planes => Set<Plan>();
     public DbSet<Cupon> Cupones => Set<Cupon>();
@@ -1367,6 +1376,102 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasOne(x => x.Version).WithMany().HasForeignKey(x => x.VersionId).OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.DocumentoId, x.OcurridoAt });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // -------------------- Modulo 2.16 Reportes e Indicadores --------------------
+
+        modelBuilder.Entity<ReporteCategoria>(b =>
+        {
+            b.ToTable("reporte_categorias");
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(100);
+            b.Property(x => x.Icono).HasMaxLength(80);
+            b.Property(x => x.Color).HasMaxLength(20);
+            b.Property(x => x.ModuloOrigen).IsRequired().HasMaxLength(20);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Nombre });
+            // Mezcla base (TenantId null) + tenant.
+            b.HasQueryFilter(x => x.TenantId == null
+                                  || _tenantContext.CurrentTenantId == null
+                                  || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<ReporteCatalogo>(b =>
+        {
+            b.ToTable("reporte_catalogo");
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(150);
+            b.Property(x => x.Descripcion).HasMaxLength(500);
+            b.Property(x => x.ModuloOrigen).IsRequired().HasMaxLength(20);
+            b.Property(x => x.Clave).IsRequired().HasMaxLength(120);
+            b.Property(x => x.AudienciasJson).IsRequired().HasColumnType("text");
+            b.Property(x => x.FiltrosConfigJson).HasColumnType("text");
+            b.HasOne(x => x.Categoria).WithMany().HasForeignKey(x => x.CategoriaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Clave });
+            b.HasIndex(x => x.CategoriaId);
+            b.HasQueryFilter(x => x.TenantId == null
+                                  || _tenantContext.CurrentTenantId == null
+                                  || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<ReporteGenerado>(b =>
+        {
+            b.ToTable("reporte_generados");
+            b.Property(x => x.NombreReporte).IsRequired().HasMaxLength(200);
+            b.Property(x => x.Categoria).IsRequired().HasMaxLength(100);
+            b.Property(x => x.Origen).HasConversion<int>();
+            b.Property(x => x.Estado).HasConversion<int>();
+            b.Property(x => x.PromptIa).HasColumnType("text");
+            b.Property(x => x.FiltrosAplicadosJson).HasColumnType("text");
+            b.Property(x => x.ResultadoJson).HasColumnType("text");
+            b.Property(x => x.ErrorMensaje).HasMaxLength(2000);
+            b.Property(x => x.UrlPdf).HasMaxLength(1000);
+            b.Property(x => x.UrlExcel).HasMaxLength(1000);
+            b.HasOne(x => x.ReporteCatalogo).WithMany().HasForeignKey(x => x.ReporteCatalogoId).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Estado });
+            b.HasIndex(x => new { x.TenantId, x.CompartidoConsejo });
+            b.HasIndex(x => new { x.TenantId, x.PeriodoInicio, x.PeriodoFin });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<ReporteProgramacion>(b =>
+        {
+            b.ToTable("reporte_programaciones");
+            b.Property(x => x.Nombre).HasMaxLength(200);
+            b.Property(x => x.Frecuencia).HasConversion<int>();
+            b.Property(x => x.PeriodoQueCubre).HasConversion<int>();
+            b.Property(x => x.Formato).HasConversion<int>();
+            b.Property(x => x.Estado).HasConversion<int>();
+            b.Property(x => x.CanalesJson).IsRequired().HasColumnType("text");
+            b.Property(x => x.FiltrosAplicadosJson).HasColumnType("text");
+            b.HasOne(x => x.ReporteCatalogo).WithMany().HasForeignKey(x => x.ReporteCatalogoId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Estado });
+            b.HasIndex(x => x.ProximoEnvio);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<ReporteProgramacionDestinatario>(b =>
+        {
+            b.ToTable("reporte_programacion_destinatarios");
+            b.Property(x => x.EmailExterno).HasMaxLength(200);
+            b.Property(x => x.WhatsappExterno).HasMaxLength(30);
+            b.HasOne(x => x.Programacion).WithMany(p => p.Destinatarios)
+                .HasForeignKey(x => x.ProgramacionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Persona).WithMany().HasForeignKey(x => x.PersonaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.ProgramacionId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<ReporteSemaforoConfig>(b =>
+        {
+            b.ToTable("reporte_semaforo_config");
+            b.Property(x => x.IndicadorKey).IsRequired().HasMaxLength(100);
+            b.Property(x => x.UmbralAmarillo).HasColumnType("numeric(18,2)");
+            b.Property(x => x.UmbralRojo).HasColumnType("numeric(18,2)");
+            b.HasIndex(x => new { x.TenantId, x.IndicadorKey }).IsUnique();
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

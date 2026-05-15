@@ -113,6 +113,10 @@ public static class DependencyInjection
         // Modulo 2.15 Documentos y Archivo Digital
         services.AddScoped<Application.Documentos.IDocumentosService, Documentos.DocumentosService>();
 
+        // Modulo 2.16 Reportes e Indicadores (consumidor puro - depende de IndicadoresService cross-modulo)
+        services.AddScoped<Application.Reportes.IIndicadoresService, Reportes.IndicadoresService>();
+        services.AddScoped<Application.Reportes.IReportesService, Reportes.ReportesService>();
+
         // Storage de blobs (logos, fachadas, portadas, futuros adjuntos).
         // Provider seleccionado por config: "R2" en produccion, cualquier otro valor (o ausente)
         // cae a filesystem local (wwwroot/uploads). Asi Development y tests no requieren credenciales.

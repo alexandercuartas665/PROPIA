@@ -1,17 +1,712 @@
 @page "/reportes"
+@rendermode InteractiveServer
+@using Propia.Application.Reportes
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+
 <PageTitle>Reportes e Indicadores - PROPIA</PageTitle>
 
-<ModuloPlaceholder
-    Codigo="2.16"
-    Nombre="Reportes e Indicadores"
-    Descripcion="Informes de gestion para administrador y consejo: financieros, operativos, de convivencia y cumplimiento."
-    Estado="EstadoModulo.EnDiseno"
-    Features='new[] {
-        "Dashboard con KPIs por copropiedad",
-        "Generacion de PDF con QuestPDF (libreria nativa .NET)",
-        "Export a Excel con ClosedXML/EPPlus",
-        "Plantillas configurables: informe mensual al consejo, rendicion anual de cuentas",
-        "Programacion de generacion + envio automatico por email",
-        "Consumido por 1.4 Reportes Cruzados de Capa 1"
-    }'
-    NotaSpec="01. REQUERIMIENTO/Capa 2. Copropiedad/2.16. Reportes-indicadores_v1_0.md" />
+<div class="mb-4 d-flex justify-content-between align-items-start">
+    <div>
+        <h1 class="h3 mb-1 fw-semibold">Reportes e Indicadores</h1>
+        <p class="text-muted mb-0">Modulo 2.16 - centro de inteligencia operativa: catalogo extensible + historial + programaciones</p>
+    </div>
+    <div class="btn-group">
+        <button class="btn btn-sm btn-outline-dark @(_tab == "catalogo" ? "active" : "")" @onclick='() => CambiarTab("catalogo")'>Catalogo</button>
+        <button class="btn btn-sm btn-outline-dark @(_tab == "historial" ? "active" : "")" @onclick='() => CambiarTab("historial")'>Historial</button>
+        <button class="btn btn-sm btn-outline-dark @(_tab == "programaciones" ? "active" : "")" @onclick='() => CambiarTab("programaciones")'>Programaciones</button>
+        <button class="btn btn-sm btn-outline-dark @(_tab == "consejo" ? "active" : "")" @onclick='() => CambiarTab("consejo")'>Vista consejo</button>
+    </div>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <AuthMessage />
+    return;
+}
+
+@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+@if (_resumen is not null && _tab != "consejo")
+{
+    <div class="row g-3 mb-3">
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Catalogo</div><h3 class="mb-0">@_resumen.TotalCatalogo</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Categorias activas</div><h3 class="mb-0 text-info">@_resumen.CategoriasActivas</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Generados ult. mes</div><h3 class="mb-0">@_resumen.GeneradosUltimoMes</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Programaciones activas</div><h3 class="mb-0 text-success">@_resumen.ProgramacionesActivas</h3>
+        </div></div></div>
+    </div>
+}
+
+@* ========================================================== *@
+@if (_tab == "catalogo")
+{
+    <div class="row g-3">
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-header bg-white py-2"><strong class="small">Categorias</strong></div>
+                <div class="list-group list-group-flush small">
+                    <button class="list-group-item list-group-item-action @(_categoriaSeleccionada is null ? "active" : "")"
+                            @onclick="() => FiltrarCategoria(null)">Todas</button>
+                    @if (_categorias is not null)
+                    {
+                        @foreach (var c in _categorias)
+                        {
+                            var cid = c.Id;
+                            <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center @(_categoriaSeleccionada == cid ? "active" : "")"
+                                    @onclick="() => FiltrarCategoria(cid)">
+                                <span>
+                                    @if (!string.IsNullOrEmpty(c.Color))
+                                    {
+                                        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:@c.Color;margin-right:6px;"></span>
+                                    }
+                                    @c.Nombre
+                                </span>
+                                <small>@c.NumeroReportes</small>
+                            </button>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-9">
+            @if (_catalogo is null)
+            {
+                <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+            }
+            else if (_catalogo.Count == 0)
+            {
+                <div class="card p-4 text-center text-muted">Sin reportes en esta categoria.</div>
+            }
+            else
+            {
+                <div class="row g-3">
+                    @foreach (var r in _catalogo)
+                    {
+                        var rid = r.Id;
+                        <div class="col-md-6">
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <h6 class="card-title mb-1">@r.Nombre</h6>
+                                        <small class="text-muted">@r.ModuloOrigen</small>
+                                    </div>
+                                    <p class="card-text small text-muted">@r.Descripcion</p>
+                                    <div class="small mb-2">
+                                        <strong>Audiencia:</strong>
+                                        @string.Join(", ", r.Audiencias.Select(a => a.ToString()))
+                                    </div>
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-sm" style="background: var(--propia-primary); color: white;"
+                                                @onclick="() => AbrirGenerar(rid)">
+                                            Generar
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-dark" @onclick="() => AbrirProgramar(rid)">
+                                            Programar envio
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@* ========================================================== *@
+@if (_tab == "historial")
+{
+    @if (_historial is null)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
+    else if (_historial.Count == 0)
+    {
+        <div class="card p-4 text-center text-muted">Aun no se han generado reportes.</div>
+    }
+    else
+    {
+        <div class="card">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="bg-light small text-muted">
+                    <tr>
+                        <th>Nombre</th><th>Categoria</th><th>Periodo</th><th>Origen</th>
+                        <th>Estado</th><th>Compartido</th><th>Fecha</th><th></th>
+                    </tr>
+                </thead>
+                <tbody class="small">
+                    @foreach (var h in _historial)
+                    {
+                        var hid = h.Id;
+                        <tr style="cursor:pointer;" @onclick="() => AbrirReporte(hid)">
+                            <td><strong>@h.Nombre</strong></td>
+                            <td>@h.Categoria</td>
+                            <td><small>@h.PeriodoInicio.ToString("yyyy-MM-dd") &harr; @h.PeriodoFin.ToString("yyyy-MM-dd")</small></td>
+                            <td>@h.Origen</td>
+                            <td>@RenderEstado(h.Estado)</td>
+                            <td>@(h.CompartidoConsejo ? "Si" : "-")</td>
+                            <td><small>@h.CreadoAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</small></td>
+                            <td>
+                                <button class="btn btn-sm btn-link p-0" @onclick:stopPropagation="true" @onclick="() => Regenerar(hid)">&#x21bb;</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@* ========================================================== *@
+@if (_tab == "programaciones")
+{
+    <div class="d-flex justify-content-end mb-3">
+        <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="() => AbrirProgramar(null)">
+            + Nueva programacion
+        </button>
+    </div>
+    @if (_programaciones is null)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
+    else if (_programaciones.Count == 0)
+    {
+        <div class="card p-4 text-center text-muted">No hay programaciones configuradas.</div>
+    }
+    else
+    {
+        @foreach (var p in _programaciones)
+        {
+            var pid = p.Id;
+            <div class="card mb-2">
+                <div class="card-body py-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>@(string.IsNullOrEmpty(p.Nombre) ? p.CatalogoNombre : p.Nombre)</strong>
+                            <br><small class="text-muted">
+                                @p.Frecuencia &middot; Dia @p.DiaEnvio &middot; @string.Join(" + ", p.Canales) &middot; @p.NumeroDestinatarios destinatarios
+                            </small>
+                            <br><small>Proximo envio: @(p.ProximoEnvio?.ToString("yyyy-MM-dd") ?? "-")</small>
+                        </div>
+                        <div class="d-flex gap-2">
+                            @if (p.Estado == EstadoProgramacion.Activa)
+                            {
+                                <span class="badge bg-success">Activa</span>
+                                <button class="btn btn-sm btn-outline-warning" @onclick="() => PausarProg(pid, true)">Pausar</button>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary">Pausada</span>
+                                <button class="btn btn-sm btn-outline-success" @onclick="() => PausarProg(pid, false)">Reactivar</button>
+                            }
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => EliminarProg(pid)">Eliminar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+}
+
+@* ========================================================== *@
+@if (_tab == "consejo")
+{
+    @if (_vistaConsejo is null)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
+    else
+    {
+        <div class="mb-3 text-muted small">
+            Periodo: @_vistaConsejo.PeriodoInicio.ToString("yyyy-MM-dd") al @_vistaConsejo.PeriodoFin.ToString("yyyy-MM-dd")
+        </div>
+        <div class="row g-3 mb-4">
+            @RenderKpi(_vistaConsejo.Kpis.Recaudo)
+            @RenderKpi(_vistaConsejo.Kpis.Mora)
+            @RenderKpi(_vistaConsejo.Kpis.PqrsdVencidas)
+            @RenderKpi(_vistaConsejo.Kpis.TareasActivas)
+            @RenderKpi(_vistaConsejo.Kpis.MantenimientoPendiente)
+            @RenderKpi(_vistaConsejo.Kpis.ComunicacionesEnviadas)
+        </div>
+
+        <h6 class="mb-2">Reportes compartidos por el administrador</h6>
+        @if (_vistaConsejo.ReportesCompartidos.Count == 0)
+        {
+            <div class="card p-3 text-center text-muted small">Aun no hay reportes compartidos con el consejo.</div>
+        }
+        else
+        {
+            <div class="card">
+                <table class="table mb-0 align-middle">
+                    <thead class="bg-light small text-muted">
+                        <tr><th>Reporte</th><th>Categoria</th><th>Periodo</th><th>Compartido</th><th></th></tr>
+                    </thead>
+                    <tbody class="small">
+                        @foreach (var r in _vistaConsejo.ReportesCompartidos)
+                        {
+                            var rid = r.Id;
+                            <tr>
+                                <td><strong>@r.Nombre</strong></td>
+                                <td>@r.Categoria</td>
+                                <td><small>@r.PeriodoInicio.ToString("yyyy-MM-dd") &harr; @r.PeriodoFin.ToString("yyyy-MM-dd")</small></td>
+                                <td><small>@r.CompartidoAt?.LocalDateTime.ToString("yyyy-MM-dd")</small></td>
+                                <td><button class="btn btn-sm btn-link p-0" @onclick="() => AbrirReporte(rid)">Ver</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+}
+
+@* ===== Modal generar reporte ===== *@
+@if (_showGenerar && _catalogoActivoId is not null)
+{
+    var rep = _catalogo?.FirstOrDefault(r => r.Id == _catalogoActivoId);
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title">Generar reporte</h5>
+                        <small class="text-muted">@rep?.Nombre</small>
+                    </div>
+                    <button class="btn-close" @onclick="() => _showGenerar = false"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="small text-muted">Configura el periodo y genera. El reporte queda en el historial y puede compartirse con el consejo.</p>
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <label class="form-label small">Desde *</label>
+                            <input type="date" class="form-control form-control-sm" @bind="_genDesde" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Hasta *</label>
+                            <input type="date" class="form-control form-control-sm" @bind="_genHasta" />
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _showGenerar = false">Cancelar</button>
+                    <button class="btn btn-sm" style="background: var(--propia-primary); color: white;"
+                            @onclick="ConfirmarGenerar" disabled="@_busy">
+                        @(_busy ? "Generando..." : "Generar")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* ===== Modal nueva programacion ===== *@
+@if (_showProgramar)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Nueva programacion</h5>
+                    <button class="btn-close" @onclick="() => _showProgramar = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-2">
+                        <div class="col-md-12">
+                            <label class="form-label small">Reporte *</label>
+                            <select class="form-select form-select-sm" @bind="_progCatalogoId">
+                                <option value="">Seleccionar...</option>
+                                @if (_catalogo is not null)
+                                {
+                                    @foreach (var r in _catalogo)
+                                    {
+                                        <option value="@r.Id">@r.Nombre</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small">Nombre descriptivo (opcional)</label>
+                            <input class="form-control form-control-sm" @bind="_progNombre" @bind:event="oninput" maxlength="200" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Frecuencia *</label>
+                            <select class="form-select form-select-sm" @bind="_progFrecuencia">
+                                @foreach (var f in Enum.GetValues<FrecuenciaProgramacion>()) { <option value="@f">@f</option> }
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Dia del mes (1-28) *</label>
+                            <input type="number" min="1" max="28" class="form-control form-control-sm" @bind="_progDia" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Periodo a cubrir</label>
+                            <select class="form-select form-select-sm" @bind="_progPeriodo">
+                                @foreach (var p in Enum.GetValues<PeriodoQueCubre>()) { <option value="@p">@p</option> }
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Formato</label>
+                            <select class="form-select form-select-sm" @bind="_progFormato">
+                                @foreach (var fo in Enum.GetValues<FormatoReporte>()) { <option value="@fo">@fo</option> }
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Canales</label>
+                            <div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox" id="chkEmail" @bind="_progEmail" />
+                                    <label class="form-check-label" for="chkEmail">Email</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox" id="chkWa" @bind="_progWhatsapp" />
+                                    <label class="form-check-label" for="chkWa">WhatsApp</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small">Destinatarios (un email por linea)</label>
+                            <textarea class="form-control form-control-sm" rows="3"
+                                      @bind="_progDestinatarios" @bind:event="oninput"
+                                      placeholder="consejo@copropiedad.co"></textarea>
+                            <small class="text-muted">Ingresa un email por linea. WhatsApp se enviara al numero registrado de cada persona en el directorio.</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _showProgramar = false">Cancelar</button>
+                    <button class="btn btn-sm" style="background: var(--propia-primary); color: white;"
+                            @onclick="ConfirmarProgramar" disabled="@_busy">
+                        @(_busy ? "Guardando..." : "Programar")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* ===== Modal ficha reporte generado ===== *@
+@if (_ficha is not null)
+{
+    var f = _ficha;
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title">@f.Nombre</h5>
+                        <small class="text-muted">@f.Categoria &middot; @RenderEstado(f.Estado) &middot; @f.PeriodoInicio.ToString("yyyy-MM-dd") &harr; @f.PeriodoFin.ToString("yyyy-MM-dd")</small>
+                    </div>
+                    <button class="btn-close" @onclick="() => _ficha = null"></button>
+                </div>
+                <div class="modal-body">
+                    @if (!string.IsNullOrEmpty(f.ErrorMensaje))
+                    {
+                        <div class="alert alert-danger py-2 small">@f.ErrorMensaje</div>
+                    }
+                    @if (!string.IsNullOrEmpty(f.ResultadoJson))
+                    {
+                        <div class="card bg-light p-3 mb-3">
+                            <h6 class="mb-2">Resultado del reporte</h6>
+                            <pre style="max-height:50vh;overflow:auto;font-size:11px;">@f.ResultadoJson</pre>
+                        </div>
+                    }
+                    <div class="d-flex gap-2">
+                        @if (f.Estado == EstadoReporteGenerado.Listo && !f.CompartidoConsejo)
+                        {
+                            <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="() => Compartir(f.Id, true)">Compartir con consejo</button>
+                        }
+                        else if (f.CompartidoConsejo)
+                        {
+                            <button class="btn btn-sm btn-outline-dark" @onclick="() => Compartir(f.Id, false)">Dejar de compartir</button>
+                        }
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => Regenerar(f.Id)">Regenerar</button>
+                    </div>
+                    <div class="alert alert-info mt-3 mb-0 py-2 small">
+                        <strong>MVP:</strong> el resultado se entrega como JSON estructurado para integracion con visor/PDF. La exportacion a PDF con logo (RN-12) y a Excel se habilita en Fase 2 junto con el motor IA T.1 y el despacho automatico T.2.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
+    .kpi-card { border-radius: 12px; border: 2px solid; }
+    .kpi-card.verde { border-color: #22c55e; }
+    .kpi-card.amarillo { border-color: #f59e0b; }
+    .kpi-card.rojo { border-color: #ef4444; }
+    .kpi-card.neutro { border-color: #94a3b8; }
+</style>
+
+@code {
+    private string? _jwt;
+    private string _tab = "catalogo";
+    private bool _busy;
+    private string? _msg;
+    private string _msgClass = "alert-info";
+
+    private ResumenReportesDto? _resumen;
+    private List<CategoriaReporteDto>? _categorias;
+    private List<CatalogoReporteDto>? _catalogo;
+    private List<ReporteGeneradoListaDto>? _historial;
+    private List<ProgramacionListaDto>? _programaciones;
+    private VistaConsejoDto? _vistaConsejo;
+    private ReporteGeneradoDetalleDto? _ficha;
+
+    private Guid? _categoriaSeleccionada;
+
+    // Generar
+    private bool _showGenerar;
+    private Guid? _catalogoActivoId;
+    private DateOnly _genDesde = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30));
+    private DateOnly _genHasta = DateOnly.FromDateTime(DateTime.UtcNow);
+
+    // Programar
+    private bool _showProgramar;
+    private Guid? _progCatalogoId;
+    private string? _progNombre;
+    private FrecuenciaProgramacion _progFrecuencia = FrecuenciaProgramacion.Mensual;
+    private int _progDia = 5;
+    private PeriodoQueCubre _progPeriodo = PeriodoQueCubre.MesAnterior;
+    private FormatoReporte _progFormato = FormatoReporte.Pdf;
+    private bool _progEmail = true;
+    private bool _progWhatsapp;
+    private string? _progDestinatarios;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarTodoAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task CargarTodoAsync()
+    {
+        try
+        {
+            var http = Auth();
+            _resumen = await http.GetFromJsonAsync<ResumenReportesDto>("/api/reportes/resumen");
+            _categorias = await http.GetFromJsonAsync<List<CategoriaReporteDto>>("/api/reportes/categorias");
+            await CargarCatalogoAsync();
+            await CargarHistorialAsync();
+            await CargarProgramacionesAsync();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task CambiarTab(string tab)
+    {
+        _tab = tab;
+        if (tab == "consejo") await CargarVistaConsejoAsync();
+        else if (tab == "historial") await CargarHistorialAsync();
+        else if (tab == "programaciones") await CargarProgramacionesAsync();
+    }
+
+    private async Task CargarCatalogoAsync()
+    {
+        var url = "/api/reportes/catalogo" + (_categoriaSeleccionada is { } cat ? $"?categoriaId={cat}" : "");
+        _catalogo = await Auth().GetFromJsonAsync<List<CatalogoReporteDto>>(url);
+    }
+
+    private async Task CargarHistorialAsync()
+    {
+        _historial = await Auth().GetFromJsonAsync<List<ReporteGeneradoListaDto>>("/api/reportes/historial");
+    }
+
+    private async Task CargarProgramacionesAsync()
+    {
+        _programaciones = await Auth().GetFromJsonAsync<List<ProgramacionListaDto>>("/api/reportes/programaciones");
+    }
+
+    private async Task CargarVistaConsejoAsync()
+    {
+        _vistaConsejo = await Auth().GetFromJsonAsync<VistaConsejoDto>("/api/reportes/vista-consejo");
+    }
+
+    private async Task FiltrarCategoria(Guid? id)
+    {
+        _categoriaSeleccionada = id;
+        await CargarCatalogoAsync();
+    }
+
+    private void AbrirGenerar(Guid catalogoId)
+    {
+        _catalogoActivoId = catalogoId;
+        _genDesde = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30));
+        _genHasta = DateOnly.FromDateTime(DateTime.UtcNow);
+        _showGenerar = true;
+    }
+
+    private async Task ConfirmarGenerar()
+    {
+        if (_catalogoActivoId is null) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var req = new GenerarReporteRequest(_catalogoActivoId.Value, _genDesde, _genHasta, null);
+            var resp = await Auth().PostAsJsonAsync("/api/reportes/generar", req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return;
+            }
+            var det = await resp.Content.ReadFromJsonAsync<ReporteGeneradoDetalleDto>();
+            _showGenerar = false;
+            _ficha = det;
+            _tab = "historial";
+            await CargarHistorialAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private void AbrirProgramar(Guid? catalogoId)
+    {
+        _progCatalogoId = catalogoId;
+        _progNombre = null;
+        _progFrecuencia = FrecuenciaProgramacion.Mensual;
+        _progDia = 5;
+        _progPeriodo = PeriodoQueCubre.MesAnterior;
+        _progFormato = FormatoReporte.Pdf;
+        _progEmail = true;
+        _progWhatsapp = false;
+        _progDestinatarios = null;
+        _showProgramar = true;
+    }
+
+    private async Task ConfirmarProgramar()
+    {
+        if (_progCatalogoId is null) { _msg = "Selecciona un reporte"; _msgClass = "alert-danger"; return; }
+        var canales = new List<string>();
+        if (_progEmail) canales.Add("EMAIL");
+        if (_progWhatsapp) canales.Add("WHATSAPP");
+        if (canales.Count == 0) { _msg = "Selecciona al menos un canal"; _msgClass = "alert-danger"; return; }
+
+        var emails = (_progDestinatarios ?? "")
+            .Split(new[] { '\n', ',' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(e => e.Contains('@'))
+            .Distinct()
+            .ToList();
+        if (emails.Count == 0) { _msg = "Agrega al menos un email"; _msgClass = "alert-danger"; return; }
+
+        _busy = true; _msg = null;
+        try
+        {
+            var dest = emails.Select(e => new DestinatarioInput(null, e, null)).ToList();
+            var req = new CrearProgramacionRequest(
+                _progCatalogoId.Value, _progNombre, _progFrecuencia, _progDia, _progPeriodo,
+                _progFormato, canales, null, dest);
+            var resp = await Auth().PostAsJsonAsync("/api/reportes/programaciones", req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return;
+            }
+            _showProgramar = false;
+            _tab = "programaciones";
+            _msg = "Programacion creada"; _msgClass = "alert-success";
+            await CargarProgramacionesAsync();
+            await CargarTodoAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task PausarProg(Guid id, bool pausar)
+    {
+        var resp = await Auth().PutAsync($"/api/reportes/programaciones/{id}/pausar?pausar={pausar}", null);
+        if (resp.IsSuccessStatusCode) await CargarProgramacionesAsync();
+    }
+
+    private async Task EliminarProg(Guid id)
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", "Eliminar esta programacion?")) return;
+        var resp = await Auth().DeleteAsync($"/api/reportes/programaciones/{id}");
+        if (resp.IsSuccessStatusCode) { await CargarProgramacionesAsync(); await CargarTodoAsync(); }
+    }
+
+    private async Task AbrirReporte(Guid id)
+    {
+        _ficha = await Auth().GetFromJsonAsync<ReporteGeneradoDetalleDto>($"/api/reportes/{id}");
+    }
+
+    private async Task Compartir(Guid id, bool compartir)
+    {
+        var resp = await Auth().PutAsync($"/api/reportes/{id}/compartir?compartir={compartir}", null);
+        if (resp.IsSuccessStatusCode)
+        {
+            await AbrirReporte(id);
+            await CargarHistorialAsync();
+        }
+        else
+        {
+            _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger";
+        }
+    }
+
+    private async Task Regenerar(Guid id)
+    {
+        var resp = await Auth().PostAsync($"/api/reportes/{id}/regenerar", null);
+        if (resp.IsSuccessStatusCode)
+        {
+            var det = await resp.Content.ReadFromJsonAsync<ReporteGeneradoDetalleDto>();
+            _ficha = det;
+            await CargarHistorialAsync();
+        }
+    }
+
+    private MarkupString RenderKpi(KpiDto kpi)
+    {
+        var color = kpi.Semaforo switch
+        {
+            "verde" => "#22c55e",
+            "amarillo" => "#f59e0b",
+            "rojo" => "#ef4444",
+            _ => "#94a3b8"
+        };
+        var valorTxt = kpi.Unidad == "%" ? $"{kpi.Valor:0.#}%" :
+                       kpi.Unidad == "COP" ? $"${kpi.Valor:N0}" :
+                       $"{kpi.Valor:0.#} {kpi.Unidad}";
+        return new MarkupString($@"
+            <div class='col-md-4 col-lg-2 mb-2'>
+                <div class='card kpi-card {kpi.Semaforo}'>
+                    <div class='card-body py-3 text-center'>
+                        <div class='text-muted small'>{kpi.Etiqueta}</div>
+                        <h3 class='mb-0' style='color:{color}'>{valorTxt}</h3>
+                    </div>
+                </div>
+            </div>");
+    }
+
+    private MarkupString RenderEstado(EstadoReporteGenerado e) => e switch
+    {
+        EstadoReporteGenerado.Generando => new MarkupString("<span class='badge bg-warning text-dark'>Generando</span>"),
+        EstadoReporteGenerado.Listo => new MarkupString("<span class='badge bg-success'>Listo</span>"),
+        EstadoReporteGenerado.Error => new MarkupString("<span class='badge bg-danger'>Error</span>"),
+        _ => new MarkupString("")
+    };
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}
