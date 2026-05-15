@@ -119,6 +119,15 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<Condonacion> Condonaciones => Set<Condonacion>();
     public DbSet<CarteraHistorial> CarteraHistorial => Set<CarteraHistorial>();
 
+    // Modulo 2.9 PQRSD y Convivencia (TenantEntity con RLS)
+    public DbSet<PqrsdExpediente> PqrsdExpedientes => Set<PqrsdExpediente>();
+    public DbSet<PqrsdCategoria> PqrsdCategorias => Set<PqrsdCategoria>();
+    public DbSet<PqrsdAdjunto> PqrsdAdjuntos => Set<PqrsdAdjunto>();
+    public DbSet<PqrsdHistorialEstado> PqrsdHistorialEstados => Set<PqrsdHistorialEstado>();
+    public DbSet<PqrsdConfiguracionPlazo> PqrsdConfiguracionPlazos => Set<PqrsdConfiguracionPlazo>();
+    public DbSet<PqrsdComiteSesion> PqrsdComiteSesiones => Set<PqrsdComiteSesion>();
+    public DbSet<PqrsdComiteMiembroSesion> PqrsdComiteMiembros => Set<PqrsdComiteMiembroSesion>();
+
     // Modulo 0.2 - Billing y Suscripciones (todo GLOBAL, sin tenant_id)
     public DbSet<Plan> Planes => Set<Plan>();
     public DbSet<Cupon> Cupones => Set<Cupon>();
@@ -900,6 +909,87 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.DatosAdicionales).HasColumnType("text");
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.TenantId, x.UnidadPrivadaId, x.OcurridoAt });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // -------------------- Modulo 2.9 PQRSD y Convivencia --------------------
+
+        modelBuilder.Entity<PqrsdCategoria>(b =>
+        {
+            b.ToTable("pqrsd_categorias");
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(100);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Nombre }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PqrsdConfiguracionPlazo>(b =>
+        {
+            b.ToTable("pqrsd_configuracion_plazos");
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Tipo }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PqrsdExpediente>(b =>
+        {
+            b.ToTable("pqrsd_expedientes");
+            b.Property(x => x.NumeroRadicado).IsRequired().HasMaxLength(30);
+            b.Property(x => x.Descripcion).IsRequired().HasMaxLength(2000);
+            b.Property(x => x.RespuestaAdmin).HasMaxLength(4000);
+            b.Property(x => x.InconformidadTexto).HasMaxLength(2000);
+            b.Property(x => x.RespuestaDefinitiva).HasMaxLength(4000);
+            b.HasOne(x => x.Categoria).WithMany().HasForeignKey(x => x.CategoriaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(x => x.RadicadorPersona).WithMany().HasForeignKey(x => x.RadicadorPersonaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.NumeroRadicado }).IsUnique();
+            b.HasIndex(x => new { x.TenantId, x.Estado });
+            b.HasIndex(x => new { x.TenantId, x.Tipo });
+            b.HasIndex(x => x.RadicadorPersonaId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PqrsdAdjunto>(b =>
+        {
+            b.ToTable("pqrsd_adjuntos");
+            b.Property(x => x.NombreArchivo).IsRequired().HasMaxLength(255);
+            b.Property(x => x.TipoMime).IsRequired().HasMaxLength(100);
+            b.Property(x => x.UrlStorage).IsRequired().HasMaxLength(1000);
+            b.HasOne(x => x.Expediente).WithMany(e => e.Adjuntos).HasForeignKey(x => x.ExpedienteId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.ExpedienteId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PqrsdHistorialEstado>(b =>
+        {
+            b.ToTable("pqrsd_historial_estados");
+            b.Property(x => x.Nota).HasMaxLength(500);
+            b.HasOne(x => x.Expediente).WithMany(e => e.Historial).HasForeignKey(x => x.ExpedienteId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.ExpedienteId, x.CreatedAt });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PqrsdComiteSesion>(b =>
+        {
+            b.ToTable("pqrsd_comite_sesiones");
+            b.Property(x => x.EnlaceReunion).HasMaxLength(500);
+            b.Property(x => x.BorradorActa).HasColumnType("text");
+            b.Property(x => x.ActaFinal).HasColumnType("text");
+            b.HasOne(x => x.Expediente).WithMany().HasForeignKey(x => x.ExpedienteId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.ExpedienteId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PqrsdComiteMiembroSesion>(b =>
+        {
+            b.ToTable("pqrsd_comite_miembros");
+            b.HasOne(x => x.Sesion).WithMany(s => s.Miembros).HasForeignKey(x => x.SesionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Persona).WithMany().HasForeignKey(x => x.PersonaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.SesionId, x.PersonaId }).IsUnique();
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

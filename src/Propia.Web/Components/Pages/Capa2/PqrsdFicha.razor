@@ -1,0 +1,419 @@
+@page "/pqrsd/{Id:guid}"
+@rendermode InteractiveServer
+@using Propia.Application.Pqrsd
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<PageTitle>Expediente - PROPIA</PageTitle>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <div class="card border-warning p-4"><h5>Necesitas iniciar sesion</h5><a class="btn btn-dark mt-2" href="/login">Iniciar sesion</a></div>
+    return;
+}
+
+<div class="mb-3"><a href="/pqrsd" class="text-decoration-none text-muted small">&larr; PQRSD</a></div>
+
+@if (_x is null)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    return;
+}
+
+@* Hero card *@
+<div class="card mb-3" style="border-left: 4px solid @SemaforoColor(_x.Semaforo);">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start">
+            <div>
+                <div class="text-muted small">@_x.NumeroRadicado &middot; @_x.Tipo &middot; @_x.CategoriaNombre</div>
+                <h3 class="mb-1">@(_x.IdentidadReservada ? "[Identidad reservada]" : _x.RadicadorNombre ?? "")</h3>
+                <div class="mb-1">
+                    @RenderEstado(_x.Estado)
+                    @RenderSemaforo(_x.Semaforo)
+                    @if (_x.TutelaActiva) { <span class="badge bg-danger ms-1">Tutela activa</span> }
+                    @if (_x.IdentidadReservada) { <span class="badge bg-secondary ms-1">Reserva</span> }
+                </div>
+                <div class="small text-muted">
+                    Vence @_x.FechaVencimiento.ToString("yyyy-MM-dd")
+                    @if (_x.DiasHastaVencimiento < 0)
+                    {
+                        <span class="text-danger fw-bold ms-1">(vencida hace @Math.Abs(_x.DiasHastaVencimiento) dias)</span>
+                    }
+                    else { <span class="ms-1">(@_x.DiasHastaVencimiento dias)</span> }
+                    &middot; Radicada @_x.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")
+                </div>
+            </div>
+            <div class="text-end">
+                @if (_x.Estado == EstadoPqrsd.Recibida)
+                {
+                    <button class="btn btn-sm" style="background: var(--propia-primary); color:white;" @onclick="Tomar" disabled="@_busy">Tomar expediente</button>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+<div class="row g-3">
+    <div class="col-md-7">
+        @* Descripcion *@
+        <div class="card mb-3"><div class="card-body">
+            <h6 class="mb-2">Descripcion</h6>
+            <p class="small mb-0">@_x.Descripcion</p>
+        </div></div>
+
+        @* Respuesta del admin *@
+        @if (_x.RespuestaAdmin is not null)
+        {
+            <div class="card mb-3 border-info"><div class="card-body">
+                <h6 class="mb-2">Respuesta del administrador
+                    <small class="text-muted">@_x.RespuestaAdminAt?.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</small>
+                </h6>
+                <p class="small mb-0">@_x.RespuestaAdmin</p>
+            </div></div>
+        }
+
+        @* Inconformidad *@
+        @if (_x.InconformidadTexto is not null)
+        {
+            <div class="card mb-3 border-warning"><div class="card-body">
+                <h6 class="mb-2">Inconformidad manifestada
+                    <small class="text-muted">@_x.InconformidadAt?.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</small>
+                </h6>
+                <p class="small mb-0">@_x.InconformidadTexto</p>
+            </div></div>
+        }
+
+        @* Respuesta definitiva *@
+        @if (_x.RespuestaDefinitiva is not null)
+        {
+            <div class="card mb-3 border-success"><div class="card-body">
+                <h6 class="mb-2">Respuesta definitiva
+                    <small class="text-muted">@_x.RespuestaDefinitivaAt?.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</small>
+                </h6>
+                <p class="small mb-0">@_x.RespuestaDefinitiva</p>
+            </div></div>
+        }
+
+        @* Comite de Convivencia *@
+        @if (_x.Comite is not null)
+        {
+            <div class="card mb-3"><div class="card-body">
+                <h6 class="mb-2">Comite de Convivencia <span class="badge bg-warning text-dark">@_x.Comite.Modalidad</span></h6>
+                <div class="small mb-2">
+                    @if (_x.Comite.FechaSesion.HasValue)
+                    {
+                        <div>Sesion @_x.Comite.FechaSesion.Value.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</div>
+                    }
+                    <div>Miembros: @string.Join(", ", _x.Comite.Miembros.Select(m => m.Nombre))</div>
+                    @if (_x.Comite.Resultado.HasValue) { <div class="mt-1"><strong>Resultado:</strong> @_x.Comite.Resultado</div> }
+                </div>
+                @if (!string.IsNullOrEmpty(_x.Comite.ActaFinal))
+                {
+                    <hr class="my-2" />
+                    <div class="small"><strong>Acta:</strong></div>
+                    <p class="small mb-0">@_x.Comite.ActaFinal</p>
+                }
+            </div></div>
+        }
+    </div>
+
+    <div class="col-md-5">
+        @* Acciones disponibles *@
+        @if (_x.Estado != EstadoPqrsd.Cerrada && _x.Estado != EstadoPqrsd.ViaInternaAgotada)
+        {
+            <div class="card mb-3"><div class="card-body">
+                <h6 class="mb-2">Acciones</h6>
+                @if (_x.Estado == EstadoPqrsd.EnGestion || _x.Estado == EstadoPqrsd.Recibida)
+                {
+                    <button class="btn btn-sm" style="background: var(--propia-primary); color:white;" @onclick="() => _showResponder = true">Responder</button>
+                }
+                @if (_x.Tipo == TipoPqrsd.Denuncia && _x.Comite is null)
+                {
+                    <button class="btn btn-sm btn-outline-warning ms-1" @onclick="() => _showComite = true">Escalar a Comite</button>
+                }
+                @if (!_x.TutelaActiva)
+                {
+                    <button class="btn btn-sm btn-outline-danger ms-1" @onclick="() => _showTutela = true">Activar Tutela</button>
+                }
+                <button class="btn btn-sm btn-outline-success ms-1" @onclick="() => _showCerrar = true">Cerrar definitivo</button>
+            </div></div>
+        }
+
+        @* Adjuntos *@
+        @if (_x.Adjuntos.Any())
+        {
+            <div class="card mb-3"><div class="card-body">
+                <h6 class="mb-2">Adjuntos (@_x.Adjuntos.Count)</h6>
+                <ul class="list-unstyled small mb-0">
+                    @foreach (var a in _x.Adjuntos)
+                    {
+                        <li>@a.NombreArchivo <small class="text-muted">(@(a.TamanioBytes / 1024) KB)</small></li>
+                    }
+                </ul>
+            </div></div>
+        }
+
+        @* Historial / linea de tiempo *@
+        <div class="card"><div class="card-body">
+            <h6 class="mb-2">Linea de tiempo (@_x.Historial.Count)</h6>
+            <ul class="list-unstyled small mb-0">
+                @foreach (var h in _x.Historial.Take(20))
+                {
+                    <li class="mb-1">
+                        <span class="text-muted">@h.CreatedAt.LocalDateTime.ToString("MM-dd HH:mm")</span>
+                        &middot; <span class="badge bg-light text-dark border">@h.EstadoNuevo</span>
+                        @if (!string.IsNullOrEmpty(h.Nota)) { <span>&middot; @h.Nota</span> }
+                    </li>
+                }
+            </ul>
+        </div></div>
+    </div>
+</div>
+
+@* Modal responder *@
+@if (_showResponder)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title">@(_x.InconformidadTexto is not null ? "Respuesta definitiva" : "Responder")</h5>
+                    <button type="button" class="btn-close" @onclick="() => _showResponder = false"></button>
+                </div>
+                <div class="modal-body">
+                    <label class="form-label small">Texto de respuesta (minimo 20 caracteres)</label>
+                    <textarea class="form-control form-control-sm" rows="5" @bind="_textoRespuesta"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _showResponder = false">Cancelar</button>
+                    <button class="btn btn-sm" style="background: var(--propia-primary); color:white;" @onclick="Responder"
+                            disabled="@(_busy || (_textoRespuesta?.Trim().Length ?? 0) < 20)">Enviar respuesta</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Modal Tutela *@
+@if (_showTutela)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title text-danger">Activar marca de Tutela</h5>
+                    <button type="button" class="btn-close" @onclick="() => _showTutela = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning py-2 small">Esta accion marca el expediente con prioridad critica. Notifica al Consejo y queda registrada en historial inmutable.</div>
+                    <label class="form-label small">Justificacion *</label>
+                    <textarea class="form-control form-control-sm" rows="3" @bind="_justificacionTutela"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _showTutela = false">Cancelar</button>
+                    <button class="btn btn-sm btn-danger" @onclick="ActivarTutela"
+                            disabled="@(_busy || string.IsNullOrWhiteSpace(_justificacionTutela))">Confirmar Tutela</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Modal escalar a comite *@
+@if (_showComite)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title">Escalar al Comite de Convivencia</h5>
+                    <button type="button" class="btn-close" @onclick="() => _showComite = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info py-2 small">El Comite no impone sanciones (Art. 58 Par. 2 Ley 675/2001). Su rol es exclusivamente mediador.</div>
+                    <div class="row g-2">
+                        <div class="col-md-6"><label class="form-label small">Modalidad</label>
+                            <select class="form-select form-select-sm" @bind="_modalidadComite">
+                                @foreach (var m in Enum.GetValues<ModalidadComite>()) { <option value="@m">@m</option> }
+                            </select></div>
+                        <div class="col-md-6"><label class="form-label small">Fecha sesion (opcional)</label>
+                            <input type="datetime-local" class="form-control form-control-sm" @bind="_fechaComite" /></div>
+                        <div class="col-md-12"><label class="form-label small">Enlace reunion (opcional)</label>
+                            <input class="form-control form-control-sm" @bind="_enlaceComite" placeholder="https://meet.google.com/..." /></div>
+                        <div class="col-md-12"><label class="form-label small">Miembros (separar por coma) *</label>
+                            <textarea class="form-control form-control-sm" rows="2" @bind="_miembrosTexto" placeholder="UUIDs de las personas del comite separados por coma"></textarea>
+                            <small class="text-muted">En MVP introduce IDs de Persona separados por coma.</small></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _showComite = false">Cancelar</button>
+                    <button class="btn btn-sm btn-warning" @onclick="EscalarAComite" disabled="@_busy">Escalar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Modal cerrar definitivo *@
+@if (_showCerrar)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title">Cerrar definitivamente</h5>
+                    <button type="button" class="btn-close" @onclick="() => _showCerrar = false"></button>
+                </div>
+                <div class="modal-body">
+                    <label class="form-label small">Respuesta definitiva *</label>
+                    <textarea class="form-control form-control-sm" rows="4" @bind="_textoCierre"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _showCerrar = false">Cancelar</button>
+                    <button class="btn btn-sm btn-success" @onclick="CerrarDefinitivo"
+                            disabled="@(_busy || string.IsNullOrWhiteSpace(_textoCierre))">Cerrar expediente</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private string? _jwt;
+    private bool _busy;
+    private string? _msg; private string _msgClass = "alert-info";
+    private PqrsdExpedienteDetalleDto? _x;
+
+    private bool _showResponder;
+    private string? _textoRespuesta;
+    private bool _showTutela;
+    private string? _justificacionTutela;
+    private bool _showComite;
+    private ModalidadComite _modalidadComite = ModalidadComite.Virtual;
+    private DateTime? _fechaComite = DateTime.UtcNow.AddDays(3);
+    private string? _enlaceComite;
+    private string? _miembrosTexto;
+    private bool _showCerrar;
+    private string? _textoCierre;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task CargarAsync()
+    {
+        try { _x = await Auth().GetFromJsonAsync<PqrsdExpedienteDetalleDto>($"/api/pqrsd/{Id}"); }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task Tomar()
+    {
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{Id}/tomar", new TomarExpedienteRequest(null));
+            if (resp.IsSuccessStatusCode) await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task Responder()
+    {
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{Id}/responder", new ResponderExpedienteRequest(_textoRespuesta!));
+            if (resp.IsSuccessStatusCode) { _showResponder = false; _textoRespuesta = null; await CargarAsync(); }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ActivarTutela()
+    {
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{Id}/tutela", new ActivarTutelaRequest(_justificacionTutela!));
+            if (resp.IsSuccessStatusCode) { _showTutela = false; _justificacionTutela = null; await CargarAsync(); }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task EscalarAComite()
+    {
+        if (string.IsNullOrWhiteSpace(_miembrosTexto)) { _msg = "Debes ingresar al menos un miembro."; _msgClass = "alert-danger"; return; }
+        var ids = _miembrosTexto.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(s => Guid.TryParse(s, out _))
+            .Select(Guid.Parse).ToList();
+        if (ids.Count == 0) { _msg = "Ningun ID valido."; _msgClass = "alert-danger"; return; }
+
+        _busy = true;
+        try
+        {
+            DateTimeOffset? fecha = _fechaComite.HasValue ? new DateTimeOffset(_fechaComite.Value, TimeSpan.Zero) : null;
+            var req = new EscalarAComiteRequest(fecha, _modalidadComite, _enlaceComite, ids);
+            var resp = await Auth().PostAsJsonAsync($"/api/pqrsd/{Id}/comite", req);
+            if (resp.IsSuccessStatusCode) { _showComite = false; await CargarAsync(); }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task CerrarDefinitivo()
+    {
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{Id}/cerrar", new CerrarDefinitivoRequest(_textoCierre!));
+            if (resp.IsSuccessStatusCode) { _showCerrar = false; _textoCierre = null; await CargarAsync(); }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private static string SemaforoColor(SemaforoPqrsd s) => s switch
+    {
+        SemaforoPqrsd.Verde => "#22c55e",
+        SemaforoPqrsd.Amarillo => "#f59e0b",
+        SemaforoPqrsd.Rojo => "#ef4444",
+        SemaforoPqrsd.Negro => "#1f2937",
+        SemaforoPqrsd.TutelaActiva => "#dc2626",
+        _ => "#94a3b8"
+    };
+
+    private static MarkupString RenderSemaforo(SemaforoPqrsd s) =>
+        new MarkupString($"<span class='badge ms-1' style='background:{SemaforoColor(s)}; color:white;'>{s}</span>");
+
+    private MarkupString RenderEstado(EstadoPqrsd e) => e switch
+    {
+        EstadoPqrsd.Recibida => new MarkupString("<span class='badge bg-light text-dark border'>Recibida</span>"),
+        EstadoPqrsd.EnGestion => new MarkupString("<span class='badge bg-info text-dark'>En gestion</span>"),
+        EstadoPqrsd.Respondida => new MarkupString("<span class='badge bg-warning text-dark'>Respondida</span>"),
+        EstadoPqrsd.Cerrada => new MarkupString("<span class='badge bg-success'>Cerrada</span>"),
+        EstadoPqrsd.ViaInternaAgotada => new MarkupString("<span class='badge bg-secondary'>Via interna agotada</span>"),
+        _ => new MarkupString("")
+    };
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

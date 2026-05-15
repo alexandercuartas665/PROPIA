@@ -1,0 +1,199 @@
+@page "/pqrsd/nueva"
+@rendermode InteractiveServer
+@using Propia.Application.Pqrsd
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<PageTitle>Radicar PQRSD - PROPIA</PageTitle>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <div class="card border-warning p-4"><h5>Necesitas iniciar sesion</h5><a class="btn btn-dark mt-2" href="/login">Iniciar sesion</a></div>
+    return;
+}
+
+<div class="mb-3"><a href="/pqrsd" class="text-decoration-none text-muted small">&larr; PQRSD</a></div>
+
+<div class="card mb-3"><div class="card-body">
+    <h3 class="mb-1">Nueva solicitud</h3>
+    <p class="text-muted small mb-3">Paso @_paso de 3</p>
+    <div class="progress mb-3" style="height: 6px;">
+        <div class="progress-bar" style="width: @(_paso * 33.33)%; background: var(--propia-primary);"></div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+    @if (_paso == 1)
+    {
+        <h5 class="mb-3">¿Que tipo de solicitud quieres radicar?</h5>
+        <div class="row g-2">
+            @foreach (var t in Enum.GetValues<TipoPqrsd>())
+            {
+                var tipo = t;
+                var seleccionado = _tipo == tipo;
+                <div class="col-md-6 col-lg-4">
+                    <button class="btn w-100 text-start p-3 @(seleccionado ? "border-primary border-2" : "border")"
+                            style="@(seleccionado ? "background:#eef2ff;" : "background:white;")"
+                            @onclick="() => _tipo = tipo">
+                        <strong>@RenderTipoTitulo(tipo)</strong>
+                        <div class="text-muted small mt-1">@RenderTipoDescripcion(tipo)</div>
+                    </button>
+                </div>
+            }
+        </div>
+    }
+    else if (_paso == 2)
+    {
+        <h5 class="mb-3">Categoria y descripcion</h5>
+        <div class="row g-2">
+            <div class="col-md-12"><label class="form-label small">Categoria *</label>
+                <select class="form-select form-select-sm" @bind="_categoriaId">
+                    <option value="">Selecciona...</option>
+                    @if (_categorias is not null)
+                    {
+                        @foreach (var c in _categorias.Where(c => c.Activa)) { <option value="@c.Id">@c.Nombre</option> }
+                    }
+                </select></div>
+            <div class="col-md-12"><label class="form-label small">Descripcion * (minimo 20 caracteres)</label>
+                <textarea class="form-control form-control-sm" rows="6" @bind="_descripcion" placeholder="Describe tu solicitud con el mayor detalle posible..."></textarea>
+                <small class="text-muted">@(_descripcion?.Length ?? 0) / 2000 caracteres</small></div>
+            @if (_tipo == TipoPqrsd.Denuncia)
+            {
+                <div class="col-md-12">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="reserva" @bind="_reserva">
+                        <label class="form-check-label small" for="reserva">
+                            <strong>Activar reserva de identidad</strong>
+                        </label>
+                    </div>
+                    <p class="text-muted small mt-1 ms-4">
+                        Tu identidad quedara protegida. La administracion recibira tu denuncia sin saber que fuiste tu.
+                        El sistema si registra tu identidad de forma segura para proteger tus derechos (Habeas Data Ley 1581/2012).
+                    </p>
+                </div>
+            }
+        </div>
+    }
+    else if (_paso == 3)
+    {
+        <h5 class="mb-3">Revisa y envia</h5>
+        <div class="card bg-light"><div class="card-body small">
+            <div><strong>Tipo:</strong> @_tipo</div>
+            <div><strong>Categoria:</strong> @(_categorias?.FirstOrDefault(c => c.Id.ToString() == _categoriaId)?.Nombre ?? "-")</div>
+            <div class="mt-2"><strong>Descripcion:</strong></div>
+            <p class="mb-0">@_descripcion</p>
+            @if (_tipo == TipoPqrsd.Denuncia && _reserva)
+            {
+                <div class="alert alert-info py-2 small mt-2 mb-0">
+                    <strong>Identidad reservada</strong> - la administracion no vera tu nombre en este expediente.
+                </div>
+            }
+            <hr />
+            <p class="text-muted small mb-0">Al enviar, recibiras un numero de radicado unico y una confirmacion por email. El plazo legal se calcula desde el dia habil siguiente.</p>
+        </div></div>
+    }
+
+    <hr class="my-3" />
+    <div class="d-flex justify-content-between">
+        <button class="btn btn-outline-dark" @onclick="Anterior" disabled="@(_paso == 1 || _busy)">Anterior</button>
+        @if (_paso < 3)
+        {
+            <button class="btn" style="background: var(--propia-primary); color:white;" @onclick="Siguiente" disabled="@(!PuedeAvanzar())">Siguiente</button>
+        }
+        else
+        {
+            <button class="btn btn-success" @onclick="Enviar" disabled="@_busy">@(_busy ? "Enviando..." : "Enviar PQRSD")</button>
+        }
+    </div>
+</div></div>
+
+@code {
+    private string? _jwt;
+    private bool _busy;
+    private string? _msg; private string _msgClass = "alert-info";
+
+    private int _paso = 1;
+    private TipoPqrsd _tipo = TipoPqrsd.Peticion;
+    private string? _categoriaId;
+    private string? _descripcion;
+    private bool _reserva;
+
+    private List<PqrsdCategoriaDto>? _categorias;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                _categorias = await Auth().GetFromJsonAsync<List<PqrsdCategoriaDto>>("/api/pqrsd/categorias") ?? new();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private bool PuedeAvanzar()
+    {
+        if (_busy) return false;
+        if (_paso == 1) return true;  // tipo siempre seleccionado
+        if (_paso == 2) return !string.IsNullOrEmpty(_categoriaId) && (_descripcion?.Trim().Length ?? 0) >= 20;
+        return true;
+    }
+
+    private void Siguiente() { if (PuedeAvanzar()) _paso++; }
+    private void Anterior() { if (_paso > 1) _paso--; }
+
+    private async Task Enviar()
+    {
+        if (!Guid.TryParse(_categoriaId, out var catId)) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var req = new RadicarPqrsdRequest(_tipo, catId, _descripcion!.Trim(), _tipo == TipoPqrsd.Denuncia && _reserva, null);
+            var resp = await Auth().PostAsJsonAsync("/api/pqrsd", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            var dto = await resp.Content.ReadFromJsonAsync<PqrsdExpedienteDetalleDto>();
+            Nav.NavigateTo($"/pqrsd/{dto!.Id}");
+        }
+        finally { _busy = false; }
+    }
+
+    private static string RenderTipoTitulo(TipoPqrsd t) => t switch
+    {
+        TipoPqrsd.Peticion => "Peticion",
+        TipoPqrsd.SolicitudDocumentos => "Solicitud de documentos",
+        TipoPqrsd.Consulta => "Consulta",
+        TipoPqrsd.Queja => "Queja",
+        TipoPqrsd.Reclamo => "Reclamo",
+        TipoPqrsd.Sugerencia => "Sugerencia",
+        TipoPqrsd.Denuncia => "Denuncia",
+        TipoPqrsd.Felicitacion => "Felicitacion",
+        _ => t.ToString()
+    };
+
+    private static string RenderTipoDescripcion(TipoPqrsd t) => t switch
+    {
+        TipoPqrsd.Peticion => "Tengo una solicitud o derecho que pedir (15 dias habiles)",
+        TipoPqrsd.SolicitudDocumentos => "Necesito documentos o informacion (10 dias)",
+        TipoPqrsd.Consulta => "Tengo una pregunta sobre la copropiedad (30 dias)",
+        TipoPqrsd.Queja => "Algo no esta bien y quiero que lo sepan (15 dias)",
+        TipoPqrsd.Reclamo => "Algo esta mal y pido que lo corrijan (15 dias)",
+        TipoPqrsd.Sugerencia => "Tengo una idea para mejorar (15 dias)",
+        TipoPqrsd.Denuncia => "Reporto un problema de convivencia (15 dias)",
+        TipoPqrsd.Felicitacion => "Reconozco algo que se hizo bien (5 dias)",
+        _ => ""
+    };
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

@@ -1,18 +1,209 @@
 @page "/pqrs"
-<PageTitle>PQRS y Convivencia - PROPIA</PageTitle>
+@page "/pqrsd"
+@rendermode InteractiveServer
+@using Propia.Application.Pqrsd
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
 
-<ModuloPlaceholder
-    Codigo="2.9"
-    Nombre="PQRS y Convivencia"
-    Descripcion="Radicacion y seguimiento de Peticiones, Quejas, Reclamos, Sugerencias y Denuncias. Comite de Convivencia segun Ley 675."
-    Estado="EstadoModulo.EnDiseno"
-    Features='new[] {
-        "Radicacion via portal web, WhatsApp o presencial",
-        "Categorizacion automatica con IA (modulo 0.4)",
-        "Asignacion a responsable + SLA de respuesta",
-        "Flujo de Comite de Convivencia para casos disciplinarios",
-        "Cada PQRS genera tareas en 2.10 automaticamente",
-        "Consultable desde la ficha de cada unidad y persona en 2.3",
-        "Dashboard de tiempos de respuesta y satisfaccion"
-    }'
-    NotaSpec="01. REQUERIMIENTO/Capa 2. Copropiedad/2.9. PQRSD-convivencia_v1_0.md" />
+<PageTitle>PQRSD - PROPIA</PageTitle>
+
+<div class="mb-4 d-flex justify-content-between align-items-start">
+    <div>
+        <h1 class="h3 mb-1 fw-semibold">PQRSD y Convivencia</h1>
+        <p class="text-muted mb-0">Modulo 2.9 - expediente ciudadano con plazos legales (Ley 1755/2015 + Ley 675/2001)</p>
+    </div>
+    <a class="btn" style="background: var(--propia-primary); color:white;" href="/pqrsd/nueva">+ Nueva PQRSD</a>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <div class="card border-warning p-4"><h5>Necesitas iniciar sesion</h5><a class="btn btn-dark mt-2" href="/login">Iniciar sesion</a></div>
+    return;
+}
+
+@if (_b is null)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    return;
+}
+
+@* KPIs *@
+<div class="row g-3 mb-3">
+    <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+        <div class="text-muted small">Total</div>
+        <h4 class="mb-0">@_b.Kpis.Total</h4>
+    </div></div></div>
+    <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+        <div class="text-muted small">Abiertas</div>
+        <h4 class="mb-0">@(_b.Kpis.Recibidas + _b.Kpis.EnGestion + _b.Kpis.Respondidas)</h4>
+    </div></div></div>
+    <div class="col-md-3"><div class="card kpi-mini border-danger"><div class="card-body py-3">
+        <div class="text-muted small">Por vencer / vencidas</div>
+        <h4 class="mb-0 text-danger">@(_b.Kpis.PorVencer + _b.Kpis.Vencidas)</h4>
+        @if (_b.Kpis.ConTutela > 0) { <small class="text-danger fw-bold">@_b.Kpis.ConTutela con Tutela</small> }
+    </div></div></div>
+    <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+        <div class="text-muted small">Comite activo</div>
+        <h4 class="mb-0">@_b.Kpis.ConComite</h4>
+        <small class="text-muted">Cerradas: @_b.Kpis.Cerradas</small>
+    </div></div></div>
+</div>
+
+@* Filtros *@
+<div class="row g-2 mb-3">
+    <div class="col-md-5">
+        <input class="form-control form-control-sm" placeholder="Buscar por radicado o descripcion..." @bind="_query" @bind:event="oninput" @onkeyup="CargarAsync" />
+    </div>
+    <div class="col-md-3">
+        <select class="form-select form-select-sm" @bind="_filtroTipo" @bind:after="CargarAsync">
+            <option value="">Todos los tipos</option>
+            @foreach (var t in Enum.GetValues<TipoPqrsd>()) { <option value="@t">@t</option> }
+        </select>
+    </div>
+    <div class="col-md-4">
+        <select class="form-select form-select-sm" @bind="_filtroEstado" @bind:after="CargarAsync">
+            <option value="">Todos los estados</option>
+            @foreach (var e in Enum.GetValues<EstadoPqrsd>()) { <option value="@e">@e</option> }
+        </select>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+@if (_b.Items.Count == 0)
+{
+    <div class="card p-4 text-center text-muted">
+        <p class="mb-2">Sin expedientes registrados.</p>
+        <a class="btn btn-sm" style="background: var(--propia-primary); color:white;" href="/pqrsd/nueva">Radicar la primera PQRSD</a>
+    </div>
+}
+else
+{
+    <div class="card">
+        <table class="table table-hover mb-0 align-middle">
+            <thead class="bg-light small text-muted">
+                <tr>
+                    <th></th>
+                    <th>Radicado</th><th>Tipo</th><th>Categoria</th><th>Descripcion</th>
+                    <th>Radicador</th><th>Estado</th><th class="text-end">Vence</th>
+                </tr>
+            </thead>
+            <tbody class="small">
+                @foreach (var i in _b.Items)
+                {
+                    var iid = i.Id;
+                    <tr style="cursor:pointer; border-left: 4px solid @SemaforoColor(i.Semaforo);" @onclick="() => Ir(iid)">
+                        <td>@RenderSemaforo(i.Semaforo)</td>
+                        <td class="text-muted">@i.NumeroRadicado</td>
+                        <td><span class="badge bg-light text-dark border">@i.Tipo</span></td>
+                        <td>@i.CategoriaNombre</td>
+                        <td>
+                            @i.DescripcionResumen
+                            @if (i.TutelaActiva) { <span class="badge bg-danger ms-1">Tutela</span> }
+                            @if (i.TieneComiteActivo) { <span class="badge bg-warning text-dark ms-1">Comite</span> }
+                        </td>
+                        <td>
+                            @if (i.IdentidadReservada) { <em class="text-muted">[Reservada]</em> }
+                            else { @(i.RadicadorNombre ?? "-") }
+                        </td>
+                        <td>@RenderEstado(i.Estado)</td>
+                        <td class="text-end">
+                            @if (i.DiasHastaVencimiento < 0)
+                            {
+                                <span class="text-danger fw-bold">Vencida (@Math.Abs(i.DiasHastaVencimiento)d)</span>
+                            }
+                            else if (i.DiasHastaVencimiento == 0)
+                            {
+                                <span class="text-danger fw-bold">Hoy</span>
+                            }
+                            else { <span>@i.DiasHastaVencimiento d</span> }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<style>
+    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
+</style>
+
+@code {
+    private string? _jwt;
+    private string? _msg; private string _msgClass = "alert-info";
+    private PqrsdBandejaDto? _b;
+
+    private string _filtroEstado = "";
+    private string _filtroTipo = "";
+    private string? _query;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var url = "/api/pqrsd/bandeja";
+            var qs = new List<string>();
+            if (!string.IsNullOrEmpty(_filtroEstado)) qs.Add($"estado={_filtroEstado}");
+            if (!string.IsNullOrEmpty(_filtroTipo)) qs.Add($"tipo={_filtroTipo}");
+            if (!string.IsNullOrEmpty(_query)) qs.Add($"q={Uri.EscapeDataString(_query)}");
+            if (qs.Any()) url += "?" + string.Join("&", qs);
+            _b = await Auth().GetFromJsonAsync<PqrsdBandejaDto>(url);
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private void Ir(Guid id) => Nav.NavigateTo($"/pqrsd/{id}");
+
+    private static string SemaforoColor(SemaforoPqrsd s) => s switch
+    {
+        SemaforoPqrsd.Verde => "#22c55e",
+        SemaforoPqrsd.Amarillo => "#f59e0b",
+        SemaforoPqrsd.Rojo => "#ef4444",
+        SemaforoPqrsd.Negro => "#1f2937",
+        SemaforoPqrsd.TutelaActiva => "#dc2626",
+        _ => "#94a3b8"
+    };
+
+    private static MarkupString RenderSemaforo(SemaforoPqrsd s)
+    {
+        var color = SemaforoColor(s);
+        var icon = s == SemaforoPqrsd.TutelaActiva ? "TUTELA" : "";
+        return new MarkupString($"<span style='display:inline-block; width:12px; height:12px; border-radius:50%; background:{color};'></span> <small class='text-muted'>{icon}</small>");
+    }
+
+    private MarkupString RenderEstado(EstadoPqrsd e) => e switch
+    {
+        EstadoPqrsd.Recibida => new MarkupString("<span class='badge bg-light text-dark border'>Recibida</span>"),
+        EstadoPqrsd.EnGestion => new MarkupString("<span class='badge bg-info text-dark'>En gestion</span>"),
+        EstadoPqrsd.Respondida => new MarkupString("<span class='badge bg-warning text-dark'>Respondida</span>"),
+        EstadoPqrsd.Cerrada => new MarkupString("<span class='badge bg-success'>Cerrada</span>"),
+        EstadoPqrsd.ViaInternaAgotada => new MarkupString("<span class='badge bg-secondary'>Via interna agotada</span>"),
+        _ => new MarkupString("")
+    };
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}
