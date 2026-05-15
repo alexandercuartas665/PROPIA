@@ -296,26 +296,41 @@ public class MantenimientoFlowTests : IAsyncLifetime
         // directamente al DbContext porque CrearPlan rechaza pasado (RN-02).
         db.MantenimientoPlanes.Add(new MantenimientoPlan
         {
-            ActivoTipo = TipoActivoMantenimiento.Equipo, ActivoId = eqVencido,
-            Nombre = "Plan vencido", Frecuencia = FrecuenciaMantenimiento.Mensual,
-            FechaInicio = hoy.AddDays(-30), ProximaEjecucion = hoy.AddDays(-5),
-            Disparo = DisparoPlanMantenimiento.Automatico, DiasAlertaPrevio = 7, Activo = true,
+            ActivoTipo = TipoActivoMantenimiento.Equipo,
+            ActivoId = eqVencido,
+            Nombre = "Plan vencido",
+            Frecuencia = FrecuenciaMantenimiento.Mensual,
+            FechaInicio = hoy.AddDays(-30),
+            ProximaEjecucion = hoy.AddDays(-5),
+            Disparo = DisparoPlanMantenimiento.Automatico,
+            DiasAlertaPrevio = 7,
+            Activo = true,
             CreadoPorUsuarioId = _userId
         });
         db.MantenimientoPlanes.Add(new MantenimientoPlan
         {
-            ActivoTipo = TipoActivoMantenimiento.Equipo, ActivoId = eqProximo,
-            Nombre = "Plan proximo", Frecuencia = FrecuenciaMantenimiento.Mensual,
-            FechaInicio = hoy.AddDays(-15), ProximaEjecucion = hoy.AddDays(3),
-            Disparo = DisparoPlanMantenimiento.Automatico, DiasAlertaPrevio = 7, Activo = true,
+            ActivoTipo = TipoActivoMantenimiento.Equipo,
+            ActivoId = eqProximo,
+            Nombre = "Plan proximo",
+            Frecuencia = FrecuenciaMantenimiento.Mensual,
+            FechaInicio = hoy.AddDays(-15),
+            ProximaEjecucion = hoy.AddDays(3),
+            Disparo = DisparoPlanMantenimiento.Automatico,
+            DiasAlertaPrevio = 7,
+            Activo = true,
             CreadoPorUsuarioId = _userId
         });
         db.MantenimientoPlanes.Add(new MantenimientoPlan
         {
-            ActivoTipo = TipoActivoMantenimiento.Equipo, ActivoId = eqSano,
-            Nombre = "Plan sano", Frecuencia = FrecuenciaMantenimiento.Anual,
-            FechaInicio = hoy, ProximaEjecucion = hoy.AddDays(180),
-            Disparo = DisparoPlanMantenimiento.Automatico, DiasAlertaPrevio = 7, Activo = true,
+            ActivoTipo = TipoActivoMantenimiento.Equipo,
+            ActivoId = eqSano,
+            Nombre = "Plan sano",
+            Frecuencia = FrecuenciaMantenimiento.Anual,
+            FechaInicio = hoy,
+            ProximaEjecucion = hoy.AddDays(180),
+            Disparo = DisparoPlanMantenimiento.Automatico,
+            DiasAlertaPrevio = 7,
+            Activo = true,
             CreadoPorUsuarioId = _userId
         });
         await db.SaveChangesAsync();
