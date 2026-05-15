@@ -97,6 +97,9 @@ public static class DependencyInjection
         // Modulo 2.10 Tareas y Proyectos
         services.AddScoped<Application.Tareas.ITareasService, Tareas.TareasService>();
 
+        // Modulo 2.7 Cartera y Estado de Cuenta
+        services.AddScoped<Application.Cartera.ICarteraService, Cartera.CarteraService>();
+
         return services;
     }
 }

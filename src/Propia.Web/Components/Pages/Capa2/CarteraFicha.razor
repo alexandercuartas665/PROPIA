@@ -1,0 +1,419 @@
+@page "/cartera/{UnidadId:guid}"
+@rendermode InteractiveServer
+@using Propia.Application.Cartera
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<PageTitle>Ficha de cartera - PROPIA</PageTitle>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <div class="card border-warning p-4"><h5>Necesitas iniciar sesion</h5><a class="btn btn-dark mt-2" href="/login">Iniciar sesion</a></div>
+    return;
+}
+
+<div class="mb-3"><a href="/cartera" class="text-decoration-none text-muted small">&larr; Cartera</a></div>
+
+@if (_d is null)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    return;
+}
+
+<div class="card mb-3" style="border-left: 4px solid @(_d.EstadoGestionColor ?? "#94a3b8");">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start">
+            <div>
+                <h3 class="mb-1">Apto @_d.UnidadNumero</h3>
+                <div class="small text-muted">
+                    @if (_d.TorreNombre is not null) { <span>@_d.TorreNombre &middot; </span> }
+                    @if (_d.EstadoGestionNombre is not null)
+                    {
+                        <span class="badge me-1" style="background:@(_d.EstadoGestionColor ?? "#94a3b8"); color:white;">@_d.EstadoGestionNombre</span>
+                    }
+                    <span>@_d.DiasMora dias en mora</span>
+                </div>
+            </div>
+            <div class="text-end">
+                <div class="small text-muted">Saldo total</div>
+                <h3 class="mb-0 text-danger">@_d.SaldoTotal.ToString("N0") COP</h3>
+                <small class="text-muted">Capital @_d.SaldoCapital.ToString("N0") + Intereses @_d.SaldoIntereses.ToString("N0")</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+<div class="row g-3 mb-3">
+    <div class="col-12">
+        <div class="card"><div class="card-body py-2 d-flex flex-wrap gap-2">
+            <button class="btn btn-sm" style="background: var(--propia-primary); color:white;" @onclick="() => _showAcuerdo = true" disabled="@_busy">
+                + Crear acuerdo
+            </button>
+            <button class="btn btn-sm btn-outline-warning" @onclick="() => _showCondonar = true" disabled="@_busy">
+                Condonar deuda
+            </button>
+            <button class="btn btn-sm btn-outline-success" @onclick="EmitirPazSalvo" disabled="@_busy">
+                Emitir paz y salvo
+            </button>
+        </div></div>
+    </div>
+</div>
+
+<div class="row g-3">
+    @* Deudas *@
+    <div class="col-md-7">
+        <div class="card mb-3"><div class="card-body">
+            <h6 class="mb-2">Detalle de deudas (@_d.Deudas.Count cuotas)</h6>
+            @if (_d.Deudas.Count == 0)
+            {
+                <p class="text-muted small mb-0">Sin deudas registradas.</p>
+            }
+            else
+            {
+                <table class="table table-sm mb-0 small">
+                    <thead class="text-muted"><tr><th>Periodo</th><th>Concepto</th><th class="text-end">Capital</th><th class="text-end">Intereses</th><th class="text-end">Total</th><th>Estado</th></tr></thead>
+                    <tbody>
+                        @foreach (var dd in _d.Deudas)
+                        {
+                            <tr>
+                                <td>@dd.Periodo.ToString("MMM yyyy")</td>
+                                <td>@dd.Concepto</td>
+                                <td class="text-end">@dd.CapitalPendiente.ToString("N0")</td>
+                                <td class="text-end @(dd.InteresAcumulado > 0 ? "text-warning" : "")">@dd.InteresAcumulado.ToString("N0")</td>
+                                <td class="text-end fw-bold">@dd.Total.ToString("N0")</td>
+                                <td>@RenderEstadoDeuda(dd.Estado)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div></div>
+
+        @* Acuerdo vigente *@
+        @if (_d.AcuerdoVigente is not null)
+        {
+            <div class="card mb-3"><div class="card-body">
+                <h6 class="mb-2">Acuerdo de pago @_d.AcuerdoVigente.Estado</h6>
+                <div class="small mb-2">
+                    Total <strong>@_d.AcuerdoVigente.MontoTotal.ToString("N0")</strong> en @_d.AcuerdoVigente.NumeroCuotas cuotas
+                    @if (_d.AcuerdoVigente.AceptacionAt.HasValue) { <span class="badge bg-success ms-1">Aceptado @_d.AcuerdoVigente.AceptacionAt.Value.LocalDateTime.ToString("yyyy-MM-dd")</span> }
+                </div>
+                <table class="table table-sm mb-0 small">
+                    <thead class="text-muted"><tr><th>#</th><th>Vence</th><th class="text-end">Monto</th><th>Estado</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var c in _d.AcuerdoVigente.Cuotas)
+                        {
+                            var cid = c.Id;
+                            <tr>
+                                <td>@c.NumeroCuota / @_d.AcuerdoVigente.NumeroCuotas</td>
+                                <td>@c.FechaVencimiento.ToString("yyyy-MM-dd")</td>
+                                <td class="text-end">@c.Monto.ToString("N0")</td>
+                                <td>@RenderEstadoCuotaAcuerdo(c.Estado)</td>
+                                <td class="text-end">
+                                    @if (c.Estado != EstadoCuotaAcuerdo.Pagada)
+                                    {
+                                        <button class="btn btn-sm btn-outline-success" @onclick="() => RegistrarPago(cid)" disabled="@_busy">Pagar</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @if (_d.AcuerdoVigente.Estado == EstadoAcuerdoPago.Borrador)
+                {
+                    <hr class="my-2" />
+                    <button class="btn btn-sm" style="background: var(--propia-primary); color:white;" @onclick="EnviarAceptacion" disabled="@_busy">Enviar para aceptacion</button>
+                }
+                @if (_d.AcuerdoVigente.Estado == EstadoAcuerdoPago.PendienteAceptacion)
+                {
+                    <hr class="my-2" />
+                    <button class="btn btn-sm btn-outline-success" @onclick="AceptarAcuerdo" disabled="@_busy">Aceptar acuerdo (en nombre del propietario)</button>
+                }
+            </div></div>
+        }
+
+        @* Paz y salvos *@
+        @if (_d.PazSalvos.Any())
+        {
+            <div class="card mb-3"><div class="card-body">
+                <h6 class="mb-2">Paz y salvos emitidos</h6>
+                <ul class="list-unstyled small mb-0">
+                    @foreach (var ps in _d.PazSalvos)
+                    {
+                        <li class="mb-1">
+                            <span class="badge me-1" style="background:@(ps.Tipo == TipoPazSalvo.Pleno ? "#22c55e" : "#f59e0b"); color:white;">@ps.Tipo</span>
+                            @ps.CodigoVerificacion &middot; @ps.FechaEmision.LocalDateTime.ToString("yyyy-MM-dd HH:mm")
+                            (vence @ps.FechaVencimiento.ToString("yyyy-MM-dd"))
+                            @if (ps.Estado == EstadoPazSalvo.Anulado) { <span class="badge bg-secondary ms-1">Anulado</span> }
+                        </li>
+                    }
+                </ul>
+            </div></div>
+        }
+    </div>
+
+    <div class="col-md-5">
+        @* Condonaciones *@
+        @if (_d.Condonaciones.Any())
+        {
+            <div class="card mb-3"><div class="card-body">
+                <h6 class="mb-2">Condonaciones (@_d.Condonaciones.Count)</h6>
+                <ul class="list-unstyled small mb-0">
+                    @foreach (var c in _d.Condonaciones)
+                    {
+                        <li class="mb-1">
+                            <span class="badge bg-warning text-dark me-1">@c.Tipo</span>
+                            @c.MontoCondonado.ToString("N0") COP &middot; @c.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd")
+                            <div class="text-muted small ms-3">@c.Motivo</div>
+                        </li>
+                    }
+                </ul>
+            </div></div>
+        }
+
+        @* Historial *@
+        <div class="card"><div class="card-body">
+            <h6 class="mb-2">Historial (@_d.Historial.Count)</h6>
+            @if (_d.Historial.Count == 0)
+            {
+                <p class="text-muted small mb-0">Sin eventos registrados.</p>
+            }
+            else
+            {
+                <ul class="list-unstyled small mb-0">
+                    @foreach (var h in _d.Historial.Take(15))
+                    {
+                        <li class="mb-1">
+                            <span class="text-muted">@h.OcurridoAt.LocalDateTime.ToString("MM-dd HH:mm")</span>
+                            &middot; <span class="badge bg-light text-dark border">@h.TipoEvento</span>
+                            &middot; @h.Descripcion
+                        </li>
+                    }
+                </ul>
+            }
+        </div></div>
+    </div>
+</div>
+
+@* Modal crear acuerdo *@
+@if (_showAcuerdo)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title">Crear acuerdo de pago</h5>
+                    <button type="button" class="btn-close" @onclick="() => _showAcuerdo = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-2">
+                        <div class="col-md-6"><label class="form-label small">Numero de cuotas</label>
+                            <input type="number" class="form-control form-control-sm" @bind="_cuotas" min="1" max="24" /></div>
+                        <div class="col-md-6"><label class="form-label small">Fecha primera cuota</label>
+                            <input type="date" class="form-control form-control-sm"
+                                   value="@_fechaPrimera.ToString("yyyy-MM-dd")"
+                                   @onchange="(e) => _fechaPrimera = DateOnly.Parse(e.Value!.ToString()!)" /></div>
+                        <div class="col-md-12"><label class="form-label small">Condonacion parcial de intereses (opcional)</label>
+                            <input type="number" class="form-control form-control-sm" @bind="_condonarIntereses" min="0" step="1000" /></div>
+                        <div class="col-md-12"><label class="form-label small">Notas (opcional)</label>
+                            <textarea class="form-control form-control-sm" rows="2" @bind="_notas"></textarea></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _showAcuerdo = false">Cancelar</button>
+                    <button class="btn btn-sm" style="background: var(--propia-primary); color:white;" @onclick="ConfirmarAcuerdo" disabled="@_busy">
+                        @(_busy ? "Creando..." : "Crear acuerdo")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Modal condonar *@
+@if (_showCondonar)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title">Condonar deuda</h5>
+                    <button type="button" class="btn-close" @onclick="() => _showCondonar = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning py-2 small">Accion irreversible (RN-10). Queda registrada en historial inmutable.</div>
+                    <div class="row g-2">
+                        <div class="col-md-6"><label class="form-label small">Tipo</label>
+                            <select class="form-select form-select-sm" @bind="_tipoCondonacion">
+                                @foreach (var t in Enum.GetValues<TipoCondonacion>()) { <option value="@t">@t</option> }
+                            </select></div>
+                        <div class="col-md-6"><label class="form-label small">Monto (COP)</label>
+                            <input type="number" class="form-control form-control-sm" @bind="_montoCondonacion" min="0" /></div>
+                        <div class="col-md-12"><label class="form-label small">Motivo *</label>
+                            <textarea class="form-control form-control-sm" rows="2" @bind="_motivoCondonacion"></textarea></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _showCondonar = false">Cancelar</button>
+                    <button class="btn btn-sm btn-warning" @onclick="ConfirmarCondonacion" disabled="@(_busy || string.IsNullOrWhiteSpace(_motivoCondonacion))">
+                        Aplicar condonacion
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid UnidadId { get; set; }
+
+    private string? _jwt;
+    private bool _busy;
+    private string? _msg; private string _msgClass = "alert-info";
+    private CarteraUnidadDetalleDto? _d;
+
+    // Crear acuerdo
+    private bool _showAcuerdo;
+    private int _cuotas = 3;
+    private DateOnly _fechaPrimera = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(15));
+    private decimal _condonarIntereses;
+    private string? _notas;
+
+    // Condonacion
+    private bool _showCondonar;
+    private TipoCondonacion _tipoCondonacion = TipoCondonacion.Intereses;
+    private decimal _montoCondonacion;
+    private string? _motivoCondonacion;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task CargarAsync()
+    {
+        try { _d = await Auth().GetFromJsonAsync<CarteraUnidadDetalleDto>($"/api/cartera/unidades/{UnidadId}"); }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task ConfirmarAcuerdo()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var req = new CrearAcuerdoRequest(UnidadId, _cuotas, _fechaPrimera, _condonarIntereses, _notas);
+            var resp = await Auth().PostAsJsonAsync("/api/cartera/acuerdos", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _msg = "Acuerdo creado en Borrador. Envia para aceptacion."; _msgClass = "alert-success";
+            _showAcuerdo = false;
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task EnviarAceptacion()
+    {
+        if (_d?.AcuerdoVigente is null) return;
+        _busy = true;
+        try
+        {
+            var aid = _d.AcuerdoVigente.Id;
+            var resp = await Auth().PutAsync($"/api/cartera/acuerdos/{aid}/enviar", null);
+            if (resp.IsSuccessStatusCode) await CargarAsync();
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task AceptarAcuerdo()
+    {
+        if (_d?.AcuerdoVigente is null) return;
+        _busy = true;
+        try
+        {
+            var aid = _d.AcuerdoVigente.Id;
+            var resp = await Auth().PutAsJsonAsync($"/api/cartera/acuerdos/{aid}/aceptar", new AceptarAcuerdoRequest("MANUAL_ADMIN_UI", "127.0.0.1"));
+            if (resp.IsSuccessStatusCode) { _msg = "Acuerdo aceptado y vigente."; _msgClass = "alert-success"; await CargarAsync(); }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ConfirmarCondonacion()
+    {
+        if (string.IsNullOrWhiteSpace(_motivoCondonacion)) return;
+        _busy = true;
+        try
+        {
+            var req = new AplicarCondonacionRequest(UnidadId, _tipoCondonacion, _montoCondonacion, _motivoCondonacion, null);
+            var resp = await Auth().PostAsJsonAsync("/api/cartera/condonaciones", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _msg = "Condonacion aplicada."; _msgClass = "alert-success";
+            _showCondonar = false;
+            _motivoCondonacion = null; _montoCondonacion = 0;
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task EmitirPazSalvo()
+    {
+        _busy = true;
+        try
+        {
+            var req = new EmitirPazSalvoRequest(UnidadId, EmisionPazSalvo.Manual, null);
+            var resp = await Auth().PostAsJsonAsync("/api/cartera/paz-salvos", req);
+            if (resp.IsSuccessStatusCode) { _msg = "Paz y salvo emitido."; _msgClass = "alert-success"; await CargarAsync(); }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task RegistrarPago(Guid cuotaId)
+    {
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/api/cartera/acuerdos/pago", new RegistrarPagoAcuerdoRequest(cuotaId, DateOnly.FromDateTime(DateTime.UtcNow)));
+            if (resp.IsSuccessStatusCode) await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private static MarkupString RenderEstadoDeuda(EstadoDeudaDetalle e) => e switch
+    {
+        EstadoDeudaDetalle.Pendiente => new MarkupString("<span class='badge bg-warning text-dark'>Pendiente</span>"),
+        EstadoDeudaDetalle.Parcial => new MarkupString("<span class='badge bg-info text-dark'>Parcial</span>"),
+        EstadoDeudaDetalle.Pagado => new MarkupString("<span class='badge bg-success'>Pagado</span>"),
+        EstadoDeudaDetalle.Condonado => new MarkupString("<span class='badge bg-secondary'>Condonado</span>"),
+        _ => new MarkupString("")
+    };
+
+    private static MarkupString RenderEstadoCuotaAcuerdo(EstadoCuotaAcuerdo e) => e switch
+    {
+        EstadoCuotaAcuerdo.Pendiente => new MarkupString("<span class='badge bg-warning text-dark'>Pendiente</span>"),
+        EstadoCuotaAcuerdo.Pagada => new MarkupString("<span class='badge bg-success'>Pagada</span>"),
+        EstadoCuotaAcuerdo.Vencida => new MarkupString("<span class='badge bg-danger'>Vencida</span>"),
+        _ => new MarkupString("")
+    };
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

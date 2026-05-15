@@ -108,6 +108,17 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<TareaComentario> TareaComentarios => Set<TareaComentario>();
     public DbSet<TareaHistorial> TareaHistorial => Set<TareaHistorial>();
 
+    // Modulo 2.7 Cartera y Estado de Cuenta (TenantEntity con RLS)
+    public DbSet<EstadoCarteraConfig> EstadosCarteraConfig => Set<EstadoCarteraConfig>();
+    public DbSet<CarteraConfig> CarteraConfigs => Set<CarteraConfig>();
+    public DbSet<CarteraUnidad> CarteraUnidades => Set<CarteraUnidad>();
+    public DbSet<DeudaDetalle> DeudaDetalles => Set<DeudaDetalle>();
+    public DbSet<AcuerdoPago> AcuerdosPago => Set<AcuerdoPago>();
+    public DbSet<AcuerdoCuota> AcuerdoCuotas => Set<AcuerdoCuota>();
+    public DbSet<PazSalvoEmitido> PazSalvosEmitidos => Set<PazSalvoEmitido>();
+    public DbSet<Condonacion> Condonaciones => Set<Condonacion>();
+    public DbSet<CarteraHistorial> CarteraHistorial => Set<CarteraHistorial>();
+
     // Modulo 0.2 - Billing y Suscripciones (todo GLOBAL, sin tenant_id)
     public DbSet<Plan> Planes => Set<Plan>();
     public DbSet<Cupon> Cupones => Set<Cupon>();
@@ -770,6 +781,125 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasOne(x => x.Tarea).WithMany(t => t.Historial).HasForeignKey(x => x.TareaId).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.TareaId, x.OcurridoAt });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // -------------------- Modulo 2.7 Cartera y Estado de Cuenta --------------------
+
+        modelBuilder.Entity<EstadoCarteraConfig>(b =>
+        {
+            b.ToTable("estados_cartera_config");
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(100);
+            b.Property(x => x.Color).HasMaxLength(20);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Nombre }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<CarteraConfig>(b =>
+        {
+            b.ToTable("cartera_config");
+            b.Property(x => x.MensajePazSalvo).HasMaxLength(1000);
+            b.Property(x => x.TasaMoraMensual).HasPrecision(8, 4);
+            b.HasIndex(x => x.TenantId).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<CarteraUnidad>(b =>
+        {
+            b.ToTable("cartera_unidades");
+            b.Property(x => x.SaldoCapital).HasPrecision(18, 2);
+            b.Property(x => x.SaldoIntereses).HasPrecision(18, 2);
+            b.Ignore(x => x.SaldoTotal);  // calculado
+            b.HasOne(x => x.UnidadPrivada).WithMany().HasForeignKey(x => x.UnidadPrivadaId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.EstadoGestion).WithMany().HasForeignKey(x => x.EstadoGestionId).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.UnidadPrivadaId }).IsUnique();
+            b.HasIndex(x => x.EstadoGestionId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<DeudaDetalle>(b =>
+        {
+            b.ToTable("deuda_detalle");
+            b.Property(x => x.Concepto).IsRequired().HasMaxLength(100);
+            b.Property(x => x.CapitalOriginal).HasPrecision(18, 2);
+            b.Property(x => x.CapitalPendiente).HasPrecision(18, 2);
+            b.Property(x => x.InteresAcumulado).HasPrecision(18, 2);
+            b.HasOne(x => x.UnidadPrivada).WithMany().HasForeignKey(x => x.UnidadPrivadaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(x => x.LiquidacionUnidad).WithMany().HasForeignKey(x => x.LiquidacionUnidadId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.UnidadPrivadaId });
+            b.HasIndex(x => x.LiquidacionUnidadId).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<AcuerdoPago>(b =>
+        {
+            b.ToTable("acuerdos_pago");
+            b.Property(x => x.MontoTotal).HasPrecision(18, 2);
+            b.Property(x => x.CapitalIncluido).HasPrecision(18, 2);
+            b.Property(x => x.InteresesIncluidos).HasPrecision(18, 2);
+            b.Property(x => x.InteresesCondonados).HasPrecision(18, 2);
+            b.Property(x => x.NotasAdmin).HasMaxLength(1000);
+            b.Property(x => x.AceptacionHash).HasMaxLength(255);
+            b.Property(x => x.AceptacionIp).HasMaxLength(50);
+            b.Property(x => x.AceptacionMetodo).HasMaxLength(50);
+            b.HasOne(x => x.UnidadPrivada).WithMany().HasForeignKey(x => x.UnidadPrivadaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(x => x.AcuerdoPadre).WithMany().HasForeignKey(x => x.AcuerdoPadreId).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.UnidadPrivadaId });
+            b.HasIndex(x => new { x.TenantId, x.Estado });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<AcuerdoCuota>(b =>
+        {
+            b.ToTable("acuerdo_cuotas");
+            b.Property(x => x.Monto).HasPrecision(18, 2);
+            b.Property(x => x.Capital).HasPrecision(18, 2);
+            b.Property(x => x.Intereses).HasPrecision(18, 2);
+            b.HasOne(x => x.Acuerdo).WithMany(a => a.Cuotas).HasForeignKey(x => x.AcuerdoId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.AcuerdoId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PazSalvoEmitido>(b =>
+        {
+            b.ToTable("paz_salvos_emitidos");
+            b.Property(x => x.Condiciones).HasMaxLength(2000);
+            b.Property(x => x.DocumentoUrl).HasMaxLength(500);
+            b.Property(x => x.CodigoVerificacion).IsRequired().HasMaxLength(100);
+            b.Property(x => x.MotivoAnulacion).HasMaxLength(500);
+            b.HasOne(x => x.UnidadPrivada).WithMany().HasForeignKey(x => x.UnidadPrivadaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.CodigoVerificacion).IsUnique();
+            b.HasIndex(x => new { x.TenantId, x.UnidadPrivadaId });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<Condonacion>(b =>
+        {
+            b.ToTable("condonaciones");
+            b.Property(x => x.MontoCondonado).HasPrecision(18, 2);
+            b.Property(x => x.Motivo).IsRequired().HasMaxLength(1000);
+            b.Property(x => x.DocumentoSoporteUrl).HasMaxLength(500);
+            b.Property(x => x.SaldoAntes).HasColumnType("text");
+            b.Property(x => x.SaldoDespues).HasColumnType("text");
+            b.HasOne(x => x.UnidadPrivada).WithMany().HasForeignKey(x => x.UnidadPrivadaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.UnidadPrivadaId });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<CarteraHistorial>(b =>
+        {
+            b.ToTable("cartera_historial");
+            b.Property(x => x.Descripcion).IsRequired().HasMaxLength(500);
+            b.Property(x => x.DatosAdicionales).HasColumnType("text");
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.UnidadPrivadaId, x.OcurridoAt });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

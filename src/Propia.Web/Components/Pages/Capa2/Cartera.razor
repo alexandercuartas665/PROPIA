@@ -1,0 +1,192 @@
+@page "/cartera"
+@rendermode InteractiveServer
+@using Propia.Application.Cartera
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<PageTitle>Cartera - PROPIA</PageTitle>
+
+<div class="mb-4 d-flex justify-content-between align-items-start">
+    <div>
+        <h1 class="h3 mb-1 fw-semibold">Cartera y Estado de Cuenta</h1>
+        <p class="text-muted mb-0">Modulo 2.7 - motor de gestion de mora desde las liquidaciones de 2.6</p>
+    </div>
+    <button class="btn btn-outline-dark btn-sm" @onclick="Sincronizar" disabled="@_busy">
+        @(_busy ? "Sincronizando..." : "Sincronizar desde Presupuesto")
+    </button>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <div class="card border-warning p-4"><h5>Necesitas iniciar sesion</h5><a class="btn btn-dark mt-2" href="/login">Iniciar sesion</a></div>
+    return;
+}
+
+@if (_t is null)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    return;
+}
+
+@* KPIs principales *@
+<div class="row g-3 mb-3">
+    <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+        <div class="text-muted small">Total mora</div>
+        <h4 class="mb-0 text-danger">@_t.Kpis.TotalMoraCop.ToString("N0") COP</h4>
+    </div></div></div>
+    <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+        <div class="text-muted small">Unidades en mora</div>
+        <h4 class="mb-0">@_t.Kpis.UnidadesEnMora</h4>
+    </div></div></div>
+    <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+        <div class="text-muted small">Con acuerdo activo</div>
+        <h4 class="mb-0 text-info">@_t.Kpis.ConAcuerdoActivo</h4>
+    </div></div></div>
+    <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+        <div class="text-muted small">En juridico</div>
+        <h4 class="mb-0 text-warning">@_t.Kpis.EnJuridico</h4>
+    </div></div></div>
+</div>
+
+@* Aging *@
+<div class="card mb-3"><div class="card-body py-3">
+    <h6 class="mb-2">Aging de cartera</h6>
+    <div class="small">
+        <div class="d-flex justify-content-between mb-1">
+            <span>0-30 dias <span class="text-muted">(@_t.Kpis.UnidadesAging0_30 unidades)</span></span>
+            <strong>@_t.Kpis.Aging0_30.ToString("N0") COP</strong>
+        </div>
+        <div class="progress mb-2" style="height:6px;">
+            <div class="progress-bar bg-success" style="width:@AgingPct(_t.Kpis.Aging0_30)%;"></div>
+        </div>
+        <div class="d-flex justify-content-between mb-1">
+            <span>31-60 dias <span class="text-muted">(@_t.Kpis.UnidadesAging31_60 unidades)</span></span>
+            <strong>@_t.Kpis.Aging31_60.ToString("N0") COP</strong>
+        </div>
+        <div class="progress mb-2" style="height:6px;">
+            <div class="progress-bar bg-warning" style="width:@AgingPct(_t.Kpis.Aging31_60)%;"></div>
+        </div>
+        <div class="d-flex justify-content-between mb-1">
+            <span>61-90 dias <span class="text-muted">(@_t.Kpis.UnidadesAging61_90 unidades)</span></span>
+            <strong>@_t.Kpis.Aging61_90.ToString("N0") COP</strong>
+        </div>
+        <div class="progress mb-2" style="height:6px;">
+            <div class="progress-bar" style="width:@AgingPct(_t.Kpis.Aging61_90)%; background:#f97316;"></div>
+        </div>
+        <div class="d-flex justify-content-between mb-1">
+            <span>+90 dias <span class="text-muted">(@_t.Kpis.UnidadesAgingMas90 unidades)</span></span>
+            <strong>@_t.Kpis.AgingMas90.ToString("N0") COP</strong>
+        </div>
+        <div class="progress mb-2" style="height:6px;">
+            <div class="progress-bar bg-danger" style="width:@AgingPct(_t.Kpis.AgingMas90)%;"></div>
+        </div>
+    </div>
+</div></div>
+
+@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+@* Tabla de unidades en mora *@
+@if (_t.UnidadesEnMora.Count == 0)
+{
+    <div class="card p-4 text-center text-muted">Sin unidades en mora. Si esperabas datos, ejecuta "Sincronizar desde Presupuesto".</div>
+}
+else
+{
+    <div class="card">
+        <table class="table table-hover mb-0 align-middle">
+            <thead class="bg-light small text-muted">
+                <tr><th>Unidad</th><th>Torre</th><th class="text-end">Saldo</th><th class="text-end">Intereses</th><th class="text-end">Total</th><th class="text-end">Dias mora</th><th>Estado</th><th></th></tr>
+            </thead>
+            <tbody class="small">
+                @foreach (var u in _t.UnidadesEnMora)
+                {
+                    var uid = u.UnidadPrivadaId;
+                    <tr style="cursor:pointer;" @onclick="() => Ir(uid)">
+                        <td><strong>@u.UnidadNumero</strong></td>
+                        <td>@(u.TorreNombre ?? "-")</td>
+                        <td class="text-end">@u.SaldoCapital.ToString("N0")</td>
+                        <td class="text-end text-warning">@u.SaldoIntereses.ToString("N0")</td>
+                        <td class="text-end fw-bold">@u.SaldoTotal.ToString("N0")</td>
+                        <td class="text-end @(u.DiasMora > 60 ? "text-danger fw-bold" : "")">@u.DiasMora</td>
+                        <td>
+                            @if (u.EstadoGestionNombre is not null)
+                            {
+                                <span class="badge" style="background:@(u.EstadoGestionColor ?? "#94a3b8"); color:white;">@u.EstadoGestionNombre</span>
+                            }
+                            @if (u.TieneAcuerdoVigente) { <span class="badge bg-info ms-1">Acuerdo</span> }
+                        </td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-dark" href="@($"/cartera/{u.UnidadPrivadaId}")">Ficha</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<style>
+    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
+</style>
+
+@code {
+    private string? _jwt;
+    private bool _busy;
+    private string? _msg; private string _msgClass = "alert-info";
+    private CarteraTableroDto? _t;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task CargarAsync()
+    {
+        try { _t = await Auth().GetFromJsonAsync<CarteraTableroDto>("/api/cartera/tablero"); }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task Sincronizar()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Auth().PostAsync("/api/cartera/sincronizar", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                _msg = "Cartera sincronizada con las liquidaciones del modulo 2.6."; _msgClass = "alert-success";
+                await CargarAsync();
+            }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private int AgingPct(decimal valor)
+    {
+        if (_t is null || _t.Kpis.TotalMoraCop == 0) return 0;
+        return (int)Math.Min(100, (double)(valor / _t.Kpis.TotalMoraCop) * 100);
+    }
+
+    private void Ir(Guid unidadId) => Nav.NavigateTo($"/cartera/{unidadId}");
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}
