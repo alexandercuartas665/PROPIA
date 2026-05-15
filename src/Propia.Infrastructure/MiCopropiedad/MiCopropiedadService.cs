@@ -25,8 +25,11 @@ public class MiCopropiedadService : IMiCopropiedadService
         var equipos = await _db.EquiposActivos.CountAsync(ct);
         var contratos = await _db.ContratosServicio.CountAsync(ct);
         var miembros = await _db.MiembrosConsejo.CountAsync(c => c.Activo, ct);
+        var miembrosEquipoActivos = await _db.MiembrosEquipo.CountAsync(m => m.Activo, ct);
+        var comitesActivos = await _db.Comites.CountAsync(c => c.Activo, ct);
+        var hayRevisorFiscal = await _db.RevisoresFiscales.AnyAsync(r => r.Activo, ct);
 
-        // Heuristicas de completitud por seccion
+        // Heuristicas de completitud por seccion (spec 2.3 v1.0)
         var completas = new Dictionary<string, bool>
         {
             ["Identidad"] = !string.IsNullOrWhiteSpace(t.Nombre)
@@ -34,8 +37,11 @@ public class MiCopropiedadService : IMiCopropiedadService
                             && !string.IsNullOrWhiteSpace(t.Direccion)
                             && t.TipoCopropiedad.HasValue,
             ["Distribucion"] = torres > 0 && unidades > 0 && Math.Abs(coefSum - 100m) <= 1m,
-            ["EquipoTrabajo"] = miembros > 0,  // proxy - se reemplaza cuando este modulo 2.5
-            ["Gobierno"] = miembros >= 3,  // minimo 3 miembros del consejo (presidente + 2)
+            ["EquipoTrabajo"] = miembrosEquipoActivos > 0,
+            // Gobierno completo: consejo con minimo 3 activos + revisor fiscal (si la PH lo requiere) + al menos un comite
+            ["Gobierno"] = miembros >= 3
+                           && (unidades <= 30 || hayRevisorFiscal)
+                           && comitesActivos > 0,
             ["Servicios"] = contratos > 0,
             ["ZonasComunes"] = zonas > 0,
             ["Equipos"] = equipos > 0,
@@ -44,13 +50,20 @@ public class MiCopropiedadService : IMiCopropiedadService
         var pct = (int)(completas.Values.Count(b => b) * 100.0 / completas.Count);
 
         return new ResumenMiCopropiedadDto(
-            new IdentidadDto(t.Id, t.Nombre, t.Nit, t.DigitoVerificacion,
-                t.Direccion, t.Ciudad, t.Departamento,
-                t.CodigoPropia, t.TipoCopropiedad, t.Estrato,
-                t.FotoFachadaUrl, t.LogoUrl, t.Descripcion),
+            ToIdentidadDto(t),
             torres, unidades, coefSum, zonas, equipos, contratos, miembros,
             pct, completas);
     }
+
+    private static IdentidadDto ToIdentidadDto(Tenant t) =>
+        new(t.Id, t.Nombre, t.Nit, t.DigitoVerificacion,
+            t.Direccion, t.Ciudad, t.Departamento,
+            t.CodigoPropia, t.TipoCopropiedad, t.Estrato,
+            t.FotoFachadaUrl, t.LogoUrl, t.Descripcion,
+            t.NumeroReglamentoPh, t.NotariaRegistro,
+            t.MatriculaInmobiliaria, t.LicenciaConstruccion,
+            t.FechaConstitucion,
+            t.LabelAgrupacion, t.LabelPiso);
 
     // ----------------------------- Seccion 1: Identidad -----------------------------
 
@@ -72,12 +85,18 @@ public class MiCopropiedadService : IMiCopropiedadService
         t.FotoFachadaUrl = req.FotoFachadaUrl;
         t.LogoUrl = req.LogoUrl;
         t.Descripcion = req.Descripcion;
+        // Identidad registral
+        t.NumeroReglamentoPh = req.NumeroReglamentoPh;
+        t.NotariaRegistro = req.NotariaRegistro;
+        t.MatriculaInmobiliaria = req.MatriculaInmobiliaria;
+        t.LicenciaConstruccion = req.LicenciaConstruccion;
+        t.FechaConstitucion = req.FechaConstitucion;
+        // Labels personalizables
+        t.LabelAgrupacion = string.IsNullOrWhiteSpace(req.LabelAgrupacion) ? null : req.LabelAgrupacion.Trim();
+        t.LabelPiso = string.IsNullOrWhiteSpace(req.LabelPiso) ? null : req.LabelPiso.Trim();
         await _db.SaveChangesAsync(ct);
 
-        return new IdentidadDto(t.Id, t.Nombre, t.Nit, t.DigitoVerificacion,
-            t.Direccion, t.Ciudad, t.Departamento,
-            t.CodigoPropia, t.TipoCopropiedad, t.Estrato,
-            t.FotoFachadaUrl, t.LogoUrl, t.Descripcion);
+        return ToIdentidadDto(t);
     }
 
     // ----------------------------- Seccion 2: Distribucion -----------------------------
@@ -157,6 +176,387 @@ public class MiCopropiedadService : IMiCopropiedadService
             unidad.CoeficientePropiedad, unidad.AreaM2,
             unidad.Habitaciones, unidad.Banos, unidad.Parqueaderos,
             unidad.Estado, unidad.Observaciones);
+    }
+
+    public async Task<UnidadDto?> ObtenerUnidadAsync(Guid unidadId, CancellationToken ct)
+    {
+        return await _db.UnidadesPrivadas
+            .AsNoTracking()
+            .Include(u => u.Torre)
+            .Where(u => u.Id == unidadId)
+            .Select(u => new UnidadDto(
+                u.Id, u.Numero, u.Tipo,
+                u.TorreId, u.Torre != null ? u.Torre.Nombre : null, u.Piso,
+                u.CoeficientePropiedad, u.AreaM2,
+                u.Habitaciones, u.Banos, u.Parqueaderos,
+                u.Estado, u.Observaciones))
+            .FirstOrDefaultAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<TipoUnidadCustomDto>> ListTiposUnidadCustomAsync(CancellationToken ct)
+    {
+        return await _db.TiposUnidadCustom
+            .AsNoTracking()
+            .OrderBy(t => t.Nombre)
+            .Select(t => new TipoUnidadCustomDto(t.Id, t.Nombre, t.PagaAdministracionPorDefecto, t.Descripcion, t.Activo))
+            .ToListAsync(ct);
+    }
+
+    public async Task<TipoUnidadCustomDto> CrearTipoUnidadCustomAsync(CrearTipoUnidadCustomRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Nombre))
+            throw new InvalidOperationException("Nombre del tipo es obligatorio.");
+        var nombre = req.Nombre.Trim();
+        if (await _db.TiposUnidadCustom.AnyAsync(t => t.Nombre == nombre, ct))
+            throw new InvalidOperationException($"Ya existe un tipo de unidad llamado '{nombre}' en esta copropiedad.");
+
+        var t = new TipoUnidadCustom
+        {
+            Nombre = nombre,
+            PagaAdministracionPorDefecto = req.PagaAdministracionPorDefecto,
+            Descripcion = req.Descripcion,
+            Activo = true
+        };
+        _db.TiposUnidadCustom.Add(t);
+        await _db.SaveChangesAsync(ct);
+        return new TipoUnidadCustomDto(t.Id, t.Nombre, t.PagaAdministracionPorDefecto, t.Descripcion, t.Activo);
+    }
+
+    public async Task<bool> EliminarTipoUnidadCustomAsync(Guid tipoId, CancellationToken ct)
+    {
+        var t = await _db.TiposUnidadCustom.FirstOrDefaultAsync(x => x.Id == tipoId, ct);
+        if (t is null) return false;
+        _db.TiposUnidadCustom.Remove(t);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    // ----------------------------- Tipos de coeficiente (B2) -----------------------------
+
+    public async Task<IReadOnlyList<TipoCoeficienteDto>> ListTiposCoeficienteAsync(CancellationToken ct)
+    {
+        // Si no hay ninguno, sembramos el default "Propiedad" (lazy init).
+        var existen = await _db.TiposCoeficiente.AnyAsync(ct);
+        if (!existen)
+        {
+            _db.TiposCoeficiente.Add(new TipoCoeficiente
+            {
+                Nombre = "Propiedad",
+                Descripcion = "Coeficiente principal de la PH segun Ley 675",
+                EsPrincipal = true,
+                Activo = true
+            });
+            await _db.SaveChangesAsync(ct);
+        }
+
+        var tipos = await _db.TiposCoeficiente
+            .AsNoTracking()
+            .OrderByDescending(t => t.EsPrincipal).ThenBy(t => t.Nombre)
+            .ToListAsync(ct);
+
+        // Calcular suma actual por tipo (incluyendo el campo legacy CoeficientePropiedad para el tipo principal).
+        var sumas = await _db.UnidadCoeficientes
+            .AsNoTracking()
+            .GroupBy(uc => uc.TipoCoeficienteId)
+            .Select(g => new { TipoId = g.Key, Suma = g.Sum(x => x.Valor) })
+            .ToDictionaryAsync(x => x.TipoId, x => x.Suma, ct);
+
+        var sumaLegacyPropiedad = await _db.UnidadesPrivadas.SumAsync(u => (decimal?)u.CoeficientePropiedad, ct) ?? 0m;
+
+        return tipos.Select(t =>
+        {
+            var suma = sumas.GetValueOrDefault(t.Id, 0m);
+            if (t.EsPrincipal) suma += sumaLegacyPropiedad - (sumas.GetValueOrDefault(t.Id, 0m) > 0 ? 0m : 0m);
+            // Para principal: si hay valores en UnidadCoeficientes los usamos; si no, caemos al legacy.
+            // Simplificacion: para el tipo principal sumamos LO QUE HAYA en UnidadCoeficientes;
+            // si no hay registros (suma == 0), exponemos el legacy.
+            var sumaReal = t.EsPrincipal && sumas.GetValueOrDefault(t.Id, 0m) == 0m
+                ? sumaLegacyPropiedad
+                : sumas.GetValueOrDefault(t.Id, 0m);
+            return new TipoCoeficienteDto(t.Id, t.Nombre, t.Descripcion, t.EsPrincipal, t.Activo, sumaReal);
+        }).ToList();
+    }
+
+    public async Task<TipoCoeficienteDto> CrearTipoCoeficienteAsync(CrearTipoCoeficienteRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Nombre))
+            throw new InvalidOperationException("Nombre del tipo de coeficiente es obligatorio.");
+        var nombre = req.Nombre.Trim();
+        if (await _db.TiposCoeficiente.AnyAsync(x => x.Nombre == nombre, ct))
+            throw new InvalidOperationException($"Ya existe un tipo de coeficiente '{nombre}'.");
+
+        var t = new TipoCoeficiente
+        {
+            Nombre = nombre,
+            Descripcion = req.Descripcion,
+            EsPrincipal = false,
+            Activo = true
+        };
+        _db.TiposCoeficiente.Add(t);
+        await _db.SaveChangesAsync(ct);
+        return new TipoCoeficienteDto(t.Id, t.Nombre, t.Descripcion, t.EsPrincipal, t.Activo, 0m);
+    }
+
+    public async Task<bool> EliminarTipoCoeficienteAsync(Guid tipoId, CancellationToken ct)
+    {
+        var t = await _db.TiposCoeficiente.FirstOrDefaultAsync(x => x.Id == tipoId, ct);
+        if (t is null) return false;
+        if (t.EsPrincipal)
+            throw new InvalidOperationException("No se puede eliminar el tipo principal de coeficiente.");
+
+        // Cascade eliminara UnidadCoeficientes asociados via FK
+        _db.TiposCoeficiente.Remove(t);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<IReadOnlyList<UnidadCoeficienteDto>> ListCoeficientesUnidadAsync(Guid unidadId, CancellationToken ct)
+    {
+        return await _db.UnidadCoeficientes
+            .AsNoTracking()
+            .Include(uc => uc.TipoCoeficiente)
+            .Where(uc => uc.UnidadId == unidadId)
+            .Select(uc => new UnidadCoeficienteDto(uc.TipoCoeficienteId, uc.TipoCoeficiente!.Nombre, uc.Valor))
+            .ToListAsync(ct);
+    }
+
+    public async Task<UnidadCoeficienteDto> SetCoeficienteUnidadAsync(Guid unidadId, SetCoeficienteUnidadRequest req, CancellationToken ct)
+    {
+        if (req.Valor < 0)
+            throw new InvalidOperationException("El coeficiente debe ser >= 0.");
+
+        var unidad = await _db.UnidadesPrivadas.FirstOrDefaultAsync(u => u.Id == unidadId, ct)
+            ?? throw new InvalidOperationException("Unidad no encontrada.");
+        var tipo = await _db.TiposCoeficiente.FirstOrDefaultAsync(t => t.Id == req.TipoCoeficienteId, ct)
+            ?? throw new InvalidOperationException("Tipo de coeficiente no encontrado.");
+
+        var existente = await _db.UnidadCoeficientes
+            .FirstOrDefaultAsync(uc => uc.UnidadId == unidadId && uc.TipoCoeficienteId == req.TipoCoeficienteId, ct);
+
+        if (existente is null)
+        {
+            existente = new UnidadCoeficiente
+            {
+                UnidadId = unidadId,
+                TipoCoeficienteId = req.TipoCoeficienteId,
+                Valor = req.Valor
+            };
+            _db.UnidadCoeficientes.Add(existente);
+        }
+        else
+        {
+            existente.Valor = req.Valor;
+        }
+
+        // Si es el tipo principal, mantenemos el campo legacy de la unidad sincronizado
+        if (tipo.EsPrincipal)
+            unidad.CoeficientePropiedad = req.Valor;
+
+        await _db.SaveChangesAsync(ct);
+        return new UnidadCoeficienteDto(req.TipoCoeficienteId, tipo.Nombre, req.Valor);
+    }
+
+    public async Task<GenerarUnidadesResponse> GenerarUnidadesAsync(GenerarUnidadesRequest req, CancellationToken ct)
+    {
+        if (req.Torres is null || req.Torres.Count == 0)
+            throw new InvalidOperationException("Debes definir al menos una torre/agrupacion.");
+        if (req.CoeficientePorUnidad < 0)
+            throw new InvalidOperationException("Coeficiente por unidad no puede ser negativo.");
+
+        var torresCreadas = new List<Torre>();
+        var unidadesCreadas = new List<UnidadPrivada>();
+        var torresExistentes = await _db.Torres.CountAsync(ct);
+        var unidadesExistentesNumeros = await _db.UnidadesPrivadas.Select(u => u.Numero).ToListAsync(ct);
+        var unidadesGeneradas = new HashSet<string>(unidadesExistentesNumeros, StringComparer.OrdinalIgnoreCase);
+
+        // Si hay torres pre-existentes o se piden multiples torres nuevas, usamos
+        // prefijo de indice de torre para garantizar unicidad global de identificadores.
+        var usarPrefijoIdx = req.Torres.Count > 1 || torresExistentes > 0;
+        var corridoSeq = unidadesExistentesNumeros.Count + 1;
+        var torreIdx = torresExistentes;
+
+        foreach (var spec in req.Torres)
+        {
+            torreIdx++;
+            if (string.IsNullOrWhiteSpace(spec.Nombre))
+                throw new InvalidOperationException("Cada torre debe tener nombre.");
+            if (spec.CantidadPisos <= 0 || spec.UnidadesPorPiso <= 0)
+                throw new InvalidOperationException($"Torre '{spec.Nombre}': pisos y unidades por piso deben ser > 0.");
+            if (await _db.Torres.AnyAsync(t => t.Nombre == spec.Nombre, ct))
+                throw new InvalidOperationException($"Ya existe una torre llamada '{spec.Nombre}' en esta copropiedad.");
+
+            var torre = new Torre { Nombre = spec.Nombre.Trim(), CantidadPisos = spec.CantidadPisos };
+            _db.Torres.Add(torre);
+            torresCreadas.Add(torre);
+
+            for (var piso = 1; piso <= spec.CantidadPisos; piso++)
+            {
+                for (var n = 1; n <= spec.UnidadesPorPiso; n++)
+                {
+                    // PisoNumero: si ya hay torres en la copropiedad o se piden multiples,
+                    // prefijamos con el indice de torre (Torre 1 piso 1 #1 -> 1101) para
+                    // garantizar unicidad global. Con 1 sola torre y tenant vacio: 101, 102 (spec).
+                    string numero;
+                    if (req.Patron == PatronNumeracion.Corrido)
+                    {
+                        numero = corridoSeq.ToString();
+                        corridoSeq++;
+                    }
+                    else
+                    {
+                        numero = usarPrefijoIdx ? $"{torreIdx}{piso}{n:D2}" : $"{piso}{n:D2}";
+                    }
+                    if (!unidadesGeneradas.Add(numero))
+                        throw new InvalidOperationException(
+                            $"Colision de identificador '{numero}'. Otra unidad ya tiene ese numero. " +
+                            "Renombra la torre o cambia el patron de numeracion.");
+                    var unidad = new UnidadPrivada
+                    {
+                        Numero = numero,
+                        Tipo = req.TipoUnidadDefault,
+                        Torre = torre,
+                        Piso = piso,
+                        CoeficientePropiedad = req.CoeficientePorUnidad
+                    };
+                    _db.UnidadesPrivadas.Add(unidad);
+                    unidadesCreadas.Add(unidad);
+                }
+            }
+        }
+
+        await _db.SaveChangesAsync(ct);
+        return new GenerarUnidadesResponse(
+            torresCreadas.Count,
+            unidadesCreadas.Count,
+            torresCreadas.Select(t => t.Id).ToList(),
+            unidadesCreadas.Select(u => u.Id).ToList());
+    }
+
+    public async Task<ImportarUnidadesResponse> ImportarUnidadesCsvAsync(ImportarUnidadesRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.CsvContent))
+            return new ImportarUnidadesResponse(false, 0, 0, 0m, new List<ImportacionFilaError>
+            {
+                new(0, "CSV", "El archivo viene vacio.")
+            });
+
+        // Formato esperado (header en fila 1):
+        //   identificador,tipo_unidad,agrupacion,piso,coeficiente,area_m2,paga_administracion
+        // Solo identificador, tipo_unidad y coeficiente son obligatorios.
+
+        var lineas = req.CsvContent.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n');
+        var errores = new List<ImportacionFilaError>();
+        var filas = new List<(int Linea, string Numero, TipoUnidad Tipo, string? Agrupacion, int? Piso, decimal Coef, decimal? Area)>();
+
+        if (lineas.Length < 2)
+        {
+            errores.Add(new(0, "CSV", "Necesitas al menos un encabezado y una fila de datos."));
+            return new ImportarUnidadesResponse(false, 0, 0, 0m, errores);
+        }
+
+        var header = lineas[0].Split(',').Select(c => c.Trim().ToLowerInvariant()).ToList();
+        int idxId = header.IndexOf("identificador");
+        int idxTipo = header.IndexOf("tipo_unidad");
+        int idxAgr = header.IndexOf("agrupacion");
+        int idxPiso = header.IndexOf("piso");
+        int idxCoef = header.IndexOf("coeficiente");
+        int idxArea = header.IndexOf("area_m2");
+
+        if (idxId < 0 || idxTipo < 0 || idxCoef < 0)
+        {
+            errores.Add(new(1, "header", "Faltan columnas obligatorias: identificador, tipo_unidad, coeficiente."));
+            return new ImportarUnidadesResponse(false, 0, 0, 0m, errores);
+        }
+
+        var numerosVistos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        decimal suma = 0m;
+
+        for (int i = 1; i < lineas.Length; i++)
+        {
+            var linea = lineas[i];
+            if (string.IsNullOrWhiteSpace(linea)) continue;
+            var celdas = linea.Split(',');
+            var nroFila = i + 1;
+
+            string numero = celdas.Length > idxId ? celdas[idxId].Trim() : "";
+            string tipoTxt = celdas.Length > idxTipo ? celdas[idxTipo].Trim() : "";
+            string coefTxt = celdas.Length > idxCoef ? celdas[idxCoef].Trim() : "";
+
+            if (string.IsNullOrEmpty(numero))
+            {
+                errores.Add(new(nroFila, "identificador", "Campo obligatorio."));
+                continue;
+            }
+            if (!numerosVistos.Add(numero))
+            {
+                errores.Add(new(nroFila, "identificador", $"Identificador '{numero}' aparece duplicado en el archivo."));
+            }
+            if (!Enum.TryParse<TipoUnidad>(tipoTxt, ignoreCase: true, out var tipo))
+            {
+                errores.Add(new(nroFila, "tipo_unidad", $"Tipo '{tipoTxt}' no esta en el catalogo base."));
+                continue;
+            }
+            if (!decimal.TryParse(coefTxt, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var coef) || coef < 0)
+            {
+                errores.Add(new(nroFila, "coeficiente", $"Formato invalido. Usa decimal positivo (ej. 0.023400)."));
+                continue;
+            }
+
+            string? agrupacion = idxAgr >= 0 && celdas.Length > idxAgr ? celdas[idxAgr].Trim() : null;
+            if (string.IsNullOrWhiteSpace(agrupacion)) agrupacion = null;
+
+            int? piso = null;
+            if (idxPiso >= 0 && celdas.Length > idxPiso && int.TryParse(celdas[idxPiso].Trim(), out var p)) piso = p;
+
+            decimal? area = null;
+            if (idxArea >= 0 && celdas.Length > idxArea && decimal.TryParse(celdas[idxArea].Trim(), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var a)) area = a;
+
+            suma += coef;
+            filas.Add((nroFila, numero, tipo, agrupacion, piso, coef, area));
+        }
+
+        if (errores.Count > 0)
+            return new ImportarUnidadesResponse(false, filas.Count, 0, suma, errores);
+
+        // Identificadores duplicados contra BD
+        var numerosArchivo = filas.Select(f => f.Numero).ToList();
+        var duplicados = await _db.UnidadesPrivadas
+            .Where(u => numerosArchivo.Contains(u.Numero))
+            .Select(u => u.Numero)
+            .ToListAsync(ct);
+        foreach (var dup in duplicados)
+            errores.Add(new(0, "identificador", $"El identificador '{dup}' ya existe en la copropiedad."));
+        if (errores.Count > 0)
+            return new ImportarUnidadesResponse(false, filas.Count, 0, suma, errores);
+
+        // Crear torres faltantes
+        var nombresTorres = filas.Where(f => f.Agrupacion is not null).Select(f => f.Agrupacion!).Distinct().ToList();
+        var torresExistentes = await _db.Torres
+            .Where(t => nombresTorres.Contains(t.Nombre))
+            .ToDictionaryAsync(t => t.Nombre, t => t, ct);
+        foreach (var nombreTorre in nombresTorres.Where(n => !torresExistentes.ContainsKey(n)))
+        {
+            var nuevaTorre = new Torre { Nombre = nombreTorre };
+            _db.Torres.Add(nuevaTorre);
+            torresExistentes[nombreTorre] = nuevaTorre;
+        }
+
+        foreach (var f in filas)
+        {
+            var torreId = f.Agrupacion is not null ? torresExistentes[f.Agrupacion].Id : (Guid?)null;
+            var torre = f.Agrupacion is not null ? torresExistentes[f.Agrupacion] : null;
+            _db.UnidadesPrivadas.Add(new UnidadPrivada
+            {
+                Numero = f.Numero,
+                Tipo = f.Tipo,
+                Piso = f.Piso,
+                CoeficientePropiedad = f.Coef,
+                AreaM2 = f.Area,
+                Torre = torre  // EF asigna torreId al guardar la torre nueva
+            });
+        }
+        await _db.SaveChangesAsync(ct);
+        return new ImportarUnidadesResponse(true, filas.Count, filas.Count, suma, Array.Empty<ImportacionFilaError>());
     }
 
     public async Task<bool> EliminarUnidadAsync(Guid unidadId, CancellationToken ct)
@@ -345,5 +745,215 @@ public class MiCopropiedadService : IMiCopropiedadService
         _db.EquiposActivos.Remove(e);
         await _db.SaveChangesAsync(ct);
         return true;
+    }
+
+    // ----------------------------- Seccion 4 ampliada: Comites + Revisor Fiscal -----------------------------
+
+    public async Task<IReadOnlyList<ComiteDto>> ListComitesAsync(CancellationToken ct)
+    {
+        return await _db.Comites
+            .AsNoTracking()
+            .OrderBy(c => c.Nombre)
+            .Select(c => new ComiteDto(c.Id, c.Nombre, c.Descripcion, c.FechaConformacion, c.Activo,
+                _db.ComiteMiembros.Count(m => m.ComiteId == c.Id && m.Activo)))
+            .ToListAsync(ct);
+    }
+
+    public async Task<ComiteDto> CrearComiteAsync(CrearComiteRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Nombre))
+            throw new InvalidOperationException("Nombre del comite es obligatorio.");
+        var nombre = req.Nombre.Trim();
+        if (await _db.Comites.AnyAsync(x => x.Nombre == nombre, ct))
+            throw new InvalidOperationException($"Ya existe un comite llamado '{nombre}'.");
+
+        var c = new Comite
+        {
+            Nombre = nombre,
+            Descripcion = req.Descripcion,
+            FechaConformacion = req.FechaConformacion,
+            Activo = true
+        };
+        _db.Comites.Add(c);
+        await _db.SaveChangesAsync(ct);
+        return new ComiteDto(c.Id, c.Nombre, c.Descripcion, c.FechaConformacion, c.Activo, 0);
+    }
+
+    public async Task<bool> DesactivarComiteAsync(Guid comiteId, CancellationToken ct)
+    {
+        var c = await _db.Comites.FirstOrDefaultAsync(x => x.Id == comiteId, ct);
+        if (c is null) return false;
+        c.Activo = false;
+        c.FechaFin = DateOnly.FromDateTime(DateTime.UtcNow);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<IReadOnlyList<ComiteMiembroDto>> ListMiembrosComiteAsync(Guid comiteId, CancellationToken ct)
+    {
+        return await _db.ComiteMiembros
+            .AsNoTracking()
+            .Include(m => m.Persona)
+            .Where(m => m.ComiteId == comiteId)
+            .Select(m => new ComiteMiembroDto(m.Id, m.ComiteId, m.PersonaId,
+                m.Persona!.Nombres + " " + m.Persona.Apellidos, m.CargoEnComite, m.Activo))
+            .ToListAsync(ct);
+    }
+
+    public async Task<ComiteMiembroDto> AgregarMiembroComiteAsync(AgregarComiteMiembroRequest req, CancellationToken ct)
+    {
+        var existe = await _db.Comites.AnyAsync(c => c.Id == req.ComiteId, ct);
+        if (!existe) throw new InvalidOperationException("Comite no encontrado.");
+        var personaOk = await _db.Personas.AnyAsync(p => p.Id == req.PersonaId, ct);
+        if (!personaOk) throw new InvalidOperationException("Persona no encontrada.");
+        if (await _db.ComiteMiembros.AnyAsync(m => m.ComiteId == req.ComiteId && m.PersonaId == req.PersonaId, ct))
+            throw new InvalidOperationException("Esta persona ya esta en el comite.");
+
+        var m = new ComiteMiembro
+        {
+            ComiteId = req.ComiteId,
+            PersonaId = req.PersonaId,
+            CargoEnComite = req.CargoEnComite,
+            Activo = true
+        };
+        _db.ComiteMiembros.Add(m);
+        await _db.SaveChangesAsync(ct);
+        var persona = await _db.Personas.FirstAsync(p => p.Id == req.PersonaId, ct);
+        return new ComiteMiembroDto(m.Id, m.ComiteId, m.PersonaId, $"{persona.Nombres} {persona.Apellidos}", m.CargoEnComite, m.Activo);
+    }
+
+    public async Task<bool> RetirarMiembroComiteAsync(Guid miembroId, CancellationToken ct)
+    {
+        var m = await _db.ComiteMiembros.FirstOrDefaultAsync(x => x.Id == miembroId, ct);
+        if (m is null) return false;
+        m.Activo = false;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<RevisorFiscalDto?> GetRevisorFiscalActivoAsync(CancellationToken ct)
+    {
+        return await _db.RevisoresFiscales
+            .AsNoTracking()
+            .Include(r => r.Persona)
+            .Where(r => r.Activo)
+            .OrderByDescending(r => r.FechaPosesion)
+            .Select(r => new RevisorFiscalDto(r.Id, r.PersonaId,
+                r.Persona!.Nombres + " " + r.Persona.Apellidos,
+                r.NumeroTarjetaProfesional, r.FechaPosesion, r.FechaFin, r.Activo))
+            .FirstOrDefaultAsync(ct);
+    }
+
+    public async Task<RevisorFiscalDto> DesignarRevisorFiscalAsync(DesignarRevisorFiscalRequest req, CancellationToken ct)
+    {
+        var persona = await _db.Personas.FirstOrDefaultAsync(p => p.Id == req.PersonaId, ct)
+            ?? throw new InvalidOperationException("Persona no encontrada.");
+
+        // Retira cualquier revisor previo activo
+        var previos = await _db.RevisoresFiscales.Where(r => r.Activo).ToListAsync(ct);
+        foreach (var prev in previos)
+        {
+            prev.Activo = false;
+            prev.FechaFin = DateOnly.FromDateTime(DateTime.UtcNow);
+        }
+
+        var r = new RevisorFiscal
+        {
+            PersonaId = req.PersonaId,
+            NumeroTarjetaProfesional = req.NumeroTarjetaProfesional,
+            FechaPosesion = req.FechaPosesion,
+            Activo = true
+        };
+        _db.RevisoresFiscales.Add(r);
+        await _db.SaveChangesAsync(ct);
+        return new RevisorFiscalDto(r.Id, r.PersonaId, $"{persona.Nombres} {persona.Apellidos}",
+            r.NumeroTarjetaProfesional, r.FechaPosesion, r.FechaFin, r.Activo);
+    }
+
+    public async Task<bool> RetirarRevisorFiscalAsync(Guid revisorId, CancellationToken ct)
+    {
+        var r = await _db.RevisoresFiscales.FirstOrDefaultAsync(x => x.Id == revisorId, ct);
+        if (r is null) return false;
+        r.Activo = false;
+        r.FechaFin = DateOnly.FromDateTime(DateTime.UtcNow);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    // ----------------------------- Seccion 3: Equipo de trabajo -----------------------------
+
+    public async Task<IReadOnlyList<MiembroEquipoDto>> ListEquipoAsync(CancellationToken ct)
+    {
+        return await _db.MiembrosEquipo
+            .AsNoTracking()
+            .Include(m => m.Persona)
+            .OrderByDescending(m => m.Activo).ThenBy(m => m.Rol).ThenBy(m => m.Persona!.Apellidos)
+            .Select(m => new MiembroEquipoDto(m.Id, m.PersonaId,
+                m.Persona!.Nombres + " " + m.Persona.Apellidos,
+                m.Rol, m.RolPersonalizado, m.Tipo,
+                m.FechaVinculacion, m.FechaFin, m.Activo, m.EsUsuarioSistema,
+                m.Telefono, m.Email))
+            .ToListAsync(ct);
+    }
+
+    public async Task<MiembroEquipoDto> AgregarMiembroEquipoAsync(AgregarMiembroEquipoRequest req, CancellationToken ct)
+    {
+        var persona = await _db.Personas.FirstOrDefaultAsync(p => p.Id == req.PersonaId, ct)
+            ?? throw new InvalidOperationException("Persona no encontrada. Usa /vincular-persona para crearla.");
+
+        var m = new MiembroEquipo
+        {
+            PersonaId = req.PersonaId,
+            Rol = req.Rol,
+            RolPersonalizado = req.Rol == RolEquipo.Otro ? req.RolPersonalizado?.Trim() : null,
+            Tipo = req.Tipo,
+            FechaVinculacion = req.FechaVinculacion,
+            Activo = true,
+            Telefono = req.Telefono,
+            Email = req.Email,
+            Observaciones = req.Observaciones
+        };
+        _db.MiembrosEquipo.Add(m);
+        await _db.SaveChangesAsync(ct);
+        return new MiembroEquipoDto(m.Id, m.PersonaId, $"{persona.Nombres} {persona.Apellidos}",
+            m.Rol, m.RolPersonalizado, m.Tipo,
+            m.FechaVinculacion, m.FechaFin, m.Activo, m.EsUsuarioSistema,
+            m.Telefono, m.Email);
+    }
+
+    public async Task<bool> DesactivarMiembroEquipoAsync(Guid miembroId, CancellationToken ct)
+    {
+        var m = await _db.MiembrosEquipo.FirstOrDefaultAsync(x => x.Id == miembroId, ct);
+        if (m is null) return false;
+        m.Activo = false;
+        m.FechaFin = DateOnly.FromDateTime(DateTime.UtcNow);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<Guid> VincularPersonaPorDocumentoAsync(VincularPersonaPorDocumentoRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Documento))
+            throw new InvalidOperationException("Documento es obligatorio.");
+        var doc = req.Documento.Trim();
+
+        var existente = await _db.Personas.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Documento == doc, ct);
+        if (existente is not null) return existente.Id;
+
+        if (string.IsNullOrWhiteSpace(req.Nombres) || string.IsNullOrWhiteSpace(req.Apellidos))
+            throw new InvalidOperationException("Nombres y apellidos son obligatorios al crear una persona nueva.");
+
+        var nueva = new Persona
+        {
+            TipoDocumento = TipoDocumento.CC,
+            Documento = doc,
+            Nombres = req.Nombres.Trim(),
+            Apellidos = req.Apellidos.Trim(),
+            Email = string.IsNullOrWhiteSpace(req.Email) ? null : req.Email.Trim(),
+            Telefono = req.Telefono
+        };
+        _db.Personas.Add(nueva);
+        await _db.SaveChangesAsync(ct);
+        return nueva.Id;
     }
 }

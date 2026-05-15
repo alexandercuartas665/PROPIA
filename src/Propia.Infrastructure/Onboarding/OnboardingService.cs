@@ -186,19 +186,25 @@ public class OnboardingService : IOnboardingService
         await _db.SaveChangesAsync(ct);
 
         // 4. Vincular UsuarioTenant (la persona es administradora de su copropiedad)
-        // Insertamos via SQL con app.tenant_id seteado para que RLS lo acepte.
-        await _db.Database.ExecuteSqlInterpolatedAsync(
-            $"SELECT set_config('app.tenant_id', {tenant.Id.ToString()}, false)", ct);
-        var usuarioTenant = new UsuarioTenant
+        // RLS bloquea INSERT si app.tenant_id no esta seteado. Abrimos conexion
+        // explicitamente y ejecutamos set_config + INSERT en el mismo cmd para
+        // garantizar misma sesion PostgreSQL.
+        var conn = _db.Database.GetDbConnection();
+        var opened = conn.State != System.Data.ConnectionState.Open;
+        if (opened) await conn.OpenAsync(ct);
+        try
         {
-            TenantId = tenant.Id,
-            PersonaId = persona.Id,
-            Rol = "Administrador",
-            Estado = EstadoUsuarioTenant.Activo,
-            FechaActivacion = DateTimeOffset.UtcNow
-        };
-        _db.UsuariosTenant.Add(usuarioTenant);
-        await _db.SaveChangesAsync(ct);
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"
+                SELECT set_config('app.tenant_id', '{tenant.Id}', false);
+                INSERT INTO usuarios_tenant (id, tenant_id, persona_id, rol, estado, fecha_activacion, created_at)
+                VALUES ('{Guid.NewGuid()}', '{tenant.Id}', '{persona.Id}', 'Administrador', 1, now(), now());";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        finally
+        {
+            if (opened) await conn.CloseAsync();
+        }
 
         // 5. Crear Suscripcion en plan seleccionado (si se proveyo PlanId)
         if (req.PlanId.HasValue)

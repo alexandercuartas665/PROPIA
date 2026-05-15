@@ -1,0 +1,217 @@
+@page "/mi-copropiedad/unidades/{UnidadId:guid}"
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<PageTitle>@(_unidad?.Numero ?? "Unidad") - Mi Copropiedad</PageTitle>
+
+@* Ficha 360 de Unidad Privada (modulo 2.3 - spec v1.0 seccion 4.4).
+   Pagina completa independiente con breadcrumb. Stubs para Propietario, Residente, PQRS, Cartera y Tareas
+   que se llenan cuando existan los modulos 2.4, 2.7, 2.9 y 2.10. *@
+
+<div class="mb-3 small text-muted">
+    <a href="/mi-copropiedad" class="text-decoration-none">Mi Copropiedad</a>
+    <span class="mx-1">/</span>
+    <strong>@(_unidad?.Numero ?? "...")</strong>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <div class="card border-warning p-4">
+        <h5>Necesitas iniciar sesion</h5>
+        <a class="btn btn-dark mt-2" href="/login">Iniciar sesion</a>
+    </div>
+    return;
+}
+
+@if (_loadError is not null)
+{
+    <div class="alert alert-danger">
+        @_loadError
+        <a class="btn btn-sm btn-outline-danger ms-3" href="/mi-copropiedad">Volver a Mi Copropiedad</a>
+    </div>
+}
+else if (_unidad is null)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+}
+else
+{
+    <div class="d-flex justify-content-between align-items-start mb-2">
+        <div>
+            <h1 class="h3 mb-1 fw-semibold">@_unidad.Tipo @_unidad.Numero</h1>
+            <p class="text-muted mb-0">
+                @if (!string.IsNullOrEmpty(_unidad.TorreNombre)) { <span>@_unidad.TorreNombre</span> }
+                @if (_unidad.Piso.HasValue) { <span> · Piso @_unidad.Piso</span> }
+                <span> · @_unidad.Tipo</span>
+            </p>
+        </div>
+        <a class="btn btn-sm btn-outline-secondary" href="/mi-copropiedad">&larr; Volver</a>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 mb-4">
+        <span class="badge bg-light text-dark border">@(_unidad.Estado ?? "Activa")</span>
+        <span class="badge bg-light text-dark border">Coef. @_unidad.CoeficientePropiedad.ToString("0.0000")%</span>
+        @if (_unidad.AreaM2.HasValue) { <span class="badge bg-light text-dark border">@_unidad.AreaM2 m²</span> }
+        @if (_unidad.Habitaciones.HasValue) { <span class="badge bg-light text-dark border">@_unidad.Habitaciones hab.</span> }
+        @if (_unidad.Banos.HasValue) { <span class="badge bg-light text-dark border">@_unidad.Banos baños</span> }
+    </div>
+
+    @* 3 KPI cards - stubs hasta que existan 2.7, 2.9, 2.10 *@
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="card kpi-card">
+                <div class="card-body">
+                    <div class="kpi-icon" style="background: linear-gradient(135deg, #f59e0b, #fbbf24);">$</div>
+                    <div>
+                        <div class="text-muted small">Deuda</div>
+                        <h4 class="mb-0">$0</h4>
+                        <small class="text-muted">2.7 Cartera no disponible aun</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card kpi-card">
+                <div class="card-body">
+                    <div class="kpi-icon" style="background: linear-gradient(135deg, #3b82f6, #60a5fa);">P</div>
+                    <div>
+                        <div class="text-muted small">PQRS abiertas</div>
+                        <h4 class="mb-0">0</h4>
+                        <small class="text-muted">2.9 PQRS no disponible aun</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card kpi-card">
+                <div class="card-body">
+                    <div class="kpi-icon" style="background: linear-gradient(135deg, var(--propia-primary), var(--propia-primary-light));">T</div>
+                    <div>
+                        <div class="text-muted small">Tareas activas</div>
+                        <h4 class="mb-0">0</h4>
+                        <small class="text-muted">2.10 Tareas no disponible aun</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* Propietario + Residente - stubs hasta 2.4 *@
+    <div class="card mb-3">
+        <div class="card-body">
+            <h6 class="text-muted small mb-3">PROPIETARIO</h6>
+            <p class="text-muted small mb-0">Sin propietario asignado. El modulo 2.4 Directorio permitira vincular personas y empresas. <em>(Pendiente.)</em></p>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h6 class="text-muted small mb-3">RESIDENTE</h6>
+            <p class="text-muted small mb-0">Sin residente asignado. <em>(Pendiente — modulo 2.4.)</em></p>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h6 class="text-muted small mb-3">UNIDADES ASOCIADAS</h6>
+            <p class="text-muted small mb-0">Parqueaderos y depositos vinculados a esta unidad. <em>(Pendiente — feature B6.)</em></p>
+        </div>
+    </div>
+
+    @* Estado de cuenta + PQRS recientes + Tareas (stubs) *@
+    <div class="card mb-3">
+        <div class="card-body">
+            <h6 class="text-muted small mb-3">ESTADO DE CUENTA</h6>
+            <p class="text-muted small mb-0">Marzo 2026: <em>(modulo 2.6 + 2.7 no disponible)</em></p>
+        </div>
+    </div>
+
+    @* Acciones admin sobre la unidad *@
+    <div class="card border-danger">
+        <div class="card-body">
+            <h6 class="mb-3">Acciones</h6>
+            <button class="btn btn-sm btn-outline-danger" @onclick="EliminarUnidad" disabled="@_busy">Eliminar unidad</button>
+            @if (!string.IsNullOrEmpty(_actionMsg))
+            {
+                <div class="alert alert-info mt-3 mb-0 py-2 small">@_actionMsg</div>
+            }
+        </div>
+    </div>
+}
+
+<style>
+    .kpi-card { border: none; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+    .kpi-card .card-body { display: flex; align-items: center; gap: 0.75rem; }
+    .kpi-icon {
+        width: 48px; height: 48px; border-radius: 10px;
+        color: white; font-weight: 700; font-size: 1.2rem;
+        display: inline-flex; align-items: center; justify-content: center;
+    }
+</style>
+
+@code {
+    [Parameter] public Guid UnidadId { get; set; }
+    private string? _jwt;
+    private bool _busy;
+    private string? _actionMsg;
+    private string? _loadError;
+    private UnidadDto? _unidad;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { /* prerender */ }
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = Auth();
+            var resp = await http.GetAsync($"/api/mi-copropiedad/unidades/{UnidadId}");
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                _loadError = "Tu sesion expiro. Vuelve a iniciar sesion.";
+                _jwt = null;
+                return;
+            }
+            if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                _loadError = "Esta unidad no existe o no pertenece a tu copropiedad.";
+                return;
+            }
+            resp.EnsureSuccessStatusCode();
+            _unidad = await resp.Content.ReadFromJsonAsync<UnidadDto>();
+        }
+        catch (Exception ex) { _loadError = ex.Message; }
+    }
+
+    private async Task EliminarUnidad()
+    {
+        _busy = true;
+        var http = Auth();
+        var resp = await http.DeleteAsync($"/api/mi-copropiedad/unidades/{UnidadId}");
+        if (resp.IsSuccessStatusCode) { Nav.NavigateTo("/mi-copropiedad", forceLoad: true); return; }
+        _actionMsg = $"No se pudo eliminar: {(int)resp.StatusCode}";
+        _busy = false;
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

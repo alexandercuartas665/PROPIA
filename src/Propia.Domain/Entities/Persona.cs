@@ -19,6 +19,16 @@ public class Persona : BaseEntity
     public string? Telefono { get; set; }
     public string? FotoUrl { get; set; }
 
-    // Navegacion - vinculos con copropiedades
+    // Modulo 2.4 Directorio (spec v1.0)
+    public DateOnly? FechaNacimiento { get; set; }
+    public GeneroPersona? Genero { get; set; }
+    public bool AceptoTratamientoDatos { get; set; }
+    public DateTimeOffset? FechaAceptacionDatos { get; set; }
+    public string? VersionPoliticaDatos { get; set; }
+    public CanalAceptacionDatos? CanalAceptacion { get; set; }
+    public string? IpAceptacion { get; set; }
+    public bool PerfilIncompleto { get; set; } = true;
+    public EstadoDirectorio EstadoDirectorio { get; set; } = EstadoDirectorio.Activo;
+
     public ICollection<UsuarioTenant> VinculosATenants { get; set; } = new List<UsuarioTenant>();
 }

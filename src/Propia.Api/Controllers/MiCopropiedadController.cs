@@ -57,6 +57,12 @@ public class MiCopropiedadController : ControllerBase
 
     // ---------- Seccion 2: Distribucion - Unidades ----------
     [HttpGet("unidades")] public async Task<IActionResult> ListUnidades(CancellationToken ct) => Ok(await _svc.ListUnidadesAsync(ct));
+    [HttpGet("unidades/{id:guid}")]
+    public async Task<IActionResult> ObtenerUnidad(Guid id, CancellationToken ct)
+    {
+        var u = await _svc.ObtenerUnidadAsync(id, ct);
+        return u is null ? NotFound() : Ok(u);
+    }
     [HttpPost("unidades")]
     public async Task<IActionResult> CrearUnidad([FromBody] CrearUnidadRequest req, CancellationToken ct)
     {
@@ -66,6 +72,56 @@ public class MiCopropiedadController : ControllerBase
     [HttpDelete("unidades/{id:guid}")]
     public async Task<IActionResult> EliminarUnidad(Guid id, CancellationToken ct)
         => await _svc.EliminarUnidadAsync(id, ct) ? NoContent() : NotFound();
+
+    // ---------- Seccion 2: Tipos personalizados de unidad ----------
+    [HttpGet("tipos-unidad")] public async Task<IActionResult> ListTiposUnidad(CancellationToken ct) => Ok(await _svc.ListTiposUnidadCustomAsync(ct));
+    [HttpPost("tipos-unidad")]
+    public async Task<IActionResult> CrearTipoUnidad([FromBody] CrearTipoUnidadCustomRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.CrearTipoUnidadCustomAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+    [HttpDelete("tipos-unidad/{id:guid}")]
+    public async Task<IActionResult> EliminarTipoUnidad(Guid id, CancellationToken ct)
+        => await _svc.EliminarTipoUnidadCustomAsync(id, ct) ? NoContent() : NotFound();
+
+    // ---------- Seccion 2: Tipos de coeficiente PH (RN-02) ----------
+    [HttpGet("tipos-coeficiente")] public async Task<IActionResult> ListTiposCoef(CancellationToken ct) => Ok(await _svc.ListTiposCoeficienteAsync(ct));
+    [HttpPost("tipos-coeficiente")]
+    public async Task<IActionResult> CrearTipoCoef([FromBody] CrearTipoCoeficienteRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.CrearTipoCoeficienteAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+    [HttpDelete("tipos-coeficiente/{id:guid}")]
+    public async Task<IActionResult> EliminarTipoCoef(Guid id, CancellationToken ct)
+    {
+        try { return await _svc.EliminarTipoCoeficienteAsync(id, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+    [HttpGet("unidades/{unidadId:guid}/coeficientes")]
+    public async Task<IActionResult> ListCoefUnidad(Guid unidadId, CancellationToken ct)
+        => Ok(await _svc.ListCoeficientesUnidadAsync(unidadId, ct));
+    [HttpPut("unidades/{unidadId:guid}/coeficientes")]
+    public async Task<IActionResult> SetCoefUnidad(Guid unidadId, [FromBody] SetCoeficienteUnidadRequest req, CancellationToken ct)
+    {
+        try { return Ok(await _svc.SetCoeficienteUnidadAsync(unidadId, req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    // ---------- Seccion 2: Generador inteligente + Import CSV ----------
+    [HttpPost("unidades/generar")]
+    public async Task<IActionResult> GenerarUnidades([FromBody] GenerarUnidadesRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.GenerarUnidadesAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+    [HttpPost("unidades/importar-csv")]
+    public async Task<IActionResult> ImportarUnidadesCsv([FromBody] ImportarUnidadesRequest req, CancellationToken ct)
+    {
+        var resp = await _svc.ImportarUnidadesCsvAsync(req, ct);
+        return resp.Aceptado ? Created("", resp) : UnprocessableEntity(resp);
+    }
 
     // ---------- Seccion 4: Gobierno - Consejo ----------
     [HttpGet("consejo")] public async Task<IActionResult> ListConsejo(CancellationToken ct) => Ok(await _svc.ListMiembrosConsejoAsync(ct));
@@ -78,6 +134,65 @@ public class MiCopropiedadController : ControllerBase
     [HttpPut("consejo/{id:guid}/desactivar")]
     public async Task<IActionResult> DesactivarMiembro(Guid id, CancellationToken ct)
         => await _svc.DesactivarMiembroConsejoAsync(id, ct) ? NoContent() : NotFound();
+
+    // ---------- Seccion 4: Comites ----------
+    [HttpGet("comites")] public async Task<IActionResult> ListComites(CancellationToken ct) => Ok(await _svc.ListComitesAsync(ct));
+    [HttpPost("comites")]
+    public async Task<IActionResult> CrearComite([FromBody] CrearComiteRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.CrearComiteAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+    [HttpPut("comites/{id:guid}/desactivar")]
+    public async Task<IActionResult> DesactivarComite(Guid id, CancellationToken ct)
+        => await _svc.DesactivarComiteAsync(id, ct) ? NoContent() : NotFound();
+    [HttpGet("comites/{id:guid}/miembros")]
+    public async Task<IActionResult> ListMiembrosComite(Guid id, CancellationToken ct)
+        => Ok(await _svc.ListMiembrosComiteAsync(id, ct));
+    [HttpPost("comites/miembros")]
+    public async Task<IActionResult> AgregarMiembroComite([FromBody] AgregarComiteMiembroRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.AgregarMiembroComiteAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+    [HttpDelete("comites/miembros/{id:guid}")]
+    public async Task<IActionResult> RetirarMiembroComite(Guid id, CancellationToken ct)
+        => await _svc.RetirarMiembroComiteAsync(id, ct) ? NoContent() : NotFound();
+
+    // ---------- Seccion 4: Revisor Fiscal ----------
+    [HttpGet("revisor-fiscal")]
+    public async Task<IActionResult> GetRevisorFiscal(CancellationToken ct)
+    {
+        var r = await _svc.GetRevisorFiscalActivoAsync(ct);
+        return r is null ? NoContent() : Ok(r);
+    }
+    [HttpPost("revisor-fiscal")]
+    public async Task<IActionResult> DesignarRevisorFiscal([FromBody] DesignarRevisorFiscalRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.DesignarRevisorFiscalAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+    [HttpDelete("revisor-fiscal/{id:guid}")]
+    public async Task<IActionResult> RetirarRevisorFiscal(Guid id, CancellationToken ct)
+        => await _svc.RetirarRevisorFiscalAsync(id, ct) ? NoContent() : NotFound();
+
+    // ---------- Seccion 3: Equipo de trabajo ----------
+    [HttpGet("equipo")] public async Task<IActionResult> ListEquipo(CancellationToken ct) => Ok(await _svc.ListEquipoAsync(ct));
+    [HttpPost("equipo")]
+    public async Task<IActionResult> AgregarMiembroEquipo([FromBody] AgregarMiembroEquipoRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.AgregarMiembroEquipoAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+    [HttpDelete("equipo/{id:guid}")]
+    public async Task<IActionResult> DesactivarMiembroEquipo(Guid id, CancellationToken ct)
+        => await _svc.DesactivarMiembroEquipoAsync(id, ct) ? NoContent() : NotFound();
+    [HttpPost("vincular-persona")]
+    public async Task<IActionResult> VincularPersona([FromBody] VincularPersonaPorDocumentoRequest req, CancellationToken ct)
+    {
+        try { return Ok(new { personaId = await _svc.VincularPersonaPorDocumentoAsync(req, ct) }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
 
     // ---------- Seccion 5: Servicios ----------
     [HttpGet("contratos")] public async Task<IActionResult> ListContratos(CancellationToken ct) => Ok(await _svc.ListContratosAsync(ct));

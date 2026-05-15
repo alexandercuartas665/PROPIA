@@ -65,6 +65,11 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+// Servir imagenes subidas via /uploads/* (modulo 2.3 - logos, fachadas, portadas).
+// En produccion esto se mueve a un bucket S3/Azure con CDN.
+Directory.CreateDirectory(Path.Combine(app.Environment.ContentRootPath, "wwwroot", "uploads"));
+app.UseStaticFiles();
+
 // IMPORTANTE: Authentication PRIMERO, despues Authorization, despues TenantMiddleware
 // (necesita el claim ya validado), despues MapControllers.
 app.UseAuthentication();

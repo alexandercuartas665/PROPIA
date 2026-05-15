@@ -26,13 +26,15 @@ public static class DependencyInjection
             ?? throw new InvalidOperationException("Falta connection string 'Propia' en configuracion.");
 
         services.AddScoped<ITenantContext, TenantContext>();
+        services.AddScoped<Persistence.TenantConnectionInterceptor>();
 
-        services.AddDbContext<PropiaDbContext>(options =>
+        services.AddDbContext<PropiaDbContext>((sp, options) =>
         {
             options.UseNpgsql(connectionString, npgsql =>
             {
                 npgsql.MigrationsAssembly(typeof(PropiaDbContext).Assembly.FullName);
             });
+            options.AddInterceptors(sp.GetRequiredService<Persistence.TenantConnectionInterceptor>());
         });
 
         // ASP.NET Core Identity - solo el core (sin cookies, JWT only)
@@ -70,6 +72,9 @@ public static class DependencyInjection
 
         // Modulo 2.1 Onboarding y Activacion
         services.AddScoped<Application.Onboarding.IOnboardingService, Onboarding.OnboardingService>();
+
+        // Modulo 2.4 Directorio
+        services.AddScoped<Application.Directorio.IDirectorioService, Directorio.DirectorioService>();
 
         return services;
     }

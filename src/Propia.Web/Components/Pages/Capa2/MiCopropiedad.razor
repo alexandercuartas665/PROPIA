@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpFactory
 @inject NavigationManager Nav
+@inject IJSRuntime Js
 
 <PageTitle>Mi Copropiedad - PROPIA</PageTitle>
 
@@ -16,7 +17,11 @@
 @if (string.IsNullOrEmpty(_jwt))
 {
     <div class="card border-warning p-4">
-        <h5>Necesitas un JWT con tenant activo</h5>
+        <h5>@(_loadError is not null ? "Sesion expirada" : "Necesitas un JWT con tenant activo")</h5>
+        @if (!string.IsNullOrEmpty(_loadError))
+        {
+            <p class="text-danger small mb-3">@_loadError</p>
+        }
         <p class="text-muted mb-3">Mi Copropiedad consume el API autenticado. En este MVP pegamos el JWT manualmente
             mientras se completa el login del cliente (modulo 2.5).</p>
         <div class="d-flex gap-2 mb-3">
@@ -35,18 +40,28 @@
 
 @if (_resumen is null)
 {
-    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    @if (!string.IsNullOrEmpty(_loadError))
+    {
+        <div class="alert alert-danger">
+            <strong>No se pudo cargar Mi Copropiedad:</strong> @_loadError
+            <button class="btn btn-sm btn-outline-danger ms-3" @onclick="CargarAsync">Reintentar</button>
+        </div>
+    }
+    else
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
 }
 else
 {
-    @* Hero card con identidad *@
-    <div class="card hero-card mb-3">
-        <div class="card-body">
+    @* Hero card con identidad - foto fachada como background si esta seteada *@
+    <div class="card hero-card mb-3" style="@HeroBackgroundStyle">
+        <div class="card-body @(HasFachada ? "hero-with-overlay" : "")">
             <div class="row align-items-center g-3">
                 <div class="col-md-2 text-center">
                     @if (!string.IsNullOrEmpty(_resumen.Identidad.LogoUrl))
                     {
-                        <img src="@_resumen.Identidad.LogoUrl" alt="logo" class="img-fluid rounded" style="max-height: 100px;" />
+                        <img src="@AbsoluteApiUrl(_resumen.Identidad.LogoUrl)" alt="logo" class="img-fluid rounded" style="max-height: 100px; background: white; padding: 4px;" />
                     }
                     else
                     {
@@ -94,7 +109,14 @@ else
         <EditForm Model="@_identForm" OnValidSubmit="GuardarIdentidad" FormName="identidad">
             <div class="row g-2">
                 <div class="col-md-6"><label class="form-label">Nombre</label><InputText @bind-Value="_identForm.Nombre" class="form-control" /></div>
-                <div class="col-md-3"><label class="form-label">NIT</label><InputText @bind-Value="_identForm.Nit" class="form-control" /></div>
+                <div class="col-md-3">
+                    <label class="form-label">NIT</label>
+                    <InputText @bind-Value="_identForm.Nit" class="form-control" />
+                    @if (_resumen.CantidadUnidades > 30 && string.IsNullOrWhiteSpace(_identForm.Nit))
+                    {
+                        <small class="text-warning">Recomendado: copropiedades con mas de 30 unidades estan obligadas a tener NIT ante la DIAN.</small>
+                    }
+                </div>
                 <div class="col-md-3"><label class="form-label">DV</label><InputText @bind-Value="_identForm.DigitoVerificacion" class="form-control" /></div>
                 <div class="col-md-6"><label class="form-label">Direccion</label><InputText @bind-Value="_identForm.Direccion" class="form-control" /></div>
                 <div class="col-md-3"><label class="form-label">Ciudad</label><InputText @bind-Value="_identForm.Ciudad" class="form-control" /></div>
@@ -116,33 +138,171 @@ else
                         <option value="@Estrato.Cinco">5</option><option value="@Estrato.Seis">6</option>
                     </InputSelect>
                 </div>
-                <div class="col-md-4"><label class="form-label">Logo URL</label><InputText @bind-Value="_identForm.LogoUrl" class="form-control" placeholder="https://..." /></div>
+                <div class="col-md-4">
+                    <label class="form-label">Logo URL</label>
+                    <InputText @bind-Value="_identForm.LogoUrl" class="form-control form-control-sm" placeholder="/uploads/..." />
+                    <InputFile OnChange="SubirLogoAsync" class="form-control form-control-sm mt-1" accept="image/jpeg,image/png,image/webp" />
+                    <small class="text-muted">o sube un archivo (max 5 MB)</small>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Foto de fachada</label>
+                    <InputText @bind-Value="_identForm.FotoFachadaUrl" class="form-control form-control-sm" placeholder="/uploads/..." />
+                    <InputFile OnChange="SubirFachadaAsync" class="form-control form-control-sm mt-1" accept="image/jpeg,image/png,image/webp" />
+                    <small class="text-muted">se muestra como fondo del hero</small>
+                </div>
                 <div class="col-12"><label class="form-label">Descripcion</label><InputTextArea @bind-Value="_identForm.Descripcion" class="form-control" rows="2" /></div>
             </div>
+
+            @* Identidad registral - colapsable, todos los campos opcionales *@
+            <details class="mt-3">
+                <summary class="text-muted small mb-2" style="cursor: pointer;">Identidad registral (Notaria, Reglamento PH, Matricula)</summary>
+                <div class="row g-2 mt-2">
+                    <div class="col-md-6">
+                        <label class="form-label small">Numero de reglamento de PH</label>
+                        <InputText @bind-Value="_identForm.NumeroReglamentoPh" class="form-control form-control-sm" placeholder="Numero de escritura registrado" />
+                        <small class="text-muted">Solicitado en tramites notariales, UAECD y bancos.</small>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small">Notaria de registro</label>
+                        <InputText @bind-Value="_identForm.NotariaRegistro" class="form-control form-control-sm" placeholder="Notaria X de Cali" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small">Matricula inmobiliaria del terreno</label>
+                        <InputText @bind-Value="_identForm.MatriculaInmobiliaria" class="form-control form-control-sm" placeholder="370-..." />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small">Licencia de construccion</label>
+                        <InputText @bind-Value="_identForm.LicenciaConstruccion" class="form-control form-control-sm" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small">Fecha de constitucion</label>
+                        <input type="date" class="form-control form-control-sm" @bind="_identForm.FechaConstitucion" />
+                    </div>
+                </div>
+            </details>
+
+            @* Labels personalizables (spec v1.0 - "Sector"/"Planta") *@
+            <details class="mt-3">
+                <summary class="text-muted small mb-2" style="cursor: pointer;">Renombrar estructura fisica (avanzado)</summary>
+                <div class="row g-2 mt-2">
+                    <div class="col-md-6">
+                        <label class="form-label small">Etiqueta para agrupacion</label>
+                        <InputText @bind-Value="_identForm.LabelAgrupacion" class="form-control form-control-sm" placeholder="Torre (default)" />
+                        <small class="text-muted">Si tu PH usa otro termino: Sector, Bloque, Etapa.</small>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small">Etiqueta para piso</label>
+                        <InputText @bind-Value="_identForm.LabelPiso" class="form-control form-control-sm" placeholder="Piso (default)" />
+                        <small class="text-muted">Alternativas comunes: Planta, Nivel.</small>
+                    </div>
+                </div>
+            </details>
+
             <button type="submit" class="btn btn-sm mt-3" style="background: var(--propia-primary); color: white;" disabled="@_busy">@(_busy ? "Guardando..." : "Guardar identidad")</button>
         </EditForm>
     </SeccionCard>
 
     @* Seccion 2 - Distribucion *@
-    <SeccionCard Titulo="2. Distribucion (Torres y Unidades)" Completa="@CompDistribucion" Abierta="@_secciones[SecDistrib]" OnToggle="() => ToggleSec(SecDistrib)">
-        <h6 class="mb-2">Torres</h6>
-        @if (_torres.Count == 0) { <p class="text-muted small mb-2">Sin torres aun.</p> }
+    <SeccionCard Titulo="@($"2. Distribucion ({LabelAgrupacionPlural} y Unidades)")" Completa="@CompDistribucion" Abierta="@_secciones[SecDistrib]" OnToggle="() => ToggleSec(SecDistrib)">
+        @* Acciones rapidas - generador + CSV (spec v1.0 - tres vias de carga) *@
+        <div class="d-flex gap-2 mb-3 flex-wrap">
+            <button class="btn btn-sm btn-outline-dark" @onclick="() => _showGenerador = !_showGenerador">@(_showGenerador ? "Cerrar generador" : "Generar automaticamente")</button>
+            <button class="btn btn-sm btn-outline-dark" @onclick="() => _showImport = !_showImport">@(_showImport ? "Cerrar importacion" : "Importar Excel/CSV")</button>
+        </div>
+
+        @* Generador inteligente - wizard inline *@
+        @if (_showGenerador)
+        {
+            <div class="card border-primary mb-3">
+                <div class="card-body bg-light">
+                    <h6 class="mb-3">Generador inteligente de unidades</h6>
+                    <p class="text-muted small mb-3">Define agrupaciones, pisos y unidades por piso. Genera todo en un solo paso.</p>
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-3">
+                            <label class="form-label small">Patron numeracion</label>
+                            <InputSelect @bind-Value="_gen.Patron" class="form-select form-select-sm">
+                                <option value="@PatronNumeracion.PisoNumero">Piso + numero (101, 102, 201...)</option>
+                                <option value="@PatronNumeracion.Corrido">Corrido (1, 2, 3...)</option>
+                            </InputSelect>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small">Tipo default</label>
+                            <InputSelect @bind-Value="_gen.TipoUnidadDefault" class="form-select form-select-sm">
+                                @foreach (var t in Enum.GetValues<TipoUnidad>()) { <option value="@t">@t</option> }
+                            </InputSelect>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small">Coef. por unidad (%)</label>
+                            <input type="number" step="0.0001" class="form-control form-control-sm" @bind="_gen.CoeficientePorUnidad" />
+                        </div>
+                    </div>
+                    <h6 class="small mb-2">@LabelAgrupacionPlural a crear</h6>
+                    @for (int i = 0; i < _gen.Torres.Count; i++)
+                    {
+                        var idx = i;
+                        <div class="row g-2 mb-2 align-items-center">
+                            <div class="col-md-4"><InputText @bind-Value="_gen.Torres[idx].Nombre" class="form-control form-control-sm" placeholder="@($"Nombre {LabelAgrupacionSingular}")" /></div>
+                            <div class="col-md-3"><input type="number" class="form-control form-control-sm" @bind="_gen.Torres[idx].CantidadPisos" placeholder="@($"{LabelPisoSingular}s")" /></div>
+                            <div class="col-md-3"><input type="number" class="form-control form-control-sm" @bind="_gen.Torres[idx].UnidadesPorPiso" placeholder="Unidades por piso" /></div>
+                            <div class="col-md-2"><button class="btn btn-sm btn-outline-danger w-100" @onclick="() => RemoverTorreGen(idx)">Quitar</button></div>
+                        </div>
+                    }
+                    <button class="btn btn-sm btn-link p-0 mb-2" @onclick="AgregarTorreGen">+ Agregar @LabelAgrupacionSingular</button>
+                    <div class="alert alert-info py-2 small mb-2"><strong>Vista previa:</strong> @PreviewGenerador</div>
+                    <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="EjecutarGenerador" disabled="@_busy">@(_busy ? "Generando..." : "Generar")</button>
+                </div>
+            </div>
+        }
+
+        @* Importacion CSV inline *@
+        @if (_showImport)
+        {
+            <div class="card border-primary mb-3">
+                <div class="card-body bg-light">
+                    <h6 class="mb-2">Importar unidades desde CSV</h6>
+                    <p class="text-muted small mb-2">
+                        Columnas obligatorias: <code>identificador, tipo_unidad, coeficiente</code>.
+                        Opcionales: <code>agrupacion, piso, area_m2</code>.
+                        Primera linea = encabezados.
+                    </p>
+                    <textarea class="form-control form-control-sm font-monospace mb-2" rows="6" @bind="_csvInput"
+                              placeholder="identificador,tipo_unidad,agrupacion,piso,coeficiente,area_m2&#10;101,Apartamento,Torre A,1,0.0125,60&#10;102,Apartamento,Torre A,1,0.0125,60"></textarea>
+                    @if (_csvErrores is { Count: > 0 })
+                    {
+                        <div class="alert alert-danger py-2 small">
+                            <strong>@_csvErrores.Count errores detectados — no se importo nada:</strong>
+                            <ul class="mb-0">
+                                @foreach (var e in _csvErrores.Take(10))
+                                {
+                                    <li>Fila @e.Fila · @e.Campo: @e.Mensaje</li>
+                                }
+                                @if (_csvErrores.Count > 10) { <li>... y @(_csvErrores.Count - 10) mas</li> }
+                            </ul>
+                        </div>
+                    }
+                    <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="EjecutarImportCsv" disabled="@_busy">@(_busy ? "Validando..." : "Importar")</button>
+                </div>
+            </div>
+        }
+
+        <h6 class="mb-2">@LabelAgrupacionPlural</h6>
+        @if (_torres.Count == 0) { <p class="text-muted small mb-2">Sin @LabelAgrupacionPlural.ToLower() aun.</p> }
         else
         {
             <ul class="list-group mb-3">
                 @foreach (var t in _torres)
                 {
                     <li class="list-group-item d-flex justify-content-between align-items-center small">
-                        <span><strong>@t.Nombre</strong> @(t.CantidadPisos.HasValue ? $"· {t.CantidadPisos} pisos" : "") · @t.CantidadUnidades unidades</span>
+                        <span><strong>@t.Nombre</strong> @(t.CantidadPisos.HasValue ? $"· {t.CantidadPisos} {LabelPisoSingular.ToLower()}s" : "") · @t.CantidadUnidades unidades</span>
                         <button class="btn btn-sm btn-outline-danger" @onclick="() => EliminarTorre(t.Id)">Quitar</button>
                     </li>
                 }
             </ul>
         }
         <div class="row g-2 mb-3">
-            <div class="col-md-5"><InputText @bind-Value="_nuevaTorre.Nombre" class="form-control form-control-sm" placeholder="Nombre torre (Torre A)" /></div>
-            <div class="col-md-3"><input type="number" class="form-control form-control-sm" @bind="_nuevaTorre.CantidadPisos" placeholder="Pisos" /></div>
-            <div class="col-md-4"><button class="btn btn-sm btn-outline-dark w-100" @onclick="CrearTorre">+ Agregar torre</button></div>
+            <div class="col-md-5"><InputText @bind-Value="_nuevaTorre.Nombre" class="form-control form-control-sm" placeholder="@($"Nombre {LabelAgrupacionSingular} ({LabelAgrupacionSingular} A)")" /></div>
+            <div class="col-md-3"><input type="number" class="form-control form-control-sm" @bind="_nuevaTorre.CantidadPisos" placeholder="@($"{LabelPisoSingular}s")" /></div>
+            <div class="col-md-4"><button class="btn btn-sm btn-outline-dark w-100" @onclick="CrearTorre">+ Agregar @LabelAgrupacionSingular</button></div>
         </div>
 
         <hr />
@@ -153,18 +313,18 @@ else
             <div class="table-responsive mb-3">
                 <table class="table table-sm align-middle">
                     <thead class="small text-muted">
-                        <tr><th>Numero</th><th>Tipo</th><th>Torre</th><th>Piso</th><th class="text-end">Coef %</th><th></th></tr>
+                        <tr><th>Numero</th><th>Tipo</th><th>@LabelAgrupacionSingular</th><th>@LabelPisoSingular</th><th class="text-end">Coef %</th><th></th></tr>
                     </thead>
                     <tbody class="small">
                         @foreach (var u in _unidades)
                         {
-                            <tr>
-                                <td><strong>@u.Numero</strong></td>
+                            <tr style="cursor: pointer;" @onclick="() => IrAUnidad(u.Id)">
+                                <td><strong class="text-primary">@u.Numero</strong></td>
                                 <td>@u.Tipo</td>
                                 <td>@(u.TorreNombre ?? "-")</td>
                                 <td>@u.Piso</td>
                                 <td class="text-end">@u.CoeficientePropiedad.ToString("0.0000")</td>
-                                <td><button class="btn btn-sm btn-outline-danger" @onclick="() => EliminarUnidad(u.Id)">X</button></td>
+                                <td><button class="btn btn-sm btn-outline-danger" @onclick:stopPropagation="true" @onclick="() => EliminarUnidad(u.Id)">X</button></td>
                             </tr>
                         }
                     </tbody>
@@ -197,8 +357,52 @@ else
         </div>
     </SeccionCard>
 
-    @* Seccion 4 - Gobierno *@
-    <SeccionCard Titulo="4. Gobierno (Consejo)" Completa="@CompGobierno" Abierta="@_secciones[SecGob]" OnToggle="() => ToggleSec(SecGob)">
+    @* Seccion 3 - Equipo de trabajo *@
+    <SeccionCard Titulo="3. Equipo de trabajo" Completa="@CompEquipoTrabajo" Abierta="@_secciones[SecEqTrab]" OnToggle="() => ToggleSec(SecEqTrab)">
+        @if (_equipo.Count == 0) { <p class="text-muted small mb-2">Sin personal vinculado a la PH.</p> }
+        else
+        {
+            <ul class="list-group mb-3">
+                @foreach (var m in _equipo)
+                {
+                    <li class="list-group-item d-flex justify-content-between align-items-center small">
+                        <span>
+                            <strong>@m.PersonaNombre</strong> ·
+                            <span class="badge bg-light text-dark border">@(m.Rol == RolEquipo.Otro ? (m.RolPersonalizado ?? "Otro") : m.Rol.ToString())</span>
+                            · @m.Tipo
+                            @if (!string.IsNullOrEmpty(m.Telefono)) { <span class="text-muted"> · @m.Telefono</span> }
+                            · @(m.Activo ? "Activo" : "Inactivo")
+                        </span>
+                        @if (m.Activo) { <button class="btn btn-sm btn-outline-danger" @onclick="() => DesactivarMiembroEquipo(m.Id)">Desactivar</button> }
+                    </li>
+                }
+            </ul>
+        }
+        <h6 class="small mb-2">+ Vincular persona al equipo</h6>
+        <div class="row g-2 mb-2">
+            <div class="col-md-3"><InputText @bind-Value="_nuevoEq.Documento" class="form-control form-control-sm" placeholder="Cedula" /></div>
+            <div class="col-md-3"><InputText @bind-Value="_nuevoEq.Nombres" class="form-control form-control-sm" placeholder="Nombres" /></div>
+            <div class="col-md-3"><InputText @bind-Value="_nuevoEq.Apellidos" class="form-control form-control-sm" placeholder="Apellidos" /></div>
+            <div class="col-md-3"><InputText @bind-Value="_nuevoEq.Telefono" class="form-control form-control-sm" placeholder="Telefono" /></div>
+            <div class="col-md-3"><InputText @bind-Value="_nuevoEq.Email" class="form-control form-control-sm" placeholder="Email" /></div>
+            <div class="col-md-3">
+                <InputSelect @bind-Value="_nuevoEq.Rol" class="form-select form-select-sm">
+                    @foreach (var r in Enum.GetValues<RolEquipo>()) { <option value="@r">@r</option> }
+                </InputSelect>
+            </div>
+            <div class="col-md-3">
+                <InputSelect @bind-Value="_nuevoEq.Tipo" class="form-select form-select-sm">
+                    <option value="@TipoVinculacion.Interno">Interno</option>
+                    <option value="@TipoVinculacion.Externo">Externo</option>
+                </InputSelect>
+            </div>
+            <div class="col-md-3"><button class="btn btn-sm btn-outline-dark w-100" @onclick="AgregarMiembroEquipo">+ Vincular</button></div>
+        </div>
+    </SeccionCard>
+
+    @* Seccion 4 - Gobierno (Consejo + Comites + Revisor Fiscal) *@
+    <SeccionCard Titulo="4. Gobierno (Consejo, Comites, Revisor Fiscal)" Completa="@CompGobierno" Abierta="@_secciones[SecGob]" OnToggle="() => ToggleSec(SecGob)">
+        <h6 class="mb-2">Consejo de Administracion</h6>
         @if (_consejo.Count == 0) { <p class="text-muted small mb-2">Sin miembros del consejo configurados.</p> }
         else
         {
@@ -212,7 +416,73 @@ else
                 }
             </ul>
         }
-        <p class="text-muted small mb-0">El alta de miembros se hace via 2.4 Directorio (en construccion).</p>
+        @if (TipoPH == TipoCopropiedad.Residencial && _consejo.Count(c => c.Activo) == 0)
+        {
+            <p class="alert alert-warning py-2 small mb-3">
+                La Ley 675 de 2001 establece que las copropiedades residenciales deben tener Consejo de Administracion. Te recomendamos conformarlo.
+            </p>
+        }
+
+        <h6 class="mb-2 mt-3">Comites</h6>
+        @if (_comites.Count == 0) { <p class="text-muted small mb-2">Sin comites configurados.</p> }
+        else
+        {
+            <ul class="list-group mb-3">
+                @foreach (var c in _comites)
+                {
+                    <li class="list-group-item d-flex justify-content-between align-items-center small">
+                        <span><strong>@c.Nombre</strong> @(string.IsNullOrEmpty(c.Descripcion) ? "" : $"· {c.Descripcion}") · @c.CantidadMiembros miembros · @(c.Activo ? "Activo" : "Inactivo")</span>
+                        @if (c.Activo) { <button class="btn btn-sm btn-outline-danger" @onclick="() => DesactivarComite(c.Id)">Desactivar</button> }
+                    </li>
+                }
+            </ul>
+        }
+        @if (TipoPH == TipoCopropiedad.Residencial && !_comites.Any(c => c.Activo && c.Nombre.ToLower().Contains("convivencia")))
+        {
+            <p class="alert alert-warning py-2 small mb-3">
+                La Ley 675 de 2001 (Art. 40) establece el Comite de Convivencia como obligatorio en copropiedades residenciales.
+            </p>
+        }
+        <div class="row g-2 mb-3">
+            <div class="col-md-4"><InputText @bind-Value="_nuevoComite.Nombre" class="form-control form-control-sm" placeholder="Nombre del comite (Convivencia, Obras, ...)" /></div>
+            <div class="col-md-4"><InputText @bind-Value="_nuevoComite.Descripcion" class="form-control form-control-sm" placeholder="Descripcion (opcional)" /></div>
+            <div class="col-md-2"><input type="date" class="form-control form-control-sm" @bind="_nuevoComite.FechaConformacion" /></div>
+            <div class="col-md-2"><button class="btn btn-sm btn-outline-dark w-100" @onclick="CrearComite">+ Comite</button></div>
+        </div>
+
+        <h6 class="mb-2 mt-3">Revisor Fiscal</h6>
+        @if (_revisorFiscal is not null)
+        {
+            <p class="small mb-3">
+                <strong>@_revisorFiscal.PersonaNombre</strong>
+                @(string.IsNullOrEmpty(_revisorFiscal.NumeroTarjetaProfesional) ? "" : $" · TP {_revisorFiscal.NumeroTarjetaProfesional}")
+                · desde @_revisorFiscal.FechaPosesion
+                <button class="btn btn-sm btn-outline-danger ms-2" @onclick="() => RetirarRevisorFiscal(_revisorFiscal!.Id)">Retirar</button>
+            </p>
+        }
+        else if (_resumen.CantidadUnidades > 30)
+        {
+            <p class="alert alert-warning py-2 small mb-3">
+                La Ley 675 (Art. 38) exige Revisor Fiscal en copropiedades con mas de 30 unidades.
+            </p>
+        }
+        else
+        {
+            <p class="text-muted small mb-3">Sin revisor fiscal designado (opcional para PH menores a 30 unidades).</p>
+        }
+        <details>
+            <summary class="text-muted small mb-2" style="cursor: pointer;">Designar Revisor Fiscal</summary>
+            <div class="row g-2 mt-2">
+                <div class="col-md-3"><InputText @bind-Value="_nuevoRev.Documento" class="form-control form-control-sm" placeholder="Cedula" /></div>
+                <div class="col-md-3"><InputText @bind-Value="_nuevoRev.Nombres" class="form-control form-control-sm" placeholder="Nombres" /></div>
+                <div class="col-md-3"><InputText @bind-Value="_nuevoRev.Apellidos" class="form-control form-control-sm" placeholder="Apellidos" /></div>
+                <div class="col-md-3"><InputText @bind-Value="_nuevoRev.TarjetaProfesional" class="form-control form-control-sm" placeholder="Tarjeta Profesional" /></div>
+                <div class="col-md-3"><input type="date" class="form-control form-control-sm" @bind="_nuevoRev.FechaPosesion" /></div>
+                <div class="col-md-3"><button class="btn btn-sm btn-outline-dark w-100" @onclick="DesignarRevisorFiscal">Designar</button></div>
+            </div>
+        </details>
+
+        <p class="text-muted small mt-3 mb-0"><em>Tip: el alta completa de personas via 2.4 Directorio (en construccion); aqui creamos por documento.</em></p>
     </SeccionCard>
 
     @* Seccion 5 - Servicios *@
@@ -329,6 +599,7 @@ else
 @code {
     private const string SecIdent = "ident";
     private const string SecDistrib = "distrib";
+    private const string SecEqTrab = "eqtrab";
     private const string SecGob = "gob";
     private const string SecSrv = "srv";
     private const string SecZon = "zon";
@@ -339,10 +610,11 @@ else
     private bool _busy;
     private string? _actionMsg;
     private string _actionMsgClass = "alert-info";
+    private string? _loadError;
 
     private Dictionary<string, bool> _secciones = new()
     {
-        [SecIdent] = true, [SecDistrib] = true,
+        [SecIdent] = true, [SecDistrib] = true, [SecEqTrab] = false,
         [SecGob] = false, [SecSrv] = false, [SecZon] = false, [SecEq] = false
     };
 
@@ -354,6 +626,14 @@ else
     private List<ContratoServicioDto> _contratos = new();
     private List<ZonaComunDto> _zonas = new();
     private List<EquipoActivoDto> _equipos = new();
+
+    // Sec 3 Equipo + Sec 4 ampliada
+    private List<MiembroEquipoDto> _equipo = new();
+    private List<ComiteDto> _comites = new();
+    private RevisorFiscalDto? _revisorFiscal;
+    private NuevoEquipoMiembro _nuevoEq = new();
+    private NuevoComite _nuevoComite = new() { FechaConformacion = DateTime.Today };
+    private NuevoRevisorFiscal _nuevoRev = new() { FechaPosesion = DateTime.Today };
 
     private NuevaTorre _nuevaTorre = new();
     private NuevaUnidad _nuevaUnidad = new();
@@ -367,15 +647,48 @@ else
     private bool CompIdentidad => Comp("Identidad");
     private bool CompDistribucion => Comp("Distribucion");
     private bool CompGobierno => Comp("Gobierno");
+    private bool CompEquipoTrabajo => Comp("EquipoTrabajo");
     private bool CompServicios => Comp("Servicios");
     private bool CompZonasComunes => Comp("ZonasComunes");
     private bool CompEquipos => Comp("Equipos");
+
+    // Hero card foto fachada (spec A2/A3)
+    private bool HasFachada => !string.IsNullOrEmpty(_resumen?.Identidad?.FotoFachadaUrl);
+    private string HeroBackgroundStyle => HasFachada
+        ? $"background-image: linear-gradient(rgba(255,255,255,0.85), rgba(255,255,255,0.85)), url('{AbsoluteApiUrl(_resumen!.Identidad.FotoFachadaUrl)}'); background-size: cover; background-position: center;"
+        : "";
+    private TipoCopropiedad? TipoPH => _resumen?.Identidad?.Tipo;
+
+    private static string AbsoluteApiUrl(string? relUrl)
+    {
+        if (string.IsNullOrEmpty(relUrl)) return "";
+        if (relUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return relUrl;
+        // El API esta en https://localhost:7100 en dev. Las imagenes se sirven desde alli.
+        return $"https://localhost:7100{(relUrl.StartsWith('/') ? "" : "/")}{relUrl}";
+    }
 
     private async Task SetJwt()
     {
         if (string.IsNullOrWhiteSpace(_jwtInput)) return;
         _jwt = _jwtInput.Trim();
+        await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_jwt", _jwt);
         await CargarAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { /* primera render server-side - se reintenta cuando llega Blazor interactivo */ }
     }
 
     private async Task CargarAsync()
@@ -384,7 +697,14 @@ else
         try
         {
             var http = Auth();
-            _resumen = await http.GetFromJsonAsync<ResumenMiCopropiedadDto>("/api/mi-copropiedad/resumen");
+            var resp = await http.GetAsync("/api/mi-copropiedad/resumen");
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                await InvalidarSesionAsync("Tu sesion expiro. Vuelve a iniciar sesion para continuar.");
+                return;
+            }
+            resp.EnsureSuccessStatusCode();
+            _resumen = await resp.Content.ReadFromJsonAsync<ResumenMiCopropiedadDto>();
             if (_resumen is null) return;
             _identForm = new IdentForm
             {
@@ -397,7 +717,15 @@ else
                 Tipo = _resumen.Identidad.Tipo,
                 Estrato = _resumen.Identidad.Estrato,
                 LogoUrl = _resumen.Identidad.LogoUrl,
-                Descripcion = _resumen.Identidad.Descripcion
+                FotoFachadaUrl = _resumen.Identidad.FotoFachadaUrl,
+                Descripcion = _resumen.Identidad.Descripcion,
+                NumeroReglamentoPh = _resumen.Identidad.NumeroReglamentoPh,
+                NotariaRegistro = _resumen.Identidad.NotariaRegistro,
+                MatriculaInmobiliaria = _resumen.Identidad.MatriculaInmobiliaria,
+                LicenciaConstruccion = _resumen.Identidad.LicenciaConstruccion,
+                FechaConstitucion = _resumen.Identidad.FechaConstitucion,
+                LabelAgrupacion = _resumen.Identidad.LabelAgrupacion,
+                LabelPiso = _resumen.Identidad.LabelPiso
             };
             _torres = await http.GetFromJsonAsync<List<TorreDto>>("/api/mi-copropiedad/torres") ?? new();
             _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
@@ -405,9 +733,151 @@ else
             _contratos = await http.GetFromJsonAsync<List<ContratoServicioDto>>("/api/mi-copropiedad/contratos") ?? new();
             _zonas = await http.GetFromJsonAsync<List<ZonaComunDto>>("/api/mi-copropiedad/zonas") ?? new();
             _equipos = await http.GetFromJsonAsync<List<EquipoActivoDto>>("/api/mi-copropiedad/equipos") ?? new();
+            _equipo = await http.GetFromJsonAsync<List<MiembroEquipoDto>>("/api/mi-copropiedad/equipo") ?? new();
+            _comites = await http.GetFromJsonAsync<List<ComiteDto>>("/api/mi-copropiedad/comites") ?? new();
+            var revResp = await http.GetAsync("/api/mi-copropiedad/revisor-fiscal");
+            _revisorFiscal = revResp.StatusCode == System.Net.HttpStatusCode.NoContent ? null
+                : await revResp.Content.ReadFromJsonAsync<RevisorFiscalDto>();
+        }
+        catch (Exception ex) { _loadError = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    // ---------- Upload imagenes (A2/A3) ----------
+    private Task SubirLogoAsync(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs e) => SubirImagenAsync(e, "logo");
+    private Task SubirFachadaAsync(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs e) => SubirImagenAsync(e, "fachada");
+    private async Task SubirImagenAsync(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs e, string tipo)
+    {
+        if (e.File is null) { Msg("Sin archivo.", false); return; }
+        if (e.File.Size > 5_000_000) { Msg("Maximo 5 MB.", false); return; }
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            await using var fs = e.File.OpenReadStream(5_000_000);
+            using var sc = new StreamContent(fs);
+            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(e.File.ContentType);
+            content.Add(sc, "file", e.File.Name);
+
+            var http = Auth();
+            var resp = await http.PostAsync($"/api/uploads/imagen/{tipo}", content);
+            if (!resp.IsSuccessStatusCode)
+            {
+                Msg($"Subida fallo: {await resp.Content.ReadAsStringAsync()}", false);
+                return;
+            }
+            var body = await resp.Content.ReadFromJsonAsync<UploadResponse>();
+            if (body is null) return;
+            if (tipo == "logo") _identForm.LogoUrl = body.Url;
+            else if (tipo == "fachada") _identForm.FotoFachadaUrl = body.Url;
+            Msg($"Imagen {tipo} subida. Guarda identidad para confirmar.", true);
         }
         catch (Exception ex) { Msg(ex.Message, false); }
-        finally { _busy = false; }
+    }
+    private record UploadResponse(string Url);
+
+    // ---------- Sec 3 Equipo ----------
+    private async Task AgregarMiembroEquipo()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevoEq.Documento) || string.IsNullOrWhiteSpace(_nuevoEq.Nombres) || string.IsNullOrWhiteSpace(_nuevoEq.Apellidos))
+        {
+            Msg("Documento, nombres y apellidos son obligatorios.", false);
+            return;
+        }
+        var http = Auth();
+        // 1) Vincular o crear Persona
+        var vincResp = await http.PostAsJsonAsync("/api/mi-copropiedad/vincular-persona",
+            new VincularPersonaPorDocumentoRequest(_nuevoEq.Documento, _nuevoEq.Nombres, _nuevoEq.Apellidos, _nuevoEq.Email, _nuevoEq.Telefono));
+        if (!vincResp.IsSuccessStatusCode) { Msg(await vincResp.Content.ReadAsStringAsync(), false); return; }
+        var vinc = await vincResp.Content.ReadFromJsonAsync<VincularResponse>();
+        if (vinc is null) return;
+
+        // 2) Agregar al equipo
+        var resp = await http.PostAsJsonAsync("/api/mi-copropiedad/equipo",
+            new AgregarMiembroEquipoRequest(vinc.PersonaId, _nuevoEq.Rol,
+                _nuevoEq.Rol == RolEquipo.Otro ? _nuevoEq.RolPersonalizado : null,
+                _nuevoEq.Tipo, DateOnly.FromDateTime(DateTime.Today),
+                _nuevoEq.Telefono, _nuevoEq.Email, null));
+        if (resp.IsSuccessStatusCode) { _nuevoEq = new(); await CargarAsync(); Msg("Miembro vinculado.", true); }
+        else Msg(await resp.Content.ReadAsStringAsync(), false);
+    }
+    private async Task DesactivarMiembroEquipo(Guid id) { await Auth().DeleteAsync($"/api/mi-copropiedad/equipo/{id}"); await CargarAsync(); }
+    private record VincularResponse(Guid PersonaId);
+
+    // ---------- Sec 4: Comites ----------
+    private async Task CrearComite()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevoComite.Nombre)) { Msg("Nombre del comite obligatorio.", false); return; }
+        var http = Auth();
+        var resp = await http.PostAsJsonAsync("/api/mi-copropiedad/comites",
+            new CrearComiteRequest(_nuevoComite.Nombre, _nuevoComite.Descripcion, DateOnly.FromDateTime(_nuevoComite.FechaConformacion)));
+        if (resp.IsSuccessStatusCode) { _nuevoComite = new() { FechaConformacion = DateTime.Today }; await CargarAsync(); }
+        else Msg(await resp.Content.ReadAsStringAsync(), false);
+    }
+    private async Task DesactivarComite(Guid id)
+    {
+        await Auth().PutAsync($"/api/mi-copropiedad/comites/{id}/desactivar", null);
+        await CargarAsync();
+    }
+
+    // ---------- Sec 4: Revisor Fiscal ----------
+    private async Task DesignarRevisorFiscal()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevoRev.Documento) || string.IsNullOrWhiteSpace(_nuevoRev.Nombres) || string.IsNullOrWhiteSpace(_nuevoRev.Apellidos))
+        {
+            Msg("Documento, nombres y apellidos son obligatorios.", false);
+            return;
+        }
+        var http = Auth();
+        var vincResp = await http.PostAsJsonAsync("/api/mi-copropiedad/vincular-persona",
+            new VincularPersonaPorDocumentoRequest(_nuevoRev.Documento, _nuevoRev.Nombres, _nuevoRev.Apellidos, null, null));
+        if (!vincResp.IsSuccessStatusCode) { Msg(await vincResp.Content.ReadAsStringAsync(), false); return; }
+        var vinc = await vincResp.Content.ReadFromJsonAsync<VincularResponse>();
+        if (vinc is null) return;
+
+        var resp = await http.PostAsJsonAsync("/api/mi-copropiedad/revisor-fiscal",
+            new DesignarRevisorFiscalRequest(vinc.PersonaId, _nuevoRev.TarjetaProfesional, DateOnly.FromDateTime(_nuevoRev.FechaPosesion)));
+        if (resp.IsSuccessStatusCode) { _nuevoRev = new() { FechaPosesion = DateTime.Today }; await CargarAsync(); Msg("Revisor designado.", true); }
+        else Msg(await resp.Content.ReadAsStringAsync(), false);
+    }
+    private async Task RetirarRevisorFiscal(Guid id)
+    {
+        await Auth().DeleteAsync($"/api/mi-copropiedad/revisor-fiscal/{id}");
+        await CargarAsync();
+    }
+
+    private class NuevoEquipoMiembro
+    {
+        public string Documento { get; set; } = "";
+        public string Nombres { get; set; } = "";
+        public string Apellidos { get; set; } = "";
+        public string? Telefono { get; set; }
+        public string? Email { get; set; }
+        public RolEquipo Rol { get; set; } = RolEquipo.AdministradorDelegado;
+        public string? RolPersonalizado { get; set; }
+        public TipoVinculacion Tipo { get; set; } = TipoVinculacion.Interno;
+    }
+    private class NuevoComite { public string Nombre { get; set; } = ""; public string? Descripcion { get; set; } public DateTime FechaConformacion { get; set; } }
+    private class NuevoRevisorFiscal
+    {
+        public string Documento { get; set; } = "";
+        public string Nombres { get; set; } = "";
+        public string Apellidos { get; set; } = "";
+        public string? TarjetaProfesional { get; set; }
+        public DateTime FechaPosesion { get; set; }
+    }
+
+    private async Task InvalidarSesionAsync(string motivo)
+    {
+        _jwt = null;
+        _resumen = null;
+        _loadError = motivo;
+        try
+        {
+            await Js.InvokeVoidAsync("sessionStorage.removeItem", "propia_jwt");
+            await Js.InvokeVoidAsync("sessionStorage.removeItem", "propia_tenant_id");
+            await Js.InvokeVoidAsync("sessionStorage.removeItem", "propia_copropiedad_nombre");
+        }
+        catch { /* prerender */ }
     }
 
     private async Task GuardarIdentidad()
@@ -417,11 +887,102 @@ else
         var req = new ActualizarIdentidadRequest(_identForm.Nombre, _identForm.Nit, _identForm.DigitoVerificacion,
             _identForm.Direccion, _identForm.Ciudad, _identForm.Departamento,
             _identForm.Tipo, _identForm.Estrato,
-            null, _identForm.LogoUrl, _identForm.Descripcion);
+            _identForm.FotoFachadaUrl, _identForm.LogoUrl, _identForm.Descripcion,
+            _identForm.NumeroReglamentoPh, _identForm.NotariaRegistro,
+            _identForm.MatriculaInmobiliaria, _identForm.LicenciaConstruccion,
+            _identForm.FechaConstitucion,
+            _identForm.LabelAgrupacion, _identForm.LabelPiso);
         var resp = await http.PutAsJsonAsync("/api/mi-copropiedad/identidad", req);
         if (resp.IsSuccessStatusCode) { Msg("Identidad guardada", true); await CargarAsync(); }
         else Msg(await resp.Content.ReadAsStringAsync(), false);
         _busy = false;
+    }
+
+    // ---------- Generador inteligente + Import CSV + navegacion a ficha ----------
+    private bool _showGenerador;
+    private bool _showImport;
+    private string _csvInput = "";
+    private List<ImportacionFilaError>? _csvErrores;
+    private GeneradorState _gen = new();
+
+    private string LabelAgrupacionSingular => string.IsNullOrWhiteSpace(_resumen?.Identidad.LabelAgrupacion) ? "Torre" : _resumen!.Identidad.LabelAgrupacion!;
+    private string LabelAgrupacionPlural => LabelAgrupacionSingular + "s";
+    private string LabelPisoSingular => string.IsNullOrWhiteSpace(_resumen?.Identidad.LabelPiso) ? "Piso" : _resumen!.Identidad.LabelPiso!;
+
+    private string PreviewGenerador
+    {
+        get
+        {
+            var total = _gen.Torres.Sum(t => t.CantidadPisos * t.UnidadesPorPiso);
+            if (total <= 0) return "Completa los datos para ver la vista previa.";
+            var detalle = string.Join(" · ", _gen.Torres
+                .Where(t => !string.IsNullOrWhiteSpace(t.Nombre) && t.CantidadPisos > 0 && t.UnidadesPorPiso > 0)
+                .Select(t => $"{t.Nombre} {t.CantidadPisos * t.UnidadesPorPiso}u"));
+            return $"{total} unidades a generar — {detalle}";
+        }
+    }
+
+    private void AgregarTorreGen() => _gen.Torres.Add(new GeneradorTorreState());
+    private void RemoverTorreGen(int idx) { if (idx >= 0 && idx < _gen.Torres.Count) _gen.Torres.RemoveAt(idx); if (_gen.Torres.Count == 0) AgregarTorreGen(); }
+
+    private async Task EjecutarGenerador()
+    {
+        _busy = true;
+        var http = Auth();
+        var req = new GenerarUnidadesRequest(
+            _gen.Torres.Where(t => !string.IsNullOrWhiteSpace(t.Nombre)).Select(t => new GeneradorTorreDto(t.Nombre.Trim(), t.CantidadPisos, t.UnidadesPorPiso)).ToList(),
+            _gen.Patron, _gen.TipoUnidadDefault, _gen.CoeficientePorUnidad);
+        var resp = await http.PostAsJsonAsync("/api/mi-copropiedad/unidades/generar", req);
+        if (resp.IsSuccessStatusCode)
+        {
+            var r = await resp.Content.ReadFromJsonAsync<GenerarUnidadesResponse>();
+            Msg($"Generadas {r!.TorresCreadas} {LabelAgrupacionPlural.ToLower()} y {r.UnidadesCreadas} unidades.", true);
+            _gen = new();
+            _showGenerador = false;
+            await CargarAsync();
+        }
+        else Msg(await resp.Content.ReadAsStringAsync(), false);
+        _busy = false;
+    }
+
+    private async Task EjecutarImportCsv()
+    {
+        _busy = true;
+        _csvErrores = null;
+        var http = Auth();
+        var resp = await http.PostAsJsonAsync("/api/mi-copropiedad/unidades/importar-csv", new ImportarUnidadesRequest(_csvInput));
+        var body = await resp.Content.ReadFromJsonAsync<ImportarUnidadesResponse>();
+        if (body is null) { Msg("Respuesta vacia.", false); _busy = false; return; }
+        if (body.Aceptado)
+        {
+            Msg($"Importadas {body.UnidadesCreadas} unidades (suma coef. {body.SumaCoeficientes:0.0000}%).", true);
+            _csvInput = "";
+            _showImport = false;
+            await CargarAsync();
+        }
+        else
+        {
+            _csvErrores = body.Errores.ToList();
+            Msg($"Importacion rechazada por {_csvErrores.Count} errores.", false);
+        }
+        _busy = false;
+    }
+
+    private void IrAUnidad(Guid unidadId) => Nav.NavigateTo($"/mi-copropiedad/unidades/{unidadId}");
+
+    private class GeneradorState
+    {
+        public List<GeneradorTorreState> Torres { get; set; } = new() { new GeneradorTorreState() };
+        public PatronNumeracion Patron { get; set; } = PatronNumeracion.PisoNumero;
+        public TipoUnidad TipoUnidadDefault { get; set; } = TipoUnidad.Apartamento;
+        public decimal CoeficientePorUnidad { get; set; } = 0m;
+    }
+
+    private class GeneradorTorreState
+    {
+        public string Nombre { get; set; } = "";
+        public int CantidadPisos { get; set; } = 1;
+        public int UnidadesPorPiso { get; set; } = 1;
     }
 
     private async Task CrearTorre()
@@ -503,7 +1064,17 @@ else
         public TipoCopropiedad? Tipo { get; set; }
         public Estrato? Estrato { get; set; }
         public string? LogoUrl { get; set; }
+        public string? FotoFachadaUrl { get; set; }
         public string? Descripcion { get; set; }
+        // Identidad registral
+        public string? NumeroReglamentoPh { get; set; }
+        public string? NotariaRegistro { get; set; }
+        public string? MatriculaInmobiliaria { get; set; }
+        public string? LicenciaConstruccion { get; set; }
+        public DateOnly? FechaConstitucion { get; set; }
+        // Labels personalizables
+        public string? LabelAgrupacion { get; set; }
+        public string? LabelPiso { get; set; }
     }
     private class NuevaTorre { public string Nombre { get; set; } = ""; public int? CantidadPisos { get; set; } }
     private class NuevaUnidad { public string Numero { get; set; } = ""; public TipoUnidad Tipo { get; set; } = TipoUnidad.Apartamento; public Guid? TorreId { get; set; } public int? Piso { get; set; } public decimal? Coef { get; set; } }

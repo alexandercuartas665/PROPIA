@@ -79,3 +79,26 @@ public enum CargoConsejo
     Vocal = 5,
     Suplente = 6
 }
+
+/// <summary>Tipo de vinculacion del equipo de trabajo (spec 2.3 - seccion 3).</summary>
+public enum TipoVinculacion
+{
+    /// <summary>Empleado directo de la copropiedad o la organizacion administradora.</summary>
+    Interno = 1,
+    /// <summary>Proveedor o contratista de servicios.</summary>
+    Externo = 2
+}
+
+/// <summary>Rol operativo del equipo de trabajo (catalogo base).</summary>
+public enum RolEquipo
+{
+    AdministradorDelegado = 1,
+    Contador = 2,
+    AuxiliarCartera = 3,
+    CoordinadorOperativo = 4,
+    SupervisorVigilancia = 5,
+    PersonalAseo = 6,
+    Mantenimiento = 7,
+    Recepcion = 8,
+    Otro = 99
+}

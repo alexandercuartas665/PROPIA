@@ -1,16 +1,472 @@
 @page "/directorio"
+@rendermode InteractiveServer
+@using Propia.Application.Directorio
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
 <PageTitle>Directorio - PROPIA</PageTitle>
 
-<ModuloPlaceholder
-    Codigo="2.4"
-    Nombre="Directorio y Accesos"
-    Descripcion="Fuente unica de verdad de personas y empresas vinculadas a la copropiedad."
-    Estado="EstadoModulo.EnDiseno"
-    Features='new[] {
-        "Personas naturales y empresas como entidades unicas globales (identidad unica de plataforma)",
-        "Etiquetas de identidad (Propietario / Residente / Arrendatario) y de cargo (Presidente Consejo, etc.)",
-        "Vinculos a copropiedades con roles, vista 360 por persona/empresa",
-        "Autoregistro por invitacion via link o QR",
-        "Reconocimiento de identidades ya existentes en otras copropiedades de PROPIA"
-    }'
-    NotaSpec="01. REQUERIMIENTO/Capa 2. Copropiedad/2.4. Directorio_v1_0.md" />
+@* Modulo 2.4 Directorio (spec v1.0): bandeja maestra de Personas y Empresas
+   vinculadas a la copropiedad activa. *@
+
+<div class="mb-4">
+    <h1 class="h3 mb-1 fw-semibold">Directorio</h1>
+    <p class="text-muted mb-0">Fuente unica de personas y empresas de la copropiedad</p>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <div class="card border-warning p-4">
+        <h5>Necesitas iniciar sesion</h5>
+        <a class="btn btn-dark mt-2" href="/login">Iniciar sesion</a>
+    </div>
+    return;
+}
+
+@* Tabs Personas / Empresas *@
+<div class="d-flex gap-2 mb-3">
+    <button class="btn @(_tab == "personas" ? "btn-dark" : "btn-outline-dark")" @onclick='() => SetTab("personas")'>Personas</button>
+    <button class="btn @(_tab == "empresas" ? "btn-dark" : "btn-outline-dark")" @onclick='() => SetTab("empresas")'>Empresas</button>
+    <div class="ms-auto d-flex gap-2">
+        @if (_tab == "personas")
+        {
+            <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="() => _showCrearPersona = true">+ Agregar persona</button>
+        }
+        else
+        {
+            <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="() => _showCrearEmpresa = true">+ Agregar empresa</button>
+        }
+    </div>
+</div>
+
+<div class="mb-3">
+    <input class="form-control" placeholder="Buscar por nombre, documento, email o NIT..." @bind="_query" @bind:event="oninput" @onkeyup="CargarAsync" />
+</div>
+
+@if (!string.IsNullOrEmpty(_loadError))
+{
+    <div class="alert alert-danger">@_loadError <button class="btn btn-sm btn-outline-danger ms-2" @onclick="CargarAsync">Reintentar</button></div>
+}
+
+@if (_tab == "personas")
+{
+    @if (_personas is null)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
+    else if (_personas.Count == 0)
+    {
+        <div class="card p-4 text-center text-muted">
+            Sin personas vinculadas a esta copropiedad aun.
+            <small>Las personas creadas en Mi Copropiedad (Equipo, Comites, Revisor Fiscal) apareceran aqui cuando esten vinculadas.</small>
+        </div>
+    }
+    else
+    {
+        <div class="card">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="small text-muted bg-light">
+                    <tr><th>Persona</th><th>Documento</th><th>Email</th><th>Telefono</th><th>Estado</th></tr>
+                </thead>
+                <tbody class="small">
+                    @foreach (var p in _personas)
+                    {
+                        var pid = p.Id;
+                        <tr style="cursor: pointer;" @onclick="() => IrAPersona(pid)">
+                            <td>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="avatar-iniciales">@Iniciales(p.Nombres, p.Apellidos)</div>
+                                    <div>
+                                        <strong>@p.Nombres @p.Apellidos</strong>
+                                        @if (p.PerfilIncompleto) { <span class="badge bg-warning text-dark ms-1">Incompleto</span> }
+                                    </div>
+                                </div>
+                            </td>
+                            <td>@p.TipoDocumento @p.Documento</td>
+                            <td>@(p.Email ?? "-")</td>
+                            <td>@(p.Telefono ?? "-")</td>
+                            <td><span class="badge bg-light text-dark border">@p.Estado</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <div class="p-2 text-muted small">Mostrando @_personas.Count personas</div>
+        </div>
+    }
+}
+else
+{
+    @if (_empresas is null)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
+    else if (_empresas.Count == 0)
+    {
+        <div class="card p-4 text-center text-muted">Sin empresas vinculadas a esta copropiedad aun.</div>
+    }
+    else
+    {
+        <div class="card">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="small text-muted bg-light">
+                    <tr><th>Razon social</th><th>NIT</th><th>Email</th><th>Telefono</th><th>Estado</th></tr>
+                </thead>
+                <tbody class="small">
+                    @foreach (var e in _empresas)
+                    {
+                        var eid = e.Id;
+                        <tr style="cursor: pointer;" @onclick="() => IrAEmpresa(eid)">
+                            <td><strong>@e.RazonSocial</strong>@(string.IsNullOrEmpty(e.NombreComercial) ? "" : $" · {e.NombreComercial}")</td>
+                            <td>@e.Nit@(string.IsNullOrEmpty(e.DigitoVerificacion) ? "" : $"-{e.DigitoVerificacion}")</td>
+                            <td>@(e.Email ?? "-")</td>
+                            <td>@(e.Telefono ?? "-")</td>
+                            <td><span class="badge bg-light text-dark border">@e.Estado</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <div class="p-2 text-muted small">Mostrando @_empresas.Count empresas</div>
+        </div>
+    }
+}
+
+@if (_showCrearPersona)
+{
+    <div class="card border-primary mt-4">
+        <div class="card-body bg-light">
+            <div class="d-flex justify-content-between">
+                <h5>Nueva persona</h5>
+                <button class="btn btn-sm btn-outline-dark" @onclick="() => _showCrearPersona = false">Cerrar</button>
+            </div>
+            <p class="text-muted small mb-3">Primero buscamos el documento. Si existe ya, te ofrecemos vincular. Si no, completas el resto.</p>
+            <div class="row g-2">
+                <div class="col-md-3">
+                    <InputSelect @bind-Value="_persona.TipoDocumento" class="form-select form-select-sm">
+                        @foreach (var td in Enum.GetValues<TipoDocumento>()) { <option value="@td">@td</option> }
+                    </InputSelect>
+                </div>
+                <div class="col-md-3">
+                    <input type="text" class="form-control form-control-sm" @bind="_persona.Documento" @bind:event="oninput" @onkeyup="BuscarPersonaPorDocumento" placeholder="Numero documento" />
+                </div>
+                <div class="col-md-3">
+                    <input class="form-control form-control-sm" @bind="_persona.Nombres" placeholder="Nombres" />
+                </div>
+                <div class="col-md-3">
+                    <input class="form-control form-control-sm" @bind="_persona.Apellidos" placeholder="Apellidos" />
+                </div>
+                <div class="col-md-4">
+                    <input class="form-control form-control-sm" @bind="_persona.Email" placeholder="Email" />
+                </div>
+                <div class="col-md-3">
+                    <input class="form-control form-control-sm" @bind="_persona.Telefono" placeholder="Telefono" />
+                </div>
+                <div class="col-md-2">
+                    <input type="date" class="form-control form-control-sm" @bind="_persona.FechaNacimiento" />
+                </div>
+                <div class="col-md-3">
+                    <InputSelect @bind-Value="_persona.Genero" class="form-select form-select-sm">
+                        <option value="">- Genero -</option>
+                        @foreach (var g in Enum.GetValues<GeneroPersona>()) { <option value="@g">@g</option> }
+                    </InputSelect>
+                </div>
+            </div>
+            <h6 class="small mt-3">Etiquetas iniciales (identidad)</h6>
+            <div class="d-flex flex-wrap gap-1 mb-2">
+                @foreach (var et in _etiquetasIdentidadPersona)
+                {
+                    var seleccionada = _etiquetasSeleccionadas.Contains(et.Id);
+                    var eid = et.Id;
+                    <button type="button" class="btn btn-sm @(seleccionada ? "btn-dark" : "btn-outline-dark")" @onclick="() => ToggleEtiqueta(eid)">@et.Nombre</button>
+                }
+            </div>
+            @if (_personaEncontrada is not null)
+            {
+                <div class="alert alert-info py-2 small">
+                    <strong>Persona ya existe en plataforma:</strong> @_personaEncontrada.Nombres @_personaEncontrada.Apellidos
+                    (@_personaEncontrada.TipoDocumento @_personaEncontrada.Documento)
+                    <button class="btn btn-sm btn-primary ms-3" @onclick="VincularPersonaExistente">Vincular a esta copropiedad</button>
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(_msgPersona))
+            {
+                <div class="alert @_msgPersonaClass py-2 small">@_msgPersona</div>
+            }
+            <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="CrearPersona" disabled="@(_busy || _personaEncontrada is not null)">@(_busy ? "Guardando..." : "Crear + vincular")</button>
+        </div>
+    </div>
+}
+
+@if (_showCrearEmpresa)
+{
+    <div class="card border-primary mt-4">
+        <div class="card-body bg-light">
+            <div class="d-flex justify-content-between">
+                <h5>Nueva empresa</h5>
+                <button class="btn btn-sm btn-outline-dark" @onclick="() => _showCrearEmpresa = false">Cerrar</button>
+            </div>
+            <p class="text-muted small mb-3">El NIT se valida con digito DIAN al salir del campo.</p>
+            <div class="row g-2">
+                <div class="col-md-3">
+                    <input class="form-control form-control-sm" @bind="_empresa.Nit" @bind:event="oninput" @onblur="CalcularDvNit" placeholder="NIT (solo numeros)" />
+                </div>
+                <div class="col-md-1">
+                    <input class="form-control form-control-sm" @bind="_empresa.DigitoVerificacion" placeholder="DV" readonly />
+                </div>
+                <div class="col-md-4">
+                    <input class="form-control form-control-sm" @bind="_empresa.RazonSocial" placeholder="Razon social" />
+                </div>
+                <div class="col-md-4">
+                    <input class="form-control form-control-sm" @bind="_empresa.NombreComercial" placeholder="Nombre comercial" />
+                </div>
+                <div class="col-md-4">
+                    <input class="form-control form-control-sm" @bind="_empresa.Email" placeholder="Email" />
+                </div>
+                <div class="col-md-3">
+                    <input class="form-control form-control-sm" @bind="_empresa.Telefono" placeholder="Telefono" />
+                </div>
+                <div class="col-md-5">
+                    <input class="form-control form-control-sm" @bind="_empresa.Direccion" placeholder="Direccion" />
+                </div>
+            </div>
+            <h6 class="small mt-3">Etiquetas iniciales (identidad)</h6>
+            <div class="d-flex flex-wrap gap-1 mb-2">
+                @foreach (var et in _etiquetasIdentidadEmpresa)
+                {
+                    var seleccionada = _etiquetasSeleccionadas.Contains(et.Id);
+                    var eid = et.Id;
+                    <button type="button" class="btn btn-sm @(seleccionada ? "btn-dark" : "btn-outline-dark")" @onclick="() => ToggleEtiqueta(eid)">@et.Nombre</button>
+                }
+            </div>
+            @if (!string.IsNullOrEmpty(_msgEmpresa))
+            {
+                <div class="alert @_msgEmpresaClass py-2 small">@_msgEmpresa</div>
+            }
+            <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="CrearEmpresa" disabled="@_busy">@(_busy ? "Guardando..." : "Crear + vincular")</button>
+        </div>
+    </div>
+}
+
+<style>
+    .avatar-iniciales {
+        width: 32px; height: 32px; border-radius: 50%;
+        background: linear-gradient(135deg, var(--propia-primary), var(--propia-primary-light));
+        color: white; font-weight: 600; font-size: 0.75rem;
+        display: inline-flex; align-items: center; justify-content: center;
+    }
+</style>
+
+@code {
+    private string? _jwt;
+    private string _tab = "personas";
+    private string _query = "";
+    private bool _busy;
+    private string? _loadError;
+
+    private List<PersonaResumenDto>? _personas;
+    private List<EmpresaResumenDto>? _empresas;
+
+    private bool _showCrearPersona;
+    private bool _showCrearEmpresa;
+    private PersonaForm _persona = new();
+    private EmpresaForm _empresa = new();
+    private PersonaDetalleDto? _personaEncontrada;
+    private string? _msgPersona; private string _msgPersonaClass = "alert-info";
+    private string? _msgEmpresa; private string _msgEmpresaClass = "alert-info";
+
+    private List<EtiquetaCatalogoDto> _etiquetasIdentidadPersona = new();
+    private List<EtiquetaCatalogoDto> _etiquetasIdentidadEmpresa = new();
+    private HashSet<Guid> _etiquetasSeleccionadas = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarEtiquetasAsync();
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { /* prerender */ }
+    }
+
+    private void SetTab(string tab) { _tab = tab; _ = CargarAsync(); }
+    private void IrAPersona(Guid id) => Nav.NavigateTo($"/directorio/personas/{id}");
+    private void IrAEmpresa(Guid id) => Nav.NavigateTo($"/directorio/empresas/{id}");
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = Auth();
+            var url = _tab == "personas"
+                ? $"/api/directorio/personas?q={Uri.EscapeDataString(_query ?? "")}"
+                : $"/api/directorio/empresas?q={Uri.EscapeDataString(_query ?? "")}";
+            var resp = await http.GetAsync(url);
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized) { _loadError = "Sesion expirada"; _jwt = null; return; }
+            resp.EnsureSuccessStatusCode();
+            if (_tab == "personas")
+                _personas = await resp.Content.ReadFromJsonAsync<List<PersonaResumenDto>>() ?? new();
+            else
+                _empresas = await resp.Content.ReadFromJsonAsync<List<EmpresaResumenDto>>() ?? new();
+        }
+        catch (Exception ex) { _loadError = ex.Message; }
+    }
+
+    private async Task CargarEtiquetasAsync()
+    {
+        var http = Auth();
+        var p = await http.GetFromJsonAsync<List<EtiquetaCatalogoDto>>("/api/directorio/etiquetas?aplicaA=Persona&grupo=Identidad");
+        _etiquetasIdentidadPersona = p ?? new();
+        var e = await http.GetFromJsonAsync<List<EtiquetaCatalogoDto>>("/api/directorio/etiquetas?aplicaA=Empresa&grupo=Identidad");
+        _etiquetasIdentidadEmpresa = e ?? new();
+    }
+
+    private void ToggleEtiqueta(Guid id)
+    {
+        if (!_etiquetasSeleccionadas.Add(id)) _etiquetasSeleccionadas.Remove(id);
+    }
+
+    private async Task BuscarPersonaPorDocumento()
+    {
+        _personaEncontrada = null;
+        if (string.IsNullOrWhiteSpace(_persona.Documento) || _persona.Documento.Length < 4) return;
+        var http = Auth();
+        var resp = await http.PostAsJsonAsync("/api/directorio/personas/buscar",
+            new BuscarPorDocumentoRequest(_persona.TipoDocumento, _persona.Documento.Trim()));
+        if (resp.StatusCode == System.Net.HttpStatusCode.OK)
+            _personaEncontrada = await resp.Content.ReadFromJsonAsync<PersonaDetalleDto>();
+    }
+
+    private async Task VincularPersonaExistente()
+    {
+        if (_personaEncontrada is null) return;
+        _busy = true; _msgPersona = null;
+        try
+        {
+            var http = Auth();
+            var resp = await http.PostAsJsonAsync("/api/directorio/vinculos",
+                new CrearVinculoRequest(EntidadDirectorio.Persona, _personaEncontrada.Id,
+                    DateOnly.FromDateTime(DateTime.UtcNow), _etiquetasSeleccionadas.ToList()));
+            if (resp.IsSuccessStatusCode)
+            {
+                _msgPersona = "Persona vinculada."; _msgPersonaClass = "alert-success";
+                _persona = new(); _personaEncontrada = null; _etiquetasSeleccionadas.Clear();
+                _showCrearPersona = false;
+                await CargarAsync();
+            }
+            else { _msgPersona = await resp.Content.ReadAsStringAsync(); _msgPersonaClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task CrearPersona()
+    {
+        if (_personaEncontrada is not null) return;
+        _busy = true; _msgPersona = null;
+        try
+        {
+            var http = Auth();
+            var crear = await http.PostAsJsonAsync("/api/directorio/personas",
+                new CrearPersonaRequest(_persona.TipoDocumento, _persona.Documento.Trim(),
+                    _persona.Nombres.Trim(), _persona.Apellidos.Trim(), _persona.Email, _persona.Telefono,
+                    _persona.FechaNacimiento, _persona.Genero));
+            if (!crear.IsSuccessStatusCode) { _msgPersona = await crear.Content.ReadAsStringAsync(); _msgPersonaClass = "alert-danger"; return; }
+            var nueva = await crear.Content.ReadFromJsonAsync<PersonaDetalleDto>();
+            if (nueva is null) return;
+
+            await http.PostAsJsonAsync("/api/directorio/vinculos",
+                new CrearVinculoRequest(EntidadDirectorio.Persona, nueva.Id,
+                    DateOnly.FromDateTime(DateTime.UtcNow), _etiquetasSeleccionadas.ToList()));
+
+            _msgPersona = $"Persona '{nueva.Nombres} {nueva.Apellidos}' creada y vinculada.";
+            _msgPersonaClass = "alert-success";
+            _persona = new(); _etiquetasSeleccionadas.Clear();
+            _showCrearPersona = false;
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task CalcularDvNit()
+    {
+        var nit = (_empresa.Nit ?? "").Replace(".", "").Replace("-", "");
+        if (string.IsNullOrEmpty(nit)) { _empresa.DigitoVerificacion = ""; return; }
+        var http = Auth();
+        var resp = await http.GetAsync($"/api/directorio/nit/dv?nit={nit}");
+        if (resp.IsSuccessStatusCode)
+        {
+            var body = await resp.Content.ReadFromJsonAsync<DvResponse>();
+            _empresa.DigitoVerificacion = body?.Dv ?? "";
+        }
+    }
+
+    private async Task CrearEmpresa()
+    {
+        _busy = true; _msgEmpresa = null;
+        try
+        {
+            var http = Auth();
+            var crear = await http.PostAsJsonAsync("/api/directorio/empresas",
+                new CrearEmpresaRequest(_empresa.Nit, _empresa.DigitoVerificacion,
+                    _empresa.RazonSocial, _empresa.NombreComercial,
+                    _empresa.Email, _empresa.Telefono, _empresa.Direccion,
+                    null, null, null, null));
+            if (!crear.IsSuccessStatusCode) { _msgEmpresa = await crear.Content.ReadAsStringAsync(); _msgEmpresaClass = "alert-danger"; return; }
+            var nueva = await crear.Content.ReadFromJsonAsync<EmpresaDetalleDto>();
+            if (nueva is null) return;
+
+            await http.PostAsJsonAsync("/api/directorio/vinculos",
+                new CrearVinculoRequest(EntidadDirectorio.Empresa, nueva.Id,
+                    DateOnly.FromDateTime(DateTime.UtcNow), _etiquetasSeleccionadas.ToList()));
+
+            _msgEmpresa = $"Empresa '{nueva.RazonSocial}' creada y vinculada.";
+            _msgEmpresaClass = "alert-success";
+            _empresa = new(); _etiquetasSeleccionadas.Clear();
+            _showCrearEmpresa = false;
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+
+    private static string Iniciales(string nombres, string apellidos)
+        => $"{(nombres.Length > 0 ? nombres[0] : ' ')}{(apellidos.Length > 0 ? apellidos[0] : ' ')}".ToUpperInvariant();
+
+    private class PersonaForm
+    {
+        public TipoDocumento TipoDocumento { get; set; } = TipoDocumento.CC;
+        public string Documento { get; set; } = "";
+        public string Nombres { get; set; } = "";
+        public string Apellidos { get; set; } = "";
+        public string? Email { get; set; }
+        public string? Telefono { get; set; }
+        public DateOnly? FechaNacimiento { get; set; }
+        public GeneroPersona? Genero { get; set; }
+    }
+
+    private class EmpresaForm
+    {
+        public string Nit { get; set; } = "";
+        public string? DigitoVerificacion { get; set; }
+        public string RazonSocial { get; set; } = "";
+        public string? NombreComercial { get; set; }
+        public string? Email { get; set; }
+        public string? Telefono { get; set; }
+        public string? Direccion { get; set; }
+    }
+
+    private record DvResponse(string Dv);
+}

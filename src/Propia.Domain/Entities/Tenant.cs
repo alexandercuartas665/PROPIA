@@ -26,6 +26,17 @@ public class Tenant : BaseEntity
     public string? LogoUrl { get; set; }
     public string? Descripcion { get; set; }
 
+    // Identidad registral (modulo 2.3 - todos opcionales)
+    public string? NumeroReglamentoPh { get; set; }
+    public string? NotariaRegistro { get; set; }
+    public string? MatriculaInmobiliaria { get; set; }
+    public string? LicenciaConstruccion { get; set; }
+    public DateOnly? FechaConstitucion { get; set; }
+
+    // Labels personalizables para estructura fisica (Sector vs Torre, Planta vs Piso, etc.)
+    public string? LabelAgrupacion { get; set; }  // Default "Torre"
+    public string? LabelPiso { get; set; }        // Default "Piso"
+
     public EstadoCopropiedad Estado { get; set; } = EstadoCopropiedad.Activa;
     public EstadoCustodia EstadoCustodia { get; set; } = EstadoCustodia.SinAdmin;
 

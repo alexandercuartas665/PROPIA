@@ -6,6 +6,7 @@
 @using Propia.Shared.Auth
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@inject IJSRuntime Js
 
 <PageTitle>Iniciar sesion - PROPIA</PageTitle>
 
@@ -102,12 +103,31 @@
 
                 if (login.ActiveTenantId.HasValue)
                 {
-                    _successMessage = $"Login exitoso. Copropiedad activa: {login.AvailableTenants.First(t => t.TenantId == login.ActiveTenantId.Value).Nombre}";
-                    // Aqui en paso 8 se guardara el JWT en cookie HttpOnly y se hara navigate.
+                    // MVP: persistimos el JWT en sessionStorage (mismo patron que el wizard).
+                    // En modulo 2.5 esto se mueve a cookie HttpOnly.
+                    var tenant = login.AvailableTenants.First(t => t.TenantId == login.ActiveTenantId.Value);
+                    await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_jwt", login.AccessToken);
+                    await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_tenant_id", tenant.TenantId.ToString());
+                    await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_copropiedad_nombre", tenant.Nombre);
+
+                    _successMessage = $"Login exitoso. Entrando a {tenant.Nombre}...";
+                    StateHasChanged();
+                    await Task.Delay(500);
+                    Nav.NavigateTo("/mi-copropiedad", forceLoad: true);
                 }
                 else
                 {
-                    _successMessage = $"Login exitoso. Tienes {login.AvailableTenants.Count} copropiedades - elige una (selector tipo Slack proximo paso).";
+                    // Sin tenant activo (usuario con N copropiedades pero ninguna seleccionada).
+                    // En MVP entramos a la primera disponible; modulo 2.5 traera el selector tipo Slack.
+                    var first = login.AvailableTenants.First();
+                    await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_jwt", login.AccessToken);
+                    await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_tenant_id", first.TenantId.ToString());
+                    await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_copropiedad_nombre", first.Nombre);
+
+                    _successMessage = $"Login exitoso. Tienes {login.AvailableTenants.Count} copropiedades - entrando a {first.Nombre}...";
+                    StateHasChanged();
+                    await Task.Delay(500);
+                    Nav.NavigateTo("/mi-copropiedad", forceLoad: true);
                 }
             }
             else if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)

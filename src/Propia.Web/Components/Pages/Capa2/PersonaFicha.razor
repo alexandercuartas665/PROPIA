@@ -1,0 +1,244 @@
+@page "/directorio/personas/{PersonaId:guid}"
+@rendermode InteractiveServer
+@using Propia.Application.Directorio
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<PageTitle>@(_data?.Persona.Nombres) @(_data?.Persona.Apellidos) - Directorio</PageTitle>
+
+@* Vista 360 de Persona (spec 2.4 seccion 4.2 y 11) *@
+
+<div class="mb-3 small text-muted">
+    <a href="/directorio" class="text-decoration-none">Directorio</a>
+    <span class="mx-1">/</span>
+    <strong>@(_data?.Persona.Nombres) @(_data?.Persona.Apellidos)</strong>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <div class="card border-warning p-4"><h5>Necesitas iniciar sesion</h5><a class="btn btn-dark mt-2" href="/login">Iniciar sesion</a></div>
+    return;
+}
+
+@if (_loadError is not null)
+{
+    <div class="alert alert-danger">@_loadError</div>
+}
+else if (_data is null)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+}
+else
+{
+    var p = _data.Persona;
+    <div class="card hero-persona mb-3">
+        <div class="card-body d-flex gap-3 align-items-center">
+            <div class="avatar-grande">@Iniciales(p.Nombres, p.Apellidos)</div>
+            <div class="flex-grow-1">
+                <h2 class="h3 mb-1">@p.Nombres @p.Apellidos</h2>
+                <p class="text-muted mb-2 small">
+                    @p.TipoDocumento @p.Documento
+                    @(string.IsNullOrEmpty(p.Email) ? "" : $" · {p.Email}")
+                    @(string.IsNullOrEmpty(p.Telefono) ? "" : $" · {p.Telefono}")
+                </p>
+                <div class="d-flex flex-wrap gap-1">
+                    <span class="badge bg-light text-dark border">@p.Estado</span>
+                    @if (p.PerfilIncompleto) { <span class="badge bg-warning text-dark">Perfil incompleto</span> }
+                    @foreach (var v in _data.VinculosEnCopropiedad.Where(v => v.Estado == EstadoVinculo.Activo))
+                    {
+                        @foreach (var et in v.Etiquetas)
+                        {
+                            <span class="badge @(et.Grupo == GrupoEtiqueta.Identidad ? "bg-primary" : "bg-info text-dark")">@et.Nombre</span>
+                        }
+                    }
+                </div>
+            </div>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="Volver">&larr; Volver</button>
+        </div>
+    </div>
+
+    @* Tabs *@
+    <ul class="nav nav-tabs mb-3">
+        @foreach (var t in _tabs)
+        {
+            var tab = t.Key;
+            <li class="nav-item"><button class="nav-link @(_activeTab == t.Key ? "active" : "")" @onclick="() => _activeTab = tab">@t.Value</button></li>
+        }
+    </ul>
+
+    @if (_activeTab == "perfil")
+    {
+        <div class="card mb-3"><div class="card-body">
+            <h6 class="text-muted small">DATOS PERSONALES</h6>
+            <div class="row small">
+                <div class="col-md-3 text-muted">Tipo + Documento</div><div class="col-md-9">@p.TipoDocumento @p.Documento</div>
+                <div class="col-md-3 text-muted mt-2">Email</div><div class="col-md-9 mt-2">@(p.Email ?? "Sin registrar")</div>
+                <div class="col-md-3 text-muted mt-2">Telefono</div><div class="col-md-9 mt-2">@(p.Telefono ?? "Sin registrar")</div>
+                <div class="col-md-3 text-muted mt-2">Fecha de nacimiento</div><div class="col-md-9 mt-2">@(p.FechaNacimiento?.ToString() ?? "-")</div>
+                <div class="col-md-3 text-muted mt-2">Genero</div><div class="col-md-9 mt-2">@(p.Genero?.ToString() ?? "-")</div>
+                <div class="col-md-3 text-muted mt-2">Acepto tratamiento datos</div>
+                <div class="col-md-9 mt-2">
+                    @if (p.AceptoTratamientoDatos)
+                    {
+                        <span class="badge bg-success">Aceptado el @p.FechaAceptacionDatos?.ToString("yyyy-MM-dd")</span>
+                    }
+                    else
+                    {
+                        <span class="badge bg-warning text-dark">Pendiente (Ley 1581 de 2012)</span>
+                    }
+                </div>
+            </div>
+        </div></div>
+
+        <div class="card mb-3"><div class="card-body">
+            <h6 class="text-muted small">CONTACTOS ADICIONALES</h6>
+            @if (_data.Contactos.Count == 0)
+            {
+                <p class="text-muted small mb-0">Sin contactos adicionales registrados.</p>
+            }
+            else
+            {
+                <ul class="list-group list-group-flush">
+                    @foreach (var c in _data.Contactos)
+                    {
+                        <li class="list-group-item d-flex justify-content-between align-items-center small">
+                            <span>
+                                <span class="badge bg-light text-dark border">@c.Tipo</span>
+                                @(string.IsNullOrEmpty(c.SubtipoLabel) ? "" : $"({c.SubtipoLabel}) ")
+                                <strong>@c.Valor</strong>
+                                @if (c.EsPrincipal) { <span class="badge bg-primary ms-2">Principal</span> }
+                                <span class="text-muted ms-2">@c.Visibilidad</span>
+                            </span>
+                        </li>
+                    }
+                </ul>
+            }
+        </div></div>
+    }
+    else if (_activeTab == "vinculos")
+    {
+        <div class="card mb-3"><div class="card-body">
+            <h6 class="text-muted small">VINCULOS CON LA COPROPIEDAD</h6>
+            @if (_data.VinculosEnCopropiedad.Count == 0)
+            {
+                <p class="text-muted small mb-0">Sin vinculos en esta copropiedad.</p>
+            }
+            else
+            {
+                <ul class="list-group">
+                    @foreach (var v in _data.VinculosEnCopropiedad)
+                    {
+                        <li class="list-group-item small">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <strong>Desde @v.FechaDesde</strong>@(v.FechaHasta.HasValue ? $" hasta {v.FechaHasta}" : "")
+                                    · <span class="badge @(v.Estado == EstadoVinculo.Activo ? "bg-success" : "bg-secondary")">@v.Estado</span>
+                                    <div class="mt-1 d-flex flex-wrap gap-1">
+                                        @foreach (var et in v.Etiquetas)
+                                        {
+                                            <span class="badge @(et.Grupo == GrupoEtiqueta.Identidad ? "bg-primary" : "bg-info text-dark")">@et.Nombre</span>
+                                        }
+                                    </div>
+                                </div>
+                                @if (v.Estado == EstadoVinculo.Activo)
+                                {
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => InactivarVinculo(v.Id)">Inactivar</button>
+                                }
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
+        </div></div>
+    }
+    else
+    {
+        <div class="card"><div class="card-body text-center text-muted py-5">
+            <p class="mb-2">Disponible cuando se active el modulo <strong>@_tabs[_activeTab]</strong>.</p>
+            <small>Spec 2.4 - principio "Pestañas progresivas": las pestañas siempre son visibles, nunca se ocultan.</small>
+        </div></div>
+    }
+}
+
+<style>
+    .hero-persona { border: none; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+    .avatar-grande {
+        width: 80px; height: 80px; border-radius: 50%;
+        background: linear-gradient(135deg, var(--propia-primary), var(--propia-primary-light));
+        color: white; font-weight: 700; font-size: 1.8rem;
+        display: inline-flex; align-items: center; justify-content: center;
+    }
+</style>
+
+@code {
+    [Parameter] public Guid PersonaId { get; set; }
+    private string? _jwt;
+    private string? _loadError;
+    private Persona360Dto? _data;
+    private string _activeTab = "perfil";
+
+    private readonly Dictionary<string, string> _tabs = new()
+    {
+        ["perfil"] = "Perfil",
+        ["vinculos"] = "Vinculos",
+        ["acceso"] = "Acceso al sistema",
+        ["estado_cuenta"] = "Estado de cuenta",
+        ["cartera"] = "Cartera",
+        ["pqrs"] = "PQRS",
+        ["tareas"] = "Tareas",
+        ["asambleas"] = "Asambleas",
+        ["documentos"] = "Documentos",
+        ["historial"] = "Historial"
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { /* prerender */ }
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = Auth();
+            var resp = await http.GetAsync($"/api/directorio/personas/{PersonaId}");
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized) { _loadError = "Sesion expirada"; _jwt = null; return; }
+            if (resp.StatusCode == System.Net.HttpStatusCode.NotFound) { _loadError = "Persona no encontrada"; return; }
+            resp.EnsureSuccessStatusCode();
+            _data = await resp.Content.ReadFromJsonAsync<Persona360Dto>();
+        }
+        catch (Exception ex) { _loadError = ex.Message; }
+    }
+
+    private async Task InactivarVinculo(Guid vinculoId)
+    {
+        var http = Auth();
+        await http.PutAsync($"/api/directorio/vinculos/{vinculoId}/inactivar", null);
+        await CargarAsync();
+    }
+
+    private void Volver() => Nav.NavigateTo("/directorio");
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+
+    private static string Iniciales(string n, string a)
+        => $"{(n.Length > 0 ? n[0] : ' ')}{(a.Length > 0 ? a[0] : ' ')}".ToUpperInvariant();
+}

@@ -48,6 +48,20 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<EquipoActivo> EquiposActivos => Set<EquipoActivo>();
     public DbSet<ContratoServicio> ContratosServicio => Set<ContratoServicio>();
     public DbSet<MiembroConsejo> MiembrosConsejo => Set<MiembroConsejo>();
+    public DbSet<TipoUnidadCustom> TiposUnidadCustom => Set<TipoUnidadCustom>();
+    public DbSet<TipoCoeficiente> TiposCoeficiente => Set<TipoCoeficiente>();
+    public DbSet<UnidadCoeficiente> UnidadCoeficientes => Set<UnidadCoeficiente>();
+    public DbSet<Comite> Comites => Set<Comite>();
+    public DbSet<ComiteMiembro> ComiteMiembros => Set<ComiteMiembro>();
+    public DbSet<RevisorFiscal> RevisoresFiscales => Set<RevisorFiscal>();
+    public DbSet<MiembroEquipo> MiembrosEquipo => Set<MiembroEquipo>();
+
+    // Modulo 2.4 Directorio
+    public DbSet<EtiquetaCatalogo> EtiquetasCatalogo => Set<EtiquetaCatalogo>();  // global+tenant mezclados via TenantId nullable
+    public DbSet<DirectorioVinculo> DirectorioVinculos => Set<DirectorioVinculo>();
+    public DbSet<DirectorioContacto> DirectorioContactos => Set<DirectorioContacto>();
+    public DbSet<DirectorioEtiqueta> DirectorioEtiquetas => Set<DirectorioEtiqueta>();
+    public DbSet<PersonaEmpresa> PersonaEmpresas => Set<PersonaEmpresa>();
 
     // Modulo 0.2 - Billing y Suscripciones (todo GLOBAL, sin tenant_id)
     public DbSet<Plan> Planes => Set<Plan>();
@@ -127,6 +141,14 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.FotoFachadaUrl).HasMaxLength(500);
             b.Property(x => x.LogoUrl).HasMaxLength(500);
             b.Property(x => x.Descripcion).HasMaxLength(2000);
+            // Identidad registral (modulo 2.3 spec v1.0)
+            b.Property(x => x.NumeroReglamentoPh).HasMaxLength(100);
+            b.Property(x => x.NotariaRegistro).HasMaxLength(200);
+            b.Property(x => x.MatriculaInmobiliaria).HasMaxLength(50);
+            b.Property(x => x.LicenciaConstruccion).HasMaxLength(50);
+            // Labels personalizables (spec v1.0 - "Sector"/"Planta")
+            b.Property(x => x.LabelAgrupacion).HasMaxLength(30);
+            b.Property(x => x.LabelPiso).HasMaxLength(30);
         });
 
         modelBuilder.Entity<Torre>(b =>
@@ -191,6 +213,150 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.TenantId, x.Cargo });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // Tipo unidad custom (spec 2.3 - tipos personalizables por copropiedad)
+        modelBuilder.Entity<TipoUnidadCustom>(b =>
+        {
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(100);
+            b.Property(x => x.Descripcion).HasMaxLength(500);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Nombre }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // Tipos de coeficiente PH (spec 2.3 - RN-02 multiples tipos por copropiedad)
+        modelBuilder.Entity<TipoCoeficiente>(b =>
+        {
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(100);
+            b.Property(x => x.Descripcion).HasMaxLength(500);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Nombre }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // Valores de coeficientes por unidad (relacion M-N + Valor)
+        modelBuilder.Entity<UnidadCoeficiente>(b =>
+        {
+            b.Property(x => x.Valor).HasPrecision(9, 6);
+            b.HasOne(x => x.Unidad).WithMany().HasForeignKey(x => x.UnidadId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.TipoCoeficiente).WithMany().HasForeignKey(x => x.TipoCoeficienteId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.UnidadId, x.TipoCoeficienteId }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // Comites y miembros (spec 2.3 - seccion 4)
+        modelBuilder.Entity<Comite>(b =>
+        {
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(100);
+            b.Property(x => x.Descripcion).HasMaxLength(500);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Nombre }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<ComiteMiembro>(b =>
+        {
+            b.Property(x => x.CargoEnComite).HasMaxLength(80);
+            b.HasOne(x => x.Comite).WithMany(c => c.Miembros).HasForeignKey(x => x.ComiteId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Persona).WithMany().HasForeignKey(x => x.PersonaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.ComiteId, x.PersonaId }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<RevisorFiscal>(b =>
+        {
+            b.Property(x => x.NumeroTarjetaProfesional).HasMaxLength(50);
+            b.HasOne(x => x.Persona).WithMany().HasForeignKey(x => x.PersonaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => x.TenantId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // Equipo de trabajo (spec 2.3 - seccion 3)
+        modelBuilder.Entity<MiembroEquipo>(b =>
+        {
+            b.Property(x => x.RolPersonalizado).HasMaxLength(80);
+            b.Property(x => x.Telefono).HasMaxLength(30);
+            b.Property(x => x.Email).HasMaxLength(200);
+            b.Property(x => x.Observaciones).HasMaxLength(1000);
+            b.HasOne(x => x.Persona).WithMany().HasForeignKey(x => x.PersonaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.PersonaId, x.Rol });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // -------------------- Modulo 2.4 Directorio --------------------
+
+        // Catalogo de etiquetas: base (TenantId NULL) + custom por copropiedad.
+        // El query filter permite ver las base + las del tenant activo.
+        modelBuilder.Entity<EtiquetaCatalogo>(b =>
+        {
+            b.Property(x => x.Codigo).IsRequired().HasMaxLength(50);
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(100);
+            b.HasIndex(x => new { x.TenantId, x.Codigo }).IsUnique();
+            b.HasQueryFilter(x => x.TenantId == null
+                                  || _tenantContext.CurrentTenantId == null
+                                  || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<DirectorioVinculo>(b =>
+        {
+            b.Property(x => x.MotivoInactivacion).HasMaxLength(500);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.EntidadTipo, x.EntidadId });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<DirectorioContacto>(b =>
+        {
+            b.Property(x => x.Valor).IsRequired().HasMaxLength(300);
+            b.Property(x => x.SubtipoLabel).HasMaxLength(50);
+            b.Property(x => x.Ciudad).HasMaxLength(100);
+            b.Property(x => x.Departamento).HasMaxLength(100);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.EntidadTipo, x.EntidadId });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<DirectorioEtiqueta>(b =>
+        {
+            b.HasOne(x => x.Vinculo).WithMany().HasForeignKey(x => x.VinculoId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Etiqueta).WithMany().HasForeignKey(x => x.EtiquetaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => new { x.VinculoId, x.EtiquetaId }).IsUnique();
+            b.HasIndex(x => x.TenantId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PersonaEmpresa>(b =>
+        {
+            b.Property(x => x.Cargo).HasMaxLength(100);
+            b.HasOne(x => x.Persona).WithMany().HasForeignKey(x => x.PersonaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(x => x.Empresa).WithMany().HasForeignKey(x => x.EmpresaId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => new { x.EmpresaId, x.PersonaId, x.Cargo });
+            b.HasIndex(x => x.TenantId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // Representante legal FK opcional
+        modelBuilder.Entity<Empresa>(b =>
+        {
+            b.HasOne(x => x.RepresentanteLegal)
+                .WithMany()
+                .HasForeignKey(x => x.RepresentanteLegalPersonaId)
+                .OnDelete(DeleteBehavior.SetNull);
+            b.Property(x => x.TipoEmpresa).HasMaxLength(100);
+            b.Property(x => x.SectorEconomico).HasMaxLength(100);
+            b.Property(x => x.RegimenTributario).HasMaxLength(100);
+            b.Property(x => x.SitioWeb).HasMaxLength(200);
+            b.Property(x => x.LogoUrl).HasMaxLength(500);
+        });
+
+        modelBuilder.Entity<Persona>(b =>
+        {
+            b.Property(x => x.VersionPoliticaDatos).HasMaxLength(20);
+            b.Property(x => x.IpAceptacion).HasMaxLength(45);
         });
 
         // UsuarioTenant (TenantEntity)
@@ -360,6 +526,9 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             }
         }
 
+        // RLS lo cubre TenantConnectionInterceptor.ConnectionOpenedAsync, que
+        // setea app.tenant_id en cada conexion abierta por EF. Aqui solo
+        // delegamos al base SaveChangesAsync.
         return base.SaveChangesAsync(cancellationToken);
     }
 
