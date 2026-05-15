@@ -37,7 +37,10 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     options.KnownProxies.Clear();
 });
 
-// ---- CORS: solo permitido el origen de Propia.Web (configurable por env var) ----
+// ---- CORS para el frontend Web (Blazor Web App) ----
+// En Prod la API recibe Cors:AllowedOrigins=https://app.propia.cubot.com.co (env var Railway).
+// En Dev sin config explicita: fallback a localhost + dominio piloto.
+// Nota: AllowAnyOrigin no es compatible con AllowCredentials en navegadores.
 var allowedOrigins = (builder.Configuration["Cors:AllowedOrigins"] ?? "")
     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
@@ -52,10 +55,15 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(policy =>
     }
     else
     {
-        // En Development sin config explicita: cualquiera. En Production debe estar configurado.
-        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+        policy.WithOrigins(
+                "https://localhost:7113", "http://localhost:5105",
+                "https://app.propia.cubot.com.co")
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
     }
 }));
+
 
 // Autenticacion JWT - configurada via IOptions<JwtSettings> (resolucion lazy)
 // para que coincida exactamente con lo que TokenService usa al firmar.
@@ -116,6 +124,10 @@ else
                     // el proxy de Railway termina TLS afuera, el contenedor solo escucha HTTP.
 }
 
+// CORS antes de Authentication para preflight OPTIONS.
+// UseHttpsRedirection y UseStaticFiles (/uploads) se aplican condicionalmente
+// en el bloque if (IsDevelopment) arriba: en Production, Railway termina TLS
+// fuera del contenedor y los adjuntos van a Cloudflare R2 (IBlobStorage).
 app.UseCors();
 
 // IMPORTANTE: Authentication PRIMERO, despues Authorization, despues TenantMiddleware
