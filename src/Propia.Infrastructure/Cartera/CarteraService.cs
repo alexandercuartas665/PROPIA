@@ -79,8 +79,12 @@ public class CarteraService : ICarteraService
                 _db.EstadosCarteraConfig.Add(new EstadoCarteraConfig
                 {
                     TenantId = tenantId,
-                    Nombre = nombre, Orden = orden, DiasAlerta = dias,
-                    Color = color, EsInicial = esInicial, Activo = true
+                    Nombre = nombre,
+                    Orden = orden,
+                    DiasAlerta = dias,
+                    Color = color,
+                    EsInicial = esInicial,
+                    Activo = true
                 });
             }
             await _db.SaveChangesAsync(ct);
