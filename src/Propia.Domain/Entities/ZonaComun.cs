@@ -20,4 +20,10 @@ public class ZonaComun : TenantEntity
     /// <summary>Texto libre: "Lunes a Viernes 8am - 10pm" por ejemplo.</summary>
     public string? HorariosUso { get; set; }
     public string? ReglasUso { get; set; }
+
+    /// <summary>
+    /// Estado operativo de la zona. Spec 2.11 - fuente unica de verdad para Mantenimiento.
+    /// Si pasa a EnMantenimiento, 2.13 bloquea reservas automaticamente (RN-08).
+    /// </summary>
+    public EstadoZonaComunMantenimiento Estado { get; set; } = EstadoZonaComunMantenimiento.Activa;
 }

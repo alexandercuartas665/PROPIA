@@ -1,17 +1,886 @@
 @page "/mantenimiento"
+@rendermode InteractiveServer
+@using Propia.Application.Mantenimiento
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
 <PageTitle>Mantenimiento y Activos - PROPIA</PageTitle>
 
-<ModuloPlaceholder
-    Codigo="2.11"
-    Nombre="Mantenimiento y Activos"
-    Descripcion="Ciclo de vida de los activos fisicos: mantenimiento preventivo, correctivo, bitacora e informes."
-    Estado="EstadoModulo.EnDiseno"
-    Features='new[] {
-        "Programacion automatica de mantenimiento preventivo segun frecuencia configurada",
-        "Bitacora de intervenciones con fotos y documentos",
-        "Registro de informes y recomendaciones tecnicas de proveedores",
-        "Inventario de activos y equipos configurado en 2.3 - aqui se opera",
-        "Genera tareas automaticamente en 2.10",
-        "Indicadores: MTBF, costos por activo, vida util restante"
-    }'
-    NotaSpec="01. REQUERIMIENTO/Capa 2. Copropiedad/2.11. Mantenimiento-activos_v1_0.md" />
+<div class="mb-4 d-flex justify-content-between align-items-start">
+    <div>
+        <h1 class="h3 mb-1 fw-semibold">Mantenimiento y Activos</h1>
+        <p class="text-muted mb-0">Modulo 2.11 - planes preventivos, intervenciones correctivas y bitacora de activos</p>
+    </div>
+    <div>
+        <button class="btn btn-outline-dark me-2" @onclick="() => _showCrearPlan = true">+ Plan preventivo</button>
+        <button class="btn" style="background: var(--propia-primary); color: white;" @onclick="() => _showCrearIntervencion = true">+ Nueva intervencion</button>
+    </div>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <div class="card border-warning p-4"><h5>Necesitas iniciar sesion</h5><a class="btn btn-dark mt-2" href="/login">Iniciar sesion</a></div>
+    return;
+}
+
+@* KPIs *@
+@if (_resumen is not null)
+{
+    <div class="row g-3 mb-3">
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Activos al dia</div>
+            <h3 class="mb-0 text-success">@_resumen.ActivosVerde</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Proximos a vencer</div>
+            <h3 class="mb-0 text-warning">@_resumen.ActivosAmarillo</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Vencidos</div>
+            <h3 class="mb-0 text-danger">@_resumen.ActivosRojo</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Sin plan</div>
+            <h3 class="mb-0 text-secondary">@_resumen.ActivosNegro</h3>
+        </div></div></div>
+    </div>
+    <div class="row g-3 mb-3">
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Intervenciones abiertas</div>
+            <h3 class="mb-0">@_resumen.IntervencionesAbiertas</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Intervenciones vencidas</div>
+            <h3 class="mb-0 text-danger">@_resumen.IntervencionesVencidas</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Preventivos del mes</div>
+            <h3 class="mb-0 text-info">@_resumen.PreventivosMes</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Correctivos del mes</div>
+            <h3 class="mb-0">@_resumen.CorrectivosMes</h3>
+        </div></div></div>
+    </div>
+}
+
+@* Tabs *@
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <button class="nav-link @(_tab == "activos" ? "active" : "")" @onclick='() => SwitchTab("activos")'>Activos</button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link @(_tab == "intervenciones" ? "active" : "")" @onclick='() => SwitchTab("intervenciones")'>Intervenciones</button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link @(_tab == "planes" ? "active" : "")" @onclick='() => SwitchTab("planes")'>Planes preventivos</button>
+    </li>
+</ul>
+
+@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+@if (_tab == "activos")
+{
+    <div class="row g-2 mb-3">
+        <div class="col-md-6">
+            <input class="form-control form-control-sm" placeholder="Buscar activo..." @bind="_query" @bind:event="oninput" @onkeyup="CargarAsync" />
+        </div>
+        <div class="col-md-3">
+            <select class="form-select form-select-sm" @bind="_filtroTipo" @bind:after="CargarAsync">
+                <option value="">Todo tipo</option>
+                <option value="Equipo">Equipos</option>
+                <option value="ZonaComun">Zonas comunes</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <select class="form-select form-select-sm" @bind="_filtroSemaforo" @bind:after="CargarAsync">
+                <option value="">Todo semaforo</option>
+                <option value="Verde">Verde - al dia</option>
+                <option value="Amarillo">Amarillo - proximo</option>
+                <option value="Rojo">Rojo - vencido</option>
+                <option value="Negro">Negro - sin plan</option>
+            </select>
+        </div>
+    </div>
+
+    @if (_activos is null)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
+    else if (_activos.Count == 0)
+    {
+        <div class="card p-4 text-center text-muted">Sin activos.</div>
+    }
+    else
+    {
+        <div class="row g-3">
+            @foreach (var a in _activos)
+            {
+                <div class="col-md-6 col-lg-4">
+                    <div class="card semaforo-@a.Semaforo.ToString().ToLower()">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <div>
+                                    <h6 class="mb-0">@RenderSemaforoIcon(a.Semaforo) @a.Nombre</h6>
+                                    <small class="text-muted">@a.ActivoTipo &middot; @(a.Categoria ?? "-") &middot; @a.EstadoActivo</small>
+                                </div>
+                                <span class="badge bg-light text-dark">@a.IntervencionesAbiertas abiertas</span>
+                            </div>
+                            @if (a.PlanProximo is not null)
+                            {
+                                <div class="small text-muted mt-2">
+                                    Proximo: <strong>@a.PlanProximo</strong>
+                                    @if (a.ProximaEjecucion.HasValue)
+                                    {
+                                        <span> - @a.ProximaEjecucion.Value.ToString("yyyy-MM-dd")</span>
+                                        @if (a.DiasParaVencer.HasValue)
+                                        {
+                                            <span class="ms-1 @(a.DiasParaVencer < 0 ? "text-danger fw-bold" : a.DiasParaVencer < 7 ? "text-warning fw-bold" : "")">
+                                                (@(a.DiasParaVencer < 0 ? $"vencio hace {-a.DiasParaVencer.Value} dias" : $"en {a.DiasParaVencer.Value} dias"))
+                                            </span>
+                                        }
+                                    }
+                                </div>
+                                @if (!string.IsNullOrEmpty(a.ProveedorPreferido))
+                                {
+                                    <div class="small text-muted">Proveedor: @a.ProveedorPreferido</div>
+                                }
+                            }
+                            else
+                            {
+                                <div class="small text-muted mt-2">Sin plan preventivo configurado</div>
+                            }
+                            @if (a.UltimoMantenimiento.HasValue)
+                            {
+                                <div class="small text-muted">Ultimo: @a.UltimoMantenimiento.Value.ToString("yyyy-MM-dd")</div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+else if (_tab == "intervenciones")
+{
+    @if (_intervenciones is null)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
+    else if (_intervenciones.Count == 0)
+    {
+        <div class="card p-4 text-center text-muted">Sin intervenciones registradas.</div>
+    }
+    else
+    {
+        <div class="card">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="bg-light small text-muted">
+                    <tr>
+                        <th>Codigo</th><th>Activo</th><th>Tipo</th><th>Titulo</th>
+                        <th>Estado</th><th>Prioridad</th><th>Proveedor</th><th>Programada</th><th>Tarea</th>
+                    </tr>
+                </thead>
+                <tbody class="small">
+                    @foreach (var i in _intervenciones)
+                    {
+                        var iid = i.Id;
+                        <tr style="cursor:pointer;" @onclick="() => MostrarFicha(iid)">
+                            <td class="text-muted">@i.Codigo</td>
+                            <td><strong>@i.ActivoNombre</strong></td>
+                            <td>@RenderTipoBadge(i.Tipo)</td>
+                            <td>@i.Titulo</td>
+                            <td>@RenderEstadoBadge(i.Estado)</td>
+                            <td>@RenderPrioridadBadge(i.Prioridad)</td>
+                            <td>@(i.ProveedorNombre ?? "-")</td>
+                            <td>
+                                @if (i.FechaProgramada.HasValue)
+                                {
+                                    <span class="@(i.Vencida ? "text-danger fw-bold" : "")">@i.FechaProgramada.Value.ToString("yyyy-MM-dd")</span>
+                                }
+                                else { <span class="text-muted">-</span> }
+                            </td>
+                            <td>
+                                @if (i.TareaId.HasValue)
+                                {
+                                    <a class="small" href="@($"/tareas/{i.TareaId}")">@i.TareaNumero</a>
+                                }
+                                else { <span class="text-muted">-</span> }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+else if (_tab == "planes")
+{
+    @if (_planes is null)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
+    else if (_planes.Count == 0)
+    {
+        <div class="card p-4 text-center text-muted">Sin planes preventivos configurados.</div>
+    }
+    else
+    {
+        <div class="card">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="bg-light small text-muted">
+                    <tr><th>Activo</th><th>Plan</th><th>Frecuencia</th><th>Proxima ejecucion</th><th>Disparo</th><th>Proveedor</th><th>Estado</th></tr>
+                </thead>
+                <tbody class="small">
+                    @foreach (var p in _planes)
+                    {
+                        <tr class="@(p.Activo ? "" : "text-muted")">
+                            <td><strong>@p.ActivoNombre</strong> <small class="text-muted">(@p.ActivoTipo)</small></td>
+                            <td>@p.Nombre</td>
+                            <td>@p.Frecuencia @(p.Frecuencia == FrecuenciaMantenimiento.Personalizada ? $"({p.FrecuenciaDias}d)" : "")</td>
+                            <td>
+                                @RenderSemaforoIcon(p.Semaforo)
+                                @p.ProximaEjecucion.ToString("yyyy-MM-dd")
+                                @if (p.DiasParaVencer.HasValue && p.Activo)
+                                {
+                                    <small class="ms-1 text-muted">
+                                        (@(p.DiasParaVencer < 0 ? $"-{-p.DiasParaVencer}d" : $"+{p.DiasParaVencer}d"))
+                                    </small>
+                                }
+                            </td>
+                            <td><small class="badge bg-light text-dark">@p.Disparo</small></td>
+                            <td>@(p.ProveedorPreferidoNombre ?? "-")</td>
+                            <td>
+                                @if (p.Activo)
+                                {
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => DesactivarPlan(p.Id)">Desactivar</button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-sm btn-outline-success" @onclick="() => ReactivarPlan(p.Id)">Reactivar</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@* ===== Modal Crear Intervencion ===== *@
+@if (_showCrearIntervencion)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Nueva intervencion</h5>
+                    <button type="button" class="btn-close" @onclick="CerrarCrearIntervencion"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-2">
+                        <div class="col-md-4">
+                            <label class="form-label small">Tipo *</label>
+                            <select class="form-select form-select-sm" @bind="_crearTipo">
+                                <option value="Correctivo">Correctivo</option>
+                                <option value="Preventivo">Preventivo</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Tipo activo *</label>
+                            <select class="form-select form-select-sm" @bind="_crearActivoTipo">
+                                <option value="Equipo">Equipo</option>
+                                <option value="ZonaComun">Zona comun</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Activo</label>
+                            <select class="form-select form-select-sm" @bind="_crearActivoId">
+                                <option value="">Seleccione...</option>
+                                @if (_activos is not null)
+                                {
+                                    @foreach (var a in _activos.Where(x => x.ActivoTipo.ToString() == _crearActivoTipo))
+                                    {
+                                        <option value="@a.ActivoId">@a.Nombre</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small">Titulo *</label>
+                            <input class="form-control form-control-sm" @bind="_crearTitulo" @bind:event="oninput" />
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small">Descripcion</label>
+                            <textarea class="form-control form-control-sm" rows="3" @bind="_crearDescripcion" @bind:event="oninput"></textarea>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Prioridad</label>
+                            <select class="form-select form-select-sm" @bind="_crearPrioridad">
+                                @foreach (var p in Enum.GetValues<PrioridadIntervencion>()) { <option value="@p">@p</option> }
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Fecha programada</label>
+                            <input type="date" class="form-control form-control-sm" value="@(_crearFecha?.ToString("yyyy-MM-dd"))"
+                                   @onchange="(e) => _crearFecha = string.IsNullOrEmpty(e.Value?.ToString()) ? null : DateOnly.Parse(e.Value!.ToString()!)" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">&nbsp;</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" @bind="_crearNotificarResidentes" id="notifIntChk" />
+                                <label class="form-check-label small" for="notifIntChk">Notificar residentes</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="CerrarCrearIntervencion">Cancelar</button>
+                    <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="ConfirmarCrearIntervencion" disabled="@(_busy || string.IsNullOrWhiteSpace(_crearTitulo) || string.IsNullOrEmpty(_crearActivoId))">
+                        @(_busy ? "Creando..." : "Crear intervencion")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* ===== Modal Crear Plan ===== *@
+@if (_showCrearPlan)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Nuevo plan preventivo</h5>
+                    <button type="button" class="btn-close" @onclick="CerrarCrearPlan"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-2">
+                        <div class="col-md-4">
+                            <label class="form-label small">Tipo de activo *</label>
+                            <select class="form-select form-select-sm" @bind="_planActivoTipo">
+                                <option value="Equipo">Equipo</option>
+                                <option value="ZonaComun">Zona comun</option>
+                            </select>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label small">Activo *</label>
+                            <select class="form-select form-select-sm" @bind="_planActivoId">
+                                <option value="">Seleccione...</option>
+                                @if (_activos is not null)
+                                {
+                                    @foreach (var a in _activos.Where(x => x.ActivoTipo.ToString() == _planActivoTipo))
+                                    {
+                                        <option value="@a.ActivoId">@a.Nombre</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small">Nombre del plan *</label>
+                            <input class="form-control form-control-sm" @bind="_planNombre" @bind:event="oninput" placeholder="Ej: Revision anual ascensor Torre A" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Frecuencia *</label>
+                            <select class="form-select form-select-sm" @bind="_planFrecuencia">
+                                @foreach (var f in Enum.GetValues<FrecuenciaMantenimiento>()) { <option value="@f">@f</option> }
+                            </select>
+                        </div>
+                        @if (_planFrecuencia == FrecuenciaMantenimiento.Personalizada)
+                        {
+                            <div class="col-md-4">
+                                <label class="form-label small">Dias *</label>
+                                <input type="number" min="1" max="365" class="form-control form-control-sm" @bind="_planFrecuenciaDias" />
+                            </div>
+                        }
+                        <div class="col-md-4">
+                            <label class="form-label small">Fecha inicio *</label>
+                            <input type="date" class="form-control form-control-sm" value="@(_planFechaInicio?.ToString("yyyy-MM-dd"))"
+                                   @onchange="(e) => _planFechaInicio = string.IsNullOrEmpty(e.Value?.ToString()) ? null : DateOnly.Parse(e.Value!.ToString()!)" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Disparo</label>
+                            <select class="form-select form-select-sm" @bind="_planDisparo">
+                                <option value="ConConfirmacion">Con confirmacion</option>
+                                <option value="Automatico">Automatico</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Dias alerta previa</label>
+                            <input type="number" min="0" max="90" class="form-control form-control-sm" @bind="_planDiasAlerta" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">&nbsp;</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" @bind="_planNotificarResidentes" id="notifPlanChk" />
+                                <label class="form-check-label small" for="notifPlanChk">Notificar residentes al ejecutar</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="CerrarCrearPlan">Cancelar</button>
+                    <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="ConfirmarCrearPlan"
+                            disabled="@(_busy || string.IsNullOrWhiteSpace(_planNombre) || string.IsNullOrEmpty(_planActivoId) || _planFechaInicio is null)">
+                        @(_busy ? "Creando..." : "Crear plan")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* ===== Modal Ficha Intervencion ===== *@
+@if (_fichaIntervencion is not null)
+{
+    var i = _fichaIntervencion;
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title">@i.Codigo &middot; @i.Titulo</h5>
+                        <small class="text-muted">@RenderTipoBadge(i.Tipo) &middot; @i.ActivoNombre &middot; Origen: @i.Origen</small>
+                    </div>
+                    <button type="button" class="btn-close" @onclick="() => _fichaIntervencion = null"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row mb-3">
+                        <div class="col-md-3"><small class="text-muted">Estado</small><br>@RenderEstadoBadge(i.Estado)</div>
+                        <div class="col-md-3"><small class="text-muted">Prioridad</small><br>@RenderPrioridadBadge(i.Prioridad)</div>
+                        <div class="col-md-3"><small class="text-muted">Proveedor</small><br>@(i.ProveedorNombre ?? "-")</div>
+                        <div class="col-md-3"><small class="text-muted">Programada</small><br>@(i.FechaProgramada?.ToString("yyyy-MM-dd") ?? "-")</div>
+                    </div>
+                    @if (!string.IsNullOrEmpty(i.Descripcion))
+                    {
+                        <p class="small mb-3"><strong>Descripcion:</strong> @i.Descripcion</p>
+                    }
+                    @if (i.TareaId.HasValue)
+                    {
+                        <p class="small mb-3"><a href="@($"/tareas/{i.TareaId}")">Ver tarea vinculada: @i.TareaNumero</a></p>
+                    }
+                    @if (i.Estado != EstadoIntervencion.Completada && i.Estado != EstadoIntervencion.Cancelada)
+                    {
+                        <div class="d-flex gap-2 mb-3 flex-wrap">
+                            @if (i.Estado == EstadoIntervencion.Programada)
+                            {
+                                <button class="btn btn-sm btn-outline-info" @onclick="() => CambiarEstado(i.Id, EstadoIntervencion.EnEjecucion)">Iniciar ejecucion</button>
+                            }
+                            @if (i.Estado == EstadoIntervencion.EnEjecucion)
+                            {
+                                <button class="btn btn-sm btn-outline-warning" @onclick="() => CambiarEstado(i.Id, EstadoIntervencion.EnRevision)">Pasar a revision</button>
+                            }
+                            <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="() => _mostrarCerrar = true">Cerrar intervencion</button>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => _mostrarCancelar = true">Cancelar</button>
+                        </div>
+                    }
+
+                    <h6 class="mt-4 mb-2">Bitacora</h6>
+                    @if (i.Bitacora.Count == 0)
+                    {
+                        <p class="text-muted small">Sin entradas.</p>
+                    }
+                    else
+                    {
+                        @foreach (var b in i.Bitacora.OrderByDescending(x => x.CreadoAt))
+                        {
+                            <div class="border-start ps-3 mb-3" style="border-left-width:3px !important; border-color: var(--propia-primary) !important;">
+                                <small class="text-muted">
+                                    @b.CreadoAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm") &middot; @b.TipoAutor &middot; @b.AutorNombre
+                                </small>
+                                <p class="mb-0 small">@b.Contenido</p>
+                            </div>
+                        }
+                    }
+
+                    @if (i.Estado != EstadoIntervencion.Completada && i.Estado != EstadoIntervencion.Cancelada)
+                    {
+                        <div class="card bg-light mt-3">
+                            <div class="card-body py-3">
+                                <label class="form-label small fw-semibold">Agregar entrada</label>
+                                <textarea class="form-control form-control-sm mb-2" rows="2" @bind="_nuevaEntrada" @bind:event="oninput"></textarea>
+                                <div class="d-flex gap-2 align-items-center">
+                                    <select class="form-select form-select-sm w-auto" @bind="_nuevaEntradaTipo">
+                                        @foreach (var t in Enum.GetValues<TipoAutorBitacoraMantenimiento>()) { <option value="@t">@t</option> }
+                                    </select>
+                                    <button class="btn btn-sm btn-dark" @onclick="AgregarEntrada" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevaEntrada))">
+                                        Agregar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    @if (_mostrarCerrar)
+                    {
+                        <div class="card border-success mt-3">
+                            <div class="card-body">
+                                <h6 class="mb-3">Cerrar intervencion</h6>
+                                <div class="row g-2">
+                                    <div class="col-md-4">
+                                        <label class="form-label small">Fecha cierre *</label>
+                                        <input type="date" class="form-control form-control-sm"
+                                               value="@(_cerrarFecha?.ToString("yyyy-MM-dd"))"
+                                               @onchange="(e) => _cerrarFecha = string.IsNullOrEmpty(e.Value?.ToString()) ? null : DateOnly.Parse(e.Value!.ToString()!)" />
+                                    </div>
+                                    <div class="col-md-8">
+                                        <label class="form-label small">Nota de cierre *</label>
+                                        <textarea class="form-control form-control-sm" rows="2" @bind="_cerrarNota" @bind:event="oninput"></textarea>
+                                    </div>
+                                    <div class="col-md-12">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" @bind="_cerrarCambiaEstado" id="cerrarCambioChk" />
+                                            <label class="form-check-label small" for="cerrarCambioChk">Cambiar estado del activo al cerrar</label>
+                                        </div>
+                                    </div>
+                                    @if (_cerrarCambiaEstado)
+                                    {
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Nuevo estado *</label>
+                                            <select class="form-select form-select-sm" @bind="_cerrarEstadoNuevo">
+                                                <option value="">Seleccione...</option>
+                                                @if (i.ActivoTipo == TipoActivoMantenimiento.Equipo)
+                                                {
+                                                    @foreach (var s in Enum.GetValues<EstadoEquipoActivo>()) { <option value="@s">@s</option> }
+                                                }
+                                                else
+                                                {
+                                                    @foreach (var s in Enum.GetValues<EstadoZonaComunMantenimiento>()) { <option value="@s">@s</option> }
+                                                }
+                                            </select>
+                                        </div>
+                                    }
+                                </div>
+                                <div class="mt-2 d-flex gap-2">
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => _mostrarCerrar = false">Volver</button>
+                                    <button class="btn btn-sm btn-success" @onclick="() => ConfirmarCerrar(i.Id)"
+                                            disabled="@(_busy || string.IsNullOrWhiteSpace(_cerrarNota) || _cerrarFecha is null)">
+                                        Confirmar cierre
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    @if (_mostrarCancelar)
+                    {
+                        <div class="card border-danger mt-3">
+                            <div class="card-body">
+                                <h6 class="mb-3 text-danger">Cancelar intervencion</h6>
+                                <label class="form-label small">Motivo *</label>
+                                <textarea class="form-control form-control-sm mb-2" rows="2" @bind="_cancelarMotivo" @bind:event="oninput"></textarea>
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => _mostrarCancelar = false">Volver</button>
+                                    <button class="btn btn-sm btn-danger" @onclick="() => ConfirmarCancelar(i.Id)"
+                                            disabled="@(_busy || string.IsNullOrWhiteSpace(_cancelarMotivo))">
+                                        Confirmar cancelacion
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
+    .semaforo-verde { border-left: 4px solid #22c55e; }
+    .semaforo-amarillo { border-left: 4px solid #f59e0b; }
+    .semaforo-rojo { border-left: 4px solid #ef4444; }
+    .semaforo-negro { border-left: 4px solid #6b7280; }
+</style>
+
+@code {
+    private string? _jwt;
+    private bool _busy;
+    private string? _msg;
+    private string _msgClass = "alert-info";
+    private string _tab = "activos";
+
+    private List<ActivoPanelDto>? _activos;
+    private List<IntervencionListaDto>? _intervenciones;
+    private List<PlanDto>? _planes;
+    private ResumenMantenimientoDto? _resumen;
+    private IntervencionDetalleDto? _fichaIntervencion;
+
+    private string _query = "";
+    private string _filtroTipo = "";
+    private string _filtroSemaforo = "";
+
+    private bool _showCrearIntervencion;
+    private string _crearTipo = "Correctivo";
+    private string _crearActivoTipo = "Equipo";
+    private string _crearActivoId = "";
+    private string? _crearTitulo;
+    private string? _crearDescripcion;
+    private PrioridadIntervencion _crearPrioridad = PrioridadIntervencion.Normal;
+    private DateOnly? _crearFecha;
+    private bool _crearNotificarResidentes;
+
+    private bool _showCrearPlan;
+    private string _planActivoTipo = "Equipo";
+    private string _planActivoId = "";
+    private string? _planNombre;
+    private FrecuenciaMantenimiento _planFrecuencia = FrecuenciaMantenimiento.Mensual;
+    private int? _planFrecuenciaDias;
+    private DateOnly? _planFechaInicio;
+    private string _planDisparo = "ConConfirmacion";
+    private int _planDiasAlerta = 7;
+    private bool _planNotificarResidentes;
+
+    private bool _mostrarCerrar;
+    private bool _mostrarCancelar;
+    private DateOnly? _cerrarFecha = DateOnly.FromDateTime(DateTime.UtcNow);
+    private string? _cerrarNota;
+    private bool _cerrarCambiaEstado;
+    private string _cerrarEstadoNuevo = "";
+    private string? _cancelarMotivo;
+    private string? _nuevaEntrada;
+    private TipoAutorBitacoraMantenimiento _nuevaEntradaTipo = TipoAutorBitacoraMantenimiento.Administrador;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task SwitchTab(string tab)
+    {
+        _tab = tab;
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = Auth();
+            _resumen = await http.GetFromJsonAsync<ResumenMantenimientoDto>("/api/mantenimiento/resumen");
+
+            var activosUrl = "/api/mantenimiento/activos";
+            var qp = new List<string>();
+            if (!string.IsNullOrEmpty(_filtroTipo)) qp.Add($"activoTipo={_filtroTipo}");
+            if (!string.IsNullOrEmpty(_filtroSemaforo)) qp.Add($"semaforo={_filtroSemaforo}");
+            if (!string.IsNullOrEmpty(_query)) qp.Add($"q={Uri.EscapeDataString(_query)}");
+            if (qp.Count > 0) activosUrl += "?" + string.Join("&", qp);
+            _activos = await http.GetFromJsonAsync<List<ActivoPanelDto>>(activosUrl) ?? new();
+
+            if (_tab == "intervenciones")
+                _intervenciones = await http.GetFromJsonAsync<List<IntervencionListaDto>>("/api/mantenimiento/intervenciones") ?? new();
+            if (_tab == "planes")
+                _planes = await http.GetFromJsonAsync<List<PlanDto>>("/api/mantenimiento/planes") ?? new();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task MostrarFicha(Guid id)
+    {
+        try
+        {
+            _fichaIntervencion = await Auth().GetFromJsonAsync<IntervencionDetalleDto>($"/api/mantenimiento/intervenciones/{id}");
+            _mostrarCerrar = _mostrarCancelar = false;
+            _cerrarFecha = DateOnly.FromDateTime(DateTime.UtcNow);
+            _cerrarNota = _cancelarMotivo = _nuevaEntrada = null;
+            _cerrarCambiaEstado = false;
+            _cerrarEstadoNuevo = "";
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private void CerrarCrearIntervencion()
+    {
+        _showCrearIntervencion = false;
+        _crearTitulo = _crearDescripcion = null;
+        _crearActivoId = "";
+        _crearFecha = null;
+        _crearPrioridad = PrioridadIntervencion.Normal;
+        _crearNotificarResidentes = false;
+    }
+
+    private async Task ConfirmarCrearIntervencion()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            if (!Guid.TryParse(_crearActivoId, out var activoId)) return;
+            var req = new CrearIntervencionRequest(
+                Enum.Parse<TipoIntervencionMantenimiento>(_crearTipo),
+                Enum.Parse<TipoActivoMantenimiento>(_crearActivoTipo),
+                activoId, null,
+                OrigenIntervencion.Manual, null,
+                _crearTitulo!, _crearDescripcion,
+                _crearPrioridad, null, null,
+                _crearFecha, _crearNotificarResidentes);
+            var resp = await Auth().PostAsJsonAsync("/api/mantenimiento/intervenciones", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _msg = "Intervencion creada con tarea vinculada."; _msgClass = "alert-success";
+            CerrarCrearIntervencion();
+            _tab = "intervenciones";
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private void CerrarCrearPlan()
+    {
+        _showCrearPlan = false;
+        _planNombre = null;
+        _planActivoId = "";
+        _planFechaInicio = null;
+        _planFrecuencia = FrecuenciaMantenimiento.Mensual;
+        _planFrecuenciaDias = null;
+        _planDisparo = "ConConfirmacion";
+        _planDiasAlerta = 7;
+        _planNotificarResidentes = false;
+    }
+
+    private async Task ConfirmarCrearPlan()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            if (!Guid.TryParse(_planActivoId, out var activoId)) return;
+            if (_planFechaInicio is null) return;
+            var req = new CrearPlanRequest(
+                Enum.Parse<TipoActivoMantenimiento>(_planActivoTipo),
+                activoId,
+                _planNombre!, null,
+                _planFrecuencia, _planFrecuenciaDias,
+                _planFechaInicio.Value, null,
+                Enum.Parse<DisparoPlanMantenimiento>(_planDisparo),
+                _planDiasAlerta, _planNotificarResidentes);
+            var resp = await Auth().PostAsJsonAsync("/api/mantenimiento/planes", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _msg = "Plan preventivo creado."; _msgClass = "alert-success";
+            CerrarCrearPlan();
+            _tab = "planes";
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task DesactivarPlan(Guid id)
+    {
+        var resp = await Auth().DeleteAsync($"/api/mantenimiento/planes/{id}");
+        if (resp.IsSuccessStatusCode) { _msg = "Plan desactivado."; _msgClass = "alert-success"; await CargarAsync(); }
+    }
+
+    private async Task ReactivarPlan(Guid id)
+    {
+        var resp = await Auth().PostAsync($"/api/mantenimiento/planes/{id}/reactivar", null);
+        if (resp.IsSuccessStatusCode) { _msg = "Plan reactivado."; _msgClass = "alert-success"; await CargarAsync(); }
+    }
+
+    private async Task CambiarEstado(Guid id, EstadoIntervencion nuevo)
+    {
+        var req = new CambiarEstadoIntervencionRequest(nuevo, null, null);
+        var resp = await Auth().PostAsJsonAsync($"/api/mantenimiento/intervenciones/{id}/estado", req);
+        if (resp.IsSuccessStatusCode) { await MostrarFicha(id); await CargarAsync(); }
+        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+    }
+
+    private async Task ConfirmarCerrar(Guid id)
+    {
+        _busy = true;
+        try
+        {
+            var req = new CerrarIntervencionRequest(
+                _cerrarFecha!.Value, _cerrarNota!,
+                _cerrarCambiaEstado, _cerrarCambiaEstado ? _cerrarEstadoNuevo : null,
+                false, null);
+            var resp = await Auth().PostAsJsonAsync($"/api/mantenimiento/intervenciones/{id}/cerrar", req);
+            if (resp.IsSuccessStatusCode) { _mostrarCerrar = false; await MostrarFicha(id); await CargarAsync(); }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ConfirmarCancelar(Guid id)
+    {
+        _busy = true;
+        try
+        {
+            var req = new CancelarIntervencionRequest(_cancelarMotivo!);
+            var resp = await Auth().PostAsJsonAsync($"/api/mantenimiento/intervenciones/{id}/cancelar", req);
+            if (resp.IsSuccessStatusCode) { _mostrarCancelar = false; await MostrarFicha(id); await CargarAsync(); }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task AgregarEntrada()
+    {
+        if (_fichaIntervencion is null || string.IsNullOrWhiteSpace(_nuevaEntrada)) return;
+        _busy = true;
+        try
+        {
+            var req = new AgregarBitacoraRequest(_nuevaEntrada!, _nuevaEntradaTipo);
+            var resp = await Auth().PostAsJsonAsync($"/api/mantenimiento/intervenciones/{_fichaIntervencion.Id}/bitacora", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                _nuevaEntrada = null;
+                await MostrarFicha(_fichaIntervencion.Id);
+            }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private MarkupString RenderSemaforoIcon(SemaforoMantenimiento s) => s switch
+    {
+        SemaforoMantenimiento.Verde => new MarkupString("<span style='color:#22c55e;'>&#9679;</span>"),
+        SemaforoMantenimiento.Amarillo => new MarkupString("<span style='color:#f59e0b;'>&#9679;</span>"),
+        SemaforoMantenimiento.Rojo => new MarkupString("<span style='color:#ef4444;'>&#9679;</span>"),
+        _ => new MarkupString("<span style='color:#6b7280;'>&#9679;</span>")
+    };
+
+    private MarkupString RenderTipoBadge(TipoIntervencionMantenimiento t) => t switch
+    {
+        TipoIntervencionMantenimiento.Preventivo => new MarkupString("<span class='badge bg-info'>Preventivo</span>"),
+        TipoIntervencionMantenimiento.Correctivo => new MarkupString("<span class='badge bg-warning text-dark'>Correctivo</span>"),
+        _ => new MarkupString("")
+    };
+
+    private MarkupString RenderEstadoBadge(EstadoIntervencion e) => e switch
+    {
+        EstadoIntervencion.Programada => new MarkupString("<span class='badge bg-secondary'>Programada</span>"),
+        EstadoIntervencion.EnEjecucion => new MarkupString("<span class='badge bg-info'>En ejecucion</span>"),
+        EstadoIntervencion.EnRevision => new MarkupString("<span class='badge bg-warning text-dark'>En revision</span>"),
+        EstadoIntervencion.Completada => new MarkupString("<span class='badge bg-success'>Completada</span>"),
+        EstadoIntervencion.Cancelada => new MarkupString("<span class='badge bg-dark'>Cancelada</span>"),
+        _ => new MarkupString("")
+    };
+
+    private MarkupString RenderPrioridadBadge(PrioridadIntervencion p) => p switch
+    {
+        PrioridadIntervencion.Urgente => new MarkupString("<span class='badge bg-danger'>Urgente</span>"),
+        PrioridadIntervencion.Alta => new MarkupString("<span class='badge bg-warning text-dark'>Alta</span>"),
+        PrioridadIntervencion.Normal => new MarkupString("<span class='badge bg-primary'>Normal</span>"),
+        PrioridadIntervencion.Baja => new MarkupString("<span class='badge bg-secondary'>Baja</span>"),
+        _ => new MarkupString("")
+    };
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}
