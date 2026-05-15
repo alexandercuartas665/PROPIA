@@ -16,14 +16,21 @@ public class UsuarioTenant : TenantEntity
     public Persona? Persona { get; set; }
 
     /// <summary>
-    /// Identificador del Rol asignado dentro de la copropiedad (referencia futura a tabla Roles).
-    /// Por ahora se almacena como string del nombre del rol (Administrador, Consejero, Residente, etc.).
-    /// Cuando se implemente la tabla Roles configurable (paso 2.5 completo), se migrara a RolId.
+    /// Nombre legacy del rol (Administrador, Consejero, Residente...). Mantenido como
+    /// snapshot textual para compatibilidad. La fuente real es <see cref="RolId"/>.
     /// </summary>
     public string Rol { get; set; } = "Residente";
+
+    /// <summary>Rol asignado en esta copropiedad (FK a Rol, spec 2.5).</summary>
+    public Guid? RolId { get; set; }
+    public Rol? RolNavigation { get; set; }
 
     public EstadoUsuarioTenant Estado { get; set; } = EstadoUsuarioTenant.Pendiente;
     public DateTimeOffset? UltimoAcceso { get; set; }
     public DateTimeOffset? FechaInvitacion { get; set; }
     public DateTimeOffset? FechaActivacion { get; set; }
+
+    /// <summary>Motivo de revocacion cuando Estado == Inactiva (spec 2.5 HU-02).</summary>
+    public string? MotivoRevocacion { get; set; }
+    public DateTimeOffset? FechaRevocacion { get; set; }
 }

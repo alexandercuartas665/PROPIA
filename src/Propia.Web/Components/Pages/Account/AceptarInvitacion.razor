@@ -1,0 +1,137 @@
+@page "/invitacion/{Token}"
+@layout WizardLayout
+@rendermode InteractiveServer
+@using Propia.Application.UsuariosAccesos
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<PageTitle>Aceptar invitacion - PROPIA</PageTitle>
+
+<div class="container py-4" style="max-width: 540px;">
+    <div class="card shadow-sm">
+        <div class="card-body p-4">
+            @if (_loading)
+            {
+                <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+            }
+            else if (_invitacion is null)
+            {
+                <h4 class="mb-3">Invitacion no encontrada</h4>
+                <p class="text-muted">El link no es valido o ya fue utilizado.</p>
+                <a class="btn btn-outline-dark mt-2" href="/">Volver al inicio</a>
+            }
+            else if (_invitacion.ExpiroToken)
+            {
+                <h4 class="mb-3">Esta invitacion expiro</h4>
+                <p class="text-muted small">
+                    La invitacion para <strong>@_invitacion.PersonaNombre</strong> en <strong>@_invitacion.CopropiedadNombre</strong>
+                    expiro. Pide al administrador que regenere el link.
+                </p>
+                <a class="btn btn-outline-dark mt-2" href="/">Volver al inicio</a>
+            }
+            else if (!_invitacion.EstaPendiente)
+            {
+                <h4 class="mb-3">Invitacion no disponible</h4>
+                <p class="text-muted small">Esta invitacion ya fue procesada (cancelada o aceptada). Si crees que es un error, contacta al administrador.</p>
+                <a class="btn btn-outline-dark mt-2" href="/">Volver al inicio</a>
+            }
+            else if (_aceptada)
+            {
+                <div class="text-center">
+                    <div class="display-4 mb-2">OK</div>
+                    <h4 class="mb-2">Bienvenido a @_invitacion.CopropiedadNombre</h4>
+                    <p class="text-muted small mb-4">Tu cuenta esta activa. Entrando...</p>
+                    <div class="spinner-border" style="color: var(--propia-primary);"></div>
+                </div>
+            }
+            else
+            {
+                <h4 class="mb-1">Bienvenido a PROPIA</h4>
+                <p class="text-muted small mb-4">
+                    <strong>@_invitacion.PersonaNombre</strong>, fuiste invitado a
+                    <strong>@_invitacion.CopropiedadNombre</strong> con el rol <strong>@_invitacion.RolNombre</strong>.
+                </p>
+                <p class="text-muted small mb-3">Tu cuenta se creara con el email <code>@_invitacion.PersonaEmail</code>. Define una contrasena para acceder.</p>
+
+                <div class="mb-3">
+                    <label class="form-label small">Contrasena (minimo 10 caracteres)</label>
+                    <input type="password" class="form-control" @bind="_password" placeholder="Define tu contrasena" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small">Confirmar contrasena</label>
+                    <input type="password" class="form-control" @bind="_confirmPassword" placeholder="Repite tu contrasena" />
+                </div>
+                @if (!string.IsNullOrEmpty(_error))
+                {
+                    <div class="alert alert-danger py-2 small">@_error</div>
+                }
+                <button class="btn w-100" style="background: var(--propia-primary); color: white;"
+                        @onclick="Aceptar" disabled="@_busy">
+                    @(_busy ? "Activando..." : "Aceptar y entrar")
+                </button>
+                <small class="text-muted d-block mt-3">
+                    Al continuar aceptas el tratamiento de datos personales conforme la Ley 1581 de 2012.
+                </small>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Token { get; set; } = "";
+
+    private bool _loading = true;
+    private bool _busy;
+    private bool _aceptada;
+    private string _password = "";
+    private string _confirmPassword = "";
+    private string? _error;
+    private InvitacionPublicaDto? _invitacion;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            var http = HttpFactory.CreateClient("PropiaApi");
+            var resp = await http.GetAsync($"/api/invitaciones/{Uri.EscapeDataString(Token)}");
+            if (resp.StatusCode == System.Net.HttpStatusCode.OK)
+                _invitacion = await resp.Content.ReadFromJsonAsync<InvitacionPublicaDto>();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; StateHasChanged(); }
+    }
+
+    private async Task Aceptar()
+    {
+        _busy = true; _error = null;
+        try
+        {
+            if (_password != _confirmPassword) { _error = "Las contrasenas no coinciden."; return; }
+            if (_password.Length < 10) { _error = "La contrasena debe tener al menos 10 caracteres."; return; }
+
+            var http = HttpFactory.CreateClient("PropiaApi");
+            var resp = await http.PostAsJsonAsync("/api/invitaciones/aceptar",
+                new AceptarInvitacionRequest(Token, _password, _confirmPassword));
+            if (!resp.IsSuccessStatusCode)
+            {
+                _error = await resp.Content.ReadAsStringAsync();
+                return;
+            }
+            var ok = await resp.Content.ReadFromJsonAsync<AceptarInvitacionResponse>();
+            if (ok is null || !ok.Aceptada) { _error = ok?.Mensaje ?? "No se pudo aceptar la invitacion."; return; }
+
+            // Persistir JWT y entrar a Mi Copropiedad
+            await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_jwt", ok.AccessToken);
+            await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_tenant_id", ok.TenantId.ToString());
+            await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_copropiedad_nombre", ok.CopropiedadNombre);
+
+            _aceptada = true;
+            StateHasChanged();
+            await Task.Delay(1500);
+            Nav.NavigateTo("/mi-copropiedad", forceLoad: true);
+        }
+        finally { _busy = false; }
+    }
+}

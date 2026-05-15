@@ -63,6 +63,15 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<DirectorioEtiqueta> DirectorioEtiquetas => Set<DirectorioEtiqueta>();
     public DbSet<PersonaEmpresa> PersonaEmpresas => Set<PersonaEmpresa>();
 
+    // Modulo 2.5 Usuarios, Roles y Accesos
+    // (RolesCopropiedad para no colisionar con IdentityDbContext.Roles de IdentityRole)
+    public DbSet<Rol> RolesCopropiedad => Set<Rol>();
+    public DbSet<RolPermiso> RolPermisos => Set<RolPermiso>();
+    public DbSet<UsuarioInvitacion> UsuarioInvitaciones => Set<UsuarioInvitacion>();
+    public DbSet<UsuarioAuthMetodo> UsuarioAuthMetodos => Set<UsuarioAuthMetodo>();
+    public DbSet<UsuarioSesion> UsuarioSesiones => Set<UsuarioSesion>();
+    public DbSet<AccesoAuditoria> AccesoAuditorias => Set<AccesoAuditoria>();
+
     // Modulo 0.2 - Billing y Suscripciones (todo GLOBAL, sin tenant_id)
     public DbSet<Plan> Planes => Set<Plan>();
     public DbSet<Cupon> Cupones => Set<Cupon>();
@@ -359,16 +368,83 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.IpAceptacion).HasMaxLength(45);
         });
 
+        // -------------------- Modulo 2.5 Usuarios, Roles y Accesos --------------------
+
+        // Rol: GLOBAL (tenant_id nullable). Las base + extendidos tienen tenant_id NULL
+        // y se ven en todas las copropiedades. Los personalizados llevan tenant_id.
+        modelBuilder.Entity<Rol>(b =>
+        {
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(100);
+            b.Property(x => x.Descripcion).HasMaxLength(500);
+            b.HasOne(x => x.CopiadoDeRol).WithMany().HasForeignKey(x => x.CopiadoDeRolId).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(x => new { x.TenantId, x.Nombre }).IsUnique();
+            // Query filter: ve sus propios + los globales (tenant_id NULL)
+            b.HasQueryFilter(x => x.TenantId == null
+                                  || _tenantContext.CurrentTenantId == null
+                                  || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<RolPermiso>(b =>
+        {
+            b.Property(x => x.ModuloCodigo).IsRequired().HasMaxLength(50);
+            b.HasOne(x => x.Rol).WithMany().HasForeignKey(x => x.RolId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => new { x.RolId, x.ModuloCodigo, x.Accion }).IsUnique();
+            // No tiene tenant_id - se hereda del rol. Sin query filter ya que se accede
+            // siempre via rol_id y el rol ya esta filtrado.
+        });
+
+        modelBuilder.Entity<UsuarioInvitacion>(b =>
+        {
+            b.Property(x => x.Token).IsRequired().HasMaxLength(128);
+            b.HasOne(x => x.Persona).WithMany().HasForeignKey(x => x.PersonaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(x => x.Rol).WithMany().HasForeignKey(x => x.RolId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => x.Token).IsUnique();
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Estado });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<UsuarioAuthMetodo>(b =>
+        {
+            b.Property(x => x.ProveedorId).HasMaxLength(255);
+            b.HasIndex(x => new { x.UsuarioId, x.Tipo });
+        });
+
+        modelBuilder.Entity<UsuarioSesion>(b =>
+        {
+            b.Property(x => x.TokenHash).IsRequired().HasMaxLength(255);
+            b.Property(x => x.Dispositivo).HasMaxLength(255);
+            b.Property(x => x.IpOrigen).HasMaxLength(45);
+            b.HasIndex(x => x.UsuarioId);
+            b.HasIndex(x => x.TokenHash).IsUnique();
+        });
+
+        modelBuilder.Entity<AccesoAuditoria>(b =>
+        {
+            b.Property(x => x.IpOrigen).HasMaxLength(45);
+            b.Property(x => x.Dispositivo).HasMaxLength(255);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.UsuarioId);
+            b.HasIndex(x => x.TipoEvento);
+            b.HasIndex(x => x.CreatedAt);
+        });
+
         // UsuarioTenant (TenantEntity)
         modelBuilder.Entity<UsuarioTenant>(b =>
         {
             b.Property(x => x.Rol).IsRequired().HasMaxLength(100);
+            b.Property(x => x.MotivoRevocacion).HasMaxLength(500);
             b.HasOne(x => x.Persona)
                 .WithMany(x => x.VinculosATenants)
                 .HasForeignKey(x => x.PersonaId)
                 .OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.RolNavigation)
+                .WithMany()
+                .HasForeignKey(x => x.RolId)
+                .OnDelete(DeleteBehavior.SetNull);
             b.HasIndex(x => new { x.TenantId, x.PersonaId }).IsUnique();
             b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.RolId);
 
             // Red de seguridad de aplicacion. RLS de Postgres es la red final.
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null

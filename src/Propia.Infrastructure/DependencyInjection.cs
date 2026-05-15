@@ -76,6 +76,10 @@ public static class DependencyInjection
         // Modulo 2.4 Directorio
         services.AddScoped<Application.Directorio.IDirectorioService, Directorio.DirectorioService>();
 
+        // Modulo 2.5 Usuarios, Roles y Accesos
+        services.AddScoped<Application.UsuariosAccesos.IUsuariosService, UsuariosAccesos.UsuariosService>();
+        services.AddScoped<Application.UsuariosAccesos.IRolesService, UsuariosAccesos.RolesService>();
+
         return services;
     }
 }

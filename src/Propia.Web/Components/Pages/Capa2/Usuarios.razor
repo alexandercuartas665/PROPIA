@@ -1,16 +1,410 @@
 @page "/usuarios"
-<PageTitle>Usuarios y Roles - PROPIA</PageTitle>
+@rendermode InteractiveServer
+@using Propia.Application.UsuariosAccesos
+@using Propia.Application.Directorio
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
 
-<ModuloPlaceholder
-    Codigo="2.5"
-    Nombre="Usuarios, Roles y Accesos"
-    Descripcion="Motor de seguridad y permisos. Toma identidades del Directorio y les otorga acceso al sistema."
-    Estado="EstadoModulo.EnConstruccion"
-    Features='new[] {
-        "ASP.NET Core Identity ya implementado (login + JWT + selector tenant tipo Slack)",
-        "Falta: matriz de permisos granular por modulo y por accion configurable desde la consola",
-        "Roles base no eliminables, permisos editables - configuracion por copropiedad",
-        "Multi-copropiedad: una identidad accede a N copropiedades con roles distintos",
-        "Autenticacion vinculada con T.1 (email/password, Google SSO, Microsoft SSO, WhatsApp OTP en Fase 2)"
-    }'
-    NotaSpec="01. REQUERIMIENTO/Capa 2. Copropiedad/2.5. Usuarios-roles-accesos_v1_0.md" />
+<PageTitle>Usuarios y Accesos - PROPIA</PageTitle>
+
+<div class="mb-4">
+    <h1 class="h3 mb-1 fw-semibold">Usuarios y Accesos</h1>
+    <p class="text-muted mb-0">Gestion de invitaciones, roles y revocaciones del modulo 2.5</p>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <div class="card border-warning p-4"><h5>Necesitas iniciar sesion</h5><a class="btn btn-dark mt-2" href="/login">Iniciar sesion</a></div>
+    return;
+}
+
+@* KPIs por estado *@
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card kpi-mini @(_tab == EstadoUsuarioTenant.Activo ? "border-primary" : "")" style="cursor:pointer;" @onclick="() => SetTab(EstadoUsuarioTenant.Activo)">
+            <div class="card-body py-3">
+                <div class="text-muted small">Activos</div>
+                <h3 class="mb-0">@(_usuarios?.Count(u => u.Estado == EstadoUsuarioTenant.Activo) ?? 0)</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card kpi-mini @(_tab == EstadoUsuarioTenant.Pendiente ? "border-primary" : "")" style="cursor:pointer;" @onclick="() => SetTab(EstadoUsuarioTenant.Pendiente)">
+            <div class="card-body py-3">
+                <div class="text-muted small">Pendientes</div>
+                <h3 class="mb-0">@(_pendientes?.Count ?? 0)</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card kpi-mini @(_tab == EstadoUsuarioTenant.Inactivo ? "border-primary" : "")" style="cursor:pointer;" @onclick="() => SetTab(EstadoUsuarioTenant.Inactivo)">
+            <div class="card-body py-3">
+                <div class="text-muted small">Inactivos</div>
+                <h3 class="mb-0">@(_usuarios?.Count(u => u.Estado == EstadoUsuarioTenant.Inactivo) ?? 0)</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 d-flex align-items-center justify-content-end gap-2">
+        <button class="btn" style="background: var(--propia-primary); color: white;" @onclick="() => _showInvitar = true">+ Invitar usuario</button>
+        <a class="btn btn-outline-dark" href="/configuracion/roles">Roles</a>
+    </div>
+</div>
+
+@* Buscador *@
+<div class="mb-3">
+    <input class="form-control" placeholder="Buscar por nombre, documento, email o rol..." @bind="_query" @bind:event="oninput" @onkeyup="CargarAsync" />
+</div>
+
+@if (!string.IsNullOrEmpty(_msg))
+{
+    <div class="alert @_msgClass py-2 small">@_msg</div>
+}
+
+@if (_tab == EstadoUsuarioTenant.Pendiente)
+{
+    @if (_pendientes is null)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
+    else if (_pendientes.Count == 0)
+    {
+        <div class="card p-4 text-center text-muted">Sin invitaciones pendientes.</div>
+    }
+    else
+    {
+        <div class="card">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="small text-muted bg-light">
+                    <tr><th>Persona</th><th>Documento</th><th>Rol</th><th>Expira</th><th class="text-end">Acciones</th></tr>
+                </thead>
+                <tbody class="small">
+                    @foreach (var i in _pendientes)
+                    {
+                        var iid = i.Id;
+                        <tr>
+                            <td><strong>@i.PersonaNombre</strong></td>
+                            <td>@i.PersonaDocumento</td>
+                            <td><span class="badge bg-light text-dark border">@i.RolNombre</span></td>
+                            <td>
+                                @i.ExpiraAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")
+                                @if (i.ExpiraAt < DateTimeOffset.UtcNow) { <span class="badge bg-warning text-dark ms-1">Expirada</span> }
+                            </td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-outline-dark" @onclick="() => CopiarLink(i)">Copiar link</button>
+                                <button class="btn btn-sm btn-outline-dark" @onclick="() => Reenviar(iid)">Reenviar</button>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => Cancelar(iid)">Cancelar</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+else
+{
+    @if (_usuarios is null)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
+    else
+    {
+        var lista = _usuarios.Where(u => u.Estado == _tab).ToList();
+        @if (lista.Count == 0)
+        {
+            <div class="card p-4 text-center text-muted">Sin usuarios @_tab.ToString().ToLower() en esta copropiedad.</div>
+        }
+        else
+        {
+            <div class="card">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="small text-muted bg-light">
+                        <tr><th>Usuario</th><th>Rol</th><th>Estado</th><th>Ultimo acceso</th><th>Cuenta</th><th class="text-end">Acciones</th></tr>
+                    </thead>
+                    <tbody class="small">
+                        @foreach (var u in lista)
+                        {
+                            var uid = u.UsuarioTenantId;
+                            <tr>
+                                <td>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <div class="avatar-mini">@Iniciales(u.NombreCompleto)</div>
+                                        <div>
+                                            <strong>@u.NombreCompleto</strong>
+                                            <div class="text-muted small">@(u.Email ?? "-")</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td><span class="badge bg-light text-dark border">@u.RolNombre</span></td>
+                                <td>
+                                    @switch (u.Estado)
+                                    {
+                                        case EstadoUsuarioTenant.Activo: <span class="badge bg-success">Activo</span> break;
+                                        case EstadoUsuarioTenant.Inactivo: <span class="badge bg-secondary">Inactivo</span> break;
+                                        default: <span class="badge bg-warning text-dark">@u.Estado</span> break;
+                                    }
+                                </td>
+                                <td>@(u.UltimoAcceso?.LocalDateTime.ToString("yyyy-MM-dd HH:mm") ?? "Sin registro")</td>
+                                <td>
+                                    @if (u.TieneCuentaPropia) { <span class="badge bg-info text-dark">Con cuenta</span> }
+                                    else { <span class="badge bg-light text-dark border">Solo en directorio</span> }
+                                </td>
+                                <td class="text-end">
+                                    @if (u.Estado == EstadoUsuarioTenant.Activo)
+                                    {
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => RevocarAccesoAsync(uid)">Revocar</button>
+                                    }
+                                    else if (u.Estado == EstadoUsuarioTenant.Inactivo)
+                                    {
+                                        <button class="btn btn-sm btn-outline-dark" @onclick="() => Reactivar(uid)">Reactivar</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+}
+
+@* Modal de invitar *@
+@if (_showInvitar)
+{
+    <div class="card border-primary mt-4">
+        <div class="card-body bg-light">
+            <div class="d-flex justify-content-between">
+                <h5>Invitar usuario al sistema</h5>
+                <button class="btn btn-sm btn-outline-dark" @onclick="() => _showInvitar = false">Cerrar</button>
+            </div>
+            <p class="text-muted small mb-3">
+                Busca la persona en el Directorio (2.4). Si no existe, agregala primero alli.
+                La invitacion expira en 72 horas (RN-11).
+            </p>
+            <div class="row g-2">
+                <div class="col-md-6">
+                    <label class="form-label small">Buscar persona</label>
+                    <input class="form-control form-control-sm" placeholder="Documento o nombre" @bind="_buscarPersona" @bind:event="oninput" @onkeyup="BuscarPersonas" />
+                    @if (_personasEncontradas.Count > 0 && _personaSel is null)
+                    {
+                        <div class="list-group list-group-flush mt-1 small" style="max-height:140px; overflow:auto;">
+                            @foreach (var p in _personasEncontradas)
+                            {
+                                var pp = p;
+                                <button type="button" class="list-group-item list-group-item-action" @onclick="() => SeleccionarPersona(pp)">
+                                    <strong>@p.Nombres @p.Apellidos</strong> · @p.TipoDocumento @p.Documento
+                                </button>
+                            }
+                        </div>
+                    }
+                    @if (_personaSel is not null)
+                    {
+                        <div class="alert alert-info py-2 small mt-2">
+                            Seleccionada: <strong>@_personaSel.Nombres @_personaSel.Apellidos</strong> · @_personaSel.Email
+                            <button class="btn btn-sm btn-link text-danger p-0 ms-2" @onclick="() => _personaSel = null">cambiar</button>
+                        </div>
+                    }
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">Rol asignado</label>
+                    <InputSelect @bind-Value="_invRolId" class="form-select form-select-sm">
+                        <option value="">- Selecciona -</option>
+                        @foreach (var r in _roles.Where(r => r.Activo))
+                        {
+                            <option value="@r.Id">@r.Nombre</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">Canal de envio</label>
+                    <InputSelect @bind-Value="_invCanal" class="form-select form-select-sm">
+                        <option value="@CanalEnvioInvitacion.Email">Email</option>
+                        <option value="@CanalEnvioInvitacion.Whatsapp">WhatsApp</option>
+                        <option value="@CanalEnvioInvitacion.Ambos">Ambos</option>
+                    </InputSelect>
+                </div>
+            </div>
+            <button class="btn btn-sm mt-3" style="background: var(--propia-primary); color: white;" @onclick="EnviarInvitacion" disabled="@(_busy || _personaSel is null || _invRolId == Guid.Empty)">
+                @(_busy ? "Generando..." : "Enviar invitacion")
+            </button>
+            @if (_ultimaInvitacion is not null)
+            {
+                <div class="alert alert-success py-2 small mt-3">
+                    Invitacion creada. <strong>Comparte este link:</strong>
+                    <code class="user-select-all">@LinkInvitacion(_ultimaInvitacion)</code>
+                    <button class="btn btn-sm btn-outline-success ms-2" @onclick="() => CopiarLinkUltima()">Copiar</button>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<style>
+    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
+    .avatar-mini {
+        width: 32px; height: 32px; border-radius: 50%;
+        background: linear-gradient(135deg, var(--propia-primary), var(--propia-primary-light));
+        color: white; font-weight: 600; font-size: 0.75rem;
+        display: inline-flex; align-items: center; justify-content: center;
+    }
+</style>
+
+@code {
+    private string? _jwt;
+    private EstadoUsuarioTenant _tab = EstadoUsuarioTenant.Activo;
+    private string _query = "";
+    private bool _busy;
+    private string? _msg; private string _msgClass = "alert-info";
+
+    private List<UsuarioListaDto>? _usuarios;
+    private List<InvitacionDto>? _pendientes;
+    private List<RolDto> _roles = new();
+
+    private bool _showInvitar;
+    private string _buscarPersona = "";
+    private List<PersonaResumenDto> _personasEncontradas = new();
+    private PersonaResumenDto? _personaSel;
+    private Guid _invRolId;
+    private CanalEnvioInvitacion _invCanal = CanalEnvioInvitacion.Email;
+    private InvitacionDto? _ultimaInvitacion;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarRolesAsync();
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { /* prerender */ }
+    }
+
+    private void SetTab(EstadoUsuarioTenant tab) { _tab = tab; _ = CargarAsync(); }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = Auth();
+            _usuarios = await http.GetFromJsonAsync<List<UsuarioListaDto>>($"/api/usuarios?q={Uri.EscapeDataString(_query)}") ?? new();
+            _pendientes = await http.GetFromJsonAsync<List<InvitacionDto>>("/api/usuarios/invitaciones") ?? new();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task CargarRolesAsync()
+    {
+        try
+        {
+            var http = Auth();
+            _roles = await http.GetFromJsonAsync<List<RolDto>>("/api/roles") ?? new();
+        }
+        catch { /* ignore - sin roles no podemos invitar pero el resto funciona */ }
+    }
+
+    private async Task BuscarPersonas()
+    {
+        if (string.IsNullOrWhiteSpace(_buscarPersona) || _buscarPersona.Length < 3)
+        {
+            _personasEncontradas.Clear();
+            return;
+        }
+        var http = Auth();
+        _personasEncontradas = await http.GetFromJsonAsync<List<PersonaResumenDto>>(
+            $"/api/directorio/personas?q={Uri.EscapeDataString(_buscarPersona)}") ?? new();
+    }
+
+    private void SeleccionarPersona(PersonaResumenDto p) { _personaSel = p; _personasEncontradas.Clear(); }
+
+    private async Task EnviarInvitacion()
+    {
+        if (_personaSel is null || _invRolId == Guid.Empty) return;
+        _busy = true; _msg = null; _ultimaInvitacion = null;
+        try
+        {
+            var http = Auth();
+            var resp = await http.PostAsJsonAsync("/api/usuarios/invitaciones",
+                new CrearInvitacionRequest(_personaSel.Id, _invRolId, _invCanal));
+            if (!resp.IsSuccessStatusCode)
+            {
+                _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return;
+            }
+            _ultimaInvitacion = await resp.Content.ReadFromJsonAsync<InvitacionDto>();
+            _msg = $"Invitacion enviada a {_personaSel.Nombres} {_personaSel.Apellidos}."; _msgClass = "alert-success";
+            _personaSel = null; _buscarPersona = ""; _invRolId = Guid.Empty;
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task Reenviar(Guid id)
+    {
+        var http = Auth();
+        await http.PutAsync($"/api/usuarios/invitaciones/{id}/reenviar", null);
+        _msg = "Token regenerado y vigencia restablecida (72h)."; _msgClass = "alert-success";
+        await CargarAsync();
+    }
+
+    private async Task Cancelar(Guid id)
+    {
+        var http = Auth();
+        await http.DeleteAsync($"/api/usuarios/invitaciones/{id}");
+        await CargarAsync();
+    }
+
+    private async Task CopiarLink(InvitacionDto i)
+    {
+        var url = $"{Nav.BaseUri.TrimEnd('/')}{i.LinkAceptacion}";
+        await Js.InvokeVoidAsync("navigator.clipboard.writeText", url);
+        _msg = $"Link copiado al portapapeles: {url}"; _msgClass = "alert-info";
+    }
+
+    private string LinkInvitacion(InvitacionDto i) => $"{Nav.BaseUri.TrimEnd('/')}{i.LinkAceptacion}";
+
+    private async Task CopiarLinkUltima()
+    {
+        if (_ultimaInvitacion is null) return;
+        await Js.InvokeVoidAsync("navigator.clipboard.writeText", LinkInvitacion(_ultimaInvitacion));
+        _msg = "Link copiado al portapapeles."; _msgClass = "alert-info";
+    }
+
+    private async Task RevocarAccesoAsync(Guid usuarioTenantId)
+    {
+        var http = Auth();
+        var resp = await http.PostAsJsonAsync($"/api/usuarios/{usuarioTenantId}/revocar",
+            new RevocarAccesoRequest(null));
+        if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+        _msg = "Acceso revocado. Sesion invalidada."; _msgClass = "alert-success";
+        await CargarAsync();
+    }
+
+    private async Task Reactivar(Guid usuarioTenantId)
+    {
+        var http = Auth();
+        await http.PostAsync($"/api/usuarios/{usuarioTenantId}/reactivar", null);
+        await CargarAsync();
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+
+    private static string Iniciales(string s)
+    {
+        var parts = s.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return "?";
+        if (parts.Length == 1) return parts[0][0].ToString().ToUpperInvariant();
+        return $"{parts[0][0]}{parts[^1][0]}".ToUpperInvariant();
+    }
+}
