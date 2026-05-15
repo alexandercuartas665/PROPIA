@@ -72,6 +72,16 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<UsuarioSesion> UsuarioSesiones => Set<UsuarioSesion>();
     public DbSet<AccesoAuditoria> AccesoAuditorias => Set<AccesoAuditoria>();
 
+    // Modulo 2.6 Presupuesto, Cuotas y Pagos
+    public DbSet<Domain.Entities.Presupuesto> Presupuestos => Set<Domain.Entities.Presupuesto>();
+    public DbSet<PresupuestoRubro> PresupuestoRubros => Set<PresupuestoRubro>();
+    public DbSet<Liquidacion> Liquidaciones => Set<Liquidacion>();
+    public DbSet<LiquidacionUnidad> LiquidacionUnidades => Set<LiquidacionUnidad>();
+    public DbSet<PagoCuota> PagosCuotas => Set<PagoCuota>();
+    public DbSet<CuotaExtraordinaria> CuotasExtraordinarias => Set<CuotaExtraordinaria>();
+    public DbSet<EjecucionPresupuestal> EjecucionesPresupuestales => Set<EjecucionPresupuestal>();
+    public DbSet<AuditLogPresupuesto> AuditLogPresupuestos => Set<AuditLogPresupuesto>();
+
     // Modulo 0.2 - Billing y Suscripciones (todo GLOBAL, sin tenant_id)
     public DbSet<Plan> Planes => Set<Plan>();
     public DbSet<Cupon> Cupones => Set<Cupon>();
@@ -427,6 +437,101 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasIndex(x => x.UsuarioId);
             b.HasIndex(x => x.TipoEvento);
             b.HasIndex(x => x.CreatedAt);
+        });
+
+        // -------------------- Modulo 2.6 Presupuesto, Cuotas y Pagos --------------------
+
+        modelBuilder.Entity<Domain.Entities.Presupuesto>(b =>
+        {
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(100);
+            b.Property(x => x.MontoTotal).HasPrecision(18, 2);
+            b.Property(x => x.AprobacionActaUrl).HasMaxLength(500);
+            b.Property(x => x.Notas).HasMaxLength(2000);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Estado });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PresupuestoRubro>(b =>
+        {
+            b.Property(x => x.Codigo).IsRequired().HasMaxLength(50);
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(100);
+            b.Property(x => x.MontoAnual).HasPrecision(18, 2);
+            b.Property(x => x.NotasInternas).HasMaxLength(1000);
+            b.HasOne(x => x.Presupuesto).WithMany(p => p.Rubros).HasForeignKey(x => x.PresupuestoId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.PresupuestoId, x.Codigo });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<Liquidacion>(b =>
+        {
+            b.Property(x => x.MontoTotal).HasPrecision(18, 2);
+            b.Property(x => x.SnapshotCalculo).HasColumnType("text");
+            b.HasOne(x => x.Presupuesto).WithMany().HasForeignKey(x => x.PresupuestoId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.PresupuestoId, x.Periodo }).IsUnique();  // Idempotencia
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<LiquidacionUnidad>(b =>
+        {
+            b.Property(x => x.Monto).HasPrecision(18, 2);
+            b.Property(x => x.Desglose).HasColumnType("text");
+            b.HasOne(x => x.Liquidacion).WithMany(l => l.Detalle).HasForeignKey(x => x.LiquidacionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.UnidadPrivada).WithMany().HasForeignKey(x => x.UnidadPrivadaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.LiquidacionId, x.UnidadPrivadaId }).IsUnique();
+            b.HasIndex(x => x.EstadoPago);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PagoCuota>(b =>
+        {
+            b.Property(x => x.Monto).HasPrecision(18, 2);
+            b.Property(x => x.ReferenciaExterna).HasMaxLength(100);
+            b.Property(x => x.Notas).HasMaxLength(1000);
+            b.HasOne(x => x.UnidadPrivada).WithMany().HasForeignKey(x => x.UnidadPrivadaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(x => x.LiquidacionUnidad).WithMany().HasForeignKey(x => x.LiquidacionUnidadId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(x => x.CuotaExtraordinaria).WithMany().HasForeignKey(x => x.CuotaExtraordinariaId).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Estado });
+            b.HasIndex(x => x.ReferenciaExterna);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<CuotaExtraordinaria>(b =>
+        {
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(150);
+            b.Property(x => x.Proposito).IsRequired().HasMaxLength(1000);
+            b.Property(x => x.MontoTotal).HasPrecision(18, 2);
+            b.Property(x => x.AprobacionActaUrl).HasMaxLength(500);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Estado });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<EjecucionPresupuestal>(b =>
+        {
+            b.Property(x => x.Descripcion).IsRequired().HasMaxLength(255);
+            b.Property(x => x.Monto).HasPrecision(18, 2);
+            b.Property(x => x.SoporteUrl).HasMaxLength(500);
+            b.HasOne(x => x.PresupuestoRubro).WithMany().HasForeignKey(x => x.PresupuestoRubroId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.PresupuestoRubroId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<AuditLogPresupuesto>(b =>
+        {
+            b.Property(x => x.Entidad).IsRequired().HasMaxLength(50);
+            b.Property(x => x.Accion).IsRequired().HasMaxLength(50);
+            b.Property(x => x.ValorAnterior).HasColumnType("text");
+            b.Property(x => x.ValorNuevo).HasColumnType("text");
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.Entidad, x.EntidadId });
+            b.HasIndex(x => x.CreatedAt);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
         // UsuarioTenant (TenantEntity)

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Propia.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using Propia.Infrastructure.Persistence;
 namespace Propia.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(PropiaDbContext))]
-    partial class PropiaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260515031618_ChangeJsonbToText26")]
+    partial class ChangeJsonbToText26
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

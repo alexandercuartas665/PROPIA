@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Propia.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using Propia.Infrastructure.Persistence;
 namespace Propia.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(PropiaDbContext))]
-    partial class PropiaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260515030204_AddPresupuestoModulo26")]
+    partial class AddPresupuestoModulo26
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -383,11 +386,11 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnName("usuario_id");
 
                     b.Property<string>("ValorAnterior")
-                        .HasColumnType("text")
+                        .HasColumnType("jsonb")
                         .HasColumnName("valor_anterior");
 
                     b.Property<string>("ValorNuevo")
-                        .HasColumnType("text")
+                        .HasColumnType("jsonb")
                         .HasColumnName("valor_nuevo");
 
                     b.HasKey("Id");
@@ -1588,8 +1591,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("SnapshotCalculo")
                         .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("snapshot_calculo");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("snapshot_calculo")
+                        .HasDefaultValueSql("'{}'::jsonb");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
@@ -1630,8 +1635,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Desglose")
                         .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("desglose");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("desglose")
+                        .HasDefaultValueSql("'[]'::jsonb");
 
                     b.Property<int>("EstadoPago")
                         .HasColumnType("integer")

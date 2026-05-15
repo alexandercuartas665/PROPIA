@@ -80,6 +80,9 @@ public static class DependencyInjection
         services.AddScoped<Application.UsuariosAccesos.IUsuariosService, UsuariosAccesos.UsuariosService>();
         services.AddScoped<Application.UsuariosAccesos.IRolesService, UsuariosAccesos.RolesService>();
 
+        // Modulo 2.6 Presupuesto, Cuotas y Pagos
+        services.AddScoped<Application.Presupuesto.IPresupuestoService, Presupuesto.PresupuestoService>();
+
         return services;
     }
 }
