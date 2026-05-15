@@ -1,17 +1,689 @@
 @page "/documentos"
+@rendermode InteractiveServer
+@using Propia.Application.Documentos
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+
 <PageTitle>Documentos - PROPIA</PageTitle>
 
-<ModuloPlaceholder
-    Codigo="2.15"
-    Nombre="Documentos y Archivo Digital"
-    Descripcion="Repositorio de documentos: reglamento de PH, actas, estados financieros, manuales, archivo historico."
-    Estado="EstadoModulo.EnDiseno"
-    Features='new[] {
-        "Visor de documentos integrado (PDF, Word, Excel) sin descargar",
-        "Firma electronica propia: hash SHA-256 + timestamp + ID firmante + IP",
-        "Firma digital certificada (Certicamara o Andes SCD) por integracion externa",
-        "Versionado de documentos con historial",
-        "Storage en Cloudflare R2 (S3-compatible)",
-        "Permisos de lectura por rol - residentes ven documentos habilitados"
-    }'
-    NotaSpec="01. REQUERIMIENTO/Capa 2. Copropiedad/2.15. Documentos-archivo-digital_v1_0.md" />
+<div class="mb-4 d-flex justify-content-between align-items-start">
+    <div>
+        <h1 class="h3 mb-1 fw-semibold">Documentos</h1>
+        <p class="text-muted mb-0">Modulo 2.15 - repositorio documental con versionado, etiquetas y auditoria</p>
+    </div>
+    <button class="btn" style="background: var(--propia-primary); color: white;" @onclick="AbrirSubir" disabled="@(_jwt is null)">
+        + Subir documento
+    </button>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <AuthMessage />
+    return;
+}
+
+@if (_resumen is not null)
+{
+    <div class="row g-3 mb-3">
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Total documentos</div><h3 class="mb-0">@_resumen.TotalDocumentos</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Categorias activas</div><h3 class="mb-0 text-info">@_resumen.TotalCategorias</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Tamano total</div><h3 class="mb-0">@FormatBytes(_resumen.TamanoTotalBytes)</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Ultimos 30 dias</div><h3 class="mb-0 text-success">@_resumen.DocumentosUltimos30Dias</h3>
+        </div></div></div>
+    </div>
+}
+
+<div class="row g-3">
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-header bg-white py-2"><strong class="small">Categorias</strong></div>
+            <div class="list-group list-group-flush small">
+                <button class="list-group-item list-group-item-action @(_filtroCategoriaId is null ? "active" : "")"
+                        @onclick="() => SeleccionarCategoria(null)">
+                    Todas
+                </button>
+                @if (_categorias is not null)
+                {
+                    @foreach (var c in _categorias)
+                    {
+                        var cid = c.Id;
+                        <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center @(_filtroCategoriaId == cid ? "active" : "")"
+                                @onclick="() => SeleccionarCategoria(cid)">
+                            <span>
+                                @if (!string.IsNullOrEmpty(c.Color))
+                                {
+                                    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:@c.Color;margin-right:6px;"></span>
+                                }
+                                @c.Nombre
+                                @if (c.EsBase)
+                                {
+                                    <small class="text-muted">&nbsp;(base)</small>
+                                }
+                            </span>
+                            <small>@c.NumeroDocumentos</small>
+                        </button>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-9">
+        <div class="row g-2 mb-3">
+            <div class="col-md-5">
+                <input class="form-control form-control-sm" placeholder="Buscar por titulo o nombre de archivo..."
+                       @bind="_query" @bind:event="oninput" @onkeyup="CargarDocumentosAsync" />
+            </div>
+            <div class="col-md-3">
+                <select class="form-select form-select-sm" @bind="_filtroEstado" @bind:after="CargarDocumentosAsync">
+                    <option value="">Todos los estados</option>
+                    @foreach (var e in Enum.GetValues<EstadoDocumento>())
+                    {
+                        <option value="@e">@e</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select form-select-sm" @bind="_filtroOrigen" @bind:after="CargarDocumentosAsync">
+                    <option value="">Cualquier origen</option>
+                    @foreach (var o in Enum.GetValues<OrigenDocumento>())
+                    {
+                        <option value="@o">@o</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-1 d-flex align-items-center">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="destChk"
+                           @bind="_soloDestacados" @bind:after="CargarDocumentosAsync" />
+                    <label class="form-check-label small" for="destChk" title="Solo destacados">&#9733;</label>
+                </div>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_msg))
+        {
+            <div class="alert @_msgClass py-2 small">@_msg</div>
+        }
+
+        @if (_documentos is null)
+        {
+            <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+        }
+        else if (_documentos.Items.Count == 0)
+        {
+            <div class="card p-4 text-center text-muted">Sin documentos con los filtros actuales.</div>
+        }
+        else
+        {
+            <div class="card">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="bg-light small text-muted">
+                        <tr>
+                            <th></th>
+                            <th>Titulo</th>
+                            <th>Categoria</th>
+                            <th>Etiquetas</th>
+                            <th>Versiones</th>
+                            <th>Tamano</th>
+                            <th>Origen</th>
+                            <th>Estado</th>
+                            <th>Modificado</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody class="small">
+                        @foreach (var d in _documentos.Items)
+                        {
+                            var did = d.Id;
+                            <tr style="cursor:pointer;">
+                                <td>
+                                    @if (d.Destacado)
+                                    {
+                                        <span title="Destacado por la copropiedad" style="color:#f59e0b;">&#9733;</span>
+                                    }
+                                    else if (d.DestacadoPersonal)
+                                    {
+                                        <span title="Destacado personal" style="color:#6366f1;">&#9733;</span>
+                                    }
+                                </td>
+                                <td @onclick="() => AbrirFicha(did)">
+                                    <strong>@d.Titulo</strong>
+                                    <br><small class="text-muted">@d.NombreArchivoOriginal</small>
+                                </td>
+                                <td @onclick="() => AbrirFicha(did)">@d.CategoriaNombre</td>
+                                <td @onclick="() => AbrirFicha(did)">
+                                    @foreach (var e in d.Etiquetas.Take(3))
+                                    {
+                                        var color = string.IsNullOrEmpty(e.Color) ? "#94a3b8" : e.Color;
+                                        <span class="badge me-1" style="background:@color;color:white;">@e.Nombre</span>
+                                    }
+                                </td>
+                                <td @onclick="() => AbrirFicha(did)">v@(d.NumeroVersiones)</td>
+                                <td @onclick="() => AbrirFicha(did)">@FormatBytes(d.TamanoBytes)</td>
+                                <td @onclick="() => AbrirFicha(did)"><small>@d.Origen</small></td>
+                                <td @onclick="() => AbrirFicha(did)">@RenderEstado(d.Estado)</td>
+                                <td @onclick="() => AbrirFicha(did)"><small>@((d.UpdatedAt ?? d.CreadoAt).LocalDateTime.ToString("yyyy-MM-dd"))</small></td>
+                                <td>
+                                    <button class="btn btn-sm btn-link p-0" title="Descargar" @onclick="() => Descargar(did)">&#8595;</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @if (_documentos.Total > _documentos.PageSize)
+                {
+                    <div class="d-flex justify-content-between align-items-center p-2 small text-muted">
+                        <span>@_documentos.Items.Count de @_documentos.Total</span>
+                        <div>
+                            <button class="btn btn-sm btn-outline-secondary" disabled="@(_page <= 1)" @onclick="() => CambiarPagina(_page - 1)">Anterior</button>
+                            <span class="mx-2">Pagina @_page</span>
+                            <button class="btn btn-sm btn-outline-secondary"
+                                    disabled="@(_page * _documentos.PageSize >= _documentos.Total)"
+                                    @onclick="() => CambiarPagina(_page + 1)">Siguiente</button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@* ===== Modal subir ===== *@
+@if (_showSubir)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Subir documento</h5>
+                    <button type="button" class="btn-close" @onclick="() => _showSubir = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-2">
+                        <div class="col-md-12">
+                            <label class="form-label small">Titulo *</label>
+                            <input class="form-control form-control-sm" @bind="_subirTitulo" @bind:event="oninput" maxlength="200" />
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small">Descripcion</label>
+                            <textarea class="form-control form-control-sm" rows="2" @bind="_subirDescripcion" @bind:event="oninput"></textarea>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Categoria *</label>
+                            <select class="form-select form-select-sm" @bind="_subirCategoriaId">
+                                <option value="">Seleccionar...</option>
+                                @if (_categorias is not null)
+                                {
+                                    @foreach (var c in _categorias)
+                                    {
+                                        <option value="@c.Id">@c.Nombre</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Visibilidad</label>
+                            <select class="form-select form-select-sm" @bind="_subirVisibilidad">
+                                <option value="EQUIPO">Equipo (administracion)</option>
+                                <option value="PUBLICO">Publico (residentes)</option>
+                                <option value="PRIVADO">Privado (solo yo)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small">Archivo *</label>
+                            <InputFile OnChange="OnArchivoSeleccionado" class="form-control form-control-sm" />
+                            @if (!string.IsNullOrEmpty(_subirNombreArchivo))
+                            {
+                                <small class="text-muted">@_subirNombreArchivo - @FormatBytes(_subirTamano)</small>
+                            }
+                        </div>
+                        @if (_etiquetas is not null && _etiquetas.Count > 0)
+                        {
+                            <div class="col-md-12">
+                                <label class="form-label small">Etiquetas</label>
+                                <div>
+                                    @foreach (var e in _etiquetas)
+                                    {
+                                        var eid = e.Id;
+                                        var seleccionada = _subirEtiquetaIds.Contains(eid);
+                                        var bg = seleccionada ? (string.IsNullOrEmpty(e.Color) ? "#6366f1" : e.Color) : "#e5e7eb";
+                                        var fg = seleccionada ? "white" : "#374151";
+                                        <button type="button" class="badge me-1 mb-1"
+                                                style="background:@bg;color:@fg;cursor:pointer;border:none;"
+                                                @onclick="() => ToggleEtiqueta(eid)">
+                                            @e.Nombre
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _showSubir = false">Cancelar</button>
+                    <button class="btn btn-sm" style="background: var(--propia-primary); color: white;"
+                            @onclick="ConfirmarSubir"
+                            disabled="@(_busy || string.IsNullOrWhiteSpace(_subirTitulo) || _subirCategoriaId == Guid.Empty || string.IsNullOrEmpty(_subirContenidoB64))">
+                        @(_busy ? "Subiendo..." : "Subir documento")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* ===== Modal ficha ===== *@
+@if (_ficha is not null)
+{
+    var d = _ficha;
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title">@d.Titulo</h5>
+                        <small class="text-muted">@d.NombreArchivoOriginal &middot; @d.CategoriaNombre &middot; @RenderEstado(d.Estado)</small>
+                    </div>
+                    <button type="button" class="btn-close" @onclick="() => _ficha = null"></button>
+                </div>
+                <div class="modal-body">
+                    @if (!string.IsNullOrEmpty(d.Descripcion))
+                    {
+                        <p class="text-muted">@d.Descripcion</p>
+                    }
+                    <div class="row mb-3">
+                        <div class="col-md-3"><small class="text-muted">Version actual</small><br>v@(d.VersionActual.Numero)</div>
+                        <div class="col-md-3"><small class="text-muted">Tamano</small><br>@FormatBytes(d.VersionActual.TamanoBytes)</div>
+                        <div class="col-md-3"><small class="text-muted">Subido por</small><br><small>@d.VersionActual.CreadoAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</small></div>
+                        <div class="col-md-3"><small class="text-muted">Visibilidad</small><br>@d.Visibilidad</div>
+                    </div>
+
+                    <div class="d-flex gap-2 mb-3">
+                        <button class="btn btn-sm" style="background: var(--propia-primary); color: white;"
+                                @onclick="() => DescargarVersion(d.Id, d.VersionActual.Id)">
+                            &#8595; Descargar version actual
+                        </button>
+                        <button class="btn btn-sm btn-outline-dark" @onclick="AbrirNuevaVersion">Subir nueva version</button>
+                        <button class="btn btn-sm btn-outline-warning" @onclick="ToggleDestacadoPersonal">
+                            @(d.DestacadoPersonal ? "Quitar destacado" : "Destacar")
+                        </button>
+                        @if (d.Estado == EstadoDocumento.Vigente)
+                        {
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => CambiarEstado(EstadoDocumento.Archivado)">Archivar</button>
+                        }
+                        else if (d.Estado == EstadoDocumento.Archivado)
+                        {
+                            <button class="btn btn-sm btn-outline-success" @onclick="() => CambiarEstado(EstadoDocumento.Vigente)">Reactivar</button>
+                        }
+                        <button class="btn btn-sm btn-outline-danger" @onclick="() => EliminarDocumento(d.Id)">Eliminar</button>
+                    </div>
+
+                    @if (_subirNuevaVersionVisible)
+                    {
+                        <div class="card bg-light p-3 mb-3">
+                            <h6 class="mb-2">Nueva version</h6>
+                            <InputFile OnChange="OnNuevaVersionArchivo" class="form-control form-control-sm mb-2" />
+                            <input class="form-control form-control-sm mb-2" placeholder="Notas del cambio (opcional)"
+                                   @bind="_nuevaVersionNotas" @bind:event="oninput" />
+                            <div>
+                                <button class="btn btn-sm" style="background: var(--propia-primary); color: white;"
+                                        @onclick="ConfirmarNuevaVersion"
+                                        disabled="@(_busy || string.IsNullOrEmpty(_nuevaVersionContenidoB64))">
+                                    @(_busy ? "Subiendo..." : "Subir nueva version")
+                                </button>
+                                <button class="btn btn-sm btn-outline-secondary" @onclick="() => _subirNuevaVersionVisible = false">Cancelar</button>
+                            </div>
+                        </div>
+                    }
+
+                    @if (d.Historial.Count > 0)
+                    {
+                        <h6>Historial de versiones</h6>
+                        <div class="card">
+                            <table class="table table-sm mb-0 small">
+                                <thead class="bg-light">
+                                    <tr><th>Version</th><th>Archivo</th><th>Tamano</th><th>Hash</th><th>Notas</th><th>Fecha</th><th></th></tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var v in d.Historial)
+                                    {
+                                        <tr>
+                                            <td>v@(v.Numero)</td>
+                                            <td>@v.NombreArchivo</td>
+                                            <td>@FormatBytes(v.TamanoBytes)</td>
+                                            <td><small><code>@v.HashSha256.Substring(0, 10)...</code></small></td>
+                                            <td><small>@v.NotasCambio</small></td>
+                                            <td><small>@v.CreadoAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</small></td>
+                                            <td><button class="btn btn-sm btn-link p-0" @onclick="() => DescargarVersion(d.Id, v.Id)">&#8595;</button></td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+
+                    @if (_auditoria is not null && _auditoria.Count > 0)
+                    {
+                        <hr>
+                        <h6>Auditoria <small class="text-muted">(append-only)</small></h6>
+                        <ul class="list-unstyled small">
+                            @foreach (var a in _auditoria.Take(15))
+                            {
+                                <li>
+                                    <span class="badge bg-light text-dark me-1">@a.TipoEvento</span>
+                                    <small class="text-muted">@a.OcurridoAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</small>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
+</style>
+
+@code {
+    private string? _jwt;
+    private bool _busy;
+    private string? _msg;
+    private string _msgClass = "alert-info";
+
+    private List<CategoriaDto>? _categorias;
+    private List<EtiquetaDto>? _etiquetas;
+    private DocumentosPageDto? _documentos;
+    private DocumentoDetalleDto? _ficha;
+    private List<AuditoriaEventoDto>? _auditoria;
+    private ResumenDocumentosDto? _resumen;
+
+    private Guid? _filtroCategoriaId;
+    private string _filtroEstado = "";
+    private string _filtroOrigen = "";
+    private string _query = "";
+    private bool _soloDestacados;
+    private int _page = 1;
+
+    // Subir
+    private bool _showSubir;
+    private string? _subirTitulo;
+    private string? _subirDescripcion;
+    private Guid _subirCategoriaId = Guid.Empty;
+    private string _subirVisibilidad = "EQUIPO";
+    private string? _subirNombreArchivo;
+    private string? _subirMime;
+    private long _subirTamano;
+    private string? _subirContenidoB64;
+    private List<Guid> _subirEtiquetaIds = new();
+
+    // Nueva version
+    private bool _subirNuevaVersionVisible;
+    private string? _nuevaVersionNombre;
+    private string? _nuevaVersionMime;
+    private long _nuevaVersionTamano;
+    private string? _nuevaVersionContenidoB64;
+    private string? _nuevaVersionNotas;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarTodoAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task CargarTodoAsync()
+    {
+        try
+        {
+            var http = Auth();
+            _resumen = await http.GetFromJsonAsync<ResumenDocumentosDto>("/api/documentos/resumen");
+            _categorias = await http.GetFromJsonAsync<List<CategoriaDto>>("/api/documentos/categorias");
+            _etiquetas = await http.GetFromJsonAsync<List<EtiquetaDto>>("/api/documentos/etiquetas");
+            await CargarDocumentosAsync();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task CargarDocumentosAsync()
+    {
+        try
+        {
+            var qp = new List<string>();
+            if (_filtroCategoriaId is { } c) qp.Add($"categoriaId={c}");
+            if (!string.IsNullOrEmpty(_filtroEstado)) qp.Add($"estado={_filtroEstado}");
+            if (!string.IsNullOrEmpty(_filtroOrigen)) qp.Add($"origen={_filtroOrigen}");
+            if (!string.IsNullOrEmpty(_query)) qp.Add($"q={Uri.EscapeDataString(_query)}");
+            if (_soloDestacados) qp.Add("destacados=true");
+            qp.Add($"page={_page}");
+            var url = "/api/documentos" + (qp.Count > 0 ? "?" + string.Join("&", qp) : "");
+            _documentos = await Auth().GetFromJsonAsync<DocumentosPageDto>(url);
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task SeleccionarCategoria(Guid? id)
+    {
+        _filtroCategoriaId = id;
+        _page = 1;
+        await CargarDocumentosAsync();
+    }
+
+    private async Task CambiarPagina(int p)
+    {
+        _page = p;
+        await CargarDocumentosAsync();
+    }
+
+    private void AbrirSubir()
+    {
+        _showSubir = true;
+        _subirTitulo = _subirDescripcion = null;
+        _subirCategoriaId = Guid.Empty;
+        _subirVisibilidad = "EQUIPO";
+        _subirNombreArchivo = _subirMime = _subirContenidoB64 = null;
+        _subirTamano = 0;
+        _subirEtiquetaIds.Clear();
+    }
+
+    private async Task OnArchivoSeleccionado(InputFileChangeEventArgs e)
+    {
+        var f = e.File;
+        if (f.Size > 20_000_000)
+        {
+            _msg = "El archivo excede 20MB"; _msgClass = "alert-danger";
+            return;
+        }
+        _subirNombreArchivo = f.Name;
+        _subirMime = string.IsNullOrEmpty(f.ContentType) ? "application/octet-stream" : f.ContentType;
+        _subirTamano = f.Size;
+        using var ms = new MemoryStream();
+        await f.OpenReadStream(20_000_000).CopyToAsync(ms);
+        _subirContenidoB64 = Convert.ToBase64String(ms.ToArray());
+    }
+
+    private void ToggleEtiqueta(Guid id)
+    {
+        if (!_subirEtiquetaIds.Remove(id)) _subirEtiquetaIds.Add(id);
+    }
+
+    private async Task ConfirmarSubir()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var req = new SubirDocumentoRequest(
+                _subirCategoriaId, null, _subirTitulo!, _subirDescripcion,
+                _subirNombreArchivo!, _subirMime!, _subirTamano, _subirContenidoB64!,
+                _subirVisibilidad, _subirEtiquetaIds.Count > 0 ? _subirEtiquetaIds : null,
+                OrigenDocumento.Manual, null);
+            var resp = await Auth().PostAsJsonAsync("/api/documentos", req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _msg = await resp.Content.ReadAsStringAsync();
+                _msgClass = "alert-danger";
+                return;
+            }
+            _msg = "Documento subido."; _msgClass = "alert-success";
+            _showSubir = false;
+            await CargarTodoAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task AbrirFicha(Guid id)
+    {
+        try
+        {
+            _ficha = await Auth().GetFromJsonAsync<DocumentoDetalleDto>($"/api/documentos/{id}");
+            _auditoria = await Auth().GetFromJsonAsync<List<AuditoriaEventoDto>>($"/api/documentos/{id}/auditoria");
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task Descargar(Guid id)
+    {
+        await DescargarVersion(id, null);
+    }
+
+    private async Task DescargarVersion(Guid id, Guid? versionId)
+    {
+        try
+        {
+            var url = $"/api/documentos/{id}/descargar" + (versionId is { } v ? $"?versionId={v}" : "");
+            var dto = await Auth().GetFromJsonAsync<DescargaDocumentoDto>(url);
+            if (dto is null) return;
+            await Js.InvokeVoidAsync("propiaUI.downloadBase64", dto.NombreArchivo, dto.TipoMime, dto.ContenidoBase64);
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private void AbrirNuevaVersion()
+    {
+        _subirNuevaVersionVisible = true;
+        _nuevaVersionNombre = _nuevaVersionMime = _nuevaVersionContenidoB64 = _nuevaVersionNotas = null;
+        _nuevaVersionTamano = 0;
+    }
+
+    private async Task OnNuevaVersionArchivo(InputFileChangeEventArgs e)
+    {
+        var f = e.File;
+        if (f.Size > 20_000_000) { _msg = "El archivo excede 20MB"; _msgClass = "alert-danger"; return; }
+        _nuevaVersionNombre = f.Name;
+        _nuevaVersionMime = string.IsNullOrEmpty(f.ContentType) ? "application/octet-stream" : f.ContentType;
+        _nuevaVersionTamano = f.Size;
+        using var ms = new MemoryStream();
+        await f.OpenReadStream(20_000_000).CopyToAsync(ms);
+        _nuevaVersionContenidoB64 = Convert.ToBase64String(ms.ToArray());
+    }
+
+    private async Task ConfirmarNuevaVersion()
+    {
+        if (_ficha is null) return;
+        _busy = true;
+        try
+        {
+            var req = new NuevaVersionRequest(_nuevaVersionNombre!, _nuevaVersionMime!,
+                _nuevaVersionTamano, _nuevaVersionContenidoB64!, _nuevaVersionNotas);
+            var resp = await Auth().PostAsJsonAsync($"/api/documentos/{_ficha.Id}/versiones", req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _msg = await resp.Content.ReadAsStringAsync();
+                _msgClass = "alert-danger";
+                return;
+            }
+            _subirNuevaVersionVisible = false;
+            await AbrirFicha(_ficha.Id);
+            await CargarDocumentosAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ToggleDestacadoPersonal()
+    {
+        if (_ficha is null) return;
+        var url = $"/api/documentos/{_ficha.Id}/destacado-personal";
+        var resp = _ficha.DestacadoPersonal
+            ? await Auth().DeleteAsync(url)
+            : await Auth().PostAsync(url, null);
+        if (resp.IsSuccessStatusCode)
+        {
+            await AbrirFicha(_ficha.Id);
+            await CargarDocumentosAsync();
+        }
+    }
+
+    private async Task CambiarEstado(EstadoDocumento nuevo)
+    {
+        if (_ficha is null) return;
+        var req = new CambiarEstadoRequest(nuevo);
+        var resp = await Auth().PutAsJsonAsync($"/api/documentos/{_ficha.Id}/estado", req);
+        if (resp.IsSuccessStatusCode)
+        {
+            await AbrirFicha(_ficha.Id);
+            await CargarDocumentosAsync();
+        }
+        else
+        {
+            _msg = await resp.Content.ReadAsStringAsync();
+            _msgClass = "alert-danger";
+        }
+    }
+
+    private async Task EliminarDocumento(Guid id)
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", "Eliminar este documento? Quedara archivado (no se borra fisicamente).")) return;
+        var resp = await Auth().DeleteAsync($"/api/documentos/{id}");
+        if (resp.IsSuccessStatusCode)
+        {
+            _ficha = null;
+            await CargarTodoAsync();
+        }
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes <= 0) return "-";
+        string[] units = { "B", "KB", "MB", "GB" };
+        var i = 0;
+        double size = bytes;
+        while (size >= 1024 && i < units.Length - 1) { size /= 1024; i++; }
+        return $"{size:0.#} {units[i]}";
+    }
+
+    private MarkupString RenderEstado(EstadoDocumento e) => e switch
+    {
+        EstadoDocumento.Borrador => new MarkupString("<span class='badge bg-light text-dark'>Borrador</span>"),
+        EstadoDocumento.Vigente => new MarkupString("<span class='badge bg-success'>Vigente</span>"),
+        EstadoDocumento.EnFirma => new MarkupString("<span class='badge bg-warning text-dark'>En firma</span>"),
+        EstadoDocumento.Firmado => new MarkupString("<span class='badge bg-primary'>Firmado</span>"),
+        EstadoDocumento.Archivado => new MarkupString("<span class='badge bg-secondary'>Archivado</span>"),
+        _ => new MarkupString("")
+    };
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

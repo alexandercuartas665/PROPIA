@@ -41,6 +41,13 @@ public sealed class LocalBlobStorage : IBlobStorage
         return Task.CompletedTask;
     }
 
+    public async Task<byte[]?> DownloadAsync(string key, CancellationToken ct)
+    {
+        var fullPath = Path.Combine(_env.ContentRootPath, "wwwroot", "uploads", key.Replace('/', Path.DirectorySeparatorChar));
+        if (!File.Exists(fullPath)) return null;
+        return await File.ReadAllBytesAsync(fullPath, ct);
+    }
+
     public string GetPublicUrl(string key)
     {
         return $"/uploads/{key}?v={DateTime.UtcNow.Ticks}";

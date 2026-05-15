@@ -16,4 +16,10 @@ public interface IBlobStorage
 
     /// <summary>URL publica para servir el objeto (incluye custom domain si esta configurado).</summary>
     string GetPublicUrl(string key);
+
+    /// <summary>
+    /// Descarga el contenido completo del blob (modulo 2.15 sirve PDFs por API).
+    /// Devuelve null si la key no existe.
+    /// </summary>
+    Task<byte[]?> DownloadAsync(string key, CancellationToken ct);
 }

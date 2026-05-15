@@ -73,6 +73,21 @@ public sealed class R2BlobStorage : IBlobStorage, IDisposable
         }
     }
 
+    public async Task<byte[]?> DownloadAsync(string key, CancellationToken ct)
+    {
+        try
+        {
+            using var response = await _client.GetObjectAsync(_options.BucketName, key, ct);
+            using var ms = new MemoryStream();
+            await response.ResponseStream.CopyToAsync(ms, ct);
+            return ms.ToArray();
+        }
+        catch (AmazonS3Exception ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+    }
+
     public string GetPublicUrl(string key)
     {
         if (!string.IsNullOrWhiteSpace(_options.PublicUrl))

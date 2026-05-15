@@ -203,4 +203,22 @@
         bindThemeButtons();
         bindRailTabs();
     };
+
+    // Helper para descargar bytes desde base64 (modulo 2.15 Documentos).
+    window.propiaUI.downloadBase64 = function (filename, mime, base64) {
+        var byteCharacters = atob(base64);
+        var byteNumbers = new Array(byteCharacters.length);
+        for (var i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        var byteArray = new Uint8Array(byteNumbers);
+        var blob = new Blob([byteArray], { type: mime || 'application/octet-stream' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = filename || 'documento';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function () { URL.revokeObjectURL(url); document.body.removeChild(a); }, 100);
+    };
 })();
