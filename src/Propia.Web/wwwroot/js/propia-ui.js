@@ -184,6 +184,8 @@
         bindSidebarToggle();
         bindThemeButtons();
         bindRailTabs();
+        syncAuthCta();
+        bindLogout();
         pullThemeFromServer();  // si hay sesion, sincroniza desde backend (override local)
     }
 
@@ -196,13 +198,61 @@
         init();
     }
 
+    // Sincroniza el CTA del header (Ingresar vs nombre copropiedad + Salir) con el
+    // estado de sesion en sessionStorage. Es JS puro porque MainLayout es SSR puro
+    // y no hidrata interactivamente con Blazor.
+    function syncAuthCta() {
+        try {
+            var jwt = sessionStorage.getItem('propia_jwt');
+            var nombre = sessionStorage.getItem('propia_copropiedad_nombre') || '';
+            var cta = document.querySelector('[data-propia-cta]');
+            if (!cta) return;
+            var login = cta.querySelector('[data-propia-cta-login]');
+            var logout = cta.querySelector('[data-propia-cta-logout]');
+            var copropiedadEl = cta.querySelector('[data-propia-cta-copropiedad]');
+            var copropiedadNombre = cta.querySelector('[data-propia-cta-copropiedad-nombre]');
+            if (jwt) {
+                if (login) login.style.display = 'none';
+                if (logout) logout.style.display = '';
+                if (copropiedadEl) {
+                    copropiedadEl.style.display = nombre ? '' : 'none';
+                    if (copropiedadNombre && nombre) copropiedadNombre.textContent = nombre;
+                }
+            } else {
+                if (login) login.style.display = '';
+                if (logout) logout.style.display = 'none';
+                if (copropiedadEl) copropiedadEl.style.display = 'none';
+            }
+        } catch (e) { /* sin sessionStorage = solo CTA Ingresar */ }
+    }
+
+    function bindLogout() {
+        var btn = document.querySelector('[data-propia-cta-logout]');
+        if (!btn || btn._propiaLogoutBound) return;
+        btn._propiaLogoutBound = true;
+        btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            try {
+                sessionStorage.removeItem('propia_jwt');
+                sessionStorage.removeItem('propia_tenant_id');
+                sessionStorage.removeItem('propia_copropiedad_nombre');
+            } catch (err) { }
+            window.location.href = '/login';
+        });
+    }
+
     // Blazor: cada vez que se renderiza una pagina (Server-side interactive)
     // los bindings deben re-aplicarse porque algunos elementos pueden recrearse.
     window.propiaUI.rebind = function () {
         bindSidebarToggle();
         bindThemeButtons();
         bindRailTabs();
+        syncAuthCta();
+        bindLogout();
     };
+
+    // Expuesto para que login.razor lo llame justo despues de setItem('propia_jwt').
+    window.propiaUI.refreshAuthCta = syncAuthCta;
 
     // Helper para descargar bytes desde base64 (modulo 2.15 Documentos).
     window.propiaUI.downloadBase64 = function (filename, mime, base64) {
