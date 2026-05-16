@@ -1,17 +1,385 @@
 @page "/org/reportes-cruzados"
-<PageTitle>Reportes Cruzados - PROPIA</PageTitle>
+@rendermode InteractiveServer
+@using Propia.Application.ReportesConsolidados
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
 
-<ModuloPlaceholder
-    Codigo="1.4"
-    Nombre="Reportes Consolidados"
-    Descripcion="Informes cruzados de finanzas, cartera, PQRS, mantenimiento y gestion por portafolio. Comparativo entre copropiedades."
-    Estado="EstadoModulo.Futuro"
-    Features='new[] {
-        "Informes consolidados a nivel organizacion (todas las PHs juntas)",
-        "Comparativos entre copropiedades del portafolio",
-        "Plantillas: rendicion mensual a clientes, KPIs de operacion, financiero consolidado",
-        "Programacion + envio automatico por email a representantes",
-        "Filtros avanzados: por copropiedad, periodo, categoria",
-        "Consume datos de 2.6, 2.7, 2.9, 2.11, 2.16 de cada PH"
-    }'
-    NotaSpec="01. REQUERIMIENTO/Capa 1. Administrador Multi-tenant/1.4. Reportes-consolidados_v1_0.md" />
+<PageTitle>Reportes Consolidados - PROPIA</PageTitle>
+
+<div class="mb-4">
+    <h1 class="h3 mb-1 fw-semibold">Reportes Consolidados</h1>
+    <p class="text-muted mb-0">Modulo 1.4 - Capa 1 - indicadores y reportes cruzados de todas las copropiedades del portafolio</p>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <AuthMessage />
+    return;
+}
+
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item"><a class="nav-link @(_tab == "indicadores" ? "active" : "")" style="cursor:pointer;" @onclick='() => SetTab("indicadores")'>Indicadores</a></li>
+    <li class="nav-item"><a class="nav-link @(_tab == "reportes" ? "active" : "")" style="cursor:pointer;" @onclick='() => SetTab("reportes")'>Mis reportes</a></li>
+    <li class="nav-item"><a class="nav-link @(_tab == "historial" ? "active" : "")" style="cursor:pointer;" @onclick='() => SetTab("historial")'>Historial</a></li>
+</ul>
+
+@if (!string.IsNullOrEmpty(_msg))
+{
+    <div class="alert @_msgClass py-2 small">@_msg</div>
+}
+
+@if (_tab == "indicadores")
+{
+    @if (_portafolio is null)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
+    else
+    {
+        <div class="row g-3 mb-4">
+            <div class="col-md-3">
+                <div class="card kpi-mini border-secondary">
+                    <div class="card-body py-3">
+                        <div class="text-muted small">Total copropiedades</div>
+                        <h3 class="mb-0">@_portafolio.TotalCopropiedades</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card kpi-mini border-success">
+                    <div class="card-body py-3">
+                        <div class="text-muted small">Verdes</div>
+                        <h3 class="mb-0 text-success">@_portafolio.Verdes</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card kpi-mini border-warning">
+                    <div class="card-body py-3">
+                        <div class="text-muted small">Amarillas</div>
+                        <h3 class="mb-0 text-warning">@_portafolio.Amarillas</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card kpi-mini border-danger">
+                    <div class="card-body py-3">
+                        <div class="text-muted small">Rojas</div>
+                        <h3 class="mb-0 text-danger">@_portafolio.Rojas</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+            <div class="col-md-6">
+                <div class="card p-3">
+                    <h6 class="text-muted small">Alertas activas (todas las PHs)</h6>
+                    <h2 class="mb-0">@_portafolio.AlertasActivas</h2>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card p-3">
+                    <h6 class="text-muted small">Tareas vencidas (todas las PHs)</h6>
+                    <h2 class="mb-0">@_portafolio.TareasVencidasTotal</h2>
+                </div>
+            </div>
+        </div>
+
+        <p class="text-muted small mb-3">
+            Detalle granular (financiero / operativo / PQRSD / equipo) disponible via API
+            (<code>/api/reportes-org/indicadores/*</code>). Tabs separados en proxima iteracion.
+        </p>
+    }
+}
+else if (_tab == "reportes")
+{
+    <div class="mb-3 d-flex justify-content-between align-items-center">
+        <div class="text-muted small">Mis reportes guardados (@(_reportes?.Count ?? 0))</div>
+        <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="AbrirCrearAsync">+ Nuevo reporte</button>
+    </div>
+
+    @if (_reportes is null)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
+    else if (_reportes.Count == 0)
+    {
+        <div class="card p-4 text-center text-muted">No tienes reportes guardados. Crea uno desde una plantilla base.</div>
+    }
+    else
+    {
+        <div class="card">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="small text-muted bg-light">
+                    <tr><th>Nombre</th><th>Categoria</th><th>Datos nominativos</th><th>Generaciones</th><th class="text-end"></th></tr>
+                </thead>
+                <tbody class="small">
+                    @foreach (var r in _reportes.OrderBy(x => x.Nombre))
+                    {
+                        var id = r.Id;
+                        <tr>
+                            <td><strong>@r.Nombre</strong></td>
+                            <td><span class="badge bg-light text-dark border">@r.Categoria</span></td>
+                            <td>
+                                @if (r.TieneDatosNominativos)
+                                {
+                                    <span class="badge bg-warning text-dark">Si</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-secondary">No</span>
+                                }
+                            </td>
+                            <td>@r.NumeroGeneraciones</td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-outline-dark" @onclick="() => GenerarAsync(id)" disabled="@_busy">Generar</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    @if (_showCrear)
+    {
+        <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Nuevo reporte desde plantilla base</h5>
+                        <button type="button" class="btn-close" @onclick="() => _showCrear = false"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-2">
+                            <label class="form-label small mb-1">Plantilla base</label>
+                            <select class="form-select form-select-sm" @bind="_plantillaCodigo">
+                                <option value="">Selecciona...</option>
+                                @if (_plantillas is not null)
+                                {
+                                    @foreach (var p in _plantillas)
+                                    {
+                                        <option value="@p.Codigo">@p.Nombre (@p.Categoria)</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small mb-1">Nombre del reporte *</label>
+                            <input class="form-control form-control-sm" @bind="_nombreNuevo" />
+                        </div>
+                        @if (_plantillaSeleccionada is not null)
+                        {
+                            <div class="alert alert-info py-2 small mb-0">
+                                @_plantillaSeleccionada.Descripcion
+                                @if (_plantillaSeleccionada.TieneDatosNominativos)
+                                {
+                                    <div class="mt-1"><strong>Atencion:</strong> contiene datos nominativos. RN-06.</div>
+                                }
+                            </div>
+                        }
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-sm btn-outline-dark" @onclick="() => _showCrear = false">Cancelar</button>
+                        <button class="btn btn-sm" style="background: var(--propia-primary); color: white;"
+                                @onclick="ConfirmarCrearAsync"
+                                disabled="@(_busy || string.IsNullOrWhiteSpace(_plantillaCodigo) || string.IsNullOrWhiteSpace(_nombreNuevo))">
+                            @(_busy ? "Creando..." : "Crear")
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}
+else if (_tab == "historial")
+{
+    @if (_historial is null)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
+    else if (_historial.Count == 0)
+    {
+        <div class="card p-4 text-center text-muted">Sin generaciones registradas todavia.</div>
+    }
+    else
+    {
+        <div class="card">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="small text-muted bg-light">
+                    <tr><th>Fecha</th><th>Reporte</th><th>Categoria</th><th>Periodo</th><th>Estado</th><th>Intentos</th></tr>
+                </thead>
+                <tbody class="small">
+                    @foreach (var g in _historial.OrderByDescending(x => x.CreadoAt))
+                    {
+                        var estadoBadge = g.Estado switch
+                        {
+                            EstadoGeneracionConsolidada.Listo => "success",
+                            EstadoGeneracionConsolidada.Error => "danger",
+                            _ => "secondary"
+                        };
+                        <tr>
+                            <td class="text-muted">@g.CreadoAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                            <td><strong>@g.ReporteNombre</strong></td>
+                            <td><span class="badge bg-light text-dark border">@g.Categoria</span></td>
+                            <td>@g.PeriodoDesde - @g.PeriodoHasta</td>
+                            <td><span class="badge bg-@estadoBadge">@g.Estado</span></td>
+                            <td>@g.Intentos</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+<style>
+    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
+</style>
+
+@code {
+    private string? _jwt;
+    private bool _busy;
+    private string? _msg; private string _msgClass = "alert-info";
+
+    private string _tab = "indicadores";
+
+    private IndicadoresPortafolioDto? _portafolio;
+    private List<OrgReporteDto>? _reportes;
+    private List<PlantillaBaseDto>? _plantillas;
+    private List<GeneracionListaDto>? _historial;
+
+    private bool _showCrear;
+    private string? _plantillaCodigo;
+    private string? _nombreNuevo;
+    private PlantillaBaseDto? _plantillaSeleccionada => _plantillas?.FirstOrDefault(p => p.Codigo == _plantillaCodigo);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarIndicadoresAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task SetTab(string t)
+    {
+        _tab = t; _msg = null;
+        if (t == "indicadores" && _portafolio is null) await CargarIndicadoresAsync();
+        if (t == "reportes" && _reportes is null) await CargarReportesAsync();
+        if (t == "historial" && _historial is null) await CargarHistorialAsync();
+    }
+
+    private async Task CargarIndicadoresAsync()
+    {
+        _busy = true;
+        try
+        {
+            var http = Auth();
+            _portafolio = await http.GetFromJsonAsync<IndicadoresPortafolioDto>("/api/reportes-org/indicadores/portafolio");
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _busy = false; }
+    }
+
+    private async Task CargarReportesAsync()
+    {
+        _busy = true;
+        try
+        {
+            var http = Auth();
+            _reportes = await http.GetFromJsonAsync<List<OrgReporteDto>>("/api/reportes-org") ?? new();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _busy = false; }
+    }
+
+    private async Task CargarHistorialAsync()
+    {
+        _busy = true;
+        try
+        {
+            var http = Auth();
+            _historial = await http.GetFromJsonAsync<List<GeneracionListaDto>>("/api/reportes-org/historial") ?? new();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _busy = false; }
+    }
+
+    private async Task AbrirCrearAsync()
+    {
+        _showCrear = true;
+        _plantillaCodigo = null;
+        _nombreNuevo = null;
+        if (_plantillas is null)
+        {
+            try
+            {
+                var http = Auth();
+                _plantillas = await http.GetFromJsonAsync<List<PlantillaBaseDto>>("/api/reportes-org/plantillas") ?? new();
+            }
+            catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        }
+    }
+
+    private async Task ConfirmarCrearAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_plantillaCodigo) || string.IsNullOrWhiteSpace(_nombreNuevo)) return;
+        var plantilla = _plantillaSeleccionada;
+        if (plantilla is null) return;
+
+        _busy = true; _msg = null;
+        try
+        {
+            var http = Auth();
+            var req = new CrearReporteRequest(_nombreNuevo!, plantilla.Categoria, plantilla.Codigo, "{}");
+            var resp = await http.PostAsJsonAsync("/api/reportes-org", req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return;
+            }
+            _showCrear = false;
+            _reportes = null;
+            await CargarReportesAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task GenerarAsync(Guid reporteId)
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var http = Auth();
+            var desde = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30));
+            var hasta = DateOnly.FromDateTime(DateTime.UtcNow);
+            var req = new GenerarReporteRequest(reporteId, desde, hasta);
+            var resp = await http.PostAsJsonAsync("/api/reportes-org/generar", req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return;
+            }
+            _msg = "Reporte generado. Verifica en pestania Historial."; _msgClass = "alert-success";
+            _historial = null;
+            await CargarReportesAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}
