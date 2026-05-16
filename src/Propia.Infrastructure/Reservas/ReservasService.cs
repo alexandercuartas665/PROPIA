@@ -18,12 +18,32 @@ public class ReservasService : IReservasService
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenantContext;
     private readonly IHttpContextAccessor _http;
+    private readonly Propia.Application.Notificaciones.INotificacionDispatcher _noti;
 
-    public ReservasService(PropiaDbContext db, ITenantContext tenantContext, IHttpContextAccessor http)
+    public ReservasService(
+        PropiaDbContext db,
+        ITenantContext tenantContext,
+        IHttpContextAccessor http,
+        Propia.Application.Notificaciones.INotificacionDispatcher noti)
     {
         _db = db;
         _tenantContext = tenantContext;
         _http = http;
+        _noti = noti;
+    }
+
+    private async Task NotificarResidenteAsync(
+        Guid? personaId, Guid? entidadOrigen, string asunto, string cuerpo,
+        Domain.Enums.PrioridadNotificacion prioridad, CancellationToken ct)
+    {
+        if (personaId is null) return;
+        var tenantId = _tenantContext.CurrentTenantId;
+        if (tenantId is null) return;
+        await _noti.EnviarAsync(new Propia.Application.Notificaciones.EnviarNotificacionRequest(
+            Canal: Domain.Enums.CanalNotificacion.InApp,
+            Cuerpo: cuerpo, TenantId: tenantId, PersonaDestinatariaId: personaId,
+            Asunto: asunto, Prioridad: prioridad,
+            ModuloOrigenCodigo: "2.13", EntidadOrigenId: entidadOrigen), ct);
     }
 
     private Guid GetPersonaActualId()
@@ -385,6 +405,19 @@ public class ReservasService : IReservasService
             pago.ReservaId = r.Id;
             await _db.SaveChangesAsync(ct);
         }
+
+        var asunto = estado switch
+        {
+            EstadoReserva.Confirmada => $"Reserva confirmada: {r.Codigo}",
+            EstadoReserva.PendienteAprobacion => $"Reserva pendiente de aprobacion: {r.Codigo}",
+            EstadoReserva.PendientePago => $"Reserva pendiente de pago: {r.Codigo}",
+            _ => $"Reserva creada: {r.Codigo}"
+        };
+        await NotificarResidenteAsync(r.PersonaId, r.Id,
+            asunto,
+            $"Tu reserva de zona comun para {r.Fecha:yyyy-MM-dd} ({r.HoraInicio:hh\\:mm}-{r.HoraFin:hh\\:mm}) quedo en estado {estado}.",
+            Domain.Enums.PrioridadNotificacion.Normal, ct);
+
         return (await GetReservaAsync(r.Id, ct))!;
     }
 
@@ -431,6 +464,12 @@ public class ReservasService : IReservasService
         r.CanceladaPorPersonaId = GetPersonaActualId();
         r.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
+
+        await NotificarResidenteAsync(r.PersonaId, r.Id,
+            $"Reserva cancelada por administracion: {r.Codigo}",
+            $"Tu reserva del {r.Fecha:yyyy-MM-dd} fue cancelada por la administracion. Motivo: {r.MotivoCancelacion ?? "sin motivo especificado"}.",
+            Domain.Enums.PrioridadNotificacion.Alta, ct);
+
         return true;
     }
 

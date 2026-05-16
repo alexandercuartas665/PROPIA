@@ -62,6 +62,7 @@ public class CapaUnoCierreFlowTests : IAsyncLifetime
         sc.AddScoped<IReportesConsolidadosService, ReportesConsolidadosService>();
         sc.AddScoped<ITransferenciaCustodiaService,
             Propia.Infrastructure.TransferenciasCustodia.TransferenciaCustodiaService>();
+        sc.AddSingleton<Propia.Application.Notificaciones.INotificacionDispatcher, FakeNotificacionDispatcher>();
 
         _services = sc.BuildServiceProvider();
         return Task.CompletedTask;

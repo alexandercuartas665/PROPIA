@@ -19,12 +19,41 @@ public class PqrsdService : IPqrsdService
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenantContext;
     private readonly IHttpContextAccessor _http;
+    private readonly Propia.Application.Notificaciones.INotificacionDispatcher _noti;
 
-    public PqrsdService(PropiaDbContext db, ITenantContext tenantContext, IHttpContextAccessor http)
+    public PqrsdService(
+        PropiaDbContext db,
+        ITenantContext tenantContext,
+        IHttpContextAccessor http,
+        Propia.Application.Notificaciones.INotificacionDispatcher noti)
     {
         _db = db;
         _tenantContext = tenantContext;
         _http = http;
+        _noti = noti;
+    }
+
+    private async Task NotificarAdminsTenantAsync(
+        string codigoModulo, Guid? entidadOrigen, string asunto, string cuerpo,
+        Domain.Enums.PrioridadNotificacion prioridad, CancellationToken ct)
+    {
+        var tenantId = _tenantContext.CurrentTenantId;
+        if (tenantId is null) return;
+        var personaIds = await _db.UsuariosTenant.AsNoTracking()
+            .Where(u => u.TenantId == tenantId && u.Estado == Domain.Enums.EstadoUsuarioTenant.Activo)
+            .Select(u => u.PersonaId).Distinct().Take(20).ToListAsync(ct);
+        if (personaIds.Count == 0) return;
+        var lote = personaIds.Select(pid =>
+            new Propia.Application.Notificaciones.EnviarNotificacionRequest(
+                Canal: Domain.Enums.CanalNotificacion.InApp,
+                Cuerpo: cuerpo,
+                TenantId: tenantId,
+                PersonaDestinatariaId: pid,
+                Asunto: asunto,
+                Prioridad: prioridad,
+                ModuloOrigenCodigo: codigoModulo,
+                EntidadOrigenId: entidadOrigen));
+        await _noti.EnviarLoteAsync(lote, ct);
     }
 
     private Guid GetUsuarioActualId()
@@ -429,6 +458,13 @@ public class PqrsdService : IPqrsdService
         });
 
         await _db.SaveChangesAsync(ct);
+
+        await NotificarAdminsTenantAsync("2.9", exp.Id,
+            $"PQRSD radicado: {numero}",
+            $"Se radico un expediente {exp.Tipo} con plazo legal. Asignar y responder dentro del SLA.",
+            exp.Tipo == TipoPqrsd.Denuncia ? Domain.Enums.PrioridadNotificacion.Alta : Domain.Enums.PrioridadNotificacion.Normal,
+            ct);
+
         return (await GetExpedienteAsync(exp.Id, ct))!;
     }
 
@@ -546,6 +582,16 @@ public class PqrsdService : IPqrsdService
             Nota = esRespuestaDefinitiva ? "Respuesta definitiva - cierre" : "Respuesta del admin"
         });
         await _db.SaveChangesAsync(ct);
+
+        var asunto = esRespuestaDefinitiva
+            ? $"PQRSD cerrado: {x.NumeroRadicado}"
+            : $"PQRSD respondido: {x.NumeroRadicado}";
+        await NotificarAdminsTenantAsync("2.9", id, asunto,
+            esRespuestaDefinitiva
+                ? "El expediente quedo cerrado tras la respuesta definitiva."
+                : "El admin respondio el expediente. Si el ciudadano queda inconforme tiene una oportunidad de inconformidad (RN-06).",
+            Domain.Enums.PrioridadNotificacion.Normal, ct);
+
         return true;
     }
 
@@ -629,6 +675,12 @@ public class PqrsdService : IPqrsdService
             Nota = $"Tutela activada - {req.Justificacion}"
         });
         await _db.SaveChangesAsync(ct);
+
+        await NotificarAdminsTenantAsync("2.9", id,
+            $"TUTELA marcada: {x.NumeroRadicado}",
+            $"Se marco tutela activa sobre el expediente. Atender con prioridad maxima. Justificacion: {req.Justificacion}",
+            Domain.Enums.PrioridadNotificacion.Critica, ct);
+
         return true;
     }
 

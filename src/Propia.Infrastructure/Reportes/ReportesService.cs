@@ -27,14 +27,17 @@ public class ReportesService : IReportesService
     private readonly ITenantContext _tenantContext;
     private readonly IHttpContextAccessor _http;
     private readonly IIndicadoresService _indicadores;
+    private readonly Propia.Application.Notificaciones.INotificacionDispatcher _noti;
 
     public ReportesService(PropiaDbContext db, ITenantContext tenantContext,
-        IHttpContextAccessor http, IIndicadoresService indicadores)
+        IHttpContextAccessor http, IIndicadoresService indicadores,
+        Propia.Application.Notificaciones.INotificacionDispatcher noti)
     {
         _db = db;
         _tenantContext = tenantContext;
         _http = http;
         _indicadores = indicadores;
+        _noti = noti;
     }
 
     private Guid GetUsuarioActualId()
@@ -271,6 +274,34 @@ public class ReportesService : IReportesService
         r.CompartidoPorUsuarioId = compartir ? GetUsuarioActualId() : null;
         r.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
+
+        if (compartir)
+        {
+            // T.2: notifica a miembros del Consejo de la copropiedad actual.
+            var tenantId = _tenantContext.CurrentTenantId;
+            if (tenantId is not null)
+            {
+                var hoy = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+                var consejeros = await _db.MiembrosConsejo.AsNoTracking()
+                    .Where(m => m.TenantId == tenantId
+                                && (m.FechaFin == null || m.FechaFin >= hoy))
+                    .Select(m => m.PersonaId).Distinct().Take(30).ToListAsync(ct);
+                if (consejeros.Count > 0)
+                {
+                    await _noti.EnviarLoteAsync(consejeros.Select(pid =>
+                        new Propia.Application.Notificaciones.EnviarNotificacionRequest(
+                            Canal: Domain.Enums.CanalNotificacion.InApp,
+                            Cuerpo: $"La administracion compartio un reporte con el Consejo. Disponible en /reportes (tab Vista consejo).",
+                            TenantId: tenantId,
+                            PersonaDestinatariaId: pid,
+                            Asunto: "Reporte compartido por la administracion",
+                            Prioridad: Domain.Enums.PrioridadNotificacion.Normal,
+                            ModuloOrigenCodigo: "2.16",
+                            EntidadOrigenId: r.Id)), ct);
+                }
+            }
+        }
+
         return true;
     }
 

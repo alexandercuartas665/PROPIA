@@ -51,23 +51,6 @@ public class ComunicacionesFlowTests : IAsyncLifetime
         _services = sc.BuildServiceProvider();
         return Task.CompletedTask;
     }
-
-    /// <summary>Dispatcher stub para tests - marca todo Enviado sin tocar BD ni canales reales.</summary>
-    private sealed class FakeNotificacionDispatcher : Propia.Application.Notificaciones.INotificacionDispatcher
-    {
-        public Task<Propia.Application.Notificaciones.ResultadoEnvioNotificacion> EnviarAsync(
-            Propia.Application.Notificaciones.EnviarNotificacionRequest req, CancellationToken ct)
-            => Task.FromResult(new Propia.Application.Notificaciones.ResultadoEnvioNotificacion(
-                Guid.NewGuid(), Propia.Domain.Enums.EstadoNotificacion.Enviado, null));
-
-        public async Task<IReadOnlyList<Propia.Application.Notificaciones.ResultadoEnvioNotificacion>> EnviarLoteAsync(
-            IEnumerable<Propia.Application.Notificaciones.EnviarNotificacionRequest> requests, CancellationToken ct)
-        {
-            var list = new List<Propia.Application.Notificaciones.ResultadoEnvioNotificacion>();
-            foreach (var r in requests) list.Add(await EnviarAsync(r, ct));
-            return list;
-        }
-    }
     public Task DisposeAsync() => Task.CompletedTask;
 
     // =======================================================================

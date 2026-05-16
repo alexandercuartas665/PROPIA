@@ -24,12 +24,54 @@ public class CarteraService : ICarteraService
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenantContext;
     private readonly IHttpContextAccessor _http;
+    private readonly Propia.Application.Notificaciones.INotificacionDispatcher _noti;
 
-    public CarteraService(PropiaDbContext db, ITenantContext tenantContext, IHttpContextAccessor http)
+    public CarteraService(
+        PropiaDbContext db,
+        ITenantContext tenantContext,
+        IHttpContextAccessor http,
+        Propia.Application.Notificaciones.INotificacionDispatcher noti)
     {
         _db = db;
         _tenantContext = tenantContext;
         _http = http;
+        _noti = noti;
+    }
+
+    /// <summary>
+    /// T.2 helper: notifica via InApp a los administradores del tenant actual.
+    /// MVP: notifica a todos los usuarios con vinculo Activo en el tenant (admin + consejo).
+    /// Fase 2 cuando 2.4 tenga UnidadResidente: limitar a propietario/residente de la unidad.
+    /// </summary>
+    private async Task NotificarAdminsAsync(
+        string codigoModulo, Guid? entidadOrigen,
+        string asunto, string cuerpo, CancellationToken ct)
+    {
+        var tenantId = _tenantContext.CurrentTenantId;
+        if (tenantId is null) return;
+
+        var personaIds = await _db.UsuariosTenant.AsNoTracking()
+            .Where(u => u.TenantId == tenantId && u.Estado == EstadoUsuarioTenant.Activo)
+            .Select(u => u.PersonaId)
+            .Distinct()
+            .Take(20)
+            .ToListAsync(ct);
+        if (personaIds.Count == 0) return;
+
+        var lote = new List<Propia.Application.Notificaciones.EnviarNotificacionRequest>();
+        foreach (var pid in personaIds)
+        {
+            lote.Add(new Propia.Application.Notificaciones.EnviarNotificacionRequest(
+                Canal: Domain.Enums.CanalNotificacion.InApp,
+                Cuerpo: cuerpo,
+                TenantId: tenantId,
+                PersonaDestinatariaId: pid,
+                Asunto: asunto,
+                Prioridad: Domain.Enums.PrioridadNotificacion.Normal,
+                ModuloOrigenCodigo: codigoModulo,
+                EntidadOrigenId: entidadOrigen));
+        }
+        await _noti.EnviarLoteAsync(lote, ct);
     }
 
     private Guid GetUsuarioActualId()
@@ -501,6 +543,11 @@ public class CarteraService : ICarteraService
 
         var unidad = await _db.UnidadesPrivadas.AsNoTracking().FirstAsync(u => u.Id == req.UnidadPrivadaId, ct);
         var conCuotas = await _db.AcuerdosPago.AsNoTracking().Include(a => a.Cuotas).FirstAsync(a => a.Id == acuerdo.Id, ct);
+
+        await NotificarAdminsAsync("2.7", acuerdo.Id,
+            $"Acuerdo de pago creado - Unidad {unidad.Numero}",
+            $"Se creo un acuerdo de pago en borrador para la unidad {unidad.Numero}: {req.NumeroCuotas} cuotas, total {montoTotal:N0} COP.", ct);
+
         return ToAcuerdoDto(conCuotas, unidad.Numero);
     }
 
@@ -546,6 +593,11 @@ public class CarteraService : ICarteraService
             $"Acuerdo aceptado por {req.MetodoAutenticacion}. Hash {hash[..16]}...",
             new { acuerdoId = a.Id, hash, ip = req.Ip, metodo = req.MetodoAutenticacion }, ct);
         await _db.SaveChangesAsync(ct);
+
+        await NotificarAdminsAsync("2.7", a.Id,
+            "Acuerdo de pago aceptado",
+            $"El acuerdo de pago fue aceptado via {req.MetodoAutenticacion}. Hash de evidencia: {hash[..16]}...", ct);
+
         return true;
     }
 
@@ -589,6 +641,11 @@ public class CarteraService : ICarteraService
             $"Pago de cuota {cuota.NumeroCuota} del acuerdo registrado: {cuota.Monto:N0}",
             new { cuotaId = cuota.Id, monto = cuota.Monto, fecha = req.FechaPago.ToString("yyyy-MM-dd") }, ct);
         await _db.SaveChangesAsync(ct);
+
+        await NotificarAdminsAsync("2.7", cuota.AcuerdoId,
+            $"Pago de cuota registrado",
+            $"Se registro el pago de la cuota {cuota.NumeroCuota} ({cuota.Monto:N0} COP) del acuerdo.", ct);
+
         return true;
     }
 
@@ -760,6 +817,11 @@ public class CarteraService : ICarteraService
             $"Paz y salvo {tipo} emitido ({req.EmisionTipo}). Codigo: {codigo}",
             new { tipo = tipo.ToString(), emisionTipo = req.EmisionTipo.ToString(), codigo }, ct);
         await _db.SaveChangesAsync(ct);
+
+        await NotificarAdminsAsync("2.7", p.Id,
+            $"Paz y salvo emitido ({tipo})",
+            $"Se emitio paz y salvo {tipo} ({req.EmisionTipo}). Codigo de verificacion: {codigo}.", ct);
+
         return new PazSalvoDto(p.Id, p.Tipo, p.Estado, p.Condiciones, p.FechaEmision, p.FechaVencimiento,
             p.EmisionTipo, p.CodigoVerificacion, p.EmitidoPorUsuarioId, null, null);
     }

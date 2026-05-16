@@ -19,12 +19,36 @@ public class MantenimientoService : IMantenimientoService
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenantContext;
     private readonly IHttpContextAccessor _http;
+    private readonly Propia.Application.Notificaciones.INotificacionDispatcher _noti;
 
-    public MantenimientoService(PropiaDbContext db, ITenantContext tenantContext, IHttpContextAccessor http)
+    public MantenimientoService(
+        PropiaDbContext db,
+        ITenantContext tenantContext,
+        IHttpContextAccessor http,
+        Propia.Application.Notificaciones.INotificacionDispatcher noti)
     {
         _db = db;
         _tenantContext = tenantContext;
         _http = http;
+        _noti = noti;
+    }
+
+    private async Task NotificarAdminsAsync(
+        string codigoModulo, Guid? entidadOrigen, string asunto, string cuerpo,
+        Domain.Enums.PrioridadNotificacion prioridad, CancellationToken ct)
+    {
+        var tenantId = _tenantContext.CurrentTenantId;
+        if (tenantId is null) return;
+        var personaIds = await _db.UsuariosTenant.AsNoTracking()
+            .Where(u => u.TenantId == tenantId && u.Estado == Domain.Enums.EstadoUsuarioTenant.Activo)
+            .Select(u => u.PersonaId).Distinct().Take(20).ToListAsync(ct);
+        if (personaIds.Count == 0) return;
+        await _noti.EnviarLoteAsync(personaIds.Select(pid =>
+            new Propia.Application.Notificaciones.EnviarNotificacionRequest(
+                Canal: Domain.Enums.CanalNotificacion.InApp,
+                Cuerpo: cuerpo, TenantId: tenantId, PersonaDestinatariaId: pid,
+                Asunto: asunto, Prioridad: prioridad,
+                ModuloOrigenCodigo: codigoModulo, EntidadOrigenId: entidadOrigen)), ct);
     }
 
     private Guid GetUsuarioActualId()
@@ -464,6 +488,14 @@ public class MantenimientoService : IMantenimientoService
         });
         await _db.SaveChangesAsync(ct);
 
+        await NotificarAdminsAsync("2.11", intervencion.Id,
+            $"Intervencion de mantenimiento creada: {codigo}",
+            $"Se creo una intervencion {req.Tipo} para el activo. Prioridad: {req.Prioridad}. Fecha programada: {req.FechaProgramada:yyyy-MM-dd}.",
+            req.Prioridad == PrioridadIntervencion.Alta || req.Prioridad == PrioridadIntervencion.Urgente
+                ? Domain.Enums.PrioridadNotificacion.Alta
+                : Domain.Enums.PrioridadNotificacion.Normal,
+            ct);
+
         return (await GetIntervencionAsync(intervencion.Id, ct))!;
     }
 
@@ -561,6 +593,13 @@ public class MantenimientoService : IMantenimientoService
         }
 
         await _db.SaveChangesAsync(ct);
+
+        await NotificarAdminsAsync("2.11", i.Id,
+            $"Intervencion cerrada: {i.Codigo}",
+            $"La intervencion {i.Titulo} se cerro el {req.FechaCierre:yyyy-MM-dd}." +
+            (req.CambiarEstadoActivo ? $" Estado activo cambiado a {req.EstadoActivoNuevo}." : string.Empty),
+            Domain.Enums.PrioridadNotificacion.Normal, ct);
+
         return true;
     }
 
