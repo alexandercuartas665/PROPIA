@@ -142,6 +142,13 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<EleccionCandidato> EleccionCandidatos => Set<EleccionCandidato>();
     public DbSet<AsambleaConfig> AsambleaConfigs => Set<AsambleaConfig>();
 
+    // Modulo 2.11 Mantenimiento y Activos (TenantEntity con RLS)
+    public DbSet<MantenimientoPlan> MantenimientoPlanes => Set<MantenimientoPlan>();
+    public DbSet<MantenimientoIntervencion> MantenimientoIntervenciones => Set<MantenimientoIntervencion>();
+    public DbSet<MantenimientoBitacora> MantenimientoBitacora => Set<MantenimientoBitacora>();
+    public DbSet<MantenimientoAdjunto> MantenimientoAdjuntos => Set<MantenimientoAdjunto>();
+    public DbSet<MantenimientoHistorialEstado> MantenimientoHistorialEstados => Set<MantenimientoHistorialEstado>();
+
     // Modulo 2.14 Comunicaciones (mezcla: ComunicadoPlantilla con TenantId nullable para globales)
     public DbSet<ComunicadoPlantilla> ComunicadoPlantillas => Set<ComunicadoPlantilla>();
     public DbSet<Comunicado> Comunicados => Set<Comunicado>();
@@ -1180,6 +1187,84 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasOne(x => x.Persona).WithMany().HasForeignKey(x => x.PersonaId).OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.EleccionId, x.PersonaId });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // -------------------- Modulo 2.11 Mantenimiento y Activos --------------------
+
+        modelBuilder.Entity<MantenimientoPlan>(b =>
+        {
+            b.ToTable("mantenimiento_planes");
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(200);
+            b.Property(x => x.Descripcion).HasColumnType("text");
+            b.Property(x => x.ActivoTipo).HasConversion<int>();
+            b.Property(x => x.Frecuencia).HasConversion<int>();
+            b.Property(x => x.Disparo).HasConversion<int>();
+            b.HasOne(x => x.ProveedorPreferido).WithMany().HasForeignKey(x => x.ProveedorPreferidoId).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.ActivoTipo, x.ActivoId });
+            b.HasIndex(x => new { x.TenantId, x.ProximaEjecucion });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<MantenimientoIntervencion>(b =>
+        {
+            b.ToTable("mantenimiento_intervenciones");
+            b.Property(x => x.Codigo).IsRequired().HasMaxLength(20);
+            b.Property(x => x.Titulo).IsRequired().HasMaxLength(200);
+            b.Property(x => x.Descripcion).HasColumnType("text");
+            b.Property(x => x.MotivoCancelacion).HasColumnType("text");
+            b.Property(x => x.EstadoActivoNuevo).HasMaxLength(50);
+            b.Property(x => x.Tipo).HasConversion<int>();
+            b.Property(x => x.ActivoTipo).HasConversion<int>();
+            b.Property(x => x.Origen).HasConversion<int>();
+            b.Property(x => x.Estado).HasConversion<int>();
+            b.Property(x => x.Prioridad).HasConversion<int>();
+            b.HasOne(x => x.Plan).WithMany(p => p.Intervenciones).HasForeignKey(x => x.PlanId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(x => x.Proveedor).WithMany().HasForeignKey(x => x.ProveedorId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(x => x.ResponsableInterno).WithMany().HasForeignKey(x => x.ResponsableInternoId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(x => x.Tarea).WithMany().HasForeignKey(x => x.TareaId).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Codigo }).IsUnique();  // RN-15
+            b.HasIndex(x => new { x.TenantId, x.ActivoTipo, x.ActivoId });
+            b.HasIndex(x => new { x.TenantId, x.Estado });
+            b.HasIndex(x => new { x.TenantId, x.FechaProgramada });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<MantenimientoBitacora>(b =>
+        {
+            b.ToTable("mantenimiento_bitacora");
+            b.Property(x => x.Contenido).IsRequired().HasColumnType("text");
+            b.Property(x => x.TipoAutor).HasConversion<int>();
+            b.HasOne(x => x.Intervencion).WithMany(i => i.Bitacora).HasForeignKey(x => x.IntervencionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.IntervencionId, x.CreatedAt });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<MantenimientoAdjunto>(b =>
+        {
+            b.ToTable("mantenimiento_adjuntos");
+            b.Property(x => x.NombreArchivo).IsRequired().HasMaxLength(500);
+            b.Property(x => x.TipoMime).IsRequired().HasMaxLength(100);
+            b.Property(x => x.UrlStorage).IsRequired().HasMaxLength(1000);
+            b.HasOne(x => x.Bitacora).WithMany(bi => bi.Adjuntos).HasForeignKey(x => x.BitacoraId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.BitacoraId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<MantenimientoHistorialEstado>(b =>
+        {
+            b.ToTable("mantenimiento_historial_estado");
+            b.Property(x => x.EstadoAnterior).IsRequired().HasMaxLength(50);
+            b.Property(x => x.EstadoNuevo).IsRequired().HasMaxLength(50);
+            b.Property(x => x.Motivo).HasColumnType("text");
+            b.Property(x => x.ActivoTipo).HasConversion<int>();
+            b.HasOne(x => x.Intervencion).WithMany().HasForeignKey(x => x.IntervencionId).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.ActivoTipo, x.ActivoId, x.CreatedAt });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
