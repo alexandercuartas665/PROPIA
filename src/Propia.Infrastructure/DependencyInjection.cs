@@ -126,6 +126,17 @@ public static class DependencyInjection
         // Modulo 2.13 Reservas de Zonas Comunes
         services.AddScoped<Application.Reservas.IReservasService, Reservas.ReservasService>();
 
+        // Modulo 1.2 Calendario Multi-Copropiedad (agregador cross-modulo)
+        services.AddScoped<Application.Calendario.ICalendarioService, Calendario.CalendarioService>();
+
+        // Modulo 1.4 Reportes Consolidados de la Organizacion
+        services.AddScoped<Application.ReportesConsolidados.IReportesConsolidadosService,
+            ReportesConsolidados.ReportesConsolidadosService>();
+
+        // Modulo 1.5 Transferencia de Custodia
+        services.AddScoped<Application.TransferenciaCustodia.ITransferenciaCustodiaService,
+            TransferenciasCustodia.TransferenciaCustodiaService>();
+
         // Storage de blobs (logos, fachadas, portadas, futuros adjuntos).
         // Provider seleccionado por config: "R2" en produccion, cualquier otro valor (o ausente)
         // cae a filesystem local (wwwroot/uploads). Asi Development y tests no requieren credenciales.
