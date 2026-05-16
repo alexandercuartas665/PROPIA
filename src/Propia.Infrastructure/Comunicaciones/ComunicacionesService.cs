@@ -34,14 +34,20 @@ public class ComunicacionesService : IComunicacionesService
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenantContext;
     private readonly IHttpContextAccessor _http;
+    private readonly Propia.Application.Notificaciones.INotificacionDispatcher _notiDispatcher;
 
     private const int TokenDiasExpiracion = 30;
 
-    public ComunicacionesService(PropiaDbContext db, ITenantContext tenantContext, IHttpContextAccessor http)
+    public ComunicacionesService(
+        PropiaDbContext db,
+        ITenantContext tenantContext,
+        IHttpContextAccessor http,
+        Propia.Application.Notificaciones.INotificacionDispatcher notiDispatcher)
     {
         _db = db;
         _tenantContext = tenantContext;
         _http = http;
+        _notiDispatcher = notiDispatcher;
     }
 
     private Guid GetUsuarioActualId()
@@ -493,15 +499,46 @@ public class ComunicacionesService : IComunicacionesService
         }
         await _db.SaveChangesAsync(ct);
 
-        // MVP: simulamos la entrega marcando todos como Entregado. En produccion, T.2
-        // gestiona la cola asincrona y actualiza estado por destinatario.
-        await _db.ComunicadoDestinatarios.Where(d => d.ComunicadoId == id)
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(x => x.EstadoEntrega, EstadoEntregaDestinatario.Entregado)
-                .SetProperty(x => x.FechaEntrega, ahora), ct);
+        // T.2 Motor de Notificaciones: despachamos uno a uno para tener trazabilidad
+        // individual. El dispatcher graba en `notificaciones` y dispara segun provider
+        // (Stub default - reemplaza la simulacion previa por un punto centralizado).
+        var lote = elegibles.Select(p => new Propia.Application.Notificaciones.EnviarNotificacionRequest(
+            Canal: Domain.Enums.CanalNotificacion.WhatsApp,
+            Cuerpo: string.IsNullOrWhiteSpace(c.CuerpoTextoPlano) ? c.CuerpoHtml : c.CuerpoTextoPlano,
+            TenantId: c.TenantId,
+            PersonaDestinatariaId: p.PersonaId,
+            Asunto: c.Asunto,
+            Prioridad: Domain.Enums.PrioridadNotificacion.Normal,
+            ModuloOrigenCodigo: "2.14",
+            EntidadOrigenId: id,
+            MetadataJson: $"{{\"comunicado_id\":\"{id}\"}}"));
+        var resultados = await _notiDispatcher.EnviarLoteAsync(lote, ct);
 
-        c.TotalEntregados = elegibles.Count;
-        c.TotalFallidos = 0;
+        // Mapea PersonaId -> indice para correlacionar resultado con destinatario.
+        var idxPorPersona = elegibles.Select((p, i) => (p.PersonaId, i))
+                                     .ToDictionary(x => x.PersonaId, x => x.i);
+        var destinatarios = await _db.ComunicadoDestinatarios
+            .Where(d => d.ComunicadoId == id).ToListAsync(ct);
+        int entregados = 0, fallidos = 0;
+        foreach (var d in destinatarios)
+        {
+            if (!idxPorPersona.TryGetValue(d.PersonaId, out var idx)) continue;
+            var r = resultados[idx];
+            if (r.Estado == Domain.Enums.EstadoNotificacion.Enviado)
+            {
+                d.EstadoEntrega = EstadoEntregaDestinatario.Entregado;
+                d.FechaEntrega = DateTimeOffset.UtcNow;
+                entregados++;
+            }
+            else
+            {
+                d.EstadoEntrega = EstadoEntregaDestinatario.Fallido;
+                fallidos++;
+            }
+        }
+
+        c.TotalEntregados = entregados;
+        c.TotalFallidos = fallidos;
         c.FechaCompletado = DateTimeOffset.UtcNow;
         c.Estado = EstadoComunicado.Enviado;
         await _db.SaveChangesAsync(ct);
