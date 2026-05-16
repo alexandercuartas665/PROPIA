@@ -1,17 +1,564 @@
 @page "/org/transferencia-custodia"
+@rendermode InteractiveServer
+@using Propia.Application.TransferenciaCustodia
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+
 <PageTitle>Transferencia de Custodia - PROPIA</PageTitle>
 
-<ModuloPlaceholder
-    Codigo="1.5"
-    Nombre="Transferencia de Custodia"
-    Descripcion="Flujo formal de vinculacion y desvinculacion de copropiedades a una organizacion administradora. Garantiza que la data pertenece al tenant."
-    Estado="EstadoModulo.Futuro"
-    Features='new[] {
-        "3 escenarios: solicitud por organizacion saliente / por la copropiedad / por organizacion entrante",
-        "Tokens de acceso temporales para la nueva organizacion (modo lectura inicial)",
-        "Aprobaciones del consejo o representante legal",
-        "Trazabilidad completa: quien hizo que, cuando, con que justificacion",
-        "Impacto en facturacion del modulo 0.2 - corte automatico de cobros",
-        "Estado del tenant: ConAdmin / EnTransferencia / SinAdmin (ya modelado en BD)"
-    }'
-    NotaSpec="01. REQUERIMIENTO/Capa 1. Administrador Multi-tenant/1.5. Transferencia-custodia_v1_0.md" />
+<div class="mb-4 d-flex justify-content-between align-items-start">
+    <div>
+        <h1 class="h3 mb-1 fw-semibold">Transferencia de Custodia</h1>
+        <p class="text-muted mb-0">Modulo 1.5 - Capa 1 - vinculacion y desvinculacion formal de copropiedades a la organizacion</p>
+    </div>
+    <button class="btn" style="background: var(--propia-primary); color: white;" @onclick="() => _showIniciar = true">+ Iniciar transferencia</button>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <AuthMessage />
+    return;
+}
+
+@* KPIs resumen *@
+@if (_resumen is not null)
+{
+    <div class="row g-3 mb-3">
+        <div class="col-md-3"><div class="card kpi-mini border-warning"><div class="card-body py-3"><div class="text-muted small">En curso</div><h3 class="mb-0">@_resumen.EnCurso</h3></div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini border-success"><div class="card-body py-3"><div class="text-muted small">Completadas</div><h3 class="mb-0 text-success">@_resumen.Completadas</h3></div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini border-info"><div class="card-body py-3"><div class="text-muted small">Pendientes mi aprobacion</div><h3 class="mb-0">@_resumen.PendientesAprobacionMia</h3></div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini border-secondary"><div class="card-body py-3"><div class="text-muted small">Canceladas</div><h3 class="mb-0 text-muted">@_resumen.Canceladas</h3></div></div></div>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(_msg))
+{
+    <div class="alert @_msgClass py-2 small">@_msg</div>
+}
+
+@if (_transferencias is null)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+}
+else if (_transferencias.Count == 0)
+{
+    <div class="card p-4 text-center text-muted">No hay transferencias activas o historicas. Inicia una desde el boton superior.</div>
+}
+else
+{
+    <div class="card">
+        <table class="table table-hover mb-0 align-middle">
+            <thead class="small text-muted bg-light">
+                <tr>
+                    <th>Creada</th><th>Copropiedad</th><th>Escenario</th><th>Saliente</th><th>Entrante</th><th>Estado</th><th class="text-end"></th>
+                </tr>
+            </thead>
+            <tbody class="small">
+                @foreach (var t in _transferencias.OrderByDescending(x => x.CreadoAt))
+                {
+                    var id = t.Id;
+                    var estadoColor = t.Estado switch
+                    {
+                        EstadoTransferencia.Ejecutado => "success",
+                        EstadoTransferencia.Cancelado => "secondary",
+                        EstadoTransferencia.AlertasActivas => "danger",
+                        EstadoTransferencia.ActaEnValidacion => "info",
+                        _ => "warning"
+                    };
+                    <tr style="cursor: pointer;" @onclick="() => AbrirExpedienteAsync(id)">
+                        <td class="text-muted">@t.CreadoAt.ToLocalTime().ToString("yyyy-MM-dd")</td>
+                        <td><strong>@t.CopropiedadNombre</strong>@if(!string.IsNullOrWhiteSpace(t.CopropiedadNit)){<span class="text-muted small"> (NIT @t.CopropiedadNit)</span>}</td>
+                        <td><span class="badge bg-light text-dark border">@t.Escenario</span></td>
+                        <td>@(t.OrganizacionSalienteNombre ?? "-")</td>
+                        <td>@(t.OrganizacionEntranteNombre ?? "-")</td>
+                        <td><span class="badge bg-@estadoColor">@t.Estado</span></td>
+                        <td class="text-end">
+                            <button class="btn btn-sm btn-outline-dark" @onclick:stopPropagation @onclick="() => AbrirExpedienteAsync(id)">Ver expediente</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@* Modal Iniciar - 3 escenarios *@
+@if (_showIniciar)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Iniciar transferencia</h5>
+                    <button type="button" class="btn-close" @onclick="CerrarIniciar"></button>
+                </div>
+                <div class="modal-body">
+                    <ul class="nav nav-pills nav-fill mb-3">
+                        <li class="nav-item"><a class="nav-link @(_escenario == "A" ? "active" : "")" style="cursor:pointer;" @onclick='() => _escenario = "A"'>A. Entrega voluntaria (yo soy saliente)</a></li>
+                        <li class="nav-item"><a class="nav-link @(_escenario == "B" ? "active" : "")" style="cursor:pointer;" @onclick='() => _escenario = "B"'>B. Reclamar custodia (yo soy entrante)</a></li>
+                        <li class="nav-item"><a class="nav-link @(_escenario == "C" ? "active" : "")" style="cursor:pointer;" @onclick='() => _escenario = "C"'>C. Gestion copropiedad</a></li>
+                    </ul>
+
+                    <div class="mb-2">
+                        <label class="form-label small mb-1">Buscar copropiedad</label>
+                        <input class="form-control form-control-sm" placeholder="Nombre, NIT o ciudad..." @bind="_busquedaCop" @bind:event="oninput" @onkeyup="BuscarCopAsync" />
+                    </div>
+
+                    @if (_busqueda is not null && _busqueda.Count > 0)
+                    {
+                        <div class="card mb-3" style="max-height: 200px; overflow-y: auto;">
+                            <table class="table table-sm table-hover mb-0">
+                                <tbody>
+                                    @foreach (var c in _busqueda)
+                                    {
+                                        var cid = c.Id;
+                                        <tr style="cursor: pointer;" class="@(_copSeleccionada?.Id == cid ? "table-active" : "")" @onclick="() => _copSeleccionada = c">
+                                            <td>
+                                                <strong>@c.Nombre</strong>
+                                                <div class="text-muted small">@(c.Ciudad ?? "-") - NIT @(c.Nit ?? "-") - Estado: @c.EstadoCustodia</div>
+                                                @if (!string.IsNullOrWhiteSpace(c.AdministradorActualNombre))
+                                                {
+                                                    <div class="text-muted small">Admin actual: @c.AdministradorActualNombre</div>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+
+                    @if (_copSeleccionada is not null)
+                    {
+                        <div class="alert alert-info py-2 small">
+                            Seleccionada: <strong>@_copSeleccionada.Nombre</strong>
+                        </div>
+
+                        @if (_escenario == "A")
+                        {
+                            <div class="mb-2">
+                                <label class="form-label small mb-1">Fecha efectiva terminacion *</label>
+                                <input type="date" class="form-control form-control-sm" @bind="_fechaEfectiva" />
+                                <small class="text-muted">Ventana de aprobacion: 15 dias (RN-03).</small>
+                            </div>
+                        }
+                        @if (_escenario == "B")
+                        {
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="declLeg" @bind="_declaracionLegitimidad" />
+                                <label class="form-check-label small" for="declLeg">
+                                    Declaro bajo gravedad de juramento que soy el administrador legitimo entrante de esta copropiedad
+                                </label>
+                            </div>
+                        }
+                        @if (_escenario == "C")
+                        {
+                            <div class="alert alert-warning py-2 small">
+                                Para escenario C necesitas el ID de la organizacion entrante (en proxima iteracion: selector con buscador).
+                                Por ahora, ingresa el GUID:
+                            </div>
+                            <input class="form-control form-control-sm" placeholder="GUID organizacion entrante" @bind="_orgEntranteId" />
+                        }
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="CerrarIniciar">Cancelar</button>
+                    <button class="btn btn-sm" style="background: var(--propia-primary); color: white;"
+                            @onclick="ConfirmarIniciarAsync"
+                            disabled="@(_busy || _copSeleccionada is null || !PuedeIniciar())">
+                        @(_busy ? "Iniciando..." : "Iniciar transferencia")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Modal Expediente *@
+@if (_expediente is not null)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title">Expediente - @_expediente.Transferencia.CopropiedadNombre</h5>
+                        <div class="text-muted small">@_expediente.Transferencia.Escenario - @_expediente.Transferencia.Estado</div>
+                    </div>
+                    <button type="button" class="btn-close" @onclick="() => _expediente = null"></button>
+                </div>
+                <div class="modal-body">
+                    @* Acciones de estado *@
+                    <div class="mb-3 d-flex flex-wrap gap-2">
+                        @if (_expediente.Transferencia.Estado == EstadoTransferencia.PendienteAprobacion)
+                        {
+                            <button class="btn btn-sm btn-success" @onclick="AprobarAsync" disabled="@_busy">Aprobar como saliente</button>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="MostrarRechazarAsync" disabled="@_busy">Rechazar</button>
+                        }
+                        @if (_expediente.Transferencia.Estado == EstadoTransferencia.PendienteAprobacion
+                            || _expediente.Transferencia.Estado == EstadoTransferencia.ActaEnValidacion
+                            || _expediente.Transferencia.Estado == EstadoTransferencia.AlertasActivas)
+                        {
+                            <button class="btn btn-sm btn-outline-dark" @onclick="() => _showActa = true">Subir acta de asamblea</button>
+                        }
+                        @if ((_expediente.Transferencia.Estado == EstadoTransferencia.ActaEnValidacion
+                            || _expediente.Transferencia.Estado == EstadoTransferencia.AlertasActivas)
+                            && _expediente.Documentos.Count > 0
+                            && _expediente.Transferencia.OrganizacionEntranteId is not null)
+                        {
+                            <button class="btn btn-sm btn-warning" @onclick="EjecutarCorteAsync" disabled="@_busy">Ejecutar corte</button>
+                        }
+                        @if (_expediente.Transferencia.Estado != EstadoTransferencia.Ejecutado
+                            && _expediente.Transferencia.Estado != EstadoTransferencia.Cancelado)
+                        {
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="MostrarCancelarAsync" disabled="@_busy">Cancelar proceso</button>
+                        }
+                    </div>
+
+                    @* Datos *@
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <div class="card p-2 small">
+                                <strong>Saliente:</strong> @(_expediente.Transferencia.OrganizacionSalienteNombre ?? "-")<br />
+                                <strong>Entrante:</strong> @(_expediente.Transferencia.OrganizacionEntranteNombre ?? "-")<br />
+                                <strong>Fecha efectiva:</strong> @(_expediente.Transferencia.FechaEfectivaSaliente?.ToString("yyyy-MM-dd") ?? "-")<br />
+                                <strong>Vence ventana:</strong> @(_expediente.Transferencia.FechaVencimientoVentana?.ToString("yyyy-MM-dd") ?? "-")<br />
+                                <strong>Fecha corte:</strong> @(_expediente.Transferencia.FechaCorte?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-")
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card p-2 small">
+                                <strong>Documentos:</strong> @_expediente.Documentos.Count<br />
+                                <strong>Eventos historial:</strong> @_expediente.Eventos.Count<br />
+                                @if (!string.IsNullOrWhiteSpace(_expediente.SnapshotEstadoJson))
+                                {
+                                    <strong>Snapshot al corte:</strong> <span class="text-success">Disponible</span><br />
+                                }
+                                @if (!string.IsNullOrWhiteSpace(_expediente.AjusteFacturacionJson))
+                                {
+                                    <strong>Ajuste facturacion:</strong> <span class="text-success">Calculado</span>
+                                }
+                            </div>
+                        </div>
+                    </div>
+
+                    @* Documentos *@
+                    @if (_expediente.Documentos.Count > 0)
+                    {
+                        <h6 class="text-muted small mt-3">Actas adjuntas</h6>
+                        <table class="table table-sm small">
+                            <thead><tr><th>Subida</th><th>Archivo</th><th>Validacion IA</th><th>Hash</th></tr></thead>
+                            <tbody>
+                                @foreach (var d in _expediente.Documentos.OrderBy(x => x.CreadoAt))
+                                {
+                                    <tr>
+                                        <td class="text-muted">@d.CreadoAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                                        <td>@d.NombreArchivo (@(d.TamanioBytes / 1024) KB)</td>
+                                        <td><span class="badge bg-light text-dark border">@d.ResultadoValidacionIa</span></td>
+                                        <td class="text-muted small">@d.HashSha256.Substring(0, 16)...</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+
+                    @* Historial *@
+                    <h6 class="text-muted small mt-3">Historial</h6>
+                    <ul class="list-group small">
+                        @foreach (var e in _expediente.Eventos.OrderBy(x => x.CreadoAt))
+                        {
+                            <li class="list-group-item py-2">
+                                <span class="text-muted small">@e.CreadoAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                                - <strong>@e.TipoEvento</strong>
+                                @if (!string.IsNullOrWhiteSpace(e.Canal))
+                                {
+                                    <span class="badge bg-light text-dark border">@e.Canal</span>
+                                }
+                            </li>
+                        }
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Modal subir acta *@
+@if (_showActa && _expediente is not null)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.7); z-index: 1060;">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Subir acta de asamblea</h5>
+                    <button type="button" class="btn-close" @onclick="() => _showActa = false"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">Selecciona el PDF del acta. Se calculara su hash SHA-256 y quedara como evidencia del proceso.</p>
+                    <InputFile OnChange="@OnActaSelectedAsync" accept=".pdf,application/pdf" />
+                    @if (_actaArchivoNombre is not null)
+                    {
+                        <div class="alert alert-info py-2 small mt-2 mb-0">
+                            Archivo seleccionado: <strong>@_actaArchivoNombre</strong> (@(_actaBytes / 1024) KB)
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _showActa = false">Cancelar</button>
+                    <button class="btn btn-sm" style="background: var(--propia-primary); color: white;"
+                            @onclick="SubirActaAsync"
+                            disabled="@(_busy || _actaBase64 is null)">
+                        @(_busy ? "Subiendo..." : "Subir acta")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
+</style>
+
+@code {
+    private string? _jwt;
+    private bool _busy;
+    private string? _msg; private string _msgClass = "alert-info";
+
+    private List<TransferenciaDto>? _transferencias;
+    private ResumenTransferenciasDto? _resumen;
+
+    // Iniciar
+    private bool _showIniciar;
+    private string _escenario = "A";
+    private string? _busquedaCop;
+    private List<CopropiedadBusquedaDto>? _busqueda;
+    private CopropiedadBusquedaDto? _copSeleccionada;
+    private DateTime _fechaEfectiva = DateTime.UtcNow.Date.AddDays(15);
+    private bool _declaracionLegitimidad;
+    private string? _orgEntranteId;
+
+    // Expediente
+    private ExpedienteDto? _expediente;
+
+    // Acta
+    private bool _showActa;
+    private string? _actaArchivoNombre;
+    private string? _actaTipoMime;
+    private long _actaBytes;
+    private string? _actaBase64;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task CargarAsync()
+    {
+        _busy = true;
+        try
+        {
+            var http = Auth();
+            _transferencias = await http.GetFromJsonAsync<List<TransferenciaDto>>("/api/custodia/mias") ?? new();
+            _resumen = await http.GetFromJsonAsync<ResumenTransferenciasDto>("/api/custodia/resumen");
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _busy = false; }
+    }
+
+    private async Task BuscarCopAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_busquedaCop) || _busquedaCop.Length < 2) { _busqueda = null; return; }
+        try
+        {
+            var http = Auth();
+            _busqueda = await http.GetFromJsonAsync<List<CopropiedadBusquedaDto>>(
+                $"/api/custodia/copropiedades/buscar?q={Uri.EscapeDataString(_busquedaCop)}") ?? new();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private bool PuedeIniciar() => _escenario switch
+    {
+        "A" => _fechaEfectiva >= DateTime.UtcNow.Date,
+        "B" => _declaracionLegitimidad,
+        "C" => Guid.TryParse(_orgEntranteId, out _),
+        _ => false
+    };
+
+    private async Task ConfirmarIniciarAsync()
+    {
+        if (_copSeleccionada is null) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var http = Auth();
+            HttpResponseMessage resp = _escenario switch
+            {
+                "A" => await http.PostAsJsonAsync("/api/custodia/escenario-a/entrega-voluntaria",
+                    new IniciarEntregaVoluntariaRequest(_copSeleccionada.Id, DateOnly.FromDateTime(_fechaEfectiva), null)),
+                "B" => await http.PostAsJsonAsync("/api/custodia/escenario-b/reclamar",
+                    new ReclamarCustodiaRequest(_copSeleccionada.Id, true)),
+                "C" => await http.PostAsJsonAsync("/api/custodia/escenario-c/por-copropiedad",
+                    new IniciarPorCopropiedadRequest(_copSeleccionada.Id, Guid.Parse(_orgEntranteId!))),
+                _ => throw new InvalidOperationException("Escenario invalido.")
+            };
+            if (!resp.IsSuccessStatusCode)
+            {
+                _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return;
+            }
+            _msg = "Transferencia iniciada."; _msgClass = "alert-success";
+            CerrarIniciar();
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private void CerrarIniciar()
+    {
+        _showIniciar = false;
+        _busqueda = null;
+        _busquedaCop = null;
+        _copSeleccionada = null;
+        _orgEntranteId = null;
+        _declaracionLegitimidad = false;
+    }
+
+    private async Task AbrirExpedienteAsync(Guid id)
+    {
+        _busy = true;
+        try
+        {
+            var http = Auth();
+            _expediente = await http.GetFromJsonAsync<ExpedienteDto>($"/api/custodia/{id}/expediente");
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _busy = false; }
+    }
+
+    private async Task AprobarAsync()
+    {
+        if (_expediente is null) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var http = Auth();
+            var resp = await http.PostAsJsonAsync($"/api/custodia/{_expediente.Transferencia.Id}/aprobar",
+                new AprobarTransferenciaRequest("Aprobado desde UI"));
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _msg = "Aprobacion registrada."; _msgClass = "alert-success";
+            await AbrirExpedienteAsync(_expediente.Transferencia.Id);
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task MostrarRechazarAsync()
+    {
+        if (_expediente is null) return;
+        var motivo = await Js.InvokeAsync<string?>("prompt", "Motivo del rechazo:");
+        if (string.IsNullOrWhiteSpace(motivo)) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var http = Auth();
+            var resp = await http.PostAsJsonAsync($"/api/custodia/{_expediente.Transferencia.Id}/rechazar",
+                new RechazarTransferenciaRequest(motivo));
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _msg = "Rechazo registrado. Caso escalado a la plataforma."; _msgClass = "alert-warning";
+            _expediente = null;
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task MostrarCancelarAsync()
+    {
+        if (_expediente is null) return;
+        var motivo = await Js.InvokeAsync<string?>("prompt", "Motivo de la cancelacion:");
+        if (string.IsNullOrWhiteSpace(motivo)) return;
+        _busy = true;
+        try
+        {
+            var http = Auth();
+            var resp = await http.PostAsJsonAsync($"/api/custodia/{_expediente.Transferencia.Id}/cancelar",
+                new { Motivo = motivo });
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _msg = "Transferencia cancelada."; _msgClass = "alert-success";
+            _expediente = null;
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task EjecutarCorteAsync()
+    {
+        if (_expediente is null) return;
+        if (!await Js.InvokeAsync<bool>("confirm", "ATENCION: el corte es irreversible. Cambia la organizacion de la copropiedad y revoca accesos del saliente. Continuar?")) return;
+        _busy = true;
+        try
+        {
+            var http = Auth();
+            var resp = await http.PostAsync($"/api/custodia/{_expediente.Transferencia.Id}/ejecutar-corte", null);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _msg = "Corte ejecutado. Copropiedad transferida."; _msgClass = "alert-success";
+            await AbrirExpedienteAsync(_expediente.Transferencia.Id);
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task OnActaSelectedAsync(InputFileChangeEventArgs e)
+    {
+        var f = e.File;
+        if (f is null) return;
+        const long maxBytes = 20L * 1024 * 1024;
+        if (f.Size > maxBytes) { _msg = "Archivo supera 20MB."; _msgClass = "alert-danger"; return; }
+        using var ms = new MemoryStream();
+        await f.OpenReadStream(maxBytes).CopyToAsync(ms);
+        var bytes = ms.ToArray();
+        _actaBase64 = Convert.ToBase64String(bytes);
+        _actaArchivoNombre = f.Name;
+        _actaTipoMime = string.IsNullOrWhiteSpace(f.ContentType) ? "application/pdf" : f.ContentType;
+        _actaBytes = f.Size;
+    }
+
+    private async Task SubirActaAsync()
+    {
+        if (_expediente is null || _actaBase64 is null || _actaArchivoNombre is null) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var http = Auth();
+            var req = new SubirActaRequest(_actaArchivoNombre, _actaTipoMime ?? "application/pdf", _actaBytes, _actaBase64);
+            var resp = await http.PostAsJsonAsync($"/api/custodia/{_expediente.Transferencia.Id}/acta", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _msg = "Acta subida con hash SHA-256."; _msgClass = "alert-success";
+            _showActa = false;
+            _actaBase64 = null;
+            _actaArchivoNombre = null;
+            await AbrirExpedienteAsync(_expediente.Transferencia.Id);
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

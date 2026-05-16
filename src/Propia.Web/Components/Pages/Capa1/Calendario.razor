@@ -1,16 +1,461 @@
 @page "/org/calendario"
+@rendermode InteractiveServer
+@using Propia.Application.Calendario
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+@inject IConfiguration Config
+
 <PageTitle>Calendario Multi-Copropiedad - PROPIA</PageTitle>
 
-<ModuloPlaceholder
-    Codigo="1.2"
-    Nombre="Calendario Multi-Copropiedad"
-    Descripcion="Vista unificada de asambleas, vencimientos, tareas y eventos relevantes de todas las copropiedades gestionadas."
-    Estado="EstadoModulo.Futuro"
-    Features='new[] {
-        "Vista mensual / semanal / diaria",
-        "Eventos coloreados por copropiedad",
-        "Filtros por tipo de evento: asambleas, vencimientos de contratos, tareas, mantenimientos",
-        "Drag-and-drop para reprogramar (con permisos)",
-        "Sync bidireccional con Google Calendar / Outlook (Fase 2)"
-    }'
-    NotaSpec="01. REQUERIMIENTO/Capa 1. Administrador Multi-tenant/1.2. Calendario-multicopropiedad_v1_0.md" />
+<div class="mb-4">
+    <h1 class="h3 mb-1 fw-semibold">Calendario Multi-Copropiedad</h1>
+    <p class="text-muted mb-0">Modulo 1.2 - Capa 1 - agenda unificada del portafolio de copropiedades</p>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <AuthMessage />
+    return;
+}
+
+@* Tabs *@
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item"><a class="nav-link @(_tab == "agenda" ? "active" : "")" style="cursor:pointer;" @onclick='() => SetTab("agenda")'>Agenda</a></li>
+    <li class="nav-item"><a class="nav-link @(_tab == "criticos" ? "active" : "")" style="cursor:pointer;" @onclick='() => SetTab("criticos")'>Criticos</a></li>
+    <li class="nav-item"><a class="nav-link @(_tab == "internos" ? "active" : "")" style="cursor:pointer;" @onclick='() => SetTab("internos")'>Mis eventos</a></li>
+    <li class="nav-item"><a class="nav-link @(_tab == "config" ? "active" : "")" style="cursor:pointer;" @onclick='() => SetTab("config")'>Configuracion</a></li>
+</ul>
+
+@if (!string.IsNullOrEmpty(_msg))
+{
+    <div class="alert @_msgClass py-2 small">@_msg</div>
+}
+
+@if (_tab == "agenda")
+{
+    <div class="row g-2 mb-3 align-items-end">
+        <div class="col-md-3">
+            <label class="form-label small mb-1">Desde</label>
+            <input type="date" class="form-control form-control-sm" @bind="_desde" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small mb-1">Hasta</label>
+            <input type="date" class="form-control form-control-sm" @bind="_hasta" />
+        </div>
+        <div class="col-md-3">
+            <button class="btn btn-sm btn-outline-dark" @onclick="CargarAgendaAsync" disabled="@_busy">@(_busy ? "Cargando..." : "Aplicar filtros")</button>
+        </div>
+    </div>
+
+    @if (_eventos is null)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
+    else if (_eventos.Count == 0)
+    {
+        <div class="card p-4 text-center text-muted">Sin eventos en el rango seleccionado.</div>
+    }
+    else
+    {
+        <div class="card">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="small text-muted bg-light">
+                    <tr><th>Fecha</th><th>Categoria</th><th>Copropiedad</th><th>Titulo</th><th></th></tr>
+                </thead>
+                <tbody class="small">
+                    @foreach (var e in _eventos.OrderBy(x => x.FechaInicio))
+                    {
+                        <tr>
+                            <td class="text-muted">@e.FechaInicio.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                            <td><span class="badge bg-light text-dark border">@e.Categoria</span></td>
+                            <td>@(e.CopropiedadNombre ?? "-")</td>
+                            <td><strong>@e.Titulo</strong></td>
+                            <td>
+                                @if (e.EsInterno)
+                                {
+                                    <span class="badge bg-info text-dark">Interno</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+else if (_tab == "criticos")
+{
+    @if (_criticos is null)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
+    else if (_criticos.Count == 0)
+    {
+        <div class="card p-4 text-center text-muted">Sin eventos criticos pendientes.</div>
+    }
+    else
+    {
+        <div class="card">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="small text-muted bg-light">
+                    <tr><th>Vence</th><th>Dias restantes</th><th>Severidad</th><th>Copropiedad</th><th>Titulo</th></tr>
+                </thead>
+                <tbody class="small">
+                    @foreach (var c in _criticos.OrderBy(x => x.Vencimiento))
+                    {
+                        var sevColor = c.Severidad switch
+                        {
+                            SeveridadCritico.Rojo => "danger",
+                            SeveridadCritico.Naranja => "warning",
+                            _ => "secondary"
+                        };
+                        <tr>
+                            <td class="text-muted">@c.Vencimiento.ToLocalTime().ToString("yyyy-MM-dd")</td>
+                            <td><strong>@c.DiasRestantes d</strong></td>
+                            <td><span class="badge bg-@sevColor">@c.Severidad</span></td>
+                            <td>@(c.CopropiedadNombre ?? "-")</td>
+                            <td><strong>@c.Titulo</strong></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+else if (_tab == "internos")
+{
+    <div class="mb-3 d-flex justify-content-end">
+        <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="() => _showNuevo = true">+ Nuevo evento</button>
+    </div>
+
+    @if (_internos is null)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
+    else if (_internos.Count == 0)
+    {
+        <div class="card p-4 text-center text-muted">No tienes eventos internos creados.</div>
+    }
+    else
+    {
+        <div class="card">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="small text-muted bg-light">
+                    <tr><th>Fecha</th><th>Tipo</th><th>Titulo</th><th>Copropiedad</th><th class="text-end"></th></tr>
+                </thead>
+                <tbody class="small">
+                    @foreach (var ev in _internos.OrderBy(x => x.FechaInicio))
+                    {
+                        var id = ev.Id;
+                        <tr>
+                            <td class="text-muted">@ev.FechaInicio.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                            <td><span class="badge bg-light text-dark border">@ev.Tipo</span></td>
+                            <td><strong>@ev.Titulo</strong></td>
+                            <td>@(ev.CopropiedadNombre ?? "Organizacion")</td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => EliminarAsync(id)">Eliminar</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    @if (_showNuevo)
+    {
+        <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Nuevo evento interno</h5>
+                        <button type="button" class="btn-close" @onclick="() => _showNuevo = false"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-2">
+                            <label class="form-label small mb-1">Titulo *</label>
+                            <input class="form-control form-control-sm" @bind="_nuevoTitulo" />
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small mb-1">Descripcion</label>
+                            <textarea class="form-control form-control-sm" rows="2" @bind="_nuevoDesc"></textarea>
+                        </div>
+                        <div class="row g-2 mb-2">
+                            <div class="col-md-6">
+                                <label class="form-label small mb-1">Tipo</label>
+                                <select class="form-select form-select-sm" @bind="_nuevoTipo">
+                                    @foreach (var t in Enum.GetValues<TipoEventoInterno>())
+                                    {
+                                        <option value="@t">@t</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small mb-1">Inicio *</label>
+                                <input type="datetime-local" class="form-control form-control-sm" @bind="_nuevoInicio" />
+                            </div>
+                        </div>
+                        <div class="row g-2 mb-2">
+                            <div class="col-md-6">
+                                <label class="form-label small mb-1">Fin (opcional)</label>
+                                <input type="datetime-local" class="form-control form-control-sm" @bind="_nuevoFin" />
+                            </div>
+                            <div class="col-md-6 d-flex align-items-end">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="diaCompleto" @bind="_nuevoDiaCompleto" />
+                                    <label class="form-check-label small" for="diaCompleto">Dia completo</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-sm btn-outline-dark" @onclick="() => _showNuevo = false">Cancelar</button>
+                        <button class="btn btn-sm" style="background: var(--propia-primary); color: white;"
+                                @onclick="CrearInternoAsync"
+                                disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoTitulo))">
+                            @(_busy ? "Guardando..." : "Crear")
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}
+else if (_tab == "config")
+{
+    @if (_config is null)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
+    else
+    {
+        <div class="card p-3 mb-3">
+            <h6>Vista por defecto y anticipaciones</h6>
+            <p class="text-muted small mb-3">Edicion in-line en proxima iteracion. Hoy se muestran valores actuales.</p>
+            <ul class="small mb-0">
+                <li>Vista default: <strong>@_config.VistaDefault</strong></li>
+                <li>Anticipacion asamblea: <strong>@_config.AnticipacionAsamblea min</strong></li>
+                <li>Anticipacion tarea: <strong>@_config.AnticipacionTarea min</strong></li>
+                <li>Anticipacion mantenimiento: <strong>@_config.AnticipacionMantenimiento min</strong></li>
+                <li>Anticipacion pqrsd: <strong>@_config.AnticipacionPqrsd min</strong></li>
+            </ul>
+        </div>
+
+        <div class="card p-3">
+            <h6>Feed iCal (sincronizacion externa)</h6>
+            <p class="text-muted small">
+                Genera un token unico para suscribirte desde Apple Calendar / Google Calendar / Outlook.
+                Si lo regeneras, el token anterior queda invalido.
+            </p>
+            @if (_config.IcalToken is { } tok && tok != Guid.Empty)
+            {
+                var icsUrl = $"{_apiBase}/api/calendario/ical/{tok}.ics";
+                <div class="input-group input-group-sm mb-2">
+                    <input class="form-control" readonly value="@icsUrl" />
+                    <button class="btn btn-outline-dark" @onclick="() => CopiarAsync(icsUrl)">Copiar</button>
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-outline-warning" @onclick="GenerarTokenAsync">Regenerar token</button>
+                    <button class="btn btn-sm btn-outline-danger" @onclick="RevocarTokenAsync">Revocar</button>
+                </div>
+            }
+            else
+            {
+                <button class="btn btn-sm btn-outline-dark" @onclick="GenerarTokenAsync">Generar token iCal</button>
+            }
+        </div>
+    }
+}
+
+@code {
+    private string? _jwt;
+    private bool _busy;
+    private string? _msg; private string _msgClass = "alert-info";
+
+    private string _tab = "agenda";
+
+    // Agenda
+    private DateTime _desde = DateTime.UtcNow.Date;
+    private DateTime _hasta = DateTime.UtcNow.Date.AddMonths(2);
+    private List<EventoCalendarioDto>? _eventos;
+
+    // Criticos
+    private List<CriticoDto>? _criticos;
+
+    // Internos
+    private List<EventoInternoDto>? _internos;
+    private bool _showNuevo;
+    private string? _nuevoTitulo;
+    private string? _nuevoDesc;
+    private TipoEventoInterno _nuevoTipo = TipoEventoInterno.RecordatorioPersonal;
+    private DateTime _nuevoInicio = DateTime.UtcNow.AddHours(1);
+    private DateTime? _nuevoFin;
+    private bool _nuevoDiaCompleto;
+
+    // Config
+    private CalendarioConfigDto? _config;
+    private string _apiBase => Config["PropiaApi:BaseUrl"]?.TrimEnd('/') ?? "https://localhost:7100";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarAgendaAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task SetTab(string t)
+    {
+        _tab = t;
+        _msg = null;
+        if (t == "agenda" && _eventos is null) await CargarAgendaAsync();
+        if (t == "criticos" && _criticos is null) await CargarCriticosAsync();
+        if (t == "internos" && _internos is null) await CargarInternosAsync();
+        if (t == "config" && _config is null) await CargarConfigAsync();
+    }
+
+    private async Task CargarAgendaAsync()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var http = Auth();
+            var filtro = new FiltroCalendarioDto(
+                DateOnly.FromDateTime(_desde),
+                DateOnly.FromDateTime(_hasta),
+                null, null);
+            var resp = await http.PostAsJsonAsync("/api/calendario/eventos/buscar", filtro);
+            resp.EnsureSuccessStatusCode();
+            _eventos = await resp.Content.ReadFromJsonAsync<List<EventoCalendarioDto>>() ?? new();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _busy = false; }
+    }
+
+    private async Task CargarCriticosAsync()
+    {
+        _busy = true;
+        try
+        {
+            var http = Auth();
+            _criticos = await http.GetFromJsonAsync<List<CriticoDto>>("/api/calendario/criticos") ?? new();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _busy = false; }
+    }
+
+    private async Task CargarInternosAsync()
+    {
+        _busy = true;
+        try
+        {
+            var http = Auth();
+            _internos = await http.GetFromJsonAsync<List<EventoInternoDto>>("/api/calendario/eventos-internos") ?? new();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _busy = false; }
+    }
+
+    private async Task CargarConfigAsync()
+    {
+        _busy = true;
+        try
+        {
+            var http = Auth();
+            _config = await http.GetFromJsonAsync<CalendarioConfigDto>("/api/calendario/config");
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _busy = false; }
+    }
+
+    private async Task CrearInternoAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevoTitulo)) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var http = Auth();
+            var req = new CrearEventoInternoRequest(
+                TenantId: null,
+                Titulo: _nuevoTitulo!,
+                Descripcion: _nuevoDesc,
+                Tipo: _nuevoTipo,
+                FechaInicio: new DateTimeOffset(_nuevoInicio, TimeSpan.Zero),
+                FechaFin: _nuevoFin.HasValue ? new DateTimeOffset(_nuevoFin.Value, TimeSpan.Zero) : null,
+                EsDiaCompleto: _nuevoDiaCompleto,
+                RecordatorioMinutos: null);
+            var resp = await http.PostAsJsonAsync("/api/calendario/eventos-internos", req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return;
+            }
+            _showNuevo = false;
+            _nuevoTitulo = _nuevoDesc = null;
+            _nuevoInicio = DateTime.UtcNow.AddHours(1);
+            _nuevoFin = null;
+            await CargarInternosAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task EliminarAsync(Guid id)
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", "Eliminar este evento?")) return;
+        _busy = true;
+        try
+        {
+            var http = Auth();
+            await http.DeleteAsync($"/api/calendario/eventos-internos/{id}");
+            await CargarInternosAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task GenerarTokenAsync()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var http = Auth();
+            await http.PostAsync("/api/calendario/ical/token", null);
+            await CargarConfigAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task RevocarTokenAsync()
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", "Esto invalida el feed actual. Continuar?")) return;
+        _busy = true;
+        try
+        {
+            var http = Auth();
+            await http.DeleteAsync("/api/calendario/ical/token");
+            await CargarConfigAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task CopiarAsync(string text)
+    {
+        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", text); _msg = "Copiado al portapapeles."; _msgClass = "alert-success"; }
+        catch { }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}
