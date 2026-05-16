@@ -120,6 +120,12 @@ public static class DependencyInjection
         services.AddScoped<Application.Reportes.IIndicadoresService, Reportes.IndicadoresService>();
         services.AddScoped<Application.Reportes.IReportesService, Reportes.ReportesService>();
 
+        // Modulo 2.12 Porteria y Control de Acceso
+        services.AddScoped<Application.Porteria.IPorteriaService, Porteria.PorteriaService>();
+
+        // Modulo 2.13 Reservas de Zonas Comunes
+        services.AddScoped<Application.Reservas.IReservasService, Reservas.ReservasService>();
+
         // Storage de blobs (logos, fachadas, portadas, futuros adjuntos).
         // Provider seleccionado por config: "R2" en produccion, cualquier otro valor (o ausente)
         // cae a filesystem local (wwwroot/uploads). Asi Development y tests no requieren credenciales.

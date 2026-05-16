@@ -1,16 +1,680 @@
 @page "/reservas"
-<PageTitle>Reservas Zonas Comunes - PROPIA</PageTitle>
+@rendermode InteractiveServer
+@using Propia.Application.Reservas
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
 
-<ModuloPlaceholder
-    Codigo="2.13"
-    Nombre="Reservas de Zonas Comunes"
-    Descripcion="Disponibilidad, reglas de uso, reservas por residentes y cobros asociados a zonas comunes."
-    Estado="EstadoModulo.Futuro"
-    Features='new[] {
-        "Calendario por zona (BBQ, salon social, gimnasio, etc.)",
-        "Reservas con reglas configurables: horarios, anticipacion, frecuencia maxima",
-        "Cobros asociados (integracion con 2.6)",
-        "Lista negra de residentes morosos - bloqueo de reservas",
-        "Inventario de zonas reservables se configura en 2.3 - aqui se opera"
-    }'
-    NotaSpec="01. REQUERIMIENTO/Capa 2. Copropiedad/2.13. Reservas-zonas-comunes_v1_0.md" />
+<PageTitle>Reservas - PROPIA</PageTitle>
+
+<div class="mb-4 d-flex justify-content-between align-items-start">
+    <div>
+        <h1 class="h3 mb-1 fw-semibold">Reservas de Zonas Comunes</h1>
+        <p class="text-muted mb-0">Modulo 2.13 - galeria, calendario, configuracion y bloqueos</p>
+    </div>
+    <div class="btn-group">
+        <button class="btn btn-sm btn-outline-dark @(_tab == "galeria" ? "active" : "")" @onclick='() => CambiarTab("galeria")'>Galeria</button>
+        <button class="btn btn-sm btn-outline-dark @(_tab == "reservas" ? "active" : "")" @onclick='() => CambiarTab("reservas")'>Reservas</button>
+        <button class="btn btn-sm btn-outline-dark @(_tab == "bloqueos" ? "active" : "")" @onclick='() => CambiarTab("bloqueos")'>Bloqueos</button>
+        <button class="btn btn-sm btn-outline-dark @(_tab == "config" ? "active" : "")" @onclick='() => CambiarTab("config")'>Configuracion</button>
+    </div>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <AuthMessage />
+    return;
+}
+
+@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+@if (_resumen is not null && _tab == "reservas")
+{
+    <div class="row g-3 mb-3">
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Confirmadas</div><h3 class="mb-0 text-success">@_resumen.Confirmadas</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Pendientes</div><h3 class="mb-0 text-warning">@_resumen.Pendientes</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Completadas (mes)</div><h3 class="mb-0">@_resumen.CompletadasUltimoMes</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Tasa cancelacion</div><h3 class="mb-0">@_resumen.TasaCancelacion.ToString("0.#")%</h3>
+        </div></div></div>
+    </div>
+}
+
+@if (_tab == "galeria")
+{
+    @if (_galeria is null) { <div class="spinner-border"></div> }
+    else if (_galeria.Count == 0) { <div class="card p-4 text-center text-muted">No hay zonas marcadas como reservables en Mi Copropiedad 2.3.</div> }
+    else
+    {
+        <div class="row g-3">
+            @foreach (var z in _galeria)
+            {
+                var zid = z.ZonaComunId;
+                <div class="col-md-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <h6 class="card-title mb-0">@z.Nombre</h6>
+                                @if (z.Estado == "EnMantenimiento")
+                                {
+                                    <span class="badge bg-warning text-dark">En mantenimiento</span>
+                                }
+                                else if (z.Estado == "Inactiva")
+                                {
+                                    <span class="badge bg-secondary">Inactiva</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-success">Disponible</span>
+                                }
+                            </div>
+                            <p class="card-text small text-muted">@z.Descripcion</p>
+                            <small class="text-muted">Aforo: @(z.Aforo ?? 0) personas</small><br>
+                            @if (z.TieneTarifa && z.ValorTarifa.HasValue)
+                            {
+                                <strong>$@z.ValorTarifa.Value.ToString("N0") / @z.ModalidadCobro</strong>
+                            }
+                            else
+                            {
+                                <span class="badge bg-light text-dark">Gratuita</span>
+                            }
+                            <hr>
+                            <button class="btn btn-sm" style="background: var(--propia-primary); color: white;"
+                                    @onclick="() => AbrirReservar(zid)" disabled="@(z.Estado != "Activa")">
+                                Reservar
+                            </button>
+                            <button class="btn btn-sm btn-outline-dark" @onclick="() => AbrirConfig(zid)">Configurar</button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+
+@if (_tab == "reservas")
+{
+    @if (_reservas is null) { <div class="spinner-border"></div> }
+    else if (_reservas.Count == 0) { <div class="card p-4 text-center text-muted">Sin reservas registradas.</div> }
+    else
+    {
+        <div class="card">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="bg-light small text-muted">
+                    <tr><th>Codigo</th><th>Zona</th><th>Fecha</th><th>Horario</th><th>Unidad</th><th>Estado</th><th>Pago</th><th></th></tr>
+                </thead>
+                <tbody class="small">
+                    @foreach (var r in _reservas)
+                    {
+                        var rid = r.Id;
+                        <tr>
+                            <td><code>@r.Codigo</code></td>
+                            <td>@r.ZonaNombre</td>
+                            <td>@r.Fecha.ToString("yyyy-MM-dd")</td>
+                            <td>@r.HoraInicio.ToString("HH:mm") - @r.HoraFin.ToString("HH:mm")</td>
+                            <td>@r.UnidadNumero<br><small class="text-muted">@r.PersonaNombre</small></td>
+                            <td>@RenderEstadoR(r.Estado)</td>
+                            <td>@(r.MontoPago.HasValue ? $"${r.MontoPago.Value:N0} ({r.EstadoPago})" : "Gratuito")</td>
+                            <td>
+                                @if (r.Estado == EstadoReserva.Confirmada || r.Estado == EstadoReserva.PendientePago)
+                                {
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => CancelarReserva(rid)">Cancelar</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@if (_tab == "bloqueos")
+{
+    <div class="d-flex justify-content-end mb-3">
+        <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="() => _showCrearBloqueo = true">+ Nuevo bloqueo</button>
+    </div>
+    @if (_bloqueos is null) { <div class="spinner-border"></div> }
+    else if (_bloqueos.Count == 0) { <div class="card p-4 text-center text-muted">No hay bloqueos activos.</div> }
+    else
+    {
+        <div class="card">
+            <table class="table mb-0 align-middle">
+                <thead class="bg-light small text-muted">
+                    <tr><th>Zona</th><th>Tipo</th><th>Periodo</th><th>Etiqueta</th><th>Motivo</th><th>Origen</th><th></th></tr>
+                </thead>
+                <tbody class="small">
+                    @foreach (var b in _bloqueos)
+                    {
+                        var bid = b.Id;
+                        <tr>
+                            <td>@b.ZonaNombre</td>
+                            <td>@b.Tipo</td>
+                            <td>@b.FechaInicio.ToString("yyyy-MM-dd") @(b.FechaInicio == b.FechaFin ? "" : "- " + b.FechaFin.ToString("yyyy-MM-dd"))</td>
+                            <td><span class="badge bg-warning text-dark">@b.Etiqueta</span></td>
+                            <td><small>@b.MotivoPersonalizado</small></td>
+                            <td><small>@b.Origen</small></td>
+                            <td><button class="btn btn-sm btn-outline-danger" @onclick="() => EliminarBloqueo(bid)">Eliminar</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@if (_tab == "config")
+{
+    @if (_configs is null) { <div class="spinner-border"></div> }
+    else if (_configs.Count == 0)
+    {
+        <div class="card p-4 text-center text-muted">
+            Sin configuraciones aun. Abre la galeria y haz click en "Configurar" para crear una.
+        </div>
+    }
+    else
+    {
+        <div class="card">
+            <table class="table mb-0">
+                <thead class="bg-light small text-muted">
+                    <tr><th>Zona</th><th>Tarifa</th><th>Anticipacion</th><th>Duracion (min)</th><th>Franjas</th><th>Visible</th><th></th></tr>
+                </thead>
+                <tbody class="small">
+                    @foreach (var c in _configs)
+                    {
+                        var zid = c.ZonaComunId;
+                        <tr>
+                            <td><strong>@c.ZonaNombre</strong></td>
+                            <td>@(c.TieneTarifa ? $"${c.ValorTarifa:N0} {c.ModalidadCobro}" : "Gratuita")</td>
+                            <td>@c.AnticipacionMinimaHoras h / @c.AnticipacionMaximaDias d</td>
+                            <td>@c.DuracionMinimaMinutos - @c.DuracionMaximaMinutos</td>
+                            <td>@c.Franjas.Count</td>
+                            <td>@(c.VisibleParaResidentes ? "Si" : "No")</td>
+                            <td><button class="btn btn-sm btn-outline-dark" @onclick="() => AbrirConfig(zid)">Editar</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@* Modal Reservar *@
+@if (_showReservar && _zonaSeleccionada is not null)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Reservar @_zonaSeleccionada.Nombre</h5>
+                    <button class="btn-close" @onclick="() => _showReservar = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-2">
+                        <div class="col-md-12">
+                            <label class="form-label small">Unidad *</label>
+                            <select class="form-select form-select-sm" @bind="_resUnidad">
+                                <option value="">Seleccionar...</option>
+                                @if (_unidades is not null)
+                                {
+                                    @foreach (var u in _unidades) { <option value="@u.Id">@u.Numero</option> }
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small">Persona *</label>
+                            <select class="form-select form-select-sm" @bind="_resPersona">
+                                <option value="">Seleccionar...</option>
+                                @if (_personas is not null)
+                                {
+                                    @foreach (var p in _personas) { <option value="@p.Id">@p.Nombres @p.Apellidos</option> }
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small">Fecha *</label>
+                            <input type="date" class="form-control form-control-sm" @bind="_resFecha" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Hora inicio *</label>
+                            <input type="time" class="form-control form-control-sm" @bind="_resHoraIni" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Hora fin *</label>
+                            <input type="time" class="form-control form-control-sm" @bind="_resHoraFin" />
+                        </div>
+                        <div class="col-md-12">
+                            <div class="form-check small">
+                                <input class="form-check-input" type="checkbox" id="chkReg" @bind="_resReglamento" />
+                                <label class="form-check-label" for="chkReg">He leido y acepto el reglamento de uso</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _showReservar = false">Cancelar</button>
+                    <button class="btn btn-sm" style="background: var(--propia-primary); color: white;"
+                            @onclick="ConfirmarReservar"
+                            disabled="@(_busy || _resUnidad == Guid.Empty || _resPersona == Guid.Empty)">
+                        @(_busy ? "Reservando..." : "Reservar")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Modal Configurar zona *@
+@if (_showConfig && _configEdit is not null)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Configurar zona reservable</h5>
+                    <button class="btn-close" @onclick="() => _showConfig = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <label class="form-label small">Anticipacion minima (horas)</label>
+                            <input type="number" class="form-control form-control-sm" min="0" @bind="_configEdit.AnticipacionMinimaHoras" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Anticipacion maxima (dias)</label>
+                            <input type="number" class="form-control form-control-sm" min="1" @bind="_configEdit.AnticipacionMaximaDias" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Duracion minima (min)</label>
+                            <input type="number" class="form-control form-control-sm" min="15" @bind="_configEdit.DuracionMinimaMinutos" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Duracion maxima (min)</label>
+                            <input type="number" class="form-control form-control-sm" min="15" @bind="_configEdit.DuracionMaximaMinutos" />
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check mt-4">
+                                <input class="form-check-input" type="checkbox" id="cfgTar" @bind="_configEdit.TieneTarifa" />
+                                <label class="form-check-label small" for="cfgTar">Tiene tarifa</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Valor</label>
+                            <input type="number" class="form-control form-control-sm" @bind="_configEdit.ValorTarifa" disabled="@(!_configEdit.TieneTarifa)" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Modalidad</label>
+                            <select class="form-select form-select-sm" @bind="_configEdit.ModalidadCobro">
+                                @foreach (var m in Enum.GetValues<ModalidadCobroReserva>()) { <option value="@m">@m</option> }
+                            </select>
+                        </div>
+                        <div class="col-md-12 mt-3">
+                            <label class="form-label small">Dias permitidos (HH:mm - HH:mm)</label>
+                            @foreach (var dia in Enum.GetValues<DiaSemanaReserva>())
+                            {
+                                var d = dia;
+                                var franja = _configEdit.Franjas.FirstOrDefault(f => f.DiaSemana == d);
+                                <div class="row g-2 mb-1 align-items-center">
+                                    <div class="col-md-3">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" checked="@(franja != null)"
+                                                   @onchange="(e) => ToggleFranja(d, (bool)e.Value!)" />
+                                            <label class="form-check-label small">@d</label>
+                                        </div>
+                                    </div>
+                                    @if (franja is not null)
+                                    {
+                                        var idx = _configEdit.Franjas.IndexOf(franja);
+                                        <div class="col-md-3">
+                                            <input type="time" class="form-control form-control-sm"
+                                                   value="@franja.HoraApertura.ToString("HH:mm")"
+                                                   @onchange="(e) => SetFranjaHora(idx, true, e.Value?.ToString() ?? string.Empty)" />
+                                        </div>
+                                        <div class="col-md-3">
+                                            <input type="time" class="form-control form-control-sm"
+                                                   value="@franja.HoraCierre.ToString("HH:mm")"
+                                                   @onchange="(e) => SetFranjaHora(idx, false, e.Value?.ToString() ?? string.Empty)" />
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _showConfig = false">Cancelar</button>
+                    <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="GuardarConfig" disabled="@_busy">
+                        @(_busy ? "Guardando..." : "Guardar configuracion")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Modal Crear bloqueo *@
+@if (_showCrearBloqueo)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Nuevo bloqueo</h5>
+                    <button class="btn-close" @onclick="() => _showCrearBloqueo = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-2">
+                        <div class="col-md-12">
+                            <label class="form-label small">Zona *</label>
+                            <select class="form-select form-select-sm" @bind="_blqZona">
+                                <option value="">Seleccionar...</option>
+                                @if (_galeria is not null)
+                                {
+                                    @foreach (var z in _galeria) { <option value="@z.ZonaComunId">@z.Nombre</option> }
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Fecha inicio *</label>
+                            <input type="date" class="form-control form-control-sm" @bind="_blqFechaIni" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Fecha fin *</label>
+                            <input type="date" class="form-control form-control-sm" @bind="_blqFechaFin" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Etiqueta</label>
+                            <select class="form-select form-select-sm" @bind="_blqEtiqueta">
+                                @foreach (var e in Enum.GetValues<EtiquetaBloqueo>()) { <option value="@e">@e</option> }
+                            </select>
+                        </div>
+                        <div class="col-md-6 d-flex align-items-end">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="blqVis" @bind="_blqVisible" />
+                                <label class="form-check-label small" for="blqVis">Visible para residentes</label>
+                            </div>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small">Motivo (opcional)</label>
+                            <textarea class="form-control form-control-sm" rows="2" @bind="_blqMotivo" @bind:event="oninput"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _showCrearBloqueo = false">Cancelar</button>
+                    <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="CrearBloqueo" disabled="@(_busy || _blqZona == Guid.Empty)">
+                        @(_busy ? "Creando..." : "Crear")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
+</style>
+
+@code {
+    private string? _jwt;
+    private string _tab = "galeria";
+    private bool _busy;
+    private string? _msg;
+    private string _msgClass = "alert-info";
+
+    private List<ZonaGaleriaDto>? _galeria;
+    private List<ReservaDto>? _reservas;
+    private List<BloqueoDto>? _bloqueos;
+    private List<ZonaConfigDto>? _configs;
+    private ResumenReservasDto? _resumen;
+    private List<UnidadMini>? _unidades;
+    private List<PersonaMini>? _personas;
+
+    // Reservar
+    private bool _showReservar;
+    private ZonaGaleriaDto? _zonaSeleccionada;
+    private Guid _resUnidad = Guid.Empty;
+    private Guid _resPersona = Guid.Empty;
+    private DateTime _resFecha = DateTime.Today.AddDays(1);
+    private DateTime _resHoraIni = DateTime.Today.AddHours(10);
+    private DateTime _resHoraFin = DateTime.Today.AddHours(12);
+    private bool _resReglamento = true;
+
+    // Config
+    private bool _showConfig;
+    private ConfigEdit? _configEdit;
+
+    // Bloqueo
+    private bool _showCrearBloqueo;
+    private Guid _blqZona = Guid.Empty;
+    private DateTime _blqFechaIni = DateTime.Today;
+    private DateTime _blqFechaFin = DateTime.Today;
+    private EtiquetaBloqueo _blqEtiqueta = EtiquetaBloqueo.Mantenimiento;
+    private bool _blqVisible = true;
+    private string _blqMotivo = "";
+
+    private class ConfigEdit
+    {
+        public Guid ZonaComunId { get; set; }
+        public int AnticipacionMinimaHoras { get; set; } = 1;
+        public int AnticipacionMaximaDias { get; set; } = 30;
+        public int DuracionMinimaMinutos { get; set; } = 60;
+        public int DuracionMaximaMinutos { get; set; } = 240;
+        public bool TieneTarifa { get; set; }
+        public decimal ValorTarifa { get; set; }
+        public ModalidadCobroReserva ModalidadCobro { get; set; } = ModalidadCobroReserva.PorHora;
+        public List<FranjaEdit> Franjas { get; set; } = new();
+    }
+
+    private class FranjaEdit
+    {
+        public DiaSemanaReserva DiaSemana { get; set; }
+        public TimeOnly HoraApertura { get; set; }
+        public TimeOnly HoraCierre { get; set; }
+    }
+
+    private record UnidadMini(Guid Id, string Numero);
+    private record PersonaMini(Guid Id, string Nombres, string Apellidos);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarTodoAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task CargarTodoAsync()
+    {
+        try
+        {
+            var http = Auth();
+            _galeria = await http.GetFromJsonAsync<List<ZonaGaleriaDto>>("/api/reservas/galeria") ?? new();
+            _reservas = await http.GetFromJsonAsync<List<ReservaDto>>("/api/reservas") ?? new();
+            _bloqueos = await http.GetFromJsonAsync<List<BloqueoDto>>("/api/reservas/bloqueos") ?? new();
+            _configs = await http.GetFromJsonAsync<List<ZonaConfigDto>>("/api/reservas/configs") ?? new();
+            _resumen = await http.GetFromJsonAsync<ResumenReservasDto>("/api/reservas/resumen");
+            try { _unidades = await http.GetFromJsonAsync<List<UnidadMini>>("/api/mi-copropiedad/unidades") ?? new(); } catch { _unidades = new(); }
+            try { _personas = await http.GetFromJsonAsync<List<PersonaMini>>("/api/directorio/personas") ?? new(); } catch { _personas = new(); }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task CambiarTab(string t)
+    {
+        _tab = t;
+        var http = Auth();
+        if (t == "galeria") _galeria = await http.GetFromJsonAsync<List<ZonaGaleriaDto>>("/api/reservas/galeria") ?? new();
+        else if (t == "reservas") { _reservas = await http.GetFromJsonAsync<List<ReservaDto>>("/api/reservas") ?? new(); _resumen = await http.GetFromJsonAsync<ResumenReservasDto>("/api/reservas/resumen"); }
+        else if (t == "bloqueos") _bloqueos = await http.GetFromJsonAsync<List<BloqueoDto>>("/api/reservas/bloqueos") ?? new();
+        else if (t == "config") _configs = await http.GetFromJsonAsync<List<ZonaConfigDto>>("/api/reservas/configs") ?? new();
+    }
+
+    private void AbrirReservar(Guid zonaId)
+    {
+        _zonaSeleccionada = _galeria?.FirstOrDefault(z => z.ZonaComunId == zonaId);
+        _showReservar = true;
+        _resUnidad = Guid.Empty; _resPersona = Guid.Empty;
+        _resFecha = DateTime.Today.AddDays(1);
+        _resHoraIni = DateTime.Today.AddHours(10);
+        _resHoraFin = DateTime.Today.AddHours(12);
+        _resReglamento = true;
+    }
+
+    private async Task ConfirmarReservar()
+    {
+        if (_zonaSeleccionada is null) return;
+        _busy = true;
+        try
+        {
+            var req = new CrearReservaRequest(_zonaSeleccionada.ZonaComunId, _resPersona, _resUnidad,
+                DateOnly.FromDateTime(_resFecha),
+                TimeOnly.FromDateTime(_resHoraIni), TimeOnly.FromDateTime(_resHoraFin),
+                _resReglamento);
+            var resp = await Auth().PostAsJsonAsync("/api/reservas", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _msg = "Reserva creada exitosamente."; _msgClass = "alert-success";
+            _showReservar = false;
+            _tab = "reservas";
+            _reservas = await Auth().GetFromJsonAsync<List<ReservaDto>>("/api/reservas") ?? new();
+            _resumen = await Auth().GetFromJsonAsync<ResumenReservasDto>("/api/reservas/resumen");
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task CancelarReserva(Guid id)
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", "Cancelar esta reserva?")) return;
+        var resp = await Auth().PostAsJsonAsync($"/api/reservas/{id}/cancelar-admin", new CancelarReservaRequest("Cancelado por administrador"));
+        if (resp.IsSuccessStatusCode)
+        {
+            _reservas = await Auth().GetFromJsonAsync<List<ReservaDto>>("/api/reservas") ?? new();
+            _resumen = await Auth().GetFromJsonAsync<ResumenReservasDto>("/api/reservas/resumen");
+        }
+    }
+
+    private async Task AbrirConfig(Guid zonaId)
+    {
+        ZonaConfigDto? existing = null;
+        try { existing = await Auth().GetFromJsonAsync<ZonaConfigDto>($"/api/reservas/configs/{zonaId}"); } catch { }
+        _configEdit = new ConfigEdit
+        {
+            ZonaComunId = zonaId,
+            AnticipacionMinimaHoras = existing?.AnticipacionMinimaHoras ?? 1,
+            AnticipacionMaximaDias = existing?.AnticipacionMaximaDias ?? 30,
+            DuracionMinimaMinutos = existing?.DuracionMinimaMinutos ?? 60,
+            DuracionMaximaMinutos = existing?.DuracionMaximaMinutos ?? 240,
+            TieneTarifa = existing?.TieneTarifa ?? false,
+            ValorTarifa = existing?.ValorTarifa ?? 0,
+            ModalidadCobro = existing?.ModalidadCobro ?? ModalidadCobroReserva.PorHora,
+            Franjas = existing?.Franjas.Select(f => new FranjaEdit { DiaSemana = f.DiaSemana, HoraApertura = f.HoraApertura, HoraCierre = f.HoraCierre }).ToList() ?? new()
+        };
+        _showConfig = true;
+    }
+
+    private void ToggleFranja(DiaSemanaReserva dia, bool activar)
+    {
+        if (_configEdit is null) return;
+        if (activar)
+        {
+            if (!_configEdit.Franjas.Any(f => f.DiaSemana == dia))
+                _configEdit.Franjas.Add(new FranjaEdit { DiaSemana = dia, HoraApertura = new TimeOnly(8, 0), HoraCierre = new TimeOnly(22, 0) });
+        }
+        else
+        {
+            _configEdit.Franjas.RemoveAll(f => f.DiaSemana == dia);
+        }
+    }
+
+    private void SetFranjaHora(int idx, bool esApertura, string value)
+    {
+        if (_configEdit is null || idx >= _configEdit.Franjas.Count) return;
+        if (TimeOnly.TryParse(value, out var t))
+        {
+            if (esApertura) _configEdit.Franjas[idx].HoraApertura = t;
+            else _configEdit.Franjas[idx].HoraCierre = t;
+        }
+    }
+
+    private async Task GuardarConfig()
+    {
+        if (_configEdit is null) return;
+        _busy = true;
+        try
+        {
+            var req = new GuardarConfigRequest(
+                _configEdit.ZonaComunId,
+                false, null, true,
+                _configEdit.AnticipacionMinimaHoras, _configEdit.AnticipacionMaximaDias,
+                _configEdit.DuracionMinimaMinutos, _configEdit.DuracionMaximaMinutos, 60,
+                _configEdit.TieneTarifa, _configEdit.ModalidadCobro, _configEdit.ValorTarifa,
+                PoliticaReembolso.SinReembolso, 0,
+                24, true, ComportamientoCancelacionTardia.ConPenalidad,
+                null, false, true,
+                _configEdit.Franjas.Select(f => new FranjaInput(f.DiaSemana, f.HoraApertura, f.HoraCierre, true)).ToList());
+            var resp = await Auth().PutAsJsonAsync("/api/reservas/configs", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _msg = "Configuracion guardada."; _msgClass = "alert-success";
+            _showConfig = false;
+            _configs = await Auth().GetFromJsonAsync<List<ZonaConfigDto>>("/api/reservas/configs") ?? new();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task CrearBloqueo()
+    {
+        _busy = true;
+        try
+        {
+            var req = new CrearBloqueoRequest(_blqZona, TipoBloqueoZona.DiaCompleto,
+                DateOnly.FromDateTime(_blqFechaIni), DateOnly.FromDateTime(_blqFechaFin),
+                null, null, _blqEtiqueta, string.IsNullOrWhiteSpace(_blqMotivo) ? null : _blqMotivo,
+                _blqVisible);
+            var resp = await Auth().PostAsJsonAsync("/api/reservas/bloqueos", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _showCrearBloqueo = false;
+            _bloqueos = await Auth().GetFromJsonAsync<List<BloqueoDto>>("/api/reservas/bloqueos") ?? new();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task EliminarBloqueo(Guid id)
+    {
+        var resp = await Auth().DeleteAsync($"/api/reservas/bloqueos/{id}");
+        if (resp.IsSuccessStatusCode) _bloqueos = await Auth().GetFromJsonAsync<List<BloqueoDto>>("/api/reservas/bloqueos") ?? new();
+    }
+
+    private MarkupString RenderEstadoR(EstadoReserva e) => e switch
+    {
+        EstadoReserva.Confirmada => new MarkupString("<span class='badge bg-success'>Confirmada</span>"),
+        EstadoReserva.PendientePago => new MarkupString("<span class='badge bg-warning text-dark'>Pendiente pago</span>"),
+        EstadoReserva.PendienteAprobacion => new MarkupString("<span class='badge bg-info'>Pendiente</span>"),
+        EstadoReserva.Completada => new MarkupString("<span class='badge bg-secondary'>Completada</span>"),
+        EstadoReserva.CanceladaResidente => new MarkupString("<span class='badge bg-light text-dark'>Cancelada residente</span>"),
+        EstadoReserva.CanceladaAdmin => new MarkupString("<span class='badge bg-light text-dark'>Cancelada admin</span>"),
+        EstadoReserva.CanceladaSistema => new MarkupString("<span class='badge bg-light text-dark'>Cancelada</span>"),
+        EstadoReserva.Expirada => new MarkupString("<span class='badge bg-danger'>Expirada</span>"),
+        _ => new MarkupString("")
+    };
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

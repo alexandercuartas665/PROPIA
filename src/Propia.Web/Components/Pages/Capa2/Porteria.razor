@@ -1,16 +1,585 @@
 @page "/porteria"
+@rendermode InteractiveServer
+@using Propia.Application.Porteria
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+
 <PageTitle>Porteria - PROPIA</PageTitle>
 
-<ModuloPlaceholder
-    Codigo="2.12"
-    Nombre="Porteria y Control de Acceso"
-    Descripcion="Registro de visitantes, control vehicular, correspondencia y paquetes."
-    Estado="EstadoModulo.Futuro"
-    Features='new[] {
-        "Registro de visitantes con foto cedula + autorizacion del residente",
-        "Notificacion al residente via WhatsApp cuando llega visita o paquete",
-        "Control vehicular con placas autorizadas y de visitantes",
-        "Bitacora de novedades del turno",
-        "Integracion con domotica (apertura de puerta vehicular en Fase 3)"
-    }'
-    NotaSpec="01. REQUERIMIENTO/Capa 2. Copropiedad/2.12. Porteria-control-acceso_v1_0.md" />
+<div class="mb-4 d-flex justify-content-between align-items-start">
+    <div>
+        <h1 class="h3 mb-1 fw-semibold">Porteria y Control de Acceso</h1>
+        <p class="text-muted mb-0">Modulo 2.12 - turnos, visitas, vehiculos, correspondencia y novedades</p>
+    </div>
+    <div class="btn-group">
+        <button class="btn btn-sm btn-outline-dark @(_tab == "panel" ? "active" : "")" @onclick='() => CambiarTab("panel")'>Panel</button>
+        <button class="btn btn-sm btn-outline-dark @(_tab == "operacion" ? "active" : "")" @onclick='() => CambiarTab("operacion")'>Operacion</button>
+        <button class="btn btn-sm btn-outline-dark @(_tab == "autorizaciones" ? "active" : "")" @onclick='() => CambiarTab("autorizaciones")'>Autorizaciones</button>
+        <button class="btn btn-sm btn-outline-dark @(_tab == "vehiculos" ? "active" : "")" @onclick='() => CambiarTab("vehiculos")'>Vehiculos</button>
+    </div>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <AuthMessage />
+    return;
+}
+
+@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+@if (_tab == "panel" && _panel is not null)
+{
+    <div class="row g-3 mb-3">
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Dentro ahora (personas)</div><h3 class="mb-0">@_panel.Hoy.VisitantesActuales</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Vehiculos dentro</div><h3 class="mb-0 text-info">@_panel.Hoy.VehiculosActuales</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Paquetes pendientes</div><h3 class="mb-0 text-warning">@_panel.Hoy.PaquetesPendientes</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Ingresos hoy</div><h3 class="mb-0">@_panel.Hoy.Ingresos</h3>
+        </div></div></div>
+    </div>
+
+    @if (_panel.TurnoActivo is not null)
+    {
+        <div class="card mb-3">
+            <div class="card-body py-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>Turno activo:</strong> @_panel.TurnoActivo.GuardaNombre &middot; <small class="text-muted">@_panel.TurnoActivo.PuntoAcceso</small>
+                        <br><small class="text-muted">Desde @_panel.TurnoActivo.FechaApertura.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</small>
+                    </div>
+                    <button class="btn btn-sm btn-outline-warning" @onclick="() => CerrarTurno(_panel.TurnoActivo.Id)">Cerrar turno</button>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="alert alert-warning py-2 small">No hay turno activo. Abre uno desde la pestana Operacion.</div>
+    }
+
+    @if (_panel.PaquetesPendientes.Count > 0)
+    {
+        <h6>Paquetes pendientes</h6>
+        <div class="card">
+            <table class="table mb-0 align-middle">
+                <thead class="bg-light small text-muted">
+                    <tr><th></th><th>Unidad</th><th>Tipo</th><th>Remitente</th><th>Recibido</th><th></th></tr>
+                </thead>
+                <tbody class="small">
+                    @foreach (var p in _panel.PaquetesPendientes)
+                    {
+                        var pid = p.Id;
+                        <tr>
+                            <td>@RenderSemaforo(p.Semaforo)</td>
+                            <td>@p.UnidadNumero</td>
+                            <td>@p.Tipo</td>
+                            <td>@p.Remitente</td>
+                            <td><small>@p.RecibidoAt.LocalDateTime.ToString("HH:mm")</small></td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-success" @onclick="() => EntregarPaquete(pid)">Entregar</button>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => DevolverPaquete(pid)">Devolver</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@if (_tab == "operacion")
+{
+    @if (_turnoActivo is null)
+    {
+        <div class="card p-4 text-center">
+            <h5>Abrir turno</h5>
+            <p class="text-muted">Selecciona el guarda y el punto de acceso para empezar a registrar.</p>
+            <div class="row g-2 justify-content-center">
+                <div class="col-md-4">
+                    <select class="form-select form-select-sm" @bind="_abrirGuardaId">
+                        <option value="">Selecciona guarda...</option>
+                        @if (_personas is not null)
+                        {
+                            @foreach (var p in _personas)
+                            {
+                                <option value="@p.Id">@p.Nombres @p.Apellidos</option>
+                            }
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <input class="form-control form-control-sm" placeholder="Punto de acceso" @bind="_abrirPunto" @bind:event="oninput" />
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-sm w-100" style="background: var(--propia-primary); color: white;" @onclick="AbrirTurno"
+                            disabled="@(_busy || _abrirGuardaId == Guid.Empty || string.IsNullOrWhiteSpace(_abrirPunto))">
+                        Abrir
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="card mb-3">
+            <div class="card-body py-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>Turno activo:</strong> @_turnoActivo.GuardaNombre &middot; @_turnoActivo.PuntoAcceso
+                    </div>
+                    <button class="btn btn-sm btn-outline-warning" @onclick="() => CerrarTurno(_turnoActivo.Id)">Cerrar turno</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-body">
+                        <h6>Registrar visita</h6>
+                        <input class="form-control form-control-sm mb-2" placeholder="Nombre" @bind="_visNombre" @bind:event="oninput" />
+                        <input class="form-control form-control-sm mb-2" placeholder="Documento (opcional)" @bind="_visDoc" @bind:event="oninput" />
+                        <select class="form-select form-select-sm mb-2" @bind="_visTipo">
+                            @foreach (var t in Enum.GetValues<TipoVisitante>()) { <option value="@t">@t</option> }
+                        </select>
+                        <div class="form-check small mb-2">
+                            <input class="form-check-input" type="checkbox" id="chkAviso" @bind="_visAviso" />
+                            <label class="form-check-label" for="chkAviso">Aviso de tratamiento de datos informado al visitante (RN-09)</label>
+                        </div>
+                        <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="RegistrarVisita"
+                                disabled="@(_busy || string.IsNullOrWhiteSpace(_visNombre))">
+                            Ingreso
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => RegistrarVisitaTipo(TipoEventoAccesoPorteria.Egreso)"
+                                disabled="@(_busy || string.IsNullOrWhiteSpace(_visNombre))">
+                            Egreso
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-body">
+                        <h6>Registrar vehiculo</h6>
+                        <input class="form-control form-control-sm mb-2" placeholder="Placa (ej: ABC123)" @bind="_vehPlaca" @bind:event="oninput" maxlength="10" />
+                        <input class="form-control form-control-sm mb-2" placeholder="Conductor (opcional)" @bind="_vehConductor" @bind:event="oninput" />
+                        <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="RegistrarVehiculo"
+                                disabled="@(_busy || string.IsNullOrWhiteSpace(_vehPlaca))">
+                            Ingreso
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => RegistrarVehiculoTipo(TipoEventoAccesoPorteria.Egreso)"
+                                disabled="@(_busy || string.IsNullOrWhiteSpace(_vehPlaca))">
+                            Egreso
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-body">
+                        <h6>Registrar paquete</h6>
+                        <div class="row g-2">
+                            <div class="col-md-4">
+                                <select class="form-select form-select-sm" @bind="_paqUnidad">
+                                    <option value="">Unidad destinataria...</option>
+                                    @if (_unidades is not null)
+                                    {
+                                        @foreach (var u in _unidades)
+                                        {
+                                            <option value="@u.Id">@u.Numero</option>
+                                        }
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <select class="form-select form-select-sm" @bind="_paqTipo">
+                                    @foreach (var t in Enum.GetValues<TipoCorrespondencia>()) { <option value="@t">@t</option> }
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <input class="form-control form-control-sm" placeholder="Remitente" @bind="_paqRemitente" @bind:event="oninput" />
+                            </div>
+                            <div class="col-md-2">
+                                <button class="btn btn-sm w-100" style="background: var(--propia-primary); color: white;" @onclick="RegistrarPaquete"
+                                        disabled="@(_busy || _paqUnidad == Guid.Empty)">
+                                    Registrar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@if (_tab == "autorizaciones")
+{
+    <div class="d-flex justify-content-between mb-3">
+        <h6>Autorizaciones previas</h6>
+        <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="() => _showCrearAuth = true">+ Nueva autorizacion</button>
+    </div>
+    @if (_autorizaciones is null) { <div class="spinner-border"></div> }
+    else if (_autorizaciones.Count == 0) { <div class="card p-4 text-center text-muted">Sin autorizaciones.</div> }
+    else
+    {
+        <div class="card">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="bg-light small text-muted">
+                    <tr><th>Visitante</th><th>Unidad</th><th>Vigencia</th><th>Estado</th><th>Codigo</th><th>Usos</th><th></th></tr>
+                </thead>
+                <tbody class="small">
+                    @foreach (var a in _autorizaciones)
+                    {
+                        var aid = a.Id;
+                        <tr>
+                            <td><strong>@a.NombreVisitante</strong><br><small class="text-muted">@a.TipoVisitante</small></td>
+                            <td>@a.UnidadNumero</td>
+                            <td><small>@a.VigenciaInicio.LocalDateTime.ToString("yyyy-MM-dd HH:mm")<br>@a.VigenciaFin.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</small></td>
+                            <td>@RenderEstadoAut(a.Estado)</td>
+                            <td><code>@a.CodigoNumerico</code></td>
+                            <td>@a.UsosRealizados / @a.UsosMaximos</td>
+                            <td>
+                                @if (a.Estado == EstadoAutorizacion.Activo)
+                                {
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => RevocarAutorizacion(aid)">Revocar</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@if (_tab == "vehiculos")
+{
+    @if (_vehiculos is null) { <div class="spinner-border"></div> }
+    else if (_vehiculos.Count == 0) { <div class="card p-4 text-center text-muted">Sin vehiculos autorizados aun.</div> }
+    else
+    {
+        <div class="card">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="bg-light small text-muted">
+                    <tr><th>Placa</th><th>Tipo</th><th>Unidad</th><th>Marca / Modelo</th><th>Parqueadero</th><th></th></tr>
+                </thead>
+                <tbody class="small">
+                    @foreach (var v in _vehiculos)
+                    {
+                        var vid = v.Id;
+                        <tr>
+                            <td><strong>@v.Placa</strong></td>
+                            <td>@v.Tipo</td>
+                            <td>@v.UnidadNumero</td>
+                            <td>@(v.Marca) @(v.Modelo) @(string.IsNullOrEmpty(v.Color) ? "" : " - " + v.Color)</td>
+                            <td>@v.ParqueaderoAsignado</td>
+                            <td><button class="btn btn-sm btn-outline-danger" @onclick="() => DesactivarVehiculo(vid)">Desactivar</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@* Modal crear autorizacion *@
+@if (_showCrearAuth)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Nueva autorizacion previa</h5>
+                    <button class="btn-close" @onclick="() => _showCrearAuth = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-2">
+                        <div class="col-md-12">
+                            <label class="form-label small">Unidad *</label>
+                            <select class="form-select form-select-sm" @bind="_authUnidad">
+                                <option value="">Seleccionar...</option>
+                                @if (_unidades is not null)
+                                {
+                                    @foreach (var u in _unidades) { <option value="@u.Id">@u.Numero</option> }
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small">Nombre del visitante *</label>
+                            <input class="form-control form-control-sm" @bind="_authNombre" @bind:event="oninput" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Documento (opcional)</label>
+                            <input class="form-control form-control-sm" @bind="_authDoc" @bind:event="oninput" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Tipo *</label>
+                            <select class="form-select form-select-sm" @bind="_authTipo">
+                                @foreach (var t in Enum.GetValues<TipoVisitante>()) { <option value="@t">@t</option> }
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Vigencia inicio *</label>
+                            <input type="datetime-local" class="form-control form-control-sm" @bind="_authIni" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Vigencia fin *</label>
+                            <input type="datetime-local" class="form-control form-control-sm" @bind="_authFin" />
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small">Nota para el portero (opcional)</label>
+                            <textarea class="form-control form-control-sm" rows="2" @bind="_authNota" @bind:event="oninput"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _showCrearAuth = false">Cancelar</button>
+                    <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="CrearAutorizacion"
+                            disabled="@(_busy || _authUnidad == Guid.Empty || string.IsNullOrWhiteSpace(_authNombre))">
+                        @(_busy ? "Creando..." : "Crear")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
+</style>
+
+@code {
+    private string? _jwt;
+    private string _tab = "panel";
+    private bool _busy;
+    private string? _msg;
+    private string _msgClass = "alert-info";
+
+    private PanelMonitoreoDto? _panel;
+    private TurnoDto? _turnoActivo;
+    private List<AutorizacionPreviaDto>? _autorizaciones;
+    private List<VehiculoAutorizadoDto>? _vehiculos;
+    private List<PersonaMini>? _personas;
+    private List<UnidadMini>? _unidades;
+
+    // Abrir turno
+    private Guid _abrirGuardaId = Guid.Empty;
+    private string _abrirPunto = "Acceso principal";
+
+    // Registro visita
+    private string _visNombre = "";
+    private string _visDoc = "";
+    private TipoVisitante _visTipo = TipoVisitante.VisitaPersonal;
+    private bool _visAviso = true;
+
+    // Registro vehiculo
+    private string _vehPlaca = "";
+    private string _vehConductor = "";
+
+    // Paquete
+    private Guid _paqUnidad = Guid.Empty;
+    private TipoCorrespondencia _paqTipo = TipoCorrespondencia.Paquete;
+    private string _paqRemitente = "";
+
+    // Autorizacion
+    private bool _showCrearAuth;
+    private Guid _authUnidad = Guid.Empty;
+    private string _authNombre = "";
+    private string _authDoc = "";
+    private TipoVisitante _authTipo = TipoVisitante.VisitaPersonal;
+    private DateTime _authIni = DateTime.Now.AddMinutes(30);
+    private DateTime _authFin = DateTime.Now.AddDays(1);
+    private string _authNota = "";
+
+    private record PersonaMini(Guid Id, string Nombres, string Apellidos);
+    private record UnidadMini(Guid Id, string Numero);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarTodoAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task CargarTodoAsync()
+    {
+        try
+        {
+            var http = Auth();
+            _panel = await http.GetFromJsonAsync<PanelMonitoreoDto>("/api/porteria/panel");
+            _turnoActivo = _panel?.TurnoActivo;
+            _autorizaciones = await http.GetFromJsonAsync<List<AutorizacionPreviaDto>>("/api/porteria/autorizaciones");
+            _vehiculos = await http.GetFromJsonAsync<List<VehiculoAutorizadoDto>>("/api/porteria/vehiculos");
+            // Personas y unidades para selects
+            _unidades = await http.GetFromJsonAsync<List<UnidadMini>>("/api/mi-copropiedad/unidades") ?? new();
+            _personas = await http.GetFromJsonAsync<List<PersonaMini>>("/api/directorio/personas") ?? new();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task CambiarTab(string t)
+    {
+        _tab = t;
+        if (t == "panel") _panel = await Auth().GetFromJsonAsync<PanelMonitoreoDto>("/api/porteria/panel");
+        else if (t == "autorizaciones") _autorizaciones = await Auth().GetFromJsonAsync<List<AutorizacionPreviaDto>>("/api/porteria/autorizaciones");
+        else if (t == "vehiculos") _vehiculos = await Auth().GetFromJsonAsync<List<VehiculoAutorizadoDto>>("/api/porteria/vehiculos");
+    }
+
+    private async Task AbrirTurno()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var req = new AbrirTurnoRequest(_abrirGuardaId, _abrirPunto);
+            var resp = await Auth().PostAsJsonAsync("/api/porteria/turnos/abrir", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _turnoActivo = await resp.Content.ReadFromJsonAsync<TurnoDto>();
+            _msg = "Turno abierto."; _msgClass = "alert-success";
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task CerrarTurno(Guid id)
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", "Cerrar este turno?")) return;
+        var resp = await Auth().PostAsJsonAsync($"/api/porteria/turnos/{id}/cerrar", new CerrarTurnoRequest(null));
+        if (resp.IsSuccessStatusCode) { _turnoActivo = null; await CargarTodoAsync(); }
+    }
+
+    private async Task RegistrarVisita() => await RegistrarVisitaTipo(TipoEventoAccesoPorteria.Ingreso);
+
+    private async Task RegistrarVisitaTipo(TipoEventoAccesoPorteria evento)
+    {
+        if (_turnoActivo is null) return;
+        _busy = true;
+        try
+        {
+            var req = new RegistrarVisitaRequest(evento, _visTipo, _visNombre, _visDoc, null, null, null, null, null, null, _visAviso);
+            var resp = await Auth().PostAsJsonAsync($"/api/porteria/turnos/{_turnoActivo.Id}/visitas", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _msg = "Visita registrada."; _msgClass = "alert-success";
+            _visNombre = ""; _visDoc = "";
+            _panel = await Auth().GetFromJsonAsync<PanelMonitoreoDto>("/api/porteria/panel");
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task RegistrarVehiculo() => await RegistrarVehiculoTipo(TipoEventoAccesoPorteria.Ingreso);
+
+    private async Task RegistrarVehiculoTipo(TipoEventoAccesoPorteria evento)
+    {
+        if (_turnoActivo is null) return;
+        _busy = true;
+        try
+        {
+            var req = new RegistrarVehiculoRequest(evento, _vehPlaca, _vehConductor, null);
+            var resp = await Auth().PostAsJsonAsync($"/api/porteria/turnos/{_turnoActivo.Id}/vehiculos", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _msg = "Vehiculo registrado."; _msgClass = "alert-success";
+            _vehPlaca = ""; _vehConductor = "";
+            _panel = await Auth().GetFromJsonAsync<PanelMonitoreoDto>("/api/porteria/panel");
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task RegistrarPaquete()
+    {
+        if (_turnoActivo is null) return;
+        _busy = true;
+        try
+        {
+            var req = new RegistrarCorrespondenciaRequest(_paqUnidad, _paqTipo, _paqRemitente, null);
+            var resp = await Auth().PostAsJsonAsync($"/api/porteria/turnos/{_turnoActivo.Id}/correspondencia", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _msg = "Paquete registrado."; _msgClass = "alert-success";
+            _paqRemitente = ""; _paqUnidad = Guid.Empty;
+            _panel = await Auth().GetFromJsonAsync<PanelMonitoreoDto>("/api/porteria/panel");
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task EntregarPaquete(Guid id)
+    {
+        var resp = await Auth().PutAsJsonAsync($"/api/porteria/correspondencia/{id}/entregar", new EntregarCorrespondenciaRequest(null));
+        if (resp.IsSuccessStatusCode) _panel = await Auth().GetFromJsonAsync<PanelMonitoreoDto>("/api/porteria/panel");
+    }
+
+    private async Task DevolverPaquete(Guid id)
+    {
+        var resp = await Auth().PutAsJsonAsync($"/api/porteria/correspondencia/{id}/devolver", new DevolverCorrespondenciaRequest("Devuelto al transportista"));
+        if (resp.IsSuccessStatusCode) _panel = await Auth().GetFromJsonAsync<PanelMonitoreoDto>("/api/porteria/panel");
+    }
+
+    private async Task CrearAutorizacion()
+    {
+        _busy = true;
+        try
+        {
+            var req = new CrearAutorizacionRequest(_authUnidad, _authNombre, _authDoc, _authTipo,
+                new DateTimeOffset(_authIni, TimeSpan.Zero), new DateTimeOffset(_authFin, TimeSpan.Zero),
+                _authNota, 1, OrigenAutorizacion.Administrador);
+            var resp = await Auth().PostAsJsonAsync("/api/porteria/autorizaciones", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _showCrearAuth = false;
+            _msg = "Autorizacion creada."; _msgClass = "alert-success";
+            _authNombre = _authDoc = _authNota = "";
+            _autorizaciones = await Auth().GetFromJsonAsync<List<AutorizacionPreviaDto>>("/api/porteria/autorizaciones");
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task RevocarAutorizacion(Guid id)
+    {
+        var resp = await Auth().DeleteAsync($"/api/porteria/autorizaciones/{id}");
+        if (resp.IsSuccessStatusCode) _autorizaciones = await Auth().GetFromJsonAsync<List<AutorizacionPreviaDto>>("/api/porteria/autorizaciones");
+    }
+
+    private async Task DesactivarVehiculo(Guid id)
+    {
+        var resp = await Auth().DeleteAsync($"/api/porteria/vehiculos/{id}");
+        if (resp.IsSuccessStatusCode) _vehiculos = await Auth().GetFromJsonAsync<List<VehiculoAutorizadoDto>>("/api/porteria/vehiculos");
+    }
+
+    private MarkupString RenderSemaforo(SemaforoPaquete s) => s switch
+    {
+        SemaforoPaquete.Verde => new MarkupString("<span style='color:#22c55e;font-size:18px;'>&#9679;</span>"),
+        SemaforoPaquete.Amarillo => new MarkupString("<span style='color:#f59e0b;font-size:18px;'>&#9679;</span>"),
+        SemaforoPaquete.Rojo => new MarkupString("<span style='color:#ef4444;font-size:18px;'>&#9679;</span>"),
+        _ => new MarkupString("")
+    };
+
+    private MarkupString RenderEstadoAut(EstadoAutorizacion e) => e switch
+    {
+        EstadoAutorizacion.Activo => new MarkupString("<span class='badge bg-success'>Activo</span>"),
+        EstadoAutorizacion.Usado => new MarkupString("<span class='badge bg-secondary'>Usado</span>"),
+        EstadoAutorizacion.Expirado => new MarkupString("<span class='badge bg-light text-dark'>Expirado</span>"),
+        EstadoAutorizacion.Revocado => new MarkupString("<span class='badge bg-danger'>Revocado</span>"),
+        _ => new MarkupString("")
+    };
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}
