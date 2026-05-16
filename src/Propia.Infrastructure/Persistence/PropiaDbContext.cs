@@ -198,6 +198,19 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<ReservaPago> ReservaPagos => Set<ReservaPago>();
     public DbSet<ZonaBloqueo> ZonaBloqueos => Set<ZonaBloqueo>();
 
+    // Modulo 1.2 Calendario Multi-Copropiedad (global - FK Organizacion)
+    public DbSet<CalendarioEvento> CalendarioEventos => Set<CalendarioEvento>();
+    public DbSet<CalendarioConfigUsuario> CalendarioConfigUsuarios => Set<CalendarioConfigUsuario>();
+
+    // Modulo 1.4 Reportes Consolidados (global - FK Organizacion)
+    public DbSet<OrgReporte> OrgReportes => Set<OrgReporte>();
+    public DbSet<OrgReporteGeneracion> OrgReporteGeneraciones => Set<OrgReporteGeneracion>();
+
+    // Modulo 1.5 Transferencia de Custodia (global - FK 2 organizaciones + 1 copropiedad)
+    public DbSet<TransferenciaCustodia> TransferenciasCustodia => Set<TransferenciaCustodia>();
+    public DbSet<TransferenciaDocumento> TransferenciaDocumentos => Set<TransferenciaDocumento>();
+    public DbSet<TransferenciaEvento> TransferenciaEventos => Set<TransferenciaEvento>();
+
     // Modulo 0.2 - Billing y Suscripciones (todo GLOBAL, sin tenant_id)
     public DbSet<Plan> Planes => Set<Plan>();
     public DbSet<Cupon> Cupones => Set<Cupon>();
@@ -1801,6 +1814,107 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.TenantId, x.ZonaComunId, x.FechaInicio, x.FechaFin });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // -------------------- Modulo 1.2 Calendario Multi-Copropiedad (global) --------------------
+
+        modelBuilder.Entity<CalendarioEvento>(b =>
+        {
+            b.ToTable("calendario_eventos");
+            b.Property(x => x.Titulo).IsRequired().HasMaxLength(200);
+            b.Property(x => x.Descripcion).HasColumnType("text");
+            b.Property(x => x.Tipo).HasConversion<int>();
+            b.Property(x => x.ZonaHoraria).IsRequired().HasMaxLength(50);
+            b.HasOne(x => x.Organizacion).WithMany().HasForeignKey(x => x.OrganizacionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Tenant).WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(x => x.OrganizacionId);
+            b.HasIndex(x => new { x.OrganizacionId, x.FechaInicio });
+            b.HasIndex(x => x.TenantId);
+            // Calendario es global - NO HasQueryFilter por tenant. Se filtra por OrganizacionId en service.
+        });
+
+        modelBuilder.Entity<CalendarioConfigUsuario>(b =>
+        {
+            b.ToTable("calendario_config_usuarios");
+            b.Property(x => x.VistaDefault).HasConversion<int>();
+            b.Property(x => x.UltimaVista).HasConversion<int>();
+            b.Property(x => x.FiltroCopropiedadesJson).HasColumnType("text");
+            b.Property(x => x.FiltroTiposJson).HasColumnType("text");
+            b.HasOne(x => x.Organizacion).WithMany().HasForeignKey(x => x.OrganizacionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => new { x.UsuarioId, x.OrganizacionId }).IsUnique();
+            b.HasIndex(x => x.IcalToken).IsUnique();
+        });
+
+        // -------------------- Modulo 1.4 Reportes Consolidados (global) --------------------
+
+        modelBuilder.Entity<OrgReporte>(b =>
+        {
+            b.ToTable("org_reportes");
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(200);
+            b.Property(x => x.Categoria).HasConversion<int>();
+            b.Property(x => x.ConfiguracionJson).IsRequired().HasColumnType("text");
+            b.HasOne(x => x.Organizacion).WithMany().HasForeignKey(x => x.OrganizacionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.OrganizacionId);
+            b.HasIndex(x => new { x.OrganizacionId, x.Categoria });
+        });
+
+        modelBuilder.Entity<OrgReporteGeneracion>(b =>
+        {
+            b.ToTable("org_reporte_generaciones");
+            b.Property(x => x.Origen).HasConversion<int>();
+            b.Property(x => x.Estado).HasConversion<int>();
+            b.Property(x => x.ResultadoJson).HasColumnType("text");
+            b.Property(x => x.ErrorDetalle).HasMaxLength(2000);
+            b.Property(x => x.UrlPdf).HasMaxLength(1000);
+            b.Property(x => x.UrlExcel).HasMaxLength(1000);
+            b.HasOne(x => x.Reporte).WithMany().HasForeignKey(x => x.ReporteId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Organizacion).WithMany().HasForeignKey(x => x.OrganizacionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.ReporteId);
+            b.HasIndex(x => new { x.OrganizacionId, x.CreatedAt });
+        });
+
+        // -------------------- Modulo 1.5 Transferencia de Custodia (global) --------------------
+
+        modelBuilder.Entity<TransferenciaCustodia>(b =>
+        {
+            b.ToTable("transferencias_custodia");
+            b.Property(x => x.Escenario).HasConversion<int>();
+            b.Property(x => x.Estado).HasConversion<int>();
+            b.Property(x => x.SnapshotEstadoJson).HasColumnType("text");
+            b.Property(x => x.AjusteFacturacionJson).HasColumnType("text");
+            b.HasOne(x => x.Copropiedad).WithMany().HasForeignKey(x => x.CopropiedadId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(x => x.ActaEntregaDocumento).WithMany().HasForeignKey(x => x.ActaEntregaDocumentoId).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(x => x.CopropiedadId);
+            b.HasIndex(x => x.OrganizacionSalienteId);
+            b.HasIndex(x => x.OrganizacionEntranteId);
+            b.HasIndex(x => x.Estado);
+            // RN-16: solo una transferencia activa por copropiedad. Unique parcial en migracion SQL.
+        });
+
+        modelBuilder.Entity<TransferenciaDocumento>(b =>
+        {
+            b.ToTable("transferencia_documentos");
+            b.Property(x => x.NombreArchivo).IsRequired().HasMaxLength(300);
+            b.Property(x => x.TipoMime).IsRequired().HasMaxLength(100);
+            b.Property(x => x.UrlStorage).IsRequired().HasMaxLength(1000);
+            b.Property(x => x.HashSha256).IsRequired().HasMaxLength(64);
+            b.Property(x => x.ResultadoValidacionIa).HasConversion<int>();
+            b.Property(x => x.DetalleValidacionIaJson).HasColumnType("text");
+            b.HasOne(x => x.Transferencia).WithMany(t => t.Documentos)
+                .HasForeignKey(x => x.TransferenciaId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TransferenciaId);
+        });
+
+        modelBuilder.Entity<TransferenciaEvento>(b =>
+        {
+            b.ToTable("transferencia_eventos");
+            b.Property(x => x.TipoEvento).HasConversion<int>();
+            b.Property(x => x.Canal).HasMaxLength(30);
+            b.Property(x => x.DetalleJson).HasColumnType("text");
+            b.HasOne(x => x.Transferencia).WithMany(t => t.Eventos)
+                .HasForeignKey(x => x.TransferenciaId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TransferenciaId);
+            b.HasIndex(x => new { x.TransferenciaId, x.CreatedAt });
         });
 
         // UsuarioTenant (TenantEntity)
