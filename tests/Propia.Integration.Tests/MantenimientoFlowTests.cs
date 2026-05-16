@@ -45,6 +45,7 @@ public class MantenimientoFlowTests : IAsyncLifetime
             .AddRoles<IdentityRole<Guid>>()
             .AddEntityFrameworkStores<PropiaDbContext>()
             .AddDefaultTokenProviders();
+        sc.AddSingleton<Propia.Application.Notificaciones.INotificacionDispatcher, FakeNotificacionDispatcher>();
         _services = sc.BuildServiceProvider();
         return Task.CompletedTask;
     }
@@ -355,7 +356,8 @@ public class MantenimientoFlowTests : IAsyncLifetime
         ctx.SetTenant(tenantId);
         var db = scope.ServiceProvider.GetRequiredService<PropiaDbContext>();
         var http = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
-        return (new MantenimientoService(db, ctx, http), db, scope);
+        var noti = scope.ServiceProvider.GetRequiredService<Propia.Application.Notificaciones.INotificacionDispatcher>();
+        return (new MantenimientoService(db, ctx, http, noti), db, scope);
     }
 
     private static HttpContext BuildFakeHttpContext(Guid userId, Guid personaId)

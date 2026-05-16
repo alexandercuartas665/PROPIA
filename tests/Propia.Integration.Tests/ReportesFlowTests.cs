@@ -57,6 +57,7 @@ public class ReportesFlowTests : IAsyncLifetime
             .AddDefaultTokenProviders();
         sc.AddScoped<IIndicadoresService, IndicadoresService>();
         sc.AddScoped<IReportesService, ReportesService>();
+        sc.AddSingleton<Propia.Application.Notificaciones.INotificacionDispatcher, FakeNotificacionDispatcher>();
         _services = sc.BuildServiceProvider();
         return Task.CompletedTask;
     }

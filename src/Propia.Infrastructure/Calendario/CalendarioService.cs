@@ -30,12 +30,18 @@ public class CalendarioService : ICalendarioService
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenantContext;
     private readonly IHttpContextAccessor _http;
+    private readonly Propia.Application.Notificaciones.INotificacionDispatcher _noti;
 
-    public CalendarioService(PropiaDbContext db, ITenantContext tenantContext, IHttpContextAccessor http)
+    public CalendarioService(
+        PropiaDbContext db,
+        ITenantContext tenantContext,
+        IHttpContextAccessor http,
+        Propia.Application.Notificaciones.INotificacionDispatcher noti)
     {
         _db = db;
         _tenantContext = tenantContext;
         _http = http;
+        _noti = noti;
     }
 
     private Guid GetUsuarioActualId()
@@ -302,6 +308,19 @@ public class CalendarioService : ICalendarioService
         };
         _db.CalendarioEventos.Add(e);
         await _db.SaveChangesAsync(ct);
+
+        // T.2: confirmacion InApp al creador. Recordatorios delay-based quedan para Fase 2
+        // (necesitan cron que escanee CalendarioEvento.FechaInicio - RecordatorioMinutos).
+        await _noti.EnviarAsync(new Propia.Application.Notificaciones.EnviarNotificacionRequest(
+            Canal: Domain.Enums.CanalNotificacion.InApp,
+            Cuerpo: $"Tu evento '{e.Titulo}' quedo agendado para {e.FechaInicio.ToLocalTime():yyyy-MM-dd HH:mm}.",
+            TenantId: e.TenantId,
+            UsuarioDestinatarioId: e.CreadoPorUsuarioId,
+            Asunto: "Evento agendado",
+            Prioridad: Domain.Enums.PrioridadNotificacion.Baja,
+            ModuloOrigenCodigo: "1.2",
+            EntidadOrigenId: e.Id), ct);
+
         return (await GetEventoInternoAsync(e.Id, ct))!;
     }
 

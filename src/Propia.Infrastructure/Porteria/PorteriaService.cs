@@ -19,12 +19,36 @@ public class PorteriaService : IPorteriaService
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenantContext;
     private readonly IHttpContextAccessor _http;
+    private readonly Propia.Application.Notificaciones.INotificacionDispatcher _noti;
 
-    public PorteriaService(PropiaDbContext db, ITenantContext tenantContext, IHttpContextAccessor http)
+    public PorteriaService(
+        PropiaDbContext db,
+        ITenantContext tenantContext,
+        IHttpContextAccessor http,
+        Propia.Application.Notificaciones.INotificacionDispatcher noti)
     {
         _db = db;
         _tenantContext = tenantContext;
         _http = http;
+        _noti = noti;
+    }
+
+    private async Task NotificarAdminsAsync(
+        string codigoModulo, Guid? entidadOrigen, string asunto, string cuerpo,
+        Domain.Enums.PrioridadNotificacion prioridad, CancellationToken ct)
+    {
+        var tenantId = _tenantContext.CurrentTenantId;
+        if (tenantId is null) return;
+        var personaIds = await _db.UsuariosTenant.AsNoTracking()
+            .Where(u => u.TenantId == tenantId && u.Estado == Domain.Enums.EstadoUsuarioTenant.Activo)
+            .Select(u => u.PersonaId).Distinct().Take(20).ToListAsync(ct);
+        if (personaIds.Count == 0) return;
+        await _noti.EnviarLoteAsync(personaIds.Select(pid =>
+            new Propia.Application.Notificaciones.EnviarNotificacionRequest(
+                Canal: Domain.Enums.CanalNotificacion.InApp,
+                Cuerpo: cuerpo, TenantId: tenantId, PersonaDestinatariaId: pid,
+                Asunto: asunto, Prioridad: prioridad,
+                ModuloOrigenCodigo: codigoModulo, EntidadOrigenId: entidadOrigen)), ct);
     }
 
     private Guid GetUsuarioActualId()
@@ -676,6 +700,12 @@ public class PorteriaService : IPorteriaService
         await _db.SaveChangesAsync(ct);
         var cfg = await GetOrCreateConfigAsync(ct);
         var unidad = await _db.UnidadesPrivadas.AsNoTracking().Where(up => up.Id == c.UnidadPrivadaId).Select(up => up.Numero).FirstOrDefaultAsync(ct) ?? "";
+
+        await NotificarAdminsAsync("2.12", c.Id,
+            $"Correspondencia recibida - Unidad {unidad}",
+            $"Llego correspondencia para la unidad {unidad}. Tipo: {c.Tipo}. Remitente: {c.Remitente ?? "-"}.",
+            Domain.Enums.PrioridadNotificacion.Normal, ct);
+
         return new CorrespondenciaDto(c.Id, c.TurnoId, c.UnidadPrivadaId, unidad,
             c.Tipo, c.Remitente, c.Descripcion, c.Estado, CalcularSemaforo(c, DateTimeOffset.UtcNow, cfg),
             c.RecibidoAt, c.NotificadoAt, c.EntregadoAt, c.EntregadoA, c.DevueltoAt, c.MotivoDevolucion,
@@ -737,6 +767,13 @@ public class PorteriaService : IPorteriaService
         };
         _db.NovedadesTurno.Add(n);
         await _db.SaveChangesAsync(ct);
+
+        await NotificarAdminsAsync("2.12", n.Id,
+            "Novedad de porteria",
+            $"El guarda reporto una novedad: {n.Descripcion}",
+            n.GeneraTarea ? Domain.Enums.PrioridadNotificacion.Alta : Domain.Enums.PrioridadNotificacion.Normal,
+            ct);
+
         return new NovedadDto(n.Id, n.TurnoId, n.GuardaPersonaId, n.Descripcion, n.GeneraTarea, n.TareaId, n.CreatedAt);
     }
 

@@ -51,6 +51,7 @@ public class PorteriaFlowTests : IAsyncLifetime
         sc.AddDbContext<PropiaDbContext>((sp, opts) =>
             opts.UseNpgsql(_fx.AppConnectionString).AddInterceptors(sp.GetRequiredService<TenantConnectionInterceptor>()));
         sc.AddIdentityCore<ApplicationUser>().AddRoles<IdentityRole<Guid>>().AddEntityFrameworkStores<PropiaDbContext>().AddDefaultTokenProviders();
+        sc.AddSingleton<Propia.Application.Notificaciones.INotificacionDispatcher, FakeNotificacionDispatcher>();
         sc.AddScoped<IPorteriaService, PorteriaService>();
         _services = sc.BuildServiceProvider();
         return Task.CompletedTask;

@@ -40,17 +40,65 @@ public class TransferenciaCustodiaService : ITransferenciaCustodiaService
     private readonly ITenantContext _tenantContext;
     private readonly IHttpContextAccessor _http;
     private readonly IBlobStorage _storage;
+    private readonly Propia.Application.Notificaciones.INotificacionDispatcher _noti;
 
     public TransferenciaCustodiaService(
         PropiaDbContext db,
         ITenantContext tenantContext,
         IHttpContextAccessor http,
-        IBlobStorage storage)
+        IBlobStorage storage,
+        Propia.Application.Notificaciones.INotificacionDispatcher noti)
     {
         _db = db;
         _tenantContext = tenantContext;
         _http = http;
         _storage = storage;
+        _noti = noti;
+    }
+
+    /// <summary>
+    /// T.2 hook: notifica a usuarios clave del proceso (saliente, entrante, iniciador).
+    /// MVP: InApp para los usuarios admin de cada organizacion involucrada.
+    /// El resolutor es best-effort (si no hay admin con vinculo activo, no falla).
+    /// </summary>
+    private async Task NotificarTransferenciaAsync(
+        TransferenciaCustodia t, string asunto, string cuerpo, CancellationToken ct)
+    {
+        var requests = new List<Propia.Application.Notificaciones.EnviarNotificacionRequest>();
+
+        async Task AgregarAdminsDeOrgAsync(Guid orgId)
+        {
+            // Admins = personas con UsuarioTenant Activo en cualquier tenant de la org.
+            var personaIds = await _db.UsuariosTenant.AsNoTracking()
+                .Where(u => u.Estado == EstadoUsuarioTenant.Activo)
+                .Join(_db.Tenants.AsNoTracking(),
+                    u => u.TenantId, te => te.Id,
+                    (u, te) => new { u.PersonaId, te.OrganizacionId })
+                .Where(x => x.OrganizacionId == orgId)
+                .Select(x => x.PersonaId)
+                .Distinct()
+                .Take(10)
+                .ToListAsync(ct);
+            foreach (var pid in personaIds)
+            {
+                requests.Add(new Propia.Application.Notificaciones.EnviarNotificacionRequest(
+                    Canal: Domain.Enums.CanalNotificacion.InApp,
+                    Cuerpo: cuerpo,
+                    TenantId: t.CopropiedadId,
+                    PersonaDestinatariaId: pid,
+                    Asunto: asunto,
+                    Prioridad: Domain.Enums.PrioridadNotificacion.Alta,
+                    ModuloOrigenCodigo: "1.5",
+                    EntidadOrigenId: t.Id));
+            }
+        }
+
+        if (t.OrganizacionSalienteId is { } sid) await AgregarAdminsDeOrgAsync(sid);
+        if (t.OrganizacionEntranteId is { } eid && eid != t.OrganizacionSalienteId)
+            await AgregarAdminsDeOrgAsync(eid);
+
+        if (requests.Count > 0)
+            await _noti.EnviarLoteAsync(requests, ct);
     }
 
     // ===========================================================================
@@ -317,6 +365,11 @@ public class TransferenciaCustodiaService : ITransferenciaCustodiaService
             t.IniciadoPorUsuarioId,
             new { Motivo = "Aprobacion implicita al iniciar voluntariamente." }, ct);
 
+        await NotificarTransferenciaAsync(t,
+            $"Transferencia iniciada - {cop.Nombre}",
+            $"El saliente inicio el proceso de entrega voluntaria con fecha efectiva {req.FechaEfectivaTerminacion:yyyy-MM-dd}. Tienes 15 dias para coordinar.",
+            ct);
+
         return (await GetTransferenciaAsync(t.Id, ct))!;
     }
 
@@ -359,6 +412,11 @@ public class TransferenciaCustodiaService : ITransferenciaCustodiaService
             t.IniciadoPorUsuarioId,
             new { Escenario = "ReclamacionEntrante", DeclaracionLegitimidad = true }, ct);
 
+        await NotificarTransferenciaAsync(t,
+            $"Reclamacion de custodia - {cop.Nombre}",
+            "Una organizacion entrante reclama la custodia. Si eres el saliente, dispones de 15 dias para aprobar o rechazar.",
+            ct);
+
         return (await GetTransferenciaAsync(t.Id, ct))!;
     }
 
@@ -397,6 +455,11 @@ public class TransferenciaCustodiaService : ITransferenciaCustodiaService
         await RegistrarEventoAsync(t.Id, TipoEventoTransferencia.SolicitudEnviada,
             t.IniciadoPorUsuarioId,
             new { Escenario = "GestionCopropiedad", OrganizacionEntranteId = req.OrganizacionEntranteId }, ct);
+
+        await NotificarTransferenciaAsync(t,
+            $"Cambio de administrador - {cop.Nombre}",
+            "La copropiedad inicio un proceso de cambio de administrador. Revisa el expediente y aprueba/rechaza si corresponde.",
+            ct);
 
         return (await GetTransferenciaAsync(t.Id, ct))!;
     }
@@ -483,6 +546,11 @@ public class TransferenciaCustodiaService : ITransferenciaCustodiaService
             GetUsuarioActualId(),
             new { req.Notas }, ct);
 
+        await NotificarTransferenciaAsync(t,
+            "Saliente aprobo la transferencia",
+            "El administrador saliente aprobo el proceso. Falta subir el acta de asamblea y ejecutar el corte.",
+            ct);
+
         return true;
     }
 
@@ -518,6 +586,11 @@ public class TransferenciaCustodiaService : ITransferenciaCustodiaService
         await RegistrarEventoAsync(transferenciaId, TipoEventoTransferencia.EscaladoAdmin,
             null,
             new { Razon = "Rechazo del saliente requiere arbitraje plataforma." }, ct);
+
+        await NotificarTransferenciaAsync(t,
+            "Saliente rechazo la transferencia",
+            $"El saliente rechazo el proceso (motivo: {req.Motivo}). El caso fue escalado al equipo de la plataforma para arbitraje.",
+            ct);
 
         return true;
     }
@@ -617,6 +690,11 @@ public class TransferenciaCustodiaService : ITransferenciaCustodiaService
                 Snapshot = snapshot,
                 Ajuste = ajuste
             }, ct);
+
+        await NotificarTransferenciaAsync(t,
+            $"Corte ejecutado - {cop?.Nombre ?? "copropiedad"}",
+            $"La transferencia se ejecuto con fecha {t.FechaCorte:yyyy-MM-dd HH:mm}. La copropiedad cambio de administrador. Snapshot y ajuste de facturacion disponibles en el expediente.",
+            ct);
 
         return (await GetTransferenciaAsync(transferenciaId, ct))!;
     }
