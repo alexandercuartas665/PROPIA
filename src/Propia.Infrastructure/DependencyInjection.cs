@@ -137,6 +137,13 @@ public static class DependencyInjection
         services.AddScoped<Application.TransferenciaCustodia.ITransferenciaCustodiaService,
             TransferenciasCustodia.TransferenciaCustodiaService>();
 
+        // T.2 Motor de Notificaciones (servicio comun consumido por 1.2, 1.5, 2.7, 2.9, 2.11,
+        // 2.12, 2.13, 2.14, 2.16). Provider stub default - reemplaza los 9 simulados dispersos.
+        services.AddScoped<Application.Notificaciones.INotificacionDispatcher,
+            Notificaciones.NotificacionDispatcher>();
+        services.AddScoped<Application.Notificaciones.INotificacionesService,
+            Notificaciones.NotificacionesService>();
+
         // Storage de blobs (logos, fachadas, portadas, futuros adjuntos).
         // Provider seleccionado por config: "R2" en produccion, cualquier otro valor (o ausente)
         // cae a filesystem local (wwwroot/uploads). Asi Development y tests no requieren credenciales.

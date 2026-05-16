@@ -211,6 +211,9 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<TransferenciaDocumento> TransferenciaDocumentos => Set<TransferenciaDocumento>();
     public DbSet<TransferenciaEvento> TransferenciaEventos => Set<TransferenciaEvento>();
 
+    // T.2 Motor de Notificaciones (servicio comun - TenantId nullable porque sirve a Capa 0/1/2)
+    public DbSet<Notificacion> Notificaciones => Set<Notificacion>();
+
     // Modulo 0.2 - Billing y Suscripciones (todo GLOBAL, sin tenant_id)
     public DbSet<Plan> Planes => Set<Plan>();
     public DbSet<Cupon> Cupones => Set<Cupon>();
@@ -1915,6 +1918,26 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
                 .HasForeignKey(x => x.TransferenciaId).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(x => x.TransferenciaId);
             b.HasIndex(x => new { x.TransferenciaId, x.CreatedAt });
+        });
+
+        // T.2 Motor de Notificaciones (servicio comun cross-modulo)
+        modelBuilder.Entity<Notificacion>(b =>
+        {
+            b.ToTable("notificaciones");
+            b.Property(x => x.Canal).HasConversion<int>();
+            b.Property(x => x.Prioridad).HasConversion<int>();
+            b.Property(x => x.Estado).HasConversion<int>();
+            b.Property(x => x.Destino).IsRequired().HasMaxLength(300);
+            b.Property(x => x.Asunto).HasMaxLength(300);
+            b.Property(x => x.Cuerpo).IsRequired().HasColumnType("text");
+            b.Property(x => x.CuerpoHtml).HasColumnType("text");
+            b.Property(x => x.MetadataJson).HasColumnType("text");
+            b.Property(x => x.ModuloOrigenCodigo).HasMaxLength(20);
+            b.Property(x => x.UltimoError).HasMaxLength(2000);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.UsuarioDestinatarioId);
+            b.HasIndex(x => new { x.Estado, x.FechaProximoIntento });
+            b.HasIndex(x => new { x.ModuloOrigenCodigo, x.EntidadOrigenId });
         });
 
         // UsuarioTenant (TenantEntity)

@@ -46,8 +46,27 @@ public class ComunicacionesFlowTests : IAsyncLifetime
             .AddRoles<IdentityRole<Guid>>()
             .AddEntityFrameworkStores<PropiaDbContext>()
             .AddDefaultTokenProviders();
+        sc.AddSingleton<Propia.Application.Notificaciones.INotificacionDispatcher,
+            FakeNotificacionDispatcher>();
         _services = sc.BuildServiceProvider();
         return Task.CompletedTask;
+    }
+
+    /// <summary>Dispatcher stub para tests - marca todo Enviado sin tocar BD ni canales reales.</summary>
+    private sealed class FakeNotificacionDispatcher : Propia.Application.Notificaciones.INotificacionDispatcher
+    {
+        public Task<Propia.Application.Notificaciones.ResultadoEnvioNotificacion> EnviarAsync(
+            Propia.Application.Notificaciones.EnviarNotificacionRequest req, CancellationToken ct)
+            => Task.FromResult(new Propia.Application.Notificaciones.ResultadoEnvioNotificacion(
+                Guid.NewGuid(), Propia.Domain.Enums.EstadoNotificacion.Enviado, null));
+
+        public async Task<IReadOnlyList<Propia.Application.Notificaciones.ResultadoEnvioNotificacion>> EnviarLoteAsync(
+            IEnumerable<Propia.Application.Notificaciones.EnviarNotificacionRequest> requests, CancellationToken ct)
+        {
+            var list = new List<Propia.Application.Notificaciones.ResultadoEnvioNotificacion>();
+            foreach (var r in requests) list.Add(await EnviarAsync(r, ct));
+            return list;
+        }
     }
     public Task DisposeAsync() => Task.CompletedTask;
 
@@ -240,7 +259,7 @@ public class ComunicacionesFlowTests : IAsyncLifetime
         publicoCtx.GetType();  // dummy: workaround porque no hay clear-tenant
         var publicoDb = publicoScope.ServiceProvider.GetRequiredService<PropiaDbContext>();
         var publicoHttp = publicoScope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
-        var svcPublico = new ComunicacionesService(publicoDb, publicoCtx, publicoHttp);
+        var svcPublico = new ComunicacionesService(publicoDb, publicoCtx, publicoHttp, _services.GetRequiredService<Propia.Application.Notificaciones.INotificacionDispatcher>());
 
         var view = await svcPublico.AbrirVistaPublicaAsync(dest.Token, DispositivoAcuse.Mobile, CancellationToken.None);
         Assert.NotNull(view);
@@ -278,7 +297,7 @@ public class ComunicacionesFlowTests : IAsyncLifetime
         pubCtx.SetTenant(Guid.Empty);
         var pubDb = pubScope.ServiceProvider.GetRequiredService<PropiaDbContext>();
         var pubHttp = pubScope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
-        await new ComunicacionesService(pubDb, pubCtx, pubHttp)
+        await new ComunicacionesService(pubDb, pubCtx, pubHttp, _services.GetRequiredService<Propia.Application.Notificaciones.INotificacionDispatcher>())
             .AbrirVistaPublicaAsync(dest.Token, DispositivoAcuse.Mobile, CancellationToken.None);
 
         var acuseId = await db.ComunicadoAcuses.AsNoTracking()
@@ -357,7 +376,7 @@ public class ComunicacionesFlowTests : IAsyncLifetime
         ctx.SetTenant(tenantId);
         var db = scope.ServiceProvider.GetRequiredService<PropiaDbContext>();
         var http = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
-        return (new ComunicacionesService(db, ctx, http), db, scope);
+        return (new ComunicacionesService(db, ctx, http, _services.GetRequiredService<Propia.Application.Notificaciones.INotificacionDispatcher>()), db, scope);
     }
 
     private static HttpContext BuildFakeHttpContext(Guid userId, Guid personaId)
