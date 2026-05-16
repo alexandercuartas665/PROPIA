@@ -385,11 +385,20 @@
             var r = await resp.Content.ReadFromJsonAsync<ActivacionResponse>();
             if (r is not null)
             {
-                // MVP: persistimos el JWT en sessionStorage para que Mi Copropiedad
-                // lo encuentre. En modulo 2.5 esto se mueve a cookie HttpOnly.
-                await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_jwt", r.AccessToken);
-                await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_tenant_id", r.TenantId.ToString());
-                await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_copropiedad_nombre", r.CopropiedadNombre);
+                // BUG FIX validacion MCP: persistimos el JWT + navegamos en un solo eval
+                // atomico. Las 3 escrituras separadas + forceLoad rompen el circuit Blazor
+                // antes de que SignalR confirme las escrituras al navegador (sessionStorage
+                // queda vacio al cargar /mi-copropiedad). Un solo eval garantiza atomicidad.
+                // En modulo 2.5 esto se mueve a cookie HttpOnly del lado servidor.
+                var script = string.Concat(
+                    "sessionStorage.setItem('propia_jwt', ", System.Text.Json.JsonSerializer.Serialize(r.AccessToken), ");",
+                    "sessionStorage.setItem('propia_tenant_id', ", System.Text.Json.JsonSerializer.Serialize(r.TenantId.ToString()), ");",
+                    "sessionStorage.setItem('propia_copropiedad_nombre', ", System.Text.Json.JsonSerializer.Serialize(r.CopropiedadNombre), ");",
+                    "setTimeout(function(){ window.location.href = '/mi-copropiedad'; }, 1200);");
+                _paso = 99;
+                StateHasChanged();
+                await Js.InvokeVoidAsync("eval", script);
+                return; // El eval se encarga del redirect; no caemos al NavigateTo de abajo.
             }
             _paso = 99;
             StateHasChanged();

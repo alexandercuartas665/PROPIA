@@ -97,6 +97,56 @@ public class NotificacionesFlowTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task InApp_resuelve_destino_desde_PersonaDestinatariaId_a_UserId_BUG_REGRESION_MCP()
+    {
+        // REGRESION del bug encontrado durante validacion MCP el 2026-05-16:
+        // los helpers cross-modulo (NotificarAdminsAsync en PqrsdService, CarteraService,
+        // MantenimientoService, PorteriaService, ReservasService, ReportesService y
+        // NotificarTransferenciaAsync en TransferenciaCustodiaService) pasan
+        // PersonaDestinatariaId al dispatcher para canal InApp. El resolver original
+        // solo aceptaba UsuarioDestinatarioId y devolvia null para PersonaDestinatariaId,
+        // resultando en InvalidOperationException capturado como warning sin propagar.
+        // Consecuencia: 7 modulos cableados NO disparaban notificaciones reales.
+        //
+        // Este test garantiza que dado un PersonaDestinatariaId + canal InApp, el
+        // dispatcher resuelve el ApplicationUser asociado y poblar UsuarioDestinatarioId
+        // en la fila Notificacion (para que el inbox del usuario la encuentre).
+        var tenantId = await SeedTenantAsync("Noti InApp Persona");
+        await SeedPersonaConApplicationUser();
+
+        using var scope = _services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<ITenantContext>().SetTenant(tenantId);
+        var dispatcher = scope.ServiceProvider.GetRequiredService<INotificacionDispatcher>();
+
+        var r = await dispatcher.EnviarAsync(new EnviarNotificacionRequest(
+            Canal: CanalNotificacion.InApp,
+            Cuerpo: "Alerta InApp resuelta desde Persona",
+            PersonaDestinatariaId: _personaId, // <- intencional: no pasamos UsuarioDestinatarioId
+            Asunto: "InApp regresion MCP",
+            ModuloOrigenCodigo: "2.9",
+            EntidadOrigenId: Guid.NewGuid()), CancellationToken.None);
+
+        Assert.Equal(EstadoNotificacion.Enviado, r.Estado);
+
+        var db = scope.ServiceProvider.GetRequiredService<PropiaDbContext>();
+        var n = await db.Notificaciones.AsNoTracking().FirstAsync(x => x.Id == r.NotificacionId);
+
+        // El dispatcher debio resolver Persona -> User.Id y poblar UsuarioDestinatarioId
+        // para que el inbox del usuario destinatario encuentre la notificacion.
+        Assert.Equal(_userId, n.UsuarioDestinatarioId);
+        Assert.Equal(_userId.ToString(), n.Destino); // destino InApp = userId.ToString()
+        Assert.Equal(EstadoNotificacion.Enviado, n.Estado);
+
+        // Verificar que el inbox del usuario (filtra por UsuarioDestinatarioId == userId
+        // O TenantId == tenantId actual) encuentra la notificacion.
+        var svc = scope.ServiceProvider.GetRequiredService<INotificacionesService>();
+        var inbox = await svc.ListarAsync(new FiltroNotificacionesRequest(
+            Canal: CanalNotificacion.InApp, ModuloOrigenCodigo: "2.9"),
+            CancellationToken.None);
+        Assert.Contains(inbox, x => x.Id == r.NotificacionId);
+    }
+
+    [Fact]
     public async Task Resolucion_destino_desde_persona_obtiene_email()
     {
         var tenantId = await SeedTenantAsync("Noti Persona");

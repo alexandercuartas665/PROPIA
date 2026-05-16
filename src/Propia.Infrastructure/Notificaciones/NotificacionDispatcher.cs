@@ -76,10 +76,19 @@ public class NotificacionDispatcher : INotificacionDispatcher
                 return new ResultadoEnvioNotificacion(existente.Id, existente.Estado, null);
         }
 
+        // Para InApp, si el destino se resolvio a un userId (a partir de PersonaDestinatariaId),
+        // poblarmos UsuarioDestinatarioId asi el inbox del usuario lo encuentra.
+        Guid? usuarioResuelto = req.UsuarioDestinatarioId;
+        if (req.Canal == CanalNotificacion.InApp && usuarioResuelto is null
+            && Guid.TryParse(destino, out var parsedUid))
+        {
+            usuarioResuelto = parsedUid;
+        }
+
         var noti = new Notificacion
         {
             TenantId = req.TenantId ?? _tenantContext.CurrentTenantId,
-            UsuarioDestinatarioId = req.UsuarioDestinatarioId,
+            UsuarioDestinatarioId = usuarioResuelto,
             PersonaDestinatariaId = req.PersonaDestinatariaId,
             Canal = req.Canal,
             Prioridad = req.Prioridad,
@@ -150,8 +159,23 @@ public class NotificacionDispatcher : INotificacionDispatcher
         if (!string.IsNullOrWhiteSpace(req.Destino)) return req.Destino;
 
         // InApp: el destino es el UsuarioDestinatarioId como string.
+        // Si solo viene PersonaDestinatariaId, resolvemos el ApplicationUser asociado.
+        // Esto permite que los helpers cross-modulo (NotificarAdminsAsync, etc.)
+        // puedan resolver destinatarios InApp desde Persona sin tener que conocer
+        // el ApplicationUser.Id de cada admin.
         if (req.Canal == CanalNotificacion.InApp)
-            return req.UsuarioDestinatarioId?.ToString();
+        {
+            if (req.UsuarioDestinatarioId is { } inAppUid) return inAppUid.ToString();
+            if (req.PersonaDestinatariaId is { } inAppPid)
+            {
+                var userId = await _db.Users.AsNoTracking()
+                    .Where(u => u.PersonaId == inAppPid)
+                    .Select(u => u.Id)
+                    .FirstOrDefaultAsync(ct);
+                return userId == Guid.Empty ? null : userId.ToString();
+            }
+            return null;
+        }
 
         // Email / WhatsApp / Push: resolver desde Persona.
         Guid? personaId = req.PersonaDestinatariaId;
