@@ -185,11 +185,18 @@ public class TareasService : ITareasService
             orderby t.Prioridad, t.FechaVencimiento, t.CreatedAt descending
             select new
             {
-                t.Id, t.NumeroTarea, t.Titulo, t.Prioridad, t.EstadoId,
-                EstadoNombre = e.Nombre, EstadoColor = e.Color, EstadoEsTerminal = e.EsTerminal,
+                t.Id,
+                t.NumeroTarea,
+                t.Titulo,
+                t.Prioridad,
+                t.EstadoId,
+                EstadoNombre = e.Nombre,
+                EstadoColor = e.Color,
+                EstadoEsTerminal = e.EsTerminal,
                 t.AsignadoPersonaId,
                 AsigNombre = p == null ? null : ((p.Nombres ?? "") + " " + (p.Apellidos ?? "")).Trim(),
-                t.FechaVencimiento, t.PadreId
+                t.FechaVencimiento,
+                t.PadreId
             }
         ).ToListAsync(ct);
 

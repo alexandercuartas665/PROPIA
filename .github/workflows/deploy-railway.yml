@@ -1,0 +1,76 @@
+name: Deploy migrations to Railway
+
+# Se dispara automaticamente cuando el workflow "CI" termina en verde sobre main.
+# Asi NO duplicamos los tests: deploy-railway depende del CI ya ejecutado.
+#
+# Que hace este workflow:
+#   1. Genera un bundle self-contained de las migraciones EF Core.
+#   2. Lo ejecuta contra Railway PostgreSQL con la connection string superuser.
+#
+# El deploy de los servicios (propia-api, propia-web) lo hace Railway solo
+# via su integracion nativa con GitHub al detectar el push a main.
+# Aqui solo nos encargamos del gate de DB.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch: {}  # permite trigger manual desde la UI
+
+env:
+  DOTNET_VERSION: "9.0.x"
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  migrate:
+    name: Aplicar migraciones EF Core en Railway PG
+    # Solo si CI termino en exito (o si fue trigger manual).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Install dotnet-ef
+        run: dotnet tool install --global dotnet-ef --version 9.*
+
+      - name: Build migrations bundle (self-contained linux-x64)
+        run: |
+          dotnet ef migrations bundle \
+            --project src/Propia.Infrastructure \
+            --startup-project src/Propia.Api \
+            --output ./efbundle \
+            --self-contained \
+            --target-runtime linux-x64 \
+            --configuration Release
+
+      - name: Apply migrations
+        env:
+          DDL_CONN: ${{ secrets.RAILWAY_DDL_CONNECTION_STRING }}
+        run: |
+          if [ -z "$DDL_CONN" ]; then
+            echo "::error::Falta el secret RAILWAY_DDL_CONNECTION_STRING"
+            exit 1
+          fi
+          chmod +x ./efbundle
+          ./efbundle --connection "$DDL_CONN"
+
+      - name: Smoke test post-deploy
+        # Espera prudente para que Railway haya redeployado los servicios y
+        # confirma que el Api responde con la DB lista.
+        run: |
+          echo "Esperando 45s para que Railway termine el redeploy de los servicios..."
+          sleep 45
+          echo "Probando /health/ready"
+          curl -fsS --max-time 15 https://api.propia.cubot.com.co/health/ready || {
+            echo "::warning::/health/ready no respondio 200. El deploy de Railway puede estar tardando mas. Reviser dashboard."
+            exit 0
+          }
+          echo "Healthcheck OK"

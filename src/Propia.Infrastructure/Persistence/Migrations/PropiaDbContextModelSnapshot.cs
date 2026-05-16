@@ -737,6 +737,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("two_factor_enabled");
 
+                    b.Property<string>("UiTheme")
+                        .HasColumnType("text")
+                        .HasColumnName("ui_theme");
+
                     b.Property<string>("UserName")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)")
@@ -1295,6 +1299,430 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("comite_miembros");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.Comunicado", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("ArchivadoDocId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("archivado_doc_id");
+
+                    b.Property<string>("Asunto")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("asunto");
+
+                    b.Property<DateTimeOffset?>("CanceladoAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelado_at");
+
+                    b.Property<Guid?>("CanceladoPorUsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cancelado_por_usuario_id");
+
+                    b.Property<Guid>("CreadoPorUsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("creado_por_usuario_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("CuerpoHtml")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("cuerpo_html");
+
+                    b.Property<string>("CuerpoTextoPlano")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("cuerpo_texto_plano");
+
+                    b.Property<int>("Estado")
+                        .HasColumnType("integer")
+                        .HasColumnName("estado");
+
+                    b.Property<DateTimeOffset?>("FechaCompletado")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_completado");
+
+                    b.Property<DateTimeOffset?>("FechaEnvio")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_envio");
+
+                    b.Property<DateTimeOffset?>("FechaProgramada")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_programada");
+
+                    b.Property<Guid?>("PlantillaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("plantilla_id");
+
+                    b.Property<bool>("RequiereAcuse")
+                        .HasColumnType("boolean")
+                        .HasColumnName("requiere_acuse");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<int>("TipoComunicado")
+                        .HasColumnType("integer")
+                        .HasColumnName("tipo_comunicado");
+
+                    b.Property<int?>("TotalDestinatarios")
+                        .HasColumnType("integer")
+                        .HasColumnName("total_destinatarios");
+
+                    b.Property<int?>("TotalEntregados")
+                        .HasColumnType("integer")
+                        .HasColumnName("total_entregados");
+
+                    b.Property<int?>("TotalFallidos")
+                        .HasColumnType("integer")
+                        .HasColumnName("total_fallidos");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PlantillaId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "Estado");
+
+                    b.HasIndex("TenantId", "FechaProgramada");
+
+                    b.ToTable("comunicados", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ComunicadoAcuse", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("AbiertoAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("abierto_at");
+
+                    b.Property<Guid>("ComunicadoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("comunicado_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid>("DestinatarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("destinatario_id");
+
+                    b.Property<int>("Dispositivo")
+                        .HasColumnType("integer")
+                        .HasColumnName("dispositivo");
+
+                    b.Property<Guid>("PersonaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("persona_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DestinatarioId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("ComunicadoId", "PersonaId");
+
+                    b.ToTable("comunicado_acuses", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ComunicadoAdjunto", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ComunicadoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("comunicado_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("NombreArchivo")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("nombre_archivo");
+
+                    b.Property<Guid>("SubidoPorUsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("subido_por_usuario_id");
+
+                    b.Property<long>("TamanoBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("tamano_bytes");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("TipoMime")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("tipo_mime");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<string>("UrlStorage")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("url_storage");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ComunicadoId");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("comunicado_adjuntos", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ComunicadoDestinatario", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ComunicadoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("comunicado_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<int>("EstadoEntrega")
+                        .HasColumnType("integer")
+                        .HasColumnName("estado_entrega");
+
+                    b.Property<DateTimeOffset?>("FechaEntrega")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_entrega");
+
+                    b.Property<Guid>("PersonaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("persona_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("Token")
+                        .HasColumnType("uuid")
+                        .HasColumnName("token");
+
+                    b.Property<DateTimeOffset>("TokenExpiraAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("token_expira_at");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PersonaId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("Token")
+                        .IsUnique();
+
+                    b.HasIndex("ComunicadoId", "PersonaId")
+                        .IsUnique();
+
+                    b.ToTable("comunicado_destinatarios", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ComunicadoPlantilla", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("Activa")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activa");
+
+                    b.Property<bool>("AcusePorDefecto")
+                        .HasColumnType("boolean")
+                        .HasColumnName("acuse_por_defecto");
+
+                    b.Property<string>("AsuntoModelo")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("asunto_modelo");
+
+                    b.Property<Guid?>("CreadoPorUsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("creado_por_usuario_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("CuerpoModelo")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("cuerpo_modelo");
+
+                    b.Property<bool>("EsGlobal")
+                        .HasColumnType("boolean")
+                        .HasColumnName("es_global");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("nombre");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<int>("TipoComunicado")
+                        .HasColumnType("integer")
+                        .HasColumnName("tipo_comunicado");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "Nombre");
+
+                    b.ToTable("comunicado_plantillas", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ComunicadoSegmento", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ComunicadoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("comunicado_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<int>("TipoSegmento")
+                        .HasColumnType("integer")
+                        .HasColumnName("tipo_segmento");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<string>("ValorJson")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("valor_json");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ComunicadoId");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("comunicado_segmentos", (string)null);
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.Condonacion", b =>
@@ -1902,6 +2330,606 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.ToTable("directorio_vinculos");
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.Documento", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activo");
+
+                    b.Property<Guid?>("CarpetaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("carpeta_id");
+
+                    b.Property<Guid>("CategoriaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("categoria_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Descripcion")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("descripcion");
+
+                    b.Property<bool>("Destacado")
+                        .HasColumnType("boolean")
+                        .HasColumnName("destacado");
+
+                    b.Property<int>("Estado")
+                        .HasColumnType("integer")
+                        .HasColumnName("estado");
+
+                    b.Property<string>("NombreArchivoOriginal")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("nombre_archivo_original");
+
+                    b.Property<int>("NumeroVersiones")
+                        .HasColumnType("integer")
+                        .HasColumnName("numero_versiones");
+
+                    b.Property<int>("Origen")
+                        .HasColumnType("integer")
+                        .HasColumnName("origen");
+
+                    b.Property<Guid?>("OrigenEntidadId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("origen_entidad_id");
+
+                    b.Property<Guid>("SubidoPorUsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("subido_por_usuario_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Titulo")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("titulo");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<Guid?>("VersionActualId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("version_actual_id");
+
+                    b.Property<string>("Visibilidad")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("visibilidad");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CarpetaId");
+
+                    b.HasIndex("CategoriaId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("VersionActualId");
+
+                    b.HasIndex("TenantId", "CarpetaId");
+
+                    b.HasIndex("TenantId", "CategoriaId");
+
+                    b.HasIndex("TenantId", "Estado");
+
+                    b.HasIndex("TenantId", "Origen", "OrigenEntidadId");
+
+                    b.ToTable("documentos", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.DocumentoAuditoria", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("DetalleJson")
+                        .HasColumnType("text")
+                        .HasColumnName("detalle_json");
+
+                    b.Property<Guid>("DocumentoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("documento_id");
+
+                    b.Property<DateTimeOffset>("OcurridoAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ocurrido_at");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<int>("TipoEvento")
+                        .HasColumnType("integer")
+                        .HasColumnName("tipo_evento");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<Guid>("UsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("usuario_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("DocumentoId", "OcurridoAt");
+
+                    b.ToTable("documento_auditoria", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.DocumentoCarpeta", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("Activa")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activa");
+
+                    b.Property<Guid>("CategoriaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("categoria_id");
+
+                    b.Property<Guid?>("CreadoPorUsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("creado_por_usuario_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Descripcion")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("descripcion");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("nombre");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("integer")
+                        .HasColumnName("orden");
+
+                    b.Property<Guid?>("PadreId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("padre_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CategoriaId");
+
+                    b.HasIndex("PadreId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "CategoriaId");
+
+                    b.HasIndex("TenantId", "PadreId");
+
+                    b.ToTable("documento_carpetas", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.DocumentoCategoria", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("Activa")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activa");
+
+                    b.Property<string>("Color")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("color");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Descripcion")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("descripcion");
+
+                    b.Property<bool>("EsBase")
+                        .HasColumnType("boolean")
+                        .HasColumnName("es_base");
+
+                    b.Property<string>("Icono")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("icono");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("nombre");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("integer")
+                        .HasColumnName("orden");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "Nombre");
+
+                    b.ToTable("documento_categorias", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.DocumentoConsumo", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<int>("Dispositivo")
+                        .HasColumnType("integer")
+                        .HasColumnName("dispositivo");
+
+                    b.Property<Guid>("DocumentoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("documento_id");
+
+                    b.Property<DateTimeOffset>("OcurridoAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ocurrido_at");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<int>("TipoEvento")
+                        .HasColumnType("integer")
+                        .HasColumnName("tipo_evento");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<Guid>("UsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("usuario_id");
+
+                    b.Property<Guid>("VersionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("version_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("VersionId");
+
+                    b.HasIndex("DocumentoId", "OcurridoAt");
+
+                    b.ToTable("documento_consumo", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.DocumentoDestacadoPersonal", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid>("DocumentoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("documento_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<Guid>("UsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("usuario_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("DocumentoId", "UsuarioId")
+                        .IsUnique();
+
+                    b.ToTable("documento_destacados_personal", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.DocumentoEtiqueta", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid>("DocumentoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("documento_id");
+
+                    b.Property<Guid>("EtiquetaCatalogoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("etiqueta_catalogo_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EtiquetaCatalogoId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("DocumentoId", "EtiquetaCatalogoId")
+                        .IsUnique();
+
+                    b.ToTable("documento_etiqueta_asignaciones", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.DocumentoEtiquetaCatalogo", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("Activa")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activa");
+
+                    b.Property<string>("Color")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("color");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<bool>("EsBase")
+                        .HasColumnType("boolean")
+                        .HasColumnName("es_base");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("nombre");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "Nombre");
+
+                    b.ToTable("documento_etiquetas_catalogo", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.DocumentoVersion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid>("DocumentoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("documento_id");
+
+                    b.Property<string>("HashSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("hash_sha256");
+
+                    b.Property<string>("NombreArchivo")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("nombre_archivo");
+
+                    b.Property<string>("NotasCambio")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("notas_cambio");
+
+                    b.Property<int>("Numero")
+                        .HasColumnType("integer")
+                        .HasColumnName("numero");
+
+                    b.Property<Guid>("SubidoPorUsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("subido_por_usuario_id");
+
+                    b.Property<long>("TamanoBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("tamano_bytes");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("TipoMime")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("tipo_mime");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<string>("UrlStorage")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("url_storage");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("DocumentoId", "Numero")
+                        .IsUnique();
+
+                    b.ToTable("documento_versiones", (string)null);
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.EjecucionPresupuestal", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2209,6 +3237,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("CreatedBy")
                         .HasColumnType("uuid")
                         .HasColumnName("created_by");
+
+                    b.Property<int>("Estado")
+                        .HasColumnType("integer")
+                        .HasColumnName("estado");
 
                     b.Property<DateOnly?>("FechaInstalacion")
                         .HasColumnType("date")
@@ -2712,6 +3744,443 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("liquidacion_unidades");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.MantenimientoAdjunto", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("BitacoraId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("bitacora_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("NombreArchivo")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("nombre_archivo");
+
+                    b.Property<Guid>("SubidoPorUsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("subido_por_usuario_id");
+
+                    b.Property<long>("TamanoBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("tamano_bytes");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("TipoMime")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("tipo_mime");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<string>("UrlStorage")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("url_storage");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BitacoraId");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("mantenimiento_adjuntos", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.MantenimientoBitacora", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AutorUsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("autor_usuario_id");
+
+                    b.Property<string>("Contenido")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("contenido");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid>("IntervencionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("intervencion_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<int>("TipoAutor")
+                        .HasColumnType("integer")
+                        .HasColumnName("tipo_autor");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IntervencionId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "IntervencionId", "CreatedAt");
+
+                    b.ToTable("mantenimiento_bitacora", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.MantenimientoHistorialEstado", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ActivoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("activo_id");
+
+                    b.Property<int>("ActivoTipo")
+                        .HasColumnType("integer")
+                        .HasColumnName("activo_tipo");
+
+                    b.Property<Guid>("ActorUsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_usuario_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("EstadoAnterior")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("estado_anterior");
+
+                    b.Property<string>("EstadoNuevo")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("estado_nuevo");
+
+                    b.Property<Guid?>("IntervencionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("intervencion_id");
+
+                    b.Property<string>("Motivo")
+                        .HasColumnType("text")
+                        .HasColumnName("motivo");
+
+                    b.Property<bool>("NotificadoResidentes")
+                        .HasColumnType("boolean")
+                        .HasColumnName("notificado_residentes");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IntervencionId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "ActivoTipo", "ActivoId", "CreatedAt");
+
+                    b.ToTable("mantenimiento_historial_estado", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.MantenimientoIntervencion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ActivoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("activo_id");
+
+                    b.Property<int>("ActivoTipo")
+                        .HasColumnType("integer")
+                        .HasColumnName("activo_tipo");
+
+                    b.Property<bool>("CambioEstadoActivo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("cambio_estado_activo");
+
+                    b.Property<string>("Codigo")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("codigo");
+
+                    b.Property<Guid>("CreadoPorUsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("creado_por_usuario_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Descripcion")
+                        .HasColumnType("text")
+                        .HasColumnName("descripcion");
+
+                    b.Property<int>("Estado")
+                        .HasColumnType("integer")
+                        .HasColumnName("estado");
+
+                    b.Property<string>("EstadoActivoNuevo")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("estado_activo_nuevo");
+
+                    b.Property<DateOnly?>("FechaCierre")
+                        .HasColumnType("date")
+                        .HasColumnName("fecha_cierre");
+
+                    b.Property<DateOnly?>("FechaInicioReal")
+                        .HasColumnType("date")
+                        .HasColumnName("fecha_inicio_real");
+
+                    b.Property<DateOnly?>("FechaProgramada")
+                        .HasColumnType("date")
+                        .HasColumnName("fecha_programada");
+
+                    b.Property<string>("MotivoCancelacion")
+                        .HasColumnType("text")
+                        .HasColumnName("motivo_cancelacion");
+
+                    b.Property<bool>("NotificarResidentes")
+                        .HasColumnType("boolean")
+                        .HasColumnName("notificar_residentes");
+
+                    b.Property<int>("Origen")
+                        .HasColumnType("integer")
+                        .HasColumnName("origen");
+
+                    b.Property<Guid?>("OrigenReferenciaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("origen_referencia_id");
+
+                    b.Property<Guid?>("PlanId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("plan_id");
+
+                    b.Property<int>("Prioridad")
+                        .HasColumnType("integer")
+                        .HasColumnName("prioridad");
+
+                    b.Property<Guid?>("ProveedorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("proveedor_id");
+
+                    b.Property<Guid?>("ResponsableInternoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("responsable_interno_id");
+
+                    b.Property<Guid?>("TareaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tarea_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<int>("Tipo")
+                        .HasColumnType("integer")
+                        .HasColumnName("tipo");
+
+                    b.Property<string>("Titulo")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("titulo");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PlanId");
+
+                    b.HasIndex("ProveedorId");
+
+                    b.HasIndex("ResponsableInternoId");
+
+                    b.HasIndex("TareaId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "Codigo")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "Estado");
+
+                    b.HasIndex("TenantId", "FechaProgramada");
+
+                    b.HasIndex("TenantId", "ActivoTipo", "ActivoId");
+
+                    b.ToTable("mantenimiento_intervenciones", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.MantenimientoPlan", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activo");
+
+                    b.Property<Guid>("ActivoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("activo_id");
+
+                    b.Property<int>("ActivoTipo")
+                        .HasColumnType("integer")
+                        .HasColumnName("activo_tipo");
+
+                    b.Property<Guid>("CreadoPorUsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("creado_por_usuario_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Descripcion")
+                        .HasColumnType("text")
+                        .HasColumnName("descripcion");
+
+                    b.Property<int>("DiasAlertaPrevio")
+                        .HasColumnType("integer")
+                        .HasColumnName("dias_alerta_previo");
+
+                    b.Property<int>("Disparo")
+                        .HasColumnType("integer")
+                        .HasColumnName("disparo");
+
+                    b.Property<DateOnly>("FechaInicio")
+                        .HasColumnType("date")
+                        .HasColumnName("fecha_inicio");
+
+                    b.Property<int>("Frecuencia")
+                        .HasColumnType("integer")
+                        .HasColumnName("frecuencia");
+
+                    b.Property<int?>("FrecuenciaDias")
+                        .HasColumnType("integer")
+                        .HasColumnName("frecuencia_dias");
+
+                    b.Property<bool>("GeneraNotifResidentes")
+                        .HasColumnType("boolean")
+                        .HasColumnName("genera_notif_residentes");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("nombre");
+
+                    b.Property<Guid?>("ProveedorPreferidoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("proveedor_preferido_id");
+
+                    b.Property<DateOnly>("ProximaEjecucion")
+                        .HasColumnType("date")
+                        .HasColumnName("proxima_ejecucion");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProveedorPreferidoId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "ProximaEjecucion");
+
+                    b.HasIndex("TenantId", "ActivoTipo", "ActivoId");
+
+                    b.ToTable("mantenimiento_planes", (string)null);
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.MetodoPago", b =>
@@ -4683,6 +6152,486 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.HasIndex("PresupuestoId", "Codigo");
 
                     b.ToTable("presupuesto_rubros");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ReporteCatalogo", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AudienciasJson")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("audiencias_json");
+
+                    b.Property<Guid>("CategoriaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("categoria_id");
+
+                    b.Property<string>("Clave")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("clave");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Descripcion")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("descripcion");
+
+                    b.Property<bool>("EsActivo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("es_activo");
+
+                    b.Property<bool>("EsSistema")
+                        .HasColumnType("boolean")
+                        .HasColumnName("es_sistema");
+
+                    b.Property<string>("FiltrosConfigJson")
+                        .HasColumnType("text")
+                        .HasColumnName("filtros_config_json");
+
+                    b.Property<string>("ModuloOrigen")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("modulo_origen");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("nombre");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("integer")
+                        .HasColumnName("orden");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CategoriaId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "Clave");
+
+                    b.ToTable("reporte_catalogo", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ReporteCategoria", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Color")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("color");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<bool>("EsActiva")
+                        .HasColumnType("boolean")
+                        .HasColumnName("es_activa");
+
+                    b.Property<string>("Icono")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("icono");
+
+                    b.Property<string>("ModuloOrigen")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("modulo_origen");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("nombre");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("integer")
+                        .HasColumnName("orden");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "Nombre");
+
+                    b.ToTable("reporte_categorias", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ReporteGenerado", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Categoria")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("categoria");
+
+                    b.Property<DateTimeOffset?>("CompartidoAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("compartido_at");
+
+                    b.Property<bool>("CompartidoConsejo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("compartido_consejo");
+
+                    b.Property<Guid?>("CompartidoPorUsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("compartido_por_usuario_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("ErrorMensaje")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("error_mensaje");
+
+                    b.Property<int>("Estado")
+                        .HasColumnType("integer")
+                        .HasColumnName("estado");
+
+                    b.Property<string>("FiltrosAplicadosJson")
+                        .HasColumnType("text")
+                        .HasColumnName("filtros_aplicados_json");
+
+                    b.Property<Guid?>("GeneradoPorUsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("generado_por_usuario_id");
+
+                    b.Property<string>("NombreReporte")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("nombre_reporte");
+
+                    b.Property<int>("Origen")
+                        .HasColumnType("integer")
+                        .HasColumnName("origen");
+
+                    b.Property<DateOnly>("PeriodoFin")
+                        .HasColumnType("date")
+                        .HasColumnName("periodo_fin");
+
+                    b.Property<DateOnly>("PeriodoInicio")
+                        .HasColumnType("date")
+                        .HasColumnName("periodo_inicio");
+
+                    b.Property<string>("PromptIa")
+                        .HasColumnType("text")
+                        .HasColumnName("prompt_ia");
+
+                    b.Property<Guid?>("ReporteCatalogoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reporte_catalogo_id");
+
+                    b.Property<string>("ResultadoJson")
+                        .HasColumnType("text")
+                        .HasColumnName("resultado_json");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<string>("UrlExcel")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("url_excel");
+
+                    b.Property<DateTimeOffset?>("UrlExpiracion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("url_expiracion");
+
+                    b.Property<string>("UrlPdf")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("url_pdf");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReporteCatalogoId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "CompartidoConsejo");
+
+                    b.HasIndex("TenantId", "Estado");
+
+                    b.HasIndex("TenantId", "PeriodoInicio", "PeriodoFin");
+
+                    b.ToTable("reporte_generados", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ReporteProgramacion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("CanalesJson")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("canales_json");
+
+                    b.Property<Guid>("CreadoPorUsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("creado_por_usuario_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<int>("DiaEnvio")
+                        .HasColumnType("integer")
+                        .HasColumnName("dia_envio");
+
+                    b.Property<int>("Estado")
+                        .HasColumnType("integer")
+                        .HasColumnName("estado");
+
+                    b.Property<string>("FiltrosAplicadosJson")
+                        .HasColumnType("text")
+                        .HasColumnName("filtros_aplicados_json");
+
+                    b.Property<int>("Formato")
+                        .HasColumnType("integer")
+                        .HasColumnName("formato");
+
+                    b.Property<int>("Frecuencia")
+                        .HasColumnType("integer")
+                        .HasColumnName("frecuencia");
+
+                    b.Property<string>("Nombre")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("nombre");
+
+                    b.Property<int>("PeriodoQueCubre")
+                        .HasColumnType("integer")
+                        .HasColumnName("periodo_que_cubre");
+
+                    b.Property<DateOnly?>("ProximoEnvio")
+                        .HasColumnType("date")
+                        .HasColumnName("proximo_envio");
+
+                    b.Property<Guid>("ReporteCatalogoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reporte_catalogo_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UltimoEnvio")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ultimo_envio");
+
+                    b.Property<bool?>("UltimoEnvioExitoso")
+                        .HasColumnType("boolean")
+                        .HasColumnName("ultimo_envio_exitoso");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProximoEnvio");
+
+                    b.HasIndex("ReporteCatalogoId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "Estado");
+
+                    b.ToTable("reporte_programaciones", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ReporteProgramacionDestinatario", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("EmailExterno")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("email_externo");
+
+                    b.Property<Guid?>("PersonaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("persona_id");
+
+                    b.Property<Guid>("ProgramacionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("programacion_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<string>("WhatsappExterno")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("whatsapp_externo");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PersonaId");
+
+                    b.HasIndex("ProgramacionId");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("reporte_programacion_destinatarios", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ReporteSemaforoConfig", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ActualizadoPorUsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actualizado_por_usuario_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<bool>("EsAscendente")
+                        .HasColumnType("boolean")
+                        .HasColumnName("es_ascendente");
+
+                    b.Property<string>("IndicadorKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("indicador_key");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<decimal>("UmbralAmarillo")
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("umbral_amarillo");
+
+                    b.Property<decimal>("UmbralRojo")
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("umbral_rojo");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "IndicadorKey")
+                        .IsUnique();
+
+                    b.ToTable("reporte_semaforo_config", (string)null);
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.RevisorFiscal", b =>
@@ -7025,6 +8974,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("es_reservable");
 
+                    b.Property<int>("Estado")
+                        .HasColumnType("integer")
+                        .HasColumnName("estado");
+
                     b.Property<string>("HorariosUso")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
@@ -7203,6 +9156,85 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Navigation("Persona");
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.Comunicado", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.ComunicadoPlantilla", "Plantilla")
+                        .WithMany()
+                        .HasForeignKey("PlantillaId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Plantilla");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ComunicadoAcuse", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.Comunicado", "Comunicado")
+                        .WithMany()
+                        .HasForeignKey("ComunicadoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Propia.Domain.Entities.ComunicadoDestinatario", "Destinatario")
+                        .WithMany("Acuses")
+                        .HasForeignKey("DestinatarioId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Comunicado");
+
+                    b.Navigation("Destinatario");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ComunicadoAdjunto", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.Comunicado", "Comunicado")
+                        .WithMany("Adjuntos")
+                        .HasForeignKey("ComunicadoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Comunicado");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ComunicadoDestinatario", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.Comunicado", "Comunicado")
+                        .WithMany("Destinatarios")
+                        .HasForeignKey("ComunicadoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Propia.Domain.Entities.Persona", "Persona")
+                        .WithMany()
+                        .HasForeignKey("PersonaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Comunicado");
+
+                    b.Navigation("Persona");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ComunicadoPlantilla", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId");
+
+                    b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ComunicadoSegmento", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.Comunicado", "Comunicado")
+                        .WithMany("Segmentos")
+                        .HasForeignKey("ComunicadoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Comunicado");
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.Condonacion", b =>
                 {
                     b.HasOne("Propia.Domain.Entities.UnidadPrivada", "UnidadPrivada")
@@ -7250,6 +9282,138 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Navigation("Etiqueta");
 
                     b.Navigation("Vinculo");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.Documento", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.DocumentoCarpeta", "Carpeta")
+                        .WithMany()
+                        .HasForeignKey("CarpetaId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Propia.Domain.Entities.DocumentoCategoria", "Categoria")
+                        .WithMany()
+                        .HasForeignKey("CategoriaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Propia.Domain.Entities.DocumentoVersion", "VersionActual")
+                        .WithMany()
+                        .HasForeignKey("VersionActualId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Carpeta");
+
+                    b.Navigation("Categoria");
+
+                    b.Navigation("VersionActual");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.DocumentoAuditoria", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.Documento", "Documento")
+                        .WithMany()
+                        .HasForeignKey("DocumentoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Documento");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.DocumentoCarpeta", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.DocumentoCategoria", "Categoria")
+                        .WithMany()
+                        .HasForeignKey("CategoriaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Propia.Domain.Entities.DocumentoCarpeta", "Padre")
+                        .WithMany()
+                        .HasForeignKey("PadreId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Categoria");
+
+                    b.Navigation("Padre");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.DocumentoCategoria", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId");
+
+                    b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.DocumentoConsumo", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.Documento", "Documento")
+                        .WithMany()
+                        .HasForeignKey("DocumentoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Propia.Domain.Entities.DocumentoVersion", "Version")
+                        .WithMany()
+                        .HasForeignKey("VersionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Documento");
+
+                    b.Navigation("Version");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.DocumentoDestacadoPersonal", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.Documento", "Documento")
+                        .WithMany()
+                        .HasForeignKey("DocumentoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Documento");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.DocumentoEtiqueta", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.Documento", "Documento")
+                        .WithMany("Etiquetas")
+                        .HasForeignKey("DocumentoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Propia.Domain.Entities.DocumentoEtiquetaCatalogo", "EtiquetaCatalogo")
+                        .WithMany()
+                        .HasForeignKey("EtiquetaCatalogoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Documento");
+
+                    b.Navigation("EtiquetaCatalogo");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.DocumentoEtiquetaCatalogo", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId");
+
+                    b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.DocumentoVersion", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.Documento", "Documento")
+                        .WithMany("Versiones")
+                        .HasForeignKey("DocumentoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Documento");
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.EjecucionPresupuestal", b =>
@@ -7357,6 +9521,79 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Navigation("Liquidacion");
 
                     b.Navigation("UnidadPrivada");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.MantenimientoAdjunto", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.MantenimientoBitacora", "Bitacora")
+                        .WithMany("Adjuntos")
+                        .HasForeignKey("BitacoraId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Bitacora");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.MantenimientoBitacora", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.MantenimientoIntervencion", "Intervencion")
+                        .WithMany("Bitacora")
+                        .HasForeignKey("IntervencionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Intervencion");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.MantenimientoHistorialEstado", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.MantenimientoIntervencion", "Intervencion")
+                        .WithMany()
+                        .HasForeignKey("IntervencionId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Intervencion");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.MantenimientoIntervencion", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.MantenimientoPlan", "Plan")
+                        .WithMany("Intervenciones")
+                        .HasForeignKey("PlanId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Propia.Domain.Entities.Persona", "Proveedor")
+                        .WithMany()
+                        .HasForeignKey("ProveedorId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Propia.Domain.Entities.Persona", "ResponsableInterno")
+                        .WithMany()
+                        .HasForeignKey("ResponsableInternoId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Propia.Domain.Entities.Tarea", "Tarea")
+                        .WithMany()
+                        .HasForeignKey("TareaId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Plan");
+
+                    b.Navigation("Proveedor");
+
+                    b.Navigation("ResponsableInterno");
+
+                    b.Navigation("Tarea");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.MantenimientoPlan", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.Persona", "ProveedorPreferido")
+                        .WithMany()
+                        .HasForeignKey("ProveedorPreferidoId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("ProveedorPreferido");
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.MetodoPago", b =>
@@ -7680,6 +9917,71 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Presupuesto");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ReporteCatalogo", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.ReporteCategoria", "Categoria")
+                        .WithMany()
+                        .HasForeignKey("CategoriaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Propia.Domain.Entities.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId");
+
+                    b.Navigation("Categoria");
+
+                    b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ReporteCategoria", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId");
+
+                    b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ReporteGenerado", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.ReporteCatalogo", "ReporteCatalogo")
+                        .WithMany()
+                        .HasForeignKey("ReporteCatalogoId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("ReporteCatalogo");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ReporteProgramacion", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.ReporteCatalogo", "ReporteCatalogo")
+                        .WithMany()
+                        .HasForeignKey("ReporteCatalogoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ReporteCatalogo");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ReporteProgramacionDestinatario", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.Persona", "Persona")
+                        .WithMany()
+                        .HasForeignKey("PersonaId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Propia.Domain.Entities.ReporteProgramacion", "Programacion")
+                        .WithMany("Destinatarios")
+                        .HasForeignKey("ProgramacionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Persona");
+
+                    b.Navigation("Programacion");
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.RevisorFiscal", b =>
@@ -8056,6 +10358,27 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Navigation("Miembros");
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.Comunicado", b =>
+                {
+                    b.Navigation("Adjuntos");
+
+                    b.Navigation("Destinatarios");
+
+                    b.Navigation("Segmentos");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ComunicadoDestinatario", b =>
+                {
+                    b.Navigation("Acuses");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.Documento", b =>
+                {
+                    b.Navigation("Etiquetas");
+
+                    b.Navigation("Versiones");
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.EleccionConsejo", b =>
                 {
                     b.Navigation("Candidatos");
@@ -8064,6 +10387,21 @@ namespace Propia.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Propia.Domain.Entities.Liquidacion", b =>
                 {
                     b.Navigation("Detalle");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.MantenimientoBitacora", b =>
+                {
+                    b.Navigation("Adjuntos");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.MantenimientoIntervencion", b =>
+                {
+                    b.Navigation("Bitacora");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.MantenimientoPlan", b =>
+                {
+                    b.Navigation("Intervenciones");
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.OrgCargo", b =>
@@ -8107,6 +10445,11 @@ namespace Propia.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Propia.Domain.Entities.Presupuesto", b =>
                 {
                     b.Navigation("Rubros");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ReporteProgramacion", b =>
+                {
+                    b.Navigation("Destinatarios");
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.Sesion", b =>

@@ -18,4 +18,10 @@ public class EquipoActivo : TenantEntity
     public DateOnly? GarantiaHasta { get; set; }
     public string? Ubicacion { get; set; }
     public string? Observaciones { get; set; }
+
+    /// <summary>
+    /// Estado operativo del equipo. Spec 2.11 - fuente unica de verdad para el modulo
+    /// de Mantenimiento, que escribe sobre este campo al cambiar el estado.
+    /// </summary>
+    public EstadoEquipoActivo Estado { get; set; } = EstadoEquipoActivo.Operativo;
 }

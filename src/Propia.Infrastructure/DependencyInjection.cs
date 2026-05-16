@@ -10,6 +10,7 @@ using Propia.Domain.Entities;
 using Propia.Infrastructure.Auth;
 using Propia.Infrastructure.Billing;
 using Propia.Infrastructure.Persistence;
+using Propia.Infrastructure.Storage;
 using Propia.Infrastructure.SuperAdmin;
 
 namespace Propia.Infrastructure;
@@ -105,6 +106,33 @@ public static class DependencyInjection
 
         // Modulo 2.8 Asambleas y Organos de Gobierno
         services.AddScoped<Application.Asambleas.IAsambleaService, Asambleas.AsambleaService>();
+
+        // Modulo 2.11 Mantenimiento y Activos
+        services.AddScoped<Application.Mantenimiento.IMantenimientoService, Mantenimiento.MantenimientoService>();
+
+        // Modulo 2.14 Comunicaciones
+        services.AddScoped<Application.Comunicaciones.IComunicacionesService, Comunicaciones.ComunicacionesService>();
+
+        // Modulo 2.15 Documentos y Archivo Digital
+        services.AddScoped<Application.Documentos.IDocumentosService, Documentos.DocumentosService>();
+
+        // Modulo 2.16 Reportes e Indicadores (consumidor puro - depende de IndicadoresService cross-modulo)
+        services.AddScoped<Application.Reportes.IIndicadoresService, Reportes.IndicadoresService>();
+        services.AddScoped<Application.Reportes.IReportesService, Reportes.ReportesService>();
+
+        // Storage de blobs (logos, fachadas, portadas, futuros adjuntos).
+        // Provider seleccionado por config: "R2" en produccion, cualquier otro valor (o ausente)
+        // cae a filesystem local (wwwroot/uploads). Asi Development y tests no requieren credenciales.
+        services.Configure<R2Options>(configuration.GetSection(R2Options.SectionName));
+        var storageProvider = configuration["Storage:Provider"] ?? "Local";
+        if (string.Equals(storageProvider, "R2", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddSingleton<IBlobStorage, R2BlobStorage>();
+        }
+        else
+        {
+            services.AddSingleton<IBlobStorage, LocalBlobStorage>();
+        }
 
         return services;
     }

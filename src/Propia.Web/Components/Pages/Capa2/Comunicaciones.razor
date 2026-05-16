@@ -1,16 +1,541 @@
 @page "/comunicaciones"
+@rendermode InteractiveServer
+@using Propia.Application.Comunicaciones
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
 <PageTitle>Comunicaciones - PROPIA</PageTitle>
 
-<ModuloPlaceholder
-    Codigo="2.14"
-    Nombre="Comunicaciones"
-    Descripcion="Circulares, anuncios y notificaciones internas. WhatsApp como canal principal de entrega."
-    Estado="EstadoModulo.EnDiseno"
-    Features='new[] {
-        "Circulares con segmentacion (todos / por torre / por rol / lista custom)",
-        "Plantillas de mensaje aprobadas por WhatsApp Business",
-        "Programacion de envios",
-        "Lectura confirmada por usuario (tracking)",
-        "Comunicaciones criticas via WhatsApp + email + in-app simultaneamente"
-    }'
-    NotaSpec="01. REQUERIMIENTO/Capa 2. Copropiedad/2.14. Comunicaciones_v1_0.md" />
+<div class="mb-4 d-flex justify-content-between align-items-start">
+    <div>
+        <h1 class="h3 mb-1 fw-semibold">Comunicaciones</h1>
+        <p class="text-muted mb-0">Modulo 2.14 - circulares, avisos y anuncios a la comunidad con entrega por WhatsApp</p>
+    </div>
+    <button class="btn" style="background: var(--propia-primary); color: white;" @onclick="AbrirCrear">+ Nuevo comunicado</button>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <AuthMessage />
+    return;
+}
+
+@if (_resumen is not null)
+{
+    <div class="row g-3 mb-3">
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Borradores</div><h3 class="mb-0">@_resumen.Borradores</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Programados</div><h3 class="mb-0 text-info">@_resumen.Programados</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Enviados este mes</div><h3 class="mb-0 text-success">@_resumen.EnviadosMes</h3>
+        </div></div></div>
+        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
+            <div class="text-muted small">Tasa apertura promedio</div>
+            <h3 class="mb-0">@(_resumen.TasaAperturaPromedioMes?.ToString("0.0") ?? "-")%</h3>
+        </div></div></div>
+    </div>
+}
+
+<div class="row g-2 mb-3">
+    <div class="col-md-6">
+        <input class="form-control form-control-sm" placeholder="Buscar por asunto..." @bind="_query" @bind:event="oninput" @onkeyup="CargarAsync" />
+    </div>
+    <div class="col-md-3">
+        <select class="form-select form-select-sm" @bind="_filtroEstado" @bind:after="CargarAsync">
+            <option value="">Todos los estados</option>
+            @foreach (var e in Enum.GetValues<EstadoComunicado>()) { <option value="@e">@e</option> }
+        </select>
+    </div>
+    <div class="col-md-3">
+        <select class="form-select form-select-sm" @bind="_filtroTipo" @bind:after="CargarAsync">
+            <option value="">Todos los tipos</option>
+            @foreach (var t in Enum.GetValues<TipoComunicadoBase>()) { <option value="@t">@t</option> }
+        </select>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+@if (_lista is null)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+}
+else if (_lista.Count == 0)
+{
+    <div class="card p-4 text-center text-muted">Sin comunicados.</div>
+}
+else
+{
+    <div class="card">
+        <table class="table table-hover mb-0 align-middle">
+            <thead class="bg-light small text-muted">
+                <tr>
+                    <th>Asunto</th><th>Tipo</th><th>Segmento</th><th>Fecha</th><th>Estado</th><th>Acuse</th>
+                </tr>
+            </thead>
+            <tbody class="small">
+                @foreach (var c in _lista)
+                {
+                    var cid = c.Id;
+                    <tr style="cursor:pointer;" @onclick="() => AbrirFicha(cid)">
+                        <td><strong>@c.Asunto</strong></td>
+                        <td>@RenderTipo(c.TipoComunicado)</td>
+                        <td><small class="text-muted">@c.SegmentoResumen</small></td>
+                        <td><small>@(c.FechaEnvio?.LocalDateTime.ToString("yyyy-MM-dd HH:mm") ?? c.FechaProgramada?.LocalDateTime.ToString("yyyy-MM-dd HH:mm") ?? c.CreadoAt.LocalDateTime.ToString("yyyy-MM-dd"))</small></td>
+                        <td>@RenderEstado(c.Estado)</td>
+                        <td>
+                            @if (c.RequiereAcuse && c.Estado == EstadoComunicado.Enviado && c.TotalDestinatarios > 0)
+                            {
+                                var pct = c.TasaApertura ?? 0m;
+                                <div class="progress" style="height: 6px; width: 100px;">
+                                    <div class="progress-bar bg-success" style="width: @(pct)%"></div>
+                                </div>
+                                <small class="text-muted">@(c.TotalAbiertos)/@(c.TotalDestinatarios) (@(pct.ToString("0.0"))%)</small>
+                            }
+                            else { <small class="text-muted">-</small> }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@* ===== Modal Crear comunicado (wizard 3 pasos) ===== *@
+@if (_showCrear)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title">Nuevo comunicado - Paso @_paso de 3</h5>
+                        <small class="text-muted">@(_paso == 1 ? "Punto de partida" : _paso == 2 ? "Editor" : "Envio")</small>
+                    </div>
+                    <button type="button" class="btn-close" @onclick="CerrarCrear"></button>
+                </div>
+                <div class="modal-body">
+                    @if (_paso == 1)
+                    {
+                        <p class="text-muted small">Elige una plantilla o empieza desde cero.</p>
+                        <div class="list-group mb-3">
+                            <button class="list-group-item list-group-item-action @(_plantillaSeleccionada is null ? "active" : "")"
+                                    @onclick="() => { _plantillaSeleccionada = null; _crearAsunto = null; _crearCuerpoHtml = null; }">
+                                <strong>Escribir desde cero</strong>
+                                <br><small>Empieza con un comunicado en blanco.</small>
+                            </button>
+                            @if (_plantillas is not null)
+                            {
+                                @foreach (var p in _plantillas)
+                                {
+                                    var pid = p.Id;
+                                    <button class="list-group-item list-group-item-action @(_plantillaSeleccionada?.Id == pid ? "active" : "")"
+                                            @onclick="() => UsarPlantilla(pid)">
+                                        <div class="d-flex justify-content-between">
+                                            <strong>@p.Nombre</strong>
+                                            <small>@(p.EsGlobal ? "(global)" : "(personal)")</small>
+                                        </div>
+                                        <small class="text-muted">@p.AsuntoModelo</small>
+                                    </button>
+                                }
+                            }
+                        </div>
+                    }
+                    else if (_paso == 2)
+                    {
+                        <div class="row g-2">
+                            <div class="col-md-4">
+                                <label class="form-label small">Tipo *</label>
+                                <select class="form-select form-select-sm" @bind="_crearTipo">
+                                    @foreach (var t in Enum.GetValues<TipoComunicadoBase>()) { <option value="@t">@t</option> }
+                                </select>
+                            </div>
+                            <div class="col-md-8">
+                                <label class="form-label small">Asunto *</label>
+                                <input class="form-control form-control-sm" @bind="_crearAsunto" @bind:event="oninput" maxlength="150" />
+                            </div>
+                            <div class="col-md-12">
+                                <label class="form-label small">Cuerpo (HTML) *</label>
+                                <textarea class="form-control form-control-sm" rows="8" @bind="_crearCuerpoHtml" @bind:event="oninput"></textarea>
+                                <small class="text-muted">Minimo 20 caracteres. Acepta HTML basico.</small>
+                            </div>
+                            <div class="col-md-12">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" @bind="_crearRequiereAcuse" id="acuseChk" />
+                                    <label class="form-check-label small" for="acuseChk">Solicitar acuse de recibo</label>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    else if (_paso == 3)
+                    {
+                        <h6>Segmento de destinatarios</h6>
+                        <div class="mb-3">
+                            <select class="form-select form-select-sm w-50 d-inline-block" @bind="_segmentoTipo">
+                                <option value="Broadcast">Toda la comunidad</option>
+                                <option value="Etiqueta">Por etiqueta del Directorio</option>
+                            </select>
+                            <button class="btn btn-sm btn-outline-dark ms-2" @onclick="AgregarSegmento">Aplicar</button>
+                        </div>
+                        @if (_segmentosActuales.Count > 0)
+                        {
+                            <p class="small">
+                                <strong>Aplicados:</strong>
+                                @foreach (var s in _segmentosActuales)
+                                {
+                                    <span class="badge bg-light text-dark me-1">@s.Tipo</span>
+                                }
+                            </p>
+                        }
+                        @if (_preview is not null)
+                        {
+                            <div class="card bg-light p-3 mb-3">
+                                <strong>@_preview.Total destinatario(s) elegibles</strong>
+                                <small class="text-muted">
+                                    @_preview.TotalSinWhatsapp sin WhatsApp registrado &middot;
+                                    @_preview.TotalSinAutorizacion sin autorizacion de datos
+                                </small>
+                            </div>
+                        }
+                        <hr>
+                        <h6>Programacion</h6>
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="envio" id="rInm" @onchange="() => _envioInmediato = true" checked="@_envioInmediato" />
+                                    <label class="form-check-label small" for="rInm">Envio inmediato</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="envio" id="rProg" @onchange="() => _envioInmediato = false" checked="@(!_envioInmediato)" />
+                                    <label class="form-check-label small" for="rProg">Programar envio</label>
+                                </div>
+                            </div>
+                            @if (!_envioInmediato)
+                            {
+                                <div class="col-md-6">
+                                    <label class="form-label small">Fecha y hora *</label>
+                                    <input type="datetime-local" class="form-control form-control-sm"
+                                           value="@(_fechaProgramada?.LocalDateTime.ToString("yyyy-MM-ddTHH:mm"))"
+                                           @onchange="(e) => _fechaProgramada = string.IsNullOrEmpty(e.Value?.ToString()) ? null : new DateTimeOffset(DateTime.Parse(e.Value!.ToString()!), TimeZoneInfo.Local.BaseUtcOffset)" />
+                                    <small class="text-muted">Minimo 5 minutos en el futuro.</small>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    @if (_paso > 1)
+                    {
+                        <button class="btn btn-sm btn-outline-dark" @onclick="() => _paso--">&larr; Atras</button>
+                    }
+                    <button class="btn btn-sm btn-outline-dark" @onclick="CerrarCrear">Cancelar</button>
+                    @if (_paso == 1)
+                    {
+                        <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="() => _paso = 2">Siguiente &rarr;</button>
+                    }
+                    else if (_paso == 2)
+                    {
+                        <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="GuardarYAvanzar"
+                                disabled="@(_busy || string.IsNullOrWhiteSpace(_crearAsunto) || string.IsNullOrWhiteSpace(_crearCuerpoHtml) || _crearAsunto!.Length < 5 || _crearCuerpoHtml!.Length < 20)">
+                            @(_busy ? "..." : (_borradorId is null ? "Crear borrador y continuar" : "Guardar y continuar")) &rarr;
+                        </button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-sm btn-success" @onclick="ConfirmarEnviar"
+                                disabled="@(_busy || _segmentosActuales.Count == 0 || (!_envioInmediato && _fechaProgramada is null))">
+                            @(_busy ? "..." : (_envioInmediato ? "Enviar ahora" : "Programar"))
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* ===== Modal Ficha + Acuses ===== *@
+@if (_ficha is not null)
+{
+    var c = _ficha;
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title">@c.Asunto</h5>
+                        <small class="text-muted">@RenderTipo(c.TipoComunicado) &middot; @RenderEstado(c.Estado)</small>
+                    </div>
+                    <button type="button" class="btn-close" @onclick="() => _ficha = null"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row mb-3">
+                        @if (c.FechaEnvio.HasValue) { <div class="col-md-3"><small class="text-muted">Enviado</small><br>@c.FechaEnvio.Value.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</div> }
+                        @if (c.FechaProgramada.HasValue) { <div class="col-md-3"><small class="text-muted">Programado</small><br>@c.FechaProgramada.Value.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</div> }
+                        <div class="col-md-3"><small class="text-muted">Acuse</small><br>@(c.RequiereAcuse ? "Si" : "No")</div>
+                        <div class="col-md-3"><small class="text-muted">Destinatarios</small><br>@(c.TotalDestinatarios ?? 0)</div>
+                    </div>
+
+                    <h6>Contenido</h6>
+                    <div class="card bg-light p-3 mb-3"><div>@((MarkupString)c.CuerpoHtml)</div></div>
+
+                    @if (c.Estado == EstadoComunicado.Enviado && c.RequiereAcuse && _acuses is not null)
+                    {
+                        <hr>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h6 class="mb-0">Acuse de recibo</h6>
+                            <button class="btn btn-sm btn-outline-dark" @onclick="() => ReenviarPendientes(c.Id)">Reenviar a pendientes</button>
+                        </div>
+                        <div class="my-2">
+                            <div class="progress" style="height: 8px;">
+                                <div class="progress-bar bg-success" style="width: @(_acuses.TasaApertura)%"></div>
+                            </div>
+                            <small class="text-muted">@_acuses.Confirmados confirmados &middot; @_acuses.Pendientes pendientes &middot; @(_acuses.TasaApertura.ToString("0.0"))%</small>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <h6 class="small">Confirmados (@_acuses.Confirmados)</h6>
+                                @foreach (var a in _acuses.Confirmadas.Take(20))
+                                {
+                                    <div class="small"><span class="text-success">&#10004;</span> @a.NombreCompleto - <small class="text-muted">@a.AbiertoAt?.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</small></div>
+                                }
+                            </div>
+                            <div class="col-md-6">
+                                <h6 class="small">Pendientes (@_acuses.Pendientes)</h6>
+                                @foreach (var a in _acuses.NoAbiertos.Take(20))
+                                {
+                                    <div class="small"><span class="text-warning">&#9203;</span> @a.NombreCompleto</div>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if (c.Estado == EstadoComunicado.Borrador || c.Estado == EstadoComunicado.Programado)
+                    {
+                        <hr>
+                        <button class="btn btn-sm btn-outline-danger" @onclick="() => CancelarComunicado(c.Id)">Cancelar comunicado</button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
+</style>
+
+@code {
+    private string? _jwt;
+    private bool _busy;
+    private string? _msg;
+    private string _msgClass = "alert-info";
+
+    private List<ComunicadoListaDto>? _lista;
+    private List<PlantillaDto>? _plantillas;
+    private ResumenComunicacionesDto? _resumen;
+    private ComunicadoDetalleDto? _ficha;
+    private AcuseListaDto? _acuses;
+
+    private string _query = "";
+    private string _filtroEstado = "";
+    private string _filtroTipo = "";
+
+    private bool _showCrear;
+    private int _paso = 1;
+    private PlantillaDto? _plantillaSeleccionada;
+    private Guid? _borradorId;
+    private TipoComunicadoBase _crearTipo = TipoComunicadoBase.Circular;
+    private string? _crearAsunto;
+    private string? _crearCuerpoHtml;
+    private bool _crearRequiereAcuse;
+    private string _segmentoTipo = "Broadcast";
+    private List<SegmentoDto> _segmentosActuales = new();
+    private PreviewDestinatariosDto? _preview;
+    private bool _envioInmediato = true;
+    private DateTimeOffset? _fechaProgramada;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = Auth();
+            _resumen = await http.GetFromJsonAsync<ResumenComunicacionesDto>("/api/comunicaciones/resumen");
+            var url = "/api/comunicaciones";
+            var qp = new List<string>();
+            if (!string.IsNullOrEmpty(_filtroEstado)) qp.Add($"estado={_filtroEstado}");
+            if (!string.IsNullOrEmpty(_filtroTipo)) qp.Add($"tipo={_filtroTipo}");
+            if (!string.IsNullOrEmpty(_query)) qp.Add($"q={Uri.EscapeDataString(_query)}");
+            if (qp.Count > 0) url += "?" + string.Join("&", qp);
+            _lista = await http.GetFromJsonAsync<List<ComunicadoListaDto>>(url) ?? new();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task AbrirCrear()
+    {
+        _showCrear = true;
+        _paso = 1;
+        _borradorId = null;
+        _plantillaSeleccionada = null;
+        _crearAsunto = _crearCuerpoHtml = null;
+        _crearTipo = TipoComunicadoBase.Circular;
+        _crearRequiereAcuse = false;
+        _segmentosActuales.Clear();
+        _preview = null;
+        _envioInmediato = true;
+        _fechaProgramada = null;
+        try
+        {
+            // Listar TODAS las plantillas (globales + tenant). Si se quisiera solo tenant, usar ?soloGlobales=false.
+            _plantillas = await Auth().GetFromJsonAsync<List<PlantillaDto>>("/api/comunicaciones/plantillas");
+        }
+        catch { _plantillas = new(); }
+    }
+
+    private void UsarPlantilla(Guid id)
+    {
+        var p = _plantillas?.FirstOrDefault(x => x.Id == id);
+        if (p is null) return;
+        _plantillaSeleccionada = p;
+        _crearTipo = p.TipoComunicado;
+        _crearAsunto = p.AsuntoModelo;
+        _crearCuerpoHtml = p.CuerpoModelo;
+        _crearRequiereAcuse = p.AcusePorDefecto;
+    }
+
+    private async Task GuardarYAvanzar()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            if (_borradorId is null)
+            {
+                var req = new CrearBorradorRequest(_plantillaSeleccionada?.Id, _crearTipo,
+                    _crearAsunto!, _crearCuerpoHtml!, null, _crearRequiereAcuse);
+                var resp = await Auth().PostAsJsonAsync("/api/comunicaciones", req);
+                if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+                var det = await resp.Content.ReadFromJsonAsync<ComunicadoDetalleDto>();
+                _borradorId = det!.Id;
+            }
+            else
+            {
+                var req = new ActualizarBorradorRequest(_crearTipo, _crearAsunto!, _crearCuerpoHtml!, null, _crearRequiereAcuse);
+                await Auth().PutAsJsonAsync($"/api/comunicaciones/{_borradorId}", req);
+            }
+            _paso = 3;
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task AgregarSegmento()
+    {
+        if (_borradorId is null) return;
+        var tipo = Enum.Parse<TipoSegmento>(_segmentoTipo);
+        var req = new AgregarSegmentoRequest(tipo, "{}");
+        var resp = await Auth().PostAsJsonAsync($"/api/comunicaciones/{_borradorId}/segmentos", req);
+        if (resp.IsSuccessStatusCode)
+        {
+            var seg = await resp.Content.ReadFromJsonAsync<SegmentoDto>();
+            if (seg is not null)
+            {
+                // Si fue Broadcast, los demas fueron removidos en el backend
+                if (tipo == TipoSegmento.Broadcast) _segmentosActuales.Clear();
+                _segmentosActuales.Add(seg);
+            }
+            _preview = await Auth().GetFromJsonAsync<PreviewDestinatariosDto>($"/api/comunicaciones/{_borradorId}/preview-destinatarios");
+        }
+        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+    }
+
+    private async Task ConfirmarEnviar()
+    {
+        if (_borradorId is null) return;
+        _busy = true;
+        try
+        {
+            var req = new EnviarRequest(_envioInmediato ? null : _fechaProgramada);
+            var resp = await Auth().PostAsJsonAsync($"/api/comunicaciones/{_borradorId}/enviar", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _msg = _envioInmediato ? "Comunicado enviado." : "Comunicado programado."; _msgClass = "alert-success";
+            CerrarCrear();
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private void CerrarCrear() { _showCrear = false; _borradorId = null; _segmentosActuales.Clear(); }
+
+    private async Task AbrirFicha(Guid id)
+    {
+        try
+        {
+            _ficha = await Auth().GetFromJsonAsync<ComunicadoDetalleDto>($"/api/comunicaciones/{id}");
+            _acuses = (_ficha?.RequiereAcuse == true && _ficha.Estado == EstadoComunicado.Enviado)
+                ? await Auth().GetFromJsonAsync<AcuseListaDto>($"/api/comunicaciones/{id}/acuses")
+                : null;
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task CancelarComunicado(Guid id)
+    {
+        var resp = await Auth().PostAsJsonAsync($"/api/comunicaciones/{id}/cancelar", new CancelarRequest("Cancelado por administrador"));
+        if (resp.IsSuccessStatusCode) { _ficha = null; await CargarAsync(); }
+    }
+
+    private async Task ReenviarPendientes(Guid id)
+    {
+        var resp = await Auth().PostAsync($"/api/comunicaciones/{id}/reenviar-pendientes", null);
+        if (resp.IsSuccessStatusCode)
+        {
+            _msg = "Reenvio encolado a destinatarios pendientes."; _msgClass = "alert-success";
+        }
+    }
+
+    private MarkupString RenderTipo(TipoComunicadoBase t) => t switch
+    {
+        TipoComunicadoBase.Circular => new MarkupString("<span class='badge bg-secondary'>Circular</span>"),
+        TipoComunicadoBase.AvisoOperativo => new MarkupString("<span class='badge bg-info'>Aviso</span>"),
+        TipoComunicadoBase.AnuncioGeneral => new MarkupString("<span class='badge bg-primary'>Anuncio</span>"),
+        TipoComunicadoBase.ComunicadoUrgente => new MarkupString("<span class='badge bg-danger'>Urgente</span>"),
+        _ => new MarkupString("")
+    };
+
+    private MarkupString RenderEstado(EstadoComunicado e) => e switch
+    {
+        EstadoComunicado.Borrador => new MarkupString("<span class='badge bg-light text-dark'>Borrador</span>"),
+        EstadoComunicado.Programado => new MarkupString("<span class='badge bg-warning text-dark'>Programado</span>"),
+        EstadoComunicado.Enviando => new MarkupString("<span class='badge bg-info'>Enviando</span>"),
+        EstadoComunicado.Enviado => new MarkupString("<span class='badge bg-success'>Enviado</span>"),
+        EstadoComunicado.Cancelado => new MarkupString("<span class='badge bg-dark'>Cancelado</span>"),
+        _ => new MarkupString("")
+    };
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

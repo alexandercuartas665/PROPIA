@@ -1,18 +1,22 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Infrastructure.Storage;
 
 namespace Propia.Api.Controllers;
 
 /// <summary>
-/// Endpoint MVP de upload de imagenes (logo, foto de fachada, portada) del tenant.
-/// Spec 2.3 - seccion Identidad. Para MVP usamos filesystem local en wwwroot/uploads.
-/// En produccion: bucket S3/Azure Blob con CDN.
+/// Endpoint de upload de imagenes (logo, foto de fachada, portada) del tenant.
+/// Spec 2.3 - seccion Identidad.
+///
+/// El storage real se delega en IBlobStorage:
+///  - Development / tests: LocalBlobStorage (filesystem wwwroot/uploads)
+///  - Production: R2BlobStorage (Cloudflare R2, S3-compatible)
 ///
 /// Reglas:
 ///  - Solo JPG/PNG/WEBP, max 5 MB
-///  - Path: /uploads/tenants/{tenantId}/{tipo}.{ext}
-///  - Devuelve URL relativa servida por StaticFiles
+///  - Key: tenants/{tenantId}/{tipo}.{ext}
+///  - Devuelve URL publica del blob
 ///  - Requiere JWT con tenant activo (mismo flujo que /api/mi-copropiedad/*)
 /// </summary>
 [ApiController]
@@ -20,7 +24,7 @@ namespace Propia.Api.Controllers;
 [Authorize]
 public class UploadsController : ControllerBase
 {
-    private readonly IWebHostEnvironment _env;
+    private readonly IBlobStorage _storage;
     private readonly ILogger<UploadsController> _logger;
     private static readonly string[] TiposPermitidos = { "logo", "fachada", "portada" };
     private static readonly Dictionary<string, string> ExtPermitidas = new()
@@ -30,9 +34,9 @@ public class UploadsController : ControllerBase
         ["image/webp"] = ".webp"
     };
 
-    public UploadsController(IWebHostEnvironment env, ILogger<UploadsController> logger)
+    public UploadsController(IBlobStorage storage, ILogger<UploadsController> logger)
     {
-        _env = env;
+        _storage = storage;
         _logger = logger;
     }
 
@@ -48,24 +52,17 @@ public class UploadsController : ControllerBase
         if (!ExtPermitidas.TryGetValue(file.ContentType, out var ext))
             return BadRequest(new { error = "Formato no soportado. Usa JPG, PNG o WEBP." });
 
-        var dir = Path.Combine(_env.ContentRootPath, "wwwroot", "uploads", "tenants", tenantId);
-        Directory.CreateDirectory(dir);
-        var fileName = $"{tipo}{ext}";
-        var fullPath = Path.Combine(dir, fileName);
-
-        // Eliminamos versiones previas del mismo tipo (con otra extension)
-        foreach (var ent in ExtPermitidas.Values.Where(e => e != ext))
+        // Borramos versiones previas del mismo tipo con otra extension (idempotente).
+        foreach (var otraExt in ExtPermitidas.Values.Where(e => e != ext))
         {
-            var prev = Path.Combine(dir, $"{tipo}{ent}");
-            if (System.IO.File.Exists(prev)) System.IO.File.Delete(prev);
+            var prevKey = $"tenants/{tenantId}/{tipo}{otraExt}";
+            await _storage.DeleteAsync(prevKey, ct);
         }
 
-        await using (var stream = System.IO.File.Create(fullPath))
-        {
-            await file.CopyToAsync(stream, ct);
-        }
+        var key = $"tenants/{tenantId}/{tipo}{ext}";
+        await using var stream = file.OpenReadStream();
+        var url = await _storage.UploadAsync(key, stream, file.ContentType, ct);
 
-        var url = $"/uploads/tenants/{tenantId}/{fileName}?v={DateTime.UtcNow.Ticks}";
         _logger.LogInformation("Imagen {Tipo} subida para tenant {Tenant}: {Url}", tipo, tenantId, url);
         return Ok(new { url });
     }

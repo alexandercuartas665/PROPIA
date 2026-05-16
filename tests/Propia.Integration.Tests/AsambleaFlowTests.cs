@@ -299,7 +299,8 @@ public class AsambleaFlowTests : IAsyncLifetime
             Id = _personaId,
             TipoDocumento = TipoDocumento.CC,
             Documento = $"A{Guid.NewGuid():N}".Substring(0, 18),
-            Nombres = "Admin", Apellidos = "Test",
+            Nombres = "Admin",
+            Apellidos = "Test",
             Email = $"admin.{Guid.NewGuid():N}@test.co",
             PerfilIncompleto = false
         };

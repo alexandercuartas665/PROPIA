@@ -20,4 +20,10 @@ public class ApplicationUser : IdentityUser<Guid>
     /// </summary>
     public Guid? PersonaId { get; set; }
     public Persona? Persona { get; set; }
+
+    /// <summary>
+    /// Preferencia de tema visual de la UI: "light" o "dark". NULL = no se ha definido,
+    /// se respeta la preferencia del sistema operativo (prefers-color-scheme). Spec 2026-05.
+    /// </summary>
+    public string? UiTheme { get; set; }
 }
