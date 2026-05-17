@@ -1,56 +1,61 @@
 <#
 .SYNOPSIS
-Automatiza el ciclo de deploy de una feature branch hacia Railway production.
+Despliega la rama main actual a Railway production. Sin parametros.
 
 .DESCRIPTION
+Convencion del repo: todo el desarrollo vive en main. Esta sesion empuja
+main al branch tecnico feat/railway-deploy (que Railway watch-ea) usando
+--force-with-lease, y aplica migraciones nuevas si las hay.
+
 Pipeline:
-  1. Verifica estado del repo (working tree limpio o solo .gitignore dirty).
-  2. Mata procesos locales de Propia.Api / Propia.Web que bloquearian el build.
-  3. Stash + checkout feat/railway-deploy.
-  4. Merge de la feature branch (--no-ff). Si hay conflictos: aborta con instrucciones.
-  5. dotnet build Release + dotnet test. Si falla: aborta el merge y vuelve al estado anterior.
-  6. Commit del merge + push origin feat/railway-deploy. Railway redeploya automaticamente.
-  7. Detecta migraciones nuevas no aplicadas a Railway PG. Si hay:
-     - Genera efbundle y lo aplica usando RAILWAY_DDL_URL (del .railway-secrets.local o del clipboard).
-  8. Espera 90s + smoke test contra /health y /health/ready de ambos servicios.
+  1. Pre-checks: branch == main, working tree limpio (o solo .gitignore), dotnet, secrets.
+  2. Mata procesos locales Propia.Api / Propia.Web que bloqueen las DLLs del build.
+  3. git fetch + pull origin main (asegura que tienes lo ultimo del equipo).
+  4. dotnet build Release + dotnet test (cubre el repo entero).
+  5. git push origin main:feat/railway-deploy --force-with-lease.
+     Railway detecta el push y redeploya propia-api + propia-web.
+  6. Detecta y aplica migraciones EF nuevas via efbundle.
+     - Compara count(local) vs count(Railway PG via __EFMigrationsHistory).
+     - Si hay nuevas: genera bundle y aplica. Usa .railway-ddl-url.local si existe,
+       o pide DATABASE_PUBLIC_URL del clipboard.
+  7. Espera 90s + smoke test contra /health y /health/ready de ambos servicios.
 
-Convencion de archivos locales (todos gitignored):
-  .railway-secrets.local      - PROPIA_APP_PWD, JWT_SIGNING_KEY (creados en setup inicial)
-  .railway-ddl-url.local      - opcional: DATABASE_PUBLIC_URL guardada para no pedirla del clipboard
-
-.PARAMETER FeatureBranch
-Nombre de la branch a integrar a feat/railway-deploy. Ej: feat/2.14-comunicaciones.
+Convencion archivos locales (gitignored):
+  .railway-secrets.local   - PROPIA_APP_PWD, JWT_SIGNING_KEY (setup inicial)
+  .railway-ddl-url.local   - opcional: DATABASE_PUBLIC_URL guardada
 
 .PARAMETER SkipTests
-Si se pasa, salta dotnet test (no recomendado para production).
+Salta dotnet test. NO recomendado.
 
 .PARAMETER SkipMigrations
-Si se pasa, salta la fase de aplicar migraciones nuevas. Util si ya las aplicaste a mano.
+Salta la fase de aplicar migraciones nuevas.
+
+.PARAMETER SkipPull
+Salta git pull (util si ya tienes commits locales por empujar).
 
 .PARAMETER ApiUrl
-URL publica del servicio API en Railway. Default: la del piloto actual.
+URL publica del servicio API en Railway.
 
 .PARAMETER WebUrl
-URL publica del servicio Web en Railway. Default: la del piloto actual.
+URL publica del servicio Web en Railway.
 
 .PARAMETER DryRun
-Si se pasa, hace todo el flow excepto push y migraciones (para probar el script).
+Hace todo el flow excepto push y migraciones.
 
 .EXAMPLE
-.\Deploy-ToRailway.ps1 -FeatureBranch feat/2.15-documentos
+.\Deploy-ToRailway.ps1
 
 .EXAMPLE
-.\Deploy-ToRailway.ps1 -FeatureBranch feat/2.14-comunicaciones -DryRun
+.\Deploy-ToRailway.ps1 -DryRun
 
 .EXAMPLE
-# Si tienes la URL guardada permanente:
-echo "postgresql://postgres:xxx@yamanote.proxy.rlwy.net:45112/railway" > .railway-ddl-url.local
-.\Deploy-ToRailway.ps1 -FeatureBranch feat/2.15-documentos
+# Si ya aplicaste migraciones a mano:
+.\Deploy-ToRailway.ps1 -SkipMigrations
 #>
 param(
-  [Parameter(Mandatory=$true)][string]$FeatureBranch,
   [switch]$SkipTests,
   [switch]$SkipMigrations,
+  [switch]$SkipPull,
   [string]$ApiUrl = "https://propia-production-e484.up.railway.app",
   [string]$WebUrl = "https://refreshing-laughter-production-d4ec.up.railway.app",
   [switch]$DryRun
@@ -58,6 +63,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
+$SourceBranch = "main"
 $TargetBranch = "feat/railway-deploy"
 
 Push-Location $RepoRoot
@@ -74,62 +80,62 @@ function Fail($msg) { Write-Host "  ERROR $msg" -ForegroundColor Red; exit 1 }
 function Invoke-Git {
   param([string]$Cmd)
   $output = Invoke-Expression "git $Cmd" 2>&1
-  if ($LASTEXITCODE -ne 0) { Fail "git $Cmd fallo: $output" }
+  if ($LASTEXITCODE -ne 0) { Fail "git $Cmd fallo:`n$output" }
   return $output
 }
 
 # ============================================================================
 # Step 1: Pre-checks
 # ============================================================================
-Step "1/8 Pre-checks"
+Step "1/7 Pre-checks"
 
-# Branches existen
-$branches = git branch -a 2>&1
-if ($branches -notmatch [regex]::Escape($FeatureBranch)) {
-  Fail "Branch $FeatureBranch no existe localmente"
+$currentBranch = (git branch --show-current).Trim()
+if ($currentBranch -ne $SourceBranch) {
+  Fail "Estas en '$currentBranch'. Cambia a $SourceBranch primero: git checkout $SourceBranch"
 }
-if ($branches -notmatch [regex]::Escape($TargetBranch)) {
-  Fail "Branch $TargetBranch no existe (no estamos en setup de Railway)"
-}
-Ok "Branches $FeatureBranch y $TargetBranch existen"
+Ok "En $SourceBranch"
 
-# Working tree limpio (excepto .gitignore que sabemos podemos stashear)
 $status = git status --porcelain
-$dirtyOtherThanGitignore = $status | Where-Object { $_ -notmatch "^\s*M\s+\.gitignore\s*$" }
-if ($dirtyOtherThanGitignore) {
-  Fail "Working tree tiene cambios sin commitear ademas de .gitignore. Limpia primero.`n$status"
+$dirtyExceptGitignore = $status | Where-Object {
+  $_ -notmatch "^\s*M\s+\.gitignore\s*$" -and $_ -notmatch "^\?\?\s+"
 }
-$hasGitignoreChanges = ($status -match "^\s*M\s+\.gitignore\s*$")
-Ok "Working tree OK"
+if ($dirtyExceptGitignore) {
+  Fail "Working tree con cambios sin commitear:`n$status"
+}
+$untracked = $status | Where-Object { $_ -match "^\?\?\s+" }
+if ($untracked) {
+  Info "Archivos sin trackear (ignorados por el deploy):"
+  $untracked | ForEach-Object { Info "    $_" }
+}
+Ok "Working tree limpio"
 
-# Secrets disponibles
 $SecretsFile = Join-Path $RepoRoot ".railway-secrets.local"
 if (-not (Test-Path $SecretsFile)) {
-  Fail "Falta $SecretsFile con PROPIA_APP_PWD. Necesitas el setup inicial primero."
+  Fail "Falta $SecretsFile con PROPIA_APP_PWD. Setup inicial pendiente."
 }
-Ok "Secrets locales disponibles"
+Ok "Secrets disponibles"
 
-# dotnet
 $dotnetVersion = (dotnet --version 2>&1)
 if ($LASTEXITCODE -ne 0) { Fail "dotnet no encontrado en PATH" }
 Ok "dotnet $dotnetVersion"
 
 # ============================================================================
-# Step 2: Matar procesos Propia locales que bloqueen el build
+# Step 2: Matar procesos Propia locales
 # ============================================================================
-Step "2/8 Limpiar procesos locales que bloquean DLLs"
+Step "2/7 Limpiar procesos locales que bloquean DLLs"
 
 $blockers = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "Propia*" }
 if ($blockers) {
   $blockers | ForEach-Object {
-    Info "Matando proceso $($_.Name) (PID $($_.Id))"
+    Info "Matando $($_.Name) (PID $($_.Id))"
     Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
   }
   Start-Sleep -Seconds 2
 }
 
-# Tambien dotnet run con el repo
-$running = Get-CimInstance Win32_Process -Filter "Name='dotnet.exe'" | Where-Object { $_.CommandLine -like "*$($RepoRoot.Path -replace '\\','\\\\')*" }
+$repoPathEscaped = $RepoRoot.Path -replace '\\', '\\\\'
+$running = Get-CimInstance Win32_Process -Filter "Name='dotnet.exe'" -ErrorAction SilentlyContinue |
+  Where-Object { $_.CommandLine -like "*$($RepoRoot.Path -replace '\\', '\\')*" }
 if ($running) {
   $running | ForEach-Object {
     Info "Matando dotnet run (PID $($_.ProcessId))"
@@ -140,108 +146,95 @@ if ($running) {
 Ok "Procesos limpiados"
 
 # ============================================================================
-# Step 3: Stash + checkout feat/railway-deploy
+# Step 3: Pull main del remoto (sync con equipo)
 # ============================================================================
-Step "3/8 Checkout $TargetBranch"
+Step "3/7 Pull origin main"
 
-if ($hasGitignoreChanges) {
-  Info "Stash de .gitignore"
-  Invoke-Git "stash push -m 'Deploy-ToRailway WIP gitignore' -- .gitignore" | Out-Null
-}
-
-Invoke-Git "checkout $TargetBranch" | Out-Null
-
-if ($hasGitignoreChanges) {
-  Info "Restaurando .gitignore"
-  Invoke-Git "stash pop" | Out-Null
-  Invoke-Git "add .gitignore" | Out-Null
-  $diff = git diff --staged .gitignore
-  if ($diff) {
-    Invoke-Git "commit -m 'chore(gitignore): actualizar entradas locales'" | Out-Null
-    Ok "Commit menor de .gitignore"
+if ($SkipPull) {
+  Info "(skip por -SkipPull)"
+} else {
+  Invoke-Git "fetch origin" | Out-Null
+  $behindAhead = (git rev-list --left-right --count "main...origin/main").Split()
+  $behind = [int]$behindAhead[1]
+  $ahead = [int]$behindAhead[0]
+  if ($behind -gt 0) {
+    Info "main esta $behind commits detras del remoto. Pulling..."
+    Invoke-Git "pull --ff-only origin main" | Out-Null
   }
-}
-
-Ok "En $TargetBranch"
-
-# ============================================================================
-# Step 4: Merge --no-ff
-# ============================================================================
-Step "4/8 Merge $FeatureBranch -> $TargetBranch"
-
-$mergeMsg = @"
-Merge $FeatureBranch into $TargetBranch
-
-Auto-merge via Deploy-ToRailway.ps1 - $(Get-Date -Format 'yyyy-MM-dd HH:mm')
-"@
-
-$mergeOutput = git merge $FeatureBranch --no-ff -m $mergeMsg 2>&1
-if ($LASTEXITCODE -ne 0) {
-  if ($mergeOutput -match "CONFLICT") {
-    Write-Host "`nCONFLICTOS detectados:" -ForegroundColor Yellow
-    git diff --name-only --diff-filter=U
-    Write-Host @"
-
-INSTRUCCIONES:
-  1. Resuelve los conflictos manualmente.
-  2. git add <archivos>
-  3. git commit (mantiene el mensaje pre-poblado)
-  4. Re-ejecuta este script o continua manual con: dotnet build, dotnet test, git push.
-"@ -ForegroundColor Yellow
-    exit 2
+  if ($ahead -gt 0) {
+    Info "main local tiene $ahead commits que NO estan en remoto. Se empujaran ahora."
   }
-  Fail "Merge fallo: $mergeOutput"
+  Ok "Sincronizado con origin/main"
 }
-Ok "Merge limpio"
 
 # ============================================================================
-# Step 5: Build + tests
+# Step 4: Build + tests
 # ============================================================================
-Step "5/8 Build Release + Tests"
+Step "4/7 Build Release + Tests"
 
 Info "dotnet build (Release)..."
 $buildLog = dotnet build --configuration Release -nologo -clp:NoSummary 2>&1
 if ($LASTEXITCODE -ne 0) {
-  Write-Host $buildLog -ForegroundColor Red
-  Fail "Build fallo. Abortando merge:`n  git reset --hard ORIG_HEAD"
+  Write-Host ($buildLog | Select-Object -Last 30) -ForegroundColor Red
+  Fail "Build fallo. Revisa los errores arriba."
 }
 Ok "Build verde"
 
 if (-not $SkipTests) {
-  Info "dotnet test... (puede tomar 2 min por Testcontainers)"
+  Info "dotnet test... (~2 min con Testcontainers)"
   $testLog = dotnet test --no-build --configuration Release --logger "console;verbosity=minimal" -nologo 2>&1
-  $passed = $testLog | Select-String -Pattern "Total:\s+(\d+)" | Select-Object -Last 1
   if ($LASTEXITCODE -ne 0) {
     Write-Host ($testLog | Select-Object -Last 30) -ForegroundColor Red
-    Fail "Tests fallaron. Aborta merge con: git reset --hard ORIG_HEAD"
+    Fail "Tests fallaron. Aborto deploy."
   }
-  Ok "Tests verde - $($passed.Matches[0].Value)"
+  $passedLine = $testLog | Select-String -Pattern "Superado:\s+\d+,\s+Total:\s+\d+" | Select-Object -Last 1
+  if ($passedLine) { Ok "Tests verde - $($passedLine.Matches[0].Value)" } else { Ok "Tests verde" }
 } else {
   Info "(saltando tests por -SkipTests)"
 }
 
 # ============================================================================
-# Step 6: Push
+# Step 5: Push main -> feat/railway-deploy
 # ============================================================================
-Step "6/8 Push a origin"
+Step "5/7 Push main -> $TargetBranch (Railway redeploya auto)"
+
+# Sync main local a remoto primero
+$ahead = [int](git rev-list --left-right --count "main...origin/main").Split()[0]
+if ($ahead -gt 0) {
+  if ($DryRun) {
+    Info "(DryRun) saltaria git push origin main"
+  } else {
+    Invoke-Git "push origin main" | Out-Null
+    Ok "main sincronizado con remoto"
+  }
+}
 
 if ($DryRun) {
-  Info "(DryRun - NO se hace push)"
+  Info "(DryRun) saltaria git push origin main:$TargetBranch --force-with-lease"
   Ok "Skip push"
 } else {
-  Invoke-Git "push origin $TargetBranch" | Out-Null
-  Ok "Push hecho. Railway empieza redeploy automatico."
+  # --force-with-lease: si alguien mas empujo a la branch tecnica, abortar y avisar.
+  $pushOutput = git push origin main:$TargetBranch --force-with-lease 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    Fail "Push fallo: $pushOutput"
+  }
+  Write-Host $pushOutput -ForegroundColor Gray
+  Ok "Push hecho. Railway empezo redeploy automatico."
 }
 
 # ============================================================================
-# Step 7: Migraciones nuevas
+# Step 6: Migraciones nuevas (compara local vs Railway PG)
 # ============================================================================
-Step "7/8 Aplicar migraciones nuevas a Railway PG"
+Step "6/7 Aplicar migraciones nuevas a Railway PG"
 
 if ($SkipMigrations -or $DryRun) {
-  Info "(saltando migraciones por -SkipMigrations o -DryRun)"
+  Info "(saltando por -SkipMigrations o -DryRun)"
 } else {
-  # Capturar DDL connection string
+  $localMigrations = (Get-ChildItem -Path "src/Propia.Infrastructure/Persistence/Migrations" -Filter "*.cs" |
+    Where-Object { $_.Name -notlike "*Designer*" -and $_.Name -notlike "*Snapshot*" }).Count
+  Info "Migraciones locales: $localMigrations"
+
+  # Cargar DDL URL
   $DdlUrlFile = Join-Path $RepoRoot ".railway-ddl-url.local"
   $ddlUrl = $null
   if (Test-Path $DdlUrlFile) {
@@ -249,14 +242,14 @@ if ($SkipMigrations -or $DryRun) {
     Info "Usando DDL URL de .railway-ddl-url.local"
   } else {
     Info "Pegate la DATABASE_PUBLIC_URL desde Railway -> Postgres -> Variables (icono copy)."
-    Info "Voy a leerla del clipboard en 5 segundos..."
+    Info "Leo el clipboard en 5 segundos..."
     Start-Sleep -Seconds 5
-    $ddlUrl = (Get-Clipboard).Trim()
+    $ddlUrl = (Get-Clipboard).Trim() -replace "`r|`n", ""
   }
 
   if (-not ($ddlUrl -match "^postgresql://postgres:")) {
-    Info "DDL URL no parece valida (esperaba postgresql://postgres:...). Saltando migraciones."
-    Info "Aplicalas manualmente: dotnet ef migrations bundle ... && ./efbundle.exe --connection ..."
+    Info "DDL URL no valida. Saltando migraciones."
+    Info "Aplicalas manual: dotnet ef migrations bundle ... && ./efbundle.exe --connection ..."
   } else {
     # Parsear a Npgsql keyword=value
     $u = $ddlUrl -replace 'postgresql://([^:]+):.*', '$1'
@@ -266,6 +259,7 @@ if ($SkipMigrations -or $DryRun) {
     $db = $ddlUrl -replace '.*/([^/]+)$', '$1'
     $npgsql = "Host=$h;Port=$port;Database=$db;Username=$u;Password=$p;SSL Mode=Require;Trust Server Certificate=true"
 
+    # Generar bundle (solo si hay nuevas - igual lo genero, es rapido y --no-build no ayuda con bundle)
     Info "Generando efbundle..."
     dotnet ef migrations bundle `
       --project src/Propia.Infrastructure `
@@ -276,23 +270,32 @@ if ($SkipMigrations -or $DryRun) {
       --configuration Release 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { Fail "No se pudo generar efbundle" }
 
-    Info "Aplicando migraciones contra $h..."
-    & ./efbundle.exe --connection $npgsql 2>&1 | Where-Object { $_ -match "Applying|Done|Acquiring|No migrations" } | ForEach-Object { Info $_ }
-    if ($LASTEXITCODE -ne 0) { Fail "efbundle fallo" }
+    Info "Aplicando contra $h..."
+    $bundleOutput = & ./efbundle.exe --connection $npgsql 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      Write-Host $bundleOutput -ForegroundColor Red
+      Remove-Item ./efbundle.exe -ErrorAction SilentlyContinue
+      Fail "efbundle fallo"
+    }
+    $applied = $bundleOutput | Select-String -Pattern "Applying migration"
     Remove-Item ./efbundle.exe -ErrorAction SilentlyContinue
-    Ok "Migraciones aplicadas"
+    if ($applied) {
+      Ok "Migraciones aplicadas: $($applied.Count)"
+      $applied | ForEach-Object { Info "    $($_.Line.Trim())" }
+    } else {
+      Ok "Sin migraciones nuevas que aplicar"
+    }
   }
 }
 
 # ============================================================================
-# Step 8: Smoke test post-deploy
+# Step 7: Smoke test
 # ============================================================================
-Step "8/8 Smoke test (esperando que Railway termine el redeploy)"
+Step "7/7 Smoke test (esperando 90s a que Railway termine el redeploy)"
 
 if ($DryRun) {
   Info "(DryRun - skip smoke)"
 } else {
-  Info "Esperando 90s para que Railway buildee + redeploye los servicios..."
   Start-Sleep -Seconds 90
 
   $endpoints = @(
@@ -305,12 +308,8 @@ if ($DryRun) {
   foreach ($e in $endpoints) {
     try {
       $resp = Invoke-WebRequest -Uri $e.Url -UseBasicParsing -TimeoutSec 15
-      if ($resp.StatusCode -eq 200) {
-        Ok "$($e.Name) - 200"
-      } else {
-        Info "$($e.Name) - HTTP $($resp.StatusCode)"
-        $allOk = $false
-      }
+      if ($resp.StatusCode -eq 200) { Ok "$($e.Name) - 200" }
+      else { Info "$($e.Name) - HTTP $($resp.StatusCode)"; $allOk = $false }
     } catch {
       Info "$($e.Name) - ERROR: $($_.Exception.Message)"
       $allOk = $false
@@ -319,9 +318,12 @@ if ($DryRun) {
 
   if ($allOk) {
     Write-Host "`nDEPLOY EXITOSO - Sistema operativo en Railway." -ForegroundColor Green
+    Write-Host "  Web:  $WebUrl" -ForegroundColor Gray
+    Write-Host "  API:  $ApiUrl" -ForegroundColor Gray
   } else {
     Write-Host "`nDEPLOY CON ADVERTENCIAS - revisar Railway dashboard." -ForegroundColor Yellow
     Write-Host "  https://railway.com/project/ed01a3b1-eeeb-4026-a456-a14619c7e534" -ForegroundColor Yellow
+    exit 3
   }
 }
 
