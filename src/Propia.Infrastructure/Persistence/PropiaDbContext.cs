@@ -215,6 +215,9 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     // T.2 Motor de Notificaciones (servicio comun - TenantId nullable porque sirve a Capa 0/1/2)
     public DbSet<Notificacion> Notificaciones => Set<Notificacion>();
 
+    // Calendario habil Colombia (global, no tenant)
+    public DbSet<FestivoColombiano> FestivosColombianos => Set<FestivoColombiano>();
+
     // Modulo 0.2 - Billing y Suscripciones (todo GLOBAL, sin tenant_id)
     public DbSet<Plan> Planes => Set<Plan>();
     public DbSet<Cupon> Cupones => Set<Cupon>();
@@ -1933,6 +1936,14 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
                 .HasForeignKey(x => x.TransferenciaId).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(x => x.TransferenciaId);
             b.HasIndex(x => new { x.TransferenciaId, x.CreatedAt });
+        });
+
+        // Festivos colombianos (global, sin tenant) - cache memoria proceso via CalendarioHabilService
+        modelBuilder.Entity<FestivoColombiano>(b =>
+        {
+            b.ToTable("festivos_colombianos");
+            b.Property(x => x.Descripcion).IsRequired().HasMaxLength(200);
+            b.HasIndex(x => x.Fecha).IsUnique();
         });
 
         // T.2 Motor de Notificaciones (servicio comun cross-modulo)
