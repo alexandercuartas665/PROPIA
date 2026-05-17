@@ -109,6 +109,46 @@
     </div>
 
     <div class="col-md-5">
+        @* ====== Dependencias (Fase 2) ====== *@
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0">Dependencias (@_dependencias.Count)</h6>
+                    <button class="btn btn-sm btn-outline-dark" @onclick="AbrirAgregarDep">+ Agregar</button>
+                </div>
+                @if (_dependencias.Count == 0)
+                {
+                    <small class="text-muted">Esta tarea no depende de otras.</small>
+                }
+                else
+                {
+                    <ul class="list-unstyled small mb-0">
+                        @foreach (var d in _dependencias)
+                        {
+                            var did = d.Id;
+                            <li class="mb-1 d-flex justify-content-between align-items-center border-bottom py-1">
+                                <div>
+                                    @if (d.DependeDeTareaEsTerminal)
+                                    {
+                                        <span class="badge bg-success me-1">OK</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-warning text-dark me-1">Bloqueante</span>
+                                    }
+                                    <a href="@($"/tareas/{d.DependeDeTareaId}")" class="text-decoration-none">
+                                        <strong>@d.DependeDeTareaNumero</strong> @d.DependeDeTareaTitulo
+                                    </a>
+                                    <small class="text-muted ms-1">(@d.DependeDeTareaEstadoNombre)</small>
+                                </div>
+                                <button class="btn btn-sm btn-link text-danger p-0" @onclick="() => RemoverDep(did)" title="Eliminar dependencia">✕</button>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+
         @* Historial *@
         <div class="card">
             <div class="card-body">
@@ -128,6 +168,43 @@
     </div>
 </div>
 
+@* Modal agregar dependencia *@
+@if (_showAgregarDep)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Agregar dependencia</h5>
+                    <button type="button" class="btn-close" @onclick="() => _showAgregarDep = false"></button>
+                </div>
+                <div class="modal-body">
+                    <label class="form-label small">Esta tarea depende de:</label>
+                    <select class="form-select form-select-sm" @bind="_nuevaDepTareaId">
+                        <option value="">Selecciona...</option>
+                        @if (_candidatosDep is not null)
+                        {
+                            @foreach (var c in _candidatosDep)
+                            {
+                                <option value="@c.Id">@c.NumeroTarea - @c.Titulo (@c.EstadoNombre)</option>
+                            }
+                        }
+                    </select>
+                    <label class="form-label small mt-2">Tipo</label>
+                    <select class="form-select form-select-sm" @bind="_nuevaDepTipo">
+                        <option value="Bloqueante">Bloqueante (debe completarse primero)</option>
+                        <option value="Sugerida">Sugerida (relacion informativa)</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _showAgregarDep = false">Cancelar</button>
+                    <button class="btn btn-sm btn-primary" @onclick="AgregarDep" disabled="@(_busy || string.IsNullOrEmpty(_nuevaDepTareaId))">Agregar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     [Parameter] public Guid Id { get; set; }
 
@@ -137,6 +214,13 @@
     private TareaDetalleDto? _t;
     private List<EstadoTareaDto>? _estados;
     private string? _comentarioTexto;
+
+    // Dependencias (Fase 2)
+    private List<TareaDependenciaDto> _dependencias = new();
+    private List<TareaListaDto>? _candidatosDep;
+    private bool _showAgregarDep;
+    private string? _nuevaDepTareaId;
+    private string _nuevaDepTipo = "Bloqueante";
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -161,8 +245,56 @@
             var http = Auth();
             _t = await http.GetFromJsonAsync<TareaDetalleDto>($"/api/tareas/{Id}");
             _estados ??= await http.GetFromJsonAsync<List<EstadoTareaDto>>("/api/tareas/estados") ?? new();
+            _dependencias = await http.GetFromJsonAsync<List<TareaDependenciaDto>>($"/api/tareas/{Id}/dependencias") ?? new();
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task CargarCandidatosDepAsync()
+    {
+        try
+        {
+            var todas = await Auth().GetFromJsonAsync<List<TareaListaDto>>("/api/tareas?soloRaiz=true") ?? new();
+            // Excluir la propia tarea y las que ya son dependencia
+            var existentes = _dependencias.Select(d => d.DependeDeTareaId).ToHashSet();
+            _candidatosDep = todas.Where(t => t.Id != Id && !existentes.Contains(t.Id)).ToList();
+        }
+        catch { _candidatosDep = new(); }
+    }
+
+    private async Task AbrirAgregarDep()
+    {
+        await CargarCandidatosDepAsync();
+        _showAgregarDep = true;
+    }
+
+    private async Task AgregarDep()
+    {
+        if (!Guid.TryParse(_nuevaDepTareaId, out var depId)) return;
+        var tipo = _nuevaDepTipo == "Sugerida" ? TipoDependenciaTarea.Sugerida : TipoDependenciaTarea.Bloqueante;
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/tareas/{Id}/dependencias",
+                new AgregarDependenciaRequest(depId, tipo));
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _showAgregarDep = false;
+            _nuevaDepTareaId = null;
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task RemoverDep(Guid depId)
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/tareas/{Id}/dependencias/{depId}");
+            if (!resp.IsSuccessStatusCode) { _msg = "Error eliminando."; _msgClass = "alert-danger"; return; }
+            await CargarAsync();
+        }
+        finally { _busy = false; }
     }
 
     private async Task CambiarEstado(ChangeEventArgs e)
