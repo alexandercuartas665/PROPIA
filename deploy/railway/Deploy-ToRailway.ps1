@@ -89,7 +89,7 @@ function Invoke-Git {
   # script. Workaround: bajar a Continue local + validar $LASTEXITCODE.
   # Uso: Invoke-Git "push" "origin" "main"
   $prev = $ErrorActionPreference
-  $ErrorActionPreference = 'Continue'
+  $ErrorActionPreference = 'SilentlyContinue'
   try {
     $output = (& git @args 2>&1 | Out-String).Trim()
     $exit = $LASTEXITCODE
@@ -105,7 +105,7 @@ function Invoke-Dotnet {
   # Uso: Invoke-Dotnet "dotnet build" @("build", "--configuration", "Release")
   param([string]$Label, [string[]]$DotnetArgs)
   $prev = $ErrorActionPreference
-  $ErrorActionPreference = 'Continue'
+  $ErrorActionPreference = 'SilentlyContinue'
   try {
     $output = (& dotnet @DotnetArgs 2>&1 | Out-String).Trim()
     $exit = $LASTEXITCODE
@@ -120,7 +120,7 @@ function Invoke-Exe {
   # Para invocar ejecutables generados localmente (efbundle.exe).
   param([string]$Label, [string]$Path, [string[]]$ExeArgs)
   $prev = $ErrorActionPreference
-  $ErrorActionPreference = 'Continue'
+  $ErrorActionPreference = 'SilentlyContinue'
   try {
     $output = (& $Path @ExeArgs 2>&1 | Out-String).Trim()
     $exit = $LASTEXITCODE
