@@ -143,6 +143,16 @@
     // Click en .app-navbar-tabs .menu-link cambia tab-pane activo.
 
     function bindRailTabs() {
+        // BUG FIX (validacion MCP 16/05/2026): el comportamiento previo guardaba el ultimo
+        // tab clickeado en sessionStorage.propia_rail_tab y lo RESTAURABA en cada carga,
+        // sobrescribiendo el tab activo que el server-side pone via URL en NavMenu.razor.
+        // Ahora el server-side gobierna: la URL determina el tab activo. El click en el
+        // rail solo permite "preview" visual de otro grupo sin navegar (el usuario clickea
+        // un NavLink del panel para navegar realmente, y el tab se reajusta segun la URL
+        // resultante en el siguiente render). Limpiamos cualquier valor previo para no
+        // dejar la regresion latente.
+        try { sessionStorage.removeItem('propia_rail_tab'); } catch (e) { }
+
         var links = document.querySelectorAll('.app-navbar-tabs .menu-link[data-tab-target]');
         for (var i = 0; i < links.length; i++) {
             if (links[i].dataset.bound === '1') continue;
@@ -164,17 +174,10 @@
                     pane.classList.add('show');
                     pane.classList.add('active');
                 }
-                try { sessionStorage.setItem('propia_rail_tab', target); } catch (e) { }
+                // No persistimos en sessionStorage: la siguiente navegacion debe usar
+                // la URL como fuente de verdad (NavMenu.razor ResolveTab(Nav.Uri)).
             });
         }
-        // Restaurar tab activo entre navegaciones
-        try {
-            var saved = sessionStorage.getItem('propia_rail_tab');
-            if (saved) {
-                var link = document.querySelector('.app-navbar-tabs .menu-link[data-tab-target="' + saved + '"]');
-                if (link) link.click();
-            }
-        } catch (e) { }
     }
 
     // ---------- Inicializacion ----------
