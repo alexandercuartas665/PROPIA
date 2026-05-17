@@ -148,6 +148,9 @@ public static class DependencyInjection
         services.AddScoped<Application.Common.ICalendarioHabilService, Common.CalendarioHabilService>();
         services.AddScoped<Pqrsd.PqrsdMantenimientoService>();
 
+        // Modulo 0.3 Monitoria y Auditoria Global
+        services.AddScoped<Application.Monitoria.IMonitoriaService, Monitoria.MonitoriaService>();
+
         // Storage de blobs (logos, fachadas, portadas, futuros adjuntos).
         // Provider seleccionado por config: "R2" en produccion, cualquier otro valor (o ausente)
         // cae a filesystem local (wwwroot/uploads). Asi Development y tests no requieren credenciales.
