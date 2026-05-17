@@ -82,14 +82,30 @@ function Info($msg) { Write-Host "  $msg" -ForegroundColor Gray }
 function Ok($msg)   { Write-Host "  OK $msg" -ForegroundColor Green }
 function Fail($msg) { Write-Host "  ERROR $msg" -ForegroundColor Red; exit 1 }
 
-function Invoke-Git {
-  # Acepta tokens individuales: Invoke-Git "push" "origin" "main"
-  # En vez de Invoke-Expression (que reactiva el manejo de stderr como exception),
-  # usa el call operator '&' que respeta $PSNativeCommandUseErrorActionPreference.
-  $output = (& git @args 2>&1 | Out-String).Trim()
-  $exit = $LASTEXITCODE
-  if ($exit -ne 0) { Fail "git $($args -join ' ') fallo (exit $exit):`n$output" }
+function Invoke-Native {
+  # Wrapper para ejecutar comandos nativos (git, dotnet) sin que stderr de
+  # progreso aborte el script en PowerShell 5.1 (que NO tiene
+  # $PSNativeCommandUseErrorActionPreference). Bajamos temporal a Continue
+  # alrededor de la llamada y verificamos solo $LASTEXITCODE.
+  param([string]$Cmd, [string[]]$Args, [string]$Label = $null)
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    $output = (& $Cmd @Args 2>&1 | Out-String).Trim()
+    $exit = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $prev
+  }
+  if ($exit -ne 0) {
+    $what = if ($Label) { $Label } else { "$Cmd $($Args -join ' ')" }
+    Fail "${what} fallo (exit $exit):`n$output"
+  }
   return $output
+}
+
+function Invoke-Git {
+  # Sugar para git: Invoke-Git "push" "origin" "main"
+  return Invoke-Native -Cmd "git" -Args $args
 }
 
 # ============================================================================
@@ -181,21 +197,13 @@ if ($SkipPull) {
 Step "4/7 Build Release + Tests"
 
 Info "dotnet build (Release)..."
-$buildLog = dotnet build --configuration Release -nologo -clp:NoSummary 2>&1
-if ($LASTEXITCODE -ne 0) {
-  Write-Host ($buildLog | Select-Object -Last 30) -ForegroundColor Red
-  Fail "Build fallo. Revisa los errores arriba."
-}
+$buildLog = Invoke-Native -Cmd "dotnet" -Args @("build", "--configuration", "Release", "-nologo", "-clp:NoSummary") -Label "dotnet build"
 Ok "Build verde"
 
 if (-not $SkipTests) {
   Info "dotnet test... (~2 min con Testcontainers)"
-  $testLog = dotnet test --no-build --configuration Release --logger "console;verbosity=minimal" -nologo 2>&1
-  if ($LASTEXITCODE -ne 0) {
-    Write-Host ($testLog | Select-Object -Last 30) -ForegroundColor Red
-    Fail "Tests fallaron. Aborto deploy."
-  }
-  $passedLine = $testLog | Select-String -Pattern "Superado:\s+\d+,\s+Total:\s+\d+" | Select-Object -Last 1
+  $testLog = Invoke-Native -Cmd "dotnet" -Args @("test", "--no-build", "--configuration", "Release", "--logger", "console;verbosity=minimal", "-nologo") -Label "dotnet test"
+  $passedLine = ($testLog -split "`n") | Select-String -Pattern "Superado:\s+\d+,\s+Total:\s+\d+" | Select-Object -Last 1
   if ($passedLine) { Ok "Tests verde - $($passedLine.Matches[0].Value)" } else { Ok "Tests verde" }
 } else {
   Info "(saltando tests por -SkipTests)"
@@ -221,18 +229,8 @@ if ($DryRun) {
   Info "(DryRun) saltaria git push origin main:$TargetBranch --force-with-lease"
   Ok "Skip push"
 } else {
-  # --force-with-lease: si alguien mas empujo a la branch tecnica, abortar y avisar.
-  # Nota: git escribe progreso a stderr aun en exito; lo capturamos a string
-  # y solo decidimos por $LASTEXITCODE para no confundir progreso con error.
-  $prevErrorAction = $ErrorActionPreference
-  $ErrorActionPreference = "Continue"
-  $pushOutput = (& git push origin "main:$TargetBranch" --force-with-lease 2>&1 | Out-String).Trim()
-  $pushExit = $LASTEXITCODE
-  $ErrorActionPreference = $prevErrorAction
-  if ($pushExit -ne 0) {
-    Fail "Push fallo (exit $pushExit):`n$pushOutput"
-  }
-  Write-Host $pushOutput -ForegroundColor Gray
+  $pushOutput = Invoke-Git "push" "origin" "main:$TargetBranch" "--force-with-lease"
+  if ($pushOutput) { Write-Host $pushOutput -ForegroundColor Gray }
   Ok "Push hecho. Railway empezo redeploy automatico."
 }
 
@@ -273,25 +271,20 @@ if ($SkipMigrations -or $DryRun) {
     $db = $ddlUrl -replace '.*/([^/]+)$', '$1'
     $npgsql = "Host=$h;Port=$port;Database=$db;Username=$u;Password=$p;SSL Mode=Require;Trust Server Certificate=true"
 
-    # Generar bundle (solo si hay nuevas - igual lo genero, es rapido y --no-build no ayuda con bundle)
     Info "Generando efbundle..."
-    dotnet ef migrations bundle `
-      --project src/Propia.Infrastructure `
-      --startup-project src/Propia.Api `
-      --output ./efbundle.exe `
-      --self-contained `
-      --target-runtime win-x64 `
-      --configuration Release 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { Fail "No se pudo generar efbundle" }
+    Invoke-Native -Cmd "dotnet" -Args @(
+      "ef", "migrations", "bundle",
+      "--project", "src/Propia.Infrastructure",
+      "--startup-project", "src/Propia.Api",
+      "--output", "./efbundle.exe",
+      "--self-contained",
+      "--target-runtime", "win-x64",
+      "--configuration", "Release"
+    ) -Label "dotnet ef migrations bundle" | Out-Null
 
     Info "Aplicando contra $h..."
-    $bundleOutput = & ./efbundle.exe --connection $npgsql 2>&1
-    if ($LASTEXITCODE -ne 0) {
-      Write-Host $bundleOutput -ForegroundColor Red
-      Remove-Item ./efbundle.exe -ErrorAction SilentlyContinue
-      Fail "efbundle fallo"
-    }
-    $applied = $bundleOutput | Select-String -Pattern "Applying migration"
+    $bundleOutput = Invoke-Native -Cmd "./efbundle.exe" -Args @("--connection", $npgsql) -Label "efbundle apply"
+    $applied = ($bundleOutput -split "`n") | Select-String -Pattern "Applying migration"
     Remove-Item ./efbundle.exe -ErrorAction SilentlyContinue
     if ($applied) {
       Ok "Migraciones aplicadas: $($applied.Count)"
