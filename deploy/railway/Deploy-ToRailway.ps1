@@ -82,30 +82,53 @@ function Info($msg) { Write-Host "  $msg" -ForegroundColor Gray }
 function Ok($msg)   { Write-Host "  OK $msg" -ForegroundColor Green }
 function Fail($msg) { Write-Host "  ERROR $msg" -ForegroundColor Red; exit 1 }
 
-function Invoke-Native {
-  # Wrapper para ejecutar comandos nativos (git, dotnet) sin que stderr de
-  # progreso aborte el script en PowerShell 5.1 (que NO tiene
-  # $PSNativeCommandUseErrorActionPreference). Bajamos temporal a Continue
-  # alrededor de la llamada y verificamos solo $LASTEXITCODE.
-  param([string]$Cmd, [string[]]$Args, [string]$Label = $null)
+function Invoke-Git {
+  # PowerShell 5.1 (default Windows) NO tiene
+  # $PSNativeCommandUseErrorActionPreference, asi que con
+  # ErrorActionPreference='Stop' el stderr-de-progreso de git aborta el
+  # script. Workaround: bajar a Continue local + validar $LASTEXITCODE.
+  # Uso: Invoke-Git "push" "origin" "main"
   $prev = $ErrorActionPreference
   $ErrorActionPreference = 'Continue'
   try {
-    $output = (& $Cmd @Args 2>&1 | Out-String).Trim()
+    $output = (& git @args 2>&1 | Out-String).Trim()
     $exit = $LASTEXITCODE
   } finally {
     $ErrorActionPreference = $prev
   }
-  if ($exit -ne 0) {
-    $what = if ($Label) { $Label } else { "$Cmd $($Args -join ' ')" }
-    Fail "${what} fallo (exit $exit):`n$output"
-  }
+  if ($exit -ne 0) { Fail "git $($args -join ' ') fallo (exit $exit):`n$output" }
   return $output
 }
 
-function Invoke-Git {
-  # Sugar para git: Invoke-Git "push" "origin" "main"
-  return Invoke-Native -Cmd "git" -Args $args
+function Invoke-Dotnet {
+  # Mismo patron pero para dotnet (build, test, ef bundle, etc).
+  # Uso: Invoke-Dotnet "dotnet build" @("build", "--configuration", "Release")
+  param([string]$Label, [string[]]$DotnetArgs)
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    $output = (& dotnet @DotnetArgs 2>&1 | Out-String).Trim()
+    $exit = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $prev
+  }
+  if ($exit -ne 0) { Fail "${Label} fallo (exit $exit):`n$output" }
+  return $output
+}
+
+function Invoke-Exe {
+  # Para invocar ejecutables generados localmente (efbundle.exe).
+  param([string]$Label, [string]$Path, [string[]]$ExeArgs)
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    $output = (& $Path @ExeArgs 2>&1 | Out-String).Trim()
+    $exit = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $prev
+  }
+  if ($exit -ne 0) { Fail "${Label} fallo (exit $exit):`n$output" }
+  return $output
 }
 
 # ============================================================================
@@ -197,12 +220,12 @@ if ($SkipPull) {
 Step "4/7 Build Release + Tests"
 
 Info "dotnet build (Release)..."
-$buildLog = Invoke-Native -Cmd "dotnet" -Args @("build", "--configuration", "Release", "-nologo", "-clp:NoSummary") -Label "dotnet build"
+Invoke-Dotnet "dotnet build" @("build", "--configuration", "Release", "-nologo", "-clp:NoSummary") | Out-Null
 Ok "Build verde"
 
 if (-not $SkipTests) {
   Info "dotnet test... (~2 min con Testcontainers)"
-  $testLog = Invoke-Native -Cmd "dotnet" -Args @("test", "--no-build", "--configuration", "Release", "--logger", "console;verbosity=minimal", "-nologo") -Label "dotnet test"
+  $testLog = Invoke-Dotnet "dotnet test" @("test", "--no-build", "--configuration", "Release", "--logger", "console;verbosity=minimal", "-nologo")
   $passedLine = ($testLog -split "`n") | Select-String -Pattern "Superado:\s+\d+,\s+Total:\s+\d+" | Select-Object -Last 1
   if ($passedLine) { Ok "Tests verde - $($passedLine.Matches[0].Value)" } else { Ok "Tests verde" }
 } else {
@@ -272,7 +295,7 @@ if ($SkipMigrations -or $DryRun) {
     $npgsql = "Host=$h;Port=$port;Database=$db;Username=$u;Password=$p;SSL Mode=Require;Trust Server Certificate=true"
 
     Info "Generando efbundle..."
-    Invoke-Native -Cmd "dotnet" -Args @(
+    Invoke-Dotnet "dotnet ef migrations bundle" @(
       "ef", "migrations", "bundle",
       "--project", "src/Propia.Infrastructure",
       "--startup-project", "src/Propia.Api",
@@ -280,10 +303,10 @@ if ($SkipMigrations -or $DryRun) {
       "--self-contained",
       "--target-runtime", "win-x64",
       "--configuration", "Release"
-    ) -Label "dotnet ef migrations bundle" | Out-Null
+    ) | Out-Null
 
     Info "Aplicando contra $h..."
-    $bundleOutput = Invoke-Native -Cmd "./efbundle.exe" -Args @("--connection", $npgsql) -Label "efbundle apply"
+    $bundleOutput = Invoke-Exe "efbundle apply" "./efbundle.exe" @("--connection", $npgsql)
     $applied = ($bundleOutput -split "`n") | Select-String -Pattern "Applying migration"
     Remove-Item ./efbundle.exe -ErrorAction SilentlyContinue
     if ($applied) {
