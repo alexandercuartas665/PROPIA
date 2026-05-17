@@ -218,6 +218,11 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     // Calendario habil Colombia (global, no tenant)
     public DbSet<FestivoColombiano> FestivosColombianos => Set<FestivoColombiano>();
 
+    // Modulo 0.3 Monitoria y Auditoria Global (todo GLOBAL, sin tenant)
+    public DbSet<SistemaLog> SistemaLogs => Set<SistemaLog>();
+    public DbSet<SistemaIncidente> SistemaIncidentes => Set<SistemaIncidente>();
+    public DbSet<MetricaUsoDiaria> MetricasUsoDiarias => Set<MetricaUsoDiaria>();
+
     // Modulo 0.2 - Billing y Suscripciones (todo GLOBAL, sin tenant_id)
     public DbSet<Plan> Planes => Set<Plan>();
     public DbSet<Cupon> Cupones => Set<Cupon>();
@@ -1943,6 +1948,44 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
         {
             b.ToTable("festivos_colombianos");
             b.Property(x => x.Descripcion).IsRequired().HasMaxLength(200);
+            b.HasIndex(x => x.Fecha).IsUnique();
+        });
+
+        // Modulo 0.3 Monitoria y Auditoria Global
+        modelBuilder.Entity<SistemaLog>(b =>
+        {
+            b.ToTable("sistema_logs");
+            b.Property(x => x.TipoEvento).HasConversion<int>();
+            b.Property(x => x.Severidad).HasConversion<int>();
+            b.Property(x => x.Mensaje).IsRequired().HasMaxLength(2000);
+            b.Property(x => x.ModuloOrigenCodigo).HasMaxLength(20);
+            b.Property(x => x.DetalleJson).HasColumnType("text");
+            b.Property(x => x.Ip).HasMaxLength(64);
+            b.Property(x => x.UserAgent).HasMaxLength(500);
+            b.HasIndex(x => x.CreatedAt);
+            b.HasIndex(x => new { x.Severidad, x.CreatedAt });
+            b.HasIndex(x => new { x.TipoEvento, x.CreatedAt });
+            b.HasIndex(x => x.TenantId);
+        });
+
+        modelBuilder.Entity<SistemaIncidente>(b =>
+        {
+            b.ToTable("sistema_incidentes");
+            b.Property(x => x.Severidad).HasConversion<int>();
+            b.Property(x => x.Estado).HasConversion<int>();
+            b.Property(x => x.Titulo).IsRequired().HasMaxLength(300);
+            b.Property(x => x.Descripcion).HasColumnType("text");
+            b.Property(x => x.ServicioAfectado).HasMaxLength(100);
+            b.Property(x => x.CausaRaiz).HasColumnType("text");
+            b.Property(x => x.SolucionAplicada).HasColumnType("text");
+            b.HasIndex(x => new { x.Estado, x.Severidad });
+            b.HasIndex(x => x.DetectadoAt);
+            b.HasIndex(x => x.AsignadoSuperAdminId);
+        });
+
+        modelBuilder.Entity<MetricaUsoDiaria>(b =>
+        {
+            b.ToTable("metricas_uso_diarias");
             b.HasIndex(x => x.Fecha).IsUnique();
         });
 
