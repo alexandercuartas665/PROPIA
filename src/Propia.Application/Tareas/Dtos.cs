@@ -90,3 +90,45 @@ public record ResumenTareasDto(
     int CompletadasUltimoMes,
     IReadOnlyList<(string Estado, int Cantidad)> PorEstado,
     IReadOnlyList<(string Prioridad, int Cantidad)> PorPrioridad);
+
+// ===========================================================================
+// Dependencias entre tareas (Fase 2)
+// ===========================================================================
+
+public record TareaDependenciaDto(
+    Guid Id,
+    Guid TareaId,
+    Guid DependeDeTareaId,
+    string DependeDeTareaNumero,
+    string DependeDeTareaTitulo,
+    string DependeDeTareaEstadoNombre,
+    bool DependeDeTareaEsTerminal,
+    TipoDependenciaTarea Tipo,
+    DateTimeOffset CreadoAt);
+
+public record AgregarDependenciaRequest(
+    Guid DependeDeTareaId,
+    TipoDependenciaTarea Tipo = TipoDependenciaTarea.Bloqueante);
+
+// ===========================================================================
+// Bulk actions (Fase 2)
+// ===========================================================================
+
+public record BulkCambiarEstadoRequest(
+    IReadOnlyList<Guid> TareaIds,
+    Guid NuevoEstadoId,
+    string? Nota = null);
+
+public record BulkCambiarPrioridadRequest(
+    IReadOnlyList<Guid> TareaIds,
+    PrioridadTarea Prioridad);
+
+public record BulkAsignarPersonaRequest(
+    IReadOnlyList<Guid> TareaIds,
+    Guid? AsignadoPersonaId);
+
+public record BulkResultDto(
+    int Solicitados,
+    int Aplicados,
+    int Omitidos,
+    IReadOnlyList<string> Errores);

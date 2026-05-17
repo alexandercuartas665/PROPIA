@@ -107,6 +107,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<TareaColaborador> TareaColaboradores => Set<TareaColaborador>();
     public DbSet<TareaComentario> TareaComentarios => Set<TareaComentario>();
     public DbSet<TareaHistorial> TareaHistorial => Set<TareaHistorial>();
+    public DbSet<TareaDependencia> TareaDependencias => Set<TareaDependencia>();
 
     // Modulo 2.7 Cartera y Estado de Cuenta (TenantEntity con RLS)
     public DbSet<EstadoCarteraConfig> EstadosCarteraConfig => Set<EstadoCarteraConfig>();
@@ -876,6 +877,20 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasOne(x => x.Tarea).WithMany(t => t.Historial).HasForeignKey(x => x.TareaId).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.TareaId, x.OcurridoAt });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<TareaDependencia>(b =>
+        {
+            b.ToTable("tarea_dependencias");
+            b.Property(x => x.Tipo).HasConversion<int>();
+            b.HasOne(x => x.Tarea).WithMany(t => t.DependenciasDe)
+                .HasForeignKey(x => x.TareaId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.DependeDeTarea).WithMany(t => t.DependenciasA)
+                .HasForeignKey(x => x.DependeDeTareaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TareaId, x.DependeDeTareaId }).IsUnique();
+            b.HasIndex(x => x.DependeDeTareaId);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

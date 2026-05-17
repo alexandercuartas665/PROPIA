@@ -64,5 +64,17 @@ public enum TipoEventoTarea
     ComentarioAgregado = 10,
     AdjuntoAgregado = 11,
     Cancelada = 12,
-    Reabierta = 13
+    Reabierta = 13,
+    DependenciaAgregada = 14,
+    DependenciaRemovida = 15,
+    PersonaMencionada = 16
+}
+
+/// <summary>Tipo de dependencia entre dos tareas. Spec 2.10 v1.0 Fase 2.</summary>
+public enum TipoDependenciaTarea
+{
+    /// <summary>La tarea A no puede pasar a EnProgreso hasta que B este Completada.</summary>
+    Bloqueante = 1,
+    /// <summary>Relacion informativa (predecesora natural pero no bloquea).</summary>
+    Sugerida = 2
 }

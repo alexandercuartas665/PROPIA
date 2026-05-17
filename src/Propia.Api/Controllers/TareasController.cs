@@ -122,4 +122,38 @@ public class TareasController : ControllerBase
 
     [HttpGet("resumen")]
     public async Task<IActionResult> Resumen(CancellationToken ct) => Ok(await _svc.GetResumenAsync(ct));
+
+    // --- Dependencias (Fase 2) ---
+
+    [HttpGet("{id:guid}/dependencias")]
+    public async Task<IActionResult> ListarDependencias(Guid id, CancellationToken ct)
+        => Ok(await _svc.ListarDependenciasAsync(id, ct));
+
+    [HttpPost("{id:guid}/dependencias")]
+    public async Task<IActionResult> AgregarDependencia(Guid id, [FromBody] AgregarDependenciaRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.AgregarDependenciaAsync(id, req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpDelete("{id:guid}/dependencias/{dependenciaId:guid}")]
+    public async Task<IActionResult> RemoverDependencia(Guid id, Guid dependenciaId, CancellationToken ct)
+        => await _svc.RemoverDependenciaAsync(id, dependenciaId, ct) ? NoContent() : NotFound();
+
+    // --- Bulk actions (Fase 2) ---
+
+    [HttpPost("bulk/estado")]
+    public async Task<IActionResult> BulkCambiarEstado([FromBody] BulkCambiarEstadoRequest req, CancellationToken ct)
+    {
+        try { return Ok(await _svc.BulkCambiarEstadoAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpPost("bulk/prioridad")]
+    public async Task<IActionResult> BulkCambiarPrioridad([FromBody] BulkCambiarPrioridadRequest req, CancellationToken ct)
+        => Ok(await _svc.BulkCambiarPrioridadAsync(req, ct));
+
+    [HttpPost("bulk/asignado")]
+    public async Task<IActionResult> BulkAsignarPersona([FromBody] BulkAsignarPersonaRequest req, CancellationToken ct)
+        => Ok(await _svc.BulkAsignarPersonaAsync(req, ct));
 }

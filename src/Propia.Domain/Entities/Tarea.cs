@@ -47,6 +47,29 @@ public class Tarea : TenantEntity
     public ICollection<TareaHistorial> Historial { get; set; } = new List<TareaHistorial>();
     public ICollection<TareaEtiquetaAsignacion> Etiquetas { get; set; } = new List<TareaEtiquetaAsignacion>();
     public ICollection<TareaColaborador> Colaboradores { get; set; } = new List<TareaColaborador>();
+
+    /// <summary>Tareas de las que esta tarea depende (predecesoras). Spec 2.10 Fase 2.</summary>
+    public ICollection<TareaDependencia> DependenciasDe { get; set; } = new List<TareaDependencia>();
+    /// <summary>Tareas que dependen de esta (sucesoras). Spec 2.10 Fase 2.</summary>
+    public ICollection<TareaDependencia> DependenciasA { get; set; } = new List<TareaDependencia>();
+}
+
+/// <summary>
+/// Dependencia entre dos tareas (Bloqueante / Sucesora). Spec 2.10 v1.0 Fase 2.
+/// Tarea A esta bloqueada hasta que Tarea B (Bloqueante) este Completada.
+/// Cero ciclos: se valida en codigo + UNIQUE(TareaId, DependeDeTareaId).
+/// </summary>
+public class TareaDependencia : TenantEntity
+{
+    public Guid TareaId { get; set; }
+    public Tarea? Tarea { get; set; }
+
+    public Guid DependeDeTareaId { get; set; }
+    public Tarea? DependeDeTarea { get; set; }
+
+    public TipoDependenciaTarea Tipo { get; set; } = TipoDependenciaTarea.Bloqueante;
+
+    public Guid? CreadoPorUsuarioId { get; set; }
 }
 
 /// <summary>Colaborador participante (no rinde cuentas). Spec 2.10 v1.0 seccion 9.</summary>

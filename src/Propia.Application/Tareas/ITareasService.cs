@@ -31,6 +31,16 @@ public interface ITareasService
     Task<TareaColaboradorDto> AgregarColaboradorAsync(Guid tareaId, AgregarColaboradorRequest req, CancellationToken ct);
     Task<bool> RemoverColaboradorAsync(Guid tareaId, Guid colaboradorId, CancellationToken ct);
 
+    // Dependencias (Fase 2)
+    Task<TareaDependenciaDto> AgregarDependenciaAsync(Guid tareaId, AgregarDependenciaRequest req, CancellationToken ct);
+    Task<bool> RemoverDependenciaAsync(Guid tareaId, Guid dependenciaId, CancellationToken ct);
+    Task<IReadOnlyList<TareaDependenciaDto>> ListarDependenciasAsync(Guid tareaId, CancellationToken ct);
+
+    // Bulk actions (Fase 2): aplicar en lote a N tareas
+    Task<BulkResultDto> BulkCambiarEstadoAsync(BulkCambiarEstadoRequest req, CancellationToken ct);
+    Task<BulkResultDto> BulkCambiarPrioridadAsync(BulkCambiarPrioridadRequest req, CancellationToken ct);
+    Task<BulkResultDto> BulkAsignarPersonaAsync(BulkAsignarPersonaRequest req, CancellationToken ct);
+
     // Indicadores
     Task<ResumenTareasDto> GetResumenAsync(CancellationToken ct);
 }

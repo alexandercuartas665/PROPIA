@@ -37,6 +37,7 @@ public class TareasFlowTests : IAsyncLifetime
             .AddRoles<IdentityRole<Guid>>()
             .AddEntityFrameworkStores<PropiaDbContext>()
             .AddDefaultTokenProviders();
+        sc.AddSingleton<Propia.Application.Notificaciones.INotificacionDispatcher, FakeNotificacionDispatcher>();
         _services = sc.BuildServiceProvider();
         return Task.CompletedTask;
     }
@@ -175,6 +176,117 @@ public class TareasFlowTests : IAsyncLifetime
         await CleanTenant(tenantId);
     }
 
+    // ===================== Dependencias (Fase 2) =====================
+
+    [Fact]
+    public async Task Dependencias_agregar_listar_y_remover()
+    {
+        var tenantId = await SeedTenantAsync("Tareas Deps");
+        var (svc, db, _) = Build(tenantId);
+
+        var pre = await svc.CrearTareaAsync(new CrearTareaRequest(
+            "Predecesora", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+        var suc = await svc.CrearTareaAsync(new CrearTareaRequest(
+            "Sucesora", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+
+        var dep = await svc.AgregarDependenciaAsync(suc.Id,
+            new AgregarDependenciaRequest(pre.Id, TipoDependenciaTarea.Bloqueante),
+            CancellationToken.None);
+
+        Assert.Equal(pre.Id, dep.DependeDeTareaId);
+        Assert.Equal(TipoDependenciaTarea.Bloqueante, dep.Tipo);
+
+        var lista = await svc.ListarDependenciasAsync(suc.Id, CancellationToken.None);
+        Assert.Single(lista);
+
+        var ok = await svc.RemoverDependenciaAsync(suc.Id, dep.Id, CancellationToken.None);
+        Assert.True(ok);
+        var lista2 = await svc.ListarDependenciasAsync(suc.Id, CancellationToken.None);
+        Assert.Empty(lista2);
+
+        await CleanTenant(tenantId);
+    }
+
+    [Fact]
+    public async Task Dependencias_evita_ciclo()
+    {
+        var tenantId = await SeedTenantAsync("Tareas Ciclo");
+        var (svc, _, _) = Build(tenantId);
+
+        var a = await svc.CrearTareaAsync(new CrearTareaRequest(
+            "A", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+        var b = await svc.CrearTareaAsync(new CrearTareaRequest(
+            "B", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+
+        // A depende de B
+        await svc.AgregarDependenciaAsync(a.Id, new AgregarDependenciaRequest(b.Id), CancellationToken.None);
+        // Ahora intentar B depende de A debe fallar (ciclo)
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            svc.AgregarDependenciaAsync(b.Id, new AgregarDependenciaRequest(a.Id), CancellationToken.None));
+
+        await CleanTenant(tenantId);
+    }
+
+    [Fact]
+    public async Task Dependencias_misma_tarea_falla()
+    {
+        var tenantId = await SeedTenantAsync("Tareas Self");
+        var (svc, _, _) = Build(tenantId);
+        var t = await svc.CrearTareaAsync(new CrearTareaRequest(
+            "T", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            svc.AgregarDependenciaAsync(t.Id, new AgregarDependenciaRequest(t.Id), CancellationToken.None));
+        await CleanTenant(tenantId);
+    }
+
+    // ===================== Bulk actions (Fase 2) =====================
+
+    [Fact]
+    public async Task Bulk_cambiar_estado_aplica_en_lote_y_marca_completada()
+    {
+        var tenantId = await SeedTenantAsync("Tareas Bulk");
+        var (svc, db, _) = Build(tenantId);
+
+        var estados = await svc.ListarEstadosAsync(CancellationToken.None);
+        var completada = estados.First(e => e.EsTerminal && e.Nombre == "Completada");
+        var t1 = await svc.CrearTareaAsync(new CrearTareaRequest(
+            "T1", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+        var t2 = await svc.CrearTareaAsync(new CrearTareaRequest(
+            "T2", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+
+        var res = await svc.BulkCambiarEstadoAsync(
+            new BulkCambiarEstadoRequest(new[] { t1.Id, t2.Id }, completada.Id, "Bulk MCP"),
+            CancellationToken.None);
+        Assert.Equal(2, res.Solicitados);
+        Assert.Equal(2, res.Aplicados);
+
+        var actualizadas = await db.Tareas.AsNoTracking()
+            .Where(t => t.Id == t1.Id || t.Id == t2.Id).ToListAsync();
+        Assert.All(actualizadas, t => Assert.NotNull(t.FechaCompletada));
+
+        await CleanTenant(tenantId);
+    }
+
+    [Fact]
+    public async Task Bulk_cambiar_prioridad_aplica_en_lote()
+    {
+        var tenantId = await SeedTenantAsync("Tareas Bulk Prio");
+        var (svc, db, _) = Build(tenantId);
+        var t1 = await svc.CrearTareaAsync(new CrearTareaRequest(
+            "T1", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+        var t2 = await svc.CrearTareaAsync(new CrearTareaRequest(
+            "T2", null, PrioridadTarea.Baja, null, null, null, null, null, null), CancellationToken.None);
+
+        var res = await svc.BulkCambiarPrioridadAsync(
+            new BulkCambiarPrioridadRequest(new[] { t1.Id, t2.Id }, PrioridadTarea.Urgente),
+            CancellationToken.None);
+        Assert.Equal(2, res.Aplicados);
+        var actualizadas = await db.Tareas.AsNoTracking()
+            .Where(t => t.Id == t1.Id || t.Id == t2.Id).ToListAsync();
+        Assert.All(actualizadas, t => Assert.Equal(PrioridadTarea.Urgente, t.Prioridad));
+        await CleanTenant(tenantId);
+    }
+
     // ===================== Helpers =====================
 
     private (ITareasService svc, PropiaDbContext db, IServiceScope scope) Build(Guid tenantId)
@@ -184,7 +296,8 @@ public class TareasFlowTests : IAsyncLifetime
         ctx.SetTenant(tenantId);
         var db = scope.ServiceProvider.GetRequiredService<PropiaDbContext>();
         var http = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
-        return (new TareasService(db, ctx, http), db, scope);
+        var noti = scope.ServiceProvider.GetRequiredService<Propia.Application.Notificaciones.INotificacionDispatcher>();
+        return (new TareasService(db, ctx, http, noti), db, scope);
     }
 
     private static HttpContext BuildFakeHttpContext()
