@@ -62,6 +62,11 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# git y dotnet escriben progreso a stderr aun en exito. Sin esto, $ErrorActionPreference="Stop"
+# convierte esos mensajes en excepciones terminating y aborta el script. PowerShell 7.4+ permite
+# desacoplar native commands: $LASTEXITCODE manda, no el stderr.
+$PSNativeCommandUseErrorActionPreference = $false
+
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
 $SourceBranch = "main"
 $TargetBranch = "feat/railway-deploy"
@@ -214,9 +219,15 @@ if ($DryRun) {
   Ok "Skip push"
 } else {
   # --force-with-lease: si alguien mas empujo a la branch tecnica, abortar y avisar.
-  $pushOutput = git push origin main:$TargetBranch --force-with-lease 2>&1
-  if ($LASTEXITCODE -ne 0) {
-    Fail "Push fallo: $pushOutput"
+  # Nota: git escribe progreso a stderr aun en exito; lo capturamos a string
+  # y solo decidimos por $LASTEXITCODE para no confundir progreso con error.
+  $prevErrorAction = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  $pushOutput = (& git push origin "main:$TargetBranch" --force-with-lease 2>&1 | Out-String).Trim()
+  $pushExit = $LASTEXITCODE
+  $ErrorActionPreference = $prevErrorAction
+  if ($pushExit -ne 0) {
+    Fail "Push fallo (exit $pushExit):`n$pushOutput"
   }
   Write-Host $pushOutput -ForegroundColor Gray
   Ok "Push hecho. Railway empezo redeploy automatico."
