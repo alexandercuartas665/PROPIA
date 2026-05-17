@@ -208,6 +208,9 @@
         try {
             var jwt = sessionStorage.getItem('propia_jwt');
             var nombre = sessionStorage.getItem('propia_copropiedad_nombre') || '';
+            // Sincronizamos el data attribute global asi el CSS pre-resuelve el CTA
+            // incluso en navegaciones SPA donde el script inline solo corre una vez.
+            try { document.documentElement.setAttribute('data-propia-auth', jwt ? 'in' : 'out'); } catch (e) { }
             var cta = document.querySelector('[data-propia-cta]');
             if (!cta) return;
             var login = cta.querySelector('[data-propia-cta-login]');
