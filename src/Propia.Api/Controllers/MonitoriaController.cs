@@ -91,4 +91,30 @@ public class MonitoriaController : ControllerBase
 
     [HttpGet("resumen")]
     public async Task<IActionResult> Resumen(CancellationToken ct) => Ok(await _svc.GetResumenAsync(ct));
+
+    // ----- Jobs nocturnos -----
+
+    [HttpGet("jobs")]
+    public async Task<IActionResult> ListarJobs(
+        [FromQuery] string? jobName, [FromQuery] int limite = 50, CancellationToken ct = default)
+        => Ok(await _svc.ListarJobsAsync(jobName, limite, ct));
+
+    [HttpGet("jobs/estado")]
+    public async Task<IActionResult> EstadoJobs(CancellationToken ct)
+        => Ok(await _svc.GetEstadoJobsAsync(ct));
+
+    /// <summary>Dispara manualmente un job registrado (util para admin/tests).</summary>
+    [HttpPost("jobs/{nombre}/ejecutar")]
+    public async Task<IActionResult> EjecutarJob(string nombre,
+        [FromServices] IEnumerable<Propia.Infrastructure.Jobs.IBackgroundJob> jobs,
+        [FromServices] Propia.Infrastructure.Jobs.BackgroundJobScheduler scheduler,
+        [FromServices] IServiceScopeFactory scopeFactory,
+        CancellationToken ct)
+    {
+        var job = jobs.FirstOrDefault(j => j.Nombre == nombre);
+        if (job is null) return NotFound(new { error = $"Job '{nombre}' no registrado." });
+        using var scope = scopeFactory.CreateScope();
+        await scheduler.EjecutarUnoAsync(scope.ServiceProvider, job, Environment.MachineName + ":manual", ct);
+        return Ok(new { ok = true, job = nombre });
+    }
 }

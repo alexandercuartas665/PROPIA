@@ -151,6 +151,13 @@ public static class DependencyInjection
         // Modulo 0.3 Monitoria y Auditoria Global
         services.AddScoped<Application.Monitoria.IMonitoriaService, Monitoria.MonitoriaService>();
 
+        // Background jobs - registro de scheduler + jobs concretos.
+        // Cada job se inyecta como IBackgroundJob (multiples implementaciones).
+        // El BackgroundJobScheduler es Singleton (BackgroundService) que cada tick
+        // abre un scope nuevo para resolver los jobs scoped.
+        services.AddScoped<Jobs.IBackgroundJob, Jobs.PqrsdCierreNocturnoJob>();
+        services.AddScoped<Jobs.IBackgroundJob, Jobs.MetricasDiariasJob>();
+
         // Storage de blobs (logos, fachadas, portadas, futuros adjuntos).
         // Provider seleccionado por config: "R2" en produccion, cualquier otro valor (o ausente)
         // cae a filesystem local (wwwroot/uploads). Asi Development y tests no requieren credenciales.

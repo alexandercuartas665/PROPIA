@@ -35,6 +35,10 @@ public interface IMonitoriaService
     Task<IReadOnlyList<MetricaUsoDiariaDto>> ListarMetricasAsync(DateOnly desde, DateOnly hasta, CancellationToken ct);
     Task<MetricaUsoDiariaDto?> GetMetricaMasRecienteAsync(CancellationToken ct);
 
+    // Jobs nocturnos (lectura - el scheduler ejecuta autonomo)
+    Task<IReadOnlyList<JobEjecucionDto>> ListarJobsAsync(string? jobName, int limite, CancellationToken ct);
+    Task<IReadOnlyList<JobEstadoDto>> GetEstadoJobsAsync(CancellationToken ct);
+
     // Resumen
     Task<ResumenMonitoriaDto> GetResumenAsync(CancellationToken ct);
 }

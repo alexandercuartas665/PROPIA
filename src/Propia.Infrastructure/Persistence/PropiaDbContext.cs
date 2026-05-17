@@ -223,6 +223,9 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<SistemaIncidente> SistemaIncidentes => Set<SistemaIncidente>();
     public DbSet<MetricaUsoDiaria> MetricasUsoDiarias => Set<MetricaUsoDiaria>();
 
+    // Background jobs (transversal, global)
+    public DbSet<JobEjecucion> JobEjecuciones => Set<JobEjecucion>();
+
     // Modulo 0.2 - Billing y Suscripciones (todo GLOBAL, sin tenant_id)
     public DbSet<Plan> Planes => Set<Plan>();
     public DbSet<Cupon> Cupones => Set<Cupon>();
@@ -1987,6 +1990,18 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
         {
             b.ToTable("metricas_uso_diarias");
             b.HasIndex(x => x.Fecha).IsUnique();
+        });
+
+        modelBuilder.Entity<JobEjecucion>(b =>
+        {
+            b.ToTable("job_ejecuciones");
+            b.Property(x => x.JobName).IsRequired().HasMaxLength(100);
+            b.Property(x => x.Estado).HasConversion<int>();
+            b.Property(x => x.ResultadoJson).HasColumnType("text");
+            b.Property(x => x.Error).HasMaxLength(4000);
+            b.Property(x => x.EjecutadoPorHost).HasMaxLength(100);
+            b.HasIndex(x => new { x.JobName, x.IniciadoAt });
+            b.HasIndex(x => new { x.JobName, x.Estado });
         });
 
         // T.2 Motor de Notificaciones (servicio comun cross-modulo)
