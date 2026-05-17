@@ -14,7 +14,15 @@
         <h1 class="h3 mb-1 fw-semibold">Tareas y Proyectos</h1>
         <p class="text-muted mb-0">Modulo 2.10 (estrella) - eje operativo central de la copropiedad</p>
     </div>
-    <button class="btn" style="background: var(--propia-primary); color: white;" @onclick="() => _showCrear = true">+ Nueva tarea</button>
+    <div class="d-flex gap-2 align-items-center">
+        <div class="btn-group btn-group-sm" role="group">
+            <button class="btn btn-outline-dark @(_vista == "lista" ? "active" : "")"
+                    @onclick='() => SetVista("lista")'>📋 Lista</button>
+            <button class="btn btn-outline-dark @(_vista == "kanban" ? "active" : "")"
+                    @onclick='() => SetVista("kanban")'>🗂️ Kanban</button>
+        </div>
+        <button class="btn" style="background: var(--propia-primary); color: white;" @onclick="() => _showCrear = true">+ Nueva tarea</button>
+    </div>
 </div>
 
 @if (string.IsNullOrEmpty(_jwt))
@@ -62,6 +70,52 @@
     </div>
 </div>
 
+@* ---- BARRA DE BULK ACTIONS (visible cuando hay seleccionadas) ---- *@
+@if (_vista == "lista" && _seleccionadas.Count > 0)
+{
+    <div class="alert alert-primary py-2 d-flex align-items-center gap-2">
+        <strong>@_seleccionadas.Count tarea(s) seleccionada(s)</strong>
+        <div class="dropdown ms-auto">
+            <button class="btn btn-sm btn-light dropdown-toggle" data-bs-toggle="dropdown">Cambiar estado</button>
+            <ul class="dropdown-menu">
+                @if (_estados is not null)
+                {
+                    @foreach (var e in _estados.Where(e => e.Activo))
+                    {
+                        var local = e;
+                        <li><a class="dropdown-item" style="cursor:pointer;" @onclick="() => BulkEstado(local.Id)">@e.Nombre</a></li>
+                    }
+                }
+            </ul>
+        </div>
+        <div class="dropdown">
+            <button class="btn btn-sm btn-light dropdown-toggle" data-bs-toggle="dropdown">Cambiar prioridad</button>
+            <ul class="dropdown-menu">
+                @foreach (var p in Enum.GetValues<PrioridadTarea>())
+                {
+                    var local = p;
+                    <li><a class="dropdown-item" style="cursor:pointer;" @onclick="() => BulkPrioridad(local)">@p</a></li>
+                }
+            </ul>
+        </div>
+        <div class="dropdown">
+            <button class="btn btn-sm btn-light dropdown-toggle" data-bs-toggle="dropdown">Asignar a</button>
+            <ul class="dropdown-menu" style="max-height: 300px; overflow-y: auto;">
+                <li><a class="dropdown-item" style="cursor:pointer;" @onclick="() => BulkAsignar(null)">Sin asignar</a></li>
+                @if (_personas is not null)
+                {
+                    @foreach (var p in _personas)
+                    {
+                        var local = p;
+                        <li><a class="dropdown-item" style="cursor:pointer;" @onclick="() => BulkAsignar(local.Id)">@p.Nombres @p.Apellidos</a></li>
+                    }
+                }
+            </ul>
+        </div>
+        <button class="btn btn-sm btn-outline-secondary" @onclick="() => _seleccionadas.Clear()">Limpiar</button>
+    </div>
+}
+
 @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
 
 @if (_tareas is null)
@@ -72,20 +126,33 @@ else if (_tareas.Count == 0)
 {
     <div class="card p-4 text-center text-muted">Sin tareas que coincidan con los filtros.</div>
 }
-else
+else if (_vista == "lista")
 {
+    @* ====================== VISTA LISTA con bulk checkboxes ====================== *@
     <div class="card">
         <table class="table table-hover mb-0 align-middle">
             <thead class="bg-light small text-muted">
-                <tr><th>Numero</th><th>Tarea</th><th>Estado</th><th>Prioridad</th><th>Asignado</th><th>Vencimiento</th><th></th></tr>
+                <tr>
+                    <th style="width:36px;">
+                        <input type="checkbox" class="form-check-input"
+                               checked="@(_seleccionadas.Count == _tareas.Count && _tareas.Count > 0)"
+                               @onchange="SeleccionarTodas" />
+                    </th>
+                    <th>Numero</th><th>Tarea</th><th>Estado</th><th>Prioridad</th><th>Asignado</th><th>Vencimiento</th><th></th>
+                </tr>
             </thead>
             <tbody class="small">
                 @foreach (var t in _tareas)
                 {
                     var tid = t.Id;
-                    <tr style="cursor:pointer;" @onclick="() => Ir(tid)">
-                        <td class="text-muted">@t.NumeroTarea</td>
-                        <td>
+                    var checkedRow = _seleccionadas.Contains(tid);
+                    <tr class="@(checkedRow ? "table-active" : "")">
+                        <td @onclick:stopPropagation>
+                            <input type="checkbox" class="form-check-input" checked="@checkedRow"
+                                   @onchange="(e) => ToggleSeleccion(tid, e)" />
+                        </td>
+                        <td class="text-muted" style="cursor:pointer;" @onclick="() => Ir(tid)">@t.NumeroTarea</td>
+                        <td style="cursor:pointer;" @onclick="() => Ir(tid)">
                             <strong>@t.Titulo</strong>
                             @if (t.CantidadSubtareas > 0) { <small class="text-muted ms-1">@t.CantidadSubtareas subtareas</small> }
                             @foreach (var et in t.Etiquetas)
@@ -112,42 +179,148 @@ else
         </table>
     </div>
 }
+else
+{
+    @* ====================== VISTA KANBAN drag&drop ====================== *@
+    <div class="kanban-board">
+        @foreach (var estado in (_estados ?? new List<EstadoTareaDto>()).Where(e => e.Activo).OrderBy(e => e.Orden))
+        {
+            var localEstado = estado;
+            var tareasCol = _tareas.Where(t => t.EstadoId == estado.Id).ToList();
+            <div class="kanban-col"
+                 ondragover="event.preventDefault()"
+                 @ondrop="(e) => OnDropAsync(localEstado.Id)">
+                <div class="kanban-col-header" style="border-top: 3px solid @(estado.Color ?? "#94a3b8");">
+                    <strong>@estado.Nombre</strong>
+                    <span class="badge bg-light text-dark">@tareasCol.Count</span>
+                </div>
+                <div class="kanban-col-body">
+                    @foreach (var t in tareasCol)
+                    {
+                        var tid = t.Id;
+                        <div class="kanban-card" draggable="true"
+                             @ondragstart="() => OnDragStart(tid)"
+                             @onclick="() => Ir(tid)">
+                            <div class="kanban-card-num">@t.NumeroTarea</div>
+                            <div class="kanban-card-title">@t.Titulo</div>
+                            <div class="d-flex gap-1 mt-2 flex-wrap">
+                                @RenderPrioridad(t.Prioridad)
+                                @foreach (var et in t.Etiquetas.Take(3))
+                                {
+                                    <span class="badge" style="background:@(et.Color ?? "#94a3b8"); color:white; font-size:0.65rem;">@et.Nombre</span>
+                                }
+                            </div>
+                            @if (!string.IsNullOrEmpty(t.AsignadoNombre) || t.FechaVencimiento.HasValue)
+                            {
+                                <div class="d-flex justify-content-between align-items-center mt-2">
+                                    <small class="text-muted">@(t.AsignadoNombre ?? "")</small>
+                                    @if (t.FechaVencimiento.HasValue)
+                                    {
+                                        <small class="@(t.Vencida ? "text-danger fw-bold" : "text-muted")">@t.FechaVencimiento.Value.ToString("MM-dd")</small>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                    @if (tareasCol.Count == 0)
+                    {
+                        <div class="kanban-empty text-muted small">Suelta tareas aqui</div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
 
-@* Modal crear tarea *@
+@* Modal crear tarea con ModuloWizard (frente E) - guia paso a paso *@
 @if (_showCrear)
 {
     <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Nueva tarea</h5>
-                    <button type="button" class="btn-close" @onclick="CerrarCrear"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="row g-2">
-                        <div class="col-md-12"><label class="form-label small">Titulo *</label>
-                            <input class="form-control form-control-sm" @bind="_crearTitulo" @bind:event="oninput" /></div>
-                        <div class="col-md-12"><label class="form-label small">Descripcion</label>
-                            <textarea class="form-control form-control-sm" rows="3" @bind="_crearDesc" @bind:event="oninput"></textarea></div>
-                        <div class="col-md-4"><label class="form-label small">Prioridad</label>
-                            <select class="form-select form-select-sm" @bind="_crearPrioridad">
-                                @foreach (var p in Enum.GetValues<PrioridadTarea>()) { <option value="@p">@p</option> }
-                            </select></div>
-                        <div class="col-md-4"><label class="form-label small">Fecha vencimiento</label>
-                            <input type="date" class="form-control form-control-sm" value="@(_crearFecha?.ToString("yyyy-MM-dd"))"
-                                   @onchange="(e) => _crearFecha = string.IsNullOrEmpty(e.Value?.ToString()) ? null : DateOnly.Parse(e.Value!.ToString()!)" /></div>
-                        <div class="col-md-4"><label class="form-label small">Asignar a</label>
-                            <select class="form-select form-select-sm" @bind="_crearAsignado">
+                <div class="modal-body p-0">
+                    <ModuloWizard Titulo="Nueva tarea"
+                                  Descripcion="Definamos la tarea paso a paso. Despues podras anadir adjuntos, dependencias y comentarios desde la ficha."
+                                  FinishLabel="Crear tarea"
+                                  OnFinish="ConfirmarCrearAsync"
+                                  OnCancel="@(() => { CerrarCrear(); return Task.CompletedTask; })">
+
+                        <WizardStep Titulo="Que hay que hacer?"
+                                    Descripcion="Un titulo claro y, opcionalmente, una descripcion con el contexto necesario."
+                                    CanAdvance="@(() => !string.IsNullOrWhiteSpace(_crearTitulo))"
+                                    MensajeError="El titulo es obligatorio.">
+                            <div class="mb-2">
+                                <label class="form-label small">Titulo *</label>
+                                <input class="form-control" @bind="_crearTitulo" @bind:event="oninput"
+                                       placeholder="Ej: Cotizar arreglo de la bomba del tanque" />
+                            </div>
+                            <div>
+                                <label class="form-label small">Descripcion (opcional)</label>
+                                <textarea class="form-control" rows="3" @bind="_crearDesc" @bind:event="oninput"
+                                          placeholder="Detalles, contexto, recordatorios"></textarea>
+                            </div>
+                        </WizardStep>
+
+                        <WizardStep Titulo="Cuando y que tan urgente?"
+                                    Descripcion="Define la prioridad y la fecha de vencimiento.">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label small">Prioridad</label>
+                                    <select class="form-select" @bind="_crearPrioridad">
+                                        @foreach (var p in Enum.GetValues<PrioridadTarea>()) { <option value="@p">@p</option> }
+                                    </select>
+                                    <small class="text-muted">@PrioridadAyuda(_crearPrioridad)</small>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small">Fecha vencimiento (opcional)</label>
+                                    <input type="date" class="form-control"
+                                           value="@(_crearFecha?.ToString("yyyy-MM-dd"))"
+                                           @onchange="(e) => _crearFecha = string.IsNullOrEmpty(e.Value?.ToString()) ? null : DateOnly.Parse(e.Value!.ToString()!)" />
+                                </div>
+                            </div>
+                        </WizardStep>
+
+                        <WizardStep Titulo="Quien la hace?"
+                                    Descripcion="Asignala a alguien del equipo. Puedes dejarla sin asignar para tomarla luego.">
+                            <label class="form-label small">Asignar a</label>
+                            <select class="form-select" @bind="_crearAsignado">
                                 <option value="">Sin asignar</option>
-                                @if (_personas is not null) { @foreach (var p in _personas) { <option value="@p.Id">@p.Nombres @p.Apellidos</option> } }
-                            </select></div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-sm btn-outline-dark" @onclick="CerrarCrear">Cancelar</button>
-                    <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="ConfirmarCrear" disabled="@(_busy || string.IsNullOrWhiteSpace(_crearTitulo))">
-                        @(_busy ? "Creando..." : "Crear tarea")
-                    </button>
+                                @if (_personas is not null)
+                                {
+                                    @foreach (var p in _personas) { <option value="@p.Id">@p.Nombres @p.Apellidos</option> }
+                                }
+                            </select>
+                            <small class="text-muted">Si seleccionas a alguien, recibira una notificacion (modulo T.2).</small>
+                        </WizardStep>
+
+                        <WizardStep Titulo="Revisar y crear"
+                                    Descripcion="Verifica los datos antes de crear la tarea.">
+                            <div class="bg-light rounded p-3 small">
+                                <div class="row g-2">
+                                    <div class="col-md-12"><strong>@_crearTitulo</strong></div>
+                                    @if (!string.IsNullOrWhiteSpace(_crearDesc))
+                                    {
+                                        <div class="col-md-12 text-muted">@_crearDesc</div>
+                                    }
+                                    <div class="col-md-4"><span class="text-muted">Prioridad: </span>@_crearPrioridad</div>
+                                    <div class="col-md-4"><span class="text-muted">Vence: </span>@(_crearFecha?.ToString("yyyy-MM-dd") ?? "—")</div>
+                                    <div class="col-md-4">
+                                        <span class="text-muted">Asignado: </span>
+                                        @(string.IsNullOrEmpty(_crearAsignado)
+                                            ? "—"
+                                            : _personas?.FirstOrDefault(p => p.Id.ToString() == _crearAsignado) is { } per
+                                                ? $"{per.Nombres} {per.Apellidos}"
+                                                : "—")
+                                    </div>
+                                </div>
+                            </div>
+                            @if (!string.IsNullOrEmpty(_msg))
+                            {
+                                <div class="alert @_msgClass py-2 mt-3 small">@_msg</div>
+                            }
+                        </WizardStep>
+
+                    </ModuloWizard>
                 </div>
             </div>
         </div>
@@ -156,6 +329,57 @@ else
 
 <style>
     .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
+
+    /* Kanban styles */
+    .kanban-board {
+        display: flex;
+        gap: 1rem;
+        overflow-x: auto;
+        padding-bottom: 1rem;
+    }
+    .kanban-col {
+        flex: 0 0 280px;
+        background: #f5f7fa;
+        border-radius: 10px;
+        display: flex;
+        flex-direction: column;
+        max-height: calc(100vh - 320px);
+    }
+    .kanban-col-header {
+        padding: 0.75rem 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: white;
+        border-radius: 10px 10px 0 0;
+        position: sticky; top: 0; z-index: 2;
+    }
+    .kanban-col-body {
+        padding: 0.5rem;
+        overflow-y: auto;
+        flex: 1;
+        min-height: 100px;
+    }
+    .kanban-card {
+        background: white;
+        border-radius: 8px;
+        padding: 0.7rem;
+        margin-bottom: 0.5rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        cursor: grab;
+        transition: transform 0.1s, box-shadow 0.1s;
+    }
+    .kanban-card:hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0,0,0,0.1); }
+    .kanban-card:active { cursor: grabbing; }
+    .kanban-card-num { font-size: 0.7rem; color: #6e6e85; }
+    .kanban-card-title { font-weight: 600; font-size: 0.88rem; }
+    .kanban-empty {
+        padding: 1.5rem 0.5rem;
+        text-align: center;
+        border: 2px dashed #d4d8e1;
+        border-radius: 8px;
+        margin-top: 0.5rem;
+    }
 </style>
 
 @code {
@@ -171,7 +395,15 @@ else
     private string _filtroEstado = "";
     private string _filtroPrioridad = "";
     private string? _query;
+    private string _vista = "lista"; // lista | kanban
 
+    // Bulk actions
+    private HashSet<Guid> _seleccionadas = new();
+
+    // Kanban drag
+    private Guid? _draggingId;
+
+    // Crear
     private bool _showCrear;
     private string? _crearTitulo;
     private string? _crearDesc;
@@ -195,6 +427,8 @@ else
         catch { }
     }
 
+    private void SetVista(string v) { _vista = v; _seleccionadas.Clear(); }
+
     private async Task CargarAsync()
     {
         try
@@ -217,6 +451,96 @@ else
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
     }
 
+    // ===================== Bulk actions =====================
+
+    private void ToggleSeleccion(Guid id, ChangeEventArgs e)
+    {
+        var marcado = e.Value is bool b && b;
+        if (marcado) _seleccionadas.Add(id);
+        else _seleccionadas.Remove(id);
+    }
+
+    private void SeleccionarTodas(ChangeEventArgs e)
+    {
+        var marcar = e.Value is bool b && b;
+        _seleccionadas.Clear();
+        if (marcar && _tareas is not null)
+            foreach (var t in _tareas) _seleccionadas.Add(t.Id);
+    }
+
+    private async Task BulkEstado(Guid nuevoEstadoId)
+    {
+        if (_seleccionadas.Count == 0) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var req = new BulkCambiarEstadoRequest(_seleccionadas.ToList(), nuevoEstadoId, "Bulk UI");
+            var resp = await Auth().PostAsJsonAsync("/api/tareas/bulk/estado", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            var r = await resp.Content.ReadFromJsonAsync<BulkResultDto>();
+            _msg = $"Bulk estado: {r?.Aplicados ?? 0} aplicadas, {r?.Omitidos ?? 0} omitidas."; _msgClass = "alert-success";
+            _seleccionadas.Clear();
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task BulkPrioridad(PrioridadTarea p)
+    {
+        if (_seleccionadas.Count == 0) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var req = new BulkCambiarPrioridadRequest(_seleccionadas.ToList(), p);
+            var resp = await Auth().PostAsJsonAsync("/api/tareas/bulk/prioridad", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            var r = await resp.Content.ReadFromJsonAsync<BulkResultDto>();
+            _msg = $"Bulk prioridad: {r?.Aplicados ?? 0} aplicadas."; _msgClass = "alert-success";
+            _seleccionadas.Clear();
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task BulkAsignar(Guid? personaId)
+    {
+        if (_seleccionadas.Count == 0) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var req = new BulkAsignarPersonaRequest(_seleccionadas.ToList(), personaId);
+            var resp = await Auth().PostAsJsonAsync("/api/tareas/bulk/asignado", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            var r = await resp.Content.ReadFromJsonAsync<BulkResultDto>();
+            _msg = $"Bulk asignar: {r?.Aplicados ?? 0} aplicadas."; _msgClass = "alert-success";
+            _seleccionadas.Clear();
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    // ===================== Kanban drag&drop =====================
+
+    private void OnDragStart(Guid id) => _draggingId = id;
+
+    private async Task OnDropAsync(Guid nuevoEstadoId)
+    {
+        if (_draggingId is null) return;
+        var tareaId = _draggingId.Value;
+        _draggingId = null;
+        _busy = true; _msg = null;
+        try
+        {
+            var req = new BulkCambiarEstadoRequest(new[] { tareaId }, nuevoEstadoId, "Movido via Kanban");
+            var resp = await Auth().PostAsJsonAsync("/api/tareas/bulk/estado", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    // ===================== Crear =====================
+
     private void CerrarCrear()
     {
         _showCrear = false;
@@ -225,7 +549,7 @@ else
         _crearPrioridad = PrioridadTarea.Normal;
     }
 
-    private async Task ConfirmarCrear()
+    private async Task ConfirmarCrearAsync()
     {
         _busy = true; _msg = null;
         try
@@ -240,6 +564,15 @@ else
         }
         finally { _busy = false; }
     }
+
+    private static string PrioridadAyuda(PrioridadTarea p) => p switch
+    {
+        PrioridadTarea.Urgente => "Atender hoy mismo. Notifica al instante a los asignados.",
+        PrioridadTarea.Alta => "Atender en los proximos 2-3 dias habiles.",
+        PrioridadTarea.Normal => "Sigue el flujo habitual; sin SLA estricto.",
+        PrioridadTarea.Baja => "Cuando haya tiempo. No genera alertas.",
+        _ => ""
+    };
 
     private MarkupString RenderPrioridad(PrioridadTarea p) => p switch
     {

@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
+using Prometheus;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -15,16 +16,49 @@ using Serilog.Formatting.Compact;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ---- Logging estructurado a stdout (Railway captura nativamente) ----
-builder.Host.UseSerilog((ctx, lc) => lc
-    .ReadFrom.Configuration(ctx.Configuration)
-    .Enrich.FromLogContext()
-    .WriteTo.Console(new CompactJsonFormatter()));
+// ---- Logging estructurado: stdout (Railway captura nativamente) + file rotativo ----
+// Frente C observabilidad: el archivo rotativo da resilience offline (si el agregador
+// externo cae, no perdemos logs). En piloto se rota diario + se mantienen 7 dias.
+// En produccion se cambia o anade sink a Grafana Loki / Better Stack.
+builder.Host.UseSerilog((ctx, lc) =>
+{
+    lc.ReadFrom.Configuration(ctx.Configuration)
+        .Enrich.FromLogContext()
+        .Enrich.WithProperty("Application", "Propia.Api")
+        .Enrich.WithProperty("Environment", ctx.HostingEnvironment.EnvironmentName)
+        .WriteTo.Console(new CompactJsonFormatter());
+
+    var logsDir = ctx.Configuration["Serilog:FileSink:Directory"] ?? "logs";
+    try
+    {
+        if (!Path.IsPathRooted(logsDir))
+            logsDir = Path.Combine(ctx.HostingEnvironment.ContentRootPath, logsDir);
+        Directory.CreateDirectory(logsDir);
+        lc.WriteTo.File(
+            new CompactJsonFormatter(),
+            Path.Combine(logsDir, "propia-api-.log"),
+            rollingInterval: Serilog.RollingInterval.Day,
+            retainedFileCountLimit: 7,
+            fileSizeLimitBytes: 50 * 1024 * 1024,
+            rollOnFileSizeLimit: true,
+            shared: false);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[Serilog file sink] no se pudo configurar (se sigue con consola): {ex.Message}");
+    }
+});
 
 // ---- Servicios ----
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddInfrastructure(builder.Configuration);
+
+// ---- Health checks enriquecidos (Frente C) ----
+// Mas alla de /health (liveness simple), agregamos /health/ready con check real
+// del DbContext via Microsoft.Extensions.Diagnostics.HealthChecks.
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<PropiaDbContext>("postgresql", tags: new[] { "ready" });
 
 // Background jobs (BackgroundJobScheduler como IHostedService + Singleton tipado).
 // Solo en la API porque Web/SuperAdmin no necesitan ejecutar jobs - los consumen
@@ -132,14 +166,17 @@ else
                     // el proxy de Railway termina TLS afuera, el contenedor solo escucha HTTP.
 }
 
+// ---- Frente C observabilidad: Prometheus + Routing explicitos ----
+// UseRouting va ANTES de Auth/Authorization. UseHttpMetrics se cuelga del routing
+// para capturar nombre de ruta normalizada (en vez de URLs con UUIDs como series).
+app.UseRouting();
+app.UseHttpMetrics();
+
 // CORS antes de Authentication para preflight OPTIONS.
-// UseHttpsRedirection y UseStaticFiles (/uploads) se aplican condicionalmente
-// en el bloque if (IsDevelopment) arriba: en Production, Railway termina TLS
-// fuera del contenedor y los adjuntos van a Cloudflare R2 (IBlobStorage).
 app.UseCors();
 
 // IMPORTANTE: Authentication PRIMERO, despues Authorization, despues TenantMiddleware
-// (necesita el claim ya validado), despues MapControllers.
+// (necesita el claim ya validado), despues MapXxx.
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -151,23 +188,43 @@ app.UseWhen(
 
 app.MapControllers();
 
-// ---- Health checks ----
-// /health: liveness simple (responde si el proceso esta vivo)
-app.MapGet("/health", () => Results.Ok(new { status = "ok", version = "0.1.0-pilot" }));
+// Endpoint /metrics expone counters/histograms en formato Prometheus.
+// En Railway: configurar scrape externo apuntando a /metrics (Grafana Cloud free tier OK).
+app.MapMetrics("/metrics");
 
-// /health/ready: readiness con check de DB
-app.MapGet("/health/ready", async (PropiaDbContext db, CancellationToken ct) =>
+// ---- Health checks ----
+var startedAt = DateTimeOffset.UtcNow;
+
+// /health: liveness enriquecido con uptime + version
+app.MapGet("/health", () => Results.Ok(new
 {
-    try
+    status = "ok",
+    version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.1.0-pilot",
+    uptimeSeconds = (int)(DateTimeOffset.UtcNow - startedAt).TotalSeconds,
+    serverTime = DateTimeOffset.UtcNow
+}));
+
+// /health/ready: readiness con check real de DbContext via HealthChecks framework.
+// Devuelve 200 con JSON detallado si OK, 503 si algun check falla.
+app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    ResponseWriter = async (context, report) =>
     {
-        var canConnect = await db.Database.CanConnectAsync(ct);
-        return canConnect
-            ? Results.Ok(new { status = "ok", db = "ok", version = "0.1.0-pilot" })
-            : Results.StatusCode(503);
-    }
-    catch
-    {
-        return Results.StatusCode(503);
+        context.Response.ContentType = "application/json";
+        var json = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            status = report.Status.ToString().ToLowerInvariant(),
+            totalDurationMs = report.TotalDuration.TotalMilliseconds,
+            checks = report.Entries.Select(e => new
+            {
+                name = e.Key,
+                status = e.Value.Status.ToString().ToLowerInvariant(),
+                durationMs = e.Value.Duration.TotalMilliseconds,
+                description = e.Value.Description
+            })
+        });
+        await context.Response.WriteAsync(json);
     }
 });
 

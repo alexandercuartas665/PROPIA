@@ -1,0 +1,350 @@
+@* Componente generico de wizard multi-paso reutilizable en distintos modulos.
+
+   Filosofia: el caller declara N <WizardStep> hijos. Cada step puede definir
+   un titulo, descripcion, contenido (RenderFragment) y una validacion (CanAdvance).
+   El wizard maneja navegacion (Anterior/Siguiente/Finalizar), progreso visual,
+   y bloquea el avance si la validacion del paso actual falla.
+
+   Diseno tipo "stepper horizontal" + barra de progreso + footer con botones.
+
+   Uso tipico:
+   <ModuloWizard Titulo="Configura tu copropiedad" OnFinish="GuardarTodoAsync">
+       <WizardStep Titulo="Identidad" CanAdvance="@(() => !string.IsNullOrEmpty(_nombre))">
+           <input @bind="_nombre" />
+       </WizardStep>
+       <WizardStep Titulo="Estructura">
+           ...
+       </WizardStep>
+   </ModuloWizard>
+*@
+
+<CascadingValue Value="this" IsFixed="true">
+    <div class="propia-wizard">
+
+        @* Header con titulo + descripcion + cerrar (si OnCancel definido) *@
+        @if (!string.IsNullOrEmpty(Titulo) || OnCancel.HasDelegate)
+        {
+            <div class="wizard-header">
+                <div>
+                    @if (!string.IsNullOrEmpty(Titulo))
+                    {
+                        <h4 class="mb-1">@Titulo</h4>
+                    }
+                    @if (!string.IsNullOrEmpty(Descripcion))
+                    {
+                        <p class="text-muted small mb-0">@Descripcion</p>
+                    }
+                </div>
+                @if (OnCancel.HasDelegate)
+                {
+                    <button type="button" class="btn-close" aria-label="Cerrar" @onclick="HandleCancelAsync"></button>
+                }
+            </div>
+        }
+
+        @* Stepper visual: bolitas + lineas entre pasos *@
+        @if (_steps.Count > 1)
+        {
+            <div class="wizard-stepper">
+                @for (var i = 0; i < _steps.Count; i++)
+                {
+                    var idx = i;
+                    var step = _steps[i];
+                    var estado = i < _current ? "done" : (i == _current ? "active" : "pending");
+                    <div class="wizard-step-indicator @estado" @onclick="() => TryGoToStep(idx)">
+                        <div class="wizard-step-bubble">
+                            @(i < _current ? "✓" : (i + 1).ToString())
+                        </div>
+                        <div class="wizard-step-label">@step.Titulo</div>
+                    </div>
+                    @if (i < _steps.Count - 1)
+                    {
+                        <div class="wizard-step-line @(i < _current ? "done" : "")"></div>
+                    }
+                }
+            </div>
+        }
+
+        @* Barra de progreso lineal *@
+        <div class="progress wizard-progress">
+            <div class="progress-bar" style="width: @ProgressPct%; background: var(--propia-primary);"></div>
+        </div>
+
+        @* Contenido del paso actual *@
+        <div class="wizard-body">
+            @if (_current < _steps.Count)
+            {
+                var stepActual = _steps[_current];
+                @if (!string.IsNullOrEmpty(stepActual.Descripcion))
+                {
+                    <p class="text-muted small mb-3">@stepActual.Descripcion</p>
+                }
+                @stepActual.ChildContent
+            }
+        </div>
+
+        @* Mensajes de error si validacion fallo *@
+        @if (!string.IsNullOrEmpty(_errorMsg))
+        {
+            <div class="alert alert-warning py-2 mb-3"><small>@_errorMsg</small></div>
+        }
+
+        @* Footer con navegacion *@
+        <div class="wizard-footer">
+            <button type="button" class="btn btn-outline-secondary"
+                    @onclick="PrevStep"
+                    disabled="@(_current == 0 || _busy)">
+                ← Anterior
+            </button>
+
+            <div class="text-muted small">
+                Paso @(_current + 1) de @_steps.Count
+            </div>
+
+            @if (_current < _steps.Count - 1)
+            {
+                <button type="button" class="btn btn-primary"
+                        @onclick="NextStepAsync"
+                        disabled="@_busy">
+                    Siguiente →
+                </button>
+            }
+            else
+            {
+                <button type="button" class="btn btn-success"
+                        @onclick="FinishAsync"
+                        disabled="@_busy">
+                    @if (_busy)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    @(FinishLabel ?? "Finalizar")
+                </button>
+            }
+        </div>
+
+    </div>
+</CascadingValue>
+
+<style>
+    .propia-wizard {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+    }
+    .wizard-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 1rem;
+    }
+
+    .wizard-stepper {
+        display: flex;
+        align-items: center;
+        margin-bottom: 1rem;
+        gap: 0.25rem;
+        overflow-x: auto;
+    }
+    .wizard-step-indicator {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.4rem;
+        cursor: pointer;
+        min-width: 70px;
+        flex: 0 0 auto;
+    }
+    .wizard-step-indicator.pending { opacity: 0.55; cursor: not-allowed; }
+    .wizard-step-bubble {
+        width: 32px; height: 32px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 0.85rem;
+        background: #e9ecef;
+        color: #6e6e85;
+        border: 2px solid #e9ecef;
+        transition: all 0.18s;
+    }
+    .wizard-step-indicator.active .wizard-step-bubble {
+        background: var(--propia-primary);
+        color: white;
+        border-color: var(--propia-primary);
+        box-shadow: 0 0 0 4px rgba(106, 17, 203, 0.15);
+    }
+    .wizard-step-indicator.done .wizard-step-bubble {
+        background: var(--propia-primary-light, #28a745);
+        color: white;
+        border-color: var(--propia-primary-light, #28a745);
+    }
+    .wizard-step-label {
+        font-size: 0.78rem;
+        color: #4a4a63;
+        text-align: center;
+        max-width: 110px;
+        line-height: 1.15;
+    }
+    .wizard-step-line {
+        flex: 1 1 auto;
+        height: 2px;
+        background: #e9ecef;
+        margin-bottom: 1.4rem;
+        min-width: 16px;
+    }
+    .wizard-step-line.done { background: var(--propia-primary-light, #28a745); }
+
+    .wizard-progress { height: 4px; margin-bottom: 1.25rem; }
+
+    .wizard-body { min-height: 140px; margin-bottom: 1rem; }
+
+    .wizard-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.5rem;
+        padding-top: 0.85rem;
+        border-top: 1px solid #eef0f5;
+    }
+</style>
+
+@code {
+    /// <summary>Titulo grande del wizard. Opcional.</summary>
+    [Parameter] public string? Titulo { get; set; }
+
+    /// <summary>Descripcion corta debajo del titulo. Opcional.</summary>
+    [Parameter] public string? Descripcion { get; set; }
+
+    /// <summary>Etiqueta del boton final. Default "Finalizar".</summary>
+    [Parameter] public string? FinishLabel { get; set; }
+
+    /// <summary>Callback al presionar Finalizar (despues de validar el ultimo paso).</summary>
+    [Parameter] public EventCallback OnFinish { get; set; }
+
+    /// <summary>Callback al presionar Cerrar (X) si esta presente.</summary>
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    /// <summary>Callback opcional ejecutado al cambiar de paso (recibe el nuevo indice).</summary>
+    [Parameter] public EventCallback<int> OnStepChanged { get; set; }
+
+    /// <summary>Permite saltar la validacion CanAdvance (modo "borrador"). Default false.</summary>
+    [Parameter] public bool SkipValidation { get; set; }
+
+    /// <summary>RenderFragment hijo - debe contener uno o mas <WizardStep>.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private readonly List<WizardStep> _steps = new();
+    private int _current;
+    private bool _busy;
+    private string? _errorMsg;
+
+    private int ProgressPct => _steps.Count == 0
+        ? 0
+        : (int)Math.Round((_current + 1) * 100.0 / _steps.Count);
+
+    /// <summary>Llamado por cada WizardStep en su OnInitialized.</summary>
+    internal void RegisterStep(WizardStep step)
+    {
+        if (!_steps.Contains(step))
+        {
+            _steps.Add(step);
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>Llamado por WizardStep en Dispose por si se quitan dinamicamente.</summary>
+    internal void UnregisterStep(WizardStep step)
+    {
+        _steps.Remove(step);
+        if (_current >= _steps.Count) _current = Math.Max(0, _steps.Count - 1);
+        StateHasChanged();
+    }
+
+    private async Task NextStepAsync()
+    {
+        _errorMsg = null;
+        if (_current >= _steps.Count - 1) return;
+
+        var actual = _steps[_current];
+        if (!SkipValidation && actual.CanAdvance is not null && !actual.CanAdvance())
+        {
+            _errorMsg = actual.MensajeError ?? "Completa los campos requeridos antes de continuar.";
+            return;
+        }
+
+        _current++;
+        if (OnStepChanged.HasDelegate) await OnStepChanged.InvokeAsync(_current);
+    }
+
+    private void PrevStep()
+    {
+        _errorMsg = null;
+        if (_current > 0)
+        {
+            _current--;
+            if (OnStepChanged.HasDelegate) _ = OnStepChanged.InvokeAsync(_current);
+        }
+    }
+
+    private void TryGoToStep(int idx)
+    {
+        // Solo permite saltar a pasos ya visitados (anteriores al actual).
+        if (idx < _current)
+        {
+            _current = idx;
+            _errorMsg = null;
+            if (OnStepChanged.HasDelegate) _ = OnStepChanged.InvokeAsync(_current);
+        }
+    }
+
+    private async Task FinishAsync()
+    {
+        _errorMsg = null;
+        if (_steps.Count > 0)
+        {
+            var actual = _steps[_current];
+            if (!SkipValidation && actual.CanAdvance is not null && !actual.CanAdvance())
+            {
+                _errorMsg = actual.MensajeError ?? "Completa los campos requeridos antes de finalizar.";
+                return;
+            }
+        }
+
+        try
+        {
+            _busy = true;
+            if (OnFinish.HasDelegate) await OnFinish.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMsg = $"Error al finalizar: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task HandleCancelAsync()
+    {
+        if (OnCancel.HasDelegate) await OnCancel.InvokeAsync();
+    }
+
+    /// <summary>API publica: ir a un paso por indice (uso programatico desde el caller).</summary>
+    public void GoToStep(int idx)
+    {
+        if (idx >= 0 && idx < _steps.Count)
+        {
+            _current = idx;
+            _errorMsg = null;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>API publica: indice actual.</summary>
+    public int CurrentStepIndex => _current;
+}

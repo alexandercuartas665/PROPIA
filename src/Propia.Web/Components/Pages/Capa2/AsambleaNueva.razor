@@ -16,74 +16,160 @@
 
 <div class="mb-3"><a href="/asambleas" class="text-decoration-none text-muted small">&larr; Asambleas</a></div>
 
-<div class="card mb-3"><div class="card-body">
-    <h3 class="mb-3">Nueva sesion</h3>
-    @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
 
-    <div class="row g-3">
-        <div class="col-md-6"><label class="form-label small">Tipo de sesion *</label>
-            <select class="form-select form-select-sm" @bind="_tipo">
-                @foreach (var t in Enum.GetValues<TipoSesion>()) { <option value="@t">@RenderTipoTitulo(t)</option> }
-            </select></div>
-        <div class="col-md-6"><label class="form-label small">Modalidad *</label>
-            <select class="form-select form-select-sm" @bind="_modalidad">
-                @foreach (var m in Enum.GetValues<ModalidadSesion>()) { <option value="@m">@m</option> }
-            </select></div>
-        <div class="col-md-12"><label class="form-label small">Titulo *</label>
-            <input class="form-control form-control-sm" @bind="_titulo" @bind:event="oninput" placeholder="Ej: Asamblea Ordinaria 2026 - Aprobacion presupuesto" /></div>
-        <div class="col-md-6"><label class="form-label small">Fecha y hora *</label>
-            <input type="datetime-local" class="form-control form-control-sm" @bind="_fecha" /></div>
-        <div class="col-md-6"><label class="form-label small">Lugar fisico (Presencial/Mixta)</label>
-            <input class="form-control form-control-sm" @bind="_lugar" @bind:event="oninput" placeholder="Salon comunal" /></div>
-        <div class="col-md-12"><label class="form-label small">Enlace videoconferencia (Virtual/Mixta)</label>
-            <input class="form-control form-control-sm" @bind="_enlace" @bind:event="oninput" placeholder="https://meet.google.com/..." /></div>
-    </div>
+<ModuloWizard Titulo="Convocar nueva sesion"
+              Descripcion="Ley 675/2001 - completa la informacion paso a paso. La sesion queda en estado Borrador."
+              FinishLabel="Crear sesion (Borrador)"
+              OnFinish="CrearAsync"
+              OnCancel="CancelarAsync">
 
-    <hr class="my-3" />
-    <h6 class="mb-2">Orden del dia (minimo 1 punto)</h6>
-    @foreach (var p in _puntos)
-    {
-        <div class="card mb-2"><div class="card-body py-2">
-            <div class="row g-2">
-                <div class="col-md-1"><label class="form-label small">#</label>
-                    <input type="number" class="form-control form-control-sm" @bind="p.Numero" min="1" /></div>
-                <div class="col-md-9"><label class="form-label small">Titulo *</label>
-                    <input class="form-control form-control-sm" @bind="p.Titulo" @bind:event="oninput" /></div>
-                <div class="col-md-2"><label class="form-label small">Tipo mayoria</label>
-                    <select class="form-select form-select-sm" @bind="p.TipoMayoria" @bind:after="() => SyncMayoriaPct(p)">
-                        @foreach (var tm in Enum.GetValues<TipoMayoria>()) { <option value="@tm">@tm</option> }
-                    </select></div>
-                <div class="col-md-12"><label class="form-label small">Descripcion (opcional)</label>
-                    <textarea class="form-control form-control-sm" rows="2" @bind="p.Descripcion" @bind:event="oninput"></textarea></div>
-                <div class="col-md-4">
-                    <div class="form-check"><input class="form-check-input" type="checkbox" @bind="p.RequiereVotacion" id="rv@(p.Numero)">
-                        <label class="form-check-label small" for="rv@(p.Numero)">Requiere votacion</label></div>
-                </div>
-                <div class="col-md-4"><label class="form-label small">% Mayoria</label>
-                    <input type="number" class="form-control form-control-sm" @bind="p.MayoriaPct" min="50" max="100" step="1" /></div>
-                <div class="col-md-3"><label class="form-label small">Modalidad voto</label>
-                    <select class="form-select form-select-sm" @bind="p.ModalidadVoto">
-                        @foreach (var mv in Enum.GetValues<ModalidadVoto>()) { <option value="@mv">@mv</option> }
-                    </select></div>
-                <div class="col-md-1 d-flex align-items-end">
-                    @if (_puntos.Count > 1)
+    @* ---------- Paso 1: tipo y modalidad ---------- *@
+    <WizardStep Titulo="Tipo y modalidad"
+                Descripcion="Define el caracter de la sesion. Esto afecta el quorum minimo y los tipos de mayoria validos por punto."
+                CanAdvance="@(() => true)">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label small">Tipo de sesion *</label>
+                <select class="form-select form-select-sm" @bind="_tipo">
+                    @foreach (var t in Enum.GetValues<TipoSesion>())
                     {
-                        <button class="btn btn-sm btn-outline-danger" @onclick="() => _puntos.Remove(p)">&times;</button>
+                        <option value="@t">@RenderTipoTitulo(t)</option>
                     }
-                </div>
+                </select>
+                <small class="text-muted d-block mt-1">@TipoAyuda(_tipo)</small>
             </div>
-        </div></div>
-    }
-    <button class="btn btn-sm btn-outline-dark" @onclick="AgregarPunto">+ Agregar punto</button>
+            <div class="col-md-6">
+                <label class="form-label small">Modalidad *</label>
+                <select class="form-select form-select-sm" @bind="_modalidad">
+                    @foreach (var m in Enum.GetValues<ModalidadSesion>())
+                    {
+                        <option value="@m">@m</option>
+                    }
+                </select>
+                <small class="text-muted d-block mt-1">@ModalidadAyuda(_modalidad)</small>
+            </div>
+        </div>
+    </WizardStep>
 
-    <hr class="my-3" />
-    <div class="d-flex justify-content-between">
-        <a class="btn btn-outline-dark" href="/asambleas">Cancelar</a>
-        <button class="btn" style="background: var(--propia-primary); color:white;" @onclick="Crear" disabled="@(_busy || !PuedeCrear())">
-            @(_busy ? "Creando..." : "Crear sesion (queda en Borrador)")
-        </button>
-    </div>
-</div></div>
+    @* ---------- Paso 2: identificacion ---------- *@
+    <WizardStep Titulo="Identificacion"
+                Descripcion="Nombra la sesion y agenda fecha/hora. Si es Presencial/Mixta indica el lugar; si es Virtual/Mixta indica el enlace."
+                CanAdvance="@(() => !string.IsNullOrWhiteSpace(_titulo) && _fecha > DateTime.UtcNow.AddMinutes(-1))"
+                MensajeError="Falta titulo o la fecha esta en el pasado.">
+        <div class="row g-3">
+            <div class="col-md-12">
+                <label class="form-label small">Titulo *</label>
+                <input class="form-control form-control-sm" @bind="_titulo" @bind:event="oninput"
+                       placeholder="Ej: Asamblea Ordinaria 2026 - Aprobacion presupuesto" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label small">Fecha y hora *</label>
+                <input type="datetime-local" class="form-control form-control-sm" @bind="_fecha" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label small">Lugar fisico (Presencial/Mixta)</label>
+                <input class="form-control form-control-sm" @bind="_lugar" @bind:event="oninput"
+                       placeholder="Salon comunal" />
+            </div>
+            <div class="col-md-12">
+                <label class="form-label small">Enlace videoconferencia (Virtual/Mixta)</label>
+                <input class="form-control form-control-sm" @bind="_enlace" @bind:event="oninput"
+                       placeholder="https://meet.google.com/..." />
+            </div>
+        </div>
+    </WizardStep>
+
+    @* ---------- Paso 3: orden del dia ---------- *@
+    <WizardStep Titulo="Orden del dia"
+                Descripcion="Minimo un punto. Marca los puntos que requieren votacion e indica tipo de mayoria."
+                CanAdvance="@(() => _puntos.Count > 0 && _puntos.All(p => !string.IsNullOrWhiteSpace(p.Titulo)))"
+                MensajeError="Cada punto debe tener un titulo.">
+        @foreach (var p in _puntos)
+        {
+            <div class="card mb-2"><div class="card-body py-2">
+                <div class="row g-2">
+                    <div class="col-md-1"><label class="form-label small">#</label>
+                        <input type="number" class="form-control form-control-sm" @bind="p.Numero" min="1" /></div>
+                    <div class="col-md-9"><label class="form-label small">Titulo *</label>
+                        <input class="form-control form-control-sm" @bind="p.Titulo" @bind:event="oninput" /></div>
+                    <div class="col-md-2"><label class="form-label small">Tipo mayoria</label>
+                        <select class="form-select form-select-sm" @bind="p.TipoMayoria" @bind:after="() => SyncMayoriaPct(p)">
+                            @foreach (var tm in Enum.GetValues<TipoMayoria>()) { <option value="@tm">@tm</option> }
+                        </select></div>
+                    <div class="col-md-12"><label class="form-label small">Descripcion (opcional)</label>
+                        <textarea class="form-control form-control-sm" rows="2" @bind="p.Descripcion" @bind:event="oninput"></textarea></div>
+                    <div class="col-md-4">
+                        <div class="form-check"><input class="form-check-input" type="checkbox" @bind="p.RequiereVotacion" id="rv@(p.Numero)">
+                            <label class="form-check-label small" for="rv@(p.Numero)">Requiere votacion</label></div>
+                    </div>
+                    <div class="col-md-4"><label class="form-label small">% Mayoria</label>
+                        <input type="number" class="form-control form-control-sm" @bind="p.MayoriaPct" min="50" max="100" step="1" /></div>
+                    <div class="col-md-3"><label class="form-label small">Modalidad voto</label>
+                        <select class="form-select form-select-sm" @bind="p.ModalidadVoto">
+                            @foreach (var mv in Enum.GetValues<ModalidadVoto>()) { <option value="@mv">@mv</option> }
+                        </select></div>
+                    <div class="col-md-1 d-flex align-items-end">
+                        @if (_puntos.Count > 1)
+                        {
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => _puntos.Remove(p)">&times;</button>
+                        }
+                    </div>
+                </div>
+            </div></div>
+        }
+        <button type="button" class="btn btn-sm btn-outline-dark" @onclick="AgregarPunto">+ Agregar punto</button>
+    </WizardStep>
+
+    @* ---------- Paso 4: revisar y crear ---------- *@
+    <WizardStep Titulo="Revisar"
+                Descripcion="Revisa antes de crear el borrador. Despues podras adjuntar convocatoria, enviar invitaciones y administrar el quorum.">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <div class="card border-0 bg-light"><div class="card-body py-2 small">
+                    <div class="text-muted">Tipo</div><strong>@RenderTipoTitulo(_tipo)</strong>
+                </div></div>
+            </div>
+            <div class="col-md-6">
+                <div class="card border-0 bg-light"><div class="card-body py-2 small">
+                    <div class="text-muted">Modalidad</div><strong>@_modalidad</strong>
+                </div></div>
+            </div>
+            <div class="col-md-12">
+                <div class="card border-0 bg-light"><div class="card-body py-2 small">
+                    <div class="text-muted">Titulo</div><strong>@_titulo</strong>
+                    <div class="text-muted mt-2">Fecha</div><strong>@_fecha.ToString("yyyy-MM-dd HH:mm")</strong>
+                    @if (!string.IsNullOrWhiteSpace(_lugar))
+                    {
+                        <div class="text-muted mt-2">Lugar</div><strong>@_lugar</strong>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_enlace))
+                    {
+                        <div class="text-muted mt-2">Enlace</div><strong>@_enlace</strong>
+                    }
+                </div></div>
+            </div>
+            <div class="col-md-12">
+                <div class="card border-0 bg-light"><div class="card-body py-2 small">
+                    <div class="text-muted mb-1">Orden del dia (@_puntos.Count puntos)</div>
+                    <ol class="mb-0 ps-3">
+                        @foreach (var p in _puntos.OrderBy(x => x.Numero))
+                        {
+                            <li>
+                                <strong>@p.Titulo</strong>
+                                @if (p.RequiereVotacion)
+                                {
+                                    <span class="badge bg-warning text-dark ms-2">Vota @p.TipoMayoria @p.MayoriaPct%</span>
+                                }
+                            </li>
+                        }
+                    </ol>
+                </div></div>
+            </div>
+        </div>
+    </WizardStep>
+
+</ModuloWizard>
 
 @code {
     private string? _jwt;
@@ -114,10 +200,6 @@
         catch { }
     }
 
-    private bool PuedeCrear() => !string.IsNullOrWhiteSpace(_titulo)
-        && _puntos.Count > 0
-        && _puntos.All(p => !string.IsNullOrWhiteSpace(p.Titulo));
-
     private void AgregarPunto() => _puntos.Add(new PuntoForm
     {
         Numero = _puntos.Count + 1,
@@ -132,8 +214,9 @@
             p.MayoriaPct = 70m;
     }
 
-    private async Task Crear()
+    private async Task CrearAsync()
     {
+        if (_busy) return;
         _busy = true; _msg = null;
         try
         {
@@ -146,11 +229,22 @@
                     p.RequiereVotacion, p.TipoMayoria, p.MayoriaPct,
                     p.ModalidadVoto, null)).ToList());
             var resp = await Auth().PostAsJsonAsync("/api/asambleas", req);
-            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            if (!resp.IsSuccessStatusCode)
+            {
+                _msg = await resp.Content.ReadAsStringAsync();
+                _msgClass = "alert-danger";
+                return;
+            }
             var dto = await resp.Content.ReadFromJsonAsync<SesionDetalleDto>();
             Nav.NavigateTo($"/asambleas/{dto!.Id}");
         }
         finally { _busy = false; }
+    }
+
+    private Task CancelarAsync()
+    {
+        Nav.NavigateTo("/asambleas");
+        return Task.CompletedTask;
     }
 
     private static string RenderTipoTitulo(TipoSesion t) => t switch
@@ -160,6 +254,23 @@
         TipoSesion.Consejo => "Sesion del Consejo de Administracion",
         TipoSesion.Comite => "Sesion del Comite de Convivencia",
         _ => t.ToString()
+    };
+
+    private static string TipoAyuda(TipoSesion t) => t switch
+    {
+        TipoSesion.AsambleaOrdinaria => "Convocada por el administrador en los 3 primeros meses del ano (Art. 39 Ley 675).",
+        TipoSesion.AsambleaExtraordinaria => "Convocada por administrador, consejo o un grupo de propietarios que represente >= 20%.",
+        TipoSesion.Consejo => "Organo permanente; convocatoria minima por estatutos.",
+        TipoSesion.Comite => "Comite de convivencia - conciliacion previa a sanciones.",
+        _ => string.Empty
+    };
+
+    private static string ModalidadAyuda(ModalidadSesion m) => m switch
+    {
+        ModalidadSesion.Presencial => "Asistencia fisica en lugar definido.",
+        ModalidadSesion.Virtual => "100% en linea (Decreto 1074 art. 2.2.4.4.2.1).",
+        ModalidadSesion.Mixta => "Combina asistencia presencial y remota.",
+        _ => string.Empty
     };
 
     private HttpClient Auth()
