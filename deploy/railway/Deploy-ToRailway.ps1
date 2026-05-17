@@ -83,9 +83,12 @@ function Ok($msg)   { Write-Host "  OK $msg" -ForegroundColor Green }
 function Fail($msg) { Write-Host "  ERROR $msg" -ForegroundColor Red; exit 1 }
 
 function Invoke-Git {
-  param([string]$Cmd)
-  $output = Invoke-Expression "git $Cmd" 2>&1
-  if ($LASTEXITCODE -ne 0) { Fail "git $Cmd fallo:`n$output" }
+  # Acepta tokens individuales: Invoke-Git "push" "origin" "main"
+  # En vez de Invoke-Expression (que reactiva el manejo de stderr como exception),
+  # usa el call operator '&' que respeta $PSNativeCommandUseErrorActionPreference.
+  $output = (& git @args 2>&1 | Out-String).Trim()
+  $exit = $LASTEXITCODE
+  if ($exit -ne 0) { Fail "git $($args -join ' ') fallo (exit $exit):`n$output" }
   return $output
 }
 
@@ -158,13 +161,13 @@ Step "3/7 Pull origin main"
 if ($SkipPull) {
   Info "(skip por -SkipPull)"
 } else {
-  Invoke-Git "fetch origin" | Out-Null
+  Invoke-Git "fetch" "origin" | Out-Null
   $behindAhead = (git rev-list --left-right --count "main...origin/main").Split()
   $behind = [int]$behindAhead[1]
   $ahead = [int]$behindAhead[0]
   if ($behind -gt 0) {
     Info "main esta $behind commits detras del remoto. Pulling..."
-    Invoke-Git "pull --ff-only origin main" | Out-Null
+    Invoke-Git "pull" "--ff-only" "origin" "main" | Out-Null
   }
   if ($ahead -gt 0) {
     Info "main local tiene $ahead commits que NO estan en remoto. Se empujaran ahora."
@@ -209,7 +212,7 @@ if ($ahead -gt 0) {
   if ($DryRun) {
     Info "(DryRun) saltaria git push origin main"
   } else {
-    Invoke-Git "push origin main" | Out-Null
+    Invoke-Git "push" "origin" "main" | Out-Null
     Ok "main sincronizado con remoto"
   }
 }
