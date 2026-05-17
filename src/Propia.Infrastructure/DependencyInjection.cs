@@ -144,6 +144,10 @@ public static class DependencyInjection
         services.AddScoped<Application.Notificaciones.INotificacionesService,
             Notificaciones.NotificacionesService>();
 
+        // Calendario habil colombiano (cache estatico de festivos en memoria del proceso).
+        services.AddScoped<Application.Common.ICalendarioHabilService, Common.CalendarioHabilService>();
+        services.AddScoped<Pqrsd.PqrsdMantenimientoService>();
+
         // Storage de blobs (logos, fachadas, portadas, futuros adjuntos).
         // Provider seleccionado por config: "R2" en produccion, cualquier otro valor (o ausente)
         // cae a filesystem local (wwwroot/uploads). Asi Development y tests no requieren credenciales.
