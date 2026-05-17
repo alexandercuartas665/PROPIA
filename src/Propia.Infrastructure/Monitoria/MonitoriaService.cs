@@ -255,6 +255,53 @@ public class MonitoriaService : IMonitoriaService
     }
 
     // =======================================================================
+    // Jobs nocturnos
+    // =======================================================================
+
+    public async Task<IReadOnlyList<JobEjecucionDto>> ListarJobsAsync(
+        string? jobName, int limite, CancellationToken ct)
+    {
+        IQueryable<JobEjecucion> q = _db.JobEjecuciones.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(jobName)) q = q.Where(j => j.JobName == jobName);
+        var rows = await q.OrderByDescending(j => j.IniciadoAt)
+            .Take(Math.Clamp(limite, 1, 500)).ToListAsync(ct);
+        return rows.Select(j => new JobEjecucionDto(
+            j.Id, j.JobName, j.IniciadoAt, j.CompletadoAt, j.Estado,
+            j.ResultadoJson, j.Error, j.EjecutadoPorHost,
+            j.CompletadoAt is { } c ? (int)(c - j.IniciadoAt).TotalMilliseconds : null)).ToList();
+    }
+
+    public async Task<IReadOnlyList<JobEstadoDto>> GetEstadoJobsAsync(CancellationToken ct)
+    {
+        // Conocemos los jobs registrados via convencion del nombre. Si quieres
+        // hacerlo dinamico, el scheduler puede exponer la lista. Por ahora hardcoded.
+        var conocidos = new (string Name, int FrecMin)[]
+        {
+            ("PqrsdCierreNocturno", 60 * 6),
+            ("MetricasDiarias", 60 * 12)
+        };
+
+        var resultado = new List<JobEstadoDto>();
+        var hace7d = DateTimeOffset.UtcNow.AddDays(-7);
+        foreach (var (name, frec) in conocidos)
+        {
+            var ultima = await _db.JobEjecuciones.AsNoTracking()
+                .Where(j => j.JobName == name)
+                .OrderByDescending(j => j.IniciadoAt).FirstOrDefaultAsync(ct);
+            var exitosa = await _db.JobEjecuciones.AsNoTracking()
+                .Where(j => j.JobName == name && j.Estado == EstadoEjecucionJob.Exitoso)
+                .OrderByDescending(j => j.IniciadoAt).FirstOrDefaultAsync(ct);
+            var fallidas = await _db.JobEjecuciones.AsNoTracking()
+                .CountAsync(j => j.JobName == name
+                                 && j.Estado == EstadoEjecucionJob.Fallido
+                                 && j.IniciadoAt >= hace7d, ct);
+            resultado.Add(new JobEstadoDto(name, frec,
+                ultima?.IniciadoAt, ultima?.Estado, exitosa?.IniciadoAt, fallidas));
+        }
+        return resultado;
+    }
+
+    // =======================================================================
     // Helpers
     // =======================================================================
 

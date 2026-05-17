@@ -26,6 +26,14 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddInfrastructure(builder.Configuration);
 
+// Background jobs (BackgroundJobScheduler como IHostedService + Singleton tipado).
+// Solo en la API porque Web/SuperAdmin no necesitan ejecutar jobs - los consumen
+// via API. El Singleton tipado permite inyectarlo en controllers (admin manual
+// trigger) y tests.
+builder.Services.AddSingleton<Propia.Infrastructure.Jobs.BackgroundJobScheduler>();
+builder.Services.AddHostedService(sp =>
+    sp.GetRequiredService<Propia.Infrastructure.Jobs.BackgroundJobScheduler>());
+
 // ---- Forwarded Headers (proxy de Railway o cualquier reverse proxy) ----
 // Necesario para que el HTTPS redirect y los esquemas de URL respeten el origen.
 builder.Services.Configure<ForwardedHeadersOptions>(options =>

@@ -91,6 +91,29 @@ public record MetricaUsoDiariaDto(
     int IncidentesCriticos);
 
 // ===========================================================================
+// Jobs nocturnos
+// ===========================================================================
+
+public record JobEjecucionDto(
+    Guid Id,
+    string JobName,
+    DateTimeOffset IniciadoAt,
+    DateTimeOffset? CompletadoAt,
+    EstadoEjecucionJob Estado,
+    string? ResultadoJson,
+    string? Error,
+    string? EjecutadoPorHost,
+    int? DuracionMs);
+
+public record JobEstadoDto(
+    string JobName,
+    int FrecuenciaMinutos,
+    DateTimeOffset? UltimaEjecucionAt,
+    EstadoEjecucionJob? UltimoEstado,
+    DateTimeOffset? UltimaExitosaAt,
+    int FallidasUlt7d);
+
+// ===========================================================================
 // Resumen ejecutivo
 // ===========================================================================
 

@@ -1,0 +1,187 @@
+@page "/monitoria"
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpFactory
+@inject SuperAdminSession Session
+@inject NavigationManager Nav
+
+<PageTitle>Monitoria - Super Admin</PageTitle>
+
+@if (!Session.IsAuthenticated) { Nav.NavigateTo("/login", forceLoad: true); return; }
+
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+        <h1 class="h3 mb-0">Monitoria y Auditoria Global</h1>
+        <p class="text-muted mb-0">Modulo 0.3 - salud del sistema, incidentes y metricas</p>
+    </div>
+    <div>
+        <button class="btn btn-outline-dark me-2" @onclick="CargarAsync" disabled="@_cargando">Refrescar</button>
+        <button class="btn btn-primary" @onclick="DispararMetricas" disabled="@_busy">Calcular metricas ahora</button>
+    </div>
+</div>
+
+@if (_cargando)
+{
+    <div class="text-center py-5"><div class="spinner-border"></div></div>
+}
+else
+{
+    @* KPIs resumen *@
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Logs ult. 24h</div>
+                    <h2 class="mb-0">@(_resumen?.LogsUlt24h ?? 0)</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm h-100" style="border-left: 4px solid #dc3545 !important;">
+                <div class="card-body">
+                    <div class="text-muted small">Errores 24h</div>
+                    <h2 class="mb-0 text-danger">@(_resumen?.LogsErrorUlt24h ?? 0)</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm h-100" style="border-left: 4px solid #ffc107 !important;">
+                <div class="card-body">
+                    <div class="text-muted small">Incidentes abiertos</div>
+                    <h2 class="mb-0 text-warning">@(_resumen?.IncidentesAbiertos ?? 0)</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm h-100" style="border-left: 4px solid #6c757d !important;">
+                <div class="card-body">
+                    <div class="text-muted small">Criticos abiertos</div>
+                    <h2 class="mb-0">@(_resumen?.IncidentesCriticosAbiertos ?? 0)</h2>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_msg))
+    {
+        <div class="alert @_msgClass">@_msg</div>
+    }
+
+    <div class="row g-3">
+        <div class="col-lg-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white"><strong>Ultima metrica diaria</strong></div>
+                <div class="card-body">
+                    @if (_metrica is null)
+                    {
+                        <p class="text-muted mb-0">Sin metricas calculadas todavia. Click "Calcular metricas ahora".</p>
+                    }
+                    else
+                    {
+                        <table class="table table-sm mb-0">
+                            <tbody>
+                                <tr><td class="text-muted">Fecha</td><td>@_metrica.Fecha.ToString("yyyy-MM-dd")</td></tr>
+                                <tr><td class="text-muted">Total tenants</td><td>@_metrica.TotalTenants <small class="text-muted">(@_metrica.TenantsActivos activos)</small></td></tr>
+                                <tr><td class="text-muted">Organizaciones</td><td>@_metrica.TotalOrganizaciones</td></tr>
+                                <tr><td class="text-muted">Usuarios</td><td>@_metrica.TotalUsuarios <small class="text-muted">(@_metrica.TotalSuperAdmins SA)</small></td></tr>
+                                <tr><td class="text-muted">Tareas 24h</td><td>@_metrica.TareasCreadas24h</td></tr>
+                                <tr><td class="text-muted">PQRSD 24h</td><td>@_metrica.PqrsdsRadicadas24h</td></tr>
+                                <tr><td class="text-muted">Comunicados 24h</td><td>@_metrica.ComunicadosEnviados24h</td></tr>
+                                <tr><td class="text-muted">Notificaciones T.2 24h</td><td>@_metrica.NotificacionesDespachadas24h</td></tr>
+                            </tbody>
+                        </table>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white d-flex justify-content-between">
+                    <strong>Estado de jobs nocturnos</strong>
+                    <a href="/monitoria/jobs" class="btn btn-sm btn-link p-0">Ver historial</a>
+                </div>
+                <div class="card-body">
+                    @if (_jobs.Count == 0)
+                    {
+                        <p class="text-muted mb-0">Sin jobs registrados.</p>
+                    }
+                    else
+                    {
+                        <table class="table table-sm mb-0">
+                            <thead><tr><th>Job</th><th>Frec.</th><th>Ultima</th><th>Estado</th></tr></thead>
+                            <tbody>
+                                @foreach (var j in _jobs)
+                                {
+                                    var estadoBadge = j.UltimoEstado switch
+                                    {
+                                        EstadoEjecucionJob.Exitoso => "<span class='badge bg-success'>OK</span>",
+                                        EstadoEjecucionJob.Fallido => "<span class='badge bg-danger'>Error</span>",
+                                        EstadoEjecucionJob.Ejecutando => "<span class='badge bg-primary'>Ejecutando</span>",
+                                        _ => "<span class='badge bg-secondary'>Nunca</span>"
+                                    };
+                                    <tr>
+                                        <td><small>@j.JobName</small></td>
+                                        <td><small>@(j.FrecuenciaMinutos / 60)h</small></td>
+                                        <td><small>@(j.UltimaEjecucionAt?.ToString("MM-dd HH:mm") ?? "-")</small></td>
+                                        <td>@((MarkupString)estadoBadge) @if (j.FallidasUlt7d > 0) { <small class="text-danger ms-1">@j.FallidasUlt7d fallos 7d</small> }</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-3 text-muted small">
+        Ultima metrica calculada: @(_resumen?.UltimaMetricaAt?.ToString("yyyy-MM-dd HH:mm UTC") ?? "nunca")
+    </div>
+}
+
+@code {
+    private bool _cargando = true;
+    private bool _busy;
+    private string? _msg;
+    private string _msgClass = "alert-info";
+    private ResumenMonitoriaDto? _resumen;
+    private MetricaUsoDiariaDto? _metrica;
+    private List<JobEstadoDto> _jobs = new();
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        _cargando = true; _msg = null;
+        try
+        {
+            var http = Http();
+            _resumen = await http.GetFromJsonAsync<ResumenMonitoriaDto>("/api/admin/monitoria/resumen");
+            try { _metrica = await http.GetFromJsonAsync<MetricaUsoDiariaDto>("/api/admin/monitoria/metricas/ultima"); }
+            catch { _metrica = null; }
+            _jobs = await http.GetFromJsonAsync<List<JobEstadoDto>>("/api/admin/monitoria/jobs/estado") ?? new();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _cargando = false; }
+    }
+
+    private async Task DispararMetricas()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var http = Http();
+            var resp = await http.PostAsync("/api/admin/monitoria/metricas/calcular", null);
+            if (!resp.IsSuccessStatusCode) { _msg = "Error calculando metricas."; _msgClass = "alert-danger"; }
+            else { _msg = "Metricas actualizadas."; _msgClass = "alert-success"; await CargarAsync(); }
+        }
+        finally { _busy = false; }
+    }
+
+    private HttpClient Http()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Session.AccessToken!);
+        return http;
+    }
+}
