@@ -22,10 +22,9 @@
     }
 
     function getPreferredTheme() {
-        var stored = getStoredTheme();
-        if (stored === 'dark' || stored === 'light') return stored;
-        return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-            ? 'dark' : 'light';
+        // Consola SuperAdmin: tema CLARO fijo. No seguimos preferencia del sistema ni servidor
+        // para evitar el salto oscuro/claro y garantizar contraste en todas las paginas.
+        return 'light';
     }
 
     function applyTheme(theme) {
@@ -189,7 +188,7 @@
         bindRailTabs();
         syncAuthCta();
         bindLogout();
-        pullThemeFromServer();  // si hay sesion, sincroniza desde backend (override local)
+        // No se sincroniza tema desde el servidor: la consola interna queda en claro fijo.
     }
 
     // Aplicar theme ASAP (antes de DOMContentLoaded para evitar flash)

@@ -86,51 +86,89 @@
 {
     <div class="text-center py-5"><div class="spinner-border"></div></div>
 }
+else if (_planes.Count == 0)
+{
+    <div class="card border-0 shadow-sm"><div class="card-body text-center text-muted py-5">Sin planes aun. Crea el primero con "+ Crear plan".</div></div>
+}
 else
 {
-    <div class="card border-0 shadow-sm">
-        <div class="table-responsive">
-            <table class="table table-hover mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>Nombre</th>
-                        <th>Estado</th>
-                        <th class="text-end">Fee base</th>
-                        <th class="text-end">Fee/unidad</th>
-                        <th class="text-center">Ciclo</th>
-                        <th>Trial</th>
-                        <th>Suscripciones</th>
-                        <th>Acciones</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var p in _planes)
+    <div class="plan-grid">
+        @foreach (var p in _planes)
+        {
+            <div class="plan-card @(p.Estado != EstadoPlan.Activo ? "plan-card-off" : "")">
+                <div class="plan-card-top">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <h5 class="plan-name mb-0">@p.Nombre</h5>
+                        @EstadoBadge(p.Estado)
+                    </div>
+                    @if (!string.IsNullOrEmpty(p.Descripcion))
                     {
-                        <tr>
-                            <td>
-                                <strong>@p.Nombre</strong>
-                                @if (!string.IsNullOrEmpty(p.Descripcion)) { <div class="text-muted small">@p.Descripcion</div> }
-                            </td>
-                            <td>@EstadoBadge(p.Estado)</td>
-                            <td class="text-end">@p.FeeBase.ToString("N0")</td>
-                            <td class="text-end">@p.FeeVariablePorUnidad.ToString("N0")</td>
-                            <td class="text-center"><small>@(p.CicloMensual ? "M" : "")@(p.CicloAnual ? "/A" : "") @(p.DescuentoAnualPct > 0 ? $"(-{p.DescuentoAnualPct}%)" : "")</small></td>
-                            <td><small>@p.DiasTrial dias</small></td>
-                            <td>@p.SuscripcionesActivas</td>
-                            <td>
-                                <button class="btn btn-sm btn-outline-dark" @onclick="() => EditarPlan(p)">Editar</button>
-                            </td>
-                        </tr>
+                        <p class="plan-desc">@p.Descripcion</p>
                     }
-                    @if (_planes.Count == 0)
+                    <div class="plan-price">
+                        <span class="plan-price-amount">$@p.FeeBase.ToString("N0")</span>
+                        <span class="plan-price-unit">COP / mes</span>
+                    </div>
+                    @if (p.FeeVariablePorUnidad > 0)
                     {
-                        <tr><td colspan="8" class="text-center text-muted py-4">Sin planes aun. Crea el primero.</td></tr>
+                        <div class="plan-price-extra">+ $@p.FeeVariablePorUnidad.ToString("N0") por unidad</div>
                     }
-                </tbody>
-            </table>
-        </div>
+                </div>
+
+                <ul class="plan-features">
+                    <li><i class="fi fi-rr-check plan-check"></i> @(p.LimiteUnidades is int lu ? $"{lu} unidades" : "Unidades ilimitadas")</li>
+                    <li><i class="fi fi-rr-check plan-check"></i> @(p.LimiteUsuarios is int us ? $"{us} usuarios" : "Usuarios ilimitados")</li>
+                    <li><i class="fi fi-rr-check plan-check"></i> @(p.DiasTrial > 0 ? $"{p.DiasTrial} dias de prueba" : "Sin trial")</li>
+                    <li>
+                        <i class="fi fi-rr-check plan-check"></i>
+                        Ciclo @(p.CicloMensual && p.CicloAnual ? "mensual y anual" : p.CicloAnual ? "anual" : "mensual")
+                        @if (p.DescuentoAnualPct > 0) { <span class="text-success">(-@p.DescuentoAnualPct% anual)</span> }
+                    </li>
+                </ul>
+
+                <div class="plan-card-foot">
+                    <span class="plan-subs">@p.SuscripcionesActivas suscripcion@(p.SuscripcionesActivas == 1 ? "" : "es")</span>
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => EditarPlan(p)">Editar plan</button>
+                </div>
+            </div>
+        }
     </div>
 }
+
+<style>
+    .plan-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 1.25rem;
+    }
+    .plan-card {
+        background: #fff;
+        border: 1px solid #e6e6ee;
+        border-radius: 14px;
+        padding: 1.25rem;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+        transition: transform .12s, box-shadow .12s;
+    }
+    .plan-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(89,85,209,0.12); }
+    .plan-card-off { opacity: .65; }
+    .plan-name { font-weight: 700; color: #1a1a2e; }
+    .plan-desc { color: #6e6e85; font-size: .85rem; margin: .4rem 0 0; }
+    .plan-price { margin-top: .9rem; display: flex; align-items: baseline; gap: .35rem; }
+    .plan-price-amount {
+        font-size: 1.9rem; font-weight: 700;
+        background: linear-gradient(135deg, var(--propia-primary,#5955D1), var(--propia-primary-light,#7A77E0));
+        -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .plan-price-unit { color: #6e6e85; font-size: .8rem; }
+    .plan-price-extra { color: #6e6e85; font-size: .8rem; margin-top: .15rem; }
+    .plan-features { list-style: none; padding: 0; margin: 1rem 0; flex: 1; }
+    .plan-features li { display: flex; align-items: center; gap: .5rem; padding: .3rem 0; font-size: .88rem; color: #4a4a63; }
+    .plan-check { color: var(--propia-primary,#5955D1); font-size: .8rem; }
+    .plan-card-foot { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #eef0f5; padding-top: .85rem; }
+    .plan-subs { font-size: .8rem; color: #6e6e85; }
+</style>
 
 @code {
     private bool _cargando = true;
