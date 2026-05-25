@@ -153,6 +153,7 @@ app.UseForwardedHeaders();
 if (app.Environment.IsDevelopment())
 {
     await SuperAdminSeeder.EnsureDevFounderAsync(app.Services);
+    await DemoSeeder.EnsureDemoDataAsync(app.Services);
     app.MapOpenApi();
     app.UseHttpsRedirection();  // Local dev usa cert self-signed en puerto HTTPS
 
