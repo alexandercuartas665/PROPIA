@@ -24,6 +24,7 @@ public class BillingService : IBillingService
                 p.FeeBase, p.FeeVariablePorUnidad,
                 p.CicloMensual, p.CicloAnual, p.DescuentoAnualPct,
                 p.LimiteUnidades, p.LimiteUsuarios, p.LimiteStorageGb,
+                p.LimiteLineasWhatsapp, p.LimiteLlamadasIaMensual,
                 p.DiasTrial, p.Estado,
                 _db.Suscripciones.Count(s => s.PlanId == p.Id && s.Estado != EstadoSuscripcion.Cancelada && s.Estado != EstadoSuscripcion.Archivada),
                 p.CreatedAt))
@@ -46,6 +47,8 @@ public class BillingService : IBillingService
             LimiteUnidades = req.LimiteUnidades,
             LimiteUsuarios = req.LimiteUsuarios,
             LimiteStorageGb = req.LimiteStorageGb,
+            LimiteLineasWhatsapp = req.LimiteLineasWhatsapp,
+            LimiteLlamadasIaMensual = req.LimiteLlamadasIaMensual,
             DiasTrial = req.DiasTrial,
             Estado = EstadoPlan.Activo
         };
@@ -84,6 +87,8 @@ public class BillingService : IBillingService
         plan.LimiteUnidades = req.LimiteUnidades;
         plan.LimiteUsuarios = req.LimiteUsuarios;
         plan.LimiteStorageGb = req.LimiteStorageGb;
+        plan.LimiteLineasWhatsapp = req.LimiteLineasWhatsapp;
+        plan.LimiteLlamadasIaMensual = req.LimiteLlamadasIaMensual;
         plan.DiasTrial = req.DiasTrial;
         plan.Estado = req.Estado;
 
@@ -415,6 +420,7 @@ public class BillingService : IBillingService
             p.FeeBase, p.FeeVariablePorUnidad,
             p.CicloMensual, p.CicloAnual, p.DescuentoAnualPct,
             p.LimiteUnidades, p.LimiteUsuarios, p.LimiteStorageGb,
+            p.LimiteLineasWhatsapp, p.LimiteLlamadasIaMensual,
             p.DiasTrial, p.Estado, suscripcionesActivas, p.CreatedAt);
 
     private static FacturaDto ToFacturaDto(Factura f) =>

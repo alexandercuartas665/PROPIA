@@ -8,6 +8,7 @@ public record PlanDto(
     decimal FeeBase, decimal FeeVariablePorUnidad,
     bool CicloMensual, bool CicloAnual, decimal DescuentoAnualPct,
     int? LimiteUnidades, int? LimiteUsuarios, int? LimiteStorageGb,
+    int? LimiteLineasWhatsapp, int? LimiteLlamadasIaMensual,
     int DiasTrial, EstadoPlan Estado, int SuscripcionesActivas, DateTimeOffset CreatedAt);
 
 public record CrearPlanRequest(
@@ -15,6 +16,7 @@ public record CrearPlanRequest(
     decimal FeeBase, decimal FeeVariablePorUnidad,
     bool CicloMensual, bool CicloAnual, decimal DescuentoAnualPct,
     int? LimiteUnidades, int? LimiteUsuarios, int? LimiteStorageGb,
+    int? LimiteLineasWhatsapp, int? LimiteLlamadasIaMensual,
     int DiasTrial);
 
 public record ActualizarPlanRequest(
@@ -22,6 +24,7 @@ public record ActualizarPlanRequest(
     decimal FeeBase, decimal FeeVariablePorUnidad,
     bool CicloMensual, bool CicloAnual, decimal DescuentoAnualPct,
     int? LimiteUnidades, int? LimiteUsuarios, int? LimiteStorageGb,
+    int? LimiteLineasWhatsapp, int? LimiteLlamadasIaMensual,
     int DiasTrial, EstadoPlan Estado);
 
 // ----- Suscripciones -----

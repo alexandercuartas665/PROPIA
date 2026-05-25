@@ -33,6 +33,12 @@ public class Plan : BaseEntity
     /// <summary>GB de storage incluidos. null = ilimitado.</summary>
     public int? LimiteStorageGb { get; set; }
 
+    /// <summary>Maximo de lineas de WhatsApp (canal Evolution). null = ilimitado.</summary>
+    public int? LimiteLineasWhatsapp { get; set; }
+
+    /// <summary>Maximo de llamadas a la IA por mes. null = ilimitado.</summary>
+    public int? LimiteLlamadasIaMensual { get; set; }
+
     /// <summary>Dias de trial antes del primer cobro. 0 = sin trial.</summary>
     public int DiasTrial { get; set; }
 

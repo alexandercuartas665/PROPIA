@@ -60,7 +60,7 @@ public class BillingFlowTests : IAsyncLifetime
     {
         // 1) Crear plan
         var planResp = await _client.PostAsJsonAsync("/admin/billing/planes",
-            new CrearPlanRequest("Plan Test", "Desc", 150000m, 5000m, true, true, 10m, null, null, null, 0));
+            new CrearPlanRequest("Plan Test", "Desc", 150000m, 5000m, true, true, 10m, null, null, null, null, null, 0));
         var planBody = await planResp.Content.ReadAsStringAsync();
         Assert.True(planResp.StatusCode == HttpStatusCode.Created,
             $"Plan create returned {(int)planResp.StatusCode}: {planBody}");
@@ -110,7 +110,7 @@ public class BillingFlowTests : IAsyncLifetime
     {
         // Crear plan
         var planResp = await _client.PostAsJsonAsync("/admin/billing/planes",
-            new CrearPlanRequest("Plan Bloqueado", null, 100000m, 0m, true, false, 0m, null, null, null, 0));
+            new CrearPlanRequest("Plan Bloqueado", null, 100000m, 0m, true, false, 0m, null, null, null, null, null, 0));
         var plan = await planResp.Content.ReadFromJsonAsync<PlanDto>();
 
         // Crear org y suscripcion
@@ -123,7 +123,7 @@ public class BillingFlowTests : IAsyncLifetime
         // Intentar archivar el plan -> debe fallar
         var resp = await _client.PutAsJsonAsync($"/admin/billing/planes/{plan.Id}",
             new ActualizarPlanRequest(plan.Nombre, null, plan.FeeBase, plan.FeeVariablePorUnidad,
-                true, false, 0m, null, null, null, 0, EstadoPlan.Archivado));
+                true, false, 0m, null, null, null, null, null, 0, EstadoPlan.Archivado));
         Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
         var body = await resp.Content.ReadAsStringAsync();
         Assert.Contains("suscripcion", body);
@@ -133,9 +133,9 @@ public class BillingFlowTests : IAsyncLifetime
     public async Task Cambio_de_plan_se_registra_como_upgrade_o_downgrade_en_historial()
     {
         var basicoResp = await _client.PostAsJsonAsync("/admin/billing/planes",
-            new CrearPlanRequest("Basico", null, 100000m, 0m, true, false, 0m, null, null, null, 0));
+            new CrearPlanRequest("Basico", null, 100000m, 0m, true, false, 0m, null, null, null, null, null, 0));
         var premiumResp = await _client.PostAsJsonAsync("/admin/billing/planes",
-            new CrearPlanRequest("Premium", null, 500000m, 0m, true, false, 0m, null, null, null, 0));
+            new CrearPlanRequest("Premium", null, 500000m, 0m, true, false, 0m, null, null, null, null, null, 0));
         var basico = await basicoResp.Content.ReadFromJsonAsync<PlanDto>();
         var premium = await premiumResp.Content.ReadFromJsonAsync<PlanDto>();
 
@@ -178,7 +178,7 @@ public class BillingFlowTests : IAsyncLifetime
     {
         // Setup minimo: crear plan, org, suscripcion -> genera entrada en historial
         var planResp = await _client.PostAsJsonAsync("/admin/billing/planes",
-            new CrearPlanRequest("Plan Imm", null, 50000m, 0m, true, false, 0m, null, null, null, 0));
+            new CrearPlanRequest("Plan Imm", null, 50000m, 0m, true, false, 0m, null, null, null, null, null, 0));
         var plan = await planResp.Content.ReadFromJsonAsync<PlanDto>();
         var orgResp = await _client.PostAsJsonAsync("/admin/organizaciones",
             new CrearOrganizacionRequest($"Org Imm {Guid.NewGuid():N}", TipoOrganizacion.Administradora, null, null, null));
