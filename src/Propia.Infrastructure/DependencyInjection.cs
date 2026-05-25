@@ -83,6 +83,7 @@ public static class DependencyInjection
         services.AddScoped<Application.Integraciones.IAiServerConfigService, Integraciones.AiServerConfigService>();
         services.AddScoped<Application.Integraciones.IWompiConfigService, Integraciones.WompiConfigService>();
         services.AddScoped<Application.Integraciones.IWompiWebhookService, Integraciones.WompiWebhookService>();
+        services.AddScoped<Application.Integraciones.IEvolutionMasterConfigService, Integraciones.EvolutionMasterConfigService>();
 
         // Modulo 2.3 Mi Copropiedad
         services.AddScoped<Application.MiCopropiedad.IMiCopropiedadService, MiCopropiedad.MiCopropiedadService>();
@@ -171,6 +172,7 @@ public static class DependencyInjection
         // abre un scope nuevo para resolver los jobs scoped.
         services.AddScoped<Jobs.IBackgroundJob, Jobs.PqrsdCierreNocturnoJob>();
         services.AddScoped<Jobs.IBackgroundJob, Jobs.MetricasDiariasJob>();
+        services.AddScoped<Jobs.IBackgroundJob, Jobs.CobroRecurrenteJob>();
 
         // Storage de blobs (logos, fachadas, portadas, futuros adjuntos).
         // Provider seleccionado por config: "R2" en produccion, cualquier otro valor (o ausente)

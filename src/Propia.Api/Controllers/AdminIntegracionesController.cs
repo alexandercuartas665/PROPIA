@@ -20,19 +20,22 @@ public class AdminIntegracionesController : ControllerBase
     private readonly IEmailSender _emailSender;
     private readonly IAiServerConfigService _ai;
     private readonly IWompiConfigService _wompi;
+    private readonly IEvolutionMasterConfigService _evolution;
 
     public AdminIntegracionesController(
         IEmailConfigService email,
         IPlatformBrandingService branding,
         IEmailSender emailSender,
         IAiServerConfigService ai,
-        IWompiConfigService wompi)
+        IWompiConfigService wompi,
+        IEvolutionMasterConfigService evolution)
     {
         _email = email;
         _branding = branding;
         _emailSender = emailSender;
         _ai = ai;
         _wompi = wompi;
+        _evolution = evolution;
     }
 
     // -------------------- Servidor de Correo --------------------
@@ -116,6 +119,29 @@ public class AdminIntegracionesController : ControllerBase
         var (id, email) = Actor();
         var result = await _wompi.ValidateAsync(id, email, Ip(), ct);
         if (result is null) return BadRequest(new { error = "wompi_no_configurado" });
+        return Ok(result);
+    }
+
+    // -------------------- Evolution API (WhatsApp) --------------------
+
+    [HttpGet("evolution-config")]
+    public async Task<IActionResult> GetEvolutionConfig(CancellationToken ct)
+        => Ok(await _evolution.GetAsync(ct) ?? new EvolutionMasterDto(
+            null, null, false, Propia.Domain.Enums.EvolutionIntegrationStatus.NotConfigured, null, "Production", null, false));
+
+    [HttpPut("evolution-config")]
+    public async Task<IActionResult> SaveEvolutionConfig([FromBody] SaveEvolutionMasterRequest req, CancellationToken ct)
+    {
+        var (id, email) = Actor();
+        return Ok(await _evolution.SaveAsync(req, id, email, Ip(), ct));
+    }
+
+    [HttpPost("evolution-config/validar")]
+    public async Task<IActionResult> ValidarEvolutionConfig(CancellationToken ct)
+    {
+        var (id, email) = Actor();
+        var result = await _evolution.ValidateAsync(id, email, Ip(), ct);
+        if (result is null) return BadRequest(new { error = "evolution_no_configurado" });
         return Ok(result);
     }
 

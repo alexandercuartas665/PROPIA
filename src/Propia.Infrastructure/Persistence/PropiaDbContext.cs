@@ -44,6 +44,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<AiProviderConfig> AiProviderConfigs => Set<AiProviderConfig>();
     public DbSet<WompiMasterConfig> WompiMasterConfigs => Set<WompiMasterConfig>();
     public DbSet<WompiWebhookEvent> WompiWebhookEvents => Set<WompiWebhookEvent>();
+    public DbSet<EvolutionMasterConfig> EvolutionMasterConfigs => Set<EvolutionMasterConfig>();
 
     // Entidades de tenant (con tenant_id + RLS + HasQueryFilter)
     public DbSet<UsuarioTenant> UsuariosTenant => Set<UsuarioTenant>();
@@ -2125,6 +2126,16 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.Note).HasMaxLength(500);
             b.HasIndex(x => x.ProviderEventId).IsUnique();
             b.HasIndex(x => x.Reference);
+        });
+
+        modelBuilder.Entity<EvolutionMasterConfig>(b =>
+        {
+            b.Property(x => x.BaseUrl).HasMaxLength(500);
+            b.Property(x => x.ApiKeyEncrypted).HasMaxLength(1024);
+            b.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+            b.Property(x => x.WebhookMode).HasMaxLength(20);
+            b.Property(x => x.WebhookPublicUrl).HasMaxLength(500);
+            b.Property(x => x.WebhookToken).HasMaxLength(1024);
         });
 
         // ApplicationUser - relacion opcional con Persona del Directorio
