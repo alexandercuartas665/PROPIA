@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -69,6 +70,17 @@ public static class DependencyInjection
 
         // Modulo 0.2 Billing y Suscripciones
         services.AddScoped<IBillingService, BillingService>();
+
+        // ---- Integraciones de plataforma (Super Admin) - portadas de CUBOT.travels ----
+        // Data Protection cifra secretos en reposo (SMTP, API keys, OAuth). En produccion
+        // (Railway/Linux) las llaves DEBEN persistirse fuera del proceso para sobrevivir redeploys
+        // (PersistKeysToFileSystem a un volumen, o PersistKeysToDbContext). En dev usa el default.
+        services.AddDataProtection().SetApplicationName("Propia");
+        services.AddSingleton<Application.Common.ISecretProtector, Security.SecretProtector>();
+        services.AddScoped<Application.Common.IEmailSender, Email.SmtpEmailSender>();
+        services.AddScoped<Application.Integraciones.IEmailConfigService, Integraciones.EmailConfigService>();
+        services.AddScoped<Application.Integraciones.IPlatformBrandingService, Integraciones.PlatformBrandingService>();
+        services.AddScoped<Application.Integraciones.IAiServerConfigService, Integraciones.AiServerConfigService>();
 
         // Modulo 2.3 Mi Copropiedad
         services.AddScoped<Application.MiCopropiedad.IMiCopropiedadService, MiCopropiedad.MiCopropiedadService>();

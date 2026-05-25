@@ -38,6 +38,11 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<SuperAdminUsuario> SuperAdminUsuarios => Set<SuperAdminUsuario>();
     public DbSet<SuperAdminLog> SuperAdminLogs => Set<SuperAdminLog>();
 
+    // Integraciones de plataforma (Super Admin) - portadas de CUBOT.travels. Globales singleton.
+    public DbSet<EmailConfig> EmailConfigs => Set<EmailConfig>();
+    public DbSet<PlatformBranding> PlatformBrandings => Set<PlatformBranding>();
+    public DbSet<AiProviderConfig> AiProviderConfigs => Set<AiProviderConfig>();
+
     // Entidades de tenant (con tenant_id + RLS + HasQueryFilter)
     public DbSet<UsuarioTenant> UsuariosTenant => Set<UsuarioTenant>();
 
@@ -2066,6 +2071,34 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasIndex(x => x.ActorId);
             b.HasIndex(x => x.CreatedAt);
             // Inmutabilidad: trigger PostgreSQL agregado en migracion posterior.
+        });
+
+        // -------------------- Integraciones de plataforma (Super Admin) --------------------
+        modelBuilder.Entity<EmailConfig>(b =>
+        {
+            b.Property(x => x.SmtpHost).HasMaxLength(255);
+            b.Property(x => x.SmtpUser).HasMaxLength(255);
+            b.Property(x => x.SmtpPasswordEncrypted).HasMaxLength(1024);
+            b.Property(x => x.FromEmail).HasMaxLength(255);
+            b.Property(x => x.FromName).HasMaxLength(255);
+        });
+
+        modelBuilder.Entity<PlatformBranding>(b =>
+        {
+            b.Property(x => x.PlatformName).IsRequired().HasMaxLength(120);
+            b.Property(x => x.Tagline).HasMaxLength(255);
+            b.Property(x => x.LoginLogoUrl).HasMaxLength(500);
+            b.Property(x => x.LoginHeadline).HasMaxLength(255);
+            b.Property(x => x.LoginSubtext).HasMaxLength(1000);
+        });
+
+        modelBuilder.Entity<AiProviderConfig>(b =>
+        {
+            b.Property(x => x.Provider).HasConversion<string>().HasMaxLength(30);
+            b.Property(x => x.ApiKeyEncrypted).HasMaxLength(1024);
+            b.Property(x => x.Model).HasMaxLength(120);
+            b.Property(x => x.BaseUrl).HasMaxLength(255);
+            b.HasIndex(x => x.Provider).IsUnique();
         });
 
         // ApplicationUser - relacion opcional con Persona del Directorio
