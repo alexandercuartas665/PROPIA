@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -9,18 +10,29 @@ namespace Propia.Infrastructure.SuperAdmin;
 
 /// <summary>
 /// Siembra un set de datos de ejemplo PEQUENO y reproducible para Development:
-/// 4 planes, 10 organizaciones, 10 copropiedades y una suscripcion por copropiedad.
-/// IDEMPOTENTE y SEGURO: solo siembra si la BD esta fresca (sin organizaciones); nunca borra
-/// ni modifica datos existentes. Para regenerar: resetear el schema y reiniciar la API.
+/// 4 planes, 10 organizaciones, 10 copropiedades, una suscripcion por copropiedad y 3 usuarios
+/// demo de cliente (Administrador Delegado, Consejo, Personal Interno) sobre la 1a copropiedad.
+/// IDEMPOTENTE y SEGURO: cada bloque tiene su propio guard; nunca borra ni modifica datos
+/// existentes. Para regenerar todo: resetear el schema y reiniciar la API.
 /// </summary>
 public static class DemoSeeder
 {
+    /// <summary>Clave comun de los 3 usuarios demo de cliente (cumple la politica: >=10, mayus, digito).</summary>
+    public const string DemoUserPassword = "PropiaDemo2026!";
+
     public static async Task EnsureDemoDataAsync(IServiceProvider services)
     {
         await using var scope = services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<PropiaDbContext>();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<PropiaDbContext>>();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
 
+        await EnsureBaseDataAsync(db, logger);
+        await EnsureDemoUsersAsync(db, userManager, logger);
+    }
+
+    private static async Task EnsureBaseDataAsync(PropiaDbContext db, ILogger logger)
+    {
         // Solo en BD fresca: si ya hay organizaciones, no tocar nada.
         if (await db.Organizaciones.AnyAsync()) return;
 
@@ -115,6 +127,83 @@ public static class DemoSeeder
         await db.SaveChangesAsync();
         logger.LogWarning("[DEV] DemoSeeder: sembrados 4 planes, {Orgs} organizaciones, {Tenants} copropiedades y {Subs} suscripciones.",
             orgs.Count, tenants.Count, tenants.Count);
+    }
+
+    /// <summary>
+    /// Crea 3 usuarios demo de cliente sobre la primera copropiedad: Administrador Delegado,
+    /// Consejo y Personal Interno. Idempotente (guard por email). Mismo patron que el onboarding:
+    /// Persona + ApplicationUser (Identity) + UsuarioTenant via SQL con set_config (RLS).
+    /// </summary>
+    private static async Task EnsureDemoUsersAsync(PropiaDbContext db, UserManager<ApplicationUser> userManager, ILogger logger)
+    {
+        const string adminEmail = "admin@demo.propia";
+        if (await db.Users.AnyAsync(u => u.Email == adminEmail)) return;
+
+        // Primera copropiedad (la de codigo PROPIA-0001) como contexto de los usuarios demo.
+        var tenant = await db.Tenants.OrderBy(t => t.CodigoPropia).FirstOrDefaultAsync();
+        if (tenant is null) return;
+
+        var now = DateTimeOffset.UtcNow;
+        var perfiles = new[]
+        {
+            (Email: adminEmail,            Nombres: "Admin",    Apellidos: "Delegado Demo", Rol: "Administrador"),
+            (Email: "consejo@demo.propia",  Nombres: "Carlos",   Apellidos: "Consejo Demo",  Rol: "Consejo"),
+            (Email: "personal@demo.propia", Nombres: "Lucia",    Apellidos: "Personal Demo", Rol: "Personal Interno"),
+        };
+
+        foreach (var p in perfiles)
+        {
+            if (await db.Users.AnyAsync(u => u.Email == p.Email)) continue;
+
+            var persona = new Persona
+            {
+                TipoDocumento = TipoDocumento.CC,
+                Documento = $"DEMO-{Guid.NewGuid().ToString("N")[..8]}",
+                Nombres = p.Nombres,
+                Apellidos = p.Apellidos,
+                Email = p.Email,
+                CreatedAt = now,
+            };
+            db.Personas.Add(persona);
+            await db.SaveChangesAsync();
+
+            var user = new ApplicationUser
+            {
+                Id = Guid.NewGuid(),
+                UserName = p.Email,
+                Email = p.Email,
+                EmailConfirmed = true,
+                PersonaId = persona.Id,
+            };
+            var created = await userManager.CreateAsync(user, DemoUserPassword);
+            if (!created.Succeeded)
+            {
+                logger.LogWarning("[DEV] DemoSeeder: no se pudo crear usuario {Email}: {Errores}",
+                    p.Email, string.Join(", ", created.Errors.Select(e => e.Description)));
+                continue;
+            }
+
+            // UsuarioTenant via SQL: RLS exige app.tenant_id seteado en la misma sesion.
+            var conn = db.Database.GetDbConnection();
+            var opened = conn.State != System.Data.ConnectionState.Open;
+            if (opened) await conn.OpenAsync();
+            try
+            {
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = $@"
+                    SELECT set_config('app.tenant_id', '{tenant.Id}', false);
+                    INSERT INTO usuarios_tenant (id, tenant_id, persona_id, rol, estado, fecha_activacion, created_at)
+                    VALUES ('{Guid.NewGuid()}', '{tenant.Id}', '{persona.Id}', '{p.Rol}', 1, now(), now());";
+                await cmd.ExecuteNonQueryAsync();
+            }
+            finally
+            {
+                if (opened) await conn.CloseAsync();
+            }
+        }
+
+        logger.LogWarning("[DEV] DemoSeeder: creados 3 usuarios demo de cliente sobre '{Tenant}' (clave: {Pwd}).",
+            tenant.Nombre, DemoUserPassword);
     }
 
     private static Plan NuevoPlan(string nombre, string desc, decimal feeBase, decimal descAnual,
