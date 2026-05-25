@@ -19,17 +19,20 @@ public class AdminIntegracionesController : ControllerBase
     private readonly IPlatformBrandingService _branding;
     private readonly IEmailSender _emailSender;
     private readonly IAiServerConfigService _ai;
+    private readonly IWompiConfigService _wompi;
 
     public AdminIntegracionesController(
         IEmailConfigService email,
         IPlatformBrandingService branding,
         IEmailSender emailSender,
-        IAiServerConfigService ai)
+        IAiServerConfigService ai,
+        IWompiConfigService wompi)
     {
         _email = email;
         _branding = branding;
         _emailSender = emailSender;
         _ai = ai;
+        _wompi = wompi;
     }
 
     // -------------------- Servidor de Correo --------------------
@@ -90,6 +93,28 @@ public class AdminIntegracionesController : ControllerBase
         var (id, email) = Actor();
         var dto = await _ai.SaveAsync(req, id, email, Ip(), ct);
         return Ok(dto);
+    }
+
+    // -------------------- Wompi (config maestra) --------------------
+
+    [HttpGet("wompi-config")]
+    public async Task<IActionResult> GetWompiConfig(CancellationToken ct)
+        => Ok(await _wompi.GetAsync(ct));
+
+    [HttpPut("wompi-config")]
+    public async Task<IActionResult> SaveWompiConfig([FromBody] SaveWompiConfigRequest req, CancellationToken ct)
+    {
+        var (id, email) = Actor();
+        return Ok(await _wompi.SaveAsync(req, id, email, Ip(), ct));
+    }
+
+    [HttpPost("wompi-config/validar")]
+    public async Task<IActionResult> ValidarWompiConfig(CancellationToken ct)
+    {
+        var (id, email) = Actor();
+        var result = await _wompi.ValidateAsync(id, email, Ip(), ct);
+        if (result is null) return BadRequest(new { error = "wompi_no_configurado" });
+        return Ok(result);
     }
 
     // -------------------- Helpers --------------------

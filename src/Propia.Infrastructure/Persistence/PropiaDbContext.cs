@@ -42,6 +42,8 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<EmailConfig> EmailConfigs => Set<EmailConfig>();
     public DbSet<PlatformBranding> PlatformBrandings => Set<PlatformBranding>();
     public DbSet<AiProviderConfig> AiProviderConfigs => Set<AiProviderConfig>();
+    public DbSet<WompiMasterConfig> WompiMasterConfigs => Set<WompiMasterConfig>();
+    public DbSet<WompiWebhookEvent> WompiWebhookEvents => Set<WompiWebhookEvent>();
 
     // Entidades de tenant (con tenant_id + RLS + HasQueryFilter)
     public DbSet<UsuarioTenant> UsuariosTenant => Set<UsuarioTenant>();
@@ -2099,6 +2101,30 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.Model).HasMaxLength(120);
             b.Property(x => x.BaseUrl).HasMaxLength(255);
             b.HasIndex(x => x.Provider).IsUnique();
+        });
+
+        modelBuilder.Entity<WompiMasterConfig>(b =>
+        {
+            b.Property(x => x.Environment).HasConversion<string>().HasMaxLength(20);
+            b.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+            b.Property(x => x.PublicKey).HasMaxLength(255);
+            b.Property(x => x.PrivateKeyEncrypted).HasMaxLength(1024);
+            b.Property(x => x.EventsSecretEncrypted).HasMaxLength(1024);
+            b.Property(x => x.IntegritySecretEncrypted).HasMaxLength(1024);
+            b.Property(x => x.WebhookEndpoint).HasMaxLength(500);
+            b.Property(x => x.Currency).HasMaxLength(10);
+        });
+
+        modelBuilder.Entity<WompiWebhookEvent>(b =>
+        {
+            b.Property(x => x.ProviderEventId).IsRequired().HasMaxLength(255);
+            b.Property(x => x.ProcessingStatus).HasConversion<string>().HasMaxLength(30);
+            b.Property(x => x.RawPayload).HasColumnType("jsonb");
+            b.Property(x => x.TransactionId).HasMaxLength(100);
+            b.Property(x => x.Reference).HasMaxLength(255);
+            b.Property(x => x.Note).HasMaxLength(500);
+            b.HasIndex(x => x.ProviderEventId).IsUnique();
+            b.HasIndex(x => x.Reference);
         });
 
         // ApplicationUser - relacion opcional con Persona del Directorio

@@ -81,6 +81,8 @@ public static class DependencyInjection
         services.AddScoped<Application.Integraciones.IEmailConfigService, Integraciones.EmailConfigService>();
         services.AddScoped<Application.Integraciones.IPlatformBrandingService, Integraciones.PlatformBrandingService>();
         services.AddScoped<Application.Integraciones.IAiServerConfigService, Integraciones.AiServerConfigService>();
+        services.AddScoped<Application.Integraciones.IWompiConfigService, Integraciones.WompiConfigService>();
+        services.AddScoped<Application.Integraciones.IWompiWebhookService, Integraciones.WompiWebhookService>();
 
         // Modulo 2.3 Mi Copropiedad
         services.AddScoped<Application.MiCopropiedad.IMiCopropiedadService, MiCopropiedad.MiCopropiedadService>();
