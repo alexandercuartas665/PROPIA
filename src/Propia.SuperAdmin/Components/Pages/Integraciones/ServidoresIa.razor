@@ -1,0 +1,121 @@
+@page "/integraciones/ia"
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpFactory
+@inject SuperAdminSession Session
+@inject NavigationManager Nav
+
+<PageTitle>Servidores de IA</PageTitle>
+
+@if (!Session.IsAuthenticated) { Nav.NavigateTo("/login", forceLoad: true); return; }
+
+<h1 class="h3 mb-1">Servidores de IA</h1>
+<p class="text-muted mb-4">Cuentas maestras de proveedores de IA de la plataforma. La API key se guarda cifrada y nunca se muestra completa. Las usaran los agentes del modulo 0.4 / T.1.</p>
+
+@if (_cargando)
+{
+    <div class="text-center py-5"><div class="spinner-border"></div></div>
+}
+else
+{
+    @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgCls">@_msg</div> }
+    <div class="row g-4">
+        @foreach (var p in _items)
+        {
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                        <strong>@p.DisplayName</strong>
+                        @if (p.IsEnabled) { <span class="badge bg-success">Habilitado</span> } else { <span class="badge bg-secondary">Inactivo</span> }
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label">Modelo</label>
+                                <input class="form-control" list="models-@p.Provider" @bind="p.Model" placeholder="@p.DefaultModel" />
+                                <datalist id="models-@p.Provider">
+                                    @foreach (var m in p.SuggestedModels) { <option value="@m" /> }
+                                </datalist>
+                            </div>
+                            <div class="col-12"><label class="form-label">Base URL (opcional)</label><input class="form-control" @bind="p.BaseUrl" /></div>
+                            <div class="col-12">
+                                <label class="form-label">API Key @(p.HasApiKey ? "(guardada - dejar vacio para conservar)" : "")</label>
+                                <input type="password" class="form-control" @bind="p.NewApiKey" placeholder="@(p.HasApiKey ? p.ApiKeyMasked : "sk-...")" />
+                            </div>
+                            <div class="col-12">
+                                <div class="form-check"><input type="checkbox" class="form-check-input" id="en-@p.Provider" @bind="p.IsEnabled" /><label class="form-check-label" for="en-@p.Provider">Habilitar (requiere API key)</label></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-footer bg-white text-end">
+                        <button class="btn btn-dark btn-sm" @onclick="() => GuardarAsync(p)" disabled="@_busy">Guardar</button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private bool _cargando = true;
+    private bool _busy;
+    private string? _msg;
+    private string _msgCls = "alert-info";
+    private List<Row> _items = new();
+
+    private class Row
+    {
+        public AiProvider Provider { get; set; }
+        public string DisplayName { get; set; } = "";
+        public string? Model { get; set; }
+        public string? BaseUrl { get; set; }
+        public string? ApiKeyMasked { get; set; }
+        public bool HasApiKey { get; set; }
+        public bool IsEnabled { get; set; }
+        public string DefaultModel { get; set; } = "";
+        public IReadOnlyList<string> SuggestedModels { get; set; } = Array.Empty<string>();
+        public string? NewApiKey { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        try
+        {
+            var list = await AuthorizedClient().GetFromJsonAsync<List<AiProviderDto>>("/admin/ai-config") ?? new();
+            _items = list.Select(c => new Row
+            {
+                Provider = c.Provider, DisplayName = c.DisplayName, Model = c.Model, BaseUrl = c.BaseUrl,
+                ApiKeyMasked = c.ApiKeyMasked, HasApiKey = c.HasApiKey, IsEnabled = c.IsEnabled,
+                DefaultModel = c.DefaultModel, SuggestedModels = c.SuggestedModels
+            }).ToList();
+        }
+        finally { _cargando = false; }
+    }
+
+    private async Task GuardarAsync(Row p)
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var req = new SaveAiProviderRequest(p.Provider, p.NewApiKey, p.Model, p.BaseUrl, p.IsEnabled);
+            var resp = await AuthorizedClient().PutAsJsonAsync("/admin/ai-config", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                var dto = await resp.Content.ReadFromJsonAsync<AiProviderDto>();
+                if (dto is not null) { p.HasApiKey = dto.HasApiKey; p.ApiKeyMasked = dto.ApiKeyMasked; p.IsEnabled = dto.IsEnabled; p.NewApiKey = null; }
+                _msg = $"{p.DisplayName} guardado."; _msgCls = "alert-success";
+            }
+            else { _msg = $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}"; _msgCls = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private HttpClient AuthorizedClient()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Session.AccessToken!);
+        return http;
+    }
+}
