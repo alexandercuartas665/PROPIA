@@ -99,7 +99,9 @@ public class AdminIntegracionesController : ControllerBase
 
     [HttpGet("wompi-config")]
     public async Task<IActionResult> GetWompiConfig(CancellationToken ct)
-        => Ok(await _wompi.GetAsync(ct));
+        => Ok(await _wompi.GetAsync(ct) ?? new WompiConfigDto(
+            Propia.Domain.Enums.WompiEnvironment.Sandbox, null, null, null, null, null, "COP", 3,
+            Propia.Domain.Enums.WompiIntegrationStatus.NotConfigured, null, false, false, false));
 
     [HttpPut("wompi-config")]
     public async Task<IActionResult> SaveWompiConfig([FromBody] SaveWompiConfigRequest req, CancellationToken ct)
