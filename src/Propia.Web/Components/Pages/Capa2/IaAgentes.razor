@@ -1,5 +1,5 @@
 @page "/ia/agentes"
-@rendermode InteractiveServer
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.InfraestructuraIa
 @using Propia.Domain.Enums
 @inject IHttpClientFactory HttpFactory
@@ -7,8 +7,8 @@
 
 <PageTitle>Agentes de IA - PROPIA</PageTitle>
 
-@* Infraestructura IA (Capa 2): agentes de IA de la copropiedad. Portado de CUBOT.travels,
-   re-estilizado a la plantilla PROPIA. Las credenciales del proveedor las define SuperAdmin. *@
+@* Infraestructura IA (Capa 2): agentes de IA de la copropiedad. Configurador estilo CUBOT:
+   modal de 2 columnas (configuracion + chat de prueba fijo). *@
 
 <div class="mb-4 d-flex align-items-start">
     <div>
@@ -27,15 +27,9 @@
 @if (_usage is not null)
 {
     <div class="row g-3 mb-4">
-        <div class="col-6 col-lg-3">
-            <div class="card p-3"><div class="small text-muted">Llamadas de IA</div><div class="h4 mb-0">@_usage.TotalCalls</div></div>
-        </div>
-        <div class="col-6 col-lg-3">
-            <div class="card p-3"><div class="small text-muted">Tokens consumidos</div><div class="h4 mb-0">@_usage.TotalTokens.ToString("N0")</div></div>
-        </div>
-        <div class="col-6 col-lg-3">
-            <div class="card p-3"><div class="small text-muted">Costo estimado</div><div class="h4 mb-0">$@_usage.EstimatedCostUsd.ToString("0.####")</div><div class="small text-muted">USD aprox.</div></div>
-        </div>
+        <div class="col-6 col-lg-3"><div class="card p-3"><div class="small text-muted">Llamadas de IA</div><div class="h4 mb-0">@_usage.TotalCalls</div></div></div>
+        <div class="col-6 col-lg-3"><div class="card p-3"><div class="small text-muted">Tokens consumidos</div><div class="h4 mb-0">@_usage.TotalTokens.ToString("N0")</div></div></div>
+        <div class="col-6 col-lg-3"><div class="card p-3"><div class="small text-muted">Costo estimado</div><div class="h4 mb-0">$@_usage.EstimatedCostUsd.ToString("0.####")</div><div class="small text-muted">USD aprox.</div></div></div>
         @if (_quota is { HasLimit: true })
         {
             <div class="col-6 col-lg-3">
@@ -95,221 +89,238 @@ else
     </div>
 }
 
-@* ---- Modal crear/editar agente ---- *@
+@* ===================== Modal configurador (2 columnas) ===================== *@
 @if (_showEditor)
 {
-    <div class="modal-backdrop-propia" @onclick="() => _showEditor = false"></div>
-    <div class="modal-propia card p-4">
-        <h5 class="mb-3">@(_editId is null ? "Nuevo agente" : "Editar agente")</h5>
-        @if (!string.IsNullOrEmpty(_editError)) { <div class="alert alert-danger py-2">@_editError</div> }
-        <div class="mb-2">
-            <label class="form-label small">Nombre</label>
-            <input class="form-control" @bind="_form.Name" @bind:event="oninput" />
+    <div class="modal-backdrop-propia" @onclick="Cerrar"></div>
+    <div class="ag-modal card">
+        <div class="ag-modal-head">
+            <h5 class="mb-0">@(_editId is null ? "Nuevo agente" : "Configurar agente")</h5>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="Cerrar">Cerrar</button>
         </div>
-        <div class="mb-2">
-            <label class="form-label small">Rol / tipo (opcional)</label>
-            <input class="form-control" @bind="_form.Role" @bind:event="oninput" placeholder="Ej. Atencion a residentes" />
-        </div>
-        <div class="row">
-            <div class="col-6 mb-2">
-                <label class="form-label small">Proveedor</label>
-                <select class="form-select" @bind="_form.Provider">
-                    @foreach (var p in Enum.GetValues<AiProvider>())
+
+        <div class="ag-modal-body">
+            @* ----- Columna izquierda: configuracion ----- *@
+            <div class="ag-col-config">
+                @if (!string.IsNullOrEmpty(_editError)) { <div class="alert alert-danger py-2">@_editError</div> }
+
+                <div class="row g-2 mb-2">
+                    <div class="col-7"><label class="form-label small">Nombre *</label><input class="form-control" @bind="_form.Name" @bind:event="oninput" /></div>
+                    <div class="col-5"><label class="form-label small">Rol / funcion</label><input class="form-control" @bind="_form.Role" @bind:event="oninput" placeholder="copiloto" /></div>
+                </div>
+                <div class="row g-2 mb-2">
+                    <div class="col-7">
+                        <label class="form-label small">Servicio de IA *</label>
+                        <select class="form-select" @bind="_form.Provider">
+                            @foreach (var p in Enum.GetValues<AiProvider>()) { <option value="@p">@ProviderLabel(p)</option> }
+                        </select>
+                    </div>
+                    <div class="col-5"><label class="form-label small">Modelo</label><input class="form-control" @bind="_form.Model" @bind:event="oninput" placeholder="(por defecto)" /></div>
+                </div>
+
+                <label class="form-label small mb-1">Prompt base (comportamiento principal)</label>
+                <div class="ag-toolbar">
+                    <button type="button" class="ag-fmt" title="Negrita" @onclick='() => Fmt("*","*")'><b>B</b></button>
+                    <button type="button" class="ag-fmt fst-italic" title="Cursiva" @onclick='() => Fmt("_","_")'>i</button>
+                    <button type="button" class="ag-fmt text-decoration-line-through" title="Tachado" @onclick='() => Fmt("~","~")'>S</button>
+                    <button type="button" class="ag-fmt" title="Monoespaciado" @onclick='() => Fmt("```","```")'>&lt;/&gt;</button>
+                    <button type="button" class="ag-fmt" title="Lista" @onclick='() => Fmt("\n- ","")'>&bull;</button>
+                </div>
+                <textarea id="agentPrompt" class="form-control ag-prompt" rows="6" @bind="_form.SystemPrompt" @bind:event="oninput"
+                          placeholder="Eres el asistente de la copropiedad. Responde con amabilidad..."></textarea>
+
+                <div class="d-flex align-items-center gap-3 mt-2">
+                    <button class="btn" style="background: var(--propia-primary); color:#fff;" @onclick="GuardarAsync" disabled="@_busy">
+                        @(_busy ? "Guardando..." : (_editId is null ? "Crear agente" : "Guardar cambios"))
+                    </button>
+                    @if (_detalle is not null)
                     {
-                        <option value="@p">@ProviderLabel(p)</option>
+                        <div class="form-check form-switch mb-0">
+                            <input class="form-check-input" type="checkbox" id="enprod" checked="@_detalle.Agent.IsActive" @onchange="ToggleActivoModalAsync" />
+                            <label class="form-check-label small" for="enprod">@(_detalle.Agent.IsActive ? "En produccion" : "Apagado")</label>
+                        </div>
                     }
-                </select>
-            </div>
-            <div class="col-6 mb-2">
-                <label class="form-label small">Modelo (opcional)</label>
-                <input class="form-control" @bind="_form.Model" @bind:event="oninput" placeholder="(por defecto)" />
-            </div>
-        </div>
-        <div class="mb-3">
-            <label class="form-label small">Prompt de sistema (comportamiento base)</label>
-            <textarea class="form-control" rows="5" @bind="_form.SystemPrompt" @bind:event="oninput"></textarea>
-        </div>
-        <div class="d-flex gap-2 justify-content-end">
-            <button class="btn btn-outline-secondary" @onclick="() => _showEditor = false">Cancelar</button>
-            <button class="btn" style="background: var(--propia-primary); color: white;" @onclick="GuardarAsync" disabled="@_busy">Guardar</button>
-        </div>
-    </div>
-}
+                </div>
 
-@* ---- Drawer detalle: prompts + recursos + probar ---- *@
-@if (_showDetalle && _detalle is not null)
-{
-    <div class="modal-backdrop-propia" @onclick="() => _showDetalle = false"></div>
-    <div class="drawer-propia card p-4">
-        <div class="d-flex align-items-center mb-3">
-            <h5 class="mb-0">@_detalle.Agent.Name</h5>
-            <button class="btn btn-sm btn-outline-secondary ms-auto" @onclick="() => _showDetalle = false">Cerrar</button>
-        </div>
-
-        <ul class="nav nav-pills mb-3">
-            <li class="nav-item"><button class="nav-link @(_dtab == "prompts" ? "active" : "")" @onclick='() => _dtab = "prompts"'>Prompts</button></li>
-            <li class="nav-item"><button class="nav-link @(_dtab == "recursos" ? "active" : "")" @onclick='() => _dtab = "recursos"'>Recursos</button></li>
-            <li class="nav-item"><button class="nav-link @(_dtab == "probar" ? "active" : "")" @onclick='() => _dtab = "probar"'>Probar</button></li>
-        </ul>
-
-        @if (_dtab == "prompts")
-        {
-            <div class="d-flex mb-2"><span class="text-muted small">Prompts enrutados (ademas del base)</span>
-                <button class="btn btn-sm btn-dark ms-auto" @onclick="NuevoPrompt">+ Prompt</button></div>
-            @foreach (var p in _detalle.Prompts)
-            {
-                var pr = p;
-                <div class="border rounded p-2 mb-2">
-                    <div class="d-flex"><strong>@pr.Name</strong>
-                        <button class="btn btn-sm btn-outline-danger ms-auto py-0" @onclick="() => EliminarPromptAsync(pr.Id)">x</button></div>
-                    <div class="small text-muted">Regla: @(string.IsNullOrWhiteSpace(pr.Rule) ? "(a criterio)" : pr.Rule)</div>
-                </div>
-            }
-            @if (_showPromptForm)
-            {
-                <div class="border rounded p-2 mb-2 bg-light">
-                    <input class="form-control form-control-sm mb-1" placeholder="Nombre" @bind="_promptForm.Name" @bind:event="oninput" />
-                    <input class="form-control form-control-sm mb-1" placeholder="Regla (cuando usarlo)" @bind="_promptForm.Rule" @bind:event="oninput" />
-                    <textarea class="form-control form-control-sm mb-1" rows="3" placeholder="Instrucciones" @bind="_promptForm.Body" @bind:event="oninput"></textarea>
-                    <div class="d-flex gap-2 justify-content-end">
-                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => _showPromptForm = false">Cancelar</button>
-                        <button class="btn btn-sm btn-dark" @onclick="GuardarPromptAsync" disabled="@_busy">Agregar</button>
-                    </div>
-                </div>
-            }
-        }
-        else if (_dtab == "recursos")
-        {
-            <div class="d-flex mb-2"><span class="text-muted small">Recursos que el agente puede entregar</span>
-                <button class="btn btn-sm btn-dark ms-auto" @onclick="NuevoRecurso">+ Recurso</button></div>
-            @foreach (var r in _detalle.Resources)
-            {
-                var rr = r;
-                <div class="border rounded p-2 mb-2">
-                    <div class="d-flex"><strong>@rr.Name</strong> <span class="badge bg-light text-dark border ms-2">@rr.ResourceType</span>
-                        <button class="btn btn-sm btn-outline-danger ms-auto py-0" @onclick="() => EliminarRecursoAsync(rr.Id)">x</button></div>
-                    @if (!string.IsNullOrWhiteSpace(rr.Detail)) { <div class="small text-muted">@rr.Detail</div> }
-                </div>
-            }
-            @if (_showRecursoForm)
-            {
-                <div class="border rounded p-2 mb-2 bg-light">
-                    <input class="form-control form-control-sm mb-1" placeholder="Nombre" @bind="_recursoForm.Name" @bind:event="oninput" />
-                    <select class="form-select form-select-sm mb-1" @bind="_recursoForm.ResourceType">
-                        @foreach (var t in Enum.GetValues<AgentResourceType>()) { <option value="@t">@t</option> }
-                    </select>
-                    <textarea class="form-control form-control-sm mb-1" rows="2" placeholder="Detalle / texto / lat,lng" @bind="_recursoForm.Detail" @bind:event="oninput"></textarea>
-                    <input class="form-control form-control-sm mb-1" placeholder="URL del archivo (opcional)" @bind="_recursoForm.FileUrl" @bind:event="oninput" />
-                    <div class="d-flex gap-2 justify-content-end">
-                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => _showRecursoForm = false">Cancelar</button>
-                        <button class="btn btn-sm btn-dark" @onclick="GuardarRecursoAsync" disabled="@_busy">Agregar</button>
-                    </div>
-                </div>
-            }
-        }
-        else
-        {
-            <div class="d-flex align-items-center mb-2">
-                <span class="text-muted small">Conversa como si fueras el residente. Usa el prompt y los recursos del agente.</span>
-                @if (_chat.Count > 0)
+                @if (_detalle is null)
                 {
-                    <button class="btn btn-sm btn-outline-secondary ms-auto" @onclick="LimpiarChat" disabled="@_busy">Limpiar</button>
+                    <div class="alert alert-info mt-3 py-2 small mb-0">Guarda el agente para configurar prompts enrutados, recursos y probarlo.</div>
+                }
+                else
+                {
+                    @* ----- Prompts enrutados ----- *@
+                    <hr class="my-3" />
+                    <div class="d-flex align-items-center mb-2">
+                        <span class="small fw-semibold text-uppercase text-muted">Prompts enrutados</span>
+                        <button class="btn btn-sm btn-outline-dark ms-auto" @onclick="NuevoPrompt">+ Prompt</button>
+                    </div>
+                    <p class="text-muted" style="font-size:11.5px;">El enrutador evalua el mensaje y aplica el prompt cuya regla coincide, antes del comportamiento base.</p>
+                    @foreach (var p in _detalle.Prompts)
+                    {
+                        var pr = p;
+                        <div class="border rounded p-2 mb-2 d-flex align-items-start">
+                            <div class="flex-grow-1">
+                                <strong>@pr.Name</strong>
+                                <div class="small text-muted">Regla: @(string.IsNullOrWhiteSpace(pr.Rule) ? "(a criterio)" : pr.Rule)</div>
+                            </div>
+                            <button class="btn btn-sm btn-outline-dark py-0 me-1" @onclick="() => EditarPrompt(pr)">Editar</button>
+                            <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => EliminarPromptAsync(pr.Id)">&times;</button>
+                        </div>
+                    }
+                    @if (_showPromptForm)
+                    {
+                        <div class="border rounded p-2 mb-2 bg-light">
+                            <input class="form-control form-control-sm mb-1" placeholder="Nombre" @bind="_promptForm.Name" @bind:event="oninput" />
+                            <input class="form-control form-control-sm mb-1" placeholder="Regla (cuando usarlo)" @bind="_promptForm.Rule" @bind:event="oninput" />
+                            <textarea class="form-control form-control-sm mb-1" rows="3" placeholder="Instrucciones" @bind="_promptForm.Body" @bind:event="oninput"></textarea>
+                            <div class="d-flex gap-2 justify-content-end">
+                                <button class="btn btn-sm btn-outline-secondary" @onclick="() => _showPromptForm = false">Cancelar</button>
+                                <button class="btn btn-sm btn-dark" @onclick="GuardarPromptAsync" disabled="@_busy">@(_editPromptId is null ? "Agregar" : "Guardar")</button>
+                            </div>
+                        </div>
+                    }
+
+                    @* ----- Recursos ----- *@
+                    <hr class="my-3" />
+                    <div class="d-flex align-items-center mb-2">
+                        <span class="small fw-semibold text-uppercase text-muted">Recursos del agente</span>
+                        <button class="btn btn-sm btn-outline-dark ms-auto" @onclick="NuevoRecurso">+ Recurso</button>
+                    </div>
+                    @foreach (var r in _detalle.Resources)
+                    {
+                        var rr = r;
+                        <div class="border rounded p-2 mb-2 d-flex align-items-start">
+                            <div class="flex-grow-1">
+                                <strong>@rr.Name</strong> <span class="badge bg-light text-dark border ms-1">@rr.ResourceType</span>
+                                @if (!string.IsNullOrWhiteSpace(rr.Detail)) { <div class="small text-muted">@rr.Detail</div> }
+                            </div>
+                            <button class="btn btn-sm btn-outline-dark py-0 me-1" @onclick="() => EditarRecurso(rr)">Editar</button>
+                            <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => EliminarRecursoAsync(rr.Id)">&times;</button>
+                        </div>
+                    }
+                    @if (_showRecursoForm)
+                    {
+                        <div class="border rounded p-2 mb-2 bg-light">
+                            <input class="form-control form-control-sm mb-1" placeholder="Nombre" @bind="_recursoForm.Name" @bind:event="oninput" />
+                            <select class="form-select form-select-sm mb-1" @bind="_recursoForm.ResourceType">
+                                @foreach (var t in Enum.GetValues<AgentResourceType>()) { <option value="@t">@t</option> }
+                            </select>
+                            <textarea class="form-control form-control-sm mb-1" rows="2" placeholder="Detalle / texto / lat,lng" @bind="_recursoForm.Detail" @bind:event="oninput"></textarea>
+                            <input class="form-control form-control-sm mb-1" placeholder="URL del archivo (opcional)" @bind="_recursoForm.FileUrl" @bind:event="oninput" />
+                            <div class="d-flex gap-2 justify-content-end">
+                                <button class="btn btn-sm btn-outline-secondary" @onclick="() => _showRecursoForm = false">Cancelar</button>
+                                <button class="btn btn-sm btn-dark" @onclick="GuardarRecursoAsync" disabled="@_busy">@(_editRecursoId is null ? "Agregar" : "Guardar")</button>
+                            </div>
+                        </div>
+                    }
                 }
             </div>
 
-            @if (_connectedLines.Count > 0)
-            {
-                <div class="ag-phone mb-2">
-                    <label class="ag-phone-toggle">
-                        <input type="checkbox" checked="@_phoneSend" @onchange="e => _phoneSend = (bool)e.Value!" />
-                        <span>Enviar las respuestas del agente a un telefono</span>
-                    </label>
-                    @if (_phoneSend)
-                    {
-                        <div class="ag-phone-row">
-                            @if (_connectedLines.Count > 1)
-                            {
-                                <select class="form-select form-select-sm" @bind="_phoneLineId">
-                                    @foreach (var ln in _connectedLines)
-                                    {
-                                        <option value="@ln.Id">@(string.IsNullOrWhiteSpace(ln.PhoneNumber) ? ln.InstanceName : ln.PhoneNumber)</option>
-                                    }
-                                </select>
-                            }
-                            <input class="form-control form-control-sm" @bind="_phoneNumber" placeholder="Numero con codigo pais (ej. 573001234567)" autocomplete="off" />
-                        </div>
-                        @if (_phoneInfo is not null) { <div class="text-muted" style="font-size:11px;margin-top:4px;">@_phoneInfo</div> }
-                    }
-                </div>
-            }
+            @* ----- Columna derecha: probar agente (fija) ----- *@
+            <div class="ag-col-test">
+                <div class="small fw-semibold text-uppercase" style="color: var(--propia-primary);">Probar agente</div>
+                <p class="text-muted" style="font-size:11.5px;">Conversa como si fueras el residente. Usa el prompt y los recursos de la izquierda.</p>
 
-            <div class="ag-test">
-                <div class="ag-test-body">
-                    @if (_chat.Count == 0)
+                @if (_detalle is null)
+                {
+                    <div class="ag-test-empty border rounded p-4">Guarda el agente para probarlo.</div>
+                }
+                else
+                {
+                    @if (_connectedLines.Count > 0)
                     {
-                        <div class="ag-test-empty">Escribe un mensaje para probar la respuesta del agente.</div>
-                    }
-                    else
-                    {
-                        @foreach (var t in _chat)
-                        {
-                            <div class="ag-bubble @(t.Role == "model" ? "bot" : "me")">
-                                @if (!string.IsNullOrWhiteSpace(t.Text)) { <div>@t.Text</div> }
-                                @if (t.Attachments is { Count: > 0 })
-                                {
-                                    @foreach (var a in t.Attachments)
+                        <div class="ag-phone mb-2">
+                            <label class="ag-phone-toggle">
+                                <input type="checkbox" checked="@_phoneSend" @onchange="e => _phoneSend = (bool)e.Value!" />
+                                <span>Enviar las respuestas a un telefono</span>
+                            </label>
+                            @if (_phoneSend)
+                            {
+                                <div class="ag-phone-row">
+                                    @if (_connectedLines.Count > 1)
                                     {
-                                        <div class="ag-attach">
-                                            @switch (a.ResourceType)
-                                            {
-                                                case AgentResourceType.Text:
-                                                    <div class="ag-attach-text">@a.Detail</div>
-                                                    break;
-                                                case AgentResourceType.Image:
-                                                    <img src="@a.FileUrl" alt="@a.Name" />
-                                                    @if (!string.IsNullOrWhiteSpace(a.Detail)) { <div class="ag-attach-cap">@a.Detail</div> }
-                                                    break;
-                                                case AgentResourceType.Video:
-                                                    <video src="@a.FileUrl" controls></video>
-                                                    break;
-                                                case AgentResourceType.Audio:
-                                                    <audio src="@a.FileUrl" controls></audio>
-                                                    break;
-                                                case AgentResourceType.Location:
-                                                    <a href="@MapsLink(a.Detail)" target="_blank">📍 @a.Name</a>
-                                                    break;
-                                                default:
-                                                    <a href="@a.FileUrl" target="_blank">📎 @(a.FileName ?? a.Name)</a>
-                                                    break;
-                                            }
-                                        </div>
+                                        <select class="form-select form-select-sm" @bind="_phoneLineId">
+                                            @foreach (var ln in _connectedLines) { <option value="@ln.Id">@(string.IsNullOrWhiteSpace(ln.PhoneNumber) ? ln.InstanceName : ln.PhoneNumber)</option> }
+                                        </select>
                                     }
-                                }
-                            </div>
-                        }
+                                    <input class="form-control form-control-sm" @bind="_phoneNumber" placeholder="Numero con codigo pais (573001234567)" autocomplete="off" />
+                                </div>
+                                @if (_phoneInfo is not null) { <div class="text-muted" style="font-size:11px;margin-top:4px;">@_phoneInfo</div> }
+                            }
+                        </div>
                     }
-                    @if (_busy) { <div class="ag-bubble bot ag-typing">Escribiendo...</div> }
-                </div>
-                @if (!string.IsNullOrEmpty(_chatError)) { <div class="text-danger small" style="padding:0 8px 6px;">@_chatError</div> }
-                <div class="ag-test-input">
-                    <input class="form-control" placeholder="Mensaje del residente..." @bind="_chatInput" @bind:event="oninput" @onkeydown="@(e => { if (e.Key == "Enter") _ = ProbarChatAsync(); })" disabled="@_busy" />
-                    <button class="btn" style="background: var(--propia-primary); color:#fff;" @onclick="ProbarChatAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_chatInput))">Enviar</button>
-                </div>
+
+                    <div class="ag-test">
+                        <div class="ag-test-body">
+                            @if (_chat.Count == 0)
+                            {
+                                <div class="ag-test-empty">Escribe un mensaje para probar la respuesta del agente.</div>
+                            }
+                            else
+                            {
+                                @foreach (var t in _chat)
+                                {
+                                    <div class="ag-bubble @(t.Role == "model" ? "bot" : "me")">
+                                        @if (!string.IsNullOrWhiteSpace(t.Text)) { <div>@t.Text</div> }
+                                        @if (t.Attachments is { Count: > 0 })
+                                        {
+                                            @foreach (var a in t.Attachments)
+                                            {
+                                                <div class="ag-attach">
+                                                    @switch (a.ResourceType)
+                                                    {
+                                                        case AgentResourceType.Text: <div class="ag-attach-text">@a.Detail</div> break;
+                                                        case AgentResourceType.Image:
+                                                            <img src="@a.FileUrl" alt="@a.Name" />
+                                                            @if (!string.IsNullOrWhiteSpace(a.Detail)) { <div class="ag-attach-cap">@a.Detail</div> }
+                                                            break;
+                                                        case AgentResourceType.Video: <video src="@a.FileUrl" controls></video> break;
+                                                        case AgentResourceType.Audio: <audio src="@a.FileUrl" controls></audio> break;
+                                                        case AgentResourceType.Location: <a href="@MapsLink(a.Detail)" target="_blank">📍 @a.Name</a> break;
+                                                        default: <a href="@a.FileUrl" target="_blank">📎 @(a.FileName ?? a.Name)</a> break;
+                                                    }
+                                                </div>
+                                            }
+                                        }
+                                    </div>
+                                }
+                            }
+                            @if (_busy) { <div class="ag-bubble bot ag-typing">Escribiendo...</div> }
+                        </div>
+                        @if (!string.IsNullOrEmpty(_chatError)) { <div class="text-danger small" style="padding:0 8px 6px;">@_chatError</div> }
+                        <div class="ag-test-input">
+                            <input class="form-control" placeholder="Mensaje del residente..." @bind="_chatInput" @bind:event="oninput" @onkeydown="@(e => { if (e.Key == "Enter") _ = ProbarChatAsync(); })" disabled="@_busy" />
+                            <button class="btn" style="background: var(--propia-primary); color:#fff;" @onclick="ProbarChatAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_chatInput))">Enviar</button>
+                        </div>
+                    </div>
+                    @if (_chat.Count > 0)
+                    {
+                        <button class="btn btn-sm btn-link mt-1 p-0" @onclick="LimpiarChat" disabled="@_busy">Limpiar conversacion</button>
+                    }
+                }
             </div>
-        }
+        </div>
     </div>
 }
 
 <style>
     .modal-backdrop-propia { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1050; }
-    .modal-propia { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1060; width: min(560px, 94vw); max-height: 92vh; overflow-y: auto; }
-    .drawer-propia { position: fixed; top: 0; right: 0; height: 100vh; width: min(520px, 96vw); z-index: 1060; border-radius: 0; overflow-y: auto; }
+    .ag-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1060; width: min(1100px, 96vw); max-height: 94vh; display: flex; flex-direction: column; }
+    .ag-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid #e3e3ec; }
+    .ag-modal-body { display: flex; gap: 18px; padding: 18px; overflow-y: auto; }
+    .ag-col-config { flex: 1.25; min-width: 0; }
+    .ag-col-test { flex: 1; min-width: 0; border-left: 1px solid #eef0f5; padding-left: 18px; }
+    @@media (max-width: 860px) { .ag-modal-body { flex-direction: column; } .ag-col-test { border-left: 0; padding-left: 0; border-top: 1px solid #eef0f5; padding-top: 14px; } }
 
-    /* Chat de prueba del agente (presentacion tipo CUBOT, paleta PROPIA) */
+    .ag-toolbar { display: flex; gap: 4px; border: 1px solid #e3e3ec; border-bottom: 0; border-radius: 8px 8px 0 0; padding: 4px 6px; background: #f7f7fb; }
+    .ag-fmt { border: 0; background: transparent; width: 28px; height: 26px; border-radius: 6px; font-size: 13px; cursor: pointer; color: #4a4a63; }
+    .ag-fmt:hover { background: rgba(89,85,209,.12); color: var(--propia-primary); }
+    .ag-prompt { border-radius: 0 0 8px 8px !important; }
+
     .ag-test { border: 1px solid #e3e3ec; border-radius: 12px; overflow: hidden; }
-    .ag-test-body { max-height: 360px; min-height: 150px; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: #f5f6fa; }
+    .ag-test-body { max-height: 320px; min-height: 150px; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: #f5f6fa; }
     .ag-test-empty { color: #8a8a9a; font-size: 12.5px; text-align: center; margin: auto; font-style: italic; }
-    .ag-bubble { max-width: 82%; padding: 8px 12px; border-radius: 12px; font-size: 13px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word; }
+    .ag-bubble { max-width: 85%; padding: 8px 12px; border-radius: 12px; font-size: 13px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word; }
     .ag-bubble.me { align-self: flex-end; background: var(--propia-primary, #5955D1); color: #fff; border-bottom-right-radius: 4px; }
     .ag-bubble.bot { align-self: flex-start; background: #fff; border: 1px solid #e3e3ec; border-bottom-left-radius: 4px; }
     .ag-bubble.ag-typing { color: #8a8a9a; font-style: italic; }
@@ -340,20 +351,19 @@ else
     private AgentForm _form = new();
     private string? _editError;
 
-    private bool _showDetalle;
     private AiAgentDetailDto? _detalle;
-    private string _dtab = "prompts";
 
     private bool _showPromptForm;
+    private Guid? _editPromptId;
     private PromptForm _promptForm = new();
     private bool _showRecursoForm;
+    private Guid? _editRecursoId;
     private RecursoForm _recursoForm = new();
 
     private readonly List<ChatMsg> _chat = new();
     private string _chatInput = "";
     private string? _chatError;
 
-    // Enviar respuestas del agente a un telefono real (via linea WhatsApp conectada).
     private List<WhatsAppLineDto> _connectedLines = new();
     private bool _phoneSend;
     private Guid _phoneLineId;
@@ -366,12 +376,7 @@ else
         try
         {
             var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
-            if (!string.IsNullOrWhiteSpace(stored))
-            {
-                _jwt = stored;
-                await CargarAsync();
-                StateHasChanged();
-            }
+            if (!string.IsNullOrWhiteSpace(stored)) { _jwt = stored; await CargarAsync(); StateHasChanged(); }
         }
         catch { /* prerender */ }
     }
@@ -394,7 +399,45 @@ else
 
     private void AbrirNuevo()
     {
-        _editId = null; _form = new(); _editError = null; _showEditor = true;
+        _editId = null; _form = new(); _editError = null; _detalle = null;
+        _chat.Clear(); _chatError = null; _phoneInfo = null;
+        _showPromptForm = false; _showRecursoForm = false; _editPromptId = null; _editRecursoId = null;
+        _showEditor = true;
+    }
+
+    private async Task AbrirDetalle(Guid id)
+    {
+        _editError = null; _chat.Clear(); _chatError = null; _phoneInfo = null;
+        _showPromptForm = false; _showRecursoForm = false; _editPromptId = null; _editRecursoId = null;
+        _showEditor = true;
+        _editId = id;
+        await CargarDetalleAsync(id);
+    }
+
+    private async Task CargarDetalleAsync(Guid id)
+    {
+        _detalle = await Auth().GetFromJsonAsync<AiAgentDetailDto>($"/api/ia/agentes/{id}");
+        if (_detalle is not null)
+        {
+            _form = new AgentForm
+            {
+                Name = _detalle.Agent.Name, Role = _detalle.Agent.Role, Provider = _detalle.Agent.Provider,
+                Model = _detalle.Agent.Model, SystemPrompt = _detalle.Agent.SystemPrompt
+            };
+        }
+        try
+        {
+            var lines = await Auth().GetFromJsonAsync<List<WhatsAppLineDto>>("/api/ia/lineas") ?? new();
+            _connectedLines = lines.Where(l => l.Status == WhatsAppLineStatus.Connected).ToList();
+            if (_phoneLineId == Guid.Empty) _phoneLineId = _connectedLines.FirstOrDefault()?.Id ?? Guid.Empty;
+        }
+        catch { _connectedLines = new(); }
+    }
+
+    private async Task Cerrar()
+    {
+        _showEditor = false;
+        await CargarAsync();
     }
 
     private async Task GuardarAsync()
@@ -402,20 +445,34 @@ else
         _editError = null; _busy = true;
         try
         {
-            HttpResponseMessage resp;
             if (_editId is null)
             {
-                resp = await Auth().PostAsJsonAsync("/api/ia/agentes",
+                var resp = await Auth().PostAsJsonAsync("/api/ia/agentes",
                     new CreateAiAgentRequest(_form.Name, _form.Role, _form.Provider, _form.Model, _form.SystemPrompt));
+                if (!resp.IsSuccessStatusCode) { _editError = $"HTTP {(int)resp.StatusCode}"; return; }
+                var dto = await resp.Content.ReadFromJsonAsync<AiAgentDto>();
+                if (dto is not null) { _editId = dto.Id; await CargarDetalleAsync(dto.Id); }  // pasa a modo edicion
             }
             else
             {
-                resp = await Auth().PutAsJsonAsync($"/api/ia/agentes/{_editId}",
+                var resp = await Auth().PutAsJsonAsync($"/api/ia/agentes/{_editId}",
                     new UpdateAiAgentRequest(_form.Name, _form.Role, _form.Provider, _form.Model, _form.SystemPrompt));
+                if (!resp.IsSuccessStatusCode) { _editError = $"HTTP {(int)resp.StatusCode}"; return; }
+                await CargarDetalleAsync(_editId.Value);
             }
-            if (!resp.IsSuccessStatusCode) { _editError = $"HTTP {(int)resp.StatusCode}"; return; }
-            _showEditor = false;
-            await CargarAsync();
+        }
+        catch (Exception ex) { _editError = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task ToggleActivoModalAsync()
+    {
+        if (_detalle is null) return;
+        _busy = true;
+        try
+        {
+            await Auth().PutAsJsonAsync($"/api/ia/agentes/{_detalle.Agent.Id}/activar", new { Active = !_detalle.Agent.IsActive });
+            await CargarDetalleAsync(_detalle.Agent.Id);
         }
         catch (Exception ex) { _editError = ex.Message; }
         finally { _busy = false; }
@@ -437,27 +494,18 @@ else
         finally { _busy = false; }
     }
 
-    private async Task AbrirDetalle(Guid id)
-    {
-        _chat.Clear(); _chatError = null; _dtab = "prompts";
-        _showPromptForm = false; _showRecursoForm = false;
-        _phoneInfo = null;
-        _detalle = await Auth().GetFromJsonAsync<AiAgentDetailDto>($"/api/ia/agentes/{id}");
-        _showDetalle = _detalle is not null;
-
-        // Lineas conectadas para la opcion de "enviar respuestas a un telefono".
-        try
-        {
-            var lines = await Auth().GetFromJsonAsync<List<WhatsAppLineDto>>("/api/ia/lineas") ?? new();
-            _connectedLines = lines.Where(l => l.Status == WhatsAppLineStatus.Connected).ToList();
-            if (_phoneLineId == Guid.Empty) _phoneLineId = _connectedLines.FirstOrDefault()?.Id ?? Guid.Empty;
-        }
-        catch { _connectedLines = new(); }
-    }
-
     private void LimpiarChat() { _chat.Clear(); _chatError = null; _phoneInfo = null; }
 
-    private void NuevoPrompt() { _promptForm = new(); _showPromptForm = true; }
+    private async Task Fmt(string before, string after) { try { await Js.InvokeVoidAsync("propiaUI.wrapField", "agentPrompt", before, after); } catch { } }
+
+    // ----- Prompts -----
+    private void NuevoPrompt() { _promptForm = new(); _editPromptId = null; _showPromptForm = true; }
+    private void EditarPrompt(AiAgentPromptDto p)
+    {
+        _editPromptId = p.Id;
+        _promptForm = new PromptForm { Name = p.Name, Rule = p.Rule, Body = p.Body };
+        _showPromptForm = true;
+    }
 
     private async Task GuardarPromptAsync()
     {
@@ -465,12 +513,20 @@ else
         _busy = true;
         try
         {
-            await Auth().PostAsJsonAsync("/api/ia/agentes/prompts",
-                new CreateAgentPromptRequest(_detalle.Agent.Id, _promptForm.Name, _promptForm.Rule, _promptForm.Body));
-            _showPromptForm = false;
-            await AbrirDetalle(_detalle.Agent.Id);
+            if (_editPromptId is null)
+            {
+                await Auth().PostAsJsonAsync("/api/ia/agentes/prompts",
+                    new CreateAgentPromptRequest(_detalle.Agent.Id, _promptForm.Name, _promptForm.Rule, _promptForm.Body));
+            }
+            else
+            {
+                await Auth().PutAsJsonAsync($"/api/ia/agentes/prompts/{_editPromptId}",
+                    new UpdateAgentPromptRequest(_promptForm.Name, _promptForm.Rule, _promptForm.Body));
+            }
+            _showPromptForm = false; _editPromptId = null;
+            await CargarDetalleAsync(_detalle.Agent.Id);
         }
-        catch (Exception ex) { _loadError = ex.Message; }
+        catch (Exception ex) { _editError = ex.Message; }
         finally { _busy = false; }
     }
 
@@ -478,10 +534,17 @@ else
     {
         if (_detalle is null) return;
         await Auth().DeleteAsync($"/api/ia/agentes/prompts/{id}");
-        await AbrirDetalle(_detalle.Agent.Id);
+        await CargarDetalleAsync(_detalle.Agent.Id);
     }
 
-    private void NuevoRecurso() { _recursoForm = new(); _showRecursoForm = true; }
+    // ----- Recursos -----
+    private void NuevoRecurso() { _recursoForm = new(); _editRecursoId = null; _showRecursoForm = true; }
+    private void EditarRecurso(AiAgentResourceDto r)
+    {
+        _editRecursoId = r.Id;
+        _recursoForm = new RecursoForm { Name = r.Name, ResourceType = r.ResourceType, Detail = r.Detail, FileUrl = r.FileUrl };
+        _showRecursoForm = true;
+    }
 
     private async Task GuardarRecursoAsync()
     {
@@ -489,13 +552,21 @@ else
         _busy = true;
         try
         {
-            await Auth().PostAsJsonAsync("/api/ia/agentes/recursos",
-                new CreateAgentResourceRequest(_detalle.Agent.Id, _recursoForm.Name, _recursoForm.ResourceType,
-                    _recursoForm.Detail, string.IsNullOrWhiteSpace(_recursoForm.FileUrl) ? null : _recursoForm.FileUrl, null));
-            _showRecursoForm = false;
-            await AbrirDetalle(_detalle.Agent.Id);
+            var fileUrl = string.IsNullOrWhiteSpace(_recursoForm.FileUrl) ? null : _recursoForm.FileUrl;
+            if (_editRecursoId is null)
+            {
+                await Auth().PostAsJsonAsync("/api/ia/agentes/recursos",
+                    new CreateAgentResourceRequest(_detalle.Agent.Id, _recursoForm.Name, _recursoForm.ResourceType, _recursoForm.Detail, fileUrl, null));
+            }
+            else
+            {
+                await Auth().PutAsJsonAsync($"/api/ia/agentes/recursos/{_editRecursoId}",
+                    new UpdateAgentResourceRequest(_recursoForm.Name, _recursoForm.ResourceType, _recursoForm.Detail, fileUrl, null));
+            }
+            _showRecursoForm = false; _editRecursoId = null;
+            await CargarDetalleAsync(_detalle.Agent.Id);
         }
-        catch (Exception ex) { _loadError = ex.Message; }
+        catch (Exception ex) { _editError = ex.Message; }
         finally { _busy = false; }
     }
 
@@ -503,9 +574,10 @@ else
     {
         if (_detalle is null) return;
         await Auth().DeleteAsync($"/api/ia/agentes/recursos/{id}");
-        await AbrirDetalle(_detalle.Agent.Id);
+        await CargarDetalleAsync(_detalle.Agent.Id);
     }
 
+    // ----- Probar -----
     private async Task ProbarChatAsync()
     {
         if (_detalle is null || string.IsNullOrWhiteSpace(_chatInput)) return;
@@ -514,7 +586,6 @@ else
         _chatInput = "";
         try
         {
-            // El backend espera turnos {Role, Text}; convertimos desde el historial.
             var turns = _chat.Select(m => new AiChatTurn(m.Role, m.Text)).ToList();
             var resp = await Auth().PostAsJsonAsync($"/api/ia/agentes/{_detalle.Agent.Id}/probar",
                 new { Turns = turns, SystemPromptOverride = (string?)null });
@@ -530,7 +601,6 @@ else
         finally { _busy = false; }
     }
 
-    // Reenvia la respuesta del agente a un telefono real por una linea conectada.
     private async Task EnviarAlTelefonoAsync(string? text)
     {
         _phoneInfo = null;
@@ -539,8 +609,7 @@ else
         var phone = new string(_phoneNumber.Where(char.IsDigit).ToArray());
         try
         {
-            var resp = await Auth().PostAsJsonAsync($"/api/ia/lineas/{_phoneLineId}/probar-envio",
-                new { Phone = phone, Text = text });
+            var resp = await Auth().PostAsJsonAsync($"/api/ia/lineas/{_phoneLineId}/probar-envio", new { Phone = phone, Text = text });
             var r = await resp.Content.ReadFromJsonAsync<LineSendResult>();
             _phoneInfo = r?.Ok == true ? $"Enviado a {phone}." : (r?.Error ?? "No se pudo enviar al telefono.");
         }
@@ -562,9 +631,9 @@ else
 
     private static string ProviderLabel(AiProvider p) => p switch
     {
-        AiProvider.Claude => "Claude",
-        AiProvider.Gemini => "Gemini",
-        AiProvider.ChatGpt => "ChatGPT",
+        AiProvider.Claude => "Anthropic Claude",
+        AiProvider.Gemini => "Google Gemini",
+        AiProvider.ChatGpt => "OpenAI ChatGPT",
         AiProvider.DeepSeek => "DeepSeek",
         _ => p.ToString()
     };

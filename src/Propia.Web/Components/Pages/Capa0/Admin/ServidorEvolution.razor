@@ -1,6 +1,6 @@
 @page "/admin/integraciones/evolution"
 @layout AdminLayout
-@rendermode InteractiveServer
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.Integraciones
 @using Propia.Domain.Enums
 @inject IHttpClientFactory HttpFactory
@@ -9,10 +9,12 @@
 
 <PageTitle>Servidor Evolution (WhatsApp) - Plataforma</PageTitle>
 
-@* Portado de Propia.SuperAdmin a la consola unificada. Auth: token de plataforma en sessionStorage. *@
-
-<h1 class="h3 mb-1">Servidor Evolution API (WhatsApp)</h1>
-<p class="text-muted mb-4">Gateway de WhatsApp que usan las lineas de las copropiedades. La API key se guarda cifrada.</p>
+<div class="d-flex align-items-center gap-2 mb-1">
+    <i class="fi fi-rr-display-code" style="color: var(--propia-primary);"></i>
+    <span class="small fw-semibold text-uppercase text-muted">Super Admin SaaS</span>
+</div>
+<h1 class="h3 mb-1">Servidor <span style="color: var(--propia-primary);">Evolution API</span></h1>
+<p class="text-muted mb-4">Servidor maestro de WhatsApp de la plataforma. Las copropiedades usan este servidor compartido. El webhook se configura automaticamente al conectar cada linea.</p>
 
 @if (_jwt is null || _cargando)
 {
@@ -20,57 +22,80 @@
 }
 else if (_form is not null)
 {
-    <div class="row g-4">
-        <div class="col-md-7">
-            <div class="card">
-                <div class="card-header bg-white d-flex justify-content-between align-items-center">
-                    <strong>Servidor</strong>
-                    @{ var (cls, txt) = StatusBadge(_form.Status); }
-                    <span class="badge @cls">@txt</span>
-                </div>
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-12"><label class="form-label">URL del servidor</label><input class="form-control" @bind="_form.BaseUrl" placeholder="https://evo.propia.com.co" /></div>
-                        <div class="col-12">
-                            <label class="form-label">API Key @(_form.HasApiKey ? "(guardada - vacio conserva)" : "")</label>
-                            <input type="password" class="form-control" @bind="_form.ApiKey" placeholder="@(_form.HasApiKey ? _form.ApiKeyMasked : "AUTHENTICATION_API_KEY")" />
-                        </div>
+    <div class="card" style="max-width: 920px;">
+        <div class="card-body">
+            <div class="d-flex align-items-start gap-3">
+                <div class="rounded p-2" style="background: rgba(89,85,209,.1);"><i class="fi fi-rr-display-code fs-4" style="color: var(--propia-primary);"></i></div>
+                <div class="flex-grow-1">
+                    <div class="d-flex align-items-center">
+                        <strong>Evolution API &mdash; servidor maestro</strong>
+                        @{ var (cls, txt) = StatusBadge(_form.Status); }
+                        <span class="badge @cls ms-auto">@txt</span>
                     </div>
+                    <div class="text-muted small">Conexion central para crear instancias y enviar/recibir WhatsApp.</div>
                 </div>
             </div>
-        </div>
-        <div class="col-md-5">
-            <div class="card">
-                <div class="card-header bg-white"><strong>Webhook entrante</strong></div>
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-12">
-                            <label class="form-label">Modo</label>
-                            <select class="form-select" @bind="_form.WebhookMode">
-                                <option value="Production">Produccion (URL fija)</option>
-                                <option value="Development">Desarrollo (tunel)</option>
-                            </select>
-                        </div>
-                        <div class="col-12"><label class="form-label">URL publica</label><input class="form-control" @bind="_form.WebhookPublicUrl" placeholder="https://app.propia.com.co" /></div>
-                        <div class="col-12">
-                            <label class="form-label">Token webhook @(_form.HasWebhookToken ? "(guardado)" : "")</label>
-                            <input type="password" class="form-control" @bind="_form.WebhookToken" placeholder="@(_form.HasWebhookToken ? "********" : "token compartido")" />
-                        </div>
+
+            <hr />
+
+            @if (!_editMode)
+            {
+                @* ---- Vista de solo lectura (configurado) ---- *@
+                <div class="row g-3">
+                    <div class="col-md-7">
+                        <div class="small text-muted text-uppercase">URL del servidor</div>
+                        <div class="font-monospace">@(_form.BaseUrl ?? "-")</div>
                     </div>
-                    <hr />
-                    <button class="btn btn-outline-dark w-100" @onclick="ValidarAsync" disabled="@_busy">Validar configuracion</button>
+                    <div class="col-md-5">
+                        <div class="small text-muted text-uppercase">API Key</div>
+                        <div class="font-monospace">@(_form.HasApiKey ? _form.ApiKeyMasked : "(sin configurar)")</div>
+                    </div>
                     @if (_form.LastValidatedAt is not null)
                     {
-                        <p class="text-muted small mt-2 mb-0">Ultima validacion: @_form.LastValidatedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</p>
+                        <div class="col-12">
+                            <div class="small text-muted text-uppercase">Ultima validacion</div>
+                            <div>@_form.LastValidatedAt.Value.ToLocalTime().ToString("dd MMM yyyy HH:mm")</div>
+                        </div>
                     }
                 </div>
-            </div>
-        </div>
-    </div>
 
-    <div class="mt-4">
-        @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgCls">@_msg</div> }
-        <button class="btn btn-dark btn-lg" @onclick="GuardarAsync" disabled="@_busy">@(_busy ? "Guardando..." : "Guardar configuracion")</button>
+                @if (!string.IsNullOrEmpty(_validateMsg))
+                {
+                    <div class="mt-3 @(_validateOk ? "text-success" : "text-danger")">@_validateMsg</div>
+                }
+                else if (_form.Status == EvolutionIntegrationStatus.Validated)
+                {
+                    <div class="mt-3 text-success">Conexion exitosa: el servidor responde y la API key es valida.</div>
+                }
+
+                <div class="d-flex gap-2 mt-3">
+                    <button class="btn" style="background: var(--propia-primary); color:#fff;" @onclick="Editar">Editar configuracion</button>
+                    <button class="btn btn-outline-dark" @onclick="ValidarAsync" disabled="@_busy">@(_busy ? "Validando..." : "Validar conexion")</button>
+                </div>
+            }
+            else
+            {
+                @* ---- Edicion ---- *@
+                <div class="row g-3">
+                    <div class="col-12"><label class="form-label">URL del servidor</label><input class="form-control" @bind="_form.BaseUrl" placeholder="https://evo.propia.com.co" /></div>
+                    <div class="col-12">
+                        <label class="form-label">API Key @(_form.HasApiKey ? "(guardada - dejar vacio para conservar)" : "")</label>
+                        <input type="password" class="form-control" @bind="_form.ApiKey" placeholder="@(_form.HasApiKey ? _form.ApiKeyMasked : "AUTHENTICATION_API_KEY")" />
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgCls mt-3 mb-0">@_msg</div> }
+
+                <div class="d-flex gap-2 mt-3">
+                    <button class="btn btn-dark" @onclick="GuardarAsync" disabled="@_busy">@(_busy ? "Guardando..." : "Guardar configuracion")</button>
+                    <button class="btn btn-outline-dark" @onclick="ValidarAsync" disabled="@_busy">Validar conexion</button>
+                    @if (_form.HasApiKey)
+                    {
+                        <button class="btn btn-outline-secondary ms-auto" @onclick="() => { _editMode = false; _msg = null; }">Cancelar</button>
+                    }
+                </div>
+            }
+        </div>
     </div>
 }
 
@@ -78,8 +103,11 @@ else if (_form is not null)
     private string? _jwt;
     private bool _cargando = true;
     private bool _busy;
+    private bool _editMode;
     private string? _msg;
     private string _msgCls = "alert-info";
+    private string? _validateMsg;
+    private bool _validateOk;
     private Form? _form;
 
     private class Form
@@ -90,6 +118,7 @@ else if (_form is not null)
         public bool HasApiKey { get; set; }
         public EvolutionIntegrationStatus Status { get; set; } = EvolutionIntegrationStatus.NotConfigured;
         public DateTimeOffset? LastValidatedAt { get; set; }
+        // Webhook: se conserva del backend pero NO se edita aqui (se configura al conectar cada linea).
         public string WebhookMode { get; set; } = "Production";
         public string? WebhookPublicUrl { get; set; }
         public string? WebhookToken { get; set; }
@@ -107,7 +136,7 @@ else if (_form is not null)
             await CargarAsync();
             StateHasChanged();
         }
-        catch { /* prerender */ }
+        catch { _cargando = false; }
     }
 
     private async Task CargarAsync()
@@ -117,9 +146,13 @@ else if (_form is not null)
         {
             var c = await Auth().GetFromJsonAsync<EvolutionMasterDto>("/admin/evolution-config");
             _form = c is null ? new Form() : MapToForm(c);
+            // Si no hay nada configurado, abrir directo en modo edicion.
+            _editMode = !_form.HasApiKey && string.IsNullOrWhiteSpace(_form.BaseUrl);
         }
         finally { _cargando = false; }
     }
+
+    private void Editar() { _editMode = true; _msg = null; }
 
     private async Task GuardarAsync()
     {
@@ -127,13 +160,15 @@ else if (_form is not null)
         _busy = true; _msg = null;
         try
         {
+            // El webhook se conserva tal cual estaba (se gestiona al conectar lineas).
             var req = new SaveEvolutionMasterRequest(_form.BaseUrl, _form.ApiKey, _form.WebhookMode, _form.WebhookPublicUrl, _form.WebhookToken);
             var resp = await Auth().PutAsJsonAsync("/admin/evolution-config", req);
             if (resp.IsSuccessStatusCode)
             {
                 var dto = await resp.Content.ReadFromJsonAsync<EvolutionMasterDto>();
                 if (dto is not null) _form = MapToForm(dto);
-                _msg = "Configuracion guardada. Recuerda validar."; _msgCls = "alert-success";
+                _msg = "Configuracion guardada. Valida la conexion."; _msgCls = "alert-success";
+                _editMode = false;
             }
             else { _msg = $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}"; _msgCls = "alert-danger"; }
         }
@@ -142,17 +177,18 @@ else if (_form is not null)
 
     private async Task ValidarAsync()
     {
-        _busy = true; _msg = null;
+        _busy = true; _validateMsg = null; _msg = null;
         try
         {
             var resp = await Auth().PostAsync("/admin/evolution-config/validar", null);
             if (resp.IsSuccessStatusCode)
             {
                 var r = await resp.Content.ReadFromJsonAsync<EvolutionValidationResult>();
-                _msg = r?.Message ?? "Validado."; _msgCls = r?.Ok == true ? "alert-success" : "alert-warning";
+                _validateOk = r?.Ok == true;
+                _validateMsg = r?.Message ?? (_validateOk ? "Conexion exitosa." : "No se pudo validar.");
                 await CargarAsync();
             }
-            else { _msg = $"No se pudo validar: {await resp.Content.ReadAsStringAsync()}"; _msgCls = "alert-danger"; }
+            else { _validateOk = false; _validateMsg = $"No se pudo validar: {await resp.Content.ReadAsStringAsync()}"; }
         }
         finally { _busy = false; }
     }

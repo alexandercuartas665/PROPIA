@@ -23,11 +23,12 @@
 
             <div class="app-header-end">
                 <div class="ms-3 ms-lg-4 d-flex align-items-center gap-2">
-                    @if (!string.IsNullOrEmpty(_email))
-                    {
-                        <span class="text-muted small d-none d-md-inline"><i class="fi fi-rr-user me-1"></i>@_email</span>
-                    }
-                    <button class="btn btn-outline-secondary btn-sm" @onclick="Salir"><i class="fi fi-rr-sign-out-alt me-1"></i>Salir</button>
+                    @* Salir render-agnostico (no depende de la interactividad del layout): limpia
+                       sessionStorage por JS y navega a /login con recarga completa. *@
+                    <a href="/login" class="btn btn-outline-secondary btn-sm"
+                       onclick="sessionStorage.removeItem('propia_admin_jwt');sessionStorage.removeItem('propia_admin_email');">
+                        <i class="fi fi-rr-sign-out-alt me-1"></i>Salir
+                    </a>
                 </div>
             </div>
         </div>
@@ -83,26 +84,9 @@
 </style>
 
 @code {
-    private string? _email;
-
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // Re-vincula el comportamiento JS del sidebar NexLink (toggler, rail) en cada render.
         try { await Js.InvokeVoidAsync("propiaUI.rebind"); } catch { }
-        if (!firstRender) return;
-        try
-        {
-            var jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_admin_jwt");
-            if (string.IsNullOrWhiteSpace(jwt)) { return; }
-            var email = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_admin_email");
-            if (_email != email) { _email = email; StateHasChanged(); }
-        }
-        catch { }
-    }
-
-    private async Task Salir()
-    {
-        await Js.InvokeVoidAsync("sessionStorage.removeItem", "propia_admin_jwt");
-        await Js.InvokeVoidAsync("sessionStorage.removeItem", "propia_admin_email");
-        Nav.NavigateTo("/login", forceLoad: true);
     }
 }

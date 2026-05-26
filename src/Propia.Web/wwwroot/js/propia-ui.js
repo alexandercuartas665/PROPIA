@@ -201,6 +201,14 @@
         init();
     }
 
+    // Blazor "enhanced navigation" reemplaza el body sin recargar la pagina y NO dispara
+    // DOMContentLoaded. Por eso el header (CTA Ingresar/Salir) y el sidebar quedaban
+    // desincronizados tras cada navegacion (se veia "Ingresar" como si se deslogueara).
+    // Re-sincronizamos en cada enhancedload.
+    document.addEventListener('enhancedload', function () {
+        try { window.propiaUI.rebind(); } catch (e) { }
+    });
+
     // Sincroniza el CTA del header (Ingresar vs nombre copropiedad + Salir) con el
     // estado de sesion en sessionStorage. Es JS puro porque MainLayout es SSR puro
     // y no hidrata interactivamente con Blazor.
@@ -259,6 +267,22 @@
 
     // Expuesto para que login.razor lo llame justo despues de setItem('propia_jwt').
     window.propiaUI.refreshAuthCta = syncAuthCta;
+
+    // Toolbar de formato (estilo WhatsApp) para textareas: envuelve la seleccion con
+    // los marcadores (before/after), o los inserta en el cursor si no hay seleccion.
+    // Luego dispara 'input' para que el @bind de Blazor capture el nuevo valor.
+    window.propiaUI.wrapField = function (id, before, after) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        var start = el.selectionStart, end = el.selectionEnd, v = el.value;
+        var sel = v.substring(start, end);
+        var ins = before + (sel || '') + (after || '');
+        el.value = v.substring(0, start) + ins + v.substring(end);
+        var pos = sel ? start + ins.length : start + before.length;
+        el.focus();
+        try { el.setSelectionRange(pos, pos); } catch (e) { }
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+    };
 
     // Helper para descargar bytes desde base64 (modulo 2.15 Documentos).
     window.propiaUI.downloadBase64 = function (filename, mime, base64) {
