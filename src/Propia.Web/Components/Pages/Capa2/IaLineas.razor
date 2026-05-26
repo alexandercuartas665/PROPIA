@@ -1,0 +1,333 @@
+@page "/ia/lineas"
+@rendermode InteractiveServer
+@using Propia.Application.InfraestructuraIa
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+
+<PageTitle>Lineas WhatsApp - PROPIA</PageTitle>
+
+@* Infraestructura IA (Capa 2): lineas WhatsApp de la copropiedad. Portado de CUBOT.travels,
+   re-estilizado a la plantilla PROPIA. Conexion contra el servidor Evolution maestro (SuperAdmin). *@
+
+<div class="mb-4 d-flex align-items-start">
+    <div>
+        <h1 class="h3 mb-1 fw-semibold">Lineas <span style="color: var(--propia-primary);">WhatsApp</span></h1>
+        <p class="text-muted mb-0">Conecta numeros de WhatsApp para atender a los residentes de la copropiedad</p>
+    </div>
+    <button class="btn ms-auto" style="background: var(--propia-primary); color: white;" @onclick="() => _showCrear = true">+ Nueva linea</button>
+</div>
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <AuthMessage />
+    return;
+}
+
+@if (_serverReady == false)
+{
+    <div class="alert alert-warning">
+        El servidor Evolution (WhatsApp) aun no esta configurado a nivel plataforma. Un administrador de A&amp;D GROUP
+        debe configurarlo en la consola SuperAdmin antes de conectar lineas.
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(_loadError))
+{
+    <div class="alert alert-danger">@_loadError <button class="btn btn-sm btn-outline-danger ms-2" @onclick="CargarAsync">Reintentar</button></div>
+}
+
+@if (_lineas is null)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+}
+else if (_lineas.Count == 0)
+{
+    <div class="card p-4 text-center text-muted">Aun no hay lineas. Crea la primera con "+ Nueva linea".</div>
+}
+else
+{
+    <div class="row g-3">
+        @foreach (var l in _lineas)
+        {
+            var line = l;
+            <div class="col-md-6 col-xl-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <i class="fi fi-rr-comment-alt fs-4" style="color: var(--propia-primary);"></i>
+                            <strong>@line.InstanceName</strong>
+                            <span class="badge ms-auto @StatusClass(line.Status)">@StatusLabel(line.Status)</span>
+                        </div>
+                        <div class="small text-muted mb-3">
+                            <div>Numero: @(string.IsNullOrWhiteSpace(line.PhoneNumber) ? "(sin asignar)" : line.PhoneNumber)</div>
+                            @if (line.LastConnectedAt is not null)
+                            {
+                                <div>Ultima conexion: @line.LastConnectedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</div>
+                            }
+                        </div>
+                        <div class="d-flex flex-wrap gap-2">
+                            <button class="btn btn-sm btn-dark" @onclick="() => ConectarAsync(line.Id)" disabled="@_busy">Conectar / QR</button>
+                            <button class="btn btn-sm btn-outline-dark" @onclick="() => RefrescarAsync(line.Id)" disabled="@_busy">Refrescar</button>
+                            @if (line.Status == WhatsAppLineStatus.Connected)
+                            {
+                                <button class="btn btn-sm btn-outline-secondary" @onclick="() => AbrirProbar(line.Id)">Probar envio</button>
+                            }
+                            <button class="btn btn-sm btn-outline-danger ms-auto" @onclick="() => DesconectarAsync(line.Id)" disabled="@_busy">Desconectar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@* ---- Modal crear ---- *@
+@if (_showCrear)
+{
+    <div class="modal-backdrop-propia" @onclick="() => _showCrear = false"></div>
+    <div class="modal-propia card p-4">
+        <h5 class="mb-3">Nueva linea WhatsApp</h5>
+        @if (!string.IsNullOrEmpty(_crearError)) { <div class="alert alert-danger py-2">@_crearError</div> }
+        <div class="mb-3">
+            <label class="form-label small">Nombre de la instancia</label>
+            <input class="form-control" @bind="_crear.InstanceName" @bind:event="oninput" placeholder="Ej. Porteria principal" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label small">Numero (opcional)</label>
+            <input class="form-control" @bind="_crear.PhoneNumber" @bind:event="oninput" placeholder="+57 300 000 0000" />
+        </div>
+        @* binding sobre form mutable; el request se arma al enviar *@
+        <div class="d-flex gap-2 justify-content-end">
+            <button class="btn btn-outline-secondary" @onclick="() => _showCrear = false">Cancelar</button>
+            <button class="btn" style="background: var(--propia-primary); color: white;" @onclick="CrearAsync" disabled="@_busy">Crear</button>
+        </div>
+    </div>
+}
+
+@* ---- Modal QR ---- *@
+@if (_showQr)
+{
+    <div class="modal-backdrop-propia" @onclick="() => _showQr = false"></div>
+    <div class="modal-propia card p-4 text-center">
+        <h5 class="mb-3">Escanea el codigo QR</h5>
+        @if (!string.IsNullOrEmpty(_qr))
+        {
+            <img src="@QrSrc(_qr)" alt="QR" style="max-width: 280px; margin: 0 auto;" />
+            <p class="small text-muted mt-3">WhatsApp &gt; Dispositivos vinculados &gt; Vincular un dispositivo. Luego pulsa "Refrescar".</p>
+        }
+        else
+        {
+            <p class="text-muted">@(_qrError ?? "No se recibio el QR. Intenta de nuevo.")</p>
+        }
+        <button class="btn btn-outline-secondary mt-2" @onclick="() => _showQr = false">Cerrar</button>
+    </div>
+}
+
+@* ---- Modal probar envio ---- *@
+@if (_showProbar)
+{
+    <div class="modal-backdrop-propia" @onclick="() => _showProbar = false"></div>
+    <div class="modal-propia card p-4">
+        <h5 class="mb-3">Enviar mensaje de prueba</h5>
+        @if (!string.IsNullOrEmpty(_probarMsg)) { <div class="alert @_probarMsgClass py-2">@_probarMsg</div> }
+        <div class="mb-3">
+            <label class="form-label small">Numero destino (con codigo de pais)</label>
+            <input class="form-control" @bind="_probarPhone" @bind:event="oninput" placeholder="573000000000" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label small">Mensaje</label>
+            <textarea class="form-control" rows="3" @bind="_probarText" @bind:event="oninput"></textarea>
+        </div>
+        <div class="d-flex gap-2 justify-content-end">
+            <button class="btn btn-outline-secondary" @onclick="() => _showProbar = false">Cerrar</button>
+            <button class="btn btn-dark" @onclick="ProbarEnvioAsync" disabled="@_busy">Enviar</button>
+        </div>
+    </div>
+}
+
+<style>
+    .modal-backdrop-propia { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1050; }
+    .modal-propia { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1060; width: min(460px, 92vw); }
+</style>
+
+@code {
+    private string? _jwt;
+    private bool _busy;
+    private bool? _serverReady;
+    private string? _loadError;
+
+    private List<WhatsAppLineDto>? _lineas;
+
+    private bool _showCrear;
+    private LineForm _crear = new();
+    private string? _crearError;
+
+    private bool _showQr;
+    private string? _qr;
+    private string? _qrError;
+
+    private bool _showProbar;
+    private Guid _probarLineId;
+    private string _probarPhone = "";
+    private string _probarText = "Mensaje de prueba desde PROPIA.";
+    private string? _probarMsg;
+    private string _probarMsgClass = "alert-info";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarServidorAsync();
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { /* prerender */ }
+    }
+
+    private async Task CargarServidorAsync()
+    {
+        try
+        {
+            var r = await Auth().GetFromJsonAsync<ServerReady>("/api/ia/lineas/servidor-listo");
+            _serverReady = r?.Ready;
+        }
+        catch { _serverReady = null; }
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var resp = await Auth().GetAsync("/api/ia/lineas");
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized) { _loadError = "Sesion expirada"; _jwt = null; return; }
+            resp.EnsureSuccessStatusCode();
+            _lineas = await resp.Content.ReadFromJsonAsync<List<WhatsAppLineDto>>() ?? new();
+            _loadError = null;
+        }
+        catch (Exception ex) { _loadError = ex.Message; }
+    }
+
+    private async Task CrearAsync()
+    {
+        _crearError = null;
+        _busy = true;
+        try
+        {
+            var req = new CreateWhatsAppLineRequest(_crear.InstanceName, _crear.PhoneNumber);
+            var resp = await Auth().PostAsJsonAsync("/api/ia/lineas", req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _crearError = await ErrorMsg(resp);
+                return;
+            }
+            _showCrear = false;
+            _crear = new();
+            await CargarAsync();
+        }
+        catch (Exception ex) { _crearError = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task ConectarAsync(Guid id)
+    {
+        _busy = true; _qr = null; _qrError = null;
+        try
+        {
+            var resp = await Auth().PostAsync($"/api/ia/lineas/{id}/conectar", null);
+            var r = await resp.Content.ReadFromJsonAsync<LineConnectResult>();
+            _qr = r?.QrBase64;
+            _qrError = r?.Error;
+            _showQr = true;
+            await CargarAsync();
+        }
+        catch (Exception ex) { _qrError = ex.Message; _showQr = true; }
+        finally { _busy = false; }
+    }
+
+    private async Task RefrescarAsync(Guid id)
+    {
+        _busy = true;
+        try { await Auth().PostAsync($"/api/ia/lineas/{id}/refrescar", null); await CargarAsync(); }
+        catch (Exception ex) { _loadError = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task DesconectarAsync(Guid id)
+    {
+        _busy = true;
+        try { await Auth().PostAsync($"/api/ia/lineas/{id}/desconectar", null); await CargarAsync(); }
+        catch (Exception ex) { _loadError = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private void AbrirProbar(Guid id)
+    {
+        _probarLineId = id; _probarMsg = null; _showProbar = true;
+    }
+
+    private async Task ProbarEnvioAsync()
+    {
+        _busy = true; _probarMsg = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/ia/lineas/{_probarLineId}/probar-envio",
+                new { Phone = _probarPhone, Text = _probarText });
+            var r = await resp.Content.ReadFromJsonAsync<LineSendResult>();
+            if (r?.Ok == true) { _probarMsg = "Mensaje enviado."; _probarMsgClass = "alert-success"; }
+            else { _probarMsg = r?.Error ?? "No se pudo enviar."; _probarMsgClass = "alert-danger"; }
+        }
+        catch (Exception ex) { _probarMsg = ex.Message; _probarMsgClass = "alert-danger"; }
+        finally { _busy = false; }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+
+    private static async Task<string> ErrorMsg(HttpResponseMessage resp)
+    {
+        try { var e = await resp.Content.ReadFromJsonAsync<ApiError>(); return e?.Error ?? $"HTTP {(int)resp.StatusCode}"; }
+        catch { return $"HTTP {(int)resp.StatusCode}"; }
+    }
+
+    private static string QrSrc(string qr) => qr.StartsWith("data:") ? qr : $"data:image/png;base64,{qr}";
+
+    private static string StatusLabel(WhatsAppLineStatus s) => s switch
+    {
+        WhatsAppLineStatus.Created => "Creada",
+        WhatsAppLineStatus.Connecting => "Conectando",
+        WhatsAppLineStatus.Connected => "Conectada",
+        WhatsAppLineStatus.Disconnected => "Desconectada",
+        WhatsAppLineStatus.Failed => "Error",
+        WhatsAppLineStatus.Disabled => "Deshabilitada",
+        _ => s.ToString()
+    };
+
+    private static string StatusClass(WhatsAppLineStatus s) => s switch
+    {
+        WhatsAppLineStatus.Connected => "bg-success",
+        WhatsAppLineStatus.Connecting => "bg-info text-dark",
+        WhatsAppLineStatus.Failed => "bg-danger",
+        WhatsAppLineStatus.Disabled => "bg-secondary",
+        _ => "bg-light text-dark border"
+    };
+
+    private sealed class LineForm
+    {
+        public string InstanceName { get; set; } = "";
+        public string? PhoneNumber { get; set; }
+    }
+
+    private sealed record ServerReady(bool Ready);
+    private sealed record ApiError(string Error);
+}

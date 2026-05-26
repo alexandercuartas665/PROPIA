@@ -1,0 +1,152 @@
+@page "/admin/integraciones/correo"
+@layout AdminLayout
+@rendermode InteractiveServer
+@using Propia.Application.Integraciones
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<PageTitle>Servidor de Correo - Plataforma</PageTitle>
+
+<h1 class="h3 mb-1">Servidor de Correo</h1>
+<p class="text-muted mb-4">Configuracion SMTP global de la plataforma. Con ella se envian invitaciones (2.5), OTP de onboarding (2.1) y notificaciones (T.2). La clave se guarda cifrada.</p>
+
+@if (_jwt is null || _cargando)
+{
+    <div class="text-center py-5"><div class="spinner-border"></div></div>
+}
+else if (_form is not null)
+{
+    <div class="row g-4">
+        <div class="col-md-7">
+            <div class="card">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <strong>Conexion SMTP</strong>
+                    @if (_form.IsEnabled) { <span class="badge bg-success">Habilitado</span> } else { <span class="badge bg-secondary">Deshabilitado</span> }
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-8"><label class="form-label">Host SMTP</label><input class="form-control" @bind="_form.SmtpHost" placeholder="smtp.sendgrid.net" /></div>
+                        <div class="col-4"><label class="form-label">Puerto</label><input type="number" class="form-control" @bind="_form.SmtpPort" /></div>
+                        <div class="col-12"><label class="form-label">Usuario SMTP</label><input class="form-control" @bind="_form.SmtpUser" placeholder="apikey (SendGrid) o usuario" /></div>
+                        <div class="col-12">
+                            <label class="form-label">Clave SMTP @(_form.HasPassword ? "(guardada - dejar vacio para conservar)" : "")</label>
+                            <input type="password" class="form-control" @bind="_form.SmtpPassword" placeholder="@(_form.HasPassword ? "********" : "clave o API key")" />
+                        </div>
+                        <div class="col-6"><label class="form-label">Remitente (From)</label><input class="form-control" @bind="_form.FromEmail" placeholder="no-reply@propia.com.co" /></div>
+                        <div class="col-6"><label class="form-label">Nombre remitente</label><input class="form-control" @bind="_form.FromName" placeholder="PROPIA" /></div>
+                        <div class="col-12 d-flex gap-4">
+                            <div class="form-check"><input type="checkbox" class="form-check-input" id="ssl" @bind="_form.UseSsl" /><label class="form-check-label" for="ssl">Usar SSL/TLS</label></div>
+                            <div class="form-check"><input type="checkbox" class="form-check-input" id="en" @bind="_form.IsEnabled" /><label class="form-check-label" for="en">Habilitar envio</label></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-5">
+            <div class="card">
+                <div class="card-header bg-white"><strong>Probar envio</strong></div>
+                <div class="card-body">
+                    <p class="text-muted small">Envia un correo de prueba con la configuracion actual (debe estar guardada y habilitada).</p>
+                    <label class="form-label">Destinatario</label>
+                    <input class="form-control mb-2" @bind="_testTo" placeholder="tu@correo.com" />
+                    <button class="btn btn-outline-dark w-100" @onclick="ProbarAsync" disabled="@_busy">Enviar prueba</button>
+                    @if (_form.LastValidatedAt is not null)
+                    {
+                        <p class="text-muted small mt-3 mb-0">Ultima validacion: @_form.LastValidatedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</p>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-4">
+        @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgCls">@_msg</div> }
+        <button class="btn btn-dark btn-lg" @onclick="GuardarAsync" disabled="@_busy">@(_busy ? "Guardando..." : "Guardar configuracion")</button>
+    </div>
+}
+
+@code {
+    private string? _jwt;
+    private bool _cargando = true;
+    private bool _busy;
+    private string? _msg;
+    private string _msgCls = "alert-info";
+    private string? _testTo;
+    private Form? _form;
+
+    private class Form
+    {
+        public string? SmtpHost { get; set; }
+        public int SmtpPort { get; set; } = 587;
+        public string? SmtpUser { get; set; }
+        public string? SmtpPassword { get; set; }
+        public bool UseSsl { get; set; } = true;
+        public string? FromEmail { get; set; }
+        public string? FromName { get; set; }
+        public bool IsEnabled { get; set; }
+        public bool HasPassword { get; set; }
+        public DateTimeOffset? LastValidatedAt { get; set; }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_admin_jwt");
+            if (string.IsNullOrWhiteSpace(jwt)) { Nav.NavigateTo("/login", forceLoad: true); return; }
+            _jwt = jwt;
+            var c = await Auth().GetFromJsonAsync<EmailConfigDto>("/admin/email-config");
+            _form = c is null ? new Form() : new Form
+            {
+                SmtpHost = c.SmtpHost, SmtpPort = c.SmtpPort, SmtpUser = c.SmtpUser,
+                UseSsl = c.UseSsl, FromEmail = c.FromEmail, FromName = c.FromName,
+                IsEnabled = c.IsEnabled, HasPassword = c.HasPassword, LastValidatedAt = c.LastValidatedAt
+            };
+            _cargando = false;
+            StateHasChanged();
+        }
+        catch { _cargando = false; }
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_form is null) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var req = new SaveEmailConfigRequest(_form.SmtpHost, _form.SmtpPort, _form.SmtpUser,
+                _form.SmtpPassword, _form.UseSsl, _form.FromEmail, _form.FromName, _form.IsEnabled);
+            var resp = await Auth().PutAsJsonAsync("/admin/email-config", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                var dto = await resp.Content.ReadFromJsonAsync<EmailConfigDto>();
+                if (dto is not null) { _form.HasPassword = dto.HasPassword; _form.SmtpPassword = null; _form.LastValidatedAt = dto.LastValidatedAt; }
+                _msg = "Configuracion guardada."; _msgCls = "alert-success";
+            }
+            else { _msg = $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}"; _msgCls = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ProbarAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_testTo)) { _msg = "Indica un destinatario de prueba."; _msgCls = "alert-warning"; return; }
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/admin/email-config/test", new TestEmailRequest(_testTo));
+            if (resp.IsSuccessStatusCode) { _msg = $"Correo de prueba enviado a {_testTo}."; _msgCls = "alert-success"; }
+            else { _msg = $"No se pudo enviar: {await resp.Content.ReadAsStringAsync()}"; _msgCls = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

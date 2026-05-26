@@ -1,0 +1,224 @@
+@page "/admin/monitoria/incidentes"
+@layout AdminLayout
+@rendermode InteractiveServer
+@using Propia.Application.Monitoria
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<PageTitle>Incidentes - Plataforma</PageTitle>
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+        <h1 class="h3 mb-0">Incidentes operacionales (0.3)</h1>
+        <p class="text-muted mb-0">Eventos que requieren atencion del equipo A&D</p>
+    </div>
+    <button class="btn btn-primary" @onclick="() => _showAbrir = true">+ Abrir incidente</button>
+</div>
+
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item"><a class="nav-link @(_filtroEstado is null ? "active" : "")" style="cursor:pointer;" @onclick="() => SetFiltro(null)">Todos (@_total)</a></li>
+    @foreach (var e in Enum.GetValues<EstadoIncidente>())
+    {
+        var local = e;
+        <li class="nav-item"><a class="nav-link @(_filtroEstado == local ? "active" : "")" style="cursor:pointer;" @onclick="() => SetFiltro(local)">@local</a></li>
+    }
+</ul>
+
+@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+@if (_jwt is null || _cargando)
+{
+    <div class="text-center py-5"><div class="spinner-border"></div></div>
+}
+else if (_incidentes.Count == 0)
+{
+    <div class="card p-4 text-center text-muted">Sin incidentes con este filtro.</div>
+}
+else
+{
+    <div class="card border-0 shadow-sm">
+        <table class="table table-sm table-hover mb-0">
+            <thead class="table-light"><tr><th>Severidad</th><th>Estado</th><th>Titulo</th><th>Servicio</th><th>Detectado</th><th>Resuelto</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var i in _incidentes)
+                {
+                    var sevBg = i.Severidad switch
+                    {
+                        SeveridadIncidente.Critico => "bg-danger text-white",
+                        SeveridadIncidente.Error => "bg-danger",
+                        SeveridadIncidente.Advertencia => "bg-warning text-dark",
+                        _ => "bg-info"
+                    };
+                    var estadoBg = i.Estado switch
+                    {
+                        EstadoIncidente.Abierto => "bg-danger",
+                        EstadoIncidente.EnInvestigacion => "bg-warning text-dark",
+                        EstadoIncidente.Resuelto => "bg-success",
+                        EstadoIncidente.Cerrado => "bg-secondary",
+                        _ => "bg-light text-dark"
+                    };
+                    var id = i.Id;
+                    <tr>
+                        <td><span class="badge @sevBg">@i.Severidad</span></td>
+                        <td><span class="badge @estadoBg">@i.Estado</span></td>
+                        <td><strong>@i.Titulo</strong>@if(!string.IsNullOrEmpty(i.Descripcion)){<div class="text-muted small">@i.Descripcion</div>}</td>
+                        <td><small>@(i.ServicioAfectado ?? "-")</small></td>
+                        <td><small>@i.DetectadoAt.ToString("MM-dd HH:mm")</small></td>
+                        <td><small>@(i.ResueltoAt?.ToString("MM-dd HH:mm") ?? "-")</small></td>
+                        <td>
+                            @if (i.Estado != EstadoIncidente.Resuelto && i.Estado != EstadoIncidente.Cerrado)
+                            {
+                                <button class="btn btn-sm btn-outline-success" @onclick="() => AbrirResolver(id)">Resolver</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_showAbrir)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Abrir incidente</h5>
+                    <button type="button" class="btn-close" @onclick="() => _showAbrir = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-2">
+                        <label class="form-label small">Severidad</label>
+                        <select class="form-select form-select-sm" @bind="_nuevoSeveridad">
+                            @foreach (var s in Enum.GetValues<SeveridadIncidente>()) { <option value="@s">@s</option> }
+                        </select>
+                    </div>
+                    <div class="mb-2"><label class="form-label small">Titulo *</label><input class="form-control form-control-sm" @bind="_nuevoTitulo" /></div>
+                    <div class="mb-2"><label class="form-label small">Descripcion</label><textarea class="form-control form-control-sm" rows="3" @bind="_nuevoDescripcion"></textarea></div>
+                    <div class="mb-2"><label class="form-label small">Servicio afectado</label><input class="form-control form-control-sm" @bind="_nuevoServicio" placeholder="ej. T.2, 0.2, Infrastructure" /></div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _showAbrir = false">Cancelar</button>
+                    <button class="btn btn-sm btn-primary" @onclick="GuardarAbrir" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoTitulo))">Abrir</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_resolverId is not null)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Resolver incidente</h5>
+                    <button type="button" class="btn-close" @onclick="() => _resolverId = null"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-2"><label class="form-label small">Causa raiz *</label><textarea class="form-control form-control-sm" rows="2" @bind="_causaRaiz"></textarea></div>
+                    <div class="mb-2"><label class="form-label small">Solucion aplicada *</label><textarea class="form-control form-control-sm" rows="2" @bind="_solucion"></textarea></div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _resolverId = null">Cancelar</button>
+                    <button class="btn btn-sm btn-success" @onclick="GuardarResolver" disabled="@(_busy || string.IsNullOrWhiteSpace(_causaRaiz) || string.IsNullOrWhiteSpace(_solucion))">Marcar resuelto</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string? _jwt;
+    private bool _cargando = true;
+    private bool _busy;
+    private string? _msg;
+    private string _msgClass = "alert-info";
+    private List<SistemaIncidenteDto> _incidentes = new();
+    private EstadoIncidente? _filtroEstado;
+    private int _total;
+
+    private bool _showAbrir;
+    private SeveridadIncidente _nuevoSeveridad = SeveridadIncidente.Advertencia;
+    private string _nuevoTitulo = "";
+    private string _nuevoDescripcion = "";
+    private string _nuevoServicio = "";
+
+    private Guid? _resolverId;
+    private string _causaRaiz = "";
+    private string _solucion = "";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_admin_jwt");
+            if (string.IsNullOrWhiteSpace(jwt)) { Nav.NavigateTo("/login", forceLoad: true); return; }
+            _jwt = jwt;
+            await CargarAsync();
+            StateHasChanged();
+        }
+        catch { _cargando = false; }
+    }
+
+    private async Task SetFiltro(EstadoIncidente? e) { _filtroEstado = e; await CargarAsync(); }
+
+    private async Task CargarAsync()
+    {
+        _cargando = true; _msg = null;
+        try
+        {
+            var http = Http();
+            var qs = _filtroEstado is null ? "" : $"?estado={_filtroEstado}";
+            _incidentes = await http.GetFromJsonAsync<List<SistemaIncidenteDto>>($"/api/admin/monitoria/incidentes{qs}") ?? new();
+            _total = (await http.GetFromJsonAsync<List<SistemaIncidenteDto>>("/api/admin/monitoria/incidentes") ?? new()).Count;
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _cargando = false; }
+    }
+
+    private async Task GuardarAbrir()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Http().PostAsJsonAsync("/api/admin/monitoria/incidentes",
+                new AbrirIncidenteRequest(_nuevoSeveridad, _nuevoTitulo.Trim(),
+                    string.IsNullOrWhiteSpace(_nuevoDescripcion) ? null : _nuevoDescripcion.Trim(),
+                    string.IsNullOrWhiteSpace(_nuevoServicio) ? null : _nuevoServicio.Trim(), null));
+            if (!resp.IsSuccessStatusCode) { _msg = "Error abriendo incidente."; _msgClass = "alert-danger"; return; }
+            _showAbrir = false;
+            _nuevoTitulo = _nuevoDescripcion = _nuevoServicio = "";
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private void AbrirResolver(Guid id) { _resolverId = id; _causaRaiz = _solucion = ""; }
+
+    private async Task GuardarResolver()
+    {
+        if (_resolverId is null) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Http().PostAsJsonAsync($"/api/admin/monitoria/incidentes/{_resolverId}/resolver",
+                new ResolverIncidenteRequest(_causaRaiz.Trim(), _solucion.Trim()));
+            if (!resp.IsSuccessStatusCode) { _msg = "Error resolviendo."; _msgClass = "alert-danger"; return; }
+            _resolverId = null;
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private HttpClient Http()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

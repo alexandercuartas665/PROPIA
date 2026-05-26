@@ -9,7 +9,7 @@ builder.Services.AddRazorComponents()
 // HttpClient hacia el API REST (endpoints /admin/*)
 builder.Services.AddHttpClient("PropiaApi", client =>
 {
-    var baseUrl = builder.Configuration["PropiaApi:BaseUrl"] ?? "https://localhost:7100";
+    var baseUrl = builder.Configuration["PropiaApi:BaseUrl"] ?? "https://localhost:7205";
     client.BaseAddress = new Uri(baseUrl);
     client.Timeout = TimeSpan.FromSeconds(30);
 })

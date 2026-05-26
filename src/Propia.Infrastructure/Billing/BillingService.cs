@@ -99,6 +99,24 @@ public class BillingService : IBillingService
         return ToDto(plan, count);
     }
 
+    public async Task<bool?> EliminarPlanAsync(Guid planId, Guid actorId, string actorEmail, string? ip, CancellationToken ct)
+    {
+        var plan = await _db.Planes.FirstOrDefaultAsync(p => p.Id == planId, ct);
+        if (plan is null) return null;
+
+        // Un plan no se borra en duro si tiene CUALQUIER suscripcion asociada (FK Restrict + historial).
+        // En ese caso se debe archivar, no eliminar.
+        var tieneSuscripciones = await _db.Suscripciones.AnyAsync(s => s.PlanId == planId, ct);
+        if (tieneSuscripciones)
+            throw new InvalidOperationException(
+                "No se puede eliminar el plan: tiene suscripciones asociadas. Cambia su estado a 'Archivado' en su lugar.");
+
+        _db.Planes.Remove(plan);
+        _db.SuperAdminLogs.Add(SuperLog(actorId, actorEmail, "DELETE_PLAN", $"Plan:{plan.Id}", $"Nombre={plan.Nombre}", ip));
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
     private static void ValidatePlanRequest(string nombre, decimal feeBase, decimal feeVariable, bool cm, bool ca)
     {
         if (string.IsNullOrWhiteSpace(nombre))

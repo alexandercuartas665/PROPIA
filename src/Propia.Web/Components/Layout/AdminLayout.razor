@@ -1,0 +1,108 @@
+@inherits LayoutComponentBase
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+@* Shell de PLATAFORMA (A&D GROUP / SuperAdmin) dentro del app unificado. Usa el MISMO chrome
+   NexLink que el cliente (MainLayout): app-header + app-menubar-tabs (riel + panel) + app-wrapper.
+   La unica diferencia es el menu (AdminNavMenu) y el CTA del header (email + Salir). *@
+
+<div class="page-layout">
+
+    <header class="app-header">
+        <div class="app-header-inner">
+            <button class="app-toggler" type="button" aria-label="app toggler">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M7.66699 12.6668L3.66699 8.00016L7.66699 3.3335" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
+                    <path opacity="0.5" d="M12.667 12.6668L8.66699 8.00016L12.667 3.3335" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+            </button>
+
+            <div class="app-header-start d-none d-md-flex">
+                <span class="badge" style="background: var(--propia-primary); color:#fff;">Consola de plataforma - A&D GROUP</span>
+            </div>
+
+            <div class="app-header-end">
+                <div class="ms-3 ms-lg-4 d-flex align-items-center gap-2">
+                    @if (!string.IsNullOrEmpty(_email))
+                    {
+                        <span class="text-muted small d-none d-md-inline"><i class="fi fi-rr-user me-1"></i>@_email</span>
+                    }
+                    <button class="btn btn-outline-secondary btn-sm" @onclick="Salir"><i class="fi fi-rr-sign-out-alt me-1"></i>Salir</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <aside class="app-menubar-tabs" id="appMenubar">
+        <div class="app-navbar-brand">
+            <a class="navbar-brand-logo" href="/panel-plataforma" title="PROPIA Plataforma">
+                <div class="propia-brand-mark">P</div>
+            </a>
+        </div>
+        <AdminNavMenu />
+    </aside>
+
+    <div class="app-wrapper">
+        @Body
+    </div>
+</div>
+
+<style>
+    :root { --propia-primary: #5955D1; --propia-primary-light: #7A77E0; }
+
+    .propia-brand-mark {
+        width: 36px; height: 36px; border-radius: 8px;
+        background: linear-gradient(135deg, var(--propia-primary), var(--propia-primary-light));
+        color: white; font-weight: 700; font-size: 1.1rem;
+        display: flex; align-items: center; justify-content: center;
+        box-shadow: 0 4px 12px rgba(89, 85, 209, 0.25);
+    }
+
+    .app-navbar-tabs .nav-item .menu-link {
+        display: flex; align-items: center; justify-content: center;
+        width: 40px; height: 40px; padding: 0; margin: 0 auto;
+    }
+    .app-navbar-tabs .nav-item .menu-link i,
+    .app-navbar-tabs .nav-item .menu-link i::before { font-size: 18px; }
+
+    .app-menubar-tabs .side-menubar .menu-item .menu-link.active,
+    .app-menubar-tabs .side-menubar .menu-item .menu-link.active i { color: var(--propia-primary); font-weight: 600; }
+    .app-menubar-tabs .side-menubar .menu-item .menu-link:hover { color: var(--propia-primary); }
+    .app-menubar-tabs { border-right: 1px solid var(--bs-border-color); }
+
+    @@media (min-width: 1200px) {
+        html:not([data-app-sidebar=mini]) { --app-menubar-tabs: 280px !important; }
+        html:not([data-app-sidebar=mini]) .app-menubar-tabs .app-tab-content { left: 80px !important; width: 200px !important; }
+        html:not([data-app-sidebar=mini]) :has(.app-menubar-tabs) .app-wrapper { margin-left: 280px !important; }
+        html:not([data-app-sidebar=mini]) :has(.app-menubar-tabs) .app-header { padding-left: 280px !important; }
+        html[data-app-sidebar=mini] { --app-menubar-tabs: 80px !important; }
+        html[data-app-sidebar=mini] .app-menubar-tabs .app-tab-content { display: none !important; }
+        html[data-app-sidebar=mini] :has(.app-menubar-tabs) .app-wrapper { margin-left: 80px !important; }
+        html[data-app-sidebar=mini] :has(.app-menubar-tabs) .app-header { padding-left: 80px !important; }
+    }
+</style>
+
+@code {
+    private string? _email;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try { await Js.InvokeVoidAsync("propiaUI.rebind"); } catch { }
+        if (!firstRender) return;
+        try
+        {
+            var jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_admin_jwt");
+            if (string.IsNullOrWhiteSpace(jwt)) { return; }
+            var email = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_admin_email");
+            if (_email != email) { _email = email; StateHasChanged(); }
+        }
+        catch { }
+    }
+
+    private async Task Salir()
+    {
+        await Js.InvokeVoidAsync("sessionStorage.removeItem", "propia_admin_jwt");
+        await Js.InvokeVoidAsync("sessionStorage.removeItem", "propia_admin_email");
+        Nav.NavigateTo("/login", forceLoad: true);
+    }
+}

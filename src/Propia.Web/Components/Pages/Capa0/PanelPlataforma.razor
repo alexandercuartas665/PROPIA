@@ -1,0 +1,106 @@
+@page "/panel-plataforma"
+@layout AdminLayout
+@rendermode InteractiveServer
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<PageTitle>Panel de plataforma - PROPIA</PageTitle>
+
+@* Aterrizaje del usuario de plataforma (A&D GROUP / SuperAdmin) dentro del app unificado.
+   Semilla de la consola fusionada: los modulos de la consola SuperAdmin (Organizaciones, Tenants,
+   Billing, Integraciones, Monitoria) se estan migrando aqui por fases. *@
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+}
+else
+{
+    <div class="mb-4">
+        <h1 class="h3 mb-1 fw-semibold">Panel de <span style="color: var(--propia-primary);">plataforma</span></h1>
+        <p class="text-muted mb-0">Sesion de A&amp;D GROUP @(_email is null ? "" : $"· {_email}")</p>
+    </div>
+
+    <div class="alert alert-info">
+        Entraste con una cuenta de <strong>plataforma</strong>. El acceso ya es unico para todos los perfiles;
+        los modulos de la consola interna se estan migrando a este mismo app por fases.
+    </div>
+
+    <div class="row g-3">
+        @foreach (var m in _modulos)
+        {
+            <div class="col-md-6 col-xl-4">
+                @if (m.Route is not null)
+                {
+                    <a href="@m.Route" class="text-decoration-none">
+                        <div class="card h-100 border-0 shadow-sm">
+                            <div class="card-body">
+                                <div class="d-flex align-items-center gap-2 mb-1">
+                                    <i class="@m.Icon fs-4" style="color: var(--propia-primary);"></i>
+                                    <strong class="text-dark">@m.Nombre</strong>
+                                    <span class="badge bg-success ms-auto">disponible</span>
+                                </div>
+                                <div class="small text-muted">@m.Desc</div>
+                            </div>
+                        </div>
+                    </a>
+                }
+                else
+                {
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center gap-2 mb-1">
+                                <i class="@m.Icon fs-4" style="color: #b0b0c0;"></i>
+                                <strong>@m.Nombre</strong>
+                                <span class="badge bg-light text-dark border ms-auto">en migracion</span>
+                            </div>
+                            <div class="small text-muted">@m.Desc</div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="mt-4">
+        <button class="btn btn-outline-secondary" @onclick="Salir">Cerrar sesion</button>
+    </div>
+}
+
+@code {
+    private string? _jwt;
+    private string? _email;
+
+    private readonly (string Nombre, string Desc, string Icon, string? Route)[] _modulos =
+    {
+        ("Servidores de IA", "Proveedores de IA (Claude, Gemini, etc.) cifrados", "fi fi-rr-brain", "/admin/integraciones/ia"),
+        ("Servidor Evolution", "Gateway de WhatsApp para las copropiedades", "fi fi-rr-comment-alt", "/admin/integraciones/evolution"),
+        ("Organizaciones", "Administradoras y su informacion", "fi fi-rr-building", null),
+        ("Copropiedades", "Alta y estado de cada PH", "fi fi-rr-apartment", null),
+        ("Billing", "Planes, suscripciones y facturas", "fi fi-rr-receipt", null),
+        ("Correo / Marca / Wompi", "Resto de integraciones de plataforma", "fi fi-rr-plug", null),
+        ("Monitoria", "Logs, incidentes y metricas globales", "fi fi-rr-chart-histogram", null),
+        ("Equipo A&D GROUP", "Usuarios internos y MFA", "fi fi-rr-users", null),
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_admin_jwt");
+            if (string.IsNullOrWhiteSpace(jwt)) { Nav.NavigateTo("/login", forceLoad: true); return; }
+            _jwt = jwt;
+            _email = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_admin_email");
+            StateHasChanged();
+        }
+        catch { /* prerender */ }
+    }
+
+    private async Task Salir()
+    {
+        await Js.InvokeVoidAsync("sessionStorage.removeItem", "propia_admin_jwt");
+        await Js.InvokeVoidAsync("sessionStorage.removeItem", "propia_admin_email");
+        Nav.NavigateTo("/login", forceLoad: true);
+    }
+}

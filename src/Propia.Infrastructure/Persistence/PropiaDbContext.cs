@@ -234,6 +234,15 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     // Background jobs (transversal, global)
     public DbSet<JobEjecucion> JobEjecuciones => Set<JobEjecucion>();
 
+    // Infraestructura IA (Capa 2 - tenant-scoped, RLS). Lineas WhatsApp, Agentes, Chat, Consumo.
+    public DbSet<WhatsAppLine> WhatsAppLines => Set<WhatsAppLine>();
+    public DbSet<Conversation> Conversations => Set<Conversation>();
+    public DbSet<Message> Messages => Set<Message>();
+    public DbSet<AiAgent> AiAgents => Set<AiAgent>();
+    public DbSet<AiAgentPrompt> AiAgentPrompts => Set<AiAgentPrompt>();
+    public DbSet<AiAgentResource> AiAgentResources => Set<AiAgentResource>();
+    public DbSet<AiUsageLog> AiUsageLogs => Set<AiUsageLog>();
+
     // Modulo 0.2 - Billing y Suscripciones (todo GLOBAL, sin tenant_id)
     public DbSet<Plan> Planes => Set<Plan>();
     public DbSet<Cupon> Cupones => Set<Cupon>();
@@ -2146,6 +2155,89 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
                 .HasForeignKey(x => x.PersonaId)
                 .OnDelete(DeleteBehavior.SetNull);
             b.HasIndex(x => x.PersonaId);
+        });
+
+        // -------------------- Infraestructura IA (Capa 2, tenant-scoped) --------------------
+
+        modelBuilder.Entity<WhatsAppLine>(b =>
+        {
+            b.Property(x => x.InstanceName).IsRequired().HasMaxLength(150);
+            b.Property(x => x.PhoneNumber).HasMaxLength(30);
+            b.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+            b.HasIndex(x => new { x.TenantId, x.InstanceName }).IsUnique();
+            b.HasIndex(x => new { x.TenantId, x.Status });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<Conversation>(b =>
+        {
+            b.Property(x => x.ContactPhone).IsRequired().HasMaxLength(30);
+            b.Property(x => x.ContactName).HasMaxLength(200);
+            b.HasIndex(x => new { x.TenantId, x.ContactPhone }).IsUnique();
+            b.HasIndex(x => new { x.TenantId, x.LastMessageAt });
+            b.HasOne(x => x.WhatsAppLine).WithMany().HasForeignKey(x => x.WhatsAppLineId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(x => x.Persona).WithMany().HasForeignKey(x => x.PersonaId).OnDelete(DeleteBehavior.SetNull);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<Message>(b =>
+        {
+            b.Property(x => x.ExternalId).HasMaxLength(255);
+            b.Property(x => x.Body).HasColumnType("text");
+            b.Property(x => x.MessageType).HasMaxLength(30);
+            b.Property(x => x.Direction).HasConversion<string>().HasMaxLength(10);
+            b.Property(x => x.MediaType).HasConversion<string>().HasMaxLength(20);
+            b.Property(x => x.SentByName).HasMaxLength(200);
+            b.Property(x => x.MediaUrl).HasMaxLength(1024);
+            b.Property(x => x.MediaMimeType).HasMaxLength(150);
+            b.HasIndex(x => new { x.TenantId, x.ExternalId }).IsUnique().HasFilter("external_id IS NOT NULL");
+            b.HasIndex(x => new { x.ConversationId, x.SentAt });
+            b.HasOne(x => x.Conversation).WithMany(c => c.Messages).HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Cascade);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<AiAgent>(b =>
+        {
+            b.Property(x => x.Name).IsRequired().HasMaxLength(150);
+            b.Property(x => x.Role).HasMaxLength(100);
+            b.Property(x => x.Provider).HasConversion<string>().HasMaxLength(20);
+            b.Property(x => x.Model).HasMaxLength(100);
+            b.Property(x => x.SystemPrompt).HasColumnType("text");
+            b.HasIndex(x => new { x.TenantId, x.IsActive });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<AiAgentPrompt>(b =>
+        {
+            b.Property(x => x.Name).IsRequired().HasMaxLength(150);
+            b.Property(x => x.Rule).HasMaxLength(1000);
+            b.Property(x => x.Body).HasColumnType("text");
+            b.HasIndex(x => new { x.TenantId, x.AgentId });
+            b.HasOne(x => x.Agent).WithMany(a => a.Prompts).HasForeignKey(x => x.AgentId).OnDelete(DeleteBehavior.Cascade);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<AiAgentResource>(b =>
+        {
+            b.Property(x => x.Name).IsRequired().HasMaxLength(150);
+            b.Property(x => x.ResourceType).HasConversion<string>().HasMaxLength(20);
+            b.Property(x => x.Detail).HasColumnType("text");
+            b.Property(x => x.FileUrl).HasMaxLength(1024);
+            b.Property(x => x.FileName).HasMaxLength(255);
+            b.HasIndex(x => new { x.TenantId, x.AgentId });
+            b.HasOne(x => x.Agent).WithMany(a => a.Resources).HasForeignKey(x => x.AgentId).OnDelete(DeleteBehavior.Cascade);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<AiUsageLog>(b =>
+        {
+            b.Property(x => x.Provider).HasConversion<string>().HasMaxLength(20);
+            b.Property(x => x.Model).HasMaxLength(100);
+            b.Property(x => x.EstimatedCostUsd).HasPrecision(12, 6);
+            b.Property(x => x.Source).HasMaxLength(30);
+            b.HasIndex(x => new { x.TenantId, x.CreatedAt });
+            b.HasIndex(x => new { x.TenantId, x.AgentId });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
         // -------------------- Modulo 0.2 Billing --------------------

@@ -1,0 +1,94 @@
+using Propia.Domain.Enums;
+
+namespace Propia.Application.InfraestructuraIa;
+
+/// <summary>Gestion de lineas WhatsApp de la copropiedad activa (tenant-scoped, RLS).</summary>
+public interface IWhatsAppLineService
+{
+    Task<IReadOnlyList<WhatsAppLineDto>> ListAsync(CancellationToken ct = default);
+
+    /// <summary>Crea una linea. Lanza InvalidOperationException si se excede LimiteLineasWhatsapp del plan.</summary>
+    Task<WhatsAppLineDto?> CreateAsync(CreateWhatsAppLineRequest request, CancellationToken ct = default);
+
+    Task<WhatsAppLineDto?> ChangeStatusAsync(Guid lineId, WhatsAppLineStatus status, CancellationToken ct = default);
+
+    /// <summary>Asigna (o desasigna con null) la linea a un UsuarioTenant de la copropiedad.</summary>
+    Task<WhatsAppLineDto?> AssignAsync(Guid lineId, Guid? usuarioTenantId, CancellationToken ct = default);
+}
+
+/// <summary>
+/// Conecta las lineas WhatsApp de la copropiedad con el servidor Evolution MAESTRO de la
+/// plataforma (configurado en SuperAdmin). Crea instancias, entrega QR, refresca estado y desconecta.
+/// </summary>
+public interface IWhatsAppConnectorService
+{
+    /// <summary>true si el servidor maestro Evolution esta configurado (base url + api key).</summary>
+    Task<bool> MasterReadyAsync(CancellationToken ct = default);
+
+    /// <summary>Crea/recupera la instancia de la linea en Evolution y devuelve el QR.</summary>
+    Task<LineConnectResult> ConnectLineAsync(Guid lineId, CancellationToken ct = default);
+
+    /// <summary>Consulta el estado real en Evolution y actualiza la linea. Null si no existe.</summary>
+    Task<WhatsAppLineDto?> RefreshAsync(Guid lineId, CancellationToken ct = default);
+
+    /// <summary>Cierra sesion y elimina la instancia; deja la linea desconectada.</summary>
+    Task<bool> DisconnectAsync(Guid lineId, CancellationToken ct = default);
+
+    /// <summary>Envia un mensaje de prueba desde la linea a un numero (con codigo de pais).</summary>
+    Task<LineSendResult> SendTestAsync(Guid lineId, string phone, string text, CancellationToken ct = default);
+}
+
+/// <summary>Gestion de agentes de IA de la copropiedad: proveedor, prompt, encendido, recursos y prompts enrutados.</summary>
+public interface IAiAgentService
+{
+    Task<IReadOnlyList<AiAgentDto>> ListAsync(CancellationToken ct = default);
+    Task<AiAgentDetailDto?> GetAsync(Guid id, CancellationToken ct = default);
+
+    Task<AiAgentDto?> CreateAsync(CreateAiAgentRequest request, CancellationToken ct = default);
+    Task<AiAgentDto?> UpdateAsync(Guid id, UpdateAiAgentRequest request, CancellationToken ct = default);
+    Task<AiAgentDto?> SetActiveAsync(Guid id, bool active, CancellationToken ct = default);
+    Task<bool> DeleteAsync(Guid id, CancellationToken ct = default);
+
+    Task<AiAgentResourceDto?> AddResourceAsync(CreateAgentResourceRequest request, CancellationToken ct = default);
+    Task<AiAgentResourceDto?> UpdateResourceAsync(Guid id, UpdateAgentResourceRequest request, CancellationToken ct = default);
+    Task<bool> DeleteResourceAsync(Guid id, CancellationToken ct = default);
+
+    Task<AiAgentPromptDto?> AddPromptAsync(CreateAgentPromptRequest request, CancellationToken ct = default);
+    Task<AiAgentPromptDto?> UpdatePromptAsync(Guid id, UpdateAgentPromptRequest request, CancellationToken ct = default);
+    Task<bool> DeletePromptAsync(Guid id, CancellationToken ct = default);
+}
+
+/// <summary>Inferencia de IA (probar un agente). Resuelve credenciales del proveedor desde la config global de SuperAdmin.</summary>
+public interface IAiInferenceService
+{
+    Task<AiChatResult> TestChatAsync(Guid agentId, IReadOnlyList<AiChatTurn> turns, string? systemPromptOverride = null, CancellationToken ct = default);
+}
+
+/// <summary>Registro y reporte de consumo de IA de la copropiedad + control de cuota del plan.</summary>
+public interface IAiUsageService
+{
+    Task RecordAsync(Guid? agentId, AiProvider provider, string model, int inputTokens, int outputTokens, string source, bool success, CancellationToken ct = default);
+    Task<AiUsageSummaryDto> GetSummaryAsync(CancellationToken ct = default);
+    Task<AiQuotaDto> GetQuotaAsync(CancellationToken ct = default);
+}
+
+// ---------- Clientes HTTP externos (impl en Infrastructure) ----------
+
+/// <summary>Cliente HTTP del servidor Evolution API (WhatsApp). La API key va en el header "apikey".</summary>
+public interface IEvolutionApiClient
+{
+    Task<EvolutionPingResult> CheckAsync(string baseUrl, string apiKey, CancellationToken ct = default);
+    Task<EvolutionInstanceResult> CreateInstanceAsync(string baseUrl, string apiKey, string instanceName, CancellationToken ct = default);
+    Task<EvolutionInstanceResult> ConnectAsync(string baseUrl, string apiKey, string instanceName, CancellationToken ct = default);
+    Task<EvolutionInstanceResult> GetStateAsync(string baseUrl, string apiKey, string instanceName, CancellationToken ct = default);
+    Task<bool> DeleteInstanceAsync(string baseUrl, string apiKey, string instanceName, CancellationToken ct = default);
+    Task<EvolutionSendResult> SendTextAsync(string baseUrl, string apiKey, string instanceName, string phone, string text, CancellationToken ct = default);
+    Task<EvolutionSendResult> SetWebhookAsync(string baseUrl, string apiKey, string instanceName, string webhookUrl, string token, CancellationToken ct = default);
+}
+
+/// <summary>Cliente HTTP de inferencia para los proveedores de IA (Claude, Gemini, OpenAI, DeepSeek).</summary>
+public interface IAiProviderClient
+{
+    Task<AiChatResult> CompleteAsync(AiProvider provider, string apiKey, string? baseUrl, string model,
+        string systemPrompt, IReadOnlyList<AiChatTurn> turns, CancellationToken ct = default);
+}

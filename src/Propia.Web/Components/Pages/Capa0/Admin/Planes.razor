@@ -1,0 +1,286 @@
+@page "/admin/billing/planes"
+@layout AdminLayout
+@rendermode InteractiveServer
+@using Propia.Application.Billing
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<PageTitle>Planes - Plataforma</PageTitle>
+
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <h1 class="h3 mb-0">Planes comerciales</h1>
+    <button class="btn btn-dark" @onclick="MostrarFormulario">+ Crear plan</button>
+</div>
+
+@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgCls">@_msg</div> }
+
+@if (_mostrarForm)
+{
+    <div class="card mb-4 border-dark">
+        <div class="card-body">
+            <h5>@(_editId is null ? "Nuevo plan" : "Editar plan")</h5>
+            <div class="row g-3">
+                <div class="col-md-6"><label class="form-label">Nombre</label><input class="form-control" @bind="_form.Nombre" /></div>
+                <div class="col-md-3"><label class="form-label">Fee base (COP)</label><input type="number" step="100" class="form-control" @bind="_form.FeeBase" /></div>
+                <div class="col-md-3"><label class="form-label">Fee variable por unidad</label><input type="number" step="100" class="form-control" @bind="_form.FeeVariablePorUnidad" /></div>
+                <div class="col-12"><label class="form-label">Descripcion</label><textarea class="form-control" rows="2" @bind="_form.Descripcion"></textarea></div>
+                <div class="col-md-3"><label class="form-label">Dias de trial</label><input type="number" class="form-control" @bind="_form.DiasTrial" /></div>
+                <div class="col-md-3"><label class="form-label">% Desc. anual</label><input type="number" step="0.5" class="form-control" @bind="_form.DescuentoAnualPct" /></div>
+                <div class="col-md-3"><label class="form-label">Limite unidades</label><input type="number" class="form-control" @bind="_form.LimiteUnidades" placeholder="vacio = ilimitado" /></div>
+                <div class="col-md-3"><label class="form-label">Limite usuarios</label><input type="number" class="form-control" @bind="_form.LimiteUsuarios" placeholder="vacio = ilimitado" /></div>
+                <div class="col-md-3"><label class="form-label">Lineas de WhatsApp</label><input type="number" class="form-control" @bind="_form.LimiteLineasWhatsapp" placeholder="vacio = ilimitado" /></div>
+                <div class="col-md-3"><label class="form-label">Llamadas IA / mes</label><input type="number" class="form-control" @bind="_form.LimiteLlamadasIaMensual" placeholder="vacio = ilimitado" /></div>
+                <div class="col-md-3 form-check ms-3 mt-4"><input type="checkbox" class="form-check-input" id="cm" @bind="_form.CicloMensual" /><label class="form-check-label" for="cm">Ciclo mensual</label></div>
+                <div class="col-md-3 form-check ms-3 mt-4"><input type="checkbox" class="form-check-input" id="ca" @bind="_form.CicloAnual" /><label class="form-check-label" for="ca">Ciclo anual</label></div>
+                @if (_editId is not null)
+                {
+                    <div class="col-md-3">
+                        <label class="form-label">Estado</label>
+                        <select class="form-select" @bind="_form.Estado">
+                            <option value="@EstadoPlan.Activo">Activo</option>
+                            <option value="@EstadoPlan.Inactivo">Inactivo</option>
+                            <option value="@EstadoPlan.Archivado">Archivado</option>
+                        </select>
+                    </div>
+                }
+                <div class="col-12">
+                    @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger py-2">@_error</div> }
+                    <button class="btn btn-dark me-2" @onclick="GuardarAsync" disabled="@_busy">@(_busy ? "Guardando..." : (_editId is null ? "Crear" : "Guardar"))</button>
+                    <button class="btn btn-outline-secondary" @onclick="CancelarForm">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_jwt is null || _cargando)
+{
+    <div class="text-center py-5"><div class="spinner-border"></div></div>
+}
+else if (_planes.Count == 0)
+{
+    <div class="card border-0 shadow-sm"><div class="card-body text-center text-muted py-5">Sin planes aun. Crea el primero con "+ Crear plan".</div></div>
+}
+else
+{
+    <div class="plan-grid">
+        @foreach (var p in _planes)
+        {
+            var pl = p;
+            <div class="plan-card @(p.Estado != EstadoPlan.Activo ? "plan-card-off" : "")">
+                <div class="plan-card-top">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <h5 class="plan-name mb-0">@p.Nombre</h5>
+                        <span class="badge @EstadoCls(p.Estado)">@p.Estado</span>
+                    </div>
+                    @if (!string.IsNullOrEmpty(p.Descripcion)) { <p class="plan-desc">@p.Descripcion</p> }
+                    <div class="plan-price">
+                        <span class="plan-price-amount">$@p.FeeBase.ToString("N0")</span>
+                        <span class="plan-price-unit">COP / mes</span>
+                    </div>
+                    @if (p.FeeVariablePorUnidad > 0) { <div class="plan-price-extra">+ $@p.FeeVariablePorUnidad.ToString("N0") por unidad</div> }
+                </div>
+                <ul class="plan-features">
+                    <li><i class="fi fi-rr-check plan-check"></i> @(p.LimiteUnidades is int lu ? $"{lu} unidades" : "Unidades ilimitadas")</li>
+                    <li><i class="fi fi-rr-check plan-check"></i> @(p.LimiteUsuarios is int us ? $"{us} usuarios" : "Usuarios ilimitados")</li>
+                    <li><i class="fi fi-rr-check plan-check"></i> @(p.LimiteLineasWhatsapp is int lw ? $"{lw} lineas WhatsApp" : "WhatsApp ilimitado")</li>
+                    <li><i class="fi fi-rr-check plan-check"></i> @(p.LimiteLlamadasIaMensual is int ia ? $"{ia} llamadas IA/mes" : "IA ilimitada")</li>
+                    <li><i class="fi fi-rr-check plan-check"></i> @(p.DiasTrial > 0 ? $"{p.DiasTrial} dias de prueba" : "Sin trial")</li>
+                    <li>
+                        <i class="fi fi-rr-check plan-check"></i>
+                        Ciclo @(p.CicloMensual && p.CicloAnual ? "mensual y anual" : p.CicloAnual ? "anual" : "mensual")
+                        @if (p.DescuentoAnualPct > 0) { <span class="text-success">(-@p.DescuentoAnualPct% anual)</span> }
+                    </li>
+                </ul>
+                <div class="plan-card-foot">
+                    <span class="plan-subs">@p.SuscripcionesActivas suscripcion@(p.SuscripcionesActivas == 1 ? "" : "es")</span>
+                    @if (_confirmDeleteId == p.Id)
+                    {
+                        <div class="d-flex gap-2 align-items-center">
+                            <span class="small text-danger">Eliminar?</span>
+                            <button class="btn btn-sm btn-danger" @onclick="() => EliminarConfirmadoAsync(pl)" disabled="@_busy">Si</button>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => _confirmDeleteId = null" disabled="@_busy">No</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-sm btn-outline-dark" @onclick="() => EditarPlan(pl)">Editar</button>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => PedirEliminar(pl)" disabled="@_busy" title="Eliminar plan">Eliminar</button>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<style>
+    .plan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.25rem; }
+    .plan-card { background: #fff; border: 1px solid #e6e6ee; border-radius: 14px; padding: 1.25rem; display: flex; flex-direction: column; box-shadow: 0 1px 3px rgba(0,0,0,0.04); transition: transform .12s, box-shadow .12s; }
+    .plan-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(89,85,209,0.12); }
+    .plan-card-off { opacity: .65; }
+    .plan-name { font-weight: 700; color: #1a1a2e; }
+    .plan-desc { color: #6e6e85; font-size: .85rem; margin: .4rem 0 0; }
+    .plan-price { margin-top: .9rem; display: flex; align-items: baseline; gap: .35rem; }
+    .plan-price-amount { font-size: 1.9rem; font-weight: 700; background: linear-gradient(135deg, var(--propia-primary,#5955D1), #7A77E0); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+    .plan-price-unit { color: #6e6e85; font-size: .8rem; }
+    .plan-price-extra { color: #6e6e85; font-size: .8rem; margin-top: .15rem; }
+    .plan-features { list-style: none; padding: 0; margin: 1rem 0; flex: 1; }
+    .plan-features li { display: flex; align-items: center; gap: .5rem; padding: .3rem 0; font-size: .88rem; color: #4a4a63; }
+    .plan-check { color: var(--propia-primary,#5955D1); font-size: .8rem; }
+    .plan-card-foot { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #eef0f5; padding-top: .85rem; }
+    .plan-subs { font-size: .8rem; color: #6e6e85; }
+</style>
+
+@code {
+    private string? _jwt;
+    private bool _cargando = true;
+    private bool _mostrarForm;
+    private bool _busy;
+    private string? _error;
+    private List<PlanDto> _planes = new();
+    private PlanForm _form = new();
+    private Guid? _editId;
+    private Guid? _confirmDeleteId;
+    private string? _msg;
+    private string _msgCls = "alert-info";
+
+    private class PlanForm
+    {
+        public string Nombre { get; set; } = "";
+        public string? Descripcion { get; set; }
+        public decimal FeeBase { get; set; }
+        public decimal FeeVariablePorUnidad { get; set; }
+        public bool CicloMensual { get; set; } = true;
+        public bool CicloAnual { get; set; } = true;
+        public decimal DescuentoAnualPct { get; set; }
+        public int? LimiteUnidades { get; set; }
+        public int? LimiteUsuarios { get; set; }
+        public int? LimiteStorageGb { get; set; }
+        public int? LimiteLineasWhatsapp { get; set; }
+        public int? LimiteLlamadasIaMensual { get; set; }
+        public int DiasTrial { get; set; }
+        public EstadoPlan Estado { get; set; } = EstadoPlan.Activo;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_admin_jwt");
+            if (string.IsNullOrWhiteSpace(jwt)) { Nav.NavigateTo("/login", forceLoad: true); return; }
+            _jwt = jwt;
+            await CargarAsync();
+            StateHasChanged();
+        }
+        catch { _cargando = false; }
+    }
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        try { _planes = await Auth().GetFromJsonAsync<List<PlanDto>>("/admin/billing/planes") ?? new(); }
+        finally { _cargando = false; }
+    }
+
+    private void MostrarFormulario() { _form = new PlanForm(); _editId = null; _error = null; _mostrarForm = true; }
+
+    private void EditarPlan(PlanDto p)
+    {
+        _editId = p.Id;
+        _form = new PlanForm
+        {
+            Nombre = p.Nombre, Descripcion = p.Descripcion, FeeBase = p.FeeBase, FeeVariablePorUnidad = p.FeeVariablePorUnidad,
+            CicloMensual = p.CicloMensual, CicloAnual = p.CicloAnual, DescuentoAnualPct = p.DescuentoAnualPct,
+            LimiteUnidades = p.LimiteUnidades, LimiteUsuarios = p.LimiteUsuarios, LimiteStorageGb = p.LimiteStorageGb,
+            LimiteLineasWhatsapp = p.LimiteLineasWhatsapp, LimiteLlamadasIaMensual = p.LimiteLlamadasIaMensual,
+            DiasTrial = p.DiasTrial, Estado = p.Estado
+        };
+        _error = null; _mostrarForm = true;
+    }
+
+    private void CancelarForm() { _mostrarForm = false; _editId = null; }
+
+    private async Task GuardarAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_form.Nombre)) { _error = "Nombre obligatorio."; return; }
+        _busy = true; _error = null;
+        try
+        {
+            HttpResponseMessage resp;
+            if (_editId is null)
+            {
+                var req = new CrearPlanRequest(_form.Nombre, _form.Descripcion, _form.FeeBase, _form.FeeVariablePorUnidad,
+                    _form.CicloMensual, _form.CicloAnual, _form.DescuentoAnualPct,
+                    _form.LimiteUnidades, _form.LimiteUsuarios, _form.LimiteStorageGb,
+                    _form.LimiteLineasWhatsapp, _form.LimiteLlamadasIaMensual, _form.DiasTrial);
+                resp = await Auth().PostAsJsonAsync("/admin/billing/planes", req);
+            }
+            else
+            {
+                var req = new ActualizarPlanRequest(_form.Nombre, _form.Descripcion, _form.FeeBase, _form.FeeVariablePorUnidad,
+                    _form.CicloMensual, _form.CicloAnual, _form.DescuentoAnualPct,
+                    _form.LimiteUnidades, _form.LimiteUsuarios, _form.LimiteStorageGb,
+                    _form.LimiteLineasWhatsapp, _form.LimiteLlamadasIaMensual, _form.DiasTrial, _form.Estado);
+                resp = await Auth().PutAsJsonAsync($"/admin/billing/planes/{_editId}", req);
+            }
+            if (!resp.IsSuccessStatusCode) { _error = $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}"; return; }
+            CancelarForm();
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private void PedirEliminar(PlanDto p)
+    {
+        _msg = null;
+        if (p.SuscripcionesActivas > 0)
+        {
+            _msg = $"No se puede eliminar \"{p.Nombre}\": tiene suscripciones asociadas. Cambia su estado a 'Archivado'.";
+            _msgCls = "alert-warning";
+            _confirmDeleteId = null;
+            return;
+        }
+        _confirmDeleteId = p.Id;
+    }
+
+    private async Task EliminarConfirmadoAsync(PlanDto p)
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/admin/billing/planes/{p.Id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                _msg = $"Plan \"{p.Nombre}\" eliminado."; _msgCls = "alert-success";
+            }
+            else
+            {
+                var err = await resp.Content.ReadAsStringAsync();
+                _msg = $"No se pudo eliminar: {err}"; _msgCls = "alert-danger";
+            }
+            _confirmDeleteId = null;
+            await CargarAsync();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgCls = "alert-danger"; _confirmDeleteId = null; }
+        finally { _busy = false; }
+    }
+
+    private static string EstadoCls(EstadoPlan e) => e switch
+    {
+        EstadoPlan.Activo => "bg-success",
+        EstadoPlan.Inactivo => "bg-secondary",
+        _ => "bg-dark"
+    };
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

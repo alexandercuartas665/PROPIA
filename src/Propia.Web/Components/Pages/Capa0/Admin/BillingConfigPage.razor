@@ -1,0 +1,164 @@
+@page "/admin/billing/config"
+@layout AdminLayout
+@rendermode InteractiveServer
+@using Propia.Application.Billing
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<PageTitle>Billing Config - Plataforma</PageTitle>
+
+<h1 class="h3 mb-1">Configuracion global de Billing</h1>
+<p class="text-muted mb-4">Parametros del modulo 0.2 - aplican a todos los cobros y suscripciones de la plataforma.</p>
+
+@if (_jwt is null || _cargando)
+{
+    <div class="text-center py-5"><div class="spinner-border"></div></div>
+}
+else if (_form is not null)
+{
+    <div class="row g-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-white"><strong>Cobranza y mora</strong></div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-6"><label class="form-label">Dias de gracia</label><input type="number" class="form-control" @bind="_form.DiasGracia" /></div>
+                        <div class="col-6"><label class="form-label">Dia alerta mora 1</label><input type="number" class="form-control" @bind="_form.DiaAlertaMora1" /></div>
+                        <div class="col-6"><label class="form-label">Dia alerta mora 2</label><input type="number" class="form-control" @bind="_form.DiaAlertaMora2" /></div>
+                        <div class="col-6"><label class="form-label">Dia de suspension</label><input type="number" class="form-control" @bind="_form.DiaSuspension" /></div>
+                        <div class="col-6"><label class="form-label">Dia alerta cancelacion</label><input type="number" class="form-control" @bind="_form.DiaAlertaCancelacion" /></div>
+                        <div class="col-6"><label class="form-label">Dia de cancelacion</label><input type="number" class="form-control" @bind="_form.DiaCancelacion" /></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-white"><strong>Reintentos y notificaciones</strong></div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-6"><label class="form-label">Reintentos de cobro</label><input type="number" class="form-control" @bind="_form.ReintentosCobro" /></div>
+                        <div class="col-6"><label class="form-label">Dias preaviso cobro</label><input type="number" class="form-control" @bind="_form.DiasPreavisoCobro" /></div>
+                        <div class="col-12"><label class="form-label">Dias entre reintentos (JSON)</label><input class="form-control font-monospace" @bind="_form.DiasEntreReintentos" placeholder="[1,3,7]" /></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-white"><strong>Retencion de datos</strong></div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-6"><label class="form-label">Meses post-cancelacion</label><input type="number" class="form-control" @bind="_form.RetencionDatosMeses" /></div>
+                        <div class="col-6"><label class="form-label">Anios de facturas</label><input type="number" class="form-control" @bind="_form.RetencionFacturasAnios" /></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-white"><strong>Impuestos y moneda</strong></div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-6"><label class="form-label">IVA % (defecto 0 - SaaS excluido)</label><input type="number" step="0.5" class="form-control" @bind="_form.ImpuestoPct" /></div>
+                        <div class="col-6"><label class="form-label">Moneda</label><input class="form-control" @bind="_form.Moneda" /></div>
+                        <div class="col-12">
+                            <label class="form-label">Proveedor contable</label>
+                            <select class="form-select" @bind="_form.ProveedorContable">
+                                <option value="">- No configurado -</option>
+                                <option value="@ProveedorContable.Siigo">Siigo</option>
+                                <option value="@ProveedorContable.Alegra">Alegra</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-4">
+        @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgCls">@_msg</div> }
+        <button class="btn btn-dark btn-lg" @onclick="GuardarAsync" disabled="@_busy">@(_busy ? "Guardando..." : "Guardar cambios")</button>
+    </div>
+}
+
+@code {
+    private string? _jwt;
+    private bool _cargando = true;
+    private bool _busy;
+    private string? _msg;
+    private string _msgCls = "alert-info";
+    private ConfigForm? _form;
+
+    private class ConfigForm
+    {
+        public int DiasGracia { get; set; }
+        public int DiaAlertaMora1 { get; set; }
+        public int DiaAlertaMora2 { get; set; }
+        public int DiaSuspension { get; set; }
+        public int DiaAlertaCancelacion { get; set; }
+        public int DiaCancelacion { get; set; }
+        public int ReintentosCobro { get; set; }
+        public string DiasEntreReintentos { get; set; } = "[1,3,7]";
+        public int DiasPreavisoCobro { get; set; }
+        public int RetencionDatosMeses { get; set; }
+        public int RetencionFacturasAnios { get; set; }
+        public decimal ImpuestoPct { get; set; }
+        public string Moneda { get; set; } = "COP";
+        public ProveedorContable? ProveedorContable { get; set; }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_admin_jwt");
+            if (string.IsNullOrWhiteSpace(jwt)) { Nav.NavigateTo("/login", forceLoad: true); return; }
+            _jwt = jwt;
+            var c = await Auth().GetFromJsonAsync<BillingConfigDto>("/admin/billing/config");
+            if (c is not null)
+            {
+                _form = new ConfigForm
+                {
+                    DiasGracia = c.DiasGracia, DiaAlertaMora1 = c.DiaAlertaMora1, DiaAlertaMora2 = c.DiaAlertaMora2,
+                    DiaSuspension = c.DiaSuspension, DiaAlertaCancelacion = c.DiaAlertaCancelacion, DiaCancelacion = c.DiaCancelacion,
+                    ReintentosCobro = c.ReintentosCobro, DiasEntreReintentos = c.DiasEntreReintentos, DiasPreavisoCobro = c.DiasPreavisoCobro,
+                    RetencionDatosMeses = c.RetencionDatosMeses, RetencionFacturasAnios = c.RetencionFacturasAnios,
+                    ImpuestoPct = c.ImpuestoPct, Moneda = c.Moneda, ProveedorContable = c.ProveedorContable
+                };
+            }
+            _cargando = false;
+            StateHasChanged();
+        }
+        catch { _cargando = false; }
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_form is null) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var req = new ActualizarBillingConfigRequest(
+                _form.DiasGracia, _form.DiaAlertaMora1, _form.DiaAlertaMora2,
+                _form.DiaSuspension, _form.DiaAlertaCancelacion, _form.DiaCancelacion,
+                _form.ReintentosCobro, _form.DiasEntreReintentos,
+                _form.DiasPreavisoCobro, _form.RetencionDatosMeses, _form.RetencionFacturasAnios,
+                _form.ImpuestoPct, _form.Moneda, _form.ProveedorContable);
+            var resp = await Auth().PutAsJsonAsync("/admin/billing/config", req);
+            if (resp.IsSuccessStatusCode) { _msg = "Cambios guardados."; _msgCls = "alert-success"; }
+            else { _msg = $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}"; _msgCls = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

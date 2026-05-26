@@ -1,0 +1,148 @@
+@page "/admin/monitoria/jobs"
+@layout AdminLayout
+@rendermode InteractiveServer
+@using Propia.Application.Monitoria
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<PageTitle>Jobs nocturnos - Plataforma</PageTitle>
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+        <h1 class="h3 mb-0">Jobs nocturnos (BackgroundJobScheduler)</h1>
+        <p class="text-muted mb-0">Ejecuciones recientes + estado de cada job + trigger manual</p>
+    </div>
+    <button class="btn btn-outline-dark" @onclick="CargarAsync">Refrescar</button>
+</div>
+
+@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2">@_msg</div> }
+
+<div class="row g-3 mb-3">
+    @foreach (var j in _estados)
+    {
+        var estadoBg = j.UltimoEstado switch
+        {
+            EstadoEjecucionJob.Exitoso => "border-success",
+            EstadoEjecucionJob.Fallido => "border-danger",
+            EstadoEjecucionJob.Ejecutando => "border-primary",
+            _ => "border-secondary"
+        };
+        var local = j.JobName;
+        <div class="col-md-6">
+            <div class="card shadow-sm @estadoBg" style="border-left-width: 4px !important;">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <strong>@j.JobName</strong>
+                        <button class="btn btn-sm btn-outline-primary" @onclick="() => DispararAsync(local)" disabled="@_busy">Ejecutar ahora</button>
+                    </div>
+                    <div class="text-muted small">
+                        Frecuencia: cada @(j.FrecuenciaMinutos / 60)h<br />
+                        Ultima ejecucion: @(j.UltimaEjecucionAt?.ToString("yyyy-MM-dd HH:mm") ?? "nunca") (@(j.UltimoEstado?.ToString() ?? "-"))<br />
+                        Ultima exitosa: @(j.UltimaExitosaAt?.ToString("yyyy-MM-dd HH:mm") ?? "nunca")<br />
+                        @if (j.FallidasUlt7d > 0) { <span class="text-danger">Fallos ult. 7d: @j.FallidasUlt7d</span> }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@if (_jwt is null || _cargando)
+{
+    <div class="text-center py-5"><div class="spinner-border"></div></div>
+}
+else
+{
+    <h6 class="text-muted mt-4">Historial de ejecuciones (50 mas recientes)</h6>
+    <div class="card border-0 shadow-sm">
+        <table class="table table-sm table-hover mb-0">
+            <thead class="table-light"><tr><th>Job</th><th>Iniciado</th><th>Estado</th><th>Duracion</th><th>Resultado</th><th>Host</th></tr></thead>
+            <tbody>
+                @foreach (var e in _ejecuciones)
+                {
+                    var bg = e.Estado switch
+                    {
+                        EstadoEjecucionJob.Exitoso => "bg-success",
+                        EstadoEjecucionJob.Fallido => "bg-danger",
+                        EstadoEjecucionJob.Ejecutando => "bg-primary",
+                        _ => "bg-secondary"
+                    };
+                    <tr>
+                        <td><small>@e.JobName</small></td>
+                        <td><small>@e.IniciadoAt.ToString("MM-dd HH:mm:ss")</small></td>
+                        <td><span class="badge @bg">@e.Estado</span></td>
+                        <td><small>@(e.DuracionMs is null ? "-" : $"{e.DuracionMs}ms")</small></td>
+                        <td><small><code>@(string.IsNullOrWhiteSpace(e.ResultadoJson) ? "-" : (e.ResultadoJson.Length > 60 ? e.ResultadoJson.Substring(0, 60) + "..." : e.ResultadoJson))</code></small></td>
+                        <td><small>@(e.EjecutadoPorHost ?? "-")</small></td>
+                    </tr>
+                    @if (e.Estado == EstadoEjecucionJob.Fallido && !string.IsNullOrEmpty(e.Error))
+                    {
+                        <tr><td colspan="6" class="text-danger small bg-light"><pre class="mb-0">@(e.Error.Length > 500 ? e.Error.Substring(0, 500) + "..." : e.Error)</pre></td></tr>
+                    }
+                }
+                @if (_ejecuciones.Count == 0)
+                {
+                    <tr><td colspan="6" class="text-center text-muted py-4">Sin ejecuciones registradas.</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private string? _jwt;
+    private bool _cargando = true;
+    private bool _busy;
+    private string? _msg;
+    private string _msgClass = "alert-info";
+    private List<JobEstadoDto> _estados = new();
+    private List<JobEjecucionDto> _ejecuciones = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_admin_jwt");
+            if (string.IsNullOrWhiteSpace(jwt)) { Nav.NavigateTo("/login", forceLoad: true); return; }
+            _jwt = jwt;
+            await CargarAsync();
+            StateHasChanged();
+        }
+        catch { _cargando = false; }
+    }
+
+    private async Task CargarAsync()
+    {
+        _cargando = true; _msg = null;
+        try
+        {
+            var http = Http();
+            _estados = await http.GetFromJsonAsync<List<JobEstadoDto>>("/api/admin/monitoria/jobs/estado") ?? new();
+            _ejecuciones = await http.GetFromJsonAsync<List<JobEjecucionDto>>("/api/admin/monitoria/jobs?limite=50") ?? new();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _cargando = false; }
+    }
+
+    private async Task DispararAsync(string nombre)
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Http().PostAsync($"/api/admin/monitoria/jobs/{Uri.EscapeDataString(nombre)}/ejecutar", null);
+            if (!resp.IsSuccessStatusCode) { _msg = $"Error ejecutando job {nombre}."; _msgClass = "alert-danger"; }
+            else { _msg = $"Job {nombre} disparado."; _msgClass = "alert-success"; await CargarAsync(); }
+        }
+        finally { _busy = false; }
+    }
+
+    private HttpClient Http()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

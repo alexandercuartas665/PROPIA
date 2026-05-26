@@ -85,6 +85,16 @@ public static class DependencyInjection
         services.AddScoped<Application.Integraciones.IWompiWebhookService, Integraciones.WompiWebhookService>();
         services.AddScoped<Application.Integraciones.IEvolutionMasterConfigService, Integraciones.EvolutionMasterConfigService>();
 
+        // ---- Infraestructura IA (Capa 2, tenant-scoped) - portado de CUBOT.travels ----
+        // Clientes HTTP externos (Evolution WhatsApp + proveedores de IA). Tipados via HttpClientFactory.
+        services.AddHttpClient<Application.InfraestructuraIa.IEvolutionApiClient, InfraestructuraIa.EvolutionApiClient>();
+        services.AddHttpClient<Application.InfraestructuraIa.IAiProviderClient, InfraestructuraIa.AiProviderClient>();
+        services.AddScoped<Application.InfraestructuraIa.IWhatsAppLineService, InfraestructuraIa.WhatsAppLineService>();
+        services.AddScoped<Application.InfraestructuraIa.IWhatsAppConnectorService, InfraestructuraIa.WhatsAppConnectorService>();
+        services.AddScoped<Application.InfraestructuraIa.IAiAgentService, InfraestructuraIa.AiAgentService>();
+        services.AddScoped<Application.InfraestructuraIa.IAiUsageService, InfraestructuraIa.AiUsageService>();
+        services.AddScoped<Application.InfraestructuraIa.IAiInferenceService, InfraestructuraIa.AiInferenceService>();
+
         // Modulo 2.3 Mi Copropiedad
         services.AddScoped<Application.MiCopropiedad.IMiCopropiedadService, MiCopropiedad.MiCopropiedadService>();
 

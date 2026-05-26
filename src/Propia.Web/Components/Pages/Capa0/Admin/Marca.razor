@@ -1,0 +1,114 @@
+@page "/admin/integraciones/marca"
+@layout AdminLayout
+@rendermode InteractiveServer
+@using Propia.Application.Integraciones
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<PageTitle>Marca de plataforma - Plataforma</PageTitle>
+
+<h1 class="h3 mb-1">Marca de plataforma</h1>
+<p class="text-muted mb-4">Gobierna el nombre, logo y textos de la pantalla de login del cliente.</p>
+
+@if (_jwt is null || _cargando)
+{
+    <div class="text-center py-5"><div class="spinner-border"></div></div>
+}
+else if (_form is not null)
+{
+    <div class="row g-4">
+        <div class="col-md-7">
+            <div class="card">
+                <div class="card-header bg-white"><strong>Identidad</strong></div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-12"><label class="form-label">Nombre de la plataforma</label><input class="form-control" @bind="_form.PlatformName" placeholder="PROPIA" /></div>
+                        <div class="col-12"><label class="form-label">Tagline</label><input class="form-control" @bind="_form.Tagline" placeholder="Plataforma de gestion de copropiedades" /></div>
+                        <div class="col-12"><label class="form-label">URL del logo (login)</label><input class="form-control" @bind="_form.LoginLogoUrl" placeholder="/uploads/branding/logo.png" /></div>
+                        <div class="col-12"><label class="form-label">Titular del login</label><input class="form-control" @bind="_form.LoginHeadline" /></div>
+                        <div class="col-12"><label class="form-label">Texto del login</label><textarea class="form-control" rows="3" @bind="_form.LoginSubtext"></textarea></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-5">
+            <div class="card">
+                <div class="card-header bg-white"><strong>Vista previa</strong></div>
+                <div class="card-body text-center">
+                    @if (!string.IsNullOrWhiteSpace(_form.LoginLogoUrl))
+                    {
+                        <img src="@_form.LoginLogoUrl" alt="logo" class="img-fluid mb-3" style="max-height:80px;" />
+                    }
+                    <h4 class="mb-1">@(string.IsNullOrWhiteSpace(_form.PlatformName) ? "PROPIA" : _form.PlatformName)</h4>
+                    <p class="text-muted small mb-3">@_form.Tagline</p>
+                    <hr />
+                    <h6 class="mb-1">@_form.LoginHeadline</h6>
+                    <p class="text-muted small mb-0">@_form.LoginSubtext</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-4">
+        @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgCls">@_msg</div> }
+        <button class="btn btn-dark btn-lg" @onclick="GuardarAsync" disabled="@_busy">@(_busy ? "Guardando..." : "Guardar marca")</button>
+    </div>
+}
+
+@code {
+    private string? _jwt;
+    private bool _cargando = true;
+    private bool _busy;
+    private string? _msg;
+    private string _msgCls = "alert-info";
+    private Form? _form;
+
+    private class Form
+    {
+        public string PlatformName { get; set; } = "PROPIA";
+        public string? Tagline { get; set; }
+        public string? LoginLogoUrl { get; set; }
+        public string? LoginHeadline { get; set; }
+        public string? LoginSubtext { get; set; }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_admin_jwt");
+            if (string.IsNullOrWhiteSpace(jwt)) { Nav.NavigateTo("/login", forceLoad: true); return; }
+            _jwt = jwt;
+            var c = await Auth().GetFromJsonAsync<PlatformBrandingDto>("/admin/branding");
+            _form = c is not null
+                ? new Form { PlatformName = c.PlatformName, Tagline = c.Tagline, LoginLogoUrl = c.LoginLogoUrl, LoginHeadline = c.LoginHeadline, LoginSubtext = c.LoginSubtext }
+                : new Form();
+            _cargando = false;
+            StateHasChanged();
+        }
+        catch { _cargando = false; }
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_form is null) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var req = new SaveBrandingRequest(_form.PlatformName, _form.Tagline, _form.LoginLogoUrl, _form.LoginHeadline, _form.LoginSubtext);
+            var resp = await Auth().PutAsJsonAsync("/admin/branding", req);
+            if (resp.IsSuccessStatusCode) { _msg = "Marca guardada."; _msgCls = "alert-success"; }
+            else { _msg = $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}"; _msgCls = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

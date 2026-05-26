@@ -25,3 +25,19 @@ public record TenantInfo(
     string Rol);
 
 public record SwitchTenantRequest(Guid TenantId);
+
+/// <summary>
+/// Respuesta del login UNIFICADO (/connect/login). Un solo punto de entrada para todos los
+/// usuarios; el campo Kind dice si la sesion es de plataforma ("superadmin") o de copropiedad
+/// ("client"), para que el app decida que mostrar. Si Kind="superadmin" y RequiresMfa=true, el
+/// cliente debe pedir el codigo TOTP y llamar a /connect/login/mfa con el MfaTicket.
+/// </summary>
+public record UnifiedLoginResponse(
+    string Kind,
+    bool RequiresMfa,
+    string? AccessToken,
+    DateTimeOffset? ExpiresAt,
+    string? Email,
+    string? MfaTicket,
+    Guid? ActiveTenantId,
+    IReadOnlyList<TenantInfo> AvailableTenants);

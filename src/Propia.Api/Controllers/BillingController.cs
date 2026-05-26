@@ -48,6 +48,18 @@ public class BillingController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [HttpDelete("planes/{planId:guid}")]
+    public async Task<IActionResult> EliminarPlan(Guid planId, CancellationToken ct)
+    {
+        try
+        {
+            var (id, email) = Actor();
+            var ok = await _billing.EliminarPlanAsync(planId, id, email, Ip(), ct);
+            return ok is null ? NotFound() : NoContent();
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     // -------------------- Suscripciones --------------------
 
     [HttpGet("suscripciones")]

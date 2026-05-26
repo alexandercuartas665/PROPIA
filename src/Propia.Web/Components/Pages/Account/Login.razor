@@ -3,64 +3,75 @@
 @rendermode InteractiveServer
 @using System.ComponentModel.DataAnnotations
 @using System.Net.Http.Json
-@using Propia.Shared.Auth
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @inject IJSRuntime Js
 
 <PageTitle>Iniciar sesion - PROPIA</PageTitle>
 
-<h2 class="h4 mb-1 text-center">Bienvenido</h2>
-<p class="text-muted text-center mb-4">Ingresa tus credenciales para continuar</p>
+@* Login UNIFICADO: un solo acceso para todos. El backend (/connect/login) decide si la cuenta es
+   de plataforma (A&D GROUP / SuperAdmin) o de copropiedad (cliente). Si es SuperAdmin con MFA, se
+   pide el codigo TOTP en un segundo paso. El rol determina a donde entra el usuario. *@
 
-<EditForm Model="@_model" OnValidSubmit="HandleLoginAsync" FormName="login">
-    <DataAnnotationsValidator />
+@if (_step == Step.Credentials)
+{
+    <h2 class="h4 mb-1 text-center">Bienvenido</h2>
+    <p class="text-muted text-center mb-4">Ingresa tus credenciales para continuar</p>
 
-    <div class="mb-3">
-        <label for="email" class="form-label">Correo electronico</label>
-        <InputText id="email" @bind-Value="_model.Email" class="form-control" placeholder="tu@correo.com" autocomplete="username" />
-        <ValidationMessage For="@(() => _model.Email)" class="text-danger small mt-1" />
-    </div>
+    <EditForm Model="@_model" OnValidSubmit="HandleLoginAsync" FormName="login">
+        <DataAnnotationsValidator />
 
-    <div class="mb-3">
-        <label for="password" class="form-label">Contrasena</label>
-        <InputText type="password" id="password" @bind-Value="_model.Password" class="form-control" placeholder="********" autocomplete="current-password" />
-        <ValidationMessage For="@(() => _model.Password)" class="text-danger small mt-1" />
-    </div>
-
-    @if (!string.IsNullOrEmpty(_errorMessage))
-    {
-        <div class="alert alert-danger py-2 mb-3" role="alert">
-            @_errorMessage
+        <div class="mb-3">
+            <label for="email" class="form-label">Correo electronico</label>
+            <InputText id="email" @bind-Value="_model.Email" class="form-control" placeholder="tu@correo.com" autocomplete="username" />
+            <ValidationMessage For="@(() => _model.Email)" class="text-danger small mt-1" />
         </div>
-    }
 
-    @if (!string.IsNullOrEmpty(_successMessage))
-    {
-        <div class="alert alert-success py-2 mb-3" role="alert">
-            @_successMessage
+        <div class="mb-3">
+            <label for="password" class="form-label">Contrasena</label>
+            <InputText type="password" id="password" @bind-Value="_model.Password" class="form-control" placeholder="********" autocomplete="current-password" />
+            <ValidationMessage For="@(() => _model.Password)" class="text-danger small mt-1" />
         </div>
-    }
 
-    <button type="submit" class="btn w-100 mb-3" style="background-color: #5955D1; color: white;" disabled="@_isSubmitting">
-        @if (_isSubmitting)
-        {
-            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
-            <span>Iniciando...</span>
-        }
-        else
-        {
-            <span>Iniciar sesion</span>
-        }
-    </button>
-</EditForm>
+        @if (!string.IsNullOrEmpty(_errorMessage)) { <div class="alert alert-danger py-2 mb-3">@_errorMessage</div> }
+        @if (!string.IsNullOrEmpty(_successMessage)) { <div class="alert alert-success py-2 mb-3">@_successMessage</div> }
+
+        <button type="submit" class="btn w-100 mb-3" style="background-color: #5955D1; color: white;" disabled="@_isSubmitting">
+            @if (_isSubmitting) { <span class="spinner-border spinner-border-sm me-2"></span><span>Iniciando...</span> }
+            else { <span>Iniciar sesion</span> }
+        </button>
+    </EditForm>
+}
+else
+{
+    <h2 class="h4 mb-1 text-center">Verificacion</h2>
+    <p class="text-muted text-center mb-4">Ingresa el codigo de 6 digitos de tu app autenticadora</p>
+
+    <EditForm Model="@_mfaModel" OnValidSubmit="HandleMfaAsync" FormName="loginMfa">
+        <DataAnnotationsValidator />
+        <div class="mb-3">
+            <InputText id="code" @bind-Value="_mfaModel.Code" class="form-control form-control-lg text-center" maxlength="6" autocomplete="one-time-code" />
+            <ValidationMessage For="@(() => _mfaModel.Code)" class="text-danger small mt-1" />
+        </div>
+        @if (!string.IsNullOrEmpty(_errorMessage)) { <div class="alert alert-danger py-2 mb-3">@_errorMessage</div> }
+        <button type="submit" class="btn w-100 mb-2" style="background-color: #5955D1; color: white;" disabled="@_isSubmitting">
+            @(_isSubmitting ? "Verificando..." : "Confirmar")
+        </button>
+        <button type="button" class="btn btn-link w-100" @onclick="VolverACredenciales">Volver</button>
+    </EditForm>
+}
 
 <div class="text-center mt-3">
     <a href="/" class="small text-decoration-none text-muted">Volver al inicio</a>
 </div>
 
 @code {
+    private enum Step { Credentials, Mfa }
+    private Step _step = Step.Credentials;
+
     private LoginModel _model = new();
+    private MfaModel _mfaModel = new();
+    private string? _mfaTicket;
     private bool _isSubmitting;
     private string? _errorMessage;
     private string? _successMessage;
@@ -76,78 +87,105 @@
         public string Password { get; set; } = string.Empty;
     }
 
+    private class MfaModel
+    {
+        [Required, StringLength(6, MinimumLength = 6, ErrorMessage = "6 digitos")]
+        public string Code { get; set; } = string.Empty;
+    }
+
     private async Task HandleLoginAsync()
     {
-        _errorMessage = null;
-        _successMessage = null;
-        _isSubmitting = true;
+        _errorMessage = null; _successMessage = null; _isSubmitting = true;
         try
         {
             var http = HttpClientFactory.CreateClient("PropiaApi");
-            var resp = await http.PostAsJsonAsync("/connect/token", new LoginRequestDto(_model.Email, _model.Password));
+            var resp = await http.PostAsJsonAsync("/connect/login", new { _model.Email, _model.Password });
 
-            if (resp.IsSuccessStatusCode)
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized) { _errorMessage = "Credenciales invalidas."; return; }
+            if (!resp.IsSuccessStatusCode) { _errorMessage = $"Error inesperado: {(int)resp.StatusCode}."; return; }
+
+            var login = await resp.Content.ReadFromJsonAsync<UnifiedLogin>();
+            if (login is null) { _errorMessage = "Respuesta inesperada del servidor."; return; }
+
+            if (login.Kind == "superadmin")
             {
-                var login = await resp.Content.ReadFromJsonAsync<LoginResponseDto>();
-                if (login is null)
+                if (login.RequiresMfa)
                 {
-                    _errorMessage = "Respuesta inesperada del servidor.";
+                    _mfaTicket = login.MfaTicket;
+                    _step = Step.Mfa;
+                    _mfaModel = new MfaModel();
                     return;
                 }
-
-                if (login.AvailableTenants.Count == 0)
-                {
-                    _errorMessage = "Tu usuario no tiene copropiedades activas. Contacta a tu administrador.";
-                    return;
-                }
-
-                if (login.ActiveTenantId.HasValue)
-                {
-                    // MVP: persistimos el JWT en sessionStorage (mismo patron que el wizard).
-                    // En modulo 2.5 esto se mueve a cookie HttpOnly.
-                    var tenant = login.AvailableTenants.First(t => t.TenantId == login.ActiveTenantId.Value);
-                    await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_jwt", login.AccessToken);
-                    await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_tenant_id", tenant.TenantId.ToString());
-                    await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_copropiedad_nombre", tenant.Nombre);
-                    try { await Js.InvokeVoidAsync("propiaUI.refreshAuthCta"); } catch { }
-
-                    _successMessage = $"Login exitoso. Entrando a {tenant.Nombre}...";
-                    StateHasChanged();
-                    await Task.Delay(500);
-                    Nav.NavigateTo("/mi-copropiedad", forceLoad: true);
-                }
-                else
-                {
-                    // Sin tenant activo (usuario con N copropiedades pero ninguna seleccionada).
-                    // En MVP entramos a la primera disponible; modulo 2.5 traera el selector tipo Slack.
-                    var first = login.AvailableTenants.First();
-                    await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_jwt", login.AccessToken);
-                    await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_tenant_id", first.TenantId.ToString());
-                    await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_copropiedad_nombre", first.Nombre);
-                    try { await Js.InvokeVoidAsync("propiaUI.refreshAuthCta"); } catch { }
-
-                    _successMessage = $"Login exitoso. Tienes {login.AvailableTenants.Count} copropiedades - entrando a {first.Nombre}...";
-                    StateHasChanged();
-                    await Task.Delay(500);
-                    Nav.NavigateTo("/mi-copropiedad", forceLoad: true);
-                }
+                await EntrarComoSuperAdminAsync(login);
+                return;
             }
-            else if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-            {
-                _errorMessage = "Credenciales invalidas.";
-            }
-            else
-            {
-                _errorMessage = $"Error inesperado: {(int)resp.StatusCode}.";
-            }
+
+            await EntrarComoClienteAsync(login);
         }
-        catch (HttpRequestException ex)
-        {
-            _errorMessage = $"No se pudo conectar al API: {ex.Message}";
-        }
-        finally
-        {
-            _isSubmitting = false;
-        }
+        catch (HttpRequestException ex) { _errorMessage = $"No se pudo conectar al API: {ex.Message}"; }
+        finally { _isSubmitting = false; }
     }
+
+    private async Task HandleMfaAsync()
+    {
+        if (string.IsNullOrEmpty(_mfaTicket)) { _errorMessage = "Sesion invalida, vuelve a ingresar."; _step = Step.Credentials; return; }
+        _errorMessage = null; _isSubmitting = true;
+        try
+        {
+            var http = HttpClientFactory.CreateClient("PropiaApi");
+            var resp = await http.PostAsJsonAsync("/connect/login/mfa", new { MfaTicket = _mfaTicket, Code = _mfaModel.Code.Trim() });
+            if (!resp.IsSuccessStatusCode) { _errorMessage = "Codigo invalido o ticket expirado."; return; }
+            var login = await resp.Content.ReadFromJsonAsync<UnifiedLogin>();
+            if (login?.AccessToken is null) { _errorMessage = "Respuesta inesperada."; return; }
+            await EntrarComoSuperAdminAsync(login);
+        }
+        catch (HttpRequestException ex) { _errorMessage = $"No se pudo conectar al API: {ex.Message}"; }
+        finally { _isSubmitting = false; }
+    }
+
+    private async Task EntrarComoSuperAdminAsync(UnifiedLogin login)
+    {
+        await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_admin_jwt", login.AccessToken!);
+        await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_admin_email", login.Email ?? "");
+        _successMessage = "Acceso de plataforma. Entrando...";
+        StateHasChanged();
+        await Task.Delay(400);
+        Nav.NavigateTo("/panel-plataforma", forceLoad: true);
+    }
+
+    private async Task EntrarComoClienteAsync(UnifiedLogin login)
+    {
+        if (login.AvailableTenants.Count == 0)
+        {
+            _errorMessage = "Tu usuario no tiene copropiedades activas. Contacta a tu administrador.";
+            return;
+        }
+        var tenant = login.ActiveTenantId.HasValue
+            ? login.AvailableTenants.First(t => t.TenantId == login.ActiveTenantId.Value)
+            : login.AvailableTenants.First();
+
+        await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_jwt", login.AccessToken!);
+        await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_tenant_id", tenant.TenantId.ToString());
+        await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_copropiedad_nombre", tenant.Nombre);
+        try { await Js.InvokeVoidAsync("propiaUI.refreshAuthCta"); } catch { }
+
+        _successMessage = $"Login exitoso. Entrando a {tenant.Nombre}...";
+        StateHasChanged();
+        await Task.Delay(400);
+        Nav.NavigateTo("/mi-copropiedad", forceLoad: true);
+    }
+
+    private void VolverACredenciales() { _step = Step.Credentials; _mfaTicket = null; _errorMessage = null; }
+
+    private sealed record UnifiedLogin(
+        string Kind,
+        bool RequiresMfa,
+        string? AccessToken,
+        DateTimeOffset? ExpiresAt,
+        string? Email,
+        string? MfaTicket,
+        Guid? ActiveTenantId,
+        List<TenantInfo> AvailableTenants);
+
+    private sealed record TenantInfo(Guid TenantId, string Nombre, string Rol);
 }

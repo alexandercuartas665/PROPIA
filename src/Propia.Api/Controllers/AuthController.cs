@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Propia.Application.Auth;
+using Propia.Application.SuperAdmin;
 
 namespace Propia.Api.Controllers;
 
@@ -15,8 +16,13 @@ namespace Propia.Api.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _auth;
+    private readonly ISuperAdminAuthService _superAdminAuth;
 
-    public AuthController(IAuthService auth) => _auth = auth;
+    public AuthController(IAuthService auth, ISuperAdminAuthService superAdminAuth)
+    {
+        _auth = auth;
+        _superAdminAuth = superAdminAuth;
+    }
 
     /// <summary>Login con email + password. Devuelve JWT con tenant activo si hay uno solo, o null si hay varios.</summary>
     [HttpPost("token")]
@@ -27,6 +33,70 @@ public class AuthController : ControllerBase
         if (result is null) return Unauthorized(new { error = "credenciales_invalidas" });
         return Ok(result);
     }
+
+    /// <summary>
+    /// Login UNIFICADO: un solo punto de entrada para todos los usuarios. Primero intenta la cuenta
+    /// de plataforma (A&D GROUP, tabla super_admin_usuarios) y, si no coincide, la cuenta de
+    /// copropiedad (ApplicationUser). El rol determina que ve el usuario. Si es SuperAdmin con MFA,
+    /// devuelve RequiresMfa=true + MfaTicket para el segundo paso (/connect/login/mfa).
+    /// </summary>
+    [HttpPost("login")]
+    [AllowAnonymous]
+    public async Task<IActionResult> UnifiedLogin([FromBody] LoginRequest request, CancellationToken ct)
+    {
+        // 1) Cuenta de plataforma (SuperAdmin). Devuelve null si el email no existe en esa tabla
+        //    o la clave no coincide -> entonces se intenta como cliente.
+        var sa = await _superAdminAuth.LoginAsync(new SuperAdminLoginRequest(request.Email, request.Password), Ip(), ct);
+        if (sa is not null)
+        {
+            return Ok(new UnifiedLoginResponse(
+                Kind: "superadmin",
+                RequiresMfa: sa.RequiresMfa,
+                AccessToken: sa.AccessToken,
+                ExpiresAt: sa.ExpiresAt,
+                Email: sa.Email,
+                MfaTicket: sa.MfaTicket,
+                ActiveTenantId: null,
+                AvailableTenants: Array.Empty<TenantInfo>()));
+        }
+
+        // 2) Cuenta de copropiedad (cliente).
+        var cl = await _auth.LoginAsync(request, ct);
+        if (cl is not null)
+        {
+            return Ok(new UnifiedLoginResponse(
+                Kind: "client",
+                RequiresMfa: false,
+                AccessToken: cl.AccessToken,
+                ExpiresAt: cl.ExpiresAt,
+                Email: cl.Email,
+                MfaTicket: null,
+                ActiveTenantId: cl.ActiveTenantId,
+                AvailableTenants: cl.AvailableTenants));
+        }
+
+        return Unauthorized(new { error = "credenciales_invalidas" });
+    }
+
+    /// <summary>Segundo paso del login unificado para SuperAdmin con MFA: valida ticket + codigo TOTP.</summary>
+    [HttpPost("login/mfa")]
+    [AllowAnonymous]
+    public async Task<IActionResult> UnifiedLoginMfa([FromBody] VerifyMfaLoginRequest request, CancellationToken ct)
+    {
+        var sa = await _superAdminAuth.VerifyMfaLoginAsync(request, Ip(), ct);
+        if (sa is null || sa.AccessToken is null) return Unauthorized(new { error = "mfa_invalido" });
+        return Ok(new UnifiedLoginResponse(
+            Kind: "superadmin",
+            RequiresMfa: false,
+            AccessToken: sa.AccessToken,
+            ExpiresAt: sa.ExpiresAt,
+            Email: sa.Email,
+            MfaTicket: null,
+            ActiveTenantId: null,
+            AvailableTenants: Array.Empty<TenantInfo>()));
+    }
+
+    private string? Ip() => HttpContext.Connection.RemoteIpAddress?.ToString();
 
     /// <summary>Info del usuario autenticado + lista de copropiedades accesibles.</summary>
     [HttpGet("me")]

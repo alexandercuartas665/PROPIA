@@ -1,0 +1,152 @@
+@page "/admin/organizaciones"
+@layout AdminLayout
+@rendermode InteractiveServer
+@using Propia.Application.SuperAdmin
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<PageTitle>Organizaciones - Plataforma</PageTitle>
+
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <h1 class="h3 mb-0">Organizaciones</h1>
+    <button class="btn btn-dark" @onclick="MostrarFormulario">+ Crear organizacion</button>
+</div>
+
+@if (_mostrarForm)
+{
+    <div class="card mb-4 border-dark">
+        <div class="card-body">
+            <h5>Nueva organizacion</h5>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Nombre</label>
+                    <input class="form-control" @bind="_nuevo.Nombre" placeholder="Empresa Administradora SAS" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Tipo</label>
+                    <select class="form-select" @bind="_nuevo.Tipo">
+                        <option value="@TipoOrganizacion.Administradora">Administradora</option>
+                        <option value="@TipoOrganizacion.Autoadministrada">Autoadministrada</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">NIT</label>
+                    <input class="form-control" @bind="_nuevo.Nit" placeholder="900123456" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Email</label>
+                    <input class="form-control" @bind="_nuevo.Email" placeholder="contacto@empresa.com" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Telefono</label>
+                    <input class="form-control" @bind="_nuevo.Telefono" placeholder="+57 300 ..." />
+                </div>
+                <div class="col-12">
+                    @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger py-2">@_error</div> }
+                    <button class="btn btn-dark me-2" @onclick="CrearAsync" disabled="@_busy">@(_busy ? "Creando..." : "Crear")</button>
+                    <button class="btn btn-outline-secondary" @onclick="() => _mostrarForm = false">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_jwt is null || _cargando)
+{
+    <div class="text-center py-5"><div class="spinner-border"></div></div>
+}
+else
+{
+    <div class="card border-0 shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr><th>Nombre</th><th>Tipo</th><th>NIT</th><th>Email</th><th>Copropiedades</th><th>Creada</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var o in _organizaciones)
+                    {
+                        <tr>
+                            <td><strong>@o.Nombre</strong></td>
+                            <td><span class="badge bg-secondary">@o.Tipo</span></td>
+                            <td>@o.Nit</td>
+                            <td>@o.Email</td>
+                            <td>@o.CopropiedadesCount</td>
+                            <td><small>@o.CreatedAt.ToString("yyyy-MM-dd")</small></td>
+                        </tr>
+                    }
+                    @if (_organizaciones.Count == 0)
+                    {
+                        <tr><td colspan="6" class="text-center text-muted py-4">Sin organizaciones aun. Crea la primera con el boton de arriba.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private string? _jwt;
+    private bool _cargando = true;
+    private bool _mostrarForm;
+    private bool _busy;
+    private string? _error;
+    private List<OrganizacionDto> _organizaciones = new();
+    private OrgForm _nuevo = new();
+
+    private class OrgForm
+    {
+        public string Nombre { get; set; } = string.Empty;
+        public TipoOrganizacion Tipo { get; set; } = TipoOrganizacion.Administradora;
+        public string? Nit { get; set; }
+        public string? Email { get; set; }
+        public string? Telefono { get; set; }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_admin_jwt");
+            if (string.IsNullOrWhiteSpace(jwt)) { Nav.NavigateTo("/login", forceLoad: true); return; }
+            _jwt = jwt;
+            await CargarAsync();
+            StateHasChanged();
+        }
+        catch { _cargando = false; }
+    }
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        try { _organizaciones = await Auth().GetFromJsonAsync<List<OrganizacionDto>>("/admin/organizaciones") ?? new(); }
+        finally { _cargando = false; }
+    }
+
+    private void MostrarFormulario() { _nuevo = new OrgForm(); _error = null; _mostrarForm = true; }
+
+    private async Task CrearAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevo.Nombre)) { _error = "El nombre es obligatorio."; return; }
+        _busy = true; _error = null;
+        try
+        {
+            var req = new CrearOrganizacionRequest(_nuevo.Nombre, _nuevo.Tipo, _nuevo.Nit, _nuevo.Email, _nuevo.Telefono);
+            var resp = await Auth().PostAsJsonAsync("/admin/organizaciones", req);
+            if (!resp.IsSuccessStatusCode) { _error = $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}"; return; }
+            _mostrarForm = false;
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

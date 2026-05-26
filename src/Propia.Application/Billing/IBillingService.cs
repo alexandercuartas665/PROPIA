@@ -12,6 +12,8 @@ public interface IBillingService
     Task<IReadOnlyList<PlanDto>> ListPlanesAsync(CancellationToken ct);
     Task<PlanDto> CrearPlanAsync(CrearPlanRequest req, Guid actorId, string actorEmail, string? ip, CancellationToken ct);
     Task<PlanDto?> ActualizarPlanAsync(Guid planId, ActualizarPlanRequest req, Guid actorId, string actorEmail, string? ip, CancellationToken ct);
+    /// <summary>Elimina un plan SOLO si no tiene suscripciones asociadas. Lanza InvalidOperationException si las tiene; devuelve null si no existe.</summary>
+    Task<bool?> EliminarPlanAsync(Guid planId, Guid actorId, string actorEmail, string? ip, CancellationToken ct);
 
     // ---- Suscripciones ----
     Task<IReadOnlyList<SuscripcionDto>> ListSuscripcionesAsync(CancellationToken ct);

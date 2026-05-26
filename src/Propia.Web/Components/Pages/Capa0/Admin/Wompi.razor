@@ -1,0 +1,181 @@
+@page "/admin/integraciones/wompi"
+@layout AdminLayout
+@rendermode InteractiveServer
+@using Propia.Application.Integraciones
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<PageTitle>Wompi (pasarela) - Plataforma</PageTitle>
+
+<h1 class="h3 mb-1">Wompi - pasarela de cobro</h1>
+<p class="text-muted mb-4">Llaves maestras con las que PROPIA cobra las suscripciones (modulo 0.2). Las llaves secretas se guardan cifradas y se muestran enmascaradas. El webhook llega a <code>/webhooks/wompi</code>.</p>
+
+@if (_jwt is null || _cargando)
+{
+    <div class="text-center py-5"><div class="spinner-border"></div></div>
+}
+else if (_form is not null)
+{
+    <div class="row g-4">
+        <div class="col-md-7">
+            <div class="card">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <strong>Credenciales</strong>
+                    @{ var (cls, txt) = StatusBadge(_form.Status); }
+                    <span class="badge @cls">@txt</span>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <label class="form-label">Ambiente</label>
+                            <select class="form-select" @bind="_form.Environment">
+                                <option value="@WompiEnvironment.Sandbox">Sandbox (pruebas)</option>
+                                <option value="@WompiEnvironment.Production">Produccion</option>
+                            </select>
+                        </div>
+                        <div class="col-6"><label class="form-label">Moneda</label><input class="form-control" @bind="_form.Currency" placeholder="COP" /></div>
+                        <div class="col-12"><label class="form-label">Llave publica (pub_...)</label><input class="form-control font-monospace" @bind="_form.PublicKey" placeholder="pub_test_..." /></div>
+                        <div class="col-12"><label class="form-label">Llave privada @(_form.HasPrivateKey ? "(guardada)" : "")</label><input type="password" class="form-control font-monospace" @bind="_form.PrivateKey" placeholder="@(_form.HasPrivateKey ? _form.PrivateKeyMasked : "prv_test_...")" /></div>
+                        <div class="col-12"><label class="form-label">Secret de eventos @(_form.HasEventsSecret ? "(guardado)" : "")</label><input type="password" class="form-control font-monospace" @bind="_form.EventsSecret" placeholder="@(_form.HasEventsSecret ? _form.EventsSecretMasked : "events secret")" /></div>
+                        <div class="col-12"><label class="form-label">Secret de integridad @(_form.HasIntegritySecret ? "(guardado)" : "")</label><input type="password" class="form-control font-monospace" @bind="_form.IntegritySecret" placeholder="@(_form.HasIntegritySecret ? _form.IntegritySecretMasked : "integrity secret")" /></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-5">
+            <div class="card">
+                <div class="card-header bg-white"><strong>Webhook y reintentos</strong></div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-12"><label class="form-label">Endpoint de webhook</label><input class="form-control" @bind="_form.WebhookEndpoint" placeholder="https://api.propia.com.co/webhooks/wompi" /></div>
+                        <div class="col-6"><label class="form-label">Max reintentos</label><input type="number" class="form-control" @bind="_form.MaxRetries" /></div>
+                    </div>
+                    <hr />
+                    <button class="btn btn-outline-dark w-100" @onclick="ValidarAsync" disabled="@_busy">Validar credenciales</button>
+                    @if (_form.LastValidatedAt is not null)
+                    {
+                        <p class="text-muted small mt-2 mb-0">Ultima validacion: @_form.LastValidatedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</p>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-4">
+        @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgCls">@_msg</div> }
+        <button class="btn btn-dark btn-lg" @onclick="GuardarAsync" disabled="@_busy">@(_busy ? "Guardando..." : "Guardar configuracion")</button>
+    </div>
+}
+
+@code {
+    private string? _jwt;
+    private bool _cargando = true;
+    private bool _busy;
+    private string? _msg;
+    private string _msgCls = "alert-info";
+    private Form? _form;
+
+    private class Form
+    {
+        public WompiEnvironment Environment { get; set; } = WompiEnvironment.Sandbox;
+        public string? PublicKey { get; set; }
+        public string? PrivateKey { get; set; }
+        public string? EventsSecret { get; set; }
+        public string? IntegritySecret { get; set; }
+        public string? PrivateKeyMasked { get; set; }
+        public string? EventsSecretMasked { get; set; }
+        public string? IntegritySecretMasked { get; set; }
+        public string? WebhookEndpoint { get; set; }
+        public string Currency { get; set; } = "COP";
+        public int MaxRetries { get; set; } = 3;
+        public WompiIntegrationStatus Status { get; set; } = WompiIntegrationStatus.NotConfigured;
+        public DateTimeOffset? LastValidatedAt { get; set; }
+        public bool HasPrivateKey { get; set; }
+        public bool HasEventsSecret { get; set; }
+        public bool HasIntegritySecret { get; set; }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_admin_jwt");
+            if (string.IsNullOrWhiteSpace(jwt)) { Nav.NavigateTo("/login", forceLoad: true); return; }
+            _jwt = jwt;
+            await CargarAsync();
+            StateHasChanged();
+        }
+        catch { _cargando = false; }
+    }
+
+    private async Task CargarAsync()
+    {
+        var c = await Auth().GetFromJsonAsync<WompiConfigDto>("/admin/wompi-config");
+        _form = c is null ? new Form() : MapToForm(c);
+        _cargando = false;
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_form is null) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var req = new SaveWompiConfigRequest(_form.Environment, _form.PublicKey, _form.PrivateKey,
+                _form.EventsSecret, _form.IntegritySecret, _form.WebhookEndpoint, _form.Currency, _form.MaxRetries);
+            var resp = await Auth().PutAsJsonAsync("/admin/wompi-config", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                var dto = await resp.Content.ReadFromJsonAsync<WompiConfigDto>();
+                if (dto is not null) _form = MapToForm(dto);
+                _msg = "Configuracion guardada. Recuerda validar."; _msgCls = "alert-success";
+            }
+            else { _msg = $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}"; _msgCls = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ValidarAsync()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Auth().PostAsync("/admin/wompi-config/validar", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                var r = await resp.Content.ReadFromJsonAsync<WompiValidationResult>();
+                _msg = r?.Message ?? "Validado."; _msgCls = r?.Ok == true ? "alert-success" : "alert-warning";
+                await CargarAsync();
+            }
+            else { _msg = $"No se pudo validar: {await resp.Content.ReadAsStringAsync()}"; _msgCls = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private static Form MapToForm(WompiConfigDto c) => new()
+    {
+        Environment = c.Environment, PublicKey = c.PublicKey,
+        PrivateKeyMasked = c.PrivateKeyMasked, EventsSecretMasked = c.EventsSecretMasked, IntegritySecretMasked = c.IntegritySecretMasked,
+        WebhookEndpoint = c.WebhookEndpoint, Currency = c.Currency, MaxRetries = c.MaxRetries,
+        Status = c.Status, LastValidatedAt = c.LastValidatedAt,
+        HasPrivateKey = c.HasPrivateKey, HasEventsSecret = c.HasEventsSecret, HasIntegritySecret = c.HasIntegritySecret
+    };
+
+    private static (string, string) StatusBadge(WompiIntegrationStatus s) => s switch
+    {
+        WompiIntegrationStatus.Validated => ("bg-success", "Validado"),
+        WompiIntegrationStatus.Configured => ("bg-info text-dark", "Configurado"),
+        WompiIntegrationStatus.Error => ("bg-danger", "Error"),
+        _ => ("bg-secondary", "No configurado")
+    };
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

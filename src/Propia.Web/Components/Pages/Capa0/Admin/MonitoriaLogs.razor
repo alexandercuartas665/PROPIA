@@ -1,0 +1,127 @@
+@page "/admin/monitoria/logs"
+@layout AdminLayout
+@rendermode InteractiveServer
+@using Propia.Application.Monitoria
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<PageTitle>Logs sistema - Plataforma</PageTitle>
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+        <h1 class="h3 mb-0">Logs del sistema (0.3)</h1>
+        <p class="text-muted mb-0">Eventos estructurados de toda la plataforma</p>
+    </div>
+    <button class="btn btn-outline-dark" @onclick="CargarAsync">Refrescar</button>
+</div>
+
+<div class="row g-2 mb-3">
+    <div class="col-md-3">
+        <label class="form-label small mb-1">Severidad</label>
+        <select class="form-select form-select-sm" @bind="_filtroSeveridad">
+            <option value="">Todas</option>
+            @foreach (var s in Enum.GetValues<SeveridadIncidente>()) { <option value="@s">@s</option> }
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label small mb-1">Tipo evento</label>
+        <select class="form-select form-select-sm" @bind="_filtroTipo">
+            <option value="">Todos</option>
+            @foreach (var t in Enum.GetValues<TipoEventoSistema>()) { <option value="@t">@t</option> }
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label small mb-1">Modulo origen</label>
+        <input class="form-control form-control-sm" placeholder="ej. 0.3" @bind="_filtroModulo" />
+    </div>
+    <div class="col-md-3 d-flex align-items-end">
+        <button class="btn btn-sm btn-primary w-100" @onclick="CargarAsync">Aplicar filtros</button>
+    </div>
+</div>
+
+@if (_jwt is null || _cargando)
+{
+    <div class="text-center py-5"><div class="spinner-border"></div></div>
+}
+else
+{
+    <div class="card border-0 shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light"><tr><th>Fecha</th><th>Severidad</th><th>Tipo</th><th>Modulo</th><th>Tenant</th><th>Mensaje</th></tr></thead>
+                <tbody>
+                    @foreach (var l in _logs)
+                    {
+                        var bg = l.Severidad switch
+                        {
+                            SeveridadIncidente.Critico => "bg-danger text-white",
+                            SeveridadIncidente.Error => "bg-danger",
+                            SeveridadIncidente.Advertencia => "bg-warning text-dark",
+                            _ => "bg-secondary"
+                        };
+                        <tr>
+                            <td><small>@l.CreadoAt.ToString("MM-dd HH:mm:ss")</small></td>
+                            <td><span class="badge @bg">@l.Severidad</span></td>
+                            <td><small>@l.TipoEvento</small></td>
+                            <td><small><code>@(l.ModuloOrigenCodigo ?? "-")</code></small></td>
+                            <td><small>@(l.TenantId?.ToString().Substring(0, 8) ?? "-")</small></td>
+                            <td><small>@l.Mensaje</small></td>
+                        </tr>
+                    }
+                    @if (_logs.Count == 0)
+                    {
+                        <tr><td colspan="6" class="text-center text-muted py-4">Sin logs con los filtros actuales.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <small class="text-muted d-block mt-2">Mostrando @_logs.Count entradas (max 200).</small>
+}
+
+@code {
+    private string? _jwt;
+    private bool _cargando = true;
+    private List<SistemaLogDto> _logs = new();
+    private string _filtroSeveridad = "";
+    private string _filtroTipo = "";
+    private string _filtroModulo = "";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_admin_jwt");
+            if (string.IsNullOrWhiteSpace(jwt)) { Nav.NavigateTo("/login", forceLoad: true); return; }
+            _jwt = jwt;
+            await CargarAsync();
+            StateHasChanged();
+        }
+        catch { _cargando = false; }
+    }
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        try
+        {
+            var http = Auth();
+            var qs = new List<string> { "limite=200" };
+            if (!string.IsNullOrEmpty(_filtroSeveridad)) qs.Add($"severidad={_filtroSeveridad}");
+            if (!string.IsNullOrEmpty(_filtroTipo)) qs.Add($"tipo={_filtroTipo}");
+            if (!string.IsNullOrWhiteSpace(_filtroModulo)) qs.Add($"modulo={Uri.EscapeDataString(_filtroModulo.Trim())}");
+            _logs = await http.GetFromJsonAsync<List<SistemaLogDto>>("/api/admin/monitoria/logs?" + string.Join("&", qs)) ?? new();
+        }
+        finally { _cargando = false; }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}
