@@ -97,31 +97,44 @@
 
     // ---------- Sidebar toggle (mobile/responsive) ----------
 
-    function bindSidebarToggle() {
-        var toggler = document.querySelector('.app-toggler');
-        var menubar = document.querySelector('.app-menubar-tabs');
-        if (!toggler || !menubar) return;
-        if (toggler.dataset.bound === '1') return;
-        toggler.dataset.bound = '1';
-        // Restaurar estado guardado
+    // Re-aplica el estado guardado del sidebar (mini/full) al <html>. Idempotente: se llama en
+    // cada rebind (incluido tras navegacion enhanced de Blazor) para no quedar desincronizado.
+    function restoreSidebar() {
         try {
+            var toggler = document.querySelector('.app-toggler');
             var saved = localStorage.getItem('propia_sidebar_mode');
             if (saved === 'mini' && window.innerWidth >= 1200) {
                 docEl.setAttribute('data-app-sidebar', 'mini');
-                toggler.classList.add('active');
+                if (toggler) toggler.classList.add('active');
+            } else {
+                docEl.setAttribute('data-app-sidebar', 'full');
+                if (toggler) toggler.classList.remove('active');
             }
         } catch (e) { }
-        toggler.addEventListener('click', function () {
+    }
+
+    var _sidebarDelegated = false;
+    // Toggle del sidebar via DELEGACION en document: un unico listener global que sobrevive a
+    // cualquier reemplazo del DOM (navegacion enhanced de Blazor) y NO se puede duplicar. Esto
+    // evita que el boton "abrir menu" se "congele" tras entrar a un modulo.
+    function bindSidebarToggle() {
+        if (_sidebarDelegated) return;
+        _sidebarDelegated = true;
+        document.addEventListener('click', function (e) {
+            var toggler = e.target.closest ? e.target.closest('.app-toggler') : null;
+            if (!toggler) return;
+            e.preventDefault();
+            var menubar = document.querySelector('.app-menubar-tabs');
             if (window.innerWidth >= 1200) {
                 // Desktop: colapsa/expande el panel textual (modo "mini")
                 var current = docEl.getAttribute('data-app-sidebar');
                 var next = current === 'mini' ? 'full' : 'mini';
                 docEl.setAttribute('data-app-sidebar', next);
                 toggler.classList.toggle('active', next === 'mini');
-                try { localStorage.setItem('propia_sidebar_mode', next); } catch (e) { }
+                try { localStorage.setItem('propia_sidebar_mode', next); } catch (e2) { }
             } else {
                 // Mobile/tablet: muestra/oculta el cajon
-                menubar.classList.toggle('open');
+                if (menubar) menubar.classList.toggle('open');
                 toggler.classList.toggle('active');
             }
         });
@@ -185,6 +198,7 @@
     function init() {
         applyTheme(getPreferredTheme());
         bindSidebarToggle();
+        restoreSidebar();
         bindThemeButtons();
         bindRailTabs();
         syncAuthCta();
@@ -259,6 +273,7 @@
     // los bindings deben re-aplicarse porque algunos elementos pueden recrearse.
     window.propiaUI.rebind = function () {
         bindSidebarToggle();
+        restoreSidebar();
         bindThemeButtons();
         bindRailTabs();
         syncAuthCta();
