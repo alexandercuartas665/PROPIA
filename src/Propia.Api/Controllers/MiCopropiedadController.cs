@@ -224,6 +224,9 @@ public class MiCopropiedadController : ControllerBase
         try { return Created("", await _svc.CrearZonaComunAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [HttpPut("zonas/{id:guid}/estado")]
+    public async Task<IActionResult> CambiarEstadoZona(Guid id, [FromBody] CambiarEstadoZonaRequest req, CancellationToken ct)
+        => await _svc.CambiarEstadoZonaAsync(id, req, ct) ? NoContent() : NotFound();
     [HttpDelete("zonas/{id:guid}")]
     public async Task<IActionResult> EliminarZona(Guid id, CancellationToken ct)
         => await _svc.EliminarZonaComunAsync(id, ct) ? NoContent() : NotFound();
@@ -236,6 +239,9 @@ public class MiCopropiedadController : ControllerBase
         try { return Created("", await _svc.CrearEquipoAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [HttpPut("equipos/{id:guid}/estado")]
+    public async Task<IActionResult> CambiarEstadoEquipo(Guid id, [FromBody] CambiarEstadoEquipoRequest req, CancellationToken ct)
+        => await _svc.CambiarEstadoEquipoAsync(id, req, ct) ? NoContent() : NotFound();
     [HttpDelete("equipos/{id:guid}")]
     public async Task<IActionResult> EliminarEquipo(Guid id, CancellationToken ct)
         => await _svc.EliminarEquipoAsync(id, ct) ? NoContent() : NotFound();

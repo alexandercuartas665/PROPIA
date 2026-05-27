@@ -670,7 +670,7 @@ public class MiCopropiedadService : IMiCopropiedadService
             .AsNoTracking()
             .OrderBy(z => z.Nombre)
             .Select(z => new ZonaComunDto(z.Id, z.Nombre, z.Categoria, z.Descripcion,
-                z.EsReservable, z.TarifaReserva, z.CapacidadPersonas, z.HorariosUso, z.ReglasUso))
+                z.EsReservable, z.TarifaReserva, z.CapacidadPersonas, z.HorariosUso, z.ReglasUso, z.Estado))
             .ToListAsync(ct);
     }
 
@@ -692,7 +692,16 @@ public class MiCopropiedadService : IMiCopropiedadService
         _db.ZonasComunes.Add(z);
         await _db.SaveChangesAsync(ct);
         return new ZonaComunDto(z.Id, z.Nombre, z.Categoria, z.Descripcion,
-            z.EsReservable, z.TarifaReserva, z.CapacidadPersonas, z.HorariosUso, z.ReglasUso);
+            z.EsReservable, z.TarifaReserva, z.CapacidadPersonas, z.HorariosUso, z.ReglasUso, z.Estado);
+    }
+
+    public async Task<bool> CambiarEstadoZonaAsync(Guid zonaId, CambiarEstadoZonaRequest req, CancellationToken ct)
+    {
+        var z = await _db.ZonasComunes.FirstOrDefaultAsync(x => x.Id == zonaId, ct);
+        if (z is null) return false;
+        z.Estado = req.Estado;  // RN-13: EnMantenimiento bloquea reservas en 2.13; RN-14: Inactiva conserva el registro
+        await _db.SaveChangesAsync(ct);
+        return true;
     }
 
     public async Task<bool> EliminarZonaComunAsync(Guid zonaId, CancellationToken ct)
@@ -712,7 +721,7 @@ public class MiCopropiedadService : IMiCopropiedadService
             .AsNoTracking()
             .OrderBy(e => e.Nombre)
             .Select(e => new EquipoActivoDto(e.Id, e.Nombre, e.Categoria, e.Marca, e.Modelo,
-                e.NumeroSerie, e.FechaInstalacion, e.GarantiaHasta, e.Ubicacion, e.Observaciones))
+                e.NumeroSerie, e.FechaInstalacion, e.GarantiaHasta, e.Ubicacion, e.Observaciones, e.Estado))
             .ToListAsync(ct);
     }
 
@@ -735,7 +744,16 @@ public class MiCopropiedadService : IMiCopropiedadService
         _db.EquiposActivos.Add(e);
         await _db.SaveChangesAsync(ct);
         return new EquipoActivoDto(e.Id, e.Nombre, e.Categoria, e.Marca, e.Modelo,
-            e.NumeroSerie, e.FechaInstalacion, e.GarantiaHasta, e.Ubicacion, e.Observaciones);
+            e.NumeroSerie, e.FechaInstalacion, e.GarantiaHasta, e.Ubicacion, e.Observaciones, e.Estado);
+    }
+
+    public async Task<bool> CambiarEstadoEquipoAsync(Guid equipoId, CambiarEstadoEquipoRequest req, CancellationToken ct)
+    {
+        var e = await _db.EquiposActivos.FirstOrDefaultAsync(x => x.Id == equipoId, ct);
+        if (e is null) return false;
+        e.Estado = req.Estado;
+        await _db.SaveChangesAsync(ct);
+        return true;
     }
 
     public async Task<bool> EliminarEquipoAsync(Guid equipoId, CancellationToken ct)

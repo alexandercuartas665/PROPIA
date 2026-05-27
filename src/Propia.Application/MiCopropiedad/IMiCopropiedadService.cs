@@ -74,11 +74,13 @@ public interface IMiCopropiedadService
     // Seccion 6 - Zonas Comunes
     Task<IReadOnlyList<ZonaComunDto>> ListZonasComunesAsync(CancellationToken ct);
     Task<ZonaComunDto> CrearZonaComunAsync(CrearZonaComunRequest req, CancellationToken ct);
+    Task<bool> CambiarEstadoZonaAsync(Guid zonaId, CambiarEstadoZonaRequest req, CancellationToken ct);
     Task<bool> EliminarZonaComunAsync(Guid zonaId, CancellationToken ct);
 
     // Seccion 7 - Equipos Activos
     Task<IReadOnlyList<EquipoActivoDto>> ListEquiposAsync(CancellationToken ct);
     Task<EquipoActivoDto> CrearEquipoAsync(CrearEquipoActivoRequest req, CancellationToken ct);
+    Task<bool> CambiarEstadoEquipoAsync(Guid equipoId, CambiarEstadoEquipoRequest req, CancellationToken ct);
     Task<bool> EliminarEquipoAsync(Guid equipoId, CancellationToken ct);
 
     // Seccion 8 - Finanzas (parametros). El resumen en tiempo real lo orquesta el controller

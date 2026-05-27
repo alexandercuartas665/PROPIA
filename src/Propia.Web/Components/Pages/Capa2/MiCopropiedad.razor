@@ -667,8 +667,18 @@ else
                 @foreach (var z in _zonas)
                 {
                     <li class="list-group-item d-flex justify-content-between align-items-center small">
-                        <span><strong>@z.Nombre</strong> · <span class="badge bg-light text-dark border">@z.Categoria</span> @(z.EsReservable ? "· Reservable" : "")</span>
-                        <button class="btn btn-sm btn-outline-danger" @onclick="() => EliminarZona(z.Id)">X</button>
+                        <span>
+                            <strong>@z.Nombre</strong> · <span class="badge bg-light text-dark border">@z.Categoria</span>
+                            @(z.EsReservable ? "· Reservable" : "")
+                            <span class="badge @EstadoZonaClass(z.Estado) ms-1">@EstadoZonaLabel(z.Estado)</span>
+                        </span>
+                        <span class="d-flex align-items-center gap-2">
+                            <select class="form-select form-select-sm" style="width:auto" @onchange="(e) => CambiarEstadoZona(z.Id, e)">
+                                @foreach (var s in Enum.GetValues<EstadoZonaComunMantenimiento>())
+                                { <option value="@s" selected="@(z.Estado == s)">@EstadoZonaLabel(s)</option> }
+                            </select>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => EliminarZona(z.Id)">X</button>
+                        </span>
                     </li>
                 }
             </ul>
@@ -695,8 +705,18 @@ else
                 @foreach (var e in _equipos)
                 {
                     <li class="list-group-item d-flex justify-content-between align-items-center small">
-                        <span><strong>@e.Nombre</strong> · <span class="badge bg-light text-dark border">@e.Categoria</span> @(string.IsNullOrEmpty(e.Marca) ? "" : $"· {e.Marca}")</span>
-                        <button class="btn btn-sm btn-outline-danger" @onclick="() => EliminarEquipo(e.Id)">X</button>
+                        <span>
+                            <strong>@e.Nombre</strong> · <span class="badge bg-light text-dark border">@e.Categoria</span>
+                            @(string.IsNullOrEmpty(e.Marca) ? "" : $"· {e.Marca}")
+                            <span class="badge @EstadoEquipoClass(e.Estado) ms-1">@EstadoEquipoLabel(e.Estado)</span>
+                        </span>
+                        <span class="d-flex align-items-center gap-2">
+                            <select class="form-select form-select-sm" style="width:auto" @onchange="(ev) => CambiarEstadoEquipo(e.Id, ev)">
+                                @foreach (var s in Enum.GetValues<EstadoEquipoActivo>())
+                                { <option value="@s" selected="@(e.Estado == s)">@EstadoEquipoLabel(s)</option> }
+                            </select>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => EliminarEquipo(e.Id)">X</button>
+                        </span>
                     </li>
                 }
             </ul>
@@ -1392,6 +1412,28 @@ else
     }
     private async Task EliminarZona(Guid id) { await Auth().DeleteAsync($"/api/mi-copropiedad/zonas/{id}"); await CargarAsync(); }
 
+    private async Task CambiarEstadoZona(Guid id, ChangeEventArgs ev)
+    {
+        if (!Enum.TryParse<EstadoZonaComunMantenimiento>(ev.Value?.ToString(), out var estado)) return;
+        var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/zonas/{id}/estado", new CambiarEstadoZonaRequest(estado));
+        if (resp.IsSuccessStatusCode) { await CargarAsync(); Msg("Estado de la zona actualizado.", true); }
+        else Msg(await resp.Content.ReadAsStringAsync(), false);
+    }
+    private static string EstadoZonaLabel(EstadoZonaComunMantenimiento s) => s switch
+    {
+        EstadoZonaComunMantenimiento.Activa => "Activa",
+        EstadoZonaComunMantenimiento.EnMantenimiento => "En mantenimiento",
+        EstadoZonaComunMantenimiento.Inactiva => "Inactiva",
+        _ => s.ToString()
+    };
+    private static string EstadoZonaClass(EstadoZonaComunMantenimiento s) => s switch
+    {
+        EstadoZonaComunMantenimiento.Activa => "bg-success",
+        EstadoZonaComunMantenimiento.EnMantenimiento => "bg-warning text-dark",
+        EstadoZonaComunMantenimiento.Inactiva => "bg-secondary",
+        _ => "bg-light text-dark"
+    };
+
     private async Task CrearEquipo()
     {
         if (string.IsNullOrWhiteSpace(_nuevoEquipo.Nombre)) return;
@@ -1402,6 +1444,28 @@ else
         else Msg(await resp.Content.ReadAsStringAsync(), false);
     }
     private async Task EliminarEquipo(Guid id) { await Auth().DeleteAsync($"/api/mi-copropiedad/equipos/{id}"); await CargarAsync(); }
+
+    private async Task CambiarEstadoEquipo(Guid id, ChangeEventArgs ev)
+    {
+        if (!Enum.TryParse<EstadoEquipoActivo>(ev.Value?.ToString(), out var estado)) return;
+        var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos/{id}/estado", new CambiarEstadoEquipoRequest(estado));
+        if (resp.IsSuccessStatusCode) { await CargarAsync(); Msg("Estado del equipo actualizado.", true); }
+        else Msg(await resp.Content.ReadAsStringAsync(), false);
+    }
+    private static string EstadoEquipoLabel(EstadoEquipoActivo s) => s switch
+    {
+        EstadoEquipoActivo.Operativo => "Operativo",
+        EstadoEquipoActivo.EnMantenimiento => "En mantenimiento",
+        EstadoEquipoActivo.FueraDeServicio => "Fuera de servicio",
+        _ => s.ToString()
+    };
+    private static string EstadoEquipoClass(EstadoEquipoActivo s) => s switch
+    {
+        EstadoEquipoActivo.Operativo => "bg-success",
+        EstadoEquipoActivo.EnMantenimiento => "bg-warning text-dark",
+        EstadoEquipoActivo.FueraDeServicio => "bg-danger",
+        _ => "bg-light text-dark"
+    };
 
     private HttpClient Auth()
     {

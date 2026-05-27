@@ -87,12 +87,16 @@ public record CrearContratoServicioRequest(
 public record ZonaComunDto(
     Guid Id, string Nombre, CategoriaZonaComun Categoria, string? Descripcion,
     bool EsReservable, decimal? TarifaReserva, int? CapacidadPersonas,
-    string? HorariosUso, string? ReglasUso);
+    string? HorariosUso, string? ReglasUso,
+    EstadoZonaComunMantenimiento Estado);
 
 public record CrearZonaComunRequest(
     string Nombre, CategoriaZonaComun Categoria, string? Descripcion,
     bool EsReservable, decimal? TarifaReserva, int? CapacidadPersonas,
     string? HorariosUso, string? ReglasUso);
+
+/// <summary>Cambia el estado operativo de una zona (RN-13/RN-14).</summary>
+public record CambiarEstadoZonaRequest(EstadoZonaComunMantenimiento Estado);
 
 // ----- Tipos de unidad personalizados (spec 2.3 - distribucion) -----
 public record TipoUnidadCustomDto(Guid Id, string Nombre, bool PagaAdministracionPorDefecto, string? Descripcion, bool Activo);
@@ -150,12 +154,16 @@ public record ImportacionFilaError(int Fila, string Campo, string Mensaje);
 public record EquipoActivoDto(
     Guid Id, string Nombre, CategoriaEquipo Categoria, string? Marca, string? Modelo,
     string? NumeroSerie, DateOnly? FechaInstalacion, DateOnly? GarantiaHasta,
-    string? Ubicacion, string? Observaciones);
+    string? Ubicacion, string? Observaciones,
+    EstadoEquipoActivo Estado);
 
 public record CrearEquipoActivoRequest(
     string Nombre, CategoriaEquipo Categoria, string? Marca, string? Modelo,
     string? NumeroSerie, DateOnly? FechaInstalacion, DateOnly? GarantiaHasta,
     string? Ubicacion, string? Observaciones);
+
+/// <summary>Cambia el estado operativo de un equipo (seccion 7).</summary>
+public record CambiarEstadoEquipoRequest(EstadoEquipoActivo Estado);
 
 // ----- Resumen / Completitud -----
 public record ResumenMiCopropiedadDto(
