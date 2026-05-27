@@ -24,6 +24,10 @@ public class RolesService : IRolesService
 
     public async Task<IReadOnlyList<RolDto>> ListarRolesAsync(CancellationToken ct)
     {
+        // Garantiza que existan los roles base (globales) con su matriz por defecto y que los
+        // usuarios de la copropiedad activa esten linkeados a su rol (idempotente).
+        await EnsureRolesBaseAsync(ct);
+
         var roles = await _db.RolesCopropiedad
             .AsNoTracking()
             .OrderBy(r => r.Tipo).ThenBy(r => r.Nombre)
@@ -204,5 +208,41 @@ public class RolesService : IRolesService
             .Where(p => p.RolId == ut.RolId && p.Habilitado)
             .Select(p => new PermisoMatrizDto(p.ModuloCodigo, p.Accion, p.Habilitado, p.NivelDato))
             .ToListAsync(ct);
+    }
+
+    public async Task<string?> GetRolActorAsync(Guid personaId, CancellationToken ct)
+    {
+        // El query filter / RLS limitan a la copropiedad activa.
+        var ut = await _db.UsuariosTenant
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.PersonaId == personaId && u.Estado == EstadoUsuarioTenant.Activo, ct);
+        return ut?.Rol;
+    }
+
+    // Nombres canonicos del catalogo de roles base (sembrado por la migracion
+    // AddUsuariosRolesModulo25). Mapea nombres legacy de seeds antiguos.
+    private static string CanonRol(string rol) => rol switch
+    {
+        "Consejo" => "Consejero",
+        "Personal Interno" => "Operario",
+        _ => rol
+    };
+
+    public async Task EnsureRolesBaseAsync(CancellationToken ct)
+    {
+        // El catalogo de roles base/extendidos es global (tenant_id NULL) y lo siembra la
+        // migracion. Aqui SOLO linkeamos los usuarios de la copropiedad activa a su rol por
+        // nombre (idempotente) - no creamos roles para no duplicar.
+        var sinRol = await _db.UsuariosTenant.Where(u => u.RolId == null).ToListAsync(ct);
+        if (sinRol.Count == 0) return;
+
+        var roles = await _db.RolesCopropiedad.Where(r => r.Tipo == TipoRol.Base).ToListAsync(ct);
+        var linked = false;
+        foreach (var ut in sinRol)
+        {
+            var rol = roles.FirstOrDefault(x => x.Nombre == CanonRol(ut.Rol));
+            if (rol != null) { ut.RolId = rol.Id; linked = true; }
+        }
+        if (linked) await _db.SaveChangesAsync(ct);
     }
 }

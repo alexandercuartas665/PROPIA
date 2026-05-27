@@ -47,4 +47,18 @@ public interface IRolesService
 
     /// <summary>Evaluacion de permisos efectivos para una persona/copropiedad. Usado por modulos para autorizar.</summary>
     Task<IReadOnlyList<PermisoMatrizDto>> GetPermisosEfectivosAsync(Guid personaId, CancellationToken ct);
+
+    /// <summary>
+    /// Rol (string) del actor en la copropiedad ACTIVA (tenant del JWT). Devuelve null si no hay
+    /// vinculo activo. Usado por el enforcement de autorizacion por rol (P0) mientras la matriz
+    /// granular rol_permisos no este sembrada.
+    /// </summary>
+    Task<string?> GetRolActorAsync(Guid personaId, CancellationToken ct);
+
+    /// <summary>
+    /// Idempotente: crea los roles base (globales) con su matriz por defecto si no existen y
+    /// linkea los usuarios de la copropiedad activa a su rol base por nombre. Habilita que el
+    /// Administrador edite la matriz en /configuracion/roles y que el enforcement use permisos.
+    /// </summary>
+    Task EnsureRolesBaseAsync(CancellationToken ct);
 }

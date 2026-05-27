@@ -147,8 +147,8 @@ public static class DemoSeeder
         var perfiles = new[]
         {
             (Email: adminEmail,            Nombres: "Admin",    Apellidos: "Delegado Demo", Rol: "Administrador"),
-            (Email: "consejo@demo.propia",  Nombres: "Carlos",   Apellidos: "Consejo Demo",  Rol: "Consejo"),
-            (Email: "personal@demo.propia", Nombres: "Lucia",    Apellidos: "Personal Demo", Rol: "Personal Interno"),
+            (Email: "consejo@demo.propia",  Nombres: "Carlos",   Apellidos: "Consejo Demo",  Rol: "Consejero"),
+            (Email: "personal@demo.propia", Nombres: "Lucia",    Apellidos: "Personal Demo", Rol: "Operario"),
         };
 
         foreach (var p in perfiles)

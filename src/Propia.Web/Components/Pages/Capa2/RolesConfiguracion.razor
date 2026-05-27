@@ -25,6 +25,12 @@
     return;
 }
 
+@if (_sinPermiso)
+{
+    <SinPermiso />
+    return;
+}
+
 @if (_rolEditando is not null)
 {
     @* ==================== Vista edicion de matriz ==================== *@
@@ -181,6 +187,7 @@ else
 @code {
     private string? _jwt;
     private bool _busy;
+    private bool _sinPermiso;
     private string? _msg; private string _msgClass = "alert-info";
 
     private List<RolDto>? _roles;
@@ -219,7 +226,10 @@ else
         try
         {
             var http = Auth();
-            _roles = await http.GetFromJsonAsync<List<RolDto>>("/api/roles") ?? new();
+            var resp = await http.GetAsync("/api/roles");
+            if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden) { _sinPermiso = true; _roles = new(); return; }
+            resp.EnsureSuccessStatusCode();
+            _roles = await resp.Content.ReadFromJsonAsync<List<RolDto>>() ?? new();
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
     }

@@ -20,6 +20,12 @@
     return;
 }
 
+@if (_sinPermiso)
+{
+    <SinPermiso />
+    return;
+}
+
 @* KPIs por estado *@
 <div class="row g-3 mb-3">
     <div class="col-md-3">
@@ -256,6 +262,7 @@ else
     private EstadoUsuarioTenant _tab = EstadoUsuarioTenant.Activo;
     private string _query = "";
     private bool _busy;
+    private bool _sinPermiso;
     private string? _msg; private string _msgClass = "alert-info";
 
     private List<UsuarioListaDto>? _usuarios;
@@ -294,7 +301,10 @@ else
         try
         {
             var http = Auth();
-            _usuarios = await http.GetFromJsonAsync<List<UsuarioListaDto>>($"/api/usuarios?q={Uri.EscapeDataString(_query)}") ?? new();
+            var resp = await http.GetAsync($"/api/usuarios?q={Uri.EscapeDataString(_query)}");
+            if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden) { _sinPermiso = true; _usuarios = new(); _pendientes = new(); return; }
+            resp.EnsureSuccessStatusCode();
+            _usuarios = await resp.Content.ReadFromJsonAsync<List<UsuarioListaDto>>() ?? new();
             _pendientes = await http.GetFromJsonAsync<List<InvitacionDto>>("/api/usuarios/invitaciones") ?? new();
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }

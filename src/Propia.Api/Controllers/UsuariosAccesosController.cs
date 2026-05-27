@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
 using Propia.Application.UsuariosAccesos;
 using Propia.Domain.Enums;
 
@@ -12,6 +13,7 @@ namespace Propia.Api.Controllers;
 [ApiController]
 [Route("api/usuarios")]
 [Authorize]
+[RequierePermiso(ModuloCodigo.UsuariosAccesos, AccionPermiso.Ver)]  // P0: requiere permiso en la matriz de roles (Admin siempre pasa)
 public class UsuariosAccesosController : ControllerBase
 {
     private readonly IUsuariosService _svc;
@@ -104,6 +106,7 @@ public class InvitacionesPublicasController : ControllerBase
 [ApiController]
 [Route("api/roles")]
 [Authorize]
+[RequierePermiso(ModuloCodigo.UsuariosAccesos, AccionPermiso.Ver)]  // P0: matriz de roles (Admin siempre pasa)
 public class RolesController : ControllerBase
 {
     private readonly IRolesService _svc;
