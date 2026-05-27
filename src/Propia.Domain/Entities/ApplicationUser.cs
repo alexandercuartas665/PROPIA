@@ -26,4 +26,10 @@ public class ApplicationUser : IdentityUser<Guid>
     /// se respeta la preferencia del sistema operativo (prefers-color-scheme). Spec 2026-05.
     /// </summary>
     public string? UiTheme { get; set; }
+
+    /// <summary>
+    /// Secciones de Mi Copropiedad (2.3) colapsadas por el usuario, como CSV de claves
+    /// (ej. "srv,zon,eq"). Persiste el estado expandido/colapsado por usuario (RN-24).
+    /// </summary>
+    public string? MiCopropiedadSeccionesColapsadas { get; set; }
 }

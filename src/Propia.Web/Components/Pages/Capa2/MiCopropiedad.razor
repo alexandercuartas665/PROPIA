@@ -933,7 +933,16 @@ else
     private NuevaZona _nuevaZona = new();
     private NuevoEquipo _nuevoEquipo = new();
 
-    private void ToggleSec(string s) => _secciones[s] = !_secciones[s];
+    private async Task ToggleSec(string s)
+    {
+        _secciones[s] = !_secciones[s];
+        // Persistir estado por usuario (RN-24). No bloqueante.
+        if (_jwt is null) return;
+        var colapsadas = string.Join(",", _secciones.Where(kv => !kv.Value).Select(kv => kv.Key));
+        try { await Auth().PutAsJsonAsync("/api/preferencias/mi-copropiedad-secciones", new { colapsadas }); } catch { }
+    }
+
+    private record SeccionesPref(string? Colapsadas);
 
     // Wizard guiado (frente E) - abre la seccion + intenta scrollear (best-effort).
     private bool _showWizardGuia;
@@ -1061,6 +1070,19 @@ else
 
             // Bitacora de cambios (RN-06)
             _bitacora = await http.GetFromJsonAsync<List<BitacoraEntradaDto>>("/api/mi-copropiedad/bitacora?limit=30") ?? new();
+
+            // Estado de secciones por usuario (RN-24): restaurar colapsadas guardadas
+            try
+            {
+                var sec = await http.GetFromJsonAsync<SeccionesPref>("/api/preferencias/mi-copropiedad-secciones");
+                if (!string.IsNullOrWhiteSpace(sec?.Colapsadas))
+                {
+                    var colapsadas = sec!.Colapsadas!.Split(',', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
+                    foreach (var key in _secciones.Keys.ToList())
+                        _secciones[key] = !colapsadas.Contains(key);
+                }
+            }
+            catch { /* sin preferencia guardada: se mantienen los defaults */ }
         }
         catch (Exception ex) { _loadError = ex.Message; }
         finally { _busy = false; }

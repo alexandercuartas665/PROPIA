@@ -48,4 +48,30 @@ public class PreferenciasController : ControllerBase
         var res = await _users.UpdateAsync(u);
         return res.Succeeded ? NoContent() : BadRequest(new { error = "No se pudo guardar la preferencia." });
     }
+
+    // ---- Estado de secciones de Mi Copropiedad (RN-24) ----
+    public record SeccionesDto(string? Colapsadas);
+    public record SetSeccionesRequest(string? Colapsadas);
+
+    [HttpGet("mi-copropiedad-secciones")]
+    public async Task<IActionResult> GetSecciones(CancellationToken ct)
+    {
+        var userId = User.FindFirstValue("user_id") ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userId, out var uid)) return Unauthorized();
+        var u = await _users.FindByIdAsync(uid.ToString());
+        if (u is null) return NotFound();
+        return Ok(new SeccionesDto(u.MiCopropiedadSeccionesColapsadas));
+    }
+
+    [HttpPut("mi-copropiedad-secciones")]
+    public async Task<IActionResult> SetSecciones([FromBody] SetSeccionesRequest req, CancellationToken ct)
+    {
+        var userId = User.FindFirstValue("user_id") ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userId, out var uid)) return Unauthorized();
+        var u = await _users.FindByIdAsync(uid.ToString());
+        if (u is null) return NotFound();
+        u.MiCopropiedadSeccionesColapsadas = string.IsNullOrWhiteSpace(req?.Colapsadas) ? null : req!.Colapsadas.Trim();
+        var res = await _users.UpdateAsync(u);
+        return res.Succeeded ? NoContent() : BadRequest(new { error = "No se pudo guardar." });
+    }
 }
