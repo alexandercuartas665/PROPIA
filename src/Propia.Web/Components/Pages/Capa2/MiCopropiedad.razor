@@ -629,7 +629,7 @@ else
         {
             <div class="table-responsive mb-3">
                 <table class="table table-sm">
-                    <thead class="small text-muted"><tr><th>Tipo</th><th>Proveedor</th><th>Inicio</th><th>Fin</th><th class="text-end">Valor</th><th></th></tr></thead>
+                    <thead class="small text-muted"><tr><th>Tipo</th><th>Proveedor</th><th>Inicio</th><th>Fin</th><th>Estado</th><th class="text-end">Valor</th><th></th></tr></thead>
                     <tbody class="small">
                         @foreach (var c in _contratos)
                         {
@@ -638,6 +638,18 @@ else
                                 <td>@c.Proveedor</td>
                                 <td>@c.FechaInicio</td>
                                 <td>@(c.FechaFin?.ToString() ?? "-")</td>
+                                <td>
+                                    <span class="badge @ContratoEstadoClass(c.Estado)">@ContratoEstadoLabel(c.Estado)</span>
+                                    @if (c.AlertaVencimiento) { <span class="badge bg-warning text-dark ms-1" title="Alerta de vencimiento">Vence en @c.DiasParaVencer d</span> }
+                                    @if (c.Estado != EstadoContrato.Vencido)
+                                    {
+                                        <select class="form-select form-select-sm d-inline-block ms-1" style="width:auto"
+                                                @onchange="(e) => CambiarEstadoContrato(c, e)">
+                                            <option value="Vigente" selected="@(c.Estado == EstadoContrato.Vigente)">Vigente</option>
+                                            <option value="EnRenovacion" selected="@(c.Estado == EstadoContrato.EnRenovacion)">En renovacion</option>
+                                        </select>
+                                    }
+                                </td>
                                 <td class="text-end">@(c.ValorMensual?.ToString("N0") ?? "-")</td>
                                 <td><button class="btn btn-sm btn-outline-danger" @onclick="() => EliminarContrato(c.Id)">X</button></td>
                             </tr>
@@ -1456,6 +1468,29 @@ else
         else Msg(await resp.Content.ReadAsStringAsync(), false);
     }
     private async Task EliminarContrato(Guid id) { await Auth().DeleteAsync($"/api/mi-copropiedad/contratos/{id}"); await CargarAsync(); }
+
+    private async Task CambiarEstadoContrato(ContratoServicioDto c, ChangeEventArgs ev)
+    {
+        if (!Enum.TryParse<EstadoContrato>(ev.Value?.ToString(), out var estado)) return;
+        var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/{c.Id}",
+            new ActualizarContratoRequest(estado, c.DiasAnticipacionAlerta));
+        if (resp.IsSuccessStatusCode) { await CargarAsync(); Msg("Contrato actualizado.", true); }
+        else Msg(await resp.Content.ReadAsStringAsync(), false);
+    }
+    private static string ContratoEstadoLabel(EstadoContrato e) => e switch
+    {
+        EstadoContrato.Vigente => "Vigente",
+        EstadoContrato.EnRenovacion => "En renovacion",
+        EstadoContrato.Vencido => "Vencido",
+        _ => e.ToString()
+    };
+    private static string ContratoEstadoClass(EstadoContrato e) => e switch
+    {
+        EstadoContrato.Vigente => "bg-success",
+        EstadoContrato.EnRenovacion => "bg-warning text-dark",
+        EstadoContrato.Vencido => "bg-danger",
+        _ => "bg-light text-dark"
+    };
 
     private async Task CrearZona()
     {

@@ -20,4 +20,10 @@ public class ContratoServicio : TenantEntity
 
     /// <summary>Texto libre: "Renovacion automatica con 30 dias de aviso", etc.</summary>
     public string? Observaciones { get; set; }
+
+    /// <summary>Estado declarado por el admin. "Vencido" se deriva por fecha (no se setea a mano).</summary>
+    public EstadoContrato Estado { get; set; } = EstadoContrato.Vigente;
+
+    /// <summary>Dias de anticipacion para alertar el vencimiento (RN-15, default 30).</summary>
+    public int DiasAnticipacionAlerta { get; set; } = 30;
 }

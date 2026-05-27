@@ -682,12 +682,11 @@ public class MiCopropiedadService : IMiCopropiedadService
 
     public async Task<IReadOnlyList<ContratoServicioDto>> ListContratosAsync(CancellationToken ct)
     {
-        return await _db.ContratosServicio
+        var contratos = await _db.ContratosServicio
             .AsNoTracking()
             .OrderBy(c => c.Tipo)
-            .Select(c => new ContratoServicioDto(c.Id, c.Tipo, c.Proveedor, c.NitProveedor,
-                c.Contacto, c.FechaInicio, c.FechaFin, c.ValorMensual, c.Observaciones))
             .ToListAsync(ct);
+        return contratos.Select(ToContratoDto).ToList();
     }
 
     public async Task<ContratoServicioDto> CrearContratoAsync(CrearContratoServicioRequest req, CancellationToken ct)
@@ -703,12 +702,34 @@ public class MiCopropiedadService : IMiCopropiedadService
             FechaInicio = req.FechaInicio,
             FechaFin = req.FechaFin,
             ValorMensual = req.ValorMensual,
-            Observaciones = req.Observaciones
+            Observaciones = req.Observaciones,
+            DiasAnticipacionAlerta = req.DiasAnticipacionAlerta <= 0 ? 30 : req.DiasAnticipacionAlerta
         };
         _db.ContratosServicio.Add(c);
         await _db.SaveChangesAsync(ct);
-        return new ContratoServicioDto(c.Id, c.Tipo, c.Proveedor, c.NitProveedor,
-            c.Contacto, c.FechaInicio, c.FechaFin, c.ValorMensual, c.Observaciones);
+        return ToContratoDto(c);
+    }
+
+    public async Task<bool> ActualizarContratoAsync(Guid contratoId, ActualizarContratoRequest req, CancellationToken ct)
+    {
+        var c = await _db.ContratosServicio.FirstOrDefaultAsync(x => x.Id == contratoId, ct);
+        if (c is null) return false;
+        // "Vencido" se deriva por fecha; el admin solo declara Vigente o EnRenovacion.
+        c.Estado = req.Estado == EstadoContrato.Vencido ? EstadoContrato.Vigente : req.Estado;
+        c.DiasAnticipacionAlerta = req.DiasAnticipacionAlerta <= 0 ? 30 : req.DiasAnticipacionAlerta;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    private static ContratoServicioDto ToContratoDto(ContratoServicio c)
+    {
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        int? dias = c.FechaFin.HasValue ? c.FechaFin.Value.DayNumber - hoy.DayNumber : null;
+        var estado = (c.FechaFin.HasValue && c.FechaFin.Value < hoy) ? EstadoContrato.Vencido : c.Estado;
+        var alerta = dias is >= 0 && dias <= c.DiasAnticipacionAlerta;
+        return new ContratoServicioDto(c.Id, c.Tipo, c.Proveedor, c.NitProveedor, c.Contacto,
+            c.FechaInicio, c.FechaFin, c.ValorMensual, c.Observaciones,
+            estado, c.DiasAnticipacionAlerta, dias, alerta);
     }
 
     public async Task<bool> EliminarContratoAsync(Guid contratoId, CancellationToken ct)

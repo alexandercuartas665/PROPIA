@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Propia.Application.Common;
 using Propia.Domain.Common;
 using Propia.Domain.Entities;
+using Propia.Domain.Enums;
 
 namespace Propia.Infrastructure.Persistence;
 
@@ -410,6 +411,8 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.Contacto).HasMaxLength(200);
             b.Property(x => x.Observaciones).HasMaxLength(1000);
             b.Property(x => x.ValorMensual).HasPrecision(12, 2);
+            b.Property(x => x.Estado).HasDefaultValue(EstadoContrato.Vigente);
+            b.Property(x => x.DiasAnticipacionAlerta).HasDefaultValue(30);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => x.FechaFin);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);

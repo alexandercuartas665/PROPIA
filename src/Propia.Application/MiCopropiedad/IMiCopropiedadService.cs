@@ -74,6 +74,7 @@ public interface IMiCopropiedadService
     // Seccion 5 - Servicios (contratos)
     Task<IReadOnlyList<ContratoServicioDto>> ListContratosAsync(CancellationToken ct);
     Task<ContratoServicioDto> CrearContratoAsync(CrearContratoServicioRequest req, CancellationToken ct);
+    Task<bool> ActualizarContratoAsync(Guid contratoId, ActualizarContratoRequest req, CancellationToken ct);
     Task<bool> EliminarContratoAsync(Guid contratoId, CancellationToken ct);
 
     // Seccion 6 - Zonas Comunes

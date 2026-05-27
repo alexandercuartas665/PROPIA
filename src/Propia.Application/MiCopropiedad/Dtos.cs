@@ -89,11 +89,17 @@ public record VincularPersonaPorDocumentoRequest(string Documento, string Nombre
 // ----- Servicios: Contratos (seccion 5) -----
 public record ContratoServicioDto(
     Guid Id, TipoServicio Tipo, string Proveedor, string? NitProveedor, string? Contacto,
-    DateOnly FechaInicio, DateOnly? FechaFin, decimal? ValorMensual, string? Observaciones);
+    DateOnly FechaInicio, DateOnly? FechaFin, decimal? ValorMensual, string? Observaciones,
+    EstadoContrato Estado, int DiasAnticipacionAlerta,
+    int? DiasParaVencer, bool AlertaVencimiento);
 
 public record CrearContratoServicioRequest(
     TipoServicio Tipo, string Proveedor, string? NitProveedor, string? Contacto,
-    DateOnly FechaInicio, DateOnly? FechaFin, decimal? ValorMensual, string? Observaciones);
+    DateOnly FechaInicio, DateOnly? FechaFin, decimal? ValorMensual, string? Observaciones,
+    int DiasAnticipacionAlerta = 30);
+
+/// <summary>Actualiza estado (Vigente/EnRenovacion) y dias de alerta de un contrato.</summary>
+public record ActualizarContratoRequest(EstadoContrato Estado, int DiasAnticipacionAlerta);
 
 // ----- Zonas Comunes (seccion 6) -----
 public record ZonaComunDto(

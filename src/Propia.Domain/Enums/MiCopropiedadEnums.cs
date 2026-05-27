@@ -51,6 +51,14 @@ public enum CategoriaEquipo
     Otros = 8
 }
 
+/// <summary>Estado de un contrato de servicio (spec 2.3 seccion 5). Vencido se auto-deriva por fecha.</summary>
+public enum EstadoContrato
+{
+    Vigente = 1,
+    EnRenovacion = 2,
+    Vencido = 3
+}
+
 /// <summary>Tipo de servicio externo contratado por la copropiedad.</summary>
 public enum TipoServicio
 {

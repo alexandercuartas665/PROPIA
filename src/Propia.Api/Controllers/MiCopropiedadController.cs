@@ -225,6 +225,9 @@ public class MiCopropiedadController : ControllerBase
         try { return Created("", await _svc.CrearContratoAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [HttpPut("contratos/{id:guid}")]
+    public async Task<IActionResult> ActualizarContrato(Guid id, [FromBody] ActualizarContratoRequest req, CancellationToken ct)
+        => await _svc.ActualizarContratoAsync(id, req, ct) ? NoContent() : NotFound();
     [HttpDelete("contratos/{id:guid}")]
     public async Task<IActionResult> EliminarContrato(Guid id, CancellationToken ct)
         => await _svc.EliminarContratoAsync(id, ct) ? NoContent() : NotFound();
