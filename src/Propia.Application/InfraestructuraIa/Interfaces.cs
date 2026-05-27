@@ -56,6 +56,13 @@ public interface IAiAgentService
     Task<AiAgentPromptDto?> AddPromptAsync(CreateAgentPromptRequest request, CancellationToken ct = default);
     Task<AiAgentPromptDto?> UpdatePromptAsync(Guid id, UpdateAgentPromptRequest request, CancellationToken ct = default);
     Task<bool> DeletePromptAsync(Guid id, CancellationToken ct = default);
+
+    // ----- Tools MCP habilitadas por agente (Capa MCP) -----
+    /// <summary>Tools MCP que el agente tiene habilitadas (la seleccion persistida).</summary>
+    Task<IReadOnlyList<AgentMcpToolSelection>> GetMcpToolsAsync(Guid agentId, CancellationToken ct = default);
+
+    /// <summary>Reemplaza por completo la seleccion de tools MCP del agente. Devuelve false si el agente no existe.</summary>
+    Task<bool> SetMcpToolsAsync(Guid agentId, IReadOnlyList<AgentMcpToolSelection> tools, CancellationToken ct = default);
 }
 
 /// <summary>Inferencia de IA (probar un agente). Resuelve credenciales del proveedor desde la config global de SuperAdmin.</summary>

@@ -183,6 +183,45 @@ public sealed class AiAgentService : IAiAgentService
         return true;
     }
 
+    public async Task<IReadOnlyList<AgentMcpToolSelection>> GetMcpToolsAsync(Guid agentId, CancellationToken ct = default)
+    {
+        return await _db.AiAgentMcpTools.AsNoTracking()
+            .Where(t => t.AgentId == agentId)
+            .OrderBy(t => t.ConnectionCode).ThenBy(t => t.ToolName)
+            .Select(t => new AgentMcpToolSelection(t.ConnectionCode, t.ToolName))
+            .ToListAsync(ct);
+    }
+
+    public async Task<bool> SetMcpToolsAsync(Guid agentId, IReadOnlyList<AgentMcpToolSelection> tools, CancellationToken ct = default)
+    {
+        if (_tenant.CurrentTenantId is not Guid tenantId) { return false; }
+        var agent = await _db.AiAgents.FirstOrDefaultAsync(a => a.Id == agentId, ct);
+        if (agent is null) { return false; }
+
+        // Reemplazo total: borro las actuales y vuelvo a insertar la seleccion (deduplicada
+        // y validada contra el catalogo de conexiones conocidas).
+        var actuales = await _db.AiAgentMcpTools.Where(t => t.AgentId == agentId).ToListAsync(ct);
+        _db.AiAgentMcpTools.RemoveRange(actuales);
+
+        var vistos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var sel in tools)
+        {
+            if (string.IsNullOrWhiteSpace(sel.ConnectionCode) || string.IsNullOrWhiteSpace(sel.ToolName)) { continue; }
+            if (McpConnectionCatalog.Find(sel.ConnectionCode) is null) { continue; }
+            var key = $"{sel.ConnectionCode}|{sel.ToolName}";
+            if (!vistos.Add(key)) { continue; }
+            _db.AiAgentMcpTools.Add(new AiAgentMcpTool
+            {
+                TenantId = tenantId,
+                AgentId = agentId,
+                ConnectionCode = sel.ConnectionCode.Trim(),
+                ToolName = sel.ToolName.Trim()
+            });
+        }
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
     private static AiAgentDto Map(AiAgent a, int resourceCount) =>
         new(a.Id, a.Name, a.Role, a.Provider, a.Model, a.SystemPrompt, a.IsActive, a.SortOrder, resourceCount);
 

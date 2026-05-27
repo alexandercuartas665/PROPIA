@@ -297,6 +297,71 @@ else
                     {
                         <button class="btn btn-sm btn-link mt-1 p-0" @onclick="LimpiarChat" disabled="@_busy">Limpiar conversacion</button>
                     }
+
+                    @* ----- Conexiones MCP: herramientas que el agente puede usar ----- *@
+                    <div class="mt-4">
+                        <div class="small fw-semibold text-uppercase" style="color: var(--propia-primary);">Conexiones MCP</div>
+                        <p class="text-muted" style="font-size:11.5px;">Elige que herramientas puede usar el agente. Al ejecutarlas hereda tu copropiedad y tus permisos.</p>
+
+                        @if (_mcpConnections is null)
+                        {
+                            <div class="text-muted small">Cargando conexiones...</div>
+                        }
+                        else if (_mcpConnections.Count == 0)
+                        {
+                            <div class="text-muted small">No hay conexiones MCP configuradas.</div>
+                        }
+                        else
+                        {
+                            @foreach (var con in _mcpConnections)
+                            {
+                                var c = con;
+                                <div class="mcp-acc">
+                                    <button type="button" class="mcp-acc-head" @onclick="() => ToggleConn(c.Code)">
+                                        <span class="mcp-acc-caret">@(IsExpanded(c.Code) ? "▾" : "▸")</span>
+                                        <span class="fw-semibold">@c.DisplayName</span>
+                                        @if (c.Reachable)
+                                        {
+                                            <span class="badge ms-auto" style="background: rgba(89,85,209,.12); color: var(--propia-primary);">@CountEnabled(c.Code)/@c.Tools.Count</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-danger ms-auto">sin conexion</span>
+                                        }
+                                    </button>
+                                    @if (IsExpanded(c.Code))
+                                    {
+                                        <div class="mcp-acc-body">
+                                            @if (!c.Reachable)
+                                            {
+                                                <div class="text-danger small">No se pudo contactar el servidor MCP: @c.Error</div>
+                                            }
+                                            else
+                                            {
+                                                <div class="small text-muted mb-2">@c.Description</div>
+                                                @foreach (var t in c.Tools)
+                                                {
+                                                    var tool = t;
+                                                    <label class="mcp-tool">
+                                                        <input type="checkbox" checked="@IsToolEnabled(c.Code, tool.Name)"
+                                                               @onchange="e => ToggleTool(c.Code, tool.Name, (bool)e.Value!)" />
+                                                        <span class="mcp-tool-txt">
+                                                            <span class="mcp-tool-name">@tool.Name</span>
+                                                            @if (!string.IsNullOrWhiteSpace(tool.Description)) { <span class="mcp-tool-desc">@tool.Description</span> }
+                                                        </span>
+                                                    </label>
+                                                }
+                                                <div class="d-flex align-items-center gap-2 mt-2">
+                                                    <button class="btn btn-sm btn-dark" @onclick="GuardarMcpAsync" disabled="@_mcpSaving">@(_mcpSaving ? "Guardando..." : "Guardar herramientas")</button>
+                                                    @if (_mcpMsg is not null) { <span class="small @(_mcpOk ? "text-success" : "text-danger")">@_mcpMsg</span> }
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        }
+                    </div>
                 }
             </div>
         </div>
@@ -335,6 +400,18 @@ else
     .ag-phone { border: 1px solid #e3e3ec; border-radius: 10px; padding: 8px 10px; background: #fff; }
     .ag-phone-toggle { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; cursor: pointer; margin: 0; }
     .ag-phone-row { display: flex; gap: 6px; margin-top: 8px; }
+
+    .mcp-acc { border: 1px solid #e3e3ec; border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
+    .mcp-acc-head { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: #f7f7fb; padding: 9px 12px; cursor: pointer; font-size: 13px; }
+    .mcp-acc-head:hover { background: #f0f0f8; }
+    .mcp-acc-caret { color: var(--propia-primary); width: 12px; }
+    .mcp-acc-body { padding: 10px 12px; }
+    .mcp-tool { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; border-top: 1px solid #f0f0f5; cursor: pointer; margin: 0; }
+    .mcp-tool:first-of-type { border-top: 0; }
+    .mcp-tool input { margin-top: 3px; }
+    .mcp-tool-txt { display: flex; flex-direction: column; }
+    .mcp-tool-name { font-family: ui-monospace, monospace; font-size: 12px; color: #2d2d44; }
+    .mcp-tool-desc { font-size: 11.5px; color: #8a8a9a; line-height: 1.35; }
 </style>
 
 @code {
@@ -369,6 +446,14 @@ else
     private Guid _phoneLineId;
     private string? _phoneNumber;
     private string? _phoneInfo;
+
+    // Conexiones MCP (herramientas habilitadas por agente)
+    private List<AgentMcpConnectionDto>? _mcpConnections;
+    private readonly Dictionary<string, HashSet<string>> _mcpEnabled = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _mcpExpanded = new(StringComparer.OrdinalIgnoreCase);
+    private bool _mcpSaving;
+    private bool _mcpOk;
+    private string? _mcpMsg;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -432,6 +517,52 @@ else
             if (_phoneLineId == Guid.Empty) _phoneLineId = _connectedLines.FirstOrDefault()?.Id ?? Guid.Empty;
         }
         catch { _connectedLines = new(); }
+
+        await LoadMcpAsync(id);
+    }
+
+    // ----- Conexiones MCP -----
+    private async Task LoadMcpAsync(Guid agentId)
+    {
+        _mcpConnections = null; _mcpEnabled.Clear(); _mcpMsg = null;
+        try
+        {
+            var cons = await Auth().GetFromJsonAsync<List<AgentMcpConnectionDto>>($"/api/ia/agentes/{agentId}/mcp") ?? new();
+            foreach (var c in cons)
+            {
+                _mcpEnabled[c.Code] = c.Tools.Where(t => t.Enabled).Select(t => t.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            }
+            if (_mcpExpanded.Count == 0 && cons.Count > 0) _mcpExpanded.Add(cons[0].Code);
+            _mcpConnections = cons;
+        }
+        catch (Exception ex) { _mcpOk = false; _mcpMsg = "No se pudieron cargar las conexiones: " + ex.Message; _mcpConnections = new(); }
+    }
+
+    private bool IsExpanded(string code) => _mcpExpanded.Contains(code);
+    private void ToggleConn(string code) { if (!_mcpExpanded.Add(code)) _mcpExpanded.Remove(code); }
+    private int CountEnabled(string code) => _mcpEnabled.TryGetValue(code, out var s) ? s.Count : 0;
+    private bool IsToolEnabled(string code, string tool) => _mcpEnabled.TryGetValue(code, out var s) && s.Contains(tool);
+
+    private void ToggleTool(string code, string tool, bool on)
+    {
+        if (!_mcpEnabled.TryGetValue(code, out var s)) { s = new(StringComparer.OrdinalIgnoreCase); _mcpEnabled[code] = s; }
+        if (on) { s.Add(tool); } else { s.Remove(tool); }
+        _mcpMsg = null;
+    }
+
+    private async Task GuardarMcpAsync()
+    {
+        if (_detalle is null) return;
+        _mcpSaving = true; _mcpMsg = null;
+        try
+        {
+            var sel = _mcpEnabled.SelectMany(kv => kv.Value.Select(t => new AgentMcpToolSelection(kv.Key, t))).ToList();
+            var resp = await Auth().PutAsJsonAsync($"/api/ia/agentes/{_detalle.Agent.Id}/mcp", new SaveAgentMcpToolsRequest(sel));
+            _mcpOk = resp.IsSuccessStatusCode;
+            _mcpMsg = _mcpOk ? "Guardado." : $"Error HTTP {(int)resp.StatusCode}";
+        }
+        catch (Exception ex) { _mcpOk = false; _mcpMsg = ex.Message; }
+        finally { _mcpSaving = false; }
     }
 
     private async Task Cerrar()

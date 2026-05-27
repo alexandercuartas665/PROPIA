@@ -19,19 +19,22 @@ public class IaController : ControllerBase
     private readonly IAiAgentService _agents;
     private readonly IAiInferenceService _inference;
     private readonly IAiUsageService _usage;
+    private readonly IMcpGateway _mcp;
 
     public IaController(
         IWhatsAppLineService lines,
         IWhatsAppConnectorService connector,
         IAiAgentService agents,
         IAiInferenceService inference,
-        IAiUsageService usage)
+        IAiUsageService usage,
+        IMcpGateway mcp)
     {
         _lines = lines;
         _connector = connector;
         _agents = agents;
         _inference = inference;
         _usage = usage;
+        _mcp = mcp;
     }
 
     // ---------- Lineas WhatsApp ----------
@@ -150,6 +153,55 @@ public class IaController : ControllerBase
     [HttpDelete("agentes/prompts/{id:guid}")]
     public async Task<IActionResult> EliminarPrompt(Guid id, CancellationToken ct)
         => await _agents.DeletePromptAsync(id, ct) ? NoContent() : NotFound();
+
+    // ---------- Tools MCP del agente (Capa MCP) ----------
+    /// <summary>
+    /// Devuelve, por cada conexion MCP del catalogo, sus tools EN VIVO (tools/list) marcando
+    /// cuales tiene habilitadas este agente. Si una conexion no responde, devuelve Reachable=false.
+    /// </summary>
+    [HttpGet("agentes/{id:guid}/mcp")]
+    public async Task<IActionResult> ListMcpTools(Guid id, CancellationToken ct)
+    {
+        var agente = await _agents.GetAsync(id, ct);
+        if (agente is null) { return NotFound(); }
+
+        var bearer = BearerToken();
+        if (string.IsNullOrEmpty(bearer)) { return Unauthorized(); }
+
+        var seleccion = (await _agents.GetMcpToolsAsync(id, ct))
+            .Select(s => $"{s.ConnectionCode}|{s.ToolName}")
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var resultado = new List<AgentMcpConnectionDto>();
+        foreach (var con in McpConnectionCatalog.All)
+        {
+            try
+            {
+                var tools = await _mcp.ListToolsAsync(con.Code, bearer, ct);
+                var toolDtos = tools
+                    .Select(t => new AgentMcpToolDto(t.Name, t.Description, seleccion.Contains($"{con.Code}|{t.Name}")))
+                    .ToList();
+                resultado.Add(new AgentMcpConnectionDto(con.Code, con.DisplayName, con.Description, true, null, toolDtos));
+            }
+            catch (Exception ex)
+            {
+                resultado.Add(new AgentMcpConnectionDto(con.Code, con.DisplayName, con.Description, false, ex.Message, Array.Empty<AgentMcpToolDto>()));
+            }
+        }
+        return Ok(resultado);
+    }
+
+    /// <summary>Reemplaza la seleccion completa de tools MCP del agente.</summary>
+    [HttpPut("agentes/{id:guid}/mcp")]
+    public async Task<IActionResult> SaveMcpTools(Guid id, [FromBody] SaveAgentMcpToolsRequest req, CancellationToken ct)
+        => await _agents.SetMcpToolsAsync(id, req.Tools ?? Array.Empty<AgentMcpToolSelection>(), ct) ? NoContent() : NotFound();
+
+    private string? BearerToken()
+    {
+        var raw = Request.Headers.Authorization.ToString();
+        const string prefix = "Bearer ";
+        return raw.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? raw[prefix.Length..].Trim() : null;
+    }
 
     // ---------- Probar agente + consumo ----------
     [HttpPost("agentes/{id:guid}/probar")]

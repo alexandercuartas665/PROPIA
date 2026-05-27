@@ -156,6 +156,24 @@ public class AiAgentResource : TenantEntity
 }
 
 /// <summary>
+/// Herramienta MCP habilitada para un agente. Cada fila = (agente, conexion MCP, tool) que el
+/// agente PUEDE usar. La ausencia de fila = no habilitada. El catalogo de conexiones es estatico
+/// (McpConnectionCatalog) y la lista de tools se descubre en vivo del servidor MCP. El agente
+/// nunca puede usar mas que estas tools, y al ejecutarlas hereda el tenant + permisos del usuario.
+/// </summary>
+public class AiAgentMcpTool : TenantEntity
+{
+    public Guid AgentId { get; set; }
+    public AiAgent? Agent { get; set; }
+
+    /// <summary>Codigo de la conexion MCP (ej. "copropiedades"). Ver McpConnectionCatalog.</summary>
+    public string ConnectionCode { get; set; } = null!;
+
+    /// <summary>Nombre de la tool tal cual la expone el servidor MCP (ej. "micopropiedad_resumen").</summary>
+    public string ToolName { get; set; } = null!;
+}
+
+/// <summary>
 /// Registro de consumo de IA de la copropiedad. TODA ejecucion (prueba, chat, automatizacion)
 /// deja un registro con proveedor, modelo, tokens y costo estimado. Base para control de plan
 /// (LimiteLlamadasIaMensual) y para el modulo de Metricas.

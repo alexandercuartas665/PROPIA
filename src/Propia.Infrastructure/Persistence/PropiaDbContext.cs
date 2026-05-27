@@ -244,6 +244,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<AiAgent> AiAgents => Set<AiAgent>();
     public DbSet<AiAgentPrompt> AiAgentPrompts => Set<AiAgentPrompt>();
     public DbSet<AiAgentResource> AiAgentResources => Set<AiAgentResource>();
+    public DbSet<AiAgentMcpTool> AiAgentMcpTools => Set<AiAgentMcpTool>();
     public DbSet<AiUsageLog> AiUsageLogs => Set<AiUsageLog>();
 
     // Modulo 0.2 - Billing y Suscripciones (todo GLOBAL, sin tenant_id)
@@ -2257,6 +2258,17 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.FileName).HasMaxLength(255);
             b.HasIndex(x => new { x.TenantId, x.AgentId });
             b.HasOne(x => x.Agent).WithMany(a => a.Resources).HasForeignKey(x => x.AgentId).OnDelete(DeleteBehavior.Cascade);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<AiAgentMcpTool>(b =>
+        {
+            b.ToTable("ai_agent_mcp_tools");
+            b.Property(x => x.ConnectionCode).IsRequired().HasMaxLength(50);
+            b.Property(x => x.ToolName).IsRequired().HasMaxLength(150);
+            b.HasOne(x => x.Agent).WithMany().HasForeignKey(x => x.AgentId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => new { x.TenantId, x.AgentId });
+            b.HasIndex(x => new { x.AgentId, x.ConnectionCode, x.ToolName }).IsUnique();
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
