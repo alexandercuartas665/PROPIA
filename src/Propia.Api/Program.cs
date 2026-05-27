@@ -1,4 +1,6 @@
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Prometheus;
@@ -142,6 +144,30 @@ builder.Services.AddAuthorization(options =>
               .RequireClaim("is_super_admin", "true"));
 });
 
+// ---- Capa MCP de 2.3 Mi Copropiedad (tool-layer para agentes) ----
+// Servidor MCP sobre HTTP montado en /mcp, detras del MISMO JWT + TenantMiddleware
+// que el resto de la API. El agente presenta el token del usuario: hereda su tenant
+// (RLS) y sus permisos (RBAC). No puede ver ni hacer mas que el usuario.
+// Enums serializados como string para que el agente lea valores legibles (no numeros).
+var mcpJsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+{
+    // Reflection-based resolver: requerido para que el SDK pueda hacer MakeReadOnly().
+    TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver()
+};
+mcpJsonOptions.Converters.Add(new JsonStringEnumConverter());
+builder.Services.AddMcpServer()
+    .WithHttpTransport(o =>
+    {
+        // Stateless: cada POST se procesa en el scope DI del request HTTP (no en una
+        // sesion persistente). CLAVE para multi-tenant: la tool resuelve ITenantContext,
+        // IMiCopropiedadService y PropiaDbContext del MISMO scope donde el TenantMiddleware
+        // ya seteo el tenant del JWT. Sin esto, las tools correrian en el scope de la sesion
+        // (creada en initialize) y RLS bloquearia todo por falta de tenant.
+        o.Stateless = true;
+    })
+    .WithTools<Propia.Api.Mcp.MiCopropiedadConsultaTools>(mcpJsonOptions)
+    .WithTools<Propia.Api.Mcp.MiCopropiedadCreacionTools>(mcpJsonOptions);
+
 var app = builder.Build();
 
 // ---- Pipeline ----
@@ -188,6 +214,10 @@ app.UseWhen(
     branch => branch.UseMiddleware<TenantMiddleware>());
 
 app.MapControllers();
+
+// Endpoint MCP en /mcp. RequireAuthorization fuerza JWT valido; el TenantMiddleware
+// (ya en el pipeline) setea el tenant del claim antes de ejecutar cualquier tool.
+app.MapMcp("/mcp").RequireAuthorization();
 
 // Endpoint /metrics expone counters/histograms en formato Prometheus.
 // En Railway: configurar scrape externo apuntando a /metrics (Grafana Cloud free tier OK).

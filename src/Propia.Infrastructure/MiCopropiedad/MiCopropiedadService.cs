@@ -1149,7 +1149,7 @@ public class MiCopropiedadService : IMiCopropiedadService
     }
 
     /// <summary>Registra una entrada de bitacora (persistencia propia). RN-06.</summary>
-    private async Task RegistrarBitacoraAsync(string categoria, string descripcion, CancellationToken ct)
+    public async Task RegistrarBitacoraAsync(string categoria, string descripcion, CancellationToken ct)
     {
         _db.BitacoraMiCopropiedad.Add(new BitacoraMiCopropiedad
         {
