@@ -52,6 +52,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     // Modulo 2.3 Mi Copropiedad - todas TenantEntity (RLS + tenant_id)
     public DbSet<Torre> Torres => Set<Torre>();
     public DbSet<UnidadPrivada> UnidadesPrivadas => Set<UnidadPrivada>();
+    public DbSet<UnidadVinculo> UnidadVinculos => Set<UnidadVinculo>();
     public DbSet<ZonaComun> ZonasComunes => Set<ZonaComun>();
     public DbSet<EquipoActivo> EquiposActivos => Set<EquipoActivo>();
     public DbSet<ContratoServicio> ContratosServicio => Set<ContratoServicio>();
@@ -351,11 +352,21 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.Numero).IsRequired().HasMaxLength(20);
             b.Property(x => x.Estado).HasMaxLength(50);
             b.Property(x => x.Observaciones).HasMaxLength(1000);
+            b.Property(x => x.MatriculaInmobiliaria).HasMaxLength(50);
             b.Property(x => x.CoeficientePropiedad).HasPrecision(7, 4);
             b.Property(x => x.AreaM2).HasPrecision(10, 2);
             b.HasOne(x => x.Torre).WithMany().HasForeignKey(x => x.TorreId).OnDelete(DeleteBehavior.SetNull);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.TenantId, x.Numero }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<UnidadVinculo>(b =>
+        {
+            b.HasOne(x => x.UnidadPrincipal).WithMany().HasForeignKey(x => x.UnidadPrincipalId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.UnidadAsociada).WithMany().HasForeignKey(x => x.UnidadAsociadaId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.UnidadAsociadaId }).IsUnique();  // una asociada tiene un solo principal
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

@@ -83,6 +83,19 @@ public class MiCopropiedadController : ControllerBase
     public async Task<IActionResult> EliminarUnidad(Guid id, CancellationToken ct)
         => await _svc.EliminarUnidadAsync(id, ct) ? NoContent() : NotFound();
 
+    // ---------- Vinculos entre unidades (RN-09) ----------
+    [HttpGet("unidades/{id:guid}/vinculos")]
+    public async Task<IActionResult> ListVinculos(Guid id, CancellationToken ct) => Ok(await _svc.ListVinculosAsync(id, ct));
+    [HttpPost("unidades/{id:guid}/vinculos")]
+    public async Task<IActionResult> CrearVinculo(Guid id, [FromBody] CrearVinculoUnidadRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.CrearVinculoAsync(id, req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+    [HttpDelete("vinculos/{id:guid}")]
+    public async Task<IActionResult> EliminarVinculo(Guid id, CancellationToken ct)
+        => await _svc.EliminarVinculoAsync(id, ct) ? NoContent() : NotFound();
+
     // ---------- Seccion 2: Tipos personalizados de unidad ----------
     [HttpGet("tipos-unidad")] public async Task<IActionResult> ListTiposUnidad(CancellationToken ct) => Ok(await _svc.ListTiposUnidadCustomAsync(ct));
     [HttpPost("tipos-unidad")]

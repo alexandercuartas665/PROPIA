@@ -23,6 +23,11 @@ public interface IMiCopropiedadService
     Task<UnidadDto> CrearUnidadAsync(CrearUnidadRequest req, CancellationToken ct);
     Task<bool> EliminarUnidadAsync(Guid unidadId, CancellationToken ct);
 
+    // Vinculos entre unidades (principal <-> asociadas, RN-09)
+    Task<IReadOnlyList<UnidadVinculoDto>> ListVinculosAsync(Guid unidadPrincipalId, CancellationToken ct);
+    Task<UnidadVinculoDto> CrearVinculoAsync(Guid unidadPrincipalId, CrearVinculoUnidadRequest req, CancellationToken ct);
+    Task<bool> EliminarVinculoAsync(Guid vinculoId, CancellationToken ct);
+
     // Tipos de unidad personalizados
     Task<IReadOnlyList<TipoUnidadCustomDto>> ListTiposUnidadCustomAsync(CancellationToken ct);
     Task<TipoUnidadCustomDto> CrearTipoUnidadCustomAsync(CrearTipoUnidadCustomRequest req, CancellationToken ct);

@@ -34,4 +34,27 @@ public class UnidadPrivada : TenantEntity
     public string? Estado { get; set; }
 
     public string? Observaciones { get; set; }
+
+    /// <summary>Matricula inmobiliaria (folio de registro) - spec 2.3 seccion 2.</summary>
+    public string? MatriculaInmobiliaria { get; set; }
+
+    /// <summary>Si la unidad paga cuota de administracion (un deposito/util puede no pagar).</summary>
+    public bool PagaAdministracion { get; set; } = true;
+}
+
+/// <summary>
+/// Vinculo entre unidades: una unidad PRINCIPAL (apartamento/casa) con sus unidades
+/// ASOCIADAS (parqueadero, deposito). Spec 2.3 tabla unidad_vinculo. RN-09: no circular.
+/// Es TenantEntity - aislada por tenant_id.
+/// </summary>
+public class UnidadVinculo : TenantEntity
+{
+    public Guid UnidadPrincipalId { get; set; }
+    public UnidadPrivada? UnidadPrincipal { get; set; }
+
+    public Guid UnidadAsociadaId { get; set; }
+    public UnidadPrivada? UnidadAsociada { get; set; }
+
+    /// <summary>Si el coeficiente de la asociada se factura junto al de la principal (cuenta consolidada).</summary>
+    public bool IncluyeEnFacturacion { get; set; } = true;
 }

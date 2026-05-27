@@ -144,7 +144,7 @@ public class MiCopropiedadService : IMiCopropiedadService
                 u.TorreId, u.Torre != null ? u.Torre.Nombre : null, u.Piso,
                 u.CoeficientePropiedad, u.AreaM2,
                 u.Habitaciones, u.Banos, u.Parqueaderos,
-                u.Estado, u.Observaciones))
+                u.Estado, u.Observaciones, u.MatriculaInmobiliaria, u.PagaAdministracion))
             .ToListAsync(ct);
     }
 
@@ -167,7 +167,9 @@ public class MiCopropiedadService : IMiCopropiedadService
             Banos = req.Banos,
             Parqueaderos = req.Parqueaderos,
             Estado = req.Estado,
-            Observaciones = req.Observaciones
+            Observaciones = req.Observaciones,
+            MatriculaInmobiliaria = req.MatriculaInmobiliaria,
+            PagaAdministracion = req.PagaAdministracion
         };
         _db.UnidadesPrivadas.Add(unidad);
         await _db.SaveChangesAsync(ct);
@@ -178,7 +180,58 @@ public class MiCopropiedadService : IMiCopropiedadService
             unidad.TorreId, torreNombre, unidad.Piso,
             unidad.CoeficientePropiedad, unidad.AreaM2,
             unidad.Habitaciones, unidad.Banos, unidad.Parqueaderos,
-            unidad.Estado, unidad.Observaciones);
+            unidad.Estado, unidad.Observaciones, unidad.MatriculaInmobiliaria, unidad.PagaAdministracion);
+    }
+
+    // ----------------------------- Vinculos entre unidades (RN-09) -----------------------------
+
+    public async Task<IReadOnlyList<UnidadVinculoDto>> ListVinculosAsync(Guid unidadPrincipalId, CancellationToken ct)
+    {
+        return await _db.UnidadVinculos
+            .AsNoTracking()
+            .Include(v => v.UnidadAsociada)
+            .Where(v => v.UnidadPrincipalId == unidadPrincipalId)
+            .OrderBy(v => v.UnidadAsociada!.Numero)
+            .Select(v => new UnidadVinculoDto(v.Id, v.UnidadAsociadaId,
+                v.UnidadAsociada!.Numero, v.UnidadAsociada.Tipo, v.IncluyeEnFacturacion))
+            .ToListAsync(ct);
+    }
+
+    public async Task<UnidadVinculoDto> CrearVinculoAsync(Guid unidadPrincipalId, CrearVinculoUnidadRequest req, CancellationToken ct)
+    {
+        if (unidadPrincipalId == req.UnidadAsociadaId)
+            throw new InvalidOperationException("Una unidad no puede asociarse a si misma.");
+
+        var principal = await _db.UnidadesPrivadas.FirstOrDefaultAsync(u => u.Id == unidadPrincipalId, ct)
+            ?? throw new InvalidOperationException("Unidad principal no encontrada.");
+        var asociada = await _db.UnidadesPrivadas.FirstOrDefaultAsync(u => u.Id == req.UnidadAsociadaId, ct)
+            ?? throw new InvalidOperationException("Unidad asociada no encontrada.");
+
+        // RN-09 (no circular): la asociada no puede ser, a su vez, principal de la unidad principal,
+        // y una asociada solo puede tener un principal.
+        if (await _db.UnidadVinculos.AnyAsync(v => v.UnidadAsociadaId == req.UnidadAsociadaId, ct))
+            throw new InvalidOperationException($"La unidad {asociada.Numero} ya esta asociada a otra unidad.");
+        if (await _db.UnidadVinculos.AnyAsync(v => v.UnidadPrincipalId == req.UnidadAsociadaId && v.UnidadAsociadaId == unidadPrincipalId, ct))
+            throw new InvalidOperationException("Vinculo circular no permitido (RN-09).");
+
+        var v = new UnidadVinculo
+        {
+            UnidadPrincipalId = unidadPrincipalId,
+            UnidadAsociadaId = req.UnidadAsociadaId,
+            IncluyeEnFacturacion = req.IncluyeEnFacturacion
+        };
+        _db.UnidadVinculos.Add(v);
+        await _db.SaveChangesAsync(ct);
+        return new UnidadVinculoDto(v.Id, v.UnidadAsociadaId, asociada.Numero, asociada.Tipo, v.IncluyeEnFacturacion);
+    }
+
+    public async Task<bool> EliminarVinculoAsync(Guid vinculoId, CancellationToken ct)
+    {
+        var v = await _db.UnidadVinculos.FirstOrDefaultAsync(x => x.Id == vinculoId, ct);
+        if (v is null) return false;
+        _db.UnidadVinculos.Remove(v);
+        await _db.SaveChangesAsync(ct);
+        return true;
     }
 
     public async Task<UnidadDto?> ObtenerUnidadAsync(Guid unidadId, CancellationToken ct)
@@ -192,7 +245,7 @@ public class MiCopropiedadService : IMiCopropiedadService
                 u.TorreId, u.Torre != null ? u.Torre.Nombre : null, u.Piso,
                 u.CoeficientePropiedad, u.AreaM2,
                 u.Habitaciones, u.Banos, u.Parqueaderos,
-                u.Estado, u.Observaciones))
+                u.Estado, u.Observaciones, u.MatriculaInmobiliaria, u.PagaAdministracion))
             .FirstOrDefaultAsync(ct);
     }
 

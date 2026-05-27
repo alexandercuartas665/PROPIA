@@ -54,6 +54,8 @@ else
         @if (_unidad.AreaM2.HasValue) { <span class="badge bg-light text-dark border">@_unidad.AreaM2 m²</span> }
         @if (_unidad.Habitaciones.HasValue) { <span class="badge bg-light text-dark border">@_unidad.Habitaciones hab.</span> }
         @if (_unidad.Banos.HasValue) { <span class="badge bg-light text-dark border">@_unidad.Banos baños</span> }
+        @if (!string.IsNullOrWhiteSpace(_unidad.MatriculaInmobiliaria)) { <span class="badge bg-light text-dark border">Matricula @_unidad.MatriculaInmobiliaria</span> }
+        <span class="badge @(_unidad.PagaAdministracion ? "bg-success" : "bg-secondary")">@(_unidad.PagaAdministracion ? "Paga administracion" : "No paga administracion")</span>
     </div>
 
     @* 3 KPI cards - stubs hasta que existan 2.7, 2.9, 2.10 *@
@@ -114,7 +116,46 @@ else
     <div class="card mb-3">
         <div class="card-body">
             <h6 class="text-muted small mb-3">UNIDADES ASOCIADAS</h6>
-            <p class="text-muted small mb-0">Parqueaderos y depositos vinculados a esta unidad. <em>(Pendiente — feature B6.)</em></p>
+            @if (_vinculos.Count == 0)
+            {
+                <p class="text-muted small mb-3">Sin parqueaderos ni depositos vinculados a esta unidad.</p>
+            }
+            else
+            {
+                <ul class="list-group mb-3">
+                    @foreach (var v in _vinculos)
+                    {
+                        <li class="list-group-item d-flex justify-content-between align-items-center small">
+                            <span>
+                                <strong>@v.AsociadaNumero</strong> · <span class="badge bg-light text-dark border">@v.AsociadaTipo</span>
+                                @if (v.IncluyeEnFacturacion) { <span class="badge bg-info text-dark ms-1">Incluye en facturacion</span> }
+                                else { <span class="badge bg-light text-dark border ms-1">Factura aparte</span> }
+                            </span>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => QuitarVinculo(v.Id)">Quitar</button>
+                        </li>
+                    }
+                </ul>
+            }
+            @* Asociar una unidad *@
+            <div class="row g-2 align-items-center">
+                <div class="col-md-5">
+                    <select class="form-select form-select-sm" @bind="_nuevoVinculoUnidadId">
+                        <option value="">Selecciona una unidad...</option>
+                        @foreach (var u in _candidatasVinculo)
+                        {
+                            <option value="@u.Id">@u.Numero (@u.Tipo)</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-4 form-check ms-2">
+                    <input class="form-check-input" type="checkbox" id="incFact" @bind="_nuevoVinculoFactura" />
+                    <label class="form-check-label small" for="incFact">Incluir en facturacion</label>
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-sm btn-outline-dark w-100" @onclick="AsociarUnidad" disabled="@_busy">Asociar</button>
+                </div>
+            </div>
+            @if (!string.IsNullOrEmpty(_vinculoMsg)) { <div class="alert alert-danger py-2 small mt-2 mb-0">@_vinculoMsg</div> }
         </div>
     </div>
 
@@ -184,6 +225,15 @@ else
     private UnidadDto? _unidad;
     private CarteraUnidadDetalleDto? _cartera;
 
+    // Vinculos entre unidades
+    private List<UnidadVinculoDto> _vinculos = new();
+    private List<UnidadDto> _todasUnidades = new();
+    private string _nuevoVinculoUnidadId = "";
+    private bool _nuevoVinculoFactura = true;
+    private string? _vinculoMsg;
+    private IEnumerable<UnidadDto> _candidatasVinculo =>
+        _todasUnidades.Where(u => u.Id != UnidadId && _vinculos.All(v => v.UnidadAsociadaId != u.Id));
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender || _jwt is not null) return;
@@ -227,9 +277,44 @@ else
                 _cartera = cResp.IsSuccessStatusCode ? await cResp.Content.ReadFromJsonAsync<CarteraUnidadDetalleDto>() : null;
             }
             catch { _cartera = null; }
+
+            // Vinculos + catalogo de unidades para asociar
+            _vinculos = await http.GetFromJsonAsync<List<UnidadVinculoDto>>($"/api/mi-copropiedad/unidades/{UnidadId}/vinculos") ?? new();
+            _todasUnidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
         }
         catch (Exception ex) { _loadError = ex.Message; }
     }
+
+    private async Task AsociarUnidad()
+    {
+        _vinculoMsg = null;
+        if (!Guid.TryParse(_nuevoVinculoUnidadId, out var asociadaId)) { _vinculoMsg = "Selecciona una unidad."; return; }
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{UnidadId}/vinculos",
+                new CrearVinculoUnidadRequest(asociadaId, _nuevoVinculoFactura));
+            if (resp.IsSuccessStatusCode)
+            {
+                _nuevoVinculoUnidadId = ""; _nuevoVinculoFactura = true;
+                await CargarAsync();
+            }
+            else
+            {
+                var err = await resp.Content.ReadFromJsonAsync<ApiError>();
+                _vinculoMsg = err?.Error ?? "No se pudo asociar la unidad.";
+            }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task QuitarVinculo(Guid vinculoId)
+    {
+        await Auth().DeleteAsync($"/api/mi-copropiedad/vinculos/{vinculoId}");
+        await CargarAsync();
+    }
+
+    private record ApiError(string? Error);
 
     private async Task EliminarUnidad()
     {

@@ -37,13 +37,22 @@ public record UnidadDto(
     Guid? TorreId, string? TorreNombre, int? Piso,
     decimal CoeficientePropiedad, decimal? AreaM2,
     int? Habitaciones, int? Banos, int? Parqueaderos,
-    string? Estado, string? Observaciones);
+    string? Estado, string? Observaciones,
+    string? MatriculaInmobiliaria = null, bool PagaAdministracion = true);
 
 public record CrearUnidadRequest(
     string Numero, TipoUnidad Tipo, Guid? TorreId, int? Piso,
     decimal CoeficientePropiedad, decimal? AreaM2,
     int? Habitaciones, int? Banos, int? Parqueaderos,
-    string? Estado, string? Observaciones);
+    string? Estado, string? Observaciones,
+    string? MatriculaInmobiliaria = null, bool PagaAdministracion = true);
+
+// ----- Vinculos entre unidades (seccion 2 - RN-09) -----
+public record UnidadVinculoDto(
+    Guid Id, Guid UnidadAsociadaId, string AsociadaNumero, TipoUnidad AsociadaTipo,
+    bool IncluyeEnFacturacion);
+
+public record CrearVinculoUnidadRequest(Guid UnidadAsociadaId, bool IncluyeEnFacturacion);
 
 // ----- Gobierno: Miembros del Consejo (seccion 4) -----
 public record MiembroConsejoDto(
