@@ -86,6 +86,35 @@ public sealed record AiChatResult(
     int OutputTokens = 0,
     IReadOnlyList<AiChatAttachment>? Attachments = null);
 
+// ---------- Tool-calling (Fase B: agente como cliente MCP) ----------
+
+/// <summary>Definicion de una tool que se le ofrece al LLM (nombre, descripcion y JSON Schema de parametros).</summary>
+public sealed record AiToolSpec(string Name, string? Description, string ParametersJsonSchema);
+
+/// <summary>Una invocacion de tool que pidio el LLM.</summary>
+public sealed record AiToolCall(string Id, string Name, string ArgumentsJson);
+
+/// <summary>
+/// Mensaje del hilo de tool-calling. Role: "user" | "assistant" | "tool".
+/// - assistant con ToolCalls: el modelo pidio ejecutar tools.
+/// - tool: resultado de una tool (ToolCallId + Text).
+/// </summary>
+public sealed record AiToolMessage(
+    string Role,
+    string? Text,
+    IReadOnlyList<AiToolCall>? ToolCalls = null,
+    string? ToolCallId = null,
+    string? ToolName = null);
+
+/// <summary>Resultado de una ronda de completado con tools: texto final o tools a ejecutar.</summary>
+public sealed record AiCompletion(
+    bool Ok,
+    string? Text,
+    string? Error,
+    int InputTokens,
+    int OutputTokens,
+    IReadOnlyList<AiToolCall> ToolCalls);
+
 // ---------- Consumo / cuota ----------
 
 public sealed record AgentUsageDto(

@@ -206,7 +206,7 @@ public class IaController : ControllerBase
     // ---------- Probar agente + consumo ----------
     [HttpPost("agentes/{id:guid}/probar")]
     public async Task<IActionResult> ProbarAgente(Guid id, [FromBody] ProbarAgenteRequest req, CancellationToken ct)
-        => Ok(await _inference.TestChatAsync(id, req.Turns, req.SystemPromptOverride, ct));
+        => Ok(await _inference.TestChatAsync(id, req.Turns, req.SystemPromptOverride, BearerToken(), ct));
 
     [HttpGet("consumo")]
     public async Task<IActionResult> Consumo(CancellationToken ct) => Ok(await _usage.GetSummaryAsync(ct));

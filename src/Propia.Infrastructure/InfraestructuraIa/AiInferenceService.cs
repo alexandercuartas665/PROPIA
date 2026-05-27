@@ -21,16 +21,21 @@ public sealed class AiInferenceService : IAiInferenceService
     private readonly ISecretProtector _secret;
     private readonly IAiProviderClient _client;
     private readonly IAiUsageService _usage;
+    private readonly IMcpGateway _mcp;
 
-    public AiInferenceService(PropiaDbContext db, ISecretProtector secret, IAiProviderClient client, IAiUsageService usage)
+    /// <summary>Maximo de rondas de tool-calling para evitar bucles infinitos del modelo.</summary>
+    private const int MaxToolRounds = 6;
+
+    public AiInferenceService(PropiaDbContext db, ISecretProtector secret, IAiProviderClient client, IAiUsageService usage, IMcpGateway mcp)
     {
         _db = db;
         _secret = secret;
         _client = client;
         _usage = usage;
+        _mcp = mcp;
     }
 
-    public async Task<AiChatResult> TestChatAsync(Guid agentId, IReadOnlyList<AiChatTurn> turns, string? systemPromptOverride = null, CancellationToken ct = default)
+    public async Task<AiChatResult> TestChatAsync(Guid agentId, IReadOnlyList<AiChatTurn> turns, string? systemPromptOverride = null, string? bearerToken = null, CancellationToken ct = default)
     {
         var agent = await _db.AiAgents.AsNoTracking().FirstOrDefaultAsync(a => a.Id == agentId, ct);
         if (agent is null) { return new AiChatResult(false, null, "El agente no existe."); }
@@ -67,6 +72,19 @@ public sealed class AiInferenceService : IAiInferenceService
 
         var systemPrompt = await BuildSystemPrompt(agentId, systemPromptOverride ?? agent.SystemPrompt, resources, ct);
 
+        // Tools MCP habilitadas para este agente. Si hay alguna y tenemos token del usuario,
+        // corremos el loop de function-calling; si no, el camino simple de siempre.
+        var toolSpecs = await BuildToolSpecsAsync(agentId, bearerToken, ct);
+        if (toolSpecs.Count > 0 && !string.IsNullOrEmpty(bearerToken))
+        {
+            var systemPromptConTools = systemPrompt
+                + "\n\nHERRAMIENTAS: tienes herramientas para consultar y gestionar datos REALES de esta copropiedad. "
+                + "Cuando te pregunten por unidades, torres, contratos, zonas, equipos, finanzas, consejo o cambios, USA las herramientas para responder con datos exactos; nunca inventes cifras. "
+                + "Si una pregunta abarca varios temas, llama a TODAS las herramientas necesarias antes de responder. "
+                + "Las herramientas de creacion son dry-run por defecto: confirma con el usuario antes de ejecutar cambios reales.";
+            return await RunToolLoopAsync(agent, model, apiKey, providerCfg.BaseUrl, systemPromptConTools, turns, toolSpecs, resources, bearerToken!, ct);
+        }
+
         var result = await _client.CompleteAsync(agent.Provider, apiKey, providerCfg.BaseUrl, model, systemPrompt, turns, ct);
 
         if (result.Ok)
@@ -81,6 +99,107 @@ public sealed class AiInferenceService : IAiInferenceService
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Arma las specs de tools (nombre, descripcion, JSON schema) de las tools MCP habilitadas
+    /// para el agente, descubriendo en vivo el schema desde el servidor MCP. Tambien deja listo
+    /// el mapa tool -> conexion para ejecutarlas. Si una conexion no responde, se omite.
+    /// </summary>
+    private async Task<IReadOnlyList<AiToolSpec>> BuildToolSpecsAsync(Guid agentId, string? bearerToken, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(bearerToken)) { return Array.Empty<AiToolSpec>(); }
+
+        var seleccion = await _db.AiAgentMcpTools.AsNoTracking()
+            .Where(t => t.AgentId == agentId)
+            .Select(t => new { t.ConnectionCode, t.ToolName })
+            .ToListAsync(ct);
+        if (seleccion.Count == 0) { return Array.Empty<AiToolSpec>(); }
+
+        _toolToConnection.Clear();
+        var specs = new List<AiToolSpec>();
+        foreach (var grupo in seleccion.GroupBy(s => s.ConnectionCode))
+        {
+            var habilitadas = grupo.Select(g => g.ToolName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                var tools = await _mcp.ListToolsAsync(grupo.Key, bearerToken, ct);
+                foreach (var t in tools.Where(t => habilitadas.Contains(t.Name)))
+                {
+                    _toolToConnection[t.Name] = grupo.Key;
+                    specs.Add(new AiToolSpec(t.Name, t.Description, t.InputSchemaJson ?? "{}"));
+                }
+            }
+            catch { /* conexion MCP caida: se omiten sus tools */ }
+        }
+        return specs;
+    }
+
+    private readonly Dictionary<string, string> _toolToConnection = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Loop de function-calling: el modelo pide tools, las ejecutamos via el gateway MCP (que
+    /// hereda el tenant + permisos del usuario por el bearer), realimentamos y repetimos hasta
+    /// la respuesta final o el maximo de rondas.
+    /// </summary>
+    private async Task<AiChatResult> RunToolLoopAsync(
+        Domain.Entities.AiAgent agent, string model, string apiKey, string? baseUrl, string systemPrompt,
+        IReadOnlyList<AiChatTurn> turns, IReadOnlyList<AiToolSpec> toolSpecs,
+        IReadOnlyList<AiChatAttachment> resources, string bearerToken, CancellationToken ct)
+    {
+        var msgs = new List<AiToolMessage>(turns.Select(t => new AiToolMessage(t.Role, t.Text)));
+        int inTok = 0, outTok = 0;
+
+        for (var ronda = 0; ronda < MaxToolRounds; ronda++)
+        {
+            var comp = await _client.CompleteWithToolsAsync(agent.Provider, apiKey, baseUrl, model, systemPrompt, msgs, toolSpecs, ct);
+            inTok += comp.InputTokens;
+            outTok += comp.OutputTokens;
+
+            if (!comp.Ok) { return new AiChatResult(false, null, comp.Error, inTok, outTok); }
+
+            if (comp.ToolCalls.Count == 0)
+            {
+                await _usage.RecordAsync(agent.Id, agent.Provider, model, inTok, outTok, "test", true, ct);
+                var (clean, attachments) = ExtractAttachments(comp.Text ?? "", resources);
+                return new AiChatResult(true, clean, null, inTok, outTok, attachments);
+            }
+
+            // El modelo pidio ejecutar tools: registramos su turno y ejecutamos cada una.
+            msgs.Add(new AiToolMessage("assistant", comp.Text, comp.ToolCalls));
+            foreach (var call in comp.ToolCalls)
+            {
+                string resultado;
+                try
+                {
+                    if (!_toolToConnection.TryGetValue(call.Name, out var conexion))
+                    {
+                        resultado = $"La tool '{call.Name}' no esta habilitada para este agente.";
+                    }
+                    else
+                    {
+                        resultado = await _mcp.CallToolAsync(conexion, call.Name, ParseArgs(call.ArgumentsJson), bearerToken, ct);
+                    }
+                }
+                catch (Exception ex) { resultado = $"Error ejecutando '{call.Name}': {ex.Message}"; }
+
+                msgs.Add(new AiToolMessage("tool", resultado, null, call.Id, call.Name));
+            }
+        }
+
+        await _usage.RecordAsync(agent.Id, agent.Provider, model, inTok, outTok, "test", false, ct);
+        return new AiChatResult(false, null, $"El agente supero el maximo de pasos de herramientas ({MaxToolRounds}).", inTok, outTok);
+    }
+
+    private static IReadOnlyDictionary<string, object?> ParseArgs(string argumentsJson)
+    {
+        if (string.IsNullOrWhiteSpace(argumentsJson)) { return new Dictionary<string, object?>(); }
+        try
+        {
+            var dict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(argumentsJson);
+            return dict ?? new Dictionary<string, object?>();
+        }
+        catch { return new Dictionary<string, object?>(); }
     }
 
     private async Task<string> BuildSystemPrompt(Guid agentId, string basePrompt, IReadOnlyList<AiChatAttachment> resources, CancellationToken ct)

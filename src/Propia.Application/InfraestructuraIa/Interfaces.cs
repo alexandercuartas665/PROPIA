@@ -68,7 +68,12 @@ public interface IAiAgentService
 /// <summary>Inferencia de IA (probar un agente). Resuelve credenciales del proveedor desde la config global de SuperAdmin.</summary>
 public interface IAiInferenceService
 {
-    Task<AiChatResult> TestChatAsync(Guid agentId, IReadOnlyList<AiChatTurn> turns, string? systemPromptOverride = null, CancellationToken ct = default);
+    /// <summary>
+    /// Prueba un agente. Si el agente tiene tools MCP habilitadas y se pasa bearerToken (el JWT
+    /// del usuario), corre el loop de function-calling ejecutando las tools con ese token (hereda
+    /// tenant + permisos). Sin tools o sin token: completado simple de un turno.
+    /// </summary>
+    Task<AiChatResult> TestChatAsync(Guid agentId, IReadOnlyList<AiChatTurn> turns, string? systemPromptOverride = null, string? bearerToken = null, CancellationToken ct = default);
 }
 
 /// <summary>Registro y reporte de consumo de IA de la copropiedad + control de cuota del plan.</summary>
@@ -98,4 +103,13 @@ public interface IAiProviderClient
 {
     Task<AiChatResult> CompleteAsync(AiProvider provider, string apiKey, string? baseUrl, string model,
         string systemPrompt, IReadOnlyList<AiChatTurn> turns, CancellationToken ct = default);
+
+    /// <summary>
+    /// Una ronda de completado CON tools (function-calling). Devuelve texto final o la lista de
+    /// tools que el modelo quiere ejecutar. El orquestador (AiInferenceService) las ejecuta y
+    /// vuelve a llamar con los resultados en el historial. Soporta OpenAI/DeepSeek/Gemini
+    /// (formato OpenAI) y Claude (formato nativo).
+    /// </summary>
+    Task<AiCompletion> CompleteWithToolsAsync(AiProvider provider, string apiKey, string? baseUrl, string model,
+        string systemPrompt, IReadOnlyList<AiToolMessage> messages, IReadOnlyList<AiToolSpec> tools, CancellationToken ct = default);
 }
