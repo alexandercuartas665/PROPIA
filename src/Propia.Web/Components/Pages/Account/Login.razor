@@ -164,7 +164,27 @@ else
             ? login.AvailableTenants.First(t => t.TenantId == login.ActiveTenantId.Value)
             : login.AvailableTenants.First();
 
-        await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_jwt", login.AccessToken!);
+        // El login solo fija tenant activo cuando hay una sola copropiedad. Para usuarios multi-PH
+        // el JWT viene SIN tenant_id; pedimos uno scopeado al tenant elegido para que las requests
+        // lleven contexto (RLS). El usuario puede cambiar luego con el selector del header.
+        var accessToken = login.AccessToken!;
+        if (!login.ActiveTenantId.HasValue)
+        {
+            try
+            {
+                var sw = HttpClientFactory.CreateClient("PropiaApi");
+                sw.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+                var swResp = await sw.PostAsJsonAsync("/connect/switch-tenant", new { tenantId = tenant.TenantId });
+                if (swResp.IsSuccessStatusCode)
+                {
+                    var scoped = await swResp.Content.ReadFromJsonAsync<SwitchTenantResp>();
+                    if (!string.IsNullOrWhiteSpace(scoped?.AccessToken)) accessToken = scoped!.AccessToken!;
+                }
+            }
+            catch { /* si falla, guardamos el token tal cual; el selector permite reintentar */ }
+        }
+
+        await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_jwt", accessToken);
         await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_tenant_id", tenant.TenantId.ToString());
         await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_copropiedad_nombre", tenant.Nombre);
         try { await Js.InvokeVoidAsync("propiaUI.refreshAuthCta"); } catch { }
@@ -188,4 +208,6 @@ else
         List<TenantInfo> AvailableTenants);
 
     private sealed record TenantInfo(Guid TenantId, string Nombre, string Rol);
+
+    private sealed record SwitchTenantResp(string? AccessToken);
 }

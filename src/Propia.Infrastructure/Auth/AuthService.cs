@@ -101,7 +101,7 @@ public class AuthService : IAuthService
         try
         {
             await using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT tenant_id, nombre, rol FROM get_tenants_for_persona(@p_persona_id)";
+            cmd.CommandText = "SELECT tenant_id, nombre, rol, logo_url FROM get_tenants_for_persona(@p_persona_id)";
             var p = cmd.CreateParameter();
             p.ParameterName = "@p_persona_id";
             p.Value = personaId;
@@ -110,7 +110,8 @@ public class AuthService : IAuthService
             await using var reader = await cmd.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {
-                rows.Add(new TenantInfo(reader.GetGuid(0), reader.GetString(1), reader.GetString(2)));
+                var logo = reader.IsDBNull(3) ? null : reader.GetString(3);
+                rows.Add(new TenantInfo(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), logo));
             }
         }
         finally

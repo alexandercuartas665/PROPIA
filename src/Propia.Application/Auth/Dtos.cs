@@ -22,7 +22,8 @@ public record MeResponse(
 public record TenantInfo(
     Guid TenantId,
     string Nombre,
-    string Rol);
+    string Rol,
+    string? LogoUrl = null);
 
 public record SwitchTenantRequest(Guid TenantId);
 
