@@ -32,4 +32,11 @@ public class ApplicationUser : IdentityUser<Guid>
     /// (ej. "srv,zon,eq"). Persiste el estado expandido/colapsado por usuario (RN-24).
     /// </summary>
     public string? MiCopropiedadSeccionesColapsadas { get; set; }
+
+    /// <summary>
+    /// Agente preferido del usuario para el asistente "Ask AI" embebido, POR copropiedad.
+    /// JSON map { "tenantId": "agentId" }. Permite que cada usuario elija su agente y que
+    /// la eleccion no se cruce entre copropiedades (multi-PH). Null = sin preferencia.
+    /// </summary>
+    public string? AskAiAgentesPorTenant { get; set; }
 }

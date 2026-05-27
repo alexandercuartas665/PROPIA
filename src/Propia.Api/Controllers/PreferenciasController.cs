@@ -74,4 +74,49 @@ public class PreferenciasController : ControllerBase
         var res = await _users.UpdateAsync(u);
         return res.Succeeded ? NoContent() : BadRequest(new { error = "No se pudo guardar." });
     }
+
+    // ---- Agente preferido del asistente Ask AI (por usuario + copropiedad) ----
+    public record AskAiAgenteDto(Guid? AgenteId);
+    public record SetAskAiAgenteRequest(Guid? AgenteId);
+
+    [HttpGet("ask-ai-agente")]
+    public async Task<IActionResult> GetAskAiAgente(CancellationToken ct)
+    {
+        var u = await CurrentUserAsync();
+        if (u is null) return Unauthorized();
+        var tenant = User.FindFirstValue("tenant_id");
+        if (string.IsNullOrWhiteSpace(tenant)) return Ok(new AskAiAgenteDto(null));
+        var map = ParseMap(u.AskAiAgentesPorTenant);
+        return Ok(new AskAiAgenteDto(map.TryGetValue(tenant, out var agente) ? agente : null));
+    }
+
+    [HttpPut("ask-ai-agente")]
+    public async Task<IActionResult> SetAskAiAgente([FromBody] SetAskAiAgenteRequest req, CancellationToken ct)
+    {
+        var u = await CurrentUserAsync();
+        if (u is null) return Unauthorized();
+        var tenant = User.FindFirstValue("tenant_id");
+        if (string.IsNullOrWhiteSpace(tenant)) return BadRequest(new { error = "Sin copropiedad activa." });
+
+        var map = ParseMap(u.AskAiAgentesPorTenant);
+        if (req?.AgenteId is Guid agente) { map[tenant] = agente; }
+        else { map.Remove(tenant); }
+
+        u.AskAiAgentesPorTenant = map.Count == 0 ? null : System.Text.Json.JsonSerializer.Serialize(map);
+        var res = await _users.UpdateAsync(u);
+        return res.Succeeded ? NoContent() : BadRequest(new { error = "No se pudo guardar." });
+    }
+
+    private async Task<ApplicationUser?> CurrentUserAsync()
+    {
+        var userId = User.FindFirstValue("user_id") ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return Guid.TryParse(userId, out var uid) ? await _users.FindByIdAsync(uid.ToString()) : null;
+    }
+
+    private static Dictionary<string, Guid> ParseMap(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new();
+        try { return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, Guid>>(json) ?? new(); }
+        catch { return new(); }
+    }
 }

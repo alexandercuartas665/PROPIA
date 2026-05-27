@@ -1,0 +1,194 @@
+@using Propia.Application.InfraestructuraIa
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+
+@* Asistente "Ask AI" reutilizable y embebible. Conversa con un agente de la copropiedad
+   (que usa las tools MCP habilitadas). El usuario elige el agente y su eleccion se
+   persiste por usuario + copropiedad. Reutilizable en cualquier pagina: solo pasale el Jwt. *@
+
+<div class="askai card @(Docked ? "askai--docked" : "")">
+    <div class="askai-head">
+        <div class="d-flex align-items-center gap-2">
+            <i class="fi fi-rr-sparkles" style="color: var(--propia-primary);"></i>
+            <span class="fw-semibold">@Titulo</span>
+        </div>
+        @if (_agents is { Count: > 0 })
+        {
+            <select class="form-select form-select-sm askai-agent" @bind="SelectedAgentId" @bind:after="OnAgentChanged">
+                @foreach (var a in _agents)
+                {
+                    <option value="@a.Id">@a.Name</option>
+                }
+            </select>
+        }
+    </div>
+
+    @if (_jwtMissing)
+    {
+        <div class="askai-empty">Inicia sesion para usar el asistente.</div>
+    }
+    else if (_agents is null)
+    {
+        <div class="askai-empty">Cargando agentes...</div>
+    }
+    else if (_agents.Count == 0)
+    {
+        <div class="askai-empty">No hay agentes configurados. Crea uno en <a href="/ia/agentes">Agentes IA</a> y enciende sus herramientas MCP.</div>
+    }
+    else
+    {
+        <div class="askai-body" @ref="_bodyRef">
+            @if (_chat.Count == 0)
+            {
+                <div class="askai-empty">Preguntale al asistente sobre tu copropiedad: unidades, contratos, finanzas, zonas...</div>
+            }
+            else
+            {
+                @foreach (var m in _chat)
+                {
+                    <div class="askai-bubble @(m.Role == "model" ? "bot" : "me")">
+                        @if (!string.IsNullOrWhiteSpace(m.Text)) { <div>@m.Text</div> }
+                        @if (m.Attachments is { Count: > 0 })
+                        {
+                            @foreach (var at in m.Attachments)
+                            {
+                                <div class="askai-attach">
+                                    @switch (at.ResourceType)
+                                    {
+                                        case AgentResourceType.Text: <div class="askai-attach-text">@at.Detail</div> break;
+                                        case AgentResourceType.Image: <img src="@at.FileUrl" alt="@at.Name" /> break;
+                                        case AgentResourceType.Video: <video src="@at.FileUrl" controls></video> break;
+                                        case AgentResourceType.Audio: <audio src="@at.FileUrl" controls></audio> break;
+                                        default: <a href="@at.FileUrl" target="_blank">@(at.FileName ?? at.Name)</a> break;
+                                    }
+                                </div>
+                            }
+                        }
+                    </div>
+                }
+            }
+            @if (_busy) { <div class="askai-bubble bot askai-typing">Pensando...</div> }
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error)) { <div class="text-danger small px-2 pb-1">@_error</div> }
+
+        <div class="askai-input">
+            <input class="form-control" placeholder="Escribe tu pregunta..." @bind="_input" @bind:event="oninput"
+                   @onkeydown="@(e => { if (e.Key == "Enter") _ = EnviarAsync(); })" disabled="@_busy" />
+            <button class="btn askai-send" @onclick="EnviarAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_input))" title="Enviar">
+                <i class="fi fi-rr-paper-plane"></i>
+            </button>
+        </div>
+    }
+</div>
+
+<style>
+    .askai { display: flex; flex-direction: column; overflow: hidden; }
+    .askai--docked { height: 100%; }
+    .askai--docked .askai-body { max-height: none; flex: 1; }
+    .askai-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #eef0f5; background: #faf9ff; }
+    .askai-agent { max-width: 220px; }
+    .askai-empty { color: #8a8a9a; font-size: 12.5px; text-align: center; padding: 18px; font-style: italic; }
+    .askai-body { max-height: 360px; min-height: 140px; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: #f5f6fa; }
+    .askai-bubble { max-width: 88%; padding: 8px 12px; border-radius: 12px; font-size: 13px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word; }
+    .askai-bubble.me { align-self: flex-end; background: var(--propia-primary, #5955D1); color: #fff; border-bottom-right-radius: 4px; }
+    .askai-bubble.bot { align-self: flex-start; background: #fff; border: 1px solid #e3e3ec; border-bottom-left-radius: 4px; }
+    .askai-bubble.askai-typing { color: #8a8a9a; font-style: italic; }
+    .askai-attach { margin-top: 6px; }
+    .askai-attach img, .askai-attach video { max-width: 220px; max-height: 200px; border-radius: 8px; display: block; }
+    .askai-attach-text { background: rgba(0,0,0,.04); border-left: 3px solid var(--propia-primary, #5955D1); border-radius: 4px; padding: 6px 8px; font-size: 12.5px; }
+    .askai-input { display: flex; gap: 8px; padding: 10px; border-top: 1px solid #e3e3ec; background: #fff; }
+    .askai-input input { flex: 1; }
+    .askai-send { background: var(--propia-primary, #5955D1); color: #fff; }
+</style>
+
+@code {
+    /// <summary>JWT del usuario (con tenant_id). Lo pasa la pagina anfitriona.</summary>
+    [Parameter] public string? Jwt { get; set; }
+
+    /// <summary>Titulo del panel (personalizable por modulo).</summary>
+    [Parameter] public string Titulo { get; set; } = "Asistente IA";
+
+    /// <summary>Modo anclado (right rail): el chat llena la altura disponible del contenedor.</summary>
+    [Parameter] public bool Docked { get; set; }
+
+    private List<AiAgentDto>? _agents;
+    private Guid _selectedAgentId;
+    private Guid SelectedAgentId { get => _selectedAgentId; set => _selectedAgentId = value; }
+
+    private readonly List<ChatMsg> _chat = new();
+    private string _input = "";
+    private bool _busy;
+    private string? _error;
+    private bool _jwtMissing;
+    private bool _loaded;
+    private ElementReference _bodyRef;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Carga una sola vez, cuando ya tenemos el JWT del padre.
+        if (_loaded) return;
+        if (string.IsNullOrEmpty(Jwt)) { _jwtMissing = true; return; }
+        _jwtMissing = false;
+        _loaded = true;
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = Auth();
+            _agents = await http.GetFromJsonAsync<List<AiAgentDto>>("/api/ia/agentes") ?? new();
+            if (_agents.Count == 0) return;
+
+            // Preferencia del usuario (por copropiedad). Si no hay o ya no existe, usa el primero.
+            Guid? pref = null;
+            try
+            {
+                var dto = await http.GetFromJsonAsync<AskAiAgentePref>("/api/preferencias/ask-ai-agente");
+                pref = dto?.AgenteId;
+            }
+            catch { /* sin preferencia */ }
+
+            _selectedAgentId = (pref is Guid p && _agents.Any(a => a.Id == p)) ? p : _agents[0].Id;
+        }
+        catch (Exception ex) { _error = ex.Message; _agents ??= new(); }
+    }
+
+    private async Task OnAgentChanged()
+    {
+        _chat.Clear(); _error = null;
+        try { await Auth().PutAsJsonAsync("/api/preferencias/ask-ai-agente", new { AgenteId = _selectedAgentId }); }
+        catch { /* no critico */ }
+    }
+
+    private async Task EnviarAsync()
+    {
+        if (_busy || string.IsNullOrWhiteSpace(_input) || _selectedAgentId == Guid.Empty) return;
+        _busy = true; _error = null;
+        _chat.Add(new ChatMsg("user", _input.Trim(), null));
+        _input = "";
+        try
+        {
+            var turns = _chat.Select(m => new AiChatTurn(m.Role, m.Text)).ToList();
+            var resp = await Auth().PostAsJsonAsync($"/api/ia/agentes/{_selectedAgentId}/probar",
+                new { Turns = turns, SystemPromptOverride = (string?)null });
+            var r = await resp.Content.ReadFromJsonAsync<AiChatResult>();
+            if (r?.Ok == true) { _chat.Add(new ChatMsg("model", r.Text ?? "", r.Attachments)); }
+            else { _error = r?.Error ?? "No se pudo obtener respuesta."; }
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt!);
+        return http;
+    }
+
+    private sealed record ChatMsg(string Role, string Text, IReadOnlyList<AiChatAttachment>? Attachments);
+    private sealed record AskAiAgentePref(Guid? AgenteId);
+}
