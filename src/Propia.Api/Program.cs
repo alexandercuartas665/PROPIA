@@ -165,7 +165,8 @@ builder.Services.AddMcpServer()
         // (creada en initialize) y RLS bloquearia todo por falta de tenant.
         o.Stateless = true;
     })
-    .WithTools<Propia.Api.Mcp.MiCopropiedadConsultaTools>(mcpJsonOptions);
+    .WithTools<Propia.Api.Mcp.MiCopropiedadConsultaTools>(mcpJsonOptions)
+    .WithTools<Propia.Api.Mcp.MiCopropiedadCreacionTools>(mcpJsonOptions);
 
 var app = builder.Build();
 
