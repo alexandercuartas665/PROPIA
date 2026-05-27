@@ -63,7 +63,8 @@ public class MiCopropiedadService : IMiCopropiedadService
             t.NumeroReglamentoPh, t.NotariaRegistro,
             t.MatriculaInmobiliaria, t.LicenciaConstruccion,
             t.FechaConstitucion,
-            t.LabelAgrupacion, t.LabelPiso);
+            t.LabelAgrupacion, t.LabelPiso,
+            t.TelefonoContacto, t.EmailContacto);
 
     // ----------------------------- Seccion 1: Identidad -----------------------------
 
@@ -94,6 +95,8 @@ public class MiCopropiedadService : IMiCopropiedadService
         // Labels personalizables
         t.LabelAgrupacion = string.IsNullOrWhiteSpace(req.LabelAgrupacion) ? null : req.LabelAgrupacion.Trim();
         t.LabelPiso = string.IsNullOrWhiteSpace(req.LabelPiso) ? null : req.LabelPiso.Trim();
+        t.TelefonoContacto = string.IsNullOrWhiteSpace(req.TelefonoContacto) ? null : req.TelefonoContacto.Trim();
+        t.EmailContacto = string.IsNullOrWhiteSpace(req.EmailContacto) ? null : req.EmailContacto.Trim();
         await _db.SaveChangesAsync(ct);
 
         return ToIdentidadDto(t);

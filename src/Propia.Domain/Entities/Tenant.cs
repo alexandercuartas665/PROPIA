@@ -22,9 +22,13 @@ public class Tenant : BaseEntity
     // Datos para el modulo 2.3 Mi Copropiedad - seccion Identidad
     public TipoCopropiedad? TipoCopropiedad { get; set; }
     public Estrato? Estrato { get; set; }
-    public string? FotoFachadaUrl { get; set; }
+    public string? FotoFachadaUrl { get; set; }  // se usa como imagen de portada (hero)
     public string? LogoUrl { get; set; }
     public string? Descripcion { get; set; }
+
+    // Contacto de la copropiedad (modulo 2.3 - seccion 1 Identidad)
+    public string? TelefonoContacto { get; set; }
+    public string? EmailContacto { get; set; }
 
     // Identidad registral (modulo 2.3 - todos opcionales)
     public string? NumeroReglamentoPh { get; set; }

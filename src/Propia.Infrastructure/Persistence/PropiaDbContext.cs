@@ -321,6 +321,8 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.FotoFachadaUrl).HasMaxLength(500);
             b.Property(x => x.LogoUrl).HasMaxLength(500);
             b.Property(x => x.Descripcion).HasMaxLength(2000);
+            b.Property(x => x.TelefonoContacto).HasMaxLength(50);
+            b.Property(x => x.EmailContacto).HasMaxLength(200);
             // Identidad registral (modulo 2.3 spec v1.0)
             b.Property(x => x.NumeroReglamentoPh).HasMaxLength(100);
             b.Property(x => x.NotariaRegistro).HasMaxLength(200);
