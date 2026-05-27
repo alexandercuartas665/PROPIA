@@ -93,4 +93,7 @@ public interface IMiCopropiedadService
     IReadOnlyList<MonedaDto> ListMonedas();
     Task<FinanzasParametrosDto> GetFinanzasParametrosAsync(Guid tenantId, CancellationToken ct);
     Task<FinanzasParametrosDto> ActualizarFinanzasAsync(Guid tenantId, ActualizarFinanzasRequest req, CancellationToken ct);
+
+    // Bitacora de cambios (RN-06)
+    Task<IReadOnlyList<BitacoraEntradaDto>> ListBitacoraAsync(int limit, CancellationToken ct);
 }

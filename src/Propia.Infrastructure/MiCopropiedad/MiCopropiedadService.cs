@@ -409,6 +409,8 @@ public class MiCopropiedadService : IMiCopropiedadService
             unidad.CoeficientePropiedad = req.Valor;
 
         await _db.SaveChangesAsync(ct);
+        await RegistrarBitacoraAsync("Coeficiente",
+            $"Unidad '{unidad.Numero}': coeficiente '{tipo.Nombre}' = {req.Valor:0.####}%.", ct);
         return new UnidadCoeficienteDto(req.TipoCoeficienteId, tipo.Nombre, req.Valor);
     }
 
@@ -755,8 +757,11 @@ public class MiCopropiedadService : IMiCopropiedadService
     {
         var z = await _db.ZonasComunes.FirstOrDefaultAsync(x => x.Id == zonaId, ct);
         if (z is null) return false;
+        var prev = z.Estado;
         z.Estado = req.Estado;  // RN-13: EnMantenimiento bloquea reservas en 2.13; RN-14: Inactiva conserva el registro
         await _db.SaveChangesAsync(ct);
+        if (prev != req.Estado)
+            await RegistrarBitacoraAsync("Zona", $"Zona '{z.Nombre}': estado {prev} -> {req.Estado}.", ct);
         return true;
     }
 
@@ -807,8 +812,11 @@ public class MiCopropiedadService : IMiCopropiedadService
     {
         var e = await _db.EquiposActivos.FirstOrDefaultAsync(x => x.Id == equipoId, ct);
         if (e is null) return false;
+        var prev = e.Estado;
         e.Estado = req.Estado;
         await _db.SaveChangesAsync(ct);
+        if (prev != req.Estado)
+            await RegistrarBitacoraAsync("Equipo", $"Equipo '{e.Nombre}': estado {prev} -> {req.Estado}.", ct);
         return true;
     }
 
@@ -1083,6 +1091,10 @@ public class MiCopropiedadService : IMiCopropiedadService
                     $"La tasa fija ({req.TasaMoraValor:0.##}%) supera el maximo legal mensual permitido ({TasaMoraMaximaLegalMensual:0.##}%) (RN-18).");
         }
 
+        // Valores previos para la bitacora (RN-06)
+        var monedaPrev = t.Moneda;
+        var cortePrev = t.DiaCorte;
+
         t.Moneda = moneda;
         t.DiaCorte = req.DiaCorte;
         t.TasaMoraEsLegal = req.TasaMoraEsLegal;
@@ -1091,10 +1103,38 @@ public class MiCopropiedadService : IMiCopropiedadService
         t.FinanzasConfiguradas = true;
         await _db.SaveChangesAsync(ct);
 
+        if (monedaPrev != moneda)
+            await RegistrarBitacoraAsync("Finanzas", $"Cambio de moneda de {monedaPrev} a {moneda}.", ct);
+        if (cortePrev != req.DiaCorte)
+            await RegistrarBitacoraAsync("Finanzas", $"Cambio del dia de corte de {cortePrev} a {req.DiaCorte}.", ct);
+
         return ToFinanzasParametros(t);
     }
 
     private static FinanzasParametrosDto ToFinanzasParametros(Tenant t) =>
         new(t.Moneda, t.DiaCorte, t.TasaMoraEsLegal, t.TasaMoraValor, t.PeriodoGraciaDias,
             t.FinanzasConfiguradas, TasaMoraMaximaLegalMensual);
+
+    // ----------------------------- Bitacora de cambios (RN-06) -----------------------------
+
+    public async Task<IReadOnlyList<BitacoraEntradaDto>> ListBitacoraAsync(int limit, CancellationToken ct)
+    {
+        return await _db.BitacoraMiCopropiedad
+            .AsNoTracking()
+            .OrderByDescending(b => b.CreatedAt)
+            .Take(limit <= 0 ? 50 : limit)
+            .Select(b => new BitacoraEntradaDto(b.Id, b.Categoria, b.Descripcion, b.Autor, b.CreatedAt))
+            .ToListAsync(ct);
+    }
+
+    /// <summary>Registra una entrada de bitacora (persistencia propia). RN-06.</summary>
+    private async Task RegistrarBitacoraAsync(string categoria, string descripcion, CancellationToken ct)
+    {
+        _db.BitacoraMiCopropiedad.Add(new BitacoraMiCopropiedad
+        {
+            Categoria = categoria,
+            Descripcion = descripcion
+        });
+        await _db.SaveChangesAsync(ct);
+    }
 }

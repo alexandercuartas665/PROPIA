@@ -218,6 +218,9 @@ public record FinanzasDto(
     FinanzasParametrosDto Parametros,
     ResumenFinancieroDto Resumen);
 
+// ----- Bitacora de cambios (RN-06) -----
+public record BitacoraEntradaDto(Guid Id, string Categoria, string Descripcion, string? Autor, DateTimeOffset Fecha);
+
 public record ActualizarFinanzasRequest(
     string Moneda,
     int DiaCorte,

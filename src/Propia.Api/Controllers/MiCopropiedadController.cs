@@ -333,6 +333,11 @@ public class MiCopropiedadController : ControllerBase
         return new ResumenFinancieroDto(cuotaVigente, recaudoPct, presupuestoAnual, carteraMora, hayVigente);
     }
 
+    // ---------- Bitacora de cambios (RN-06) ----------
+    [HttpGet("bitacora")]
+    public async Task<IActionResult> ListBitacora([FromQuery] int limit = 50, CancellationToken ct = default)
+        => Ok(await _svc.ListBitacoraAsync(limit, ct));
+
     // ---------- Helpers ----------
     private Guid? GetTenantId()
     {

@@ -53,6 +53,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<Torre> Torres => Set<Torre>();
     public DbSet<UnidadPrivada> UnidadesPrivadas => Set<UnidadPrivada>();
     public DbSet<UnidadVinculo> UnidadVinculos => Set<UnidadVinculo>();
+    public DbSet<BitacoraMiCopropiedad> BitacoraMiCopropiedad => Set<BitacoraMiCopropiedad>();
     public DbSet<ZonaComun> ZonasComunes => Set<ZonaComun>();
     public DbSet<EquipoActivo> EquiposActivos => Set<EquipoActivo>();
     public DbSet<ContratoServicio> ContratosServicio => Set<ContratoServicio>();
@@ -358,6 +359,15 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasOne(x => x.Torre).WithMany().HasForeignKey(x => x.TorreId).OnDelete(DeleteBehavior.SetNull);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.TenantId, x.Numero }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<BitacoraMiCopropiedad>(b =>
+        {
+            b.Property(x => x.Categoria).IsRequired().HasMaxLength(50);
+            b.Property(x => x.Descripcion).IsRequired().HasMaxLength(1000);
+            b.Property(x => x.Autor).HasMaxLength(200);
+            b.HasIndex(x => x.TenantId);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
