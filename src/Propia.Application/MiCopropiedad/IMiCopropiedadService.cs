@@ -80,4 +80,10 @@ public interface IMiCopropiedadService
     Task<IReadOnlyList<EquipoActivoDto>> ListEquiposAsync(CancellationToken ct);
     Task<EquipoActivoDto> CrearEquipoAsync(CrearEquipoActivoRequest req, CancellationToken ct);
     Task<bool> EliminarEquipoAsync(Guid equipoId, CancellationToken ct);
+
+    // Seccion 8 - Finanzas (parametros). El resumen en tiempo real lo orquesta el controller
+    // combinando 2.6 Presupuesto + 2.7 Cartera.
+    IReadOnlyList<MonedaDto> ListMonedas();
+    Task<FinanzasParametrosDto> GetFinanzasParametrosAsync(Guid tenantId, CancellationToken ct);
+    Task<FinanzasParametrosDto> ActualizarFinanzasAsync(Guid tenantId, ActualizarFinanzasRequest req, CancellationToken ct);
 }

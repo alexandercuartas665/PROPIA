@@ -545,6 +545,18 @@ else
                 La Ley 675 de 2001 establece que las copropiedades residenciales deben tener Consejo de Administracion. Te recomendamos conformarlo.
             </p>
         }
+        <div class="row g-2 mb-3">
+            <div class="col-md-2"><InputText @bind-Value="_nuevoConsejo.Documento" class="form-control form-control-sm" placeholder="Cedula" /></div>
+            <div class="col-md-2"><InputText @bind-Value="_nuevoConsejo.Nombres" class="form-control form-control-sm" placeholder="Nombres" /></div>
+            <div class="col-md-2"><InputText @bind-Value="_nuevoConsejo.Apellidos" class="form-control form-control-sm" placeholder="Apellidos" /></div>
+            <div class="col-md-2">
+                <InputSelect @bind-Value="_nuevoConsejo.Cargo" class="form-select form-select-sm">
+                    @foreach (var c in Enum.GetValues<CargoConsejo>()) { <option value="@c">@c</option> }
+                </InputSelect>
+            </div>
+            <div class="col-md-2"><input type="date" class="form-control form-control-sm" @bind="_nuevoConsejo.FechaInicio" /></div>
+            <div class="col-md-2"><button class="btn btn-sm btn-outline-dark w-100" @onclick="AgregarMiembroConsejo">+ Miembro</button></div>
+        </div>
 
         <h6 class="mb-2 mt-3">Comites</h6>
         @if (_comites.Count == 0) { <p class="text-muted small mb-2">Sin comites configurados.</p> }
@@ -701,6 +713,97 @@ else
         </div>
     </SeccionCard>
 
+    @* Seccion 8 - Finanzas *@
+    <SeccionCard Titulo="8. Finanzas" Completa="@CompFinanzas" Abierta="@_secciones[SecFin]" OnToggle="() => ToggleSec(SecFin)">
+        @if (_finanzas is null)
+        {
+            <p class="text-muted small mb-0">Cargando...</p>
+        }
+        else
+        {
+            var sim = _monedas.FirstOrDefault(m => m.Codigo == _finForm.Moneda)?.Simbolo ?? "$";
+
+            @* Resumen financiero en tiempo real (se nutre de 2.6 Presupuesto y 2.7 Cartera) *@
+            <div class="row g-2 mb-1">
+                <div class="col-6 col-md-3">
+                    <div class="fin-kpi"><div class="fin-kpi-label">Cuota administracion</div>
+                        <div class="fin-kpi-val">@sim @_finanzas.Resumen.CuotaAdministracionVigente.ToString("N0")</div></div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="fin-kpi"><div class="fin-kpi-label">Recaudo del mes</div>
+                        <div class="fin-kpi-val">@_finanzas.Resumen.RecaudoMesPct.ToString("0.#")%</div></div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="fin-kpi"><div class="fin-kpi-label">Presupuesto anual</div>
+                        <div class="fin-kpi-val">@sim @_finanzas.Resumen.PresupuestoAnualAprobado.ToString("N0")</div></div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="fin-kpi"><div class="fin-kpi-label">Cartera en mora</div>
+                        <div class="fin-kpi-val text-danger">@sim @_finanzas.Resumen.CarteraEnMora.ToString("N0")</div></div>
+                </div>
+            </div>
+            @if (!_finanzas.Resumen.HayPresupuestoVigente)
+            {
+                <p class="text-muted small mb-0">El resumen se completa cuando exista un presupuesto vigente en 2.6 Presupuesto.</p>
+            }
+
+            <hr />
+            <h6 class="mb-2">Parametros de configuracion</h6>
+            <div class="row g-2">
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Moneda</label>
+                    <select class="form-select form-select-sm" @bind="_finForm.Moneda">
+                        @foreach (var m in _monedas) { <option value="@m.Codigo">@m.Codigo - @m.Nombre</option> }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Dia de corte (1-28)</label>
+                    <input type="number" min="1" max="28" class="form-control form-control-sm" @bind="_finForm.DiaCorte" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Periodo de gracia (dias)</label>
+                    <input type="number" min="0" max="30" class="form-control form-control-sm" @bind="_finForm.PeriodoGraciaDias" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Tasa de interes por mora</label>
+                    <select class="form-select form-select-sm" @bind="MoraModo">
+                        <option value="legal">Tasa legal vigente (automatica)</option>
+                        <option value="fija">Tasa fija</option>
+                    </select>
+                </div>
+                @if (!_finForm.TasaMoraEsLegal)
+                {
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">Tasa fija mensual (%)</label>
+                        <input type="number" step="0.01" min="0" class="form-control form-control-sm" @bind="_finForm.TasaMoraValor" />
+                        <div class="form-text small">Maximo legal: @_finanzas.Parametros.TasaMoraMaximaLegal.ToString("0.##")% mensual</div>
+                    </div>
+                }
+            </div>
+
+            @if (_finForm.DiaCorte != _diaCorteOriginal)
+            {
+                <div class="alert alert-warning py-2 mt-3 mb-0 small">Cambiar el dia de corte afecta la facturacion a partir del proximo periodo.</div>
+            }
+            @if (_finConfirmMoneda)
+            {
+                <div class="alert alert-warning py-2 mt-3 mb-0 small">
+                    <strong>Advertencia:</strong> cambiar la moneda impacta todos los valores monetarios de la copropiedad. Confirma para continuar.
+                </div>
+            }
+
+            <div class="mt-3 d-flex gap-2">
+                <button class="btn btn-sm" style="background: var(--propia-primary); color:#fff;" @onclick="GuardarFinanzas">
+                    @(_finConfirmMoneda ? "Confirmar cambio de moneda y guardar" : "Guardar parametros")
+                </button>
+                @if (_finConfirmMoneda)
+                {
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => { _finForm.Moneda = _monedaOriginal!; _finConfirmMoneda = false; })">Cancelar</button>
+                }
+            </div>
+        }
+    </SeccionCard>
+
     @if (!string.IsNullOrEmpty(_actionMsg))
     {
         <div class="alert @_actionMsgClass mt-3">@_actionMsg</div>
@@ -717,6 +820,12 @@ else
     }
     .hero-stats { display: flex; gap: 1rem; text-align: center; justify-content: end; }
     .hero-stats div strong { font-size: 1.4rem; }
+    .fin-kpi {
+        border: 1px solid var(--bs-border-color); border-radius: 10px;
+        padding: 10px 12px; height: 100%; background: var(--bs-body-bg);
+    }
+    .fin-kpi-label { font-size: .72rem; text-transform: uppercase; color: var(--bs-secondary-color); letter-spacing: .02em; }
+    .fin-kpi-val { font-size: 1.25rem; font-weight: 700; color: var(--bs-heading-color); }
 </style>
 
 @code {
@@ -727,6 +836,7 @@ else
     private const string SecSrv = "srv";
     private const string SecZon = "zon";
     private const string SecEq = "eq";
+    private const string SecFin = "fin";
 
     private string? _jwt;
     private string _jwtInput = "";
@@ -737,8 +847,10 @@ else
 
     private Dictionary<string, bool> _secciones = new()
     {
+        // Spec 2.3: Identidad y Finanzas siempre expandidas por defecto.
         [SecIdent] = true, [SecDistrib] = true, [SecEqTrab] = false,
-        [SecGob] = false, [SecSrv] = false, [SecZon] = false, [SecEq] = false
+        [SecGob] = false, [SecSrv] = false, [SecZon] = false, [SecEq] = false,
+        [SecFin] = true
     };
 
     private ResumenMiCopropiedadDto? _resumen;
@@ -755,8 +867,17 @@ else
     private List<ComiteDto> _comites = new();
     private RevisorFiscalDto? _revisorFiscal;
     private NuevoEquipoMiembro _nuevoEq = new();
+    private NuevoConsejoMiembro _nuevoConsejo = new() { FechaInicio = DateTime.Today };
     private NuevoComite _nuevoComite = new() { FechaConformacion = DateTime.Today };
     private NuevoRevisorFiscal _nuevoRev = new() { FechaPosesion = DateTime.Today };
+
+    // Sec 8 Finanzas
+    private FinanzasDto? _finanzas;
+    private List<MonedaDto> _monedas = new();
+    private FinForm _finForm = new();
+    private string? _monedaOriginal;
+    private int _diaCorteOriginal = 1;
+    private bool _finConfirmMoneda;
 
     private NuevaTorre _nuevaTorre = new();
     private NuevaUnidad _nuevaUnidad = new();
@@ -783,6 +904,7 @@ else
     private bool CompServicios => Comp("Servicios");
     private bool CompZonasComunes => Comp("ZonasComunes");
     private bool CompEquipos => Comp("Equipos");
+    private bool CompFinanzas => Comp("Finanzas");
 
     // Hero card foto fachada (spec A2/A3)
     private bool HasFachada => !string.IsNullOrEmpty(_resumen?.Identidad?.FotoFachadaUrl);
@@ -870,9 +992,79 @@ else
             var revResp = await http.GetAsync("/api/mi-copropiedad/revisor-fiscal");
             _revisorFiscal = revResp.StatusCode == System.Net.HttpStatusCode.NoContent ? null
                 : await revResp.Content.ReadFromJsonAsync<RevisorFiscalDto>();
+
+            // Seccion 8 - Finanzas
+            _monedas = await http.GetFromJsonAsync<List<MonedaDto>>("/api/mi-copropiedad/finanzas/monedas") ?? new();
+            _finanzas = await http.GetFromJsonAsync<FinanzasDto>("/api/mi-copropiedad/finanzas");
+            if (_finanzas is not null)
+            {
+                var p = _finanzas.Parametros;
+                _finForm = new FinForm
+                {
+                    Moneda = p.Moneda, DiaCorte = p.DiaCorte, TasaMoraEsLegal = p.TasaMoraEsLegal,
+                    TasaMoraValor = p.TasaMoraValor, PeriodoGraciaDias = p.PeriodoGraciaDias
+                };
+                _monedaOriginal = p.Moneda;
+                _diaCorteOriginal = p.DiaCorte;
+                _finConfirmMoneda = false;
+            }
         }
         catch (Exception ex) { _loadError = ex.Message; }
         finally { _busy = false; }
+    }
+
+    // ---------- Sec 8 Finanzas ----------
+    private async Task GuardarFinanzas()
+    {
+        // RN-16: cambiar la moneda requiere confirmacion explicita.
+        if (_finForm.Moneda != _monedaOriginal && !_finConfirmMoneda)
+        {
+            _finConfirmMoneda = true;
+            return;
+        }
+        try
+        {
+            var http = Auth();
+            var req = new
+            {
+                moneda = _finForm.Moneda,
+                diaCorte = _finForm.DiaCorte,
+                tasaMoraEsLegal = _finForm.TasaMoraEsLegal,
+                tasaMoraValor = _finForm.TasaMoraEsLegal ? (decimal?)null : _finForm.TasaMoraValor,
+                periodoGraciaDias = _finForm.PeriodoGraciaDias
+            };
+            var resp = await http.PutAsJsonAsync("/api/mi-copropiedad/finanzas", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                _finConfirmMoneda = false;
+                await CargarAsync();  // refresca parametros + completitud + resumen
+                Msg("Parametros financieros guardados.", true);
+            }
+            else
+            {
+                var err = await resp.Content.ReadFromJsonAsync<ApiError>();
+                Msg(err?.Error ?? "No se pudo guardar.", false);
+            }
+        }
+        catch (Exception ex) { Msg(ex.Message, false); }
+    }
+
+    private record ApiError(string? Error);
+
+    // Bindeo string del modo de mora (evita el problema de bindear <select> a bool).
+    private string MoraModo
+    {
+        get => _finForm.TasaMoraEsLegal ? "legal" : "fija";
+        set => _finForm.TasaMoraEsLegal = value != "fija";
+    }
+
+    private class FinForm
+    {
+        public string Moneda { get; set; } = "COP";
+        public int DiaCorte { get; set; } = 1;
+        public bool TasaMoraEsLegal { get; set; } = true;
+        public decimal? TasaMoraValor { get; set; }
+        public int PeriodoGraciaDias { get; set; }
     }
 
     // ---------- Upload imagenes (A2/A3) ----------
@@ -951,6 +1143,33 @@ else
         await CargarAsync();
     }
 
+    // ---------- Sec 4: Consejo de Administracion ----------
+    private async Task AgregarMiembroConsejo()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevoConsejo.Documento) || string.IsNullOrWhiteSpace(_nuevoConsejo.Nombres) || string.IsNullOrWhiteSpace(_nuevoConsejo.Apellidos))
+        {
+            Msg("Documento, nombres y apellidos son obligatorios.", false);
+            return;
+        }
+        var http = Auth();
+        var vincResp = await http.PostAsJsonAsync("/api/mi-copropiedad/vincular-persona",
+            new VincularPersonaPorDocumentoRequest(_nuevoConsejo.Documento, _nuevoConsejo.Nombres, _nuevoConsejo.Apellidos, null, null));
+        if (!vincResp.IsSuccessStatusCode) { Msg(await vincResp.Content.ReadAsStringAsync(), false); return; }
+        var vinc = await vincResp.Content.ReadFromJsonAsync<VincularResponse>();
+        if (vinc is null) return;
+
+        var resp = await http.PostAsJsonAsync("/api/mi-copropiedad/consejo",
+            new AgregarMiembroConsejoRequest(vinc.PersonaId, _nuevoConsejo.Cargo, DateOnly.FromDateTime(_nuevoConsejo.FechaInicio), null));
+        if (resp.IsSuccessStatusCode)
+        {
+            // Tras el primer miembro, dejamos el cargo en Vocal para agregar el resto mas rapido.
+            _nuevoConsejo = new() { FechaInicio = DateTime.Today, Cargo = CargoConsejo.Vocal };
+            await CargarAsync();
+            Msg("Miembro del consejo agregado.", true);
+        }
+        else Msg(await resp.Content.ReadAsStringAsync(), false);
+    }
+
     // ---------- Sec 4: Revisor Fiscal ----------
     private async Task DesignarRevisorFiscal()
     {
@@ -989,6 +1208,14 @@ else
         public TipoVinculacion Tipo { get; set; } = TipoVinculacion.Interno;
     }
     private class NuevoComite { public string Nombre { get; set; } = ""; public string? Descripcion { get; set; } public DateTime FechaConformacion { get; set; } }
+    private class NuevoConsejoMiembro
+    {
+        public string Documento { get; set; } = "";
+        public string Nombres { get; set; } = "";
+        public string Apellidos { get; set; } = "";
+        public CargoConsejo Cargo { get; set; } = CargoConsejo.Presidente;
+        public DateTime FechaInicio { get; set; }
+    }
     private class NuevoRevisorFiscal
     {
         public string Documento { get; set; } = "";

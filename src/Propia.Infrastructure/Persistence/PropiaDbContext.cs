@@ -329,6 +329,11 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             // Labels personalizables (spec v1.0 - "Sector"/"Planta")
             b.Property(x => x.LabelAgrupacion).HasMaxLength(30);
             b.Property(x => x.LabelPiso).HasMaxLength(30);
+            // Parametros financieros (seccion 8)
+            b.Property(x => x.Moneda).HasMaxLength(3).HasDefaultValue("COP");
+            b.Property(x => x.DiaCorte).HasDefaultValue(1);
+            b.Property(x => x.TasaMoraEsLegal).HasDefaultValue(true);
+            b.Property(x => x.TasaMoraValor).HasPrecision(6, 4);
         });
 
         modelBuilder.Entity<Torre>(b =>

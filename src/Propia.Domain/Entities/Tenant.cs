@@ -37,6 +37,14 @@ public class Tenant : BaseEntity
     public string? LabelAgrupacion { get; set; }  // Default "Torre"
     public string? LabelPiso { get; set; }        // Default "Piso"
 
+    // Parametros financieros (modulo 2.3 - seccion 8 Finanzas). Consumidos por 2.6/2.7.
+    public string Moneda { get; set; } = "COP";          // Codigo ISO 4217 (RN: nunca simbolo/texto libre)
+    public int DiaCorte { get; set; } = 1;               // RN-17: entre 1 y 28
+    public bool TasaMoraEsLegal { get; set; } = true;    // true = tasa legal vigente automatica
+    public decimal? TasaMoraValor { get; set; }          // % mensual cuando es fija (RN-18: <= maximo legal)
+    public int PeriodoGraciaDias { get; set; }           // 0..30
+    public bool FinanzasConfiguradas { get; set; }       // true una vez el admin guarda la seccion
+
     public EstadoCopropiedad Estado { get; set; } = EstadoCopropiedad.Activa;
     public EstadoCustodia EstadoCustodia { get; set; } = EstadoCustodia.SinAdmin;
 

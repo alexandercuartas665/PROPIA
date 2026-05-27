@@ -169,3 +169,38 @@ public record ResumenMiCopropiedadDto(
     int CantidadMiembrosConsejo,
     int CompletitudPct,
     IReadOnlyDictionary<string, bool> SeccionesCompletas);
+
+// ----- Finanzas (seccion 8) -----
+
+/// <summary>Item del catalogo de monedas (ISO 4217).</summary>
+public record MonedaDto(string Codigo, string Nombre, string Simbolo);
+
+/// <summary>Parametros financieros de la copropiedad (consumidos por 2.6/2.7).</summary>
+public record FinanzasParametrosDto(
+    string Moneda,
+    int DiaCorte,
+    bool TasaMoraEsLegal,
+    decimal? TasaMoraValor,
+    int PeriodoGraciaDias,
+    bool Configuradas,
+    decimal TasaMoraMaximaLegal);  // maximo legal vigente para validar la tasa fija
+
+/// <summary>Resumen financiero en tiempo real (se nutre de 2.6 Presupuesto y 2.7 Cartera).</summary>
+public record ResumenFinancieroDto(
+    decimal CuotaAdministracionVigente,
+    decimal RecaudoMesPct,
+    decimal PresupuestoAnualAprobado,
+    decimal CarteraEnMora,
+    bool HayPresupuestoVigente);
+
+/// <summary>Vista completa de la seccion Finanzas: parametros + resumen.</summary>
+public record FinanzasDto(
+    FinanzasParametrosDto Parametros,
+    ResumenFinancieroDto Resumen);
+
+public record ActualizarFinanzasRequest(
+    string Moneda,
+    int DiaCorte,
+    bool TasaMoraEsLegal,
+    decimal? TasaMoraValor,
+    int PeriodoGraciaDias);

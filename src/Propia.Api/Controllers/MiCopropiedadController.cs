@@ -2,6 +2,9 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Propia.Application.MiCopropiedad;
+using Propia.Application.Presupuesto;
+using Propia.Application.Cartera;
+using Propia.Domain.Enums;
 
 namespace Propia.Api.Controllers;
 
@@ -16,8 +19,15 @@ namespace Propia.Api.Controllers;
 public class MiCopropiedadController : ControllerBase
 {
     private readonly IMiCopropiedadService _svc;
+    private readonly IPresupuestoService _presupuesto;
+    private readonly ICarteraService _cartera;
 
-    public MiCopropiedadController(IMiCopropiedadService svc) => _svc = svc;
+    public MiCopropiedadController(IMiCopropiedadService svc, IPresupuestoService presupuesto, ICarteraService cartera)
+    {
+        _svc = svc;
+        _presupuesto = presupuesto;
+        _cartera = cartera;
+    }
 
     // ---------- Resumen ----------
     [HttpGet("resumen")]
@@ -229,6 +239,80 @@ public class MiCopropiedadController : ControllerBase
     [HttpDelete("equipos/{id:guid}")]
     public async Task<IActionResult> EliminarEquipo(Guid id, CancellationToken ct)
         => await _svc.EliminarEquipoAsync(id, ct) ? NoContent() : NotFound();
+
+    // ---------- Seccion 8: Finanzas ----------
+    [HttpGet("finanzas/monedas")]
+    public IActionResult ListMonedas() => Ok(_svc.ListMonedas());
+
+    [HttpGet("finanzas")]
+    public async Task<IActionResult> GetFinanzas(CancellationToken ct)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
+        try
+        {
+            var parametros = await _svc.GetFinanzasParametrosAsync(tenantId.Value, ct);
+            var resumen = await ConstruirResumenFinancieroAsync(ct);
+            return Ok(new FinanzasDto(parametros, resumen));
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpPut("finanzas")]
+    public async Task<IActionResult> ActualizarFinanzas([FromBody] ActualizarFinanzasRequest req, CancellationToken ct)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
+        try
+        {
+            var parametros = await _svc.ActualizarFinanzasAsync(tenantId.Value, req, ct);
+            var resumen = await ConstruirResumenFinancieroAsync(ct);
+            return Ok(new FinanzasDto(parametros, resumen));
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    /// <summary>
+    /// Resumen financiero en tiempo real (spec 2.3 seccion 8): se nutre de 2.6 Presupuesto
+    /// y 2.7 Cartera. Defensivo: si un modulo aun no tiene datos, devuelve 0 en ese indicador.
+    /// </summary>
+    private async Task<ResumenFinancieroDto> ConstruirResumenFinancieroAsync(CancellationToken ct)
+    {
+        decimal cuotaVigente = 0, presupuestoAnual = 0, recaudoPct = 0, carteraMora = 0;
+        bool hayVigente = false;
+
+        try
+        {
+            var presupuestos = await _presupuesto.ListarPresupuestosAsync(ct);
+            var vigente = presupuestos.FirstOrDefault(p => p.Estado == EstadoPresupuesto.EnEjecucion)
+                          ?? presupuestos.FirstOrDefault(p => p.Estado == EstadoPresupuesto.Aprobado);
+            if (vigente is not null)
+            {
+                hayVigente = true;
+                presupuestoAnual = vigente.MontoTotal;
+                var detalle = await _presupuesto.GetPresupuestoDetalleAsync(vigente.Id, ct);
+                if (detalle is not null) cuotaVigente = detalle.CuotaProyectadaPromedioMes;
+            }
+        }
+        catch { /* 2.6 sin datos */ }
+
+        try
+        {
+            var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+            var recaudo = await _presupuesto.GetRecaudoResumenAsync(hoy, ct);
+            recaudoPct = recaudo.PorcentajeRecaudo;
+        }
+        catch { /* sin liquidaciones del periodo */ }
+
+        try
+        {
+            var tablero = await _cartera.GetTableroAsync(ct);
+            carteraMora = tablero.Kpis.TotalMoraCop;
+        }
+        catch { /* 2.7 sin datos */ }
+
+        return new ResumenFinancieroDto(cuotaVigente, recaudoPct, presupuestoAnual, carteraMora, hayVigente);
+    }
 
     // ---------- Helpers ----------
     private Guid? GetTenantId()

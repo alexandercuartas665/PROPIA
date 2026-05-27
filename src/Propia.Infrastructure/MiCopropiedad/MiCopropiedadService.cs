@@ -45,7 +45,7 @@ public class MiCopropiedadService : IMiCopropiedadService
             ["Servicios"] = contratos > 0,
             ["ZonasComunes"] = zonas > 0,
             ["Equipos"] = equipos > 0,
-            ["Finanzas"] = false  // se completa cuando exista 2.6
+            ["Finanzas"] = t.FinanzasConfiguradas  // el admin guardo los parametros de la seccion 8
         };
         var pct = (int)(completas.Values.Count(b => b) * 100.0 / completas.Count);
 
@@ -956,4 +956,71 @@ public class MiCopropiedadService : IMiCopropiedadService
         await _db.SaveChangesAsync(ct);
         return nueva.Id;
     }
+
+    // ----------------------------- Seccion 8: Finanzas -----------------------------
+
+    // Maximo legal de la tasa de mora MENSUAL (placeholder configurable). La spec preve
+    // actualizarlo desde la Superfinanciera - diferido. Sirve para validar la tasa fija (RN-18).
+    private const decimal TasaMoraMaximaLegalMensual = 2.5m;
+
+    // Catalogo de monedas (ISO 4217) estatico - reference data fija.
+    private static readonly IReadOnlyList<MonedaDto> _monedas = new List<MonedaDto>
+    {
+        new("COP", "Peso colombiano", "$"),
+        new("USD", "Dolar estadounidense", "US$"),
+        new("EUR", "Euro", "EUR"),
+        new("MXN", "Peso mexicano", "MX$"),
+        new("PEN", "Sol peruano", "S/"),
+        new("CLP", "Peso chileno", "CLP$"),
+        new("ARS", "Peso argentino", "AR$"),
+        new("BRL", "Real brasileno", "R$"),
+    };
+
+    public IReadOnlyList<MonedaDto> ListMonedas() => _monedas;
+
+    public async Task<FinanzasParametrosDto> GetFinanzasParametrosAsync(Guid tenantId, CancellationToken ct)
+    {
+        var t = await _db.Tenants.AsNoTracking().FirstOrDefaultAsync(x => x.Id == tenantId, ct)
+            ?? throw new InvalidOperationException("Copropiedad no encontrada.");
+        return ToFinanzasParametros(t);
+    }
+
+    public async Task<FinanzasParametrosDto> ActualizarFinanzasAsync(Guid tenantId, ActualizarFinanzasRequest req, CancellationToken ct)
+    {
+        var t = await _db.Tenants.FirstOrDefaultAsync(x => x.Id == tenantId, ct)
+            ?? throw new InvalidOperationException("Copropiedad no encontrada.");
+
+        var moneda = (req.Moneda ?? "").Trim().ToUpperInvariant();
+        if (!_monedas.Any(m => m.Codigo == moneda))
+            throw new InvalidOperationException("Moneda invalida. Usa un codigo del catalogo (ISO 4217).");
+
+        if (req.DiaCorte < 1 || req.DiaCorte > 28)
+            throw new InvalidOperationException("El dia de corte debe estar entre 1 y 28 (RN-17).");
+
+        if (req.PeriodoGraciaDias < 0 || req.PeriodoGraciaDias > 30)
+            throw new InvalidOperationException("El periodo de gracia debe estar entre 0 y 30 dias.");
+
+        if (!req.TasaMoraEsLegal)
+        {
+            if (req.TasaMoraValor is null || req.TasaMoraValor < 0)
+                throw new InvalidOperationException("Ingresa una tasa de mora valida.");
+            if (req.TasaMoraValor > TasaMoraMaximaLegalMensual)
+                throw new InvalidOperationException(
+                    $"La tasa fija ({req.TasaMoraValor:0.##}%) supera el maximo legal mensual permitido ({TasaMoraMaximaLegalMensual:0.##}%) (RN-18).");
+        }
+
+        t.Moneda = moneda;
+        t.DiaCorte = req.DiaCorte;
+        t.TasaMoraEsLegal = req.TasaMoraEsLegal;
+        t.TasaMoraValor = req.TasaMoraEsLegal ? null : req.TasaMoraValor;
+        t.PeriodoGraciaDias = req.PeriodoGraciaDias;
+        t.FinanzasConfiguradas = true;
+        await _db.SaveChangesAsync(ct);
+
+        return ToFinanzasParametros(t);
+    }
+
+    private static FinanzasParametrosDto ToFinanzasParametros(Tenant t) =>
+        new(t.Moneda, t.DiaCorte, t.TasaMoraEsLegal, t.TasaMoraValor, t.PeriodoGraciaDias,
+            t.FinanzasConfiguradas, TasaMoraMaximaLegalMensual);
 }
