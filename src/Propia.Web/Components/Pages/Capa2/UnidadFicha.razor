@@ -1,5 +1,6 @@
 @page "/mi-copropiedad/unidades/{UnidadId:guid}"
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.Cartera
 @inject IHttpClientFactory HttpFactory
 @inject NavigationManager Nav
 @inject IJSRuntime Js
@@ -62,9 +63,9 @@ else
                 <div class="card-body">
                     <div class="kpi-icon" style="background: linear-gradient(135deg, #f59e0b, #fbbf24);">$</div>
                     <div>
-                        <div class="text-muted small">Deuda</div>
-                        <h4 class="mb-0">$0</h4>
-                        <small class="text-muted">2.7 Cartera no disponible aun</small>
+                        <div class="text-muted small">Saldo en cartera</div>
+                        <h4 class="mb-0 @(_cartera?.SaldoTotal > 0 ? "text-danger" : "")">$ @((_cartera?.SaldoTotal ?? 0).ToString("N0"))</h4>
+                        <small class="text-muted">@(_cartera is null ? "Sin movimientos (2.7)" : $"{_cartera.DiasMora} dias en mora")</small>
                     </div>
                 </div>
             </div>
@@ -120,8 +121,34 @@ else
     @* Estado de cuenta + PQRS recientes + Tareas (stubs) *@
     <div class="card mb-3">
         <div class="card-body">
-            <h6 class="text-muted small mb-3">ESTADO DE CUENTA</h6>
-            <p class="text-muted small mb-0">Marzo 2026: <em>(modulo 2.6 + 2.7 no disponible)</em></p>
+            <h6 class="text-muted small mb-3">ESTADO DE CUENTA <span class="badge bg-light text-dark border ms-1">2.7 Cartera</span></h6>
+            @if (_cartera is null)
+            {
+                <p class="text-muted small mb-0">Sin movimientos de cartera para esta unidad (aun no hay liquidaciones del modulo 2.6 Presupuesto).</p>
+            }
+            else
+            {
+                <div class="row g-2 mb-2">
+                    <div class="col-6 col-md-3"><div class="border rounded p-2"><div class="small text-muted">Capital</div><div class="fw-bold">$ @_cartera.SaldoCapital.ToString("N0")</div></div></div>
+                    <div class="col-6 col-md-3"><div class="border rounded p-2"><div class="small text-muted">Intereses</div><div class="fw-bold">$ @_cartera.SaldoIntereses.ToString("N0")</div></div></div>
+                    <div class="col-6 col-md-3"><div class="border rounded p-2"><div class="small text-muted">Total</div><div class="fw-bold @(_cartera.SaldoTotal > 0 ? "text-danger" : "")">$ @_cartera.SaldoTotal.ToString("N0")</div></div></div>
+                    <div class="col-6 col-md-3"><div class="border rounded p-2"><div class="small text-muted">Dias mora</div><div class="fw-bold">@_cartera.DiasMora</div></div></div>
+                </div>
+                @if (_cartera.Deudas.Count > 0)
+                {
+                    <table class="table table-sm small mb-0">
+                        <thead><tr><th>Periodo</th><th>Concepto</th><th class="text-end">Total</th><th>Vence</th><th>Estado</th></tr></thead>
+                        <tbody>
+                            @foreach (var d in _cartera.Deudas)
+                            {
+                                <tr><td>@d.Periodo.ToString("yyyy-MM")</td><td>@d.Concepto</td><td class="text-end">$ @d.Total.ToString("N0")</td><td>@d.FechaVencimiento.ToString("yyyy-MM-dd")</td><td>@d.Estado</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                else { <p class="text-muted small mb-0">Sin deudas pendientes. Unidad al dia.</p> }
+                <a href="/cartera" class="btn btn-sm btn-outline-dark mt-2">Ver en Cartera</a>
+            }
         </div>
     </div>
 
@@ -155,6 +182,7 @@ else
     private string? _actionMsg;
     private string? _loadError;
     private UnidadDto? _unidad;
+    private CarteraUnidadDetalleDto? _cartera;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -191,6 +219,14 @@ else
             }
             resp.EnsureSuccessStatusCode();
             _unidad = await resp.Content.ReadFromJsonAsync<UnidadDto>();
+
+            // Estado de cuenta real (2.7 Cartera). 404 si la unidad aun no tiene cartera.
+            try
+            {
+                var cResp = await http.GetAsync($"/api/cartera/unidades/{UnidadId}");
+                _cartera = cResp.IsSuccessStatusCode ? await cResp.Content.ReadFromJsonAsync<CarteraUnidadDetalleDto>() : null;
+            }
+            catch { _cartera = null; }
         }
         catch (Exception ex) { _loadError = ex.Message; }
     }
