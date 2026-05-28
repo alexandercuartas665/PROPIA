@@ -9,79 +9,123 @@
 
 <PageTitle>Crea tu cuenta - PROPIA</PageTitle>
 
-@* Registro self-service - paso 1 del wizard 2.1.
-   Tras crear la cuenta, el backend devuelve un JWT (sin tenant aun) + sessionId. Lo guardamos en
-   sessionStorage y enviamos al wizard /onboarding/continuar para los pasos 3-5 autenticados.
-   Esto soporta retomada (RN-03) desde otro dispositivo: el usuario entra por /login y el
-   handler de cliente sin tenants lo redirige al wizard si tiene sesion pendiente. *@
+@* Registro self-service - paso 1 y 2 del wizard 2.1.
+   Paso 1 (formulario): POST /paso1/registrar -> crea User+Persona, envia OTP por correo, NO devuelve JWT.
+   Paso 2 (OTP):        POST /paso1/confirmar-email -> verifica OTP, devuelve JWT + sessionId.
+   Tras OTP exitoso, guardamos en sessionStorage y vamos al wizard /onboarding/continuar (pasos 3-5). *@
 
-<h2 class="h4 mb-1 text-center fw-semibold">Crea tu cuenta</h2>
-<p class="text-muted text-center mb-4">En menos de 2 minutos quedaras dentro de PROPIA</p>
+@if (_step == Step.Form)
+{
+    <h2 class="h4 mb-1 text-center fw-semibold">Crea tu cuenta</h2>
+    <p class="text-muted text-center mb-4">En menos de 2 minutos quedaras dentro de PROPIA</p>
 
-<EditForm Model="@_register" OnValidSubmit="HandleRegisterAsync" FormName="register">
-    <DataAnnotationsValidator />
+    <EditForm Model="@_register" OnValidSubmit="HandleRegisterAsync" FormName="register">
+        <DataAnnotationsValidator />
 
-    <div class="mb-3">
-        <label class="form-label">Nombre completo</label>
-        <InputText @bind-Value="_register.NombreCompleto" class="form-control"
-                   placeholder="Tu nombre y apellidos" autocomplete="name" />
-        <ValidationMessage For="@(() => _register.NombreCompleto)" class="text-danger small mt-1" />
-    </div>
-
-    <div class="mb-3">
-        <label class="form-label">Correo electronico</label>
-        <InputText @bind-Value="_register.Email" class="form-control"
-                   placeholder="tu@correo.com" autocomplete="email" />
-        <ValidationMessage For="@(() => _register.Email)" class="text-danger small mt-1" />
-    </div>
-
-    <div class="mb-2">
-        <label class="form-label">Contrasena</label>
-        <div class="password-wrapper">
-            <InputText type="@(_showPwd ? "text" : "password")"
-                       @bind-Value="_register.Password" @bind-Value:after="EvaluarFortaleza"
-                       class="form-control" placeholder="Minimo 10 caracteres" autocomplete="new-password" />
-            <button type="button" class="password-toggle" @onclick="TogglePwd"
-                    aria-label="Mostrar u ocultar contrasena">
-                @if (_showPwd)
-                {
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
-                }
-                else
-                {
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                }
-            </button>
+        <div class="mb-3">
+            <label class="form-label">Nombre completo</label>
+            <InputText @bind-Value="_register.NombreCompleto" class="form-control"
+                       placeholder="Tu nombre y apellidos" autocomplete="name" />
+            <ValidationMessage For="@(() => _register.NombreCompleto)" class="text-danger small mt-1" />
         </div>
-        @if (!string.IsNullOrEmpty(_register.Password))
-        {
-            <div class="pwd-strength @($"pwd-strength-{_fortaleza}")">
-                <div class="pwd-strength-bar"><div></div></div>
-                <span class="pwd-strength-label">@FortalezaLabel(_fortaleza)</span>
+
+        <div class="mb-3">
+            <label class="form-label">Correo electronico</label>
+            <InputText @bind-Value="_register.Email" class="form-control"
+                       placeholder="tu@correo.com" autocomplete="email" />
+            <ValidationMessage For="@(() => _register.Email)" class="text-danger small mt-1" />
+        </div>
+
+        <div class="mb-2">
+            <label class="form-label">Contrasena</label>
+            <div class="password-wrapper">
+                <InputText type="@(_showPwd ? "text" : "password")"
+                           @bind-Value="_register.Password" @bind-Value:after="EvaluarFortaleza"
+                           class="form-control" placeholder="Minimo 10 caracteres" autocomplete="new-password" />
+                <button type="button" class="password-toggle" @onclick="TogglePwd"
+                        aria-label="Mostrar u ocultar contrasena">
+                    @if (_showPwd)
+                    {
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+                    }
+                    else
+                    {
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    }
+                </button>
             </div>
-        }
-        <ValidationMessage For="@(() => _register.Password)" class="text-danger small mt-1" />
-    </div>
+            @if (!string.IsNullOrEmpty(_register.Password))
+            {
+                <div class="pwd-strength @($"pwd-strength-{_fortaleza}")">
+                    <div class="pwd-strength-bar"><div></div></div>
+                    <span class="pwd-strength-label">@FortalezaLabel(_fortaleza)</span>
+                </div>
+            }
+            <ValidationMessage For="@(() => _register.Password)" class="text-danger small mt-1" />
+        </div>
 
-    @if (!string.IsNullOrEmpty(_errorMessage)) { <div class="alert alert-danger py-2 mb-3">@_errorMessage</div> }
-    @if (!string.IsNullOrEmpty(_successMessage)) { <div class="alert alert-success py-2 mb-3">@_successMessage</div> }
+        @if (!string.IsNullOrEmpty(_errorMessage)) { <div class="alert alert-danger py-2 mb-3">@_errorMessage</div> }
 
-    <button type="submit" class="btn btn-auth-primary w-100 text-white mb-3" disabled="@_isSubmitting">
-        @if (_isSubmitting) { <span class="spinner-border spinner-border-sm me-2"></span><span>Creando cuenta...</span> }
-        else { <span>Crear mi cuenta</span> }
-    </button>
+        <button type="submit" class="btn btn-auth-primary w-100 text-white mb-3" disabled="@_isSubmitting">
+            @if (_isSubmitting) { <span class="spinner-border spinner-border-sm me-2"></span><span>Creando cuenta...</span> }
+            else { <span>Crear mi cuenta</span> }
+        </button>
 
-    <p class="text-center text-muted small mb-3">
-        Al continuar aceptas los <a href="#">terminos</a> y la <a href="#">politica de privacidad</a>.
+        <p class="text-center text-muted small mb-3">
+            Al continuar aceptas los <a href="#">terminos</a> y la <a href="#">politica de privacidad</a>.
+        </p>
+
+        <p class="text-center small mb-0 text-muted">
+            Ya tienes cuenta? <a href="/login">Inicia sesion</a>
+        </p>
+    </EditForm>
+}
+else
+{
+    @* Paso 2: input del codigo OTP de 6 digitos recibido por correo *@
+    <h2 class="h4 mb-1 text-center fw-semibold">Verifica tu correo</h2>
+    <p class="text-muted text-center mb-4">
+        Enviamos un codigo de 6 digitos a <strong>@_emailEnviado</strong>.<br />
+        Revisa tu bandeja y pegalo aqui.
     </p>
 
-    <p class="text-center small mb-0 text-muted">
-        Ya tienes cuenta? <a href="/login">Inicia sesion</a>
-    </p>
-</EditForm>
+    <EditForm Model="@_otp" OnValidSubmit="HandleVerifyOtpAsync" FormName="otp">
+        <DataAnnotationsValidator />
+
+        <div class="mb-3">
+            <label class="form-label">Codigo de verificacion</label>
+            <InputText @bind-Value="_otp.Codigo" class="form-control form-control-lg text-center"
+                       maxlength="6" inputmode="numeric" autocomplete="one-time-code"
+                       placeholder="000000" style="letter-spacing: 8px; font-weight: 600;" />
+            <ValidationMessage For="@(() => _otp.Codigo)" class="text-danger small mt-1" />
+        </div>
+
+        @if (!string.IsNullOrEmpty(_errorMessage)) { <div class="alert alert-danger py-2 mb-3">@_errorMessage</div> }
+        @if (!string.IsNullOrEmpty(_successMessage)) { <div class="alert alert-success py-2 mb-3">@_successMessage</div> }
+
+        <button type="submit" class="btn btn-auth-primary w-100 text-white mb-2" disabled="@_isSubmitting">
+            @if (_isSubmitting) { <span class="spinner-border spinner-border-sm me-2"></span><span>Verificando...</span> }
+            else { <span>Verificar y continuar</span> }
+        </button>
+
+        <button type="button" class="btn btn-link w-100 small" @onclick="VolverAlFormulario">
+            Usar otro correo
+        </button>
+
+        <p class="text-center text-muted small mt-3 mb-0">
+            No te llego el codigo? Revisa la carpeta de spam. El codigo expira en 15 minutos.
+        </p>
+    </EditForm>
+}
 
 @code {
+    private enum Step { Form, Otp }
+    private Step _step = Step.Form;
+
     private RegisterModel _register = new();
+    private OtpModel _otp = new();
+    private Guid _sessionId;
+    private string _emailEnviado = string.Empty;
     private bool _isSubmitting;
     private bool _showPwd;
     private string _fortaleza = "weak";
@@ -89,6 +133,14 @@
     private string? _successMessage;
 
     private void TogglePwd() => _showPwd = !_showPwd;
+
+    private void VolverAlFormulario()
+    {
+        _step = Step.Form;
+        _errorMessage = null;
+        _successMessage = null;
+        _otp = new OtpModel();
+    }
 
     private void EvaluarFortaleza()
     {
@@ -129,6 +181,13 @@
         public string Password { get; set; } = string.Empty;
     }
 
+    private class OtpModel
+    {
+        [Required(ErrorMessage = "Ingresa el codigo")]
+        [StringLength(6, MinimumLength = 6, ErrorMessage = "El codigo tiene 6 digitos")]
+        public string Codigo { get; set; } = string.Empty;
+    }
+
     private async Task HandleRegisterAsync()
     {
         _errorMessage = null; _successMessage = null; _isSubmitting = true;
@@ -145,20 +204,50 @@
             }
 
             var r = await resp.Content.ReadFromJsonAsync<RegistroResp>();
+            if (r is null || r.OnboardingSessionId == Guid.Empty)
+            {
+                _errorMessage = "Respuesta inesperada del servidor.";
+                return;
+            }
+
+            // Mostrar paso 2 (input OTP). No guardamos JWT todavia - eso pasa al confirmar.
+            _sessionId = r.OnboardingSessionId;
+            _emailEnviado = r.Email;
+            _step = Step.Otp;
+            StateHasChanged();
+        }
+        catch (HttpRequestException ex) { _errorMessage = $"No se pudo conectar al API: {ex.Message}"; }
+        finally { _isSubmitting = false; }
+    }
+
+    private async Task HandleVerifyOtpAsync()
+    {
+        _errorMessage = null; _successMessage = null; _isSubmitting = true;
+        try
+        {
+            var http = HttpClientFactory.CreateClient("PropiaApi");
+            var resp = await http.PostAsJsonAsync("/api/onboarding/paso1/confirmar-email",
+                new { OnboardingSessionId = _sessionId, Codigo = _otp.Codigo.Trim() });
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                _errorMessage = await ExtractErrorAsync(resp);
+                return;
+            }
+
+            var r = await resp.Content.ReadFromJsonAsync<ConfirmarResp>();
             if (r is null || string.IsNullOrEmpty(r.AccessToken))
             {
                 _errorMessage = "Respuesta inesperada del servidor.";
                 return;
             }
 
-            // Guarda JWT (sin tenant aun) + sessionId del wizard pendiente. El wizard 2-5
-            // corre AUTENTICADO; al activar se reemite el JWT con tenant_id.
             await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_jwt", r.AccessToken);
             await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_onboarding_session_id", r.OnboardingSessionId.ToString());
             await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_user_email", r.Email);
             try { await Js.InvokeVoidAsync("propiaUI.refreshAuthCta"); } catch { }
 
-            _successMessage = "Cuenta creada. Vamos a configurar tu copropiedad...";
+            _successMessage = "Correo verificado. Vamos a configurar tu copropiedad...";
             StateHasChanged();
             await Task.Delay(400);
             Nav.NavigateTo("/onboarding/continuar", forceLoad: true);
@@ -179,7 +268,9 @@
         return $"Error {(int)resp.StatusCode}";
     }
 
-    private sealed record RegistroResp(
+    private sealed record RegistroResp(Guid OnboardingSessionId, Guid UserId, string Email);
+
+    private sealed record ConfirmarResp(
         Guid OnboardingSessionId, Guid UserId, string Email,
         string AccessToken, DateTimeOffset ExpiresAt);
 }

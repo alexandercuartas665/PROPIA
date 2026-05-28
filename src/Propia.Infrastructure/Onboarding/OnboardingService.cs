@@ -1,7 +1,11 @@
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Propia.Application.Auth;
+using Propia.Application.Common;
 using Propia.Application.Onboarding;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
@@ -11,27 +15,39 @@ namespace Propia.Infrastructure.Onboarding;
 
 /// <summary>
 /// Implementacion del wizard 2.1 con estado de sesion en memoria.
-/// Para Fase 2: persistir el estado en tabla onboarding_session con TTL y
-/// confirmacion real de email via T.2 Motor de Notificaciones.
-/// En MVP: estado en memoria singleton + email auto-confirmado.
+/// Paso 1 envia un OTP de 6 digitos al correo (via IEmailSender) y deja la cuenta
+/// con EmailConfirmed=false hasta que el usuario verifica en Paso1Confirmar (entrega JWT).
+/// Paso 5 manda correo de "copropiedad activada" (best-effort, no bloquea la activacion).
+/// Para Fase 2: persistir el estado en tabla onboarding_session con TTL y motor de notificaciones T.2.
 /// </summary>
 public class OnboardingService : IOnboardingService
 {
+    private const int OtpTtlMinutes = 15;
+
     // Estado del wizard por session - singleton del proceso (Fase 2: persistir)
     private static readonly ConcurrentDictionary<Guid, OnboardingState> _sessions = new();
 
     private readonly PropiaDbContext _db;
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly ITokenService _tokenService;
+    private readonly IEmailSender _emailSender;
+    private readonly ILogger<OnboardingService> _logger;
 
-    public OnboardingService(PropiaDbContext db, UserManager<ApplicationUser> userManager, ITokenService tokenService)
+    public OnboardingService(
+        PropiaDbContext db,
+        UserManager<ApplicationUser> userManager,
+        ITokenService tokenService,
+        IEmailSender emailSender,
+        ILogger<OnboardingService> logger)
     {
         _db = db;
         _userManager = userManager;
         _tokenService = tokenService;
+        _emailSender = emailSender;
+        _logger = logger;
     }
 
-    // ---------- Paso 1: Registro (crea User+Persona+JWT) ----------
+    // ---------- Paso 1: Registro (crea User+Persona, envia OTP, NO emite JWT todavia) ----------
     public async Task<RegistroResponse> Paso1RegistrarAsync(RegistroRequest req, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.NombreCompleto))
@@ -59,14 +75,15 @@ public class OnboardingService : IOnboardingService
         _db.Personas.Add(persona);
         await _db.SaveChangesAsync(ct);
 
-        // 2. Crear ApplicationUser + marcar la sesion de onboarding pendiente
+        // 2. Crear ApplicationUser CON EmailConfirmed=false. El usuario no podra hacer login
+        //    en /connect/login mientras el correo no este verificado.
         var sessionId = Guid.NewGuid();
         var user = new ApplicationUser
         {
             Id = Guid.NewGuid(),
             UserName = req.Email,
             Email = req.Email,
-            EmailConfirmed = true,
+            EmailConfirmed = false,
             PersonaId = persona.Id,
             OnboardingSessionId = sessionId
         };
@@ -74,7 +91,10 @@ public class OnboardingService : IOnboardingService
         if (!created.Succeeded)
             throw new InvalidOperationException("No se pudo crear el usuario: " + string.Join(", ", created.Errors.Select(e => e.Description)));
 
-        // 3. Guardar estado en memoria con referencias persistidas
+        // 3. Generar OTP de 6 digitos + guardar hash en estado (no en BD por MVP)
+        var otp = GenerateOtp6();
+        var otpHash = HashOtp(otp, sessionId);
+
         _sessions[sessionId] = new OnboardingState
         {
             Email = req.Email,
@@ -82,22 +102,78 @@ public class OnboardingService : IOnboardingService
             NombreCompleto = req.NombreCompleto,
             UserId = user.Id,
             PersonaId = persona.Id,
-            EmailConfirmado = true,   // MVP: auto-confirmacion (T.2 enviara OTP real)
+            EmailConfirmado = false,
+            OtpHash = otpHash,
+            OtpExpiresAt = DateTimeOffset.UtcNow.AddMinutes(OtpTtlMinutes),
             PasoActual = 1
         };
 
-        // 4. Emitir JWT SIN tenant (el tenant se crea en paso 5)
-        var (token, expires) = _tokenService.IssueAccessToken(user, null);
-        return new RegistroResponse(sessionId, user.Id, user.Email!, token, expires);
+        // 4. Enviar correo de bienvenida + OTP. Si SMTP falla, el usuario igualmente queda
+        //    creado y puede reintentar pidiendo reenvio (Fase 2). Logueamos la falla.
+        try
+        {
+            var (subject, body) = OnboardingEmailTemplates.BienvenidaConOtp(req.NombreCompleto, otp);
+            var result = await _emailSender.SendAsync(req.Email, subject, body, ct);
+            if (!result.Success)
+            {
+                _logger.LogWarning("OTP onboarding NO enviado a {Email}: {Error}", req.Email, result.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fallo enviando OTP de onboarding a {Email}", req.Email);
+        }
+
+        return new RegistroResponse(sessionId, user.Id, user.Email!);
     }
 
-    // ---------- Paso 1.5: Confirmar email ----------
-    public Task<bool> Paso1ConfirmarEmailAsync(ConfirmarEmailRequest req, CancellationToken ct)
+    // ---------- Paso 1.5: Confirmar email con OTP -> emite JWT ----------
+    public async Task<ConfirmarEmailResponse?> Paso1ConfirmarEmailAsync(ConfirmarEmailRequest req, CancellationToken ct)
     {
-        if (!_sessions.TryGetValue(req.OnboardingSessionId, out var st)) return Task.FromResult(false);
-        // MVP: auto-confirmacion (cualquier codigo o null es valido). Fase 2: validar OTP real.
+        if (!_sessions.TryGetValue(req.OnboardingSessionId, out var st)) return null;
+        if (string.IsNullOrWhiteSpace(req.Codigo))
+            throw new InvalidOperationException("Codigo obligatorio.");
+        if (st.OtpExpiresAt is null || st.OtpExpiresAt.Value < DateTimeOffset.UtcNow)
+            throw new InvalidOperationException("El codigo expiro. Solicita uno nuevo.");
+        if (string.IsNullOrEmpty(st.OtpHash))
+            throw new InvalidOperationException("No hay codigo pendiente en esta sesion.");
+
+        var hash = HashOtp(req.Codigo.Trim(), req.OnboardingSessionId);
+        if (!CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(hash), Encoding.UTF8.GetBytes(st.OtpHash)))
+        {
+            throw new InvalidOperationException("Codigo invalido.");
+        }
+
+        if (st.UserId is not Guid uid) throw new InvalidOperationException("La sesion no tiene usuario.");
+        var user = await _userManager.FindByIdAsync(uid.ToString())
+            ?? throw new InvalidOperationException("Usuario no encontrado.");
+
+        if (!user.EmailConfirmed)
+        {
+            user.EmailConfirmed = true;
+            await _userManager.UpdateAsync(user);
+        }
         st.EmailConfirmado = true;
-        return Task.FromResult(true);
+        st.OtpHash = null;
+        st.OtpExpiresAt = null;
+
+        var (token, expires) = _tokenService.IssueAccessToken(user, null);
+        return new ConfirmarEmailResponse(req.OnboardingSessionId, user.Id, user.Email!, token, expires);
+    }
+
+    private static string GenerateOtp6()
+    {
+        var n = RandomNumberGenerator.GetInt32(0, 1_000_000);
+        return n.ToString("D6");
+    }
+
+    private static string HashOtp(string otp, Guid sessionId)
+    {
+        // Hash con session_id como sal para que el mismo OTP en otra sesion no matchee.
+        var bytes = Encoding.UTF8.GetBytes($"{sessionId:N}|{otp}");
+        var hash = SHA256.HashData(bytes);
+        return Convert.ToHexString(hash);
     }
 
     // ---------- Paso 2: Clasificacion ----------
@@ -258,7 +334,24 @@ public class OnboardingService : IOnboardingService
         user.OnboardingSessionId = null;
         await _userManager.UpdateAsync(user);
 
-        // 7. Emitir JWT con tenant activo
+        // 7. Correo de activacion (best-effort, no bloquea la activacion)
+        try
+        {
+            var (subject, body) = OnboardingEmailTemplates.CopropiedadActivada(
+                st.NombreCompleto ?? user.Email ?? "",
+                tenant.Nombre);
+            var emailResult = await _emailSender.SendAsync(user.Email!, subject, body, ct);
+            if (!emailResult.Success)
+            {
+                _logger.LogWarning("Correo de activacion no enviado a {Email}: {Error}", user.Email, emailResult.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fallo enviando correo de activacion a {Email}", user.Email);
+        }
+
+        // 8. Emitir JWT con tenant activo
         var (token, expires) = _tokenService.IssueAccessToken(user, tenant.Id);
         return new ActivacionResponse(token, expires, user.Id, user.Email!, orgId, tenant.Id, tenant.Nombre);
     }
@@ -296,6 +389,8 @@ public class OnboardingService : IOnboardingService
         public Guid? UserId { get; set; }
         public Guid? PersonaId { get; set; }
         public bool EmailConfirmado { get; set; }
+        public string? OtpHash { get; set; }
+        public DateTimeOffset? OtpExpiresAt { get; set; }
         // Paso 2
         public TipoPerfilCliente? Perfil { get; set; }
         // Paso 3

@@ -7,17 +7,18 @@ namespace Propia.Api.Controllers;
 
 /// <summary>
 /// Endpoints del modulo 2.1 Onboarding y Activacion - wizard de 5 pasos.
-/// Todos son [AllowAnonymous] - el usuario aun no tiene cuenta hasta paso 5.
+/// Casi todos son [AllowAnonymous] (la cuenta nace en paso 1 pero sin EmailConfirmed).
+/// La excepcion es mi-sesion-pendiente, que requiere [Authorize] para resolver el user_id.
 /// </summary>
 [ApiController]
 [Route("api/onboarding")]
-[AllowAnonymous]
 public class OnboardingController : ControllerBase
 {
     private readonly IOnboardingService _svc;
     public OnboardingController(IOnboardingService svc) => _svc = svc;
 
     [HttpPost("paso1/registrar")]
+    [AllowAnonymous]
     public async Task<IActionResult> Paso1Registrar([FromBody] RegistroRequest req, CancellationToken ct)
     {
         try { return Ok(await _svc.Paso1RegistrarAsync(req, ct)); }
@@ -25,13 +26,19 @@ public class OnboardingController : ControllerBase
     }
 
     [HttpPost("paso1/confirmar-email")]
+    [AllowAnonymous]
     public async Task<IActionResult> Paso1ConfirmarEmail([FromBody] ConfirmarEmailRequest req, CancellationToken ct)
     {
-        var ok = await _svc.Paso1ConfirmarEmailAsync(req, ct);
-        return ok ? Ok(new { confirmado = true }) : NotFound();
+        try
+        {
+            var resp = await _svc.Paso1ConfirmarEmailAsync(req, ct);
+            return resp is null ? NotFound() : Ok(resp);
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
     [HttpPost("paso2/clasificar")]
+    [AllowAnonymous]
     public async Task<IActionResult> Paso2Clasificar([FromBody] ClasificacionRequest req, CancellationToken ct)
     {
         try
@@ -43,6 +50,7 @@ public class OnboardingController : ControllerBase
     }
 
     [HttpPost("paso3/organizacion")]
+    [AllowAnonymous]
     public async Task<IActionResult> Paso3Organizacion([FromBody] DatosOrganizacionRequest req, CancellationToken ct)
     {
         try
@@ -54,6 +62,7 @@ public class OnboardingController : ControllerBase
     }
 
     [HttpPost("paso4/copropiedad")]
+    [AllowAnonymous]
     public async Task<IActionResult> Paso4Copropiedad([FromBody] DatosCopropiedadRequest req, CancellationToken ct)
     {
         try
@@ -65,6 +74,7 @@ public class OnboardingController : ControllerBase
     }
 
     [HttpPost("paso5/activar")]
+    [AllowAnonymous]
     public async Task<IActionResult> Paso5Activar([FromBody] ActivacionRequest req, CancellationToken ct)
     {
         try
@@ -76,6 +86,7 @@ public class OnboardingController : ControllerBase
     }
 
     [HttpGet("status/{sessionId:guid}")]
+    [AllowAnonymous]
     public async Task<IActionResult> Status(Guid sessionId, CancellationToken ct)
     {
         var s = await _svc.GetStatusAsync(sessionId, ct);

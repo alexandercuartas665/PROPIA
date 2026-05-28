@@ -16,16 +16,23 @@ public enum TipoPerfilCliente
 // ----- Paso 1: Registro -----
 public record RegistroRequest(string NombreCompleto, string Email, string Password);
 /// <summary>
-/// Respuesta de Paso 1: el usuario YA quedo creado en BD y se emite JWT (sin tenant,
-/// porque la copropiedad se crea en Paso 5). El frontend usa el JWT para autenticar al
-/// usuario y entrar al wizard pasos 2-5. Tambien guarda OnboardingSessionId para retomar.
+/// Respuesta de Paso 1: el usuario YA quedo creado en BD pero con EmailConfirmed=false.
+/// El sistema envia un OTP de 6 digitos al correo y el frontend muestra un input para
+/// ingresarlo. El JWT solo se emite en Paso1ConfirmarEmail tras verificar el OTP.
 /// </summary>
 public record RegistroResponse(
+    Guid OnboardingSessionId, Guid UserId, string Email);
+
+/// <summary>Pide verificar el OTP enviado al correo del usuario.</summary>
+public record ConfirmarEmailRequest(Guid OnboardingSessionId, string Codigo);
+
+/// <summary>
+/// Respuesta de Paso1Confirmar: OTP verificado, se emite JWT sin tenant
+/// para que el frontend continue con los pasos 3-5 del wizard autenticado.
+/// </summary>
+public record ConfirmarEmailResponse(
     Guid OnboardingSessionId, Guid UserId, string Email,
     string AccessToken, DateTimeOffset ExpiresAt);
-
-// Verificacion email simulada en MVP (auto-verificada). En Fase 2 se envia codigo.
-public record ConfirmarEmailRequest(Guid OnboardingSessionId, string? Codigo);
 
 // ----- Paso 2: Clasificacion -----
 public record ClasificacionRequest(Guid OnboardingSessionId, TipoPerfilCliente Perfil);

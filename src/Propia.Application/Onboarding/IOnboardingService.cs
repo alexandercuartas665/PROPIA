@@ -8,7 +8,7 @@ namespace Propia.Application.Onboarding;
 public interface IOnboardingService
 {
     Task<RegistroResponse> Paso1RegistrarAsync(RegistroRequest req, CancellationToken ct);
-    Task<bool> Paso1ConfirmarEmailAsync(ConfirmarEmailRequest req, CancellationToken ct);
+    Task<ConfirmarEmailResponse?> Paso1ConfirmarEmailAsync(ConfirmarEmailRequest req, CancellationToken ct);
     Task<OnboardingStatusDto?> Paso2ClasificarAsync(ClasificacionRequest req, CancellationToken ct);
     Task<OnboardingStatusDto?> Paso3OrganizacionAsync(DatosOrganizacionRequest req, CancellationToken ct);
     Task<OnboardingStatusDto?> Paso4CopropiedadAsync(DatosCopropiedadRequest req, CancellationToken ct);
