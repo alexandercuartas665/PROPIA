@@ -39,4 +39,11 @@ public class ApplicationUser : IdentityUser<Guid>
     /// la eleccion no se cruce entre copropiedades (multi-PH). Null = sin preferencia.
     /// </summary>
     public string? AskAiAgentesPorTenant { get; set; }
+
+    /// <summary>
+    /// Sesion de onboarding pendiente del usuario (modulo 2.1). NULL = onboarding completado.
+    /// Cuando se setea: el usuario fue creado por el paso 1 (registro en /login) pero aun no
+    /// ha activado su copropiedad (paso 5). El login redirige a /onboarding/continuar para retomar.
+    /// </summary>
+    public Guid? OnboardingSessionId { get; set; }
 }

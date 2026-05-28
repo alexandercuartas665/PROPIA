@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Propia.Application.Onboarding;
@@ -79,5 +80,19 @@ public class OnboardingController : ControllerBase
     {
         var s = await _svc.GetStatusAsync(sessionId, ct);
         return s is null ? NotFound() : Ok(s);
+    }
+
+    /// <summary>
+    /// Estado del onboarding del usuario AUTENTICADO. Lo usa el frontend tras login para
+    /// decidir si redirigir a /onboarding/continuar (Completado=false) o a /mi-copropiedad
+    /// (Completado=true).
+    /// </summary>
+    [HttpGet("mi-sesion-pendiente")]
+    [Authorize]
+    public async Task<IActionResult> MiSesionPendiente(CancellationToken ct)
+    {
+        var userId = User.FindFirstValue("user_id") ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userId, out var uid)) return Unauthorized();
+        return Ok(await _svc.GetMiSesionPendienteAsync(uid, ct));
     }
 }

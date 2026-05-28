@@ -31,7 +31,7 @@ public class OnboardingService : IOnboardingService
         _tokenService = tokenService;
     }
 
-    // ---------- Paso 1: Registro ----------
+    // ---------- Paso 1: Registro (crea User+Persona+JWT) ----------
     public async Task<RegistroResponse> Paso1RegistrarAsync(RegistroRequest req, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.NombreCompleto))
@@ -44,15 +44,51 @@ public class OnboardingService : IOnboardingService
         var existe = await _userManager.FindByEmailAsync(req.Email);
         if (existe is not null) throw new InvalidOperationException("Ya existe un usuario con ese email.");
 
+        // 1. Crear Persona (perfil humano) - documento sintetico hasta capturar el real
+        var partes = req.NombreCompleto.Trim().Split(' ', 2);
+        var nombres = partes[0];
+        var apellidos = partes.Length > 1 ? partes[1] : nombres;
+        var persona = new Persona
+        {
+            TipoDocumento = TipoDocumento.CC,
+            Documento = $"PENDIENTE-{Guid.NewGuid().ToString("N")[..10]}",
+            Nombres = nombres,
+            Apellidos = apellidos,
+            Email = req.Email
+        };
+        _db.Personas.Add(persona);
+        await _db.SaveChangesAsync(ct);
+
+        // 2. Crear ApplicationUser + marcar la sesion de onboarding pendiente
         var sessionId = Guid.NewGuid();
+        var user = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            UserName = req.Email,
+            Email = req.Email,
+            EmailConfirmed = true,
+            PersonaId = persona.Id,
+            OnboardingSessionId = sessionId
+        };
+        var created = await _userManager.CreateAsync(user, req.Password);
+        if (!created.Succeeded)
+            throw new InvalidOperationException("No se pudo crear el usuario: " + string.Join(", ", created.Errors.Select(e => e.Description)));
+
+        // 3. Guardar estado en memoria con referencias persistidas
         _sessions[sessionId] = new OnboardingState
         {
             Email = req.Email,
             Password = req.Password,
             NombreCompleto = req.NombreCompleto,
+            UserId = user.Id,
+            PersonaId = persona.Id,
+            EmailConfirmado = true,   // MVP: auto-confirmacion (T.2 enviara OTP real)
             PasoActual = 1
         };
-        return new RegistroResponse(sessionId, req.Email);
+
+        // 4. Emitir JWT SIN tenant (el tenant se crea en paso 5)
+        var (token, expires) = _tokenService.IssueAccessToken(user, null);
+        return new RegistroResponse(sessionId, user.Id, user.Email!, token, expires);
     }
 
     // ---------- Paso 1.5: Confirmar email ----------
@@ -107,7 +143,7 @@ public class OnboardingService : IOnboardingService
         return Task.FromResult<OnboardingStatusDto?>(BuildStatus(req.OnboardingSessionId, st));
     }
 
-    // ---------- Paso 5: Activacion (crea todo en BD) ----------
+    // ---------- Paso 5: Activacion (crea Org+Tenant+Suscripcion, User/Persona ya existen del Paso 1) ----------
     public async Task<ActivacionResponse?> Paso5ActivarAsync(ActivacionRequest req, CancellationToken ct)
     {
         if (!_sessions.TryGetValue(req.OnboardingSessionId, out var st)) return null;
@@ -115,38 +151,13 @@ public class OnboardingService : IOnboardingService
         if (!st.EmailConfirmado) throw new InvalidOperationException("Email no confirmado.");
         if (string.IsNullOrWhiteSpace(st.NombreCopropiedad))
             throw new InvalidOperationException("Falta nombre de la copropiedad (paso 4).");
+        if (st.UserId is not Guid userId || st.PersonaId is not Guid personaId)
+            throw new InvalidOperationException("La sesion no tiene usuario asociado (Paso 1 incompleto).");
 
-        // 1. Crear ApplicationUser
-        var partes = st.NombreCompleto!.Trim().Split(' ', 2);
-        var nombres = partes[0];
-        var apellidos = partes.Length > 1 ? partes[1] : nombres;
-
-        // Generar documento sintetico para la Persona (Fase 2: capturarlo en el wizard).
-        // Se identifica por email - se reemplaza cuando el usuario complete su perfil.
-        var documento = $"PENDIENTE-{Guid.NewGuid().ToString("N")[..10]}";
-
-        var persona = new Persona
-        {
-            TipoDocumento = TipoDocumento.CC,
-            Documento = documento,
-            Nombres = nombres,
-            Apellidos = apellidos,
-            Email = st.Email
-        };
-        _db.Personas.Add(persona);
-        await _db.SaveChangesAsync(ct);
-
-        var user = new ApplicationUser
-        {
-            Id = Guid.NewGuid(),
-            UserName = st.Email,
-            Email = st.Email,
-            EmailConfirmed = true,
-            PersonaId = persona.Id
-        };
-        var created = await _userManager.CreateAsync(user, st.Password!);
-        if (!created.Succeeded)
-            throw new InvalidOperationException("No se pudo crear el usuario: " + string.Join(", ", created.Errors.Select(e => e.Description)));
+        var user = await _userManager.FindByIdAsync(userId.ToString())
+            ?? throw new InvalidOperationException("Usuario no encontrado para esta sesion.");
+        var persona = await _db.Personas.FirstOrDefaultAsync(p => p.Id == personaId, ct)
+            ?? throw new InvalidOperationException("Persona no encontrada para esta sesion.");
 
         // 2. Crear Organizacion (si aplica)
         Guid? orgId = null;
@@ -243,9 +254,25 @@ public class OnboardingService : IOnboardingService
         st.Activado = true;
         st.PasoActual = 5;
 
-        // 6. Emitir JWT con tenant activo
+        // 6. Marcar onboarding como completado en el usuario (limpia OnboardingSessionId)
+        user.OnboardingSessionId = null;
+        await _userManager.UpdateAsync(user);
+
+        // 7. Emitir JWT con tenant activo
         var (token, expires) = _tokenService.IssueAccessToken(user, tenant.Id);
         return new ActivacionResponse(token, expires, user.Id, user.Email!, orgId, tenant.Id, tenant.Nombre);
+    }
+
+    public async Task<MiSesionPendienteDto> GetMiSesionPendienteAsync(Guid userId, CancellationToken ct)
+    {
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user is null || user.OnboardingSessionId is null)
+        {
+            return new MiSesionPendienteDto(null, 0, Completado: true);
+        }
+        var sid = user.OnboardingSessionId.Value;
+        var paso = _sessions.TryGetValue(sid, out var st) ? st.PasoActual : 1;
+        return new MiSesionPendienteDto(sid, paso, Completado: false);
     }
 
     public Task<OnboardingStatusDto?> GetStatusAsync(Guid sessionId, CancellationToken ct)
@@ -262,10 +289,12 @@ public class OnboardingService : IOnboardingService
 
     private class OnboardingState
     {
-        // Paso 1
+        // Paso 1 (ya persistido en BD: User+Persona)
         public string? Email { get; set; }
         public string? Password { get; set; }
         public string? NombreCompleto { get; set; }
+        public Guid? UserId { get; set; }
+        public Guid? PersonaId { get; set; }
         public bool EmailConfirmado { get; set; }
         // Paso 2
         public TipoPerfilCliente? Perfil { get; set; }

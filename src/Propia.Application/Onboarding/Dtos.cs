@@ -15,7 +15,14 @@ public enum TipoPerfilCliente
 
 // ----- Paso 1: Registro -----
 public record RegistroRequest(string NombreCompleto, string Email, string Password);
-public record RegistroResponse(Guid OnboardingSessionId, string Email);
+/// <summary>
+/// Respuesta de Paso 1: el usuario YA quedo creado en BD y se emite JWT (sin tenant,
+/// porque la copropiedad se crea en Paso 5). El frontend usa el JWT para autenticar al
+/// usuario y entrar al wizard pasos 2-5. Tambien guarda OnboardingSessionId para retomar.
+/// </summary>
+public record RegistroResponse(
+    Guid OnboardingSessionId, Guid UserId, string Email,
+    string AccessToken, DateTimeOffset ExpiresAt);
 
 // Verificacion email simulada en MVP (auto-verificada). En Fase 2 se envia codigo.
 public record ConfirmarEmailRequest(Guid OnboardingSessionId, string? Codigo);
@@ -48,3 +55,9 @@ public record OnboardingStatusDto(
     Guid OnboardingSessionId, int PasoActual,
     bool EmailConfirmado, TipoPerfilCliente? Perfil,
     bool TieneOrganizacion, bool TieneCopropiedad, bool Activado);
+
+/// <summary>
+/// Sesion de onboarding pendiente del usuario autenticado. Si OnboardingSessionId es null,
+/// significa que el usuario YA completo el wizard (no debe redirigir).
+/// </summary>
+public record MiSesionPendienteDto(Guid? OnboardingSessionId, int PasoActual, bool Completado);

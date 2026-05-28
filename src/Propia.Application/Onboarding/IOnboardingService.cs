@@ -14,4 +14,11 @@ public interface IOnboardingService
     Task<OnboardingStatusDto?> Paso4CopropiedadAsync(DatosCopropiedadRequest req, CancellationToken ct);
     Task<ActivacionResponse?> Paso5ActivarAsync(ActivacionRequest req, CancellationToken ct);
     Task<OnboardingStatusDto?> GetStatusAsync(Guid sessionId, CancellationToken ct);
+
+    /// <summary>
+    /// Estado de onboarding del usuario AUTENTICADO. Devuelve la sesion pendiente para
+    /// que el frontend redirija a /onboarding/continuar, o Completado=true si ya termino
+    /// el wizard (en cuyo caso el frontend va a /mi-copropiedad como siempre).
+    /// </summary>
+    Task<MiSesionPendienteDto> GetMiSesionPendienteAsync(Guid userId, CancellationToken ct);
 }
