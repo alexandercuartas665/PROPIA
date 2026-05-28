@@ -41,6 +41,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
 
     // Integraciones de plataforma (Super Admin) - portadas de CUBOT.travels. Globales singleton.
     public DbSet<EmailConfig> EmailConfigs => Set<EmailConfig>();
+    public DbSet<GoogleAuthConfig> GoogleAuthConfigs => Set<GoogleAuthConfig>();
     public DbSet<PlatformBranding> PlatformBrandings => Set<PlatformBranding>();
     public DbSet<AiProviderConfig> AiProviderConfigs => Set<AiProviderConfig>();
     public DbSet<WompiMasterConfig> WompiMasterConfigs => Set<WompiMasterConfig>();
@@ -2125,6 +2126,12 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.SmtpPasswordEncrypted).HasMaxLength(1024);
             b.Property(x => x.FromEmail).HasMaxLength(255);
             b.Property(x => x.FromName).HasMaxLength(255);
+        });
+
+        modelBuilder.Entity<GoogleAuthConfig>(b =>
+        {
+            b.Property(x => x.ClientId).HasMaxLength(255);
+            b.Property(x => x.ClientSecretEncrypted).HasMaxLength(1024);
         });
 
         modelBuilder.Entity<PlatformBranding>(b =>

@@ -46,4 +46,11 @@ public class ApplicationUser : IdentityUser<Guid>
     /// ha activado su copropiedad (paso 5). El login redirige a /onboarding/continuar para retomar.
     /// </summary>
     public Guid? OnboardingSessionId { get; set; }
+
+    /// <summary>
+    /// Subject (sub) que Google emite para identificar de forma estable a un usuario, independiente
+    /// de cambios de correo (RFC OIDC). Se vincula al primer login con Google y permite ingresos
+    /// posteriores sin contrasena. NULL = el usuario no ha usado Google para ingresar.
+    /// </summary>
+    public string? GoogleSubject { get; set; }
 }

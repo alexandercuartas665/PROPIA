@@ -1,0 +1,144 @@
+@page "/admin/integraciones/google"
+@layout AdminLayout
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.Integraciones
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<PageTitle>Login con Google - Plataforma</PageTitle>
+
+<h1 class="h3 mb-1">Login con Google</h1>
+<p class="text-muted mb-4">
+    Permite a los usuarios iniciar sesion con su cuenta de Google. Google verifica la identidad;
+    PROPIA hace el auto-registro si el correo es nuevo (omite el OTP que Google ya cubrio). El
+    Client Secret se guarda cifrado.
+</p>
+
+@if (_jwt is null || _cargando)
+{
+    <div class="text-center py-5"><div class="spinner-border"></div></div>
+}
+else if (_form is not null)
+{
+    <div class="row g-4">
+        <div class="col-md-7">
+            <div class="card">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <strong>Credenciales OAuth</strong>
+                    @if (_form.IsEnabled) { <span class="badge bg-success">Habilitado</span> } else { <span class="badge bg-secondary">Deshabilitado</span> }
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info py-2 small mb-3">
+                        <strong>URIs de redireccion</strong> que debes registrar en Google Cloud Console (APIs y servicios -> Credenciales -> tu cliente OAuth -> URIs de redireccion autorizados):
+                        <div class="mt-1" style="font-family: var(--bs-font-monospace); font-size: 12px;">
+                            http://localhost:5105/signin-google<br />
+                            https://app.propia.cubot.com.co/signin-google
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Client ID</label>
+                        <input class="form-control" @bind="_form.ClientId" @bind:event="oninput"
+                               placeholder="xxxxxxxx.apps.googleusercontent.com" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Client Secret @(_form.HasSecret ? "(guardado - dejar vacio para conservar)" : "")</label>
+                        <input type="password" class="form-control" @bind="_form.ClientSecret" @bind:event="oninput"
+                               placeholder="@(_form.HasSecret ? "********" : "GOCSPX-...")" />
+                    </div>
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="gen" @bind="_form.IsEnabled" />
+                        <label class="form-check-label" for="gen">Habilitar boton "Continuar con Google" en /login y /registro</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-5">
+            <div class="card">
+                <div class="card-header bg-white"><strong>Notas</strong></div>
+                <div class="card-body small text-muted">
+                    <p class="mb-2">Si Google esta en modo "Prueba" en tu proyecto de Cloud Console, solo los correos agregados como <strong>usuarios de prueba</strong> podran ingresar.</p>
+                    <p class="mb-2">El correo retornado por Google debe estar marcado como <em>verificado</em> (lo esta por defecto).</p>
+                    <p class="mb-0">El alcance solicitado es minimo: <code>openid email profile</code>.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-4">
+        @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgCls">@_msg</div> }
+        <button class="btn btn-dark btn-lg" @onclick="GuardarAsync" disabled="@_busy">@(_busy ? "Guardando..." : "Guardar configuracion")</button>
+    </div>
+}
+
+@code {
+    private string? _jwt;
+    private bool _cargando = true;
+    private bool _busy;
+    private string? _msg;
+    private string _msgCls = "alert-info";
+    private Form? _form;
+
+    private class Form
+    {
+        public string? ClientId { get; set; }
+        public string? ClientSecret { get; set; }
+        public bool IsEnabled { get; set; }
+        public bool HasSecret { get; set; }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_admin_jwt");
+            if (string.IsNullOrWhiteSpace(jwt)) { Nav.NavigateTo("/login", forceLoad: true); return; }
+            _jwt = jwt;
+            var c = await Auth().GetFromJsonAsync<GoogleAuthConfigDto>("/admin/google-auth-config");
+            _form = c is null
+                ? new Form()
+                : new Form { ClientId = c.ClientId, IsEnabled = c.IsEnabled, HasSecret = c.HasSecret };
+            _cargando = false;
+            StateHasChanged();
+        }
+        catch { _cargando = false; }
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_form is null) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var req = new SaveGoogleAuthConfigRequest(_form.ClientId, _form.ClientSecret, _form.IsEnabled);
+            var resp = await Auth().PutAsJsonAsync("/admin/google-auth-config", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                var dto = await resp.Content.ReadFromJsonAsync<GoogleAuthConfigDto>();
+                if (dto is not null)
+                {
+                    _form.ClientId = dto.ClientId;
+                    _form.ClientSecret = null;
+                    _form.IsEnabled = dto.IsEnabled;
+                    _form.HasSecret = dto.HasSecret;
+                }
+                _msg = "Configuracion guardada."; _msgCls = "alert-success";
+            }
+            else
+            {
+                _msg = $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}";
+                _msgCls = "alert-danger";
+            }
+        }
+        finally { _busy = false; }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

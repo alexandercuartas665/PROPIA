@@ -1,0 +1,167 @@
+@page "/signin-google"
+@layout AuthLayout
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using System.Net.Http.Json
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<PageTitle>Iniciando sesion - PROPIA</PageTitle>
+
+@* Callback OAuth de Google. Google redirige aqui con ?code=...&state=...
+   1. Validamos state contra el que guardamos en sessionStorage (CSRF).
+   2. POST /connect/google/callback con el code para que el API resuelva el login.
+   3. Guardamos JWT + (si aplica) sessionId de onboarding pendiente.
+   4. Navegamos:
+      - Si AutoRegistrado=true u OnboardingSessionId tiene valor -> /onboarding/continuar
+      - Si TenantId tiene valor -> /mi-copropiedad
+      - Si no -> /login con error generico *@
+
+<h2 class="h4 mb-2 text-center fw-semibold">Iniciando sesion con Google</h2>
+
+@if (_estado == Estado.Procesando)
+{
+    <div class="text-center py-3">
+        <div class="spinner-border" style="color: #5955D1;"></div>
+        <p class="text-muted small mt-3 mb-0">Validando identidad...</p>
+    </div>
+}
+else if (_estado == Estado.Error)
+{
+    <div class="alert alert-danger py-2 mb-3">@_error</div>
+    <div class="text-center">
+        <a href="/login" class="btn btn-auth-primary text-white">Volver al login</a>
+    </div>
+}
+
+@code {
+    private enum Estado { Procesando, Error }
+    private Estado _estado = Estado.Procesando;
+    private string? _error;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await ProcesarCallbackAsync();
+    }
+
+    private async Task ProcesarCallbackAsync()
+    {
+        try
+        {
+            // 1. Leer code+state de la URL
+            var uri = new Uri(Nav.Uri);
+            var qs = System.Web.HttpUtility.ParseQueryString(uri.Query);
+            var code = qs["code"];
+            var stateGoogle = qs["state"];
+            var errorGoogle = qs["error"];
+
+            if (!string.IsNullOrEmpty(errorGoogle))
+            {
+                ShowError($"Google reporto un error: {errorGoogle}");
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(stateGoogle))
+            {
+                ShowError("No recibimos los datos esperados de Google.");
+                return;
+            }
+
+            // 2. Verificar state vs sessionStorage (CSRF)
+            var savedState = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_google_state");
+            if (string.IsNullOrEmpty(savedState) || !string.Equals(savedState, stateGoogle, StringComparison.Ordinal))
+            {
+                ShowError("La sesion de inicio expiro o fue alterada. Intenta de nuevo.");
+                return;
+            }
+            await Js.InvokeVoidAsync("sessionStorage.removeItem", "propia_google_state");
+
+            // 3. Llamar al API con el code
+            var redirectUri = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_google_redirect_uri")
+                              ?? $"{Nav.BaseUri.TrimEnd('/')}/signin-google";
+            await Js.InvokeVoidAsync("sessionStorage.removeItem", "propia_google_redirect_uri");
+
+            var http = HttpFactory.CreateClient("PropiaApi");
+            var resp = await http.PostAsJsonAsync("/connect/google/callback", new { Code = code, RedirectUri = redirectUri });
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                ShowError(ExtractError(body) ?? "No se pudo iniciar sesion con Google.");
+                return;
+            }
+
+            var r = await resp.Content.ReadFromJsonAsync<GoogleResp>();
+            if (r is null || !r.Success || string.IsNullOrEmpty(r.AccessToken))
+            {
+                ShowError(r?.Error ?? "Respuesta inesperada del servidor.");
+                return;
+            }
+
+            // 4. Persistir JWT y navegar
+            await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_jwt", r.AccessToken);
+            if (!string.IsNullOrEmpty(r.Email))
+            {
+                await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_user_email", r.Email);
+            }
+            try { await Js.InvokeVoidAsync("propiaUI.refreshAuthCta"); } catch { }
+
+            // 4a. Onboarding pendiente (auto-registro O usuario existente con wizard sin terminar)
+            if (r.OnboardingSessionId.HasValue)
+            {
+                await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_onboarding_session_id", r.OnboardingSessionId.Value.ToString());
+                Nav.NavigateTo("/onboarding/continuar", forceLoad: true);
+                return;
+            }
+
+            // 4b. Tenant resuelto -> Mi Copropiedad
+            if (r.TenantId.HasValue)
+            {
+                await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_tenant_id", r.TenantId.Value.ToString());
+                if (!string.IsNullOrEmpty(r.TenantNombre))
+                {
+                    await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_copropiedad_nombre", r.TenantNombre);
+                }
+                Nav.NavigateTo("/mi-copropiedad", forceLoad: true);
+                return;
+            }
+
+            // 4c. Sin tenant ni onboarding: el usuario no tiene copropiedad asignada
+            ShowError("Tu cuenta de Google esta validada pero no tienes copropiedades activas. Contacta a tu administrador.");
+        }
+        catch (Exception ex)
+        {
+            ShowError($"No se pudo procesar la respuesta de Google: {ex.Message}");
+        }
+    }
+
+    private void ShowError(string mensaje)
+    {
+        _error = mensaje;
+        _estado = Estado.Error;
+        StateHasChanged();
+    }
+
+    private static string? ExtractError(string body)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("error", out var e)) return e.GetString();
+        }
+        catch { }
+        return null;
+    }
+
+    private sealed record GoogleResp(
+        bool Success,
+        string? Error,
+        string? AccessToken,
+        DateTimeOffset? ExpiresAt,
+        Guid? UserId,
+        string? Email,
+        Guid? TenantId,
+        string? TenantNombre,
+        Guid? OnboardingSessionId,
+        bool AutoRegistrado);
+}

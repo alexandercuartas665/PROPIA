@@ -21,6 +21,7 @@ public class AdminIntegracionesController : ControllerBase
     private readonly IAiServerConfigService _ai;
     private readonly IWompiConfigService _wompi;
     private readonly IEvolutionMasterConfigService _evolution;
+    private readonly IGoogleAuthConfigService _google;
 
     public AdminIntegracionesController(
         IEmailConfigService email,
@@ -28,7 +29,8 @@ public class AdminIntegracionesController : ControllerBase
         IEmailSender emailSender,
         IAiServerConfigService ai,
         IWompiConfigService wompi,
-        IEvolutionMasterConfigService evolution)
+        IEvolutionMasterConfigService evolution,
+        IGoogleAuthConfigService google)
     {
         _email = email;
         _branding = branding;
@@ -36,6 +38,7 @@ public class AdminIntegracionesController : ControllerBase
         _ai = ai;
         _wompi = wompi;
         _evolution = evolution;
+        _google = google;
     }
 
     // -------------------- Servidor de Correo --------------------
@@ -143,6 +146,20 @@ public class AdminIntegracionesController : ControllerBase
         var result = await _evolution.ValidateAsync(id, email, Ip(), ct);
         if (result is null) return BadRequest(new { error = "evolution_no_configurado" });
         return Ok(result);
+    }
+
+    // -------------------- Login con Google --------------------
+
+    [HttpGet("google-auth-config")]
+    public async Task<IActionResult> GetGoogleAuthConfig(CancellationToken ct)
+        => Ok(await _google.GetAsync(ct) ?? new GoogleAuthConfigDto(null, false, false));
+
+    [HttpPut("google-auth-config")]
+    public async Task<IActionResult> SaveGoogleAuthConfig([FromBody] SaveGoogleAuthConfigRequest req, CancellationToken ct)
+    {
+        var (id, email) = Actor();
+        var dto = await _google.SaveAsync(req, id, email, Ip(), ct);
+        return Ok(dto);
     }
 
     // -------------------- Helpers --------------------
