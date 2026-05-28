@@ -79,6 +79,25 @@
                 <i class="fi fi-rr-paper-plane"></i>
             </button>
         </div>
+
+        @* ===== TRAZA DE DEPURACION (temporal) - mide el ciclo de cada envio ===== *@
+        <div class="askai-trace">
+            <div class="askai-trace-head">
+                <span>TRAZA (debug)</span>
+                <button type="button" @onclick="() => _trace.Clear()">limpiar</button>
+            </div>
+            @if (_trace.Count == 0)
+            {
+                <div class="askai-trace-empty">Aqui se mostrara el ciclo de cada mensaje (endpoint, HTTP, tiempo, errores).</div>
+            }
+            else
+            {
+                @foreach (var t in _trace)
+                {
+                    <div class="askai-trace-line @(t.Contains("ERROR") || t.Contains("EXCEPCION") ? "err" : "")">@t</div>
+                }
+            }
+        </div>
     }
 </div>
 
@@ -100,6 +119,13 @@
     .askai-input { display: flex; gap: 8px; padding: 10px; border-top: 1px solid #e3e3ec; background: #fff; }
     .askai-input input { flex: 1; }
     .askai-send { background: var(--propia-primary, #5955D1); color: #fff; }
+
+    .askai-trace { border-top: 1px dashed #d33; background: #fff7f7; max-height: 160px; overflow-y: auto; padding: 6px 8px; }
+    .askai-trace-head { display: flex; align-items: center; justify-content: space-between; font-size: 10.5px; font-weight: 700; color: #c0392b; letter-spacing: .5px; margin-bottom: 4px; }
+    .askai-trace-head button { border: 0; background: transparent; color: #c0392b; font-size: 10.5px; cursor: pointer; text-decoration: underline; }
+    .askai-trace-empty { font-size: 11px; color: #b08; font-style: italic; }
+    .askai-trace-line { font-family: ui-monospace, monospace; font-size: 11px; line-height: 1.5; color: #444; white-space: pre-wrap; word-break: break-word; }
+    .askai-trace-line.err { color: #c0392b; font-weight: 600; }
 </style>
 
 @code {
@@ -117,6 +143,7 @@
     private Guid SelectedAgentId { get => _selectedAgentId; set => _selectedAgentId = value; }
 
     private readonly List<ChatMsg> _chat = new();
+    private readonly List<string> _trace = new();
     private string _input = "";
     private bool _busy;
     private string? _error;
@@ -152,8 +179,9 @@
             catch { /* sin preferencia */ }
 
             _selectedAgentId = (pref is Guid p && _agents.Any(a => a.Id == p)) ? p : _agents[0].Id;
+            Trace($"agentes cargados: {_agents.Count} | seleccionado={_selectedAgentId} | pref={pref}");
         }
-        catch (Exception ex) { _error = ex.Message; _agents ??= new(); }
+        catch (Exception ex) { _error = ex.Message; _agents ??= new(); Trace($"EXCEPCION cargando agentes: {ex.Message}"); }
     }
 
     private async Task OnAgentChanged()
@@ -163,23 +191,64 @@
         catch { /* no critico */ }
     }
 
+    private void Trace(string msg)
+    {
+        _trace.Add($"[{DateTime.Now:HH:mm:ss.fff}] {msg}");
+        StateHasChanged();
+    }
+
     private async Task EnviarAsync()
     {
-        if (_busy || string.IsNullOrWhiteSpace(_input) || _selectedAgentId == Guid.Empty) return;
+        if (_busy || string.IsNullOrWhiteSpace(_input) || _selectedAgentId == Guid.Empty)
+        {
+            Trace($"-> ignorado (busy={_busy}, vacio={string.IsNullOrWhiteSpace(_input)}, agente={_selectedAgentId})");
+            return;
+        }
         _busy = true; _error = null;
-        _chat.Add(new ChatMsg("user", _input.Trim(), null));
+        var pregunta = _input.Trim();
+        _chat.Add(new ChatMsg("user", pregunta, null));
         _input = "";
+        Trace($"-> enviar | agente={_selectedAgentId} | jwt={(string.IsNullOrEmpty(Jwt) ? "AUSENTE" : "ok(" + Jwt!.Length + ")")} | msg=\"{(pregunta.Length > 30 ? pregunta[..30] + "..." : pregunta)}\"");
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             var turns = _chat.Select(m => new AiChatTurn(m.Role, m.Text)).ToList();
+            Trace($"POST /api/ia/agentes/{_selectedAgentId}/probar (turnos={turns.Count})...");
             var resp = await Auth().PostAsJsonAsync($"/api/ia/agentes/{_selectedAgentId}/probar",
                 new { Turns = turns, SystemPromptOverride = (string?)null });
+            Trace($"HTTP {(int)resp.StatusCode} {resp.StatusCode} en {sw.ElapsedMilliseconds}ms");
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                _error = $"HTTP {(int)resp.StatusCode}";
+                Trace($"ERROR cuerpo: {(body.Length > 120 ? body[..120] + "..." : body)}");
+                return;
+            }
+
             var r = await resp.Content.ReadFromJsonAsync<AiChatResult>();
-            if (r?.Ok == true) { _chat.Add(new ChatMsg("model", r.Text ?? "", r.Attachments)); }
-            else { _error = r?.Error ?? "No se pudo obtener respuesta."; }
+            Trace($"parse: ok={r?.Ok} | textoLen={(r?.Text?.Length ?? 0)} | err={r?.Error}");
+            if (r?.Ok == true)
+            {
+                _chat.Add(new ChatMsg("model", r.Text ?? "", r.Attachments));
+                Trace($"respuesta agregada al chat ({sw.ElapsedMilliseconds}ms total)");
+            }
+            else
+            {
+                _error = r?.Error ?? "No se pudo obtener respuesta.";
+                Trace($"ERROR logico: {_error}");
+            }
         }
-        catch (Exception ex) { _error = ex.Message; }
-        finally { _busy = false; }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Trace($"EXCEPCION ({sw.ElapsedMilliseconds}ms): {ex.GetType().Name}: {ex.Message}");
+        }
+        finally
+        {
+            _busy = false;
+            Trace("fin (busy=false)");
+        }
     }
 
     private HttpClient Auth()
