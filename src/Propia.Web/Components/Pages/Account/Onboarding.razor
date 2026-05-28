@@ -1,4 +1,5 @@
 @page "/onboarding"
+@page "/onboarding/continuar"
 @layout WizardLayout
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using System.ComponentModel.DataAnnotations
@@ -11,57 +12,18 @@
 @* Wizard 2.1 de 5 pasos: Registro -> Confirmar email -> Clasificacion -> Organizacion -> Copropiedad -> Activacion *@
 
 <div class="wizard-content">
+    @if (_sessionId is null)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border" style="color: var(--propia-primary);"></div>
+            <p class="text-muted small mt-3 mb-0">Cargando tu sesion de onboarding...</p>
+        </div>
+    }
+    else
+    {
     <ProgressBar Paso="@_paso" />
 
-    @if (_paso == 1)
-    {
-        <h2 class="h3 mb-2 fw-semibold text-center">Bienvenido a PROPIA</h2>
-        <p class="text-muted text-center mb-4">Crea tu cuenta en menos de 2 minutos</p>
-        <EditForm Model="@_reg" OnValidSubmit="Paso1Registrar" FormName="paso1">
-            <DataAnnotationsValidator />
-            <div class="mb-3">
-                <label class="form-label">Nombre completo</label>
-                <InputText @bind-Value="_reg.NombreCompleto" class="form-control form-control-lg" placeholder="Tu nombre y apellidos" />
-                <ValidationMessage For="@(() => _reg.NombreCompleto)" class="text-danger small mt-1" />
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Correo electronico</label>
-                <InputText @bind-Value="_reg.Email" class="form-control form-control-lg" placeholder="tu@correo.com" autocomplete="email" />
-                <ValidationMessage For="@(() => _reg.Email)" class="text-danger small mt-1" />
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Contrasena</label>
-                <InputText type="password" @bind-Value="_reg.Password" class="form-control form-control-lg" placeholder="Minimo 10 caracteres" />
-                <ValidationMessage For="@(() => _reg.Password)" class="text-danger small mt-1" />
-            </div>
-            @ErrorAlert
-            <button type="submit" class="btn btn-lg w-100" style="background: var(--propia-primary); color: white;" disabled="@_busy">
-                @(_busy ? "Creando cuenta..." : "Crear mi cuenta")
-            </button>
-            <p class="text-center text-muted small mt-3 mb-0">
-                Al continuar aceptas los <a href="#">terminos</a> y la <a href="#">politica de privacidad</a>.
-            </p>
-        </EditForm>
-    }
-    else if (_paso == 2)
-    {
-        <h2 class="h3 mb-2 fw-semibold text-center">Verifica tu correo</h2>
-        <p class="text-muted text-center mb-4">
-            Enviamos un codigo a <strong>@_reg.Email</strong>.<br />
-            <small class="text-muted">(MVP: confirmacion automatica - ingresa cualquier codigo y continua)</small>
-        </p>
-        <EditForm Model="@_emailCode" OnValidSubmit="Paso1ConfirmarEmail" FormName="paso1confirmar">
-            <div class="mb-3">
-                <label class="form-label">Codigo de verificacion</label>
-                <InputText @bind-Value="_emailCode.Codigo" class="form-control form-control-lg text-center" maxlength="6" placeholder="123456" />
-            </div>
-            @ErrorAlert
-            <button type="submit" class="btn btn-lg w-100" style="background: var(--propia-primary); color: white;" disabled="@_busy">
-                @(_busy ? "Verificando..." : "Continuar")
-            </button>
-        </EditForm>
-    }
-    else if (_paso == 3)
+    @if (_paso == 3)
     {
         <h2 class="h3 mb-2 fw-semibold text-center">Cuentanos tu perfil</h2>
         <p class="text-muted text-center mb-4">Asi configuramos PROPIA para tu caso</p>
@@ -181,7 +143,7 @@
             <div class="card-body">
                 <div class="row small">
                     <div class="col-4 text-muted">Cuenta:</div>
-                    <div class="col-8"><strong>@_reg.NombreCompleto</strong> · @_reg.Email</div>
+                    <div class="col-8"><strong>@_userEmail</strong></div>
                     <div class="col-4 text-muted mt-2">Perfil:</div>
                     <div class="col-8 mt-2">@(_clasificacion.Perfil?.ToString())</div>
                     @if (!string.IsNullOrEmpty(_org.Nombre))
@@ -212,6 +174,7 @@
                 Redirigiendote a Mi Copropiedad...
             </p>
         </div>
+    }
     }
 </div>
 
@@ -259,16 +222,41 @@
 </style>
 
 @code {
-    private int _paso = 1;
+    @* El wizard arranca AUTENTICADO (paso 1 vive en /login). Lee de sessionStorage:
+       - propia_jwt: token emitido por el paso 1 (sin tenant aun).
+       - propia_onboarding_session_id: sesion del wizard en curso.
+       - propia_user_email: solo para mostrar en el resumen del paso final. *@
+    private int _paso = 3;
     private bool _busy;
     private string? _error;
     private Guid? _sessionId;
+    private string? _userEmail;
+    private bool _booted;
 
-    private RegistroModel _reg = new();
-    private CodeModel _emailCode = new();
     private ClasificacionModel _clasificacion = new();
     private OrgModel _org = new();
     private CopropiedadModel _cp = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _booted) return;
+        _booted = true;
+        try
+        {
+            var jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            var sid = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_onboarding_session_id");
+            var email = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_user_email");
+            if (string.IsNullOrEmpty(jwt) || string.IsNullOrEmpty(sid) || !Guid.TryParse(sid, out var parsed))
+            {
+                Nav.NavigateTo("/login", forceLoad: false);
+                return;
+            }
+            _sessionId = parsed;
+            _userEmail = email ?? "";
+            StateHasChanged();
+        }
+        catch { /* prerender / sin JS */ }
+    }
 
     private static readonly (TipoPerfilCliente Val, string Titulo, string Desc)[] PerfilOpciones = new[]
     {
@@ -287,41 +275,6 @@
             __builder.CloseElement();
         }
     };
-
-    private async Task Paso1Registrar()
-    {
-        _busy = true; _error = null;
-        try
-        {
-            var http = HttpFactory.CreateClient("PropiaApi");
-            var resp = await http.PostAsJsonAsync("/api/onboarding/paso1/registrar",
-                new RegistroRequest(_reg.NombreCompleto, _reg.Email, _reg.Password));
-            if (!resp.IsSuccessStatusCode)
-            {
-                _error = await ExtractError(resp);
-                return;
-            }
-            var r = await resp.Content.ReadFromJsonAsync<RegistroResponse>();
-            _sessionId = r!.OnboardingSessionId;
-            _paso = 2;
-        }
-        catch (Exception ex) { _error = ex.Message; }
-        finally { _busy = false; }
-    }
-
-    private async Task Paso1ConfirmarEmail()
-    {
-        _busy = true; _error = null;
-        try
-        {
-            var http = HttpFactory.CreateClient("PropiaApi");
-            var resp = await http.PostAsJsonAsync("/api/onboarding/paso1/confirmar-email",
-                new ConfirmarEmailRequest(_sessionId!.Value, _emailCode.Codigo));
-            if (!resp.IsSuccessStatusCode) { _error = await ExtractError(resp); return; }
-            _paso = 3;
-        }
-        finally { _busy = false; }
-    }
 
     private void SelectPerfil(TipoPerfilCliente p) { _clasificacion.Perfil = p; _error = null; }
 
@@ -421,13 +374,6 @@
         return $"Error {(int)resp.StatusCode}: {body}";
     }
 
-    private class RegistroModel
-    {
-        [Required(ErrorMessage = "Nombre obligatorio")] public string NombreCompleto { get; set; } = "";
-        [Required, EmailAddress] public string Email { get; set; } = "";
-        [Required, MinLength(10, ErrorMessage = "Minimo 10 caracteres")] public string Password { get; set; } = "";
-    }
-    private class CodeModel { public string Codigo { get; set; } = ""; }
     private class ClasificacionModel { public TipoPerfilCliente? Perfil { get; set; } }
     private class OrgModel
     {

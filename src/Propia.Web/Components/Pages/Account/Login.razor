@@ -15,9 +15,57 @@
 
 @if (_step == Step.Credentials)
 {
-    <h2 class="h4 mb-1 text-center">Bienvenido</h2>
-    <p class="text-muted text-center mb-4">Ingresa tus credenciales para continuar</p>
+    @* Tabs: el cliente nuevo puede crear su cuenta aqui mismo (auto-gestion) sin pasar por
+       una landing aparte. El paso 1 del wizard 2.1 (Registro) vive en este login. *@
+    <div class="auth-tabs mb-3">
+        <button type="button" class="auth-tab @(_mode == AuthMode.Login ? "auth-tab-active" : "")"
+                @onclick="() => SetMode(AuthMode.Login)">Iniciar sesion</button>
+        <button type="button" class="auth-tab @(_mode == AuthMode.Register ? "auth-tab-active" : "")"
+                @onclick="() => SetMode(AuthMode.Register)">Crear cuenta nueva</button>
+    </div>
 
+    @if (_mode == AuthMode.Login)
+    {
+        <h2 class="h4 mb-1 text-center">Bienvenido</h2>
+        <p class="text-muted text-center mb-4">Ingresa tus credenciales para continuar</p>
+    }
+    else
+    {
+        <h2 class="h4 mb-1 text-center">Crea tu cuenta</h2>
+        <p class="text-muted text-center mb-4">En menos de 2 minutos quedaras dentro de PROPIA</p>
+    }
+
+@if (_mode == AuthMode.Register)
+{
+    <EditForm Model="@_register" OnValidSubmit="HandleRegisterAsync" FormName="register">
+        <DataAnnotationsValidator />
+        <div class="mb-3">
+            <label class="form-label">Nombre completo</label>
+            <InputText @bind-Value="_register.NombreCompleto" class="form-control" placeholder="Tu nombre y apellidos" autocomplete="name" />
+            <ValidationMessage For="@(() => _register.NombreCompleto)" class="text-danger small mt-1" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Correo electronico</label>
+            <InputText @bind-Value="_register.Email" class="form-control" placeholder="tu@correo.com" autocomplete="email" />
+            <ValidationMessage For="@(() => _register.Email)" class="text-danger small mt-1" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Contrasena</label>
+            <InputText type="password" @bind-Value="_register.Password" class="form-control" placeholder="Minimo 10 caracteres" autocomplete="new-password" />
+            <ValidationMessage For="@(() => _register.Password)" class="text-danger small mt-1" />
+        </div>
+        @if (!string.IsNullOrEmpty(_errorMessage)) { <div class="alert alert-danger py-2 mb-3">@_errorMessage</div> }
+        <button type="submit" class="btn w-100 mb-3" style="background-color: #5955D1; color: white;" disabled="@_isSubmitting">
+            @if (_isSubmitting) { <span class="spinner-border spinner-border-sm me-2"></span><span>Creando cuenta...</span> }
+            else { <span>Crear mi cuenta</span> }
+        </button>
+        <p class="text-center text-muted small mb-0">
+            Al continuar aceptas los <a href="#">terminos</a> y la <a href="#">politica de privacidad</a>.
+        </p>
+    </EditForm>
+}
+else
+{
     <EditForm Model="@_model" OnValidSubmit="HandleLoginAsync" FormName="login">
         <DataAnnotationsValidator />
 
@@ -41,6 +89,7 @@
             else { <span>Iniciar sesion</span> }
         </button>
     </EditForm>
+}
 }
 else
 {
@@ -67,14 +116,24 @@ else
 
 @code {
     private enum Step { Credentials, Mfa }
+    private enum AuthMode { Login, Register }
     private Step _step = Step.Credentials;
+    private AuthMode _mode = AuthMode.Login;
 
     private LoginModel _model = new();
+    private RegisterModel _register = new();
     private MfaModel _mfaModel = new();
     private string? _mfaTicket;
     private bool _isSubmitting;
     private string? _errorMessage;
     private string? _successMessage;
+
+    private void SetMode(AuthMode mode)
+    {
+        _mode = mode;
+        _errorMessage = null;
+        _successMessage = null;
+    }
 
     private class LoginModel
     {
@@ -87,11 +146,80 @@ else
         public string Password { get; set; } = string.Empty;
     }
 
+    private class RegisterModel
+    {
+        [Required(ErrorMessage = "Tu nombre es obligatorio")]
+        [MinLength(3, ErrorMessage = "Minimo 3 caracteres")]
+        public string NombreCompleto { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "El correo es obligatorio")]
+        [EmailAddress(ErrorMessage = "Correo invalido")]
+        public string Email { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "La contrasena es obligatoria")]
+        [MinLength(10, ErrorMessage = "Minimo 10 caracteres")]
+        public string Password { get; set; } = string.Empty;
+    }
+
     private class MfaModel
     {
         [Required, StringLength(6, MinimumLength = 6, ErrorMessage = "6 digitos")]
         public string Code { get; set; } = string.Empty;
     }
+
+    private async Task HandleRegisterAsync()
+    {
+        _errorMessage = null; _successMessage = null; _isSubmitting = true;
+        try
+        {
+            var http = HttpClientFactory.CreateClient("PropiaApi");
+            var resp = await http.PostAsJsonAsync("/api/onboarding/paso1/registrar",
+                new { _register.NombreCompleto, _register.Email, _register.Password });
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                _errorMessage = await ExtractErrorAsync(resp);
+                return;
+            }
+
+            var r = await resp.Content.ReadFromJsonAsync<RegistroResp>();
+            if (r is null || string.IsNullOrEmpty(r.AccessToken))
+            {
+                _errorMessage = "Respuesta inesperada del servidor.";
+                return;
+            }
+
+            // Guarda JWT (sin tenant aun) + sessionId del wizard pendiente. El wizard 2-5
+            // corre AUTENTICADO; al activar se reemite el JWT con tenant_id.
+            await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_jwt", r.AccessToken);
+            await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_onboarding_session_id", r.OnboardingSessionId.ToString());
+            await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_user_email", r.Email);
+            try { await Js.InvokeVoidAsync("propiaUI.refreshAuthCta"); } catch { }
+
+            _successMessage = "Cuenta creada. Vamos a configurar tu copropiedad...";
+            StateHasChanged();
+            await Task.Delay(400);
+            Nav.NavigateTo("/onboarding/continuar", forceLoad: true);
+        }
+        catch (HttpRequestException ex) { _errorMessage = $"No se pudo conectar al API: {ex.Message}"; }
+        finally { _isSubmitting = false; }
+    }
+
+    private static async Task<string> ExtractErrorAsync(HttpResponseMessage resp)
+    {
+        var body = await resp.Content.ReadAsStringAsync();
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("error", out var e)) return e.GetString() ?? body;
+        }
+        catch { }
+        return $"Error {(int)resp.StatusCode}";
+    }
+
+    private sealed record RegistroResp(
+        Guid OnboardingSessionId, Guid UserId, string Email,
+        string AccessToken, DateTimeOffset ExpiresAt);
 
     private async Task HandleLoginAsync()
     {
@@ -155,8 +283,30 @@ else
 
     private async Task EntrarComoClienteAsync(UnifiedLogin login)
     {
+        // Sin copropiedades: o el usuario tiene wizard 2.1 pendiente (registrado pero no
+        // activado) -> redirige al wizard; o de verdad no tiene acceso a ninguna PH.
         if (login.AvailableTenants.Count == 0)
         {
+            try
+            {
+                var probe = HttpClientFactory.CreateClient("PropiaApi");
+                probe.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", login.AccessToken!);
+                var pend = await probe.GetFromJsonAsync<MiSesionPendiente>("/api/onboarding/mi-sesion-pendiente");
+                if (pend is { Completado: false, OnboardingSessionId: not null })
+                {
+                    await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_jwt", login.AccessToken!);
+                    await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_onboarding_session_id", pend.OnboardingSessionId.ToString());
+                    await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_user_email", login.Email ?? "");
+                    try { await Js.InvokeVoidAsync("propiaUI.refreshAuthCta"); } catch { }
+                    _successMessage = "Retomando tu configuracion...";
+                    StateHasChanged();
+                    await Task.Delay(300);
+                    Nav.NavigateTo("/onboarding/continuar", forceLoad: true);
+                    return;
+                }
+            }
+            catch { /* si el endpoint falla, cae al mensaje de abajo */ }
+
             _errorMessage = "Tu usuario no tiene copropiedades activas. Contacta a tu administrador.";
             return;
         }
@@ -210,4 +360,13 @@ else
     private sealed record TenantInfo(Guid TenantId, string Nombre, string Rol);
 
     private sealed record SwitchTenantResp(string? AccessToken);
+
+    private sealed record MiSesionPendiente(Guid? OnboardingSessionId, int PasoActual, bool Completado);
 }
+
+<style>
+    .auth-tabs { display: flex; gap: 6px; background: #f3f3fa; border-radius: 10px; padding: 4px; }
+    .auth-tab { flex: 1; border: 0; background: transparent; color: #5b5b6e; font-weight: 600; font-size: 13px; padding: 8px 10px; border-radius: 8px; cursor: pointer; transition: all .15s; }
+    .auth-tab:hover { color: #2d2d44; }
+    .auth-tab-active { background: #fff; color: #2d2d44; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+</style>
