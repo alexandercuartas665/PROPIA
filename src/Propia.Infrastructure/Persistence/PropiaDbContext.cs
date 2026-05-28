@@ -247,6 +247,8 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<AiAgentResource> AiAgentResources => Set<AiAgentResource>();
     public DbSet<AiAgentMcpTool> AiAgentMcpTools => Set<AiAgentMcpTool>();
     public DbSet<AiUsageLog> AiUsageLogs => Set<AiUsageLog>();
+    public DbSet<AiAgentTemplate> AiAgentTemplates => Set<AiAgentTemplate>();
+    public DbSet<AiAgentTemplateMcpTool> AiAgentTemplateMcpTools => Set<AiAgentTemplateMcpTool>();
 
     // Modulo 0.2 - Billing y Suscripciones (todo GLOBAL, sin tenant_id)
     public DbSet<Plan> Planes => Set<Plan>();
@@ -2288,6 +2290,27 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasIndex(x => new { x.TenantId, x.CreatedAt });
             b.HasIndex(x => new { x.TenantId, x.AgentId });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // Plantillas globales de agente (Super Admin). SIN tenant_id ni RLS.
+        modelBuilder.Entity<AiAgentTemplate>(b =>
+        {
+            b.Property(x => x.Name).IsRequired().HasMaxLength(150);
+            b.Property(x => x.Role).HasMaxLength(100);
+            b.Property(x => x.Description).HasMaxLength(500);
+            b.Property(x => x.Provider).HasConversion<string>().HasMaxLength(20);
+            b.Property(x => x.Model).HasMaxLength(100);
+            b.Property(x => x.SystemPrompt).HasColumnType("text");
+            b.HasIndex(x => new { x.IsActive, x.IncludeInOnboarding });
+        });
+
+        modelBuilder.Entity<AiAgentTemplateMcpTool>(b =>
+        {
+            b.ToTable("ai_agent_template_mcp_tools");
+            b.Property(x => x.ConnectionCode).IsRequired().HasMaxLength(50);
+            b.Property(x => x.ToolName).IsRequired().HasMaxLength(150);
+            b.HasOne(x => x.Template).WithMany(t => t.McpTools).HasForeignKey(x => x.TemplateId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => new { x.TemplateId, x.ConnectionCode, x.ToolName }).IsUnique();
         });
 
         // -------------------- Modulo 0.2 Billing --------------------

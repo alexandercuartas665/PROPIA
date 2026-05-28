@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Propia.Application.Auth;
 using Propia.Application.Common;
+using Propia.Application.InfraestructuraIa;
 using Propia.Application.Onboarding;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
@@ -31,6 +32,7 @@ public class OnboardingService : IOnboardingService
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly ITokenService _tokenService;
     private readonly IEmailSender _emailSender;
+    private readonly IAiAgentTemplateService _aiAgentTemplates;
     private readonly ILogger<OnboardingService> _logger;
 
     public OnboardingService(
@@ -38,12 +40,14 @@ public class OnboardingService : IOnboardingService
         UserManager<ApplicationUser> userManager,
         ITokenService tokenService,
         IEmailSender emailSender,
+        IAiAgentTemplateService aiAgentTemplates,
         ILogger<OnboardingService> logger)
     {
         _db = db;
         _userManager = userManager;
         _tokenService = tokenService;
         _emailSender = emailSender;
+        _aiAgentTemplates = aiAgentTemplates;
         _logger = logger;
     }
 
@@ -287,6 +291,24 @@ public class OnboardingService : IOnboardingService
                 INSERT INTO usuarios_tenant (id, tenant_id, persona_id, rol, estado, fecha_activacion, created_at)
                 VALUES ('{Guid.NewGuid()}', '{tenant.Id}', '{persona.Id}', 'Administrador', 1, now(), now());";
             await cmd.ExecuteNonQueryAsync(ct);
+
+            // Desplegar plantillas de agente IA con la misma sesion SQL (set_config sigue activo).
+            // Best-effort: si el deploy falla, la activacion sigue exitosa - el tenant simplemente
+            // tendra que crear sus agentes a mano en /agentes-ia.
+            try
+            {
+                var copiados = await _aiAgentTemplates.DeployToTenantAsync(
+                    tenant.Id, tenant.Nombre, st.NombreOrganizacion, ct);
+                if (copiados > 0)
+                {
+                    _logger.LogInformation("Desplegados {N} agentes-plantilla al tenant {TenantId} ({Nombre})",
+                        copiados, tenant.Id, tenant.Nombre);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Fallo desplegando plantillas de agente al tenant {TenantId}", tenant.Id);
+            }
         }
         finally
         {

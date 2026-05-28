@@ -1,0 +1,353 @@
+@page "/admin/plantillas/agentes-ia"
+@layout AdminLayout
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.InfraestructuraIa
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<PageTitle>Plantillas de Agentes IA - Plataforma</PageTitle>
+
+<h1 class="h3 mb-1">Plantillas de Agentes IA</h1>
+<p class="text-muted mb-4">
+    Agentes pre-configurados que se despliegan automaticamente a cada copropiedad nueva al
+    activar el wizard 2.1. El cliente llega con su asistente listo para usar. Marca
+    "Incluir en onboarding" para las que deben copiarse a tenants nuevos.
+</p>
+
+@if (_jwt is null || _cargando)
+{
+    <div class="text-center py-5"><div class="spinner-border"></div></div>
+}
+else
+{
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="h5 mb-0">@_templates.Count plantillas</h2>
+        <button class="btn btn-dark" @onclick="NuevaPlantilla">+ Nueva plantilla</button>
+    </div>
+
+    @if (_templates.Count == 0)
+    {
+        <div class="alert alert-info">
+            No hay plantillas creadas. Crea la primera para que los clientes nuevos lleguen con un agente listo.
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Proveedor / Modelo</th>
+                        <th>Tools</th>
+                        <th>Estado</th>
+                        <th>Onboarding</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var t in _templates)
+                    {
+                        <tr>
+                            <td><strong>@t.Name</strong>@(string.IsNullOrEmpty(t.Role) ? null : (MarkupString)$" <small class=\"text-muted\">{t.Role}</small>")</td>
+                            <td>@t.Provider <small class="text-muted">@(t.Model ?? "default")</small></td>
+                            <td>@t.Tools.Count</td>
+                            <td>
+                                @if (t.IsActive) { <span class="badge bg-success">Activa</span> }
+                                else { <span class="badge bg-secondary">Inactiva</span> }
+                            </td>
+                            <td>
+                                @if (t.IncludeInOnboarding) { <span class="badge bg-primary">Si</span> }
+                                else { <span class="badge bg-light text-dark">No</span> }
+                            </td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-outline-dark" @onclick="() => Editar(t)">Editar</button>
+                                <button class="btn btn-sm btn-outline-danger ms-1" @onclick="() => Borrar(t)">Borrar</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@if (_editando is not null && _form is not null)
+{
+    <div class="modal d-block" style="background: rgba(0,0,0,0.4);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(_editando.Value == Guid.Empty ? "Nueva plantilla" : "Editar plantilla")</h5>
+                    <button type="button" class="btn-close" @onclick="CancelarEdicion"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-8">
+                            <label class="form-label">Nombre</label>
+                            <input class="form-control" @bind="_form.Name" @bind:event="oninput" placeholder="Asistente PROPIA" />
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label">Rol</label>
+                            <input class="form-control" @bind="_form.Role" @bind:event="oninput" placeholder="copiloto" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Descripcion <span class="text-muted small">(interna)</span></label>
+                            <input class="form-control" @bind="_form.Description" @bind:event="oninput" placeholder="Plantilla por defecto para copropiedades nuevas" />
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label">Proveedor</label>
+                            <select class="form-select" @bind="_form.Provider">
+                                @foreach (var p in Enum.GetValues<AiProvider>())
+                                {
+                                    <option value="@p">@p</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label">Modelo <span class="text-muted small">(opcional)</span></label>
+                            <input class="form-control" @bind="_form.Model" @bind:event="oninput" placeholder="claude-opus-4" />
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label">Sort order</label>
+                            <input type="number" class="form-control" @bind="_form.SortOrder" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">System prompt</label>
+                            <textarea class="form-control" rows="6" @bind="_form.SystemPrompt" @bind:event="oninput"
+                                      placeholder="Eres el asistente IA de la copropiedad {COPROPIEDAD_NOMBRE}..."></textarea>
+                            <div class="form-text">
+                                Placeholders disponibles (se reemplazan al desplegar al tenant):
+                                <code>{COPROPIEDAD_NOMBRE}</code>, <code>{ORGANIZACION_NOMBRE}</code>
+                            </div>
+                        </div>
+                        <div class="col-6 form-check ms-3">
+                            <input type="checkbox" class="form-check-input" id="active" @bind="_form.IsActive" />
+                            <label class="form-check-label" for="active">Activa</label>
+                        </div>
+                        <div class="col-6 form-check">
+                            <input type="checkbox" class="form-check-input" id="onb" @bind="_form.IncludeInOnboarding" />
+                            <label class="form-check-label" for="onb">Incluir en onboarding (desplegar a tenants nuevos)</label>
+                        </div>
+                        <div class="col-12">
+                            <h6 class="mt-2">Tools MCP habilitadas</h6>
+                            @if (_catalogo is null)
+                            {
+                                <div class="text-muted small">Cargando catalogo MCP...</div>
+                            }
+                            else
+                            {
+                                @foreach (var con in _catalogo)
+                                {
+                                    <div class="card mb-2">
+                                        <div class="card-header bg-white py-2">
+                                            <strong>@con.DisplayName</strong> <span class="text-muted small">(@con.Code)</span>
+                                            @if (!con.Reachable) { <span class="badge bg-warning text-dark ms-2">no responde</span> }
+                                        </div>
+                                        <div class="card-body py-2">
+                                            @if (con.Tools.Count == 0)
+                                            {
+                                                <div class="text-muted small">@(con.Error ?? "Sin tools disponibles")</div>
+                                            }
+                                            else
+                                            {
+                                                @foreach (var t in con.Tools)
+                                                {
+                                                    var key = $"{con.Code}|{t.ToolName}";
+                                                    <div class="form-check">
+                                                        <input type="checkbox" class="form-check-input" id="@key"
+                                                               checked="@(_toolsSeleccionadas.Contains(key))"
+                                                               @onchange="@((ChangeEventArgs e) => ToggleTool(con.Code, t.ToolName, (bool)e.Value!))" />
+                                                        <label class="form-check-label" for="@key">
+                                                            <code>@t.ToolName</code>
+                                                            @if (!string.IsNullOrEmpty(t.Description)) { <span class="text-muted small"> - @t.Description</span> }
+                                                        </label>
+                                                    </div>
+                                                }
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    @if (!string.IsNullOrEmpty(_msg)) { <span class="me-auto @_msgCls">@_msg</span> }
+                    <button type="button" class="btn btn-secondary" @onclick="CancelarEdicion">Cancelar</button>
+                    <button type="button" class="btn btn-dark" @onclick="GuardarAsync" disabled="@_busy">@(_busy ? "Guardando..." : "Guardar")</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string? _jwt;
+    private bool _cargando = true;
+    private bool _busy;
+    private string? _msg;
+    private string _msgCls = "text-success";
+
+    private List<AiAgentTemplateDto> _templates = new();
+    private List<TemplateMcpConnectionCatalogItem>? _catalogo;
+
+    private Guid? _editando;
+    private Form? _form;
+    private HashSet<string> _toolsSeleccionadas = new();
+
+    private class Form
+    {
+        public string Name { get; set; } = "";
+        public string? Role { get; set; }
+        public string? Description { get; set; }
+        public AiProvider Provider { get; set; } = AiProvider.Claude;
+        public string? Model { get; set; }
+        public string SystemPrompt { get; set; } = "";
+        public bool IsActive { get; set; } = true;
+        public bool IncludeInOnboarding { get; set; } = true;
+        public int SortOrder { get; set; }
+    }
+
+    public sealed record TemplateMcpToolCatalogItem(string ToolName, string? Description);
+    public sealed record TemplateMcpConnectionCatalogItem(string Code, string DisplayName, string? Description, bool Reachable, string? Error, List<TemplateMcpToolCatalogItem> Tools);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_admin_jwt");
+            if (string.IsNullOrWhiteSpace(jwt)) { Nav.NavigateTo("/login", forceLoad: true); return; }
+            _jwt = jwt;
+            await CargarListaAsync();
+            _cargando = false;
+            StateHasChanged();
+        }
+        catch { _cargando = false; }
+    }
+
+    private async Task CargarListaAsync()
+    {
+        try
+        {
+            _templates = await Auth().GetFromJsonAsync<List<AiAgentTemplateDto>>("/admin/ai-agent-templates") ?? new();
+        }
+        catch { /* silencioso */ }
+    }
+
+    private async Task CargarCatalogoAsync()
+    {
+        if (_catalogo is not null) return;
+        try
+        {
+            _catalogo = await Auth().GetFromJsonAsync<List<TemplateMcpConnectionCatalogItem>>("/admin/ai-agent-templates/mcp-catalog");
+        }
+        catch { _catalogo = new(); }
+    }
+
+    private async Task NuevaPlantilla()
+    {
+        _editando = Guid.Empty;
+        _form = new Form { SystemPrompt = "Eres el asistente IA de la copropiedad {COPROPIEDAD_NOMBRE}. Ayuda al equipo administrativo a consultar datos y ejecutar acciones rapidas." };
+        _toolsSeleccionadas = new();
+        _msg = null;
+        await CargarCatalogoAsync();
+        StateHasChanged();
+    }
+
+    private async Task Editar(AiAgentTemplateDto t)
+    {
+        _editando = t.Id;
+        _form = new Form
+        {
+            Name = t.Name, Role = t.Role, Description = t.Description,
+            Provider = t.Provider, Model = t.Model, SystemPrompt = t.SystemPrompt,
+            IsActive = t.IsActive, IncludeInOnboarding = t.IncludeInOnboarding,
+            SortOrder = t.SortOrder
+        };
+        _toolsSeleccionadas = t.Tools.Select(x => $"{x.ConnectionCode}|{x.ToolName}").ToHashSet();
+        _msg = null;
+        await CargarCatalogoAsync();
+        StateHasChanged();
+    }
+
+    private void CancelarEdicion()
+    {
+        _editando = null;
+        _form = null;
+        _toolsSeleccionadas = new();
+        _msg = null;
+    }
+
+    private void ToggleTool(string connectionCode, string toolName, bool selected)
+    {
+        var key = $"{connectionCode}|{toolName}";
+        if (selected) _toolsSeleccionadas.Add(key);
+        else _toolsSeleccionadas.Remove(key);
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_form is null) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var tools = _toolsSeleccionadas.Select(k =>
+            {
+                var parts = k.Split('|', 2);
+                return new AiAgentTemplateToolDto(parts[0], parts[1]);
+            }).ToList();
+
+            var req = new SaveAiAgentTemplateRequest(
+                _form.Name, _form.Role, _form.Description, _form.Provider, _form.Model,
+                _form.SystemPrompt, _form.IsActive, _form.IncludeInOnboarding, _form.SortOrder, tools);
+
+            HttpResponseMessage resp;
+            if (_editando == Guid.Empty)
+            {
+                resp = await Auth().PostAsJsonAsync("/admin/ai-agent-templates", req);
+            }
+            else
+            {
+                resp = await Auth().PutAsJsonAsync($"/admin/ai-agent-templates/{_editando}", req);
+            }
+
+            if (resp.IsSuccessStatusCode)
+            {
+                await CargarListaAsync();
+                CancelarEdicion();
+            }
+            else
+            {
+                _msg = $"Error: {await resp.Content.ReadAsStringAsync()}";
+                _msgCls = "text-danger";
+            }
+        }
+        catch (Exception ex)
+        {
+            _msg = $"Error: {ex.Message}"; _msgCls = "text-danger";
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task Borrar(AiAgentTemplateDto t)
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", $"Borrar la plantilla '{t.Name}'? Los agentes ya copiados a tenants no se ven afectados.")) return;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/admin/ai-agent-templates/{t.Id}");
+            if (resp.IsSuccessStatusCode) await CargarListaAsync();
+        }
+        catch { }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

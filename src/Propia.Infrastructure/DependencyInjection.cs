@@ -97,6 +97,7 @@ public static class DependencyInjection
         services.AddScoped<Application.InfraestructuraIa.IAiAgentService, InfraestructuraIa.AiAgentService>();
         services.AddScoped<Application.InfraestructuraIa.IAiUsageService, InfraestructuraIa.AiUsageService>();
         services.AddScoped<Application.InfraestructuraIa.IAiInferenceService, InfraestructuraIa.AiInferenceService>();
+        services.AddScoped<Application.InfraestructuraIa.IAiAgentTemplateService, InfraestructuraIa.AiAgentTemplateService>();
 
         // Gateway MCP: el agente como cliente MCP. HttpClient "Mcp" acepta el cert self-signed
         // SOLO para localhost (dev); contra cualquier host real exige certificado valido.
