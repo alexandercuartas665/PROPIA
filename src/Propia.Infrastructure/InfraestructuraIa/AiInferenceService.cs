@@ -22,17 +22,19 @@ public sealed class AiInferenceService : IAiInferenceService
     private readonly IAiProviderClient _client;
     private readonly IAiUsageService _usage;
     private readonly IMcpGateway _mcp;
+    private readonly ITenantContext _tenant;
 
     /// <summary>Maximo de rondas de tool-calling para evitar bucles infinitos del modelo.</summary>
     private const int MaxToolRounds = 6;
 
-    public AiInferenceService(PropiaDbContext db, ISecretProtector secret, IAiProviderClient client, IAiUsageService usage, IMcpGateway mcp)
+    public AiInferenceService(PropiaDbContext db, ISecretProtector secret, IAiProviderClient client, IAiUsageService usage, IMcpGateway mcp, ITenantContext tenant)
     {
         _db = db;
         _secret = secret;
         _client = client;
         _usage = usage;
         _mcp = mcp;
+        _tenant = tenant;
     }
 
     public async Task<AiChatResult> TestChatAsync(Guid agentId, IReadOnlyList<AiChatTurn> turns, string? systemPromptOverride = null, string? bearerToken = null, CancellationToken ct = default)
@@ -71,6 +73,10 @@ public sealed class AiInferenceService : IAiInferenceService
             .ToListAsync(ct);
 
         var systemPrompt = await BuildSystemPrompt(agentId, systemPromptOverride ?? agent.SystemPrompt, resources, ct);
+
+        // Contexto de la copropiedad ACTIVA (la seleccionada por el usuario): se antepone al
+        // prompt para que el agente sepa SIEMPRE sobre que copropiedad responde, sin hardcodear.
+        systemPrompt = await PrependContextoCopropiedadAsync(systemPrompt, ct);
 
         // Tools MCP habilitadas para este agente. Si hay alguna y tenemos token del usuario,
         // corremos el loop de function-calling; si no, el camino simple de siempre.
@@ -200,6 +206,29 @@ public sealed class AiInferenceService : IAiInferenceService
             return dict ?? new Dictionary<string, object?>();
         }
         catch { return new Dictionary<string, object?>(); }
+    }
+
+    /// <summary>
+    /// Antepone al prompt un bloque con la identidad de la copropiedad ACTIVA (la del JWT). Asi el
+    /// agente siempre sabe sobre que copropiedad responde, sin hardcodear el nombre en el prompt y
+    /// reflejando automaticamente la propiedad que el usuario tenga seleccionada en el selector.
+    /// </summary>
+    private async Task<string> PrependContextoCopropiedadAsync(string systemPrompt, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tenantId) { return systemPrompt; }
+        var t = await _db.Tenants.AsNoTracking().FirstOrDefaultAsync(x => x.Id == tenantId, ct);
+        if (t is null) { return systemPrompt; }
+
+        var sb = new StringBuilder();
+        sb.AppendLine("CONTEXTO: estas atendiendo EXCLUSIVAMENTE a la copropiedad activa seleccionada por el usuario:");
+        sb.AppendLine($"- Nombre: {t.Nombre}");
+        if (!string.IsNullOrWhiteSpace(t.Nit)) { sb.AppendLine($"- NIT: {t.Nit}"); }
+        if (!string.IsNullOrWhiteSpace(t.Direccion)) { sb.AppendLine($"- Direccion: {t.Direccion}{(string.IsNullOrWhiteSpace(t.Ciudad) ? "" : ", " + t.Ciudad)}"); }
+        if (t.TipoCopropiedad.HasValue) { sb.AppendLine($"- Tipo: {t.TipoCopropiedad}"); }
+        sb.AppendLine("Todas tus herramientas operan sobre esta copropiedad. Si el usuario pregunta por otra, aclara que solo puedes ver la activa.");
+        sb.AppendLine();
+        sb.Append(systemPrompt);
+        return sb.ToString();
     }
 
     private async Task<string> BuildSystemPrompt(Guid agentId, string basePrompt, IReadOnlyList<AiChatAttachment> resources, CancellationToken ct)
