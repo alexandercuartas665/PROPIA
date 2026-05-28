@@ -65,9 +65,20 @@ public sealed class SmtpEmailSender : IEmailSender
             await client.SendMailAsync(message, cancellationToken);
             return new EmailSendResult(true, null);
         }
+        catch (SmtpException ex)
+        {
+            // SendGrid suele devolver el motivo en StatusCode + InnerException.Message.
+            // Sin esto, el usuario ve "Failure sending mail." sin pista del problema real.
+            var statusCode = ex.StatusCode.ToString();
+            var inner = ex.InnerException?.Message;
+            var detail = inner is null ? $"{statusCode}: {ex.Message}" : $"{statusCode}: {ex.Message} - {inner}";
+            return new EmailSendResult(false, $"SMTP fallo ({detail})");
+        }
         catch (Exception ex)
         {
-            return new EmailSendResult(false, $"No se pudo enviar el correo: {ex.Message}");
+            var inner = ex.InnerException?.Message;
+            var detail = inner is null ? ex.Message : $"{ex.Message} - {inner}";
+            return new EmailSendResult(false, $"No se pudo enviar el correo: {detail}");
         }
     }
 }

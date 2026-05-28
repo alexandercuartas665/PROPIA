@@ -26,15 +26,18 @@ else if (_form is not null)
                 </div>
                 <div class="card-body">
                     <div class="row g-3">
-                        <div class="col-8"><label class="form-label">Host SMTP</label><input class="form-control" @bind="_form.SmtpHost" placeholder="smtp.sendgrid.net" /></div>
-                        <div class="col-4"><label class="form-label">Puerto</label><input type="number" class="form-control" @bind="_form.SmtpPort" /></div>
-                        <div class="col-12"><label class="form-label">Usuario SMTP</label><input class="form-control" @bind="_form.SmtpUser" placeholder="apikey (SendGrid) o usuario" /></div>
+                        @* @bind:event="oninput" sincroniza el modelo en CADA tecla. Sin esto, si el usuario
+                           tipea y clickea Guardar sin hacer Tab/blur, el valor se pierde y el backend recibe
+                           null. Es trampa especialmente en password (no se ve) y se manifesta como SMTP fallido. *@
+                        <div class="col-8"><label class="form-label">Host SMTP</label><input class="form-control" @bind="_form.SmtpHost" @bind:event="oninput" placeholder="smtp.sendgrid.net" /></div>
+                        <div class="col-4"><label class="form-label">Puerto</label><input type="number" class="form-control" @bind="_form.SmtpPort" @bind:event="oninput" /></div>
+                        <div class="col-12"><label class="form-label">Usuario SMTP</label><input class="form-control" @bind="_form.SmtpUser" @bind:event="oninput" placeholder="apikey (SendGrid) o usuario" /></div>
                         <div class="col-12">
                             <label class="form-label">Clave SMTP @(_form.HasPassword ? "(guardada - dejar vacio para conservar)" : "")</label>
-                            <input type="password" class="form-control" @bind="_form.SmtpPassword" placeholder="@(_form.HasPassword ? "********" : "clave o API key")" />
+                            <input type="password" class="form-control" @bind="_form.SmtpPassword" @bind:event="oninput" placeholder="@(_form.HasPassword ? "********" : "clave o API key")" />
                         </div>
-                        <div class="col-6"><label class="form-label">Remitente (From)</label><input class="form-control" @bind="_form.FromEmail" placeholder="no-reply@propia.com.co" /></div>
-                        <div class="col-6"><label class="form-label">Nombre remitente</label><input class="form-control" @bind="_form.FromName" placeholder="PROPIA" /></div>
+                        <div class="col-6"><label class="form-label">Remitente (From)</label><input class="form-control" @bind="_form.FromEmail" @bind:event="oninput" placeholder="no-reply@propia.com.co" /></div>
+                        <div class="col-6"><label class="form-label">Nombre remitente</label><input class="form-control" @bind="_form.FromName" @bind:event="oninput" placeholder="PROPIA" /></div>
                         <div class="col-12 d-flex gap-4">
                             <div class="form-check"><input type="checkbox" class="form-check-input" id="ssl" @bind="_form.UseSsl" /><label class="form-check-label" for="ssl">Usar SSL/TLS</label></div>
                             <div class="form-check"><input type="checkbox" class="form-check-input" id="en" @bind="_form.IsEnabled" /><label class="form-check-label" for="en">Habilitar envio</label></div>
@@ -122,7 +125,20 @@ else if (_form is not null)
             if (resp.IsSuccessStatusCode)
             {
                 var dto = await resp.Content.ReadFromJsonAsync<EmailConfigDto>();
-                if (dto is not null) { _form.HasPassword = dto.HasPassword; _form.SmtpPassword = null; _form.LastValidatedAt = dto.LastValidatedAt; }
+                if (dto is not null)
+                {
+                    // Refrescar TODO desde el server para evitar mostrar valores stale tras un guardado parcial.
+                    _form.SmtpHost = dto.SmtpHost;
+                    _form.SmtpPort = dto.SmtpPort;
+                    _form.SmtpUser = dto.SmtpUser;
+                    _form.SmtpPassword = null;
+                    _form.UseSsl = dto.UseSsl;
+                    _form.FromEmail = dto.FromEmail;
+                    _form.FromName = dto.FromName;
+                    _form.IsEnabled = dto.IsEnabled;
+                    _form.HasPassword = dto.HasPassword;
+                    _form.LastValidatedAt = dto.LastValidatedAt;
+                }
                 _msg = "Configuracion guardada."; _msgCls = "alert-success";
             }
             else { _msg = $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}"; _msgCls = "alert-danger"; }
