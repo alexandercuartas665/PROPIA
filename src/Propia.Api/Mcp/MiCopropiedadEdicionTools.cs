@@ -44,7 +44,7 @@ public sealed class MiCopropiedadEdicionTools
             accion: async _ => await svc.ActualizarContratoAsync(contratoId, cambios, ct), ct);
 
     [McpServerTool(Name = "micopropiedad_cambiar_estado_zona")]
-    [Description("Cambia el estado operativo de una zona comun (Disponible/EnMantenimiento/Inhabilitada). Dry-run por defecto. (Seccion 6)")]
+    [Description("Cambia el estado operativo de una zona comun (Activa/EnMantenimiento/Inactiva). Dry-run por defecto. (Seccion 6)")]
     public static Task<ResultadoCreacionMcp> CambiarEstadoZona(
         [Description("Identificador (Guid) de la zona comun.")] Guid zonaId,
         [Description("Nuevo estado operativo de la zona.")] EstadoZonaComunMantenimiento estado,
