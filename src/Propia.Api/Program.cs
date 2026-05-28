@@ -166,7 +166,8 @@ builder.Services.AddMcpServer()
         o.Stateless = true;
     })
     .WithTools<Propia.Api.Mcp.MiCopropiedadConsultaTools>(mcpJsonOptions)
-    .WithTools<Propia.Api.Mcp.MiCopropiedadCreacionTools>(mcpJsonOptions);
+    .WithTools<Propia.Api.Mcp.MiCopropiedadCreacionTools>(mcpJsonOptions)
+    .WithTools<Propia.Api.Mcp.MiCopropiedadEdicionTools>(mcpJsonOptions);
 
 var app = builder.Build();
 

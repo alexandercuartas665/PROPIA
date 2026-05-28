@@ -226,6 +226,7 @@ public sealed class AiInferenceService : IAiInferenceService
         if (!string.IsNullOrWhiteSpace(t.Direccion)) { sb.AppendLine($"- Direccion: {t.Direccion}{(string.IsNullOrWhiteSpace(t.Ciudad) ? "" : ", " + t.Ciudad)}"); }
         if (t.TipoCopropiedad.HasValue) { sb.AppendLine($"- Tipo: {t.TipoCopropiedad}"); }
         sb.AppendLine("Todas tus herramientas operan sobre esta copropiedad. Si el usuario pregunta por otra, aclara que solo puedes ver la activa.");
+        sb.AppendLine("NUNCA inventes datos de la copropiedad (cifras, montos, cantidades, estados). Si no tienes una herramienta para consultar algo concreto, dilo con honestidad en vez de suponer.");
         sb.AppendLine();
         sb.Append(systemPrompt);
         return sb.ToString();

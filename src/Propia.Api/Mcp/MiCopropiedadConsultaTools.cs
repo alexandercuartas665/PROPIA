@@ -101,6 +101,76 @@ public sealed class MiCopropiedadConsultaTools
         CancellationToken ct)
         => await svc.ListBitacoraAsync(limit <= 0 ? 50 : limit, ct);
 
+    [McpServerTool(Name = "micopropiedad_identidad")]
+    [Description("Identidad de la copropiedad activa: nombre, NIT, direccion, ciudad, tipo, estrato, datos registrales (reglamento PH, notaria, matricula) y contacto.")]
+    public static async Task<IdentidadDto> Identidad(
+        IMiCopropiedadService svc, ITenantContext tenant, CancellationToken ct)
+    {
+        var tid = RequireTenant(tenant);
+        var r = await svc.GetResumenAsync(tid, ct)
+            ?? throw new InvalidOperationException("No existe la copropiedad activa.");
+        return r.Identidad;
+    }
+
+    [McpServerTool(Name = "micopropiedad_listar_equipo_trabajo")]
+    [Description("Lista el equipo de trabajo de la copropiedad (administrador, contador, vigilancia, aseo, etc.): persona, rol, tipo de vinculacion y vigencia. (Seccion 3)")]
+    public static async Task<IReadOnlyList<MiembroEquipoDto>> ListarEquipoTrabajo(
+        IMiCopropiedadService svc, CancellationToken ct)
+        => await svc.ListEquipoAsync(ct);
+
+    [McpServerTool(Name = "micopropiedad_listar_comites")]
+    [Description("Lista los comites de la copropiedad (convivencia, deportes, etc.) con su fecha de conformacion y cantidad de miembros. (Seccion 4 - Gobierno)")]
+    public static async Task<IReadOnlyList<ComiteDto>> ListarComites(
+        IMiCopropiedadService svc, CancellationToken ct)
+        => await svc.ListComitesAsync(ct);
+
+    [McpServerTool(Name = "micopropiedad_listar_miembros_comite")]
+    [Description("Lista los miembros de un comite por su identificador (Guid).")]
+    public static async Task<IReadOnlyList<ComiteMiembroDto>> ListarMiembrosComite(
+        IMiCopropiedadService svc,
+        [Description("Identificador (Guid) del comite.")] Guid comiteId,
+        CancellationToken ct)
+        => await svc.ListMiembrosComiteAsync(comiteId, ct);
+
+    [McpServerTool(Name = "micopropiedad_revisor_fiscal")]
+    [Description("Devuelve el Revisor Fiscal activo de la copropiedad (persona, tarjeta profesional, fecha de posesion) o null si no hay. (Seccion 4 - Gobierno)")]
+    public static async Task<RevisorFiscalDto?> RevisorFiscal(
+        IMiCopropiedadService svc, CancellationToken ct)
+        => await svc.GetRevisorFiscalActivoAsync(ct);
+
+    [McpServerTool(Name = "micopropiedad_listar_tipos_coeficiente")]
+    [Description("Lista los tipos de coeficiente de propiedad de la copropiedad (RN-02), con si es principal y la suma actual de cada uno. (Seccion 2)")]
+    public static async Task<IReadOnlyList<TipoCoeficienteDto>> ListarTiposCoeficiente(
+        IMiCopropiedadService svc, CancellationToken ct)
+        => await svc.ListTiposCoeficienteAsync(ct);
+
+    [McpServerTool(Name = "micopropiedad_listar_coeficientes_unidad")]
+    [Description("Lista los coeficientes (por tipo) de una unidad por su identificador (Guid).")]
+    public static async Task<IReadOnlyList<UnidadCoeficienteDto>> ListarCoeficientesUnidad(
+        IMiCopropiedadService svc,
+        [Description("Identificador (Guid) de la unidad.")] Guid unidadId,
+        CancellationToken ct)
+        => await svc.ListCoeficientesUnidadAsync(unidadId, ct);
+
+    [McpServerTool(Name = "micopropiedad_listar_vinculos_unidad")]
+    [Description("Lista las unidades asociadas (parqueaderos, depositos, etc.) vinculadas a una unidad principal por su identificador (Guid). (RN-09)")]
+    public static async Task<IReadOnlyList<UnidadVinculoDto>> ListarVinculosUnidad(
+        IMiCopropiedadService svc,
+        [Description("Identificador (Guid) de la unidad principal.")] Guid unidadPrincipalId,
+        CancellationToken ct)
+        => await svc.ListVinculosAsync(unidadPrincipalId, ct);
+
+    [McpServerTool(Name = "micopropiedad_listar_tipos_unidad")]
+    [Description("Lista los tipos de unidad personalizados definidos en la copropiedad (ademas de los estandar como apartamento/local).")]
+    public static async Task<IReadOnlyList<TipoUnidadCustomDto>> ListarTiposUnidad(
+        IMiCopropiedadService svc, CancellationToken ct)
+        => await svc.ListTiposUnidadCustomAsync(ct);
+
+    [McpServerTool(Name = "micopropiedad_listar_monedas")]
+    [Description("Catalogo de monedas (ISO 4217) disponibles para configurar la copropiedad (COP, USD, EUR, etc.).")]
+    public static IReadOnlyList<MonedaDto> ListarMonedas(IMiCopropiedadService svc)
+        => svc.ListMonedas();
+
     // ---------- Helpers ----------
 
     /// <summary>
