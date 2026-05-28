@@ -176,6 +176,167 @@ public sealed class AiAgentTemplateService : IAiAgentTemplateService
         return copied;
     }
 
+    public async Task<List<ImportableAgentDto>> ListImportSourcesAsync(CancellationToken ct = default)
+    {
+        // Usamos la funcion SECURITY DEFINER admin_list_active_agents() para bypass RLS
+        // sin tener que cambiar el rol propia_app a BYPASSRLS. Devuelve agentes + tenant + count.
+        var conn = _db.Database.GetDbConnection();
+        var opened = conn.State != System.Data.ConnectionState.Open;
+        if (opened) await conn.OpenAsync(ct);
+        var result = new List<ImportableAgentDto>();
+        try
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT agent_id, agent_name, role, provider, model, tenant_id, tenant_nombre, tools_count FROM admin_list_active_agents()";
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                var providerStr = reader.GetString(3);
+                var provider = Enum.TryParse<Domain.Enums.AiProvider>(providerStr, true, out var p)
+                    ? p
+                    : Domain.Enums.AiProvider.Claude;
+                result.Add(new ImportableAgentDto(
+                    AgentId: reader.GetGuid(0),
+                    AgentName: reader.GetString(1),
+                    Role: reader.IsDBNull(2) ? null : reader.GetString(2),
+                    Provider: provider,
+                    Model: reader.IsDBNull(4) ? null : reader.GetString(4),
+                    TenantId: reader.GetGuid(5),
+                    TenantNombre: reader.GetString(6),
+                    ToolsCount: (int)reader.GetInt64(7)));
+            }
+        }
+        finally
+        {
+            if (opened) await conn.CloseAsync();
+        }
+        return result;
+    }
+
+    public async Task<AiAgentTemplateDto> ImportFromAgentAsync(Guid agentId, Guid actorId, string actorEmail, string? ip, CancellationToken ct = default)
+    {
+        // Usamos la funcion SECURITY DEFINER admin_get_agent_for_template para bypass RLS.
+        var conn = _db.Database.GetDbConnection();
+        var opened = conn.State != System.Data.ConnectionState.Open;
+        if (opened) await conn.OpenAsync(ct);
+
+        string agentName, providerStr, systemPrompt, tenantNombre;
+        string? role, model, organizacionNombre;
+        int sortOrder;
+        string toolsJson;
+        try
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT name, role, provider, model, system_prompt, sort_order, tenant_nombre, organizacion_nombre, tools FROM admin_get_agent_for_template(@p)";
+            var p = cmd.CreateParameter();
+            p.ParameterName = "@p";
+            p.Value = agentId;
+            cmd.Parameters.Add(p);
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            if (!await reader.ReadAsync(ct))
+                throw new InvalidOperationException("Agente no encontrado.");
+            agentName = reader.GetString(0);
+            role = reader.IsDBNull(1) ? null : reader.GetString(1);
+            providerStr = reader.GetString(2);
+            model = reader.IsDBNull(3) ? null : reader.GetString(3);
+            systemPrompt = reader.GetString(4);
+            sortOrder = reader.GetInt32(5);
+            tenantNombre = reader.GetString(6);
+            organizacionNombre = reader.IsDBNull(7) ? null : reader.GetString(7);
+            toolsJson = reader.GetString(8);
+        }
+        finally
+        {
+            if (opened) await conn.CloseAsync();
+        }
+
+        var provider = Enum.TryParse<Domain.Enums.AiProvider>(providerStr, true, out var prov)
+            ? prov
+            : Domain.Enums.AiProvider.Claude;
+
+        // Reverse placeholder substitution
+        var promptParametrizado = ReversePlaceholders(systemPrompt, tenantNombre, organizacionNombre);
+
+        var template = new AiAgentTemplate
+        {
+            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedBy = actorId,
+            Name = agentName,
+            Role = role,
+            Description = $"Importado del agente '{agentName}' del tenant '{tenantNombre}'.",
+            Provider = provider,
+            Model = model,
+            SystemPrompt = promptParametrizado,
+            IsActive = true,
+            IncludeInOnboarding = false,
+            SortOrder = sortOrder
+        };
+        _db.AiAgentTemplates.Add(template);
+
+        // Parse tools JSON [{"connection_code":"x","tool_name":"y"}, ...]
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(toolsJson);
+            foreach (var el in doc.RootElement.EnumerateArray())
+            {
+                var cc = el.GetProperty("connection_code").GetString();
+                var tn = el.GetProperty("tool_name").GetString();
+                if (cc is null || tn is null) continue;
+                template.McpTools.Add(new AiAgentTemplateMcpTool
+                {
+                    Template = template,
+                    ConnectionCode = cc,
+                    ToolName = tn,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    CreatedBy = actorId
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "No se pudieron parsear las tools del agente {AgentId}; la plantilla quedara sin tools.", agentId);
+        }
+
+        _db.SuperAdminLogs.Add(new SuperAdminLog
+        {
+            ActorId = actorId,
+            ActorEmail = actorEmail,
+            Accion = "AI_AGENT_TEMPLATE_IMPORT",
+            EntidadAfectada = $"AiAgent:{agentId}->AiAgentTemplate:{template.Id}",
+            Ip = ip,
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+
+        await _db.SaveChangesAsync(ct);
+        return Map(template);
+    }
+
+    /// <summary>
+    /// Reemplaza ocurrencias literales del nombre del tenant/organizacion por sus placeholders.
+    /// Hace match case-insensitive. Si el nombre es muy corto (&lt; 3 chars) lo omite para evitar
+    /// falsos positivos.
+    /// </summary>
+    private static string ReversePlaceholders(string prompt, string copropiedadNombre, string? organizacionNombre)
+    {
+        if (string.IsNullOrEmpty(prompt)) return prompt;
+        var result = prompt;
+        if (!string.IsNullOrEmpty(organizacionNombre) && organizacionNombre.Length >= 3)
+        {
+            result = System.Text.RegularExpressions.Regex.Replace(
+                result, System.Text.RegularExpressions.Regex.Escape(organizacionNombre),
+                "{ORGANIZACION_NOMBRE}",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        }
+        if (!string.IsNullOrEmpty(copropiedadNombre) && copropiedadNombre.Length >= 3)
+        {
+            result = System.Text.RegularExpressions.Regex.Replace(
+                result, System.Text.RegularExpressions.Regex.Escape(copropiedadNombre),
+                "{COPROPIEDAD_NOMBRE}",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        }
+        return result;
+    }
+
     // ---------- helpers ----------
 
     private static string ReplacePlaceholders(string prompt, string copropiedadNombre, string? organizacionNombre)

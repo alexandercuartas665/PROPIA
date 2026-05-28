@@ -106,6 +106,24 @@ public sealed class AdminAiAgentTemplatesController : ControllerBase
         return ok ? NoContent() : NotFound();
     }
 
+    /// <summary>Lista todos los agentes existentes (de todos los tenants) que pueden importarse como plantilla.</summary>
+    [HttpGet("import-sources")]
+    public async Task<IActionResult> ImportSources(CancellationToken ct)
+        => Ok(await _svc.ListImportSourcesAsync(ct));
+
+    /// <summary>Crea una plantilla nueva a partir de un agente existente en algun tenant.</summary>
+    [HttpPost("import/{agentId:guid}")]
+    public async Task<IActionResult> ImportFromAgent(Guid agentId, CancellationToken ct)
+    {
+        try
+        {
+            var (actorId, email) = Actor();
+            var dto = await _svc.ImportFromAgentAsync(agentId, actorId, email, Ip(), ct);
+            return CreatedAtAction(nameof(Get), new { id = dto.Id }, dto);
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     // ---------- helpers ----------
 
     private (Guid Id, string Email) Actor()

@@ -24,7 +24,10 @@ else
 {
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h2 class="h5 mb-0">@_templates.Count plantillas</h2>
-        <button class="btn btn-dark" @onclick="NuevaPlantilla">+ Nueva plantilla</button>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-dark" @onclick="AbrirImportar">Importar de tenant</button>
+            <button class="btn btn-dark" @onclick="NuevaPlantilla">+ Nueva plantilla</button>
+        </div>
     </div>
 
     @if (_templates.Count == 0)
@@ -72,6 +75,64 @@ else
             </table>
         </div>
     }
+}
+
+@if (_mostrandoImportar)
+{
+    <div class="modal d-block" style="background: rgba(0,0,0,0.4);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Importar de tenant</h5>
+                    <button type="button" class="btn-close" @onclick="CerrarImportar"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">
+                        Selecciona un agente existente en alguna copropiedad. Se creara una plantilla
+                        nueva con todos sus datos (nombre, prompt, tools). El nombre del tenant y de la
+                        organizacion se reemplazaran por placeholders automaticamente para que la
+                        plantilla sea reutilizable.
+                    </p>
+                    @if (_importSources is null)
+                    {
+                        <div class="text-center py-3"><div class="spinner-border spinner-border-sm"></div></div>
+                    }
+                    else if (_importSources.Count == 0)
+                    {
+                        <div class="alert alert-info py-2 small">
+                            No hay agentes activos en ningun tenant.
+                        </div>
+                    }
+                    else
+                    {
+                        <ul class="list-group">
+                            @foreach (var grupo in _importSources.GroupBy(x => new { x.TenantId, x.TenantNombre }).OrderBy(g => g.Key.TenantNombre))
+                            {
+                                <li class="list-group-item bg-light"><strong>@grupo.Key.TenantNombre</strong></li>
+                                @foreach (var a in grupo)
+                                {
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <strong>@a.AgentName</strong>
+                                            <small class="text-muted ms-2">@a.Provider @(a.Model ?? "default") &middot; @a.ToolsCount tools</small>
+                                            @if (!string.IsNullOrEmpty(a.Role)) { <small class="text-muted ms-2">[@a.Role]</small> }
+                                        </div>
+                                        <button class="btn btn-sm btn-outline-dark" @onclick="() => ImportarAgenteAsync(a.AgentId)" disabled="@_busy">
+                                            @(_importandoId == a.AgentId ? "Importando..." : "Crear plantilla")
+                                        </button>
+                                    </li>
+                                }
+                            }
+                        </ul>
+                    }
+                    @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgCls mt-3 py-2 small">@_msg</div> }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CerrarImportar">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
 }
 
 @if (_editando is not null && _form is not null)
@@ -197,6 +258,10 @@ else
     private Guid? _editando;
     private Form? _form;
     private HashSet<string> _toolsSeleccionadas = new();
+
+    private bool _mostrandoImportar;
+    private List<ImportableAgentDto>? _importSources;
+    private Guid? _importandoId;
 
     private class Form
     {
@@ -342,6 +407,53 @@ else
             if (resp.IsSuccessStatusCode) await CargarListaAsync();
         }
         catch { }
+    }
+
+    private async Task AbrirImportar()
+    {
+        _mostrandoImportar = true;
+        _importSources = null;
+        _msg = null;
+        StateHasChanged();
+        try
+        {
+            _importSources = await Auth().GetFromJsonAsync<List<ImportableAgentDto>>("/admin/ai-agent-templates/import-sources") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _importSources = new();
+            _msg = $"No se pudo cargar la lista: {ex.Message}";
+            _msgCls = "alert-danger";
+        }
+        StateHasChanged();
+    }
+
+    private void CerrarImportar()
+    {
+        _mostrandoImportar = false;
+        _importSources = null;
+        _importandoId = null;
+        _msg = null;
+    }
+
+    private async Task ImportarAgenteAsync(Guid agentId)
+    {
+        _busy = true; _importandoId = agentId; _msg = null;
+        try
+        {
+            var resp = await Auth().PostAsync($"/admin/ai-agent-templates/import/{agentId}", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                await CargarListaAsync();
+                CerrarImportar();
+            }
+            else
+            {
+                _msg = $"Error: {await resp.Content.ReadAsStringAsync()}"; _msgCls = "alert-danger";
+            }
+        }
+        catch (Exception ex) { _msg = $"Error: {ex.Message}"; _msgCls = "alert-danger"; }
+        finally { _busy = false; _importandoId = null; StateHasChanged(); }
     }
 
     private HttpClient Auth()
