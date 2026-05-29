@@ -187,7 +187,7 @@ public sealed class AiAgentTemplateService : IAiAgentTemplateService
         try
         {
             await using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT agent_id, agent_name, role, provider, model, tenant_id, tenant_nombre, tools_count FROM admin_list_active_agents()";
+            cmd.CommandText = "SELECT agent_id, agent_name, role, provider, model, tenant_id, tenant_nombre, tools_count, is_active FROM admin_list_active_agents()";
             await using var reader = await cmd.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {
@@ -203,7 +203,8 @@ public sealed class AiAgentTemplateService : IAiAgentTemplateService
                     Model: reader.IsDBNull(4) ? null : reader.GetString(4),
                     TenantId: reader.GetGuid(5),
                     TenantNombre: reader.GetString(6),
-                    ToolsCount: (int)reader.GetInt64(7)));
+                    ToolsCount: (int)reader.GetInt64(7),
+                    IsActive: reader.GetBoolean(8)));
             }
         }
         finally

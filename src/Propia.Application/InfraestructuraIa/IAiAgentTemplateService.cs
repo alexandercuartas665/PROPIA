@@ -27,7 +27,8 @@ public sealed record ImportableAgentDto(
     string? Model,
     Guid TenantId,
     string TenantNombre,
-    int ToolsCount);
+    int ToolsCount,
+    bool IsActive);
 
 public sealed record SaveAiAgentTemplateRequest(
     string Name,
