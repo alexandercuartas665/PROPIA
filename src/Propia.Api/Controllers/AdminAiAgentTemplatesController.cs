@@ -84,6 +84,10 @@ public sealed class AdminAiAgentTemplatesController : ControllerBase
             return CreatedAtAction(nameof(Get), new { id = dto.Id }, dto);
         }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException)
+        {
+            return BadRequest(new { error = "No se pudo crear la plantilla (puede haber un tool duplicado o un valor invalido)." });
+        }
     }
 
     [HttpPut("{id:guid}")]
@@ -96,6 +100,15 @@ public sealed class AdminAiAgentTemplatesController : ControllerBase
             return Ok(dto);
         }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException)
+        {
+            // Devolvemos un mensaje generico para evitar exponer stack trace + headers (incluido Authorization).
+            return Conflict(new { error = "Conflicto al guardar - alguien modifico la plantilla mientras editabas. Recarga la pagina e intenta de nuevo." });
+        }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException)
+        {
+            return BadRequest(new { error = "No se pudo guardar la plantilla (puede haber un tool duplicado o un valor invalido)." });
+        }
     }
 
     [HttpDelete("{id:guid}")]

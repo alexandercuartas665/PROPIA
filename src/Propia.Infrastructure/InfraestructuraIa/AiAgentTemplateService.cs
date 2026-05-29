@@ -44,21 +44,28 @@ public sealed class AiAgentTemplateService : IAiAgentTemplateService
         var isNew = false;
         if (id is Guid existingId)
         {
+            // No incluimos McpTools en el load: las borramos con ExecuteDeleteAsync (sin tracking)
+            // para evitar AggregateUpdateConcurrencyException que EF emite cuando un batch mezcla
+            // muchos DELETEs con un UPDATE y el conteo de rows-affected no le cuadra (problema
+            // conocido con npgsql al batchear). ExecuteDeleteAsync emite un solo DELETE WHERE.
             var loaded = await _db.AiAgentTemplates
-                .Include(x => x.McpTools)
                 .FirstOrDefaultAsync(x => x.Id == existingId, ct)
                 ?? throw new InvalidOperationException("Plantilla no encontrada.");
             t = loaded;
             t.UpdatedAt = DateTimeOffset.UtcNow;
             t.UpdatedBy = actorId;
-            // Limpiamos tools para re-crearlas (mas simple que diff)
-            _db.AiAgentTemplateMcpTools.RemoveRange(t.McpTools);
+
+            await _db.AiAgentTemplateMcpTools
+                .Where(x => x.TemplateId == existingId)
+                .ExecuteDeleteAsync(ct);
+            // McpTools queda vacia en la entidad (ya no la trackeamos aqui)
             t.McpTools.Clear();
         }
         else
         {
             isNew = true;
-            t = new AiAgentTemplate { CreatedAt = DateTimeOffset.UtcNow, CreatedBy = actorId };
+            // Id explicito para que los Add de tools puedan referenciar el TemplateId antes de SaveChanges.
+            t = new AiAgentTemplate { Id = Guid.NewGuid(), CreatedAt = DateTimeOffset.UtcNow, CreatedBy = actorId };
             _db.AiAgentTemplates.Add(t);
         }
 
@@ -72,12 +79,20 @@ public sealed class AiAgentTemplateService : IAiAgentTemplateService
         t.IncludeInOnboarding = req.IncludeInOnboarding;
         t.SortOrder = req.SortOrder;
 
-        // De-duplicar tools que vengan repetidas
-        foreach (var tool in req.Tools.Distinct())
+        // De-duplicar por (connection, tool) para no romper el unique index
+        var unique = req.Tools
+            .GroupBy(x => (x.ConnectionCode.Trim(), x.ToolName.Trim()))
+            .Select(g => g.First())
+            .ToList();
+        // Importante: agregar al DbSet directamente con TemplateId + Id explicitos. Hacerlo via
+        // t.McpTools.Add (navigation) en update path confundia a EF y emitia 32 UPDATEs (no INSERTs)
+        // sobre los IDs nuevos -> AggregateUpdateConcurrencyException.
+        foreach (var tool in unique)
         {
-            t.McpTools.Add(new AiAgentTemplateMcpTool
+            _db.AiAgentTemplateMcpTools.Add(new AiAgentTemplateMcpTool
             {
-                Template = t,
+                Id = Guid.NewGuid(),
+                TemplateId = t.Id,
                 ConnectionCode = tool.ConnectionCode.Trim(),
                 ToolName = tool.ToolName.Trim(),
                 CreatedAt = DateTimeOffset.UtcNow,
