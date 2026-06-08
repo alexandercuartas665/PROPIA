@@ -1,8 +1,10 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Propia.Application.Auth;
 using Propia.Application.Common;
@@ -34,6 +36,7 @@ public class OnboardingService : IOnboardingService
     private readonly IEmailSender _emailSender;
     private readonly IAiAgentTemplateService _aiAgentTemplates;
     private readonly ILogger<OnboardingService> _logger;
+    private readonly IHostEnvironment _env;
 
     public OnboardingService(
         PropiaDbContext db,
@@ -41,7 +44,8 @@ public class OnboardingService : IOnboardingService
         ITokenService tokenService,
         IEmailSender emailSender,
         IAiAgentTemplateService aiAgentTemplates,
-        ILogger<OnboardingService> logger)
+        ILogger<OnboardingService> logger,
+        IHostEnvironment env)
     {
         _db = db;
         _userManager = userManager;
@@ -49,6 +53,7 @@ public class OnboardingService : IOnboardingService
         _emailSender = emailSender;
         _aiAgentTemplates = aiAgentTemplates;
         _logger = logger;
+        _env = env;
     }
 
     // ---------- Paso 1: Registro (crea User+Persona, envia OTP, NO emite JWT todavia) ----------
@@ -126,6 +131,14 @@ public class OnboardingService : IOnboardingService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Fallo enviando OTP de onboarding a {Email}", req.Email);
+        }
+
+        // [DEV-ONLY] En entorno Development logueamos el OTP en plano para poder
+        // probar el wizard sin depender de SMTP real. El guard IsDevelopment evita
+        // que el OTP termine en logs de produccion.
+        if (_env.IsDevelopment())
+        {
+            _logger.LogWarning("[DEV-ONLY] OTP onboarding {Email} -> {Otp}", req.Email, otp);
         }
 
         return new RegistroResponse(sessionId, user.Id, user.Email!);
