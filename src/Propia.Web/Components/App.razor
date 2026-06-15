@@ -11,20 +11,48 @@
     <base href="/" />
     <title>PROPIA - Plataforma de Copropiedades</title>
 
-    @* Script inline: aplicar theme + estado de sesion ANTES del primer render para evitar FOUC
-       y el flash "Ingresar" que aparece momentaneamente en paginas con sesion activa. *@
+    @* Script inline: aplicar theme + estado de sesion + AUTH GUARD ANTES del primer render.
+       El guard intercepta accesos sin sesion a rutas protegidas y redirige a /login antes de
+       que Blazor renderice el MainLayout (no se ve flash de sidebar/modulos). *@
     <script>
         (function () {
             try {
+                // ---- Theme ----
                 var t = localStorage.getItem('propia_theme');
                 if (t !== 'dark' && t !== 'light') {
                     t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
                 }
                 document.documentElement.setAttribute('data-bs-theme', t);
-                // Sesion: si hay JWT en sessionStorage marcamos el html para que CSS pre-resuelva
-                // la visibilidad del CTA del header (login vs logout). Evita flash "Ingresar".
+
+                // ---- Auth state (para el CSS del CTA del header) ----
                 var hasJwt = !!sessionStorage.getItem('propia_jwt');
                 document.documentElement.setAttribute('data-propia-auth', hasJwt ? 'in' : 'out');
+
+                // ---- Auth guard ----
+                // Whitelist de rutas publicas (no requieren JWT). Todo lo demas requiere auth.
+                // Diseno seguro por defecto: si me olvido de marcar una ruta, queda protegida.
+                var path = (window.location.pathname || '/').toLowerCase();
+                var publicExact = ['/', '/login', '/registro', '/error', '/signin-google', '/admin/login'];
+                var publicPrefix = ['/onboarding/', '/invitacion/', '/c/', '/restaurar', '/olvidaste', '/admin/login/'];
+                var isPublic = publicExact.indexOf(path) !== -1
+                    || publicPrefix.some(function (p) { return path.indexOf(p) === 0; });
+
+                if (!isPublic) {
+                    // El path / no es publico en realidad - lo trato como publico arriba porque
+                    // Home redirige a /login y queremos evitar el flash. Si el usuario entra a una
+                    // ruta protegida sin JWT (sessionStorage vacia), lo mandamos a /login con
+                    // returnUrl para retomar despues.
+                    var isAdminArea = path === '/admin' || path.indexOf('/admin/') === 0;
+                    var requiredJwt = isAdminArea ? 'propia_admin_jwt' : 'propia_jwt';
+                    var hasRequiredJwt = !!sessionStorage.getItem(requiredJwt);
+                    if (!hasRequiredJwt) {
+                        var loginUrl = isAdminArea ? '/admin/login' : '/login';
+                        var returnUrl = encodeURIComponent(window.location.pathname + window.location.search);
+                        // location.replace evita ensuciar el historial del navegador
+                        window.location.replace(loginUrl + '?returnUrl=' + returnUrl);
+                        return; // detener el resto del bootstrap
+                    }
+                }
             } catch (e) { }
         })();
     </script>

@@ -3,6 +3,7 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using System.ComponentModel.DataAnnotations
 @using System.Net.Http.Json
+@using Microsoft.AspNetCore.WebUtilities
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @inject IJSRuntime Js
@@ -183,7 +184,7 @@ else
         _successMessage = "Acceso de plataforma. Entrando...";
         StateHasChanged();
         await Task.Delay(400);
-        Nav.NavigateTo("/panel-plataforma", forceLoad: true);
+        Nav.NavigateTo(ResolveReturnUrl("/panel-plataforma", adminArea: true), forceLoad: true);
     }
 
     private async Task EntrarComoClienteAsync(UnifiedLogin login)
@@ -247,10 +248,37 @@ else
         _successMessage = $"Login exitoso. Entrando a {tenant.Nombre}...";
         StateHasChanged();
         await Task.Delay(400);
-        Nav.NavigateTo("/mi-copropiedad", forceLoad: true);
+        Nav.NavigateTo(ResolveReturnUrl("/mi-copropiedad", adminArea: false), forceLoad: true);
     }
 
     private void VolverACredenciales() { _step = Step.Credentials; _mfaTicket = null; _errorMessage = null; }
+
+    // Permite retomar la pagina que el usuario intento abrir sin sesion. El AuthGuard inline en
+    // App.razor agrega ?returnUrl=<ruta> al redirigir a /login. Aqui validamos que sea una ruta
+    // RELATIVA INTERNA (anti open-redirect) y coherente con el area (cliente vs super-admin).
+    private string ResolveReturnUrl(string fallback, bool adminArea)
+    {
+        try
+        {
+            var uri = new Uri(Nav.Uri);
+            var qs = QueryHelpers.ParseQuery(uri.Query);
+            if (!qs.TryGetValue("returnUrl", out var v)) return fallback;
+            var raw = v.ToString();
+            if (string.IsNullOrWhiteSpace(raw)) return fallback;
+            // Solo rutas relativas internas: deben comenzar con '/' y no ser protocolo-relativas
+            // ('//host') ni intentar escapar con '/\'. Tampoco aceptamos URLs absolutas.
+            if (raw.Length < 2 || raw[0] != '/' || raw[1] == '/' || raw[1] == '\\') return fallback;
+            var low = raw.ToLowerInvariant();
+            var isAdminPath = low == "/admin" || low.StartsWith("/admin/") || low == "/panel-plataforma" || low.StartsWith("/panel-plataforma/");
+            // Coherencia area: super-admin solo vuelve a area admin; cliente solo a area no-admin.
+            if (adminArea && !isAdminPath) return fallback;
+            if (!adminArea && isAdminPath) return fallback;
+            // Onboarding tiene su propia logica de continuacion, no honramos returnUrl ahi
+            if (low.StartsWith("/onboarding/")) return fallback;
+            return raw;
+        }
+        catch { return fallback; }
+    }
 
     private sealed record UnifiedLogin(
         string Kind,
