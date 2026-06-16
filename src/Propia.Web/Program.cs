@@ -41,6 +41,11 @@ builder.Services.AddHttpClient("PropiaApi", client =>
     return handler;
 });
 
+// Servicio de modales globales. Scoped por circuit Blazor Server.
+// Ver Components/Shared/Modals/IModalService.cs y [[00.3. COMPONENTES GLOBALES]].
+builder.Services.AddScoped<Propia.Web.Components.Shared.Modals.IModalService,
+                          Propia.Web.Components.Shared.Modals.ModalService>();
+
 var app = builder.Build();
 
 // ForwardedHeaders DEBE ir primero en el pipeline.

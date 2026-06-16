@@ -1,0 +1,240 @@
+@* EditarDistribucionModal - D.1 del catalogo.
+   Basado en PROPIA.dc.html L.584-678 (panel izq del modal fullscreen).
+   Version minima: CRUD de torres + resumen de unidades. El detalle de cada
+   unidad (panel derecho del proto) y el generador/import siguen en la pagina. *@
+
+@inherits ModalBase<bool>
+@using Propia.Web.Components.Shared.Modals
+@using Propia.Application.MiCopropiedad
+
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+
+@* ====== HEADER ====== *@
+<div class="pmm-header">
+    <div class="pmm-header-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7" rx="1"/>
+            <rect x="14" y="3" width="7" height="7" rx="1"/>
+            <rect x="3" y="14" width="7" height="7" rx="1"/>
+            <rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+    </div>
+    <div class="pmm-header-text">
+        <div class="pmm-title">2. Distribucion</div>
+        <div class="pmm-subtitle">Como esta compuesto?</div>
+    </div>
+    <button class="pmm-close" @onclick="Cerrar" type="button" aria-label="Cerrar">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+</div>
+
+@* ====== BODY ====== *@
+<div class="pmm-body">
+    <div class="ed-summary">
+        <span class="ed-summary-strong">@_torres.Count @AgrupacionLabel</span>
+        <span class="ed-summary-sep">-</span>
+        <span>@TotalUnidades unidades</span>
+    </div>
+
+    @if (_torres.Count == 0)
+    {
+        <div class="ed-empty">
+            Sin @AgrupacionLabel.ToLower() registrados. Agrega el primero abajo.
+        </div>
+    }
+    else
+    {
+        <div class="ed-torres">
+            @foreach (var t in _torres)
+            {
+                <div class="ed-torre">
+                    <div class="ed-torre-icon">
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 21h18M6 21V5h8v16M14 21V9h4v12M9 9h.01M9 13h.01M9 17h.01"/>
+                        </svg>
+                    </div>
+                    <div class="ed-torre-text">
+                        <div class="ed-torre-name">@t.Nombre</div>
+                        <div class="ed-torre-meta">
+                            @(t.CantidadPisos.HasValue ? $"{t.CantidadPisos.Value} pisos · " : "")@t.CantidadUnidades unidades
+                        </div>
+                    </div>
+                    <button class="ed-torre-del" @onclick="() => EliminarTorre(t.Id)" title="Quitar torre">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                    </button>
+                </div>
+            }
+        </div>
+    }
+
+    @* ====== Form agregar torre ====== *@
+    <div class="pmm-divider"></div>
+    <div class="pmm-eyebrow">AGREGAR @AgrupacionLabel.ToUpper()</div>
+    <div class="ed-form">
+        <div class="pmm-field ed-form-name">
+            <label class="pmm-label">Nombre</label>
+            <input class="pmm-input" @bind="_nuevoNombre" @bind:event="oninput"
+                   placeholder="@($"Ej. {AgrupacionLabel} A")" />
+        </div>
+        <div class="pmm-field ed-form-pisos">
+            <label class="pmm-label">Pisos</label>
+            <input class="pmm-input" type="number" min="1" @bind="_nuevoPisos" placeholder="3" />
+        </div>
+        <button class="propia-btn-brand ed-form-btn" @onclick="AgregarTorre"
+                disabled="@(string.IsNullOrWhiteSpace(_nuevoNombre) || _busy)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+            Agregar
+        </button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_msg))
+    {
+        <div class="ed-msg @(_msgError ? "ed-msg--err" : "ed-msg--ok")">@_msg</div>
+    }
+</div>
+
+@* ====== FOOTER ====== *@
+<div class="pmm-footer">
+    <button class="propia-btn-brand" type="button" @onclick="Cerrar">
+        Cerrar
+    </button>
+</div>
+
+<style>
+    .ed-summary {
+        display: flex; align-items: center; gap: 8px;
+        font-size: 13px; color: #516F90;
+        margin-bottom: 12px;
+    }
+    .ed-summary-strong { color: #33475B; font-weight: 700; }
+    .ed-summary-sep { color: #A6B7C8; }
+
+    .ed-empty {
+        font-size: 12.5px; color: #A6B7C8;
+        padding: 10px 12px;
+        border: 1px dashed #E1E8EE; border-radius: 9px;
+        background: #FAFBFC;
+    }
+    .ed-torres { display: flex; flex-direction: column; gap: 8px; }
+    .ed-torre {
+        display: flex; align-items: center; gap: 11px;
+        border: 1px solid var(--propia-border-card, #E1E8EE);
+        border-radius: 11px; padding: 11px 14px;
+        background: var(--propia-bg-card, #fff);
+    }
+    .ed-torre-icon {
+        width: 34px; height: 34px; border-radius: 9px;
+        background: var(--propia-brand-soft, #F1ECFD);
+        color: var(--propia-brand, #6D4FE3);
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+    }
+    .ed-torre-text { flex: 1; min-width: 0; }
+    .ed-torre-name { font-size: 13.5px; font-weight: 700; color: var(--propia-text-body, #33475B); }
+    .ed-torre-meta { font-size: 11.5px; color: #A6B7C8; }
+    .ed-torre-del {
+        width: 28px; height: 28px;
+        border-radius: 7px;
+        border: 0; background: transparent;
+        color: #C3D0DD; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .ed-torre-del:hover { background: #FDE7E7; color: #D7263D; }
+
+    .ed-form {
+        display: grid;
+        grid-template-columns: 1fr 110px auto;
+        gap: 10px;
+        align-items: end;
+    }
+    .ed-form-btn { height: 40px; }
+
+    .ed-msg {
+        margin-top: 4px;
+        padding: 9px 12px;
+        font-size: 12.5px;
+        border-radius: 9px;
+        border: 1px solid;
+    }
+    .ed-msg--ok { color: #15703F; background: #E6F6EE; border-color: #B6E2C9; }
+    .ed-msg--err { color: #B91C1C; background: #FEE2E2; border-color: #FECACA; }
+</style>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+    [Parameter] public List<TorreDto>? TorresIniciales { get; set; }
+    [Parameter] public string AgrupacionLabel { get; set; } = "Torre";
+
+    private List<TorreDto> _torres = new();
+    private string _nuevoNombre = "";
+    private int? _nuevoPisos;
+    private string _msg = "";
+    private bool _msgError;
+    private bool _busy;
+    private bool _huboCambios;
+
+    private int TotalUnidades => _torres.Sum(t => t.CantidadUnidades);
+
+    protected override void OnInitialized()
+    {
+        if (TorresIniciales is not null)
+            _torres = new List<TorreDto>(TorresIniciales);
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    private async Task AgregarTorre()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevoNombre)) return;
+        _busy = true;
+        var req = new CrearTorreRequest(_nuevoNombre.Trim(), _nuevoPisos, null);
+        var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/torres", req);
+        if (resp.IsSuccessStatusCode)
+        {
+            var nueva = await resp.Content.ReadFromJsonAsync<TorreDto>();
+            if (nueva is not null) _torres.Add(nueva);
+            _nuevoNombre = "";
+            _nuevoPisos = null;
+            _huboCambios = true;
+            ShowMsg($"{AgrupacionLabel} agregada", false);
+        }
+        else
+        {
+            ShowMsg("No se pudo agregar: " + await resp.Content.ReadAsStringAsync(), true);
+        }
+        _busy = false;
+    }
+
+    private async Task EliminarTorre(Guid id)
+    {
+        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/torres/{id}");
+        if (resp.IsSuccessStatusCode)
+        {
+            _torres.RemoveAll(t => t.Id == id);
+            _huboCambios = true;
+            ShowMsg("Eliminada", false);
+        }
+        else
+        {
+            ShowMsg("No se pudo eliminar: " + await resp.Content.ReadAsStringAsync(), true);
+        }
+    }
+
+    private void ShowMsg(string text, bool isError)
+    {
+        _msg = text;
+        _msgError = isError;
+    }
+
+    private void Cerrar()
+    {
+        Close(_huboCambios);
+    }
+}

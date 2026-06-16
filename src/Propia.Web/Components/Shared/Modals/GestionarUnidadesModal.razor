@@ -1,0 +1,1433 @@
+@* GestionarUnidadesModal - D.1 del catalogo (fullscreen).
+   Replica literal del modal del prototipo PROPIA.dc.html L.584-720.
+   Componente reutilizable: recibe Jwt + cargas las torres/unidades por su cuenta.
+   Layout 2 paneles: izq lista torres/unidades, der ficha unidad seleccionada. *@
+
+@inherits ModalBase<bool>
+@using Propia.Web.Components.Shared.Modals
+@using Propia.Application.MiCopropiedad
+@using Propia.Domain.Enums
+
+@inject IHttpClientFactory HttpFactory
+
+@* ====== HEADER ====== *@
+<div class="gum-header">
+    <div class="gum-header-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7" rx="1"/>
+            <rect x="14" y="3" width="7" height="7" rx="1"/>
+            <rect x="3" y="14" width="7" height="7" rx="1"/>
+            <rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+    </div>
+    <div class="gum-header-text">
+        <div class="gum-title">2. Distribucion</div>
+        <div class="gum-subtitle">Como esta compuesto?</div>
+    </div>
+    <button class="gum-close" @onclick="Cerrar" type="button" aria-label="Cerrar">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+</div>
+
+@* ====== 2 PANELES ====== *@
+<div class="gum-body">
+
+    @* ===== Panel IZQ - arbol torres > pisos > unidades ===== *@
+    <div class="gum-panel-left">
+        @if (_genToast > 0)
+        {
+            <div class="gum-toast-ok">
+                <div class="gum-toast-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg></div>
+                Estructura generada: <b>@_genToast unidades</b> creadas en el arbol.
+            </div>
+        }
+
+        <div class="gum-summary">
+            <span class="gum-summary-strong">@_torres.Count @AgrupacionLabelPlural</span>
+            <span class="gum-summary-sep">-</span>
+            <span>@_unidades.Count unidades</span>
+            @if (_unidades.Count > 0)
+            {
+                var coefOk = Math.Abs(CoefTotal - 100m) < 0.01m;
+                <span class="gum-chip @(coefOk ? "" : "gum-chip--warn")">
+                    @if (coefOk)
+                    {
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>
+                    }
+                    else
+                    {
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 9v4M12 17h.01M4.93 19h14.14a2 2 0 0 0 1.73-3L13.73 4a2 2 0 0 0-3.46 0L3.2 16a2 2 0 0 0 1.73 3z"/></svg>
+                    }
+                    Coeficientes: @CoefTotal.ToString("0.##")%
+                </span>
+                @if (!coefOk)
+                {
+                    <button class="gum-rebal-btn" type="button" @onclick="Rebalancear" disabled="@_busy">
+                        @(_busy ? "Rebalanceando..." : "Rebalancear a 100%")
+                    </button>
+                }
+            }
+        </div>
+
+        @* CTAs *@
+        <div class="gum-ctas">
+            <button class="gum-cta @(_mode == "manual" ? "gum-cta--active" : "")" @onclick='() => SetMode("manual")'>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
+                Agregar manual
+            </button>
+            <button class="gum-cta @(_mode == "import" ? "gum-cta--active" : "")" @onclick='() => SetMode("import")'>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
+                Importar Excel
+            </button>
+            <button class="gum-cta gum-cta--brand @(_mode == "gen" ? "gum-cta--active" : "")" @onclick='() => SetMode("gen")'>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L4.5 13H11l-1 9 8.5-11H12l1-9z"/></svg>
+                Generar automatico
+            </button>
+        </div>
+
+        @* Wizard inline segun modo *@
+        @if (_mode == "manual")
+        {
+            <div class="gum-card-soft">
+                <div class="gum-card-title">Agregar unidad manualmente</div>
+                <div class="gum-card-sub">Indica la torre y el piso: la unidad se incorpora al arbol junto a las demas.</div>
+                <div class="gum-form-row">
+                    <div class="gum-field gum-grow">
+                        <label class="gum-lbl">@AgrupacionLabelSingular</label>
+                        <select class="gum-input" @bind="_manTorreId">
+                            @foreach (var t in _torres) { <option value="@t.Id">@t.Nombre</option> }
+                        </select>
+                    </div>
+                    <div class="gum-field" style="width:110px">
+                        <label class="gum-lbl">@PisoLabelSingular</label>
+                        <input type="number" min="1" class="gum-input" @bind="_manPiso" placeholder="1" />
+                    </div>
+                </div>
+                <div class="gum-form-row">
+                    <input class="gum-input gum-grow" @bind="_manNumero" @bind:event="oninput" placeholder="Identificador (ej. 1501)" />
+                    <select class="gum-input" @bind="_manTipo">
+                        @foreach (var t in Enum.GetValues<TipoUnidad>()) { <option value="@t">@t</option> }
+                    </select>
+                    <button class="gum-btn-brand" @onclick="AgregarUnidadManual" disabled="@(string.IsNullOrWhiteSpace(_manNumero))">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+                        Agregar
+                    </button>
+                </div>
+            </div>
+        }
+
+        @if (_mode == "gen")
+        {
+            <div class="gum-card-brand">
+                <div class="gum-genhead">
+                    <div class="gum-genicon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L4.5 13H11l-1 9 8.5-11H12l1-9z"/></svg></div>
+                    <div>
+                        <div class="gum-gen-title">Generador inteligente</div>
+                        <div class="gum-gen-sub">Configuralo una vez y crea toda la estructura</div>
+                    </div>
+                </div>
+                <div class="gum-lbl">Cuantas @AgrupacionLabelPlural.ToLower() tiene tu conjunto?</div>
+                <div class="gum-n-options">
+                    @for (int n = 1; n <= 6; n++)
+                    {
+                        var i = n;
+                        <button class="gum-n @(_genN == i ? "gum-n--active" : "")" @onclick="() => SetGenN(i)">@i</button>
+                    }
+                </div>
+                <div class="gum-lbl">Nombre de cada @AgrupacionLabelSingular.ToLower()</div>
+                <div class="gum-grid3">
+                    @for (int i = 0; i < _genNombres.Count; i++)
+                    {
+                        var idx = i;
+                        <input class="gum-input" @bind="_genNombres[idx]" @bind:event="oninput" />
+                    }
+                </div>
+                <div class="gum-grid2">
+                    <div class="gum-field"><label class="gum-lbl">@(PisoLabelSingular)s por @AgrupacionLabelSingular.ToLower()</label><input class="gum-input" type="number" min="1" @bind="_genPisos" /></div>
+                    <div class="gum-field"><label class="gum-lbl">Unidades por @PisoLabelSingular.ToLower()</label><input class="gum-input" type="number" min="1" @bind="_genPorPiso" /></div>
+                </div>
+                <div class="gum-preview">
+                    <div class="gum-preview-eyebrow">VISTA PREVIA</div>
+                    <div class="gum-preview-chips">
+                        @foreach (var n in _genNombres)
+                        {
+                            <span class="gum-preview-chip">@n - @(_genPisos * _genPorPiso) unidades</span>
+                        }
+                    </div>
+                    <div class="gum-preview-total">Total: @GenTotal unidades a generar</div>
+                </div>
+                <div class="gum-gen-footer">
+                    <button class="gum-btn-ghost" @onclick='() => SetMode(null)'>Cancelar</button>
+                    <button class="gum-btn-brand" @onclick="EjecutarGenerador" disabled="@_busy">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L4.5 13H11l-1 9 8.5-11H12l1-9z"/></svg>
+                        Generar @GenTotal unidades
+                    </button>
+                </div>
+            </div>
+        }
+
+        @if (_mode == "import")
+        {
+            <div class="gum-card-soft">
+                <div class="gum-card-title">Importar desde Excel / CSV</div>
+                <div class="gum-card-sub">Pega una columna de identificadores (uno por linea). Se validan antes de importar.</div>
+                <textarea class="gum-input" rows="4" @bind="_csv" @bind:event="oninput" placeholder="1501&#10;1502&#10;1503"></textarea>
+                <div class="gum-import-foot">
+                    <span class="gum-import-count">@CsvCount unidades detectadas</span>
+                    <button class="gum-btn-brand" @onclick="ImportarCsv" disabled="@(CsvCount == 0)">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
+                        Importar
+                    </button>
+                </div>
+            </div>
+        }
+
+        @* Lista de torres *@
+        @foreach (var t in _torres)
+        {
+            <div class="gum-torre">
+                <button class="gum-torre-head" @onclick="() => ToggleTorre(t.Id)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+                         style="@($"transform:rotate({(IsOpen(t.Id) ? 90 : 0)}deg);transition:transform .18s")">
+                        <path d="M9 6l6 6-6 6"/>
+                    </svg>
+                    <span class="gum-torre-name">@t.Nombre</span>
+                    <span class="gum-torre-meta">- @_unidades.Count(u => u.TorreId == t.Id) unidades</span>
+                </button>
+                @if (IsOpen(t.Id))
+                {
+                    <div class="gum-torre-body">
+                        @foreach (var grupo in _unidades.Where(u => u.TorreId == t.Id).GroupBy(u => u.Piso ?? 0).OrderBy(g => g.Key))
+                        {
+                            <div class="gum-piso">
+                                <span class="gum-piso-lbl">@PisoLabelSingular @grupo.Key</span>
+                                <div class="gum-piso-units">
+                                    @foreach (var u in grupo.OrderBy(x => x.Numero))
+                                    {
+                                        <button class="gum-unit @(_selected?.Id == u.Id ? "gum-unit--active" : "")" @onclick="() => SeleccionarUnidad(u)">@u.Numero</button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                        @if (!_unidades.Any(u => u.TorreId == t.Id))
+                        {
+                            <div class="gum-torre-empty">Sin unidades. Usa "Agregar manual" o "Generador automatico".</div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(_msg))
+        {
+            <div class="gum-msg @(_msgError ? "gum-msg--err" : "gum-msg--ok")">@_msg</div>
+        }
+    </div>
+
+    @* ===== Panel DER - ficha unidad ===== *@
+    <div class="gum-panel-right">
+        @if (_selected is null)
+        {
+            <div class="gum-empty">
+                <div class="gum-empty-icon">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <path d="M3 21h18M5 21V7l7-4 7 4v14M9 13h.01M15 13h.01M9 17h.01M15 17h.01"/>
+                    </svg>
+                </div>
+                <div class="gum-empty-title">Selecciona una unidad</div>
+                <div class="gum-empty-sub">Haz clic en cualquier unidad del arbol para ver y configurar su ficha completa.</div>
+            </div>
+        }
+        else
+        {
+            <div class="gum-unit-head">
+                <div class="gum-unit-avatar">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18M5 21V7l7-4 7 4v14M10 21v-4h4v4"/></svg>
+                </div>
+                <div class="gum-unit-id">
+                    <div class="gum-unit-title">@_selected.Tipo @_selected.Numero</div>
+                    <div class="gum-unit-meta">
+                        @(_selected.TorreNombre ?? "Sin torre")
+                        @(_selected.Piso.HasValue ? $" · {PisoLabelSingular} {_selected.Piso}" : "")
+                        · @_selected.Tipo
+                        @(_selected.AreaM2.HasValue ? $" · {_selected.AreaM2.Value:0.##} m2" : "")
+                    </div>
+                </div>
+                @if (!_editMode)
+                {
+                    <button class="gum-unit-edit" type="button" @onclick="EntrarEdicion" title="Editar ficha">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        Editar ficha
+                    </button>
+                }
+                else
+                {
+                    <button class="gum-unit-save" type="button" @onclick="GuardarUnidad" disabled="@_busy" title="Guardar">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>
+                        @(_busy ? "Guardando..." : "Guardar")
+                    </button>
+                    <button class="gum-unit-cancel" type="button" @onclick="CancelarEdicion">Cancelar</button>
+                }
+                <button class="gum-unit-del" @onclick="EliminarUnidad" title="Eliminar unidad">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="gum-unit-cards">
+                @* === Card PROPIETARIO, RESIDENTE Y CONTACTOS (proto L.696-715) === *@
+                <div class="gum-unit-card gum-unit-card--full">
+                    <div class="gum-people-head">
+                        <div class="gum-unit-eyebrow gum-unit-eyebrow--lg">PROPIETARIO, RESIDENTE Y CONTACTOS</div>
+                        <div class="gum-people-sub">Cada miembro (propietario, residente, familiar) tiene su propio documento, email y telefono.</div>
+                    </div>
+
+                    @foreach (var grupo in new[] {
+                        (Rol: RolUnidadPersona.Propietario, Label: "Propietario", DotClass: "gum-people-dot--owner", EmptyMsg: "Sin propietario registrado."),
+                        (Rol: RolUnidadPersona.Residente, Label: "Residente", DotClass: "gum-people-dot--resident", EmptyMsg: "Sin residente registrado. Si el propietario habita la unidad, no es necesario."),
+                        (Rol: RolUnidadPersona.Arrendatario, Label: "Arrendatario", DotClass: "gum-people-dot--tenant", EmptyMsg: "Sin arrendatario. Vincula uno si la unidad esta en alquiler."),
+                        (Rol: RolUnidadPersona.Familiar, Label: "Grupo familiar", DotClass: "gum-people-dot--family", EmptyMsg: "Sin otros miembros del grupo familiar."),
+                        (Rol: RolUnidadPersona.Apoderado, Label: "Apoderado", DotClass: "gum-people-dot--proxy", EmptyMsg: "Sin apoderado registrado.")
+                    })
+                    {
+                        var personasRol = _personas.Where(p => p.Rol == grupo.Rol).ToList();
+                        var rolLower = grupo.Rol.ToString().ToLower();
+                        <div class="gum-people-group @(grupo.Rol == RolUnidadPersona.Propietario ? "" : "gum-people-group--top")">
+                            <span class="gum-people-tag"><span class="gum-people-dot @grupo.DotClass"></span>@grupo.Label</span>
+                            <button class="gum-people-add" type="button" @onclick="() => AbrirFormPersona(grupo.Rol)">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+                                Agregar @rolLower
+                            </button>
+                        </div>
+                        @if (personasRol.Count > 0)
+                        {
+                            <div class="gum-persons-grid">
+                                @foreach (var p in personasRol)
+                                {
+                                    var ini = (p.PersonaNombre.Length > 0 ? p.PersonaNombre[0].ToString() : "?")
+                                            + (p.PersonaNombre.Contains(' ') ? p.PersonaNombre.Split(' ', 2)[1][0].ToString() : "");
+                                    <div class="gum-person-card">
+                                        <div class="gum-person-head">
+                                            <div class="gum-person-avatar @grupo.DotClass.Replace("dot", "avatar")">@ini.ToUpper()</div>
+                                            <div class="gum-person-id">
+                                                <div class="gum-person-name">@p.PersonaNombre</div>
+                                                <div class="gum-person-rol">@grupo.Label · @p.PersonaDocumento@(string.IsNullOrEmpty(p.Parentesco) ? "" : $" · {p.Parentesco}")</div>
+                                            </div>
+                                            <button class="gum-person-del" type="button" @onclick="() => EliminarPersona(p.Id)" title="Quitar">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                            </button>
+                                        </div>
+                                        @if (!string.IsNullOrEmpty(p.PersonaEmail))
+                                        {
+                                            <div class="gum-person-contact">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A6B7C8" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 7l10 6 10-6"/></svg>
+                                                @p.PersonaEmail
+                                            </div>
+                                        }
+                                        @if (!string.IsNullOrEmpty(p.PersonaTelefono))
+                                        {
+                                            <div class="gum-person-contact">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A6B7C8" stroke-width="2"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.6A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>
+                                                @p.PersonaTelefono
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else if (_formRol != grupo.Rol)
+                        {
+                            <div class="gum-people-empty">@grupo.EmptyMsg</div>
+                        }
+                        @if (_formRol == grupo.Rol)
+                        {
+                            <div class="gum-person-form">
+                                <div class="gum-form-row">
+                                    <input class="gum-input gum-grow" @bind="_personaForm.Documento" @bind:event="oninput" placeholder="Documento *" />
+                                    <input class="gum-input gum-grow" @bind="_personaForm.Nombres" @bind:event="oninput" placeholder="Nombres *" />
+                                    <input class="gum-input gum-grow" @bind="_personaForm.Apellidos" @bind:event="oninput" placeholder="Apellidos *" />
+                                </div>
+                                <div class="gum-form-row">
+                                    <input class="gum-input gum-grow" @bind="_personaForm.Email" @bind:event="oninput" placeholder="Email (opcional)" />
+                                    <input class="gum-input gum-grow" @bind="_personaForm.Telefono" @bind:event="oninput" placeholder="Telefono (opcional)" />
+                                    @if (grupo.Rol == RolUnidadPersona.Familiar)
+                                    {
+                                        <input class="gum-input gum-grow" @bind="_personaForm.Parentesco" @bind:event="oninput" placeholder="Parentesco (ej. hijo)" />
+                                    }
+                                    <button class="gum-btn-brand" type="button" @onclick="GuardarPersona" disabled="@(_busy || !PersonaFormValido)">Guardar</button>
+                                    <button class="gum-btn-ghost" type="button" @onclick="() => _formRol = null">Cancelar</button>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+
+                @* === Card INMUEBLES VINCULADOS (proto L.717-721) === *@
+                <div class="gum-unit-card">
+                    <div class="gum-unit-eyebrow">INMUEBLES VINCULADOS</div>
+                    @if (_vinculos.Count == 0)
+                    {
+                        <div class="gum-people-empty">Sin inmuebles vinculados (parqueaderos, depositos).</div>
+                    }
+                    else
+                    {
+                        <div class="gum-inm-list">
+                            @foreach (var v in _vinculos)
+                            {
+                                <div class="gum-inm">
+                                    <div class="gum-inm-icon">
+                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+                                    </div>
+                                    <div class="gum-inm-text">
+                                        <div class="gum-inm-name">@v.AsociadaTipo @v.AsociadaNumero</div>
+                                        <div class="gum-inm-fact" style="@(v.IncluyeEnFacturacion ? "color:#1A8754" : "color:#7C98B6")">
+                                            @(v.IncluyeEnFacturacion ? "Incluye en facturacion" : "No factura")
+                                        </div>
+                                    </div>
+                                    <button class="gum-inm-del" type="button" @onclick="() => EliminarVinculo(v.Id)" title="Quitar">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    }
+                    @* Form para agregar inmueble vinculado (proto L.720) *@
+                    <div class="gum-inm-add">
+                        <select class="gum-inm-input" @bind="_nuevoVinculoUnidadId">
+                            <option value="">- Selecciona unidad -</option>
+                            @foreach (var u in _unidades.Where(u => u.Id != _selected.Id && (u.Tipo == TipoUnidad.Parqueadero || u.Tipo == TipoUnidad.UtilCuarto || u.Tipo == TipoUnidad.Bodega)))
+                            {
+                                <option value="@u.Id">@u.Tipo @u.Numero</option>
+                            }
+                        </select>
+                        <select class="gum-inm-input" @bind="_nuevoVinculoFactura">
+                            <option value="false">No factura</option>
+                            <option value="true">Si factura</option>
+                        </select>
+                        <button class="gum-inm-add-btn" type="button" @onclick="AgregarVinculo" disabled="@(_nuevoVinculoUnidadId == Guid.Empty)">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+                        </button>
+                    </div>
+                </div>
+
+                @* === Card VALORES DE ADMINISTRACION (proto L.722-730) === *@
+                <div class="gum-unit-card">
+                    <div class="gum-unit-eyebrow">VALORES DE ADMINISTRACION</div>
+                    @if (!_editMode)
+                    {
+                        <div class="gum-unit-rows">
+                            <div class="gum-unit-row"><span>Numero</span><span>@_selected.Numero</span></div>
+                            <div class="gum-unit-row"><span>Tipo</span><span>@_selected.Tipo</span></div>
+                            <div class="gum-unit-row"><span>@AgrupacionLabelSingular</span><span>@(_selected.TorreNombre ?? "-")</span></div>
+                            <div class="gum-unit-row"><span>@PisoLabelSingular</span><span>@(_selected.Piso?.ToString() ?? "-")</span></div>
+                            <div class="gum-unit-row"><span>Coeficiente</span><span>@_selected.CoeficientePropiedad.ToString("0.####")%</span></div>
+                            @if (_cuota is not null && _cuota.CantidadAsociadasFactura > 0)
+                            {
+                                <div class="gum-unit-row"><span>+ Asociadas en facturacion</span><span>@_cuota.CoefAsociadasFactura.ToString("0.####")% (@_cuota.CantidadAsociadasFactura)</span></div>
+                                <div class="gum-unit-row" style="border-top:1px dashed #DCD2F8;padding-top:8px"><span><b>Coef consolidado</b></span><span style="color:var(--propia-brand,#6D4FE3)"><b>@_cuota.CoefTotal.ToString("0.####")%</b></span></div>
+                            }
+                            <div class="gum-unit-row"><span>Area</span><span>@(_selected.AreaM2.HasValue ? _selected.AreaM2.Value.ToString("0.##") + " m2" : "-")</span></div>
+                            <div class="gum-unit-row"><span>Habitaciones</span><span>@(_selected.Habitaciones?.ToString() ?? "-")</span></div>
+                            <div class="gum-unit-row"><span>Banos</span><span>@(_selected.Banos?.ToString() ?? "-")</span></div>
+                            <div class="gum-unit-row"><span>Parqueaderos</span><span>@(_selected.Parqueaderos?.ToString() ?? "-")</span></div>
+                            <div class="gum-unit-row"><span>Estado</span><span>@(_selected.Estado ?? "-")</span></div>
+                            <div class="gum-unit-row"><span>Paga administracion</span><span>@(_selected.PagaAdministracion ? "Si" : "No")</span></div>
+                            @if (!string.IsNullOrEmpty(_selected.MatriculaInmobiliaria))
+                            {
+                                <div class="gum-unit-row"><span>Matricula</span><span>@_selected.MatriculaInmobiliaria</span></div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="gum-edit-grid">
+                            <div class="gum-edit-field"><label class="gum-lbl">Numero</label><input class="gum-input" @bind="_edit.Numero" /></div>
+                            <div class="gum-edit-field">
+                                <label class="gum-lbl">Tipo</label>
+                                <select class="gum-input" @bind="_edit.Tipo">
+                                    @foreach (var t in Enum.GetValues<TipoUnidad>()) { <option value="@t">@t</option> }
+                                </select>
+                            </div>
+                            <div class="gum-edit-field">
+                                <label class="gum-lbl">@AgrupacionLabelSingular</label>
+                                <select class="gum-input" @bind="_edit.TorreId">
+                                    <option value="">- Sin @AgrupacionLabelSingular.ToLower() -</option>
+                                    @foreach (var t in _torres) { <option value="@t.Id">@t.Nombre</option> }
+                                </select>
+                            </div>
+                            <div class="gum-edit-field"><label class="gum-lbl">@PisoLabelSingular</label><input type="number" class="gum-input" @bind="_edit.Piso" /></div>
+                            <div class="gum-edit-field"><label class="gum-lbl">Coeficiente (%)</label><input type="number" step="0.0001" class="gum-input" @bind="_edit.CoeficientePropiedad" /></div>
+                            <div class="gum-edit-field"><label class="gum-lbl">Area (m2)</label><input type="number" step="0.01" class="gum-input" @bind="_edit.AreaM2" /></div>
+                            <div class="gum-edit-field"><label class="gum-lbl">Habitaciones</label><input type="number" class="gum-input" @bind="_edit.Habitaciones" /></div>
+                            <div class="gum-edit-field"><label class="gum-lbl">Banos</label><input type="number" class="gum-input" @bind="_edit.Banos" /></div>
+                            <div class="gum-edit-field"><label class="gum-lbl">Parqueaderos</label><input type="number" class="gum-input" @bind="_edit.Parqueaderos" /></div>
+                            <div class="gum-edit-field"><label class="gum-lbl">Estado</label><input class="gum-input" @bind="_edit.Estado" placeholder="Habitada / Vacia / En obra" /></div>
+                            <div class="gum-edit-field gum-edit-field--full"><label class="gum-lbl">Matricula inmobiliaria</label><input class="gum-input" @bind="_edit.MatriculaInmobiliaria" placeholder="370-..." /></div>
+                            <div class="gum-edit-field gum-edit-field--full">
+                                <label class="gum-check">
+                                    <input type="checkbox" @bind="_edit.PagaAdministracion" />
+                                    <span>Paga administracion</span>
+                                </label>
+                            </div>
+                            <div class="gum-edit-field gum-edit-field--full"><label class="gum-lbl">Observaciones</label><textarea class="gum-input" rows="2" @bind="_edit.Observaciones"></textarea></div>
+                        </div>
+                    }
+                </div>
+
+                @* === Card FICHA TECNICA - CAMPOS PERSONALIZADOS (proto L.742-754) === *@
+                <div class="gum-unit-card gum-unit-card--full">
+                    <div class="gum-card-head-row">
+                        <div class="gum-unit-eyebrow">FICHA TECNICA - CAMPOS PERSONALIZADOS</div>
+                        <button class="gum-people-add" type="button" @onclick="() => _cfOpen = !_cfOpen">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+                            Agregar campo
+                        </button>
+                    </div>
+                    @if (_camposPersonalizados.Count > 0)
+                    {
+                        <div class="gum-cf-grid">
+                            @foreach (var (k, v) in _camposPersonalizados)
+                            {
+                                <div class="gum-cf-cell">
+                                    <div class="gum-cf-lbl">@k</div>
+                                    <div class="gum-cf-val">@v</div>
+                                    <button class="gum-cf-del" type="button" @onclick="() => _camposPersonalizados.Remove(k)" title="Quitar">
+                                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    }
+                    @if (_cfOpen)
+                    {
+                        <div class="gum-cf-form">
+                            <input class="gum-input" @bind="_cfLabel" @bind:event="oninput" placeholder="Nombre del campo (ej. N de medidor)" />
+                            <input class="gum-input" @bind="_cfValor" @bind:event="oninput" placeholder="Valor" />
+                            <button class="gum-btn-brand" type="button" @onclick="AgregarCampoPersonalizado" disabled="@(string.IsNullOrWhiteSpace(_cfLabel) || string.IsNullOrWhiteSpace(_cfValor))">Guardar</button>
+                        </div>
+                    }
+                    @if (_camposPersonalizados.Count == 0 && !_cfOpen)
+                    {
+                        <div class="gum-people-empty">Aun no hay campos personalizados. Usa "Agregar campo" para extender la ficha tecnica (ej. medidor de agua, marca de cerradura, color de fachada...).</div>
+                    }
+                </div>
+
+                @* === ESTADISTICA (proto L.755-760) === *@
+                <div class="gum-unit-card--full gum-stats">
+                    <div class="gum-stat">
+                        <div class="gum-stat-lbl">Deuda actual</div>
+                        <div class="gum-stat-val gum-stat-val--ok">$ 0</div>
+                    </div>
+                    <div class="gum-stat">
+                        <div class="gum-stat-lbl">PQRS</div>
+                        <div class="gum-stat-val">0</div>
+                    </div>
+                    <div class="gum-stat">
+                        <div class="gum-stat-lbl">Pagos del ano</div>
+                        <div class="gum-stat-val">0</div>
+                    </div>
+                </div>
+
+                @* === HISTORIAL (proto L.761-766) === *@
+                <div class="gum-unit-card">
+                    <div class="gum-unit-eyebrow">HISTORIAL</div>
+                    <div class="gum-hist-empty">Sin eventos registrados en la unidad.</div>
+                </div>
+
+                @* === DOCUMENTOS (proto L.785-792) === *@
+                <div class="gum-unit-card">
+                    <div class="gum-unit-eyebrow">DOCUMENTOS</div>
+                    <label class="gum-doc-upload">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
+                        Subir documento
+                        <input type="file" accept="image/*,application/pdf" />
+                    </label>
+                </div>
+
+                @* === FACTURAS - HISTORIAL DE PAGOS (proto L.767-783) === *@
+                <div class="gum-unit-card gum-unit-card--full">
+                    <div class="gum-unit-eyebrow">FACTURAS - HISTORIAL DE PAGOS</div>
+                    <div class="gum-hist-empty">Sin facturas emitidas a la unidad.</div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .gum-header {
+        display: flex; align-items: center; gap: 13px;
+        padding: 18px 24px;
+        border-bottom: 1px solid #EEF3F8;
+        flex-shrink: 0;
+    }
+    .gum-header-icon {
+        width: 38px; height: 38px; border-radius: 10px;
+        background: var(--propia-brand-soft, #F1ECFD);
+        color: var(--propia-brand, #6D4FE3);
+        display: flex; align-items: center; justify-content: center;
+    }
+    .gum-header-text { flex: 1; }
+    .gum-title { font-size: 16px; font-weight: 800; letter-spacing: -0.3px; color: #1B2A3A; }
+    .gum-subtitle { font-size: 12.5px; color: #7C98B6; }
+    .gum-close {
+        width: 34px; height: 34px; border-radius: 9px;
+        display: flex; align-items: center; justify-content: center;
+        color: #7C98B6; border: 1px solid #E1E8EE;
+        background: #fff; cursor: pointer;
+    }
+    .gum-close:hover { background: #F5F8FA; color: #33475B; }
+
+    .gum-body {
+        flex: 1; min-height: 0;
+        display: flex; align-items: stretch;
+    }
+
+    /* ===== Panel izq ===== */
+    .gum-panel-left {
+        width: 600px; flex-shrink: 0;
+        padding: 22px 24px;
+        border-right: 1px solid #EEF3F8;
+        overflow-y: auto;
+    }
+
+    .gum-toast-ok {
+        display: flex; align-items: center; gap: 10px;
+        background: #E6F6EE; border: 1px solid #B6E2C9;
+        border-radius: 11px; padding: 11px 14px; margin-bottom: 14px;
+        font-size: 12.5px; color: #15703F; font-weight: 600;
+    }
+    .gum-toast-icon { width:26px; height:26px; border-radius:7px; background:#1A8754; color:#fff; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+
+    .gum-summary {
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+        margin-bottom: 16px;
+        font-size: 13px; color: #516F90;
+    }
+    .gum-summary-strong { color: #33475B; font-weight: 700; }
+    .gum-summary-sep { color: #A6B7C8; }
+    .gum-chip {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-size: 11.5px; font-weight: 700; color: #1A8754;
+        background: #E6F6EE; padding: 4px 10px; border-radius: 7px;
+    }
+    .gum-chip--warn { color: #B45309; background: #FEF3C7; }
+    .gum-rebal-btn {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 4px 11px; border-radius: 7px;
+        background: var(--propia-brand, #6D4FE3); color: #fff;
+        font-size: 11.5px; font-weight: 700;
+        border: 0; cursor: pointer;
+        box-shadow: 0 3px 8px rgba(109,79,227,.25);
+    }
+    .gum-rebal-btn:hover { background: var(--propia-brand-hover, #5838C9); }
+    .gum-rebal-btn:disabled { opacity: .6; cursor: not-allowed; }
+
+    .gum-ctas { display: flex; gap: 9px; flex-wrap: wrap; margin-bottom: 16px; }
+    .gum-cta {
+        display: inline-flex; align-items: center; gap: 7px;
+        padding: 9px 14px; border-radius: 9px;
+        border: 1px solid #E1E8EE;
+        font-size: 12.5px; font-weight: 600; color: #516F90;
+        background: #fff; cursor: pointer;
+    }
+    .gum-cta:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
+    .gum-cta--brand {
+        border-color: #DCD2F8; color: var(--propia-brand, #6D4FE3); background: #F1ECFD; font-weight: 700;
+    }
+    .gum-cta--brand:hover { background: #E6DEFA; }
+    .gum-cta--active { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); background: #F5F1FE; }
+
+    /* Cards de wizards */
+    .gum-card-soft {
+        background: #F8FAFC; border: 1px solid #E1E8EE;
+        border-radius: 12px; padding: 16px; margin-bottom: 16px;
+    }
+    .gum-card-brand {
+        background: linear-gradient(160deg, #F5F1FE, #EFEAFC);
+        border: 1px solid #DCD2F8; border-radius: 14px;
+        padding: 18px; margin-bottom: 16px;
+    }
+    .gum-card-title { font-size: 13px; font-weight: 700; color: #1B2A3A; margin-bottom: 4px; }
+    .gum-card-sub { font-size: 11px; color: #A6B7C8; margin-bottom: 12px; }
+
+    .gum-form-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 11px; }
+    .gum-field { display: flex; flex-direction: column; min-width: 0; }
+    .gum-grow { flex: 1; min-width: 0; }
+    .gum-lbl { font-size: 11px; color: #7C98B6; font-weight: 700; margin-bottom: 5px; display: block; }
+    .gum-input {
+        border: 1px solid #DCD2F8; border-radius: 9px;
+        padding: 9px 11px; font-size: 13px; color: #33475B;
+        background: #fff; outline: none;
+        width: 100%; box-sizing: border-box; font-family: inherit;
+    }
+    .gum-input:focus { border-color: var(--propia-brand, #6D4FE3); }
+
+    .gum-genhead { display: flex; align-items: center; gap: 9px; margin-bottom: 16px; }
+    .gum-genicon { width: 32px; height: 32px; border-radius: 9px; background: var(--propia-brand, #6D4FE3); color: #fff; display: flex; align-items: center; justify-content: center; }
+    .gum-gen-title { font-size: 14px; font-weight: 800; color: #4B2BB0; }
+    .gum-gen-sub { font-size: 11.5px; color: #7C5CE8; }
+    .gum-n-options { display: flex; gap: 7px; margin: 8px 0 16px; }
+    .gum-n {
+        width: 40px; height: 40px; border-radius: 10px;
+        border: 1.5px solid #DCD2F8; background: #fff; color: #516F90;
+        font-size: 14px; font-weight: 700; cursor: pointer;
+    }
+    .gum-n--active { background: var(--propia-brand, #6D4FE3); color: #fff; border-color: var(--propia-brand, #6D4FE3); }
+    .gum-grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
+    .gum-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+    .gum-preview { background: #fff; border: 1px dashed #DCD2F8; border-radius: 11px; padding: 13px 15px; margin-bottom: 16px; }
+    .gum-preview-eyebrow { font-size: 10px; letter-spacing: .5px; font-weight: 700; color: #7C5CE8; margin-bottom: 9px; }
+    .gum-preview-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }
+    .gum-preview-chip { font-size: 12px; font-weight: 600; color: #516F90; background: #F5F1FE; border: 1px solid #DCD2F8; border-radius: 7px; padding: 4px 10px; }
+    .gum-preview-total { font-size: 14px; font-weight: 800; color: #4B2BB0; }
+    .gum-gen-footer { display: flex; justify-content: flex-end; gap: 8px; }
+
+    .gum-import-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+    .gum-import-count { font-size: 12px; color: #516F90; font-weight: 600; }
+
+    .gum-btn-brand {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 9px 15px; border-radius: 9px;
+        background: var(--propia-brand, #6D4FE3); color: #fff;
+        font-size: 13px; font-weight: 700; border: 0; cursor: pointer;
+        box-shadow: 0 4px 12px rgba(109,79,227,.30);
+    }
+    .gum-btn-brand:hover { background: var(--propia-brand-hover, #5838C9); }
+    .gum-btn-brand:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+    .gum-btn-ghost {
+        padding: 9px 15px; border-radius: 9px;
+        background: #fff; border: 1px solid #DCD2F8;
+        font-size: 13px; font-weight: 600; color: #516F90; cursor: pointer;
+    }
+
+    /* Lista torres */
+    .gum-torre { border: 1px solid #E1E8EE; border-radius: 11px; margin-bottom: 9px; overflow: hidden; }
+    .gum-torre-head {
+        display: flex; align-items: center; gap: 11px;
+        width: 100%; padding: 12px 15px;
+        background: #F8FAFC; border: 0; cursor: pointer;
+        text-align: left;
+    }
+    .gum-torre-head:hover { background: #F1F5F9; }
+    .gum-torre-name { font-size: 13.5px; font-weight: 700; color: #33475B; }
+    .gum-torre-meta { font-size: 11.5px; color: #A6B7C8; font-weight: 600; }
+    .gum-torre-body { padding: 6px 15px 14px; }
+    .gum-torre-empty { font-size: 12px; color: #A6B7C8; padding: 8px 4px; }
+    .gum-piso { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
+    .gum-piso-lbl { font-size: 11px; color: #A6B7C8; font-weight: 700; width: 64px; flex-shrink: 0; }
+    .gum-piso-units { display: flex; flex-wrap: wrap; gap: 7px; }
+    .gum-unit {
+        font-size: 12px; font-weight: 600; color: #516F90;
+        background: #fff; border: 1px solid #E1E8EE;
+        border-radius: 7px; padding: 5px 11px; cursor: pointer;
+    }
+    .gum-unit:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); background: #F5F1FE; }
+    .gum-unit--active { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); background: #F1ECFD; }
+
+    .gum-msg { margin-top: 10px; padding: 9px 12px; font-size: 12.5px; border-radius: 9px; border: 1px solid; }
+    .gum-msg--ok { color: #15703F; background: #E6F6EE; border-color: #B6E2C9; }
+    .gum-msg--err { color: #B91C1C; background: #FEE2E2; border-color: #FECACA; }
+
+    /* ===== Panel der ===== */
+    .gum-panel-right {
+        flex: 1; min-width: 0;
+        background: #FBFAFE;
+        overflow-y: auto;
+    }
+    .gum-empty {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        height: 100%; min-height: 340px; padding: 40px;
+        text-align: center; color: #A6B7C8;
+    }
+    .gum-empty-icon {
+        width: 54px; height: 54px; border-radius: 14px;
+        background: #F1ECFD; color: var(--propia-brand, #6D4FE3);
+        display: flex; align-items: center; justify-content: center;
+        margin-bottom: 14px;
+    }
+    .gum-empty-title { font-size: 14px; font-weight: 700; color: #516F90; }
+    .gum-empty-sub { font-size: 12.5px; max-width: 240px; line-height: 1.5; margin-top: 5px; }
+
+    .gum-unit-head {
+        padding: 20px 22px;
+        border-bottom: 1px solid #EEF3F8;
+        display: flex; align-items: center; gap: 13px;
+        position: sticky; top: 0; background: #FBFAFE; z-index: 2;
+    }
+    .gum-unit-avatar {
+        width: 46px; height: 46px; border-radius: 12px;
+        background: linear-gradient(140deg, #8366F0, #5838C9);
+        color: #fff; display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+    }
+    .gum-unit-id { flex: 1; min-width: 0; }
+    .gum-unit-title { font-size: 17px; font-weight: 800; letter-spacing: -0.3px; color: #1B2A3A; }
+    .gum-unit-meta { font-size: 12px; color: #7C98B6; }
+    .gum-unit-del {
+        width: 32px; height: 32px; border-radius: 8px;
+        border: 1px solid #FCA5A5; background: #fff;
+        color: #DC2626; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .gum-unit-del:hover { background: #FEE2E2; }
+
+    .gum-unit-cards { padding: 18px 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .gum-unit-card { background: #fff; border: 1px solid #E1E8EE; border-radius: 13px; padding: 14px; }
+    .gum-unit-card--full { grid-column: 1 / -1; }
+    .gum-unit-eyebrow { font-size: 10.5px; letter-spacing: .5px; color: #A6B7C8; font-weight: 700; margin-bottom: 11px; }
+    .gum-unit-eyebrow--lg { margin-bottom: 2px; }
+    .gum-unit-rows { display: flex; flex-direction: column; gap: 9px; }
+    .gum-unit-row { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; }
+    .gum-unit-row span:first-child { color: #7C98B6; }
+    .gum-unit-row span:last-child { font-weight: 700; color: #33475B; }
+
+    .gum-unit-edit {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 8px 13px; border-radius: 8px;
+        border: 1px solid #DCD2F8; background: #fff;
+        font-size: 12.5px; font-weight: 700; color: var(--propia-brand, #6D4FE3);
+        cursor: pointer; flex-shrink: 0;
+    }
+    .gum-unit-edit:hover { background: #F1ECFD; }
+    .gum-unit-save {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 8px 14px; border-radius: 8px;
+        background: var(--propia-brand, #6D4FE3); color: #fff;
+        font-size: 12.5px; font-weight: 700; border: 0; cursor: pointer;
+        box-shadow: 0 4px 12px rgba(109,79,227,.30); flex-shrink: 0;
+    }
+    .gum-unit-save:hover { background: var(--propia-brand-hover, #5838C9); }
+    .gum-unit-save:disabled { opacity: .6; cursor: not-allowed; box-shadow: none; }
+    .gum-unit-cancel {
+        padding: 8px 13px; border-radius: 8px;
+        border: 1px solid #E1E8EE; background: #fff;
+        font-size: 12.5px; font-weight: 600; color: #516F90;
+        cursor: pointer; flex-shrink: 0;
+    }
+    .gum-unit-cancel:hover { background: #F5F8FA; }
+
+    /* Edit grid */
+    .gum-edit-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+    .gum-edit-field { display: flex; flex-direction: column; min-width: 0; }
+    .gum-edit-field--full { grid-column: 1 / -1; }
+    .gum-check {
+        display: flex; align-items: center; gap: 8px;
+        font-size: 13px; color: #33475B; font-weight: 600;
+        cursor: pointer;
+    }
+    .gum-check input[type="checkbox"] {
+        width: 16px; height: 16px; accent-color: var(--propia-brand, #6D4FE3);
+    }
+
+    /* People (Propietario/Residente/Familiar) - proto L.696-715 */
+    .gum-people-head { margin-bottom: 13px; }
+    .gum-people-sub { font-size: 11px; color: #A6B7C8; margin-top: 2px; }
+    .gum-people-group {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 8px;
+    }
+    .gum-people-group--top {
+        margin-top: 10px; padding-top: 10px;
+        border-top: 1px solid #F4F7FA;
+    }
+    .gum-people-tag {
+        display: flex; align-items: center; gap: 6px;
+        font-size: 11px; font-weight: 800; color: #33475B;
+    }
+    .gum-people-dot { width: 7px; height: 7px; border-radius: 50%; }
+    .gum-people-dot--owner { background: var(--propia-brand, #6D4FE3); }
+    .gum-people-dot--resident { background: #2563EB; }
+    .gum-people-dot--family { background: #1A8754; }
+    .gum-people-dot--tenant { background: #D97706; }
+    .gum-people-dot--proxy { background: #6B7280; }
+    .gum-people-add {
+        display: inline-flex; align-items: center; gap: 5px;
+        font-size: 11px; font-weight: 700;
+        color: var(--propia-brand, #6D4FE3);
+        background: #F1ECFD; border: 1px solid #DCD2F8;
+        padding: 5px 10px; border-radius: 7px;
+        cursor: pointer;
+    }
+    .gum-people-add:hover { background: #E6DEFA; }
+    .gum-people-empty {
+        font-size: 11.5px; color: #A6B7C8;
+        padding: 4px 2px 10px;
+    }
+    .gum-persons-grid {
+        display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
+        margin-bottom: 8px;
+    }
+    .gum-person-card {
+        border: 1px solid #E1E8EE; border-radius: 11px;
+        padding: 12px; background: #FBFBFD;
+    }
+    .gum-person-head { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; }
+    .gum-person-avatar {
+        width: 34px; height: 34px; border-radius: 9px;
+        display: flex; align-items: center; justify-content: center;
+        color: #fff; font-size: 12px; font-weight: 700; flex-shrink: 0;
+    }
+    .gum-people-avatar--owner { background: linear-gradient(135deg, #33475B, #1B2A3A); }
+    .gum-people-avatar--resident { background: linear-gradient(135deg, #2563EB, #1E40AF); }
+    .gum-people-avatar--family { background: linear-gradient(135deg, #22A565, #15703F); }
+    .gum-person-id { flex: 1; min-width: 0; }
+    .gum-person-name { font-size: 13px; font-weight: 700; color: #33475B; }
+    .gum-person-rol { font-size: 10.5px; color: #7C98B6; font-weight: 600; margin-top: 1px; }
+    .gum-person-del {
+        width: 24px; height: 24px; border-radius: 6px;
+        display: flex; align-items: center; justify-content: center;
+        color: #C3D0DD; border: 0; background: transparent; cursor: pointer; flex-shrink: 0;
+    }
+    .gum-person-del:hover { background: #FDE7E7; color: #D7263D; }
+    .gum-person-contact {
+        display: flex; align-items: center; gap: 6px;
+        font-size: 11.5px; color: #516F90;
+        padding: 1px 0;
+    }
+    .gum-person-form {
+        background: #FBFAFE; border: 1px dashed #DCD2F8; border-radius: 10px;
+        padding: 12px; margin-bottom: 8px;
+        display: flex; flex-direction: column; gap: 8px;
+    }
+    .gum-person-form .gum-input { font-size: 12px; padding: 7px 10px; }
+
+    /* Inmuebles vinculados */
+    .gum-inm-list { display: flex; flex-direction: column; gap: 8px; }
+    .gum-inm { display: flex; align-items: center; gap: 9px; }
+    .gum-inm-icon {
+        width: 30px; height: 30px; border-radius: 8px;
+        background: #EEF3F8; color: #516F90;
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+    }
+    .gum-inm-text { flex: 1; min-width: 0; }
+    .gum-inm-name { font-size: 12.5px; font-weight: 700; color: #33475B; }
+    .gum-inm-fact { font-size: 10.5px; font-weight: 600; }
+    .gum-inm-del {
+        width: 22px; height: 22px; border-radius: 6px;
+        display: flex; align-items: center; justify-content: center;
+        color: #C3D0DD; border: 0; background: transparent; cursor: pointer; flex-shrink: 0;
+    }
+    .gum-inm-del:hover { background: #FDE7E7; color: #D7263D; }
+    .gum-inm-add {
+        display: flex; gap: 5px; margin-top: 9px;
+    }
+    .gum-inm-input {
+        flex: 1; min-width: 0;
+        border: 1px solid #E1E8EE; border-radius: 8px;
+        padding: 7px 8px; font-size: 11.5px; color: #33475B;
+        outline: none; background: #fff; font-family: inherit;
+    }
+    .gum-inm-input:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .gum-inm-add-btn {
+        width: 30px; height: 30px; flex-shrink: 0;
+        border-radius: 8px; background: var(--propia-brand, #6D4FE3);
+        color: #fff; border: 0; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .gum-inm-add-btn:hover { background: var(--propia-brand-hover, #5838C9); }
+    .gum-inm-add-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* Card head row (eyebrow + boton agregar campo) */
+    .gum-card-head-row {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 11px;
+    }
+    .gum-card-head-row .gum-unit-eyebrow { margin-bottom: 0; }
+
+    /* Campos personalizados */
+    .gum-cf-grid {
+        display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
+        background: #EEF3F8; border: 1px solid #EEF3F8; border-radius: 10px;
+        overflow: hidden; margin-bottom: 10px;
+    }
+    .gum-cf-cell {
+        background: #fff; padding: 10px 12px; position: relative;
+    }
+    .gum-cf-lbl { font-size: 10.5px; color: #A6B7C8; font-weight: 600; }
+    .gum-cf-val { font-size: 12.5px; font-weight: 600; color: #33475B; margin-top: 2px; padding-right: 16px; }
+    .gum-cf-del {
+        position: absolute; top: 8px; right: 7px;
+        width: 18px; height: 18px; border-radius: 5px;
+        display: flex; align-items: center; justify-content: center;
+        color: #C3D0DD; border: 0; background: transparent; cursor: pointer;
+    }
+    .gum-cf-del:hover { background: #FDE7E7; color: #D7263D; }
+    .gum-cf-form {
+        display: flex; gap: 7px; align-items: center;
+        background: #FBFAFE; border: 1px dashed #DCD2F8; border-radius: 10px;
+        padding: 11px;
+    }
+    .gum-cf-form .gum-input { flex: 1; padding: 8px 10px; font-size: 12px; }
+
+    /* Estadistica */
+    .gum-stats {
+        display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+    }
+    .gum-stat {
+        background: #fff; border: 1px solid #E1E8EE; border-radius: 12px;
+        padding: 13px 14px;
+    }
+    .gum-stat-lbl { font-size: 11px; color: #A6B7C8; font-weight: 600; }
+    .gum-stat-val {
+        font-size: 18px; font-weight: 800; color: #1B2A3A; margin-top: 3px;
+    }
+    .gum-stat-val--ok { color: #1A8754; }
+    .gum-stat-val--err { color: #C0383C; }
+
+    /* Historial / Facturas vacios */
+    .gum-hist-empty { font-size: 11.5px; color: #A6B7C8; padding: 4px 2px; }
+
+    /* Documentos */
+    .gum-doc-upload {
+        display: flex; align-items: center; justify-content: center; gap: 7px;
+        border: 1px dashed #DCD2F8; border-radius: 9px;
+        padding: 10px; font-size: 12px; font-weight: 600;
+        color: var(--propia-brand, #6D4FE3); background: #FBFAFE;
+        cursor: pointer;
+    }
+    .gum-doc-upload:hover { background: #F5F1FE; border-color: var(--propia-brand, #6D4FE3); }
+    .gum-doc-upload input[type="file"] { display: none; }
+
+    /* Dark mode minimal */
+    [data-bs-theme="dark"] .gum-header,
+    [data-bs-theme="dark"] .gum-panel-left { background: #1B2233; }
+    [data-bs-theme="dark"] .gum-title,
+    [data-bs-theme="dark"] .gum-unit-title { color: #E5E7EB; }
+    [data-bs-theme="dark"] .gum-panel-right { background: #161B2D; }
+    [data-bs-theme="dark"] .gum-unit-card,
+    [data-bs-theme="dark"] .gum-card-soft { background: #232B40; border-color: #2D3650; }
+    [data-bs-theme="dark"] .gum-torre,
+    [data-bs-theme="dark"] .gum-unit { background: #232B40; border-color: #2D3650; }
+    [data-bs-theme="dark"] .gum-torre-head { background: #1B2233; color: #B6C6DC; }
+    [data-bs-theme="dark"] .gum-torre-head:hover { background: #232B40; }
+</style>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+    [Parameter] public string AgrupacionLabelSingular { get; set; } = "Torre";
+    [Parameter] public string PisoLabelSingular { get; set; } = "Piso";
+
+    private List<TorreDto> _torres = new();
+    private List<UnidadDto> _unidades = new();
+    private UnidadDto? _selected;
+    private List<UnidadVinculoDto> _vinculos = new();
+    private CuotaConsolidadaDto? _cuota;
+    private HashSet<Guid> _torresAbiertas = new();
+    private bool _editMode;
+    private EditUnidadForm _edit = new();
+
+    // Inmuebles vinculados - form para agregar
+    private Guid _nuevoVinculoUnidadId;
+    private bool _nuevoVinculoFactura;
+
+    // Campos personalizados (Ficha tecnica)
+    private Dictionary<string, string> _camposPersonalizados = new();
+    private bool _cfOpen;
+    private string _cfLabel = "";
+    private string _cfValor = "";
+
+    // Personas vinculadas a la unidad
+    private List<UnidadPersonaDto> _personas = new();
+    private RolUnidadPersona? _formRol;
+    private PersonaForm _personaForm = new();
+
+    private class PersonaForm
+    {
+        public string Documento { get; set; } = "";
+        public string Nombres { get; set; } = "";
+        public string Apellidos { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string Telefono { get; set; } = "";
+        public string Parentesco { get; set; } = "";
+    }
+
+    private bool PersonaFormValido =>
+        !string.IsNullOrWhiteSpace(_personaForm.Documento) &&
+        !string.IsNullOrWhiteSpace(_personaForm.Nombres) &&
+        !string.IsNullOrWhiteSpace(_personaForm.Apellidos);
+
+    private class EditUnidadForm
+    {
+        public string Numero { get; set; } = "";
+        public TipoUnidad Tipo { get; set; } = TipoUnidad.Apartamento;
+        public Guid? TorreId { get; set; }
+        public int? Piso { get; set; }
+        public decimal CoeficientePropiedad { get; set; }
+        public decimal? AreaM2 { get; set; }
+        public int? Habitaciones { get; set; }
+        public int? Banos { get; set; }
+        public int? Parqueaderos { get; set; }
+        public string? Estado { get; set; }
+        public string? Observaciones { get; set; }
+        public string? MatriculaInmobiliaria { get; set; }
+        public bool PagaAdministracion { get; set; } = true;
+    }
+    private bool _huboCambios;
+    private bool _busy;
+    private string _msg = "";
+    private bool _msgError;
+
+    private string AgrupacionLabelPlural => AgrupacionLabelSingular + "s";
+
+    // Modes
+    private string? _mode;
+
+    // Manual
+    private Guid _manTorreId;
+    private int? _manPiso;
+    private string _manNumero = "";
+    private TipoUnidad _manTipo = TipoUnidad.Apartamento;
+
+    // Generador
+    private int _genN = 2;
+    private List<string> _genNombres = new() { "Torre A", "Torre B" };
+    private int _genPisos = 5;
+    private int _genPorPiso = 4;
+    private int GenTotal => _genN * _genPisos * _genPorPiso;
+    private int _genToast;
+
+    // Import
+    private string _csv = "";
+    private int CsvCount => string.IsNullOrWhiteSpace(_csv) ? 0 : _csv.Split('\n').Count(l => !string.IsNullOrWhiteSpace(l));
+
+    private decimal CoefTotal => _unidades.Sum(u => u.CoeficientePropiedad);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAsync();
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = Auth();
+            _torres = await http.GetFromJsonAsync<List<TorreDto>>("/api/mi-copropiedad/torres") ?? new();
+            _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
+            if (_torres.Count > 0 && _torresAbiertas.Count == 0)
+                _torresAbiertas.Add(_torres[0].Id);
+            if (_manTorreId == Guid.Empty && _torres.Count > 0)
+                _manTorreId = _torres[0].Id;
+        }
+        catch (Exception ex) { ShowMsg(ex.Message, true); }
+    }
+
+    private void SetMode(string? m) { _mode = (_mode == m) ? null : m; _genToast = 0; }
+    private void SetGenN(int n)
+    {
+        _genN = n;
+        while (_genNombres.Count < n) _genNombres.Add($"{AgrupacionLabelSingular} {(char)('A' + _genNombres.Count)}");
+        while (_genNombres.Count > n) _genNombres.RemoveAt(_genNombres.Count - 1);
+    }
+
+    private void ToggleTorre(Guid id)
+    {
+        if (!_torresAbiertas.Add(id)) _torresAbiertas.Remove(id);
+    }
+    private bool IsOpen(Guid id) => _torresAbiertas.Contains(id);
+
+    private async Task SeleccionarUnidad(UnidadDto u)
+    {
+        _selected = u;
+        _editMode = false;
+        _vinculos.Clear();
+        _personas.Clear();
+        _cuota = null;
+        _camposPersonalizados.Clear();
+        _cfOpen = false;
+        _formRol = null;
+        _personaForm = new PersonaForm();
+        _nuevoVinculoUnidadId = Guid.Empty;
+        _nuevoVinculoFactura = false;
+        try
+        {
+            _vinculos = await Auth().GetFromJsonAsync<List<UnidadVinculoDto>>($"/api/mi-copropiedad/unidades/{u.Id}/vinculos") ?? new();
+        }
+        catch { /* sin vinculos */ }
+        try
+        {
+            _personas = await Auth().GetFromJsonAsync<List<UnidadPersonaDto>>($"/api/mi-copropiedad/unidades/{u.Id}/personas") ?? new();
+        }
+        catch { /* sin personas */ }
+        try
+        {
+            _cuota = await Auth().GetFromJsonAsync<CuotaConsolidadaDto>($"/api/mi-copropiedad/unidades/{u.Id}/cuota-consolidada");
+        }
+        catch { _cuota = null; }
+    }
+
+    private void AbrirFormPersona(RolUnidadPersona rol)
+    {
+        if (_formRol == rol) { _formRol = null; return; }
+        _formRol = rol;
+        _personaForm = new PersonaForm();
+    }
+
+    private async Task GuardarPersona()
+    {
+        if (_selected is null || _formRol is null || !PersonaFormValido) return;
+        _busy = true;
+        var req = new AgregarPersonaUnidadRequest(
+            _personaForm.Documento.Trim(),
+            _personaForm.Nombres.Trim(),
+            _personaForm.Apellidos.Trim(),
+            string.IsNullOrWhiteSpace(_personaForm.Email) ? null : _personaForm.Email.Trim(),
+            string.IsNullOrWhiteSpace(_personaForm.Telefono) ? null : _personaForm.Telefono.Trim(),
+            _formRol.Value,
+            true,
+            string.IsNullOrWhiteSpace(_personaForm.Parentesco) ? null : _personaForm.Parentesco.Trim());
+        var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{_selected.Id}/personas", req);
+        if (resp.IsSuccessStatusCode)
+        {
+            var creada = await resp.Content.ReadFromJsonAsync<UnidadPersonaDto>();
+            if (creada is not null) _personas.Add(creada);
+            _formRol = null;
+            _personaForm = new PersonaForm();
+            _huboCambios = true;
+            ShowMsg("Persona vinculada.", false);
+        }
+        else
+        {
+            ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true);
+        }
+        _busy = false;
+    }
+
+    private async Task EliminarPersona(Guid unidadPersonaId)
+    {
+        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades-personas/{unidadPersonaId}");
+        if (resp.IsSuccessStatusCode)
+        {
+            _personas.RemoveAll(p => p.Id == unidadPersonaId);
+            _huboCambios = true;
+        }
+    }
+
+    private void EntrarEdicion()
+    {
+        if (_selected is null) return;
+        _edit = new EditUnidadForm
+        {
+            Numero = _selected.Numero,
+            Tipo = _selected.Tipo,
+            TorreId = _selected.TorreId,
+            Piso = _selected.Piso,
+            CoeficientePropiedad = _selected.CoeficientePropiedad,
+            AreaM2 = _selected.AreaM2,
+            Habitaciones = _selected.Habitaciones,
+            Banos = _selected.Banos,
+            Parqueaderos = _selected.Parqueaderos,
+            Estado = _selected.Estado,
+            Observaciones = _selected.Observaciones,
+            MatriculaInmobiliaria = _selected.MatriculaInmobiliaria,
+            PagaAdministracion = _selected.PagaAdministracion
+        };
+        _editMode = true;
+    }
+
+    private void CancelarEdicion() => _editMode = false;
+
+    private async Task GuardarUnidad()
+    {
+        if (_selected is null) return;
+        if (string.IsNullOrWhiteSpace(_edit.Numero)) { ShowMsg("Numero obligatorio.", true); return; }
+        _busy = true;
+        var req = new ActualizarUnidadRequest(
+            _edit.Numero.Trim(), _edit.Tipo, _edit.TorreId, _edit.Piso,
+            _edit.CoeficientePropiedad, _edit.AreaM2,
+            _edit.Habitaciones, _edit.Banos, _edit.Parqueaderos,
+            string.IsNullOrWhiteSpace(_edit.Estado) ? null : _edit.Estado,
+            string.IsNullOrWhiteSpace(_edit.Observaciones) ? null : _edit.Observaciones,
+            string.IsNullOrWhiteSpace(_edit.MatriculaInmobiliaria) ? null : _edit.MatriculaInmobiliaria,
+            _edit.PagaAdministracion);
+        var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades/{_selected.Id}", req);
+        if (resp.IsSuccessStatusCode)
+        {
+            var actualizada = await resp.Content.ReadFromJsonAsync<UnidadDto>();
+            if (actualizada is not null)
+            {
+                _selected = actualizada;
+                var idx = _unidades.FindIndex(u => u.Id == actualizada.Id);
+                if (idx >= 0) _unidades[idx] = actualizada;
+            }
+            _editMode = false;
+            _huboCambios = true;
+            ShowMsg($"Unidad {actualizada?.Numero} actualizada.", false);
+        }
+        else
+        {
+            ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true);
+        }
+        _busy = false;
+    }
+
+    private async Task AgregarUnidadManual()
+    {
+        if (string.IsNullOrWhiteSpace(_manNumero)) return;
+        if (_manTorreId == Guid.Empty) { ShowMsg($"Selecciona {AgrupacionLabelSingular.ToLower()}.", true); return; }
+        _busy = true;
+        var req = new CrearUnidadRequest(_manNumero.Trim(), _manTipo, _manTorreId, _manPiso, 0m, null, null, null, null, null, null);
+        var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/unidades", req);
+        if (resp.IsSuccessStatusCode)
+        {
+            _manNumero = "";
+            _huboCambios = true;
+            await CargarAsync();
+            ShowMsg("Unidad agregada", false);
+        }
+        else { ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true); }
+        _busy = false;
+    }
+
+    private async Task EjecutarGenerador()
+    {
+        _busy = true;
+        var http = Auth();
+        // 1) crear torres
+        var creadas = new List<TorreDto>();
+        foreach (var nombre in _genNombres.Where(n => !string.IsNullOrWhiteSpace(n)))
+        {
+            var exist = _torres.FirstOrDefault(t => t.Nombre.Equals(nombre, StringComparison.OrdinalIgnoreCase));
+            if (exist is not null) { creadas.Add(exist); continue; }
+            var resp = await http.PostAsJsonAsync("/api/mi-copropiedad/torres", new CrearTorreRequest(nombre, _genPisos, null));
+            if (resp.IsSuccessStatusCode)
+            {
+                var nueva = await resp.Content.ReadFromJsonAsync<TorreDto>();
+                if (nueva is not null) creadas.Add(nueva);
+            }
+        }
+        // 2) crear unidades por torre
+        int totalCreadas = 0;
+        foreach (var t in creadas)
+        {
+            for (int piso = 1; piso <= _genPisos; piso++)
+            {
+                for (int u = 1; u <= _genPorPiso; u++)
+                {
+                    var num = $"{piso}{u:00}";
+                    if (_unidades.Any(x => x.TorreId == t.Id && x.Numero == num)) continue;
+                    var req = new CrearUnidadRequest(num, TipoUnidad.Apartamento, t.Id, piso, 0m, null, null, null, null, null, null);
+                    var resp = await http.PostAsJsonAsync("/api/mi-copropiedad/unidades", req);
+                    if (resp.IsSuccessStatusCode) totalCreadas++;
+                }
+            }
+        }
+        _genToast = totalCreadas;
+        _huboCambios = true;
+        await CargarAsync();
+        SetMode(null);
+        _busy = false;
+    }
+
+    private async Task ImportarCsv()
+    {
+        if (CsvCount == 0) return;
+        if (_torres.Count == 0) { ShowMsg($"Crea un {AgrupacionLabelSingular.ToLower()} primero.", true); return; }
+        var torre = _torres[0];
+        var lineas = _csv.Split('\n').Select(l => l.Trim()).Where(l => !string.IsNullOrWhiteSpace(l)).ToList();
+        int ok = 0;
+        foreach (var num in lineas)
+        {
+            if (_unidades.Any(u => u.TorreId == torre.Id && u.Numero == num)) continue;
+            var req = new CrearUnidadRequest(num, TipoUnidad.Apartamento, torre.Id, null, 0m, null, null, null, null, null, null);
+            var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/unidades", req);
+            if (resp.IsSuccessStatusCode) ok++;
+        }
+        _csv = "";
+        _huboCambios = true;
+        await CargarAsync();
+        ShowMsg($"{ok} unidades importadas a {torre.Nombre}", false);
+    }
+
+    private async Task AgregarVinculo()
+    {
+        if (_selected is null || _nuevoVinculoUnidadId == Guid.Empty) return;
+        var req = new CrearVinculoUnidadRequest(_nuevoVinculoUnidadId, _nuevoVinculoFactura);
+        var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{_selected.Id}/vinculos", req);
+        if (resp.IsSuccessStatusCode)
+        {
+            var v = await resp.Content.ReadFromJsonAsync<UnidadVinculoDto>();
+            if (v is not null) _vinculos.Add(v);
+            _nuevoVinculoUnidadId = Guid.Empty;
+            _nuevoVinculoFactura = false;
+            _huboCambios = true;
+        }
+        else
+        {
+            ShowMsg("No se pudo vincular: " + await resp.Content.ReadAsStringAsync(), true);
+        }
+    }
+
+    private async Task EliminarVinculo(Guid vinculoId)
+    {
+        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/vinculos/{vinculoId}");
+        if (resp.IsSuccessStatusCode)
+        {
+            _vinculos.RemoveAll(v => v.Id == vinculoId);
+            _huboCambios = true;
+        }
+    }
+
+    private void AgregarCampoPersonalizado()
+    {
+        if (string.IsNullOrWhiteSpace(_cfLabel) || string.IsNullOrWhiteSpace(_cfValor)) return;
+        _camposPersonalizados[_cfLabel.Trim()] = _cfValor.Trim();
+        _cfLabel = "";
+        _cfValor = "";
+        _cfOpen = false;
+    }
+
+    private async Task Rebalancear()
+    {
+        _busy = true;
+        var resp = await Auth().PostAsync("/api/mi-copropiedad/unidades/rebalancear-coeficientes", null);
+        if (resp.IsSuccessStatusCode)
+        {
+            var r = await resp.Content.ReadFromJsonAsync<RebalanceoCoeficientesDto>();
+            _huboCambios = true;
+            await CargarAsync();
+            if (_selected is not null)
+            {
+                var fresh = _unidades.FirstOrDefault(u => u.Id == _selected.Id);
+                if (fresh is not null) _selected = fresh;
+                _cuota = null;
+                try { _cuota = await Auth().GetFromJsonAsync<CuotaConsolidadaDto>($"/api/mi-copropiedad/unidades/{_selected!.Id}/cuota-consolidada"); } catch { }
+            }
+            ShowMsg($"Rebalanceado: {r?.Apartamentos} aptos a {r?.CoefPorApartamento}% c/u. Suma {r?.SumaAnterior:0.##}% -> {r?.SumaNueva:0.##}%.", false);
+        }
+        else
+        {
+            ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true);
+        }
+        _busy = false;
+    }
+
+    private async Task EliminarUnidad()
+    {
+        if (_selected is null) return;
+        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades/{_selected.Id}");
+        if (resp.IsSuccessStatusCode)
+        {
+            _huboCambios = true;
+            _selected = null;
+            await CargarAsync();
+        }
+        else { ShowMsg("No se pudo eliminar", true); }
+    }
+
+    private void ShowMsg(string text, bool isError) { _msg = text; _msgError = isError; }
+
+    private void Cerrar() => Close(_huboCambios);
+}

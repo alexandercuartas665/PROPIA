@@ -1,0 +1,85 @@
+@* ModalHost - raiz unica de renderizado de modales globales.
+   Se coloca UNA SOLA VEZ en MainLayout (al final del DOM).
+   ModalService notifica via OnChange y nosotros re-renderizamos. *@
+
+@inject IModalService Modals
+@implements IDisposable
+@using Microsoft.AspNetCore.Components
+
+@foreach (var modal in Modals.Active)
+{
+    <div @key="modal.Id"
+         class="propia-modal-backdrop @(modal.Fullscreen ? "propia-modal-backdrop--fs" : "")"
+         @onclick="() => HandleBackdropClick(modal)">
+        <div class="propia-modal-shell @(modal.Fullscreen ? "propia-modal-shell--fs" : "")"
+             style="@ShellStyle(modal)"
+             @onclick:stopPropagation="true">
+            <CascadingValue Value="modal" IsFixed="true">
+                <DynamicComponent Type="modal.ComponentType"
+                                  Parameters="modal.Parameters.All.ToDictionary(p => p.Key, p => p.Value)" />
+            </CascadingValue>
+        </div>
+    </div>
+}
+
+@code {
+    protected override void OnInitialized()
+    {
+        Modals.OnChange += HandleChange;
+    }
+
+    void HandleChange()
+    {
+        // OnChange viene desde cualquier hilo; usamos InvokeAsync para tocar UI
+        InvokeAsync(StateHasChanged);
+    }
+
+    void HandleBackdropClick(ModalReference modal)
+    {
+        if (!modal.CloseOnBackdrop) return;
+        Modals.Close(modal.Id, null);
+    }
+
+    string ShellStyle(ModalReference modal) =>
+        modal.Fullscreen
+            ? "width:100%;max-width:1640px;height:95vh;"
+            : $"width:{modal.Width};max-width:96vw;";
+
+    public void Dispose()
+    {
+        Modals.OnChange -= HandleChange;
+    }
+}
+
+<style>
+    /* Backdrop + shell del modal. Usa tokens del prototipo (propia-tokens.css). */
+    .propia-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 9000;
+        background: var(--propia-bg-overlay, rgba(27, 42, 58, 0.55));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        animation: propiaModalFadeIn 0.15s ease;
+    }
+    .propia-modal-backdrop--fs { padding: 18px; }
+
+    .propia-modal-shell {
+        max-height: 94vh;
+        background: var(--propia-bg-card, #fff);
+        border-radius: var(--propia-radius-modal, 18px);
+        box-shadow: var(--propia-shadow-modal, 0 30px 70px rgba(27, 42, 58, 0.40));
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        font-family: var(--propia-font-base, 'Lexend', sans-serif);
+    }
+    .propia-modal-shell--fs { border-radius: 16px; max-height: 95vh; }
+
+    @@keyframes propiaModalFadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+</style>

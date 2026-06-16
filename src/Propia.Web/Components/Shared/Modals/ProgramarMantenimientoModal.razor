@@ -1,0 +1,342 @@
+@* ProgramarMantenimientoModal - C.1 del catalogo de componentes globales.
+   Fuente: PROPIA.dc.html L.2402-2426.
+   Reusable desde: 2.11 Mantenimiento, 2.3 sec 7 Equipos, ficha activo,
+   asistente IA (tool MCP), calendario.
+
+   Devuelve MantenimientoProgramado o null si cancelado. *@
+
+@inherits ModalBase<MantenimientoProgramado>
+@using Propia.Web.Components.Shared.Modals
+
+@* ====== HEADER ====== *@
+<div class="pmm-header">
+    <div class="pmm-header-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 4h18v18H3zM3 10h18M8 2v4M16 2v4" />
+        </svg>
+    </div>
+    <div class="pmm-header-text">
+        <div class="pmm-title">Programar mantenimiento</div>
+        <div class="pmm-subtitle">@(string.IsNullOrEmpty(ActivoNombre) ? "Activo no especificado" : ActivoNombre) - se envia al panel de Tareas</div>
+    </div>
+    <button class="pmm-close" @onclick="Cancel" type="button" aria-label="Cerrar">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6L6 18M6 6l12 12" />
+        </svg>
+    </button>
+</div>
+
+@* ====== BODY ====== *@
+<div class="pmm-body">
+    @* Proveedor (obligatorio) *@
+    <div class="pmm-field">
+        <label class="pmm-label">Proveedor / tercero <span class="pmm-required">*</span></label>
+        <input @bind="_draft.Proveedor"
+               @bind:event="oninput"
+               placeholder="Ej. Otis - Plomeria SAS"
+               class="pmm-input" />
+    </div>
+
+    @* Contrato (opcional) *@
+    <div class="pmm-field">
+        <label class="pmm-label">Contrato relacionado <span class="pmm-optional">(opcional)</span></label>
+        <select @bind="_draft.ContratoId" class="pmm-input">
+            <option value="">- Sin contrato -</option>
+            @if (Contratos != null)
+            {
+                @foreach (var c in Contratos)
+                {
+                    <option value="@c.Id">@c.Nombre</option>
+                }
+            }
+        </select>
+    </div>
+
+    @* Frecuencia (chips) *@
+    <div class="pmm-field">
+        <label class="pmm-label">Frecuencia</label>
+        <div class="pmm-chips">
+            @foreach (var f in _frecuencias)
+            {
+                <button type="button"
+                        class="pmm-chip @(_draft.Frecuencia == f ? "pmm-chip--active" : "")"
+                        @onclick="() => _draft.Frecuencia = f">@f</button>
+            }
+        </div>
+    </div>
+
+    @* Dia + Hora *@
+    <div class="pmm-row">
+        <div class="pmm-field pmm-grow">
+            <label class="pmm-label">Dia de la semana</label>
+            <div class="pmm-days">
+                @for (int i = 0; i < _dias.Length; i++)
+                {
+                    var idx = i;
+                    var d = _dias[idx];
+                    <button type="button"
+                            class="pmm-day @(_draft.DiaSemana == idx ? "pmm-day--active" : "")"
+                            @onclick="() => _draft.DiaSemana = idx">@d</button>
+                }
+            </div>
+        </div>
+        <div class="pmm-field pmm-w100">
+            <label class="pmm-label">Hora</label>
+            <input @bind="_draft.Hora" placeholder="9:00" class="pmm-input" />
+        </div>
+    </div>
+
+    @* Costo (opcional) *@
+    <div class="pmm-field">
+        <label class="pmm-label">Costo del servicio <span class="pmm-optional">(opcional)</span></label>
+        <input type="number" @bind="_draft.Costo" placeholder="Ej. 600000" class="pmm-input" />
+    </div>
+
+    @* Nota *@
+    <div class="pmm-field">
+        <label class="pmm-label">Nota / alcance</label>
+        <textarea @bind="_draft.Nota" rows="2" placeholder="Que incluye el servicio?" class="pmm-input pmm-textarea"></textarea>
+    </div>
+
+    @* Callout informativo *@
+    <div class="pmm-callout">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pmm-callout-icon">
+            <path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+        </svg>
+        <div class="pmm-callout-text">
+            Al programar, aparece en el <b>cronograma semanal</b> y se crea una tarjeta caracterizada como <b>Mantenimiento</b> en el panel de Tareas.
+        </div>
+    </div>
+</div>
+
+@* ====== FOOTER ====== *@
+<div class="pmm-footer">
+    <button type="button" class="pmm-btn pmm-btn--ghost" @onclick="Cancel">Cancelar</button>
+    <button type="button" class="pmm-btn pmm-btn--brand" @onclick="HandleConfirm" disabled="@(!IsValid)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4">
+            <path d="M20 6L9 17l-5-5" />
+        </svg>
+        Programar y enviar a Tareas
+    </button>
+</div>
+
+@code {
+    // ----------- Parametros recibidos -----------
+
+    [Parameter] public string? ActivoNombre { get; set; }
+    [Parameter] public Guid? ActivoId { get; set; }
+    [Parameter] public List<ContratoOption>? Contratos { get; set; }
+    [Parameter] public string? ProveedorPredeterminado { get; set; }
+
+    // ----------- Estado interno -----------
+
+    private MantenimientoProgramado _draft = new();
+
+    private readonly string[] _frecuencias =
+    {
+        "Unica", "Semanal", "Mensual", "Trimestral", "Semestral", "Anual"
+    };
+
+    private readonly string[] _dias = { "L", "M", "X", "J", "V", "S", "D" };
+
+    protected override void OnInitialized()
+    {
+        // Pre-llenar con los parametros entrantes
+        _draft.ActivoId = ActivoId;
+        _draft.ActivoNombre = ActivoNombre ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(ProveedorPredeterminado))
+        {
+            _draft.Proveedor = ProveedorPredeterminado;
+        }
+        // Valores razonables por defecto
+        _draft.Frecuencia ??= "Mensual";
+        _draft.DiaSemana ??= 0; // Lunes
+        _draft.Hora ??= "9:00";
+    }
+
+    private bool IsValid =>
+        !string.IsNullOrWhiteSpace(_draft.Proveedor) &&
+        !string.IsNullOrWhiteSpace(_draft.Frecuencia) &&
+        _draft.DiaSemana.HasValue &&
+        !string.IsNullOrWhiteSpace(_draft.Hora);
+
+    private void HandleConfirm()
+    {
+        if (!IsValid) return;
+        Close(_draft);
+    }
+}
+
+@* ====== ESTILOS - usan tokens del prototipo (propia-tokens.css) ====== *@
+<style>
+    /* Prefijo pmm- = ProgramarMantenimientoModal */
+    .pmm-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 18px 24px;
+        border-bottom: 1px solid var(--propia-border-divider);
+        flex-shrink: 0;
+    }
+
+    .pmm-header-icon {
+        width: 38px;
+        height: 38px;
+        border-radius: var(--propia-radius-icon);
+        background: var(--propia-brand-soft);
+        color: var(--propia-brand);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+
+    .pmm-header-text { flex: 1; }
+    .pmm-title { font-size: 16px; font-weight: 800; letter-spacing: -0.3px; color: var(--propia-text-h1); }
+    .pmm-subtitle { font-size: 12px; color: var(--propia-text-muted); margin-top: 1px; }
+
+    .pmm-close {
+        width: 34px; height: 34px;
+        border-radius: 9px;
+        display: flex; align-items: center; justify-content: center;
+        color: var(--propia-text-muted);
+        border: 1px solid var(--propia-border-card);
+        background: transparent;
+        cursor: pointer;
+        transition: background var(--propia-anim-base), color var(--propia-anim-base);
+    }
+    .pmm-close:hover { background: var(--propia-bg-app); color: var(--propia-text-body); }
+
+    .pmm-body {
+        overflow-y: auto;
+        padding: 20px 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+    }
+
+    .pmm-field { display: flex; flex-direction: column; }
+    .pmm-label {
+        font-size: 11px;
+        color: var(--propia-text-muted);
+        font-weight: 700;
+        margin-bottom: 5px;
+    }
+    .pmm-required { color: var(--propia-error); margin-left: 2px; }
+    .pmm-optional { font-weight: 600; color: var(--propia-text-faint); margin-left: 4px; }
+
+    .pmm-input {
+        border: 1px solid var(--propia-border-card);
+        border-radius: var(--propia-radius-input);
+        padding: 10px 12px;
+        font-size: 13.5px;
+        color: var(--propia-text-body);
+        background: var(--propia-bg-card);
+        outline: none;
+        font-family: inherit;
+        transition: border-color var(--propia-anim-base);
+    }
+    .pmm-input:focus { border-color: var(--propia-brand); }
+    .pmm-textarea { resize: vertical; line-height: 1.5; }
+
+    .pmm-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .pmm-chip {
+        font-size: 11.5px;
+        font-weight: 700;
+        padding: 7px 12px;
+        border-radius: var(--propia-radius-chip);
+        border: 1px solid var(--propia-border-card);
+        color: var(--propia-text-secondary);
+        background: var(--propia-bg-card);
+        cursor: pointer;
+        transition: border-color var(--propia-anim-base), color var(--propia-anim-base), background var(--propia-anim-base);
+    }
+    .pmm-chip:hover { border-color: var(--propia-brand); }
+    .pmm-chip--active {
+        border-color: var(--propia-brand);
+        color: var(--propia-text-inverse);
+        background: var(--propia-brand);
+    }
+
+    .pmm-row { display: grid; grid-template-columns: 1fr 100px; gap: 12px; }
+    .pmm-grow { min-width: 0; }
+    .pmm-w100 { min-width: 0; }
+
+    .pmm-days { display: flex; gap: 4px; }
+    .pmm-day {
+        flex: 1;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 8px 0;
+        border-radius: 7px;
+        border: 1px solid var(--propia-border-card);
+        color: var(--propia-text-secondary);
+        background: var(--propia-bg-card);
+        cursor: pointer;
+        transition: border-color var(--propia-anim-base), color var(--propia-anim-base), background var(--propia-anim-base);
+    }
+    .pmm-day:hover { border-color: var(--propia-brand); }
+    .pmm-day--active {
+        border-color: var(--propia-brand);
+        color: var(--propia-text-inverse);
+        background: var(--propia-brand);
+    }
+
+    .pmm-callout {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 11px 13px;
+        background: var(--propia-brand-soft-2);
+        border: 1px solid var(--propia-brand-border);
+        border-radius: var(--propia-radius-icon);
+    }
+    .pmm-callout-icon { color: var(--propia-brand); flex-shrink: 0; }
+    .pmm-callout-text {
+        font-size: 11.5px;
+        color: var(--propia-brand-text-2);
+        line-height: 1.45;
+    }
+
+    .pmm-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 9px;
+        padding: 16px 24px;
+        border-top: 1px solid var(--propia-border-divider);
+        flex-shrink: 0;
+    }
+
+    .pmm-btn {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 10px 18px;
+        border-radius: var(--propia-radius-input);
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        font-family: inherit;
+        border: none;
+        transition: background var(--propia-anim-base), border-color var(--propia-anim-base);
+    }
+    .pmm-btn--ghost {
+        background: var(--propia-bg-card);
+        border: 1px solid var(--propia-border-card);
+        color: var(--propia-text-secondary);
+        font-weight: 600;
+        padding: 10px 16px;
+    }
+    .pmm-btn--ghost:hover { border-color: var(--propia-border-card-2); }
+    .pmm-btn--brand {
+        background: var(--propia-brand);
+        color: var(--propia-text-inverse);
+        box-shadow: var(--propia-glow-brand-sm);
+    }
+    .pmm-btn--brand:hover { background: var(--propia-brand-hover); }
+    .pmm-btn--brand:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        box-shadow: none;
+    }
+</style>

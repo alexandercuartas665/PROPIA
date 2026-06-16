@@ -1,0 +1,357 @@
+@* GestionarZonasModal - sec 6 Zonas Comunes.
+   Lista de zonas con categoria, capacidad, reservable, tarifa, estado operativo.
+   Form para crear zona + cambiar estado mantenimiento + eliminar. *@
+
+@inherits ModalBase<bool>
+@using Propia.Web.Components.Shared.Modals
+@using Propia.Application.MiCopropiedad
+@using Propia.Domain.Enums
+
+@inject IHttpClientFactory HttpFactory
+
+@* ====== HEADER ====== *@
+<div class="gzn-header">
+    <div class="gzn-header-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="3" width="20" height="14" rx="2"/>
+            <path d="M2 17h20M8 21h8"/>
+        </svg>
+    </div>
+    <div class="gzn-header-text">
+        <div class="gzn-title">6. Zonas comunes</div>
+        <div class="gzn-subtitle">Salones, gimnasio, parqueaderos, BBQ, etc</div>
+    </div>
+    <button class="gzn-close" @onclick="Cerrar" type="button" aria-label="Cerrar">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+</div>
+
+@* ====== BODY ====== *@
+<div class="gzn-body">
+
+    <div class="gzn-summary">
+        <span class="gzn-summary-strong">@_zonas.Count(z => z.Estado == EstadoZonaComunMantenimiento.Activa) activas</span>
+        <span class="gzn-summary-sep">·</span>
+        <span>@_zonas.Count(z => z.Estado == EstadoZonaComunMantenimiento.EnMantenimiento) en mantenimiento</span>
+        <span class="gzn-summary-sep">·</span>
+        <span>@_zonas.Count(z => z.EsReservable) reservables</span>
+    </div>
+
+    @if (_zonas.Count == 0)
+    {
+        <div class="gzn-empty">Sin zonas comunes registradas.</div>
+    }
+    else
+    {
+        <div class="gzn-grid">
+            @foreach (var z in _zonas.OrderBy(x => x.Categoria).ThenBy(x => x.Nombre))
+            {
+                <div class="gzn-card">
+                    <div class="gzn-card-icon">
+                        @CategoriaIcon(z.Categoria)
+                    </div>
+                    <div class="gzn-card-id">
+                        <div class="gzn-card-name">@z.Nombre</div>
+                        <div class="gzn-card-meta">
+                            <span>@CategoriaLabel(z.Categoria)</span>
+                            @if (z.CapacidadPersonas.HasValue) { <span> · cap @z.CapacidadPersonas pers</span> }
+                            @if (z.EsReservable)
+                            {
+                                <span> · </span>
+                                <span class="gzn-pill gzn-pill--brand">Reservable</span>
+                                @if (z.TarifaReserva.HasValue && z.TarifaReserva > 0) { <span> $ @z.TarifaReserva.Value.ToString("N0")</span> }
+                            }
+                        </div>
+                        @if (!string.IsNullOrEmpty(z.HorariosUso) || !string.IsNullOrEmpty(z.ReglasUso))
+                        {
+                            <div class="gzn-card-extra">
+                                @if (!string.IsNullOrEmpty(z.HorariosUso)) { <span>Horarios: @z.HorariosUso</span> }
+                                @if (!string.IsNullOrEmpty(z.HorariosUso) && !string.IsNullOrEmpty(z.ReglasUso)) { <span> · </span> }
+                                @if (!string.IsNullOrEmpty(z.ReglasUso)) { <span>Reglas: @z.ReglasUso</span> }
+                            </div>
+                        }
+                    </div>
+                    <span class="gzn-badge @EstadoClass(z.Estado)">@EstadoLabel(z.Estado)</span>
+                    <select class="gzn-state-select" value="@z.Estado" @onchange="(e) => CambiarEstado(z.Id, e)">
+                        @foreach (var s in Enum.GetValues<EstadoZonaComunMantenimiento>())
+                        {
+                            <option value="@s">@EstadoLabel(s)</option>
+                        }
+                    </select>
+                    <button class="gzn-del" type="button" @onclick="() => Eliminar(z.Id)" title="Eliminar">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+                    </button>
+                </div>
+            }
+        </div>
+    }
+
+    @* Form crear *@
+    <div class="gzn-form">
+        <div class="gzn-form-title">+ Crear nueva zona</div>
+        <div class="gzn-form-row">
+            <input class="gzn-input gzn-grow" @bind="_form.Nombre" @bind:event="oninput" placeholder="Nombre *" />
+            <select class="gzn-input" @bind="_form.Categoria">
+                @foreach (var c in Enum.GetValues<CategoriaZonaComun>())
+                {
+                    <option value="@c">@CategoriaLabel(c)</option>
+                }
+            </select>
+            <input type="number" class="gzn-input" style="width:140px" @bind="_form.CapacidadPersonas" placeholder="Capacidad" />
+        </div>
+        <div class="gzn-form-row">
+            <input class="gzn-input gzn-grow" @bind="_form.HorariosUso" @bind:event="oninput" placeholder="Horarios (ej. L-V 8-22, S-D 8-23)" />
+            <label class="gzn-check">
+                <input type="checkbox" @bind="_form.EsReservable" />
+                <span>Reservable</span>
+            </label>
+            @if (_form.EsReservable)
+            {
+                <input type="number" step="any" class="gzn-input" style="width:160px" @bind="_form.TarifaReserva" placeholder="Tarifa reserva" />
+            }
+        </div>
+        <div class="gzn-form-row">
+            <input class="gzn-input gzn-grow" @bind="_form.ReglasUso" @bind:event="oninput" placeholder="Reglas de uso (opcional)" />
+            <input class="gzn-input gzn-grow" @bind="_form.Descripcion" @bind:event="oninput" placeholder="Descripcion (opcional)" />
+            <button class="gzn-btn-brand" type="button" @onclick="Crear" disabled="@(_busy || !FormValido)">Crear</button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_msg))
+    {
+        <div class="gzn-msg @(_msgError ? "gzn-msg--err" : "gzn-msg--ok")">@_msg</div>
+    }
+</div>
+
+<style>
+    .gzn-header {
+        display: flex; align-items: center; gap: 13px;
+        padding: 18px 24px; border-bottom: 1px solid #EEF3F8; flex-shrink: 0;
+    }
+    .gzn-header-icon {
+        width: 38px; height: 38px; border-radius: 10px;
+        background: var(--propia-brand-soft, #F1ECFD);
+        color: var(--propia-brand, #6D4FE3);
+        display: flex; align-items: center; justify-content: center;
+    }
+    .gzn-header-text { flex: 1; }
+    .gzn-title { font-size: 16px; font-weight: 800; letter-spacing: -0.3px; color: #1B2A3A; }
+    .gzn-subtitle { font-size: 12.5px; color: #7C98B6; }
+    .gzn-close {
+        width: 34px; height: 34px; border-radius: 9px;
+        display: flex; align-items: center; justify-content: center;
+        color: #7C98B6; border: 1px solid #E1E8EE; background: #fff; cursor: pointer;
+    }
+    .gzn-close:hover { background: #F5F8FA; color: #33475B; }
+
+    .gzn-body { padding: 20px 24px; overflow-y: auto; font-family: var(--propia-font-base, 'Lexend', sans-serif); }
+
+    .gzn-summary {
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+        margin-bottom: 14px; font-size: 13px; color: #516F90;
+    }
+    .gzn-summary-strong { color: #33475B; font-weight: 700; }
+    .gzn-summary-sep { color: #A6B7C8; }
+
+    .gzn-empty {
+        background: #F8FAFC; border: 1px dashed #D7E0EA; border-radius: 11px;
+        padding: 20px; text-align: center; font-size: 13px; color: #A6B7C8; margin-bottom: 14px;
+    }
+
+    .gzn-grid { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+    .gzn-card {
+        display: flex; align-items: center; gap: 11px;
+        border: 1px solid #E1E8EE; border-radius: 11px;
+        padding: 12px 14px; background: #fff;
+    }
+    .gzn-card-icon {
+        width: 36px; height: 36px; border-radius: 9px;
+        background: var(--propia-brand-soft, #F1ECFD); color: var(--propia-brand, #6D4FE3);
+        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .gzn-card-id { flex: 1; min-width: 0; }
+    .gzn-card-name { font-size: 13.5px; font-weight: 700; color: #33475B; }
+    .gzn-card-meta { font-size: 11.5px; color: #7C98B6; margin-top: 2px; }
+    .gzn-card-extra { font-size: 10.5px; color: #A6B7C8; margin-top: 4px; }
+    .gzn-pill {
+        font-size: 10px; font-weight: 700;
+        padding: 1px 7px; border-radius: 5px;
+    }
+    .gzn-pill--brand { color: var(--propia-brand, #6D4FE3); background: var(--propia-brand-soft, #F1ECFD); }
+    .gzn-badge { font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 6px; }
+    .gzn-badge--ok { color: #1A8754; background: #E6F6EE; }
+    .gzn-badge--warn { color: #B45309; background: #FEF3C7; }
+    .gzn-badge--err { color: #B91C1C; background: #FEE2E2; }
+    .gzn-state-select {
+        border: 1px solid #E1E8EE; border-radius: 8px;
+        padding: 6px 8px; font-size: 11.5px; color: #33475B;
+        background: #fff; outline: none; font-family: inherit;
+    }
+    .gzn-del {
+        width: 28px; height: 28px; border-radius: 7px;
+        display: flex; align-items: center; justify-content: center;
+        color: #C3D0DD; border: 0; background: transparent;
+        cursor: pointer; flex-shrink: 0;
+    }
+    .gzn-del:hover { background: #FDE7E7; color: #D7263D; }
+
+    .gzn-form {
+        background: #F8FAFC; border: 1px dashed #D7E0EA; border-radius: 12px;
+        padding: 14px;
+    }
+    .gzn-form-title { font-size: 13px; font-weight: 700; color: #1B2A3A; margin-bottom: 10px; }
+    .gzn-form-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+    .gzn-form-row:last-child { margin-bottom: 0; }
+    .gzn-input {
+        border: 1px solid #E1E8EE; border-radius: 9px;
+        padding: 9px 11px; font-size: 13px; color: #33475B;
+        background: #fff; outline: none; min-width: 0; font-family: inherit; box-sizing: border-box;
+    }
+    .gzn-input:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .gzn-grow { flex: 1; min-width: 140px; }
+    .gzn-check {
+        display: flex; align-items: center; gap: 7px;
+        font-size: 13px; color: #33475B; font-weight: 600; cursor: pointer;
+    }
+    .gzn-check input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--propia-brand, #6D4FE3); }
+    .gzn-btn-brand {
+        padding: 9px 17px; border-radius: 9px;
+        background: var(--propia-brand, #6D4FE3); color: #fff;
+        font-size: 13px; font-weight: 700; border: 0; cursor: pointer;
+        box-shadow: 0 4px 12px rgba(109,79,227,.30); white-space: nowrap;
+    }
+    .gzn-btn-brand:hover { background: var(--propia-brand-hover, #5838C9); }
+    .gzn-btn-brand:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+
+    .gzn-msg { margin-top: 12px; padding: 9px 12px; font-size: 12.5px; border-radius: 9px; border: 1px solid; }
+    .gzn-msg--ok { color: #15703F; background: #E6F6EE; border-color: #B6E2C9; }
+    .gzn-msg--err { color: #B91C1C; background: #FEE2E2; border-color: #FECACA; }
+
+    [data-bs-theme="dark"] .gzn-title,
+    [data-bs-theme="dark"] .gzn-card-name { color: #E5E7EB; }
+    [data-bs-theme="dark"] .gzn-card,
+    [data-bs-theme="dark"] .gzn-form { background: #232B40; border-color: #2D3650; }
+</style>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+
+    private List<ZonaComunDto> _zonas = new();
+    private ZonaForm _form = new();
+    private bool _busy;
+    private string _msg = "";
+    private bool _msgError;
+    private bool _huboCambios;
+
+    private class ZonaForm
+    {
+        public string Nombre { get; set; } = "";
+        public CategoriaZonaComun Categoria { get; set; } = CategoriaZonaComun.Social;
+        public string Descripcion { get; set; } = "";
+        public bool EsReservable { get; set; }
+        public decimal? TarifaReserva { get; set; }
+        public int? CapacidadPersonas { get; set; }
+        public string HorariosUso { get; set; } = "";
+        public string ReglasUso { get; set; } = "";
+    }
+
+    private bool FormValido => !string.IsNullOrWhiteSpace(_form.Nombre);
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    private async Task CargarAsync()
+    {
+        try { _zonas = await Auth().GetFromJsonAsync<List<ZonaComunDto>>("/api/mi-copropiedad/zonas") ?? new(); }
+        catch { _zonas = new(); }
+    }
+
+    private async Task Crear()
+    {
+        if (!FormValido) return;
+        _busy = true;
+        var req = new CrearZonaComunRequest(
+            _form.Nombre.Trim(),
+            _form.Categoria,
+            string.IsNullOrWhiteSpace(_form.Descripcion) ? null : _form.Descripcion.Trim(),
+            _form.EsReservable,
+            _form.EsReservable ? _form.TarifaReserva : null,
+            _form.CapacidadPersonas,
+            string.IsNullOrWhiteSpace(_form.HorariosUso) ? null : _form.HorariosUso.Trim(),
+            string.IsNullOrWhiteSpace(_form.ReglasUso) ? null : _form.ReglasUso.Trim());
+        var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/zonas", req);
+        if (resp.IsSuccessStatusCode)
+        {
+            _form = new ZonaForm();
+            _huboCambios = true;
+            await CargarAsync();
+            ShowMsg("Zona creada.", false);
+        }
+        else { ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true); }
+        _busy = false;
+    }
+
+    private async Task CambiarEstado(Guid id, ChangeEventArgs e)
+    {
+        if (!Enum.TryParse<EstadoZonaComunMantenimiento>(e.Value?.ToString(), out var nuevo)) return;
+        var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/zonas/{id}/estado",
+            new CambiarEstadoZonaRequest(nuevo));
+        if (resp.IsSuccessStatusCode) { _huboCambios = true; await CargarAsync(); }
+        else { ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true); }
+    }
+
+    private async Task Eliminar(Guid id)
+    {
+        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/zonas/{id}");
+        if (resp.IsSuccessStatusCode) { _huboCambios = true; await CargarAsync(); }
+    }
+
+    private void ShowMsg(string text, bool isError) { _msg = text; _msgError = isError; }
+    private void Cerrar() => Close(_huboCambios);
+
+    private static string CategoriaLabel(CategoriaZonaComun c) => c switch
+    {
+        CategoriaZonaComun.Social => "Social",
+        CategoriaZonaComun.Deportiva => "Deportiva",
+        CategoriaZonaComun.Servicios => "Servicios",
+        CategoriaZonaComun.Circulacion => "Circulacion",
+        CategoriaZonaComun.Recreativa => "Recreativa",
+        _ => "Otros"
+    };
+
+    private static string EstadoLabel(EstadoZonaComunMantenimiento e) => e switch
+    {
+        EstadoZonaComunMantenimiento.Activa => "Activa",
+        EstadoZonaComunMantenimiento.EnMantenimiento => "En mantenimiento",
+        EstadoZonaComunMantenimiento.Inactiva => "Inactiva",
+        _ => e.ToString()
+    };
+
+    private static string EstadoClass(EstadoZonaComunMantenimiento e) => e switch
+    {
+        EstadoZonaComunMantenimiento.Activa => "gzn-badge--ok",
+        EstadoZonaComunMantenimiento.EnMantenimiento => "gzn-badge--warn",
+        _ => "gzn-badge--err"
+    };
+
+    private static MarkupString CategoriaIcon(CategoriaZonaComun c)
+    {
+        var path = c switch
+        {
+            CategoriaZonaComun.Social => "<path d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z'/>",
+            CategoriaZonaComun.Deportiva => "<path d='M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zM2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20'/>",
+            CategoriaZonaComun.Recreativa => "<path d='M6 21V11l6-4 6 4v10M9 21v-6h6v6'/>",
+            CategoriaZonaComun.Servicios => "<path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6'/>",
+            CategoriaZonaComun.Circulacion => "<path d='M5 12h14M13 6l6 6-6 6'/>",
+            _ => "<rect x='3' y='3' width='18' height='18' rx='2'/>"
+        };
+        return new MarkupString($"<svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'>{path}</svg>");
+    }
+}

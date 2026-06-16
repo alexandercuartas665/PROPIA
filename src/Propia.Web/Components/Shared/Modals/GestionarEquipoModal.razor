@@ -1,0 +1,379 @@
+@* GestionarEquipoModal - replica del prototipo PROPIA.dc.html L.800-843.
+   Componente reutilizable: carga miembros del equipo, permite agregar (vincula
+   o crea Persona por documento + asigna RolEquipo + tipo Interno/Externo) y
+   desactivar. Layout cards 2-col con avatar gradient brand. *@
+
+@inherits ModalBase<bool>
+@using Propia.Web.Components.Shared.Modals
+@using Propia.Application.MiCopropiedad
+@using Propia.Domain.Enums
+
+@inject IHttpClientFactory HttpFactory
+
+@* ====== HEADER ====== *@
+<div class="gem-header">
+    <div class="gem-header-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87"/>
+        </svg>
+    </div>
+    <div class="gem-header-text">
+        <div class="gem-title">3. Equipo de trabajo</div>
+        <div class="gem-subtitle">Quienes lo manejan?</div>
+    </div>
+    <button class="gem-close" @onclick="Cerrar" type="button" aria-label="Cerrar">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+</div>
+
+@* ====== BODY ====== *@
+<div class="gem-body">
+    <div class="gem-summary">
+        <span class="gem-summary-strong">@_equipo.Count(m => m.Activo) activos</span>
+        <span class="gem-summary-sep">-</span>
+        <span>@_equipo.Count(m => !m.Activo) inactivos</span>
+        <span class="gem-summary-sep">-</span>
+        <span>@_equipo.Count(m => m.Tipo == TipoVinculacion.Interno) internos</span>
+        <span class="gem-summary-sep">·</span>
+        <span>@_equipo.Count(m => m.Tipo == TipoVinculacion.Externo) externos</span>
+    </div>
+
+    @* Cards del equipo *@
+    @if (_equipo.Count == 0)
+    {
+        <div class="gem-empty">
+            <div class="gem-empty-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg></div>
+            <div class="gem-empty-title">Aun no hay equipo vinculado</div>
+            <div class="gem-empty-sub">Usa el formulario de abajo para agregar el primer miembro.</div>
+        </div>
+    }
+    else
+    {
+        <div class="gem-grid">
+            @foreach (var m in _equipo)
+            {
+                var ini = Iniciales(m.PersonaNombre);
+                <div class="gem-card @(!m.Activo ? "gem-card--inactivo" : "")">
+                    <div class="gem-avatar">@ini</div>
+                    <div class="gem-card-id">
+                        <div class="gem-card-name">@m.PersonaNombre</div>
+                        <div class="gem-card-meta">
+                            @(m.Rol == RolEquipo.Otro ? (m.RolPersonalizado ?? "Otro") : m.Rol.ToString())
+                            · @m.Tipo
+                            @(string.IsNullOrEmpty(m.Telefono) ? "" : $" · {m.Telefono}")
+                        </div>
+                    </div>
+                    @if (m.Activo)
+                    {
+                        <span class="gem-badge gem-badge--ok">Activo</span>
+                        <button class="gem-del" type="button" @onclick="() => DesactivarMiembro(m.Id)" title="Desactivar">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+                        </button>
+                    }
+                    else
+                    {
+                        <span class="gem-badge gem-badge--inact">Inactivo</span>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    @* Form de agregar persona al equipo *@
+    <div class="gem-form">
+        <div class="gem-form-title">+ Vincular nueva persona al equipo</div>
+        <div class="gem-form-row">
+            <input class="gem-input gem-grow" @bind="_form.Documento" @bind:event="oninput" placeholder="Documento *" />
+            <input class="gem-input gem-grow" @bind="_form.Nombres" @bind:event="oninput" placeholder="Nombres *" />
+            <input class="gem-input gem-grow" @bind="_form.Apellidos" @bind:event="oninput" placeholder="Apellidos *" />
+        </div>
+        <div class="gem-form-row">
+            <input class="gem-input gem-grow" @bind="_form.Email" @bind:event="oninput" placeholder="Email" />
+            <input class="gem-input gem-grow" @bind="_form.Telefono" @bind:event="oninput" placeholder="Telefono" />
+        </div>
+        <div class="gem-form-row">
+            <select class="gem-input gem-grow" @bind="_form.Rol">
+                @foreach (var r in Enum.GetValues<RolEquipo>())
+                {
+                    <option value="@r">@RolLabel(r)</option>
+                }
+            </select>
+            @if (_form.Rol == RolEquipo.Otro)
+            {
+                <input class="gem-input gem-grow" @bind="_form.RolPersonalizado" @bind:event="oninput" placeholder="Rol personalizado" />
+            }
+            <select class="gem-input" @bind="_form.Tipo">
+                <option value="@TipoVinculacion.Interno">Interno</option>
+                <option value="@TipoVinculacion.Externo">Externo</option>
+            </select>
+            <button class="gem-btn-brand" type="button" @onclick="AgregarMiembro" disabled="@(_busy || !FormValido)">
+                @if (_busy)
+                {
+                    <span>Vinculando...</span>
+                }
+                else
+                {
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+                    <span>Agregar</span>
+                }
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_msg))
+    {
+        <div class="gem-msg @(_msgError ? "gem-msg--err" : "gem-msg--ok")">@_msg</div>
+    }
+</div>
+
+<style>
+    .gem-header {
+        display: flex; align-items: center; gap: 13px;
+        padding: 18px 24px;
+        border-bottom: 1px solid #EEF3F8;
+        flex-shrink: 0;
+    }
+    .gem-header-icon {
+        width: 38px; height: 38px; border-radius: 10px;
+        background: var(--propia-brand-soft, #F1ECFD);
+        color: var(--propia-brand, #6D4FE3);
+        display: flex; align-items: center; justify-content: center;
+    }
+    .gem-header-text { flex: 1; }
+    .gem-title { font-size: 16px; font-weight: 800; letter-spacing: -0.3px; color: #1B2A3A; }
+    .gem-subtitle { font-size: 12.5px; color: #7C98B6; }
+    .gem-close {
+        width: 34px; height: 34px; border-radius: 9px;
+        display: flex; align-items: center; justify-content: center;
+        color: #7C98B6; border: 1px solid #E1E8EE; background: #fff; cursor: pointer;
+    }
+    .gem-close:hover { background: #F5F8FA; color: #33475B; }
+
+    .gem-body {
+        padding: 22px 24px;
+        overflow-y: auto;
+        font-family: var(--propia-font-base, 'Lexend', sans-serif);
+    }
+
+    .gem-summary {
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+        margin-bottom: 16px;
+        font-size: 13px; color: #516F90;
+    }
+    .gem-summary-strong { color: #33475B; font-weight: 700; }
+    .gem-summary-sep { color: #A6B7C8; }
+
+    .gem-empty {
+        background: #F8FAFC; border: 1px dashed #D7E0EA; border-radius: 12px;
+        padding: 30px 16px; text-align: center; margin-bottom: 14px;
+    }
+    .gem-empty-icon {
+        width: 50px; height: 50px; border-radius: 12px;
+        background: #F1ECFD; color: var(--propia-brand, #6D4FE3);
+        display: flex; align-items: center; justify-content: center;
+        margin: 0 auto 12px;
+    }
+    .gem-empty-title { font-size: 14px; font-weight: 700; color: #516F90; }
+    .gem-empty-sub { font-size: 12.5px; color: #A6B7C8; margin-top: 4px; }
+
+    .gem-grid {
+        display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
+        margin-bottom: 18px;
+    }
+    .gem-card {
+        display: flex; align-items: center; gap: 11px;
+        border: 1px solid #E1E8EE; border-radius: 11px;
+        padding: 12px 14px; background: #fff;
+    }
+    .gem-card--inactivo { opacity: 0.6; }
+    .gem-avatar {
+        width: 38px; height: 38px; border-radius: 9px;
+        background: linear-gradient(135deg, #7C5CE8, #5838C9);
+        color: #fff; font-size: 13px; font-weight: 700;
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+    }
+    .gem-card-id { flex: 1; min-width: 0; }
+    .gem-card-name { font-size: 13.5px; font-weight: 700; color: #33475B; }
+    .gem-card-meta { font-size: 11.5px; color: #A6B7C8; margin-top: 2px; }
+    .gem-badge {
+        font-size: 10px; font-weight: 700;
+        padding: 3px 8px; border-radius: 6px;
+    }
+    .gem-badge--ok { color: #1A8754; background: #E6F6EE; }
+    .gem-badge--inact { color: #6B7280; background: #F3F4F6; }
+    .gem-del {
+        width: 28px; height: 28px; border-radius: 7px;
+        display: flex; align-items: center; justify-content: center;
+        color: #C3D0DD; border: 0; background: transparent;
+        cursor: pointer; flex-shrink: 0;
+    }
+    .gem-del:hover { background: #FDE7E7; color: #D7263D; }
+
+    .gem-form {
+        background: #F8FAFC; border: 1px dashed #D7E0EA; border-radius: 12px;
+        padding: 14px;
+    }
+    .gem-form-title { font-size: 13px; font-weight: 700; color: #1B2A3A; margin-bottom: 10px; }
+    .gem-form-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+    .gem-form-row:last-child { margin-bottom: 0; }
+    .gem-input {
+        border: 1px solid #E1E8EE; border-radius: 9px;
+        padding: 9px 11px; font-size: 13px; color: #33475B;
+        background: #fff; outline: none; min-width: 0;
+        font-family: inherit; box-sizing: border-box;
+    }
+    .gem-input:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .gem-grow { flex: 1; min-width: 130px; }
+    .gem-btn-brand {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 9px 15px; border-radius: 9px;
+        background: var(--propia-brand, #6D4FE3); color: #fff;
+        font-size: 13px; font-weight: 700; border: 0; cursor: pointer;
+        box-shadow: 0 4px 12px rgba(109,79,227,.30);
+    }
+    .gem-btn-brand:hover { background: var(--propia-brand-hover, #5838C9); }
+    .gem-btn-brand:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+
+    .gem-msg { margin-top: 12px; padding: 9px 12px; font-size: 12.5px; border-radius: 9px; border: 1px solid; }
+    .gem-msg--ok { color: #15703F; background: #E6F6EE; border-color: #B6E2C9; }
+    .gem-msg--err { color: #B91C1C; background: #FEE2E2; border-color: #FECACA; }
+
+    /* Dark mode */
+    [data-bs-theme="dark"] .gem-title,
+    [data-bs-theme="dark"] .gem-card-name { color: #E5E7EB; }
+    [data-bs-theme="dark"] .gem-card,
+    [data-bs-theme="dark"] .gem-form { background: #232B40; border-color: #2D3650; }
+    [data-bs-theme="dark"] .gem-empty { background: #1B2233; border-color: #2D3650; }
+</style>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+
+    private List<MiembroEquipoDto> _equipo = new();
+    private MiembroForm _form = new();
+    private bool _busy;
+    private string _msg = "";
+    private bool _msgError;
+    private bool _huboCambios;
+
+    private class MiembroForm
+    {
+        public string Documento { get; set; } = "";
+        public string Nombres { get; set; } = "";
+        public string Apellidos { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string Telefono { get; set; } = "";
+        public RolEquipo Rol { get; set; } = RolEquipo.AdministradorDelegado;
+        public string RolPersonalizado { get; set; } = "";
+        public TipoVinculacion Tipo { get; set; } = TipoVinculacion.Interno;
+    }
+
+    private bool FormValido =>
+        !string.IsNullOrWhiteSpace(_form.Documento) &&
+        !string.IsNullOrWhiteSpace(_form.Nombres) &&
+        !string.IsNullOrWhiteSpace(_form.Apellidos) &&
+        (_form.Rol != RolEquipo.Otro || !string.IsNullOrWhiteSpace(_form.RolPersonalizado));
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            _equipo = await Auth().GetFromJsonAsync<List<MiembroEquipoDto>>("/api/mi-copropiedad/equipo") ?? new();
+        }
+        catch (Exception ex) { ShowMsg(ex.Message, true); }
+    }
+
+    private async Task AgregarMiembro()
+    {
+        if (!FormValido) return;
+        _busy = true;
+        try
+        {
+            var vincReq = new VincularPersonaPorDocumentoRequest(
+                _form.Documento.Trim(), _form.Nombres.Trim(), _form.Apellidos.Trim(),
+                string.IsNullOrWhiteSpace(_form.Email) ? null : _form.Email.Trim(),
+                string.IsNullOrWhiteSpace(_form.Telefono) ? null : _form.Telefono.Trim());
+            var vincResp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/vincular-persona", vincReq);
+            if (!vincResp.IsSuccessStatusCode)
+            {
+                ShowMsg("No se pudo crear/buscar persona: " + await vincResp.Content.ReadAsStringAsync(), true);
+                _busy = false; return;
+            }
+            var vincDto = await vincResp.Content.ReadFromJsonAsync<VincularResp>();
+            var personaId = vincDto?.PersonaId ?? Guid.Empty;
+            if (personaId == Guid.Empty) { ShowMsg("No se pudo crear/buscar persona.", true); _busy = false; return; }
+
+            var req = new AgregarMiembroEquipoRequest(
+                personaId, _form.Rol,
+                _form.Rol == RolEquipo.Otro ? _form.RolPersonalizado.Trim() : null,
+                _form.Tipo,
+                DateOnly.FromDateTime(DateTime.UtcNow),
+                string.IsNullOrWhiteSpace(_form.Telefono) ? null : _form.Telefono.Trim(),
+                string.IsNullOrWhiteSpace(_form.Email) ? null : _form.Email.Trim(),
+                null);
+            var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/equipo", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                _form = new MiembroForm();
+                _huboCambios = true;
+                await CargarAsync();
+                ShowMsg("Miembro vinculado al equipo.", false);
+            }
+            else
+            {
+                ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true);
+            }
+        }
+        catch (Exception ex) { ShowMsg(ex.Message, true); }
+        _busy = false;
+    }
+
+    private async Task DesactivarMiembro(Guid id)
+    {
+        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/equipo/{id}");
+        if (resp.IsSuccessStatusCode)
+        {
+            _huboCambios = true;
+            await CargarAsync();
+        }
+        else { ShowMsg("No se pudo desactivar.", true); }
+    }
+
+    private void ShowMsg(string text, bool isError) { _msg = text; _msgError = isError; }
+    private void Cerrar() => Close(_huboCambios);
+
+    private static string Iniciales(string nombre)
+    {
+        if (string.IsNullOrWhiteSpace(nombre)) return "?";
+        var parts = nombre.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length == 1
+            ? parts[0][0].ToString().ToUpper()
+            : (parts[0][0].ToString() + parts[^1][0].ToString()).ToUpper();
+    }
+
+    private record VincularResp(Guid PersonaId);
+
+    private static string RolLabel(RolEquipo r) => r switch
+    {
+        RolEquipo.AdministradorDelegado => "Administrador delegado",
+        RolEquipo.Contador => "Contador",
+        RolEquipo.AuxiliarCartera => "Auxiliar de cartera",
+        RolEquipo.CoordinadorOperativo => "Coordinador operativo",
+        RolEquipo.SupervisorVigilancia => "Supervisor de vigilancia",
+        RolEquipo.PersonalAseo => "Personal de aseo",
+        RolEquipo.Mantenimiento => "Mantenimiento",
+        RolEquipo.Otro => "Otros",
+        _ => r.ToString()
+    };
+}

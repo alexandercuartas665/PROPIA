@@ -1,0 +1,192 @@
+@* Pagina de demo para validar el patron de componentes globales.
+   Pruebas en /_dev/modales (solo desarrollo). Cuando el patron este probado,
+   los modales se invocan desde sus modulos correspondientes. *@
+
+@page "/_dev/modales"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Web.Components.Shared.Modals
+@inject IModalService Modals
+
+<div class="dev-page">
+    <div class="dev-header">
+        <div class="propia-eyebrow">DEVELOPMENT</div>
+        <h1>Demo de componentes globales</h1>
+        <p>
+            Esta pagina prueba el patron <code>IModalService</code> + <code>ModalHost</code>
+            con el primer modal piloto. Ver [[00.3. COMPONENTES GLOBALES]] del vault.
+        </p>
+    </div>
+
+    <div class="dev-card">
+        <h2>C.1 ProgramarMantenimientoModal</h2>
+        <p>
+            Modal piloto basado en el prototipo PROPIA.dc.html L.2402-2426.
+            Devuelve <code>MantenimientoProgramado</code> con los datos del formulario,
+            o <code>null</code> si el usuario cancela.
+        </p>
+
+        <button class="propia-btn-brand" @onclick="AbrirProgramarMantenimiento">
+            Programar mantenimiento (demo)
+        </button>
+
+        <button class="propia-btn-ghost" @onclick="DebugContador" style="margin-left:8px;">
+            Debug click (@_contador)
+        </button>
+
+        @if (_ultimoResultado is not null)
+        {
+            <div class="dev-result">
+                <div class="propia-eyebrow">ULTIMO RESULTADO</div>
+                <pre>@_ultimoResultadoJson</pre>
+            </div>
+        }
+
+        @if (_canceladoUltimo)
+        {
+            <div class="dev-cancelled">
+                <span class="propia-badge propia-badge--neutral">Cancelado</span>
+                El usuario cerro el modal sin confirmar.
+            </div>
+        }
+    </div>
+
+    <div class="dev-card">
+        <h2>Validacion del patron</h2>
+        <ul class="dev-checklist">
+            <li>Click en "Programar mantenimiento (demo)" abre el modal global</li>
+            <li>Backdrop oscuro cubre la pagina (`var(--propia-bg-overlay)`)</li>
+            <li>Modal con tipografia Lexend y paleta brand `#6D4FE3`</li>
+            <li>Click fuera del modal lo cierra (CloseOnBackdrop=true)</li>
+            <li>Tecla Esc no esta implementada aun (V2)</li>
+            <li>Confirmar devuelve el draft tipado al caller</li>
+            <li>Boton confirmar deshabilitado si falta Proveedor</li>
+        </ul>
+    </div>
+</div>
+
+@* Modal host: vive DENTRO de la pagina para compartir el mismo circuit Scoped
+   que el caller. Ver nota en MainLayout.razor L.77-84. *@
+<ModalHost />
+
+@code {
+    private MantenimientoProgramado? _ultimoResultado;
+    private string _ultimoResultadoJson = string.Empty;
+    private bool _canceladoUltimo;
+    private int _contador = 0;
+
+    private void DebugContador() => _contador++;
+
+    private async Task AbrirProgramarMantenimiento()
+    {
+        _canceladoUltimo = false;
+
+        var parameters = new ModalParameters()
+            .Set("ActivoNombre", "Ascensor Torre A - Otis")
+            .Set("ActivoId", Guid.NewGuid())
+            .Set("ProveedorPredeterminado", "Otis Colombia SAS")
+            .Set("Contratos", new List<ContratoOption>
+            {
+                new() { Id = Guid.NewGuid(), Nombre = "Contrato Otis - Mantenimiento mensual 2026" },
+                new() { Id = Guid.NewGuid(), Nombre = "Contrato Plomeria - Mantenimiento trimestral" }
+            });
+
+        var result = await Modals.OpenAsync<ProgramarMantenimientoModal, MantenimientoProgramado>(parameters);
+
+        if (result is null)
+        {
+            _canceladoUltimo = true;
+            return;
+        }
+
+        _ultimoResultado = result;
+        _ultimoResultadoJson = System.Text.Json.JsonSerializer.Serialize(result,
+            new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        StateHasChanged();
+    }
+}
+
+<style>
+    .dev-page {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 24px;
+        font-family: var(--propia-font-base, 'Lexend', sans-serif);
+    }
+
+    .dev-header { margin-bottom: 24px; }
+    .dev-header h1 {
+        font-size: 27px;
+        font-weight: 800;
+        letter-spacing: -0.6px;
+        color: var(--propia-text-h1);
+        margin-top: 4px;
+    }
+    .dev-header p {
+        font-size: 14px;
+        color: var(--propia-text-secondary);
+        line-height: 1.5;
+        margin-top: 6px;
+    }
+
+    .dev-card {
+        background: var(--propia-bg-card);
+        border: 1px solid var(--propia-border-card);
+        border-radius: var(--propia-radius-card);
+        box-shadow: var(--propia-shadow-card);
+        padding: 22px 24px;
+        margin-bottom: 18px;
+    }
+    .dev-card h2 {
+        font-size: 17px;
+        font-weight: 700;
+        color: var(--propia-text-h1);
+        margin: 0 0 6px;
+    }
+    .dev-card p {
+        font-size: 13.5px;
+        color: var(--propia-text-secondary);
+        line-height: 1.5;
+        margin: 0 0 14px;
+    }
+    .dev-card code {
+        font-family: var(--propia-font-mono);
+        font-size: 12px;
+        background: var(--propia-brand-soft);
+        color: var(--propia-brand-text-2);
+        padding: 1px 6px;
+        border-radius: 4px;
+    }
+
+    .dev-result {
+        margin-top: 16px;
+        padding: 14px 16px;
+        background: var(--propia-bg-app);
+        border: 1px solid var(--propia-border-card);
+        border-radius: var(--propia-radius-card-sm);
+    }
+    .dev-result pre {
+        font-family: var(--propia-font-mono);
+        font-size: 12px;
+        color: var(--propia-text-body);
+        margin: 6px 0 0;
+        overflow-x: auto;
+        line-height: 1.5;
+    }
+
+    .dev-cancelled {
+        margin-top: 14px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--propia-text-secondary);
+    }
+
+    .dev-checklist {
+        margin: 6px 0 0;
+        padding-left: 22px;
+        color: var(--propia-text-body);
+        font-size: 13px;
+        line-height: 1.7;
+    }
+</style>

@@ -1,0 +1,510 @@
+@* GestionarGobiernoModal - seccion 4 Gobierno con 3 tabs (Consejo, Comites, Revisor Fiscal).
+   Replica el patron del prototipo PROPIA.dc.html L.845+ con tabs internos para no
+   sobrecargar el modal. Cada tab tiene su lista + form de agregar. Reusa
+   VincularPersonaPorDocumentoAsync. *@
+
+@inherits ModalBase<bool>
+@using Propia.Web.Components.Shared.Modals
+@using Propia.Application.MiCopropiedad
+@using Propia.Domain.Enums
+
+@inject IHttpClientFactory HttpFactory
+
+@* ====== HEADER ====== *@
+<div class="ggov-header">
+    <div class="ggov-header-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 21h18M5 21V10l7-5 7 5v11M9 21v-6h6v6"/>
+        </svg>
+    </div>
+    <div class="ggov-header-text">
+        <div class="ggov-title">4. Gobierno</div>
+        <div class="ggov-subtitle">Consejo, comites y revisor fiscal</div>
+    </div>
+    <button class="ggov-close" @onclick="Cerrar" type="button" aria-label="Cerrar">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+</div>
+
+@* ====== TABS ====== *@
+<div class="ggov-tabs">
+    <button class="ggov-tab @(_tab == "consejo" ? "ggov-tab--active" : "")" type="button" @onclick='() => _tab = "consejo"'>
+        Consejo
+        @if (_consejo.Count(c => c.Activo) > 0) { <span class="ggov-tab-count">@_consejo.Count(c => c.Activo)</span> }
+    </button>
+    <button class="ggov-tab @(_tab == "comites" ? "ggov-tab--active" : "")" type="button" @onclick='() => _tab = "comites"'>
+        Comites
+        @if (_comites.Count(c => c.Activo) > 0) { <span class="ggov-tab-count">@_comites.Count(c => c.Activo)</span> }
+    </button>
+    <button class="ggov-tab @(_tab == "revisor" ? "ggov-tab--active" : "")" type="button" @onclick='() => _tab = "revisor"'>
+        Revisor fiscal
+        @if (_revisor is not null && _revisor.Activo) { <span class="ggov-tab-dot">·</span> }
+    </button>
+</div>
+
+@* ====== BODY ====== *@
+<div class="ggov-body">
+    @if (_tab == "consejo")
+    {
+        @* Consejo de administracion *@
+        @if (_consejo.Count == 0)
+        {
+            <div class="ggov-empty">Sin miembros en el consejo.</div>
+        }
+        else
+        {
+            <div class="ggov-grid">
+                @foreach (var m in _consejo.Where(x => x.Activo))
+                {
+                    <div class="ggov-card">
+                        <div class="ggov-avatar ggov-avatar--owner">@Iniciales(m.PersonaNombre)</div>
+                        <div class="ggov-card-id">
+                            <div class="ggov-card-name">@m.PersonaNombre</div>
+                            <div class="ggov-card-meta">@m.Cargo · desde @m.FechaInicio.ToString("yyyy-MM-dd")</div>
+                        </div>
+                        <button class="ggov-del" type="button" @onclick="() => DesactivarConsejo(m.Id)" title="Desactivar">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+                        </button>
+                    </div>
+                }
+            </div>
+        }
+
+        <div class="ggov-form">
+            <div class="ggov-form-title">+ Agregar miembro al consejo</div>
+            <div class="ggov-form-row">
+                <input class="ggov-input ggov-grow" @bind="_consejoForm.Documento" @bind:event="oninput" placeholder="Documento *" />
+                <input class="ggov-input ggov-grow" @bind="_consejoForm.Nombres" @bind:event="oninput" placeholder="Nombres *" />
+                <input class="ggov-input ggov-grow" @bind="_consejoForm.Apellidos" @bind:event="oninput" placeholder="Apellidos *" />
+            </div>
+            <div class="ggov-form-row">
+                <select class="ggov-input ggov-grow" @bind="_consejoForm.Cargo">
+                    @foreach (var c in Enum.GetValues<CargoConsejo>()) { <option value="@c">@c</option> }
+                </select>
+                <input type="date" class="ggov-input" @bind="_consejoForm.FechaInicio" />
+                <button class="ggov-btn-brand" type="button" @onclick="AgregarMiembroConsejo" disabled="@(_busy || !ConsejoFormValido)">Agregar</button>
+            </div>
+        </div>
+    }
+
+    @if (_tab == "comites")
+    {
+        @* Comites *@
+        @if (_comites.Count == 0)
+        {
+            <div class="ggov-empty">Sin comites conformados.</div>
+        }
+        else
+        {
+            <div class="ggov-comites">
+                @foreach (var c in _comites.Where(x => x.Activo))
+                {
+                    <div class="ggov-comite">
+                        <div class="ggov-comite-head">
+                            <div class="ggov-comite-icon">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg>
+                            </div>
+                            <div class="ggov-comite-id">
+                                <div class="ggov-comite-name">@c.Nombre</div>
+                                <div class="ggov-comite-meta">@c.CantidadMiembros miembros · desde @c.FechaConformacion.ToString("yyyy-MM-dd")</div>
+                            </div>
+                            <button class="ggov-del" type="button" @onclick="() => DesactivarComite(c.Id)" title="Desactivar">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+                            </button>
+                        </div>
+                        @if (!string.IsNullOrEmpty(c.Descripcion))
+                        {
+                            <div class="ggov-comite-desc">@c.Descripcion</div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+
+        <div class="ggov-form">
+            <div class="ggov-form-title">+ Crear nuevo comite</div>
+            <div class="ggov-form-row">
+                <input class="ggov-input ggov-grow" @bind="_comiteForm.Nombre" @bind:event="oninput" placeholder="Nombre (Convivencia, Obras...) *" />
+                <input class="ggov-input ggov-grow" @bind="_comiteForm.Descripcion" @bind:event="oninput" placeholder="Descripcion (opcional)" />
+                <input type="date" class="ggov-input" @bind="_comiteForm.FechaConformacion" />
+                <button class="ggov-btn-brand" type="button" @onclick="CrearComite" disabled="@(_busy || string.IsNullOrWhiteSpace(_comiteForm.Nombre))">Crear</button>
+            </div>
+        </div>
+    }
+
+    @if (_tab == "revisor")
+    {
+        @* Revisor Fiscal *@
+        @if (_revisor is not null && _revisor.Activo)
+        {
+            <div class="ggov-card ggov-card--revisor">
+                <div class="ggov-avatar ggov-avatar--owner">@Iniciales(_revisor.PersonaNombre)</div>
+                <div class="ggov-card-id">
+                    <div class="ggov-card-name">@_revisor.PersonaNombre</div>
+                    <div class="ggov-card-meta">
+                        @(string.IsNullOrEmpty(_revisor.NumeroTarjetaProfesional) ? "Sin TP registrada" : $"TP {_revisor.NumeroTarjetaProfesional}")
+                        · posesion @_revisor.FechaPosesion.ToString("yyyy-MM-dd")
+                    </div>
+                </div>
+                <button class="ggov-btn-ghost" type="button" @onclick="() => RetirarRevisor(_revisor!.Id)">Retirar</button>
+            </div>
+        }
+        else
+        {
+            <div class="ggov-empty">Sin revisor fiscal designado.</div>
+            <div class="ggov-form">
+                <div class="ggov-form-title">+ Designar revisor fiscal</div>
+                <div class="ggov-form-row">
+                    <input class="ggov-input ggov-grow" @bind="_revisorForm.Documento" @bind:event="oninput" placeholder="Documento *" />
+                    <input class="ggov-input ggov-grow" @bind="_revisorForm.Nombres" @bind:event="oninput" placeholder="Nombres *" />
+                    <input class="ggov-input ggov-grow" @bind="_revisorForm.Apellidos" @bind:event="oninput" placeholder="Apellidos *" />
+                </div>
+                <div class="ggov-form-row">
+                    <input class="ggov-input ggov-grow" @bind="_revisorForm.TarjetaProfesional" @bind:event="oninput" placeholder="TP (opcional)" />
+                    <input type="date" class="ggov-input" @bind="_revisorForm.FechaPosesion" />
+                    <button class="ggov-btn-brand" type="button" @onclick="DesignarRevisor" disabled="@(_busy || !RevisorFormValido)">Designar</button>
+                </div>
+            </div>
+        }
+    }
+
+    @if (!string.IsNullOrEmpty(_msg))
+    {
+        <div class="ggov-msg @(_msgError ? "ggov-msg--err" : "ggov-msg--ok")">@_msg</div>
+    }
+</div>
+
+<style>
+    .ggov-header {
+        display: flex; align-items: center; gap: 13px;
+        padding: 18px 24px; border-bottom: 1px solid #EEF3F8; flex-shrink: 0;
+    }
+    .ggov-header-icon {
+        width: 38px; height: 38px; border-radius: 10px;
+        background: var(--propia-brand-soft, #F1ECFD);
+        color: var(--propia-brand, #6D4FE3);
+        display: flex; align-items: center; justify-content: center;
+    }
+    .ggov-header-text { flex: 1; }
+    .ggov-title { font-size: 16px; font-weight: 800; letter-spacing: -0.3px; color: #1B2A3A; }
+    .ggov-subtitle { font-size: 12.5px; color: #7C98B6; }
+    .ggov-close {
+        width: 34px; height: 34px; border-radius: 9px;
+        display: flex; align-items: center; justify-content: center;
+        color: #7C98B6; border: 1px solid #E1E8EE; background: #fff; cursor: pointer;
+    }
+    .ggov-close:hover { background: #F5F8FA; color: #33475B; }
+
+    .ggov-tabs {
+        display: flex; gap: 4px;
+        padding: 0 24px; border-bottom: 1px solid #EEF3F8;
+        background: #FAFBFC;
+    }
+    .ggov-tab {
+        display: inline-flex; align-items: center; gap: 7px;
+        padding: 11px 16px; border: 0; background: transparent;
+        font-size: 13px; font-weight: 600; color: #7C98B6;
+        cursor: pointer; border-bottom: 2px solid transparent;
+        font-family: var(--propia-font-base, 'Lexend', sans-serif);
+    }
+    .ggov-tab:hover { color: #33475B; }
+    .ggov-tab--active { color: var(--propia-brand, #6D4FE3); border-bottom-color: var(--propia-brand, #6D4FE3); }
+    .ggov-tab-count {
+        background: var(--propia-brand-soft, #F1ECFD); color: var(--propia-brand, #6D4FE3);
+        font-size: 10.5px; font-weight: 700;
+        padding: 2px 7px; border-radius: 7px;
+    }
+    .ggov-tab-dot { color: #1A8754; font-size: 20px; font-weight: 900; line-height: 0.5; }
+
+    .ggov-body {
+        padding: 20px 24px;
+        overflow-y: auto;
+        font-family: var(--propia-font-base, 'Lexend', sans-serif);
+    }
+
+    .ggov-empty {
+        background: #F8FAFC; border: 1px dashed #D7E0EA; border-radius: 11px;
+        padding: 20px; text-align: center;
+        font-size: 13px; color: #A6B7C8; margin-bottom: 14px;
+    }
+
+    .ggov-grid {
+        display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
+        margin-bottom: 16px;
+    }
+    .ggov-card {
+        display: flex; align-items: center; gap: 11px;
+        border: 1px solid #E1E8EE; border-radius: 11px;
+        padding: 12px 14px; background: #fff;
+    }
+    .ggov-card--revisor { padding: 16px 18px; margin-bottom: 14px; }
+    .ggov-avatar {
+        width: 38px; height: 38px; border-radius: 9px;
+        color: #fff; font-size: 13px; font-weight: 700;
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+    }
+    .ggov-avatar--owner { background: linear-gradient(135deg, #7C5CE8, #5838C9); }
+    .ggov-card-id { flex: 1; min-width: 0; }
+    .ggov-card-name { font-size: 13.5px; font-weight: 700; color: #33475B; }
+    .ggov-card-meta { font-size: 11.5px; color: #A6B7C8; margin-top: 2px; }
+    .ggov-del {
+        width: 28px; height: 28px; border-radius: 7px;
+        display: flex; align-items: center; justify-content: center;
+        color: #C3D0DD; border: 0; background: transparent;
+        cursor: pointer; flex-shrink: 0;
+    }
+    .ggov-del:hover { background: #FDE7E7; color: #D7263D; }
+
+    .ggov-comites { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+    .ggov-comite {
+        border: 1px solid #E1E8EE; border-radius: 11px;
+        padding: 14px 16px; background: #fff;
+    }
+    .ggov-comite-head { display: flex; align-items: center; gap: 11px; }
+    .ggov-comite-icon {
+        width: 32px; height: 32px; border-radius: 8px;
+        background: var(--propia-brand-soft, #F1ECFD); color: var(--propia-brand, #6D4FE3);
+        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .ggov-comite-id { flex: 1; min-width: 0; }
+    .ggov-comite-name { font-size: 13.5px; font-weight: 700; color: #33475B; }
+    .ggov-comite-meta { font-size: 11.5px; color: #A6B7C8; margin-top: 2px; }
+    .ggov-comite-desc {
+        font-size: 12px; color: #516F90;
+        margin-top: 8px; padding-top: 8px;
+        border-top: 1px dashed #EEF3F8;
+    }
+
+    .ggov-form {
+        background: #F8FAFC; border: 1px dashed #D7E0EA; border-radius: 12px;
+        padding: 14px;
+    }
+    .ggov-form-title { font-size: 13px; font-weight: 700; color: #1B2A3A; margin-bottom: 10px; }
+    .ggov-form-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+    .ggov-form-row:last-child { margin-bottom: 0; }
+    .ggov-input {
+        border: 1px solid #E1E8EE; border-radius: 9px;
+        padding: 9px 11px; font-size: 13px; color: #33475B;
+        background: #fff; outline: none; min-width: 0; font-family: inherit; box-sizing: border-box;
+    }
+    .ggov-input:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .ggov-grow { flex: 1; min-width: 130px; }
+    .ggov-btn-brand {
+        padding: 9px 17px; border-radius: 9px;
+        background: var(--propia-brand, #6D4FE3); color: #fff;
+        font-size: 13px; font-weight: 700; border: 0; cursor: pointer;
+        box-shadow: 0 4px 12px rgba(109,79,227,.30);
+    }
+    .ggov-btn-brand:hover { background: var(--propia-brand-hover, #5838C9); }
+    .ggov-btn-brand:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+    .ggov-btn-ghost {
+        padding: 8px 14px; border-radius: 8px;
+        background: #fff; border: 1px solid #E1E8EE;
+        font-size: 12.5px; font-weight: 600; color: #516F90; cursor: pointer;
+    }
+    .ggov-btn-ghost:hover { border-color: #D7263D; color: #D7263D; background: #FDE7E7; }
+
+    .ggov-msg { margin-top: 12px; padding: 9px 12px; font-size: 12.5px; border-radius: 9px; border: 1px solid; }
+    .ggov-msg--ok { color: #15703F; background: #E6F6EE; border-color: #B6E2C9; }
+    .ggov-msg--err { color: #B91C1C; background: #FEE2E2; border-color: #FECACA; }
+
+    /* Dark mode */
+    [data-bs-theme="dark"] .ggov-title,
+    [data-bs-theme="dark"] .ggov-card-name,
+    [data-bs-theme="dark"] .ggov-comite-name { color: #E5E7EB; }
+    [data-bs-theme="dark"] .ggov-tabs { background: #1B2233; }
+    [data-bs-theme="dark"] .ggov-card,
+    [data-bs-theme="dark"] .ggov-comite,
+    [data-bs-theme="dark"] .ggov-form { background: #232B40; border-color: #2D3650; }
+    [data-bs-theme="dark"] .ggov-empty { background: #1B2233; border-color: #2D3650; color: #8696B5; }
+</style>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+
+    private string _tab = "consejo";
+    private List<MiembroConsejoDto> _consejo = new();
+    private List<ComiteDto> _comites = new();
+    private RevisorFiscalDto? _revisor;
+    private bool _busy;
+    private string _msg = "";
+    private bool _msgError;
+    private bool _huboCambios;
+
+    private ConsejoForm _consejoForm = new();
+    private ComiteForm _comiteForm = new();
+    private RevisorForm _revisorForm = new();
+
+    private class ConsejoForm
+    {
+        public string Documento { get; set; } = "";
+        public string Nombres { get; set; } = "";
+        public string Apellidos { get; set; } = "";
+        public CargoConsejo Cargo { get; set; } = CargoConsejo.Presidente;
+        public DateTime FechaInicio { get; set; } = DateTime.Today;
+    }
+
+    private class ComiteForm
+    {
+        public string Nombre { get; set; } = "";
+        public string Descripcion { get; set; } = "";
+        public DateTime FechaConformacion { get; set; } = DateTime.Today;
+    }
+
+    private class RevisorForm
+    {
+        public string Documento { get; set; } = "";
+        public string Nombres { get; set; } = "";
+        public string Apellidos { get; set; } = "";
+        public string TarjetaProfesional { get; set; } = "";
+        public DateTime FechaPosesion { get; set; } = DateTime.Today;
+    }
+
+    private bool ConsejoFormValido =>
+        !string.IsNullOrWhiteSpace(_consejoForm.Documento) &&
+        !string.IsNullOrWhiteSpace(_consejoForm.Nombres) &&
+        !string.IsNullOrWhiteSpace(_consejoForm.Apellidos);
+
+    private bool RevisorFormValido =>
+        !string.IsNullOrWhiteSpace(_revisorForm.Documento) &&
+        !string.IsNullOrWhiteSpace(_revisorForm.Nombres) &&
+        !string.IsNullOrWhiteSpace(_revisorForm.Apellidos);
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            _consejo = await Auth().GetFromJsonAsync<List<MiembroConsejoDto>>("/api/mi-copropiedad/consejo") ?? new();
+        }
+        catch { _consejo = new(); }
+        try
+        {
+            _comites = await Auth().GetFromJsonAsync<List<ComiteDto>>("/api/mi-copropiedad/comites") ?? new();
+        }
+        catch { _comites = new(); }
+        try
+        {
+            var resp = await Auth().GetAsync("/api/mi-copropiedad/revisor-fiscal");
+            _revisor = resp.IsSuccessStatusCode && resp.Content.Headers.ContentLength > 0
+                ? await resp.Content.ReadFromJsonAsync<RevisorFiscalDto>()
+                : null;
+        }
+        catch { _revisor = null; }
+    }
+
+    private async Task<Guid?> VincularPersona(string doc, string nom, string ape, string? mail = null, string? tel = null)
+    {
+        var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/vincular-persona",
+            new VincularPersonaPorDocumentoRequest(doc.Trim(), nom.Trim(), ape.Trim(), mail, tel));
+        if (!resp.IsSuccessStatusCode)
+        {
+            ShowMsg("No se pudo crear/buscar persona: " + await resp.Content.ReadAsStringAsync(), true);
+            return null;
+        }
+        var dto = await resp.Content.ReadFromJsonAsync<VincularResp>();
+        return dto?.PersonaId;
+    }
+
+    private record VincularResp(Guid PersonaId);
+
+    private async Task AgregarMiembroConsejo()
+    {
+        if (!ConsejoFormValido) return;
+        _busy = true;
+        var personaId = await VincularPersona(_consejoForm.Documento, _consejoForm.Nombres, _consejoForm.Apellidos);
+        if (personaId is null) { _busy = false; return; }
+        var req = new AgregarMiembroConsejoRequest(personaId.Value, _consejoForm.Cargo, DateOnly.FromDateTime(_consejoForm.FechaInicio), null);
+        var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/consejo", req);
+        if (resp.IsSuccessStatusCode)
+        {
+            _consejoForm = new ConsejoForm();
+            _huboCambios = true;
+            await CargarAsync();
+            ShowMsg("Miembro agregado al consejo.", false);
+        }
+        else { ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true); }
+        _busy = false;
+    }
+
+    private async Task DesactivarConsejo(Guid id)
+    {
+        var resp = await Auth().PutAsync($"/api/mi-copropiedad/consejo/{id}/desactivar", null);
+        if (resp.IsSuccessStatusCode) { _huboCambios = true; await CargarAsync(); }
+    }
+
+    private async Task CrearComite()
+    {
+        if (string.IsNullOrWhiteSpace(_comiteForm.Nombre)) return;
+        _busy = true;
+        var req = new CrearComiteRequest(_comiteForm.Nombre.Trim(),
+            string.IsNullOrWhiteSpace(_comiteForm.Descripcion) ? null : _comiteForm.Descripcion.Trim(),
+            DateOnly.FromDateTime(_comiteForm.FechaConformacion));
+        var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/comites", req);
+        if (resp.IsSuccessStatusCode)
+        {
+            _comiteForm = new ComiteForm();
+            _huboCambios = true;
+            await CargarAsync();
+            ShowMsg("Comite creado.", false);
+        }
+        else { ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true); }
+        _busy = false;
+    }
+
+    private async Task DesactivarComite(Guid id)
+    {
+        var resp = await Auth().PutAsync($"/api/mi-copropiedad/comites/{id}/desactivar", null);
+        if (resp.IsSuccessStatusCode) { _huboCambios = true; await CargarAsync(); }
+    }
+
+    private async Task DesignarRevisor()
+    {
+        if (!RevisorFormValido) return;
+        _busy = true;
+        var personaId = await VincularPersona(_revisorForm.Documento, _revisorForm.Nombres, _revisorForm.Apellidos);
+        if (personaId is null) { _busy = false; return; }
+        var req = new DesignarRevisorFiscalRequest(
+            personaId.Value,
+            string.IsNullOrWhiteSpace(_revisorForm.TarjetaProfesional) ? null : _revisorForm.TarjetaProfesional.Trim(),
+            DateOnly.FromDateTime(_revisorForm.FechaPosesion));
+        var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/revisor-fiscal", req);
+        if (resp.IsSuccessStatusCode)
+        {
+            _revisorForm = new RevisorForm();
+            _huboCambios = true;
+            await CargarAsync();
+            ShowMsg("Revisor fiscal designado.", false);
+        }
+        else { ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true); }
+        _busy = false;
+    }
+
+    private async Task RetirarRevisor(Guid id)
+    {
+        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/revisor-fiscal/{id}");
+        if (resp.IsSuccessStatusCode) { _huboCambios = true; await CargarAsync(); }
+    }
+
+    private void ShowMsg(string text, bool isError) { _msg = text; _msgError = isError; }
+    private void Cerrar() => Close(_huboCambios);
+
+    private static string Iniciales(string nombre)
+    {
+        if (string.IsNullOrWhiteSpace(nombre)) return "?";
+        var parts = nombre.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length == 1
+            ? parts[0][0].ToString().ToUpper()
+            : (parts[0][0].ToString() + parts[^1][0].ToString()).ToUpper();
+    }
+}
