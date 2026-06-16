@@ -79,6 +79,16 @@ public class MiCopropiedadController : ControllerBase
         try { return Created("", await _svc.CrearUnidadAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [HttpPut("unidades/{id:guid}")]
+    public async Task<IActionResult> ActualizarUnidad(Guid id, [FromBody] ActualizarUnidadRequest req, CancellationToken ct)
+    {
+        try
+        {
+            var r = await _svc.ActualizarUnidadAsync(id, req, ct);
+            return r is null ? NotFound() : Ok(r);
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
     [HttpDelete("unidades/{id:guid}")]
     public async Task<IActionResult> EliminarUnidad(Guid id, CancellationToken ct)
         => await _svc.EliminarUnidadAsync(id, ct) ? NoContent() : NotFound();
@@ -95,6 +105,33 @@ public class MiCopropiedadController : ControllerBase
     [HttpDelete("vinculos/{id:guid}")]
     public async Task<IActionResult> EliminarVinculo(Guid id, CancellationToken ct)
         => await _svc.EliminarVinculoAsync(id, ct) ? NoContent() : NotFound();
+
+    // ---------- Personas vinculadas a una unidad (Propietario/Residente/Familiar) ----------
+    [HttpGet("unidades/{id:guid}/personas")]
+    public async Task<IActionResult> ListPersonasUnidad(Guid id, CancellationToken ct)
+        => Ok(await _svc.ListPersonasUnidadAsync(id, ct));
+
+    [HttpPost("unidades/{id:guid}/personas")]
+    public async Task<IActionResult> AgregarPersonaUnidad(Guid id, [FromBody] AgregarPersonaUnidadRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.AgregarPersonaUnidadAsync(id, req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpDelete("unidades-personas/{id:guid}")]
+    public async Task<IActionResult> EliminarPersonaUnidad(Guid id, CancellationToken ct)
+        => await _svc.EliminarPersonaUnidadAsync(id, ct) ? NoContent() : NotFound();
+
+    [HttpGet("unidades/{id:guid}/cuota-consolidada")]
+    public async Task<IActionResult> GetCuotaConsolidada(Guid id, CancellationToken ct)
+    {
+        var c = await _svc.GetCuotaConsolidadaAsync(id, ct);
+        return c is null ? NotFound() : Ok(c);
+    }
+
+    [HttpPost("unidades/rebalancear-coeficientes")]
+    public async Task<IActionResult> RebalancearCoeficientes(CancellationToken ct)
+        => Ok(await _svc.RebalancearCoeficientesAsync(ct));
 
     // ---------- Seccion 2: Tipos personalizados de unidad ----------
     [HttpGet("tipos-unidad")] public async Task<IActionResult> ListTiposUnidad(CancellationToken ct) => Ok(await _svc.ListTiposUnidadCustomAsync(ct));

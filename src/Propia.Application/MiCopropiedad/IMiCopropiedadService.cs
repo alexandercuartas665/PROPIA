@@ -21,12 +21,25 @@ public interface IMiCopropiedadService
     Task<IReadOnlyList<UnidadDto>> ListUnidadesAsync(CancellationToken ct);
     Task<UnidadDto?> ObtenerUnidadAsync(Guid unidadId, CancellationToken ct);
     Task<UnidadDto> CrearUnidadAsync(CrearUnidadRequest req, CancellationToken ct);
+    Task<UnidadDto?> ActualizarUnidadAsync(Guid unidadId, ActualizarUnidadRequest req, CancellationToken ct);
     Task<bool> EliminarUnidadAsync(Guid unidadId, CancellationToken ct);
 
     // Vinculos entre unidades (principal <-> asociadas, RN-09)
     Task<IReadOnlyList<UnidadVinculoDto>> ListVinculosAsync(Guid unidadPrincipalId, CancellationToken ct);
     Task<UnidadVinculoDto> CrearVinculoAsync(Guid unidadPrincipalId, CrearVinculoUnidadRequest req, CancellationToken ct);
     Task<bool> EliminarVinculoAsync(Guid vinculoId, CancellationToken ct);
+
+    // Personas vinculadas a una unidad (Propietario/Residente/Familiar)
+    Task<IReadOnlyList<UnidadPersonaDto>> ListPersonasUnidadAsync(Guid unidadId, CancellationToken ct);
+    Task<UnidadPersonaDto> AgregarPersonaUnidadAsync(Guid unidadId, AgregarPersonaUnidadRequest req, CancellationToken ct);
+    Task<bool> EliminarPersonaUnidadAsync(Guid unidadPersonaId, CancellationToken ct);
+
+    // Cuota consolidada de una unidad (principal + asociadas con incluyeEnFacturacion=true)
+    Task<CuotaConsolidadaDto?> GetCuotaConsolidadaAsync(Guid unidadId, CancellationToken ct);
+
+    // Rebalancear coeficientes: distribuye 100% equitativamente entre unidades que pagan
+    // administracion (parqueaderos/depositos opcionalmente con un coef bajo fijo).
+    Task<RebalanceoCoeficientesDto> RebalancearCoeficientesAsync(CancellationToken ct);
 
     // Tipos de unidad personalizados
     Task<IReadOnlyList<TipoUnidadCustomDto>> ListTiposUnidadCustomAsync(CancellationToken ct);

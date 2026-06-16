@@ -97,6 +97,16 @@ public enum TipoVinculacion
     Externo = 2
 }
 
+/// <summary>Rol de una persona vinculada a una unidad. Spec 2.3 tabla unidad_persona.</summary>
+public enum RolUnidadPersona
+{
+    Propietario = 1,
+    Residente = 2,
+    Familiar = 3,
+    Arrendatario = 4,
+    Apoderado = 5
+}
+
 /// <summary>Rol operativo del equipo de trabajo (catalogo base).</summary>
 public enum RolEquipo
 {

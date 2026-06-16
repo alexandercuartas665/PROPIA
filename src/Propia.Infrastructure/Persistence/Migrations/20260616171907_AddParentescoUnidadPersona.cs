@@ -1,0 +1,28 @@
+﻿using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace Propia.Infrastructure.Persistence.Migrations
+{
+    /// <inheritdoc />
+    public partial class AddParentescoUnidadPersona : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.AddColumn<string>(
+                name: "parentesco",
+                table: "unidad_personas",
+                type: "text",
+                nullable: true);
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropColumn(
+                name: "parentesco",
+                table: "unidad_personas");
+        }
+    }
+}

@@ -43,6 +43,28 @@ public class UnidadPrivada : TenantEntity
 }
 
 /// <summary>
+/// Vincula una Persona (propietario/residente/familiar/etc) con una Unidad. Una unidad
+/// puede tener N personas; una persona puede tener N unidades (multi-propietario).
+/// Es TenantEntity - aislada por tenant_id.
+/// </summary>
+public class UnidadPersona : TenantEntity
+{
+    public Guid UnidadId { get; set; }
+    public UnidadPrivada? Unidad { get; set; }
+
+    public Guid PersonaId { get; set; }
+
+    /// <summary>Rol del miembro respecto a la unidad.</summary>
+    public RolUnidadPersona Rol { get; set; } = RolUnidadPersona.Propietario;
+
+    /// <summary>Habita la unidad. Util para distinguir propietario-no-residente.</summary>
+    public bool Habita { get; set; } = true;
+
+    /// <summary>Parentesco o nota libre (hijo, esposa, sobrina, etc). Opcional, util para Familiar.</summary>
+    public string? Parentesco { get; set; }
+}
+
+/// <summary>
 /// Vinculo entre unidades: una unidad PRINCIPAL (apartamento/casa) con sus unidades
 /// ASOCIADAS (parqueadero, deposito). Spec 2.3 tabla unidad_vinculo. RN-09: no circular.
 /// Es TenantEntity - aislada por tenant_id.

@@ -176,11 +176,51 @@ public class MiCopropiedadService : IMiCopropiedadService
         var torreNombre = unidad.TorreId.HasValue
             ? await _db.Torres.Where(t => t.Id == unidad.TorreId).Select(t => t.Nombre).FirstOrDefaultAsync(ct)
             : null;
+        await RegistrarBitacoraAsync("Unidad", $"Unidad '{unidad.Numero}' creada ({unidad.Tipo}, coef {unidad.CoeficientePropiedad}%).", ct);
         return new UnidadDto(unidad.Id, unidad.Numero, unidad.Tipo,
             unidad.TorreId, torreNombre, unidad.Piso,
             unidad.CoeficientePropiedad, unidad.AreaM2,
             unidad.Habitaciones, unidad.Banos, unidad.Parqueaderos,
             unidad.Estado, unidad.Observaciones, unidad.MatriculaInmobiliaria, unidad.PagaAdministracion);
+    }
+
+    public async Task<UnidadDto?> ActualizarUnidadAsync(Guid unidadId, ActualizarUnidadRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Numero))
+            throw new InvalidOperationException("Numero de unidad obligatorio.");
+        if (req.CoeficientePropiedad < 0 || req.CoeficientePropiedad > 100)
+            throw new InvalidOperationException("Coeficiente debe estar entre 0 y 100.");
+
+        var u = await _db.UnidadesPrivadas.FirstOrDefaultAsync(x => x.Id == unidadId, ct);
+        if (u is null) return null;
+
+        u.Numero = req.Numero.Trim();
+        u.Tipo = req.Tipo;
+        u.TorreId = req.TorreId;
+        u.Piso = req.Piso;
+        u.CoeficientePropiedad = req.CoeficientePropiedad;
+        u.AreaM2 = req.AreaM2;
+        u.Habitaciones = req.Habitaciones;
+        u.Banos = req.Banos;
+        u.Parqueaderos = req.Parqueaderos;
+        u.Estado = req.Estado;
+        u.Observaciones = req.Observaciones;
+        u.MatriculaInmobiliaria = req.MatriculaInmobiliaria;
+        u.PagaAdministracion = req.PagaAdministracion;
+
+        await _db.SaveChangesAsync(ct);
+
+        var torreNombre = u.TorreId.HasValue
+            ? await _db.Torres.Where(t => t.Id == u.TorreId).Select(t => t.Nombre).FirstOrDefaultAsync(ct)
+            : null;
+
+        await RegistrarBitacoraAsync("Unidad", $"Unidad '{u.Numero}' actualizada.", ct);
+
+        return new UnidadDto(u.Id, u.Numero, u.Tipo,
+            u.TorreId, torreNombre, u.Piso,
+            u.CoeficientePropiedad, u.AreaM2,
+            u.Habitaciones, u.Banos, u.Parqueaderos,
+            u.Estado, u.Observaciones, u.MatriculaInmobiliaria, u.PagaAdministracion);
     }
 
     // ----------------------------- Vinculos entre unidades (RN-09) -----------------------------
@@ -222,6 +262,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         };
         _db.UnidadVinculos.Add(v);
         await _db.SaveChangesAsync(ct);
+        await RegistrarBitacoraAsync("Unidad", $"{asociada.Tipo} '{asociada.Numero}' vinculado a unidad '{principal.Numero}' ({(req.IncluyeEnFacturacion ? "factura" : "no factura")}).", ct);
         return new UnidadVinculoDto(v.Id, v.UnidadAsociadaId, asociada.Numero, asociada.Tipo, v.IncluyeEnFacturacion);
     }
 
@@ -232,6 +273,139 @@ public class MiCopropiedadService : IMiCopropiedadService
         _db.UnidadVinculos.Remove(v);
         await _db.SaveChangesAsync(ct);
         return true;
+    }
+
+    // ----------------------------- Personas vinculadas a una unidad -----------------------------
+
+    public async Task<IReadOnlyList<UnidadPersonaDto>> ListPersonasUnidadAsync(Guid unidadId, CancellationToken ct)
+    {
+        return await (from up in _db.UnidadPersonas.AsNoTracking()
+                      join p in _db.Personas on up.PersonaId equals p.Id
+                      where up.UnidadId == unidadId
+                      orderby up.Rol, p.Apellidos, p.Nombres
+                      select new UnidadPersonaDto(
+                          up.Id, up.PersonaId,
+                          (p.Nombres + " " + p.Apellidos).Trim(),
+                          p.Documento, p.Email, p.Telefono,
+                          up.Rol, up.Habita, up.Parentesco))
+                      .ToListAsync(ct);
+    }
+
+    public async Task<UnidadPersonaDto> AgregarPersonaUnidadAsync(Guid unidadId, AgregarPersonaUnidadRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Documento)) throw new InvalidOperationException("Documento obligatorio.");
+        if (string.IsNullOrWhiteSpace(req.Nombres)) throw new InvalidOperationException("Nombres obligatorios.");
+        if (string.IsNullOrWhiteSpace(req.Apellidos)) throw new InvalidOperationException("Apellidos obligatorios.");
+
+        var unidad = await _db.UnidadesPrivadas.FirstOrDefaultAsync(u => u.Id == unidadId, ct)
+            ?? throw new InvalidOperationException("Unidad no encontrada.");
+
+        // Reusa el helper que busca o crea Persona por documento (ya existente)
+        var personaId = await VincularPersonaPorDocumentoAsync(
+            new VincularPersonaPorDocumentoRequest(req.Documento, req.Nombres, req.Apellidos, req.Email, req.Telefono), ct);
+
+        // Evita duplicar mismo (unidad + persona + rol)
+        var existente = await _db.UnidadPersonas
+            .FirstOrDefaultAsync(x => x.UnidadId == unidadId && x.PersonaId == personaId && x.Rol == req.Rol, ct);
+        if (existente is not null)
+            throw new InvalidOperationException($"Esta persona ya es {req.Rol} de la unidad {unidad.Numero}.");
+
+        var up = new UnidadPersona
+        {
+            UnidadId = unidadId,
+            PersonaId = personaId,
+            Rol = req.Rol,
+            Habita = req.Habita,
+            Parentesco = string.IsNullOrWhiteSpace(req.Parentesco) ? null : req.Parentesco.Trim()
+        };
+        _db.UnidadPersonas.Add(up);
+        await _db.SaveChangesAsync(ct);
+
+        var persona = await _db.Personas.AsNoTracking().FirstAsync(p => p.Id == personaId, ct);
+        await RegistrarBitacoraAsync("Unidad", $"{req.Rol} '{persona.Nombres} {persona.Apellidos}' vinculado a unidad '{unidad.Numero}'.", ct);
+
+        return new UnidadPersonaDto(up.Id, personaId,
+            ($"{persona.Nombres} {persona.Apellidos}").Trim(), persona.Documento, persona.Email, persona.Telefono,
+            up.Rol, up.Habita, up.Parentesco);
+    }
+
+    public async Task<bool> EliminarPersonaUnidadAsync(Guid unidadPersonaId, CancellationToken ct)
+    {
+        var up = await _db.UnidadPersonas.FirstOrDefaultAsync(x => x.Id == unidadPersonaId, ct);
+        if (up is null) return false;
+        _db.UnidadPersonas.Remove(up);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    // ----------------------------- Rebalanceo de coeficientes (Ley 675 art. 26: suma = 100) -----------------------------
+
+    public async Task<RebalanceoCoeficientesDto> RebalancearCoeficientesAsync(CancellationToken ct)
+    {
+        var unidades = await _db.UnidadesPrivadas.ToListAsync(ct);
+        var sumaAnterior = unidades.Sum(u => u.CoeficientePropiedad);
+
+        // Estrategia: solo unidades con PagaAdministracion=true reciben coeficiente > 0.
+        // Las que no pagan (parqueadero, deposito) van a 0. Distribucion equitativa con
+        // compensacion en la ultima para que el total sea exactamente 100.0000.
+        var pagan = unidades.Where(u => u.PagaAdministracion).OrderBy(u => u.Numero).ToList();
+        var noPagan = unidades.Where(u => !u.PagaAdministracion).ToList();
+
+        if (pagan.Count == 0)
+        {
+            // Nada que rebalancear, dejar todas en 0
+            foreach (var u in unidades) u.CoeficientePropiedad = 0m;
+            await _db.SaveChangesAsync(ct);
+            return new RebalanceoCoeficientesDto(unidades.Count, sumaAnterior, 0m, 0m, 0, noPagan.Count);
+        }
+
+        var coefBase = Math.Round(100m / pagan.Count, 4, MidpointRounding.ToZero);
+        decimal acumulado = 0m;
+        for (int i = 0; i < pagan.Count; i++)
+        {
+            if (i == pagan.Count - 1)
+            {
+                // Compensacion en la ultima para evitar floating drift y forzar suma=100
+                pagan[i].CoeficientePropiedad = Math.Round(100m - acumulado, 4);
+            }
+            else
+            {
+                pagan[i].CoeficientePropiedad = coefBase;
+                acumulado += coefBase;
+            }
+        }
+        foreach (var u in noPagan) u.CoeficientePropiedad = 0m;
+
+        await _db.SaveChangesAsync(ct);
+        var sumaNueva = unidades.Sum(u => u.CoeficientePropiedad);
+        await RegistrarBitacoraAsync("Distribucion",
+            $"Coeficientes rebalanceados: {pagan.Count} apartamentos a {coefBase}% (ultima ajustada), {noPagan.Count} en 0%. Suma anterior {sumaAnterior:0.##}% -> nueva {sumaNueva:0.##}%.", ct);
+        return new RebalanceoCoeficientesDto(unidades.Count, sumaAnterior, sumaNueva, coefBase, pagan.Count, noPagan.Count);
+    }
+
+    // ----------------------------- Cuota consolidada (principal + asociadas con factura) -----------------------------
+
+    public async Task<CuotaConsolidadaDto?> GetCuotaConsolidadaAsync(Guid unidadId, CancellationToken ct)
+    {
+        var principal = await _db.UnidadesPrivadas.AsNoTracking().FirstOrDefaultAsync(u => u.Id == unidadId, ct);
+        if (principal is null) return null;
+
+        var asociadas = await _db.UnidadVinculos.AsNoTracking()
+            .Include(v => v.UnidadAsociada)
+            .Where(v => v.UnidadPrincipalId == unidadId)
+            .ToListAsync(ct);
+
+        var coefAsociadasFactura = asociadas
+            .Where(v => v.IncluyeEnFacturacion)
+            .Sum(v => v.UnidadAsociada!.CoeficientePropiedad);
+
+        return new CuotaConsolidadaDto(
+            principal.Id, principal.Numero,
+            principal.CoeficientePropiedad,
+            coefAsociadasFactura,
+            principal.CoeficientePropiedad + coefAsociadasFactura,
+            asociadas.Count,
+            asociadas.Count(v => v.IncluyeEnFacturacion));
     }
 
     public async Task<UnidadDto?> ObtenerUnidadAsync(Guid unidadId, CancellationToken ct)
@@ -483,6 +657,9 @@ public class MiCopropiedadService : IMiCopropiedadService
         }
 
         await _db.SaveChangesAsync(ct);
+        var nombresTorre = string.Join(", ", torresCreadas.Select(t => t.Nombre));
+        await RegistrarBitacoraAsync("Distribucion",
+            $"Generador automatico: {torresCreadas.Count} torre(s) [{nombresTorre}] + {unidadesCreadas.Count} unidades creadas (coef {req.CoeficientePorUnidad}% c/u).", ct);
         return new GenerarUnidadesResponse(
             torresCreadas.Count,
             unidadesCreadas.Count,

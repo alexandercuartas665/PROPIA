@@ -47,12 +47,45 @@ public record CrearUnidadRequest(
     string? Estado, string? Observaciones,
     string? MatriculaInmobiliaria = null, bool PagaAdministracion = true);
 
+/// <summary>Actualiza la ficha completa de una unidad (todos los campos editables).</summary>
+public record ActualizarUnidadRequest(
+    string Numero, TipoUnidad Tipo, Guid? TorreId, int? Piso,
+    decimal CoeficientePropiedad, decimal? AreaM2,
+    int? Habitaciones, int? Banos, int? Parqueaderos,
+    string? Estado, string? Observaciones,
+    string? MatriculaInmobiliaria, bool PagaAdministracion);
+
 // ----- Vinculos entre unidades (seccion 2 - RN-09) -----
 public record UnidadVinculoDto(
     Guid Id, Guid UnidadAsociadaId, string AsociadaNumero, TipoUnidad AsociadaTipo,
     bool IncluyeEnFacturacion);
 
 public record CrearVinculoUnidadRequest(Guid UnidadAsociadaId, bool IncluyeEnFacturacion);
+
+// ----- Personas vinculadas a una unidad (Propietario/Residente/Familiar/Arrendatario/Apoderado) -----
+public record UnidadPersonaDto(
+    Guid Id, Guid PersonaId, string PersonaNombre, string PersonaDocumento,
+    string? PersonaEmail, string? PersonaTelefono,
+    RolUnidadPersona Rol, bool Habita, string? Parentesco);
+
+public record AgregarPersonaUnidadRequest(
+    string Documento, string Nombres, string Apellidos,
+    string? Email, string? Telefono,
+    RolUnidadPersona Rol, bool Habita = true, string? Parentesco = null);
+
+/// <summary>
+/// Cuota consolidada: coeficiente y cuota total de una unidad principal sumando
+/// sus unidades asociadas con IncluyeEnFacturacion=true (RN-09).
+/// </summary>
+public record CuotaConsolidadaDto(
+    Guid UnidadId, string Numero,
+    decimal CoefPrincipal, decimal CoefAsociadasFactura, decimal CoefTotal,
+    int CantidadAsociadas, int CantidadAsociadasFactura);
+
+/// <summary>Resultado del rebalanceo de coeficientes (Ley 675 art. 26: suma = 100%).</summary>
+public record RebalanceoCoeficientesDto(
+    int UnidadesActualizadas, decimal SumaAnterior, decimal SumaNueva,
+    decimal CoefPorApartamento, int Apartamentos, int NoPagan);
 
 // ----- Gobierno: Miembros del Consejo (seccion 4) -----
 public record MiembroConsejoDto(

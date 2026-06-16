@@ -55,6 +55,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<Torre> Torres => Set<Torre>();
     public DbSet<UnidadPrivada> UnidadesPrivadas => Set<UnidadPrivada>();
     public DbSet<UnidadVinculo> UnidadVinculos => Set<UnidadVinculo>();
+    public DbSet<UnidadPersona> UnidadPersonas => Set<UnidadPersona>();
     public DbSet<BitacoraMiCopropiedad> BitacoraMiCopropiedad => Set<BitacoraMiCopropiedad>();
     public DbSet<ZonaComun> ZonasComunes => Set<ZonaComun>();
     public DbSet<EquipoActivo> EquiposActivos => Set<EquipoActivo>();
@@ -382,6 +383,14 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasOne(x => x.UnidadAsociada).WithMany().HasForeignKey(x => x.UnidadAsociadaId).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.TenantId, x.UnidadAsociadaId }).IsUnique();  // una asociada tiene un solo principal
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<UnidadPersona>(b =>
+        {
+            b.HasOne(x => x.Unidad).WithMany().HasForeignKey(x => x.UnidadId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.UnidadId, x.PersonaId, x.Rol }).IsUnique();
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

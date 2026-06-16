@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Propia.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using Propia.Infrastructure.Persistence;
 namespace Propia.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(PropiaDbContext))]
-    partial class PropiaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260616161728_AddUnidadPersona")]
+    partial class AddUnidadPersona
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -11415,10 +11418,6 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Property<bool>("Habita")
                         .HasColumnType("boolean")
                         .HasColumnName("habita");
-
-                    b.Property<string>("Parentesco")
-                        .HasColumnType("text")
-                        .HasColumnName("parentesco");
 
                     b.Property<Guid>("PersonaId")
                         .HasColumnType("uuid")
