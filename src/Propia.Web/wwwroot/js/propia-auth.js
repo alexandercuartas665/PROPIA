@@ -52,6 +52,36 @@
     // Hidratar inmediatamente para que la guard de App.razor lea la sesion persistida.
     hidratarDesdeLocal();
 
+    /* Guard de ruta: si la pagina actual requiere sesion y no hay JWT,
+     * redirige a /login con returnUrl. Evita que las paginas de Capa 2
+     * muestren el banner "Sesion expirada / Necesitas un JWT". */
+    function rutaEsPublica(path) {
+        var publics = ['/', '/login', '/registro', '/signin-google', '/operador/info', '/_probe'];
+        // /onboarding y /onboarding/continuar requieren JWT temporal del registro: NO publicas.
+        if (publics.indexOf(path) !== -1) return true;
+        if (path.indexOf('/invitacion/') === 0) return true; // links de invitacion publicos
+        if (path.indexOf('/c/') === 0) return true;           // comunicados publicos
+        if (path.indexOf('/_dev/') === 0) return true;        // paginas de desarrollo
+        return false;
+    }
+    function rutaEsAdmin(path) {
+        return path === '/admin' || path.indexOf('/admin/') === 0;
+    }
+    function guardSession() {
+        try {
+            var path = (window.location.pathname || '/').toLowerCase();
+            if (rutaEsPublica(path)) return;
+            var esAdmin = rutaEsAdmin(path);
+            var key = esAdmin ? 'propia_admin_jwt' : 'propia_jwt';
+            if (leerCualquiera(key)) return; // tenemos token, dejar pasar
+            var qs = window.location.pathname + (window.location.search || '');
+            if (!qs || qs === '/') qs = path;
+            var url = '/login?returnUrl=' + encodeURIComponent(qs);
+            window.location.replace(url);
+        } catch (e) { /* nunca romper la pagina por el guard */ }
+    }
+    guardSession();
+
     window.propiaAuth = {
         /** Guarda JWT + tenant + nombre de copropiedad en ambos stores. null/undefined = no toca esa key.
          *  Para limpiar usa propiaAuth.clear(). */
