@@ -12,7 +12,24 @@ namespace Propia.Api.Controllers;
 public class CarteraController : ControllerBase
 {
     private readonly ICarteraService _svc;
-    public CarteraController(ICarteraService svc) => _svc = svc;
+    private readonly IComprobantePdfService _comprobantes;
+    public CarteraController(ICarteraService svc, IComprobantePdfService comprobantes)
+    {
+        _svc = svc;
+        _comprobantes = comprobantes;
+    }
+
+    /// <summary>
+    /// Devuelve el comprobante de pago en PDF (QuestPDF). Util para enviar como adjunto en correo
+    /// al residente o como respaldo de auditoria.
+    /// </summary>
+    [HttpGet("pagos/{pagoId:guid}/comprobante.pdf")]
+    public async Task<IActionResult> ComprobantePago(Guid pagoId, CancellationToken ct)
+    {
+        var result = await _comprobantes.GenerarComprobantePagoAsync(pagoId, ct);
+        if (result is null) return NotFound();
+        return File(result.Value.Pdf, "application/pdf", result.Value.FileName);
+    }
 
     // --- Sincronizacion + tablero ---
     [HttpPost("sincronizar")]

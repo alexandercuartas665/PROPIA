@@ -139,6 +139,7 @@ public static class DependencyInjection
 
         // Modulo 2.7 Cartera y Estado de Cuenta
         services.AddScoped<Application.Cartera.ICarteraService, Cartera.CarteraService>();
+        services.AddScoped<Application.Cartera.IComprobantePdfService, Cartera.ComprobantePdfService>();
 
         // Modulo 2.9 PQRSD y Convivencia
         services.AddScoped<Application.Pqrsd.IPqrsdService, Pqrsd.PqrsdService>();
