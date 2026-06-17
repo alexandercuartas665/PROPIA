@@ -277,8 +277,99 @@ else
         </div>
     </SeccionCard>
 
-    @* Seccion 2 - Distribucion *@
-    <SeccionCard Titulo="@($"2. Distribucion")" Subtitulo="Como esta compuesto?" Completa="@CompDistribucion" Abierta="@_secciones[SecDistrib]" OnToggle="() => ToggleSec(SecDistrib)">
+    @* Seccion 2 - Finanzas (movida aqui desde el final del acordeon). *@
+    <SeccionCard Titulo="2. Finanzas" Completa="@CompFinanzas" Abierta="@_secciones[SecFin]" OnToggle="() => ToggleSec(SecFin)">
+        @if (_finanzas is null)
+        {
+            <p class="text-muted small mb-0">Cargando...</p>
+        }
+        else
+        {
+            var sim = _monedas.FirstOrDefault(m => m.Codigo == _finForm.Moneda)?.Simbolo ?? "$";
+
+            @* Resumen financiero en tiempo real (se nutre de 2.6 Presupuesto y 2.7 Cartera) *@
+            <div class="row g-2 mb-1">
+                <div class="col-6 col-md-3">
+                    <div class="fin-kpi"><div class="fin-kpi-label">Cuota administracion</div>
+                        <div class="fin-kpi-val">@sim @_finanzas.Resumen.CuotaAdministracionVigente.ToString("N0")</div></div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="fin-kpi"><div class="fin-kpi-label">Recaudo del mes</div>
+                        <div class="fin-kpi-val">@_finanzas.Resumen.RecaudoMesPct.ToString("0.#")%</div></div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="fin-kpi"><div class="fin-kpi-label">Presupuesto anual</div>
+                        <div class="fin-kpi-val">@sim @_finanzas.Resumen.PresupuestoAnualAprobado.ToString("N0")</div></div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="fin-kpi"><div class="fin-kpi-label">Cartera en mora</div>
+                        <div class="fin-kpi-val text-danger">@sim @_finanzas.Resumen.CarteraEnMora.ToString("N0")</div></div>
+                </div>
+            </div>
+            @if (!_finanzas.Resumen.HayPresupuestoVigente)
+            {
+                <p class="text-muted small mb-0">El resumen se completa cuando exista un presupuesto vigente en 2.6 Presupuesto.</p>
+            }
+
+            <hr />
+            <h6 class="mb-2">Parametros de configuracion</h6>
+            <div class="row g-2">
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Moneda</label>
+                    <select class="form-select form-select-sm" @bind="_finForm.Moneda">
+                        @foreach (var m in _monedas) { <option value="@m.Codigo">@m.Codigo - @m.Nombre</option> }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Dia de corte (1-28)</label>
+                    <input type="number" min="1" max="28" class="form-control form-control-sm" @bind="_finForm.DiaCorte" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Periodo de gracia (dias)</label>
+                    <input type="number" min="0" max="30" class="form-control form-control-sm" @bind="_finForm.PeriodoGraciaDias" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Tasa de interes por mora</label>
+                    <select class="form-select form-select-sm" @bind="MoraModo">
+                        <option value="legal">Tasa legal vigente (automatica)</option>
+                        <option value="fija">Tasa fija</option>
+                    </select>
+                </div>
+                @if (!_finForm.TasaMoraEsLegal)
+                {
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">Tasa fija mensual (%)</label>
+                        <input type="number" step="0.01" min="0" class="form-control form-control-sm" @bind="_finForm.TasaMoraValor" />
+                        <div class="form-text small">Maximo legal: @_finanzas.Parametros.TasaMoraMaximaLegal.ToString("0.##")% mensual</div>
+                    </div>
+                }
+            </div>
+
+            @if (_finForm.DiaCorte != _diaCorteOriginal)
+            {
+                <div class="alert alert-warning py-2 mt-3 mb-0 small">Cambiar el dia de corte afecta la facturacion a partir del proximo periodo.</div>
+            }
+            @if (_finConfirmMoneda)
+            {
+                <div class="alert alert-warning py-2 mt-3 mb-0 small">
+                    <strong>Advertencia:</strong> cambiar la moneda impacta todos los valores monetarios de la copropiedad. Confirma para continuar.
+                </div>
+            }
+
+            <div class="mt-3 d-flex gap-2">
+                <button class="btn btn-sm" style="background: var(--propia-primary); color:#fff;" @onclick="GuardarFinanzas">
+                    @(_finConfirmMoneda ? "Confirmar cambio de moneda y guardar" : "Guardar parametros")
+                </button>
+                @if (_finConfirmMoneda)
+                {
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => { _finForm.Moneda = _monedaOriginal!; _finConfirmMoneda = false; })">Cancelar</button>
+                }
+            </div>
+        }
+    </SeccionCard>
+
+    @* Seccion 3 - Distribucion (era 2 antes de mover Finanzas al puesto 2). *@
+    <SeccionCard Titulo="@($"3. Distribucion")" Subtitulo="Como esta compuesto?" Completa="@CompDistribucion" Abierta="@_secciones[SecDistrib]" OnToggle="() => ToggleSec(SecDistrib)">
         @* Vista compacta estilo prototipo L.572-581. El detalle vive en GestionarUnidadesModal. *@
         <div class="mc-dist-summary">
             <span class="mc-dist-summary-strong">@_torres.Count @LabelAgrupacionPlural</span>
@@ -443,7 +534,7 @@ else
     }
 
     @* Seccion 6 - Zonas Comunes *@
-    <SeccionCard Titulo="6. Zonas Comunes" Subtitulo="Salones, deportivas, parques..." Completa="@CompZonasComunes" Abierta="@_secciones[SecZon]" OnToggle="() => ToggleSec(SecZon)">
+    <SeccionCard Titulo="4. Zonas Comunes" Subtitulo="Salones, deportivas, parques..." Completa="@CompZonasComunes" Abierta="@_secciones[SecZon]" OnToggle="() => ToggleSec(SecZon)">
         <div class="mc-zn-summary">
             <div class="mc-zn-stat">
                 <div class="mc-zn-stat-val">@_zonas.Count(z => z.Estado == EstadoZonaComunMantenimiento.Activa)</div>
@@ -476,7 +567,7 @@ else
     </SeccionCard>
 
     @* Seccion 7 - Equipos *@
-    <SeccionCard Titulo="7. Equipos y Activos" Completa="@CompEquipos" Abierta="@_secciones[SecEq]" OnToggle="() => ToggleSec(SecEq)">
+    <SeccionCard Titulo="5. Equipos y Activos" Completa="@CompEquipos" Abierta="@_secciones[SecEq]" OnToggle="() => ToggleSec(SecEq)">
         @if (_equipos.Count == 0) { <p class="text-muted small mb-2">Sin equipos registrados.</p> }
         else
         {
@@ -517,8 +608,11 @@ else
         </div>
     </SeccionCard>
 
-    @* Seccion 8 - Finanzas *@
-    <SeccionCard Titulo="8. Finanzas" Completa="@CompFinanzas" Abierta="@_secciones[SecFin]" OnToggle="() => ToggleSec(SecFin)">
+    @* Seccion 2 - Finanzas (movida al puesto 2 desde el final). Placeholder vacio:
+       el contenido real se renderiza justo despues de Identidad mas arriba. *@
+    @if (false)
+    {
+    <SeccionCard Titulo="(reservado) Finanzas" Completa="@CompFinanzas" Abierta="@_secciones[SecFin]" OnToggle="() => ToggleSec(SecFin)">
         @if (_finanzas is null)
         {
             <p class="text-muted small mb-0">Cargando...</p>
@@ -607,6 +701,7 @@ else
             </div>
         }
     </SeccionCard>
+    }
 
     @* Bitacora de cambios (RN-06): ahora vive en BitacoraCambiosModal, accesible desde
        el boton "Bitacora" al lado de "Editar datos" en la seccion 1 (Identidad). *@
