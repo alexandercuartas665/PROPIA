@@ -51,6 +51,12 @@ public class Conversation : TenantEntity
 
     public DateTimeOffset? LastMessageAt { get; set; }
 
+    /// <summary>Conversacion archivada por el operador. Null = activa. Si llega un mensaje entrante se desarchiva sola.</summary>
+    public DateTimeOffset? ArchivedAt { get; set; }
+
+    /// <summary>Punto de reinicio del contexto del agente IA: el dispatcher ignora turnos previos a esta fecha.</summary>
+    public DateTimeOffset? AgentContextResetAt { get; set; }
+
     public ICollection<Message> Messages { get; set; } = new List<Message>();
 }
 

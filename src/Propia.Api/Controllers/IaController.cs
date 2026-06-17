@@ -21,6 +21,7 @@ public class IaController : ControllerBase
     private readonly IAiUsageService _usage;
     private readonly IMcpGateway _mcp;
     private readonly IListaNegraService _listaNegra;
+    private readonly IConversacionService _conversaciones;
 
     public IaController(
         IWhatsAppLineService lines,
@@ -29,7 +30,8 @@ public class IaController : ControllerBase
         IAiInferenceService inference,
         IAiUsageService usage,
         IMcpGateway mcp,
-        IListaNegraService listaNegra)
+        IListaNegraService listaNegra,
+        IConversacionService conversaciones)
     {
         _lines = lines;
         _connector = connector;
@@ -38,7 +40,49 @@ public class IaController : ControllerBase
         _usage = usage;
         _mcp = mcp;
         _listaNegra = listaNegra;
+        _conversaciones = conversaciones;
     }
+
+    // ---------- Conversaciones humanas (Oleada IA #3) ----------
+    [HttpGet("conversaciones")]
+    public async Task<IActionResult> ListarConversaciones([FromQuery] string? q, CancellationToken ct)
+        => Ok(await _conversaciones.ListarActivasAsync(q, ct));
+
+    [HttpGet("conversaciones/archivadas")]
+    public async Task<IActionResult> ListarConversacionesArchivadas(CancellationToken ct)
+        => Ok(await _conversaciones.ListarArchivadasAsync(ct));
+
+    [HttpGet("conversaciones/{id:guid}")]
+    public async Task<IActionResult> ObtenerConversacion(Guid id, CancellationToken ct)
+    {
+        var c = await _conversaciones.ObtenerAsync(id, ct);
+        return c is null ? NotFound() : Ok(c);
+    }
+
+    [HttpGet("conversaciones/{id:guid}/mensajes")]
+    public async Task<IActionResult> ListarMensajes(Guid id, CancellationToken ct)
+        => Ok(await _conversaciones.ListarMensajesAsync(id, ct));
+
+    [HttpPost("conversaciones/{id:guid}/mensajes")]
+    public async Task<IActionResult> EnviarMensaje(Guid id, [FromBody] EnviarMensajeRequest req, CancellationToken ct)
+    {
+        var msg = await _conversaciones.EnviarTextoAsync(id, req, ct);
+        return msg is null ? NotFound() : Created("", msg);
+    }
+
+    [HttpPut("conversaciones/{id:guid}/archivar")]
+    public async Task<IActionResult> ArchivarConversacion(Guid id, [FromBody] ArchivarRequest req, CancellationToken ct)
+        => await _conversaciones.ArchivarAsync(id, req.Archivar, ct) ? NoContent() : NotFound();
+
+    [HttpPut("conversaciones/{id:guid}/reiniciar-contexto")]
+    public async Task<IActionResult> ReiniciarContextoAgente(Guid id, CancellationToken ct)
+        => await _conversaciones.ReiniciarContextoAgenteAsync(id, ct) ? NoContent() : NotFound();
+
+    [HttpPost("conversaciones/{id:guid}/bloquear")]
+    public async Task<IActionResult> BloquearContactoConversacion(Guid id, CancellationToken ct)
+        => await _conversaciones.BloquearContactoAsync(id, ct) ? NoContent() : NotFound();
+
+    public sealed record ArchivarRequest(bool Archivar);
 
     // ---------- Lista negra global del tenant (portado de CUBOT.travels) ----------
     [HttpGet("lista-negra")]

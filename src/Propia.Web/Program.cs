@@ -6,7 +6,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents()
+    .AddInteractiveServerComponents(o =>
+    {
+        if (builder.Environment.IsDevelopment()) o.DetailedErrors = true;
+    })
     .AddInteractiveWebAssemblyComponents();
 
 // Forwarded Headers para el proxy de Railway (necesario para que el scheme HTTPS

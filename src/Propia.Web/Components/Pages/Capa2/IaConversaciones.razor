@@ -1,0 +1,341 @@
+@page "/ia/conversaciones"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.InfraestructuraIa
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<PageTitle>Conversaciones - PROPIA</PageTitle>
+
+@* Bandeja humana de conversaciones (Oleada IA #3). Portado de CUBOT.travels.
+   Lista izq, hilo derecha, compositor simple. Sin SignalR ni multimedia. *@
+
+<div class="cv-page">
+    <div class="cv-head">
+        <div>
+            <h1 class="cv-title">Conversaciones</h1>
+            <p class="cv-sub">Bandeja humana cuando el agente IA escala una conversacion. Responde, archiva o bloquea contactos.</p>
+        </div>
+    </div>
+
+    @if (string.IsNullOrEmpty(_jwt))
+    {
+        <div class="cv-empty">Sesion expirada. <a href="/login?returnUrl=%2Fia%2Fconversaciones">Iniciar sesion</a>.</div>
+    }
+    else
+    {
+        <div class="cv-layout">
+            <aside class="cv-inbox">
+                <div class="cv-inbox-search">
+                    <input class="cv-search" @bind="_buscar" @bind:event="oninput" @bind:after="CargarAsync" placeholder="Buscar por nombre o telefono..." />
+                </div>
+                <div class="cv-inbox-tabs">
+                    <button class="cv-tab @(_modo == "activas" ? "cv-tab--on" : "")" type="button" @onclick="SetActivas">
+                        Activas <span class="cv-tab-count">@_items.Count</span>
+                    </button>
+                    <button class="cv-tab @(_modo == "archivadas" ? "cv-tab--on" : "")" type="button" @onclick="SetArchivadas">
+                        Archivadas
+                    </button>
+                </div>
+                <div class="cv-inbox-list">
+                    @if (_items.Count == 0)
+                    {
+                        <div class="cv-inbox-empty">Sin conversaciones.</div>
+                    }
+                    else
+                    {
+                        @foreach (var c in _items)
+                        {
+                            var ccId = c.Id;
+                            var nombre = string.IsNullOrEmpty(c.ContactName) ? c.ContactPhone : c.ContactName;
+                            <button type="button" class="cv-card @(_seleccionadaId == c.Id ? "cv-card--on" : "")" @onclick="@(() => SeleccionarAsync(ccId))">
+                                <div class="cv-card-avatar">@Iniciales(c.ContactName ?? c.ContactPhone)</div>
+                                <div class="cv-card-body">
+                                    <div class="cv-card-name">@nombre</div>
+                                    <div class="cv-card-snippet">@(c.UltimoMensajeResumen ?? "(sin mensajes)")</div>
+                                </div>
+                            </button>
+                        }
+                    }
+                </div>
+            </aside>
+
+            <main class="cv-thread">
+                @if (_seleccionada == null)
+                {
+                    <div class="cv-thread-empty">
+                        <strong>Selecciona una conversacion</strong>
+                        <span>Hace click en una tarjeta de la izquierda para ver el historial.</span>
+                    </div>
+                }
+                else
+                {
+                    <header class="cv-thread-head">
+                        <div>
+                            <div class="cv-thread-name">@(_seleccionada.ContactName ?? _seleccionada.ContactPhone)</div>
+                            <div class="cv-thread-sub">@_seleccionada.ContactPhone</div>
+                        </div>
+                        <div class="cv-thread-actions">
+                            <button class="cv-btn-ghost" type="button" @onclick="ReiniciarContextoAsync" disabled="@_busy">Reiniciar IA</button>
+                            <button class="cv-btn-ghost" type="button" @onclick="ToggleArchivoAsync" disabled="@_busy">
+                                @(_seleccionada.ArchivedAt.HasValue ? "Desarchivar" : "Archivar")
+                            </button>
+                            <button class="cv-btn-ghost-danger" type="button" @onclick="BloquearAsync" disabled="@_busy">Bloquear</button>
+                        </div>
+                    </header>
+
+                    <div class="cv-thread-body">
+                        @if (_mensajes.Count == 0)
+                        {
+                            <div class="cv-thread-noend">Sin mensajes.</div>
+                        }
+                        else
+                        {
+                            @foreach (var m in _mensajes)
+                            {
+                                var isOut = string.Equals(m.Direction, "Outbound", StringComparison.OrdinalIgnoreCase);
+                                <div class="cv-msg @(isOut ? "cv-msg--out" : "cv-msg--in")">
+                                    <div class="cv-msg-bubble">
+                                        <div class="cv-msg-text">@m.Body</div>
+                                        <div class="cv-msg-meta">@m.SentAt.ToLocalTime().ToString("dd MMM HH:mm")</div>
+                                    </div>
+                                </div>
+                            }
+                        }
+                    </div>
+
+                    <footer class="cv-composer">
+                        <textarea class="cv-composer-input" rows="2" @bind="_borrador" @bind:event="oninput" placeholder="Escribe una respuesta..."></textarea>
+                        <button class="cv-btn-brand" type="button" @onclick="EnviarAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_borrador))">Enviar</button>
+                    </footer>
+                }
+            </main>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_msg))
+        {
+            <div class="cv-toast @(_msgError ? "cv-toast--err" : "cv-toast--ok")">@_msg</div>
+        }
+    }
+</div>
+
+<style>
+    .cv-page { padding: 22px 28px; font-family: var(--propia-font-base, 'Lexend', sans-serif); }
+    .cv-head { margin-bottom: 18px; }
+    .cv-title { font-size: 27px; font-weight: 800; letter-spacing: -0.6px; color: #1B2A3A; margin: 0; }
+    .cv-sub { font-size: 14px; color: #7C98B6; margin: 4px 0 0; }
+    .cv-empty { background: #F8FAFC; border: 1px dashed #D7E0EA; border-radius: 12px; padding: 30px; text-align: center; color: #A6B7C8; }
+    .cv-layout { display: grid; grid-template-columns: 340px 1fr; gap: 14px; height: calc(100vh - 200px); min-height: 480px; }
+
+    .cv-inbox { background: #fff; border: 1px solid #EEF3F8; border-radius: 14px; display: flex; flex-direction: column; overflow: hidden; }
+    .cv-inbox-search { padding: 12px 14px; border-bottom: 1px solid #F4F7FA; }
+    .cv-search { width: 100%; border: 1.5px solid #E1E8EE; border-radius: 9px; padding: 9px 11px; font-size: 13px; font-family: inherit; outline: none; }
+    .cv-search:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .cv-inbox-tabs { display: flex; gap: 4px; padding: 6px 10px; border-bottom: 1px solid #EEF3F8; }
+    .cv-tab { background: transparent; border: 0; padding: 7px 11px; font-size: 12.5px; font-weight: 700; color: #7C98B6; cursor: pointer; border-bottom: 2px solid transparent; }
+    .cv-tab--on { color: var(--propia-brand, #6D4FE3); border-bottom-color: var(--propia-brand, #6D4FE3); }
+    .cv-tab-count { font-size: 10.5px; color: #A6B7C8; margin-left: 4px; }
+    .cv-inbox-list { flex: 1; overflow-y: auto; }
+    .cv-inbox-empty { padding: 30px 14px; color: #A6B7C8; font-size: 13px; text-align: center; }
+    .cv-card { width: 100%; display: flex; align-items: flex-start; gap: 10px; padding: 11px 14px; border: 0; border-bottom: 1px solid #F4F7FA; background: transparent; cursor: pointer; text-align: left; font-family: inherit; }
+    .cv-card:hover { background: #FAFBFD; }
+    .cv-card--on { background: var(--propia-brand-soft, #F1ECFD); }
+    .cv-card-avatar { width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, #7C5CE8, #5838C9); color: #fff; font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .cv-card-body { flex: 1; min-width: 0; }
+    .cv-card-name { font-size: 13px; font-weight: 700; color: #1B2A3A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cv-card-snippet { font-size: 12px; color: #516F90; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .cv-thread { background: #fff; border: 1px solid #EEF3F8; border-radius: 14px; display: flex; flex-direction: column; overflow: hidden; }
+    .cv-thread-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #A6B7C8; padding: 40px; }
+    .cv-thread-empty strong { font-size: 15px; color: #1B2A3A; }
+    .cv-thread-empty span { font-size: 12.5px; max-width: 320px; text-align: center; line-height: 1.5; }
+    .cv-thread-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid #EEF3F8; }
+    .cv-thread-name { font-size: 14px; font-weight: 800; color: #1B2A3A; }
+    .cv-thread-sub { font-size: 11.5px; color: #7C98B6; margin-top: 1px; }
+    .cv-thread-actions { display: flex; gap: 6px; }
+    .cv-btn-ghost { padding: 6px 12px; border-radius: 7px; border: 1px solid #E1E8EE; background: #fff; font-size: 11.5px; font-weight: 700; color: #516F90; cursor: pointer; font-family: inherit; }
+    .cv-btn-ghost:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
+    .cv-btn-ghost-danger { padding: 6px 12px; border-radius: 7px; border: 1px solid #FECACA; background: #fff; font-size: 11.5px; font-weight: 700; color: #B91C1C; cursor: pointer; font-family: inherit; }
+    .cv-btn-ghost-danger:hover { background: #FEE2E2; }
+
+    .cv-thread-body { flex: 1; overflow-y: auto; padding: 18px; background: #FAFBFD; display: flex; flex-direction: column; gap: 7px; }
+    .cv-thread-noend { color: #A6B7C8; text-align: center; padding: 40px; }
+    .cv-msg { display: flex; }
+    .cv-msg--in { justify-content: flex-start; }
+    .cv-msg--out { justify-content: flex-end; }
+    .cv-msg-bubble { max-width: 70%; padding: 9px 12px; border-radius: 12px; font-size: 13.5px; line-height: 1.4; color: #33475B; }
+    .cv-msg--in .cv-msg-bubble { background: #fff; border: 1px solid #EEF3F8; border-bottom-left-radius: 4px; }
+    .cv-msg--out .cv-msg-bubble { background: var(--propia-brand, #6D4FE3); color: #fff; border-bottom-right-radius: 4px; }
+    .cv-msg-text { white-space: pre-wrap; word-break: break-word; }
+    .cv-msg-meta { font-size: 10px; opacity: .7; margin-top: 3px; text-align: right; }
+
+    .cv-composer { display: flex; gap: 9px; padding: 12px 14px; border-top: 1px solid #EEF3F8; background: #fff; align-items: flex-end; }
+    .cv-composer-input { flex: 1; border: 1.5px solid #E1E8EE; border-radius: 10px; padding: 9px 12px; font-size: 13.5px; color: #33475B; font-family: inherit; outline: none; resize: vertical; min-height: 44px; max-height: 140px; }
+    .cv-composer-input:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .cv-btn-brand { padding: 10px 16px; border: 0; border-radius: 9px; background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 4px 12px rgba(109,79,227,.25); }
+    .cv-btn-brand:hover { background: var(--propia-brand-hover, #5838C9); }
+    .cv-btn-brand:disabled { opacity: .55; cursor: not-allowed; }
+
+    .cv-toast { position: fixed; bottom: 24px; right: 28px; padding: 12px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; box-shadow: 0 8px 24px rgba(45,62,80,.18); z-index: 200; }
+    .cv-toast--ok { background: #1A8754; color: #fff; }
+    .cv-toast--err { background: #DC2626; color: #fff; }
+</style>
+
+@code {
+    private string? _jwt;
+    private string _modo = "activas";
+    private string _buscar = "";
+    private List<ConversacionDto> _items = new();
+    private Guid? _seleccionadaId;
+    private ConversacionDto? _seleccionada;
+    private List<MensajeDto> _mensajes = new();
+    private string _borrador = "";
+    private bool _busy;
+    private string? _msg;
+    private bool _msgError;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            _jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+        }
+        catch { }
+        if (!string.IsNullOrEmpty(_jwt))
+        {
+            await CargarAsync();
+            StateHasChanged();
+        }
+        else
+        {
+            StateHasChanged();
+        }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(_jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
+        return http;
+    }
+
+    private async Task SetActivas() { _modo = "activas"; await ResetAndLoadAsync(); }
+    private async Task SetArchivadas() { _modo = "archivadas"; await ResetAndLoadAsync(); }
+
+    private async Task ResetAndLoadAsync()
+    {
+        _seleccionadaId = null;
+        _seleccionada = null;
+        _mensajes.Clear();
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        if (string.IsNullOrEmpty(_jwt)) return;
+        try
+        {
+            var url = _modo == "archivadas"
+                ? "/api/ia/conversaciones/archivadas"
+                : "/api/ia/conversaciones" + (string.IsNullOrWhiteSpace(_buscar) ? "" : ($"?q={Uri.EscapeDataString(_buscar)}"));
+            var resp = await Auth().GetAsync(url);
+            if (resp.IsSuccessStatusCode)
+            {
+                _items = await resp.Content.ReadFromJsonAsync<List<ConversacionDto>>() ?? new();
+            }
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+    }
+
+    private async Task SeleccionarAsync(Guid id)
+    {
+        _seleccionadaId = id;
+        _seleccionada = _items.FirstOrDefault(x => x.Id == id);
+        _mensajes.Clear();
+        if (_seleccionada == null) return;
+        try
+        {
+            var resp = await Auth().GetAsync($"/api/ia/conversaciones/{id}/mensajes");
+            if (resp.IsSuccessStatusCode)
+            {
+                _mensajes = await resp.Content.ReadFromJsonAsync<List<MensajeDto>>() ?? new();
+            }
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+    }
+
+    private async Task EnviarAsync()
+    {
+        if (_seleccionadaId == null || string.IsNullOrWhiteSpace(_borrador)) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/ia/conversaciones/{_seleccionadaId}/mensajes",
+                new EnviarMensajeRequest(_borrador.Trim()));
+            if (resp.IsSuccessStatusCode)
+            {
+                _borrador = "";
+                await SeleccionarAsync(_seleccionadaId.Value);
+                await CargarAsync();
+                Toast("Mensaje enviado.", false);
+            }
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+        _busy = false;
+    }
+
+    private async Task ToggleArchivoAsync()
+    {
+        if (_seleccionadaId == null || _seleccionada == null) return;
+        _busy = true;
+        var archivar = !_seleccionada.ArchivedAt.HasValue;
+        try
+        {
+            await Auth().PutAsJsonAsync($"/api/ia/conversaciones/{_seleccionadaId}/archivar", new { Archivar = archivar });
+            Toast(archivar ? "Archivada." : "Desarchivada.", false);
+            await ResetAndLoadAsync();
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+        _busy = false;
+    }
+
+    private async Task ReiniciarContextoAsync()
+    {
+        if (_seleccionadaId == null) return;
+        _busy = true;
+        try
+        {
+            await Auth().PutAsync($"/api/ia/conversaciones/{_seleccionadaId}/reiniciar-contexto", null);
+            Toast("Contexto del agente reiniciado.", false);
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+        _busy = false;
+    }
+
+    private async Task BloquearAsync()
+    {
+        if (_seleccionadaId == null) return;
+        _busy = true;
+        try
+        {
+            await Auth().PostAsync($"/api/ia/conversaciones/{_seleccionadaId}/bloquear", null);
+            Toast("Contacto bloqueado.", false);
+            await ResetAndLoadAsync();
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+        _busy = false;
+    }
+
+    private void Toast(string m, bool err) { _msg = m; _msgError = err; }
+
+    private static string Iniciales(string txt)
+    {
+        if (string.IsNullOrWhiteSpace(txt)) return "?";
+        var parts = txt.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return "?";
+        if (parts.Length == 1) return parts[0].Substring(0, Math.Min(2, parts[0].Length)).ToUpper();
+        return (parts[0][0].ToString() + parts[parts.Length - 1][0].ToString()).ToUpper();
+    }
+}
