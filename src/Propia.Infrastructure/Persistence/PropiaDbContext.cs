@@ -250,6 +250,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<AiUsageLog> AiUsageLogs => Set<AiUsageLog>();
     public DbSet<AiAgentTemplate> AiAgentTemplates => Set<AiAgentTemplate>();
     public DbSet<AiAgentTemplateMcpTool> AiAgentTemplateMcpTools => Set<AiAgentTemplateMcpTool>();
+    public DbSet<NumeroEnListaNegra> NumerosEnListaNegra => Set<NumeroEnListaNegra>();
 
     // Modulo 0.2 - Billing y Suscripciones (todo GLOBAL, sin tenant_id)
     public DbSet<Plan> Planes => Set<Plan>();
@@ -2216,6 +2217,14 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
             b.HasIndex(x => new { x.TenantId, x.InstanceName }).IsUnique();
             b.HasIndex(x => new { x.TenantId, x.Status });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<NumeroEnListaNegra>(b =>
+        {
+            b.Property(x => x.Telefono).IsRequired().HasMaxLength(30);
+            b.Property(x => x.Nota).HasMaxLength(500);
+            b.HasIndex(x => new { x.TenantId, x.Telefono }).IsUnique();
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

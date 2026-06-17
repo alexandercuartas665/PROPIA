@@ -20,6 +20,7 @@ public class IaController : ControllerBase
     private readonly IAiInferenceService _inference;
     private readonly IAiUsageService _usage;
     private readonly IMcpGateway _mcp;
+    private readonly IListaNegraService _listaNegra;
 
     public IaController(
         IWhatsAppLineService lines,
@@ -27,7 +28,8 @@ public class IaController : ControllerBase
         IAiAgentService agents,
         IAiInferenceService inference,
         IAiUsageService usage,
-        IMcpGateway mcp)
+        IMcpGateway mcp,
+        IListaNegraService listaNegra)
     {
         _lines = lines;
         _connector = connector;
@@ -35,7 +37,25 @@ public class IaController : ControllerBase
         _inference = inference;
         _usage = usage;
         _mcp = mcp;
+        _listaNegra = listaNegra;
     }
+
+    // ---------- Lista negra global del tenant (portado de CUBOT.travels) ----------
+    [HttpGet("lista-negra")]
+    public async Task<IActionResult> ListarBloqueados(CancellationToken ct)
+        => Ok(await _listaNegra.ListarAsync(ct));
+
+    [HttpPost("lista-negra")]
+    public async Task<IActionResult> BloquearNumero([FromBody] AgregarNumeroBloqueadoRequest req, CancellationToken ct)
+    {
+        var result = await _listaNegra.AgregarAsync(req, ct);
+        if (result is null) return BadRequest(new { error = "Telefono invalido (minimo 7 digitos) o sin tenant activo." });
+        return Created("", result);
+    }
+
+    [HttpDelete("lista-negra/{id:guid}")]
+    public async Task<IActionResult> DesbloquearNumero(Guid id, CancellationToken ct)
+        => await _listaNegra.EliminarAsync(id, ct) ? NoContent() : NotFound();
 
     // ---------- Lineas WhatsApp ----------
     [HttpGet("lineas")]

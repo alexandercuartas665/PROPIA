@@ -93,6 +93,7 @@ public static class DependencyInjection
         services.AddHttpClient<Application.InfraestructuraIa.IEvolutionApiClient, InfraestructuraIa.EvolutionApiClient>();
         services.AddHttpClient<Application.InfraestructuraIa.IAiProviderClient, InfraestructuraIa.AiProviderClient>();
         services.AddScoped<Application.InfraestructuraIa.IWhatsAppLineService, InfraestructuraIa.WhatsAppLineService>();
+        services.AddScoped<Application.InfraestructuraIa.IListaNegraService, InfraestructuraIa.ListaNegraService>();
         services.AddScoped<Application.InfraestructuraIa.IWhatsAppConnectorService, InfraestructuraIa.WhatsAppConnectorService>();
         services.AddScoped<Application.InfraestructuraIa.IAiAgentService, InfraestructuraIa.AiAgentService>();
         services.AddScoped<Application.InfraestructuraIa.IAiUsageService, InfraestructuraIa.AiUsageService>();
