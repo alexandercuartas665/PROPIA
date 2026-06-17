@@ -15,7 +15,8 @@ public record IdentidadDto(
     // Labels personalizables (spec v1.0)
     string? LabelAgrupacion, string? LabelPiso,
     // Contacto (spec v1.0)
-    string? TelefonoContacto = null, string? EmailContacto = null);
+    string? TelefonoContacto = null, string? EmailContacto = null,
+    string? Pais = null);
 
 public record ActualizarIdentidadRequest(
     string Nombre, string? Nit, string? DigitoVerificacion,
@@ -26,7 +27,8 @@ public record ActualizarIdentidadRequest(
     string? MatriculaInmobiliaria, string? LicenciaConstruccion,
     DateOnly? FechaConstitucion,
     string? LabelAgrupacion, string? LabelPiso,
-    string? TelefonoContacto = null, string? EmailContacto = null);
+    string? TelefonoContacto = null, string? EmailContacto = null,
+    string? Pais = null);
 
 // ----- Distribucion: Torres + Unidades (seccion 2) -----
 public record TorreDto(Guid Id, string Nombre, int? CantidadPisos, string? Descripcion, int CantidadUnidades);

@@ -32,6 +32,7 @@ public class Tenant : BaseEntity
 
     // Identidad registral (modulo 2.3 - todos opcionales)
     public string? NumeroReglamentoPh { get; set; }
+    public string? Pais { get; set; }                  // Por defecto "Colombia" cuando se crea desde Identidad.
     public string? NotariaRegistro { get; set; }
     public string? MatriculaInmobiliaria { get; set; }
     public string? LicenciaConstruccion { get; set; }

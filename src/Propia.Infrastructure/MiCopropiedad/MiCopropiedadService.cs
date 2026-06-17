@@ -70,7 +70,8 @@ public class MiCopropiedadService : IMiCopropiedadService
             t.MatriculaInmobiliaria, t.LicenciaConstruccion,
             t.FechaConstitucion,
             t.LabelAgrupacion, t.LabelPiso,
-            t.TelefonoContacto, t.EmailContacto);
+            t.TelefonoContacto, t.EmailContacto,
+            t.Pais);
 
     // ----------------------------- Seccion 1: Identidad -----------------------------
 
@@ -87,6 +88,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         t.Direccion = req.Direccion;
         t.Ciudad = req.Ciudad;
         t.Departamento = req.Departamento;
+        t.Pais = string.IsNullOrWhiteSpace(req.Pais) ? null : req.Pais.Trim();
         t.TipoCopropiedad = req.Tipo;
         t.Estrato = req.Estrato;
         t.FotoFachadaUrl = req.FotoFachadaUrl;

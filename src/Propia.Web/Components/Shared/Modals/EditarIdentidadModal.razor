@@ -40,7 +40,7 @@
             <input class="pmm-input" @bind="_form.Nit" @bind:event="oninput" placeholder="900.123.456" />
         </div>
         <div class="pmm-field">
-            <label class="pmm-label">DV</label>
+            <label class="pmm-label">Digito de verificacion</label>
             <input class="pmm-input" @bind="_form.DigitoVerificacion" @bind:event="oninput" placeholder="7" maxlength="1" />
         </div>
         <div class="pmm-field">
@@ -48,12 +48,38 @@
             <input class="pmm-input" @bind="_form.Direccion" @bind:event="oninput" placeholder="Cra. 00 #00-00" />
         </div>
         <div class="pmm-field">
-            <label class="pmm-label">Ciudad</label>
-            <input class="pmm-input" @bind="_form.Ciudad" @bind:event="oninput" />
+            <label class="pmm-label">Pais</label>
+            <select class="pmm-input" @bind="_form.Pais" @bind:after="OnPaisChange">
+                @foreach (var p in Propia.Web.Services.ColombiaCatalogo.Paises) { <option value="@p">@p</option> }
+            </select>
         </div>
         <div class="pmm-field">
             <label class="pmm-label">Departamento</label>
-            <input class="pmm-input" @bind="_form.Departamento" @bind:event="oninput" />
+            @if (EsColombia)
+            {
+                <select class="pmm-input" @bind="_form.Departamento" @bind:after="OnDeptoChange">
+                    <option value="">- Seleccionar -</option>
+                    @foreach (var d in Propia.Web.Services.ColombiaCatalogo.DepartamentosColombia) { <option value="@d">@d</option> }
+                </select>
+            }
+            else
+            {
+                <input class="pmm-input" @bind="_form.Departamento" @bind:event="oninput" placeholder="Departamento / Provincia" />
+            }
+        </div>
+        <div class="pmm-field">
+            <label class="pmm-label">Ciudad</label>
+            @if (EsColombia && !string.IsNullOrEmpty(_form.Departamento))
+            {
+                <select class="pmm-input" @bind="_form.Ciudad">
+                    <option value="">- Seleccionar -</option>
+                    @foreach (var c in Propia.Web.Services.ColombiaCatalogo.CiudadesDelDepartamento(_form.Departamento)) { <option value="@c">@c</option> }
+                </select>
+            }
+            else
+            {
+                <input class="pmm-input" @bind="_form.Ciudad" @bind:event="oninput" placeholder="Ciudad" />
+            }
         </div>
         <div class="pmm-field">
             <label class="pmm-label">Telefono de contacto</label>
@@ -242,7 +268,34 @@
             _form.LabelPiso = Inicial.LabelPiso;
             _form.TelefonoContacto = Inicial.TelefonoContacto;
             _form.EmailContacto = Inicial.EmailContacto;
+            _form.Pais = string.IsNullOrWhiteSpace(Inicial.Pais) ? "Colombia" : Inicial.Pais;
         }
+        else
+        {
+            _form.Pais = "Colombia";
+        }
+    }
+
+    private bool EsColombia => string.Equals(_form.Pais, "Colombia", StringComparison.OrdinalIgnoreCase);
+
+    private void OnPaisChange()
+    {
+        // Al cambiar de pais limpia depto y ciudad para no dejar valores invalidos.
+        if (!EsColombia) return;
+        if (!string.IsNullOrEmpty(_form.Departamento)
+            && !Propia.Web.Services.ColombiaCatalogo.ColombiaDepartamentosCiudades.ContainsKey(_form.Departamento))
+        {
+            _form.Departamento = null;
+            _form.Ciudad = null;
+        }
+    }
+
+    private void OnDeptoChange()
+    {
+        if (!EsColombia) return;
+        var ciudades = Propia.Web.Services.ColombiaCatalogo.CiudadesDelDepartamento(_form.Departamento);
+        if (!string.IsNullOrEmpty(_form.Ciudad) && !ciudades.Contains(_form.Ciudad))
+            _form.Ciudad = null;
     }
 
     private void Guardar()
@@ -268,13 +321,15 @@
             LabelAgrupacion: _form.LabelAgrupacion,
             LabelPiso: _form.LabelPiso,
             TelefonoContacto: _form.TelefonoContacto,
-            EmailContacto: _form.EmailContacto);
+            EmailContacto: _form.EmailContacto,
+            Pais: _form.Pais);
         Close(req);
     }
 
     private class FormState
     {
         public string Nombre { get; set; } = "";
+        public string? Pais { get; set; }
         public string? Nit { get; set; }
         public string? DigitoVerificacion { get; set; }
         public string? Direccion { get; set; }
