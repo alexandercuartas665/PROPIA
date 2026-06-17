@@ -712,11 +712,26 @@ else
     }
     </div>@* /mc-main *@
 
-    @* Asistente Ask AI anclado a la derecha (right rail), acompana el scroll *@
-    <aside class="mc-rail">
-        <AskAi Jwt="@_jwt" Titulo="Asistente de Mi Copropiedad" Docked="true" />
-    </aside>
+    @* Asistente Ask AI anclado a la derecha (right rail). Se puede ocultar/mostrar
+       como el sidebar; el estado se persiste en localStorage. *@
+    @if (_asistenteVisible)
+    {
+        <aside class="mc-rail">
+            <button class="mc-rail-collapse" type="button" @onclick="ToggleAsistenteAsync" title="Ocultar asistente">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+            <AskAi Jwt="@_jwt" Titulo="Asistente de Mi Copropiedad" Docked="true" />
+        </aside>
+    }
     </div>@* /mc-layout *@
+
+    @if (!_asistenteVisible)
+    {
+        <button class="mc-rail-reopen" type="button" @onclick="ToggleAsistenteAsync" title="Mostrar asistente">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+            <span>Asistente</span>
+        </button>
+    }
 }
 
 <style>
@@ -724,6 +739,24 @@ else
     .mc-main { flex: 1; min-width: 0; }
     .mc-rail { width: 380px; flex-shrink: 0; position: sticky; top: 88px; align-self: flex-start; height: calc(100vh - 108px); }
     .mc-rail .askai { height: 100%; }
+    .mc-rail-collapse {
+        position: absolute; top: 10px; right: 10px; z-index: 5;
+        width: 26px; height: 26px; border-radius: 7px;
+        border: 1px solid #E1E8EE; background: #fff; color: #7C98B6;
+        display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+    }
+    .mc-rail-collapse:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
+    .mc-rail-reopen {
+        position: fixed; right: 0; top: 50%; transform: translateY(-50%);
+        z-index: 50; display: inline-flex; align-items: center; gap: 6px;
+        padding: 10px 12px 10px 10px;
+        border: 1px solid #E1E8EE; border-right: 0;
+        border-radius: 10px 0 0 10px;
+        background: var(--propia-brand, #6D4FE3); color: #fff;
+        font-size: 12px; font-weight: 700; cursor: pointer;
+        box-shadow: -4px 4px 14px rgba(45,62,80,.15); font-family: inherit;
+    }
+    .mc-rail-reopen:hover { background: var(--propia-brand-hover, #5838C9); }
     @@media (max-width: 1200px) {
         .mc-layout { flex-direction: column; }
         .mc-rail { width: 100%; position: static; height: 480px; }
@@ -1012,6 +1045,13 @@ else
     private string? _jwt;
     private string _jwtInput = "";
     private bool _busy;
+    private bool _asistenteVisible = true;
+
+    private async Task ToggleAsistenteAsync()
+    {
+        _asistenteVisible = !_asistenteVisible;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", "propia_asistente_visible", _asistenteVisible ? "1" : "0"); } catch { }
+    }
     private string? _actionMsg;
     private string _actionMsgClass = "alert-info";
     private string? _loadError;
@@ -1124,6 +1164,12 @@ else
                 await CargarAsync();
                 StateHasChanged();
             }
+            try
+            {
+                var v = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_asistente_visible");
+                if (v == "0") { _asistenteVisible = false; StateHasChanged(); }
+            }
+            catch { }
         }
         catch { /* primera render server-side - se reintenta cuando llega Blazor interactivo */ }
     }
