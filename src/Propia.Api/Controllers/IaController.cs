@@ -70,6 +70,19 @@ public class IaController : ControllerBase
         return msg is null ? NotFound() : Created("", msg);
     }
 
+    /// <summary>Envia un adjunto (imagen, video, audio, documento) con caption opcional. multipart/form-data.</summary>
+    [HttpPost("conversaciones/{id:guid}/mensajes/media")]
+    [RequestSizeLimit(50_000_000)] // 50 MB
+    public async Task<IActionResult> EnviarMedia(Guid id, [FromForm] IFormFile archivo, [FromForm] string? caption, CancellationToken ct)
+    {
+        if (archivo is null || archivo.Length == 0) return BadRequest(new { error = "Archivo vacio." });
+        using var stream = archivo.OpenReadStream();
+        var msg = await _conversaciones.EnviarMediaAsync(id, stream, archivo.FileName,
+            string.IsNullOrEmpty(archivo.ContentType) ? "application/octet-stream" : archivo.ContentType,
+            caption, ct);
+        return msg is null ? NotFound() : Created("", msg);
+    }
+
     [HttpPut("conversaciones/{id:guid}/archivar")]
     public async Task<IActionResult> ArchivarConversacion(Guid id, [FromBody] ArchivarRequest req, CancellationToken ct)
         => await _conversaciones.ArchivarAsync(id, req.Archivar, ct) ? NoContent() : NotFound();

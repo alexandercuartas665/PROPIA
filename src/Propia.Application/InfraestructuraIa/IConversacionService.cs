@@ -43,6 +43,12 @@ public interface IConversacionService
     /// <summary>El operador envia un mensaje texto via la linea WhatsApp asociada.</summary>
     Task<MensajeDto?> EnviarTextoAsync(Guid conversationId, EnviarMensajeRequest req, CancellationToken ct = default);
 
+    /// <summary>
+    /// El operador envia un adjunto (imagen, video, audio, documento) con caption opcional.
+    /// El binario va a IBlobStorage; el mensaje queda con MediaUrl/MediaType.
+    /// </summary>
+    Task<MensajeDto?> EnviarMediaAsync(Guid conversationId, Stream contenido, string nombreArchivo, string mimeType, string? caption, CancellationToken ct = default);
+
     /// <summary>Archivar / desarchivar.</summary>
     Task<bool> ArchivarAsync(Guid id, bool archivar, CancellationToken ct = default);
 

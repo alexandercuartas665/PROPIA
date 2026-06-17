@@ -1,6 +1,7 @@
 @page "/ia/conversaciones"
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.InfraestructuraIa
+@using Microsoft.AspNetCore.Components.Forms
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
 @inject NavigationManager Nav
@@ -96,7 +97,24 @@
                                 var isOut = string.Equals(m.Direction, "Outbound", StringComparison.OrdinalIgnoreCase);
                                 <div class="cv-msg @(isOut ? "cv-msg--out" : "cv-msg--in")">
                                     <div class="cv-msg-bubble">
-                                        <div class="cv-msg-text">@m.Body</div>
+                                        @if (!string.IsNullOrEmpty(m.MediaUrl) && m.MediaType != "None")
+                                        {
+                                            @if (m.MediaType == "Image")
+                                            {
+                                                <img class="cv-msg-img" src="@m.MediaUrl" alt="adjunto" />
+                                            }
+                                            else
+                                            {
+                                                <a class="cv-msg-link" href="@m.MediaUrl" target="_blank" rel="noopener">
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                                                    @(m.MediaType) - abrir
+                                                </a>
+                                            }
+                                        }
+                                        @if (!string.IsNullOrEmpty(m.Body))
+                                        {
+                                            <div class="cv-msg-text">@m.Body</div>
+                                        }
                                         <div class="cv-msg-meta">@m.SentAt.ToLocalTime().ToString("dd MMM HH:mm")</div>
                                     </div>
                                 </div>
@@ -104,8 +122,29 @@
                         }
                     </div>
 
+                    @if (_plantillasFiltradas.Count > 0 && _borrador.StartsWith("/"))
+                    {
+                        <div class="cv-templates">
+                            @foreach (var p in _plantillasFiltradas.Take(5))
+                            {
+                                var pp = p;
+                                <button type="button" class="cv-template" @onclick="@(() => UsarPlantilla(pp))">
+                                    <span class="cv-template-name">@p.Nombre</span>
+                                    <span class="cv-template-body">@p.Cuerpo</span>
+                                </button>
+                            }
+                            <button type="button" class="cv-template cv-template--add" @onclick="GuardarComoPlantilla">
+                                <span class="cv-template-name">+ Guardar plantilla actual</span>
+                                <span class="cv-template-body">Guarda el texto despues del "/" como plantilla nueva.</span>
+                            </button>
+                        </div>
+                    }
                     <footer class="cv-composer">
-                        <textarea class="cv-composer-input" rows="2" @bind="_borrador" @bind:event="oninput" placeholder="Escribe una respuesta..."></textarea>
+                        <label class="cv-composer-attach" title="Adjuntar archivo">
+                            <InputFile OnChange="OnArchivoSeleccionado" class="cv-composer-attach-input" accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx" />
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                        </label>
+                        <textarea class="cv-composer-input" rows="2" @bind="_borrador" @bind:event="oninput" placeholder="Escribe una respuesta... (/ para plantillas)"></textarea>
                         <button class="cv-btn-brand" type="button" @onclick="EnviarAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_borrador))">Enviar</button>
                     </footer>
                 }
@@ -176,6 +215,20 @@
     .cv-btn-brand:hover { background: var(--propia-brand-hover, #5838C9); }
     .cv-btn-brand:disabled { opacity: .55; cursor: not-allowed; }
 
+    .cv-composer-attach { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 9px; border: 1.5px solid #E1E8EE; color: #516F90; background: #fff; cursor: pointer; flex-shrink: 0; }
+    .cv-composer-attach:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
+    .cv-composer-attach-input { display: none; }
+    .cv-msg-img { display: block; max-width: 240px; border-radius: 8px; margin-bottom: 4px; }
+    .cv-msg-link { display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px; border-radius: 7px; background: rgba(255,255,255,.18); color: inherit; text-decoration: none; font-size: 12.5px; font-weight: 600; margin-bottom: 4px; }
+    .cv-msg--in .cv-msg-link { background: #F1ECFD; color: var(--propia-brand, #6D4FE3); }
+
+    .cv-templates { background: #fff; border-top: 1px solid #EEF3F8; border-bottom: 1px solid #EEF3F8; max-height: 220px; overflow-y: auto; }
+    .cv-template { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 10px 14px; border: 0; border-bottom: 1px solid #F4F7FA; background: transparent; cursor: pointer; text-align: left; font-family: inherit; }
+    .cv-template:hover { background: #FAFBFD; }
+    .cv-template-name { font-size: 12.5px; font-weight: 700; color: #1B2A3A; }
+    .cv-template-body { font-size: 12px; color: #516F90; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cv-template--add .cv-template-name { color: var(--propia-brand, #6D4FE3); }
+
     .cv-toast { position: fixed; bottom: 24px; right: 28px; padding: 12px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; box-shadow: 0 8px 24px rgba(45,62,80,.18); z-index: 200; }
     .cv-toast--ok { background: #1A8754; color: #fff; }
     .cv-toast--err { background: #DC2626; color: #fff; }
@@ -198,6 +251,12 @@
     private DotNetObjectReference<IaConversaciones>? _hubRef;
     private bool _hubConectado;
 
+    private sealed record Plantilla(string Nombre, string Cuerpo);
+    private List<Plantilla> _plantillas = new();
+    private List<Plantilla> _plantillasFiltradas => string.IsNullOrEmpty(_borrador) || !_borrador.StartsWith("/")
+        ? new()
+        : _plantillas.Where(p => p.Nombre.Contains(_borrador.TrimStart('/'), StringComparison.OrdinalIgnoreCase)).ToList();
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
@@ -209,6 +268,7 @@
         if (!string.IsNullOrEmpty(_jwt))
         {
             await CargarAsync();
+            await CargarPlantillasAsync();
             await ConectarHubAsync();
             StateHasChanged();
         }
@@ -216,6 +276,89 @@
         {
             StateHasChanged();
         }
+    }
+
+    private async Task CargarPlantillasAsync()
+    {
+        try
+        {
+            var raw = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_chat_templates");
+            if (string.IsNullOrWhiteSpace(raw)) { _plantillas = PlantillasPorDefecto(); return; }
+            var lista = System.Text.Json.JsonSerializer.Deserialize<List<Plantilla>>(raw);
+            _plantillas = lista is { Count: > 0 } ? lista : PlantillasPorDefecto();
+        }
+        catch { _plantillas = PlantillasPorDefecto(); }
+    }
+
+    private static List<Plantilla> PlantillasPorDefecto() => new()
+    {
+        new("saludo", "Hola, le saluda la administracion. En que podemos ayudarle?"),
+        new("recibir", "Hemos recibido su solicitud y la estamos gestionando. Le informaremos pronto."),
+        new("cierre", "Quedamos atentos. Que tenga buen dia."),
+        new("horario", "Nuestro horario de atencion es de lunes a viernes 8:00 a 17:00."),
+        new("recaudo", "Recordamos que el pago de la administracion vence el dia 10 de cada mes.")
+    };
+
+    private async Task GuardarPlantillasAsync()
+    {
+        try
+        {
+            var json = System.Text.Json.JsonSerializer.Serialize(_plantillas);
+            await Js.InvokeVoidAsync("localStorage.setItem", "propia_chat_templates", json);
+        }
+        catch { }
+    }
+
+    private void UsarPlantilla(Plantilla p)
+    {
+        _borrador = p.Cuerpo;
+        StateHasChanged();
+    }
+
+    private async Task GuardarComoPlantilla()
+    {
+        var cuerpo = _borrador.TrimStart('/').Trim();
+        if (string.IsNullOrWhiteSpace(cuerpo)) { Toast("Escribe el cuerpo despues de '/'.", true); return; }
+        var nombre = "plantilla-" + (_plantillas.Count + 1);
+        _plantillas.Add(new Plantilla(nombre, cuerpo));
+        await GuardarPlantillasAsync();
+        _borrador = "";
+        Toast($"Plantilla '{nombre}' guardada.", false);
+    }
+
+    private async Task OnArchivoSeleccionado(InputFileChangeEventArgs e)
+    {
+        if (_seleccionadaId == null) { Toast("Selecciona una conversacion primero.", true); return; }
+        var f = e.File;
+        if (f == null) return;
+        if (f.Size > 50_000_000) { Toast("Archivo supera 50 MB.", true); return; }
+        _busy = true;
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var stream = f.OpenReadStream(50_000_000);
+            var sc = new StreamContent(stream);
+            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(string.IsNullOrEmpty(f.ContentType) ? "application/octet-stream" : f.ContentType);
+            content.Add(sc, "archivo", f.Name);
+            if (!string.IsNullOrWhiteSpace(_borrador))
+            {
+                content.Add(new StringContent(_borrador.Trim()), "caption");
+            }
+            var resp = await Auth().PostAsync($"/api/ia/conversaciones/{_seleccionadaId}/mensajes/media", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                _borrador = "";
+                await SeleccionarAsync(_seleccionadaId.Value);
+                await CargarAsync();
+                Toast("Adjunto enviado.", false);
+            }
+            else
+            {
+                Toast($"Error: {(int)resp.StatusCode}", true);
+            }
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+        _busy = false;
     }
 
     private async Task ConectarHubAsync()

@@ -4,6 +4,7 @@ using Propia.Application.InfraestructuraIa;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
 using Propia.Infrastructure.Persistence;
+using Propia.Infrastructure.Storage;
 
 namespace Propia.Infrastructure.InfraestructuraIa;
 
@@ -19,18 +20,21 @@ public sealed class ConversacionService : IConversacionService
     private readonly IWhatsAppConnectorService _connector;
     private readonly IListaNegraService _listaNegra;
     private readonly IChatBroadcaster? _broadcaster;
+    private readonly IBlobStorage _storage;
 
     public ConversacionService(
         PropiaDbContext db,
         ITenantContext tenant,
         IWhatsAppConnectorService connector,
         IListaNegraService listaNegra,
+        IBlobStorage storage,
         IChatBroadcaster? broadcaster = null)
     {
         _db = db;
         _tenant = tenant;
         _connector = connector;
         _listaNegra = listaNegra;
+        _storage = storage;
         _broadcaster = broadcaster;
     }
 
@@ -177,6 +181,58 @@ public sealed class ConversacionService : IConversacionService
                 m.Body, m.MessageType, m.SentAt, m.SentByName,
                 m.MediaType.ToString(), m.MediaUrl, m.MediaMimeType, m.ExternalId))
             .ToListAsync(ct);
+    }
+
+    public async Task<MensajeDto?> EnviarMediaAsync(Guid conversationId, Stream contenido, string nombreArchivo, string mimeType, string? caption, CancellationToken ct = default)
+    {
+        if (_tenant.CurrentTenantId is not Guid tenantId) return null;
+        var conv = await _db.Conversations.FirstOrDefaultAsync(c => c.Id == conversationId, ct);
+        if (conv is null) return null;
+
+        var ext = System.IO.Path.GetExtension(nombreArchivo);
+        if (string.IsNullOrEmpty(ext)) ext = ".bin";
+        var key = $"tenants/{tenantId:N}/conversaciones/{conversationId:N}/{Guid.NewGuid():N}{ext}";
+        var url = await _storage.UploadAsync(key, contenido, mimeType, ct);
+
+        var mediaType = (mimeType?.ToLowerInvariant()) switch
+        {
+            var m when m != null && m.StartsWith("image/") => MessageMediaType.Image,
+            var m when m != null && m.StartsWith("video/") => MessageMediaType.Video,
+            var m when m != null && m.StartsWith("audio/") => MessageMediaType.Audio,
+            _ => MessageMediaType.Document
+        };
+
+        var now = DateTimeOffset.UtcNow;
+        var msg = new Message
+        {
+            TenantId = tenantId,
+            ConversationId = conversationId,
+            Direction = MessageDirection.Outbound,
+            ExternalId = null,
+            Body = caption ?? string.Empty,
+            MessageType = mediaType.ToString().ToLowerInvariant(),
+            SentAt = now,
+            SentByName = "Operador",
+            MediaType = mediaType,
+            MediaUrl = url,
+            MediaMimeType = mimeType
+        };
+        _db.Messages.Add(msg);
+        conv.LastMessageAt = now;
+        if (conv.ArchivedAt.HasValue) conv.ArchivedAt = null;
+        await _db.SaveChangesAsync(ct);
+
+        var dto = new MensajeDto(
+            msg.Id, msg.ConversationId, msg.Direction.ToString(),
+            msg.Body, msg.MessageType, msg.SentAt, msg.SentByName,
+            msg.MediaType.ToString(), msg.MediaUrl, msg.MediaMimeType, msg.ExternalId);
+
+        if (_broadcaster is not null)
+        {
+            try { await _broadcaster.NotifyMessageAddedAsync(tenantId, conversationId, dto, ct); }
+            catch { }
+        }
+        return dto;
     }
 
     /// <summary>Helper: proyeccion comun con join a WhatsAppLine + ultimo mensaje (subconsulta).</summary>
