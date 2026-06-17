@@ -1,22 +1,24 @@
+@* Modal "Radicar PQR" alineado al prototipo PROPIA.dc.html:
+   un solo formulario (no wizard) con grid 2-cols, campos Tipo+Prioridad / Unidad+Solicitante /
+   Asunto / Descripcion. Categoria queda como dropdown adicional porque la spec del modulo 2.9
+   la requiere (legal). *@
+
 @using Propia.Application.Pqrsd
 @using Propia.Domain.Enums
 @inherits ModalBase<bool>
 @inject IHttpClientFactory HttpFactory
-
-@* Wizard para radicar nueva PQRSD: paso 1 tipo, paso 2 categoria, paso 3 descripcion y reserva, paso 4 confirmacion. *@
 
 <div class="npq">
     <div class="npq-head">
         <div class="npq-head-l">
             <span class="npq-icon-bx">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                    <path d="M14 2v6h6M12 18v-6M9 15h6"/>
+                    <path d="M12 5v14M5 12h14"/>
                 </svg>
             </span>
             <div>
                 <h2 class="npq-title">Radicar nueva PQR</h2>
-                <p class="npq-sub">Paso @_paso de 4 - completa todos los datos para que el plazo legal arranque correctamente.</p>
+                <p class="npq-sub">Completa los datos y queda asignada al solicitante. El plazo legal arranca inmediatamente.</p>
             </div>
         </div>
         <button type="button" class="npq-close" @onclick="Cerrar" aria-label="Cerrar">
@@ -24,91 +26,62 @@
         </button>
     </div>
 
-    @* Indicador de pasos *@
-    <div class="npq-steps">
-        <div class="npq-step @(_paso >= 1 ? "npq-step--on" : "")"><span class="npq-step-num">1</span> Tipo</div>
-        <div class="npq-step @(_paso >= 2 ? "npq-step--on" : "")"><span class="npq-step-num">2</span> Categoria</div>
-        <div class="npq-step @(_paso >= 3 ? "npq-step--on" : "")"><span class="npq-step-num">3</span> Descripcion</div>
-        <div class="npq-step @(_paso >= 4 ? "npq-step--on" : "")"><span class="npq-step-num">4</span> Confirmar</div>
-    </div>
-
     <div class="npq-body">
-        @if (_paso == 1)
-        {
-            <h3 class="npq-h3">Que clase de solicitud es?</h3>
-            <p class="npq-help">Cada tipo tiene un plazo legal distinto. Elige el que mejor describe el caso.</p>
-            <div class="npq-tipos">
-                @foreach (var t in Enum.GetValues<TipoPqrsd>())
+        <div class="npq-grid">
+            <div class="npq-field">
+                <label class="npq-lbl">Tipo</label>
+                <select class="npq-input" @bind="_tipoStr" @bind:after="OnTipoChange">
+                    <option value="">- elegir -</option>
+                    @foreach (var t in Enum.GetValues<TipoPqrsd>())
+                    {
+                        <option value="@t">@TipoLabel(t)</option>
+                    }
+                </select>
+                @if (_plazoCalculado.HasValue)
                 {
-                    var plazo = _plazos.FirstOrDefault(p => p.Tipo == t);
-                    var dias = plazo?.DiasHabiles ?? PlazoDefault(t);
-                    var urg = plazo?.NivelUrgencia ?? UrgenciaDefault(t);
-                    var seleccionado = _tipo == t;
-                    var tt = t;
-                    <button type="button" class="npq-tipo @(seleccionado ? "npq-tipo--on" : "")" @onclick="@(() => SetTipo(tt))">
-                        <div class="npq-tipo-head">
-                            <span class="npq-tipo-name">@TipoLabel(t)</span>
-                            <span class="npq-tipo-urg npq-urg--@urg.ToString().ToLower()">@urg</span>
-                        </div>
-                        <div class="npq-tipo-desc">@TipoDesc(t)</div>
-                        <div class="npq-tipo-plazo">@dias dias habiles</div>
-                    </button>
+                    <span class="npq-helper">@_plazoCalculado.Value dias habiles - vence aprox. @_fechaVencimiento.ToString("dd MMM")</span>
                 }
             </div>
-        }
-        else if (_paso == 2)
-        {
-            <h3 class="npq-h3">A que categoria pertenece?</h3>
-            <p class="npq-help">Sirve para reportes y para enrutar el caso al area correcta.</p>
-            <div class="npq-cats">
-                @foreach (var c in _categorias.Where(c => c.Activa).OrderBy(c => c.Orden))
-                {
-                    var cc = c;
-                    <button type="button" class="npq-cat @(_categoriaId == c.Id ? "npq-cat--on" : "")" @onclick="@(() => _categoriaId = cc.Id)">
-                        @c.Nombre
-                    </button>
-                }
-            </div>
-        }
-        else if (_paso == 3)
-        {
-            <h3 class="npq-h3">Describe el caso</h3>
-            <p class="npq-help">Se concreto - quien, donde, cuando, que paso. Esto queda en el expediente.</p>
-            <textarea class="npq-textarea" rows="6" maxlength="2000" @bind="_descripcion"
-                placeholder="Ejemplo: El portero del turno de noche del 12 de junio no permitio el ingreso de mi visita autorizada en el cuaderno..."></textarea>
-            <div class="npq-charcount">@(_descripcion?.Length ?? 0) / 2000</div>
 
-            <label class="npq-checkbox">
-                <input type="checkbox" @bind="_identidadReservada" />
-                <span><strong>Reservar mi identidad.</strong> El admin no vera mi nombre; solo se mostrara que radique una PQR.</span>
-            </label>
-        }
-        else if (_paso == 4)
-        {
-            <h3 class="npq-h3">Confirma y radica</h3>
-            <p class="npq-help">Revisa los datos. Al radicar, el plazo legal inicia inmediatamente.</p>
-
-            <div class="npq-confirm-grid">
-                <div class="npq-confirm-row"><span class="npq-lbl">Tipo</span><span class="npq-val">@TipoLabel(_tipo!.Value)</span></div>
-                <div class="npq-confirm-row"><span class="npq-lbl">Categoria</span><span class="npq-val">@(_categorias.FirstOrDefault(c => c.Id == _categoriaId)?.Nombre ?? "-")</span></div>
-                <div class="npq-confirm-row">
-                    <span class="npq-lbl">Plazo legal</span>
-                    <span class="npq-val">
-                        @{
-                            var p = _plazos.FirstOrDefault(p => p.Tipo == _tipo);
-                            var dias = p?.DiasHabiles ?? PlazoDefault(_tipo!.Value);
-                            var venc = DateTime.Today.AddDays(EstimarCalendar(dias));
-                        }
-                        @dias dias habiles - vence aprox. @venc.ToString("dd MMM yyyy")
-                    </span>
-                </div>
-                <div class="npq-confirm-row"><span class="npq-lbl">Reserva</span><span class="npq-val">@(_identidadReservada ? "Identidad reservada" : "Publica")</span></div>
-                <div class="npq-confirm-row npq-confirm-desc">
-                    <span class="npq-lbl">Descripcion</span>
-                    <span class="npq-val">@_descripcion</span>
-                </div>
+            <div class="npq-field">
+                <label class="npq-lbl">Categoria</label>
+                <select class="npq-input" @bind="_categoriaIdStr">
+                    <option value="">- elegir -</option>
+                    @foreach (var c in _categorias.Where(c => c.Activa).OrderBy(c => c.Orden))
+                    {
+                        <option value="@c.Id">@c.Nombre</option>
+                    }
+                </select>
             </div>
-        }
+
+            <div class="npq-field">
+                <label class="npq-lbl">Unidad / apartamento</label>
+                <input class="npq-input" @bind="_unidadTexto" @bind:event="oninput" placeholder="Ej. Apto 802 (opcional)" />
+            </div>
+
+            <div class="npq-field">
+                <label class="npq-lbl">Solicitante</label>
+                <input class="npq-input" @bind="_solicitanteTexto" @bind:event="oninput" placeholder="Nombre de quien solicita (opcional)" />
+            </div>
+
+            <div class="npq-field npq-field--full">
+                <label class="npq-lbl">Asunto</label>
+                <input class="npq-input" @bind="_asunto" @bind:event="oninput" placeholder="Resumen del caso" />
+            </div>
+
+            <div class="npq-field npq-field--full">
+                <label class="npq-lbl">Descripcion <span class="npq-charcount">@(_descripcion?.Length ?? 0) / 2000</span></label>
+                <textarea class="npq-input npq-textarea" rows="5" maxlength="2000" @bind="_descripcion" @bind:event="oninput"
+                    placeholder="Detalle de la peticion, queja o reclamo..."></textarea>
+            </div>
+
+            <div class="npq-field npq-field--full">
+                <label class="npq-check">
+                    <input type="checkbox" @bind="_identidadReservada" />
+                    <span><strong>Reservar mi identidad.</strong> El admin no vera mi nombre.</span>
+                </label>
+            </div>
+        </div>
 
         @if (!string.IsNullOrEmpty(_msg))
         {
@@ -117,107 +90,85 @@
     </div>
 
     <div class="npq-foot">
-        <div class="npq-foot-l">
-            @if (_paso > 1)
-            {
-                <button type="button" class="npq-btn-ghost" @onclick="Atras" disabled="@_busy">Atras</button>
-            }
-        </div>
-        <div class="npq-foot-r">
-            <button type="button" class="npq-btn-ghost" @onclick="Cerrar" disabled="@_busy">Cancelar</button>
-            @if (_paso < 4)
-            {
-                <button type="button" class="npq-btn-brand" @onclick="Siguiente" disabled="@(!PuedeAvanzar || _busy)">
-                    Siguiente
-                </button>
-            }
+        <button type="button" class="npq-btn-ghost" @onclick="Cerrar" disabled="@_busy">Cancelar</button>
+        <button type="button" class="npq-btn-brand" @onclick="Radicar" disabled="@(!PuedeRadicar || _busy)">
+            @if (_busy) { <span>Radicando...</span> }
             else
             {
-                <button type="button" class="npq-btn-brand" @onclick="Radicar" disabled="@_busy">
-                    @if (_busy) { <span>Radicando...</span> } else { <span>Radicar PQR</span> }
-                </button>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+                <span>Radicar</span>
             }
-        </div>
+        </button>
     </div>
 </div>
 
 <style>
-    .npq { display: flex; flex-direction: column; height: 100%; font-family: var(--propia-font-base, 'Lexend', sans-serif); background: #fff; }
+    .npq { display: flex; flex-direction: column; max-height: 90vh; font-family: var(--propia-font-base, 'Lexend', sans-serif); background: #fff; }
     .npq-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 24px; border-bottom: 1px solid #EEF3F8; }
     .npq-head-l { display: flex; align-items: center; gap: 12px; }
     .npq-icon-bx { width: 38px; height: 38px; border-radius: 10px; background: var(--propia-brand-soft, #F1ECFD); color: var(--propia-brand, #6D4FE3); display: inline-flex; align-items: center; justify-content: center; }
-    .npq-title { font-size: 19px; font-weight: 800; color: #1B2A3A; letter-spacing: -0.3px; margin: 0; }
+    .npq-title { font-size: 17px; font-weight: 800; color: #1B2A3A; letter-spacing: -0.3px; margin: 0; }
     .npq-sub { font-size: 12.5px; color: #7C98B6; margin: 2px 0 0; }
     .npq-close { width: 34px; height: 34px; border: 0; border-radius: 8px; background: transparent; color: #7C98B6; cursor: pointer; }
     .npq-close:hover { background: #F1F5F9; }
 
-    .npq-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 12px 24px; background: #FAFBFD; border-bottom: 1px solid #EEF3F8; }
-    .npq-step { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: #A6B7C8; padding: 7px 12px; border-radius: 8px; background: #fff; border: 1px solid #EEF3F8; }
-    .npq-step-num { display: inline-flex; align-items: center; justify-content: center; width: 21px; height: 21px; border-radius: 50%; font-size: 11px; font-weight: 800; background: #F1F5F9; color: #A6B7C8; }
-    .npq-step--on { color: var(--propia-brand, #6D4FE3); border-color: var(--propia-brand, #6D4FE3); background: var(--propia-brand-soft, #F1ECFD); }
-    .npq-step--on .npq-step-num { background: var(--propia-brand, #6D4FE3); color: #fff; }
-
-    .npq-body { flex: 1; overflow-y: auto; padding: 22px 24px 16px; }
-    .npq-h3 { font-size: 16px; font-weight: 700; color: #1B2A3A; margin: 0 0 4px; }
-    .npq-help { font-size: 13px; color: #7C98B6; margin: 0 0 14px; }
-
-    .npq-tipos { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
-    .npq-tipo { text-align: left; padding: 12px 14px; border-radius: 11px; border: 1.5px solid #E1E8EE; background: #fff; cursor: pointer; font-family: inherit; transition: border-color .15s, transform .1s; }
-    .npq-tipo:hover { border-color: var(--propia-brand, #6D4FE3); transform: translateY(-1px); }
-    .npq-tipo--on { border-color: var(--propia-brand, #6D4FE3); background: var(--propia-brand-soft, #F1ECFD); }
-    .npq-tipo-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
-    .npq-tipo-name { font-size: 14px; font-weight: 700; color: #1B2A3A; }
-    .npq-tipo-urg { font-size: 9.5px; font-weight: 800; padding: 2px 7px; border-radius: 5px; text-transform: uppercase; letter-spacing: .3px; }
-    .npq-urg--alta { color: #fff; background: #DC2626; }
-    .npq-urg--media { color: #B45309; background: #FEF3C7; }
-    .npq-urg--baja { color: #15703F; background: #E6F6EE; }
-    .npq-tipo-desc { font-size: 11.5px; color: #7C98B6; line-height: 1.4; margin-bottom: 8px; }
-    .npq-tipo-plazo { font-size: 11px; font-weight: 700; color: var(--propia-brand, #6D4FE3); }
-
-    .npq-cats { display: flex; flex-wrap: wrap; gap: 8px; }
-    .npq-cat { padding: 9px 16px; border-radius: 10px; border: 1.5px solid #E1E8EE; background: #fff; font-size: 13px; font-weight: 600; color: #516F90; cursor: pointer; font-family: inherit; }
-    .npq-cat:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
-    .npq-cat--on { background: var(--propia-brand, #6D4FE3); border-color: var(--propia-brand, #6D4FE3); color: #fff; }
-
-    .npq-textarea { width: 100%; border: 1.5px solid #E1E8EE; border-radius: 10px; padding: 11px 13px; font-size: 13.5px; color: #33475B; font-family: inherit; outline: none; resize: vertical; }
-    .npq-textarea:focus { border-color: var(--propia-brand, #6D4FE3); }
-    .npq-charcount { font-size: 11px; color: #A6B7C8; text-align: right; margin-top: 4px; }
-
-    .npq-checkbox { display: flex; align-items: flex-start; gap: 10px; margin-top: 16px; padding: 12px 14px; background: #FAFBFD; border: 1px solid #EEF3F8; border-radius: 10px; font-size: 12.5px; color: #516F90; cursor: pointer; }
-    .npq-checkbox input { margin-top: 2px; }
-
-    .npq-confirm-grid { display: flex; flex-direction: column; gap: 1px; background: #EEF3F8; border-radius: 10px; overflow: hidden; }
-    .npq-confirm-row { display: grid; grid-template-columns: 130px 1fr; gap: 12px; background: #fff; padding: 12px 14px; }
-    .npq-confirm-desc { grid-template-columns: 130px 1fr; }
-    .npq-lbl { font-size: 11px; font-weight: 700; color: #A6B7C8; text-transform: uppercase; letter-spacing: .3px; }
-    .npq-val { font-size: 13px; color: #1B2A3A; word-break: break-word; }
-
+    .npq-body { overflow-y: auto; padding: 20px 24px; }
+    .npq-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
+    .npq-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+    .npq-field--full { grid-column: 1 / -1; }
+    .npq-lbl { font-size: 11px; color: #7C98B6; font-weight: 700; }
+    .npq-input {
+        width: 100%; border: 1.5px solid #E1E8EE; border-radius: 9px;
+        padding: 10px 12px; font-size: 13.5px; color: #33475B;
+        font-family: inherit; outline: none; background: #fff;
+    }
+    .npq-input:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .npq-textarea { resize: vertical; min-height: 100px; }
+    .npq-helper { font-size: 11px; color: var(--propia-brand, #6D4FE3); font-weight: 600; margin-top: 2px; }
+    .npq-charcount { font-size: 10px; font-weight: 600; color: #A6B7C8; float: right; }
+    .npq-check { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; background: #FAFBFD; border: 1px solid #EEF3F8; border-radius: 10px; font-size: 12.5px; color: #516F90; cursor: pointer; }
+    .npq-check input { margin-top: 2px; }
     .npq-msg { margin-top: 14px; padding: 10px 14px; border-radius: 9px; font-size: 12.5px; font-weight: 600; }
     .npq-msg--ok { background: #E6F6EE; color: #15703F; }
     .npq-msg--err { background: #FEE2E2; color: #B91C1C; }
 
-    .npq-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 24px; border-top: 1px solid #EEF3F8; background: #FAFBFD; }
-    .npq-foot-l, .npq-foot-r { display: flex; align-items: center; gap: 8px; }
-    .npq-btn-ghost { padding: 10px 18px; border-radius: 9px; border: 1px solid #E1E8EE; background: #fff; font-size: 13px; font-weight: 600; color: #516F90; cursor: pointer; font-family: inherit; }
+    .npq-foot { display: flex; align-items: center; justify-content: flex-end; gap: 9px; padding: 14px 24px; border-top: 1px solid #EEF3F8; background: #FAFBFD; }
+    .npq-btn-ghost { padding: 9px 16px; border-radius: 9px; border: 1px solid #E1E8EE; background: #fff; font-size: 13px; font-weight: 600; color: #516F90; cursor: pointer; font-family: inherit; }
     .npq-btn-ghost:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
-    .npq-btn-brand { padding: 10px 22px; border-radius: 9px; border: 0; background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 4px 12px rgba(109,79,227,.25); }
+    .npq-btn-brand {
+        display: inline-flex; align-items: center; gap: 7px;
+        padding: 9px 18px; border-radius: 9px; border: 0;
+        background: var(--propia-brand, #6D4FE3); color: #fff;
+        font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit;
+        box-shadow: 0 4px 12px rgba(109,79,227,.25);
+    }
     .npq-btn-brand:hover { background: var(--propia-brand-hover, #5838C9); }
-    .npq-btn-brand:disabled { opacity: .55; cursor: not-allowed; }
+    .npq-btn-brand:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
 </style>
 
 @code {
     [Parameter] public string? Jwt { get; set; }
 
-    private int _paso = 1;
-    private TipoPqrsd? _tipo;
-    private Guid _categoriaId;
+    private string _tipoStr = "";
+    private string _categoriaIdStr = "";
+    private string _unidadTexto = "";
+    private string _solicitanteTexto = "";
+    private string _asunto = "";
     private string _descripcion = "";
     private bool _identidadReservada = false;
     private bool _busy;
-    private string _msg = "";
+    private string? _msg;
     private bool _msgError;
+    private int? _plazoCalculado;
+    private DateTime _fechaVencimiento;
     private List<PqrsdCategoriaDto> _categorias = new();
     private List<PqrsdPlazoDto> _plazos = new();
+
+    private bool PuedeRadicar =>
+        !string.IsNullOrEmpty(_tipoStr) &&
+        !string.IsNullOrEmpty(_categoriaIdStr) &&
+        !string.IsNullOrWhiteSpace(_descripcion) &&
+        _descripcion.Length >= 10;
 
     protected override async Task OnInitializedAsync()
     {
@@ -230,25 +181,39 @@
         catch (Exception ex) { _msg = "No se pudo cargar el catalogo: " + ex.Message; _msgError = true; }
     }
 
-    private bool PuedeAvanzar => _paso switch
+    private void OnTipoChange()
     {
-        1 => _tipo.HasValue,
-        2 => _categoriaId != Guid.Empty,
-        3 => !string.IsNullOrWhiteSpace(_descripcion) && _descripcion.Length >= 10,
-        _ => true
-    };
-
-    private void Siguiente() { if (PuedeAvanzar && _paso < 4) _paso++; }
-    private void Atras() { if (_paso > 1) _paso--; }
-    private void SetTipo(TipoPqrsd t) { _tipo = t; }
+        if (Enum.TryParse<TipoPqrsd>(_tipoStr, out var t))
+        {
+            var p = _plazos.FirstOrDefault(p => p.Tipo == t);
+            _plazoCalculado = p?.DiasHabiles ?? PlazoDefault(t);
+            _fechaVencimiento = DateTime.Today.AddDays((int)Math.Ceiling(_plazoCalculado.Value * 1.4));
+        }
+        else
+        {
+            _plazoCalculado = null;
+        }
+    }
 
     private async Task Radicar()
     {
-        if (!_tipo.HasValue || _categoriaId == Guid.Empty || string.IsNullOrWhiteSpace(_descripcion)) return;
+        if (!PuedeRadicar) return;
         _busy = true;
         try
         {
-            var req = new RadicarPqrsdRequest(_tipo.Value, _categoriaId, _descripcion.Trim(), _identidadReservada, null);
+            var tipo = Enum.Parse<TipoPqrsd>(_tipoStr);
+            var catId = Guid.Parse(_categoriaIdStr);
+            // Compone descripcion enriquecida: asunto + unidad/solicitante + texto libre
+            // (sin tocar el schema del backend; cuando el backend acepte asignacion explicita los campos
+            // pasaran directos).
+            var sb = new System.Text.StringBuilder();
+            if (!string.IsNullOrWhiteSpace(_asunto)) sb.AppendLine("Asunto: " + _asunto.Trim()).AppendLine();
+            if (!string.IsNullOrWhiteSpace(_unidadTexto)) sb.AppendLine("Unidad: " + _unidadTexto.Trim());
+            if (!string.IsNullOrWhiteSpace(_solicitanteTexto)) sb.AppendLine("Solicitante: " + _solicitanteTexto.Trim());
+            if (sb.Length > 0) sb.AppendLine();
+            sb.Append(_descripcion.Trim());
+
+            var req = new RadicarPqrsdRequest(tipo, catId, sb.ToString(), _identidadReservada, null);
             var resp = await Auth().PostAsJsonAsync("/api/pqrsd", req);
             if (resp.IsSuccessStatusCode)
             {
@@ -287,19 +252,6 @@
         _ => t.ToString()
     };
 
-    private static string TipoDesc(TipoPqrsd t) => t switch
-    {
-        TipoPqrsd.Peticion => "Solicitud general a la administracion.",
-        TipoPqrsd.SolicitudDocumentos => "Pides copias, paz y salvos, certificaciones.",
-        TipoPqrsd.Consulta => "Pregunta tecnica o normativa que requiere estudio.",
-        TipoPqrsd.Queja => "Inconformidad con el servicio o un proceso interno.",
-        TipoPqrsd.Reclamo => "Exiges correccion o compensacion por algo concreto.",
-        TipoPqrsd.Sugerencia => "Idea o mejora propuesta a la administracion.",
-        TipoPqrsd.Denuncia => "Reporte de conducta o falta grave - confidencial.",
-        TipoPqrsd.Felicitacion => "Reconocimiento positivo al equipo o servicio.",
-        _ => ""
-    };
-
     private static int PlazoDefault(TipoPqrsd t) => t switch
     {
         TipoPqrsd.SolicitudDocumentos => 10,
@@ -307,14 +259,4 @@
         TipoPqrsd.Felicitacion => 5,
         _ => 15
     };
-
-    private static NivelUrgenciaPqrsd UrgenciaDefault(TipoPqrsd t) => t switch
-    {
-        TipoPqrsd.Denuncia => NivelUrgenciaPqrsd.Alta,
-        TipoPqrsd.Consulta or TipoPqrsd.Sugerencia or TipoPqrsd.Felicitacion => NivelUrgenciaPqrsd.Baja,
-        _ => NivelUrgenciaPqrsd.Media
-    };
-
-    // Aproxima dias habiles a calendario (factor 1.4) para mostrar fecha estimada.
-    private static int EstimarCalendar(int diasHabiles) => (int)Math.Ceiling(diasHabiles * 1.4);
 }
