@@ -20,12 +20,14 @@ public sealed class ChatIngestService : IChatIngestService
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenant;
     private readonly IListaNegraService _listaNegra;
+    private readonly IChatBroadcaster? _broadcaster;
 
-    public ChatIngestService(PropiaDbContext db, ITenantContext tenant, IListaNegraService listaNegra)
+    public ChatIngestService(PropiaDbContext db, ITenantContext tenant, IListaNegraService listaNegra, IChatBroadcaster? broadcaster = null)
     {
         _db = db;
         _tenant = tenant;
         _listaNegra = listaNegra;
+        _broadcaster = broadcaster;
     }
 
     public async Task<ChatIngestResult> IngestTrustedAsync(Guid tenantId, IngestMessageRequest payload, CancellationToken ct = default)
@@ -116,6 +118,19 @@ public sealed class ChatIngestService : IChatIngestService
         _db.Messages.Add(msg);
 
         await _db.SaveChangesAsync(ct);
+
+        if (_broadcaster is not null)
+        {
+            try
+            {
+                var dto = new MensajeDto(
+                    msg.Id, msg.ConversationId, msg.Direction.ToString(),
+                    msg.Body, msg.MessageType, msg.SentAt, msg.SentByName,
+                    msg.MediaType.ToString(), msg.MediaUrl, msg.MediaMimeType, msg.ExternalId);
+                await _broadcaster.NotifyMessageAddedAsync(tenantId, conv.Id, dto, ct);
+            }
+            catch { /* webhook no debe fallar si SignalR esta caido */ }
+        }
         return ChatIngestResult.Accepted;
     }
 }

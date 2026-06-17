@@ -18,17 +18,20 @@ public sealed class ConversacionService : IConversacionService
     private readonly ITenantContext _tenant;
     private readonly IWhatsAppConnectorService _connector;
     private readonly IListaNegraService _listaNegra;
+    private readonly IChatBroadcaster? _broadcaster;
 
     public ConversacionService(
         PropiaDbContext db,
         ITenantContext tenant,
         IWhatsAppConnectorService connector,
-        IListaNegraService listaNegra)
+        IListaNegraService listaNegra,
+        IChatBroadcaster? broadcaster = null)
     {
         _db = db;
         _tenant = tenant;
         _connector = connector;
         _listaNegra = listaNegra;
+        _broadcaster = broadcaster;
     }
 
     public async Task<IReadOnlyList<ConversacionDto>> ListarActivasAsync(string? buscar, CancellationToken ct = default)
@@ -112,10 +115,18 @@ public sealed class ConversacionService : IConversacionService
         if (conv.ArchivedAt.HasValue) conv.ArchivedAt = null; // si respondemos a una archivada, vuelve a activa
         await _db.SaveChangesAsync(ct);
 
-        return new MensajeDto(
+        var dto = new MensajeDto(
             msg.Id, msg.ConversationId, msg.Direction.ToString(),
             msg.Body, msg.MessageType, msg.SentAt, msg.SentByName,
             msg.MediaType.ToString(), msg.MediaUrl, msg.MediaMimeType, msg.ExternalId);
+
+        // Realtime: notifica al hilo abierto + a la bandeja del tenant.
+        if (_broadcaster is not null)
+        {
+            try { await _broadcaster.NotifyMessageAddedAsync(tenantId, conversationId, dto, ct); }
+            catch { /* no romper el envio si SignalR esta caido */ }
+        }
+        return dto;
     }
 
     public async Task<bool> ArchivarAsync(Guid id, bool archivar, CancellationToken ct = default)

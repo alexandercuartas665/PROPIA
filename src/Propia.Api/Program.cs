@@ -55,6 +55,8 @@ builder.Host.UseSerilog((ctx, lc) =>
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddSignalR();
+builder.Services.AddScoped<Propia.Application.InfraestructuraIa.IChatBroadcaster, Propia.Api.Hubs.ChatBroadcaster>();
 
 // ---- Health checks enriquecidos (Frente C) ----
 // Mas alla de /health (liveness simple), agregamos /health/ready con check real
@@ -133,6 +135,21 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
             ValidAudience = jwt.Audience,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.SigningKey)),
             ClockSkew = TimeSpan.FromSeconds(30)
+        };
+
+        // SignalR over WebSocket no permite headers: el token viaja en query string ?access_token=...
+        bearer.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
+        {
+            OnMessageReceived = ctx =>
+            {
+                var accessToken = ctx.Request.Query["access_token"];
+                var path = ctx.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+                {
+                    ctx.Token = accessToken;
+                }
+                return Task.CompletedTask;
+            }
         };
     });
 
@@ -215,6 +232,7 @@ app.UseWhen(
     branch => branch.UseMiddleware<TenantMiddleware>());
 
 app.MapControllers();
+app.MapHub<Propia.Api.Hubs.ChatHub>("/hubs/chat");
 
 // Endpoint MCP en /mcp. RequireAuthorization fuerza JWT valido; el TenantMiddleware
 // (ya en el pipeline) setea el tenant del claim antes de ejecutar cualquier tool.

@@ -181,6 +181,8 @@
     .cv-toast--err { background: #DC2626; color: #fff; }
 </style>
 
+@implements IAsyncDisposable
+
 @code {
     private string? _jwt;
     private string _modo = "activas";
@@ -193,6 +195,8 @@
     private bool _busy;
     private string? _msg;
     private bool _msgError;
+    private DotNetObjectReference<IaConversaciones>? _hubRef;
+    private bool _hubConectado;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -205,12 +209,50 @@
         if (!string.IsNullOrEmpty(_jwt))
         {
             await CargarAsync();
+            await ConectarHubAsync();
             StateHasChanged();
         }
         else
         {
             StateHasChanged();
         }
+    }
+
+    private async Task ConectarHubAsync()
+    {
+        try
+        {
+            _hubRef ??= DotNetObjectReference.Create(this);
+            _hubConectado = await Js.InvokeAsync<bool>("propiaChatHub.connect", _hubRef);
+        }
+        catch { _hubConectado = false; }
+    }
+
+    [JSInvokable]
+    public async Task OnMessageAdded(MensajeDto mensaje)
+    {
+        // Si la conversacion abierta es la del mensaje, agregar al timeline si no esta ya.
+        if (_seleccionadaId == mensaje.ConversationId && !_mensajes.Any(m => m.Id == mensaje.Id))
+        {
+            _mensajes.Add(mensaje);
+            StateHasChanged();
+        }
+        // Refrescar bandeja para que avance LastMessageAt y snippet.
+        await CargarAsync();
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task OnBoardChanged()
+    {
+        await CargarAsync();
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await Js.InvokeVoidAsync("propiaChatHub.disconnect"); } catch { }
+        _hubRef?.Dispose();
     }
 
     private HttpClient Auth()
@@ -251,6 +293,11 @@
 
     private async Task SeleccionarAsync(Guid id)
     {
+        // Salir del grupo anterior si lo habia.
+        if (_seleccionadaId.HasValue && _hubConectado)
+        {
+            try { await Js.InvokeVoidAsync("propiaChatHub.leaveConversation", _seleccionadaId.Value); } catch { }
+        }
         _seleccionadaId = id;
         _seleccionada = _items.FirstOrDefault(x => x.Id == id);
         _mensajes.Clear();
@@ -264,6 +311,11 @@
             }
         }
         catch (Exception ex) { Toast(ex.Message, true); }
+        // Suscribirse al hilo nuevo.
+        if (_hubConectado)
+        {
+            try { await Js.InvokeVoidAsync("propiaChatHub.joinConversation", id); } catch { }
+        }
     }
 
     private async Task EnviarAsync()
