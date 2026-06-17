@@ -1024,7 +1024,7 @@ else
     {
         if (string.IsNullOrWhiteSpace(_jwtInput)) return;
         _jwt = _jwtInput.Trim();
-        await Js.InvokeVoidAsync("sessionStorage.setItem", "propia_jwt", _jwt);
+        await Js.InvokeVoidAsync("propiaAuth.save", _jwt, null, null);
         await CargarAsync();
     }
 
@@ -1053,8 +1053,12 @@ else
             var resp = await http.GetAsync("/api/mi-copropiedad/resumen");
             if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             {
-                await InvalidarSesionAsync("Tu sesion expiro. Vuelve a iniciar sesion para continuar.");
-                return;
+                // Intenta sliding refresh antes de invalidar; si falla redirige a /login con returnUrl.
+                var nuevoJwt = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+                if (string.IsNullOrEmpty(nuevoJwt)) return; // SessionHelper ya redirigio
+                _jwt = nuevoJwt;
+                http = Auth();
+                resp = await http.GetAsync("/api/mi-copropiedad/resumen");
             }
             resp.EnsureSuccessStatusCode();
             _resumen = await resp.Content.ReadFromJsonAsync<ResumenMiCopropiedadDto>();

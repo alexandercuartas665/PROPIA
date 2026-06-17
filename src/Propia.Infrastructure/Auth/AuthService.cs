@@ -1,5 +1,10 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using Propia.Application.Auth;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
@@ -12,15 +17,18 @@ public class AuthService : IAuthService
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly PropiaDbContext _db;
     private readonly ITokenService _tokenService;
+    private readonly JwtSettings _jwt;
 
     public AuthService(
         UserManager<ApplicationUser> userManager,
         PropiaDbContext db,
-        ITokenService tokenService)
+        ITokenService tokenService,
+        IOptions<JwtSettings> jwtOptions)
     {
         _userManager = userManager;
         _db = db;
         _tokenService = tokenService;
+        _jwt = jwtOptions.Value;
     }
 
     public async Task<LoginResponse?> LoginAsync(LoginRequest request, CancellationToken ct)
@@ -77,6 +85,59 @@ public class AuthService : IAuthService
         await UpdateUltimoAccesoAsync(user.PersonaId, newTenantId, ct);
 
         return new LoginResponse(token, expires, user.Id, user.Email!, newTenantId, tenants);
+    }
+
+    public async Task<LoginResponse?> RefreshAsync(string rawJwt, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(rawJwt)) return null;
+
+        var handler = new JwtSecurityTokenHandler();
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwt.SigningKey));
+        var validation = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = _jwt.Issuer,
+            ValidateAudience = true,
+            ValidAudience = _jwt.Audience,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = key,
+            // Ventana sliding: aceptamos tokens recientemente expirados (clock skew amplio).
+            ValidateLifetime = false,
+            ClockSkew = TimeSpan.Zero
+        };
+
+        ClaimsPrincipal principal;
+        SecurityToken validated;
+        try
+        {
+            principal = handler.ValidateToken(rawJwt, validation, out validated);
+        }
+        catch { return null; }
+
+        if (validated is not JwtSecurityToken jwt) return null;
+
+        // Sliding window: rechazar tokens expirados hace mucho.
+        var ahora = DateTimeOffset.UtcNow;
+        var exp = new DateTimeOffset(jwt.ValidTo, TimeSpan.Zero);
+        if (ahora - exp > TimeSpan.FromHours(_jwt.RefreshSlidingHours)) return null;
+
+        var sub = principal.FindFirstValue("user_id") ?? principal.FindFirstValue(JwtRegisteredClaimNames.Sub);
+        if (!Guid.TryParse(sub, out var userId)) return null;
+
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user is null) return null;
+
+        Guid? activeTenant = null;
+        var t = principal.FindFirstValue("tenant_id");
+        if (Guid.TryParse(t, out var parsedTenant)) activeTenant = parsedTenant;
+
+        var tenants = await LoadAvailableTenantsAsync(userId, ct);
+        // Si el tenant del JWT viejo ya no esta disponible, reasignamos al primero o null.
+        if (activeTenant.HasValue && !tenants.Any(x => x.TenantId == activeTenant.Value))
+            activeTenant = tenants.Count == 1 ? tenants[0].TenantId : null;
+
+        var (nuevoToken, expires) = _tokenService.IssueAccessToken(user, activeTenant);
+        return new LoginResponse(nuevoToken, expires, user.Id, user.Email!, activeTenant, tenants);
     }
 
     // ---------- Helpers ----------

@@ -261,9 +261,16 @@
         btn.addEventListener('click', function (e) {
             e.preventDefault();
             try {
-                sessionStorage.removeItem('propia_jwt');
-                sessionStorage.removeItem('propia_tenant_id');
-                sessionStorage.removeItem('propia_copropiedad_nombre');
+                if (window.propiaAuth && window.propiaAuth.clear) {
+                    window.propiaAuth.clear();
+                } else {
+                    sessionStorage.removeItem('propia_jwt');
+                    sessionStorage.removeItem('propia_tenant_id');
+                    sessionStorage.removeItem('propia_copropiedad_nombre');
+                    localStorage.removeItem('propia_jwt');
+                    localStorage.removeItem('propia_tenant_id');
+                    localStorage.removeItem('propia_copropiedad_nombre');
+                }
             } catch (err) { }
             window.location.href = '/login';
         });

@@ -96,6 +96,26 @@ public class AuthController : ControllerBase
             AvailableTenants: Array.Empty<TenantInfo>()));
     }
 
+    /// <summary>
+    /// Sliding refresh: recibe el JWT actual (posiblemente recien expirado, dentro de Jwt:RefreshSlidingHours)
+    /// en el header Authorization Bearer y devuelve uno nuevo con la misma identidad y tenant activo.
+    /// Esto evita que el usuario tenga que volver a loguearse cuando vuelve al tab horas despues.
+    /// </summary>
+    [HttpPost("refresh")]
+    [AllowAnonymous]
+    public async Task<IActionResult> Refresh(CancellationToken ct)
+    {
+        var auth = Request.Headers.Authorization.ToString();
+        if (string.IsNullOrWhiteSpace(auth)) return Unauthorized(new { error = "token_ausente" });
+        var raw = auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+            ? auth.Substring(7).Trim()
+            : auth.Trim();
+
+        var result = await _auth.RefreshAsync(raw, ct);
+        if (result is null) return Unauthorized(new { error = "token_invalido_o_vencido" });
+        return Ok(result);
+    }
+
     private string? Ip() => HttpContext.Connection.RemoteIpAddress?.ToString();
 
     /// <summary>Info del usuario autenticado + lista de copropiedades accesibles.</summary>
