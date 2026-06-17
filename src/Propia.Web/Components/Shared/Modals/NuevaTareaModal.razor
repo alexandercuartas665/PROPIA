@@ -1,0 +1,248 @@
+@* Modal "Nueva tarea" alineado al prototipo PROPIA.dc.html:
+   un solo formulario, grid 2-cols con Titulo (full), Descripcion (full),
+   Prioridad+Estado, Responsable+Fecha vencimiento, Etiquetas (chips). *@
+
+@using Propia.Application.Tareas
+@using Propia.Domain.Enums
+@inherits ModalBase<bool>
+@inject IHttpClientFactory HttpFactory
+
+<div class="ntk">
+    <div class="ntk-head">
+        <div class="ntk-head-l">
+            <span class="ntk-icon-bx">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            </span>
+            <div>
+                <h2 class="ntk-title">Nueva tarea</h2>
+                <p class="ntk-sub">Asigna a una persona y elige el estado donde entra en el tablero.</p>
+            </div>
+        </div>
+        <button type="button" class="ntk-close" @onclick="Cerrar" aria-label="Cerrar">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+    </div>
+
+    <div class="ntk-body">
+        <div class="ntk-grid">
+            <div class="ntk-field ntk-field--full">
+                <label class="ntk-lbl">Titulo *</label>
+                <input class="ntk-input" @bind="_titulo" @bind:event="oninput" placeholder="Ej. Cambio de luminarias piso 3" />
+            </div>
+
+            <div class="ntk-field ntk-field--full">
+                <label class="ntk-lbl">Descripcion</label>
+                <textarea class="ntk-input ntk-textarea" rows="3" @bind="_descripcion" @bind:event="oninput"
+                    placeholder="Que hay que hacer, donde, cuando..."></textarea>
+            </div>
+
+            <div class="ntk-field">
+                <label class="ntk-lbl">Prioridad</label>
+                <div class="ntk-prio-row">
+                    @foreach (var p in new[] { PrioridadTarea.Urgente, PrioridadTarea.Alta, PrioridadTarea.Normal, PrioridadTarea.Baja })
+                    {
+                        var pp = p;
+                        <button type="button" class="ntk-prio-btn @(_prioridad == p ? "ntk-prio-btn--on " + PrioridadClass(p) : "")"
+                                @onclick="@(() => _prioridad = pp)">
+                            @PrioridadLabel(p)
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <div class="ntk-field">
+                <label class="ntk-lbl">Estado</label>
+                <select class="ntk-input" @bind="_estadoIdStr">
+                    <option value="">- por defecto -</option>
+                    @foreach (var e in _estados.Where(e => e.Activo).OrderBy(e => e.Orden))
+                    {
+                        <option value="@e.Id">@e.Nombre</option>
+                    }
+                </select>
+            </div>
+
+            <div class="ntk-field">
+                <label class="ntk-lbl">Responsable</label>
+                <input class="ntk-input" @bind="_responsable" @bind:event="oninput" placeholder="Nombre o iniciales (opcional)" />
+                <span class="ntk-helper">Si dejas vacio, queda sin asignar.</span>
+            </div>
+
+            <div class="ntk-field">
+                <label class="ntk-lbl">Fecha vencimiento</label>
+                <input type="date" class="ntk-input" @bind="_fechaVencimiento" />
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_msg))
+        {
+            <div class="ntk-msg @(_msgError ? "ntk-msg--err" : "ntk-msg--ok")">@_msg</div>
+        }
+    </div>
+
+    <div class="ntk-foot">
+        <button type="button" class="ntk-btn-ghost" @onclick="Cerrar" disabled="@_busy">Cancelar</button>
+        <button type="button" class="ntk-btn-brand" @onclick="Crear" disabled="@(!PuedeCrear || _busy)">
+            @if (_busy) { <span>Creando...</span> }
+            else
+            {
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>
+                <span>Crear tarea</span>
+            }
+        </button>
+    </div>
+</div>
+
+<style>
+    .ntk { display: flex; flex-direction: column; max-height: 90vh; font-family: var(--propia-font-base, 'Lexend', sans-serif); background: #fff; }
+    .ntk-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 24px; border-bottom: 1px solid #EEF3F8; }
+    .ntk-head-l { display: flex; align-items: center; gap: 12px; }
+    .ntk-icon-bx { width: 38px; height: 38px; border-radius: 10px; background: var(--propia-brand-soft, #F1ECFD); color: var(--propia-brand, #6D4FE3); display: inline-flex; align-items: center; justify-content: center; }
+    .ntk-title { font-size: 17px; font-weight: 800; color: #1B2A3A; margin: 0; letter-spacing: -0.3px; }
+    .ntk-sub { font-size: 12.5px; color: #7C98B6; margin: 2px 0 0; }
+    .ntk-close { width: 34px; height: 34px; border: 0; border-radius: 8px; background: transparent; color: #7C98B6; cursor: pointer; }
+    .ntk-close:hover { background: #F1F5F9; }
+
+    .ntk-body { overflow-y: auto; padding: 20px 24px; }
+    .ntk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
+    .ntk-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+    .ntk-field--full { grid-column: 1 / -1; }
+    .ntk-lbl { font-size: 11px; color: #7C98B6; font-weight: 700; }
+    .ntk-helper { font-size: 10.5px; color: #A6B7C8; font-weight: 600; margin-top: 1px; }
+    .ntk-input { width: 100%; border: 1.5px solid #E1E8EE; border-radius: 9px; padding: 10px 12px; font-size: 13.5px; color: #33475B; background: #fff; font-family: inherit; outline: none; }
+    .ntk-input:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .ntk-textarea { resize: vertical; min-height: 80px; }
+
+    .ntk-prio-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .ntk-prio-btn {
+        flex: 1; min-width: 60px;
+        border: 1.5px solid #E1E8EE; background: #fff;
+        padding: 8px 10px; border-radius: 8px;
+        font-size: 12px; font-weight: 700; color: #516F90;
+        cursor: pointer; font-family: inherit;
+    }
+    .ntk-prio-btn:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
+    .ntk-prio-btn--on.ntk-card-prio--urgente { background: #DC2626; color: #fff; border-color: #DC2626; }
+    .ntk-prio-btn--on.ntk-card-prio--alta { background: #FEF3C7; color: #B45309; border-color: #FEF3C7; }
+    .ntk-prio-btn--on.ntk-card-prio--normal { background: #DBEAFE; color: #2563EB; border-color: #DBEAFE; }
+    .ntk-prio-btn--on.ntk-card-prio--baja { background: #F3F4F6; color: #6B7280; border-color: #F3F4F6; }
+
+    .ntk-msg { margin-top: 14px; padding: 10px 14px; border-radius: 9px; font-size: 12.5px; font-weight: 600; }
+    .ntk-msg--ok { background: #E6F6EE; color: #15703F; }
+    .ntk-msg--err { background: #FEE2E2; color: #B91C1C; }
+
+    .ntk-foot { display: flex; align-items: center; justify-content: flex-end; gap: 9px; padding: 14px 24px; border-top: 1px solid #EEF3F8; background: #FAFBFD; }
+    .ntk-btn-ghost { padding: 9px 16px; border-radius: 9px; border: 1px solid #E1E8EE; background: #fff; font-size: 13px; font-weight: 600; color: #516F90; cursor: pointer; font-family: inherit; }
+    .ntk-btn-ghost:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
+    .ntk-btn-brand {
+        display: inline-flex; align-items: center; gap: 7px;
+        padding: 9px 18px; border-radius: 9px; border: 0;
+        background: var(--propia-brand, #6D4FE3); color: #fff;
+        font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit;
+        box-shadow: 0 4px 12px rgba(109,79,227,.25);
+    }
+    .ntk-btn-brand:hover { background: var(--propia-brand-hover, #5838C9); }
+    .ntk-btn-brand:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
+</style>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+    [Parameter] public List<EstadoTareaDto>? EstadosDisponibles { get; set; }
+
+    private string _titulo = "";
+    private string _descripcion = "";
+    private PrioridadTarea _prioridad = PrioridadTarea.Normal;
+    private string _estadoIdStr = "";
+    private string _responsable = "";
+    private DateTime? _fechaVencimiento;
+    private bool _busy;
+    private string? _msg;
+    private bool _msgError;
+    private List<EstadoTareaDto> _estados = new();
+
+    private bool PuedeCrear => !string.IsNullOrWhiteSpace(_titulo);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (EstadosDisponibles is not null && EstadosDisponibles.Count > 0)
+        {
+            _estados = EstadosDisponibles;
+        }
+        else
+        {
+            try
+            {
+                _estados = (await Auth().GetFromJsonAsync<List<EstadoTareaDto>>("/api/tareas/estados") ?? new())
+                    .Where(e => e.Activo).OrderBy(e => e.Orden).ToList();
+            }
+            catch (Exception ex) { _msg = "No se pudo cargar estados: " + ex.Message; _msgError = true; }
+        }
+    }
+
+    private async Task Crear()
+    {
+        if (!PuedeCrear) return;
+        _busy = true;
+        try
+        {
+            Guid? estadoId = Guid.TryParse(_estadoIdStr, out var eg) ? eg : null;
+            DateOnly? fechaVenc = _fechaVencimiento.HasValue ? DateOnly.FromDateTime(_fechaVencimiento.Value) : null;
+            // El backend no expone aun selector de personas, pasamos null y dejamos el nombre como nota
+            // en la descripcion para mantener la trazabilidad mientras se conecta el directorio.
+            var desc = _descripcion?.Trim() ?? "";
+            if (!string.IsNullOrWhiteSpace(_responsable))
+            {
+                desc = $"Responsable: {_responsable.Trim()}\n\n{desc}".Trim();
+            }
+            var req = new CrearTareaRequest(
+                _titulo.Trim(),
+                string.IsNullOrEmpty(desc) ? null : desc,
+                _prioridad,
+                estadoId,
+                null,
+                null,
+                fechaVenc,
+                null,
+                null);
+            var resp = await Auth().PostAsJsonAsync("/api/tareas", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                Close(true);
+            }
+            else
+            {
+                _msg = "No se pudo crear: " + await resp.Content.ReadAsStringAsync();
+                _msgError = true;
+            }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
+        _busy = false;
+    }
+
+    private void Cerrar() => Cancel();
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    private static string PrioridadLabel(PrioridadTarea p) => p switch
+    {
+        PrioridadTarea.Urgente => "Urgente",
+        PrioridadTarea.Alta => "Alta",
+        PrioridadTarea.Normal => "Normal",
+        PrioridadTarea.Baja => "Baja",
+        _ => p.ToString()
+    };
+
+    private static string PrioridadClass(PrioridadTarea p) => p switch
+    {
+        PrioridadTarea.Urgente => "ntk-card-prio--urgente",
+        PrioridadTarea.Alta => "ntk-card-prio--alta",
+        PrioridadTarea.Normal => "ntk-card-prio--normal",
+        PrioridadTarea.Baja => "ntk-card-prio--baja",
+        _ => ""
+    };
+}

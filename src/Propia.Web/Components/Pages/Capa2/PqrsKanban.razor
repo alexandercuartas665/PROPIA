@@ -146,7 +146,7 @@
                                     <span class="pk-radicador">
                                         @if (it.IdentidadReservada) { <span class="pk-rsv">[Reservada]</span> }
                                         else if (!string.IsNullOrEmpty(it.RadicadorNombre)) { <span>@it.RadicadorNombre</span> }
-                                        @if (!string.IsNullOrEmpty(it.UnidadNumero)) { <span> · @it.UnidadNumero</span> }
+                                        @if (!string.IsNullOrEmpty(it.UnidadNumero)) { <span> - @it.UnidadNumero</span> }
                                     </span>
                                     <span class="pk-vence @(it.DiasHastaVencimiento < 0 ? "pk-vence-err" : it.DiasHastaVencimiento <= 3 ? "pk-vence-warn" : "")">
                                         @if (it.DiasHastaVencimiento < 0) { <span>vencida hace @Math.Abs(it.DiasHastaVencimiento)d</span> }
@@ -156,8 +156,36 @@
                                 @if (it.TutelaActiva || it.TieneComiteActivo)
                                 {
                                     <div class="pk-card-flags">
-                                        @if (it.TutelaActiva) { <span class="pk-flag pk-flag--tutela">⚠ Tutela activa</span> }
+                                        @if (it.TutelaActiva) { <span class="pk-flag pk-flag--tutela">Tutela activa</span> }
                                         @if (it.TieneComiteActivo) { <span class="pk-flag pk-flag--comite">Comite</span> }
+                                    </div>
+                                }
+                                @{
+                                    var prev = EstadoAnterior(it.Estado);
+                                    var next = EstadoSiguiente(it.Estado);
+                                }
+                                @if (prev.HasValue || next.HasValue)
+                                {
+                                    <div class="pk-card-nav" @onclick:stopPropagation="true">
+                                        @if (prev.HasValue)
+                                        {
+                                            var p = prev.Value;
+                                            <button type="button" class="pk-nav-btn" title="Mover a @EstadoLabel(p)"
+                                                    @onclick="() => MoverEstado(it.Id, it.Estado, p)">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 18l-6-6 6-6"/></svg>
+                                                <span>@EstadoLabel(p)</span>
+                                            </button>
+                                        }
+                                        else { <span></span> }
+                                        @if (next.HasValue)
+                                        {
+                                            var n = next.Value;
+                                            <button type="button" class="pk-nav-btn pk-nav-btn--brand" title="Mover a @EstadoLabel(n)"
+                                                    @onclick="() => MoverEstado(it.Id, it.Estado, n)">
+                                                <span>@EstadoLabel(n)</span>
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 18l6-6-6-6"/></svg>
+                                            </button>
+                                        }
                                     </div>
                                 }
                             </div>
@@ -332,6 +360,22 @@
     .pk-flag--tutela { color: #fff; background: #DC2626; }
     .pk-flag--comite { color: var(--propia-brand, #6D4FE3); background: var(--propia-brand-soft, #F1ECFD); }
 
+    .pk-card-nav {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 6px; margin-top: 9px; padding-top: 9px;
+        border-top: 1px solid #F4F7FA;
+    }
+    .pk-nav-btn {
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 4px 9px; border-radius: 6px;
+        border: 1px solid #E1E8EE; background: #fff;
+        font-size: 10.5px; font-weight: 600; color: #516F90;
+        cursor: pointer; font-family: inherit;
+    }
+    .pk-nav-btn:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
+    .pk-nav-btn--brand { background: var(--propia-brand-soft, #F1ECFD); border-color: var(--propia-brand-soft, #F1ECFD); color: var(--propia-brand, #6D4FE3); }
+    .pk-nav-btn--brand:hover { background: var(--propia-brand, #6D4FE3); color: #fff; border-color: var(--propia-brand, #6D4FE3); }
+
     .pk-toast {
         position: fixed; bottom: 24px; right: 28px;
         padding: 12px 18px; border-radius: 10px;
@@ -374,6 +418,34 @@
 
     private void SetCategoria(string nombre) { _filtroCategoria = nombre; }
     private void SetUnidad(string numero) { _filtroUnidad = numero; }
+
+    private static EstadoPqrsd? EstadoSiguiente(EstadoPqrsd e) => e switch
+    {
+        EstadoPqrsd.Recibida => EstadoPqrsd.EnGestion,
+        EstadoPqrsd.EnGestion => EstadoPqrsd.Respondida,
+        EstadoPqrsd.Respondida => EstadoPqrsd.Cerrada,
+        _ => null
+    };
+
+    private static EstadoPqrsd? EstadoAnterior(EstadoPqrsd e) => e switch
+    {
+        // Solo permitimos retroceder de Respondida a EnGestion (re-abrir). Recibida y Cerrada no retroceden.
+        EstadoPqrsd.Respondida => EstadoPqrsd.EnGestion,
+        _ => null
+    };
+
+    private async Task MoverEstado(Guid id, EstadoPqrsd desde, EstadoPqrsd hasta)
+    {
+        var (endpoint, body, ok) = MapearTransicion(desde, hasta);
+        if (!ok) { Toast($"Transicion invalida: {EstadoLabel(desde)} -> {EstadoLabel(hasta)}", true); return; }
+        var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{id}/{endpoint}", body);
+        if (resp.IsSuccessStatusCode)
+        {
+            await CargarAsync();
+            Toast($"PQR movida a '{EstadoLabel(hasta)}'.", false);
+        }
+        else { Toast("No se pudo mover: " + await resp.Content.ReadAsStringAsync(), true); }
+    }
 
     private IEnumerable<PqrsdBandejaItemDto> ItemsFiltrados =>
         (_bandeja?.Items ?? new List<PqrsdBandejaItemDto>())
