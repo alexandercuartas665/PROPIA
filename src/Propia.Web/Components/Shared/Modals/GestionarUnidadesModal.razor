@@ -292,10 +292,13 @@
                         var rolLower = grupo.Rol.ToString().ToLower();
                         <div class="gum-people-group @(grupo.Rol == RolUnidadPersona.Propietario ? "" : "gum-people-group--top")">
                             <span class="gum-people-tag"><span class="gum-people-dot @grupo.DotClass"></span>@grupo.Label</span>
-                            <button class="gum-people-add" type="button" @onclick="() => AbrirFormPersona(grupo.Rol)">
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-                                Agregar @rolLower
-                            </button>
+                            @if (_editMode)
+                            {
+                                <button class="gum-people-add" type="button" @onclick="() => AbrirFormPersona(grupo.Rol)">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+                                    Agregar @rolLower
+                                </button>
+                            }
                         </div>
                         @if (personasRol.Count > 0)
                         {
@@ -311,9 +314,12 @@
                                                 <div class="gum-person-name">@p.PersonaNombre</div>
                                                 <div class="gum-person-rol">@grupo.Label · @p.PersonaDocumento@(string.IsNullOrEmpty(p.Parentesco) ? "" : $" · {p.Parentesco}")</div>
                                             </div>
-                                            <button class="gum-person-del" type="button" @onclick="() => EliminarPersona(p.Id)" title="Quitar">
-                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                                            </button>
+                                            @if (_editMode)
+                                            {
+                                                <button class="gum-person-del" type="button" @onclick="() => EliminarPersona(p.Id)" title="Quitar">
+                                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                                </button>
+                                            }
                                         </div>
                                         @if (!string.IsNullOrEmpty(p.PersonaEmail))
                                         {
@@ -339,21 +345,58 @@
                         }
                         @if (_formRol == grupo.Rol)
                         {
-                            <div class="gum-person-form">
-                                <div class="gum-form-row">
-                                    <input class="gum-input gum-grow" @bind="_personaForm.Documento" @bind:event="oninput" placeholder="Documento *" />
-                                    <input class="gum-input gum-grow" @bind="_personaForm.Nombres" @bind:event="oninput" placeholder="Nombres *" />
-                                    <input class="gum-input gum-grow" @bind="_personaForm.Apellidos" @bind:event="oninput" placeholder="Apellidos *" />
-                                </div>
-                                <div class="gum-form-row">
-                                    <input class="gum-input gum-grow" @bind="_personaForm.Email" @bind:event="oninput" placeholder="Email (opcional)" />
-                                    <input class="gum-input gum-grow" @bind="_personaForm.Telefono" @bind:event="oninput" placeholder="Telefono (opcional)" />
+                            @* Form estilo prototipo L.703: nombre+rol fila, documento, eyebrows CORREOS y TELEFONOS con listas + boton brand *@
+                            <div class="gum-pf">
+                                <div class="gum-pf-row">
+                                    <input class="gum-pf-input gum-grow" @bind="_personaForm.Nombres" @bind:event="oninput" placeholder="Nombre *" />
+                                    <input class="gum-pf-input gum-grow" @bind="_personaForm.Apellidos" @bind:event="oninput" placeholder="Apellidos *" />
                                     @if (grupo.Rol == RolUnidadPersona.Familiar)
                                     {
-                                        <input class="gum-input gum-grow" @bind="_personaForm.Parentesco" @bind:event="oninput" placeholder="Parentesco (ej. hijo)" />
+                                        <input class="gum-pf-input gum-grow" style="max-width:160px" @bind="_personaForm.Parentesco" @bind:event="oninput" placeholder="Parentesco" />
                                     }
-                                    <button class="gum-btn-brand" type="button" @onclick="GuardarPersona" disabled="@(_busy || !PersonaFormValido)">Guardar</button>
+                                </div>
+                                <input class="gum-pf-input" @bind="_personaForm.Documento" @bind:event="oninput" placeholder="Documento (CC, NIT...) *" />
+
+                                @* === CORREOS === *@
+                                <div class="gum-pf-eyebrow">CORREOS</div>
+                                @for (int i = 0; i < _personaForm.Emails.Count; i++)
+                                {
+                                    var idx = i;
+                                    <div class="gum-pf-item">
+                                        <input class="gum-pf-input" @bind="_personaForm.Emails[idx]" @bind:event="oninput" placeholder="correo@email.com" />
+                                        @if (_personaForm.Emails.Count > 1)
+                                        {
+                                            <button class="gum-pf-x" type="button" @onclick="() => _personaForm.Emails.RemoveAt(idx)" title="Quitar">
+                                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                                <button class="gum-pf-add" type="button" @onclick="() => _personaForm.Emails.Add(string.Empty)">+ Anadir correo</button>
+
+                                @* === TELEFONOS === *@
+                                <div class="gum-pf-eyebrow">TELEFONOS</div>
+                                @for (int i = 0; i < _personaForm.Telefonos.Count; i++)
+                                {
+                                    var idx = i;
+                                    <div class="gum-pf-item">
+                                        <select class="gum-pf-input gum-pf-cod" @bind="_personaForm.Codigos[idx]">
+                                            @foreach (var cp in _codigosPais) { <option value="@cp">@cp</option> }
+                                        </select>
+                                        <input class="gum-pf-input" @bind="_personaForm.Telefonos[idx]" @bind:event="oninput" placeholder="300 000 0000" />
+                                        @if (_personaForm.Telefonos.Count > 1)
+                                        {
+                                            <button class="gum-pf-x" type="button" @onclick="() => RemoveTel(idx)" title="Quitar">
+                                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                                <button class="gum-pf-add" type="button" @onclick="AddTel">+ Anadir telefono</button>
+
+                                <div class="gum-pf-footer">
                                     <button class="gum-btn-ghost" type="button" @onclick="() => _formRol = null">Cancelar</button>
+                                    <button class="gum-btn-brand" type="button" @onclick="GuardarPersona" disabled="@(_busy || !PersonaFormValido)">Guardar</button>
                                 </div>
                             </div>
                         }
@@ -382,30 +425,36 @@
                                             @(v.IncluyeEnFacturacion ? "Incluye en facturacion" : "No factura")
                                         </div>
                                     </div>
-                                    <button class="gum-inm-del" type="button" @onclick="() => EliminarVinculo(v.Id)" title="Quitar">
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                                    </button>
+                                    @if (_editMode)
+                                    {
+                                        <button class="gum-inm-del" type="button" @onclick="() => EliminarVinculo(v.Id)" title="Quitar">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                        </button>
+                                    }
                                 </div>
                             }
                         </div>
                     }
-                    @* Form para agregar inmueble vinculado (proto L.720) *@
-                    <div class="gum-inm-add">
-                        <select class="gum-inm-input" @bind="_nuevoVinculoUnidadId">
-                            <option value="">- Selecciona unidad -</option>
-                            @foreach (var u in _unidades.Where(u => u.Id != _selected.Id && (u.Tipo == TipoUnidad.Parqueadero || u.Tipo == TipoUnidad.UtilCuarto || u.Tipo == TipoUnidad.Bodega)))
-                            {
-                                <option value="@u.Id">@u.Tipo @u.Numero</option>
-                            }
-                        </select>
-                        <select class="gum-inm-input" @bind="_nuevoVinculoFactura">
-                            <option value="false">No factura</option>
-                            <option value="true">Si factura</option>
-                        </select>
-                        <button class="gum-inm-add-btn" type="button" @onclick="AgregarVinculo" disabled="@(_nuevoVinculoUnidadId == Guid.Empty)">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-                        </button>
-                    </div>
+                    @* Form para agregar inmueble vinculado (proto L.720) - solo en modo edit *@
+                    @if (_editMode)
+                    {
+                        <div class="gum-inm-add">
+                            <select class="gum-inm-input" @bind="_nuevoVinculoUnidadId">
+                                <option value="">- Selecciona unidad -</option>
+                                @foreach (var u in _unidades.Where(u => u.Id != _selected.Id && (u.Tipo == TipoUnidad.Parqueadero || u.Tipo == TipoUnidad.UtilCuarto || u.Tipo == TipoUnidad.Bodega)))
+                                {
+                                    <option value="@u.Id">@u.Tipo @u.Numero</option>
+                                }
+                            </select>
+                            <select class="gum-inm-input" @bind="_nuevoVinculoFactura">
+                                <option value="false">No factura</option>
+                                <option value="true">Si factura</option>
+                            </select>
+                            <button class="gum-inm-add-btn" type="button" @onclick="AgregarVinculo" disabled="@(_nuevoVinculoUnidadId == Guid.Empty)">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+                            </button>
+                        </div>
+                    }
                 </div>
 
                 @* === Card VALORES DE ADMINISTRACION (proto L.722-730) === *@
@@ -476,10 +525,13 @@
                 <div class="gum-unit-card gum-unit-card--full">
                     <div class="gum-card-head-row">
                         <div class="gum-unit-eyebrow">FICHA TECNICA - CAMPOS PERSONALIZADOS</div>
-                        <button class="gum-people-add" type="button" @onclick="() => _cfOpen = !_cfOpen">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-                            Agregar campo
-                        </button>
+                        @if (_editMode)
+                        {
+                            <button class="gum-people-add" type="button" @onclick="() => _cfOpen = !_cfOpen">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+                                Agregar campo
+                            </button>
+                        }
                     </div>
                     @if (_camposPersonalizados.Count > 0)
                     {
@@ -489,9 +541,12 @@
                                 <div class="gum-cf-cell">
                                     <div class="gum-cf-lbl">@k</div>
                                     <div class="gum-cf-val">@v</div>
-                                    <button class="gum-cf-del" type="button" @onclick="() => _camposPersonalizados.Remove(k)" title="Quitar">
-                                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                                    </button>
+                                    @if (_editMode)
+                                    {
+                                        <button class="gum-cf-del" type="button" @onclick="() => _camposPersonalizados.Remove(k)" title="Quitar">
+                                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                        </button>
+                                    }
                                 </div>
                             }
                         </div>
@@ -894,6 +949,49 @@
     }
     .gum-person-form .gum-input { font-size: 12px; padding: 7px 10px; }
 
+    /* Form persona estilo prototipo (multiples emails y telefonos) */
+    .gum-pf {
+        background: #FBFAFE; border: 1px dashed #DCD2F8; border-radius: 10px;
+        padding: 12px; margin-bottom: 10px;
+    }
+    .gum-pf-row { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; flex-wrap: wrap; }
+    .gum-pf-input {
+        border: 1px solid #E1E8EE; border-radius: 7px;
+        padding: 7px 10px; font-size: 12px; color: #33475B;
+        background: #fff; outline: none; font-family: inherit;
+        width: 100%; box-sizing: border-box; min-width: 0;
+    }
+    .gum-pf-input:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .gum-pf-eyebrow {
+        font-size: 9.5px; letter-spacing: .4px; color: #A6B7C8;
+        font-weight: 700; margin: 10px 0 5px;
+    }
+    .gum-pf-item { display: flex; align-items: center; gap: 5px; margin-bottom: 5px; }
+    .gum-pf-cod { max-width: 80px; flex-shrink: 0; padding: 7px 5px; font-size: 11px; }
+    .gum-pf-x {
+        width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center;
+        color: #C3D0DD; border: 0; background: transparent; cursor: pointer;
+    }
+    .gum-pf-x:hover { background: #FDE7E7; color: #D7263D; }
+    .gum-pf-add {
+        font-size: 10.5px; font-weight: 700;
+        color: var(--propia-brand, #6D4FE3);
+        background: transparent; border: 0; cursor: pointer;
+        padding: 2px 0; margin-top: 3px;
+    }
+    .gum-pf-add:hover { text-decoration: underline; }
+    .gum-pf-footer {
+        display: flex; justify-content: flex-end; gap: 8px;
+        margin-top: 12px;
+    }
+    .gum-btn-ghost {
+        padding: 8px 14px; border-radius: 9px;
+        background: #fff; border: 1px solid #E1E8EE;
+        font-size: 12.5px; font-weight: 600; color: #516F90; cursor: pointer;
+    }
+    .gum-btn-ghost:hover { background: #F5F8FA; }
+
     /* Inmuebles vinculados */
     .gum-inm-list { display: flex; flex-direction: column; gap: 8px; }
     .gum-inm { display: flex; align-items: center; gap: 9px; }
@@ -1040,9 +1138,35 @@
         public string Documento { get; set; } = "";
         public string Nombres { get; set; } = "";
         public string Apellidos { get; set; } = "";
-        public string Email { get; set; } = "";
-        public string Telefono { get; set; } = "";
+        public List<string> Emails { get; set; } = new() { "" };
+        public List<string> Telefonos { get; set; } = new() { "" };
+        public List<string> Codigos { get; set; } = new() { "+57" };
         public string Parentesco { get; set; } = "";
+
+        public string? PrimerEmail => Emails.FirstOrDefault(e => !string.IsNullOrWhiteSpace(e))?.Trim();
+        public string? PrimerTelefono
+        {
+            get
+            {
+                for (int i = 0; i < Telefonos.Count; i++)
+                {
+                    var t = Telefonos[i]?.Trim();
+                    if (string.IsNullOrWhiteSpace(t)) continue;
+                    var cod = i < Codigos.Count ? Codigos[i] : "";
+                    return string.IsNullOrWhiteSpace(cod) ? t : $"{cod} {t}";
+                }
+                return null;
+            }
+        }
+    }
+
+    private readonly string[] _codigosPais = { "+57", "+1", "+34", "+52", "+54", "+55", "+56", "+58", "+593", "+503", "+507", "+591" };
+
+    private void AddTel() { _personaForm.Telefonos.Add(""); _personaForm.Codigos.Add("+57"); }
+    private void RemoveTel(int idx)
+    {
+        if (idx >= 0 && idx < _personaForm.Telefonos.Count) _personaForm.Telefonos.RemoveAt(idx);
+        if (idx >= 0 && idx < _personaForm.Codigos.Count) _personaForm.Codigos.RemoveAt(idx);
     }
 
     private bool PersonaFormValido =>
@@ -1183,8 +1307,8 @@
             _personaForm.Documento.Trim(),
             _personaForm.Nombres.Trim(),
             _personaForm.Apellidos.Trim(),
-            string.IsNullOrWhiteSpace(_personaForm.Email) ? null : _personaForm.Email.Trim(),
-            string.IsNullOrWhiteSpace(_personaForm.Telefono) ? null : _personaForm.Telefono.Trim(),
+            _personaForm.PrimerEmail,
+            _personaForm.PrimerTelefono,
             _formRol.Value,
             true,
             string.IsNullOrWhiteSpace(_personaForm.Parentesco) ? null : _personaForm.Parentesco.Trim());
@@ -1237,7 +1361,12 @@
         _editMode = true;
     }
 
-    private void CancelarEdicion() => _editMode = false;
+    private void CancelarEdicion()
+    {
+        _editMode = false;
+        _formRol = null;
+        _cfOpen = false;
+    }
 
     private async Task GuardarUnidad()
     {
