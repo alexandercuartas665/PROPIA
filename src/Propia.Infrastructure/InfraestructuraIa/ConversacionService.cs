@@ -145,6 +145,29 @@ public sealed class ConversacionService : IConversacionService
         return true;
     }
 
+    public async Task<IReadOnlyList<MensajeDto>> ListarMensajesParaContextoAsync(Guid conversationId, int maxTurnos = 12, CancellationToken ct = default)
+    {
+        var conv = await _db.Conversations.AsNoTracking()
+            .Where(c => c.Id == conversationId)
+            .Select(c => new { c.AgentContextResetAt })
+            .FirstOrDefaultAsync(ct);
+        if (conv is null) return Array.Empty<MensajeDto>();
+
+        var q = _db.Messages.AsNoTracking().Where(m => m.ConversationId == conversationId);
+        if (conv.AgentContextResetAt.HasValue)
+        {
+            // Despues del reset, los turnos previos no entran al contexto del agente.
+            q = q.Where(m => m.SentAt > conv.AgentContextResetAt.Value);
+        }
+        return await q.OrderByDescending(m => m.SentAt).Take(maxTurnos)
+            .OrderBy(m => m.SentAt)
+            .Select(m => new MensajeDto(
+                m.Id, m.ConversationId, m.Direction.ToString(),
+                m.Body, m.MessageType, m.SentAt, m.SentByName,
+                m.MediaType.ToString(), m.MediaUrl, m.MediaMimeType, m.ExternalId))
+            .ToListAsync(ct);
+    }
+
     /// <summary>Helper: proyeccion comun con join a WhatsAppLine + ultimo mensaje (subconsulta).</summary>
     private IQueryable<ConversacionDto> BuildDtoQuery(IQueryable<Conversation> q)
     {

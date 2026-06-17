@@ -23,11 +23,12 @@ public sealed class AiInferenceService : IAiInferenceService
     private readonly IAiUsageService _usage;
     private readonly IMcpGateway _mcp;
     private readonly ITenantContext _tenant;
+    private readonly IListaNegraService _listaNegra;
 
     /// <summary>Maximo de rondas de tool-calling para evitar bucles infinitos del modelo.</summary>
     private const int MaxToolRounds = 6;
 
-    public AiInferenceService(PropiaDbContext db, ISecretProtector secret, IAiProviderClient client, IAiUsageService usage, IMcpGateway mcp, ITenantContext tenant)
+    public AiInferenceService(PropiaDbContext db, ISecretProtector secret, IAiProviderClient client, IAiUsageService usage, IMcpGateway mcp, ITenantContext tenant, IListaNegraService listaNegra)
     {
         _db = db;
         _secret = secret;
@@ -35,12 +36,37 @@ public sealed class AiInferenceService : IAiInferenceService
         _usage = usage;
         _mcp = mcp;
         _tenant = tenant;
+        _listaNegra = listaNegra;
     }
 
-    public async Task<AiChatResult> TestChatAsync(Guid agentId, IReadOnlyList<AiChatTurn> turns, string? systemPromptOverride = null, string? bearerToken = null, CancellationToken ct = default)
+    public async Task<AiChatResult> TestChatAsync(Guid agentId, IReadOnlyList<AiChatTurn> turns, string? systemPromptOverride = null, string? bearerToken = null, string? contactPhone = null, Guid? conversationId = null, CancellationToken ct = default)
     {
         var agent = await _db.AiAgents.AsNoTracking().FirstOrDefaultAsync(a => a.Id == agentId, ct);
         if (agent is null) { return new AiChatResult(false, null, "El agente no existe."); }
+
+        // Lista negra: ningun agente debe responder a numeros bloqueados.
+        // Portado de CUBOT.travels: chequeo ANTES de gastar tokens.
+        if (!string.IsNullOrWhiteSpace(contactPhone))
+        {
+            if (await _listaNegra.EstaBloqueadoAsync(contactPhone, ct))
+            {
+                return new AiChatResult(false, null, "El numero esta en la lista negra del tenant. Ningun agente responde.");
+            }
+        }
+
+        // Reset de contexto: si la conversacion tiene AgentContextResetAt seteado, el dispatcher
+        // debe filtrar los turnos enviados a este metodo segun el caller. Aqui solo registramos el
+        // momento para futura logica de cache/embedings por sesion.
+        if (conversationId.HasValue)
+        {
+            var resetAt = await _db.Conversations.AsNoTracking()
+                .Where(c => c.Id == conversationId.Value)
+                .Select(c => c.AgentContextResetAt)
+                .FirstOrDefaultAsync(ct);
+            // El caller (futuro AgentDispatcher) ya filtra los turns por SentAt > resetAt antes de
+            // llamarnos. Aqui no podemos filtrar porque AiChatTurn no tiene timestamp.
+            _ = resetAt;
+        }
 
         // La cuenta del proveedor (API key, modelo, base url) la define el SuperAdmin (config global).
         var providerCfg = await _db.AiProviderConfigs.AsNoTracking().FirstOrDefaultAsync(c => c.Provider == agent.Provider, ct);

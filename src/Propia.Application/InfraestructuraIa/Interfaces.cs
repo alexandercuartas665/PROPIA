@@ -84,7 +84,7 @@ public interface IAiInferenceService
     /// del usuario), corre el loop de function-calling ejecutando las tools con ese token (hereda
     /// tenant + permisos). Sin tools o sin token: completado simple de un turno.
     /// </summary>
-    Task<AiChatResult> TestChatAsync(Guid agentId, IReadOnlyList<AiChatTurn> turns, string? systemPromptOverride = null, string? bearerToken = null, CancellationToken ct = default);
+    Task<AiChatResult> TestChatAsync(Guid agentId, IReadOnlyList<AiChatTurn> turns, string? systemPromptOverride = null, string? bearerToken = null, string? contactPhone = null, Guid? conversationId = null, CancellationToken ct = default);
 }
 
 /// <summary>Registro y reporte de consumo de IA de la copropiedad + control de cuota del plan.</summary>

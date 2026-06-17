@@ -51,4 +51,11 @@ public interface IConversacionService
 
     /// <summary>Bloquea al contacto (lo agrega a la lista negra global del tenant) y archiva la conversacion.</summary>
     Task<bool> BloquearContactoAsync(Guid id, CancellationToken ct = default);
+
+    /// <summary>
+    /// Para uso del dispatcher: devuelve los mensajes recientes de la conversacion, ya filtrados
+    /// por AgentContextResetAt (si esta seteado). Limita a las ultimas N entradas para no inflar
+    /// el prompt del LLM. Portado de CUBOT.travels (reconstrucion de turnos para el agente).
+    /// </summary>
+    Task<IReadOnlyList<MensajeDto>> ListarMensajesParaContextoAsync(Guid conversationId, int maxTurnos = 12, CancellationToken ct = default);
 }
