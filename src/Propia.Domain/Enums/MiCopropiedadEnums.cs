@@ -77,6 +77,39 @@ public enum TipoServicio
     Otros = 13
 }
 
+/// <summary>Tipo de cuenta bancaria de la copropiedad (RN-finanzas: cuentas para recaudo y factura).</summary>
+public enum TipoCuentaBancaria
+{
+    Ahorros = 1,
+    Corriente = 2,
+    EncargoFiduciario = 3
+}
+
+/// <summary>Formas de pago habilitadas para residentes (flags - se pueden combinar).</summary>
+[System.Flags]
+public enum TiposPagoPermitidos
+{
+    Ninguno = 0,
+    Cheque = 1 << 0,
+    Consignacion = 1 << 1,
+    Efectivo = 1 << 2,
+    NotaCredito = 1 << 3,
+    Pse = 1 << 4,
+    RecaudoEnLinea = 1 << 5,
+    TarjetaCredito = 1 << 6,
+    Transferencia = 1 << 7,
+    PseWenjoy = 1 << 8
+}
+
+/// <summary>Multiplo al que se redondean los valores (RN: 1=sin redondeo, 100, 1000).</summary>
+public enum MultiploRedondeo
+{
+    NoRedondear = 1,
+    Cien = 100,
+    Quinientos = 500,
+    Mil = 1000
+}
+
 /// <summary>Cargo del miembro del Consejo de Administracion.</summary>
 public enum CargoConsejo
 {

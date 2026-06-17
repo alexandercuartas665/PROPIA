@@ -1,0 +1,606 @@
+@* GestionarFinanzasModal - Finanzas (seccion 2 de Mi Copropiedad). 3 tabs:
+   - Parametros: moneda, dia corte, gracia, intereses mora.
+   - Cuentas bancarias: CRUD + marcar "ver en factura" + cancelar.
+   - Mas informacion: redondeos, consecutivos, convenio recaudo, tipos de pago,
+     Wenjoy, comunicacion en factura, minimos, cuenta contable, zona, estrato.
+   Replica el modulo SoftwareGanadero/Sysman de configuracion financiera de PH. *@
+
+@inherits ModalBase<bool>
+@using Propia.Application.MiCopropiedad
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+
+<div class="gfin-header">
+    <div class="gfin-header-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+    </div>
+    <div class="gfin-header-text">
+        <div class="gfin-title">Finanzas</div>
+        <div class="gfin-subtitle">Parametros, cuentas bancarias y configuracion avanzada de facturacion.</div>
+    </div>
+    <button class="gfin-close" @onclick="@(() => Close(_dirty))" type="button" aria-label="Cerrar">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+</div>
+
+<div class="gfin-tabs">
+    <button class="gfin-tab @(_tab == "param" ? "gfin-tab--active" : "")" type="button" @onclick='() => _tab = "param"'>Parametros</button>
+    <button class="gfin-tab @(_tab == "cuentas" ? "gfin-tab--active" : "")" type="button" @onclick='() => _tab = "cuentas"'>
+        Cuentas bancarias
+        @if (_cuentas.Count > 0) { <span class="gfin-tab-count">@_cuentas.Count(x => !x.Cancelada)</span> }
+    </button>
+    <button class="gfin-tab @(_tab == "mas" ? "gfin-tab--active" : "")" type="button" @onclick='() => _tab = "mas"'>Mas informacion</button>
+</div>
+
+<div class="gfin-body">
+
+    @if (_tab == "param")
+    {
+        @if (_finanzas is null) { <div class="gfin-empty">Cargando...</div> }
+        else
+        {
+            <div class="gfin-grid2">
+                <div>
+                    <label class="gfin-lbl">Moneda</label>
+                    <select class="gfin-input" @bind="_finForm.Moneda">
+                        @foreach (var m in _monedas) { <option value="@m.Codigo">@m.Codigo - @m.Nombre</option> }
+                    </select>
+                </div>
+                <div>
+                    <label class="gfin-lbl">Dia de corte (1-28)</label>
+                    <input type="number" min="1" max="28" class="gfin-input" @bind="_finForm.DiaCorte" />
+                </div>
+                <div>
+                    <label class="gfin-lbl">Periodo de gracia (dias)</label>
+                    <input type="number" min="0" max="30" class="gfin-input" @bind="_finForm.PeriodoGraciaDias" />
+                </div>
+                <div>
+                    <label class="gfin-lbl">Tasa de interes por mora</label>
+                    <select class="gfin-input" @bind="MoraModo">
+                        <option value="legal">Tasa legal vigente (automatica)</option>
+                        <option value="fija">Tasa fija</option>
+                    </select>
+                </div>
+                @if (!_finForm.TasaMoraEsLegal)
+                {
+                    <div>
+                        <label class="gfin-lbl">Tasa fija mensual (%)</label>
+                        <input type="number" step="0.01" min="0" class="gfin-input" @bind="_finForm.TasaMoraValor" />
+                        <div class="gfin-hint">Maximo legal: @_finanzas.Parametros.TasaMoraMaximaLegal.ToString("0.##")% mensual</div>
+                    </div>
+                }
+            </div>
+            <div class="gfin-actions">
+                <button class="gfin-btn-brand" type="button" @onclick="GuardarParametrosAsync" disabled="@_busy">Guardar parametros</button>
+            </div>
+        }
+    }
+    else if (_tab == "cuentas")
+    {
+        <div class="gfin-cuentas-head">
+            <button class="gfin-btn-brand" type="button" @onclick="@(() => { _editandoCuenta = new(); _editandoCuentaId = null; })">
+                + Agregar cuenta bancaria
+            </button>
+        </div>
+
+        @if (_editandoCuenta is not null)
+        {
+            <div class="gfin-cuenta-form">
+                <div class="gfin-grid2">
+                    <div>
+                        <label class="gfin-lbl">Numero de cuenta</label>
+                        <input class="gfin-input" @bind="_editandoCuenta.NumeroCuenta" />
+                    </div>
+                    <div>
+                        <label class="gfin-lbl">Tipo de cuenta</label>
+                        <select class="gfin-input" @bind="_editandoCuenta.TipoCuenta">
+                            <option value="@TipoCuentaBancaria.Corriente">Corriente</option>
+                            <option value="@TipoCuentaBancaria.Ahorros">Ahorros</option>
+                            <option value="@TipoCuentaBancaria.EncargoFiduciario">Encargo Fiduciario</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="gfin-lbl">Banco</label>
+                        <input class="gfin-input" @bind="_editandoCuenta.Banco" placeholder="Ej. BANCO DE OCCIDENTE" />
+                    </div>
+                    <div class="gfin-check-cell">
+                        <label class="gfin-check">
+                            <input type="checkbox" @bind="_editandoCuenta.VerEnFactura" />
+                            <span>Ver en la factura</span>
+                        </label>
+                        @if (_editandoCuentaId is not null)
+                        {
+                            <label class="gfin-check">
+                                <input type="checkbox" @bind="_editandoCuenta.Cancelada" />
+                                <span>Cancelada</span>
+                            </label>
+                        }
+                    </div>
+                </div>
+                <div class="gfin-actions">
+                    <button class="gfin-btn-ghost" type="button" @onclick="@(() => { _editandoCuenta = null; _editandoCuentaId = null; })">Cancelar</button>
+                    <button class="gfin-btn-brand" type="button" @onclick="GuardarCuentaAsync" disabled="@_busy">Guardar</button>
+                </div>
+            </div>
+        }
+
+        @if (_cuentas.Count == 0)
+        {
+            <div class="gfin-empty">Sin cuentas bancarias registradas.</div>
+        }
+        else
+        {
+            <table class="gfin-table">
+                <thead>
+                    <tr>
+                        <th>Numero</th>
+                        <th>Tipo</th>
+                        <th>Banco</th>
+                        <th>Ver en factura</th>
+                        <th>Estado</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var c in _cuentas)
+                    {
+                        var cc = c;
+                        <tr class="@(c.Cancelada ? "gfin-row--cancelada" : "")">
+                            <td><strong>@c.NumeroCuenta</strong></td>
+                            <td>@TipoCuentaTxt(c.TipoCuenta)</td>
+                            <td>@c.Banco</td>
+                            <td>@(c.VerEnFactura ? "Si" : "-")</td>
+                            <td>@(c.Cancelada ? $"Cancelada {c.FechaCancelacion?.ToString("dd MMM yyyy")}" : "Activa")</td>
+                            <td class="gfin-row-actions">
+                                <button class="gfin-link" type="button" @onclick="@(() => EditarCuenta(cc))">Editar</button>
+                                <button class="gfin-link gfin-link--danger" type="button" @onclick="@(() => EliminarCuentaAsync(cc.Id))">Eliminar</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    }
+    else if (_tab == "mas")
+    {
+        @if (_config is null) { <div class="gfin-empty">Cargando...</div> }
+        else
+        {
+            <div class="gfin-section-title">Redondeos</div>
+            <div class="gfin-grid3">
+                <div>
+                    <label class="gfin-lbl">Multiplo Redondeo</label>
+                    <select class="gfin-input" @bind="_configForm.MultiploRedondeo">
+                        @foreach (var v in (MultiploRedondeo[])System.Enum.GetValues(typeof(MultiploRedondeo))) { <option value="@v">@MultiploTxt(v)</option> }
+                    </select>
+                </div>
+                <div>
+                    <label class="gfin-lbl">Cuota extra</label>
+                    <select class="gfin-input" @bind="_configForm.MultiploRedondeoCuotaExtra">
+                        @foreach (var v in (MultiploRedondeo[])System.Enum.GetValues(typeof(MultiploRedondeo))) { <option value="@v">@MultiploTxt(v)</option> }
+                    </select>
+                </div>
+                <div>
+                    <label class="gfin-lbl">Pronto pago</label>
+                    <select class="gfin-input" @bind="_configForm.MultiploRedondeoProntoPago">
+                        @foreach (var v in (MultiploRedondeo[])System.Enum.GetValues(typeof(MultiploRedondeo))) { <option value="@v">@MultiploTxt(v)</option> }
+                    </select>
+                </div>
+            </div>
+
+            <div class="gfin-section-title">Consecutivos</div>
+            <div class="gfin-grid3">
+                <div>
+                    <label class="gfin-lbl">Factura</label>
+                    <input type="number" min="0" class="gfin-input" @bind="_configForm.ConsecutivoFactura" />
+                </div>
+                <div>
+                    <label class="gfin-lbl">Recibo de caja (RC)</label>
+                    <input type="number" min="0" class="gfin-input" @bind="_configForm.ConsecutivoRC" />
+                </div>
+                <div>
+                    <label class="gfin-lbl">Nota credito</label>
+                    <input type="number" min="0" class="gfin-input" @bind="_configForm.ConsecutivoNotaCredito" />
+                </div>
+                <div>
+                    <label class="gfin-lbl">Paz y salvo</label>
+                    <input type="number" min="0" class="gfin-input" @bind="_configForm.ConsecutivoPazYSalvo" />
+                </div>
+                <div>
+                    <label class="gfin-lbl">Acta de consejo</label>
+                    <input type="number" min="0" class="gfin-input" @bind="_configForm.ConsecutivoActaConsejo" />
+                </div>
+                <div>
+                    <label class="gfin-lbl">Acta de asamblea</label>
+                    <input type="number" min="0" class="gfin-input" @bind="_configForm.ConsecutivoActaAsamblea" />
+                </div>
+            </div>
+
+            <div class="gfin-section-title">Recaudo</div>
+            <div class="gfin-grid2">
+                <div>
+                    <label class="gfin-lbl">Convenio de recaudo</label>
+                    <input class="gfin-input" @bind="_configForm.ConvenioRecaudo" />
+                </div>
+                <div>
+                    <label class="gfin-lbl">CHARTLD</label>
+                    <input class="gfin-input" @bind="_configForm.Chartld" />
+                </div>
+                <div>
+                    <label class="gfin-lbl">Wenjoy codigo recaudo</label>
+                    <input class="gfin-input" @bind="_configForm.WenjoyCodigoRecaudo" />
+                </div>
+                <div>
+                    <label class="gfin-lbl">Cuenta contable</label>
+                    <input class="gfin-input" @bind="_configForm.CuentaContable" />
+                </div>
+            </div>
+
+            <div class="gfin-section-title">Tipos de pago permitidos</div>
+            <div class="gfin-check-grid">
+                @foreach (var (flag, label) in TiposPagoOpciones)
+                {
+                    var f = flag;
+                    <label class="gfin-check">
+                        <input type="checkbox" checked="@_configForm.TiposPagoPermitidos.HasFlag(f)"
+                               @onchange="@((ChangeEventArgs e) => ToggleTipoPago(f, (bool)e.Value!))" />
+                        <span>@label</span>
+                    </label>
+                }
+            </div>
+            <div>
+                <label class="gfin-lbl">Formas de pago (texto libre)</label>
+                <textarea class="gfin-input" rows="2" @bind="_configForm.FormasDePago" placeholder="Descripcion adicional opcional"></textarea>
+            </div>
+
+            <div class="gfin-section-title">Comunicacion en la factura</div>
+            <textarea class="gfin-input" rows="3" @bind="_configForm.ComunicacionFactura"
+                placeholder="Para resolver inquietudes por favor comunicarse con: Nombre, email, telefono..."></textarea>
+
+            <div class="gfin-section-title">Saldos minimos y otros</div>
+            <div class="gfin-grid3">
+                <div>
+                    <label class="gfin-lbl">Minimo saldo pronto pago</label>
+                    <input type="number" min="0" step="0.01" class="gfin-input" @bind="_configForm.MinimoSaldoProntoPago" />
+                </div>
+                <div>
+                    <label class="gfin-lbl">Minimo saldo para cartera</label>
+                    <input type="number" min="0" step="0.01" class="gfin-input" @bind="_configForm.MinimoSaldoCartera" />
+                </div>
+                <div>
+                    <label class="gfin-lbl">Zona facturacion</label>
+                    <input class="gfin-input" @bind="_configForm.ZonaFacturacion" placeholder="Ej. Sur" />
+                </div>
+                <div>
+                    <label class="gfin-lbl">Estrato facturacion</label>
+                    <input type="number" min="1" max="6" class="gfin-input" @bind="_configForm.EstratoFacturacion" />
+                </div>
+            </div>
+
+            <div class="gfin-actions">
+                <button class="gfin-btn-brand" type="button" @onclick="GuardarConfiguracionAsync" disabled="@_busy">Guardar configuracion</button>
+            </div>
+        }
+    }
+</div>
+
+@if (!string.IsNullOrEmpty(_msg))
+{
+    <div class="gfin-toast @(_msgError ? "gfin-toast--err" : "gfin-toast--ok")">@_msg</div>
+}
+
+<style>
+    .gfin-header { display: flex; align-items: center; gap: 12px; padding: 16px 22px; border-bottom: 1px solid #EEF3F8; }
+    .gfin-header-icon { width: 34px; height: 34px; border-radius: 9px; background: var(--propia-brand-soft, #F1ECFD); color: var(--propia-brand, #6D4FE3); display: flex; align-items: center; justify-content: center; }
+    .gfin-header-text { flex: 1; }
+    .gfin-title { font-size: 15px; font-weight: 800; color: #1B2A3A; }
+    .gfin-subtitle { font-size: 12px; color: #7C98B6; margin-top: 1px; }
+    .gfin-close { background: transparent; border: 0; width: 30px; height: 30px; border-radius: 7px; color: #7C98B6; cursor: pointer; }
+    .gfin-close:hover { background: #F4F7FA; color: #1B2A3A; }
+
+    .gfin-tabs { display: flex; gap: 2px; padding: 0 22px; border-bottom: 1px solid #EEF3F8; }
+    .gfin-tab { background: transparent; border: 0; padding: 11px 14px; font-size: 13px; font-weight: 700; color: #7C98B6; cursor: pointer; border-bottom: 2px solid transparent; font-family: inherit; }
+    .gfin-tab--active { color: var(--propia-brand, #6D4FE3); border-bottom-color: var(--propia-brand, #6D4FE3); }
+    .gfin-tab-count { display: inline-block; padding: 1px 7px; border-radius: 999px; background: #F1ECFD; color: var(--propia-brand, #6D4FE3); font-size: 10.5px; margin-left: 5px; }
+
+    .gfin-body { padding: 18px 22px; max-height: 65vh; overflow-y: auto; }
+    .gfin-empty { padding: 22px; color: #A6B7C8; font-size: 13px; text-align: center; }
+
+    .gfin-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; margin-bottom: 10px; }
+    .gfin-grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px 16px; margin-bottom: 12px; }
+    .gfin-lbl { display: block; font-size: 12px; font-weight: 700; color: #516F90; margin-bottom: 4px; }
+    .gfin-input { width: 100%; border: 1.5px solid #E1E8EE; border-radius: 8px; padding: 8px 10px; font-size: 13px; color: #33475B; outline: none; font-family: inherit; background: #fff; }
+    .gfin-input:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .gfin-hint { font-size: 11px; color: #7C98B6; margin-top: 3px; }
+
+    .gfin-section-title { font-size: 12px; text-transform: uppercase; letter-spacing: .4px; font-weight: 800; color: var(--propia-brand, #6D4FE3); margin: 14px 0 8px; }
+    .gfin-check-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 14px; margin-bottom: 10px; }
+    .gfin-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #33475B; cursor: pointer; }
+    .gfin-check input { accent-color: var(--propia-brand, #6D4FE3); }
+    .gfin-check-cell { display: flex; flex-direction: column; gap: 6px; padding-top: 22px; }
+
+    .gfin-cuentas-head { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+    .gfin-cuenta-form { background: #FAFBFD; border: 1px solid #EEF3F8; border-radius: 11px; padding: 14px; margin-bottom: 14px; }
+
+    .gfin-table { width: 100%; border-collapse: collapse; }
+    .gfin-table th { padding: 8px 10px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: #7C98B6; background: #FAFBFD; border-bottom: 1px solid #EEF3F8; }
+    .gfin-table td { padding: 9px 10px; border-bottom: 1px solid #F4F7FA; font-size: 13px; color: #33475B; }
+    .gfin-row--cancelada td { color: #A6B7C8; }
+    .gfin-row-actions { white-space: nowrap; text-align: right; }
+    .gfin-link { background: transparent; border: 0; color: var(--propia-brand, #6D4FE3); font-size: 12px; font-weight: 700; cursor: pointer; padding: 0 6px; font-family: inherit; }
+    .gfin-link--danger { color: #B91C1C; }
+    .gfin-link:hover { text-decoration: underline; }
+
+    .gfin-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #F4F7FA; }
+    .gfin-btn-brand { padding: 9px 16px; border: 0; border-radius: 8px; background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 4px 12px rgba(109,79,227,.25); }
+    .gfin-btn-brand:hover { background: var(--propia-brand-hover, #5838C9); }
+    .gfin-btn-brand:disabled { opacity: .55; cursor: not-allowed; }
+    .gfin-btn-ghost { padding: 9px 16px; border-radius: 8px; border: 1px solid #E1E8EE; background: #fff; font-size: 13px; font-weight: 700; color: #516F90; cursor: pointer; font-family: inherit; }
+    .gfin-btn-ghost:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
+
+    .gfin-toast { position: fixed; bottom: 24px; right: 28px; padding: 11px 16px; border-radius: 9px; font-size: 12.5px; font-weight: 700; box-shadow: 0 8px 24px rgba(45,62,80,.18); z-index: 1500; }
+    .gfin-toast--ok { background: #1A8754; color: #fff; }
+    .gfin-toast--err { background: #DC2626; color: #fff; }
+</style>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+
+    private string _tab = "param";
+    private bool _busy;
+    private bool _dirty;
+    private string? _msg;
+    private bool _msgError;
+
+    private FinanzasDto? _finanzas;
+    private List<MonedaDto> _monedas = new();
+    private FinForm _finForm = new();
+
+    private List<CuentaBancariaDto> _cuentas = new();
+    private CuentaForm? _editandoCuenta;
+    private Guid? _editandoCuentaId;
+
+    private ConfiguracionFinanzasDto? _config;
+    private ConfigForm _configForm = new();
+
+    private static readonly (TiposPagoPermitidos flag, string label)[] TiposPagoOpciones = new[]
+    {
+        (TiposPagoPermitidos.Cheque, "Cheque"),
+        (TiposPagoPermitidos.Consignacion, "Consignacion"),
+        (TiposPagoPermitidos.Efectivo, "Efectivo"),
+        (TiposPagoPermitidos.NotaCredito, "Nota credito"),
+        (TiposPagoPermitidos.Pse, "PSE"),
+        (TiposPagoPermitidos.RecaudoEnLinea, "Recaudo en linea"),
+        (TiposPagoPermitidos.TarjetaCredito, "Tarjeta de credito"),
+        (TiposPagoPermitidos.Transferencia, "Transferencia"),
+        (TiposPagoPermitidos.PseWenjoy, "Pse Wenjoy")
+    };
+
+    private string MoraModo
+    {
+        get => _finForm.TasaMoraEsLegal ? "legal" : "fija";
+        set
+        {
+            _finForm.TasaMoraEsLegal = value == "legal";
+            if (_finForm.TasaMoraEsLegal) _finForm.TasaMoraValor = null;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarTodoAsync();
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    private async Task CargarTodoAsync()
+    {
+        try
+        {
+            var http = Auth();
+            _monedas = await http.GetFromJsonAsync<List<MonedaDto>>("/api/mi-copropiedad/finanzas/monedas") ?? new();
+            _finanzas = await http.GetFromJsonAsync<FinanzasDto>("/api/mi-copropiedad/finanzas");
+            if (_finanzas is not null)
+            {
+                _finForm = new FinForm
+                {
+                    Moneda = _finanzas.Parametros.Moneda,
+                    DiaCorte = _finanzas.Parametros.DiaCorte,
+                    TasaMoraEsLegal = _finanzas.Parametros.TasaMoraEsLegal,
+                    TasaMoraValor = _finanzas.Parametros.TasaMoraValor,
+                    PeriodoGraciaDias = _finanzas.Parametros.PeriodoGraciaDias
+                };
+            }
+            _cuentas = await http.GetFromJsonAsync<List<CuentaBancariaDto>>("/api/mi-copropiedad/finanzas/cuentas-bancarias") ?? new();
+            _config = await http.GetFromJsonAsync<ConfiguracionFinanzasDto>("/api/mi-copropiedad/finanzas/configuracion");
+            if (_config is not null) _configForm = ConfigForm.From(_config);
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+    }
+
+    private async Task GuardarParametrosAsync()
+    {
+        _busy = true;
+        try
+        {
+            var req = new ActualizarFinanzasRequest(_finForm.Moneda, _finForm.DiaCorte, _finForm.TasaMoraEsLegal, _finForm.TasaMoraValor, _finForm.PeriodoGraciaDias);
+            var r = await Auth().PutAsJsonAsync("/api/mi-copropiedad/finanzas", req);
+            if (r.IsSuccessStatusCode) { _dirty = true; Toast("Parametros guardados.", false); }
+            else Toast($"Error: {(int)r.StatusCode}", true);
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+        _busy = false;
+    }
+
+    private void EditarCuenta(CuentaBancariaDto c)
+    {
+        _editandoCuentaId = c.Id;
+        _editandoCuenta = new CuentaForm { NumeroCuenta = c.NumeroCuenta, TipoCuenta = c.TipoCuenta, Banco = c.Banco, VerEnFactura = c.VerEnFactura, Cancelada = c.Cancelada };
+    }
+
+    private async Task GuardarCuentaAsync()
+    {
+        if (_editandoCuenta is null) return;
+        _busy = true;
+        try
+        {
+            HttpResponseMessage r;
+            if (_editandoCuentaId is null)
+            {
+                var req = new CrearCuentaBancariaRequest(_editandoCuenta.NumeroCuenta, _editandoCuenta.TipoCuenta, _editandoCuenta.Banco, _editandoCuenta.VerEnFactura);
+                r = await Auth().PostAsJsonAsync("/api/mi-copropiedad/finanzas/cuentas-bancarias", req);
+            }
+            else
+            {
+                var req = new ActualizarCuentaBancariaRequest(_editandoCuenta.NumeroCuenta, _editandoCuenta.TipoCuenta, _editandoCuenta.Banco, _editandoCuenta.VerEnFactura, _editandoCuenta.Cancelada);
+                r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/finanzas/cuentas-bancarias/{_editandoCuentaId}", req);
+            }
+            if (r.IsSuccessStatusCode)
+            {
+                _editandoCuenta = null; _editandoCuentaId = null; _dirty = true;
+                _cuentas = await Auth().GetFromJsonAsync<List<CuentaBancariaDto>>("/api/mi-copropiedad/finanzas/cuentas-bancarias") ?? new();
+                Toast("Cuenta guardada.", false);
+            }
+            else Toast($"Error: {(int)r.StatusCode}", true);
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+        _busy = false;
+    }
+
+    private async Task EliminarCuentaAsync(Guid id)
+    {
+        _busy = true;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/finanzas/cuentas-bancarias/{id}");
+            if (r.IsSuccessStatusCode)
+            {
+                _cuentas.RemoveAll(c => c.Id == id);
+                _dirty = true;
+                Toast("Cuenta eliminada.", false);
+            }
+            else Toast($"Error: {(int)r.StatusCode}", true);
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+        _busy = false;
+    }
+
+    private void ToggleTipoPago(TiposPagoPermitidos flag, bool on)
+    {
+        _configForm.TiposPagoPermitidos = on ? _configForm.TiposPagoPermitidos | flag : _configForm.TiposPagoPermitidos & ~flag;
+    }
+
+    private async Task GuardarConfiguracionAsync()
+    {
+        _busy = true;
+        try
+        {
+            var req = _configForm.ToRequest();
+            var r = await Auth().PutAsJsonAsync("/api/mi-copropiedad/finanzas/configuracion", req);
+            if (r.IsSuccessStatusCode) { _dirty = true; Toast("Configuracion guardada.", false); }
+            else Toast($"Error: {(int)r.StatusCode}", true);
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+        _busy = false;
+    }
+
+    private void Toast(string m, bool err) { _msg = m; _msgError = err; }
+
+    private static string TipoCuentaTxt(TipoCuentaBancaria t) => t switch
+    {
+        TipoCuentaBancaria.Ahorros => "Ahorros",
+        TipoCuentaBancaria.Corriente => "Corriente",
+        TipoCuentaBancaria.EncargoFiduciario => "Encargo Fiduciario",
+        _ => t.ToString()
+    };
+
+    private static string MultiploTxt(MultiploRedondeo m) => m switch
+    {
+        MultiploRedondeo.NoRedondear => "No redondear",
+        MultiploRedondeo.Cien => "Redondear a 100",
+        MultiploRedondeo.Quinientos => "Redondear a 500",
+        MultiploRedondeo.Mil => "Redondear a 1.000",
+        _ => m.ToString()
+    };
+
+    private class FinForm
+    {
+        public string Moneda { get; set; } = "COP";
+        public int DiaCorte { get; set; } = 1;
+        public bool TasaMoraEsLegal { get; set; } = true;
+        public decimal? TasaMoraValor { get; set; }
+        public int PeriodoGraciaDias { get; set; }
+    }
+
+    private class CuentaForm
+    {
+        public string NumeroCuenta { get; set; } = "";
+        public TipoCuentaBancaria TipoCuenta { get; set; } = TipoCuentaBancaria.Corriente;
+        public string Banco { get; set; } = "";
+        public bool VerEnFactura { get; set; }
+        public bool Cancelada { get; set; }
+    }
+
+    private class ConfigForm
+    {
+        public MultiploRedondeo MultiploRedondeo { get; set; }
+        public MultiploRedondeo MultiploRedondeoCuotaExtra { get; set; }
+        public MultiploRedondeo MultiploRedondeoProntoPago { get; set; }
+        public int ConsecutivoFactura { get; set; }
+        public int ConsecutivoRC { get; set; }
+        public int ConsecutivoNotaCredito { get; set; }
+        public int ConsecutivoPazYSalvo { get; set; }
+        public int ConsecutivoActaConsejo { get; set; }
+        public int ConsecutivoActaAsamblea { get; set; }
+        public string? ConvenioRecaudo { get; set; }
+        public string? Chartld { get; set; }
+        public string? ComunicacionFactura { get; set; }
+        public string? WenjoyCodigoRecaudo { get; set; }
+        public TiposPagoPermitidos TiposPagoPermitidos { get; set; }
+        public string? FormasDePago { get; set; }
+        public decimal MinimoSaldoProntoPago { get; set; }
+        public decimal MinimoSaldoCartera { get; set; }
+        public string? CuentaContable { get; set; }
+        public string? ZonaFacturacion { get; set; }
+        public int? EstratoFacturacion { get; set; }
+
+        public static ConfigForm From(ConfiguracionFinanzasDto d) => new()
+        {
+            MultiploRedondeo = d.MultiploRedondeo,
+            MultiploRedondeoCuotaExtra = d.MultiploRedondeoCuotaExtra,
+            MultiploRedondeoProntoPago = d.MultiploRedondeoProntoPago,
+            ConsecutivoFactura = d.ConsecutivoFactura,
+            ConsecutivoRC = d.ConsecutivoRC,
+            ConsecutivoNotaCredito = d.ConsecutivoNotaCredito,
+            ConsecutivoPazYSalvo = d.ConsecutivoPazYSalvo,
+            ConsecutivoActaConsejo = d.ConsecutivoActaConsejo,
+            ConsecutivoActaAsamblea = d.ConsecutivoActaAsamblea,
+            ConvenioRecaudo = d.ConvenioRecaudo,
+            Chartld = d.Chartld,
+            ComunicacionFactura = d.ComunicacionFactura,
+            WenjoyCodigoRecaudo = d.WenjoyCodigoRecaudo,
+            TiposPagoPermitidos = d.TiposPagoPermitidos,
+            FormasDePago = d.FormasDePago,
+            MinimoSaldoProntoPago = d.MinimoSaldoProntoPago,
+            MinimoSaldoCartera = d.MinimoSaldoCartera,
+            CuentaContable = d.CuentaContable,
+            ZonaFacturacion = d.ZonaFacturacion,
+            EstratoFacturacion = d.EstratoFacturacion
+        };
+
+        public ActualizarConfiguracionFinanzasRequest ToRequest() => new(
+            MultiploRedondeo, MultiploRedondeoCuotaExtra, MultiploRedondeoProntoPago,
+            ConsecutivoFactura, ConsecutivoRC, ConsecutivoNotaCredito, ConsecutivoPazYSalvo,
+            ConsecutivoActaConsejo, ConsecutivoActaAsamblea,
+            ConvenioRecaudo, Chartld, ComunicacionFactura, WenjoyCodigoRecaudo,
+            TiposPagoPermitidos, FormasDePago,
+            MinimoSaldoProntoPago, MinimoSaldoCartera,
+            CuentaContable, ZonaFacturacion, EstratoFacturacion);
+    }
+}

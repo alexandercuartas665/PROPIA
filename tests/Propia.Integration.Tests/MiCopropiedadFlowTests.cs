@@ -546,7 +546,7 @@ public class MiCopropiedadFlowTests
             .Options;
 
         var db = new PropiaDbContext(options, tenantCtx);
-        return (new MiCopropiedadService(db), db, tenantCtx);
+        return (new MiCopropiedadService(db, tenantCtx), db, tenantCtx);
     }
 
     private async Task<Guid> SeedTenantAsync(string nombre)

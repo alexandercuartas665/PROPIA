@@ -331,6 +331,54 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    // ---------- Configuracion avanzada de Finanzas (bloque "mas informacion") ----------
+
+    [HttpGet("finanzas/configuracion")]
+    public async Task<IActionResult> GetConfigFinanzas(CancellationToken ct)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
+        try { return Ok(await _svc.GetConfiguracionFinanzasAsync(tenantId.Value, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpPut("finanzas/configuracion")]
+    public async Task<IActionResult> ActualizarConfigFinanzas([FromBody] ActualizarConfiguracionFinanzasRequest req, CancellationToken ct)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
+        try { return Ok(await _svc.ActualizarConfiguracionFinanzasAsync(tenantId.Value, req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    // ---------- Cuentas bancarias ----------
+
+    [HttpGet("finanzas/cuentas-bancarias")]
+    public async Task<IActionResult> ListCuentasBancarias(CancellationToken ct)
+        => Ok(await _svc.ListCuentasBancariasAsync(ct));
+
+    [HttpPost("finanzas/cuentas-bancarias")]
+    public async Task<IActionResult> CrearCuentaBancaria([FromBody] CrearCuentaBancariaRequest req, CancellationToken ct)
+    {
+        try { return Ok(await _svc.CrearCuentaBancariaAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpPut("finanzas/cuentas-bancarias/{id:guid}")]
+    public async Task<IActionResult> ActualizarCuentaBancaria(Guid id, [FromBody] ActualizarCuentaBancariaRequest req, CancellationToken ct)
+    {
+        try
+        {
+            var dto = await _svc.ActualizarCuentaBancariaAsync(id, req, ct);
+            return dto is null ? NotFound() : Ok(dto);
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpDelete("finanzas/cuentas-bancarias/{id:guid}")]
+    public async Task<IActionResult> EliminarCuentaBancaria(Guid id, CancellationToken ct)
+        => await _svc.EliminarCuentaBancariaAsync(id, ct) ? NoContent() : NotFound();
+
     /// <summary>
     /// Resumen financiero en tiempo real (spec 2.3 seccion 8): se nutre de 2.6 Presupuesto
     /// y 2.7 Cartera. Defensivo: si un modulo aun no tiene datos, devuelve 0 en ese indicador.

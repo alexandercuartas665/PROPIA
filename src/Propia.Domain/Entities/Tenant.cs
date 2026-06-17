@@ -49,6 +49,33 @@ public class Tenant : BaseEntity
     public int PeriodoGraciaDias { get; set; }           // 0..30
     public bool FinanzasConfiguradas { get; set; }       // true una vez el admin guarda la seccion
 
+    // Configuracion avanzada de Finanzas (modulo 2.3 seccion 2 "Mas informacion" del modal).
+    public MultiploRedondeo MultiploRedondeo { get; set; } = MultiploRedondeo.NoRedondear;
+    public MultiploRedondeo MultiploRedondeoCuotaExtra { get; set; } = MultiploRedondeo.NoRedondear;
+    public MultiploRedondeo MultiploRedondeoProntoPago { get; set; } = MultiploRedondeo.NoRedondear;
+
+    // Consecutivos: ultimo numero usado. Se incrementan al emitir cada documento.
+    public int ConsecutivoFactura { get; set; }
+    public int ConsecutivoRC { get; set; }                // RC = Recibo de Caja
+    public int ConsecutivoNotaCredito { get; set; }
+    public int ConsecutivoPazYSalvo { get; set; }
+    public int ConsecutivoActaConsejo { get; set; }
+    public int ConsecutivoActaAsamblea { get; set; }
+
+    public string? ConvenioRecaudo { get; set; }
+    public string? Chartld { get; set; }                  // codigo CHARTLD del operador (bancario)
+    public string? ComunicacionFactura { get; set; }      // texto libre (nombre/email/tel auxiliar)
+    public string? WenjoyCodigoRecaudo { get; set; }
+
+    public TiposPagoPermitidos TiposPagoPermitidos { get; set; } = TiposPagoPermitidos.Ninguno;
+    public string? FormasDePago { get; set; }             // descripcion libre (texto)
+
+    public decimal MinimoSaldoProntoPago { get; set; }
+    public decimal MinimoSaldoCartera { get; set; }
+    public string? CuentaContable { get; set; }
+    public string? ZonaFacturacion { get; set; }          // ej. Sur, Norte (distinta a Ciudad)
+    public int? EstratoFacturacion { get; set; }
+
     public EstadoCopropiedad Estado { get; set; } = EstadoCopropiedad.Activa;
     public EstadoCustodia EstadoCustodia { get; set; } = EstadoCustodia.SinAdmin;
 

@@ -108,6 +108,16 @@ public interface IMiCopropiedadService
     Task<FinanzasParametrosDto> GetFinanzasParametrosAsync(Guid tenantId, CancellationToken ct);
     Task<FinanzasParametrosDto> ActualizarFinanzasAsync(Guid tenantId, ActualizarFinanzasRequest req, CancellationToken ct);
 
+    // Configuracion avanzada de Finanzas (RN: bloque "Mas informacion" del modal).
+    Task<ConfiguracionFinanzasDto> GetConfiguracionFinanzasAsync(Guid tenantId, CancellationToken ct);
+    Task<ConfiguracionFinanzasDto> ActualizarConfiguracionFinanzasAsync(Guid tenantId, ActualizarConfiguracionFinanzasRequest req, CancellationToken ct);
+
+    // Cuentas bancarias de la copropiedad.
+    Task<IReadOnlyList<CuentaBancariaDto>> ListCuentasBancariasAsync(CancellationToken ct);
+    Task<CuentaBancariaDto> CrearCuentaBancariaAsync(CrearCuentaBancariaRequest req, CancellationToken ct);
+    Task<CuentaBancariaDto?> ActualizarCuentaBancariaAsync(Guid id, ActualizarCuentaBancariaRequest req, CancellationToken ct);
+    Task<bool> EliminarCuentaBancariaAsync(Guid id, CancellationToken ct);
+
     // Bitacora de cambios (RN-06)
     Task<IReadOnlyList<BitacoraEntradaDto>> ListBitacoraAsync(int limit, CancellationToken ct);
 

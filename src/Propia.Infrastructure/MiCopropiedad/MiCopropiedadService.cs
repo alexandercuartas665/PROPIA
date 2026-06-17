@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Propia.Application.Common;
 using Propia.Application.MiCopropiedad;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
@@ -9,7 +10,12 @@ namespace Propia.Infrastructure.MiCopropiedad;
 public class MiCopropiedadService : IMiCopropiedadService
 {
     private readonly PropiaDbContext _db;
-    public MiCopropiedadService(PropiaDbContext db) => _db = db;
+    private readonly ITenantContext _tenant;
+    public MiCopropiedadService(PropiaDbContext db, ITenantContext tenant)
+    {
+        _db = db;
+        _tenant = tenant;
+    }
 
     // ----------------------------- Resumen -----------------------------
 
@@ -1312,6 +1318,124 @@ public class MiCopropiedadService : IMiCopropiedadService
     private static FinanzasParametrosDto ToFinanzasParametros(Tenant t) =>
         new(t.Moneda, t.DiaCorte, t.TasaMoraEsLegal, t.TasaMoraValor, t.PeriodoGraciaDias,
             t.FinanzasConfiguradas, TasaMoraMaximaLegalMensual);
+
+    // ----------------------------- Configuracion avanzada de Finanzas -----------------------------
+
+    public async Task<ConfiguracionFinanzasDto> GetConfiguracionFinanzasAsync(Guid tenantId, CancellationToken ct)
+    {
+        var t = await _db.Tenants.AsNoTracking().FirstOrDefaultAsync(x => x.Id == tenantId, ct)
+            ?? throw new InvalidOperationException("Copropiedad no encontrada.");
+        return ToConfiguracionFinanzas(t);
+    }
+
+    public async Task<ConfiguracionFinanzasDto> ActualizarConfiguracionFinanzasAsync(Guid tenantId, ActualizarConfiguracionFinanzasRequest req, CancellationToken ct)
+    {
+        var t = await _db.Tenants.FirstOrDefaultAsync(x => x.Id == tenantId, ct)
+            ?? throw new InvalidOperationException("Copropiedad no encontrada.");
+
+        if (req.MinimoSaldoProntoPago < 0 || req.MinimoSaldoCartera < 0)
+            throw new InvalidOperationException("Los minimos de saldo no pueden ser negativos.");
+        if (req.EstratoFacturacion is < 1 or > 6)
+            throw new InvalidOperationException("El estrato debe estar entre 1 y 6.");
+
+        t.MultiploRedondeo = req.MultiploRedondeo;
+        t.MultiploRedondeoCuotaExtra = req.MultiploRedondeoCuotaExtra;
+        t.MultiploRedondeoProntoPago = req.MultiploRedondeoProntoPago;
+        t.ConsecutivoFactura = req.ConsecutivoFactura;
+        t.ConsecutivoRC = req.ConsecutivoRC;
+        t.ConsecutivoNotaCredito = req.ConsecutivoNotaCredito;
+        t.ConsecutivoPazYSalvo = req.ConsecutivoPazYSalvo;
+        t.ConsecutivoActaConsejo = req.ConsecutivoActaConsejo;
+        t.ConsecutivoActaAsamblea = req.ConsecutivoActaAsamblea;
+        t.ConvenioRecaudo = string.IsNullOrWhiteSpace(req.ConvenioRecaudo) ? null : req.ConvenioRecaudo.Trim();
+        t.Chartld = string.IsNullOrWhiteSpace(req.Chartld) ? null : req.Chartld.Trim();
+        t.ComunicacionFactura = string.IsNullOrWhiteSpace(req.ComunicacionFactura) ? null : req.ComunicacionFactura.Trim();
+        t.WenjoyCodigoRecaudo = string.IsNullOrWhiteSpace(req.WenjoyCodigoRecaudo) ? null : req.WenjoyCodigoRecaudo.Trim();
+        t.TiposPagoPermitidos = req.TiposPagoPermitidos;
+        t.FormasDePago = string.IsNullOrWhiteSpace(req.FormasDePago) ? null : req.FormasDePago.Trim();
+        t.MinimoSaldoProntoPago = req.MinimoSaldoProntoPago;
+        t.MinimoSaldoCartera = req.MinimoSaldoCartera;
+        t.CuentaContable = string.IsNullOrWhiteSpace(req.CuentaContable) ? null : req.CuentaContable.Trim();
+        t.ZonaFacturacion = string.IsNullOrWhiteSpace(req.ZonaFacturacion) ? null : req.ZonaFacturacion.Trim();
+        t.EstratoFacturacion = req.EstratoFacturacion;
+        await _db.SaveChangesAsync(ct);
+
+        await RegistrarBitacoraAsync("Finanzas", "Configuracion avanzada actualizada (mas informacion).", ct);
+        return ToConfiguracionFinanzas(t);
+    }
+
+    private static ConfiguracionFinanzasDto ToConfiguracionFinanzas(Tenant t) => new(
+        t.MultiploRedondeo, t.MultiploRedondeoCuotaExtra, t.MultiploRedondeoProntoPago,
+        t.ConsecutivoFactura, t.ConsecutivoRC, t.ConsecutivoNotaCredito, t.ConsecutivoPazYSalvo,
+        t.ConsecutivoActaConsejo, t.ConsecutivoActaAsamblea,
+        t.ConvenioRecaudo, t.Chartld, t.ComunicacionFactura, t.WenjoyCodigoRecaudo,
+        t.TiposPagoPermitidos, t.FormasDePago,
+        t.MinimoSaldoProntoPago, t.MinimoSaldoCartera,
+        t.CuentaContable, t.ZonaFacturacion, t.EstratoFacturacion);
+
+    // ----------------------------- Cuentas bancarias -----------------------------
+
+    public async Task<IReadOnlyList<CuentaBancariaDto>> ListCuentasBancariasAsync(CancellationToken ct)
+    {
+        return await _db.CuentasBancarias.AsNoTracking()
+            .OrderBy(c => c.Cancelada)
+            .ThenBy(c => c.Banco)
+            .Select(c => new CuentaBancariaDto(c.Id, c.NumeroCuenta, c.TipoCuenta, c.Banco, c.VerEnFactura, c.Cancelada, c.FechaCancelacion))
+            .ToListAsync(ct);
+    }
+
+    public async Task<CuentaBancariaDto> CrearCuentaBancariaAsync(CrearCuentaBancariaRequest req, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid)
+            throw new InvalidOperationException("Sin tenant activo.");
+        if (string.IsNullOrWhiteSpace(req.NumeroCuenta))
+            throw new InvalidOperationException("Numero de cuenta requerido.");
+        if (string.IsNullOrWhiteSpace(req.Banco))
+            throw new InvalidOperationException("Banco requerido.");
+
+        var c = new CuentaBancaria
+        {
+            TenantId = tid,
+            NumeroCuenta = req.NumeroCuenta.Trim(),
+            TipoCuenta = req.TipoCuenta,
+            Banco = req.Banco.Trim(),
+            VerEnFactura = req.VerEnFactura,
+            Cancelada = false
+        };
+        _db.CuentasBancarias.Add(c);
+        await _db.SaveChangesAsync(ct);
+        await RegistrarBitacoraAsync("Finanzas", $"Cuenta bancaria agregada: {c.Banco} {c.NumeroCuenta}.", ct);
+        return new CuentaBancariaDto(c.Id, c.NumeroCuenta, c.TipoCuenta, c.Banco, c.VerEnFactura, c.Cancelada, c.FechaCancelacion);
+    }
+
+    public async Task<CuentaBancariaDto?> ActualizarCuentaBancariaAsync(Guid id, ActualizarCuentaBancariaRequest req, CancellationToken ct)
+    {
+        var c = await _db.CuentasBancarias.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (c is null) return null;
+        if (string.IsNullOrWhiteSpace(req.NumeroCuenta) || string.IsNullOrWhiteSpace(req.Banco))
+            throw new InvalidOperationException("Numero de cuenta y banco son obligatorios.");
+        var seCancela = req.Cancelada && !c.Cancelada;
+        c.NumeroCuenta = req.NumeroCuenta.Trim();
+        c.TipoCuenta = req.TipoCuenta;
+        c.Banco = req.Banco.Trim();
+        c.VerEnFactura = req.VerEnFactura;
+        c.Cancelada = req.Cancelada;
+        c.FechaCancelacion = req.Cancelada ? (c.FechaCancelacion ?? DateTimeOffset.UtcNow) : null;
+        await _db.SaveChangesAsync(ct);
+        if (seCancela)
+            await RegistrarBitacoraAsync("Finanzas", $"Cuenta bancaria cancelada: {c.Banco} {c.NumeroCuenta}.", ct);
+        return new CuentaBancariaDto(c.Id, c.NumeroCuenta, c.TipoCuenta, c.Banco, c.VerEnFactura, c.Cancelada, c.FechaCancelacion);
+    }
+
+    public async Task<bool> EliminarCuentaBancariaAsync(Guid id, CancellationToken ct)
+    {
+        var c = await _db.CuentasBancarias.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (c is null) return false;
+        _db.CuentasBancarias.Remove(c);
+        await _db.SaveChangesAsync(ct);
+        await RegistrarBitacoraAsync("Finanzas", $"Cuenta bancaria eliminada: {c.Banco} {c.NumeroCuenta}.", ct);
+        return true;
+    }
 
     // ----------------------------- Bitacora de cambios (RN-06) -----------------------------
 

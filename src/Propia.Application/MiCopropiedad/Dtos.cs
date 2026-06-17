@@ -266,3 +266,71 @@ public record ActualizarFinanzasRequest(
     bool TasaMoraEsLegal,
     decimal? TasaMoraValor,
     int PeriodoGraciaDias);
+
+// ===== Configuracion avanzada de Finanzas (modulo 2.3 seccion 2 "Mas informacion") =====
+
+public record CuentaBancariaDto(
+    Guid Id,
+    string NumeroCuenta,
+    Propia.Domain.Enums.TipoCuentaBancaria TipoCuenta,
+    string Banco,
+    bool VerEnFactura,
+    bool Cancelada,
+    DateTimeOffset? FechaCancelacion);
+
+public record CrearCuentaBancariaRequest(
+    string NumeroCuenta,
+    Propia.Domain.Enums.TipoCuentaBancaria TipoCuenta,
+    string Banco,
+    bool VerEnFactura);
+
+public record ActualizarCuentaBancariaRequest(
+    string NumeroCuenta,
+    Propia.Domain.Enums.TipoCuentaBancaria TipoCuenta,
+    string Banco,
+    bool VerEnFactura,
+    bool Cancelada);
+
+public record ConfiguracionFinanzasDto(
+    Propia.Domain.Enums.MultiploRedondeo MultiploRedondeo,
+    Propia.Domain.Enums.MultiploRedondeo MultiploRedondeoCuotaExtra,
+    Propia.Domain.Enums.MultiploRedondeo MultiploRedondeoProntoPago,
+    int ConsecutivoFactura,
+    int ConsecutivoRC,
+    int ConsecutivoNotaCredito,
+    int ConsecutivoPazYSalvo,
+    int ConsecutivoActaConsejo,
+    int ConsecutivoActaAsamblea,
+    string? ConvenioRecaudo,
+    string? Chartld,
+    string? ComunicacionFactura,
+    string? WenjoyCodigoRecaudo,
+    Propia.Domain.Enums.TiposPagoPermitidos TiposPagoPermitidos,
+    string? FormasDePago,
+    decimal MinimoSaldoProntoPago,
+    decimal MinimoSaldoCartera,
+    string? CuentaContable,
+    string? ZonaFacturacion,
+    int? EstratoFacturacion);
+
+public record ActualizarConfiguracionFinanzasRequest(
+    Propia.Domain.Enums.MultiploRedondeo MultiploRedondeo,
+    Propia.Domain.Enums.MultiploRedondeo MultiploRedondeoCuotaExtra,
+    Propia.Domain.Enums.MultiploRedondeo MultiploRedondeoProntoPago,
+    int ConsecutivoFactura,
+    int ConsecutivoRC,
+    int ConsecutivoNotaCredito,
+    int ConsecutivoPazYSalvo,
+    int ConsecutivoActaConsejo,
+    int ConsecutivoActaAsamblea,
+    string? ConvenioRecaudo,
+    string? Chartld,
+    string? ComunicacionFactura,
+    string? WenjoyCodigoRecaudo,
+    Propia.Domain.Enums.TiposPagoPermitidos TiposPagoPermitidos,
+    string? FormasDePago,
+    decimal MinimoSaldoProntoPago,
+    decimal MinimoSaldoCartera,
+    string? CuentaContable,
+    string? ZonaFacturacion,
+    int? EstratoFacturacion);

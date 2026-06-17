@@ -277,7 +277,8 @@ else
         </div>
     </SeccionCard>
 
-    @* Seccion 2 - Finanzas (movida aqui desde el final del acordeon). *@
+    @* Seccion 2 - Finanzas. Resumen + boton "Gestionar finanzas" abre el modal con tabs
+       (Parametros, Cuentas bancarias, Mas informacion). *@
     <SeccionCard Titulo="2. Finanzas" Completa="@CompFinanzas" Abierta="@_secciones[SecFin]" OnToggle="() => ToggleSec(SecFin)">
         @if (_finanzas is null)
         {
@@ -286,8 +287,6 @@ else
         else
         {
             var sim = _monedas.FirstOrDefault(m => m.Codigo == _finForm.Moneda)?.Simbolo ?? "$";
-
-            @* Resumen financiero en tiempo real (se nutre de 2.6 Presupuesto y 2.7 Cartera) *@
             <div class="row g-2 mb-1">
                 <div class="col-6 col-md-3">
                     <div class="fin-kpi"><div class="fin-kpi-label">Cuota administracion</div>
@@ -308,62 +307,13 @@ else
             </div>
             @if (!_finanzas.Resumen.HayPresupuestoVigente)
             {
-                <p class="text-muted small mb-0">El resumen se completa cuando exista un presupuesto vigente en 2.6 Presupuesto.</p>
+                <p class="text-muted small mt-2 mb-0">El resumen se completa cuando exista un presupuesto vigente en 2.6 Presupuesto.</p>
             }
-
-            <hr />
-            <h6 class="mb-2">Parametros de configuracion</h6>
-            <div class="row g-2">
-                <div class="col-md-3">
-                    <label class="form-label small mb-1">Moneda</label>
-                    <select class="form-select form-select-sm" @bind="_finForm.Moneda">
-                        @foreach (var m in _monedas) { <option value="@m.Codigo">@m.Codigo - @m.Nombre</option> }
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label small mb-1">Dia de corte (1-28)</label>
-                    <input type="number" min="1" max="28" class="form-control form-control-sm" @bind="_finForm.DiaCorte" />
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label small mb-1">Periodo de gracia (dias)</label>
-                    <input type="number" min="0" max="30" class="form-control form-control-sm" @bind="_finForm.PeriodoGraciaDias" />
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label small mb-1">Tasa de interes por mora</label>
-                    <select class="form-select form-select-sm" @bind="MoraModo">
-                        <option value="legal">Tasa legal vigente (automatica)</option>
-                        <option value="fija">Tasa fija</option>
-                    </select>
-                </div>
-                @if (!_finForm.TasaMoraEsLegal)
-                {
-                    <div class="col-md-3">
-                        <label class="form-label small mb-1">Tasa fija mensual (%)</label>
-                        <input type="number" step="0.01" min="0" class="form-control form-control-sm" @bind="_finForm.TasaMoraValor" />
-                        <div class="form-text small">Maximo legal: @_finanzas.Parametros.TasaMoraMaximaLegal.ToString("0.##")% mensual</div>
-                    </div>
-                }
-            </div>
-
-            @if (_finForm.DiaCorte != _diaCorteOriginal)
-            {
-                <div class="alert alert-warning py-2 mt-3 mb-0 small">Cambiar el dia de corte afecta la facturacion a partir del proximo periodo.</div>
-            }
-            @if (_finConfirmMoneda)
-            {
-                <div class="alert alert-warning py-2 mt-3 mb-0 small">
-                    <strong>Advertencia:</strong> cambiar la moneda impacta todos los valores monetarios de la copropiedad. Confirma para continuar.
-                </div>
-            }
-
-            <div class="mt-3 d-flex gap-2">
-                <button class="btn btn-sm" style="background: var(--propia-primary); color:#fff;" @onclick="GuardarFinanzas">
-                    @(_finConfirmMoneda ? "Confirmar cambio de moneda y guardar" : "Guardar parametros")
+            <div class="mc-actions">
+                <button class="propia-btn-brand" type="button" @onclick="AbrirGestionarFinanzasAsync">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    Gestionar finanzas
                 </button>
-                @if (_finConfirmMoneda)
-                {
-                    <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => { _finForm.Moneda = _monedaOriginal!; _finConfirmMoneda = false; })">Cancelar</button>
-                }
             </div>
         }
     </SeccionCard>
@@ -1578,6 +1528,18 @@ else
         var parameters = new ModalParameters().Set("Jwt", _jwt);
         var options = new ModalOptions { Width = "780px" };
         await Modals.OpenAsync<BitacoraCambiosModal, bool>(parameters, options);
+    }
+
+    private async Task AbrirGestionarFinanzasAsync()
+    {
+        var parameters = new ModalParameters().Set("Jwt", _jwt);
+        var options = new ModalOptions { Width = "920px" };
+        var hubo = await Modals.OpenAsync<GestionarFinanzasModal, bool>(parameters, options);
+        if (hubo == true)
+        {
+            await CargarAsync();
+            Msg("Finanzas actualizadas", true);
+        }
     }
 
     private async Task AbrirEditarIdentidadAsync()
