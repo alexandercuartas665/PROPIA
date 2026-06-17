@@ -113,6 +113,24 @@ public record ManifestarInconformidadRequest(string Texto);
 
 public record CerrarDefinitivoRequest(string RespuestaDefinitiva);
 
+/// <summary>Contexto humano del expediente: personas asociadas a la unidad del radicador.</summary>
+public record PqrsdContextoPersonaDto(
+    Guid PersonaId, string Nombre, string Documento,
+    string? Email, string? Telefono, string Rol, bool EsRadicador);
+
+public record PqrsdContextoUnidadDto(
+    Guid? UnidadId, string? UnidadNumero, string? TorreNombre, int? Piso,
+    string? Tipo, decimal? CoeficientePropiedad);
+
+public record PqrsdContextoDto(
+    PqrsdContextoUnidadDto Unidad,
+    IReadOnlyList<PqrsdContextoPersonaDto> Personas);
+
+public record AsignarUnidadPqrsdRequest(Guid? UnidadId);
+
+public record AgregarAdjuntoPqrsdRequest(
+    string NombreArchivo, string TipoMime, long TamanioBytes, string UrlStorage);
+
 public record ActivarTutelaRequest(string Justificacion);
 
 public record EscalarAComiteRequest(

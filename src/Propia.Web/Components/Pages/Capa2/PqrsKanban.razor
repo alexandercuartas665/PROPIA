@@ -1,0 +1,546 @@
+@page "/pqrs"
+@page "/pqrsd"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.Pqrsd
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+@inject IModalService Modals
+@using Propia.Web.Components.Shared.Modals
+
+<PageTitle>PQRSD - PROPIA</PageTitle>
+
+@* Modulo 2.9 PQRSD - vista Kanban con drag&drop entre estados.
+   Replica patron de tarjetas del prototipo PROPIA.dc.html. *@
+
+<div class="pk-page">
+    <div class="pk-head">
+        <div>
+            <h1 class="pk-title">PQRS y convivencia</h1>
+            <p class="pk-sub">Peticiones, quejas, reclamos y sugerencias con plazos legales (Ley 1755).</p>
+        </div>
+        <button class="pk-cta-brand" type="button" @onclick="IrNueva">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+            Radicar nueva PQR
+        </button>
+    </div>
+
+    @if (string.IsNullOrEmpty(_jwt))
+    {
+        <div class="pk-empty">Sesion expirada. <a href="/login?returnUrl=%2Fpqrs">Iniciar sesion</a>.</div>
+    }
+    else
+    {
+        @* === KPIs === *@
+        @if (_bandeja?.Kpis is not null)
+        {
+            var k = _bandeja.Kpis;
+            <div class="pk-kpis">
+                <div class="pk-kpi"><div class="pk-kpi-val">@k.Total</div><div class="pk-kpi-lbl">total</div></div>
+                <div class="pk-kpi"><div class="pk-kpi-val">@k.Recibidas</div><div class="pk-kpi-lbl">recibidas</div></div>
+                <div class="pk-kpi"><div class="pk-kpi-val">@k.EnGestion</div><div class="pk-kpi-lbl">en gestion</div></div>
+                <div class="pk-kpi"><div class="pk-kpi-val">@k.Respondidas</div><div class="pk-kpi-lbl">respondidas</div></div>
+                <div class="pk-kpi"><div class="pk-kpi-val">@k.Cerradas</div><div class="pk-kpi-lbl">cerradas</div></div>
+                <div class="pk-kpi @(k.PorVencer > 0 ? "pk-kpi--warn" : "")"><div class="pk-kpi-val">@k.PorVencer</div><div class="pk-kpi-lbl">por vencer</div></div>
+                <div class="pk-kpi @(k.Vencidas > 0 ? "pk-kpi--err" : "")"><div class="pk-kpi-val">@k.Vencidas</div><div class="pk-kpi-lbl">vencidas</div></div>
+                <div class="pk-kpi @(k.ConTutela > 0 ? "pk-kpi--alert" : "")"><div class="pk-kpi-val">@k.ConTutela</div><div class="pk-kpi-lbl">con tutela</div></div>
+            </div>
+        }
+
+        @* === Chips por categoria === *@
+        @if (_bandeja?.Items.Count > 0)
+        {
+            var porCategoria = _bandeja.Items.GroupBy(x => x.CategoriaNombre).OrderByDescending(g => g.Count()).ToList();
+            var porUnidad = _bandeja.Items.Where(x => !string.IsNullOrEmpty(x.UnidadNumero))
+                              .GroupBy(x => x.UnidadNumero!).OrderByDescending(g => g.Count()).ToList();
+
+            <div class="pk-chip-section">
+                <div class="pk-chip-row">
+                    <span class="pk-chip-lbl">Categoria</span>
+                    <button type="button" class="pk-chip @(string.IsNullOrEmpty(_filtroCategoria) ? "pk-chip--on" : "")"
+                            @onclick="@(() => SetCategoria(""))">
+                        Todas <span class="pk-chip-num">@_bandeja.Items.Count</span>
+                    </button>
+                    @foreach (var g in porCategoria)
+                    {
+                        var nombre = g.Key;
+                        <button type="button" class="pk-chip @(_filtroCategoria == nombre ? "pk-chip--on" : "")"
+                                @onclick="@(() => SetCategoria(nombre))">
+                            @nombre <span class="pk-chip-num">@g.Count()</span>
+                        </button>
+                    }
+                </div>
+                @if (porUnidad.Count > 0)
+                {
+                    <div class="pk-chip-row">
+                        <span class="pk-chip-lbl">Unidad</span>
+                        <button type="button" class="pk-chip @(string.IsNullOrEmpty(_filtroUnidad) ? "pk-chip--on" : "")"
+                                @onclick="@(() => SetUnidad(""))">
+                            Todas
+                        </button>
+                        @foreach (var g in porUnidad)
+                        {
+                            var u = g.Key;
+                            <button type="button" class="pk-chip @(_filtroUnidad == u ? "pk-chip--on" : "")"
+                                    @onclick="@(() => SetUnidad(u))">
+                                @u <span class="pk-chip-num">@g.Count()</span>
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+        }
+
+        @* === Filtros === *@
+        <div class="pk-filters">
+            <input class="pk-input" @bind="_buscar" @bind:event="oninput" placeholder="Buscar por radicado o resumen..." />
+            <select class="pk-input" @bind="_filtroTipo">
+                <option value="">Todos los tipos</option>
+                @foreach (var t in Enum.GetValues<TipoPqrsd>()) { <option value="@t">@TipoLabel(t)</option> }
+            </select>
+            <button class="pk-input-btn" @onclick="CargarAsync" disabled="@_busy">
+                @if (_busy) { <span>Cargando...</span> }
+                else
+                {
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 16-5.7M21 4v4h-4M21 12a9 9 0 0 1-16 5.7M3 20v-4h4"/></svg>
+                    <span>Refrescar</span>
+                }
+            </button>
+        </div>
+
+        @* === KANBAN por estado === *@
+        <div class="pk-board">
+            @foreach (var estado in _estadosKanban)
+            {
+                var items = ItemsFiltrados.Where(x => x.Estado == estado).ToList();
+                <div class="pk-col"
+                     @ondragover="OnDragOver"
+                     @ondragover:preventDefault="true"
+                     @ondrop="() => OnDrop(estado)">
+                    <div class="pk-col-head">
+                        <span class="pk-col-dot" style="background:@EstadoColor(estado)"></span>
+                        <span class="pk-col-name">@EstadoLabel(estado)</span>
+                        <span class="pk-col-count">@items.Count</span>
+                    </div>
+                    <div class="pk-col-body">
+                        @foreach (var it in items)
+                        {
+                            <div class="pk-card @(it.TutelaActiva ? "pk-card--tutela" : "")"
+                                 draggable="true"
+                                 @ondragstart="() => OnDragStart(it.Id, it.Estado)"
+                                 @onclick="() => IrA(it.Id)">
+                                <div class="pk-card-head">
+                                    <span class="pk-card-num">@it.NumeroRadicado</span>
+                                    <span class="pk-sem @SemaforoClass(it.Semaforo)" title="@SemaforoLabel(it.Semaforo)">
+                                        <span class="pk-sem-dot"></span>
+                                        @SemaforoLabel(it.Semaforo)
+                                    </span>
+                                </div>
+                                <div class="pk-card-tipo">
+                                    <span class="pk-tipo-pill">@TipoLabel(it.Tipo)</span>
+                                    <span class="pk-cat">@it.CategoriaNombre</span>
+                                </div>
+                                <div class="pk-card-desc">@it.DescripcionResumen</div>
+                                <div class="pk-card-foot">
+                                    <span class="pk-radicador">
+                                        @if (it.IdentidadReservada) { <span class="pk-rsv">[Reservada]</span> }
+                                        else if (!string.IsNullOrEmpty(it.RadicadorNombre)) { <span>@it.RadicadorNombre</span> }
+                                        @if (!string.IsNullOrEmpty(it.UnidadNumero)) { <span> · @it.UnidadNumero</span> }
+                                    </span>
+                                    <span class="pk-vence @(it.DiasHastaVencimiento < 0 ? "pk-vence-err" : it.DiasHastaVencimiento <= 3 ? "pk-vence-warn" : "")">
+                                        @if (it.DiasHastaVencimiento < 0) { <span>vencida hace @Math.Abs(it.DiasHastaVencimiento)d</span> }
+                                        else { <span>@it.DiasHastaVencimiento d</span> }
+                                    </span>
+                                </div>
+                                @if (it.TutelaActiva || it.TieneComiteActivo)
+                                {
+                                    <div class="pk-card-flags">
+                                        @if (it.TutelaActiva) { <span class="pk-flag pk-flag--tutela">⚠ Tutela activa</span> }
+                                        @if (it.TieneComiteActivo) { <span class="pk-flag pk-flag--comite">Comite</span> }
+                                    </div>
+                                }
+                            </div>
+                        }
+                        @if (items.Count == 0)
+                        {
+                            <div class="pk-col-empty">Sin PQRs.</div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        @if (!string.IsNullOrEmpty(_msg))
+        {
+            <div class="pk-toast @(_msgError ? "pk-toast--err" : "pk-toast--ok")">@_msg</div>
+        }
+    }
+</div>
+
+<ModalHost />
+
+<style>
+    .pk-page {
+        padding: 22px 28px;
+        font-family: var(--propia-font-base, 'Lexend', sans-serif);
+    }
+    .pk-head {
+        display: flex; align-items: flex-start; justify-content: space-between;
+        gap: 20px; margin-bottom: 18px;
+    }
+    .pk-title { font-size: 27px; font-weight: 800; letter-spacing: -0.6px; color: #1B2A3A; margin: 0; }
+    .pk-sub { font-size: 14px; color: #7C98B6; margin: 4px 0 0; }
+    .pk-cta-brand {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 11px 17px; border-radius: 10px;
+        background: var(--propia-brand, #6D4FE3); color: #fff;
+        font-size: 13.5px; font-weight: 700; border: 0; cursor: pointer;
+        box-shadow: 0 6px 16px rgba(109,79,227,.32);
+    }
+    .pk-cta-brand:hover { background: var(--propia-brand-hover, #5838C9); }
+
+    .pk-empty {
+        background: #F8FAFC; border: 1px dashed #D7E0EA; border-radius: 12px;
+        padding: 30px; text-align: center; color: #A6B7C8;
+    }
+
+    .pk-kpis {
+        display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px;
+        margin-bottom: 16px;
+    }
+    .pk-kpi {
+        background: #fff; border: 1px solid #E1E8EE; border-radius: 11px;
+        padding: 11px 13px;
+    }
+    .pk-kpi-val { font-size: 22px; font-weight: 800; color: #1B2A3A; letter-spacing: -0.3px; }
+    .pk-kpi-lbl { font-size: 10.5px; color: #A6B7C8; font-weight: 600; margin-top: 1px; }
+    .pk-kpi--warn .pk-kpi-val { color: #B45309; }
+    .pk-kpi--err .pk-kpi-val { color: #DC2626; }
+    .pk-kpi--alert .pk-kpi-val { color: #DC2626; }
+    .pk-kpi--alert { background: #FEF2F2; border-color: #FECACA; }
+
+    .pk-chip-section { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+    .pk-chip-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+    .pk-chip-lbl { font-size: 10.5px; font-weight: 700; color: #A6B7C8; text-transform: uppercase; letter-spacing: .4px; min-width: 70px; }
+    .pk-chip {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 5px 11px; border-radius: 999px;
+        border: 1px solid #E1E8EE; background: #fff;
+        font-size: 11.5px; font-weight: 600; color: #516F90;
+        cursor: pointer; font-family: inherit;
+    }
+    .pk-chip:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
+    .pk-chip--on { background: var(--propia-brand, #6D4FE3); border-color: var(--propia-brand, #6D4FE3); color: #fff; }
+    .pk-chip--on:hover { color: #fff; }
+    .pk-chip-num {
+        font-size: 10px; font-weight: 800; background: rgba(255,255,255,.25);
+        color: inherit; padding: 1px 6px; border-radius: 5px; min-width: 18px; text-align: center;
+    }
+    .pk-chip:not(.pk-chip--on) .pk-chip-num { background: #F1F5F9; color: #516F90; }
+
+    .pk-filters {
+        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+        margin-bottom: 16px;
+    }
+    .pk-input {
+        border: 1px solid #E1E8EE; border-radius: 9px;
+        padding: 9px 11px; font-size: 13px; color: #33475B;
+        background: #fff; outline: none; font-family: inherit;
+        min-width: 200px;
+    }
+    .pk-input:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .pk-input-btn {
+        display: inline-flex; align-items: center; gap: 7px;
+        padding: 9px 14px; border-radius: 9px;
+        border: 1px solid #E1E8EE; background: #fff;
+        font-size: 12.5px; font-weight: 600; color: #516F90; cursor: pointer;
+    }
+    .pk-input-btn:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
+
+    /* Board */
+    .pk-board {
+        display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px;
+        margin-bottom: 30px;
+    }
+    .pk-col {
+        background: #F5F8FA; border: 1px solid #EEF3F8; border-radius: 14px;
+        min-height: 200px; display: flex; flex-direction: column;
+    }
+    .pk-col-head {
+        display: flex; align-items: center; gap: 8px;
+        padding: 12px 14px; border-bottom: 1px solid #EEF3F8;
+    }
+    .pk-col-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .pk-col-name { font-size: 13px; font-weight: 700; color: #1B2A3A; flex: 1; }
+    .pk-col-count { font-size: 11px; font-weight: 700; background: #fff; color: #516F90; padding: 2px 8px; border-radius: 7px; }
+    .pk-col-body { padding: 10px; display: flex; flex-direction: column; gap: 8px; min-height: 100px; }
+    .pk-col-empty { font-size: 12px; color: #A6B7C8; padding: 14px 4px; text-align: center; }
+
+    /* Card */
+    .pk-card {
+        background: #fff; border: 1px solid #E1E8EE;
+        border-radius: 11px; padding: 11px 13px;
+        cursor: grab;
+        box-shadow: 0 1px 2px rgba(45,62,80,.04);
+        transition: box-shadow .15s, transform .1s;
+    }
+    .pk-card:hover { box-shadow: 0 4px 12px rgba(45,62,80,.10); transform: translateY(-1px); }
+    .pk-card:active { cursor: grabbing; }
+    .pk-card--tutela { border-left: 3px solid #DC2626; }
+
+    .pk-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+    .pk-card-num { font-size: 10.5px; font-weight: 700; color: #A6B7C8; }
+    .pk-sem { display: inline-flex; align-items: center; gap: 5px; font-size: 9.5px; font-weight: 700; padding: 2px 7px; border-radius: 5px; text-transform: uppercase; letter-spacing: .3px; }
+    .pk-sem-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .pk-sem--verde { color: #15703F; background: #E6F6EE; }
+    .pk-sem--amarillo { color: #B45309; background: #FEF3C7; }
+    .pk-sem--rojo { color: #B91C1C; background: #FEE2E2; }
+    .pk-sem--negro { color: #fff; background: #111827; }
+    .pk-sem--tutela { color: #fff; background: #DC2626; }
+
+    .pk-card-tipo { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+    .pk-tipo-pill {
+        font-size: 10px; font-weight: 700; color: var(--propia-brand, #6D4FE3);
+        background: var(--propia-brand-soft, #F1ECFD);
+        padding: 2px 8px; border-radius: 5px;
+    }
+    .pk-cat { font-size: 10.5px; color: #7C98B6; font-weight: 600; }
+
+    .pk-card-desc {
+        font-size: 12px; color: #516F90;
+        line-height: 1.4; margin-bottom: 8px;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    .pk-card-foot {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 8px;
+        font-size: 10.5px; color: #7C98B6;
+    }
+    .pk-radicador { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+    .pk-rsv { color: #DC2626; font-weight: 700; }
+    .pk-vence { font-weight: 700; }
+    .pk-vence-warn { color: #B45309; }
+    .pk-vence-err { color: #DC2626; }
+
+    .pk-card-flags { display: flex; gap: 5px; margin-top: 7px; flex-wrap: wrap; }
+    .pk-flag { font-size: 9.5px; font-weight: 700; padding: 2px 7px; border-radius: 5px; }
+    .pk-flag--tutela { color: #fff; background: #DC2626; }
+    .pk-flag--comite { color: var(--propia-brand, #6D4FE3); background: var(--propia-brand-soft, #F1ECFD); }
+
+    .pk-toast {
+        position: fixed; bottom: 24px; right: 28px;
+        padding: 12px 18px; border-radius: 10px;
+        font-size: 13px; font-weight: 600;
+        box-shadow: 0 8px 24px rgba(45,62,80,.18);
+        z-index: 200;
+    }
+    .pk-toast--ok { background: #1A8754; color: #fff; }
+    .pk-toast--err { background: #DC2626; color: #fff; }
+
+    [data-bs-theme="dark"] .pk-title { color: #E5E7EB; }
+    [data-bs-theme="dark"] .pk-kpi,
+    [data-bs-theme="dark"] .pk-card { background: #232B40; border-color: #2D3650; }
+    [data-bs-theme="dark"] .pk-kpi-val { color: #E5E7EB; }
+    [data-bs-theme="dark"] .pk-col { background: #1B2233; border-color: #2D3650; }
+</style>
+
+@code {
+    private string? _jwt;
+    private PqrsdBandejaDto? _bandeja;
+    private string _buscar = "";
+    private string _filtroTipo = "";
+    private bool _busy;
+    private string _msg = "";
+    private bool _msgError;
+    private Guid? _draggingId;
+    private EstadoPqrsd? _draggingFromEstado;
+
+    private readonly EstadoPqrsd[] _estadosKanban = new[]
+    {
+        EstadoPqrsd.Recibida,
+        EstadoPqrsd.EnGestion,
+        EstadoPqrsd.Respondida,
+        EstadoPqrsd.Cerrada,
+        EstadoPqrsd.ViaInternaAgotada
+    };
+
+    private string _filtroCategoria = "";
+    private string _filtroUnidad = "";
+
+    private void SetCategoria(string nombre) { _filtroCategoria = nombre; }
+    private void SetUnidad(string numero) { _filtroUnidad = numero; }
+
+    private IEnumerable<PqrsdBandejaItemDto> ItemsFiltrados =>
+        (_bandeja?.Items ?? new List<PqrsdBandejaItemDto>())
+            .Where(x => string.IsNullOrEmpty(_buscar)
+                || x.NumeroRadicado.Contains(_buscar, StringComparison.OrdinalIgnoreCase)
+                || x.DescripcionResumen.Contains(_buscar, StringComparison.OrdinalIgnoreCase))
+            .Where(x => string.IsNullOrEmpty(_filtroTipo)
+                || x.Tipo == Enum.Parse<TipoPqrsd>(_filtroTipo))
+            .Where(x => string.IsNullOrEmpty(_filtroCategoria)
+                || x.CategoriaNombre == _filtroCategoria)
+            .Where(x => string.IsNullOrEmpty(_filtroUnidad)
+                || x.UnidadNumero == _filtroUnidad);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try { _jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt"); }
+            catch { _jwt = null; }
+            if (!string.IsNullOrEmpty(_jwt))
+            {
+                await CargarAsync();
+            }
+            StateHasChanged();
+        }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(_jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
+        return http;
+    }
+
+    private async Task CargarAsync()
+    {
+        if (string.IsNullOrEmpty(_jwt))
+        {
+            try { _jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt"); }
+            catch { return; }
+        }
+        if (string.IsNullOrEmpty(_jwt)) return;
+        _busy = true;
+        try
+        {
+            _bandeja = await Auth().GetFromJsonAsync<PqrsdBandejaDto>("/api/pqrsd/bandeja");
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+        _busy = false;
+    }
+
+    private void OnDragStart(Guid id, EstadoPqrsd from) { _draggingId = id; _draggingFromEstado = from; }
+    private void OnDragOver() { }
+
+    private async Task OnDrop(EstadoPqrsd target)
+    {
+        if (_draggingId is null || _draggingFromEstado is null || _draggingFromEstado == target) return;
+        var id = _draggingId.Value;
+        var from = _draggingFromEstado.Value;
+        _draggingId = null;
+        _draggingFromEstado = null;
+
+        // Mapeo: que endpoint llamar segun la transicion
+        var (endpoint, body, ok) = MapearTransicion(from, target);
+        if (!ok) { Toast($"Transicion invalida: {EstadoLabel(from)} → {EstadoLabel(target)}", true); return; }
+
+        var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{id}/{endpoint}", body);
+        if (resp.IsSuccessStatusCode)
+        {
+            await CargarAsync();
+            Toast($"PQR movida a '{EstadoLabel(target)}'.", false);
+        }
+        else { Toast("No se pudo mover: " + await resp.Content.ReadAsStringAsync(), true); }
+    }
+
+    private (string Endpoint, object Body, bool Ok) MapearTransicion(EstadoPqrsd from, EstadoPqrsd to)
+    {
+        // Recibida -> EnGestion: tomar
+        if (from == EstadoPqrsd.Recibida && to == EstadoPqrsd.EnGestion)
+            return ("tomar", new TomarExpedienteRequest("Movida via Kanban."), true);
+        // EnGestion -> Respondida: responder (necesita texto, dejamos placeholder)
+        if (from == EstadoPqrsd.EnGestion && to == EstadoPqrsd.Respondida)
+            return ("responder", new ResponderExpedienteRequest("Respuesta registrada via Kanban (pendiente texto detallado)."), true);
+        // Respondida -> Cerrada: cerrar definitivo
+        if (from == EstadoPqrsd.Respondida && to == EstadoPqrsd.Cerrada)
+            return ("cerrar", new CerrarDefinitivoRequest("Cerrado via Kanban."), true);
+        return ("", new { }, false);
+    }
+
+    private void Toast(string text, bool isError) { _msg = text; _msgError = isError; }
+
+    private async Task IrNueva()
+    {
+        var parameters = new ModalParameters().Set("Jwt", _jwt);
+        var options = new ModalOptions { Width = "820px" };
+        var radicada = await Modals.OpenAsync<NuevaPqrsdWizardModal, bool>(parameters, options);
+        if (radicada == true)
+        {
+            await CargarAsync();
+            Toast("PQR radicada correctamente.", false);
+        }
+    }
+
+    private async Task IrA(Guid id)
+    {
+        var parameters = new ModalParameters()
+            .Set("Jwt", _jwt)
+            .Set("ExpedienteId", id);
+        var options = new ModalOptions { Fullscreen = true };
+        var hubo = await Modals.OpenAsync<GestionarPqrsdModal, bool>(parameters, options);
+        if (hubo == true)
+        {
+            await CargarAsync();
+            Toast("Expediente actualizado.", false);
+        }
+    }
+
+    private static string TipoLabel(TipoPqrsd t) => t switch
+    {
+        TipoPqrsd.Peticion => "Peticion",
+        TipoPqrsd.SolicitudDocumentos => "Solicitud docs",
+        TipoPqrsd.Consulta => "Consulta",
+        TipoPqrsd.Queja => "Queja",
+        TipoPqrsd.Reclamo => "Reclamo",
+        TipoPqrsd.Sugerencia => "Sugerencia",
+        TipoPqrsd.Denuncia => "Denuncia",
+        _ => t.ToString()
+    };
+
+    private static string EstadoLabel(EstadoPqrsd e) => e switch
+    {
+        EstadoPqrsd.Recibida => "Recibida",
+        EstadoPqrsd.EnGestion => "En gestion",
+        EstadoPqrsd.Respondida => "Respondida",
+        EstadoPqrsd.Cerrada => "Cerrada",
+        EstadoPqrsd.ViaInternaAgotada => "Via interna agotada",
+        _ => e.ToString()
+    };
+
+    private static string EstadoColor(EstadoPqrsd e) => e switch
+    {
+        EstadoPqrsd.Recibida => "#6D4FE3",
+        EstadoPqrsd.EnGestion => "#2563EB",
+        EstadoPqrsd.Respondida => "#D97706",
+        EstadoPqrsd.Cerrada => "#1A8754",
+        EstadoPqrsd.ViaInternaAgotada => "#6B7280",
+        _ => "#A6B7C8"
+    };
+
+    private static string SemaforoLabel(SemaforoPqrsd s) => s switch
+    {
+        SemaforoPqrsd.Verde => "Verde",
+        SemaforoPqrsd.Amarillo => "Amarillo",
+        SemaforoPqrsd.Rojo => "Rojo",
+        SemaforoPqrsd.Negro => "Vencida",
+        SemaforoPqrsd.TutelaActiva => "Tutela",
+        _ => s.ToString()
+    };
+
+    private static string SemaforoClass(SemaforoPqrsd s) => s switch
+    {
+        SemaforoPqrsd.Verde => "pk-sem--verde",
+        SemaforoPqrsd.Amarillo => "pk-sem--amarillo",
+        SemaforoPqrsd.Rojo => "pk-sem--rojo",
+        SemaforoPqrsd.Negro => "pk-sem--negro",
+        SemaforoPqrsd.TutelaActiva => "pk-sem--tutela",
+        _ => ""
+    };
+}

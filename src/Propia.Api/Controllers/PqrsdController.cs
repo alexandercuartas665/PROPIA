@@ -1,7 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Propia.Application.Pqrsd;
+using Propia.Domain.Entities;
 using Propia.Domain.Enums;
+using Propia.Infrastructure.Persistence;
 
 namespace Propia.Api.Controllers;
 
@@ -12,7 +15,8 @@ namespace Propia.Api.Controllers;
 public class PqrsdController : ControllerBase
 {
     private readonly IPqrsdService _svc;
-    public PqrsdController(IPqrsdService svc) => _svc = svc;
+    private readonly PropiaDbContext _db;
+    public PqrsdController(IPqrsdService svc, PropiaDbContext db) { _svc = svc; _db = db; }
 
     // --- Catalogo ---
     [HttpGet("categorias")]
@@ -117,5 +121,81 @@ public class PqrsdController : ControllerBase
     {
         try { return await _svc.RegistrarSesionComiteAsync(sesionId, req, ct) ? NoContent() : NotFound(); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    // --- Contexto humano del expediente: unidad asignada + propietario/residente/etc con contacto ---
+    [HttpGet("{id:guid}/contexto")]
+    public async Task<IActionResult> GetContexto(Guid id, CancellationToken ct)
+    {
+        var exp = await _db.PqrsdExpedientes.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (exp is null) return NotFound();
+
+        // Buscar UnidadPersona donde PersonaId = RadicadorPersonaId. Tomo la primera asociacion como "unidad del expediente".
+        var unidadPersona = await (from up in _db.UnidadPersonas.AsNoTracking()
+                                   join u in _db.UnidadesPrivadas.AsNoTracking() on up.UnidadId equals u.Id
+                                   where up.PersonaId == exp.RadicadorPersonaId
+                                   select new { up.UnidadId, u.Numero, u.TorreId, u.Piso, u.Tipo, u.CoeficientePropiedad })
+                                  .FirstOrDefaultAsync(ct);
+
+        PqrsdContextoUnidadDto unidadDto;
+        IReadOnlyList<PqrsdContextoPersonaDto> personasDto = new List<PqrsdContextoPersonaDto>();
+
+        if (unidadPersona is not null)
+        {
+            var torreNombre = unidadPersona.TorreId.HasValue
+                ? await _db.Torres.AsNoTracking().Where(t => t.Id == unidadPersona.TorreId).Select(t => t.Nombre).FirstOrDefaultAsync(ct)
+                : null;
+            unidadDto = new PqrsdContextoUnidadDto(
+                unidadPersona.UnidadId, unidadPersona.Numero, torreNombre,
+                unidadPersona.Piso, unidadPersona.Tipo.ToString(), unidadPersona.CoeficientePropiedad);
+
+            // Todas las personas de esa unidad con sus datos
+            personasDto = await (from up in _db.UnidadPersonas.AsNoTracking()
+                                 join p in _db.Personas.AsNoTracking() on up.PersonaId equals p.Id
+                                 where up.UnidadId == unidadPersona.UnidadId
+                                 select new PqrsdContextoPersonaDto(
+                                     p.Id,
+                                     (p.Nombres + " " + p.Apellidos).Trim(),
+                                     p.Documento, p.Email, p.Telefono,
+                                     up.Rol.ToString(),
+                                     p.Id == exp.RadicadorPersonaId))
+                                .ToListAsync(ct);
+        }
+        else
+        {
+            unidadDto = new PqrsdContextoUnidadDto(null, null, null, null, null, null);
+            // Aun sin unidad asociada, devolver al menos el radicador
+            var rad = await _db.Personas.AsNoTracking().FirstOrDefaultAsync(p => p.Id == exp.RadicadorPersonaId, ct);
+            if (rad is not null)
+            {
+                personasDto = new List<PqrsdContextoPersonaDto>
+                {
+                    new(rad.Id, (rad.Nombres + " " + rad.Apellidos).Trim(),
+                        rad.Documento, rad.Email, rad.Telefono, "Radicador", true)
+                };
+            }
+        }
+
+        return Ok(new PqrsdContextoDto(unidadDto, personasDto));
+    }
+
+    // --- Agregar adjunto despues de la radicacion (admin adjunta evidencias/documentos) ---
+    [HttpPost("{id:guid}/adjuntos")]
+    public async Task<IActionResult> AgregarAdjunto(Guid id, [FromBody] AgregarAdjuntoPqrsdRequest req, CancellationToken ct)
+    {
+        var exp = await _db.PqrsdExpedientes.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (exp is null) return NotFound();
+        if (string.IsNullOrWhiteSpace(req.NombreArchivo)) return BadRequest(new { error = "NombreArchivo requerido." });
+        var adj = new PqrsdAdjunto
+        {
+            ExpedienteId = id,
+            NombreArchivo = req.NombreArchivo.Trim(),
+            TipoMime = req.TipoMime,
+            TamanioBytes = req.TamanioBytes,
+            UrlStorage = req.UrlStorage
+        };
+        _db.PqrsdAdjuntos.Add(adj);
+        await _db.SaveChangesAsync(ct);
+        return Created("", new PqrsdAdjuntoDto(adj.Id, adj.NombreArchivo, adj.TipoMime, adj.TamanioBytes, adj.UrlStorage, adj.CreatedAt));
     }
 }
