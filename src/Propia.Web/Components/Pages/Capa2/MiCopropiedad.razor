@@ -270,6 +270,10 @@ else
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 Editar datos
             </button>
+            <button class="propia-btn-ghost" @onclick="AbrirBitacoraAsync" title="Bitacora de cambios">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                Bitacora
+            </button>
         </div>
     </SeccionCard>
 
@@ -599,28 +603,8 @@ else
         }
     </SeccionCard>
 
-    @* Bitacora de cambios (RN-06) - registro en lenguaje natural, solo lectura *@
-    <div class="card mt-3">
-        <div class="card-body">
-            <h6 class="mb-3"><i class="fi fi-rr-time-past me-1"></i>Bitacora de cambios</h6>
-            @if (_bitacora.Count == 0)
-            {
-                <p class="text-muted small mb-0">Aun no hay cambios registrados. Aqui quedaran los cambios de coeficientes, moneda, dia de corte y estados.</p>
-            }
-            else
-            {
-                <ul class="list-group list-group-flush small">
-                    @foreach (var b in _bitacora)
-                    {
-                        <li class="list-group-item d-flex justify-content-between align-items-start px-0">
-                            <span><span class="badge bg-light text-dark border me-2">@b.Categoria</span>@b.Descripcion</span>
-                            <span class="text-muted ms-3" style="white-space:nowrap;">@b.Fecha.ToLocalTime().ToString("dd MMM HH:mm")</span>
-                        </li>
-                    }
-                </ul>
-            }
-        </div>
-    </div>
+    @* Bitacora de cambios (RN-06): ahora vive en BitacoraCambiosModal, accesible desde
+       el boton "Bitacora" al lado de "Editar datos" en la seccion 1 (Identidad). *@
 
     @if (!string.IsNullOrEmpty(_actionMsg))
     {
@@ -958,8 +942,8 @@ else
     private NuevoComite _nuevoComite = new() { FechaConformacion = DateTime.Today };
     private NuevoRevisorFiscal _nuevoRev = new() { FechaPosesion = DateTime.Today };
 
-    // Bitacora de cambios (RN-06)
-    private List<BitacoraEntradaDto> _bitacora = new();
+    // Bitacora de cambios (RN-06): el listado se carga bajo demanda dentro de BitacoraCambiosModal.
+
 
     // Sec 8 Finanzas
     private FinanzasDto? _finanzas;
@@ -1114,8 +1098,8 @@ else
                 _finConfirmMoneda = false;
             }
 
-            // Bitacora de cambios (RN-06)
-            _bitacora = await http.GetFromJsonAsync<List<BitacoraEntradaDto>>("/api/mi-copropiedad/bitacora?limit=30") ?? new();
+            // Bitacora: se carga bajo demanda en BitacoraCambiosModal (boton al lado de "Editar datos").
+
 
             // Estado de secciones por usuario (RN-24): restaurar colapsadas guardadas
             try
@@ -1441,6 +1425,13 @@ else
             await CargarAsync();
             Msg("Zonas actualizadas", true);
         }
+    }
+
+    private async Task AbrirBitacoraAsync()
+    {
+        var parameters = new ModalParameters().Set("Jwt", _jwt);
+        var options = new ModalOptions { Width = "780px" };
+        await Modals.OpenAsync<BitacoraCambiosModal, bool>(parameters, options);
     }
 
     private async Task AbrirEditarIdentidadAsync()

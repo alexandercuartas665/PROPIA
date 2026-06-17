@@ -1,0 +1,150 @@
+@page "/servicios"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.MiCopropiedad
+@using Propia.Web.Components.Shared.Modals
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+@inject IModalService Modals
+
+<PageTitle>Servicios - PROPIA</PageTitle>
+
+@* 2.5.2 Servicios: pagina dedicada que reusa GestionarServiciosModal. Muestra resumen
+   de contratos por estado y abre el modal para gestion completa. *@
+
+<div class="srv-page">
+    <div class="srv-head">
+        <div>
+            <h1 class="srv-title">Servicios</h1>
+            <p class="srv-sub">Contratos de aseo, seguridad, mantenimiento y otros servicios externalizados.</p>
+        </div>
+        <button class="srv-btn-brand" type="button" @onclick="AbrirGestionarAsync">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Gestionar servicios
+        </button>
+    </div>
+
+    <div class="srv-stats">
+        <div class="srv-stat srv-stat--ok" @onclick="AbrirGestionarAsync">
+            <div class="srv-stat-val">@_vigentes</div>
+            <div class="srv-stat-lbl">Vigentes</div>
+        </div>
+        <div class="srv-stat srv-stat--warn" @onclick="AbrirGestionarAsync">
+            <div class="srv-stat-val">@_renovacion</div>
+            <div class="srv-stat-lbl">En renovacion</div>
+        </div>
+        <div class="srv-stat srv-stat--neutral" @onclick="AbrirGestionarAsync">
+            <div class="srv-stat-val">@_vencidos</div>
+            <div class="srv-stat-lbl">Vencidos</div>
+        </div>
+        <div class="srv-stat srv-stat--total" @onclick="AbrirGestionarAsync">
+            <div class="srv-stat-val">@_contratos.Count</div>
+            <div class="srv-stat-lbl">Total contratos</div>
+        </div>
+    </div>
+
+    @if (_contratos.Count > 0)
+    {
+        <div class="srv-list">
+            <div class="srv-list-head">Ultimos contratos</div>
+            <table class="srv-table">
+                <thead>
+                    <tr><th>Servicio</th><th>Proveedor</th><th>Estado</th><th>Fin</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var c in _contratos.OrderByDescending(x => x.FechaInicio).Take(8))
+                    {
+                        <tr @onclick="AbrirGestionarAsync">
+                            <td class="srv-cell-strong">@c.Tipo</td>
+                            <td>@(string.IsNullOrEmpty(c.Proveedor) ? "-" : c.Proveedor)</td>
+                            <td><span class="srv-pill srv-pill--@c.Estado.ToString().ToLowerInvariant()">@EstadoTexto(c.Estado)</span></td>
+                            <td>@(c.FechaFin?.ToString("dd MMM yyyy") ?? "-")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<ModalHost />
+
+<style>
+    .srv-page { padding: 22px 28px; font-family: var(--propia-font-base, 'Lexend', sans-serif); }
+    .srv-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 22px; }
+    .srv-title { font-size: 27px; font-weight: 800; letter-spacing: -0.6px; color: #1B2A3A; margin: 0; }
+    .srv-sub { font-size: 14px; color: #7C98B6; margin: 4px 0 0; }
+    .srv-btn-brand { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; padding: 9px 16px; border: 0; border-radius: 9px; background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(109,79,227,.25); }
+    .srv-btn-brand:hover { background: var(--propia-brand-hover, #5838C9); }
+
+    .srv-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .srv-stat { background: #fff; border: 1px solid #EEF3F8; border-radius: 13px; padding: 16px; cursor: pointer; transition: border-color .15s, transform .15s; }
+    .srv-stat:hover { border-color: var(--propia-brand, #6D4FE3); transform: translateY(-1px); }
+    .srv-stat-val { font-size: 26px; font-weight: 800; color: #1B2A3A; line-height: 1; }
+    .srv-stat-lbl { font-size: 12px; color: #7C98B6; margin-top: 5px; text-transform: uppercase; letter-spacing: .3px; font-weight: 700; }
+    .srv-stat--ok .srv-stat-val { color: #2E7D32; }
+    .srv-stat--warn .srv-stat-val { color: #EF6C00; }
+    .srv-stat--neutral .srv-stat-val { color: #7C98B6; }
+
+    .srv-list { background: #fff; border: 1px solid #EEF3F8; border-radius: 13px; overflow: hidden; }
+    .srv-list-head { padding: 12px 18px; font-size: 13px; font-weight: 800; color: #1B2A3A; border-bottom: 1px solid #EEF3F8; }
+    .srv-table { width: 100%; border-collapse: collapse; }
+    .srv-table th { padding: 10px 18px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: #7C98B6; background: #FAFBFD; }
+    .srv-table td { padding: 11px 18px; border-bottom: 1px solid #F4F7FA; font-size: 13px; color: #33475B; }
+    .srv-table tbody tr { cursor: pointer; }
+    .srv-table tbody tr:hover { background: #FAFBFD; }
+    .srv-cell-strong { font-weight: 700; color: #1B2A3A; }
+    .srv-pill { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; }
+    .srv-pill--vigente { background: #E8F5E9; color: #2E7D32; }
+    .srv-pill--enrenovacion { background: #FFF3E0; color: #EF6C00; }
+    .srv-pill--vencido { background: #F4F7FA; color: #7C98B6; }
+    .srv-pill--terminado { background: #F4F7FA; color: #7C98B6; }
+</style>
+
+@code {
+    private string? _jwt;
+    private List<ContratoServicioDto> _contratos = new();
+    private int _vigentes;
+    private int _renovacion;
+    private int _vencidos;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try { _jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt"); } catch { }
+        if (string.IsNullOrEmpty(_jwt)) return;
+        await CargarAsync();
+        StateHasChanged();
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = HttpFactory.CreateClient("PropiaApi");
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+            _contratos = await http.GetFromJsonAsync<List<ContratoServicioDto>>("/api/mi-copropiedad/contratos") ?? new();
+            _vigentes = _contratos.Count(c => c.Estado == EstadoContrato.Vigente);
+            _renovacion = _contratos.Count(c => c.Estado == EstadoContrato.EnRenovacion);
+            _vencidos = _contratos.Count(c => c.Estado == EstadoContrato.Vencido);
+        }
+        catch { /* ignorar */ }
+    }
+
+    private async Task AbrirGestionarAsync()
+    {
+        var parameters = new ModalParameters().Set("Jwt", _jwt);
+        var options = new ModalOptions { Width = "980px" };
+        var hubo = await Modals.OpenAsync<GestionarServiciosModal, bool>(parameters, options);
+        if (hubo == true) await CargarAsync();
+    }
+
+    private static string EstadoTexto(EstadoContrato e) => e switch
+    {
+        EstadoContrato.Vigente => "Vigente",
+        EstadoContrato.EnRenovacion => "En renovacion",
+        EstadoContrato.Vencido => "Vencido",
+        _ => e.ToString()
+    };
+}

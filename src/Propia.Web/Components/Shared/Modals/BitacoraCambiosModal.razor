@@ -1,0 +1,101 @@
+@* BitacoraCambiosModal - registro en lenguaje natural de cambios sobre la copropiedad (RN-06).
+   Solo lectura. Se abre desde el boton al lado de "Editar datos" en la seccion Identidad
+   de Mi Copropiedad. Carga las ultimas 100 entradas de /api/mi-copropiedad/bitacora. *@
+
+@inherits ModalBase<bool>
+@using Propia.Application.MiCopropiedad
+@inject IHttpClientFactory HttpFactory
+
+<div class="bcm-header">
+    <div class="bcm-header-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+        </svg>
+    </div>
+    <div class="bcm-header-text">
+        <div class="bcm-title">Bitacora de cambios</div>
+        <div class="bcm-subtitle">Registro de cambios sobre la copropiedad (RN-06). Solo lectura.</div>
+    </div>
+    <button class="bcm-close" @onclick="() => Cerrar()" type="button" aria-label="Cerrar">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+</div>
+
+<div class="bcm-body">
+    @if (_loading)
+    {
+        <div class="bcm-empty">Cargando...</div>
+    }
+    else if (_entradas.Count == 0)
+    {
+        <div class="bcm-empty">Aun no hay cambios registrados. Aqui quedaran los cambios de coeficientes, moneda, dia de corte y estados.</div>
+    }
+    else
+    {
+        <ul class="bcm-list">
+            @foreach (var b in _entradas)
+            {
+                <li class="bcm-item">
+                    <span class="bcm-cat bcm-cat--@(b.Categoria.ToLowerInvariant())">@b.Categoria</span>
+                    <span class="bcm-desc">@b.Descripcion</span>
+                    <span class="bcm-fecha">@b.Fecha.ToLocalTime().ToString("dd MMM yyyy HH:mm")</span>
+                </li>
+            }
+        </ul>
+    }
+</div>
+
+<div class="bcm-footer">
+    <button class="bcm-btn-ghost" @onclick="() => Cerrar()" type="button">Cerrar</button>
+</div>
+
+<style>
+    .bcm-header { display: flex; align-items: center; gap: 12px; padding: 16px 22px; border-bottom: 1px solid #EEF3F8; }
+    .bcm-header-icon { width: 34px; height: 34px; border-radius: 9px; background: var(--propia-brand-soft, #F1ECFD); color: var(--propia-brand, #6D4FE3); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .bcm-header-text { flex: 1; }
+    .bcm-title { font-size: 15px; font-weight: 800; color: #1B2A3A; }
+    .bcm-subtitle { font-size: 12px; color: #7C98B6; margin-top: 1px; }
+    .bcm-close { background: transparent; border: 0; width: 30px; height: 30px; border-radius: 7px; color: #7C98B6; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+    .bcm-close:hover { background: #F4F7FA; color: #1B2A3A; }
+
+    .bcm-body { padding: 14px 22px; max-height: 60vh; overflow-y: auto; }
+    .bcm-empty { padding: 30px 0; text-align: center; color: #A6B7C8; font-size: 13px; }
+    .bcm-list { list-style: none; margin: 0; padding: 0; }
+    .bcm-item { display: grid; grid-template-columns: 110px 1fr auto; gap: 10px; align-items: center; padding: 11px 0; border-bottom: 1px solid #F4F7FA; font-size: 13px; color: #33475B; }
+    .bcm-item:last-child { border-bottom: 0; }
+    .bcm-cat { padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; text-align: center; background: #EEF3F8; color: #516F90; }
+    .bcm-cat--unidad { background: #E3F2FD; color: #1565C0; }
+    .bcm-cat--distribucion { background: #FFF3E0; color: #EF6C00; }
+    .bcm-cat--identidad { background: #F1ECFD; color: #6D4FE3; }
+    .bcm-cat--finanzas { background: #E8F5E9; color: #2E7D32; }
+    .bcm-cat--gobierno { background: #FCE4EC; color: #C2185B; }
+    .bcm-cat--servicios { background: #FFF8E1; color: #F57F17; }
+    .bcm-desc { color: #33475B; }
+    .bcm-fecha { color: #A6B7C8; font-size: 12px; white-space: nowrap; }
+
+    .bcm-footer { display: flex; justify-content: flex-end; padding: 12px 22px; border-top: 1px solid #EEF3F8; }
+    .bcm-btn-ghost { padding: 8px 16px; border-radius: 8px; border: 1px solid #E1E8EE; background: #fff; font-size: 13px; font-weight: 700; color: #516F90; cursor: pointer; font-family: inherit; }
+    .bcm-btn-ghost:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
+</style>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+
+    private List<BitacoraEntradaDto> _entradas = new();
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var http = HttpFactory.CreateClient("PropiaApi");
+            if (!string.IsNullOrEmpty(Jwt))
+                http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+            _entradas = await http.GetFromJsonAsync<List<BitacoraEntradaDto>>("/api/mi-copropiedad/bitacora?limit=100") ?? new();
+        }
+        catch { /* dejamos lista vacia; el modal mostrara el empty state */ }
+        _loading = false;
+    }
+
+    private void Cerrar() => Close(false);
+}
