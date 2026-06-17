@@ -38,6 +38,12 @@ public sealed record AiAgentDto(
     int SortOrder,
     int ResourceCount);
 
+/// <summary>Snapshot de un prompt enrutado en una version historica.</summary>
+public sealed record AgentPromptSnapshotDto(string Name, string? Rule, string Body, int SortOrder);
+
+/// <summary>Una version del historial del prompt del agente (ultimas 5).</summary>
+public sealed record AiAgentPromptVersionDto(int Index, DateTimeOffset SavedAt, string BasePrompt, List<AgentPromptSnapshotDto> Prompts);
+
 public sealed record AiAgentResourceDto(
     Guid Id,
     Guid AgentId,

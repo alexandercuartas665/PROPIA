@@ -109,6 +109,13 @@ public class AiAgent : TenantEntity
 
     public int SortOrder { get; set; }
 
+    /// <summary>
+    /// Red de seguridad: ultimas 5 versiones del prompt base + enrutados. Cada UpdateAsync hace push
+    /// al inicio del array. Si el usuario borra/edita algo por error puede restaurar una version
+    /// anterior. Portado de CUBOT.travels.
+    /// </summary>
+    public string? PromptHistoryJson { get; set; }
+
     public ICollection<AiAgentPrompt> Prompts { get; set; } = new List<AiAgentPrompt>();
     public ICollection<AiAgentResource> Resources { get; set; } = new List<AiAgentResource>();
 }

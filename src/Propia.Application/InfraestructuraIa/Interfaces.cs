@@ -63,6 +63,17 @@ public interface IAiAgentService
 
     /// <summary>Reemplaza por completo la seleccion de tools MCP del agente. Devuelve false si el agente no existe.</summary>
     Task<bool> SetMcpToolsAsync(Guid agentId, IReadOnlyList<AgentMcpToolSelection> tools, CancellationToken ct = default);
+
+    // ----- Duplicado + versionado de prompts (portado de CUBOT.travels) -----
+    /// <summary>Duplica un agente: copia toda la config (prompts, recursos, MCP tools, PromptHistory) menos
+    /// los datos vivos (no se duplican vinculos a lineas). El nuevo agente queda apagado.</summary>
+    Task<AiAgentDto?> DuplicateAsync(Guid sourceId, CancellationToken ct = default);
+
+    /// <summary>Lista las ultimas 5 versiones del prompt + enrutados del agente (red de seguridad).</summary>
+    Task<IReadOnlyList<AiAgentPromptVersionDto>> GetPromptHistoryAsync(Guid agentId, CancellationToken ct = default);
+
+    /// <summary>Restaura una version anterior del prompt (reemplaza SystemPrompt + AiAgentPrompts).</summary>
+    Task<AiAgentDetailDto?> RestorePromptVersionAsync(Guid agentId, int versionIndex, CancellationToken ct = default);
 }
 
 /// <summary>Inferencia de IA (probar un agente). Resuelve credenciales del proveedor desde la config global de SuperAdmin.</summary>

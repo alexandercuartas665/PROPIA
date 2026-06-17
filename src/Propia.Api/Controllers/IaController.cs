@@ -136,6 +136,25 @@ public class IaController : ControllerBase
     public async Task<IActionResult> EliminarAgente(Guid id, CancellationToken ct)
         => await _agents.DeleteAsync(id, ct) ? NoContent() : NotFound();
 
+    // ---------- Duplicar + versionado (portado de CUBOT.travels) ----------
+    [HttpPost("agentes/{id:guid}/duplicar")]
+    public async Task<IActionResult> DuplicarAgente(Guid id, CancellationToken ct)
+    {
+        var r = await _agents.DuplicateAsync(id, ct);
+        return r is null ? NotFound() : Created("", r);
+    }
+
+    [HttpGet("agentes/{id:guid}/versiones")]
+    public async Task<IActionResult> HistorialPrompts(Guid id, CancellationToken ct)
+        => Ok(await _agents.GetPromptHistoryAsync(id, ct));
+
+    [HttpPost("agentes/{id:guid}/versiones/{indice:int}/restaurar")]
+    public async Task<IActionResult> RestaurarPrompt(Guid id, int indice, CancellationToken ct)
+    {
+        var r = await _agents.RestorePromptVersionAsync(id, indice, ct);
+        return r is null ? NotFound() : Ok(r);
+    }
+
     // ---------- Recursos del agente ----------
     [HttpPost("agentes/recursos")]
     public async Task<IActionResult> AgregarRecurso([FromBody] CreateAgentResourceRequest req, CancellationToken ct)
