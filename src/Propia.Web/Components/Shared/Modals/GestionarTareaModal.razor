@@ -1,0 +1,407 @@
+@* GestionarTareaModal - vista profesional de una tarea T.2.
+   Estructura: hero (numero+titulo+prioridad+estado), 2 paneles (descripcion+comentarios+subtareas / sidebar con asignado+fechas+etiquetas+colaboradores+historial). *@
+
+@inherits ModalBase<bool>
+@using Propia.Application.Tareas
+@using Propia.Domain.Enums
+@using Propia.Web.Components.Shared.Modals
+@inject IHttpClientFactory HttpFactory
+
+<div class="gtk">
+    <div class="gtk-header">
+        <div class="gtk-header-l">
+            <span class="gtk-header-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 11l3 3 8-8M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                </svg>
+            </span>
+            <div>
+                @if (_t is not null)
+                {
+                    <h2 class="gtk-title">@_t.NumeroTarea</h2>
+                    <p class="gtk-sub">@_t.Estado.Nombre @if (_t.Estado.EsTerminal){<span> · terminal</span>} · creada @_t.CreatedAt.ToString("dd MMM yyyy")</p>
+                }
+            </div>
+        </div>
+        <div class="gtk-header-r">
+            @if (_t is not null)
+            {
+                <span class="gtk-state-pill" style="background:@(_t.Estado.Color ?? "#F1F5F9");color:#fff">@_t.Estado.Nombre</span>
+                <span class="gtk-prio-pill @PrioridadClass(_t.Prioridad)">@PrioridadLabel(_t.Prioridad)</span>
+            }
+            <button type="button" class="gtk-close" @onclick="Cerrar" aria-label="Cerrar">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+    </div>
+
+    @if (_loadError is not null)
+    {
+        <div class="gtk-body"><div class="gtk-msg gtk-msg--err">@_loadError</div></div>
+    }
+    else if (_t is null)
+    {
+        <div class="gtk-body"><div class="gtk-spinner"></div></div>
+    }
+    else
+    {
+        <div class="gtk-body gtk-body--grid">
+            @* === Panel izquierdo: titulo + descripcion + subtareas + comentarios === *@
+            <div class="gtk-col-l">
+                <div class="gtk-card">
+                    <h3 class="gtk-task-title">@_t.Titulo</h3>
+                    @if (!string.IsNullOrWhiteSpace(_t.Descripcion))
+                    {
+                        <p class="gtk-task-desc">@_t.Descripcion</p>
+                    }
+                    else
+                    {
+                        <p class="gtk-task-desc gtk-task-desc--empty">Sin descripcion.</p>
+                    }
+                </div>
+
+                @if (_t.Subtareas.Count > 0)
+                {
+                    <div class="gtk-card">
+                        <div class="gtk-section-head">
+                            <span class="gtk-section-lbl">SUBTAREAS (@_t.Subtareas.Count(s => s.EstadoEsTerminal) / @_t.Subtareas.Count)</span>
+                        </div>
+                        <div class="gtk-progress">
+                            @{ var ratio = _t.Subtareas.Count == 0 ? 0 : (double)_t.Subtareas.Count(s => s.EstadoEsTerminal) / _t.Subtareas.Count; }
+                            <div class="gtk-progress-fill" style="width:@(ratio * 100)%"></div>
+                        </div>
+                        <ul class="gtk-subs">
+                            @foreach (var s in _t.Subtareas)
+                            {
+                                <li class="gtk-sub @(s.EstadoEsTerminal ? "gtk-sub--done" : "")">
+                                    <span class="gtk-sub-num">@s.NumeroTarea</span>
+                                    <span class="gtk-sub-titulo">@s.Titulo</span>
+                                    <span class="gtk-sub-estado" style="background:@(s.EstadoColor ?? "#A6B7C8")">@s.EstadoNombre</span>
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                }
+
+                <div class="gtk-card">
+                    <div class="gtk-section-head">
+                        <span class="gtk-section-lbl">COMENTARIOS (@_t.Comentarios.Count)</span>
+                    </div>
+                    @if (_t.Comentarios.Count == 0)
+                    {
+                        <p class="gtk-empty-line">No hay comentarios todavia.</p>
+                    }
+                    else
+                    {
+                        <ul class="gtk-comments">
+                            @foreach (var c in _t.Comentarios)
+                            {
+                                <li class="gtk-comment">
+                                    <div class="gtk-comment-head">
+                                        <span class="gtk-comment-when">@c.CreatedAt.ToLocalTime().ToString("dd MMM HH:mm")</span>
+                                    </div>
+                                    <div class="gtk-comment-text">@c.Texto</div>
+                                </li>
+                            }
+                        </ul>
+                    }
+
+                    <div class="gtk-comment-add">
+                        <textarea class="gtk-textarea" rows="3" @bind="_nuevoComentario" placeholder="Escribe un comentario..."></textarea>
+                        <button class="gtk-btn-brand" type="button" @onclick="AgregarComentario" disabled="@(string.IsNullOrWhiteSpace(_nuevoComentario) || _busy)">
+                            Comentar
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            @* === Panel derecho: sidebar con asignacion / fechas / etiquetas / cambio de estado / historial === *@
+            <div class="gtk-col-r">
+                <div class="gtk-card">
+                    <div class="gtk-section-head"><span class="gtk-section-lbl">ASIGNACION</span></div>
+                    <div class="gtk-asign">
+                        <div class="gtk-asign-avatar">@Iniciales(_t.AsignadoNombre ?? "?")</div>
+                        <div>
+                            <div class="gtk-asign-name">@(_t.AsignadoNombre ?? "Sin asignar")</div>
+                            <div class="gtk-asign-rol">Responsable</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="gtk-card">
+                    <div class="gtk-section-head"><span class="gtk-section-lbl">FECHAS</span></div>
+                    <div class="gtk-kv">
+                        <span class="gtk-k">Inicio</span>
+                        <span class="gtk-v">@(_t.FechaInicio?.ToString("dd MMM yyyy") ?? "-")</span>
+                    </div>
+                    <div class="gtk-kv">
+                        <span class="gtk-k">Vencimiento</span>
+                        <span class="gtk-v @(EsVencida() ? "gtk-v--err" : "")">@(_t.FechaVencimiento?.ToString("dd MMM yyyy") ?? "-")</span>
+                    </div>
+                    @if (_t.FechaCompletada.HasValue)
+                    {
+                        <div class="gtk-kv">
+                            <span class="gtk-k">Completada</span>
+                            <span class="gtk-v">@_t.FechaCompletada.Value.ToLocalTime().ToString("dd MMM HH:mm")</span>
+                        </div>
+                    }
+                </div>
+
+                @if (_t.Etiquetas.Count > 0)
+                {
+                    <div class="gtk-card">
+                        <div class="gtk-section-head"><span class="gtk-section-lbl">ETIQUETAS</span></div>
+                        <div class="gtk-tags">
+                            @foreach (var e in _t.Etiquetas)
+                            {
+                                <span class="gtk-tag" style="background:@(e.Color ?? "#F1ECFD");color:@(e.Color is null ? "#6D4FE3" : "#fff")">@e.Nombre</span>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <div class="gtk-card">
+                    <div class="gtk-section-head"><span class="gtk-section-lbl">CAMBIAR ESTADO</span></div>
+                    <select class="gtk-input" @bind="_nuevoEstadoId" @bind:after="CambiarEstado" disabled="@_busy">
+                        @foreach (var e in _estados)
+                        {
+                            <option value="@e.Id" selected="@(e.Id == _t.Estado.Id)">@e.Nombre @(e.EsTerminal ? "(terminal)" : "")</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="gtk-card">
+                    <div class="gtk-section-head"><span class="gtk-section-lbl">HISTORIAL</span></div>
+                    @if (_t.Historial.Count == 0)
+                    {
+                        <p class="gtk-empty-line">Sin eventos.</p>
+                    }
+                    else
+                    {
+                        <ul class="gtk-hist">
+                            @foreach (var h in _t.Historial.Take(15))
+                            {
+                                <li class="gtk-hist-row">
+                                    <span class="gtk-hist-dot"></span>
+                                    <div>
+                                        <div class="gtk-hist-desc">@h.Descripcion</div>
+                                        <div class="gtk-hist-when">@h.OcurridoAt.ToLocalTime().ToString("dd MMM HH:mm") · @h.TipoEvento</div>
+                                    </div>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_msg))
+    {
+        <div class="gtk-toast @(_msgError ? "gtk-toast--err" : "gtk-toast--ok")">@_msg</div>
+    }
+</div>
+
+<style>
+    .gtk { display: flex; flex-direction: column; height: 100%; background: #fff; font-family: var(--propia-font-base, 'Lexend', sans-serif); }
+    .gtk-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 24px; border-bottom: 1px solid #EEF3F8; }
+    .gtk-header-l { display: flex; align-items: center; gap: 12px; }
+    .gtk-header-icon { width: 42px; height: 42px; border-radius: 11px; background: var(--propia-brand-soft, #F1ECFD); color: var(--propia-brand, #6D4FE3); display: inline-flex; align-items: center; justify-content: center; }
+    .gtk-title { font-size: 22px; font-weight: 800; color: #1B2A3A; margin: 0; letter-spacing: -.4px; }
+    .gtk-sub { font-size: 12.5px; color: #7C98B6; margin: 2px 0 0; }
+    .gtk-header-r { display: flex; align-items: center; gap: 8px; }
+    .gtk-state-pill { font-size: 11.5px; font-weight: 800; padding: 5px 12px; border-radius: 7px; text-transform: uppercase; letter-spacing: .3px; }
+    .gtk-prio-pill { font-size: 10.5px; font-weight: 800; padding: 4px 10px; border-radius: 6px; text-transform: uppercase; letter-spacing: .3px; }
+    .gtk-prio-pill--urgente { color: #fff; background: #DC2626; }
+    .gtk-prio-pill--alta { color: #B45309; background: #FEF3C7; }
+    .gtk-prio-pill--normal { color: #2563EB; background: #DBEAFE; }
+    .gtk-prio-pill--baja { color: #6B7280; background: #F3F4F6; }
+    .gtk-close { width: 36px; height: 36px; border-radius: 9px; border: 0; background: transparent; color: #7C98B6; cursor: pointer; }
+    .gtk-close:hover { background: #F1F5F9; }
+
+    .gtk-body { flex: 1; overflow-y: auto; padding: 18px 24px; background: #FAFBFD; }
+    .gtk-body--grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; }
+    .gtk-col-l, .gtk-col-r { display: flex; flex-direction: column; gap: 14px; }
+
+    .gtk-card { background: #fff; border: 1px solid #EEF3F8; border-radius: 13px; padding: 16px 18px; }
+    .gtk-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+    .gtk-section-lbl { font-size: 10.5px; font-weight: 800; color: #A6B7C8; text-transform: uppercase; letter-spacing: .4px; }
+
+    .gtk-task-title { font-size: 18px; font-weight: 700; color: #1B2A3A; margin: 0 0 8px; line-height: 1.3; }
+    .gtk-task-desc { font-size: 13.5px; color: #516F90; line-height: 1.55; margin: 0; white-space: pre-wrap; }
+    .gtk-task-desc--empty { color: #A6B7C8; font-style: italic; }
+
+    .gtk-progress { height: 7px; background: #EEF3F8; border-radius: 4px; overflow: hidden; margin-bottom: 10px; }
+    .gtk-progress-fill { height: 100%; background: linear-gradient(90deg, #7C5CE8, #5838C9); border-radius: 4px; transition: width .3s; }
+    .gtk-subs { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+    .gtk-sub { display: grid; grid-template-columns: 90px 1fr auto; gap: 10px; align-items: center; padding: 8px 11px; background: #F8FAFC; border-radius: 8px; font-size: 12.5px; }
+    .gtk-sub--done .gtk-sub-titulo { text-decoration: line-through; opacity: .7; }
+    .gtk-sub-num { font-size: 10.5px; font-weight: 700; color: #A6B7C8; }
+    .gtk-sub-titulo { color: #33475B; }
+    .gtk-sub-estado { font-size: 10px; font-weight: 700; color: #fff; padding: 2px 8px; border-radius: 5px; text-transform: uppercase; letter-spacing: .3px; }
+
+    .gtk-empty-line { font-size: 12.5px; color: #A6B7C8; margin: 4px 0; font-style: italic; }
+
+    .gtk-comments { list-style: none; padding: 0; margin: 0 0 12px; display: flex; flex-direction: column; gap: 10px; max-height: 250px; overflow-y: auto; }
+    .gtk-comment { background: #F8FAFC; border-radius: 9px; padding: 9px 12px; }
+    .gtk-comment-head { display: flex; justify-content: space-between; margin-bottom: 4px; }
+    .gtk-comment-when { font-size: 10.5px; color: #A6B7C8; font-weight: 600; }
+    .gtk-comment-text { font-size: 12.5px; color: #33475B; line-height: 1.45; white-space: pre-wrap; }
+    .gtk-comment-add { display: flex; flex-direction: column; gap: 8px; }
+    .gtk-textarea { width: 100%; border: 1.5px solid #E1E8EE; border-radius: 9px; padding: 9px 11px; font-size: 12.5px; color: #33475B; font-family: inherit; outline: none; resize: vertical; }
+    .gtk-textarea:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .gtk-btn-brand { align-self: flex-end; padding: 8px 18px; border-radius: 8px; border: 0; background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .gtk-btn-brand:hover { background: var(--propia-brand-hover, #5838C9); }
+    .gtk-btn-brand:disabled { opacity: .55; cursor: not-allowed; }
+
+    .gtk-asign { display: flex; align-items: center; gap: 10px; }
+    .gtk-asign-avatar { width: 38px; height: 38px; border-radius: 10px; background: linear-gradient(135deg, #7C5CE8, #5838C9); color: #fff; font-size: 14px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+    .gtk-asign-name { font-size: 13.5px; font-weight: 700; color: #1B2A3A; }
+    .gtk-asign-rol { font-size: 10.5px; color: #A6B7C8; font-weight: 600; }
+
+    .gtk-kv { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px dashed #EEF3F8; font-size: 12.5px; }
+    .gtk-kv:last-child { border-bottom: 0; }
+    .gtk-k { color: #7C98B6; font-weight: 600; }
+    .gtk-v { color: #1B2A3A; font-weight: 700; }
+    .gtk-v--err { color: #DC2626; }
+
+    .gtk-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+    .gtk-tag { font-size: 10.5px; font-weight: 700; padding: 4px 9px; border-radius: 5px; }
+
+    .gtk-input { width: 100%; border: 1.5px solid #E1E8EE; border-radius: 9px; padding: 9px 11px; font-size: 12.5px; color: #33475B; background: #fff; font-family: inherit; outline: none; }
+    .gtk-input:focus { border-color: var(--propia-brand, #6D4FE3); }
+
+    .gtk-hist { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 9px; max-height: 280px; overflow-y: auto; }
+    .gtk-hist-row { display: grid; grid-template-columns: 12px 1fr; gap: 9px; padding-left: 4px; }
+    .gtk-hist-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--propia-brand, #6D4FE3); margin-top: 6px; }
+    .gtk-hist-desc { font-size: 12.5px; color: #33475B; line-height: 1.4; }
+    .gtk-hist-when { font-size: 10px; color: #A6B7C8; font-weight: 600; margin-top: 1px; }
+
+    .gtk-spinner { width: 36px; height: 36px; border: 3px solid #EEF3F8; border-top-color: var(--propia-brand, #6D4FE3); border-radius: 50%; margin: 60px auto; animation: gtkspin .8s linear infinite; }
+    @@keyframes gtkspin { to { transform: rotate(360deg); } }
+
+    .gtk-msg { padding: 10px 14px; border-radius: 9px; font-size: 12.5px; font-weight: 600; }
+    .gtk-msg--err { background: #FEE2E2; color: #B91C1C; }
+
+    .gtk-toast { position: fixed; bottom: 22px; right: 26px; padding: 12px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; box-shadow: 0 8px 24px rgba(45,62,80,.18); z-index: 200; }
+    .gtk-toast--ok { background: #1A8754; color: #fff; }
+    .gtk-toast--err { background: #DC2626; color: #fff; }
+</style>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+    [Parameter] public Guid TareaId { get; set; }
+
+    private TareaDetalleDto? _t;
+    private List<EstadoTareaDto> _estados = new();
+    private string? _loadError;
+    private string _nuevoComentario = "";
+    private Guid _nuevoEstadoId;
+    private bool _busy;
+    private string? _msg;
+    private bool _msgError;
+    private bool _hubo;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = Auth();
+            _estados = (await http.GetFromJsonAsync<List<EstadoTareaDto>>("/api/tareas/estados") ?? new())
+                .Where(e => e.Activo).OrderBy(e => e.Orden).ToList();
+            _t = await http.GetFromJsonAsync<TareaDetalleDto>($"/api/tareas/{TareaId}");
+            if (_t is not null) _nuevoEstadoId = _t.Estado.Id;
+        }
+        catch (Exception ex) { _loadError = ex.Message; }
+    }
+
+    private async Task AgregarComentario()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevoComentario)) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/tareas/{TareaId}/comentarios",
+                new CrearComentarioRequest(_nuevoComentario.Trim()));
+            if (resp.IsSuccessStatusCode)
+            {
+                _nuevoComentario = "";
+                _hubo = true;
+                await CargarAsync();
+                Toast("Comentario agregado.", false);
+            }
+            else { Toast("No se pudo agregar: " + await resp.Content.ReadAsStringAsync(), true); }
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+        _busy = false;
+    }
+
+    private async Task CambiarEstado()
+    {
+        if (_t is null || _nuevoEstadoId == _t.Estado.Id) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/tareas/{TareaId}/estado",
+                new CambiarEstadoRequest(_nuevoEstadoId, null));
+            if (resp.IsSuccessStatusCode)
+            {
+                _hubo = true;
+                await CargarAsync();
+                Toast("Estado actualizado.", false);
+            }
+            else { Toast("No se pudo cambiar: " + await resp.Content.ReadAsStringAsync(), true); }
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+        _busy = false;
+    }
+
+    private void Cerrar() => Close(_hubo);
+    private void Toast(string text, bool isError) { _msg = text; _msgError = isError; }
+
+    private bool EsVencida()
+    {
+        if (_t?.FechaVencimiento is null) return false;
+        return _t.FechaVencimiento < DateOnly.FromDateTime(DateTime.Today) && !_t.Estado.EsTerminal;
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    private static string PrioridadLabel(PrioridadTarea p) => p switch
+    {
+        PrioridadTarea.Urgente => "Urgente",
+        PrioridadTarea.Alta => "Alta",
+        PrioridadTarea.Normal => "Normal",
+        PrioridadTarea.Baja => "Baja",
+        _ => p.ToString()
+    };
+
+    private static string PrioridadClass(PrioridadTarea p) => p switch
+    {
+        PrioridadTarea.Urgente => "gtk-prio-pill--urgente",
+        PrioridadTarea.Alta => "gtk-prio-pill--alta",
+        PrioridadTarea.Normal => "gtk-prio-pill--normal",
+        PrioridadTarea.Baja => "gtk-prio-pill--baja",
+        _ => ""
+    };
+
+    private static string Iniciales(string nombre)
+    {
+        if (string.IsNullOrWhiteSpace(nombre)) return "?";
+        var parts = nombre.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length == 1
+            ? parts[0][0].ToString().ToUpper()
+            : (parts[0][0].ToString() + parts[^1][0].ToString()).ToUpper();
+    }
+}

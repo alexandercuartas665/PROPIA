@@ -346,15 +346,35 @@
                     </div>
                 }
 
-                @* Form rapido agregar adjunto (sin upload real - registra metadata por ahora) *@
-                <div class="gpq-adj-add">
-                    <input class="gpq-input" @bind="_nuevoAdjNombre" @bind:event="oninput" placeholder="Nombre del archivo (ej. evidencia.pdf)" />
-                    <input class="gpq-input" @bind="_nuevoAdjUrl" @bind:event="oninput" placeholder="URL o ruta" />
-                    <button class="gpq-btn-brand" type="button" @onclick="AgregarAdjunto" disabled="@(string.IsNullOrWhiteSpace(_nuevoAdjNombre))">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-                        Agregar
-                    </button>
-                </div>
+                @* Drag&drop con InputFile + fallback de URL para registrar metadata. *@
+                <label class="gpq-dropzone @(_subiendo ? "gpq-dropzone--busy" : "")">
+                    <InputFile OnChange="OnArchivosSeleccionados" multiple class="gpq-dropzone-input" />
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                    </svg>
+                    <div class="gpq-dropzone-text">
+                        @if (_subiendo)
+                        {
+                            <strong>Subiendo @_subiendoNombre...</strong>
+                        }
+                        else
+                        {
+                            <strong>Arrastra archivos aqui</strong>
+                            <span> o haz clic para seleccionar. Cualquier tipo, multiple.</span>
+                        }
+                    </div>
+                </label>
+
+                <details class="gpq-adj-url">
+                    <summary>Agregar por URL (link a Drive, R2, etc.)</summary>
+                    <div class="gpq-adj-add">
+                        <input class="gpq-input" @bind="_nuevoAdjNombre" @bind:event="oninput" placeholder="Nombre del archivo (ej. evidencia.pdf)" />
+                        <input class="gpq-input" @bind="_nuevoAdjUrl" @bind:event="oninput" placeholder="URL o ruta" />
+                        <button class="gpq-btn-brand" type="button" @onclick="AgregarAdjunto" disabled="@(string.IsNullOrWhiteSpace(_nuevoAdjNombre))">
+                            Agregar
+                        </button>
+                    </div>
+                </details>
             </div>
         }
     </div>
@@ -499,6 +519,22 @@
     .gpq-person-link:hover { color: var(--propia-brand, #6D4FE3); text-decoration: underline; }
 
     /* Form agregar adjunto */
+    .gpq-dropzone {
+        position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 6px; padding: 18px 14px; margin-top: 8px;
+        border: 2px dashed #D7DFEA; border-radius: 12px; background: #FAFBFD;
+        color: #7C98B6; text-align: center; cursor: pointer; transition: border-color .15s, background .15s;
+    }
+    .gpq-dropzone:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); background: var(--propia-brand-soft, #F1ECFD); }
+    .gpq-dropzone--busy { opacity: .7; pointer-events: none; }
+    .gpq-dropzone-input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .gpq-dropzone-text { font-size: 12.5px; }
+    .gpq-dropzone-text strong { color: #1B2A3A; font-weight: 700; }
+
+    .gpq-adj-url { margin-top: 10px; }
+    .gpq-adj-url summary { font-size: 11.5px; color: #7C98B6; cursor: pointer; font-weight: 600; padding: 4px 0; }
+    .gpq-adj-url summary:hover { color: var(--propia-brand, #6D4FE3); }
+
     .gpq-adj-add {
         display: flex; gap: 6px; margin-top: 10px;
         padding-top: 10px; border-top: 1px dashed #E1E8EE;
@@ -619,6 +655,8 @@
     // Form adjunto
     private string _nuevoAdjNombre = "";
     private string _nuevoAdjUrl = "";
+    private bool _subiendo;
+    private string _subiendoNombre = "";
 
     protected override async Task OnInitializedAsync() => await CargarAsync();
 
@@ -672,6 +710,48 @@
         {
             ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true);
         }
+    }
+
+    // Drag&drop / seleccion multiple: registra metadata por cada archivo (sin upload binario al storage
+    // todavia; eso lo conectaremos al modulo de Storage R2 en una oleada posterior). Por ahora marca el
+    // path como /pendiente-upload para que el operador sepa que hay un archivo asociado al expediente.
+    private async Task OnArchivosSeleccionados(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs e)
+    {
+        _subiendo = true;
+        var registrados = 0;
+        foreach (var archivo in e.GetMultipleFiles(maximumFileCount: 10))
+        {
+            _subiendoNombre = archivo.Name;
+            StateHasChanged();
+            var ext = System.IO.Path.GetExtension(archivo.Name).ToLowerInvariant();
+            var mime = !string.IsNullOrEmpty(archivo.ContentType)
+                ? archivo.ContentType
+                : ext switch
+                {
+                    ".pdf" => "application/pdf",
+                    ".jpg" or ".jpeg" => "image/jpeg",
+                    ".png" => "image/png",
+                    ".doc" or ".docx" => "application/msword",
+                    ".xls" or ".xlsx" => "application/vnd.ms-excel",
+                    _ => "application/octet-stream"
+                };
+            var req = new AgregarAdjuntoPqrsdRequest(archivo.Name, mime, archivo.Size, "/pendiente-upload");
+            try
+            {
+                var resp = await Auth().PostAsJsonAsync($"/api/pqrsd/{ExpedienteId}/adjuntos", req);
+                if (resp.IsSuccessStatusCode) registrados++;
+            }
+            catch { }
+        }
+        _subiendo = false;
+        _subiendoNombre = "";
+        if (registrados > 0)
+        {
+            _huboCambios = true;
+            await CargarAsync();
+            ShowMsg($"{registrados} archivo(s) registrado(s).", false);
+        }
+        else { ShowMsg("No se registro ningun archivo.", true); }
     }
 
     private static string PersonaAvatar(string rol) => rol switch

@@ -1,0 +1,558 @@
+@page "/tareas"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.Tareas
+@using Propia.Domain.Enums
+@using Propia.Web.Components.Shared.Modals
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IModalService Modals
+
+<PageTitle>Tareas - PROPIA</PageTitle>
+
+@* Modulo 2.10 Tareas - vista Kanban estilo prototipo PROPIA.dc.html.
+   Columnas por estado, tarjetas drag&drop entre columnas. *@
+
+<div class="tk-page">
+    <div class="tk-head">
+        <div>
+            <h1 class="tk-title">Tareas y proyectos</h1>
+            <p class="tk-sub">Eje operativo: lo que hay que hacer, quien lo hace, cuando.</p>
+        </div>
+        <button class="tk-cta-brand" type="button" @onclick="AbrirNuevaTarea">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+            Nueva tarea
+        </button>
+    </div>
+
+    @if (string.IsNullOrEmpty(_jwt))
+    {
+        <div class="tk-empty">Sesion expirada. <a href="/login?returnUrl=%2Ftareas">Iniciar sesion</a>.</div>
+    }
+    else
+    {
+        @* === KPIs === *@
+        @if (_resumen is not null)
+        {
+            <div class="tk-kpis">
+                <div class="tk-kpi"><div class="tk-kpi-val">@_resumen.Total</div><div class="tk-kpi-lbl">total</div></div>
+                <div class="tk-kpi"><div class="tk-kpi-val">@_resumen.Pendientes</div><div class="tk-kpi-lbl">pendientes</div></div>
+                <div class="tk-kpi"><div class="tk-kpi-val">@_resumen.EnProgreso</div><div class="tk-kpi-lbl">en progreso</div></div>
+                <div class="tk-kpi @(_resumen.Vencidas > 0 ? "tk-kpi--err" : "")"><div class="tk-kpi-val">@_resumen.Vencidas</div><div class="tk-kpi-lbl">vencidas</div></div>
+                <div class="tk-kpi"><div class="tk-kpi-val">@_resumen.CompletadasUltimoMes</div><div class="tk-kpi-lbl">completadas (30d)</div></div>
+            </div>
+        }
+
+        @* === Chips por asignado y por etiqueta === *@
+        @if (_tareas.Count > 0)
+        {
+            var porAsignado = _tareas.Where(x => !string.IsNullOrEmpty(x.AsignadoNombre))
+                                .GroupBy(x => x.AsignadoNombre!).OrderByDescending(g => g.Count()).Take(8).ToList();
+            var porEtiqueta = _tareas.SelectMany(x => x.Etiquetas).GroupBy(e => e.Nombre)
+                                .Select(g => new { Nombre = g.Key, Color = g.First().Color, Cantidad = g.Count() })
+                                .OrderByDescending(g => g.Cantidad).Take(8).ToList();
+
+            <div class="tk-chip-section">
+                @if (porAsignado.Count > 0)
+                {
+                    <div class="tk-chip-row">
+                        <span class="tk-chip-lbl">Asignado</span>
+                        <button type="button" class="tk-chip @(string.IsNullOrEmpty(_filtroAsignado) ? "tk-chip--on" : "")"
+                                @onclick="@(() => SetAsignado(""))">
+                            Todos <span class="tk-chip-num">@_tareas.Count</span>
+                        </button>
+                        @foreach (var g in porAsignado)
+                        {
+                            var nom = g.Key;
+                            <button type="button" class="tk-chip @(_filtroAsignado == nom ? "tk-chip--on" : "")"
+                                    @onclick="@(() => SetAsignado(nom))">
+                                <span class="tk-chip-avatar">@Iniciales(nom)</span>
+                                @nom <span class="tk-chip-num">@g.Count()</span>
+                            </button>
+                        }
+                    </div>
+                }
+                @if (porEtiqueta.Count > 0)
+                {
+                    <div class="tk-chip-row">
+                        <span class="tk-chip-lbl">Etiqueta</span>
+                        <button type="button" class="tk-chip @(string.IsNullOrEmpty(_filtroEtiqueta) ? "tk-chip--on" : "")"
+                                @onclick="@(() => SetEtiqueta(""))">
+                            Todas
+                        </button>
+                        @foreach (var g in porEtiqueta)
+                        {
+                            var nom = g.Nombre;
+                            <button type="button" class="tk-chip @(_filtroEtiqueta == nom ? "tk-chip--on" : "")"
+                                    @onclick="@(() => SetEtiqueta(nom))">
+                                @if (!string.IsNullOrEmpty(g.Color))
+                                {
+                                    <span class="tk-chip-dot" style="background:@g.Color"></span>
+                                }
+                                @nom <span class="tk-chip-num">@g.Cantidad</span>
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+        }
+
+        @* === Filtros === *@
+        <div class="tk-filters">
+            <input class="tk-input" @bind="_buscar" @bind:event="oninput" placeholder="Buscar por titulo o numero..." />
+            <select class="tk-input" @bind="_filtroPrioridad">
+                <option value="">Todas las prioridades</option>
+                <option value="@PrioridadTarea.Urgente">Urgente</option>
+                <option value="@PrioridadTarea.Alta">Alta</option>
+                <option value="@PrioridadTarea.Normal">Normal</option>
+                <option value="@PrioridadTarea.Baja">Baja</option>
+            </select>
+            <button class="tk-input-btn" @onclick="CargarAsync" disabled="@_busy">
+                @if (_busy)
+                {
+                    <span>Cargando...</span>
+                }
+                else
+                {
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 16-5.7M21 4v4h-4M21 12a9 9 0 0 1-16 5.7M3 20v-4h4"/></svg>
+                    <span>Refrescar</span>
+                }
+            </button>
+            <div class="tk-summary">
+                <strong>@_tareas.Count</strong> tareas
+                @if (_tareas.Count(t => t.Vencida) > 0)
+                {
+                    <span class="tk-alert-pill">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 9v4M12 17h.01M4.93 19h14.14a2 2 0 0 0 1.73-3L13.73 4a2 2 0 0 0-3.46 0L3.2 16a2 2 0 0 0 1.73 3z"/></svg>
+                        @_tareas.Count(t => t.Vencida) vencidas
+                    </span>
+                }
+            </div>
+        </div>
+
+        @* === KANBAN === *@
+        <div class="tk-board">
+            @foreach (var col in _estados.OrderBy(e => e.Orden))
+            {
+                var tareasCol = TareasFiltradas.Where(t => t.EstadoId == col.Id).ToList();
+                <div class="tk-col @(col.EsTerminal ? "tk-col--terminal" : "")"
+                     @ondragover="OnDragOver"
+                     @ondragover:preventDefault="true"
+                     @ondrop="() => OnDrop(col.Id)">
+                    <div class="tk-col-head">
+                        <span class="tk-col-dot" style="background:@(col.Color ?? "#A6B7C8")"></span>
+                        <span class="tk-col-name">@col.Nombre</span>
+                        <span class="tk-col-count">@tareasCol.Count</span>
+                    </div>
+                    <div class="tk-col-body">
+                        @foreach (var t in tareasCol)
+                        {
+                            <div class="tk-card @(t.Vencida ? "tk-card--vencida" : "")"
+                                 draggable="true"
+                                 @ondragstart="() => OnDragStart(t.Id)"
+                                 @onclick="() => AbrirTarea(t.Id)">
+                                <div class="tk-card-head">
+                                    <span class="tk-card-num">@t.NumeroTarea</span>
+                                    <span class="tk-card-prio @PrioridadClass(t.Prioridad)">@PrioridadLabel(t.Prioridad)</span>
+                                </div>
+                                <div class="tk-card-title">@t.Titulo</div>
+                                @if (t.Etiquetas.Count > 0)
+                                {
+                                    <div class="tk-card-tags">
+                                        @foreach (var e in t.Etiquetas.Take(3))
+                                        {
+                                            <span class="tk-tag" style="background:@(e.Color ?? "#F1ECFD");color:@(e.Color is null ? "#6D4FE3" : "#fff")">@e.Nombre</span>
+                                        }
+                                    </div>
+                                }
+                                <div class="tk-card-foot">
+                                    @if (!string.IsNullOrEmpty(t.AsignadoNombre))
+                                    {
+                                        <div class="tk-card-avatar" title="@t.AsignadoNombre">@Iniciales(t.AsignadoNombre)</div>
+                                    }
+                                    <div class="tk-card-meta">
+                                        @if (t.FechaVencimiento.HasValue)
+                                        {
+                                            <span class="@(t.Vencida ? "tk-meta-err" : "")">
+                                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                                                @t.FechaVencimiento.Value.ToString("dd/MM")
+                                            </span>
+                                        }
+                                        @if (t.CantidadComentarios > 0)
+                                        {
+                                            <span>
+                                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                                                @t.CantidadComentarios
+                                            </span>
+                                        }
+                                        @if (t.CantidadSubtareas > 0)
+                                        {
+                                            <span>
+                                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                                                @t.CantidadSubtareas
+                                            </span>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                        @if (tareasCol.Count == 0)
+                        {
+                            <div class="tk-col-empty">Sin tareas.</div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        @if (!string.IsNullOrEmpty(_msg))
+        {
+            <div class="tk-toast @(_msgError ? "tk-toast--err" : "tk-toast--ok")">@_msg</div>
+        }
+    }
+</div>
+
+<ModalHost />
+
+<style>
+    .tk-page {
+        padding: 22px 28px;
+        font-family: var(--propia-font-base, 'Lexend', sans-serif);
+    }
+    .tk-head {
+        display: flex; align-items: flex-start; justify-content: space-between;
+        gap: 20px; margin-bottom: 18px;
+    }
+    .tk-title { font-size: 27px; font-weight: 800; letter-spacing: -0.6px; color: var(--propia-text-h1, #1B2A3A); margin: 0; }
+    .tk-sub { font-size: 14px; color: var(--propia-text-secondary, #7C98B6); margin: 4px 0 0; }
+    .tk-cta-brand {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 11px 17px; border-radius: 10px;
+        background: var(--propia-brand, #6D4FE3); color: #fff;
+        font-size: 13.5px; font-weight: 700; border: 0; cursor: pointer;
+        box-shadow: 0 6px 16px rgba(109,79,227,.32);
+    }
+    .tk-cta-brand:hover { background: var(--propia-brand-hover, #5838C9); }
+
+    .tk-empty {
+        background: #F8FAFC; border: 1px dashed #D7E0EA; border-radius: 12px;
+        padding: 30px; text-align: center; color: #A6B7C8;
+    }
+
+    /* KPIs */
+    .tk-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 14px; }
+    .tk-kpi { background: #fff; border: 1px solid #E1E8EE; border-radius: 11px; padding: 11px 13px; }
+    .tk-kpi-val { font-size: 22px; font-weight: 800; color: #1B2A3A; letter-spacing: -0.3px; }
+    .tk-kpi-lbl { font-size: 10.5px; color: #A6B7C8; font-weight: 600; margin-top: 1px; }
+    .tk-kpi--err .tk-kpi-val { color: #DC2626; }
+    .tk-kpi--err { background: #FEF2F2; border-color: #FECACA; }
+
+    /* Chips */
+    .tk-chip-section { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+    .tk-chip-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+    .tk-chip-lbl { font-size: 10.5px; font-weight: 700; color: #A6B7C8; text-transform: uppercase; letter-spacing: .4px; min-width: 70px; }
+    .tk-chip {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 5px 11px; border-radius: 999px;
+        border: 1px solid #E1E8EE; background: #fff;
+        font-size: 11.5px; font-weight: 600; color: #516F90;
+        cursor: pointer; font-family: inherit;
+    }
+    .tk-chip:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
+    .tk-chip--on { background: var(--propia-brand, #6D4FE3); border-color: var(--propia-brand, #6D4FE3); color: #fff; }
+    .tk-chip--on:hover { color: #fff; }
+    .tk-chip-num {
+        font-size: 10px; font-weight: 800; background: rgba(255,255,255,.25);
+        color: inherit; padding: 1px 6px; border-radius: 5px; min-width: 18px; text-align: center;
+    }
+    .tk-chip:not(.tk-chip--on) .tk-chip-num { background: #F1F5F9; color: #516F90; }
+    .tk-chip-avatar {
+        width: 18px; height: 18px; border-radius: 6px;
+        background: linear-gradient(135deg, #7C5CE8, #5838C9); color: #fff;
+        font-size: 8.5px; font-weight: 800;
+        display: inline-flex; align-items: center; justify-content: center;
+    }
+    .tk-chip--on .tk-chip-avatar { background: rgba(255,255,255,.25); color: #fff; }
+    .tk-chip-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+    .tk-filters {
+        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+        margin-bottom: 16px;
+    }
+    .tk-input {
+        border: 1px solid #E1E8EE; border-radius: 9px;
+        padding: 9px 11px; font-size: 13px; color: #33475B;
+        background: #fff; outline: none; font-family: inherit;
+        min-width: 200px;
+    }
+    .tk-input:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .tk-input-btn {
+        display: inline-flex; align-items: center; gap: 7px;
+        padding: 9px 14px; border-radius: 9px;
+        border: 1px solid #E1E8EE; background: #fff;
+        font-size: 12.5px; font-weight: 600; color: #516F90; cursor: pointer;
+    }
+    .tk-input-btn:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
+    .tk-summary {
+        display: flex; align-items: center; gap: 10px;
+        font-size: 13px; color: #516F90;
+        margin-left: auto;
+    }
+    .tk-alert-pill {
+        display: inline-flex; align-items: center; gap: 5px;
+        background: #FEF3C7; color: #B45309;
+        font-size: 11.5px; font-weight: 700;
+        padding: 3px 9px; border-radius: 6px;
+    }
+
+    /* Board */
+    .tk-board {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 12px;
+        margin-bottom: 30px;
+    }
+    .tk-col {
+        background: #F5F8FA;
+        border: 1px solid #EEF3F8;
+        border-radius: 14px;
+        min-height: 200px;
+        display: flex; flex-direction: column;
+    }
+    .tk-col--terminal { background: #FAFBFC; }
+    .tk-col-head {
+        display: flex; align-items: center; gap: 8px;
+        padding: 12px 14px;
+        border-bottom: 1px solid #EEF3F8;
+    }
+    .tk-col-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .tk-col-name { font-size: 13px; font-weight: 700; color: #1B2A3A; flex: 1; }
+    .tk-col-count {
+        font-size: 11px; font-weight: 700;
+        background: #fff; color: #516F90;
+        padding: 2px 8px; border-radius: 7px;
+    }
+    .tk-col-body {
+        padding: 10px;
+        display: flex; flex-direction: column; gap: 8px;
+        min-height: 100px;
+    }
+    .tk-col-empty {
+        font-size: 12px; color: #A6B7C8;
+        padding: 14px 4px; text-align: center;
+    }
+
+    /* Card */
+    .tk-card {
+        background: #fff; border: 1px solid #E1E8EE;
+        border-radius: 11px; padding: 11px 13px;
+        cursor: grab;
+        box-shadow: 0 1px 2px rgba(45,62,80,.04);
+        transition: box-shadow .15s, transform .1s;
+    }
+    .tk-card:hover { box-shadow: 0 4px 12px rgba(45,62,80,.10); transform: translateY(-1px); }
+    .tk-card:active { cursor: grabbing; }
+    .tk-card--vencida { border-color: #FCA5A5; }
+    .tk-card-head {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 8px; margin-bottom: 6px;
+    }
+    .tk-card-num { font-size: 10.5px; font-weight: 700; color: #A6B7C8; }
+    .tk-card-prio {
+        font-size: 9.5px; font-weight: 700;
+        padding: 2px 7px; border-radius: 5px;
+        text-transform: uppercase; letter-spacing: .3px;
+    }
+    .tk-card-prio--urgente { color: #fff; background: #DC2626; }
+    .tk-card-prio--alta { color: #B45309; background: #FEF3C7; }
+    .tk-card-prio--normal { color: #2563EB; background: #DBEAFE; }
+    .tk-card-prio--baja { color: #6B7280; background: #F3F4F6; }
+    .tk-card-title {
+        font-size: 13px; font-weight: 600; color: #33475B;
+        line-height: 1.35; margin-bottom: 8px;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    .tk-card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+    .tk-tag {
+        font-size: 9.5px; font-weight: 700;
+        padding: 2px 7px; border-radius: 5px;
+    }
+    .tk-card-foot {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 8px;
+    }
+    .tk-card-avatar {
+        width: 24px; height: 24px; border-radius: 7px;
+        background: linear-gradient(135deg, #7C5CE8, #5838C9);
+        color: #fff; font-size: 10px; font-weight: 700;
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+    }
+    .tk-card-meta {
+        display: flex; align-items: center; gap: 10px;
+        font-size: 10.5px; color: #7C98B6; font-weight: 600;
+    }
+    .tk-card-meta span {
+        display: inline-flex; align-items: center; gap: 3px;
+    }
+    .tk-meta-err { color: #DC2626; }
+
+    .tk-toast {
+        position: fixed; bottom: 24px; right: 28px;
+        padding: 12px 18px; border-radius: 10px;
+        font-size: 13px; font-weight: 600;
+        box-shadow: 0 8px 24px rgba(45,62,80,.18);
+        z-index: 200;
+        animation: tkToastIn .25s ease;
+    }
+    .tk-toast--ok { background: #1A8754; color: #fff; }
+    .tk-toast--err { background: #DC2626; color: #fff; }
+    @@keyframes tkToastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+    [data-bs-theme="dark"] .tk-title { color: #E5E7EB; }
+    [data-bs-theme="dark"] .tk-card { background: #232B40; border-color: #2D3650; }
+    [data-bs-theme="dark"] .tk-col { background: #1B2233; border-color: #2D3650; }
+    [data-bs-theme="dark"] .tk-card-title { color: #E5E7EB; }
+</style>
+
+@code {
+    private string? _jwt;
+    private List<EstadoTareaDto> _estados = new();
+    private List<TareaListaDto> _tareas = new();
+    private string _buscar = "";
+    private string _filtroPrioridad = "";
+    private bool _busy;
+    private string _msg = "";
+    private bool _msgError;
+    private Guid? _draggingTareaId;
+
+    private ResumenTareasDto? _resumen;
+    private string _filtroAsignado = "";
+    private string _filtroEtiqueta = "";
+
+    private void SetAsignado(string nombre) { _filtroAsignado = nombre; }
+    private void SetEtiqueta(string nombre) { _filtroEtiqueta = nombre; }
+
+    private List<TareaListaDto> TareasFiltradas =>
+        _tareas
+            .Where(t => string.IsNullOrEmpty(_buscar)
+                || t.Titulo.Contains(_buscar, StringComparison.OrdinalIgnoreCase)
+                || t.NumeroTarea.Contains(_buscar, StringComparison.OrdinalIgnoreCase))
+            .Where(t => string.IsNullOrEmpty(_filtroPrioridad)
+                || t.Prioridad == Enum.Parse<PrioridadTarea>(_filtroPrioridad))
+            .Where(t => string.IsNullOrEmpty(_filtroAsignado)
+                || t.AsignadoNombre == _filtroAsignado)
+            .Where(t => string.IsNullOrEmpty(_filtroEtiqueta)
+                || t.Etiquetas.Any(e => e.Nombre == _filtroEtiqueta))
+            .ToList();
+
+    [Inject] public IJSRuntime Js { get; set; } = default!;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try { _jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt"); }
+            catch { _jwt = null; }
+            if (!string.IsNullOrEmpty(_jwt))
+            {
+                await CargarAsync();
+                StateHasChanged();
+            }
+            else
+            {
+                StateHasChanged();
+            }
+        }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(_jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
+        return http;
+    }
+
+    private async Task CargarAsync()
+    {
+        if (string.IsNullOrEmpty(_jwt))
+        {
+            try { _jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt"); }
+            catch { _jwt = null; }
+        }
+        if (string.IsNullOrEmpty(_jwt)) return;
+        _busy = true;
+        try
+        {
+            _estados = (await Auth().GetFromJsonAsync<List<EstadoTareaDto>>("/api/tareas/estados") ?? new())
+                .Where(e => e.Activo).OrderBy(e => e.Orden).ToList();
+            _tareas = await Auth().GetFromJsonAsync<List<TareaListaDto>>("/api/tareas") ?? new();
+            try { _resumen = await Auth().GetFromJsonAsync<ResumenTareasDto>("/api/tareas/resumen"); } catch { _resumen = null; }
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+        _busy = false;
+    }
+
+    private void OnDragStart(Guid tareaId) => _draggingTareaId = tareaId;
+    private void OnDragOver() { /* solo @preventDefault */ }
+
+    private async Task OnDrop(Guid estadoId)
+    {
+        if (_draggingTareaId is null) return;
+        var tareaId = _draggingTareaId.Value;
+        _draggingTareaId = null;
+        var tarea = _tareas.FirstOrDefault(t => t.Id == tareaId);
+        if (tarea is null || tarea.EstadoId == estadoId) return;
+        var resp = await Auth().PutAsJsonAsync($"/api/tareas/{tareaId}/estado",
+            new CambiarEstadoRequest(estadoId, null));
+        if (resp.IsSuccessStatusCode)
+        {
+            await CargarAsync();
+            var nuevoEstado = _estados.FirstOrDefault(e => e.Id == estadoId)?.Nombre ?? "?";
+            Toast($"Tarea movida a '{nuevoEstado}'.", false);
+        }
+        else { Toast("No se pudo mover: " + await resp.Content.ReadAsStringAsync(), true); }
+    }
+
+    private async Task AbrirTarea(Guid id)
+    {
+        var parameters = new ModalParameters().Set("Jwt", _jwt).Set("TareaId", id);
+        var options = new ModalOptions { Fullscreen = true };
+        var hubo = await Modals.OpenAsync<GestionarTareaModal, bool>(parameters, options);
+        if (hubo == true) { await CargarAsync(); Toast("Tarea actualizada.", false); }
+    }
+
+    private void AbrirNuevaTarea() => Nav.NavigateTo("/tareas/nueva");
+
+    private void Toast(string text, bool isError) { _msg = text; _msgError = isError; }
+
+    private static string PrioridadLabel(PrioridadTarea p) => p switch
+    {
+        PrioridadTarea.Urgente => "Urgente",
+        PrioridadTarea.Alta => "Alta",
+        PrioridadTarea.Normal => "Normal",
+        PrioridadTarea.Baja => "Baja",
+        _ => p.ToString()
+    };
+
+    private static string PrioridadClass(PrioridadTarea p) => p switch
+    {
+        PrioridadTarea.Urgente => "tk-card-prio--urgente",
+        PrioridadTarea.Alta => "tk-card-prio--alta",
+        PrioridadTarea.Normal => "tk-card-prio--normal",
+        PrioridadTarea.Baja => "tk-card-prio--baja",
+        _ => ""
+    };
+
+    private static string Iniciales(string nombre)
+    {
+        if (string.IsNullOrWhiteSpace(nombre)) return "?";
+        var parts = nombre.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length == 1
+            ? parts[0][0].ToString().ToUpper()
+            : (parts[0][0].ToString() + parts[^1][0].ToString()).ToUpper();
+    }
+}

@@ -4,6 +4,7 @@
 @using Propia.Domain.Enums
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
+@inject NavigationManager Nav
 
 <PageTitle>Lineas WhatsApp - PROPIA</PageTitle>
 
@@ -205,8 +206,16 @@ else
     {
         try
         {
-            var resp = await Auth().GetAsync("/api/ia/lineas");
-            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized) { _loadError = "Sesion expirada"; _jwt = null; return; }
+            var http = Auth();
+            var resp = await http.GetAsync("/api/ia/lineas");
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                var nuevoJwt = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+                if (string.IsNullOrEmpty(nuevoJwt)) return;
+                _jwt = nuevoJwt;
+                http = Auth();
+                resp = await http.GetAsync("/api/ia/lineas");
+            }
             resp.EnsureSuccessStatusCode();
             _lineas = await resp.Content.ReadFromJsonAsync<List<WhatsAppLineDto>>() ?? new();
             _loadError = null;

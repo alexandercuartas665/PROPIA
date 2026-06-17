@@ -4,6 +4,7 @@
 @using Propia.Domain.Enums
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
+@inject NavigationManager Nav
 
 <PageTitle>Agentes de IA - PROPIA</PageTitle>
 
@@ -472,7 +473,14 @@ else
         {
             var http = Auth();
             var resp = await http.GetAsync("/api/ia/agentes");
-            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized) { _loadError = "Sesion expirada"; _jwt = null; return; }
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                var nuevoJwt = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+                if (string.IsNullOrEmpty(nuevoJwt)) return;
+                _jwt = nuevoJwt;
+                http = Auth();
+                resp = await http.GetAsync("/api/ia/agentes");
+            }
             resp.EnsureSuccessStatusCode();
             _agents = await resp.Content.ReadFromJsonAsync<List<AiAgentDto>>() ?? new();
             _usage = await http.GetFromJsonAsync<AiUsageSummaryDto>("/api/ia/consumo");
