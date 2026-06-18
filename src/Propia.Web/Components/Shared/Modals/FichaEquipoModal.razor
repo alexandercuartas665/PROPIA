@@ -1,128 +1,301 @@
-@* Ficha tecnica completa de un equipo/activo: identificacion, ubicacion, garantia,
-   vida util, adquisicion y, si EsReservable, horarios de disponibilidad
-   (DisponibilidadHorariosEditor reutilizable). *@
+@* Ficha tecnica completa de un equipo/activo - replica del modal grande del prototipo
+   PROPIA.dc.html (activoDet, L.2277+). Layout 2 columnas:
+   IZQUIERDA: fotos + datos + valor y depreciacion (vida util ajustable).
+   DERECHA: facturas (compra + mejoras), contratos vinculados, activos vinculados,
+            tareas asociadas, mantenimientos.
+   Si el activo es reservable, un segundo tab muestra los horarios de disponibilidad. *@
 
 @inherits ModalBase<bool>
+@using Microsoft.AspNetCore.Components.Forms
 @using Propia.Application.MiCopropiedad
 @using Propia.Domain.Enums
 @using Propia.Web.Components.Shared
 @inject IHttpClientFactory HttpFactory
 
-<div class="fem-header">
-    <div class="fem-header-icon">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 7h6M9 11h6M10 16h4"/></svg>
+@if (_ficha is null)
+{
+    <div class="fem-header">
+        <div class="fem-header-text"><div class="fem-title">Cargando ficha...</div></div>
+        <button class="fem-close" @onclick="@(() => Close(_dirty))" type="button"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
     </div>
-    <div class="fem-header-text">
-        <div class="fem-title">@_form.Nombre</div>
-        <div class="fem-subtitle">@_form.Tipo · @_form.Categoria @(_form.EsReservable ? " · Reservable" : "")</div>
-    </div>
-    <button class="fem-close" @onclick="@(() => Close(_dirty))" type="button" aria-label="Cerrar">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-    </button>
-</div>
+    <div class="fem-body"><div class="fem-empty">Cargando...</div></div>
+}
+else
+{
+    var eq = _ficha.Equipo;
+    var dep = _ficha.Depreciacion;
 
-<div class="fem-tabs">
-    <button class="fem-tab @(_tab == "ficha" ? "fem-tab--on" : "")" type="button" @onclick='() => _tab = "ficha"'>Ficha tecnica</button>
-    @if (_form.EsReservable)
-    {
-        <button class="fem-tab @(_tab == "horarios" ? "fem-tab--on" : "")" type="button" @onclick='() => _tab = "horarios"'>Horarios disponibilidad</button>
-    }
-</div>
-
-<div class="fem-body">
-    @if (_tab == "ficha")
-    {
-        <div class="fem-section">Identificacion</div>
-        <div class="fem-grid2">
-            <div>
-                <label class="fem-lbl">Nombre</label>
-                <input class="fem-input" @bind="_form.Nombre" />
-            </div>
-            <div>
-                <label class="fem-lbl">Categoria</label>
-                <select class="fem-input" @bind="_form.Categoria">
-                    @foreach (var c in (CategoriaEquipo[])System.Enum.GetValues(typeof(CategoriaEquipo))) { <option value="@c">@c</option> }
-                </select>
-            </div>
-            <div>
-                <label class="fem-lbl">Tipo</label>
-                <select class="fem-input" @bind="_form.Tipo">
-                    <option value="@TipoElemento.Equipo">Equipo (unitario)</option>
-                    <option value="@TipoElemento.Activo">Activo (agrupado)</option>
-                </select>
-            </div>
-            <div>
-                <label class="fem-lbl">Cantidad</label>
-                <input type="number" min="1" class="fem-input" @bind="_form.Cantidad" disabled="@(_form.Tipo == TipoElemento.Equipo)" />
-            </div>
-            <div>
-                <label class="fem-lbl">Modelo</label>
-                <input class="fem-input" @bind="_form.Modelo" />
-            </div>
-            <div>
-                <label class="fem-lbl">Numero de serie</label>
-                <input class="fem-input" @bind="_form.NumeroSerie" />
-            </div>
-            <div class="fem-col-span-2">
-                <label class="fem-check">
-                    <input type="checkbox" @bind="_form.EsReservable" />
-                    <span>Es reservable (zonas comunes, gimnasio, salones)</span>
-                </label>
+    <div class="fem-header">
+        <div class="fem-header-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 7h6M9 11h6M10 16h4"/></svg>
+        </div>
+        <div class="fem-header-text">
+            <div class="fem-title">@eq.Nombre</div>
+            <div class="fem-subtitle">
+                @TipoTxt(eq.Tipo) · @eq.Categoria
+                @(string.IsNullOrEmpty(eq.NumeroSerie) ? "" : $" · Serie {eq.NumeroSerie}")
+                @(string.IsNullOrEmpty(eq.Ubicacion) ? "" : $" · {eq.Ubicacion}")
+                @if (eq.Tipo == TipoElemento.Activo && eq.Cantidad > 1) { <text> · x@(eq.Cantidad)</text> }
             </div>
         </div>
+        <span class="fem-estado fem-estado--@EstadoBadge(eq.Estado)">@EstadoTxt(eq.Estado)</span>
+        <button class="fem-close" @onclick="@(() => Close(_dirty))" type="button" aria-label="Cerrar">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+    </div>
 
-        <div class="fem-section">Vida util y costos</div>
-        <div class="fem-grid2">
-            <div>
-                <label class="fem-lbl">Vida util (anios)</label>
-                <input type="number" min="0" class="fem-input" @bind="_form.VidaUtilAnios" />
+    <div class="fem-tabs">
+        <button class="fem-tab @(_tab == "ficha" ? "fem-tab--on" : "")" type="button" @onclick='() => _tab = "ficha"'>Ficha del activo</button>
+        @if (eq.EsReservable)
+        {
+            <button class="fem-tab @(_tab == "horarios" ? "fem-tab--on" : "")" type="button" @onclick='() => _tab = "horarios"'>Horarios disponibilidad</button>
+        }
+        <button class="fem-tab @(_tab == "editar" ? "fem-tab--on" : "")" type="button" @onclick="IniciarEdicion">Editar datos</button>
+    </div>
+
+    @if (_tab == "ficha")
+    {
+        <div class="fem-grid">
+            @* ===== IZQUIERDA ===== *@
+            <div class="fem-left">
+                <div class="fem-sectlbl">FOTOS DEL ACTIVO</div>
+                <div class="fem-fotos">
+                    @foreach (var f in _ficha.Fotos)
+                    {
+                        var fid = f.Id;
+                        <div class="fem-foto" style="background-image:url('@f.Url')">
+                            <button class="fem-foto-del" type="button" title="Eliminar" @onclick="@(() => EliminarFotoAsync(fid))">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                            </button>
+                        </div>
+                    }
+                    <label class="fem-foto-add">
+                        <InputFile OnChange="OnFotoSeleccionada" accept="image/png,image/jpeg,image/webp" class="fem-foto-input" />
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                        <span>Foto</span>
+                    </label>
+                </div>
+
+                <div class="fem-sectlbl">DATOS DEL ACTIVO</div>
+                <div class="fem-datos">
+                    <div class="fem-dato"><span>Ubicacion</span><b>@(string.IsNullOrEmpty(eq.Ubicacion) ? "—" : eq.Ubicacion)</b></div>
+                    <div class="fem-dato"><span>Fecha de compra</span><b>@(eq.FechaAdquisicion?.ToString("dd MMM yyyy") ?? "—")</b></div>
+                    <div class="fem-dato"><span>Proximo manten.</span><b>@ProximoMantenimiento()</b></div>
+                </div>
+
+                <div class="fem-sectlbl">VALOR Y DEPRECIACION</div>
+                <div class="fem-dep">
+                    <div class="fem-dep-top">
+                        <span>Valor en libros hoy</span>
+                        <b>$ @dep.ValorEnLibros.ToString("N0")</b>
+                    </div>
+                    <div class="fem-bar"><div class="fem-bar-fill" style="width:@(dep.PctDepreciado)%"></div></div>
+                    <div class="fem-dep-pct">@dep.PctDepreciado% depreciado · @dep.AniosUso de @dep.VidaUtilAnios anios de vida util</div>
+
+                    <div class="fem-vida">
+                        <div>
+                            <div class="fem-vida-t">Vida util del activo</div>
+                            <div class="fem-vida-s">Ajusta para recalcular la depreciacion</div>
+                        </div>
+                        <div class="fem-vida-step">
+                            <button type="button" @onclick="@(() => AjustarVidaAsync(-1))" disabled="@_busy">−</button>
+                            <span>@dep.VidaUtilAnios anios</span>
+                            <button type="button" @onclick="@(() => AjustarVidaAsync(1))" disabled="@_busy">+</button>
+                        </div>
+                    </div>
+
+                    <div class="fem-dep-rows">
+                        <div><span>Costo de adquisicion</span><b>$ @dep.CostoAdquisicion.ToString("N0")</b></div>
+                        <div><span>Mejoras capitalizadas</span><b class="fem-pos">+ $ @dep.MejorasCapitalizadas.ToString("N0")</b></div>
+                        <div><span>Depreciacion anual</span><b>$ @dep.DepreciacionAnual.ToString("N0")</b></div>
+                        <div><span>Depreciacion acumulada</span><b class="fem-neg">− $ @dep.DepreciacionAcumulada.ToString("N0")</b></div>
+                    </div>
+                </div>
             </div>
-            <div>
-                <label class="fem-lbl">Fecha de adquisicion</label>
-                <input type="date" class="fem-input" @bind="_form.FechaAdquisicion" />
-            </div>
-            <div>
-                <label class="fem-lbl">Fecha de instalacion</label>
-                <input type="date" class="fem-input" @bind="_form.FechaInstalacion" />
-            </div>
-            <div>
-                <label class="fem-lbl">Garantia hasta</label>
-                <input type="date" class="fem-input" @bind="_form.GarantiaHasta" />
-            </div>
-            <div>
-                <label class="fem-lbl">Valor de adquisicion</label>
-                <input type="number" min="0" step="0.01" class="fem-input" @bind="_form.ValorAdquisicion" />
-            </div>
-            <div>
-                <label class="fem-lbl">Ubicacion</label>
-                <input class="fem-input" @bind="_form.Ubicacion" placeholder="Ej. Cuarto tecnico nivel -1" />
-            </div>
-            <div>
-                <label class="fem-lbl">Proveedor</label>
-                <input class="fem-input" @bind="_form.Proveedor" />
-            </div>
-            <div>
-                <label class="fem-lbl">Numero de factura</label>
-                <input class="fem-input" @bind="_form.NumeroFactura" />
-            </div>
-            <div class="fem-col-span-2">
-                <label class="fem-lbl">Observaciones</label>
-                <textarea class="fem-input" rows="2" @bind="_form.Observaciones"></textarea>
+
+            @* ===== DERECHA ===== *@
+            <div class="fem-right">
+                @* FACTURAS *@
+                <div class="fem-block">
+                    <div class="fem-sectlbl">FACTURAS</div>
+                    @if (!string.IsNullOrEmpty(eq.NumeroFactura) || dep.CostoAdquisicion > 0)
+                    {
+                        <div class="fem-doc">
+                            <div class="fem-doc-icon fem-doc-icon--compra"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg></div>
+                            <div class="fem-doc-body">
+                                <div class="fem-doc-name">@(string.IsNullOrEmpty(eq.NumeroFactura) ? "Factura de compra" : eq.NumeroFactura)</div>
+                                <div class="fem-doc-meta">Factura de compra · $ @dep.CostoAdquisicion.ToString("N0") @(string.IsNullOrEmpty(eq.Proveedor) ? "" : $" · {eq.Proveedor}")</div>
+                            </div>
+                            <span class="fem-tag fem-tag--compra">COMPRA</span>
+                        </div>
+                    }
+                    @foreach (var m in _ficha.Mejoras)
+                    {
+                        var mid = m.Id;
+                        <div class="fem-doc">
+                            <div class="fem-doc-icon fem-doc-icon--mejora"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg></div>
+                            <div class="fem-doc-body">
+                                <div class="fem-doc-name">@m.Descripcion</div>
+                                <div class="fem-doc-meta">Mejora · $ @m.Valor.ToString("N0") · @m.Fecha.ToString("dd MMM yyyy")</div>
+                            </div>
+                            <span class="fem-tag fem-tag--mejora">MEJORA</span>
+                            <button class="fem-mini-del" type="button" title="Eliminar" @onclick="@(() => EliminarMejoraAsync(mid))"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
+                        </div>
+                    }
+                    <div class="fem-mejora-form">
+                        <input class="fem-input fem-grow" @bind="_mejoraDesc" placeholder="Mejora (ej. Cambio de motor)" />
+                        <input type="number" min="0" class="fem-input fem-mini" @bind="_mejoraValor" placeholder="Valor" />
+                        <button class="fem-btn-brand" type="button" @onclick="AgregarMejoraAsync" disabled="@_busy">Anadir factura</button>
+                    </div>
+                </div>
+
+                @* CONTRATOS + ACTIVOS VINCULADOS *@
+                <div class="fem-2col">
+                    <div>
+                        <div class="fem-sectlbl">CONTRATOS VINCULADOS</div>
+                        @foreach (var c in _ficha.ContratosVinculados)
+                        {
+                            var cid = c.Id;
+                            <div class="fem-link fem-link--on">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6D4FE3" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>
+                                <div class="fem-link-body"><div class="fem-link-name">@c.Nombre</div><div class="fem-link-meta">@c.Meta</div></div>
+                                <button type="button" class="fem-mini-del" title="Quitar" @onclick="@(() => ToggleContratoAsync(cid, false))"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                            </div>
+                        }
+                        <div class="fem-disp-lbl">DISPONIBLES (SERVICIOS)</div>
+                        @foreach (var c in _ficha.ContratosDisponibles)
+                        {
+                            var cid = c.Id;
+                            <button type="button" class="fem-pick" @onclick="@(() => ToggleContratoAsync(cid, true))">
+                                <span>@c.Nombre</span>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+                            </button>
+                        }
+                        @if (_ficha.ContratosDisponibles.Count == 0 && _ficha.ContratosVinculados.Count == 0)
+                        {
+                            <div class="fem-mini-empty">Aun no hay contratos en seccion 5 Servicios.</div>
+                        }
+                    </div>
+                    <div>
+                        <div class="fem-sectlbl">ACTIVOS VINCULADOS</div>
+                        @foreach (var v in _ficha.ActivosVinculados)
+                        {
+                            var vid = v.Id;
+                            <div class="fem-link">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#516F90" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
+                                <div class="fem-link-body"><div class="fem-link-name">@v.Nombre</div></div>
+                                <button type="button" class="fem-mini-del" title="Quitar" @onclick="@(() => ToggleActivoAsync(vid, false))"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                            </div>
+                        }
+                        <div class="fem-disp-lbl">OTROS ACTIVOS</div>
+                        @foreach (var v in _ficha.ActivosDisponibles)
+                        {
+                            var vid = v.Id;
+                            <button type="button" class="fem-pick" @onclick="@(() => ToggleActivoAsync(vid, true))">
+                                <span>@v.Nombre</span>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+                            </button>
+                        }
+                        @if (_ficha.ActivosDisponibles.Count == 0 && _ficha.ActivosVinculados.Count == 0)
+                        {
+                            <div class="fem-mini-empty">No hay otros activos registrados.</div>
+                        }
+                    </div>
+                </div>
+
+                @* TAREAS ASOCIADAS *@
+                <div class="fem-block">
+                    <div class="fem-sectlbl">TAREAS ASOCIADAS <span class="fem-sectlbl-soft">· desde los tableros</span></div>
+                    @if (_ficha.Tareas.Count == 0)
+                    {
+                        <div class="fem-mini-empty">Sin tareas asociadas. Las intervenciones de mantenimiento generan tareas en 2.10.</div>
+                    }
+                    else
+                    {
+                        @foreach (var t in _ficha.Tareas)
+                        {
+                            <div class="fem-tarea">
+                                <div class="fem-tarea-body"><div class="fem-tarea-t">@t.Titulo</div><div class="fem-tarea-board">@t.Tablero</div></div>
+                                <span class="fem-tarea-estado">@t.Estado</span>
+                            </div>
+                        }
+                    }
+                </div>
+
+                @* MANTENIMIENTOS *@
+                <div class="fem-block">
+                    <div class="fem-sectlbl">MANTENIMIENTOS</div>
+                    @if (_ficha.Mantenimientos.Count == 0)
+                    {
+                        <div class="fem-mini-empty">Sin mantenimientos registrados. Programalos desde el modulo 2.11 Mantenimiento.</div>
+                    }
+                    else
+                    {
+                        @foreach (var m in _ficha.Mantenimientos)
+                        {
+                            <div class="fem-mant">
+                                <span class="fem-mant-tipo">@m.Tipo</span>
+                                <div class="fem-mant-body"><div class="fem-mant-t">@m.Titulo</div></div>
+                                <span class="fem-mant-fecha">@(m.Fecha?.ToString("dd MMM yyyy") ?? "")</span>
+                                <span class="fem-mant-estado">@m.Estado</span>
+                            </div>
+                        }
+                    }
+                </div>
             </div>
         </div>
     }
     else if (_tab == "horarios")
     {
-        <DisponibilidadHorariosEditor @ref="_editor" Iniciales="_ventanasIniciales" />
+        <div class="fem-body">
+            <DisponibilidadHorariosEditor @ref="_editor" Iniciales="_ventanasIniciales" />
+        </div>
+        <div class="fem-footer">
+            <button class="fem-btn-ghost" type="button" @onclick="@(() => _tab = "ficha")">Volver</button>
+            <button class="fem-btn-brand" type="button" @onclick="GuardarHorariosAsync" disabled="@_busy">Guardar horarios</button>
+        </div>
     }
-</div>
+    else if (_tab == "editar")
+    {
+        <div class="fem-body">
+            <div class="fem-section">Identificacion</div>
+            <div class="fem-egrid">
+                <div><label class="fem-lbl">Nombre</label><input class="fem-input" @bind="_form.Nombre" /></div>
+                <div><label class="fem-lbl">Categoria</label>
+                    <select class="fem-input" @bind="_form.Categoria">@foreach (var c in (CategoriaEquipo[])System.Enum.GetValues(typeof(CategoriaEquipo))) { <option value="@c">@c</option> }</select>
+                </div>
+                <div><label class="fem-lbl">Tipo</label>
+                    <select class="fem-input" @bind="_form.Tipo">
+                        <option value="@TipoElemento.Equipo">Equipo (unitario)</option>
+                        <option value="@TipoElemento.Activo">Activo (agrupado)</option>
+                    </select>
+                </div>
+                <div><label class="fem-lbl">Cantidad</label><input type="number" min="1" class="fem-input" @bind="_form.Cantidad" disabled="@(_form.Tipo == TipoElemento.Equipo)" /></div>
+                <div><label class="fem-lbl">Marca</label><input class="fem-input" @bind="_form.Marca" /></div>
+                <div><label class="fem-lbl">Modelo</label><input class="fem-input" @bind="_form.Modelo" /></div>
+                <div><label class="fem-lbl">Numero de serie</label><input class="fem-input" @bind="_form.NumeroSerie" /></div>
+                <div><label class="fem-lbl">Ubicacion</label><input class="fem-input" @bind="_form.Ubicacion" placeholder="Ej. Cuarto tecnico nivel -1" /></div>
+                <div class="fem-col-2"><label class="fem-check"><input type="checkbox" @bind="_form.EsReservable" /><span>Es reservable (zonas comunes, gimnasio, salones)</span></label></div>
+            </div>
 
-<div class="fem-footer">
-    <button class="fem-btn-ghost" type="button" @onclick="@(() => Close(_dirty))">Cancelar</button>
-    <button class="fem-btn-brand" type="button" @onclick="GuardarAsync" disabled="@_busy">
-        @(_busy ? "Guardando..." : "Guardar cambios")
-    </button>
-</div>
+            <div class="fem-section">Vida util y costos</div>
+            <div class="fem-egrid">
+                <div><label class="fem-lbl">Vida util (anios)</label><input type="number" min="0" class="fem-input" @bind="_form.VidaUtilAnios" /></div>
+                <div><label class="fem-lbl">Fecha de adquisicion</label><input type="date" class="fem-input" @bind="_form.FechaAdquisicion" /></div>
+                <div><label class="fem-lbl">Fecha de instalacion</label><input type="date" class="fem-input" @bind="_form.FechaInstalacion" /></div>
+                <div><label class="fem-lbl">Garantia hasta</label><input type="date" class="fem-input" @bind="_form.GarantiaHasta" /></div>
+                <div><label class="fem-lbl">Valor de adquisicion</label><input type="number" min="0" step="0.01" class="fem-input" @bind="_form.ValorAdquisicion" /></div>
+                <div><label class="fem-lbl">Proveedor</label><input class="fem-input" @bind="_form.Proveedor" /></div>
+                <div><label class="fem-lbl">Numero de factura</label><input class="fem-input" @bind="_form.NumeroFactura" /></div>
+                <div class="fem-col-2"><label class="fem-lbl">Observaciones</label><textarea class="fem-input" rows="2" @bind="_form.Observaciones"></textarea></div>
+            </div>
+        </div>
+        <div class="fem-footer">
+            <button class="fem-btn-ghost" type="button" @onclick="@(() => _tab = "ficha")">Cancelar</button>
+            <button class="fem-btn-brand" type="button" @onclick="GuardarDatosAsync" disabled="@_busy">Guardar cambios</button>
+        </div>
+    }
+}
 
 @if (!string.IsNullOrEmpty(_msg))
 {
@@ -131,25 +304,113 @@
 
 <style>
     .fem-header { display: flex; align-items: center; gap: 12px; padding: 16px 22px; border-bottom: 1px solid #EEF3F8; }
-    .fem-header-icon { width: 36px; height: 36px; border-radius: 10px; background: #F1ECFD; color: #6D4FE3; display: flex; align-items: center; justify-content: center; }
-    .fem-header-text { flex: 1; }
-    .fem-title { font-size: 15px; font-weight: 800; color: #1B2A3A; }
-    .fem-subtitle { font-size: 12px; color: #7C98B6; margin-top: 1px; }
-    .fem-close { background: transparent; border: 1px solid #E1E8EE; width: 32px; height: 32px; border-radius: 8px; color: #7C98B6; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+    .fem-header-icon { width: 44px; height: 44px; border-radius: 12px; background: #EEF3F8; color: #516F90; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .fem-header-text { flex: 1; min-width: 0; }
+    .fem-title { font-size: 18px; font-weight: 800; letter-spacing: -.3px; color: #1B2A3A; }
+    .fem-subtitle { font-size: 12px; color: #7C98B6; margin-top: 2px; }
+    .fem-estado { font-size: 11px; font-weight: 700; padding: 5px 11px; border-radius: 8px; flex-shrink: 0; text-transform: uppercase; letter-spacing: .3px; }
+    .fem-estado--ok { color: #1A8754; background: #E6F6EE; }
+    .fem-estado--mant { color: #B45309; background: #FEF3DC; }
+    .fem-estado--fuera { color: #C0383C; background: #FDE7E7; }
+    .fem-close { background: #fff; border: 1px solid #E1E8EE; width: 34px; height: 34px; border-radius: 9px; color: #7C98B6; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .fem-close:hover { background: #F5F8FA; color: #33475B; }
 
     .fem-tabs { display: flex; gap: 2px; padding: 0 22px; border-bottom: 1px solid #EEF3F8; }
     .fem-tab { background: transparent; border: 0; padding: 11px 14px; font-size: 13px; font-weight: 700; color: #7C98B6; cursor: pointer; border-bottom: 2px solid transparent; font-family: inherit; }
     .fem-tab--on { color: var(--propia-brand, #6D4FE3); border-bottom-color: var(--propia-brand, #6D4FE3); }
 
-    .fem-body { padding: 16px 22px; max-height: 60vh; overflow-y: auto; }
-    .fem-section { font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--propia-brand, #6D4FE3); font-weight: 800; margin: 12px 0 6px; }
+    .fem-grid { display: grid; grid-template-columns: 340px 1fr; min-height: 0; max-height: 68vh; }
+    .fem-left { border-right: 1px solid #EEF3F8; background: #FBFCFD; overflow-y: auto; padding: 18px 20px; }
+    .fem-right { overflow-y: auto; padding: 18px 22px; display: flex; flex-direction: column; gap: 20px; }
+    .fem-sectlbl { font-size: 11px; letter-spacing: .5px; color: #A6B7C8; font-weight: 700; margin-bottom: 9px; }
+    .fem-sectlbl-soft { color: #C3D0DD; font-weight: 600; }
+
+    .fem-fotos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-bottom: 16px; }
+    .fem-foto { aspect-ratio: 1; border-radius: 10px; background-size: cover; background-position: center; position: relative; border: 1px solid #E1E8EE; }
+    .fem-foto-del { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 6px; background: rgba(27,42,58,.6); color: #fff; border: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .fem-foto-add { aspect-ratio: 1; border-radius: 10px; border: 1px dashed #C3D0DD; background: #fff; color: var(--propia-brand, #6D4FE3); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; cursor: pointer; font-size: 9px; font-weight: 700; }
+    .fem-foto-add:hover { border-color: var(--propia-brand, #6D4FE3); background: #F5F1FE; }
+    .fem-foto-input { display: none; }
+
+    .fem-datos { display: flex; flex-direction: column; gap: 1px; background: #EEF3F8; border: 1px solid #EEF3F8; border-radius: 11px; overflow: hidden; margin-bottom: 16px; }
+    .fem-dato { background: #fff; padding: 10px 13px; display: flex; justify-content: space-between; }
+    .fem-dato span { font-size: 11.5px; color: #A6B7C8; font-weight: 600; }
+    .fem-dato b { font-size: 12px; font-weight: 700; color: #33475B; text-align: right; }
+
+    .fem-dep { background: #fff; border: 1px solid #E1E8EE; border-radius: 13px; padding: 15px; }
+    .fem-dep-top { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 3px; }
+    .fem-dep-top span { font-size: 11.5px; color: #7C98B6; font-weight: 600; }
+    .fem-dep-top b { font-size: 19px; font-weight: 800; color: #1B2A3A; letter-spacing: -.4px; }
+    .fem-bar { height: 7px; border-radius: 5px; background: #EEF3F8; overflow: hidden; margin: 9px 0; }
+    .fem-bar-fill { height: 100%; background: linear-gradient(90deg, #B45309, #C0383C); border-radius: 5px; }
+    .fem-dep-pct { font-size: 10.5px; color: #A6B7C8; margin-bottom: 12px; }
+    .fem-vida { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 11px; background: #F8FAFC; border: 1px solid #E1E8EE; border-radius: 9px; margin-bottom: 11px; }
+    .fem-vida-t { font-size: 11.5px; font-weight: 700; color: #33475B; }
+    .fem-vida-s { font-size: 10px; color: #A6B7C8; }
+    .fem-vida-step { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .fem-vida-step button { width: 28px; height: 28px; border-radius: 8px; border: 1px solid #E1E8EE; background: #fff; color: #516F90; cursor: pointer; font-size: 16px; font-weight: 700; }
+    .fem-vida-step button:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
+    .fem-vida-step span { font-size: 14px; font-weight: 800; color: #1B2A3A; min-width: 54px; text-align: center; }
+    .fem-dep-rows { display: flex; flex-direction: column; gap: 7px; }
+    .fem-dep-rows > div { display: flex; justify-content: space-between; }
+    .fem-dep-rows span { font-size: 11.5px; color: #7C98B6; }
+    .fem-dep-rows b { font-size: 12px; font-weight: 700; color: #33475B; }
+    .fem-pos { color: #1A8754 !important; }
+    .fem-neg { color: #C0383C !important; }
+
+    .fem-block { }
+    .fem-doc { display: flex; align-items: center; gap: 10px; border: 1px solid #E1E8EE; border-radius: 10px; padding: 10px 13px; margin-bottom: 7px; background: #fff; }
+    .fem-doc-icon { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .fem-doc-icon--compra { background: #E6F2FB; color: #2563EB; }
+    .fem-doc-icon--mejora { background: #E6F6EE; color: #1A8754; }
+    .fem-doc-body { flex: 1; min-width: 0; }
+    .fem-doc-name { font-size: 12.5px; font-weight: 700; color: #33475B; }
+    .fem-doc-meta { font-size: 10.5px; color: #A6B7C8; }
+    .fem-tag { font-size: 9.5px; font-weight: 800; padding: 3px 8px; border-radius: 5px; flex-shrink: 0; }
+    .fem-tag--compra { color: #2563EB; background: #E6F2FB; }
+    .fem-tag--mejora { color: #1A8754; background: #E6F6EE; }
+    .fem-mini-del { width: 24px; height: 24px; border-radius: 6px; background: transparent; border: 0; color: #C3D0DD; cursor: pointer; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; }
+    .fem-mini-del:hover { background: #FDE7E7; color: #D7263D; }
+    .fem-mejora-form { display: flex; gap: 7px; align-items: center; padding: 11px; background: #F8FAFC; border: 1px dashed #D7E0EA; border-radius: 10px; margin-top: 3px; }
+
+    .fem-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .fem-link { display: flex; align-items: center; gap: 8px; border: 1px solid #E1E8EE; border-radius: 9px; padding: 8px 11px; margin-bottom: 6px; }
+    .fem-link--on { border-color: #DCD2F8; background: #F5F1FE; }
+    .fem-link-body { flex: 1; min-width: 0; }
+    .fem-link-name { font-size: 12px; font-weight: 700; color: #33475B; }
+    .fem-link-meta { font-size: 10px; color: #7C98B6; }
+    .fem-disp-lbl { font-size: 10px; color: #A6B7C8; font-weight: 700; margin: 8px 0 5px; }
+    .fem-pick { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 1px solid #E1E8EE; background: #fff; border-radius: 9px; padding: 7px 10px; margin-bottom: 5px; cursor: pointer; font-family: inherit; }
+    .fem-pick:hover { border-color: var(--propia-brand, #6D4FE3); }
+    .fem-pick span { flex: 1; font-size: 11.5px; font-weight: 600; color: #33475B; }
+    .fem-pick svg { color: var(--propia-brand, #6D4FE3); }
+    .fem-mini-empty { font-size: 11px; color: #A6B7C8; padding: 4px 2px; }
+
+    .fem-tarea { display: flex; align-items: center; gap: 9px; border: 1px solid #E1E8EE; border-left: 3px solid var(--propia-brand, #6D4FE3); border-radius: 9px; padding: 9px 12px; margin-bottom: 6px; }
+    .fem-tarea-body { flex: 1; min-width: 0; }
+    .fem-tarea-t { font-size: 12.5px; font-weight: 700; color: #33475B; }
+    .fem-tarea-board { font-size: 10.5px; color: #A6B7C8; }
+    .fem-tarea-estado { font-size: 10px; font-weight: 700; color: #516F90; background: #EEF3F8; padding: 3px 9px; border-radius: 6px; }
+
+    .fem-mant { display: flex; align-items: center; gap: 9px; border: 1px solid #E1E8EE; border-radius: 11px; padding: 11px 13px; margin-bottom: 7px; }
+    .fem-mant-tipo { font-size: 10px; font-weight: 800; color: var(--propia-brand, #6D4FE3); background: #F1ECFD; padding: 3px 8px; border-radius: 6px; }
+    .fem-mant-body { flex: 1; min-width: 0; }
+    .fem-mant-t { font-size: 12.5px; font-weight: 700; color: #33475B; }
+    .fem-mant-fecha { font-size: 11px; color: #A6B7C8; }
+    .fem-mant-estado { font-size: 10px; font-weight: 700; color: #516F90; background: #EEF3F8; padding: 3px 9px; border-radius: 6px; }
+
+    .fem-body { padding: 16px 22px; max-height: 62vh; overflow-y: auto; }
+    .fem-empty { padding: 30px; text-align: center; color: #A6B7C8; font-size: 13px; }
+    .fem-section { font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--propia-brand, #6D4FE3); font-weight: 800; margin: 12px 0 7px; }
     .fem-section:first-child { margin-top: 0; }
-    .fem-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
-    .fem-col-span-2 { grid-column: 1 / -1; }
+    .fem-egrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+    .fem-col-2 { grid-column: 1 / -1; }
     .fem-lbl { display: block; font-size: 11.5px; font-weight: 700; color: #7C98B6; margin-bottom: 3px; }
     .fem-input { width: 100%; border: 1px solid #E1E8EE; border-radius: 8px; padding: 8px 10px; font-size: 13px; color: #33475B; outline: none; font-family: inherit; background: #fff; }
     .fem-input:focus { border-color: var(--propia-brand, #6D4FE3); }
     .fem-input:disabled { background: #F8FAFC; color: #A6B7C8; }
+    .fem-grow { flex: 1; min-width: 0; }
+    .fem-mini { width: 110px; }
     .fem-check { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: #33475B; cursor: pointer; }
     .fem-check input { accent-color: var(--propia-brand, #6D4FE3); }
 
@@ -172,20 +433,18 @@
     private bool _dirty;
     private string? _msg;
     private bool _msgError;
+    private EquipoFichaDto? _ficha;
     private DisponibilidadHorariosEditor? _editor;
-    private FormState _form = new();
     private List<VentanaDisponibilidadDto>? _ventanasIniciales;
 
-    protected override async Task OnInitializedAsync()
-    {
-        if (Equipo is null) return;
-        _form = FormState.From(Equipo);
-        if (Equipo.EsReservable)
-        {
-            try { _ventanasIniciales = await Auth().GetFromJsonAsync<List<VentanaDisponibilidadDto>>($"/api/mi-copropiedad/disponibilidad?tipo=EquipoActivo&entidadId={Equipo.Id}"); }
-            catch { _ventanasIniciales = new(); }
-        }
-    }
+    private string _mejoraDesc = "";
+    private decimal? _mejoraValor;
+
+    private FormState _form = new();
+
+    private Guid EqId => Equipo?.Id ?? Guid.Empty;
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
 
     private HttpClient Auth()
     {
@@ -195,31 +454,157 @@
         return http;
     }
 
-    private async Task GuardarAsync()
+    private async Task CargarAsync()
     {
-        if (Equipo is null) return;
+        try
+        {
+            _ficha = await Auth().GetFromJsonAsync<EquipoFichaDto>($"/api/mi-copropiedad/equipos/{EqId}/ficha");
+            if (_ficha is not null && _ficha.Equipo.EsReservable && _ventanasIniciales is null)
+            {
+                try { _ventanasIniciales = await Auth().GetFromJsonAsync<List<VentanaDisponibilidadDto>>($"/api/mi-copropiedad/disponibilidad?tipo=EquipoActivo&entidadId={EqId}"); }
+                catch { _ventanasIniciales = new(); }
+            }
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+    }
+
+    private void IniciarEdicion()
+    {
+        if (_ficha is not null) _form = FormState.From(_ficha.Equipo);
+        _tab = "editar";
+    }
+
+    private async Task GuardarDatosAsync()
+    {
         _busy = true;
         try
         {
             var req = _form.ToRequest();
-            var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos/{Equipo.Id}", req);
-            if (!r.IsSuccessStatusCode) { Toast($"Error al guardar ficha: {(int)r.StatusCode}", true); _busy = false; return; }
-            _dirty = true;
-
-            if (_form.EsReservable && _editor is not null)
-            {
-                var ventanas = _editor.Snapshot();
-                var vreq = new GuardarVentanasRequest(TipoEntidadDisponibilidad.EquipoActivo, Equipo.Id, ventanas);
-                var r2 = await Auth().PutAsJsonAsync("/api/mi-copropiedad/disponibilidad", vreq);
-                if (!r2.IsSuccessStatusCode) { Toast("Ficha guardada, pero hubo error en horarios.", true); _busy = false; return; }
-            }
-            Toast("Cambios guardados.", false);
+            var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos/{EqId}", req);
+            if (r.IsSuccessStatusCode) { _dirty = true; await CargarAsync(); _tab = "ficha"; Toast("Datos guardados.", false); }
+            else Toast($"Error: {(int)r.StatusCode}", true);
         }
         catch (Exception ex) { Toast(ex.Message, true); }
         _busy = false;
     }
 
-    private void Toast(string m, bool err) { _msg = m; _msgError = err; }
+    private async Task AjustarVidaAsync(int delta)
+    {
+        if (_ficha is null) return;
+        var nueva = Math.Max(0, _ficha.Depreciacion.VidaUtilAnios + delta);
+        _busy = true;
+        try
+        {
+            var e = _ficha.Equipo;
+            var req = new ActualizarEquipoActivoRequest(e.Nombre, e.Categoria, e.Tipo, e.Cantidad, e.EsReservable,
+                e.Modelo, e.NumeroSerie, e.FechaInstalacion, e.GarantiaHasta, e.Ubicacion, e.Observaciones,
+                nueva, e.FechaAdquisicion, e.ValorAdquisicion, e.Proveedor, e.NumeroFactura);
+            var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos/{EqId}", req);
+            if (r.IsSuccessStatusCode) { _dirty = true; await CargarAsync(); }
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+        _busy = false;
+    }
+
+    private async Task OnFotoSeleccionada(InputFileChangeEventArgs e)
+    {
+        var f = e.File;
+        if (f is null) return;
+        if (f.Size > 5_000_000) { Toast("Maximo 5 MB.", true); return; }
+        _busy = true;
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var sc = new StreamContent(f.OpenReadStream(5_000_000));
+            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(string.IsNullOrEmpty(f.ContentType) ? "image/jpeg" : f.ContentType);
+            content.Add(sc, "file", f.Name);
+            var r = await Auth().PostAsync($"/api/mi-copropiedad/equipos/{EqId}/fotos", content);
+            if (r.IsSuccessStatusCode) { _dirty = true; await CargarAsync(); Toast("Foto agregada.", false); }
+            else Toast($"Error al subir foto: {(int)r.StatusCode}", true);
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+        _busy = false;
+    }
+
+    private async Task EliminarFotoAsync(Guid id)
+    {
+        try { var r = await Auth().DeleteAsync($"/api/mi-copropiedad/equipos/fotos/{id}"); if (r.IsSuccessStatusCode) { _dirty = true; await CargarAsync(); } }
+        catch (Exception ex) { Toast(ex.Message, true); }
+    }
+
+    private async Task AgregarMejoraAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_mejoraDesc)) { Toast("Describe la mejora.", true); return; }
+        _busy = true;
+        try
+        {
+            var req = new AgregarMejoraRequest(_mejoraDesc.Trim(), _mejoraValor ?? 0m, DateOnly.FromDateTime(DateTime.Today));
+            var r = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/equipos/{EqId}/mejoras", req);
+            if (r.IsSuccessStatusCode) { _dirty = true; _mejoraDesc = ""; _mejoraValor = null; await CargarAsync(); Toast("Mejora registrada.", false); }
+            else Toast($"Error: {(int)r.StatusCode}", true);
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+        _busy = false;
+    }
+
+    private async Task EliminarMejoraAsync(Guid id)
+    {
+        try { var r = await Auth().DeleteAsync($"/api/mi-copropiedad/equipos/mejoras/{id}"); if (r.IsSuccessStatusCode) { _dirty = true; await CargarAsync(); } }
+        catch (Exception ex) { Toast(ex.Message, true); }
+    }
+
+    private async Task ToggleActivoAsync(Guid id, bool vincular)
+    {
+        try { var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos/{EqId}/activos-vinculados", new ToggleVinculoRequest(id, vincular)); if (r.IsSuccessStatusCode) { _dirty = true; await CargarAsync(); } }
+        catch (Exception ex) { Toast(ex.Message, true); }
+    }
+
+    private async Task ToggleContratoAsync(Guid id, bool vincular)
+    {
+        try { var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos/{EqId}/contratos-vinculados", new ToggleVinculoRequest(id, vincular)); if (r.IsSuccessStatusCode) { _dirty = true; await CargarAsync(); } }
+        catch (Exception ex) { Toast(ex.Message, true); }
+    }
+
+    private async Task GuardarHorariosAsync()
+    {
+        if (_editor is null) return;
+        _busy = true;
+        try
+        {
+            var vreq = new GuardarVentanasRequest(TipoEntidadDisponibilidad.EquipoActivo, EqId, _editor.Snapshot());
+            var r = await Auth().PutAsJsonAsync("/api/mi-copropiedad/disponibilidad", vreq);
+            if (r.IsSuccessStatusCode) { _dirty = true; Toast("Horarios guardados.", false); }
+            else Toast($"Error: {(int)r.StatusCode}", true);
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+        _busy = false;
+    }
+
+    private string ProximoMantenimiento()
+    {
+        var prox = _ficha?.Mantenimientos
+            .Where(m => m.Fecha.HasValue && m.Estado != "Cerrada" && m.Estado != "Cancelada")
+            .OrderBy(m => m.Fecha).FirstOrDefault();
+        return prox?.Fecha?.ToString("dd MMM yyyy") ?? "Sin programar";
+    }
+
+    private void Toast(string m, bool err) { _msg = m; _msgError = err; StateHasChanged(); }
+
+    private static string TipoTxt(TipoElemento t) => t == TipoElemento.Activo ? "Activo" : "Equipo";
+    private static string EstadoTxt(EstadoEquipoActivo s) => s switch
+    {
+        EstadoEquipoActivo.Operativo => "Operativo",
+        EstadoEquipoActivo.EnMantenimiento => "En mantenimiento",
+        EstadoEquipoActivo.FueraDeServicio => "Fuera de servicio",
+        _ => s.ToString()
+    };
+    private static string EstadoBadge(EstadoEquipoActivo s) => s switch
+    {
+        EstadoEquipoActivo.Operativo => "ok",
+        EstadoEquipoActivo.EnMantenimiento => "mant",
+        EstadoEquipoActivo.FueraDeServicio => "fuera",
+        _ => "ok"
+    };
 
     private class FormState
     {
@@ -228,6 +613,7 @@
         public TipoElemento Tipo { get; set; }
         public int Cantidad { get; set; } = 1;
         public bool EsReservable { get; set; }
+        public string? Marca { get; set; }
         public string? Modelo { get; set; }
         public string? NumeroSerie { get; set; }
         public DateOnly? FechaInstalacion { get; set; }
@@ -243,17 +629,15 @@
         public static FormState From(EquipoActivoDto e) => new()
         {
             Nombre = e.Nombre, Categoria = e.Categoria, Tipo = e.Tipo, Cantidad = e.Cantidad, EsReservable = e.EsReservable,
-            Modelo = e.Modelo, NumeroSerie = e.NumeroSerie, FechaInstalacion = e.FechaInstalacion, GarantiaHasta = e.GarantiaHasta,
+            Marca = e.Marca, Modelo = e.Modelo, NumeroSerie = e.NumeroSerie, FechaInstalacion = e.FechaInstalacion, GarantiaHasta = e.GarantiaHasta,
             Ubicacion = e.Ubicacion, Observaciones = e.Observaciones,
             VidaUtilAnios = e.VidaUtilAnios, FechaAdquisicion = e.FechaAdquisicion, ValorAdquisicion = e.ValorAdquisicion,
             Proveedor = e.Proveedor, NumeroFactura = e.NumeroFactura
         };
 
         public ActualizarEquipoActivoRequest ToRequest() => new(
-            Nombre, Categoria, Tipo, Cantidad, EsReservable,
-            Modelo, NumeroSerie, FechaInstalacion, GarantiaHasta,
-            Ubicacion, Observaciones,
-            VidaUtilAnios, FechaAdquisicion, ValorAdquisicion,
-            Proveedor, NumeroFactura);
+            Nombre, Categoria, Tipo, Tipo == TipoElemento.Activo ? Math.Max(1, Cantidad) : 1, EsReservable,
+            Modelo, NumeroSerie, FechaInstalacion, GarantiaHasta, Ubicacion, Observaciones,
+            VidaUtilAnios, FechaAdquisicion, ValorAdquisicion, Proveedor, NumeroFactura);
     }
 }

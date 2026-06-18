@@ -1102,6 +1102,147 @@ public class MiCopropiedadService : IMiCopropiedadService
         return true;
     }
 
+    // ----------------------------- Ficha tecnica completa del equipo/activo -----------------------------
+
+    public async Task<EquipoFichaDto?> GetEquipoFichaAsync(Guid equipoId, CancellationToken ct)
+    {
+        var e = await _db.EquiposActivos.AsNoTracking().FirstOrDefaultAsync(x => x.Id == equipoId, ct);
+        if (e is null) return null;
+
+        var fotos = await _db.EquipoFotos.AsNoTracking().Where(f => f.EquipoActivoId == equipoId)
+            .Select(f => new EquipoFotoDto(f.Id, f.Url)).ToListAsync(ct);
+
+        var mejoras = await _db.EquipoMejoras.AsNoTracking().Where(m => m.EquipoActivoId == equipoId)
+            .OrderByDescending(m => m.Fecha)
+            .Select(m => new EquipoMejoraDto(m.Id, m.Descripcion, m.Valor, m.Fecha, m.DocumentoUrl)).ToListAsync(ct);
+
+        var depreciacion = CalcularDepreciacion(e, mejoras.Sum(m => m.Valor));
+
+        // Contratos vinculados + disponibles
+        var contratosVinculadosIds = await _db.EquipoContratoVinculos.AsNoTracking()
+            .Where(v => v.EquipoActivoId == equipoId).Select(v => v.ContratoServicioId).ToListAsync(ct);
+        var contratos = await _db.ContratosServicio.AsNoTracking().ToListAsync(ct);
+        var contratosVinculados = contratos.Where(c => contratosVinculadosIds.Contains(c.Id))
+            .Select(c => new EquipoRefDto(c.Id, $"{c.Tipo} - {c.Proveedor}", c.Estado.ToString())).ToList();
+        var contratosDisponibles = contratos.Where(c => !contratosVinculadosIds.Contains(c.Id))
+            .Select(c => new EquipoRefDto(c.Id, $"{c.Tipo} - {c.Proveedor}", null)).ToList();
+
+        // Activos vinculados + disponibles (otros equipos)
+        var vinculadosIds = await _db.EquipoVinculos.AsNoTracking()
+            .Where(v => v.EquipoActivoId == equipoId).Select(v => v.EquipoVinculadoId).ToListAsync(ct);
+        var todos = await _db.EquiposActivos.AsNoTracking().Where(x => x.Id != equipoId)
+            .Select(x => new { x.Id, x.Nombre, x.Categoria }).ToListAsync(ct);
+        var activosVinculados = todos.Where(x => vinculadosIds.Contains(x.Id))
+            .Select(x => new EquipoRefDto(x.Id, x.Nombre, x.Categoria.ToString())).ToList();
+        var activosDisponibles = todos.Where(x => !vinculadosIds.Contains(x.Id))
+            .Select(x => new EquipoRefDto(x.Id, x.Nombre, null)).ToList();
+
+        // Mantenimientos (intervenciones de este activo)
+        var intervenciones = await _db.MantenimientoIntervenciones.AsNoTracking()
+            .Where(i => i.ActivoId == equipoId)
+            .OrderByDescending(i => i.FechaProgramada)
+            .Take(20)
+            .ToListAsync(ct);
+        var mantenimientos = intervenciones.Select(i => new MantenimientoRefDto(
+            i.Id, i.Tipo.ToString(), i.Titulo, null, i.FechaProgramada, i.Estado.ToString(), i.TareaId)).ToList();
+
+        // Tareas asociadas (las intervenciones que generaron tarea en 2.10)
+        var tareaIds = intervenciones.Where(i => i.TareaId.HasValue).Select(i => i.TareaId!.Value).ToList();
+        var tareas = await _db.Tareas.AsNoTracking().Where(t => tareaIds.Contains(t.Id))
+            .Select(t => new TareaRefDto(t.Id, t.Titulo, "Mantenimiento", t.Estado != null ? t.Estado.Nombre : "—"))
+            .ToListAsync(ct);
+
+        return new EquipoFichaDto(
+            ToEquipoActivoDto(e), depreciacion, fotos, mejoras,
+            contratosVinculados, contratosDisponibles,
+            activosVinculados, activosDisponibles,
+            mantenimientos, tareas);
+    }
+
+    /// <summary>Depreciacion lineal: base = costo + mejoras; depAnual = base/vidaUtil; acumulada por anios de uso.</summary>
+    private static DepreciacionDto CalcularDepreciacion(EquipoActivo e, decimal mejoras)
+    {
+        var costo = e.ValorAdquisicion ?? 0m;
+        var baseDep = costo + mejoras;
+        var vida = e.VidaUtilAnios.GetValueOrDefault();
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        var inicio = e.FechaAdquisicion ?? e.FechaInstalacion;
+        var aniosUso = 0;
+        if (inicio.HasValue)
+        {
+            aniosUso = hoy.Year - inicio.Value.Year;
+            if (hoy.Month < inicio.Value.Month || (hoy.Month == inicio.Value.Month && hoy.Day < inicio.Value.Day)) aniosUso--;
+            if (aniosUso < 0) aniosUso = 0;
+        }
+        var depAnual = vida > 0 ? Math.Round(baseDep / vida, 2) : 0m;
+        var depAcum = vida > 0 ? Math.Min(baseDep, depAnual * Math.Min(aniosUso, vida)) : 0m;
+        var valorLibros = baseDep - depAcum;
+        var pct = baseDep > 0 ? (int)Math.Round(depAcum / baseDep * 100) : 0;
+        return new DepreciacionDto(costo, mejoras, baseDep, vida, aniosUso, depAnual, depAcum, valorLibros, pct);
+    }
+
+    public async Task<EquipoFotoDto?> AgregarFotoEquipoAsync(Guid equipoId, string url, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) return null;
+        if (string.IsNullOrWhiteSpace(url)) return null;
+        var f = new EquipoFoto { TenantId = tid, EquipoActivoId = equipoId, Url = url.Trim() };
+        _db.EquipoFotos.Add(f);
+        await _db.SaveChangesAsync(ct);
+        return new EquipoFotoDto(f.Id, f.Url);
+    }
+
+    public async Task<bool> EliminarFotoEquipoAsync(Guid fotoId, CancellationToken ct)
+    {
+        var f = await _db.EquipoFotos.FirstOrDefaultAsync(x => x.Id == fotoId, ct);
+        if (f is null) return false;
+        _db.EquipoFotos.Remove(f);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<EquipoMejoraDto?> AgregarMejoraEquipoAsync(Guid equipoId, AgregarMejoraRequest req, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) return null;
+        if (string.IsNullOrWhiteSpace(req.Descripcion)) throw new InvalidOperationException("Descripcion de la mejora obligatoria.");
+        if (req.Valor < 0) throw new InvalidOperationException("El valor no puede ser negativo.");
+        var m = new EquipoMejora { TenantId = tid, EquipoActivoId = equipoId, Descripcion = req.Descripcion.Trim(), Valor = req.Valor, Fecha = req.Fecha };
+        _db.EquipoMejoras.Add(m);
+        await _db.SaveChangesAsync(ct);
+        await RegistrarBitacoraAsync("Equipos", $"Mejora capitalizada registrada: {m.Descripcion} ({m.Valor:N0}).", ct);
+        return new EquipoMejoraDto(m.Id, m.Descripcion, m.Valor, m.Fecha, m.DocumentoUrl);
+    }
+
+    public async Task<bool> EliminarMejoraEquipoAsync(Guid mejoraId, CancellationToken ct)
+    {
+        var m = await _db.EquipoMejoras.FirstOrDefaultAsync(x => x.Id == mejoraId, ct);
+        if (m is null) return false;
+        _db.EquipoMejoras.Remove(m);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task ToggleActivoVinculadoAsync(Guid equipoId, ToggleVinculoRequest req, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) return;
+        var existente = await _db.EquipoVinculos.FirstOrDefaultAsync(v => v.EquipoActivoId == equipoId && v.EquipoVinculadoId == req.Id, ct);
+        if (req.Vincular && existente is null)
+            _db.EquipoVinculos.Add(new EquipoVinculo { TenantId = tid, EquipoActivoId = equipoId, EquipoVinculadoId = req.Id });
+        else if (!req.Vincular && existente is not null)
+            _db.EquipoVinculos.Remove(existente);
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task ToggleContratoVinculadoAsync(Guid equipoId, ToggleVinculoRequest req, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) return;
+        var existente = await _db.EquipoContratoVinculos.FirstOrDefaultAsync(v => v.EquipoActivoId == equipoId && v.ContratoServicioId == req.Id, ct);
+        if (req.Vincular && existente is null)
+            _db.EquipoContratoVinculos.Add(new EquipoContratoVinculo { TenantId = tid, EquipoActivoId = equipoId, ContratoServicioId = req.Id });
+        else if (!req.Vincular && existente is not null)
+            _db.EquipoContratoVinculos.Remove(existente);
+        await _db.SaveChangesAsync(ct);
+    }
+
     // ----------------------------- Seccion 4 ampliada: Comites + Revisor Fiscal -----------------------------
 
     public async Task<IReadOnlyList<ComiteDto>> ListComitesAsync(CancellationToken ct)

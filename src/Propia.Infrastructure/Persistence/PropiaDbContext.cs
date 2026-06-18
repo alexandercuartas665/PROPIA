@@ -253,6 +253,10 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<NumeroEnListaNegra> NumerosEnListaNegra => Set<NumeroEnListaNegra>();
     public DbSet<CuentaBancaria> CuentasBancarias => Set<CuentaBancaria>();
     public DbSet<VentanaDisponibilidad> VentanasDisponibilidad => Set<VentanaDisponibilidad>();
+    public DbSet<EquipoFoto> EquipoFotos => Set<EquipoFoto>();
+    public DbSet<EquipoMejora> EquipoMejoras => Set<EquipoMejora>();
+    public DbSet<EquipoVinculo> EquipoVinculos => Set<EquipoVinculo>();
+    public DbSet<EquipoContratoVinculo> EquipoContratoVinculos => Set<EquipoContratoVinculo>();
 
     // Modulo 0.2 - Billing y Suscripciones (todo GLOBAL, sin tenant_id)
     public DbSet<Plan> Planes => Set<Plan>();
@@ -2241,6 +2245,29 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
         modelBuilder.Entity<VentanaDisponibilidad>(b =>
         {
             b.HasIndex(x => new { x.TenantId, x.TipoEntidad, x.EntidadId });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<EquipoFoto>(b =>
+        {
+            b.HasIndex(x => new { x.TenantId, x.EquipoActivoId });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<EquipoMejora>(b =>
+        {
+            b.Property(x => x.Descripcion).IsRequired().HasMaxLength(200);
+            b.Property(x => x.Valor).HasColumnType("numeric(18,2)");
+            b.HasIndex(x => new { x.TenantId, x.EquipoActivoId });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<EquipoVinculo>(b =>
+        {
+            b.HasIndex(x => new { x.TenantId, x.EquipoActivoId });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<EquipoContratoVinculo>(b =>
+        {
+            b.HasIndex(x => new { x.TenantId, x.EquipoActivoId });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

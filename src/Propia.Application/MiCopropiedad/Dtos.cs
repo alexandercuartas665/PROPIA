@@ -243,6 +243,36 @@ public record NuevaVentanaItem(DiaSemana DiaSemana, TimeOnly HoraInicio, TimeOnl
 /// <summary>Cambia el estado operativo de un equipo (seccion 7).</summary>
 public record CambiarEstadoEquipoRequest(EstadoEquipoActivo Estado);
 
+// ----- Ficha tecnica completa del equipo/activo (modal grande estilo prototipo) -----
+
+/// <summary>Valor en libros y depreciacion lineal calculada del activo.</summary>
+public record DepreciacionDto(
+    decimal CostoAdquisicion, decimal MejorasCapitalizadas, decimal Base,
+    int VidaUtilAnios, int AniosUso, decimal DepreciacionAnual,
+    decimal DepreciacionAcumulada, decimal ValorEnLibros, int PctDepreciado);
+
+public record EquipoFotoDto(Guid Id, string Url);
+public record EquipoMejoraDto(Guid Id, string Descripcion, decimal Valor, DateOnly Fecha, string? DocumentoUrl);
+public record EquipoRefDto(Guid Id, string Nombre, string? Meta);
+public record MantenimientoRefDto(Guid Id, string Tipo, string Titulo, string? Responsable, DateOnly? Fecha, string Estado, Guid? TareaId);
+public record TareaRefDto(Guid Id, string Titulo, string Tablero, string Estado);
+
+/// <summary>Agregado que alimenta el modal de ficha tecnica del activo.</summary>
+public record EquipoFichaDto(
+    EquipoActivoDto Equipo,
+    DepreciacionDto Depreciacion,
+    IReadOnlyList<EquipoFotoDto> Fotos,
+    IReadOnlyList<EquipoMejoraDto> Mejoras,
+    IReadOnlyList<EquipoRefDto> ContratosVinculados,
+    IReadOnlyList<EquipoRefDto> ContratosDisponibles,
+    IReadOnlyList<EquipoRefDto> ActivosVinculados,
+    IReadOnlyList<EquipoRefDto> ActivosDisponibles,
+    IReadOnlyList<MantenimientoRefDto> Mantenimientos,
+    IReadOnlyList<TareaRefDto> Tareas);
+
+public record AgregarMejoraRequest(string Descripcion, decimal Valor, DateOnly Fecha);
+public record ToggleVinculoRequest(Guid Id, bool Vincular);
+
 // ----- Resumen / Completitud -----
 public record ResumenMiCopropiedadDto(
     IdentidadDto Identidad,

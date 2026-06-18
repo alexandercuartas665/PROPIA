@@ -107,6 +107,15 @@ public interface IMiCopropiedadService
     Task<IReadOnlyList<VentanaDisponibilidadDto>> ListVentanasAsync(Propia.Domain.Enums.TipoEntidadDisponibilidad tipo, Guid entidadId, CancellationToken ct);
     Task GuardarVentanasAsync(GuardarVentanasRequest req, CancellationToken ct);
 
+    // Ficha tecnica completa del equipo/activo (modal grande estilo prototipo).
+    Task<EquipoFichaDto?> GetEquipoFichaAsync(Guid equipoId, CancellationToken ct);
+    Task<EquipoFotoDto?> AgregarFotoEquipoAsync(Guid equipoId, string url, CancellationToken ct);
+    Task<bool> EliminarFotoEquipoAsync(Guid fotoId, CancellationToken ct);
+    Task<EquipoMejoraDto?> AgregarMejoraEquipoAsync(Guid equipoId, AgregarMejoraRequest req, CancellationToken ct);
+    Task<bool> EliminarMejoraEquipoAsync(Guid mejoraId, CancellationToken ct);
+    Task ToggleActivoVinculadoAsync(Guid equipoId, ToggleVinculoRequest req, CancellationToken ct);
+    Task ToggleContratoVinculadoAsync(Guid equipoId, ToggleVinculoRequest req, CancellationToken ct);
+
     // Seccion 8 - Finanzas (parametros). El resumen en tiempo real lo orquesta el controller
     // combinando 2.6 Presupuesto + 2.7 Cartera.
     IReadOnlyList<MonedaDto> ListMonedas();

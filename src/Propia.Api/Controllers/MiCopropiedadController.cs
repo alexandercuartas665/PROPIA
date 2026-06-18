@@ -5,6 +5,7 @@ using Propia.Application.MiCopropiedad;
 using Propia.Application.Presupuesto;
 using Propia.Application.Cartera;
 using Propia.Domain.Enums;
+using Propia.Infrastructure.Storage;
 
 namespace Propia.Api.Controllers;
 
@@ -21,12 +22,14 @@ public class MiCopropiedadController : ControllerBase
     private readonly IMiCopropiedadService _svc;
     private readonly IPresupuestoService _presupuesto;
     private readonly ICarteraService _cartera;
+    private readonly IBlobStorage _storage;
 
-    public MiCopropiedadController(IMiCopropiedadService svc, IPresupuestoService presupuesto, ICarteraService cartera)
+    public MiCopropiedadController(IMiCopropiedadService svc, IPresupuestoService presupuesto, ICarteraService cartera, IBlobStorage storage)
     {
         _svc = svc;
         _presupuesto = presupuesto;
         _cartera = cartera;
+        _storage = storage;
     }
 
     // ---------- Resumen ----------
@@ -308,6 +311,64 @@ public class MiCopropiedadController : ControllerBase
     [HttpDelete("equipos/{id:guid}")]
     public async Task<IActionResult> EliminarEquipo(Guid id, CancellationToken ct)
         => await _svc.EliminarEquipoAsync(id, ct) ? NoContent() : NotFound();
+
+    // ---------- Ficha tecnica completa del equipo/activo ----------
+    [HttpGet("equipos/{id:guid}/ficha")]
+    public async Task<IActionResult> GetEquipoFicha(Guid id, CancellationToken ct)
+    {
+        var ficha = await _svc.GetEquipoFichaAsync(id, ct);
+        return ficha is null ? NotFound() : Ok(ficha);
+    }
+
+    [HttpPost("equipos/{id:guid}/fotos")]
+    [RequestSizeLimit(6_000_000)]
+    public async Task<IActionResult> SubirFotoEquipo(Guid id, IFormFile file, CancellationToken ct)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
+        if (file is null || file.Length == 0) return BadRequest(new { error = "Archivo vacio." });
+        if (file.Length > 5_000_000) return BadRequest(new { error = "Maximo 5 MB." });
+        var ext = file.ContentType switch { "image/jpeg" => ".jpg", "image/png" => ".png", "image/webp" => ".webp", _ => "" };
+        if (ext == "") return BadRequest(new { error = "Formato no soportado. Usa JPG, PNG o WEBP." });
+        var key = $"tenants/{tenantId:N}/equipos/{id:N}/{Guid.NewGuid():N}{ext}";
+        await using var stream = file.OpenReadStream();
+        var url = await _storage.UploadAsync(key, stream, file.ContentType, ct);
+        var dto = await _svc.AgregarFotoEquipoAsync(id, url, ct);
+        return dto is null ? BadRequest(new { error = "No se pudo registrar la foto." }) : Ok(dto);
+    }
+
+    [HttpDelete("equipos/fotos/{fotoId:guid}")]
+    public async Task<IActionResult> EliminarFotoEquipo(Guid fotoId, CancellationToken ct)
+        => await _svc.EliminarFotoEquipoAsync(fotoId, ct) ? NoContent() : NotFound();
+
+    [HttpPost("equipos/{id:guid}/mejoras")]
+    public async Task<IActionResult> AgregarMejora(Guid id, [FromBody] AgregarMejoraRequest req, CancellationToken ct)
+    {
+        try
+        {
+            var dto = await _svc.AgregarMejoraEquipoAsync(id, req, ct);
+            return dto is null ? BadRequest(new { error = "no_active_tenant" }) : Ok(dto);
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpDelete("equipos/mejoras/{mejoraId:guid}")]
+    public async Task<IActionResult> EliminarMejora(Guid mejoraId, CancellationToken ct)
+        => await _svc.EliminarMejoraEquipoAsync(mejoraId, ct) ? NoContent() : NotFound();
+
+    [HttpPut("equipos/{id:guid}/activos-vinculados")]
+    public async Task<IActionResult> ToggleActivoVinculado(Guid id, [FromBody] ToggleVinculoRequest req, CancellationToken ct)
+    {
+        await _svc.ToggleActivoVinculadoAsync(id, req, ct);
+        return NoContent();
+    }
+
+    [HttpPut("equipos/{id:guid}/contratos-vinculados")]
+    public async Task<IActionResult> ToggleContratoVinculado(Guid id, [FromBody] ToggleVinculoRequest req, CancellationToken ct)
+    {
+        await _svc.ToggleContratoVinculadoAsync(id, req, ct);
+        return NoContent();
+    }
 
     // ---------- Ventanas de disponibilidad (equipos reservables y zonas comunes) ----------
     [HttpGet("disponibilidad")]
