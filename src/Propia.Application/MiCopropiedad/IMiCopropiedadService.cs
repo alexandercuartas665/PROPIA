@@ -99,8 +99,13 @@ public interface IMiCopropiedadService
     // Seccion 7 - Equipos Activos
     Task<IReadOnlyList<EquipoActivoDto>> ListEquiposAsync(CancellationToken ct);
     Task<EquipoActivoDto> CrearEquipoAsync(CrearEquipoActivoRequest req, CancellationToken ct);
+    Task<EquipoActivoDto?> ActualizarEquipoAsync(Guid id, ActualizarEquipoActivoRequest req, CancellationToken ct);
     Task<bool> CambiarEstadoEquipoAsync(Guid equipoId, CambiarEstadoEquipoRequest req, CancellationToken ct);
     Task<bool> EliminarEquipoAsync(Guid equipoId, CancellationToken ct);
+
+    // Ventanas de disponibilidad reutilizables (equipos reservables, zonas comunes).
+    Task<IReadOnlyList<VentanaDisponibilidadDto>> ListVentanasAsync(Propia.Domain.Enums.TipoEntidadDisponibilidad tipo, Guid entidadId, CancellationToken ct);
+    Task GuardarVentanasAsync(GuardarVentanasRequest req, CancellationToken ct);
 
     // Seccion 8 - Finanzas (parametros). El resumen en tiempo real lo orquesta el controller
     // combinando 2.6 Presupuesto + 2.7 Cartera.

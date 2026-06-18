@@ -987,31 +987,98 @@ public class MiCopropiedadService : IMiCopropiedadService
         return await _db.EquiposActivos
             .AsNoTracking()
             .OrderBy(e => e.Nombre)
-            .Select(e => new EquipoActivoDto(e.Id, e.Nombre, e.Categoria, e.Marca, e.Modelo,
-                e.NumeroSerie, e.FechaInstalacion, e.GarantiaHasta, e.Ubicacion, e.Observaciones, e.Estado))
+            .Select(e => ToEquipoActivoDto(e))
             .ToListAsync(ct);
     }
+
+    private static EquipoActivoDto ToEquipoActivoDto(EquipoActivo e) => new(
+        e.Id, e.Nombre, e.Categoria,
+        e.Tipo, e.Cantidad, e.EsReservable,
+        e.Marca, e.Modelo, e.NumeroSerie, e.FechaInstalacion, e.GarantiaHasta,
+        e.Ubicacion, e.Observaciones,
+        e.VidaUtilAnios, e.FechaAdquisicion, e.ValorAdquisicion,
+        e.Proveedor, e.NumeroFactura, e.Estado);
 
     public async Task<EquipoActivoDto> CrearEquipoAsync(CrearEquipoActivoRequest req, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.Nombre))
             throw new InvalidOperationException("Nombre del equipo obligatorio.");
+        if (req.Cantidad < 1)
+            throw new InvalidOperationException("Cantidad debe ser al menos 1.");
         var e = new EquipoActivo
         {
-            Nombre = req.Nombre,
+            Nombre = req.Nombre.Trim(),
             Categoria = req.Categoria,
-            Marca = req.Marca,
-            Modelo = req.Modelo,
-            NumeroSerie = req.NumeroSerie,
-            FechaInstalacion = req.FechaInstalacion,
-            GarantiaHasta = req.GarantiaHasta,
-            Ubicacion = req.Ubicacion,
-            Observaciones = req.Observaciones
+            Tipo = req.Tipo,
+            Cantidad = req.Tipo == TipoElemento.Activo ? req.Cantidad : 1,
+            EsReservable = req.EsReservable
         };
         _db.EquiposActivos.Add(e);
         await _db.SaveChangesAsync(ct);
-        return new EquipoActivoDto(e.Id, e.Nombre, e.Categoria, e.Marca, e.Modelo,
-            e.NumeroSerie, e.FechaInstalacion, e.GarantiaHasta, e.Ubicacion, e.Observaciones, e.Estado);
+        await RegistrarBitacoraAsync("Equipos", $"{e.Tipo} '{e.Nombre}' agregado (cantidad {e.Cantidad}).", ct);
+        return ToEquipoActivoDto(e);
+    }
+
+    public async Task<EquipoActivoDto?> ActualizarEquipoAsync(Guid id, ActualizarEquipoActivoRequest req, CancellationToken ct)
+    {
+        var e = await _db.EquiposActivos.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (e is null) return null;
+        if (string.IsNullOrWhiteSpace(req.Nombre))
+            throw new InvalidOperationException("Nombre obligatorio.");
+        e.Nombre = req.Nombre.Trim();
+        e.Categoria = req.Categoria;
+        e.Tipo = req.Tipo;
+        e.Cantidad = req.Tipo == TipoElemento.Activo ? Math.Max(1, req.Cantidad) : 1;
+        e.EsReservable = req.EsReservable;
+        e.Modelo = req.Modelo;
+        e.NumeroSerie = req.NumeroSerie;
+        e.FechaInstalacion = req.FechaInstalacion;
+        e.GarantiaHasta = req.GarantiaHasta;
+        e.Ubicacion = req.Ubicacion;
+        e.Observaciones = req.Observaciones;
+        e.VidaUtilAnios = req.VidaUtilAnios;
+        e.FechaAdquisicion = req.FechaAdquisicion;
+        e.ValorAdquisicion = req.ValorAdquisicion;
+        e.Proveedor = req.Proveedor;
+        e.NumeroFactura = req.NumeroFactura;
+        await _db.SaveChangesAsync(ct);
+        await RegistrarBitacoraAsync("Equipos", $"Ficha tecnica de '{e.Nombre}' actualizada.", ct);
+        return ToEquipoActivoDto(e);
+    }
+
+    // ----------------------------- Ventanas de disponibilidad -----------------------------
+
+    public async Task<IReadOnlyList<VentanaDisponibilidadDto>> ListVentanasAsync(TipoEntidadDisponibilidad tipo, Guid entidadId, CancellationToken ct)
+    {
+        return await _db.VentanasDisponibilidad.AsNoTracking()
+            .Where(v => v.TipoEntidad == tipo && v.EntidadId == entidadId)
+            .OrderBy(v => v.DiaSemana).ThenBy(v => v.HoraInicio)
+            .Select(v => new VentanaDisponibilidadDto(v.Id, v.TipoEntidad, v.EntidadId, v.DiaSemana, v.HoraInicio, v.HoraFin, v.Activa))
+            .ToListAsync(ct);
+    }
+
+    public async Task GuardarVentanasAsync(GuardarVentanasRequest req, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid)
+            throw new InvalidOperationException("Sin tenant activo.");
+        // Reemplazo total: borra las existentes y crea las nuevas. Simple y correcto para un editor.
+        var existentes = _db.VentanasDisponibilidad.Where(v => v.TipoEntidad == req.TipoEntidad && v.EntidadId == req.EntidadId);
+        _db.VentanasDisponibilidad.RemoveRange(existentes);
+        foreach (var v in req.Ventanas ?? Array.Empty<NuevaVentanaItem>())
+        {
+            if (v.HoraFin <= v.HoraInicio) continue; // ignora rangos invertidos
+            _db.VentanasDisponibilidad.Add(new VentanaDisponibilidad
+            {
+                TenantId = tid,
+                TipoEntidad = req.TipoEntidad,
+                EntidadId = req.EntidadId,
+                DiaSemana = v.DiaSemana,
+                HoraInicio = v.HoraInicio,
+                HoraFin = v.HoraFin,
+                Activa = v.Activa
+            });
+        }
+        await _db.SaveChangesAsync(ct);
     }
 
     public async Task<bool> CambiarEstadoEquipoAsync(Guid equipoId, CambiarEstadoEquipoRequest req, CancellationToken ct)

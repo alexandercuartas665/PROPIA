@@ -252,6 +252,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<AiAgentTemplateMcpTool> AiAgentTemplateMcpTools => Set<AiAgentTemplateMcpTool>();
     public DbSet<NumeroEnListaNegra> NumerosEnListaNegra => Set<NumeroEnListaNegra>();
     public DbSet<CuentaBancaria> CuentasBancarias => Set<CuentaBancaria>();
+    public DbSet<VentanaDisponibilidad> VentanasDisponibilidad => Set<VentanaDisponibilidad>();
 
     // Modulo 0.2 - Billing y Suscripciones (todo GLOBAL, sin tenant_id)
     public DbSet<Plan> Planes => Set<Plan>();
@@ -2234,6 +2235,12 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.NumeroCuenta).IsRequired().HasMaxLength(50);
             b.Property(x => x.Banco).IsRequired().HasMaxLength(120);
             b.HasIndex(x => new { x.TenantId, x.NumeroCuenta });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<VentanaDisponibilidad>(b =>
+        {
+            b.HasIndex(x => new { x.TenantId, x.TipoEntidad, x.EntidadId });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

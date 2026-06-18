@@ -101,6 +101,32 @@ public enum TiposPagoPermitidos
     PseWenjoy = 1 << 8
 }
 
+/// <summary>Distincion entre Equipo (pieza unica, ej. ascensor) y Activo (suele agruparse en cantidad, ej. sillas).</summary>
+public enum TipoElemento
+{
+    Equipo = 1,
+    Activo = 2
+}
+
+/// <summary>Dia de la semana - usado por VentanaDisponibilidad para horarios reservables.</summary>
+public enum DiaSemana
+{
+    Lunes = 1,
+    Martes = 2,
+    Miercoles = 3,
+    Jueves = 4,
+    Viernes = 5,
+    Sabado = 6,
+    Domingo = 7
+}
+
+/// <summary>Tipo de entidad a la que aplica una ventana de disponibilidad (polimorfico).</summary>
+public enum TipoEntidadDisponibilidad
+{
+    EquipoActivo = 1,
+    ZonaComun = 2
+}
+
 /// <summary>Multiplo al que se redondean los valores (RN: 1=sin redondeo, 100, 1000).</summary>
 public enum MultiploRedondeo
 {

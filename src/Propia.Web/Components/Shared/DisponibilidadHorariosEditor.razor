@@ -1,0 +1,124 @@
+@* Editor de ventanas horarias reutilizable: define en que horarios un equipo o
+   zona comun esta disponible para reservar. NO maneja la lista de reservas
+   (esa va en 2.13). Se consume desde ficha tecnica de equipo (cuando EsReservable)
+   y desde la ficha de zona comun. *@
+
+@using Propia.Application.MiCopropiedad
+@using Propia.Domain.Enums
+
+<div class="dhe-root">
+    <div class="dhe-head">
+        <div>
+            <div class="dhe-title">Horarios de disponibilidad</div>
+            <div class="dhe-sub">Define en que franjas se puede reservar (ej. piscina 08:00 a 19:00). Fuera de estos horarios no se permitiran reservas.</div>
+        </div>
+        <button class="dhe-btn-ghost" type="button" @onclick="AplicarPlantilla">Aplicar L-V 8-18, S-D 9-15</button>
+    </div>
+
+    <table class="dhe-table">
+        <thead><tr><th>Dia</th><th>Inicio</th><th>Fin</th><th>Activa</th><th></th></tr></thead>
+        <tbody>
+            @for (int i = 0; i < _ventanas.Count; i++)
+            {
+                var idx = i;
+                <tr>
+                    <td>
+                        <select class="dhe-input" @bind="_ventanas[idx].Dia">
+                            @foreach (var d in (DiaSemana[])System.Enum.GetValues(typeof(DiaSemana))) { <option value="@d">@DiaTxt(d)</option> }
+                        </select>
+                    </td>
+                    <td><input type="time" class="dhe-input" @bind="_ventanas[idx].Inicio" /></td>
+                    <td><input type="time" class="dhe-input" @bind="_ventanas[idx].Fin" /></td>
+                    <td class="dhe-center"><input type="checkbox" @bind="_ventanas[idx].Activa" /></td>
+                    <td class="dhe-center"><button class="dhe-del" type="button" title="Quitar" @onclick="@(() => _ventanas.RemoveAt(idx))">×</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (_ventanas.Count == 0)
+    {
+        <div class="dhe-empty">Sin ventanas. Agrega una con el boton de abajo o aplica una plantilla.</div>
+    }
+    <div class="dhe-actions">
+        <button class="dhe-btn-ghost" type="button" @onclick="AgregarFila">+ Agregar ventana</button>
+    </div>
+</div>
+
+<style>
+    .dhe-root { font-family: var(--propia-font-base, 'Lexend', sans-serif); }
+    .dhe-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+    .dhe-title { font-size: 13.5px; font-weight: 800; color: #1B2A3A; }
+    .dhe-sub { font-size: 12px; color: #7C98B6; margin-top: 2px; max-width: 540px; }
+    .dhe-btn-ghost { margin-left: auto; padding: 7px 12px; border-radius: 8px; border: 1px solid #E1E8EE; background: #fff; font-size: 12px; font-weight: 700; color: #516F90; cursor: pointer; font-family: inherit; }
+    .dhe-btn-ghost:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
+    .dhe-table { width: 100%; border-collapse: collapse; }
+    .dhe-table th { padding: 7px 8px; text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .3px; color: #7C98B6; background: #FAFBFD; }
+    .dhe-table td { padding: 6px 8px; border-bottom: 1px solid #F4F7FA; }
+    .dhe-input { width: 100%; border: 1px solid #E1E8EE; border-radius: 7px; padding: 6px 8px; font-size: 12.5px; color: #33475B; outline: none; background: #fff; font-family: inherit; }
+    .dhe-input:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .dhe-center { text-align: center; }
+    .dhe-del { width: 26px; height: 26px; border-radius: 6px; background: transparent; border: 0; color: #C3D0DD; cursor: pointer; font-size: 17px; line-height: 1; }
+    .dhe-del:hover { background: #FDE7E7; color: #D7263D; }
+    .dhe-empty { padding: 14px; text-align: center; color: #A6B7C8; font-size: 12px; }
+    .dhe-actions { margin-top: 10px; display: flex; justify-content: flex-end; }
+</style>
+
+@code {
+    /// <summary>Coleccion inicial de ventanas (proviene del backend o esta vacia).</summary>
+    [Parameter] public IReadOnlyList<VentanaDisponibilidadDto>? Iniciales { get; set; }
+
+    /// <summary>Lambda que se llama al guardar desde el modal padre.</summary>
+    [Parameter] public EventCallback<List<NuevaVentanaItem>> OnCambio { get; set; }
+
+    private List<Fila> _ventanas = new();
+
+    protected override void OnParametersSet()
+    {
+        if (Iniciales is null || _ventanas.Count > 0) return;
+        _ventanas = Iniciales.Select(v => new Fila { Dia = v.DiaSemana, Inicio = v.HoraInicio, Fin = v.HoraFin, Activa = v.Activa }).ToList();
+    }
+
+    private void AgregarFila()
+    {
+        _ventanas.Add(new Fila { Dia = DiaSemana.Lunes, Inicio = new TimeOnly(8, 0), Fin = new TimeOnly(18, 0), Activa = true });
+        EmitirCambio();
+    }
+
+    private void AplicarPlantilla()
+    {
+        _ventanas.Clear();
+        foreach (var d in new[] { DiaSemana.Lunes, DiaSemana.Martes, DiaSemana.Miercoles, DiaSemana.Jueves, DiaSemana.Viernes })
+            _ventanas.Add(new Fila { Dia = d, Inicio = new TimeOnly(8, 0), Fin = new TimeOnly(18, 0), Activa = true });
+        foreach (var d in new[] { DiaSemana.Sabado, DiaSemana.Domingo })
+            _ventanas.Add(new Fila { Dia = d, Inicio = new TimeOnly(9, 0), Fin = new TimeOnly(15, 0), Activa = true });
+        EmitirCambio();
+    }
+
+    public List<NuevaVentanaItem> Snapshot() =>
+        _ventanas.Select(v => new NuevaVentanaItem(v.Dia, v.Inicio, v.Fin, v.Activa)).ToList();
+
+    private void EmitirCambio()
+    {
+        if (OnCambio.HasDelegate) _ = OnCambio.InvokeAsync(Snapshot());
+    }
+
+    private static string DiaTxt(DiaSemana d) => d switch
+    {
+        DiaSemana.Lunes => "Lunes",
+        DiaSemana.Martes => "Martes",
+        DiaSemana.Miercoles => "Miercoles",
+        DiaSemana.Jueves => "Jueves",
+        DiaSemana.Viernes => "Viernes",
+        DiaSemana.Sabado => "Sabado",
+        DiaSemana.Domingo => "Domingo",
+        _ => d.ToString()
+    };
+
+    private class Fila
+    {
+        public DiaSemana Dia { get; set; }
+        public TimeOnly Inicio { get; set; }
+        public TimeOnly Fin { get; set; }
+        public bool Activa { get; set; } = true;
+    }
+}

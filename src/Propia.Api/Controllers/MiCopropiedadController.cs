@@ -295,9 +295,33 @@ public class MiCopropiedadController : ControllerBase
     [HttpPut("equipos/{id:guid}/estado")]
     public async Task<IActionResult> CambiarEstadoEquipo(Guid id, [FromBody] CambiarEstadoEquipoRequest req, CancellationToken ct)
         => await _svc.CambiarEstadoEquipoAsync(id, req, ct) ? NoContent() : NotFound();
+    [HttpPut("equipos/{id:guid}")]
+    public async Task<IActionResult> ActualizarEquipo(Guid id, [FromBody] ActualizarEquipoActivoRequest req, CancellationToken ct)
+    {
+        try
+        {
+            var dto = await _svc.ActualizarEquipoAsync(id, req, ct);
+            return dto is null ? NotFound() : Ok(dto);
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
     [HttpDelete("equipos/{id:guid}")]
     public async Task<IActionResult> EliminarEquipo(Guid id, CancellationToken ct)
         => await _svc.EliminarEquipoAsync(id, ct) ? NoContent() : NotFound();
+
+    // ---------- Ventanas de disponibilidad (equipos reservables y zonas comunes) ----------
+    [HttpGet("disponibilidad")]
+    public async Task<IActionResult> ListVentanas(
+        [FromQuery] Propia.Domain.Enums.TipoEntidadDisponibilidad tipo,
+        [FromQuery] Guid entidadId, CancellationToken ct)
+        => Ok(await _svc.ListVentanasAsync(tipo, entidadId, ct));
+
+    [HttpPut("disponibilidad")]
+    public async Task<IActionResult> GuardarVentanas([FromBody] GuardarVentanasRequest req, CancellationToken ct)
+    {
+        try { await _svc.GuardarVentanasAsync(req, ct); return NoContent(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
 
     // ---------- Seccion 8: Finanzas ----------
     [HttpGet("finanzas/monedas")]

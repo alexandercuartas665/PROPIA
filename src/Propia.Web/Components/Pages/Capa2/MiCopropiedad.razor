@@ -517,44 +517,52 @@ else
     </SeccionCard>
 
     @* Seccion 7 - Equipos *@
-    <SeccionCard Titulo="5. Equipos y Activos" Completa="@CompEquipos" Abierta="@_secciones[SecEq]" OnToggle="() => ToggleSec(SecEq)">
-        @if (_equipos.Count == 0) { <p class="text-muted small mb-2">Sin equipos registrados.</p> }
-        else
+    <SeccionCard Titulo="5. Equipos y Activos" Subtitulo="Que activos fisicos tiene?" Completa="@CompEquipos" Abierta="@_secciones[SecEq]" OnToggle="() => ToggleSec(SecEq)">
+        <div class="mc-eq-summary">
+            <div class="mc-eq-stat">
+                <div class="mc-eq-stat-val">@_equipos.Count(e => e.Estado == EstadoEquipoActivo.Operativo)</div>
+                <div class="mc-eq-stat-lbl">operativos</div>
+            </div>
+            <div class="mc-eq-stat">
+                <div class="mc-eq-stat-val">@_equipos.Count(e => e.Estado == EstadoEquipoActivo.EnMantenimiento)</div>
+                <div class="mc-eq-stat-lbl">en mantenimiento</div>
+            </div>
+            <div class="mc-eq-stat @(_equipos.Any(e => e.Estado == EstadoEquipoActivo.FueraDeServicio) ? "mc-eq-stat--warn" : "")">
+                <div class="mc-eq-stat-val">@_equipos.Count(e => e.Estado == EstadoEquipoActivo.FueraDeServicio)</div>
+                <div class="mc-eq-stat-lbl">fuera de servicio</div>
+            </div>
+        </div>
+        @if (_equipos.Count > 0)
         {
-            <ul class="list-group mb-3">
+            @* Cards estilo prototipo: click abre ficha tecnica. *@
+            <div class="mc-eq-grid">
                 @foreach (var e in _equipos)
                 {
-                    <li class="list-group-item d-flex justify-content-between align-items-center small">
-                        <span>
-                            <strong>@e.Nombre</strong> · <span class="badge bg-light text-dark border">@e.Categoria</span>
-                            @(string.IsNullOrEmpty(e.Marca) ? "" : $"· {e.Marca}")
-                            <span class="badge @EstadoEquipoClass(e.Estado) ms-1">@EstadoEquipoLabel(e.Estado)</span>
-                        </span>
-                        <span class="d-flex align-items-center gap-2">
-                            <select class="form-select form-select-sm" style="width:auto" @onchange="(ev) => CambiarEstadoEquipo(e.Id, ev)">
-                                @foreach (var s in Enum.GetValues<EstadoEquipoActivo>())
-                                { <option value="@s" selected="@(e.Estado == s)">@EstadoEquipoLabel(s)</option> }
-                            </select>
-                            <button class="btn btn-sm btn-outline-secondary"
-                                    title="Programar mantenimiento"
-                                    @onclick="() => AbrirProgramarMantenimientoAsync(e)">
-                                <i class="fi fi-rr-calendar-clock"></i>
-                            </button>
-                            <button class="btn btn-sm btn-outline-danger" @onclick="() => EliminarEquipo(e.Id)">X</button>
-                        </span>
-                    </li>
+                    var eq = e;
+                    <div class="mc-eq-card" @onclick="@(() => AbrirFichaEquipoAsync(eq))">
+                        <div class="mc-eq-card-icon">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 7h6M9 11h6M10 16h4"/></svg>
+                        </div>
+                        <div class="mc-eq-card-body">
+                            <div class="mc-eq-card-name">
+                                @e.Nombre
+                                @if (e.Tipo == TipoElemento.Activo && e.Cantidad > 1) { <span class="mc-eq-qty">x@(e.Cantidad)</span> }
+                            </div>
+                            <div class="mc-eq-card-meta">
+                                @e.Categoria
+                                @if (e.EsReservable) { <span class="mc-eq-flag">reservable</span> }
+                            </div>
+                        </div>
+                        <span class="mc-eq-badge mc-eq-badge--@EstadoEquipoBadge(e.Estado)">@EstadoEquipoTextoCorto(e.Estado)</span>
+                    </div>
                 }
-            </ul>
-        }
-        <div class="row g-2">
-            <div class="col-md-4"><InputText @bind-Value="_nuevoEquipo.Nombre" class="form-control form-control-sm" placeholder="Nombre" /></div>
-            <div class="col-md-3">
-                <InputSelect @bind-Value="_nuevoEquipo.Categoria" class="form-select form-select-sm">
-                    @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c">@c</option> }
-                </InputSelect>
             </div>
-            <div class="col-md-3"><InputText @bind-Value="_nuevoEquipo.Marca" class="form-control form-control-sm" placeholder="Marca" /></div>
-            <div class="col-md-2"><button class="btn btn-sm btn-outline-dark w-100" @onclick="CrearEquipo">+</button></div>
+        }
+        <div class="mc-actions">
+            <button class="propia-btn-brand" type="button" @onclick="AbrirGestionarEquiposAsync">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                Gestionar equipos
+            </button>
         </div>
     </SeccionCard>
 
@@ -929,21 +937,38 @@ else
     [data-bs-theme="dark"] .mc-gov-stat { background: #232B40; border-color: #2D3650; }
     [data-bs-theme="dark"] .mc-gov-stat-val { color: #E5E7EB; }
 
-    /* Sec 5/6 - resumen servicios/zonas (mismo estilo) */
-    .mc-srv-summary, .mc-zn-summary {
+    /* Sec 5/6 - resumen servicios/zonas/equipos (mismo estilo) */
+    .mc-srv-summary, .mc-zn-summary, .mc-eq-summary {
         display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
         margin-bottom: 12px;
         font-family: var(--propia-font-base, 'Lexend', sans-serif);
     }
-    .mc-srv-stat, .mc-zn-stat {
+    .mc-srv-stat, .mc-zn-stat, .mc-eq-stat {
         background: #fff; border: 1px solid #E1E8EE; border-radius: 11px;
         padding: 14px 16px;
     }
-    .mc-srv-stat-val, .mc-zn-stat-val {
+    .mc-srv-stat-val, .mc-zn-stat-val, .mc-eq-stat-val {
         font-size: 22px; font-weight: 800; color: #1B2A3A; letter-spacing: -0.3px;
     }
-    .mc-srv-stat-lbl, .mc-zn-stat-lbl { font-size: 11px; color: #A6B7C8; font-weight: 600; margin-top: 1px; }
-    .mc-srv-stat--warn .mc-srv-stat-val { color: #B45309; }
+    .mc-srv-stat-lbl, .mc-zn-stat-lbl, .mc-eq-stat-lbl { font-size: 11px; color: #A6B7C8; font-weight: 600; margin-top: 1px; }
+    .mc-srv-stat--warn .mc-srv-stat-val, .mc-eq-stat--warn .mc-eq-stat-val { color: #B45309; }
+    .mc-eq-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+    .mc-eq-chip { font-size: 11.5px; font-weight: 600; color: #516F90; background: #F4F7FA; padding: 4px 10px; border-radius: 999px; }
+
+    /* Cards de equipos (estilo prototipo "6. Equipos"). */
+    .mc-eq-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; font-family: var(--propia-font-base, 'Lexend', sans-serif); }
+    .mc-eq-card { display: flex; align-items: center; gap: 11px; border: 1px solid #E1E8EE; border-radius: 11px; padding: 12px 14px; background: #fff; cursor: pointer; }
+    .mc-eq-card:hover { border-color: var(--propia-brand, #6D4FE3); background: #FBFAFE; }
+    .mc-eq-card-icon { width: 36px; height: 36px; border-radius: 9px; background: #EEF3F8; color: #516F90; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .mc-eq-card-body { flex: 1; min-width: 0; }
+    .mc-eq-card-name { font-size: 13px; font-weight: 700; color: #33475B; display: flex; align-items: center; gap: 6px; }
+    .mc-eq-qty { font-size: 11px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: #F1ECFD; padding: 2px 6px; border-radius: 5px; }
+    .mc-eq-card-meta { font-size: 11px; color: #A6B7C8; margin-top: 1px; display: flex; align-items: center; gap: 6px; }
+    .mc-eq-flag { font-size: 10px; font-weight: 700; color: #1A8754; background: #E6F6EE; padding: 1px 6px; border-radius: 5px; text-transform: uppercase; letter-spacing: .3px; }
+    .mc-eq-badge { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 6px; white-space: nowrap; text-transform: uppercase; letter-spacing: .3px; }
+    .mc-eq-badge--ok { color: #1A8754; background: #E6F6EE; }
+    .mc-eq-badge--mant { color: #B45309; background: #FEF3DC; }
+    .mc-eq-badge--fuera { color: #C0383C; background: #FDE7E7; }
     .mc-srv-chips, .mc-zn-chips {
         display: flex; flex-wrap: wrap; gap: 6px;
         margin-bottom: 14px;
@@ -1542,6 +1567,41 @@ else
         }
     }
 
+    private async Task AbrirGestionarEquiposAsync()
+    {
+        var parameters = new ModalParameters().Set("Jwt", _jwt);
+        var options = new ModalOptions { Width = "780px" };
+        var hubo = await Modals.OpenAsync<GestionarEquiposActivosModal, bool>(parameters, options);
+        if (hubo == true)
+        {
+            await CargarAsync();
+            Msg("Equipos actualizados", true);
+        }
+    }
+
+    private async Task AbrirFichaEquipoAsync(EquipoActivoDto equipo)
+    {
+        var parameters = new ModalParameters().Set("Jwt", _jwt).Set("Equipo", equipo);
+        var options = new ModalOptions { Width = "780px" };
+        var hubo = await Modals.OpenAsync<FichaEquipoModal, bool>(parameters, options);
+        if (hubo == true) { await CargarAsync(); Msg("Ficha actualizada", true); }
+    }
+
+    private static string EstadoEquipoBadge(EstadoEquipoActivo s) => s switch
+    {
+        EstadoEquipoActivo.Operativo => "ok",
+        EstadoEquipoActivo.EnMantenimiento => "mant",
+        EstadoEquipoActivo.FueraDeServicio => "fuera",
+        _ => "ok"
+    };
+    private static string EstadoEquipoTextoCorto(EstadoEquipoActivo s) => s switch
+    {
+        EstadoEquipoActivo.Operativo => "Operativo",
+        EstadoEquipoActivo.EnMantenimiento => "Mantenimiento",
+        EstadoEquipoActivo.FueraDeServicio => "Fuera",
+        _ => s.ToString()
+    };
+
     private async Task AbrirEditarIdentidadAsync()
     {
         if (_resumen is null) return;
@@ -1748,7 +1808,7 @@ else
     {
         if (string.IsNullOrWhiteSpace(_nuevoEquipo.Nombre)) return;
         var req = new CrearEquipoActivoRequest(_nuevoEquipo.Nombre, _nuevoEquipo.Categoria,
-            _nuevoEquipo.Marca, null, null, null, null, null, null);
+            TipoElemento.Equipo, 1, false);
         var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/equipos", req);
         if (resp.IsSuccessStatusCode) { _nuevoEquipo = new(); await CargarAsync(); }
         else Msg(await resp.Content.ReadAsStringAsync(), false);

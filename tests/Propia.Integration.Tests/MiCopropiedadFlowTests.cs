@@ -144,7 +144,7 @@ public class MiCopropiedadFlowTests
         await svc.CrearZonaComunAsync(new CrearZonaComunRequest(
             "Piscina", CategoriaZonaComun.Deportiva, null, true, 50_000m, 20, null, null), CancellationToken.None);
         await svc.CrearEquipoAsync(new CrearEquipoActivoRequest(
-            "Bomba Hidroflo", CategoriaEquipo.Bombeo, "Pedrollo", null, null, null, null, "Cuarto tecnico", null), CancellationToken.None);
+            "Bomba Hidroflo", CategoriaEquipo.Bombeo, TipoElemento.Equipo, 1, false), CancellationToken.None);
 
         var resumen = await svc.GetResumenAsync(tenantId, CancellationToken.None);
         Assert.NotNull(resumen);

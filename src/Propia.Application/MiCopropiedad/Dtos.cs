@@ -203,17 +203,42 @@ public record ImportarUnidadesResponse(
 
 public record ImportacionFilaError(int Fila, string Campo, string Mensaje);
 
-// ----- Equipos / Activos (seccion 7) -----
+// ----- Equipos / Activos (seccion 5) -----
 public record EquipoActivoDto(
-    Guid Id, string Nombre, CategoriaEquipo Categoria, string? Marca, string? Modelo,
+    Guid Id, string Nombre, CategoriaEquipo Categoria,
+    TipoElemento Tipo, int Cantidad, bool EsReservable,
+    string? Marca, string? Modelo,
     string? NumeroSerie, DateOnly? FechaInstalacion, DateOnly? GarantiaHasta,
     string? Ubicacion, string? Observaciones,
+    int? VidaUtilAnios, DateOnly? FechaAdquisicion, decimal? ValorAdquisicion,
+    string? Proveedor, string? NumeroFactura,
     EstadoEquipoActivo Estado);
 
+/// <summary>Creacion basica (lo minimo): nombre + cantidad + tipo + reservable + categoria.</summary>
 public record CrearEquipoActivoRequest(
-    string Nombre, CategoriaEquipo Categoria, string? Marca, string? Modelo,
-    string? NumeroSerie, DateOnly? FechaInstalacion, DateOnly? GarantiaHasta,
-    string? Ubicacion, string? Observaciones);
+    string Nombre, CategoriaEquipo Categoria,
+    TipoElemento Tipo, int Cantidad, bool EsReservable);
+
+/// <summary>Actualiza la ficha tecnica completa de un equipo/activo existente.</summary>
+public record ActualizarEquipoActivoRequest(
+    string Nombre, CategoriaEquipo Categoria,
+    TipoElemento Tipo, int Cantidad, bool EsReservable,
+    string? Modelo, string? NumeroSerie,
+    DateOnly? FechaInstalacion, DateOnly? GarantiaHasta,
+    string? Ubicacion, string? Observaciones,
+    int? VidaUtilAnios, DateOnly? FechaAdquisicion, decimal? ValorAdquisicion,
+    string? Proveedor, string? NumeroFactura);
+
+// ----- Ventanas de disponibilidad (reservas: zonas comunes y equipos reservables) -----
+public record VentanaDisponibilidadDto(
+    Guid Id, TipoEntidadDisponibilidad TipoEntidad, Guid EntidadId,
+    DiaSemana DiaSemana, TimeOnly HoraInicio, TimeOnly HoraFin, bool Activa);
+
+public record GuardarVentanasRequest(
+    TipoEntidadDisponibilidad TipoEntidad, Guid EntidadId,
+    IReadOnlyList<NuevaVentanaItem> Ventanas);
+
+public record NuevaVentanaItem(DiaSemana DiaSemana, TimeOnly HoraInicio, TimeOnly HoraFin, bool Activa);
 
 /// <summary>Cambia el estado operativo de un equipo (seccion 7).</summary>
 public record CambiarEstadoEquipoRequest(EstadoEquipoActivo Estado);
