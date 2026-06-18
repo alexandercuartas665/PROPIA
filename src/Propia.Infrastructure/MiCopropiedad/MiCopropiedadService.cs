@@ -1343,12 +1343,12 @@ public class MiCopropiedadService : IMiCopropiedadService
         t.MultiploRedondeo = req.MultiploRedondeo;
         t.MultiploRedondeoCuotaExtra = req.MultiploRedondeoCuotaExtra;
         t.MultiploRedondeoProntoPago = req.MultiploRedondeoProntoPago;
-        t.ConsecutivoFactura = req.ConsecutivoFactura;
-        t.ConsecutivoRC = req.ConsecutivoRC;
-        t.ConsecutivoNotaCredito = req.ConsecutivoNotaCredito;
-        t.ConsecutivoPazYSalvo = req.ConsecutivoPazYSalvo;
-        t.ConsecutivoActaConsejo = req.ConsecutivoActaConsejo;
-        t.ConsecutivoActaAsamblea = req.ConsecutivoActaAsamblea;
+        t.ConsecutivoFactura = NormalizarConsec(req.ConsecutivoFactura);
+        t.ConsecutivoRC = NormalizarConsec(req.ConsecutivoRC);
+        t.ConsecutivoNotaCredito = NormalizarConsec(req.ConsecutivoNotaCredito);
+        t.ConsecutivoPazYSalvo = NormalizarConsec(req.ConsecutivoPazYSalvo);
+        t.ConsecutivoActaConsejo = NormalizarConsec(req.ConsecutivoActaConsejo);
+        t.ConsecutivoActaAsamblea = NormalizarConsec(req.ConsecutivoActaAsamblea);
         t.ConvenioRecaudo = string.IsNullOrWhiteSpace(req.ConvenioRecaudo) ? null : req.ConvenioRecaudo.Trim();
         t.Chartld = string.IsNullOrWhiteSpace(req.Chartld) ? null : req.Chartld.Trim();
         t.ComunicacionFactura = string.IsNullOrWhiteSpace(req.ComunicacionFactura) ? null : req.ComunicacionFactura.Trim();
@@ -1365,6 +1365,11 @@ public class MiCopropiedadService : IMiCopropiedadService
         await RegistrarBitacoraAsync("Finanzas", "Configuracion avanzada actualizada (mas informacion).", ct);
         return ToConfiguracionFinanzas(t);
     }
+
+    /// <summary>Normaliza un consecutivo (texto libre: admite prefijos tipo "FAC-001", "RC-2026-0042").
+    /// Vacio o solo espacios se guarda como null para que el front muestre placeholder.</summary>
+    private static string? NormalizarConsec(string? v)
+        => string.IsNullOrWhiteSpace(v) ? null : v.Trim();
 
     private static ConfiguracionFinanzasDto ToConfiguracionFinanzas(Tenant t) => new(
         t.MultiploRedondeo, t.MultiploRedondeoCuotaExtra, t.MultiploRedondeoProntoPago,

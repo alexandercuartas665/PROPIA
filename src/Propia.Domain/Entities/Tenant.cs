@@ -55,13 +55,13 @@ public class Tenant : BaseEntity
     public MultiploRedondeo MultiploRedondeoCuotaExtra { get; set; } = MultiploRedondeo.NoRedondear;
     public MultiploRedondeo MultiploRedondeoProntoPago { get; set; } = MultiploRedondeo.NoRedondear;
 
-    // Consecutivos: ultimo numero usado. Se incrementan al emitir cada documento.
-    public int ConsecutivoFactura { get; set; }
-    public int ConsecutivoRC { get; set; }                // RC = Recibo de Caja
-    public int ConsecutivoNotaCredito { get; set; }
-    public int ConsecutivoPazYSalvo { get; set; }
-    public int ConsecutivoActaConsejo { get; set; }
-    public int ConsecutivoActaAsamblea { get; set; }
+    // Consecutivos: numero de documento como TEXTO (admite prefijos, ej. "FAC-001", "RC-2026-0042").
+    public string? ConsecutivoFactura { get; set; }
+    public string? ConsecutivoRC { get; set; }                // RC = Recibo de Caja
+    public string? ConsecutivoNotaCredito { get; set; }
+    public string? ConsecutivoPazYSalvo { get; set; }
+    public string? ConsecutivoActaConsejo { get; set; }
+    public string? ConsecutivoActaAsamblea { get; set; }
 
     public string? ConvenioRecaudo { get; set; }
     public string? Chartld { get; set; }                  // codigo CHARTLD del operador (bancario)
