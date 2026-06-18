@@ -115,6 +115,8 @@ public interface IMiCopropiedadService
     Task<bool> EliminarMejoraEquipoAsync(Guid mejoraId, CancellationToken ct);
     Task ToggleActivoVinculadoAsync(Guid equipoId, ToggleVinculoRequest req, CancellationToken ct);
     Task ToggleContratoVinculadoAsync(Guid equipoId, ToggleVinculoRequest req, CancellationToken ct);
+    Task<EquipoCampoDto?> AgregarCampoEquipoAsync(Guid equipoId, AgregarCampoRequest req, CancellationToken ct);
+    Task<bool> EliminarCampoEquipoAsync(Guid campoId, CancellationToken ct);
 
     // Seccion 8 - Finanzas (parametros). El resumen en tiempo real lo orquesta el controller
     // combinando 2.6 Presupuesto + 2.7 Cartera.

@@ -1116,6 +1116,10 @@ public class MiCopropiedadService : IMiCopropiedadService
             .OrderByDescending(m => m.Fecha)
             .Select(m => new EquipoMejoraDto(m.Id, m.Descripcion, m.Valor, m.Fecha, m.DocumentoUrl)).ToListAsync(ct);
 
+        var campos = await _db.EquipoCamposPersonalizados.AsNoTracking().Where(c => c.EquipoActivoId == equipoId)
+            .OrderBy(c => c.CreatedAt)
+            .Select(c => new EquipoCampoDto(c.Id, c.Label, c.Valor)).ToListAsync(ct);
+
         var depreciacion = CalcularDepreciacion(e, mejoras.Sum(m => m.Valor));
 
         // Contratos vinculados + disponibles
@@ -1153,7 +1157,7 @@ public class MiCopropiedadService : IMiCopropiedadService
             .ToListAsync(ct);
 
         return new EquipoFichaDto(
-            ToEquipoActivoDto(e), depreciacion, fotos, mejoras,
+            ToEquipoActivoDto(e), depreciacion, fotos, mejoras, campos,
             contratosVinculados, contratosDisponibles,
             activosVinculados, activosDisponibles,
             mantenimientos, tareas);
@@ -1241,6 +1245,31 @@ public class MiCopropiedadService : IMiCopropiedadService
         else if (!req.Vincular && existente is not null)
             _db.EquipoContratoVinculos.Remove(existente);
         await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task<EquipoCampoDto?> AgregarCampoEquipoAsync(Guid equipoId, AgregarCampoRequest req, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) return null;
+        if (string.IsNullOrWhiteSpace(req.Label)) throw new InvalidOperationException("El nombre del campo es obligatorio.");
+        var c = new EquipoCampoPersonalizado
+        {
+            TenantId = tid,
+            EquipoActivoId = equipoId,
+            Label = req.Label.Trim(),
+            Valor = string.IsNullOrWhiteSpace(req.Valor) ? null : req.Valor.Trim()
+        };
+        _db.EquipoCamposPersonalizados.Add(c);
+        await _db.SaveChangesAsync(ct);
+        return new EquipoCampoDto(c.Id, c.Label, c.Valor);
+    }
+
+    public async Task<bool> EliminarCampoEquipoAsync(Guid campoId, CancellationToken ct)
+    {
+        var c = await _db.EquipoCamposPersonalizados.FirstOrDefaultAsync(x => x.Id == campoId, ct);
+        if (c is null) return false;
+        _db.EquipoCamposPersonalizados.Remove(c);
+        await _db.SaveChangesAsync(ct);
+        return true;
     }
 
     // ----------------------------- Seccion 4 ampliada: Comites + Revisor Fiscal -----------------------------

@@ -253,6 +253,7 @@ public record DepreciacionDto(
 
 public record EquipoFotoDto(Guid Id, string Url);
 public record EquipoMejoraDto(Guid Id, string Descripcion, decimal Valor, DateOnly Fecha, string? DocumentoUrl);
+public record EquipoCampoDto(Guid Id, string Label, string? Valor);
 public record EquipoRefDto(Guid Id, string Nombre, string? Meta);
 public record MantenimientoRefDto(Guid Id, string Tipo, string Titulo, string? Responsable, DateOnly? Fecha, string Estado, Guid? TareaId);
 public record TareaRefDto(Guid Id, string Titulo, string Tablero, string Estado);
@@ -263,6 +264,7 @@ public record EquipoFichaDto(
     DepreciacionDto Depreciacion,
     IReadOnlyList<EquipoFotoDto> Fotos,
     IReadOnlyList<EquipoMejoraDto> Mejoras,
+    IReadOnlyList<EquipoCampoDto> CamposPersonalizados,
     IReadOnlyList<EquipoRefDto> ContratosVinculados,
     IReadOnlyList<EquipoRefDto> ContratosDisponibles,
     IReadOnlyList<EquipoRefDto> ActivosVinculados,
@@ -272,6 +274,7 @@ public record EquipoFichaDto(
 
 public record AgregarMejoraRequest(string Descripcion, decimal Valor, DateOnly Fecha);
 public record ToggleVinculoRequest(Guid Id, bool Vincular);
+public record AgregarCampoRequest(string Label, string? Valor);
 
 // ----- Resumen / Completitud -----
 public record ResumenMiCopropiedadDto(

@@ -81,6 +81,37 @@ else
                     <div class="fem-dato"><span>Ubicacion</span><b>@(string.IsNullOrEmpty(eq.Ubicacion) ? "—" : eq.Ubicacion)</b></div>
                     <div class="fem-dato"><span>Fecha de compra</span><b>@(eq.FechaAdquisicion?.ToString("dd MMM yyyy") ?? "—")</b></div>
                     <div class="fem-dato"><span>Proximo manten.</span><b>@ProximoMantenimiento()</b></div>
+                    @foreach (var c in _ficha.CamposPersonalizados)
+                    {
+                        var cid = c.Id;
+                        <div class="fem-dato fem-dato--custom">
+                            <span>@c.Label</span>
+                            <b>@(string.IsNullOrEmpty(c.Valor) ? "—" : c.Valor)</b>
+                            <button class="fem-dato-del" type="button" title="Quitar campo" @onclick="@(() => EliminarCampoAsync(cid))">
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                            </button>
+                        </div>
+                    }
+                </div>
+                <div class="fem-campo-add">
+                    @if (_campoOpen)
+                    {
+                        <div class="fem-campo-form">
+                            <input class="fem-input" @bind="_campoLabel" placeholder="Nombre del campo (ej. N de medidor)" />
+                            <input class="fem-input" @bind="_campoValor" placeholder="Valor" />
+                            <div class="fem-campo-actions">
+                                <button class="fem-btn-ghost-sm" type="button" @onclick="CancelarCampo">Cancelar</button>
+                                <button class="fem-btn-brand-sm" type="button" @onclick="AgregarCampoAsync" disabled="@_busy">Guardar</button>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <button class="fem-campo-btn" type="button" @onclick="@(() => _campoOpen = true)">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+                            Agregar campo personalizado
+                        </button>
+                    }
                 </div>
 
                 <div class="fem-sectlbl">VALOR Y DEPRECIACION</div>
@@ -332,10 +363,22 @@ else
     .fem-foto-add:hover { border-color: var(--propia-brand, #6D4FE3); background: #F5F1FE; }
     .fem-foto-input { display: none; }
 
-    .fem-datos { display: flex; flex-direction: column; gap: 1px; background: #EEF3F8; border: 1px solid #EEF3F8; border-radius: 11px; overflow: hidden; margin-bottom: 16px; }
-    .fem-dato { background: #fff; padding: 10px 13px; display: flex; justify-content: space-between; }
+    .fem-datos { display: flex; flex-direction: column; gap: 1px; background: #EEF3F8; border: 1px solid #EEF3F8; border-radius: 11px; overflow: hidden; margin-bottom: 10px; }
+    .fem-dato { background: #fff; padding: 10px 13px; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
     .fem-dato span { font-size: 11.5px; color: #A6B7C8; font-weight: 600; }
-    .fem-dato b { font-size: 12px; font-weight: 700; color: #33475B; text-align: right; }
+    .fem-dato b { font-size: 12px; font-weight: 700; color: #33475B; text-align: right; flex: 1; }
+    .fem-dato--custom b { padding-right: 4px; }
+    .fem-dato-del { width: 18px; height: 18px; border-radius: 5px; border: 0; background: transparent; color: #C3D0DD; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .fem-dato-del:hover { background: #FDE7E7; color: #D7263D; }
+
+    .fem-campo-add { margin-bottom: 16px; }
+    .fem-campo-btn { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: #F1ECFD; border: 1px solid #DCD2F8; padding: 6px 11px; border-radius: 7px; cursor: pointer; font-family: inherit; }
+    .fem-campo-btn:hover { background: #E6DEFA; }
+    .fem-campo-form { background: #FBFAFE; border: 1px dashed #DCD2F8; border-radius: 10px; padding: 11px; display: flex; flex-direction: column; gap: 7px; }
+    .fem-campo-actions { display: flex; justify-content: flex-end; gap: 6px; }
+    .fem-btn-ghost-sm { padding: 6px 12px; border-radius: 7px; border: 1px solid #E1E8EE; background: #fff; font-size: 12px; font-weight: 700; color: #516F90; cursor: pointer; font-family: inherit; }
+    .fem-btn-brand-sm { padding: 6px 12px; border-radius: 7px; border: 0; background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .fem-btn-brand-sm:disabled { opacity: .55; }
 
     .fem-dep { background: #fff; border: 1px solid #E1E8EE; border-radius: 13px; padding: 15px; }
     .fem-dep-top { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 3px; }
@@ -439,6 +482,10 @@ else
 
     private string _mejoraDesc = "";
     private decimal? _mejoraValor;
+
+    private bool _campoOpen;
+    private string _campoLabel = "";
+    private string _campoValor = "";
 
     private FormState _form = new();
 
@@ -550,6 +597,29 @@ else
     private async Task EliminarMejoraAsync(Guid id)
     {
         try { var r = await Auth().DeleteAsync($"/api/mi-copropiedad/equipos/mejoras/{id}"); if (r.IsSuccessStatusCode) { _dirty = true; await CargarAsync(); } }
+        catch (Exception ex) { Toast(ex.Message, true); }
+    }
+
+    private void CancelarCampo() { _campoOpen = false; _campoLabel = ""; _campoValor = ""; }
+
+    private async Task AgregarCampoAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_campoLabel)) { Toast("Escribe el nombre del campo.", true); return; }
+        _busy = true;
+        try
+        {
+            var req = new AgregarCampoRequest(_campoLabel.Trim(), string.IsNullOrWhiteSpace(_campoValor) ? null : _campoValor.Trim());
+            var r = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/equipos/{EqId}/campos", req);
+            if (r.IsSuccessStatusCode) { _dirty = true; CancelarCampo(); await CargarAsync(); Toast("Campo agregado.", false); }
+            else Toast($"Error: {(int)r.StatusCode}", true);
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+        _busy = false;
+    }
+
+    private async Task EliminarCampoAsync(Guid id)
+    {
+        try { var r = await Auth().DeleteAsync($"/api/mi-copropiedad/equipos/campos/{id}"); if (r.IsSuccessStatusCode) { _dirty = true; await CargarAsync(); } }
         catch (Exception ex) { Toast(ex.Message, true); }
     }
 

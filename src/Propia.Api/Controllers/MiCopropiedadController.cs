@@ -370,6 +370,21 @@ public class MiCopropiedadController : ControllerBase
         return NoContent();
     }
 
+    [HttpPost("equipos/{id:guid}/campos")]
+    public async Task<IActionResult> AgregarCampo(Guid id, [FromBody] AgregarCampoRequest req, CancellationToken ct)
+    {
+        try
+        {
+            var dto = await _svc.AgregarCampoEquipoAsync(id, req, ct);
+            return dto is null ? BadRequest(new { error = "no_active_tenant" }) : Ok(dto);
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpDelete("equipos/campos/{campoId:guid}")]
+    public async Task<IActionResult> EliminarCampo(Guid campoId, CancellationToken ct)
+        => await _svc.EliminarCampoEquipoAsync(campoId, ct) ? NoContent() : NotFound();
+
     // ---------- Ventanas de disponibilidad (equipos reservables y zonas comunes) ----------
     [HttpGet("disponibilidad")]
     public async Task<IActionResult> ListVentanas(

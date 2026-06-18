@@ -35,3 +35,14 @@ public class EquipoContratoVinculo : TenantEntity
     public Guid EquipoActivoId { get; set; }
     public Guid ContratoServicioId { get; set; }
 }
+
+/// <summary>
+/// Campo personalizado (EAV) de la ficha tecnica de un equipo/activo. Extiende la ficha
+/// sin migraciones: ej. "N de medidor", "Marca de cerradura", "Capacidad (BTU)".
+/// </summary>
+public class EquipoCampoPersonalizado : TenantEntity
+{
+    public Guid EquipoActivoId { get; set; }
+    public string Label { get; set; } = null!;
+    public string? Valor { get; set; }
+}

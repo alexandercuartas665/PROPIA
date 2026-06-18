@@ -257,6 +257,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<EquipoMejora> EquipoMejoras => Set<EquipoMejora>();
     public DbSet<EquipoVinculo> EquipoVinculos => Set<EquipoVinculo>();
     public DbSet<EquipoContratoVinculo> EquipoContratoVinculos => Set<EquipoContratoVinculo>();
+    public DbSet<EquipoCampoPersonalizado> EquipoCamposPersonalizados => Set<EquipoCampoPersonalizado>();
 
     // Modulo 0.2 - Billing y Suscripciones (todo GLOBAL, sin tenant_id)
     public DbSet<Plan> Planes => Set<Plan>();
@@ -2267,6 +2268,13 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
         });
         modelBuilder.Entity<EquipoContratoVinculo>(b =>
         {
+            b.HasIndex(x => new { x.TenantId, x.EquipoActivoId });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<EquipoCampoPersonalizado>(b =>
+        {
+            b.Property(x => x.Label).IsRequired().HasMaxLength(120);
+            b.Property(x => x.Valor).HasMaxLength(500);
             b.HasIndex(x => new { x.TenantId, x.EquipoActivoId });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
