@@ -64,16 +64,14 @@
         if (path.indexOf('/_dev/') === 0) return true;        // paginas de desarrollo
         return false;
     }
-    function rutaEsAdmin(path) {
-        return path === '/admin' || path.indexOf('/admin/') === 0;
-    }
     function guardSession() {
         try {
             var path = (window.location.pathname || '/').toLowerCase();
             if (rutaEsPublica(path)) return;
-            var esAdmin = rutaEsAdmin(path);
-            var key = esAdmin ? 'propia_admin_jwt' : 'propia_jwt';
-            if (leerCualquiera(key)) return; // tenemos token, dejar pasar
+            // Cualquier sesion valida (cliente o super admin) deja pasar. El acceso fino
+            // lo resuelve cada pagina + la autorizacion del API. Asi rutas de super admin
+            // (/panel-plataforma, /admin/*) que usan propia_admin_jwt no se rebotan.
+            if (leerCualquiera('propia_jwt') || leerCualquiera('propia_admin_jwt')) return;
             var qs = window.location.pathname + (window.location.search || '');
             if (!qs || qs === '/') qs = path;
             var url = '/login?returnUrl=' + encodeURIComponent(qs);
