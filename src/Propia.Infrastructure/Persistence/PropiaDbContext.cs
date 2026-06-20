@@ -121,6 +121,12 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<TareaComentario> TareaComentarios => Set<TareaComentario>();
     public DbSet<TareaHistorial> TareaHistorial => Set<TareaHistorial>();
     public DbSet<TareaDependencia> TareaDependencias => Set<TareaDependencia>();
+    // Tableros de trabajo (2.10)
+    public DbSet<Tablero> Tableros => Set<Tablero>();
+    public DbSet<TableroUsuario> TableroUsuarios => Set<TableroUsuario>();
+    public DbSet<TableroCampo> TableroCampos => Set<TableroCampo>();
+    public DbSet<TareaCampoValor> TareaCampoValores => Set<TareaCampoValor>();
+    public DbSet<TareaAdjunto> TareaAdjuntos => Set<TareaAdjunto>();
 
     // Modulo 2.7 Cartera y Estado de Cuenta (TenantEntity con RLS)
     public DbSet<EstadoCarteraConfig> EstadosCarteraConfig => Set<EstadoCarteraConfig>();
@@ -893,7 +899,8 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.Nombre).IsRequired().HasMaxLength(80);
             b.Property(x => x.Color).HasMaxLength(20);
             b.HasIndex(x => x.TenantId);
-            b.HasIndex(x => new { x.TenantId, x.Nombre }).IsUnique();
+            // Unico por tablero (el mismo nombre de columna puede repetirse entre tableros distintos).
+            b.HasIndex(x => new { x.TenantId, x.TableroId, x.Nombre }).IsUnique();
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

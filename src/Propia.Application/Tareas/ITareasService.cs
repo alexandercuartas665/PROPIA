@@ -43,4 +43,11 @@ public interface ITareasService
 
     // Indicadores
     Task<ResumenTareasDto> GetResumenAsync(CancellationToken ct);
+
+    // Tableros de trabajo (2.10)
+    Task<IReadOnlyList<TableroDto>> ListarTablerosAsync(CancellationToken ct);
+    Task<TableroDto?> GetTableroAsync(Guid id, CancellationToken ct);
+    Task<TableroDto> CrearTableroAsync(GuardarTableroRequest req, CancellationToken ct);
+    Task<bool> ActualizarTableroAsync(Guid id, GuardarTableroRequest req, CancellationToken ct);
+    Task<bool> EliminarTableroAsync(Guid id, CancellationToken ct);
 }

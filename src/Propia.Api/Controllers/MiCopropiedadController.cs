@@ -332,7 +332,7 @@ public class MiCopropiedadController : ControllerBase
         if (ext == "") return BadRequest(new { error = "Formato no soportado. Usa JPG, PNG o WEBP." });
         var key = $"tenants/{tenantId:N}/equipos/{id:N}/{Guid.NewGuid():N}{ext}";
         await using var stream = file.OpenReadStream();
-        var url = await _storage.UploadAsync(key, stream, file.ContentType, ct);
+        var url = Absolutizar(await _storage.UploadAsync(key, stream, file.ContentType, ct));
         var dto = await _svc.AgregarFotoEquipoAsync(id, url, ct);
         return dto is null ? BadRequest(new { error = "No se pudo registrar la foto." }) : Ok(dto);
     }
@@ -423,7 +423,7 @@ public class MiCopropiedadController : ControllerBase
         if (ext == "") return BadRequest(new { error = "Formato no soportado. Usa JPG, PNG o WEBP." });
         var key = $"tenants/{tenantId:N}/zonas/{id:N}/{Guid.NewGuid():N}{ext}";
         await using var stream = file.OpenReadStream();
-        var url = await _storage.UploadAsync(key, stream, file.ContentType, ct);
+        var url = Absolutizar(await _storage.UploadAsync(key, stream, file.ContentType, ct));
         var saved = await _svc.SetZonaImagenAsync(id, url, ct);
         return saved is null ? NotFound() : Ok(new { url = saved });
     }
@@ -450,7 +450,7 @@ public class MiCopropiedadController : ControllerBase
         var safe = System.IO.Path.GetExtension(file.FileName);
         var key = $"tenants/{tenantId:N}/zonas/{id:N}/docs/{Guid.NewGuid():N}{safe}";
         await using var stream = file.OpenReadStream();
-        var url = await _storage.UploadAsync(key, stream, file.ContentType, ct);
+        var url = Absolutizar(await _storage.UploadAsync(key, stream, file.ContentType, ct));
         var dto = await _svc.AgregarZonaDocumentoAsync(id, file.FileName, url, ct);
         return dto is null ? BadRequest(new { error = "No se pudo registrar el documento." }) : Ok(dto);
     }
@@ -482,7 +482,7 @@ public class MiCopropiedadController : ControllerBase
         if (ext == "") return BadRequest(new { error = "Formato no soportado. Usa JPG, PNG o WEBP." });
         var key = $"tenants/{tenantId:N}/zonas/{id:N}/novedades/{Guid.NewGuid():N}{ext}";
         await using var stream = file.OpenReadStream();
-        var url = await _storage.UploadAsync(key, stream, file.ContentType, ct);
+        var url = Absolutizar(await _storage.UploadAsync(key, stream, file.ContentType, ct));
         return Ok(new { url });
     }
 
@@ -647,4 +647,11 @@ public class MiCopropiedadController : ControllerBase
         var raw = User.FindFirstValue("persona_id");
         return Guid.TryParse(raw, out var g) ? g : null;
     }
+
+    /// <summary>
+    /// El blob local (Development) devuelve URLs relativas (/uploads/...). El Web se sirve en otro
+    /// origen que el API, asi que esas URLs no resuelven. Las absolutizamos contra el API. En
+    /// produccion R2 ya devuelve URLs absolutas (no empiezan con '/') y esto las deja igual.
+    /// </summary>
+    private string Absolutizar(string url) => url.StartsWith('/') ? $"{Request.Scheme}://{Request.Host}{url}" : url;
 }

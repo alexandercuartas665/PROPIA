@@ -771,4 +771,137 @@ public class TareasService : ITareasService
         return new BulkResultDto(req.TareaIds.Count, aplicados,
             req.TareaIds.Count - aplicados, Array.Empty<string>());
     }
+
+    // ===================== Tableros de trabajo =====================
+
+    private static string? ColorEstadoBase(string nombre) => nombre switch
+    {
+        EstadoTareaBase.Pendiente => "#94a3b8",
+        EstadoTareaBase.EnProgreso => "#3b82f6",
+        EstadoTareaBase.EnRevision => "#f59e0b",
+        EstadoTareaBase.Bloqueada => "#ef4444",
+        EstadoTareaBase.Completada => "#22c55e",
+        EstadoTareaBase.Cancelada => "#6b7280",
+        _ => "#94a3b8"
+    };
+
+    private static string Iniciales(string? nombre)
+    {
+        var parts = (nombre ?? "").Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return "?";
+        if (parts.Length == 1) return parts[0].Substring(0, Math.Min(2, parts[0].Length)).ToUpperInvariant();
+        return ("" + parts[0][0] + parts[1][0]).ToUpperInvariant();
+    }
+
+    private async Task SembrarEstadosTableroAsync(Guid tableroId, CancellationToken ct)
+    {
+        foreach (var (nombre, orden, esTerminal) in EstadoTareaBase.Base)
+            _db.TareasEstados.Add(new TareaEstado
+            {
+                TableroId = tableroId,
+                Nombre = nombre,
+                Orden = orden,
+                EsTerminal = esTerminal,
+                EsBase = true,
+                Activo = true,
+                Color = ColorEstadoBase(nombre)
+            });
+        await _db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Crea el tablero "General" si no existe y migra estados/tareas legacy (TableroId null) a el.</summary>
+    private async Task<Guid> AsegurarTableroDefaultAsync(CancellationToken ct)
+    {
+        var existing = await _db.Tableros.OrderBy(t => t.Orden).Select(t => t.Id).FirstOrDefaultAsync(ct);
+        if (existing != Guid.Empty) return existing;
+
+        var t = new Tablero { Nombre = "General", Descripcion = "Tablero principal de tareas.", Color = "#6D4FE3", Orden = 0, Activo = true };
+        _db.Tableros.Add(t);
+        await _db.SaveChangesAsync(ct);
+
+        // Migrar estados y tareas legacy (sin tablero) al tablero por defecto.
+        await _db.TareasEstados.Where(e => e.TableroId == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(e => e.TableroId, t.Id), ct);
+        await _db.Tareas.Where(x => x.TableroId == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.TableroId, t.Id), ct);
+        return t.Id;
+    }
+
+    private async Task<TableroDto> MapTableroAsync(Tablero t, CancellationToken ct)
+    {
+        var nCards = await _db.Tareas.AsNoTracking().CountAsync(x => x.TableroId == t.Id && x.PadreId == null, ct);
+        var usuariosIds = await _db.TableroUsuarios.AsNoTracking().Where(u => u.TableroId == t.Id).Select(u => u.PersonaId).ToListAsync(ct);
+        var personas = await _db.Personas.AsNoTracking().Where(p => usuariosIds.Contains(p.Id))
+            .Select(p => new { p.Id, Nombre = p.Nombres + " " + p.Apellidos }).ToListAsync(ct);
+        var usuarios = personas.Select(p => new TableroUsuarioDto(p.Id, p.Nombre.Trim(), Iniciales(p.Nombre))).ToList();
+        return new TableroDto(t.Id, t.Nombre, t.Descripcion, t.Color, t.Orden, nCards, usuarios);
+    }
+
+    public async Task<IReadOnlyList<TableroDto>> ListarTablerosAsync(CancellationToken ct)
+    {
+        await AsegurarEstadosBaseAsync(ct);
+        await AsegurarTableroDefaultAsync(ct);
+        var tableros = await _db.Tableros.AsNoTracking().Where(t => t.Activo).OrderBy(t => t.Orden).ToListAsync(ct);
+        var result = new List<TableroDto>(tableros.Count);
+        foreach (var t in tableros) result.Add(await MapTableroAsync(t, ct));
+        return result;
+    }
+
+    public async Task<TableroDto?> GetTableroAsync(Guid id, CancellationToken ct)
+    {
+        var t = await _db.Tableros.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        return t is null ? null : await MapTableroAsync(t, ct);
+    }
+
+    private async Task SetTableroUsuariosAsync(Guid tableroId, IReadOnlyList<Guid>? personaIds, CancellationToken ct)
+    {
+        await _db.TableroUsuarios.Where(u => u.TableroId == tableroId).ExecuteDeleteAsync(ct);
+        foreach (var pid in (personaIds ?? Array.Empty<Guid>()).Distinct())
+            _db.TableroUsuarios.Add(new TableroUsuario { TableroId = tableroId, PersonaId = pid });
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task<TableroDto> CrearTableroAsync(GuardarTableroRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Nombre)) throw new InvalidOperationException("Nombre del tablero requerido.");
+        var maxOrden = await _db.Tableros.AnyAsync(ct) ? await _db.Tableros.MaxAsync(t => t.Orden, ct) : -1;
+        var t = new Tablero
+        {
+            Nombre = req.Nombre.Trim(),
+            Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim(),
+            Color = string.IsNullOrWhiteSpace(req.Color) ? "#6D4FE3" : req.Color.Trim(),
+            Orden = maxOrden + 1,
+            Activo = true
+        };
+        _db.Tableros.Add(t);
+        await _db.SaveChangesAsync(ct);
+        await SetTableroUsuariosAsync(t.Id, req.UsuarioPersonaIds, ct);
+        await SembrarEstadosTableroAsync(t.Id, ct);
+        return (await GetTableroAsync(t.Id, ct))!;
+    }
+
+    public async Task<bool> ActualizarTableroAsync(Guid id, GuardarTableroRequest req, CancellationToken ct)
+    {
+        var t = await _db.Tableros.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (t is null) return false;
+        if (string.IsNullOrWhiteSpace(req.Nombre)) throw new InvalidOperationException("Nombre del tablero requerido.");
+        t.Nombre = req.Nombre.Trim();
+        t.Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim();
+        t.Color = string.IsNullOrWhiteSpace(req.Color) ? t.Color : req.Color.Trim();
+        t.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        await SetTableroUsuariosAsync(t.Id, req.UsuarioPersonaIds, ct);
+        return true;
+    }
+
+    public async Task<bool> EliminarTableroAsync(Guid id, CancellationToken ct)
+    {
+        var t = await _db.Tableros.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (t is null) return false;
+        // Soft-delete: ocultamos el tablero pero conservamos sus tarjetas/estados.
+        t.Activo = false;
+        t.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
 }

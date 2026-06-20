@@ -132,3 +132,11 @@ public record BulkResultDto(
     int Aplicados,
     int Omitidos,
     IReadOnlyList<string> Errores);
+
+// ----- Tableros de trabajo (2.10) -----
+public record TableroUsuarioDto(Guid PersonaId, string Nombre, string Iniciales);
+public record TableroDto(
+    Guid Id, string Nombre, string? Descripcion, string Color, int Orden,
+    int NCards, IReadOnlyList<TableroUsuarioDto> Usuarios);
+public record GuardarTableroRequest(
+    string Nombre, string? Descripcion, string Color, IReadOnlyList<Guid> UsuarioPersonaIds);

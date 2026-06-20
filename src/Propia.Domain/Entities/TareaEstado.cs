@@ -9,6 +9,9 @@ namespace Propia.Domain.Entities;
 /// </summary>
 public class TareaEstado : TenantEntity
 {
+    /// <summary>Tablero al que pertenece la columna/estado. Null = estados legacy (Kanban unico).</summary>
+    public Guid? TableroId { get; set; }
+
     public string Nombre { get; set; } = string.Empty;
 
     /// <summary>Color hexadecimal para chips en UI. Opcional.</summary>

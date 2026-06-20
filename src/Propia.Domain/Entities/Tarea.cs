@@ -12,6 +12,9 @@ public class Tarea : TenantEntity
     /// <summary>Codigo visible "T-{AÑO}-{SEQ}" generado automaticamente. Spec 6.1.</summary>
     public string NumeroTarea { get; set; } = string.Empty;
 
+    /// <summary>Tablero al que pertenece la tarjeta. Null = tareas legacy (Kanban unico).</summary>
+    public Guid? TableroId { get; set; }
+
     public string Titulo { get; set; } = string.Empty;
     public string? Descripcion { get; set; }
 
@@ -19,6 +22,18 @@ public class Tarea : TenantEntity
     public TareaEstado? Estado { get; set; }
 
     public PrioridadTarea Prioridad { get; set; } = PrioridadTarea.Normal;
+
+    // ----- Campos de tarjeta del prototipo (2.10) -----
+    /// <summary>Color hex de la tarjeta (borde/cabecera del modal).</summary>
+    public string? Color { get; set; }
+    /// <summary>Marca la tarjeta como proyecto.</summary>
+    public bool EsProyecto { get; set; }
+    /// <summary>Valor/costo estimado en COP.</summary>
+    public decimal? Valor { get; set; }
+    /// <summary>Avance 0-100.</summary>
+    public int Progreso { get; set; }
+    public TimeOnly? HoraInicio { get; set; }
+    public TimeOnly? HoraFin { get; set; }
 
     /// <summary>Responsable principal (FK Persona del Directorio). Opcional.</summary>
     public Guid? AsignadoPersonaId { get; set; }

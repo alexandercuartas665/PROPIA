@@ -156,4 +156,33 @@ public class TareasController : ControllerBase
     [HttpPost("bulk/asignado")]
     public async Task<IActionResult> BulkAsignarPersona([FromBody] BulkAsignarPersonaRequest req, CancellationToken ct)
         => Ok(await _svc.BulkAsignarPersonaAsync(req, ct));
+
+    // ----- Tableros de trabajo (2.10) -----
+    [HttpGet("tableros")]
+    public async Task<IActionResult> ListarTableros(CancellationToken ct) => Ok(await _svc.ListarTablerosAsync(ct));
+
+    [HttpGet("tableros/{id:guid}")]
+    public async Task<IActionResult> GetTablero(Guid id, CancellationToken ct)
+    {
+        var t = await _svc.GetTableroAsync(id, ct);
+        return t is null ? NotFound() : Ok(t);
+    }
+
+    [HttpPost("tableros")]
+    public async Task<IActionResult> CrearTablero([FromBody] GuardarTableroRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.CrearTableroAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpPut("tableros/{id:guid}")]
+    public async Task<IActionResult> ActualizarTablero(Guid id, [FromBody] GuardarTableroRequest req, CancellationToken ct)
+    {
+        try { return await _svc.ActualizarTableroAsync(id, req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpDelete("tableros/{id:guid}")]
+    public async Task<IActionResult> EliminarTablero(Guid id, CancellationToken ct)
+        => await _svc.EliminarTableroAsync(id, ct) ? NoContent() : NotFound();
 }
