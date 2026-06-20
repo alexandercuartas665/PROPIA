@@ -15,8 +15,11 @@ public class PlatformBranding : BaseEntity
     /// <summary>Bajada corta bajo el nombre.</summary>
     public string? Tagline { get; set; }
 
-    /// <summary>URL del logo principal del login. Null = logo por defecto.</summary>
+    /// <summary>URL del logo principal del login (y panel lateral). Null = logo por defecto.</summary>
     public string? LoginLogoUrl { get; set; }
+
+    /// <summary>URL del icono cuadrado (rail del sidebar + favicon). Null = icono por defecto.</summary>
+    public string? IconUrl { get; set; }
 
     /// <summary>Titular grande del panel del login.</summary>
     public string? LoginHeadline { get; set; }

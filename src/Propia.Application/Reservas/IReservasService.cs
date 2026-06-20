@@ -48,6 +48,9 @@ public interface IReservasService
     Task<bool> CancelarComoResidenteAsync(Guid id, CancelarReservaRequest req, CancellationToken ct);
     Task<bool> CancelarComoAdminAsync(Guid id, CancelarReservaRequest req, CancellationToken ct);
 
+    /// <summary>Aprueba una reserva en PendienteAprobacion (la pasa a Confirmada). RN-04.</summary>
+    Task<bool> AprobarAsync(Guid id, CancellationToken ct);
+
     // ----- Bloqueos -----
     Task<IReadOnlyList<BloqueoDto>> ListarBloqueosAsync(Guid? zonaId, DateOnly? desde, DateOnly? hasta, CancellationToken ct);
     Task<BloqueoDto> CrearBloqueoAsync(CrearBloqueoRequest req, CancellationToken ct);

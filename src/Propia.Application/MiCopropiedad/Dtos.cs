@@ -394,3 +394,50 @@ public record ActualizarConfiguracionFinanzasRequest(
     string? CuentaContable,
     string? ZonaFacturacion,
     int? EstratoFacturacion);
+
+// ===========================================================================
+// Ficha completa de zona comun (2.3 seccion 4, prototipo zonaDet)
+// ===========================================================================
+
+public record ZonaFacturaDto(Guid Id, string Concepto, decimal? Valor, DateOnly? Fecha);
+public record ZonaDocumentoDto(Guid Id, string Nombre, string Url);
+public record ZonaCampoDto(Guid Id, string Label, string? Valor);
+public record ZonaContratoRefDto(Guid Id, string Nombre);
+
+public record ZonaComentarioDto(Guid Id, string AutorNombre, string AutorIniciales, string Texto, string FechaTexto);
+
+public record ZonaNovedadDto(
+    Guid Id, string Titulo, string? Texto, string? ImagenUrl,
+    string AutorNombre, string AutorIniciales, string FechaTexto,
+    int Likes, bool YoDiLike,
+    IReadOnlyList<ZonaComentarioDto> Comentarios);
+
+/// <summary>Agregado que alimenta el modal de ficha completa de la zona comun.</summary>
+public record ZonaFichaDto(
+    ZonaComunDto Zona,
+    string? ImagenUrl,
+    string MantenimientoTipo,
+    string? MantenimientoContrato,
+    string MantenimientoFrecuencia,
+    int? MantenimientoDiaMes,
+    IReadOnlyList<ZonaFacturaDto> Facturas,
+    IReadOnlyList<ZonaDocumentoDto> Documentos,
+    IReadOnlyList<ZonaCampoDto> Campos,
+    IReadOnlyList<VentanaDisponibilidadDto> Horarios,
+    IReadOnlyList<ZonaContratoRefDto> ContratosDisponibles,
+    IReadOnlyList<ZonaNovedadDto> Novedades);
+
+/// <summary>Guarda la config de la ficha (imagen + mantenimiento + reservable + aforo).</summary>
+public record GuardarZonaFichaRequest(
+    string? ImagenUrl,
+    string MantenimientoTipo,
+    string? MantenimientoContrato,
+    string MantenimientoFrecuencia,
+    int? MantenimientoDiaMes,
+    bool EsReservable,
+    int? CapacidadPersonas);
+
+public record AgregarZonaFacturaRequest(string Concepto, decimal? Valor, DateOnly? Fecha);
+public record AgregarZonaCampoRequest(string Label, string? Valor);
+public record PublicarZonaNovedadRequest(string Titulo, string? Texto, string? ImagenUrl);
+public record ComentarZonaNovedadRequest(string Texto);

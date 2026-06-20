@@ -118,6 +118,21 @@ public interface IMiCopropiedadService
     Task<EquipoCampoDto?> AgregarCampoEquipoAsync(Guid equipoId, AgregarCampoRequest req, CancellationToken ct);
     Task<bool> EliminarCampoEquipoAsync(Guid campoId, CancellationToken ct);
 
+    // Ficha completa de zona comun (seccion 4, prototipo zonaDet).
+    Task<ZonaFichaDto?> GetZonaFichaAsync(Guid zonaId, Guid? personaId, CancellationToken ct);
+    Task<bool> GuardarZonaFichaAsync(Guid zonaId, GuardarZonaFichaRequest req, CancellationToken ct);
+    Task<string?> SetZonaImagenAsync(Guid zonaId, string url, CancellationToken ct);
+    Task<ZonaFacturaDto?> AgregarZonaFacturaAsync(Guid zonaId, AgregarZonaFacturaRequest req, CancellationToken ct);
+    Task<bool> EliminarZonaFacturaAsync(Guid facturaId, CancellationToken ct);
+    Task<ZonaDocumentoDto?> AgregarZonaDocumentoAsync(Guid zonaId, string nombre, string url, CancellationToken ct);
+    Task<bool> EliminarZonaDocumentoAsync(Guid docId, CancellationToken ct);
+    Task<ZonaCampoDto?> AgregarZonaCampoAsync(Guid zonaId, AgregarZonaCampoRequest req, CancellationToken ct);
+    Task<bool> EliminarZonaCampoAsync(Guid campoId, CancellationToken ct);
+    Task<ZonaNovedadDto?> PublicarZonaNovedadAsync(Guid zonaId, PublicarZonaNovedadRequest req, Guid? personaId, CancellationToken ct);
+    Task<bool> EliminarZonaNovedadAsync(Guid novedadId, CancellationToken ct);
+    Task<ZonaComentarioDto?> ComentarZonaNovedadAsync(Guid novedadId, ComentarZonaNovedadRequest req, Guid? personaId, CancellationToken ct);
+    Task<int> ToggleZonaNovedadLikeAsync(Guid novedadId, Guid? personaId, CancellationToken ct);
+
     // Seccion 8 - Finanzas (parametros). El resumen en tiempo real lo orquesta el controller
     // combinando 2.6 Presupuesto + 2.7 Cartera.
     IReadOnlyList<MonedaDto> ListMonedas();

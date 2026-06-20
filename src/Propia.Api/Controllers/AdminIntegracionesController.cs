@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Propia.Application.Common;
 using Propia.Application.Integraciones;
+using Propia.Infrastructure.Storage;
 
 namespace Propia.Api.Controllers;
 
@@ -22,6 +23,7 @@ public class AdminIntegracionesController : ControllerBase
     private readonly IWompiConfigService _wompi;
     private readonly IEvolutionMasterConfigService _evolution;
     private readonly IGoogleAuthConfigService _google;
+    private readonly IBlobStorage _storage;
 
     public AdminIntegracionesController(
         IEmailConfigService email,
@@ -30,7 +32,8 @@ public class AdminIntegracionesController : ControllerBase
         IAiServerConfigService ai,
         IWompiConfigService wompi,
         IEvolutionMasterConfigService evolution,
-        IGoogleAuthConfigService google)
+        IGoogleAuthConfigService google,
+        IBlobStorage storage)
     {
         _email = email;
         _branding = branding;
@@ -39,6 +42,7 @@ public class AdminIntegracionesController : ControllerBase
         _wompi = wompi;
         _evolution = evolution;
         _google = google;
+        _storage = storage;
     }
 
     // -------------------- Servidor de Correo --------------------
@@ -85,6 +89,35 @@ public class AdminIntegracionesController : ControllerBase
         var (id, email) = Actor();
         await _branding.SaveAsync(req, id, email, Ip(), ct);
         return Ok(await _branding.GetAsync(ct));
+    }
+
+    /// <summary>Sube un archivo de imagen (logo o icono) de la marca y devuelve su URL absoluta.</summary>
+    [HttpPost("branding/logo")]
+    [RequestSizeLimit(6_000_000)]
+    public async Task<IActionResult> SubirLogoMarca(IFormFile file, CancellationToken ct)
+    {
+        if (file is null || file.Length == 0) return BadRequest(new { error = "Archivo vacio." });
+        if (file.Length > 5_000_000) return BadRequest(new { error = "Maximo 5 MB." });
+        var ext = file.ContentType switch
+        {
+            "image/jpeg" => ".jpg",
+            "image/png" => ".png",
+            "image/webp" => ".webp",
+            "image/svg+xml" => ".svg",
+            _ => ""
+        };
+        if (ext == "") return BadRequest(new { error = "Formato no soportado. Usa PNG, JPG, WEBP o SVG." });
+
+        var key = $"branding/{Guid.NewGuid():N}{ext}";
+        await using var stream = file.OpenReadStream();
+        var url = await _storage.UploadAsync(key, stream, file.ContentType, ct);
+
+        // En Development el blob local devuelve una URL relativa (/uploads/...). El login y el
+        // sidebar se sirven desde Propia.Web (otro origen), asi que la absolutizamos contra el API.
+        if (url.StartsWith('/'))
+            url = $"{Request.Scheme}://{Request.Host}{url}";
+
+        return Ok(new { url });
     }
 
     // -------------------- Servidores de IA --------------------

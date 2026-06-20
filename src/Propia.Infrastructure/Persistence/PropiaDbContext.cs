@@ -259,6 +259,14 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<EquipoContratoVinculo> EquipoContratoVinculos => Set<EquipoContratoVinculo>();
     public DbSet<EquipoCampoPersonalizado> EquipoCamposPersonalizados => Set<EquipoCampoPersonalizado>();
 
+    // Ficha de zona comun (2.3 seccion 4)
+    public DbSet<ZonaFactura> ZonaFacturas => Set<ZonaFactura>();
+    public DbSet<ZonaDocumento> ZonaDocumentos => Set<ZonaDocumento>();
+    public DbSet<ZonaCampoPersonalizado> ZonaCamposPersonalizados => Set<ZonaCampoPersonalizado>();
+    public DbSet<ZonaNovedad> ZonaNovedades => Set<ZonaNovedad>();
+    public DbSet<ZonaNovedadComentario> ZonaNovedadComentarios => Set<ZonaNovedadComentario>();
+    public DbSet<ZonaNovedadLike> ZonaNovedadLikes => Set<ZonaNovedadLike>();
+
     // Modulo 0.2 - Billing y Suscripciones (todo GLOBAL, sin tenant_id)
     public DbSet<Plan> Planes => Set<Plan>();
     public DbSet<Cupon> Cupones => Set<Cupon>();

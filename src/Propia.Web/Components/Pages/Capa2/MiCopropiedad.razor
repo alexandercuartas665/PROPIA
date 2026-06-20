@@ -501,10 +501,19 @@ else
         </div>
         @if (_zonas.Count > 0)
         {
-            <div class="mc-zn-chips">
-                @foreach (var grupo in _zonas.GroupBy(z => z.Categoria).OrderBy(g => g.Key))
+            <div class="mc-zn-cards">
+                @foreach (var z in _zonas.OrderBy(x => x.Categoria).ThenBy(x => x.Nombre))
                 {
-                    <span class="mc-zn-chip">@grupo.Key (@grupo.Count())</span>
+                    var zona = z;
+                    <button type="button" class="mc-zn-card" @onclick="() => AbrirFichaZonaAsync(zona)" title="Abrir ficha de la zona">
+                        <div class="mc-zn-card-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V8h14v13M9 12h.01M15 12h.01"/></svg></div>
+                        <div class="mc-zn-card-id">
+                            <div class="mc-zn-card-nom">@z.Nombre</div>
+                            <div class="mc-zn-card-meta">@z.Categoria@(z.CapacidadPersonas.HasValue ? $" · Aforo {z.CapacidadPersonas}" : "") · @(z.EsReservable ? "Reservable" : "No reservable")</div>
+                        </div>
+                        @if (z.Estado == EstadoZonaComunMantenimiento.EnMantenimiento) { <span class="mc-zn-card-mant">Mant.</span> }
+                        <svg class="mc-zn-card-arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18l6-6-6-6"/></svg>
+                    </button>
                 }
             </div>
         }
@@ -978,6 +987,17 @@ else
         background: #F5F8FA; border: 1px solid #E1E8EE;
         padding: 4px 10px; border-radius: 7px;
     }
+    .mc-zn-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
+    .mc-zn-card { display: flex; align-items: center; gap: 11px; border: 1px solid #E1E8EE; border-radius: 11px; padding: 11px 14px; width: 100%; text-align: left; background: #fff; cursor: pointer; transition: border-color .12s, background .12s; }
+    .mc-zn-card:hover { border-color: #6D4FE3; background: #FBFAFE; }
+    .mc-zn-card-ic { width: 36px; height: 36px; border-radius: 9px; background: #F1ECFD; color: #6D4FE3; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .mc-zn-card-id { flex: 1; min-width: 0; }
+    .mc-zn-card-nom { font-size: 13px; font-weight: 700; color: #33475B; }
+    .mc-zn-card-meta { font-size: 11px; color: #A6B7C8; }
+    .mc-zn-card-mant { font-size: 9.5px; font-weight: 700; color: #B45309; background: #FEF3DC; padding: 3px 7px; border-radius: 6px; white-space: nowrap; }
+    .mc-zn-card-arrow { color: #C3D0DD; flex-shrink: 0; }
+    [data-bs-theme="dark"] .mc-zn-card { background: #232B40; border-color: #2D3650; }
+    [data-bs-theme="dark"] .mc-zn-card-nom { color: #E5E7EB; }
     [data-bs-theme="dark"] .mc-srv-stat,
     [data-bs-theme="dark"] .mc-zn-stat { background: #232B40; border-color: #2D3650; }
     [data-bs-theme="dark"] .mc-srv-stat-val,
@@ -1546,6 +1566,14 @@ else
             await CargarAsync();
             Msg("Zonas actualizadas", true);
         }
+    }
+
+    private async Task AbrirFichaZonaAsync(ZonaComunDto zona)
+    {
+        var parameters = new ModalParameters().Set("Jwt", _jwt).Set("Zona", zona);
+        var options = new ModalOptions { Width = "960px" };
+        var hubo = await Modals.OpenAsync<FichaZonaModal, bool>(parameters, options);
+        if (hubo == true) { await CargarAsync(); Msg("Ficha de zona actualizada", true); }
     }
 
     private async Task AbrirBitacoraAsync()

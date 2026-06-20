@@ -1,0 +1,569 @@
+@* FichaZonaModal - ficha completa de zona comun (2.3 seccion 4), fiel al prototipo zonaDet.
+   2 columnas: izq = imagen + mantenimiento + facturas + documentos + campos dinamicos + disponibilidad;
+   der = muro de novedades (publicar + likes + comentarios). *@
+
+@inherits ModalBase<bool>
+@using Propia.Application.MiCopropiedad
+@using Propia.Domain.Enums
+@using Propia.Web.Components.Shared
+@using Microsoft.AspNetCore.Components.Forms
+@inject IHttpClientFactory HttpFactory
+
+@if (_ficha is null)
+{
+    <div class="fz-loading"><div class="spinner-border" style="color:#6D4FE3"></div></div>
+}
+else
+{
+<div class="fz-head">
+    <div class="fz-head-ic"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V8h14v13M9 12h.01M15 12h.01"/></svg></div>
+    <div class="fz-head-tt">
+        <div class="fz-head-h">@_ficha.Zona.Nombre</div>
+        <div class="fz-head-s">@_ficha.Zona.Categoria &middot; Aforo @(_aforo?.ToString() ?? "-") &middot; @_ficha.Zona.Estado</div>
+    </div>
+    @if (_reservable) { <span class="fz-badge-res">Reservable</span> }
+    <button class="fz-x" @onclick="Cerrar"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+</div>
+
+<div class="fz-grid">
+    @* ===================== IZQUIERDA ===================== *@
+    <div class="fz-left">
+        @* Imagen *@
+        <div>
+            @if (!string.IsNullOrWhiteSpace(_imagenUrl))
+            {
+                <div class="fz-img" style="background-image:url('@_imagenUrl')"></div>
+                <label class="fz-img-change">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>Cambiar imagen
+                    <InputFile OnChange="SubirImagen" accept="image/png,image/jpeg,image/webp" hidden />
+                </label>
+            }
+            else
+            {
+                <label class="fz-img-drop">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-9 7"/></svg>
+                    <span>@(_subiendoImg ? "Subiendo..." : "Cargar imagen")</span>
+                    <InputFile OnChange="SubirImagen" accept="image/png,image/jpeg,image/webp" hidden disabled="@_subiendoImg" />
+                </label>
+            }
+        </div>
+
+        @* Mantenimiento *@
+        <div class="fz-block">
+            <div class="fz-block-t">PROGRAMA DE MANTENIMIENTO</div>
+            <label class="fz-lbl">Tipo</label>
+            <select class="fz-in" @bind="_mantTipo">
+                <option value="Interno">Interno</option>
+                <option value="Contrato">Por contrato</option>
+            </select>
+            @if (_mantTipo == "Contrato")
+            {
+                <label class="fz-lbl">Contrato relacionado</label>
+                <select class="fz-in" @bind="_mantContrato">
+                    <option value="">Seleccionar...</option>
+                    @foreach (var c in _ficha.ContratosDisponibles) { <option value="@c.Nombre">@c.Nombre</option> }
+                </select>
+            }
+            <label class="fz-lbl">Frecuencia</label>
+            <select class="fz-in" @bind="_mantFrec">
+                @foreach (var f in new[] { "Semanal", "Quincenal", "Mensual", "Trimestral", "Semestral" }) { <option value="@f">@f</option> }
+            </select>
+            @if (_mantFrec == "Mensual")
+            {
+                <div class="fz-diames">Cae el dia <input type="number" min="1" max="31" class="fz-in-sm" @bind="_mantDia" /> de cada mes</div>
+            }
+            <button class="fz-btn-green" @onclick="GenerarTarea" disabled="@_busy">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                Generar tarea de mantenimiento
+            </button>
+            @if (!string.IsNullOrEmpty(_tareaMsg)) { <div class="fz-ok-note">@_tareaMsg</div> }
+        </div>
+
+        @* Facturas *@
+        <div class="fz-block">
+            <div class="fz-block-t">FACTURAS DE COMPRA</div>
+            @foreach (var f in _ficha.Facturas)
+            {
+                var fid = f.Id;
+                <div class="fz-row-item">
+                    <div class="fz-row-ic fz-ic-blue"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg></div>
+                    <div class="fz-row-main"><div class="fz-row-nom">@f.Concepto</div><div class="fz-row-sub">@(f.Valor.HasValue ? "$ " + f.Valor.Value.ToString("N0") : "") @(f.Fecha.HasValue ? "- " + f.Fecha.Value.ToString("yyyy-MM-dd") : "")</div></div>
+                    <button class="fz-del-sm" @onclick="() => EliminarFactura(fid)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                </div>
+            }
+            <div class="fz-addrow">
+                <input class="fz-in fz-grow" @bind="_facConcepto" placeholder="Concepto de compra" />
+                <input class="fz-in-sm2" type="number" @bind="_facValor" placeholder="$ valor" />
+                <button class="fz-add" @onclick="AgregarFactura"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></button>
+            </div>
+        </div>
+
+        @* Documentos *@
+        <div class="fz-block">
+            <div class="fz-block-t">DOCUMENTOS</div>
+            @foreach (var d in _ficha.Documentos)
+            {
+                var did = d.Id;
+                <div class="fz-row-item">
+                    <div class="fz-row-ic fz-ic-violet"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg></div>
+                    <a class="fz-row-main fz-doc-link" href="@d.Url" target="_blank"><div class="fz-row-nom">@d.Nombre</div></a>
+                    <button class="fz-del-sm" @onclick="() => EliminarDocumento(did)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                </div>
+            }
+            <label class="fz-upload">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>@(_subiendoDoc ? "Subiendo..." : "Cargar documento")
+                <InputFile OnChange="SubirDocumento" hidden disabled="@_subiendoDoc" />
+            </label>
+        </div>
+
+        @* Campos dinamicos *@
+        <div class="fz-block">
+            <div class="fz-block-t">CAMPOS DINAMICOS</div>
+            @foreach (var c in _ficha.Campos)
+            {
+                var cid = c.Id;
+                <div class="fz-row-item">
+                    <div class="fz-row-main"><div class="fz-row-nom">@c.Label</div><div class="fz-row-sub">@c.Valor</div></div>
+                    <button class="fz-del-sm" @onclick="() => EliminarCampo(cid)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                </div>
+            }
+            <div class="fz-addrow">
+                <input class="fz-in" style="width:42%" @bind="_campoLabel" placeholder="Campo" />
+                <input class="fz-in fz-grow" @bind="_campoValor" placeholder="Valor" />
+                <button class="fz-add" @onclick="AgregarCampo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></button>
+            </div>
+        </div>
+
+        @* Disponibilidad *@
+        <div class="fz-block">
+            <div class="fz-disp-head">
+                <div class="fz-block-t" style="margin:0">DISPONIBILIDAD</div>
+                <button class="fz-toggle @(_reservable ? "on" : "")" @onclick="() => _reservable = !_reservable">
+                    <span class="fz-toggle-track"><span class="fz-toggle-knob"></span></span>
+                    @(_reservable ? "Reservable" : "No reservable")
+                </button>
+            </div>
+            <div class="fz-aforo">Aforo maximo <input type="number" min="0" class="fz-in-sm" @bind="_aforo" /> personas</div>
+            @if (_reservable)
+            {
+                <div class="fz-block-t" style="margin-top:10px">HORARIOS DE SERVICIO</div>
+                <DisponibilidadHorariosEditor @ref="_horariosEditor" Iniciales="_ficha.Horarios" />
+            }
+        </div>
+    </div>
+
+    @* ===================== DERECHA: muro de novedades ===================== *@
+    <div class="fz-right">
+        <div class="fz-right-t">NOVEDADES DE LA ZONA</div>
+        <div class="fz-publish">
+            <div class="fz-publish-head"><div class="fz-ava">AD</div><span>Publicar novedad</span></div>
+            <input class="fz-in" @bind="_novTitulo" placeholder="Titulo (ej. Cancha renovada)" />
+            <textarea class="fz-in fz-ta" rows="2" @bind="_novTexto" placeholder="Cuenta la novedad..."></textarea>
+            @if (!string.IsNullOrWhiteSpace(_novImagenUrl))
+            {
+                <div class="fz-nov-preview" style="background-image:url('@_novImagenUrl')">
+                    <button class="fz-nov-preview-x" @onclick="() => _novImagenUrl = null" title="Quitar imagen">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                    </button>
+                </div>
+            }
+            <div class="fz-publish-foot">
+                <label class="fz-attach">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-9 7"/></svg>
+                    @(_subiendoNovImg ? "Subiendo..." : "Imagen")
+                    <InputFile OnChange="SubirNovedadImagen" accept="image/png,image/jpeg,image/webp" hidden disabled="@_subiendoNovImg" />
+                </label>
+                <button class="fz-btn-brand" @onclick="PublicarNovedad" disabled="@(_busy || string.IsNullOrWhiteSpace(_novTitulo))">Publicar</button>
+            </div>
+        </div>
+
+        <div class="fz-feed">
+            @if (_ficha.Novedades.Count == 0)
+            {
+                <div class="fz-feed-empty">Aun no hay novedades. Publica la primera.</div>
+            }
+            @foreach (var n in _ficha.Novedades)
+            {
+                var nid = n.Id;
+                <div class="fz-post">
+                    <div class="fz-post-head">
+                        <div class="fz-ava">@n.AutorIniciales</div>
+                        <div class="fz-post-meta"><div class="fz-post-autor">@n.AutorNombre</div><div class="fz-post-fecha">@n.FechaTexto</div></div>
+                        <button class="fz-del-sm" @onclick="() => EliminarNovedad(nid)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                    </div>
+                    <div class="fz-post-tit">@n.Titulo</div>
+                    @if (!string.IsNullOrWhiteSpace(n.Texto)) { <div class="fz-post-txt">@n.Texto</div> }
+                    @if (!string.IsNullOrWhiteSpace(n.ImagenUrl)) { <div class="fz-post-img" style="background-image:url('@n.ImagenUrl')"></div> }
+                    <div class="fz-post-actions">
+                        <button class="fz-like @(n.YoDiLike ? "on" : "")" @onclick="() => ToggleLike(nid)">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="@(n.YoDiLike ? "currentColor" : "none")" stroke="currentColor" stroke-width="2"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
+                            @n.Likes
+                        </button>
+                        <span class="fz-coment-count">@n.Comentarios.Count comentarios</span>
+                    </div>
+                    @foreach (var cm in n.Comentarios)
+                    {
+                        <div class="fz-coment"><div class="fz-ava fz-ava-sm">@cm.AutorIniciales</div><div class="fz-coment-body"><span class="fz-coment-autor">@cm.AutorNombre</span> @cm.Texto <span class="fz-coment-fecha">&middot; @cm.FechaTexto</span></div></div>
+                    }
+                    <div class="fz-coment-add">
+                        <input class="fz-in fz-in-coment" placeholder="Escribe un comentario..." value="@(_comentTexto.TryGetValue(nid, out var v) ? v : "")" @oninput="(e) => _comentTexto[nid] = e.Value?.ToString() ?? string.Empty" />
+                        <button class="fz-add" @onclick="() => Comentar(nid)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<div class="fz-foot">
+    @if (!string.IsNullOrEmpty(_msg)) { <span class="fz-foot-msg">@_msg</span> }
+    <button class="fz-btn-ghost" @onclick="Cerrar">Cerrar</button>
+    <button class="fz-btn-brand" @onclick="GuardarConfig" disabled="@_busy">@(_busy ? "Guardando..." : "Guardar cambios")</button>
+</div>
+}
+
+<style>
+    .fz-loading { padding: 80px; display: flex; justify-content: center; }
+    .fz-head { display: flex; align-items: center; gap: 13px; padding: 16px 22px; border-bottom: 1px solid #EEF3F8; flex-shrink: 0; }
+    .fz-head-ic { width: 42px; height: 42px; border-radius: 11px; background: #F1ECFD; color: #6D4FE3; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .fz-head-tt { flex: 1; min-width: 0; }
+    .fz-head-h { font-size: 18px; font-weight: 800; letter-spacing: -.3px; color: #1B2A3A; }
+    .fz-head-s { font-size: 12px; color: #7C98B6; }
+    .fz-badge-res { font-size: 11px; font-weight: 700; color: #1A8754; background: #E6F6EE; padding: 5px 11px; border-radius: 8px; flex-shrink: 0; }
+    .fz-x { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; color: #7C98B6; border: 1px solid #E1E8EE; background: #fff; cursor: pointer; flex-shrink: 0; }
+    .fz-x:hover { background: #F5F8FA; color: #33475B; }
+
+    .fz-grid { display: grid; grid-template-columns: 340px 1fr; min-height: 0; flex: 1; overflow: hidden; }
+    .fz-left { overflow-y: auto; padding: 18px 20px; border-right: 1px solid #EEF3F8; background: #FBFCFD; display: flex; flex-direction: column; gap: 16px; }
+    .fz-right { display: flex; flex-direction: column; min-height: 0; background: #F5F7FA; overflow: hidden; }
+
+    .fz-img { height: 150px; border-radius: 12px; background-size: cover; background-position: center; }
+    .fz-img-change { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 7px; font-size: 11.5px; font-weight: 700; color: #6D4FE3; cursor: pointer; }
+    .fz-img-drop { height: 150px; border-radius: 12px; border: 1.5px dashed #C3D0DD; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; cursor: pointer; color: #6D4FE3; font-size: 12px; font-weight: 700; }
+    .fz-img-drop:hover { border-color: #6D4FE3; background: #F5F1FE; }
+
+    .fz-block { }
+    .fz-block-t { font-size: 11px; letter-spacing: .5px; color: #A6B7C8; font-weight: 700; margin-bottom: 8px; }
+    .fz-lbl { font-size: 11px; color: #7C98B6; font-weight: 700; display: block; margin: 7px 0 5px; }
+    .fz-in { width: 100%; border: 1px solid #E1E8EE; border-radius: 9px; padding: 9px 11px; font-size: 12.5px; color: #33475B; outline: none; background: #fff; box-sizing: border-box; }
+    .fz-in:focus { border-color: #6D4FE3; }
+    .fz-ta { resize: vertical; }
+    .fz-in-sm { width: 56px; border: 1px solid #E1E8EE; border-radius: 7px; padding: 5px 8px; font-size: 12px; color: #33475B; outline: none; background: #fff; margin: 0 4px; }
+    .fz-in-sm2 { width: 84px; border: 1px solid #E1E8EE; border-radius: 8px; padding: 7px 9px; font-size: 11.5px; color: #33475B; outline: none; background: #fff; box-sizing: border-box; }
+    .fz-diames { display: flex; align-items: center; font-size: 11.5px; color: #516F90; font-weight: 600; margin-top: 9px; }
+    .fz-btn-green { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; margin-top: 10px; padding: 9px; border-radius: 9px; background: #1A8754; color: #fff; font-size: 12px; font-weight: 700; border: 0; cursor: pointer; }
+    .fz-btn-green:hover { background: #15703F; }
+    .fz-ok-note { margin-top: 8px; font-size: 11px; color: #15703F; background: #E6F6EE; border: 1px solid #BFE8CF; border-radius: 8px; padding: 7px 10px; font-weight: 600; }
+
+    .fz-row-item { display: flex; align-items: center; gap: 9px; border: 1px solid #E1E8EE; border-radius: 9px; padding: 8px 11px; background: #fff; margin-bottom: 6px; }
+    .fz-row-ic { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .fz-ic-blue { background: #E6F2FB; color: #2563EB; }
+    .fz-ic-violet { background: #F1ECFD; color: #6D4FE3; }
+    .fz-row-main { flex: 1; min-width: 0; text-decoration: none; }
+    .fz-row-nom { font-size: 11.5px; font-weight: 700; color: #33475B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .fz-row-sub { font-size: 10px; color: #A6B7C8; }
+    .fz-doc-link:hover .fz-row-nom { color: #6D4FE3; }
+    .fz-del-sm { width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #C3D0DD; flex-shrink: 0; border: 0; background: transparent; cursor: pointer; }
+    .fz-del-sm:hover { background: #FDE7E7; color: #D7263D; }
+    .fz-addrow { display: flex; gap: 6px; align-items: center; }
+    .fz-grow { flex: 1; min-width: 0; }
+    .fz-add { width: 32px; height: 34px; flex-shrink: 0; border-radius: 8px; background: #6D4FE3; color: #fff; display: flex; align-items: center; justify-content: center; border: 0; cursor: pointer; }
+    .fz-add:hover { background: #5838C9; }
+    .fz-upload { display: flex; align-items: center; justify-content: center; gap: 6px; border: 1px dashed #C3D0DD; border-radius: 9px; padding: 9px; cursor: pointer; font-size: 11.5px; font-weight: 700; color: #6D4FE3; background: #FBFAFE; }
+    .fz-upload:hover { border-color: #6D4FE3; background: #F5F1FE; }
+
+    .fz-disp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
+    .fz-toggle { display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 700; color: #7C98B6; border: 0; background: transparent; cursor: pointer; }
+    .fz-toggle.on { color: #1A8754; }
+    .fz-toggle-track { width: 34px; height: 19px; border-radius: 11px; background: #C3D0DD; position: relative; display: inline-block; transition: background .15s; }
+    .fz-toggle.on .fz-toggle-track { background: #1A8754; }
+    .fz-toggle-knob { position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; transition: left .15s; }
+    .fz-toggle.on .fz-toggle-knob { left: 17px; }
+    .fz-aforo { display: flex; align-items: center; font-size: 11.5px; color: #516F90; font-weight: 600; }
+
+    .fz-right-t { padding: 16px 20px 10px; flex-shrink: 0; font-size: 11px; letter-spacing: .5px; color: #A6B7C8; font-weight: 700; }
+    .fz-publish { margin: 0 20px 12px; background: #fff; border: 1px solid #E1E8EE; border-radius: 13px; padding: 12px 13px; box-shadow: 0 1px 2px rgba(45,62,80,.05); flex-shrink: 0; }
+    .fz-publish-head { display: flex; align-items: center; gap: 9px; margin-bottom: 9px; }
+    .fz-ava { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg,#8366F0,#5838C9); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; flex-shrink: 0; }
+    .fz-ava-sm { width: 24px; height: 24px; font-size: 9.5px; }
+    .fz-publish-head span { font-size: 12px; font-weight: 700; color: #33475B; }
+    .fz-publish .fz-in { margin-bottom: 7px; }
+    .fz-publish-foot { display: flex; align-items: center; justify-content: space-between; }
+    .fz-attach { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: #6D4FE3; cursor: pointer; padding: 6px 8px; border-radius: 8px; }
+    .fz-attach:hover { background: #F5F1FE; }
+    .fz-nov-preview { position: relative; height: 120px; border-radius: 10px; background-size: cover; background-position: center; margin-bottom: 8px; }
+    .fz-nov-preview-x { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border-radius: 7px; border: 0; background: rgba(27,42,58,.6); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+    .fz-nov-preview-x:hover { background: rgba(27,42,58,.85); }
+    .fz-btn-brand { padding: 8px 16px; border-radius: 9px; background: #6D4FE3; color: #fff; font-size: 12.5px; font-weight: 700; border: 0; cursor: pointer; box-shadow: 0 4px 12px rgba(109,79,227,.3); }
+    .fz-btn-brand:hover { background: #5838C9; }
+    .fz-btn-brand:disabled { opacity: .55; cursor: default; box-shadow: none; }
+    .fz-btn-ghost { padding: 8px 16px; border-radius: 9px; border: 1px solid #E1E8EE; background: #fff; font-size: 12.5px; font-weight: 600; color: #516F90; cursor: pointer; }
+    .fz-btn-ghost:hover { border-color: #C3D0DD; }
+
+    .fz-feed { flex: 1; overflow-y: auto; padding: 0 20px 18px; display: flex; flex-direction: column; gap: 11px; }
+    .fz-feed-empty { font-size: 12.5px; color: #A6B7C8; text-align: center; padding: 22px; }
+    .fz-post { background: #fff; border: 1px solid #E1E8EE; border-radius: 13px; padding: 13px; box-shadow: 0 1px 2px rgba(45,62,80,.05); }
+    .fz-post-head { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; }
+    .fz-post-meta { flex: 1; min-width: 0; }
+    .fz-post-autor { font-size: 12px; font-weight: 700; color: #33475B; }
+    .fz-post-fecha { font-size: 10.5px; color: #A6B7C8; }
+    .fz-post-tit { font-size: 13.5px; font-weight: 800; color: #1B2A3A; margin-bottom: 3px; }
+    .fz-post-txt { font-size: 12.5px; color: #516F90; line-height: 1.45; white-space: pre-wrap; }
+    .fz-post-img { height: 140px; border-radius: 10px; background-size: cover; background-position: center; margin-top: 9px; }
+    .fz-post-actions { display: flex; align-items: center; gap: 13px; margin: 10px 0 4px; }
+    .fz-like { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: #7C98B6; border: 0; background: transparent; cursor: pointer; }
+    .fz-like.on { color: #6D4FE3; }
+    .fz-coment-count { font-size: 11px; color: #A6B7C8; }
+    .fz-coment { display: flex; align-items: flex-start; gap: 8px; margin-top: 8px; }
+    .fz-coment-body { font-size: 12px; color: #516F90; line-height: 1.4; }
+    .fz-coment-autor { font-weight: 700; color: #33475B; }
+    .fz-coment-fecha { font-size: 10px; color: #B7C4D2; }
+    .fz-coment-add { display: flex; gap: 6px; margin-top: 9px; }
+    .fz-in-coment { font-size: 11.5px; padding: 7px 10px; }
+
+    .fz-foot { display: flex; align-items: center; justify-content: flex-end; gap: 9px; padding: 14px 22px; border-top: 1px solid #EEF3F8; flex-shrink: 0; }
+    .fz-foot-msg { flex: 1; font-size: 12px; color: #15703F; font-weight: 600; }
+</style>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+    [Parameter] public ZonaComunDto? Zona { get; set; }
+
+    private ZonaFichaDto? _ficha;
+    private bool _busy;
+    private bool _subiendoImg;
+    private bool _subiendoDoc;
+    private bool _dirty;
+    private string _msg = "";
+    private string _tareaMsg = "";
+
+    // estado editable de config
+    private string? _imagenUrl;
+    private string _mantTipo = "Interno";
+    private string? _mantContrato;
+    private string _mantFrec = "Mensual";
+    private int? _mantDia;
+    private bool _reservable;
+    private int? _aforo;
+
+    // forms
+    private string _facConcepto = "";
+    private decimal? _facValor;
+    private string _campoLabel = "";
+    private string _campoValor = "";
+    private string _novTitulo = "";
+    private string _novTexto = "";
+    private string? _novImagenUrl;
+    private bool _subiendoNovImg;
+    private readonly Dictionary<Guid, string> _comentTexto = new();
+
+    private DisponibilidadHorariosEditor? _horariosEditor;
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    private async Task CargarAsync()
+    {
+        if (Zona is null) return;
+        try
+        {
+            _ficha = await Auth().GetFromJsonAsync<ZonaFichaDto>($"/api/mi-copropiedad/zonas/{Zona.Id}/ficha");
+            if (_ficha is not null)
+            {
+                _imagenUrl = _ficha.ImagenUrl;
+                _mantTipo = _ficha.MantenimientoTipo;
+                _mantContrato = _ficha.MantenimientoContrato;
+                _mantFrec = _ficha.MantenimientoFrecuencia;
+                _mantDia = _ficha.MantenimientoDiaMes;
+                _reservable = _ficha.Zona.EsReservable;
+                _aforo = _ficha.Zona.CapacidadPersonas;
+            }
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+    }
+
+    private async Task Recargar() => await CargarAsync();
+
+    private async Task SubirImagen(InputFileChangeEventArgs e)
+    {
+        if (Zona is null || e.File is null) return;
+        _subiendoImg = true; _msg = "";
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var sc = new StreamContent(e.File.OpenReadStream(5_000_000));
+            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(e.File.ContentType);
+            content.Add(sc, "file", e.File.Name);
+            var resp = await Auth().PostAsync($"/api/mi-copropiedad/zonas/{Zona.Id}/imagen", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                var dto = await resp.Content.ReadFromJsonAsync<UrlResp>();
+                _imagenUrl = dto?.url; _dirty = true;
+            }
+            else { _msg = await resp.Content.ReadAsStringAsync(); }
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+        finally { _subiendoImg = false; }
+    }
+
+    private async Task GenerarTarea()
+    {
+        if (Zona is null) return;
+        _busy = true; _tareaMsg = "";
+        try
+        {
+            var req = new
+            {
+                Titulo = $"Mantenimiento {_mantFrec.ToLower()}: {Zona.Nombre}",
+                Descripcion = $"Tarea generada desde la ficha de la zona comun. Tipo: {_mantTipo}." + (string.IsNullOrWhiteSpace(_mantContrato) ? "" : $" Contrato: {_mantContrato}."),
+                Prioridad = 2,
+                EstadoId = (Guid?)null,
+                AsignadoPersonaId = (Guid?)null,
+                FechaInicio = (DateOnly?)null,
+                FechaVencimiento = (DateOnly?)null,
+                PadreId = (Guid?)null,
+                EtiquetaIds = (List<Guid>?)null
+            };
+            var resp = await Auth().PostAsJsonAsync("/api/tareas", req);
+            _tareaMsg = resp.IsSuccessStatusCode ? "Tarea de mantenimiento creada en Tareas (2.10)." : "No se pudo generar la tarea.";
+        }
+        catch (Exception ex) { _tareaMsg = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task AgregarFactura()
+    {
+        if (Zona is null || string.IsNullOrWhiteSpace(_facConcepto)) return;
+        var req = new AgregarZonaFacturaRequest(_facConcepto.Trim(), _facValor, null);
+        var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/zonas/{Zona.Id}/facturas", req);
+        if (resp.IsSuccessStatusCode) { _facConcepto = ""; _facValor = null; _dirty = true; await Recargar(); }
+    }
+    private async Task EliminarFactura(Guid id)
+    {
+        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/zonas/facturas/{id}");
+        if (resp.IsSuccessStatusCode) { _dirty = true; await Recargar(); }
+    }
+
+    private async Task SubirDocumento(InputFileChangeEventArgs e)
+    {
+        if (Zona is null || e.File is null) return;
+        _subiendoDoc = true; _msg = "";
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var sc = new StreamContent(e.File.OpenReadStream(10_000_000));
+            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(string.IsNullOrEmpty(e.File.ContentType) ? "application/octet-stream" : e.File.ContentType);
+            content.Add(sc, "file", e.File.Name);
+            var resp = await Auth().PostAsync($"/api/mi-copropiedad/zonas/{Zona.Id}/documentos", content);
+            if (resp.IsSuccessStatusCode) { _dirty = true; await Recargar(); }
+            else { _msg = await resp.Content.ReadAsStringAsync(); }
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+        finally { _subiendoDoc = false; }
+    }
+    private async Task EliminarDocumento(Guid id)
+    {
+        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/zonas/documentos/{id}");
+        if (resp.IsSuccessStatusCode) { _dirty = true; await Recargar(); }
+    }
+
+    private async Task AgregarCampo()
+    {
+        if (Zona is null || string.IsNullOrWhiteSpace(_campoLabel)) return;
+        var req = new AgregarZonaCampoRequest(_campoLabel.Trim(), string.IsNullOrWhiteSpace(_campoValor) ? null : _campoValor.Trim());
+        var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/zonas/{Zona.Id}/campos", req);
+        if (resp.IsSuccessStatusCode) { _campoLabel = ""; _campoValor = ""; _dirty = true; await Recargar(); }
+    }
+    private async Task EliminarCampo(Guid id)
+    {
+        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/zonas/campos/{id}");
+        if (resp.IsSuccessStatusCode) { _dirty = true; await Recargar(); }
+    }
+
+    private async Task SubirNovedadImagen(InputFileChangeEventArgs e)
+    {
+        if (Zona is null || e.File is null) return;
+        _subiendoNovImg = true; _msg = "";
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var sc = new StreamContent(e.File.OpenReadStream(5_000_000));
+            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(e.File.ContentType);
+            content.Add(sc, "file", e.File.Name);
+            var resp = await Auth().PostAsync($"/api/mi-copropiedad/zonas/{Zona.Id}/novedad-imagen", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                var dto = await resp.Content.ReadFromJsonAsync<UrlResp>();
+                _novImagenUrl = dto?.url;
+            }
+            else { _msg = await resp.Content.ReadAsStringAsync(); }
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+        finally { _subiendoNovImg = false; }
+    }
+
+    private async Task PublicarNovedad()
+    {
+        if (Zona is null || string.IsNullOrWhiteSpace(_novTitulo)) return;
+        _busy = true;
+        try
+        {
+            var req = new PublicarZonaNovedadRequest(_novTitulo.Trim(), string.IsNullOrWhiteSpace(_novTexto) ? null : _novTexto.Trim(), _novImagenUrl);
+            var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/zonas/{Zona.Id}/novedades", req);
+            if (resp.IsSuccessStatusCode) { _novTitulo = ""; _novTexto = ""; _novImagenUrl = null; _dirty = true; await Recargar(); }
+        }
+        finally { _busy = false; }
+    }
+    private async Task EliminarNovedad(Guid id)
+    {
+        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/zonas/novedades/{id}");
+        if (resp.IsSuccessStatusCode) { _dirty = true; await Recargar(); }
+    }
+    private async Task ToggleLike(Guid id)
+    {
+        var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/zonas/novedades/{id}/like", new { });
+        if (resp.IsSuccessStatusCode) { _dirty = true; await Recargar(); }
+    }
+    private async Task Comentar(Guid novedadId)
+    {
+        if (!_comentTexto.TryGetValue(novedadId, out var txt) || string.IsNullOrWhiteSpace(txt)) return;
+        var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/zonas/novedades/{novedadId}/comentarios", new ComentarZonaNovedadRequest(txt.Trim()));
+        if (resp.IsSuccessStatusCode) { _comentTexto[novedadId] = ""; _dirty = true; await Recargar(); }
+    }
+
+    private async Task GuardarConfig()
+    {
+        if (Zona is null) return;
+        _busy = true; _msg = "";
+        try
+        {
+            var req = new GuardarZonaFichaRequest(_imagenUrl, _mantTipo, _mantContrato, _mantFrec, _mantDia, _reservable, _aforo);
+            var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/zonas/{Zona.Id}/ficha", req);
+            if (!resp.IsSuccessStatusCode) { _msg = "Error: " + await resp.Content.ReadAsStringAsync(); return; }
+
+            // Horarios (solo si reservable y el editor esta montado)
+            if (_reservable && _horariosEditor is not null)
+            {
+                var ventanas = _horariosEditor.Snapshot();
+                var vreq = new GuardarVentanasRequest(TipoEntidadDisponibilidad.ZonaComun, Zona.Id, ventanas);
+                await Auth().PutAsJsonAsync("/api/mi-copropiedad/disponibilidad", vreq);
+            }
+            _dirty = true;
+            _msg = "Cambios guardados.";
+            await Recargar();
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private void Cerrar() => Close(_dirty);
+
+    private sealed class UrlResp { public string? url { get; set; } }
+}

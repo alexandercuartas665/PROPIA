@@ -89,6 +89,13 @@ public class ReservasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [HttpPost("{id:guid}/aprobar")]
+    public async Task<IActionResult> Aprobar(Guid id, CancellationToken ct)
+    {
+        try { return await _svc.AprobarAsync(id, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     // ----- Bloqueos -----
 
     [HttpGet("bloqueos")]

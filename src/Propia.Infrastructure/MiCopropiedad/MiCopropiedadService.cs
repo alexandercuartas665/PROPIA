@@ -1703,4 +1703,234 @@ public class MiCopropiedadService : IMiCopropiedadService
         });
         await _db.SaveChangesAsync(ct);
     }
+
+    // ----------------------------- Ficha completa de zona comun (seccion 4) -----------------------------
+
+    public async Task<ZonaFichaDto?> GetZonaFichaAsync(Guid zonaId, Guid? personaId, CancellationToken ct)
+    {
+        var z = await _db.ZonasComunes.AsNoTracking().FirstOrDefaultAsync(x => x.Id == zonaId, ct);
+        if (z is null) return null;
+
+        var zonaDto = new ZonaComunDto(z.Id, z.Nombre, z.Categoria, z.Descripcion, z.EsReservable,
+            z.TarifaReserva, z.CapacidadPersonas, z.HorariosUso, z.ReglasUso, z.Estado);
+
+        var facturas = await _db.ZonaFacturas.AsNoTracking().Where(f => f.ZonaComunId == zonaId)
+            .OrderByDescending(f => f.Fecha)
+            .Select(f => new ZonaFacturaDto(f.Id, f.Concepto, f.Valor, f.Fecha)).ToListAsync(ct);
+
+        var docs = await _db.ZonaDocumentos.AsNoTracking().Where(d => d.ZonaComunId == zonaId)
+            .OrderByDescending(d => d.CreatedAt)
+            .Select(d => new ZonaDocumentoDto(d.Id, d.Nombre, d.Url)).ToListAsync(ct);
+
+        var campos = await _db.ZonaCamposPersonalizados.AsNoTracking().Where(c => c.ZonaComunId == zonaId)
+            .OrderBy(c => c.CreatedAt)
+            .Select(c => new ZonaCampoDto(c.Id, c.Label, c.Valor)).ToListAsync(ct);
+
+        var horarios = await _db.VentanasDisponibilidad.AsNoTracking()
+            .Where(v => v.TipoEntidad == TipoEntidadDisponibilidad.ZonaComun && v.EntidadId == zonaId)
+            .OrderBy(v => v.DiaSemana).ThenBy(v => v.HoraInicio)
+            .Select(v => new VentanaDisponibilidadDto(v.Id, v.TipoEntidad, v.EntidadId, v.DiaSemana, v.HoraInicio, v.HoraFin, v.Activa))
+            .ToListAsync(ct);
+
+        var contratos = await _db.ContratosServicio.AsNoTracking()
+            .Select(c => new ZonaContratoRefDto(c.Id, c.Tipo + " - " + c.Proveedor)).ToListAsync(ct);
+
+        var novedadesRaw = await _db.ZonaNovedades.AsNoTracking().Where(n => n.ZonaComunId == zonaId)
+            .OrderByDescending(n => n.CreatedAt).ToListAsync(ct);
+        var novIds = novedadesRaw.Select(n => n.Id).ToList();
+        var comentarios = await _db.ZonaNovedadComentarios.AsNoTracking()
+            .Where(c => novIds.Contains(c.ZonaNovedadId)).OrderBy(c => c.CreatedAt).ToListAsync(ct);
+        var misLikes = personaId is Guid pid
+            ? await _db.ZonaNovedadLikes.AsNoTracking().Where(l => novIds.Contains(l.ZonaNovedadId) && l.PersonaId == pid)
+                .Select(l => l.ZonaNovedadId).ToListAsync(ct)
+            : new List<Guid>();
+
+        var novedades = novedadesRaw.Select(n => new ZonaNovedadDto(
+            n.Id, n.Titulo, n.Texto, n.ImagenUrl, n.AutorNombre, Iniciales(n.AutorNombre), FechaRel(n.CreatedAt),
+            n.LikesCount, misLikes.Contains(n.Id),
+            comentarios.Where(c => c.ZonaNovedadId == n.Id)
+                .Select(c => new ZonaComentarioDto(c.Id, c.AutorNombre, Iniciales(c.AutorNombre), c.Texto, FechaRel(c.CreatedAt))).ToList()
+        )).ToList();
+
+        return new ZonaFichaDto(zonaDto, z.ImagenUrl, z.MantenimientoTipo, z.MantenimientoContrato,
+            z.MantenimientoFrecuencia, z.MantenimientoDiaMes, facturas, docs, campos, horarios, contratos, novedades);
+    }
+
+    public async Task<bool> GuardarZonaFichaAsync(Guid zonaId, GuardarZonaFichaRequest req, CancellationToken ct)
+    {
+        var z = await _db.ZonasComunes.FirstOrDefaultAsync(x => x.Id == zonaId, ct);
+        if (z is null) return false;
+        z.ImagenUrl = string.IsNullOrWhiteSpace(req.ImagenUrl) ? null : req.ImagenUrl.Trim();
+        z.MantenimientoTipo = string.IsNullOrWhiteSpace(req.MantenimientoTipo) ? "Interno" : req.MantenimientoTipo.Trim();
+        z.MantenimientoContrato = string.IsNullOrWhiteSpace(req.MantenimientoContrato) ? null : req.MantenimientoContrato.Trim();
+        z.MantenimientoFrecuencia = string.IsNullOrWhiteSpace(req.MantenimientoFrecuencia) ? "Mensual" : req.MantenimientoFrecuencia.Trim();
+        z.MantenimientoDiaMes = req.MantenimientoDiaMes;
+        z.EsReservable = req.EsReservable;
+        z.CapacidadPersonas = req.CapacidadPersonas;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<string?> SetZonaImagenAsync(Guid zonaId, string url, CancellationToken ct)
+    {
+        var z = await _db.ZonasComunes.FirstOrDefaultAsync(x => x.Id == zonaId, ct);
+        if (z is null) return null;
+        z.ImagenUrl = url;
+        await _db.SaveChangesAsync(ct);
+        return url;
+    }
+
+    public async Task<ZonaFacturaDto?> AgregarZonaFacturaAsync(Guid zonaId, AgregarZonaFacturaRequest req, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) return null;
+        if (!await _db.ZonasComunes.AnyAsync(z => z.Id == zonaId, ct)) return null;
+        var f = new ZonaFactura { TenantId = tid, ZonaComunId = zonaId, Concepto = req.Concepto.Trim(), Valor = req.Valor, Fecha = req.Fecha };
+        _db.ZonaFacturas.Add(f);
+        await _db.SaveChangesAsync(ct);
+        return new ZonaFacturaDto(f.Id, f.Concepto, f.Valor, f.Fecha);
+    }
+
+    public async Task<bool> EliminarZonaFacturaAsync(Guid facturaId, CancellationToken ct)
+    {
+        var f = await _db.ZonaFacturas.FirstOrDefaultAsync(x => x.Id == facturaId, ct);
+        if (f is null) return false;
+        _db.ZonaFacturas.Remove(f);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<ZonaDocumentoDto?> AgregarZonaDocumentoAsync(Guid zonaId, string nombre, string url, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) return null;
+        if (!await _db.ZonasComunes.AnyAsync(z => z.Id == zonaId, ct)) return null;
+        var d = new ZonaDocumento { TenantId = tid, ZonaComunId = zonaId, Nombre = nombre.Trim(), Url = url };
+        _db.ZonaDocumentos.Add(d);
+        await _db.SaveChangesAsync(ct);
+        return new ZonaDocumentoDto(d.Id, d.Nombre, d.Url);
+    }
+
+    public async Task<bool> EliminarZonaDocumentoAsync(Guid docId, CancellationToken ct)
+    {
+        var d = await _db.ZonaDocumentos.FirstOrDefaultAsync(x => x.Id == docId, ct);
+        if (d is null) return false;
+        _db.ZonaDocumentos.Remove(d);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<ZonaCampoDto?> AgregarZonaCampoAsync(Guid zonaId, AgregarZonaCampoRequest req, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) return null;
+        if (string.IsNullOrWhiteSpace(req.Label)) return null;
+        if (!await _db.ZonasComunes.AnyAsync(z => z.Id == zonaId, ct)) return null;
+        var c = new ZonaCampoPersonalizado { TenantId = tid, ZonaComunId = zonaId, Label = req.Label.Trim(), Valor = req.Valor?.Trim() };
+        _db.ZonaCamposPersonalizados.Add(c);
+        await _db.SaveChangesAsync(ct);
+        return new ZonaCampoDto(c.Id, c.Label, c.Valor);
+    }
+
+    public async Task<bool> EliminarZonaCampoAsync(Guid campoId, CancellationToken ct)
+    {
+        var c = await _db.ZonaCamposPersonalizados.FirstOrDefaultAsync(x => x.Id == campoId, ct);
+        if (c is null) return false;
+        _db.ZonaCamposPersonalizados.Remove(c);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<ZonaNovedadDto?> PublicarZonaNovedadAsync(Guid zonaId, PublicarZonaNovedadRequest req, Guid? personaId, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) return null;
+        if (string.IsNullOrWhiteSpace(req.Titulo)) return null;
+        if (!await _db.ZonasComunes.AnyAsync(z => z.Id == zonaId, ct)) return null;
+        var autor = await ResolverNombrePersonaAsync(personaId, "Administracion", ct);
+        var n = new ZonaNovedad
+        {
+            TenantId = tid,
+            ZonaComunId = zonaId,
+            Titulo = req.Titulo.Trim(),
+            Texto = string.IsNullOrWhiteSpace(req.Texto) ? null : req.Texto.Trim(),
+            ImagenUrl = string.IsNullOrWhiteSpace(req.ImagenUrl) ? null : req.ImagenUrl.Trim(),
+            AutorNombre = autor,
+            AutorPersonaId = personaId,
+            LikesCount = 0
+        };
+        _db.ZonaNovedades.Add(n);
+        await _db.SaveChangesAsync(ct);
+        return new ZonaNovedadDto(n.Id, n.Titulo, n.Texto, n.ImagenUrl, n.AutorNombre, Iniciales(n.AutorNombre),
+            FechaRel(n.CreatedAt), 0, false, new List<ZonaComentarioDto>());
+    }
+
+    public async Task<bool> EliminarZonaNovedadAsync(Guid novedadId, CancellationToken ct)
+    {
+        var n = await _db.ZonaNovedades.FirstOrDefaultAsync(x => x.Id == novedadId, ct);
+        if (n is null) return false;
+        _db.ZonaNovedadComentarios.RemoveRange(_db.ZonaNovedadComentarios.Where(c => c.ZonaNovedadId == novedadId));
+        _db.ZonaNovedadLikes.RemoveRange(_db.ZonaNovedadLikes.Where(l => l.ZonaNovedadId == novedadId));
+        _db.ZonaNovedades.Remove(n);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<ZonaComentarioDto?> ComentarZonaNovedadAsync(Guid novedadId, ComentarZonaNovedadRequest req, Guid? personaId, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) return null;
+        if (string.IsNullOrWhiteSpace(req.Texto)) return null;
+        if (!await _db.ZonaNovedades.AnyAsync(n => n.Id == novedadId, ct)) return null;
+        var autor = await ResolverNombrePersonaAsync(personaId, "Residente", ct);
+        var c = new ZonaNovedadComentario { TenantId = tid, ZonaNovedadId = novedadId, AutorNombre = autor, AutorPersonaId = personaId, Texto = req.Texto.Trim() };
+        _db.ZonaNovedadComentarios.Add(c);
+        await _db.SaveChangesAsync(ct);
+        return new ZonaComentarioDto(c.Id, c.AutorNombre, Iniciales(c.AutorNombre), c.Texto, FechaRel(c.CreatedAt));
+    }
+
+    public async Task<int> ToggleZonaNovedadLikeAsync(Guid novedadId, Guid? personaId, CancellationToken ct)
+    {
+        var n = await _db.ZonaNovedades.FirstOrDefaultAsync(x => x.Id == novedadId, ct);
+        if (n is null) return 0;
+        if (personaId is Guid pid)
+        {
+            var existing = await _db.ZonaNovedadLikes.FirstOrDefaultAsync(l => l.ZonaNovedadId == novedadId && l.PersonaId == pid, ct);
+            if (existing is null)
+            {
+                if (_tenant.CurrentTenantId is Guid tid)
+                    _db.ZonaNovedadLikes.Add(new ZonaNovedadLike { TenantId = tid, ZonaNovedadId = novedadId, PersonaId = pid });
+                n.LikesCount += 1;
+            }
+            else
+            {
+                _db.ZonaNovedadLikes.Remove(existing);
+                n.LikesCount = Math.Max(0, n.LikesCount - 1);
+            }
+        }
+        else { n.LikesCount += 1; }
+        await _db.SaveChangesAsync(ct);
+        return n.LikesCount;
+    }
+
+    private async Task<string> ResolverNombrePersonaAsync(Guid? personaId, string fallback, CancellationToken ct)
+    {
+        if (personaId is not Guid pid) return fallback;
+        var n = await _db.Personas.AsNoTracking().Where(p => p.Id == pid)
+            .Select(p => p.Nombres + " " + p.Apellidos).FirstOrDefaultAsync(ct);
+        return string.IsNullOrWhiteSpace(n) ? fallback : n.Trim();
+    }
+
+    private static string Iniciales(string? nombre)
+    {
+        var parts = (nombre ?? "").Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return "?";
+        if (parts.Length == 1) return parts[0].Substring(0, Math.Min(2, parts[0].Length)).ToUpperInvariant();
+        return ("" + parts[0][0] + parts[1][0]).ToUpperInvariant();
+    }
+
+    private static string FechaRel(DateTimeOffset dt)
+    {
+        var d = DateTimeOffset.UtcNow - dt;
+        if (d.TotalMinutes < 1) return "ahora";
+        if (d.TotalMinutes < 60) return "hace " + (int)d.TotalMinutes + " min";
+        if (d.TotalHours < 24) return "hace " + (int)d.TotalHours + " h";
+        if (d.TotalDays < 30) return "hace " + (int)d.TotalDays + " d";
+        return dt.ToString("yyyy-MM-dd");
+    }
 }

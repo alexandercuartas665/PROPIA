@@ -18,9 +18,16 @@ public sealed class PlatformBrandingService : IPlatformBrandingService
     public async Task<PlatformBrandingDto> GetAsync(CancellationToken ct = default)
     {
         var row = await _db.PlatformBrandings.AsNoTracking().FirstOrDefaultAsync(ct);
-        return row is null
-            ? PlatformBrandingDto.Default
-            : new PlatformBrandingDto(row.PlatformName, row.Tagline, row.LoginLogoUrl, row.LoginHeadline, row.LoginSubtext);
+        if (row is null) return PlatformBrandingDto.Default;
+        // Si un campo de logo quedo vacio, caemos al asset por defecto para que el sistema
+        // siempre tenga una marca que pintar (login/sidebar nunca quedan sin logo).
+        return new PlatformBrandingDto(
+            row.PlatformName,
+            row.Tagline,
+            string.IsNullOrWhiteSpace(row.LoginLogoUrl) ? PlatformBrandingDto.DefaultLoginLogoUrl : row.LoginLogoUrl,
+            string.IsNullOrWhiteSpace(row.IconUrl) ? PlatformBrandingDto.DefaultIconUrl : row.IconUrl,
+            row.LoginHeadline,
+            row.LoginSubtext);
     }
 
     public async Task SaveAsync(SaveBrandingRequest request, Guid actorId, string actorEmail, string? ip, CancellationToken ct = default)
@@ -43,6 +50,7 @@ public sealed class PlatformBrandingService : IPlatformBrandingService
         row.PlatformName = name;
         row.Tagline = request.Tagline?.Trim();
         row.LoginLogoUrl = string.IsNullOrWhiteSpace(request.LoginLogoUrl) ? null : request.LoginLogoUrl.Trim();
+        row.IconUrl = string.IsNullOrWhiteSpace(request.IconUrl) ? null : request.IconUrl.Trim();
         row.LoginHeadline = request.LoginHeadline?.Trim();
         row.LoginSubtext = request.LoginSubtext?.Trim();
 

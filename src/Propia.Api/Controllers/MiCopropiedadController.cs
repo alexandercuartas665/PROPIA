@@ -399,6 +399,115 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    // ---------- Ficha completa de zona comun (seccion 4) ----------
+    [HttpGet("zonas/{id:guid}/ficha")]
+    public async Task<IActionResult> GetZonaFicha(Guid id, CancellationToken ct)
+    {
+        var ficha = await _svc.GetZonaFichaAsync(id, GetPersonaId(), ct);
+        return ficha is null ? NotFound() : Ok(ficha);
+    }
+
+    [HttpPut("zonas/{id:guid}/ficha")]
+    public async Task<IActionResult> GuardarZonaFicha(Guid id, [FromBody] GuardarZonaFichaRequest req, CancellationToken ct)
+        => await _svc.GuardarZonaFichaAsync(id, req, ct) ? NoContent() : NotFound();
+
+    [HttpPost("zonas/{id:guid}/imagen")]
+    [RequestSizeLimit(6_000_000)]
+    public async Task<IActionResult> SubirImagenZona(Guid id, IFormFile file, CancellationToken ct)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
+        if (file is null || file.Length == 0) return BadRequest(new { error = "Archivo vacio." });
+        if (file.Length > 5_000_000) return BadRequest(new { error = "Maximo 5 MB." });
+        var ext = file.ContentType switch { "image/jpeg" => ".jpg", "image/png" => ".png", "image/webp" => ".webp", _ => "" };
+        if (ext == "") return BadRequest(new { error = "Formato no soportado. Usa JPG, PNG o WEBP." });
+        var key = $"tenants/{tenantId:N}/zonas/{id:N}/{Guid.NewGuid():N}{ext}";
+        await using var stream = file.OpenReadStream();
+        var url = await _storage.UploadAsync(key, stream, file.ContentType, ct);
+        var saved = await _svc.SetZonaImagenAsync(id, url, ct);
+        return saved is null ? NotFound() : Ok(new { url = saved });
+    }
+
+    [HttpPost("zonas/{id:guid}/facturas")]
+    public async Task<IActionResult> AgregarZonaFactura(Guid id, [FromBody] AgregarZonaFacturaRequest req, CancellationToken ct)
+    {
+        var dto = await _svc.AgregarZonaFacturaAsync(id, req, ct);
+        return dto is null ? BadRequest(new { error = "no_active_tenant" }) : Ok(dto);
+    }
+
+    [HttpDelete("zonas/facturas/{facturaId:guid}")]
+    public async Task<IActionResult> EliminarZonaFactura(Guid facturaId, CancellationToken ct)
+        => await _svc.EliminarZonaFacturaAsync(facturaId, ct) ? NoContent() : NotFound();
+
+    [HttpPost("zonas/{id:guid}/documentos")]
+    [RequestSizeLimit(11_000_000)]
+    public async Task<IActionResult> SubirZonaDocumento(Guid id, IFormFile file, CancellationToken ct)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
+        if (file is null || file.Length == 0) return BadRequest(new { error = "Archivo vacio." });
+        if (file.Length > 10_000_000) return BadRequest(new { error = "Maximo 10 MB." });
+        var safe = System.IO.Path.GetExtension(file.FileName);
+        var key = $"tenants/{tenantId:N}/zonas/{id:N}/docs/{Guid.NewGuid():N}{safe}";
+        await using var stream = file.OpenReadStream();
+        var url = await _storage.UploadAsync(key, stream, file.ContentType, ct);
+        var dto = await _svc.AgregarZonaDocumentoAsync(id, file.FileName, url, ct);
+        return dto is null ? BadRequest(new { error = "No se pudo registrar el documento." }) : Ok(dto);
+    }
+
+    [HttpDelete("zonas/documentos/{docId:guid}")]
+    public async Task<IActionResult> EliminarZonaDocumento(Guid docId, CancellationToken ct)
+        => await _svc.EliminarZonaDocumentoAsync(docId, ct) ? NoContent() : NotFound();
+
+    [HttpPost("zonas/{id:guid}/campos")]
+    public async Task<IActionResult> AgregarZonaCampo(Guid id, [FromBody] AgregarZonaCampoRequest req, CancellationToken ct)
+    {
+        var dto = await _svc.AgregarZonaCampoAsync(id, req, ct);
+        return dto is null ? BadRequest(new { error = "no_se_pudo" }) : Ok(dto);
+    }
+
+    [HttpDelete("zonas/campos/{campoId:guid}")]
+    public async Task<IActionResult> EliminarZonaCampo(Guid campoId, CancellationToken ct)
+        => await _svc.EliminarZonaCampoAsync(campoId, ct) ? NoContent() : NotFound();
+
+    [HttpPost("zonas/{id:guid}/novedad-imagen")]
+    [RequestSizeLimit(6_000_000)]
+    public async Task<IActionResult> SubirImagenNovedadZona(Guid id, IFormFile file, CancellationToken ct)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
+        if (file is null || file.Length == 0) return BadRequest(new { error = "Archivo vacio." });
+        if (file.Length > 5_000_000) return BadRequest(new { error = "Maximo 5 MB." });
+        var ext = file.ContentType switch { "image/jpeg" => ".jpg", "image/png" => ".png", "image/webp" => ".webp", _ => "" };
+        if (ext == "") return BadRequest(new { error = "Formato no soportado. Usa JPG, PNG o WEBP." });
+        var key = $"tenants/{tenantId:N}/zonas/{id:N}/novedades/{Guid.NewGuid():N}{ext}";
+        await using var stream = file.OpenReadStream();
+        var url = await _storage.UploadAsync(key, stream, file.ContentType, ct);
+        return Ok(new { url });
+    }
+
+    [HttpPost("zonas/{id:guid}/novedades")]
+    public async Task<IActionResult> PublicarZonaNovedad(Guid id, [FromBody] PublicarZonaNovedadRequest req, CancellationToken ct)
+    {
+        var dto = await _svc.PublicarZonaNovedadAsync(id, req, GetPersonaId(), ct);
+        return dto is null ? BadRequest(new { error = "no_se_pudo" }) : Ok(dto);
+    }
+
+    [HttpDelete("zonas/novedades/{novedadId:guid}")]
+    public async Task<IActionResult> EliminarZonaNovedad(Guid novedadId, CancellationToken ct)
+        => await _svc.EliminarZonaNovedadAsync(novedadId, ct) ? NoContent() : NotFound();
+
+    [HttpPost("zonas/novedades/{novedadId:guid}/comentarios")]
+    public async Task<IActionResult> ComentarZonaNovedad(Guid novedadId, [FromBody] ComentarZonaNovedadRequest req, CancellationToken ct)
+    {
+        var dto = await _svc.ComentarZonaNovedadAsync(novedadId, req, GetPersonaId(), ct);
+        return dto is null ? BadRequest(new { error = "no_se_pudo" }) : Ok(dto);
+    }
+
+    [HttpPost("zonas/novedades/{novedadId:guid}/like")]
+    public async Task<IActionResult> LikeZonaNovedad(Guid novedadId, CancellationToken ct)
+        => Ok(new { likes = await _svc.ToggleZonaNovedadLikeAsync(novedadId, GetPersonaId(), ct) });
+
     // ---------- Seccion 8: Finanzas ----------
     [HttpGet("finanzas/monedas")]
     public IActionResult ListMonedas() => Ok(_svc.ListMonedas());
@@ -530,6 +639,12 @@ public class MiCopropiedadController : ControllerBase
     private Guid? GetTenantId()
     {
         var raw = User.FindFirstValue("tenant_id");
+        return Guid.TryParse(raw, out var g) ? g : null;
+    }
+
+    private Guid? GetPersonaId()
+    {
+        var raw = User.FindFirstValue("persona_id");
         return Guid.TryParse(raw, out var g) ? g : null;
     }
 }

@@ -39,11 +39,18 @@ public class ReservasService : IReservasService
         if (personaId is null) return;
         var tenantId = _tenantContext.CurrentTenantId;
         if (tenantId is null) return;
-        await _noti.EnviarAsync(new Propia.Application.Notificaciones.EnviarNotificacionRequest(
-            Canal: Domain.Enums.CanalNotificacion.InApp,
-            Cuerpo: cuerpo, TenantId: tenantId, PersonaDestinatariaId: personaId,
-            Asunto: asunto, Prioridad: prioridad,
-            ModuloOrigenCodigo: "2.13", EntidadOrigenId: entidadOrigen), ct);
+        // Best-effort: la notificacion es un efecto secundario. Si falla (ej. la persona aun no
+        // tiene usuario al que enrutar el InApp) NO debe tumbar la operacion de negocio (crear /
+        // aprobar / cancelar reserva), que ya se persistio antes de llamar aqui.
+        try
+        {
+            await _noti.EnviarAsync(new Propia.Application.Notificaciones.EnviarNotificacionRequest(
+                Canal: Domain.Enums.CanalNotificacion.InApp,
+                Cuerpo: cuerpo, TenantId: tenantId, PersonaDestinatariaId: personaId,
+                Asunto: asunto, Prioridad: prioridad,
+                ModuloOrigenCodigo: "2.13", EntidadOrigenId: entidadOrigen), ct);
+        }
+        catch { /* notificacion best-effort: no propagar */ }
     }
 
     private Guid GetPersonaActualId()
@@ -102,11 +109,15 @@ public class ReservasService : IReservasService
         var existeZona = await _db.ZonasComunes.AnyAsync(z => z.Id == req.ZonaComunId, ct);
         if (!existeZona) throw new InvalidOperationException("Zona no encontrada.");
 
-        var c = await _db.ZonaConfigReservas.Include(x => x.Franjas)
+        // No incluimos Franjas en el load: las reemplazamos con un DELETE directo (ExecuteDelete)
+        // para evitar AggregateUpdateConcurrencyException que EF/Npgsql emite cuando un batch mezcla
+        // varios DELETE de hijos con el UPDATE del padre y el conteo de rows-affected no le cuadra.
+        var c = await _db.ZonaConfigReservas
             .FirstOrDefaultAsync(x => x.ZonaComunId == req.ZonaComunId, ct);
+        var esNueva = c is null;
         if (c is null)
         {
-            c = new ZonaConfigReserva { TenantId = tenantId, ZonaComunId = req.ZonaComunId };
+            c = new ZonaConfigReserva { Id = Guid.NewGuid(), TenantId = tenantId, ZonaComunId = req.ZonaComunId };
             _db.ZonaConfigReservas.Add(c);
         }
         c.RequiereAprobacion = req.RequiereAprobacion;
@@ -130,14 +141,20 @@ public class ReservasService : IReservasService
         c.VisibleParaResidentes = req.VisibleParaResidentes;
         c.UpdatedAt = DateTimeOffset.UtcNow;
 
-        // Reemplazar franjas
-        _db.ZonaFranjas.RemoveRange(c.Franjas);
+        // Reemplazar franjas: borrar las viejas con un solo DELETE WHERE (sin tracking) y crear las nuevas.
+        if (!esNueva)
+            await _db.ZonaFranjas.Where(f => f.ZonaConfigReservaId == c.Id).ExecuteDeleteAsync(ct);
+        c.Franjas.Clear();
         foreach (var f in req.Franjas)
         {
             if (f.HoraCierre <= f.HoraApertura) continue;
-            c.Franjas.Add(new ZonaFranja
+            // Add via DbSet (no via la navegacion): ZonaFranja trae un Id no-default de BaseEntity,
+            // y EF marcaria como Unchanged una entidad nueva agregada a la navegacion de un padre
+            // trackeado (la cree como UPDATE y afecte 0 filas). Add explicito fuerza el estado Added.
+            _db.ZonaFranjas.Add(new ZonaFranja
             {
                 TenantId = tenantId,
+                ZonaConfigReservaId = c.Id,
                 DiaSemana = f.DiaSemana,
                 HoraApertura = f.HoraApertura,
                 HoraCierre = f.HoraCierre,
@@ -469,6 +486,24 @@ public class ReservasService : IReservasService
             $"Reserva cancelada por administracion: {r.Codigo}",
             $"Tu reserva del {r.Fecha:yyyy-MM-dd} fue cancelada por la administracion. Motivo: {r.MotivoCancelacion ?? "sin motivo especificado"}.",
             Domain.Enums.PrioridadNotificacion.Alta, ct);
+
+        return true;
+    }
+
+    public async Task<bool> AprobarAsync(Guid id, CancellationToken ct)
+    {
+        var r = await _db.Reservas.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (r is null) return false;
+        if (r.Estado != EstadoReserva.PendienteAprobacion)
+            throw new InvalidOperationException("La reserva no esta pendiente de aprobacion.");
+        r.Estado = EstadoReserva.Confirmada;
+        r.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        await NotificarResidenteAsync(r.PersonaId, r.Id,
+            $"Reserva confirmada: {r.Codigo}",
+            $"Tu reserva del {r.Fecha:yyyy-MM-dd} de {r.HoraInicio:HH\\:mm} a {r.HoraFin:HH\\:mm} fue aprobada por la administracion.",
+            Domain.Enums.PrioridadNotificacion.Normal, ct);
 
         return true;
     }

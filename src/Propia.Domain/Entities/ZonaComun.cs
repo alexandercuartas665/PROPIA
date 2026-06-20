@@ -21,6 +21,19 @@ public class ZonaComun : TenantEntity
     public string? HorariosUso { get; set; }
     public string? ReglasUso { get; set; }
 
+    /// <summary>Imagen principal de la zona (ficha). Binario en IBlobStorage.</summary>
+    public string? ImagenUrl { get; set; }
+
+    // ----- Programa de mantenimiento (ficha de la zona, prototipo) -----
+    /// <summary>"Interno" o "Contrato".</summary>
+    public string MantenimientoTipo { get; set; } = "Interno";
+    /// <summary>Nombre del contrato relacionado si MantenimientoTipo = Contrato.</summary>
+    public string? MantenimientoContrato { get; set; }
+    /// <summary>"Semanal" / "Quincenal" / "Mensual" / "Trimestral" / "Semestral".</summary>
+    public string MantenimientoFrecuencia { get; set; } = "Mensual";
+    /// <summary>Dia del mes (1-31) cuando la frecuencia es Mensual.</summary>
+    public int? MantenimientoDiaMes { get; set; }
+
     /// <summary>
     /// Estado operativo de la zona. Spec 2.11 - fuente unica de verdad para Mantenimiento.
     /// Si pasa a EnMantenimiento, 2.13 bloquea reservas automaticamente (RN-08).

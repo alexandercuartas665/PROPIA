@@ -2,6 +2,7 @@
 @layout AdminLayout
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.Integraciones
+@using Microsoft.AspNetCore.Components.Forms
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
 @inject NavigationManager Nav
@@ -9,7 +10,7 @@
 <PageTitle>Marca de plataforma - Plataforma</PageTitle>
 
 <h1 class="h3 mb-1">Marca de plataforma</h1>
-<p class="text-muted mb-4">Gobierna el nombre, logo y textos de la pantalla de login del cliente.</p>
+<p class="text-muted mb-4">Gobierna el nombre, logo y textos de la pantalla de login del cliente. El login, el menu lateral y el favicon responden a lo que configures aqui.</p>
 
 @if (_jwt is null || _cargando)
 {
@@ -23,11 +24,71 @@ else if (_form is not null)
                 <div class="card-header bg-white"><strong>Identidad</strong></div>
                 <div class="card-body">
                     <div class="row g-3">
-                        <div class="col-12"><label class="form-label">Nombre de la plataforma</label><input class="form-control" @bind="_form.PlatformName" placeholder="PROPIA" /></div>
-                        <div class="col-12"><label class="form-label">Tagline</label><input class="form-control" @bind="_form.Tagline" placeholder="Plataforma de gestion de copropiedades" /></div>
-                        <div class="col-12"><label class="form-label">URL del logo (login)</label><input class="form-control" @bind="_form.LoginLogoUrl" placeholder="/uploads/branding/logo.png" /></div>
-                        <div class="col-12"><label class="form-label">Titular del login</label><input class="form-control" @bind="_form.LoginHeadline" /></div>
-                        <div class="col-12"><label class="form-label">Texto del login</label><textarea class="form-control" rows="3" @bind="_form.LoginSubtext"></textarea></div>
+                        <div class="col-12">
+                            <label class="form-label">Nombre de la plataforma</label>
+                            <input class="form-control" @bind="_form.PlatformName" placeholder="PROPIA" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Tagline</label>
+                            <input class="form-control" @bind="_form.Tagline" placeholder="Plataforma de gestion de copropiedades" />
+                        </div>
+
+                        <div class="col-12"><hr class="my-1" /></div>
+
+                        @* ---- Logo principal (login + menu lateral) ---- *@
+                        <div class="col-12">
+                            <label class="form-label">Logo principal (login y menu lateral)</label>
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="marca-logo-box">
+                                    @if (!string.IsNullOrWhiteSpace(_form.LoginLogoUrl))
+                                    {
+                                        <img src="@_form.LoginLogoUrl" alt="logo" />
+                                    }
+                                    else { <span class="text-muted small">Sin logo</span> }
+                                </div>
+                                <div class="flex-fill">
+                                    <label class="btn btn-outline-primary btn-sm mb-2">
+                                        <i class="fi fi-rr-cloud-upload me-1"></i>@(_subiendoLogo ? "Subiendo..." : "Subir imagen")
+                                        <InputFile OnChange="@(e => SubirAsync(e, esIcono: false))" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden disabled="@_subiendoLogo" />
+                                    </label>
+                                    <input class="form-control form-control-sm" @bind="_form.LoginLogoUrl" placeholder="/img/brand/logo-normal.png o URL" />
+                                    <div class="form-text">PNG, JPG, WEBP o SVG. Max 5 MB. Ancho recomendado.</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        @* ---- Icono cuadrado (rail + favicon) ---- *@
+                        <div class="col-12">
+                            <label class="form-label">Icono cuadrado (rail del menu y favicon)</label>
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="marca-icon-box">
+                                    @if (!string.IsNullOrWhiteSpace(_form.IconUrl))
+                                    {
+                                        <img src="@_form.IconUrl" alt="icono" />
+                                    }
+                                    else { <span class="text-muted small">Sin icono</span> }
+                                </div>
+                                <div class="flex-fill">
+                                    <label class="btn btn-outline-primary btn-sm mb-2">
+                                        <i class="fi fi-rr-cloud-upload me-1"></i>@(_subiendoIcono ? "Subiendo..." : "Subir imagen")
+                                        <InputFile OnChange="@(e => SubirAsync(e, esIcono: true))" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden disabled="@_subiendoIcono" />
+                                    </label>
+                                    <input class="form-control form-control-sm" @bind="_form.IconUrl" placeholder="/img/brand/favicon.png o URL" />
+                                    <div class="form-text">Cuadrado (1:1). PNG, JPG, WEBP o SVG. Max 5 MB.</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-12"><hr class="my-1" /></div>
+
+                        <div class="col-12">
+                            <label class="form-label">Titular del login</label>
+                            <input class="form-control" @bind="_form.LoginHeadline" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Texto del login</label>
+                            <textarea class="form-control" rows="3" @bind="_form.LoginSubtext"></textarea>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -43,6 +104,14 @@ else if (_form is not null)
                     <h4 class="mb-1">@(string.IsNullOrWhiteSpace(_form.PlatformName) ? "PROPIA" : _form.PlatformName)</h4>
                     <p class="text-muted small mb-3">@_form.Tagline</p>
                     <hr />
+                    <div class="d-flex align-items-center justify-content-center gap-2 mb-3">
+                        @if (!string.IsNullOrWhiteSpace(_form.IconUrl))
+                        {
+                            <img src="@_form.IconUrl" alt="icono" style="width:34px;height:34px;border-radius:8px;object-fit:contain;" />
+                        }
+                        <span class="fw-semibold">@(string.IsNullOrWhiteSpace(_form.PlatformName) ? "PROPIA" : _form.PlatformName)</span>
+                    </div>
+                    <hr />
                     <h6 class="mb-1">@_form.LoginHeadline</h6>
                     <p class="text-muted small mb-0">@_form.LoginSubtext</p>
                 </div>
@@ -56,10 +125,25 @@ else if (_form is not null)
     </div>
 }
 
+<style>
+    .marca-logo-box {
+        width: 150px; height: 64px; border: 1px dashed #c9c9d6; border-radius: 10px;
+        display: flex; align-items: center; justify-content: center; background: #fafafe; flex: 0 0 auto;
+    }
+    .marca-logo-box img { max-width: 100%; max-height: 100%; object-fit: contain; }
+    .marca-icon-box {
+        width: 64px; height: 64px; border: 1px dashed #c9c9d6; border-radius: 10px;
+        display: flex; align-items: center; justify-content: center; background: #fafafe; flex: 0 0 auto;
+    }
+    .marca-icon-box img { max-width: 100%; max-height: 100%; object-fit: contain; }
+</style>
+
 @code {
     private string? _jwt;
     private bool _cargando = true;
     private bool _busy;
+    private bool _subiendoLogo;
+    private bool _subiendoIcono;
     private string? _msg;
     private string _msgCls = "alert-info";
     private Form? _form;
@@ -69,6 +153,7 @@ else if (_form is not null)
         public string PlatformName { get; set; } = "PROPIA";
         public string? Tagline { get; set; }
         public string? LoginLogoUrl { get; set; }
+        public string? IconUrl { get; set; }
         public string? LoginHeadline { get; set; }
         public string? LoginSubtext { get; set; }
     }
@@ -83,12 +168,43 @@ else if (_form is not null)
             _jwt = jwt;
             var c = await Auth().GetFromJsonAsync<PlatformBrandingDto>("/admin/branding");
             _form = c is not null
-                ? new Form { PlatformName = c.PlatformName, Tagline = c.Tagline, LoginLogoUrl = c.LoginLogoUrl, LoginHeadline = c.LoginHeadline, LoginSubtext = c.LoginSubtext }
+                ? new Form { PlatformName = c.PlatformName, Tagline = c.Tagline, LoginLogoUrl = c.LoginLogoUrl, IconUrl = c.IconUrl, LoginHeadline = c.LoginHeadline, LoginSubtext = c.LoginSubtext }
                 : new Form();
             _cargando = false;
             StateHasChanged();
         }
         catch { _cargando = false; }
+    }
+
+    private async Task SubirAsync(InputFileChangeEventArgs e, bool esIcono)
+    {
+        if (_form is null) return;
+        var file = e.File;
+        if (file is null) return;
+        if (esIcono) _subiendoIcono = true; else _subiendoLogo = true;
+        _msg = null;
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var stream = file.OpenReadStream(5_000_000);
+            var sc = new StreamContent(stream);
+            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(sc, "file", file.Name);
+
+            var resp = await Auth().PostAsync("/admin/branding/logo", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                var dto = await resp.Content.ReadFromJsonAsync<UploadResp>();
+                if (dto?.url is not null)
+                {
+                    if (esIcono) _form.IconUrl = dto.url; else _form.LoginLogoUrl = dto.url;
+                    _msg = "Imagen subida. Recuerda guardar la marca."; _msgCls = "alert-success";
+                }
+            }
+            else { _msg = $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}"; _msgCls = "alert-danger"; }
+        }
+        catch (Exception ex) { _msg = $"Error subiendo imagen: {ex.Message}"; _msgCls = "alert-danger"; }
+        finally { _subiendoIcono = false; _subiendoLogo = false; }
     }
 
     private async Task GuardarAsync()
@@ -97,13 +213,21 @@ else if (_form is not null)
         _busy = true; _msg = null;
         try
         {
-            var req = new SaveBrandingRequest(_form.PlatformName, _form.Tagline, _form.LoginLogoUrl, _form.LoginHeadline, _form.LoginSubtext);
+            var req = new SaveBrandingRequest(_form.PlatformName, _form.Tagline, _form.LoginLogoUrl, _form.IconUrl, _form.LoginHeadline, _form.LoginSubtext);
             var resp = await Auth().PutAsJsonAsync("/admin/branding", req);
-            if (resp.IsSuccessStatusCode) { _msg = "Marca guardada."; _msgCls = "alert-success"; }
+            if (resp.IsSuccessStatusCode)
+            {
+                _msg = "Marca guardada. El login y el menu se actualizaran al recargar."; _msgCls = "alert-success";
+                // Refrescar la cache de marca del navegador para ver el cambio sin recargar a mano.
+                try { await Js.InvokeVoidAsync("sessionStorage.removeItem", "propia_branding"); } catch { }
+                try { await Js.InvokeVoidAsync("eval", "window.propiaBranding && window.propiaBranding.refresh && window.propiaBranding.refresh()"); } catch { }
+            }
             else { _msg = $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}"; _msgCls = "alert-danger"; }
         }
         finally { _busy = false; }
     }
+
+    private sealed class UploadResp { public string? url { get; set; } }
 
     private HttpClient Auth()
     {
