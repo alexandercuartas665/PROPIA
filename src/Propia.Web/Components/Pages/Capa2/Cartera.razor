@@ -1,141 +1,398 @@
 @page "/cartera"
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using System.Globalization
 @using Propia.Application.Cartera
 @using Propia.Domain.Enums
 @inject IHttpClientFactory HttpFactory
-@inject NavigationManager Nav
 @inject IJSRuntime Js
 
 <PageTitle>Cartera - PROPIA</PageTitle>
 
-<div class="mb-4 d-flex justify-content-between align-items-start">
-    <div>
-        <h1 class="h3 mb-1 fw-semibold">Cartera y Estado de Cuenta</h1>
-        <p class="text-muted mb-0">Modulo 2.7 - motor de gestion de mora desde las liquidaciones de 2.6</p>
-    </div>
-    <button class="btn btn-outline-dark btn-sm" @onclick="Sincronizar" disabled="@_busy">
-        @(_busy ? "Sincronizando..." : "Sincronizar desde Presupuesto")
-    </button>
-</div>
-
 @if (string.IsNullOrEmpty(_jwt))
 {
     <AuthMessage />
-    return;
-}
-
-@if (_t is null)
-{
-    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
-    return;
-}
-
-@* KPIs principales *@
-<div class="row g-3 mb-3">
-    <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
-        <div class="text-muted small">Total mora</div>
-        <h4 class="mb-0 text-danger">@_t.Kpis.TotalMoraCop.ToString("N0") COP</h4>
-    </div></div></div>
-    <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
-        <div class="text-muted small">Unidades en mora</div>
-        <h4 class="mb-0">@_t.Kpis.UnidadesEnMora</h4>
-    </div></div></div>
-    <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
-        <div class="text-muted small">Con acuerdo activo</div>
-        <h4 class="mb-0 text-info">@_t.Kpis.ConAcuerdoActivo</h4>
-    </div></div></div>
-    <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
-        <div class="text-muted small">En juridico</div>
-        <h4 class="mb-0 text-warning">@_t.Kpis.EnJuridico</h4>
-    </div></div></div>
-</div>
-
-@* Aging *@
-<div class="card mb-3"><div class="card-body py-3">
-    <h6 class="mb-2">Aging de cartera</h6>
-    <div class="small">
-        <div class="d-flex justify-content-between mb-1">
-            <span>0-30 dias <span class="text-muted">(@_t.Kpis.UnidadesAging0_30 unidades)</span></span>
-            <strong>@_t.Kpis.Aging0_30.ToString("N0") COP</strong>
-        </div>
-        <div class="progress mb-2" style="height:6px;">
-            <div class="progress-bar bg-success" style="width:@AgingPct(_t.Kpis.Aging0_30)%;"></div>
-        </div>
-        <div class="d-flex justify-content-between mb-1">
-            <span>31-60 dias <span class="text-muted">(@_t.Kpis.UnidadesAging31_60 unidades)</span></span>
-            <strong>@_t.Kpis.Aging31_60.ToString("N0") COP</strong>
-        </div>
-        <div class="progress mb-2" style="height:6px;">
-            <div class="progress-bar bg-warning" style="width:@AgingPct(_t.Kpis.Aging31_60)%;"></div>
-        </div>
-        <div class="d-flex justify-content-between mb-1">
-            <span>61-90 dias <span class="text-muted">(@_t.Kpis.UnidadesAging61_90 unidades)</span></span>
-            <strong>@_t.Kpis.Aging61_90.ToString("N0") COP</strong>
-        </div>
-        <div class="progress mb-2" style="height:6px;">
-            <div class="progress-bar" style="width:@AgingPct(_t.Kpis.Aging61_90)%; background:#f97316;"></div>
-        </div>
-        <div class="d-flex justify-content-between mb-1">
-            <span>+90 dias <span class="text-muted">(@_t.Kpis.UnidadesAgingMas90 unidades)</span></span>
-            <strong>@_t.Kpis.AgingMas90.ToString("N0") COP</strong>
-        </div>
-        <div class="progress mb-2" style="height:6px;">
-            <div class="progress-bar bg-danger" style="width:@AgingPct(_t.Kpis.AgingMas90)%;"></div>
-        </div>
-    </div>
-</div></div>
-
-@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
-
-@* Tabla de unidades en mora *@
-@if (_t.UnidadesEnMora.Count == 0)
-{
-    <div class="card p-4 text-center text-muted">Sin unidades en mora. Si esperabas datos, ejecuta "Sincronizar desde Presupuesto".</div>
 }
 else
 {
-    <div class="card">
-        <table class="table table-hover mb-0 align-middle">
-            <thead class="bg-light small text-muted">
-                <tr><th>Unidad</th><th>Torre</th><th class="text-end">Saldo</th><th class="text-end">Intereses</th><th class="text-end">Total</th><th class="text-end">Dias mora</th><th>Estado</th><th></th></tr>
-            </thead>
-            <tbody class="small">
-                @foreach (var u in _t.UnidadesEnMora)
-                {
-                    var uid = u.UnidadPrivadaId;
-                    <tr style="cursor:pointer;" @onclick="() => Ir(uid)">
-                        <td><strong>@u.UnidadNumero</strong></td>
-                        <td>@(u.TorreNombre ?? "-")</td>
-                        <td class="text-end">@u.SaldoCapital.ToString("N0")</td>
-                        <td class="text-end text-warning">@u.SaldoIntereses.ToString("N0")</td>
-                        <td class="text-end fw-bold">@u.SaldoTotal.ToString("N0")</td>
-                        <td class="text-end @(u.DiasMora > 60 ? "text-danger fw-bold" : "")">@u.DiasMora</td>
-                        <td>
-                            @if (u.EstadoGestionNombre is not null)
-                            {
-                                <span class="badge" style="background:@(u.EstadoGestionColor ?? "#94a3b8"); color:white;">@u.EstadoGestionNombre</span>
-                            }
-                            @if (u.TieneAcuerdoVigente) { <span class="badge bg-info ms-1">Acuerdo</span> }
-                        </td>
-                        <td class="text-end">
-                            <a class="btn btn-sm btn-outline-dark" href="@($"/cartera/{u.UnidadPrivadaId}")">Ficha</a>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+<div class="ca-wrap">
+    @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+    <div class="ca-head">
+        <div>
+            <h1 class="ca-title">Cartera y estado de cuenta</h1>
+            <p class="ca-sub">Motor de gestion de mora — del primer impago al cobro juridico.</p>
+        </div>
+        <button class="ca-btn ca-btn-soft" @onclick="Sincronizar" disabled="@_busy"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15"/></svg>Sincronizar desde presupuesto</button>
     </div>
+
+    @if (_loading)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color:#6D4FE3"></div></div>
+    }
+    else if (_tablero is null)
+    {
+        <div class="ca-empty-cta">
+            <div class="ca-empty-t">Cartera sin sincronizar</div>
+            <div class="ca-empty-s">Sincroniza desde el presupuesto para construir la cartera a partir de las liquidaciones.</div>
+        </div>
+    }
+    else
+    {
+        var k = _tablero.Kpis;
+        <div class="ca-kpis">
+            <div class="ca-kpi"><div class="ca-kpi-l">Total en mora</div><div class="ca-kpi-v" style="color:#C0383C">@Money(k.TotalMoraCop)</div></div>
+            <div class="ca-kpi"><div class="ca-kpi-l">Unidades en mora</div><div class="ca-kpi-v">@k.UnidadesEnMora</div></div>
+            <div class="ca-kpi"><div class="ca-kpi-l">Con acuerdo activo</div><div class="ca-kpi-v" style="color:#1A8754">@k.ConAcuerdoActivo</div></div>
+            <div class="ca-kpi"><div class="ca-kpi-l">En juridico</div><div class="ca-kpi-v" style="color:#B45309">@k.EnJuridico</div></div>
+        </div>
+
+        <div class="ca-aging">
+            @foreach (var a in Aging(k))
+            {
+                <div class="ca-age">
+                    <div class="ca-age-top"><span>@a.Label</span><span class="ca-age-n" style="color:@a.Color;background:@a.Bg">@a.Unidades un.</span></div>
+                    <div class="ca-age-v">@Money(a.Monto)</div>
+                    <div class="ca-age-bar"><div style="width:@a.Pct%;background:@a.Color"></div></div>
+                </div>
+            }
+        </div>
+
+        <div class="ca-views">
+            <span class="ca-views-l">VISTAS:</span>
+            @foreach (var v in _vistas)
+            {
+                var key = v.Key;
+                <button class="ca-view @(_vista == key ? "on" : "")" @onclick="() => _vista = key">@v.Label</button>
+            }
+        </div>
+
+        <div class="ca-card">
+            <div class="ca-thead">
+                <div class="ca-c ca-c-uni">UNIDAD / PROPIETARIO</div>
+                <div class="ca-c ca-c-deuda">DEUDA TOTAL</div>
+                <div class="ca-c ca-c-dias">DIAS MORA</div>
+                <div class="ca-c ca-c-est">ESTADO</div>
+                <div class="ca-c ca-c-acu">ACUERDO</div>
+                <div class="ca-c ca-c-fic"></div>
+            </div>
+            @{ var filtradas = FiltrarUnidades(); }
+            @if (filtradas.Count == 0)
+            {
+                <div class="ca-empty">Sin unidades en esta vista. Recaudo al dia.</div>
+            }
+            else
+            {
+                @foreach (var u in filtradas)
+                {
+                    var uni = u;
+                    <div class="ca-row">
+                        <div class="ca-c ca-c-uni">
+                            <div class="ca-row-nom">@u.UnidadNumero@(string.IsNullOrWhiteSpace(u.TorreNombre) ? "" : " · " + u.TorreNombre)</div>
+                            <div class="ca-row-sub">@(string.IsNullOrWhiteSpace(u.PropietarioNombre) ? "Sin propietario" : u.PropietarioNombre)</div>
+                        </div>
+                        <div class="ca-c ca-c-deuda">@Money(u.SaldoTotal)</div>
+                        <div class="ca-c ca-c-dias">@u.DiasMora</div>
+                        <div class="ca-c ca-c-est">@if (!string.IsNullOrWhiteSpace(u.EstadoGestionNombre)) { <span class="ca-pill" style="color:@(u.EstadoGestionColor ?? "#516F90");background:@Tint(u.EstadoGestionColor)">@u.EstadoGestionNombre</span> }</div>
+                        <div class="ca-c ca-c-acu">@if (u.TieneAcuerdoVigente) { <span class="ca-acu">Acuerdo</span> }</div>
+                        <div class="ca-c ca-c-fic"><button class="ca-ficha-btn" @onclick="() => AbrirFicha(uni.UnidadPrivadaId)">Ficha</button></div>
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>
+
+@* ===================== Ficha de cartera por unidad ===================== *@
+@if (_ficha is not null)
+{
+    var f = _ficha;
+    <div class="ca-modal-bd" @onclick="CerrarFicha">
+        <div class="ca-modal" @onclick:stopPropagation="true">
+            <div class="ca-modal-head">
+                <div class="ca-modal-top">
+                    <div class="ca-modal-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2.5"/><path d="M2 10h20"/></svg></div>
+                    <div class="ca-modal-id">
+                        <div class="ca-modal-t">@f.UnidadNumero — @(string.IsNullOrWhiteSpace(f.PropietarioNombre) ? "Sin propietario" : f.PropietarioNombre)</div>
+                        <div class="ca-modal-d">Dias en mora: <b>@f.DiasMora</b> · Deuda total: <b style="color:#C0383C">@Money(f.SaldoTotal)</b> · Intereses: <b style="color:#B45309">@Money(f.SaldoIntereses)</b></div>
+                    </div>
+                    <div class="ca-modal-actstop">
+                        <select class="ca-est-sel" @onchange="CambiarEstado">
+                            @foreach (var e in _estados) { <option value="@e.Id" selected="@(e.Id == f.EstadoGestionId)">@e.Nombre</option> }
+                        </select>
+                        <button class="ca-modal-x" @onclick="CerrarFicha"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                    </div>
+                </div>
+                <div class="ca-modal-acts">
+                    <button class="ca-act ca-act-p" @onclick='() => Panel("acuerdo")'>Crear acuerdo de pago</button>
+                    <button class="ca-act ca-act-w" @onclick='() => Panel("cond")'>Condonar intereses</button>
+                    <button class="ca-act ca-act-g" @onclick="EmitirPazSalvo" disabled="@_busy">Emitir paz y salvo</button>
+                </div>
+            </div>
+            <div class="ca-modal-body">
+                @* Panel: crear acuerdo *@
+                @if (_panel == "acuerdo")
+                {
+                    <div class="ca-panel ca-panel-p">
+                        <div class="ca-panel-h">ACUERDO DE PAGO · condiciones</div>
+                        <div class="ca-panel-grid">
+                            <div><label>Deuda incluida</label><div class="ca-panel-tot">@Money(f.SaldoTotal)</div></div>
+                            <div><label>Numero de cuotas</label>
+                                <select @bind="_acCuotas"><option value="3">3</option><option value="6">6</option><option value="12">12</option></select>
+                            </div>
+                            <div><label>Primera cuota</label><input type="date" @bind="_acFecha" /></div>
+                        </div>
+                        <div class="ca-panel-foot">
+                            <button class="ca-btn ca-btn-ghost" @onclick='() => Panel(null)'>Cancelar</button>
+                            <button class="ca-btn ca-btn-primary" @onclick="CrearAcuerdo" disabled="@_busy">Crear acuerdo</button>
+                        </div>
+                    </div>
+                }
+                @* Panel: condonar *@
+                @if (_panel == "cond")
+                {
+                    <div class="ca-panel ca-panel-w">
+                        <label class="ca-panel-lbl">Motivo de la condonacion de intereses (obligatorio — queda inmutable)</label>
+                        <div class="ca-panel-row">
+                            <input @bind="_condMotivo" @bind:event="oninput" placeholder="Ej. Incentivo de pago aprobado por consejo, acta 045" />
+                            <button class="ca-btn ca-btn-warn" @onclick="Condonar" disabled="@(_busy || string.IsNullOrWhiteSpace(_condMotivo))">Condonar @Money(f.SaldoIntereses)</button>
+                        </div>
+                    </div>
+                }
+
+                @* Acuerdo vigente / pendiente *@
+                @if (f.AcuerdoVigente is { } ac)
+                {
+                    @if (ac.Estado == EstadoAcuerdoPago.PendienteAceptacion || ac.Estado == EstadoAcuerdoPago.Borrador)
+                    {
+                        <div class="ca-banner warn">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B45309" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                            <div class="ca-banner-tx">Acuerdo de pago <b>@(ac.Estado == EstadoAcuerdoPago.Borrador ? "en borrador" : "pendiente de aceptacion")</b> — @ac.NumeroCuotas cuotas desde @ac.FechaPrimeraCuota.ToString("d MMM yyyy", Es).</div>
+                            @if (ac.Estado == EstadoAcuerdoPago.Borrador) { <button class="ca-banner-btn" @onclick="() => EnviarAcuerdo(ac.Id)">Enviar para aceptacion</button> }
+                            else { <button class="ca-banner-btn" @onclick="() => AceptarAcuerdo(ac.Id)">Simular aceptacion</button> }
+                        </div>
+                    }
+                    else if (ac.Estado == EstadoAcuerdoPago.Vigente)
+                    {
+                        <div class="ca-banner ok">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1A8754" stroke-width="2.4"><path d="M5 12l5 5 9-11"/></svg>
+                            <div class="ca-banner-tx">Acuerdo <b>Vigente</b> — aceptacion inmutable (hash + timestamp + IP). El motor evalua el cumplimiento.</div>
+                        </div>
+                        <div class="ca-cron">
+                            <div class="ca-cron-h"><div style="width:60px"># CUOTA</div><div style="flex:1">VENCE</div><div style="width:120px;text-align:right">MONTO</div><div style="width:90px;text-align:right">ESTADO</div></div>
+                            @foreach (var c in ac.Cuotas)
+                            {
+                                var cuota = c;
+                                <div class="ca-cron-r">
+                                    <div style="width:60px;font-weight:700;color:#6D4FE3">#@c.NumeroCuota</div>
+                                    <div style="flex:1;color:#516F90">@c.FechaVencimiento.ToString("d MMM yyyy", Es)</div>
+                                    <div style="width:120px;text-align:right;font-weight:700;color:#1B2A3A">@Money(c.Monto)</div>
+                                    <div style="width:90px;text-align:right">
+                                        @if (c.Estado == EstadoCuotaAcuerdo.Pagada) { <span class="ca-pill" style="color:#1A8754;background:#E6F6EE">Pagada</span> }
+                                        else { <button class="ca-pay" @onclick="() => PagarCuota(cuota.Id)" disabled="@_busy">Pagar</button> }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+
+                @* Detalle de deuda *@
+                <div class="ca-sec-h">DETALLE DE DEUDA</div>
+                @if (f.Deudas.Count == 0)
+                {
+                    <div class="ca-banner ok"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1A8754" stroke-width="2.4"><path d="M5 12l5 5 9-11"/></svg><div class="ca-banner-tx" style="color:#15703F;font-weight:700">Unidad al dia — sin deuda pendiente. Puedes emitir un paz y salvo pleno.</div></div>
+                }
+                else
+                {
+                    <div class="ca-deuda">
+                        <div class="ca-deuda-h"><div style="width:90px">PERIODO</div><div style="flex:1">CONCEPTO</div><div style="width:110px;text-align:right">CAPITAL</div><div style="width:100px;text-align:right">INTERES</div><div style="width:120px;text-align:right">TOTAL</div></div>
+                        @foreach (var dd in f.Deudas)
+                        {
+                            <div class="ca-deuda-r"><div style="width:90px;font-weight:700;color:#33475B">@dd.Periodo.ToString("MMM yy", Es)</div><div style="flex:1;color:#516F90">@dd.Concepto</div><div style="width:110px;text-align:right;color:#33475B">@Money(dd.CapitalPendiente)</div><div style="width:100px;text-align:right;color:#B45309">@Money(dd.InteresAcumulado)</div><div style="width:120px;text-align:right;font-weight:800;color:#1B2A3A">@Money(dd.Total)</div></div>
+                        }
+                        <div class="ca-deuda-t"><div style="width:90px;font-weight:800;color:#1B2A3A">TOTAL</div><div style="flex:1"></div><div style="width:110px;text-align:right;font-weight:800;color:#1B2A3A">@Money(f.SaldoCapital)</div><div style="width:100px;text-align:right;font-weight:800;color:#B45309">@Money(f.SaldoIntereses)</div><div style="width:120px;text-align:right;font-weight:800;color:#C0383C">@Money(f.SaldoTotal)</div></div>
+                    </div>
+                }
+
+                @* Paz y salvos / condonaciones *@
+                @if (f.PazSalvos.Count > 0)
+                {
+                    <div class="ca-sec-h">PAZ Y SALVO</div>
+                    @foreach (var p in f.PazSalvos)
+                    {
+                        <div class="ca-ps">
+                            <span class="ca-pill" style="color:@(p.Estado == EstadoPazSalvo.Vigente ? "#1A8754" : "#A6B7C8");background:@(p.Estado == EstadoPazSalvo.Vigente ? "#E6F6EE" : "#EEF3F8")">@p.Estado</span>
+                            <span class="ca-ps-t">@p.Tipo · vence @p.FechaVencimiento.ToString("d MMM yyyy", Es)</span>
+                            <span class="ca-ps-cod">@p.CodigoVerificacion.Substring(0, Math.Min(10, p.CodigoVerificacion.Length))</span>
+                        </div>
+                    }
+                }
+
+                @* Historial *@
+                <div class="ca-sec-h">HISTORIAL DE GESTION</div>
+                @if (f.Historial.Count == 0) { <div class="ca-empty" style="padding:14px">Sin movimientos registrados.</div> }
+                else
+                {
+                    <div class="ca-log">
+                        @foreach (var l in f.Historial)
+                        {
+                            <div class="ca-log-i">
+                                <div class="ca-log-rail"><span class="ca-log-dot"></span><span class="ca-log-line"></span></div>
+                                <div><div class="ca-log-t">@l.Descripcion</div><div class="ca-log-d">@FechaHora(l.OcurridoAt)</div></div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
 }
 
 <style>
-    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
+    .ca-wrap { width: 100%; max-width: 1900px; margin: 0 auto; padding: 6px 28px 60px; font-family: 'Lexend', sans-serif; box-sizing: border-box; }
+    .ca-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
+    .ca-title { font-size: 27px; font-weight: 800; letter-spacing: -.6px; color: #1B2A3A; margin: 0; }
+    .ca-sub { font-size: 14px; color: #7C98B6; margin: 4px 0 0; }
+    .ca-btn { display: inline-flex; align-items: center; gap: 7px; padding: 9px 14px; border-radius: 9px; font-size: 12.5px; font-weight: 700; border: 0; cursor: pointer; white-space: nowrap; }
+    .ca-btn-primary { background: #6D4FE3; color: #fff; box-shadow: 0 4px 12px rgba(109,79,227,.3); }
+    .ca-btn-primary:hover { background: #5838C9; }
+    .ca-btn-primary:disabled { opacity: .6; cursor: default; }
+    .ca-btn-soft { background: #F1ECFD; color: #6D4FE3; border: 1px solid #DCD2F8; }
+    .ca-btn-soft:hover { background: #E6DEFA; }
+    .ca-btn-ghost { background: #fff; color: #516F90; border: 1px solid #E1E8EE; }
+    .ca-btn-warn { background: #B45309; color: #fff; }
+    .ca-btn-warn:hover { background: #92450A; }
+    .ca-btn-warn:disabled { opacity: .6; cursor: default; }
+
+    .ca-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+    .ca-kpi { background: #fff; border: 1px solid #E1E8EE; border-radius: 14px; padding: 16px 18px; box-shadow: 0 1px 2px rgba(45,62,80,.05); }
+    .ca-kpi-l { font-size: 12px; font-weight: 700; color: #7C98B6; }
+    .ca-kpi-v { font-size: 21px; font-weight: 800; color: #1B2A3A; letter-spacing: -.5px; margin-top: 5px; }
+    .ca-aging { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+    .ca-age { background: #fff; border: 1px solid #E1E8EE; border-radius: 14px; padding: 14px 16px; box-shadow: 0 1px 2px rgba(45,62,80,.05); }
+    .ca-age-top { display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; font-weight: 700; color: #7C98B6; }
+    .ca-age-n { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; }
+    .ca-age-v { font-size: 17px; font-weight: 800; color: #1B2A3A; letter-spacing: -.4px; margin-top: 7px; }
+    .ca-age-bar { height: 5px; border-radius: 4px; background: #EEF3F8; overflow: hidden; margin-top: 7px; }
+    .ca-age-bar div { height: 100%; border-radius: 4px; }
+    .ca-views { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-bottom: 14px; }
+    .ca-views-l { font-size: 11px; color: #A6B7C8; font-weight: 700; margin-right: 3px; }
+    .ca-view { font-size: 12px; font-weight: 700; padding: 7px 13px; border-radius: 20px; border: 1px solid #E1E8EE; color: #516F90; background: #fff; cursor: pointer; }
+    .ca-view.on { border-color: #6D4FE3; color: #6D4FE3; background: #F1ECFD; }
+
+    .ca-card { background: #fff; border: 1px solid #E1E8EE; border-radius: 14px; box-shadow: 0 1px 2px rgba(45,62,80,.05); overflow: hidden; }
+    .ca-thead { display: flex; align-items: center; gap: 12px; padding: 10px 20px; background: #FAFBFC; border-bottom: 1px solid #EEF3F8; }
+    .ca-thead .ca-c { font-size: 10.5px; letter-spacing: .4px; font-weight: 700; color: #A6B7C8; }
+    .ca-row { display: flex; align-items: center; gap: 12px; padding: 13px 20px; border-bottom: 1px solid #F4F7FA; }
+    .ca-row:hover { background: #FBFAFE; }
+    .ca-c-uni { flex: 1; min-width: 0; }
+    .ca-c-deuda { width: 120px; flex-shrink: 0; text-align: right; font-size: 13.5px; font-weight: 800; color: #1B2A3A; }
+    .ca-thead .ca-c-deuda { text-align: right; }
+    .ca-c-dias { width: 90px; flex-shrink: 0; text-align: center; font-size: 12.5px; font-weight: 700; color: #516F90; }
+    .ca-thead .ca-c-dias { text-align: center; }
+    .ca-c-est { width: 120px; flex-shrink: 0; text-align: center; }
+    .ca-thead .ca-c-est { text-align: center; }
+    .ca-c-acu { width: 90px; flex-shrink: 0; text-align: right; }
+    .ca-thead .ca-c-acu { text-align: right; }
+    .ca-c-fic { width: 70px; flex-shrink: 0; text-align: right; }
+    .ca-row-nom { font-size: 13px; font-weight: 700; color: #33475B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ca-row-sub { font-size: 11px; color: #A6B7C8; }
+    .ca-pill { font-size: 10.5px; font-weight: 700; padding: 4px 9px; border-radius: 7px; white-space: nowrap; }
+    .ca-acu { font-size: 10px; font-weight: 700; color: #1A8754; background: #E6F6EE; padding: 3px 8px; border-radius: 6px; }
+    .ca-ficha-btn { font-size: 11px; font-weight: 700; color: #6D4FE3; background: #F1ECFD; border: 1px solid #DCD2F8; padding: 6px 11px; border-radius: 7px; cursor: pointer; }
+    .ca-ficha-btn:hover { background: #E6DEFA; }
+    .ca-empty { padding: 26px; text-align: center; font-size: 13px; color: #A6B7C8; }
+    .ca-empty-cta { background: #fff; border: 1.5px dashed #D7E0EA; border-radius: 16px; padding: 44px 24px; text-align: center; }
+    .ca-empty-t { font-size: 17px; font-weight: 800; color: #1B2A3A; }
+    .ca-empty-s { font-size: 13px; color: #7C98B6; margin-top: 5px; }
+
+    .ca-modal-bd { position: fixed; inset: 0; z-index: 1090; background: rgba(27,42,58,.55); display: flex; align-items: flex-start; justify-content: center; padding: 30px 20px; overflow-y: auto; }
+    .ca-modal { width: 820px; max-width: 100%; background: #fff; border-radius: 18px; box-shadow: 0 30px 70px rgba(27,42,58,.4); margin: auto; overflow: hidden; display: flex; flex-direction: column; max-height: 92vh; }
+    .ca-modal-head { padding: 20px 24px; border-bottom: 1px solid #EEF3F8; flex-shrink: 0; }
+    .ca-modal-top { display: flex; align-items: flex-start; gap: 13px; }
+    .ca-modal-ic { width: 42px; height: 42px; border-radius: 11px; background: #F1ECFD; color: #6D4FE3; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .ca-modal-id { flex: 1; min-width: 0; }
+    .ca-modal-t { font-size: 17px; font-weight: 800; letter-spacing: -.3px; color: #1B2A3A; }
+    .ca-modal-d { font-size: 12px; color: #A6B7C8; margin-top: 2px; }
+    .ca-modal-actstop { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .ca-est-sel { border: 1px solid #E1E8EE; color: #516F90; background: #fff; border-radius: 9px; padding: 7px 10px; font-size: 12px; font-weight: 700; outline: none; }
+    .ca-modal-x { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; color: #7C98B6; border: 1px solid #E1E8EE; background: #fff; cursor: pointer; }
+    .ca-modal-acts { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 14px; }
+    .ca-act { font-size: 11.5px; font-weight: 700; padding: 7px 12px; border-radius: 8px; cursor: pointer; border: 1px solid; }
+    .ca-act-p { color: #6D4FE3; background: #F1ECFD; border-color: #DCD2F8; }
+    .ca-act-w { color: #B45309; background: #FEF3DC; border-color: #F8E3B5; }
+    .ca-act-g { color: #516F90; background: #fff; border-color: #E1E8EE; }
+    .ca-act:disabled { opacity: .6; cursor: default; }
+    .ca-modal-body { overflow-y: auto; padding: 20px 24px; }
+
+    .ca-panel { border-radius: 12px; padding: 14px; margin-bottom: 16px; }
+    .ca-panel-p { background: #FBFAFE; border: 1px solid #DCD2F8; }
+    .ca-panel-w { background: #FEF9EE; border: 1px solid #F8E3B5; }
+    .ca-panel-h { font-size: 12px; font-weight: 700; color: #6D4FE3; margin-bottom: 10px; }
+    .ca-panel-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .ca-panel-grid label { font-size: 10.5px; color: #7C98B6; font-weight: 700; display: block; margin-bottom: 4px; }
+    .ca-panel-grid select, .ca-panel-grid input { width: 100%; border: 1px solid #E1E8EE; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; color: #33475B; outline: none; background: #fff; box-sizing: border-box; }
+    .ca-panel-tot { font-size: 13px; font-weight: 800; color: #1B2A3A; padding: 8px 0; }
+    .ca-panel-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 11px; }
+    .ca-panel-lbl { font-size: 11px; color: #92591A; font-weight: 700; display: block; margin-bottom: 5px; }
+    .ca-panel-row { display: flex; gap: 8px; align-items: center; }
+    .ca-panel-row input { flex: 1; min-width: 0; border: 1px solid #F8E3B5; border-radius: 9px; padding: 9px 11px; font-size: 13px; color: #33475B; outline: none; background: #fff; box-sizing: border-box; }
+
+    .ca-banner { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 11px; margin-bottom: 16px; }
+    .ca-banner svg { flex-shrink: 0; }
+    .ca-banner.warn { background: #FEF9EE; border: 1px solid #F8E3B5; }
+    .ca-banner.ok { background: #E9F8EF; border: 1px solid #BFE8CF; }
+    .ca-banner-tx { flex: 1; font-size: 12px; color: #92591A; font-weight: 600; }
+    .ca-banner.ok .ca-banner-tx { color: #15703F; }
+    .ca-banner-btn { font-size: 11px; font-weight: 700; color: #fff; background: #B45309; padding: 6px 11px; border-radius: 7px; border: 0; cursor: pointer; }
+    .ca-cron { border: 1px solid #E9E4F8; border-radius: 10px; overflow: hidden; background: #fff; margin-bottom: 16px; }
+    .ca-cron-h { display: flex; padding: 8px 13px; background: #F5F1FE; font-size: 10px; font-weight: 700; color: #7C5CE8; letter-spacing: .4px; }
+    .ca-cron-r { display: flex; align-items: center; padding: 9px 13px; border-top: 1px solid #F4F7FA; font-size: 12.5px; }
+    .ca-pay { font-size: 11px; font-weight: 700; color: #1A8754; background: #E6F6EE; border: 1px solid #BFE8CF; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
+    .ca-pay:disabled { opacity: .6; }
+
+    .ca-sec-h { font-size: 10.5px; letter-spacing: .5px; color: #A6B7C8; font-weight: 700; margin: 4px 0 8px; }
+    .ca-deuda { border: 1px solid #EEF3F8; border-radius: 11px; overflow: hidden; margin-bottom: 18px; }
+    .ca-deuda-h { display: flex; padding: 9px 14px; background: #FAFBFC; border-bottom: 1px solid #EEF3F8; font-size: 10px; letter-spacing: .4px; font-weight: 700; color: #A6B7C8; }
+    .ca-deuda-r { display: flex; align-items: center; padding: 10px 14px; border-bottom: 1px solid #F4F7FA; font-size: 12.5px; }
+    .ca-deuda-t { display: flex; align-items: center; padding: 11px 14px; background: #F8FAFC; font-size: 12.5px; }
+    .ca-ps { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid #F4F7FA; }
+    .ca-ps-t { flex: 1; font-size: 12px; color: #516F90; font-weight: 600; }
+    .ca-ps-cod { font-size: 11px; color: #A6B7C8; font-family: ui-monospace, monospace; }
+    .ca-log { display: flex; flex-direction: column; }
+    .ca-log-i { display: flex; gap: 10px; padding-bottom: 11px; }
+    .ca-log-rail { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; }
+    .ca-log-dot { width: 9px; height: 9px; border-radius: 50%; background: #6D4FE3; margin-top: 3px; }
+    .ca-log-line { width: 2px; flex: 1; background: #EEF3F8; margin-top: 2px; }
+    .ca-log-t { font-size: 12.5px; font-weight: 600; color: #33475B; line-height: 1.4; }
+    .ca-log-d { font-size: 10.5px; color: #A6B7C8; }
+
+    @@media (max-width: 980px) { .ca-kpis, .ca-aging { grid-template-columns: repeat(2,1fr); } .ca-panel-grid { grid-template-columns: 1fr; } }
 </style>
 
 @code {
+    private static readonly CultureInfo Es = CultureInfo.GetCultureInfo("es-CO");
     private string? _jwt;
     private bool _busy;
+    private bool _loading = true;
     private string? _msg; private string _msgClass = "alert-info";
-    private CarteraTableroDto? _t;
+
+    private CarteraTableroDto? _tablero;
+    private List<EstadoCarteraDto> _estados = new();
+    private CarteraUnidadDetalleDto? _ficha;
+    private string _vista = "todas";
+    private string? _panel;
+
+    private int _acCuotas = 3;
+    private DateTime _acFecha = DateTime.Today.AddDays(15);
+    private string _condMotivo = "";
+
+    private record VistaDef(string Key, string Label);
+    private readonly List<VistaDef> _vistas = new()
+    {
+        new("todas", "Todas"), new("acuerdo", "Con acuerdo"), new("sinacuerdo", "Sin acuerdo"), new("critico", "Mora +90")
+    };
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -143,19 +400,27 @@ else
         try
         {
             var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
-            if (!string.IsNullOrWhiteSpace(stored))
-            {
-                _jwt = stored;
-                await CargarAsync();
-                StateHasChanged();
-            }
+            if (!string.IsNullOrWhiteSpace(stored)) { _jwt = stored; await CargarAsync(); }
+            _loading = false; StateHasChanged();
         }
-        catch { }
+        catch { _loading = false; }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
     }
 
     private async Task CargarAsync()
     {
-        try { _t = await Auth().GetFromJsonAsync<CarteraTableroDto>("/api/cartera/tablero"); }
+        try
+        {
+            var http = Auth();
+            _tablero = await http.GetFromJsonAsync<CarteraTableroDto>("/api/cartera/tablero");
+            try { _estados = await http.GetFromJsonAsync<List<EstadoCarteraDto>>("/api/cartera/estados") ?? new(); } catch { }
+        }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
     }
 
@@ -165,28 +430,131 @@ else
         try
         {
             var resp = await Auth().PostAsync("/api/cartera/sincronizar", null);
-            if (resp.IsSuccessStatusCode)
-            {
-                _msg = "Cartera sincronizada con las liquidaciones del modulo 2.6."; _msgClass = "alert-success";
-                await CargarAsync();
-            }
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _msg = "Cartera sincronizada desde las liquidaciones."; _msgClass = "alert-success";
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private List<CarteraUnidadListaDto> FiltrarUnidades()
+    {
+        var l = _tablero?.UnidadesEnMora ?? new List<CarteraUnidadListaDto>();
+        return _vista switch
+        {
+            "acuerdo" => l.Where(u => u.TieneAcuerdoVigente).ToList(),
+            "sinacuerdo" => l.Where(u => !u.TieneAcuerdoVigente).ToList(),
+            "critico" => l.Where(u => u.DiasMora > 90).ToList(),
+            _ => l.ToList()
+        };
+    }
+
+    private record AgeRow(string Label, decimal Monto, int Unidades, decimal Pct, string Color, string Bg);
+    private List<AgeRow> Aging(CarteraKpisDto k)
+    {
+        var tot = k.TotalMoraCop <= 0 ? 1 : k.TotalMoraCop;
+        return new()
+        {
+            new("0-30 dias", k.Aging0_30, k.UnidadesAging0_30, k.Aging0_30 / tot * 100, "#1A8754", "#E6F6EE"),
+            new("31-60 dias", k.Aging31_60, k.UnidadesAging31_60, k.Aging31_60 / tot * 100, "#B45309", "#FEF3DC"),
+            new("61-90 dias", k.Aging61_90, k.UnidadesAging61_90, k.Aging61_90 / tot * 100, "#EA580C", "#FEEAD9"),
+            new("+90 dias", k.AgingMas90, k.UnidadesAgingMas90, k.AgingMas90 / tot * 100, "#C0383C", "#FDE7E7"),
+        };
+    }
+
+    private async Task AbrirFicha(Guid unidadId)
+    {
+        _panel = null;
+        try { _ficha = await Auth().GetFromJsonAsync<CarteraUnidadDetalleDto>($"/api/cartera/unidades/{unidadId}"); }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+    private void CerrarFicha() { _ficha = null; _panel = null; }
+    private void Panel(string? p) { _panel = _panel == p ? null : p; }
+
+    private async Task RecargarFicha()
+    {
+        if (_ficha is null) return;
+        _ficha = await Auth().GetFromJsonAsync<CarteraUnidadDetalleDto>($"/api/cartera/unidades/{_ficha.UnidadPrivadaId}");
+        await CargarAsync();
+    }
+
+    private async Task CambiarEstado(ChangeEventArgs e)
+    {
+        if (_ficha is null || !Guid.TryParse(e.Value?.ToString(), out var estadoId)) return;
+        var resp = await Auth().PutAsJsonAsync($"/api/cartera/unidades/{_ficha.UnidadPrivadaId}/estado", new CambiarEstadoUnidadRequest(estadoId, "Cambio manual desde ficha"));
+        if (resp.IsSuccessStatusCode) await RecargarFicha();
+        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+    }
+
+    private async Task CrearAcuerdo()
+    {
+        if (_ficha is null) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/api/cartera/acuerdos",
+                new CrearAcuerdoRequest(_ficha.UnidadPrivadaId, _acCuotas, DateOnly.FromDateTime(_acFecha), 0m, null));
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _panel = null;
+            await RecargarFicha();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task EnviarAcuerdo(Guid id)
+    {
+        var resp = await Auth().PutAsync($"/api/cartera/acuerdos/{id}/enviar", null);
+        if (resp.IsSuccessStatusCode) await RecargarFicha();
+        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+    }
+    private async Task AceptarAcuerdo(Guid id)
+    {
+        var resp = await Auth().PutAsJsonAsync($"/api/cartera/acuerdos/{id}/aceptar", new AceptarAcuerdoRequest("simulado-admin", "127.0.0.1"));
+        if (resp.IsSuccessStatusCode) await RecargarFicha();
+        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+    }
+    private async Task PagarCuota(Guid cuotaId)
+    {
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/api/cartera/acuerdos/pago", new RegistrarPagoAcuerdoRequest(cuotaId, DateOnly.FromDateTime(DateTime.Today)));
+            if (resp.IsSuccessStatusCode) await RecargarFicha();
             else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
         }
         finally { _busy = false; }
     }
 
-    private int AgingPct(decimal valor)
+    private async Task Condonar()
     {
-        if (_t is null || _t.Kpis.TotalMoraCop == 0) return 0;
-        return (int)Math.Min(100, (double)(valor / _t.Kpis.TotalMoraCop) * 100);
+        if (_ficha is null || string.IsNullOrWhiteSpace(_condMotivo)) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/api/cartera/condonaciones",
+                new AplicarCondonacionRequest(_ficha.UnidadPrivadaId, TipoCondonacion.Intereses, _ficha.SaldoIntereses, _condMotivo.Trim(), null));
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _panel = null; _condMotivo = "";
+            await RecargarFicha();
+        }
+        finally { _busy = false; }
     }
 
-    private void Ir(Guid unidadId) => Nav.NavigateTo($"/cartera/{unidadId}");
-
-    private HttpClient Auth()
+    private async Task EmitirPazSalvo()
     {
-        var http = HttpFactory.CreateClient("PropiaApi");
-        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
-        return http;
+        if (_ficha is null) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/api/cartera/paz-salvos",
+                new EmitirPazSalvoRequest(_ficha.UnidadPrivadaId, EmisionPazSalvo.Manual, null));
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            await RecargarFicha();
+        }
+        finally { _busy = false; }
     }
+
+    private static string Money(decimal v) => "$ " + Math.Round(v).ToString("N0", Es);
+    private static string Tint(string? hex) => string.IsNullOrWhiteSpace(hex) ? "#F1F5F9" : "#F5F8FA";
+    private static string FechaHora(DateTimeOffset f) { var l = f.ToLocalTime(); return l.ToString("d MMM yyyy, HH:mm", Es); }
 }
