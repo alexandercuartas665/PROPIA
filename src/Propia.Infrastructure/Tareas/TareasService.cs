@@ -77,14 +77,33 @@ public class TareasService : ITareasService
             .ToListAsync(ct);
     }
 
+    private static readonly string[] _estadoPalette = { "#6D4FE3", "#0EA5E9", "#EC4899", "#14B8A6", "#A855F7", "#F97316" };
+
     public async Task<EstadoTareaDto> CrearEstadoAsync(CrearEstadoRequest req, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.Nombre) || req.Nombre.Trim().Length < 2)
             throw new InvalidOperationException("Nombre minimo 2 caracteres.");
         var nom = req.Nombre.Trim();
-        if (await _db.TareasEstados.AnyAsync(e => e.Nombre == nom, ct))
-            throw new InvalidOperationException("Ya existe un estado con este nombre.");
-        var e = new TareaEstado { Nombre = nom, Color = req.Color, Orden = req.Orden, EsTerminal = false, EsBase = false, Activo = true };
+        var tableroId = req.TableroId ?? await AsegurarTableroDefaultAsync(ct);
+        if (await _db.TareasEstados.AnyAsync(e => e.TableroId == tableroId && e.Nombre == nom, ct))
+            throw new InvalidOperationException("Ya existe un estado con este nombre en el tablero.");
+
+        // Insertar el nuevo estado justo antes de los estados terminales (Completada/Cancelada).
+        var enBoard = await _db.TareasEstados.Where(e => e.TableroId == tableroId).ToListAsync(ct);
+        var terminales = enBoard.Where(e => e.EsTerminal).ToList();
+        int orden;
+        if (req.Orden > 0) orden = req.Orden;
+        else if (terminales.Count > 0)
+        {
+            orden = terminales.Min(e => e.Orden);
+            foreach (var term in terminales) { term.Orden += 1; term.UpdatedAt = DateTimeOffset.UtcNow; }
+        }
+        else orden = (enBoard.Count > 0 ? enBoard.Max(e => e.Orden) : 0) + 1;
+
+        var color = string.IsNullOrWhiteSpace(req.Color)
+            ? _estadoPalette[enBoard.Count(e => !e.EsBase) % _estadoPalette.Length]
+            : req.Color;
+        var e = new TareaEstado { TableroId = tableroId, Nombre = nom, Color = color, Orden = orden, EsTerminal = false, EsBase = false, Activo = true };
         _db.TareasEstados.Add(e);
         await _db.SaveChangesAsync(ct);
         return new EstadoTareaDto(e.Id, e.Nombre, e.Color, e.Orden, false, false, true);
@@ -112,7 +131,7 @@ public class TareasService : ITareasService
         var e = await _db.TareasEstados.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (e is null) return false;
         if (e.EsTerminal || e.EsBase) throw new InvalidOperationException("Estados base o terminales no eliminables.");
-        if (await _db.Tareas.AnyAsync(t => t.EstadoId == id, ct))
+        if (await _db.Tareas.AnyAsync(t => t.EstadoId == id && !t.Eliminada, ct))
             throw new InvalidOperationException("No puedes eliminar un estado con tareas asociadas. Reasignalas primero.");
         _db.TareasEstados.Remove(e);
         await _db.SaveChangesAsync(ct);
@@ -964,7 +983,35 @@ public class TareasService : ITareasService
         var personas = await _db.Personas.AsNoTracking().Where(p => usuariosIds.Contains(p.Id))
             .Select(p => new { p.Id, Nombre = p.Nombres + " " + p.Apellidos }).ToListAsync(ct);
         var usuarios = personas.Select(p => new TableroUsuarioDto(p.Id, p.Nombre.Trim(), Iniciales(p.Nombre))).ToList();
-        return new TableroDto(t.Id, t.Nombre, t.Descripcion, t.Color, t.Orden, nCards, usuarios);
+        var campos = await _db.TableroCampos.AsNoTracking().Where(c => c.TableroId == t.Id)
+            .OrderBy(c => c.Orden).Select(c => new TableroCampoDto(c.Id, c.Label, c.Orden)).ToListAsync(ct);
+        return new TableroDto(t.Id, t.Nombre, t.Descripcion, t.Color, t.Orden, nCards, usuarios, campos);
+    }
+
+    public async Task<TableroCampoDto> AgregarCampoAsync(Guid tableroId, string label, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(label) || label.Trim().Length < 2)
+            throw new InvalidOperationException("Etiqueta minimo 2 caracteres.");
+        var lab = label.Trim();
+        if (!await _db.Tableros.AnyAsync(t => t.Id == tableroId, ct))
+            throw new InvalidOperationException("Tablero no encontrado.");
+        if (await _db.TableroCampos.AnyAsync(c => c.TableroId == tableroId && c.Label == lab, ct))
+            throw new InvalidOperationException("Ya existe un campo con esa etiqueta.");
+        var orden = (await _db.TableroCampos.Where(c => c.TableroId == tableroId).Select(c => (int?)c.Orden).MaxAsync(ct) ?? 0) + 1;
+        var c2 = new TableroCampo { TableroId = tableroId, Label = lab, Orden = orden };
+        _db.TableroCampos.Add(c2);
+        await _db.SaveChangesAsync(ct);
+        return new TableroCampoDto(c2.Id, c2.Label, c2.Orden);
+    }
+
+    public async Task<bool> EliminarCampoAsync(Guid tableroId, Guid campoId, CancellationToken ct)
+    {
+        var c = await _db.TableroCampos.FirstOrDefaultAsync(x => x.Id == campoId && x.TableroId == tableroId, ct);
+        if (c is null) return false;
+        await _db.TareaCampoValores.Where(v => v.TableroCampoId == campoId).ExecuteDeleteAsync(ct);
+        _db.TableroCampos.Remove(c);
+        await _db.SaveChangesAsync(ct);
+        return true;
     }
 
     public async Task<IReadOnlyList<TableroDto>> ListarTablerosAsync(CancellationToken ct)

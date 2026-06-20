@@ -60,4 +60,8 @@ public interface ITareasService
     /// <summary>Vista completa de un tablero (tablero + estados + tarjetas).</summary>
     Task<TableroBoardDto?> GetTableroBoardAsync(Guid tableroId, CancellationToken ct);
     Task<bool> ActualizarProgresoAsync(Guid tareaId, int progreso, CancellationToken ct);
+
+    // Campos personalizados del tablero
+    Task<TableroCampoDto> AgregarCampoAsync(Guid tableroId, string label, CancellationToken ct);
+    Task<bool> EliminarCampoAsync(Guid tableroId, Guid campoId, CancellationToken ct);
 }

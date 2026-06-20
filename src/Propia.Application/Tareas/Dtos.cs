@@ -118,7 +118,7 @@ public record CrearComentarioRequest(string Texto);
 public record AsignarEtiquetaRequest(Guid EtiquetaId);
 public record AgregarColaboradorRequest(Guid PersonaId);
 
-public record CrearEstadoRequest(string Nombre, string? Color, int Orden);
+public record CrearEstadoRequest(string Nombre, string? Color, int Orden, Guid? TableroId = null);
 public record ActualizarEstadoRequest(string Nombre, string? Color, int Orden, bool Activo);
 
 public record CrearEtiquetaRequest(string Nombre, string? Color);
@@ -177,11 +177,14 @@ public record BulkResultDto(
 
 // ----- Tableros de trabajo (2.10) -----
 public record TableroUsuarioDto(Guid PersonaId, string Nombre, string Iniciales);
+public record TableroCampoDto(Guid Id, string Label, int Orden);
 public record TableroDto(
     Guid Id, string Nombre, string? Descripcion, string Color, int Orden,
-    int NCards, IReadOnlyList<TableroUsuarioDto> Usuarios);
+    int NCards, IReadOnlyList<TableroUsuarioDto> Usuarios,
+    IReadOnlyList<TableroCampoDto>? Campos = null);
 public record GuardarTableroRequest(
     string Nombre, string? Descripcion, string Color, IReadOnlyList<Guid> UsuarioPersonaIds);
+public record GuardarCampoRequest(string Label);
 
 /// <summary>Vista completa de un tablero: el tablero + sus columnas/estados + sus tarjetas.</summary>
 public record TableroBoardDto(

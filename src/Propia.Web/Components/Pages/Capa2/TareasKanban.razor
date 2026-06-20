@@ -92,7 +92,7 @@ else
                     </button>
                 }
             </div>
-            <button class="tb-btn tb-btn-soft" @onclick="() => AbrirTableroDraft(_tableros?.FirstOrDefault(x => x.Id == _board!.Tablero.Id))"><i class="fi fi-rr-settings"></i>Configurar</button>
+            <button class="tb-btn tb-btn-soft" @onclick="AbrirConfigBoard"><i class="fi fi-rr-settings"></i>Configurar</button>
             <button class="tb-btn tb-btn-primary" @onclick="() => AbrirCardDraft(null, _board.Estados.FirstOrDefault()?.Id)"><i class="fi fi-rr-plus"></i>Nueva tarjeta</button>
         </div>
 
@@ -257,6 +257,68 @@ else
                 <div class="tb-flex"></div>
                 <button class="tb-btn tb-btn-ghost" @onclick="() => _tableroDraft = null">Cancelar</button>
                 <button class="tb-btn tb-btn-primary" @onclick="GuardarTablero" disabled="@(_busy || string.IsNullOrWhiteSpace(_tableroDraft.Nombre))">@(_busy ? "Guardando..." : "Guardar tablero")</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ===================== Modal Configurar tablero (estados + campos) ===================== *@
+@if (_cfgOpen && _board is not null)
+{
+    <div class="tb-modal-bd" @onclick="CerrarConfigBoard">
+        <div class="tb-modal" @onclick:stopPropagation="true">
+            <div class="tb-modal-head">
+                <div class="tb-modal-tt">
+                    <div class="tb-modal-h">Configurar tablero</div>
+                    <div class="tb-modal-s">@_board.Tablero.Nombre · estados y campos</div>
+                </div>
+                <button class="tb-modal-x" @onclick="CerrarConfigBoard"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+            </div>
+            <div class="tb-modal-body">
+                <div>
+                    <div class="tbcfg-h">ESTADOS (COLUMNAS)</div>
+                    <div class="tbcfg-list">
+                        @foreach (var e in _board.Estados)
+                        {
+                            var est = e;
+                            <div class="tbcfg-est">
+                                <span class="tbcfg-dot" style="background:@(e.Color ?? "#94a3b8")"></span>
+                                <span class="tbcfg-est-nom">@e.Nombre</span>
+                                <span class="tbcfg-est-cnt">@CountEstado(e.Id) tarjetas</span>
+                                @if (!e.EsBase && !e.EsTerminal)
+                                {
+                                    <button class="tbcfg-del" title="Quitar estado" @onclick="() => CfgRemoveEstado(est.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
+                                }
+                            </div>
+                        }
+                    </div>
+                    <div class="tbcfg-add">
+                        <input @bind="_cfgEstadoNew" @bind:event="oninput" placeholder="Nuevo estado (ej. En revision)" />
+                        <button class="tb-btn tb-btn-primary" @onclick="CfgAddEstado" disabled="@(_busy || string.IsNullOrWhiteSpace(_cfgEstadoNew))">Agregar</button>
+                    </div>
+                </div>
+                <div>
+                    <div class="tbcfg-h">CAMPOS ADICIONALES</div>
+                    <div class="tbcfg-help">Cada tarjeta ya tiene titulo, descripcion, color, adjuntos y trazabilidad. Agrega campos propios:</div>
+                    @if (_board.Tablero.Campos is { Count: > 0 })
+                    {
+                        <div class="tbcfg-chips">
+                            @foreach (var c in _board.Tablero.Campos)
+                            {
+                                var campo = c;
+                                <span class="tbcfg-chip">@c.Label<button title="Quitar" @onclick="() => CfgRemoveCampo(campo.Id)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></span>
+                            }
+                        </div>
+                    }
+                    <div class="tbcfg-add">
+                        <input @bind="_cfgCampoNew" @bind:event="oninput" placeholder="Nuevo campo (ej. Costo estimado)" />
+                        <button class="tb-btn tb-btn-soft" @onclick="CfgAddCampo" disabled="@(_busy || string.IsNullOrWhiteSpace(_cfgCampoNew))">Agregar</button>
+                    </div>
+                </div>
+            </div>
+            <div class="tb-modal-foot">
+                <div class="tb-flex"></div>
+                <button class="tb-btn tb-btn-primary" @onclick="CerrarConfigBoard">Listo</button>
             </div>
         </div>
     </div>
@@ -710,6 +772,25 @@ else
 
     .tbc-foot { display: flex; align-items: center; gap: 9px; padding: 16px 24px; border-top: 1px solid #EEF3F8; flex-shrink: 0; }
 
+    /* ===== Modal Configurar tablero ===== */
+    .tbcfg-h { font-size: 11px; letter-spacing: .5px; color: #A6B7C8; font-weight: 700; margin-bottom: 10px; }
+    .tbcfg-list { display: flex; flex-direction: column; gap: 7px; margin-bottom: 10px; }
+    .tbcfg-est { display: flex; align-items: center; gap: 10px; border: 1px solid #E1E8EE; border-radius: 10px; padding: 10px 12px; }
+    .tbcfg-dot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
+    .tbcfg-est-nom { flex: 1; font-size: 13px; font-weight: 700; color: #33475B; }
+    .tbcfg-est-cnt { font-size: 11px; color: #A6B7C8; }
+    .tbcfg-del { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: #C3D0DD; border: 0; background: transparent; cursor: pointer; flex-shrink: 0; }
+    .tbcfg-del:hover { background: #FDE7E7; color: #D7263D; }
+    .tbcfg-add { display: flex; gap: 7px; }
+    .tbcfg-add input { flex: 1; min-width: 0; border: 1px solid #E1E8EE; border-radius: 8px; padding: 9px 11px; font-size: 13px; color: #33475B; outline: none; background: #fff; box-sizing: border-box; }
+    .tbcfg-add input:focus { border-color: #6D4FE3; }
+    .tbcfg-add .tb-btn { flex-shrink: 0; }
+    .tbcfg-help { font-size: 11.5px; color: #7C98B6; margin-bottom: 10px; line-height: 1.45; }
+    .tbcfg-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }
+    .tbcfg-chip { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; color: #516F90; background: #F5F8FA; border: 1px solid #E1E8EE; padding: 6px 11px; border-radius: 8px; }
+    .tbcfg-chip button { display: flex; color: #C3D0DD; border: 0; background: transparent; cursor: pointer; padding: 0; }
+    .tbcfg-chip button:hover { color: #D7263D; }
+
     @@media (max-width: 880px) { .tbc-body { grid-template-columns: 1fr; } }
 </style>
 
@@ -733,6 +814,9 @@ else
     private string _subNew = "";
     private string _respPick = "";
     private bool _subiendo;
+    private bool _cfgOpen;
+    private string _cfgEstadoNew = "";
+    private string _cfgCampoNew = "";
 
     // Contexto para la tarjeta rica (copropiedad + origen)
     private string _coNombre = "";
@@ -1001,6 +1085,51 @@ else
         if (!await Js.InvokeAsync<bool>("confirm", "Eliminar este tablero? Sus tarjetas se conservan pero el tablero deja de mostrarse.")) return;
         var resp = await Auth().DeleteAsync($"/api/tareas/tableros/{_tableroDraft.Id}");
         if (resp.IsSuccessStatusCode) { _tableroDraft = null; _board = null; await CargarAsync(); }
+    }
+
+    // ----- Configurar tablero (estados + campos) -----
+    private void AbrirConfigBoard() { _cfgOpen = true; _cfgEstadoNew = ""; _cfgCampoNew = ""; }
+    private void CerrarConfigBoard() { _cfgOpen = false; }
+    private int CountEstado(Guid estadoId) => _board?.Tareas.Count(t => t.EstadoId == estadoId && t.PadreId == null) ?? 0;
+
+    private async Task CfgAddEstado()
+    {
+        if (_board is null || string.IsNullOrWhiteSpace(_cfgEstadoNew)) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/api/tareas/estados", new CrearEstadoRequest(_cfgEstadoNew.Trim(), null, 0, _board.Tablero.Id));
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _cfgEstadoNew = "";
+            await RecargarBoard();
+        }
+        finally { _busy = false; }
+    }
+    private async Task CfgRemoveEstado(Guid estadoId)
+    {
+        if (_board is null) return;
+        var resp = await Auth().DeleteAsync($"/api/tareas/estados/{estadoId}");
+        if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+        await RecargarBoard();
+    }
+    private async Task CfgAddCampo()
+    {
+        if (_board is null || string.IsNullOrWhiteSpace(_cfgCampoNew)) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/tareas/tableros/{_board.Tablero.Id}/campos", new GuardarCampoRequest(_cfgCampoNew.Trim()));
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _cfgCampoNew = "";
+            await RecargarBoard();
+        }
+        finally { _busy = false; }
+    }
+    private async Task CfgRemoveCampo(Guid campoId)
+    {
+        if (_board is null) return;
+        var resp = await Auth().DeleteAsync($"/api/tareas/tableros/{_board.Tablero.Id}/campos/{campoId}");
+        if (resp.IsSuccessStatusCode) await RecargarBoard();
     }
 
     private void CerrarCard() { _cardDraft = null; _subNew = ""; _respPick = ""; }

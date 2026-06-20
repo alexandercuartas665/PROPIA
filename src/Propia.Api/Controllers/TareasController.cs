@@ -200,6 +200,17 @@ public class TareasController : ControllerBase
         return b is null ? NotFound() : Ok(b);
     }
 
+    [HttpPost("tableros/{id:guid}/campos")]
+    public async Task<IActionResult> AgregarCampo(Guid id, [FromBody] GuardarCampoRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.AgregarCampoAsync(id, req.Label, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpDelete("tableros/{id:guid}/campos/{campoId:guid}")]
+    public async Task<IActionResult> EliminarCampo(Guid id, Guid campoId, CancellationToken ct)
+        => await _svc.EliminarCampoAsync(id, campoId, ct) ? NoContent() : NotFound();
+
     [HttpPut("{id:guid}/progreso")]
     public async Task<IActionResult> ActualizarProgreso(Guid id, [FromBody] ActualizarProgresoRequest req, CancellationToken ct)
         => await _svc.ActualizarProgresoAsync(id, req.Progreso, ct) ? NoContent() : NotFound();
