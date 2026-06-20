@@ -186,13 +186,36 @@ else
             </div>
         }
 
-        @* ---------- CALENDARIO (preparado) ---------- *@
+        @* ---------- CALENDARIO (mensual por fecha de vencimiento) ---------- *@
         else if (_boardMode == "calendario")
         {
-            <div class="tb-soon">
-                <div class="tb-soon-ic"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></div>
-                <div class="tb-soon-t">Vista Calendario</div>
-                <div class="tb-soon-s">Las tarjetas con fecha de vencimiento se veran en un calendario mensual. Proximamente.</div>
+            <div class="tcal">
+                <div class="tcal-head">
+                    <button class="tcal-nav" title="Mes anterior" @onclick="() => CalMover(-1)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
+                    <div class="tcal-title">@CalTitulo()</div>
+                    <button class="tcal-nav" title="Mes siguiente" @onclick="() => CalMover(1)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button>
+                    <button class="tcal-today" @onclick="CalHoy">Hoy</button>
+                    <div class="tb-flex"></div>
+                    <span class="tcal-count">@CalCards().Count con vencimiento</span>
+                </div>
+                <div class="tcal-grid-h">
+                    @foreach (var d in _diasSemana) { <div class="tcal-dow">@d</div> }
+                </div>
+                <div class="tcal-grid">
+                    @foreach (var cell in CalCeldas())
+                    {
+                        <div class="tcal-cell @(cell.EsMes ? "" : "tcal-out") @(cell.EsFinde ? "tcal-finde" : "")">
+                            <div class="tcal-daynum @(cell.EsHoy ? "tcal-hoy" : "")">@cell.Dia</div>
+                            <div class="tcal-events">
+                                @foreach (var t in cell.Cards)
+                                {
+                                    var tarea = t;
+                                    <button class="tcal-ev @(t.Vencida ? "venc" : "")" style="border-left-color:@(t.Color ?? t.EstadoColor ?? "#6D4FE3")" title="@t.Titulo - @t.EstadoNombre" @onclick="() => AbrirCardDraft(tarea, null)">@t.Titulo</button>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
             </div>
         }
 
@@ -791,6 +814,30 @@ else
     .tbcfg-chip button { display: flex; color: #C3D0DD; border: 0; background: transparent; cursor: pointer; padding: 0; }
     .tbcfg-chip button:hover { color: #D7263D; }
 
+    /* ===== Vista Calendario ===== */
+    .tcal { background: #fff; border: 1px solid #E1E8EE; border-radius: 14px; box-shadow: 0 1px 2px rgba(45,62,80,.05); overflow: hidden; }
+    .tcal-head { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid #EEF3F8; }
+    .tcal-nav { width: 32px; height: 32px; border-radius: 8px; border: 1px solid #E1E8EE; background: #fff; color: #516F90; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+    .tcal-nav:hover { border-color: #6D4FE3; color: #6D4FE3; }
+    .tcal-title { font-size: 15px; font-weight: 800; color: #1B2A3A; min-width: 150px; }
+    .tcal-today { font-size: 12px; font-weight: 700; color: #6D4FE3; background: #F1ECFD; border: 1px solid #DCD2F8; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+    .tcal-today:hover { background: #E6DEFA; }
+    .tcal-count { font-size: 11.5px; font-weight: 700; color: #6D4FE3; background: #F1ECFD; padding: 4px 11px; border-radius: 20px; }
+    .tcal-grid-h { display: grid; grid-template-columns: repeat(7, 1fr); background: #FAFBFC; border-bottom: 1px solid #EEF3F8; }
+    .tcal-dow { padding: 8px 10px; font-size: 10.5px; letter-spacing: .4px; font-weight: 700; color: #A6B7C8; }
+    .tcal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: #EEF3F8; }
+    .tcal-cell { background: #fff; min-height: 106px; display: flex; flex-direction: column; padding: 6px 7px; }
+    .tcal-cell.tcal-finde { background: #FBFCFD; }
+    .tcal-cell.tcal-out { background: #FAFBFC; }
+    .tcal-cell.tcal-out .tcal-daynum { color: #C3D0DD; }
+    .tcal-daynum { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11.5px; font-weight: 800; color: #33475B; align-self: flex-end; }
+    .tcal-daynum.tcal-hoy { background: #6D4FE3; color: #fff; }
+    .tcal-events { display: flex; flex-direction: column; gap: 4px; margin-top: 3px; min-width: 0; }
+    .tcal-ev { display: block; width: 100%; text-align: left; font-size: 10.5px; font-weight: 700; color: #33475B; line-height: 1.25; background: #F8FAFC; border: 0; border-left: 3px solid #6D4FE3; border-radius: 6px; padding: 4px 7px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tcal-ev:hover { background: #F1ECFD; }
+    .tcal-ev.venc { background: #FDE7E7; color: #C0383C; }
+
+    @@media (max-width: 880px) { .tcal-cell { min-height: 76px; } }
     @@media (max-width: 880px) { .tbc-body { grid-template-columns: 1fr; } }
 </style>
 
@@ -960,6 +1007,49 @@ else
         if (!string.IsNullOrEmpty(_fResp) && t.AsignadoNombre != _fResp) return false;
         if (!string.IsNullOrEmpty(_fPrio) && t.Prioridad.ToString() != _fPrio) return false;
         return true;
+    }
+
+    // ----- Vista Calendario (mensual por fecha de vencimiento) -----
+    private static readonly string[] _diasSemana = { "LUN", "MAR", "MIE", "JUE", "VIE", "SAB", "DOM" };
+    private int _calYear; private int _calMonth; private bool _calInit;
+    private record CalCelda(int Dia, bool EsMes, bool EsHoy, bool EsFinde, List<TareaListaDto> Cards);
+
+    private void CalInit() { if (_calInit) return; var t = DateTime.Today; _calYear = t.Year; _calMonth = t.Month; _calInit = true; }
+    private void CalMover(int delta) { CalInit(); var d = new DateTime(_calYear, _calMonth, 1).AddMonths(delta); _calYear = d.Year; _calMonth = d.Month; }
+    private void CalHoy() { var t = DateTime.Today; _calYear = t.Year; _calMonth = t.Month; _calInit = true; }
+    private string CalTitulo()
+    {
+        CalInit();
+        var s = new DateTime(_calYear, _calMonth, 1).ToString("MMMM yyyy", Es);
+        return char.ToUpper(s[0]) + s.Substring(1);
+    }
+    private List<TareaListaDto> CalCards() => _board?.Tareas.Where(t => t.FechaVencimiento.HasValue).ToList() ?? new();
+
+    private List<CalCelda> CalCeldas()
+    {
+        CalInit();
+        var primero = new DateTime(_calYear, _calMonth, 1);
+        int offset = ((int)primero.DayOfWeek + 6) % 7; // semana inicia lunes
+        var inicio = primero.AddDays(-offset);
+        int dias = DateTime.DaysInMonth(_calYear, _calMonth);
+        int total = (int)Math.Ceiling((offset + dias) / 7.0) * 7;
+        var hoy = DateTime.Today;
+        var porDia = (_board?.Tareas ?? new List<TareaListaDto>())
+            .Where(t => t.FechaVencimiento.HasValue)
+            .GroupBy(t => t.FechaVencimiento!.Value)
+            .ToDictionary(g => g.Key, g => g.OrderBy(t => t.Prioridad).ToList());
+        var celdas = new List<CalCelda>(total);
+        for (int i = 0; i < total; i++)
+        {
+            var f = inicio.AddDays(i);
+            celdas.Add(new CalCelda(
+                f.Day,
+                f.Month == _calMonth,
+                f.Date == hoy.Date,
+                f.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday,
+                porDia.GetValueOrDefault(DateOnly.FromDateTime(f), new List<TareaListaDto>())));
+        }
+        return celdas;
     }
 
     @* Render recursivo: la fila + sus tareas hijas (encadenadas) cuando esta expandida. Hasta 3 niveles, como el prototipo. *@
