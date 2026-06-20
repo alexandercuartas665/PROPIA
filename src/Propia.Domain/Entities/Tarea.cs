@@ -53,6 +53,15 @@ public class Tarea : TenantEntity
     public string? ModuloOrigenCodigo { get; set; }
     public Guid? ModuloOrigenEntidadId { get; set; }
 
+    // ----- Relacion de la tarjeta con un elemento de la copropiedad (card del prototipo) -----
+    /// <summary>Tipo de relacion: "inmueble" | "zona" | "equipo". Null = sin relacion.</summary>
+    public string? OrigenTipo { get; set; }
+    /// <summary>Referencia legible del elemento relacionado (numero de unidad, nombre de zona/equipo).</summary>
+    public string? OrigenReferencia { get; set; }
+
+    /// <summary>Soft-delete de la tarjeta (el historial es append-only, no se puede borrar fisico).</summary>
+    public bool Eliminada { get; set; }
+
     public Guid? CreadoPorUsuarioId { get; set; }
 
     public string? MotivoCancelacion { get; set; }

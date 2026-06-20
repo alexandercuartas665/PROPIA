@@ -48,3 +48,15 @@ public class TareaAdjunto : TenantEntity
     public string Nombre { get; set; } = string.Empty;
     public string Url { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// Subtarea ligera tipo checklist de una tarjeta (campo "Tareas relacionadas" del modal).
+/// Es distinta de las tareas hijas reales (Tarea.PadreId): no tiene estado ni ficha propia.
+/// </summary>
+public class TareaSubtarea : TenantEntity
+{
+    public Guid TareaId { get; set; }
+    public string Titulo { get; set; } = string.Empty;
+    public bool Hecho { get; set; }
+    public int Orden { get; set; }
+}

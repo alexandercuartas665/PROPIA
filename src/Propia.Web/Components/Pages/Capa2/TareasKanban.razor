@@ -180,11 +180,7 @@ else
                     </div>
                     @foreach (var t in grupo)
                     {
-                        @RenderFila(t, 0)
-                        @if (_expandidas.Contains(t.Id))
-                        {
-                            foreach (var hijo in Hijos(t.Id)) { @RenderFila(hijo, 1) }
-                        }
+                        @RenderArbol(t, 0)
                     }
                 }
             </div>
@@ -266,50 +262,219 @@ else
     </div>
 }
 
-@* ===================== Modal crear/editar tarjeta (basico - Stage 5 lo hara rico) ===================== *@
-@if (_cardDraft is not null)
+@* ===================== Modal tarjeta (rico, fiel al prototipo) ===================== *@
+@if (_cardDraft is not null && _board is not null)
 {
-    <div class="tb-modal-bd" @onclick="() => _cardDraft = null">
-        <div class="tb-modal" @onclick:stopPropagation="true">
-            <div class="tb-modal-head" style="background:@(_cardDraft.Color);">
-                <div class="tb-modal-tt">
-                    <div class="tb-modal-h" style="color:#fff">@(_cardDraft.Id is null ? "Nueva tarjeta" : "Editar tarjeta")</div>
-                    <div class="tb-modal-s" style="color:rgba(255,255,255,.85)">@_board?.Tablero.Nombre</div>
+    var d = _cardDraft;
+    <div class="tb-modal-bd" @onclick="CerrarCard">
+        <div class="tbc-modal" @onclick:stopPropagation="true">
+            @* ----- Cabecera con color de la tarjeta ----- *@
+            <div class="tbc-head" style="background:@d.Color">
+                <div class="tbc-head-bar"></div>
+                <div class="tbc-head-id">
+                    <div class="tbc-head-tt">
+                        @(d.Id is null ? "Nueva tarjeta" : "Detalle de la tarjeta")
+                        @if (d.EsProyecto)
+                        {
+                            <span class="tbc-proy"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3 7h7l2 2h9v11H3z"/></svg>PROYECTO</span>
+                        }
+                    </div>
+                    <div class="tbc-head-bc">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l7-4 7 4v14"/></svg>
+                        <span>@_coNombre</span>
+                        @if (d.PadreId is not null) { <span class="tbc-sep">&rsaquo;</span><span class="tbc-bold">Subtarea de @d.PadreTitulo</span> }
+                        @if (!string.IsNullOrEmpty(d.OrigenTipo)) { <span class="tbc-sep">&rsaquo;</span><span>@OrigenTipoLabel(d.OrigenTipo)</span> }
+                        @if (!string.IsNullOrEmpty(d.OrigenReferencia)) { <span class="tbc-sep">&rsaquo;</span><span class="tbc-bold">@d.OrigenReferencia</span> }
+                    </div>
                 </div>
-                <button class="tb-modal-x" style="color:#fff;border-color:rgba(255,255,255,.4);background:rgba(255,255,255,.12)" @onclick="() => _cardDraft = null"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                <button class="tbc-head-btn @(d.EsProyecto ? "on" : "")" @onclick="() => d.EsProyecto = !d.EsProyecto" title="Marcar como proyecto">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h7l2 2h9v11H3z"/></svg>@(d.EsProyecto ? "Es proyecto" : "Marcar proyecto")
+                </button>
+                <button class="tbc-head-x" @onclick="CerrarCard"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
             </div>
-            <div class="tb-modal-body">
-                <div class="tb-fld"><label>Titulo *</label><input @bind="_cardDraft.Titulo" placeholder="Ej. Cambio de luminarias piso 3" /></div>
-                <div class="tb-fld"><label>Descripcion</label><textarea rows="3" @bind="_cardDraft.Descripcion" placeholder="Detalle de la tarea..."></textarea></div>
-                <div class="tb-grid2">
-                    <div class="tb-fld"><label>Etapa</label>
-                        <select @bind="_cardDraft.EstadoId">@if (_board is not null) { @foreach (var e in _board.Estados) { <option value="@e.Id">@e.Nombre</option> } }</select>
+
+            <div class="tbc-body">
+                @* ----- Columna 1: titulo, descripcion, origen, color, checklist ----- *@
+                <div class="tbc-col">
+                    <div class="tbc-fld"><label>Titulo *</label><input @bind="d.Titulo" placeholder="Ej. Cambio de luminarias piso 3" /></div>
+                    <div class="tbc-fld"><label>Descripcion</label><textarea rows="3" @bind="d.Descripcion" placeholder="Detalle de la tarea..."></textarea></div>
+
+                    <div class="tbc-origen">
+                        <div class="tbc-origen-h">ORIGEN DE LA TAREA</div>
+                        <div class="tbc-origen-row">
+                            <div class="tbc-fld tbc-grow">
+                                <label>Relacionado con</label>
+                                <select value="@(d.OrigenTipo ?? "")" @onchange="CardSetOrigenTipo">
+                                    <option value="">Sin relacion</option>
+                                    <option value="inmueble">Inmueble / unidad</option>
+                                    <option value="zona">Zona comun</option>
+                                    <option value="equipo">Equipo / activo</option>
+                                </select>
+                            </div>
+                            @if (!string.IsNullOrEmpty(d.OrigenTipo))
+                            {
+                                <div class="tbc-fld tbc-grow">
+                                    <label>Origen</label>
+                                    <select class="tbc-origen-sel" @bind="d.OrigenReferencia">
+                                        <option value="">Seleccionar...</option>
+                                        @foreach (var o in OrigenOpts()) { <option value="@o">@o</option> }
+                                    </select>
+                                </div>
+                            }
+                        </div>
                     </div>
-                    <div class="tb-fld"><label>Prioridad</label>
-                        <select @bind="_cardDraft.Prioridad">@foreach (var p in Enum.GetValues<PrioridadTarea>()) { <option value="@p">@p</option> }</select>
+
+                    <div class="tbc-fld">
+                        <label>Color de la tarjeta</label>
+                        <div class="tb-colors">
+                            @foreach (var c in _colores) { var col = c; <button class="tb-color @(d.Color == col ? "on" : "")" style="background:@col" @onclick="() => d.Color = col"></button> }
+                        </div>
+                    </div>
+
+                    <div class="tbc-fld">
+                        <label>Tareas relacionadas @if (d.Checklist.Count > 0) { <span class="tbc-mut">- @d.Checklist.Count(x => x.Hecho)/@d.Checklist.Count</span> }</label>
+                        <div class="tbc-sublist">
+                            @for (int i = 0; i < d.Checklist.Count; i++)
+                            {
+                                var idx = i; var st = d.Checklist[i];
+                                <div class="tbc-sub">
+                                    <button class="tbc-chk @(st.Hecho ? "on" : "")" @onclick="() => CardToggleSub(idx)">
+                                        @if (st.Hecho) { <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg> }
+                                    </button>
+                                    <span class="tbc-sub-t @(st.Hecho ? "done" : "")">@st.Titulo</span>
+                                    <button class="tbc-sub-x" @onclick="() => CardRemoveSub(idx)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                                </div>
+                            }
+                            <div class="tbc-sub-add">
+                                <input @bind="_subNew" @bind:event="oninput" placeholder="Nueva tarea relacionada..." />
+                                <button class="tbc-add-btn" @onclick="CardAddSub"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Agregar</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                <div class="tb-grid2">
-                    <div class="tb-fld"><label>Responsable</label>
-                        <select @bind="_cardDraft.AsignadoPersonaId">
-                            <option value="">Sin asignar</option>
-                            @if (_personas is not null) { @foreach (var p in _personas) { <option value="@p.Id">@p.Nombre</option> } }
-                        </select>
+
+                @* ----- Columna 2: estado, prioridad, responsables, fechas, valor, trazabilidad ----- *@
+                <div class="tbc-col">
+                    <div class="tbc-fld">
+                        <label>Estado</label>
+                        <div class="tbc-estados">
+                            @foreach (var e in _board.Estados)
+                            {
+                                var est = e;
+                                <button class="tbc-est @(d.EstadoId == e.Id ? "on" : "")" @onclick="() => d.EstadoId = est.Id">@e.Nombre</button>
+                            }
+                        </div>
                     </div>
-                    <div class="tb-fld"><label>Vence</label><input type="date" @bind="_cardDraft.FechaVencimiento" /></div>
+                    <div class="tbc-fld">
+                        <label>Prioridad</label>
+                        <div class="tbc-prios">
+                            @foreach (var p in Enum.GetValues<PrioridadTarea>())
+                            {
+                                var pr = p;
+                                <button class="tbc-prio2 @(d.Prioridad == p ? "on" : "")" @onclick="() => d.Prioridad = pr">@p</button>
+                            }
+                        </div>
+                    </div>
+                    <div class="tbc-fld">
+                        <label>Responsables</label>
+                        @if (d.Responsables.Count > 0)
+                        {
+                            <div class="tbc-resps">
+                                @for (int i = 0; i < d.Responsables.Count; i++)
+                                {
+                                    var rid = d.Responsables[i]; var ci = i;
+                                    <div class="tbc-resp">
+                                        <div class="tb-ava" style="background:@RespColor(ci);margin-right:0">@Iniciales(PersonaNombre(rid))</div>
+                                        <span class="tbc-resp-nm">@PersonaNombre(rid)</span>
+                                        <button class="tbc-resp-x" @onclick="() => CardRemoveResp(rid)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        <div class="tbc-resp-add">
+                            <select @bind="_respPick">
+                                <option value="">Agregar responsable...</option>
+                                @if (_personas is not null)
+                                {
+                                    @foreach (var p in _personas.Where(x => !d.Responsables.Contains(x.Id))) { <option value="@p.Id">@p.Nombre</option> }
+                                }
+                            </select>
+                            <button class="tbc-add-sq" @onclick="CardAddResp"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></button>
+                        </div>
+                    </div>
+                    <div class="tbc-row2">
+                        <div class="tbc-fld tbc-grow"><label>Inicio</label><input type="date" @bind="d.FechaInicio" /></div>
+                        <div class="tbc-fld tbc-w80"><label>Hora</label><input type="time" @bind="d.HoraInicio" /></div>
+                    </div>
+                    <div class="tbc-row2">
+                        <div class="tbc-fld tbc-grow"><label>Fin</label><input type="date" @bind="d.FechaVencimiento" /></div>
+                        <div class="tbc-fld tbc-w80"><label>Hora</label><input type="time" @bind="d.HoraFin" /></div>
+                    </div>
+                    <div class="tbc-fld"><label>Valor (COP)</label><input type="number" @bind="d.Valor" placeholder="Ej. 1200000" /></div>
+
+                    @if (d.Historial.Count > 0)
+                    {
+                        <div class="tbc-fld">
+                            <label>Trazabilidad</label>
+                            <div class="tbc-log">
+                                @foreach (var l in d.Historial)
+                                {
+                                    <div class="tbc-log-i">
+                                        <div class="tbc-log-rail"><span class="tbc-log-dot"></span><span class="tbc-log-line"></span></div>
+                                        <div><div class="tbc-log-t">@l.Texto</div><div class="tbc-log-d">@FechaHora(l.Fecha)</div></div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
                 </div>
-                <div class="tb-fld">
-                    <label>Color de la tarjeta</label>
-                    <div class="tb-colors">
-                        @foreach (var c in _colores) { var col = c; <button class="tb-color @(_cardDraft.Color == col ? "on" : "")" style="background:@col" @onclick="() => _cardDraft.Color = col"></button> }
+
+                @* ----- Columna 3: adjuntos ----- *@
+                <div class="tbc-col">
+                    <label class="tbc-lbl">Archivos @if (d.Adjuntos.Count > 0) { <span class="tbc-mut">- @d.Adjuntos.Count</span> }</label>
+                    <div class="tbc-adjs">
+                        @foreach (var a in d.Adjuntos)
+                        {
+                            var aid = a.Id;
+                            <div class="tbc-adj">
+                                <a class="tbc-adj-th" href="@a.Url" target="_blank">
+                                    @if (EsImg(a.Url)) { <img src="@a.Url" alt="@a.Nombre" /> }
+                                    else { <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h4"/></svg> }
+                                </a>
+                                <div class="tbc-adj-nm">@a.Nombre</div>
+                                <button class="tbc-adj-x" @onclick="() => EliminarAdjunto(aid)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                            </div>
+                        }
+                        @if (d.Id is not null)
+                        {
+                            <label class="tbc-adj-up">
+                                @if (_subiendo) { <span class="tbc-adj-up-t">Subiendo...</span> }
+                                else
+                                {
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
+                                    <span class="tbc-adj-up-t">Subir</span>
+                                }
+                                <InputFile OnChange="SubirAdjunto" style="display:none" />
+                            </label>
+                        }
+                        else
+                        {
+                            <div class="tbc-adj-hint">Guarda la tarjeta para adjuntar archivos.</div>
+                        }
                     </div>
                 </div>
-                <div class="tb-note">La ficha completa de la tarjeta (origen, proyecto, responsables, subtareas, adjuntos, trazabilidad) llega en la siguiente etapa.</div>
             </div>
-            <div class="tb-modal-foot">
+
+            <div class="tbc-foot">
+                @if (d.Id is not null)
+                {
+                    <button class="tb-btn-danger" @onclick="EliminarCard"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>Eliminar</button>
+                }
                 <div class="tb-flex"></div>
-                <button class="tb-btn tb-btn-ghost" @onclick="() => _cardDraft = null">Cancelar</button>
-                <button class="tb-btn tb-btn-primary" @onclick="GuardarCard" disabled="@(_busy || string.IsNullOrWhiteSpace(_cardDraft.Titulo))">@(_busy ? "Guardando..." : "Guardar")</button>
+                <button class="tb-btn tb-btn-ghost" @onclick="CerrarCard">Cancelar</button>
+                <button class="tb-btn tb-btn-primary" @onclick="GuardarCard" disabled="@(_busy || string.IsNullOrWhiteSpace(d.Titulo))">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>@(_busy ? "Guardando..." : "Guardar")
+                </button>
             </div>
         </div>
     </div>
@@ -406,9 +571,16 @@ else
     .tb-row:hover { background: #FBFAFE; }
     .tb-row-tit { width: 300px; flex-shrink: 0; min-width: 0; display: flex; align-items: center; gap: 5px; }
     .tb-exp { width: 20px; height: 20px; flex-shrink: 0; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: #6D4FE3; background: #F1ECFD; border: 0; cursor: pointer; }
+    .tb-row-child { background: #FCFCFE; }
+    .tb-row-kidmark { width: 20px; flex-shrink: 0; display: flex; justify-content: center; color: #C3D0DD; font-weight: 700; }
     .tb-row-titbtn { text-align: left; flex: 1; min-width: 0; background: none; border: 0; cursor: pointer; padding: 0; }
     .tb-row-titbtn:hover .tb-row-t { color: #6D4FE3; }
     .tb-row-t { font-size: 13px; font-weight: 600; color: #33475B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tb-row-addsub { width: 20px; height: 20px; flex-shrink: 0; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: #6D4FE3; background: transparent; border: 0; cursor: pointer; opacity: 0; transition: opacity .12s; }
+    .tb-row:hover .tb-row-addsub { opacity: 1; }
+    .tb-row-addsub:hover { background: #F1ECFD; }
+    .tb-prog-bar { flex: 1; height: 6px; border-radius: 4px; background: #EEF3F8; overflow: hidden; }
+    .tb-prog-fill { height: 100%; border-radius: 4px; }
     .tb-est-sel { width: 130px; flex-shrink: 0; font-size: 11.5px; font-weight: 700; color: #fff; border: 0; border-radius: 7px; padding: 5px 7px; outline: none; cursor: pointer; }
     .tb-row-resp { width: 150px; flex-shrink: 0; font-size: 12px; color: #516F90; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .tb-row-prog { width: 140px; flex-shrink: 0; display: flex; align-items: center; gap: 7px; }
@@ -446,6 +618,99 @@ else
     .tb-user .tb-ava { margin-right: 0; }
     .tb-user-nom { flex: 1; font-size: 13px; font-weight: 600; color: #33475B; }
     .tb-note { font-size: 11.5px; color: #7C5CE8; background: #FBFAFE; border: 1px dashed #DCD2F8; border-radius: 9px; padding: 9px 11px; }
+
+    /* ===== Modal de tarjeta rico (3 columnas) ===== */
+    .tbc-modal { width: 980px; max-width: 100%; background: #fff; border-radius: 18px; box-shadow: 0 30px 70px rgba(27,42,58,.4); margin: auto; overflow: hidden; display: flex; flex-direction: column; max-height: 92vh; }
+    .tbc-head { display: flex; align-items: center; gap: 12px; padding: 18px 24px; flex-shrink: 0; }
+    .tbc-head-bar { width: 8px; height: 32px; border-radius: 5px; background: rgba(255,255,255,.85); flex-shrink: 0; }
+    .tbc-head-id { flex: 1; min-width: 0; }
+    .tbc-head-tt { font-size: 16px; font-weight: 800; letter-spacing: -.3px; color: #fff; display: flex; align-items: center; gap: 9px; text-shadow: 0 1px 2px rgba(0,0,0,.18); }
+    .tbc-proy { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 800; color: #fff; background: rgba(255,255,255,.22); padding: 3px 9px; border-radius: 20px; }
+    .tbc-head-bc { display: flex; align-items: center; gap: 6px; margin-top: 5px; font-size: 11.5px; font-weight: 600; color: rgba(255,255,255,.9); }
+    .tbc-head-bc svg { flex-shrink: 0; }
+    .tbc-sep { opacity: .7; }
+    .tbc-bold { font-weight: 800; }
+    .tbc-head-btn { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 9px; border: 1px solid rgba(255,255,255,.45); background: rgba(255,255,255,.12); font-size: 12px; font-weight: 700; color: #fff; cursor: pointer; flex-shrink: 0; }
+    .tbc-head-btn.on { background: rgba(255,255,255,.25); }
+    .tbc-head-btn:hover { background: rgba(255,255,255,.3); }
+    .tbc-head-x { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; color: #fff; border: 1px solid rgba(255,255,255,.45); background: rgba(255,255,255,.12); cursor: pointer; flex-shrink: 0; }
+    .tbc-head-x:hover { background: rgba(255,255,255,.28); }
+
+    .tbc-body { overflow-y: auto; padding: 22px 24px; display: grid; grid-template-columns: 1fr 220px 250px; gap: 22px; }
+    .tbc-col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+    .tbc-fld { display: flex; flex-direction: column; }
+    .tbc-fld > label, .tbc-lbl { font-size: 11px; color: #7C98B6; font-weight: 700; margin-bottom: 6px; }
+    .tbc-mut { color: #A6B7C8; font-weight: 600; }
+    .tbc-fld input, .tbc-fld select, .tbc-fld textarea { width: 100%; border: 1px solid #E1E8EE; border-radius: 9px; padding: 9px 11px; font-size: 12.5px; color: #33475B; outline: none; background: #fff; box-sizing: border-box; font-family: inherit; }
+    .tbc-fld textarea { line-height: 1.5; resize: vertical; }
+    .tbc-fld input:focus, .tbc-fld select:focus, .tbc-fld textarea:focus { border-color: #6D4FE3; }
+    .tbc-grow { flex: 1; min-width: 140px; }
+    .tbc-w80 { width: 84px; flex-shrink: 0; }
+    .tbc-row2 { display: flex; gap: 8px; }
+
+    .tbc-origen { background: #FBFAFE; border: 1px solid #DCD2F8; border-radius: 11px; padding: 13px 14px; display: flex; flex-direction: column; gap: 11px; }
+    .tbc-origen-h { font-size: 10.5px; letter-spacing: .4px; color: #6D4FE3; font-weight: 800; }
+    .tbc-origen-row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .tbc-origen-sel { color: #5838C9 !important; font-weight: 600; border-color: #DCD2F8 !important; }
+
+    .tbc-sublist { display: flex; flex-direction: column; gap: 6px; }
+    .tbc-sub { display: flex; align-items: center; gap: 9px; border: 1px solid #E1E8EE; border-radius: 9px; padding: 8px 11px; background: #FBFCFD; }
+    .tbc-chk { width: 18px; height: 18px; border-radius: 6px; border: 1.5px solid #C3D0DD; background: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; cursor: pointer; padding: 0; }
+    .tbc-chk.on { border-color: #1A8754; background: #1A8754; }
+    .tbc-sub-t { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; color: #33475B; }
+    .tbc-sub-t.done { color: #A6B7C8; text-decoration: line-through; }
+    .tbc-sub-x { width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #C3D0DD; flex-shrink: 0; border: 0; background: transparent; cursor: pointer; }
+    .tbc-sub-x:hover { background: #FDE7E7; color: #D7263D; }
+    .tbc-sub-add { display: flex; gap: 7px; }
+    .tbc-sub-add input { flex: 1; min-width: 0; border: 1px solid #E1E8EE; border-radius: 8px; padding: 8px 11px; font-size: 12.5px; color: #33475B; outline: none; background: #fff; box-sizing: border-box; }
+    .tbc-sub-add input:focus { border-color: #6D4FE3; }
+    .tbc-add-btn { display: flex; align-items: center; gap: 5px; padding: 8px 13px; border-radius: 8px; border: 1px solid #DCD2F8; background: #F1ECFD; color: #6D4FE3; font-size: 12px; font-weight: 700; flex-shrink: 0; cursor: pointer; }
+    .tbc-add-btn:hover { background: #E6DEFA; }
+
+    .tbc-estados { display: flex; flex-direction: column; gap: 5px; }
+    .tbc-est { text-align: left; font-size: 12px; font-weight: 700; padding: 8px 11px; border-radius: 8px; border: 1px solid #E1E8EE; color: #516F90; background: #fff; cursor: pointer; }
+    .tbc-est:hover { border-color: #6D4FE3; }
+    .tbc-est.on { border-color: #6D4FE3; color: #fff; background: #6D4FE3; }
+    .tbc-prios { display: flex; gap: 5px; }
+    .tbc-prio2 { flex: 1; font-size: 11.5px; font-weight: 700; padding: 8px 4px; border-radius: 8px; border: 1px solid #E1E8EE; color: #516F90; background: #fff; cursor: pointer; }
+    .tbc-prio2:hover { border-color: #6D4FE3; }
+    .tbc-prio2.on { border-color: #6D4FE3; color: #fff; background: #6D4FE3; }
+
+    .tbc-resps { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 7px; }
+    .tbc-resp { display: flex; align-items: center; gap: 6px; background: #F5F8FA; border: 1px solid #E1E8EE; border-radius: 20px; padding: 3px 9px 3px 3px; }
+    .tbc-resp .tb-ava { width: 24px; height: 24px; font-size: 10px; border: 0; }
+    .tbc-resp-nm { font-size: 11.5px; font-weight: 600; color: #33475B; }
+    .tbc-resp-x { display: flex; color: #C3D0DD; border: 0; background: transparent; cursor: pointer; padding: 0; }
+    .tbc-resp-x:hover { color: #D7263D; }
+    .tbc-resp-add { display: flex; gap: 6px; }
+    .tbc-resp-add select { flex: 1; min-width: 0; border: 1px solid #E1E8EE; border-radius: 9px; padding: 8px 11px; font-size: 12.5px; color: #33475B; outline: none; background: #fff; box-sizing: border-box; }
+    .tbc-resp-add select:focus { border-color: #6D4FE3; }
+    .tbc-add-sq { width: 34px; flex-shrink: 0; border-radius: 9px; background: #6D4FE3; color: #fff; display: flex; align-items: center; justify-content: center; border: 0; cursor: pointer; }
+    .tbc-add-sq:hover { background: #5838C9; }
+
+    .tbc-log { display: flex; flex-direction: column; }
+    .tbc-log-i { display: flex; gap: 9px; padding-bottom: 10px; }
+    .tbc-log-rail { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; }
+    .tbc-log-dot { width: 8px; height: 8px; border-radius: 50%; background: #6D4FE3; margin-top: 3px; }
+    .tbc-log-line { width: 2px; flex: 1; background: #EEF3F8; margin-top: 2px; }
+    .tbc-log-t { font-size: 11.5px; font-weight: 600; color: #33475B; line-height: 1.4; }
+    .tbc-log-d { font-size: 10px; color: #A6B7C8; }
+
+    .tbc-adjs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .tbc-adj { position: relative; border: 1px solid #E1E8EE; border-radius: 10px; overflow: hidden; background: #fff; }
+    .tbc-adj-th { aspect-ratio: 1/1; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg,#F5F1FE,#E6DEFA); color: #6D4FE3; }
+    .tbc-adj-th img { width: 100%; height: 100%; object-fit: cover; }
+    .tbc-adj-nm { padding: 6px 8px; font-size: 10px; font-weight: 600; color: #33475B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tbc-adj-x { position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #fff; background: rgba(27,42,58,.55); border: 0; cursor: pointer; }
+    .tbc-adj-x:hover { background: #D7263D; }
+    .tbc-adj-up { aspect-ratio: 1/1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; border: 1px dashed #D7E0EA; border-radius: 10px; cursor: pointer; font-size: 10.5px; font-weight: 700; color: #6D4FE3; background: #FBFAFE; text-align: center; }
+    .tbc-adj-up:hover { border-color: #6D4FE3; background: #F5F1FE; }
+    .tbc-adj-up-t { font-size: 10px; }
+    .tbc-adj-hint { grid-column: 1 / -1; font-size: 11px; color: #A6B7C8; background: #F8FAFC; border: 1px dashed #D7E0EA; border-radius: 10px; padding: 11px; text-align: center; line-height: 1.4; }
+
+    .tbc-foot { display: flex; align-items: center; gap: 9px; padding: 16px 24px; border-top: 1px solid #EEF3F8; flex-shrink: 0; }
+
+    @@media (max-width: 880px) { .tbc-body { grid-template-columns: 1fr; } }
 </style>
 
 @code {
@@ -465,8 +730,18 @@ else
 
     private TableroDraft? _tableroDraft;
     private CardDraft? _cardDraft;
+    private string _subNew = "";
+    private string _respPick = "";
+    private bool _subiendo;
+
+    // Contexto para la tarjeta rica (copropiedad + origen)
+    private string _coNombre = "";
+    private List<OpcionOrigen>? _unidades;
+    private List<OpcionOrigen>? _zonas;
+    private List<OpcionOrigen>? _equipos;
 
     private static readonly string[] _colores = { "#6D4FE3", "#2563EB", "#1A8754", "#F59E0B", "#EF4444", "#7C3AED", "#0EA5E9", "#EC4899" };
+    private static readonly string[] _avaColors = { "#6D4FE3", "#2563EB", "#1A8754", "#B45309", "#C0383C", "#0EA5E9", "#EC4899", "#7C3AED" };
 
     private record ModeDef(string Key, string Label, string Icon);
     private readonly List<ModeDef> _modes = new()
@@ -489,17 +764,40 @@ else
     private class CardDraft
     {
         public Guid? Id { get; set; }
+        public Guid? PadreId { get; set; }
+        public string? PadreTitulo { get; set; }
         public string Titulo { get; set; } = "";
         public string? Descripcion { get; set; }
         public PrioridadTarea Prioridad { get; set; } = PrioridadTarea.Normal;
         public Guid EstadoId { get; set; }
-        public Guid? AsignadoPersonaId { get; set; }
-        public DateTime? FechaVencimiento { get; set; }
         public string Color { get; set; } = "#6D4FE3";
+        public bool EsProyecto { get; set; }
+        public decimal? Valor { get; set; }
+        public int Progreso { get; set; }
+        public DateTime? FechaInicio { get; set; }
+        public DateTime? FechaVencimiento { get; set; }
+        public TimeOnly? HoraInicio { get; set; }
+        public TimeOnly? HoraFin { get; set; }
+        public string? OrigenTipo { get; set; }
+        public string? OrigenReferencia { get; set; }
+        public List<Guid> Responsables { get; set; } = new();
+        public List<SubChk> Checklist { get; set; } = new();
+        public List<AdjuntoVM> Adjuntos { get; set; } = new();
+        public List<LogVM> Historial { get; set; } = new();
     }
+
+    private class SubChk { public string Titulo { get; set; } = ""; public bool Hecho { get; set; } }
+    private record AdjuntoVM(Guid Id, string Nombre, string Url);
+    private record LogVM(string Texto, DateTimeOffset Fecha);
+    private record OpcionOrigen(Guid Id, string Label);
 
     private record PersonaMini(Guid Id, string Nombre);
     private record PersonaRaw(Guid Id, string Nombres, string Apellidos);
+    private record CoResumenMini(CoIdentidadMini? Identidad);
+    private record CoIdentidadMini(string? Nombre);
+    private record UnidadMini(Guid Id, string Numero);
+    private record ZonaMini(Guid Id, string Nombre);
+    private record EquipoMini(Guid Id, string Nombre);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -538,8 +836,18 @@ else
                 }
                 catch { _personas = new(); }
             }
+            if (string.IsNullOrEmpty(_coNombre)) await CargarContextoAsync();
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    /// <summary>Carga, best-effort, el nombre de la copropiedad y las listas para el origen de la tarjeta.</summary>
+    private async Task CargarContextoAsync()
+    {
+        try { var r = await Auth().GetFromJsonAsync<CoResumenMini>("/api/mi-copropiedad/resumen"); if (!string.IsNullOrWhiteSpace(r?.Identidad?.Nombre)) _coNombre = r!.Identidad!.Nombre!; } catch { }
+        try { var u = await Auth().GetFromJsonAsync<List<UnidadMini>>("/api/mi-copropiedad/unidades"); _unidades = u?.Select(x => new OpcionOrigen(x.Id, x.Numero)).ToList() ?? new(); } catch { _unidades = new(); }
+        try { var z = await Auth().GetFromJsonAsync<List<ZonaMini>>("/api/mi-copropiedad/zonas"); _zonas = z?.Select(x => new OpcionOrigen(x.Id, x.Nombre)).ToList() ?? new(); } catch { _zonas = new(); }
+        try { var e = await Auth().GetFromJsonAsync<List<EquipoMini>>("/api/mi-copropiedad/equipos"); _equipos = e?.Select(x => new OpcionOrigen(x.Id, x.Nombre)).ToList() ?? new(); } catch { _equipos = new(); }
     }
 
     private async Task AbrirBoardAsync(Guid id)
@@ -570,25 +878,47 @@ else
         return true;
     }
 
+    @* Render recursivo: la fila + sus tareas hijas (encadenadas) cuando esta expandida. Hasta 3 niveles, como el prototipo. *@
+    private RenderFragment RenderArbol(TareaListaDto t, int depth) => __builder =>
+    {
+        @RenderFila(t, depth)
+        @if (t.CantidadSubtareas > 0 && _expandidas.Contains(t.Id) && depth < 3)
+        {
+            foreach (var h in Hijos(t.Id))
+            {
+                @RenderArbol(h, depth + 1)
+            }
+        }
+    };
+
     private RenderFragment RenderFila(TareaListaDto t, int depth) => __builder =>
     {
         var tarea = t;
-        <div class="tb-row" style="border-left-color:@(t.Color ?? "transparent")">
+        var esHija = depth > 0;
+        <div class="tb-row @(esHija ? "tb-row-child" : "")" style="border-left-color:@(t.Color ?? (esHija ? "#E1E8EE" : "transparent"))">
             <div class="tb-row-tit" style="padding-left:@(depth * 22)px">
-                @if (depth == 0 && t.CantidadSubtareas > 0)
+                @if (t.CantidadSubtareas > 0)
                 {
-                    <button class="tb-exp" @onclick="() => ToggleExp(tarea.Id)">
+                    <button class="tb-exp" @onclick="() => ToggleExp(tarea.Id)" title="Ver tareas hijas">
                         @if (_expandidas.Contains(t.Id))
                         { <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14"/></svg> }
                         else { <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 5v14M5 12h14"/></svg> }
                     </button>
                 }
+                else if (esHija)
+                {
+                    <span class="tb-row-kidmark">&rsaquo;</span>
+                }
                 <button class="tb-row-titbtn" @onclick="() => AbrirCardDraft(tarea, null)">
                     <div class="tb-row-t">@t.Titulo</div>
                 </button>
+                @if (depth < 3)
+                {
+                    <button class="tb-row-addsub" title="Agregar tarea hija" @onclick="() => AbrirSubtareaDraft(tarea)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg></button>
+                }
             </div>
             <div style="width:130px;flex-shrink:0">
-                @if (depth == 0)
+                @if (!esHija)
                 {
                     <select class="tb-est-sel" style="background:@(t.EstadoColor ?? "#6D4FE3")" value="@t.EstadoId" @onchange="(e) => CambiarEstadoFila(tarea.Id, e)">
                         @if (_board is not null) { @foreach (var e in _board.Estados) { <option value="@e.Id" style="background:#fff;color:#33475B">@e.Nombre</option> } }
@@ -598,7 +928,14 @@ else
             </div>
             <div class="tb-row-resp">@(string.IsNullOrWhiteSpace(t.AsignadoNombre) ? "-" : t.AsignadoNombre)</div>
             <div class="tb-row-prog">
-                <input type="range" min="0" max="100" step="5" value="@t.Progreso" style="accent-color:@(t.Progreso >= 100 ? "#1A8754" : "#6D4FE3")" @onchange="(e) => CambiarProgresoFila(tarea.Id, e)" />
+                @if (!esHija)
+                {
+                    <input type="range" min="0" max="100" step="5" value="@t.Progreso" style="accent-color:@(t.Progreso >= 100 ? "#1A8754" : "#6D4FE3")" @onchange="(e) => CambiarProgresoFila(tarea.Id, e)" />
+                }
+                else
+                {
+                    <div class="tb-prog-bar"><div class="tb-prog-fill" style="width:@(t.Progreso)%;background:@(t.Progreso >= 100 ? "#1A8754" : "#6D4FE3")"></div></div>
+                }
                 <span class="tb-row-progv" style="color:@(t.Progreso >= 100 ? "#1A8754" : "#516F90")">@t.Progreso%</span>
             </div>
             <div class="tb-row-prio"><span class="tb-prio" style="color:@PrioFg(t.Prioridad);background:@PrioBg(t.Prioridad)">@t.Prioridad</span></div>
@@ -607,6 +944,18 @@ else
     };
 
     private void ToggleExp(Guid id) { if (!_expandidas.Add(id)) _expandidas.Remove(id); }
+
+    private void AbrirSubtareaDraft(TareaListaDto padre)
+    {
+        _subNew = ""; _respPick = "";
+        _cardDraft = new CardDraft
+        {
+            PadreId = padre.Id,
+            PadreTitulo = padre.Titulo,
+            EstadoId = padre.EstadoId,
+            Color = padre.Color ?? "#6D4FE3"
+        };
+    }
 
     private async Task CambiarEstadoFila(Guid tareaId, ChangeEventArgs e)
     {
@@ -654,50 +1003,186 @@ else
         if (resp.IsSuccessStatusCode) { _tableroDraft = null; _board = null; await CargarAsync(); }
     }
 
-    private void AbrirCardDraft(TareaListaDto? t, Guid? estadoIdDefault)
+    private void CerrarCard() { _cardDraft = null; _subNew = ""; _respPick = ""; }
+
+    private async Task AbrirCardDraft(TareaListaDto? t, Guid? estadoIdDefault)
     {
+        _subNew = ""; _respPick = "";
         if (t is null)
         {
             _cardDraft = new CardDraft { EstadoId = estadoIdDefault ?? _board?.Estados.FirstOrDefault()?.Id ?? Guid.Empty };
+            return;
         }
-        else
+
+        // Tarjeta existente: traer la ficha completa.
+        try
         {
+            var det = await Auth().GetFromJsonAsync<TareaDetalleDto>($"/api/tareas/{t.Id}");
+            if (det is null) return;
+            var responsables = new List<Guid>();
+            if (det.AsignadoPersonaId is { } ap) responsables.Add(ap);
+            responsables.AddRange(det.Colaboradores.Select(c => c.PersonaId).Where(p => !responsables.Contains(p)));
             _cardDraft = new CardDraft
             {
-                Id = t.Id, Titulo = t.Titulo, Prioridad = t.Prioridad, EstadoId = t.EstadoId,
-                AsignadoPersonaId = t.AsignadoPersonaId, Color = t.Color ?? "#6D4FE3",
-                FechaVencimiento = t.FechaVencimiento?.ToDateTime(TimeOnly.MinValue)
+                Id = det.Id,
+                PadreId = det.PadreId,
+                PadreTitulo = det.PadreTitulo,
+                Titulo = det.Titulo,
+                Descripcion = det.Descripcion,
+                Prioridad = det.Prioridad,
+                EstadoId = det.Estado.Id,
+                Color = det.Color ?? t.Color ?? "#6D4FE3",
+                EsProyecto = det.EsProyecto,
+                Valor = det.Valor,
+                Progreso = det.Progreso,
+                FechaInicio = det.FechaInicio?.ToDateTime(TimeOnly.MinValue),
+                FechaVencimiento = det.FechaVencimiento?.ToDateTime(TimeOnly.MinValue),
+                HoraInicio = det.HoraInicio,
+                HoraFin = det.HoraFin,
+                OrigenTipo = det.OrigenTipo,
+                OrigenReferencia = det.OrigenReferencia,
+                Responsables = responsables,
+                Checklist = (det.Checklist ?? new List<SubtareaCheckDto>()).Select(s => new SubChk { Titulo = s.Titulo, Hecho = s.Hecho }).ToList(),
+                Adjuntos = (det.Adjuntos ?? new List<TareaAdjuntoDto>()).Select(a => new AdjuntoVM(a.Id, a.Nombre, a.Url)).ToList(),
+                Historial = det.Historial.OrderBy(h => h.OcurridoAt).Select(h => new LogVM(h.Descripcion, h.OcurridoAt)).ToList()
             };
         }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
     }
+
     private async Task GuardarCard()
     {
         if (_cardDraft is null || _board is null || string.IsNullOrWhiteSpace(_cardDraft.Titulo)) return;
+        var d = _cardDraft;
         _busy = true;
         try
         {
-            var venc = _cardDraft.FechaVencimiento.HasValue ? DateOnly.FromDateTime(_cardDraft.FechaVencimiento.Value) : (DateOnly?)null;
+            var ini = d.FechaInicio.HasValue ? DateOnly.FromDateTime(d.FechaInicio.Value) : (DateOnly?)null;
+            var venc = d.FechaVencimiento.HasValue ? DateOnly.FromDateTime(d.FechaVencimiento.Value) : (DateOnly?)null;
+            var origenTipo = string.IsNullOrWhiteSpace(d.OrigenTipo) ? null : d.OrigenTipo;
+            var origenRef = string.IsNullOrWhiteSpace(d.OrigenReferencia) ? null : d.OrigenReferencia;
+            var responsables = d.Responsables.Count > 0 ? d.Responsables.ToList() : new List<Guid>();
+            var checklist = d.Checklist.Where(x => !string.IsNullOrWhiteSpace(x.Titulo))
+                .Select(x => new SubtareaCheckItem(x.Titulo.Trim(), x.Hecho)).ToList();
+
             HttpResponseMessage resp;
-            if (_cardDraft.Id is null)
+            if (d.Id is null)
             {
-                var req = new CrearTareaRequest(_cardDraft.Titulo.Trim(), _cardDraft.Descripcion, _cardDraft.Prioridad,
-                    _cardDraft.EstadoId, _cardDraft.AsignadoPersonaId == Guid.Empty ? null : _cardDraft.AsignadoPersonaId,
-                    null, venc, null, null, _board.Tablero.Id);
+                var req = new CrearTareaRequest(
+                    d.Titulo.Trim(), d.Descripcion, d.Prioridad, d.EstadoId,
+                    null, ini, venc, d.PadreId, null, _board.Tablero.Id,
+                    d.Color, d.EsProyecto, d.Valor, d.HoraInicio, d.HoraFin,
+                    origenTipo, origenRef, responsables, checklist);
                 resp = await Auth().PostAsJsonAsync("/api/tareas", req);
             }
             else
             {
-                var req = new ActualizarTareaRequest(_cardDraft.Titulo.Trim(), _cardDraft.Descripcion, _cardDraft.Prioridad,
-                    _cardDraft.AsignadoPersonaId == Guid.Empty ? null : _cardDraft.AsignadoPersonaId, null, venc);
-                resp = await Auth().PutAsJsonAsync($"/api/tareas/{_cardDraft.Id}", req);
-                await Auth().PutAsJsonAsync($"/api/tareas/{_cardDraft.Id}/estado", new CambiarEstadoRequest(_cardDraft.EstadoId, null));
+                var req = new ActualizarTareaRequest(
+                    d.Titulo.Trim(), d.Descripcion, d.Prioridad, null, ini, venc,
+                    d.EstadoId, d.Color, d.EsProyecto, d.Valor, d.Progreso, d.HoraInicio, d.HoraFin,
+                    origenTipo, origenRef, responsables, checklist);
+                resp = await Auth().PutAsJsonAsync($"/api/tareas/{d.Id}", req);
             }
             if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
-            _cardDraft = null;
+            // Si era una tarea hija, deja el padre expandido para verla en la lista.
+            if (d.PadreId is { } pid) { _expandidas.Add(pid); if (_boardMode == "tablero") _boardMode = "lista"; }
+            CerrarCard();
             await RecargarBoard();
             await CargarAsync();
         }
         finally { _busy = false; }
+    }
+
+    private async Task EliminarCard()
+    {
+        if (_cardDraft?.Id is null) return;
+        if (!await Js.InvokeAsync<bool>("confirm", "Eliminar esta tarjeta? Esta accion no se puede deshacer.")) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/tareas/{_cardDraft.Id}");
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            CerrarCard();
+            await RecargarBoard();
+        }
+        finally { _busy = false; }
+    }
+
+    // ----- Helpers del modal de tarjeta -----
+    private void CardSetOrigenTipo(ChangeEventArgs e)
+    {
+        if (_cardDraft is null) return;
+        var v = e.Value?.ToString();
+        _cardDraft.OrigenTipo = string.IsNullOrEmpty(v) ? null : v;
+        _cardDraft.OrigenReferencia = null;
+    }
+    private IEnumerable<string> OrigenOpts() => _cardDraft?.OrigenTipo switch
+    {
+        "inmueble" => (_unidades ?? new()).Select(x => x.Label),
+        "zona" => (_zonas ?? new()).Select(x => x.Label),
+        "equipo" => (_equipos ?? new()).Select(x => x.Label),
+        _ => Enumerable.Empty<string>()
+    };
+    private static string OrigenTipoLabel(string? t) => t switch { "inmueble" => "Inmueble", "zona" => "Zona comun", "equipo" => "Equipo", _ => "" };
+
+    private void CardAddSub()
+    {
+        if (_cardDraft is null || string.IsNullOrWhiteSpace(_subNew)) return;
+        _cardDraft.Checklist.Add(new SubChk { Titulo = _subNew.Trim(), Hecho = false });
+        _subNew = "";
+    }
+    private void CardToggleSub(int i) { if (_cardDraft is not null && i >= 0 && i < _cardDraft.Checklist.Count) _cardDraft.Checklist[i].Hecho = !_cardDraft.Checklist[i].Hecho; }
+    private void CardRemoveSub(int i) { if (_cardDraft is not null && i >= 0 && i < _cardDraft.Checklist.Count) _cardDraft.Checklist.RemoveAt(i); }
+
+    private void CardAddResp()
+    {
+        if (_cardDraft is null || !Guid.TryParse(_respPick, out var pid) || pid == Guid.Empty) return;
+        if (!_cardDraft.Responsables.Contains(pid)) _cardDraft.Responsables.Add(pid);
+        _respPick = "";
+    }
+    private void CardRemoveResp(Guid pid) { _cardDraft?.Responsables.Remove(pid); }
+
+    private string PersonaNombre(Guid id) => _personas?.FirstOrDefault(p => p.Id == id)?.Nombre ?? "Persona";
+    private static string RespColor(int idx) => _avaColors[idx % _avaColors.Length];
+
+    private async Task SubirAdjunto(InputFileChangeEventArgs e)
+    {
+        if (_cardDraft?.Id is null || e.File is null) return;
+        _subiendo = true; _msg = null;
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var sc = new StreamContent(e.File.OpenReadStream(10_000_000));
+            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(string.IsNullOrEmpty(e.File.ContentType) ? "application/octet-stream" : e.File.ContentType);
+            content.Add(sc, "file", e.File.Name);
+            var resp = await Auth().PostAsync($"/api/tareas/{_cardDraft.Id}/adjuntos", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                var dto = await resp.Content.ReadFromJsonAsync<TareaAdjuntoDto>();
+                if (dto is not null) _cardDraft.Adjuntos.Add(new AdjuntoVM(dto.Id, dto.Nombre, dto.Url));
+            }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _subiendo = false; }
+    }
+
+    private async Task EliminarAdjunto(Guid adjuntoId)
+    {
+        if (_cardDraft?.Id is null) return;
+        var resp = await Auth().DeleteAsync($"/api/tareas/{_cardDraft.Id}/adjuntos/{adjuntoId}");
+        if (resp.IsSuccessStatusCode) _cardDraft.Adjuntos.RemoveAll(a => a.Id == adjuntoId);
+    }
+
+    private static bool EsImg(string url)
+    {
+        var u = url.ToLowerInvariant();
+        return u.EndsWith(".jpg") || u.EndsWith(".jpeg") || u.EndsWith(".png") || u.EndsWith(".webp") || u.EndsWith(".gif");
+    }
+    private static string FechaHora(DateTimeOffset f)
+    {
+        var l = f.ToLocalTime();
+        return l.ToString("d MMM yyyy, HH:mm", Es);
     }
 
     private static string Iniciales(string? n)

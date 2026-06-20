@@ -171,7 +171,7 @@ public class TareasService : ITareasService
         CancellationToken ct, Guid? tableroId = null)
     {
         await AsegurarEstadosBaseAsync(ct);
-        IQueryable<Tarea> q = _db.Tareas.AsNoTracking();
+        IQueryable<Tarea> q = _db.Tareas.AsNoTracking().Where(t => !t.Eliminada);
         if (tableroId.HasValue) q = q.Where(t => t.TableroId == tableroId.Value);
         if (estadoId.HasValue) q = q.Where(t => t.EstadoId == estadoId.Value);
         if (prioridad.HasValue) q = q.Where(t => t.Prioridad == prioridad.Value);
@@ -212,7 +212,7 @@ public class TareasService : ITareasService
         ).ToListAsync(ct);
 
         var ids = rows.Select(r => r.Id).ToList();
-        var subs = await _db.Tareas.AsNoTracking().Where(t => t.PadreId != null && ids.Contains(t.PadreId!.Value))
+        var subs = await _db.Tareas.AsNoTracking().Where(t => !t.Eliminada && t.PadreId != null && ids.Contains(t.PadreId!.Value))
             .GroupBy(t => t.PadreId!.Value).Select(g => new { g.Key, Cant = g.Count() })
             .ToDictionaryAsync(x => x.Key, x => x.Cant, ct);
         var coms = await _db.TareaComentarios.AsNoTracking().Where(c => ids.Contains(c.TareaId))
@@ -275,6 +275,18 @@ public class TareasService : ITareasService
             select new TareaColaboradorDto(c.Id, p.Id, ((p.Nombres ?? "") + " " + (p.Apellidos ?? "")).Trim())
         ).ToListAsync(ct);
 
+        var adjuntos = await _db.TareaAdjuntos.AsNoTracking()
+            .Where(a => a.TareaId == id)
+            .OrderBy(a => a.CreatedAt)
+            .Select(a => new TareaAdjuntoDto(a.Id, a.Nombre, a.Url))
+            .ToListAsync(ct);
+
+        var checklist = await _db.TareaSubtareas.AsNoTracking()
+            .Where(s => s.TareaId == id)
+            .OrderBy(s => s.Orden)
+            .Select(s => new SubtareaCheckDto(s.Id, s.Titulo, s.Hecho, s.Orden))
+            .ToListAsync(ct);
+
         var asigNombre = t.AsignadoPersona is null ? null
             : ((t.AsignadoPersona.Nombres ?? "") + " " + (t.AsignadoPersona.Apellidos ?? "")).Trim();
         var estadoDto = new EstadoTareaDto(t.Estado!.Id, t.Estado.Nombre, t.Estado.Color, t.Estado.Orden, t.Estado.EsTerminal, t.Estado.EsBase, t.Estado.Activo);
@@ -285,7 +297,9 @@ public class TareasService : ITareasService
             t.FechaInicio, t.FechaVencimiento, t.FechaCompletada,
             t.PadreId, t.Padre?.Titulo, t.Origen, t.ModuloOrigenCodigo, t.ModuloOrigenEntidadId,
             t.CreatedAt, t.CreadoPorUsuarioId,
-            etiquetas, subtareas, comentarios, historial, colabs);
+            etiquetas, subtareas, comentarios, historial, colabs,
+            t.Color, t.EsProyecto, t.Valor, t.Progreso, t.HoraInicio, t.HoraFin,
+            t.OrigenTipo, t.OrigenReferencia, t.TableroId, adjuntos, checklist);
     }
 
     private async Task<string> GenerarNumeroAsync(CancellationToken ct)
@@ -336,6 +350,10 @@ public class TareasService : ITareasService
                 estadoId = await _db.TareasEstados.Where(e => e.Nombre == EstadoTareaBase.Pendiente).Select(e => e.Id).FirstAsync(ct);
         }
 
+        // Responsables: el primero es el asignado principal; el resto son colaboradores.
+        var responsables = req.ResponsablePersonaIds?.Where(x => x != Guid.Empty).Distinct().ToList();
+        var asignado = responsables is { Count: > 0 } ? responsables[0] : req.AsignadoPersonaId;
+
         var numero = await GenerarNumeroAsync(ct);
         var t = new Tarea
         {
@@ -345,11 +363,18 @@ public class TareasService : ITareasService
             Descripcion = req.Descripcion?.Trim(),
             Prioridad = req.Prioridad,
             EstadoId = estadoId,
-            AsignadoPersonaId = req.AsignadoPersonaId,
+            AsignadoPersonaId = asignado,
             FechaInicio = req.FechaInicio,
             FechaVencimiento = req.FechaVencimiento,
             PadreId = req.PadreId,
             Origen = OrigenTarea.Manual,
+            Color = req.Color,
+            EsProyecto = req.EsProyecto,
+            Valor = req.Valor,
+            HoraInicio = req.HoraInicio,
+            HoraFin = req.HoraFin,
+            OrigenTipo = string.IsNullOrWhiteSpace(req.OrigenTipo) ? null : req.OrigenTipo,
+            OrigenReferencia = string.IsNullOrWhiteSpace(req.OrigenReferencia) ? null : req.OrigenReferencia,
             CreadoPorUsuarioId = GetUsuarioActualId()
         };
         _db.Tareas.Add(t);
@@ -365,6 +390,15 @@ public class TareasService : ITareasService
             await _db.SaveChangesAsync(ct);
         }
 
+        if (responsables is { Count: > 1 })
+        {
+            foreach (var pid in responsables.Skip(1))
+                _db.TareaColaboradores.Add(new TareaColaborador { TareaId = t.Id, PersonaId = pid });
+            await _db.SaveChangesAsync(ct);
+        }
+
+        await ReemplazarChecklistAsync(t.Id, req.Checklist, ct);
+
         await RegistrarHistorial(t.Id, TipoEventoTarea.Creada, $"Tarea creada con prioridad {req.Prioridad}", null, new { titulo = t.Titulo, prioridad = req.Prioridad.ToString() }, ct);
         await _db.SaveChangesAsync(ct);
 
@@ -377,17 +411,31 @@ public class TareasService : ITareasService
         if (t is null) return false;
         if (string.IsNullOrWhiteSpace(req.Titulo)) throw new InvalidOperationException("Titulo obligatorio.");
 
-        var cambios = new List<string>();
         var prevAsig = t.AsignadoPersonaId;
         var prevFv = t.FechaVencimiento;
         var prevPri = t.Prioridad;
+        var prevProyecto = t.EsProyecto;
+
+        // Responsables: el primero es el asignado principal; el resto son colaboradores.
+        var responsables = req.ResponsablePersonaIds?.Where(x => x != Guid.Empty).Distinct().ToList();
+        var asignado = responsables is not null
+            ? (responsables.Count > 0 ? responsables[0] : (Guid?)null)
+            : req.AsignadoPersonaId;
 
         t.Titulo = req.Titulo.Trim();
         t.Descripcion = req.Descripcion?.Trim();
         t.Prioridad = req.Prioridad;
-        t.AsignadoPersonaId = req.AsignadoPersonaId;
+        t.AsignadoPersonaId = asignado;
         t.FechaInicio = req.FechaInicio;
         t.FechaVencimiento = req.FechaVencimiento;
+        t.Color = req.Color;
+        t.EsProyecto = req.EsProyecto;
+        t.Valor = req.Valor;
+        if (req.Progreso.HasValue) t.Progreso = Math.Clamp(req.Progreso.Value, 0, 100);
+        t.HoraInicio = req.HoraInicio;
+        t.HoraFin = req.HoraFin;
+        t.OrigenTipo = string.IsNullOrWhiteSpace(req.OrigenTipo) ? null : req.OrigenTipo;
+        t.OrigenReferencia = string.IsNullOrWhiteSpace(req.OrigenReferencia) ? null : req.OrigenReferencia;
         t.UpdatedAt = DateTimeOffset.UtcNow;
 
         if (prevPri != req.Prioridad)
@@ -395,19 +443,82 @@ public class TareasService : ITareasService
             await RegistrarHistorial(t.Id, TipoEventoTarea.PrioridadCambiada, $"Prioridad cambiada a {req.Prioridad}",
                 new { prev = prevPri.ToString() }, new { nuevo = req.Prioridad.ToString() }, ct);
         }
-        if (prevAsig != req.AsignadoPersonaId)
+        if (prevAsig != asignado)
         {
             await RegistrarHistorial(t.Id, TipoEventoTarea.AsignacionCambiada,
-                req.AsignadoPersonaId is null ? "Responsable removido" : "Responsable cambiado",
-                new { prev = prevAsig }, new { nuevo = req.AsignadoPersonaId }, ct);
+                asignado is null ? "Responsable removido" : "Responsable cambiado",
+                new { prev = prevAsig }, new { nuevo = asignado }, ct);
         }
         if (prevFv != req.FechaVencimiento)
         {
             await RegistrarHistorial(t.Id, TipoEventoTarea.FechaCambiada, "Fecha de vencimiento actualizada",
                 new { prev = prevFv?.ToString("yyyy-MM-dd") }, new { nuevo = req.FechaVencimiento?.ToString("yyyy-MM-dd") }, ct);
         }
+        if (!prevProyecto && req.EsProyecto)
+        {
+            await RegistrarHistorial(t.Id, TipoEventoTarea.Actualizada, "Marcada como proyecto", null, null, ct);
+        }
+        await _db.SaveChangesAsync(ct);
+
+        // Estado (mismo flujo de historial que CambiarEstado).
+        if (req.EstadoId.HasValue && req.EstadoId.Value != Guid.Empty && req.EstadoId.Value != t.EstadoId)
+            await CambiarEstadoAsync(id, new CambiarEstadoRequest(req.EstadoId.Value, null), ct);
+
+        // Colaboradores (reemplazo total) cuando se envian responsables.
+        if (responsables is not null)
+        {
+            await _db.TareaColaboradores.Where(c => c.TareaId == id).ExecuteDeleteAsync(ct);
+            foreach (var pid in responsables.Skip(1))
+                _db.TareaColaboradores.Add(new TareaColaborador { TareaId = id, PersonaId = pid });
+            await _db.SaveChangesAsync(ct);
+        }
+
+        // Checklist (reemplazo total) cuando se envia.
+        if (req.Checklist is not null)
+            await ReemplazarChecklistAsync(id, req.Checklist, ct);
+
+        return true;
+    }
+
+    /// <summary>Reemplaza la checklist (tareas relacionadas) de una tarjeta.</summary>
+    private async Task ReemplazarChecklistAsync(Guid tareaId, IReadOnlyList<SubtareaCheckItem>? items, CancellationToken ct)
+    {
+        if (items is null) return;
+        await _db.TareaSubtareas.Where(s => s.TareaId == tareaId).ExecuteDeleteAsync(ct);
+        var orden = 0;
+        foreach (var it in items.Where(x => !string.IsNullOrWhiteSpace(x.Titulo)))
+            _db.TareaSubtareas.Add(new TareaSubtarea { TareaId = tareaId, Titulo = it.Titulo.Trim(), Hecho = it.Hecho, Orden = orden++ });
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task<bool> EliminarTareaAsync(Guid id, CancellationToken ct)
+    {
+        var t = await _db.Tareas.FirstOrDefaultAsync(x => x.Id == id && !x.Eliminada, ct);
+        if (t is null) return false;
+        t.Eliminada = true;
+        t.UpdatedAt = DateTimeOffset.UtcNow;
+        // Soft-delete en cascada de las tareas hijas (sub-cards).
+        var hijos = await _db.Tareas.Where(x => x.PadreId == id && !x.Eliminada).ToListAsync(ct);
+        foreach (var h in hijos) { h.Eliminada = true; h.UpdatedAt = DateTimeOffset.UtcNow; }
+        await RegistrarHistorial(id, TipoEventoTarea.Eliminada, "Tarjeta eliminada", null, null, ct);
         await _db.SaveChangesAsync(ct);
         return true;
+    }
+
+    public async Task<TareaAdjuntoDto?> AgregarAdjuntoAsync(Guid tareaId, string nombre, string url, CancellationToken ct)
+    {
+        if (!await _db.Tareas.AnyAsync(x => x.Id == tareaId && !x.Eliminada, ct)) return null;
+        var a = new TareaAdjunto { TareaId = tareaId, Nombre = nombre, Url = url };
+        _db.TareaAdjuntos.Add(a);
+        await RegistrarHistorial(tareaId, TipoEventoTarea.AdjuntoAgregado, $"Adjunto agregado: {nombre}", null, null, ct);
+        await _db.SaveChangesAsync(ct);
+        return new TareaAdjuntoDto(a.Id, a.Nombre, a.Url);
+    }
+
+    public async Task<bool> EliminarAdjuntoAsync(Guid tareaId, Guid adjuntoId, CancellationToken ct)
+    {
+        var n = await _db.TareaAdjuntos.Where(a => a.Id == adjuntoId && a.TareaId == tareaId).ExecuteDeleteAsync(ct);
+        return n > 0;
     }
 
     public async Task<bool> CambiarEstadoAsync(Guid id, CambiarEstadoRequest req, CancellationToken ct)
@@ -543,7 +654,7 @@ public class TareasService : ITareasService
     public async Task<ResumenTareasDto> GetResumenAsync(CancellationToken ct)
     {
         await AsegurarEstadosBaseAsync(ct);
-        var tareas = await _db.Tareas.AsNoTracking().Include(t => t.Estado).ToListAsync(ct);
+        var tareas = await _db.Tareas.AsNoTracking().Where(t => !t.Eliminada).Include(t => t.Estado).ToListAsync(ct);
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
         var mesAtras = DateTime.UtcNow.AddMonths(-1);
         var pendienteId = await _db.TareasEstados.Where(e => e.Nombre == EstadoTareaBase.Pendiente).Select(e => e.Id).FirstAsync(ct);
@@ -848,7 +959,7 @@ public class TareasService : ITareasService
 
     private async Task<TableroDto> MapTableroAsync(Tablero t, CancellationToken ct)
     {
-        var nCards = await _db.Tareas.AsNoTracking().CountAsync(x => x.TableroId == t.Id && x.PadreId == null, ct);
+        var nCards = await _db.Tareas.AsNoTracking().CountAsync(x => x.TableroId == t.Id && x.PadreId == null && !x.Eliminada, ct);
         var usuariosIds = await _db.TableroUsuarios.AsNoTracking().Where(u => u.TableroId == t.Id).Select(u => u.PersonaId).ToListAsync(ct);
         var personas = await _db.Personas.AsNoTracking().Where(p => usuariosIds.Contains(p.Id))
             .Select(p => new { p.Id, Nombre = p.Nombres + " " + p.Apellidos }).ToListAsync(ct);

@@ -23,6 +23,12 @@ public interface ITareasService
     Task<TareaDetalleDto> CrearTareaAsync(CrearTareaRequest req, CancellationToken ct);
     Task<bool> ActualizarTareaAsync(Guid id, ActualizarTareaRequest req, CancellationToken ct);
     Task<bool> CambiarEstadoAsync(Guid id, CambiarEstadoRequest req, CancellationToken ct);
+    /// <summary>Soft-delete de una tarjeta y sus tareas hijas.</summary>
+    Task<bool> EliminarTareaAsync(Guid id, CancellationToken ct);
+
+    // Adjuntos de la tarjeta
+    Task<TareaAdjuntoDto?> AgregarAdjuntoAsync(Guid tareaId, string nombre, string url, CancellationToken ct);
+    Task<bool> EliminarAdjuntoAsync(Guid tareaId, Guid adjuntoId, CancellationToken ct);
 
     // Comentarios + Etiquetas + Colaboradores
     Task<TareaComentarioDto> AgregarComentarioAsync(Guid tareaId, CrearComentarioRequest req, CancellationToken ct);

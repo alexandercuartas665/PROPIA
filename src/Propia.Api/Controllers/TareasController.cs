@@ -1,7 +1,9 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Propia.Application.Tareas;
 using Propia.Domain.Enums;
+using Propia.Infrastructure.Storage;
 
 namespace Propia.Api.Controllers;
 
@@ -11,7 +13,12 @@ namespace Propia.Api.Controllers;
 public class TareasController : ControllerBase
 {
     private readonly ITareasService _svc;
-    public TareasController(ITareasService svc) => _svc = svc;
+    private readonly IBlobStorage _storage;
+    public TareasController(ITareasService svc, IBlobStorage storage)
+    {
+        _svc = svc;
+        _storage = storage;
+    }
 
     // --- Estados ---
     [HttpGet("estados")]
@@ -196,4 +203,38 @@ public class TareasController : ControllerBase
     [HttpPut("{id:guid}/progreso")]
     public async Task<IActionResult> ActualizarProgreso(Guid id, [FromBody] ActualizarProgresoRequest req, CancellationToken ct)
         => await _svc.ActualizarProgresoAsync(id, req.Progreso, ct) ? NoContent() : NotFound();
+
+    // --- Eliminar tarjeta (soft-delete) ---
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Eliminar(Guid id, CancellationToken ct)
+        => await _svc.EliminarTareaAsync(id, ct) ? NoContent() : NotFound();
+
+    // --- Adjuntos de la tarjeta ---
+    [HttpPost("{id:guid}/adjuntos")]
+    [RequestSizeLimit(11_000_000)]
+    public async Task<IActionResult> SubirAdjunto(Guid id, IFormFile file, CancellationToken ct)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
+        if (file is null || file.Length == 0) return BadRequest(new { error = "Archivo vacio." });
+        if (file.Length > 10_000_000) return BadRequest(new { error = "Maximo 10 MB." });
+        var ext = System.IO.Path.GetExtension(file.FileName);
+        var key = $"tenants/{tenantId:N}/tareas/{id:N}/{Guid.NewGuid():N}{ext}";
+        await using var stream = file.OpenReadStream();
+        var url = Absolutizar(await _storage.UploadAsync(key, stream, file.ContentType ?? "application/octet-stream", ct));
+        var dto = await _svc.AgregarAdjuntoAsync(id, file.FileName, url, ct);
+        return dto is null ? NotFound() : Ok(dto);
+    }
+
+    [HttpDelete("{id:guid}/adjuntos/{adjuntoId:guid}")]
+    public async Task<IActionResult> EliminarAdjunto(Guid id, Guid adjuntoId, CancellationToken ct)
+        => await _svc.EliminarAdjuntoAsync(id, adjuntoId, ct) ? NoContent() : NotFound();
+
+    private Guid? GetTenantId()
+    {
+        var raw = User.FindFirstValue("tenant_id");
+        return Guid.TryParse(raw, out var g) ? g : null;
+    }
+
+    private string Absolutizar(string url) => url.StartsWith('/') ? $"{Request.Scheme}://{Request.Host}{url}" : url;
 }

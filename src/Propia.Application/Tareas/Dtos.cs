@@ -50,11 +50,28 @@ public record TareaDetalleDto(
     IReadOnlyList<TareaListaDto> Subtareas,
     IReadOnlyList<TareaComentarioDto> Comentarios,
     IReadOnlyList<TareaHistorialDto> Historial,
-    IReadOnlyList<TareaColaboradorDto> Colaboradores);
+    IReadOnlyList<TareaColaboradorDto> Colaboradores,
+    // ----- Campos de la tarjeta rica (2.10) -----
+    string? Color = null,
+    bool EsProyecto = false,
+    decimal? Valor = null,
+    int Progreso = 0,
+    TimeOnly? HoraInicio = null,
+    TimeOnly? HoraFin = null,
+    string? OrigenTipo = null,
+    string? OrigenReferencia = null,
+    Guid? TableroId = null,
+    IReadOnlyList<TareaAdjuntoDto>? Adjuntos = null,
+    IReadOnlyList<SubtareaCheckDto>? Checklist = null);
 
 public record TareaComentarioDto(Guid Id, Guid AutorUsuarioId, string Texto, DateTimeOffset CreatedAt);
 public record TareaHistorialDto(TipoEventoTarea TipoEvento, string Descripcion, Guid RealizadoPorUsuarioId, DateTimeOffset OcurridoAt);
 public record TareaColaboradorDto(Guid Id, Guid PersonaId, string Nombre);
+
+// ----- Adjuntos y checklist de la tarjeta -----
+public record TareaAdjuntoDto(Guid Id, string Nombre, string Url);
+public record SubtareaCheckDto(Guid Id, string Titulo, bool Hecho, int Orden);
+public record SubtareaCheckItem(string Titulo, bool Hecho);
 
 public record CrearTareaRequest(
     string Titulo,
@@ -66,7 +83,16 @@ public record CrearTareaRequest(
     DateOnly? FechaVencimiento,
     Guid? PadreId,
     IReadOnlyList<Guid>? EtiquetaIds,
-    Guid? TableroId = null);
+    Guid? TableroId = null,
+    string? Color = null,
+    bool EsProyecto = false,
+    decimal? Valor = null,
+    TimeOnly? HoraInicio = null,
+    TimeOnly? HoraFin = null,
+    string? OrigenTipo = null,
+    string? OrigenReferencia = null,
+    IReadOnlyList<Guid>? ResponsablePersonaIds = null,
+    IReadOnlyList<SubtareaCheckItem>? Checklist = null);
 
 public record ActualizarTareaRequest(
     string Titulo,
@@ -74,7 +100,18 @@ public record ActualizarTareaRequest(
     PrioridadTarea Prioridad,
     Guid? AsignadoPersonaId,
     DateOnly? FechaInicio,
-    DateOnly? FechaVencimiento);
+    DateOnly? FechaVencimiento,
+    Guid? EstadoId = null,
+    string? Color = null,
+    bool EsProyecto = false,
+    decimal? Valor = null,
+    int? Progreso = null,
+    TimeOnly? HoraInicio = null,
+    TimeOnly? HoraFin = null,
+    string? OrigenTipo = null,
+    string? OrigenReferencia = null,
+    IReadOnlyList<Guid>? ResponsablePersonaIds = null,
+    IReadOnlyList<SubtareaCheckItem>? Checklist = null);
 
 public record CambiarEstadoRequest(Guid EstadoId, string? MotivoCancelacion);
 public record CrearComentarioRequest(string Texto);

@@ -67,7 +67,9 @@ public enum TipoEventoTarea
     Reabierta = 13,
     DependenciaAgregada = 14,
     DependenciaRemovida = 15,
-    PersonaMencionada = 16
+    PersonaMencionada = 16,
+    Actualizada = 17,
+    Eliminada = 18
 }
 
 /// <summary>Tipo de dependencia entre dos tareas. Spec 2.10 v1.0 Fase 2.</summary>

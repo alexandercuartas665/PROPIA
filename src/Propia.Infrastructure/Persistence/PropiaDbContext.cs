@@ -127,6 +127,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<TableroCampo> TableroCampos => Set<TableroCampo>();
     public DbSet<TareaCampoValor> TareaCampoValores => Set<TareaCampoValor>();
     public DbSet<TareaAdjunto> TareaAdjuntos => Set<TareaAdjunto>();
+    public DbSet<TareaSubtarea> TareaSubtareas => Set<TareaSubtarea>();
 
     // Modulo 2.7 Cartera y Estado de Cuenta (TenantEntity con RLS)
     public DbSet<EstadoCarteraConfig> EstadosCarteraConfig => Set<EstadoCarteraConfig>();
