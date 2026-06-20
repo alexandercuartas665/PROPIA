@@ -25,7 +25,8 @@ public record TareaListaDto(
     int Progreso = 0,
     string? Color = null,
     bool EsProyecto = false,
-    decimal? Valor = null);
+    decimal? Valor = null,
+    DateOnly? FechaInicio = null);
 
 public record TareaDetalleDto(
     Guid Id,

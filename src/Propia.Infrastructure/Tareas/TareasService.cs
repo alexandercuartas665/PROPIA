@@ -222,6 +222,7 @@ public class TareasService : ITareasService
                 t.AsignadoPersonaId,
                 AsigNombre = p == null ? null : ((p.Nombres ?? "") + " " + (p.Apellidos ?? "")).Trim(),
                 t.FechaVencimiento,
+                t.FechaInicio,
                 t.PadreId,
                 t.Progreso,
                 t.Color,
@@ -254,7 +255,7 @@ public class TareasService : ITareasService
             subs.GetValueOrDefault(r.Id, 0),
             coms.GetValueOrDefault(r.Id, 0),
             etiquetasMap.GetValueOrDefault(r.Id, new List<EtiquetaTareaDto>()),
-            r.Progreso, r.Color, r.EsProyecto, r.Valor)).ToList();
+            r.Progreso, r.Color, r.EsProyecto, r.Valor, r.FechaInicio)).ToList();
     }
 
     public async Task<TareaDetalleDto?> GetTareaAsync(Guid id, CancellationToken ct)

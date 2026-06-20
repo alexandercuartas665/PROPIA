@@ -219,13 +219,68 @@ else
             </div>
         }
 
-        @* ---------- GANTT (preparado) ---------- *@
+        @* ---------- GANTT (cronograma de barras inicio-fin) ---------- *@
         else if (_boardMode == "gantt")
         {
-            <div class="tb-soon">
-                <div class="tb-soon-ic"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h10M3 12h14M3 18h7M21 4v16"/></svg></div>
-                <div class="tb-soon-t">Vista Gantt</div>
-                <div class="tb-soon-s">Cronograma de barras por tarea (inicio - vencimiento) con dependencias. Proximamente.</div>
+            var (gIni, gDias) = GanttRango();
+            var hoy = DateOnly.FromDateTime(DateTime.Today);
+            var filas = GanttTareas();
+            var sinFecha = GanttSinFecha();
+            <div class="tg">
+                <div class="tg-titlebar">
+                    <div class="tg-title">Cronograma · @FechaCortaSimple(gIni) – @FechaCortaSimple(gIni.AddDays(gDias - 1))</div>
+                    <div class="tb-flex"></div>
+                    <span class="tcal-count">@filas.Count en cronograma</span>
+                </div>
+                <div class="tg-scroll">
+                    <div class="tg-inner" style="width:@(240 + gDias * GColW)px">
+                        @* cabecera de dias *@
+                        <div class="tg-row tg-head">
+                            <div class="tg-left tg-head-left">TAREA</div>
+                            <div class="tg-time">
+                                @for (int i = 0; i < gDias; i++)
+                                {
+                                    var d = gIni.AddDays(i);
+                                    var fin = d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
+                                    <div class="tg-daycol @(fin ? "tg-we" : "") @(d == hoy ? "tg-today" : "")" style="width:@(GColW)px">
+                                        <div class="tg-dow">@DowLetra(d)</div>
+                                        <div class="tg-dnum @(d == hoy ? "tg-dnum-hoy" : "")">@d.Day</div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                        @* filas de tareas *@
+                        @foreach (var t in filas)
+                        {
+                            var tarea = t;
+                            var ini = GIni(t)!.Value; var fin = GFin(t)!.Value;
+                            var off = ini.DayNumber - gIni.DayNumber;
+                            var dur = Math.Max(1, fin.DayNumber - ini.DayNumber + 1);
+                            <div class="tg-row">
+                                <button class="tg-left tg-task" @onclick="() => AbrirCardDraft(tarea, null)" title="@t.Titulo">
+                                    <span class="tg-dot" style="background:@(t.EstadoColor ?? "#94a3b8")"></span>
+                                    <span class="tg-task-t">@t.Titulo</span>
+                                </button>
+                                <div class="tg-time tg-lane">
+                                    @for (int i = 0; i < gDias; i++)
+                                    {
+                                        var d = gIni.AddDays(i);
+                                        var fin2 = d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
+                                        <div class="tg-cell @(fin2 ? "tg-we" : "") @(d == hoy ? "tg-today" : "")" style="width:@(GColW)px"></div>
+                                    }
+                                    <button class="tg-bar" style="left:@(off * GColW + 2)px;width:@(dur * GColW - 4)px;background:@(t.Color ?? t.EstadoColor ?? "#6D4FE3")" @onclick="() => AbrirCardDraft(tarea, null)" title="@t.Titulo (@t.Progreso%)">
+                                        @if (t.Progreso < 100) { <span class="tg-bar-rest" style="left:@(t.Progreso)%"></span> }
+                                        <span class="tg-bar-lbl">@t.Titulo</span>
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+                @if (sinFecha.Count > 0)
+                {
+                    <div class="tg-note">@sinFecha.Count tarea@(sinFecha.Count == 1 ? "" : "s") sin fechas no se muestran en el cronograma.</div>
+                }
             </div>
         }
     }
@@ -837,6 +892,38 @@ else
     .tcal-ev:hover { background: #F1ECFD; }
     .tcal-ev.venc { background: #FDE7E7; color: #C0383C; }
 
+    /* ===== Vista Gantt ===== */
+    .tg { background: #fff; border: 1px solid #E1E8EE; border-radius: 14px; box-shadow: 0 1px 2px rgba(45,62,80,.05); overflow: hidden; }
+    .tg-titlebar { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid #EEF3F8; }
+    .tg-title { font-size: 15px; font-weight: 800; color: #1B2A3A; }
+    .tg-scroll { overflow-x: auto; }
+    .tg-inner { min-width: 100%; }
+    .tg-row { display: flex; align-items: stretch; border-bottom: 1px solid #F4F7FA; }
+    .tg-row:last-child { border-bottom: 0; }
+    .tg-head { background: #FAFBFC; border-bottom: 1px solid #EEF3F8; position: sticky; top: 0; z-index: 3; }
+    .tg-left { width: 240px; flex-shrink: 0; position: sticky; left: 0; z-index: 2; background: #fff; border-right: 1px solid #EEF3F8; display: flex; align-items: center; gap: 8px; padding: 0 12px; }
+    .tg-head-left { background: #FAFBFC; font-size: 10.5px; letter-spacing: .4px; font-weight: 700; color: #A6B7C8; padding: 10px 12px; }
+    .tg-task { text-align: left; border: 0; cursor: pointer; min-height: 40px; }
+    .tg-task:hover .tg-task-t { color: #6D4FE3; }
+    .tg-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .tg-task-t { font-size: 12.5px; font-weight: 600; color: #33475B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tg-time { display: flex; position: relative; }
+    .tg-daycol { flex-shrink: 0; padding: 5px 0; text-align: center; border-right: 1px solid #F4F7FA; }
+    .tg-daycol.tg-we { background: #FBFCFD; }
+    .tg-daycol.tg-today { background: #F1ECFD; }
+    .tg-dow { font-size: 8.5px; letter-spacing: .3px; font-weight: 700; color: #A6B7C8; text-transform: uppercase; }
+    .tg-dnum { font-size: 11px; font-weight: 700; color: #516F90; margin-top: 1px; }
+    .tg-dnum-hoy { color: #6D4FE3; }
+    .tg-lane { min-height: 40px; }
+    .tg-cell { flex-shrink: 0; border-right: 1px solid #F4F7FA; }
+    .tg-cell.tg-we { background: #FBFCFD; }
+    .tg-cell.tg-today { background: #F5F1FE; }
+    .tg-bar { position: absolute; top: 8px; height: 24px; border-radius: 7px; border: 0; cursor: pointer; overflow: hidden; display: flex; align-items: center; box-shadow: 0 1px 3px rgba(27,42,58,.18); }
+    .tg-bar:hover { filter: brightness(1.05); }
+    .tg-bar-rest { position: absolute; top: 0; bottom: 0; right: 0; background: rgba(255,255,255,.5); }
+    .tg-bar-lbl { position: relative; z-index: 1; font-size: 10.5px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 8px; text-shadow: 0 1px 1px rgba(0,0,0,.15); }
+    .tg-note { font-size: 11.5px; color: #A6B7C8; padding: 11px 18px; border-top: 1px solid #EEF3F8; background: #FBFCFD; }
+
     @@media (max-width: 880px) { .tcal-cell { min-height: 76px; } }
     @@media (max-width: 880px) { .tbc-body { grid-template-columns: 1fr; } }
 </style>
@@ -1051,6 +1138,32 @@ else
         }
         return celdas;
     }
+
+    // ----- Vista Gantt (cronograma de barras inicio-fin) -----
+    private const int GColW = 34;
+    private DateOnly? GIni(TareaListaDto t) => t.FechaInicio ?? t.FechaVencimiento;
+    private DateOnly? GFin(TareaListaDto t) => t.FechaVencimiento ?? t.FechaInicio;
+    private List<TareaListaDto> GanttTareas() =>
+        (_board?.Tareas ?? new List<TareaListaDto>()).Where(t => GIni(t).HasValue)
+            .OrderBy(t => GIni(t)!.Value).ThenBy(t => t.Titulo).ToList();
+    private List<TareaListaDto> GanttSinFecha() =>
+        (_board?.Tareas ?? new List<TareaListaDto>()).Where(t => !GIni(t).HasValue && t.PadreId == null).ToList();
+
+    private (DateOnly ini, int dias) GanttRango()
+    {
+        var ds = GanttTareas();
+        if (ds.Count == 0) { var h = DateOnly.FromDateTime(DateTime.Today).AddDays(-2); return (h, 21); }
+        var ini = ds.Min(t => GIni(t)!.Value).AddDays(-1);
+        var fin = ds.Max(t => GFin(t)!.Value).AddDays(1);
+        return (ini, fin.DayNumber - ini.DayNumber + 1);
+    }
+
+    private static string DowLetra(DateOnly d) => d.DayOfWeek switch
+    {
+        DayOfWeek.Monday => "Lu", DayOfWeek.Tuesday => "Ma", DayOfWeek.Wednesday => "Mi",
+        DayOfWeek.Thursday => "Ju", DayOfWeek.Friday => "Vi", DayOfWeek.Saturday => "Sa", _ => "Do"
+    };
+    private static string FechaCortaSimple(DateOnly d) => d.Day + " " + d.ToString("MMM yyyy", Es);
 
     @* Render recursivo: la fila + sus tareas hijas (encadenadas) cuando esta expandida. Hasta 3 niveles, como el prototipo. *@
     private RenderFragment RenderArbol(TareaListaDto t, int depth) => __builder =>
