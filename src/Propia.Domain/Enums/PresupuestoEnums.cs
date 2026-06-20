@@ -92,6 +92,15 @@ public enum TipoAprobacion
     Manual = 2
 }
 
+/// <summary>Tipo de movimiento de gasto en la ejecucion presupuestal (2.6 tab Ejecucion).</summary>
+public enum TipoGasto
+{
+    /// <summary>Compromiso: gasto reservado/contratado pero aun no pagado.</summary>
+    Comprometido = 1,
+    /// <summary>Ejecutado: gasto efectivamente pagado.</summary>
+    Ejecutado = 2
+}
+
 /// <summary>Codigos estandar de rubros del catalogo base (spec 2.6 - tabla 5.2).</summary>
 public static class RubroCatalogo
 {

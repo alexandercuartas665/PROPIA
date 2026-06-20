@@ -44,4 +44,10 @@ public interface IPresupuestoService
 
     // --- Auditoria ---
     Task<IReadOnlyList<AuditPresupuestoDto>> ListarAuditoriaAsync(int limit, CancellationToken ct);
+
+    // --- Ejecucion presupuestal (tab Ejecucion) ---
+    Task<EjecucionResumenDto> GetEjecucionAsync(Guid presupuestoId, CancellationToken ct);
+    Task<IReadOnlyList<GastoDto>> ListarGastosAsync(Guid presupuestoId, CancellationToken ct);
+    Task<GastoDto> RegistrarGastoAsync(Guid presupuestoId, RegistrarGastoRequest req, CancellationToken ct);
+    Task<bool> EliminarGastoAsync(Guid gastoId, CancellationToken ct);
 }

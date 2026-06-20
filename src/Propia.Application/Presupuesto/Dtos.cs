@@ -119,6 +119,24 @@ public record MiCuotaDto(
 public record CuotaExtraordinariaPendienteDto(
     Guid Id, string Nombre, decimal MontoMiUnidad, int? CuotaActual, int? NumeroCuotas);
 
+// ============================ Ejecucion presupuestal ============================
+
+public record EjecucionRubroDto(
+    Guid RubroId, string Nombre,
+    decimal Presupuestado, decimal Comprometido, decimal Ejecutado, decimal Disponible,
+    decimal PctEjecutado);
+
+public record EjecucionResumenDto(
+    decimal Presupuestado, decimal Comprometido, decimal Ejecutado, decimal Disponible,
+    IReadOnlyList<EjecucionRubroDto> Rubros);
+
+public record GastoDto(
+    Guid Id, Guid RubroId, string RubroNombre,
+    TipoGasto Tipo, decimal Monto, string? Descripcion, DateOnly Fecha);
+
+public record RegistrarGastoRequest(
+    Guid RubroId, TipoGasto Tipo, decimal Monto, string? Descripcion, DateOnly Fecha);
+
 // ============================ Auditoria ============================
 
 public record AuditPresupuestoDto(

@@ -159,4 +159,24 @@ public class PresupuestoController : ControllerBase
     [HttpGet("auditoria")]
     public async Task<IActionResult> Auditoria([FromQuery] int limit = 50, CancellationToken ct = default)
         => Ok(await _svc.ListarAuditoriaAsync(limit, ct));
+
+    // --- Ejecucion presupuestal (tab Ejecucion) ---
+    [HttpGet("{id:guid}/ejecucion")]
+    public async Task<IActionResult> Ejecucion(Guid id, CancellationToken ct)
+        => Ok(await _svc.GetEjecucionAsync(id, ct));
+
+    [HttpGet("{id:guid}/gastos")]
+    public async Task<IActionResult> ListarGastos(Guid id, CancellationToken ct)
+        => Ok(await _svc.ListarGastosAsync(id, ct));
+
+    [HttpPost("{id:guid}/gastos")]
+    public async Task<IActionResult> RegistrarGasto(Guid id, [FromBody] RegistrarGastoRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.RegistrarGastoAsync(id, req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpDelete("gastos/{gastoId:guid}")]
+    public async Task<IActionResult> EliminarGasto(Guid gastoId, CancellationToken ct)
+        => await _svc.EliminarGastoAsync(gastoId, ct) ? NoContent() : NotFound();
 }

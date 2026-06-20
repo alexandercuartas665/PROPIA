@@ -90,6 +90,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<PresupuestoRubro> PresupuestoRubros => Set<PresupuestoRubro>();
     public DbSet<Liquidacion> Liquidaciones => Set<Liquidacion>();
     public DbSet<LiquidacionUnidad> LiquidacionUnidades => Set<LiquidacionUnidad>();
+    public DbSet<GastoPresupuestal> GastosPresupuestales => Set<GastoPresupuestal>();
     public DbSet<PagoCuota> PagosCuotas => Set<PagoCuota>();
     public DbSet<CuotaExtraordinaria> CuotasExtraordinarias => Set<CuotaExtraordinaria>();
     public DbSet<EjecucionPresupuestal> EjecucionesPresupuestales => Set<EjecucionPresupuestal>();
@@ -689,6 +690,18 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasOne(x => x.Presupuesto).WithMany(p => p.Rubros).HasForeignKey(x => x.PresupuestoId).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.PresupuestoId, x.Codigo });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<GastoPresupuestal>(b =>
+        {
+            b.Property(x => x.Monto).HasPrecision(18, 2);
+            b.Property(x => x.Descripcion).HasMaxLength(500);
+            b.Property(x => x.SoporteUrl).HasMaxLength(500);
+            b.HasOne(x => x.Presupuesto).WithMany().HasForeignKey(x => x.PresupuestoId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Rubro).WithMany().HasForeignKey(x => x.RubroId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.PresupuestoId, x.RubroId });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

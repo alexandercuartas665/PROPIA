@@ -278,14 +278,56 @@ else
         }
     }
 
-    @* ===================== TAB EJECUCION (stub) ===================== *@
+    @* ===================== TAB EJECUCION ===================== *@
     else if (_tab == "ejecucion")
     {
-        <div class="fz-soon">
-            <div class="fz-soon-ic"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18M7 14l3-3 3 3 5-6"/></svg></div>
-            <div class="fz-soon-t">Ejecucion presupuestal</div>
-            <div class="fz-soon-s">Seguimiento del gasto por rubro (Presupuestado − Comprometido − Ejecutado = Disponible) y registro de gastos. Proximamente.</div>
-        </div>
+        @if (_detalle is null)
+        {
+            <div class="fz-card fz-pad fz-empty-cta">
+                <div class="fz-empty-t">Sin presupuesto</div>
+                <div class="fz-empty-s">Crea y activa una vigencia para hacer seguimiento del gasto.</div>
+            </div>
+        }
+        else
+        {
+            <div class="fz-ejec-head">
+                <div class="fz-ejec-note">Seguimiento operativo del gasto — <b>Presupuestado − Comprometido − Ejecutado = Disponible</b>. No reemplaza la contabilidad.</div>
+                <button class="fz-btn fz-btn-primary" @onclick="AbrirGasto"><i class="fi fi-rr-plus"></i>Registrar gasto</button>
+            </div>
+            <div class="fz-kpis">
+                <div class="fz-kpi"><div class="fz-kpi-l">Presupuestado</div><div class="fz-kpi-v">@(_ejec is not null ? Money(_ejec.Presupuestado) : "—")</div></div>
+                <div class="fz-kpi"><div class="fz-kpi-l">Comprometido</div><div class="fz-kpi-v" style="color:#B45309">@(_ejec is not null ? Money(_ejec.Comprometido) : "—")</div></div>
+                <div class="fz-kpi"><div class="fz-kpi-l">Ejecutado</div><div class="fz-kpi-v" style="color:#6D4FE3">@(_ejec is not null ? Money(_ejec.Ejecutado) : "—")</div></div>
+                <div class="fz-kpi"><div class="fz-kpi-l">Disponible</div><div class="fz-kpi-v" style="color:#1A8754">@(_ejec is not null ? Money(_ejec.Disponible) : "—")</div></div>
+            </div>
+            <div class="fz-card">
+                <div class="fz-ejec-thead">
+                    <div style="flex:1">RUBRO</div>
+                    <div class="fz-ec">PRESUP.</div>
+                    <div class="fz-ec">COMPROM.</div>
+                    <div class="fz-ec">EJECUTADO</div>
+                    <div class="fz-ec">DISPONIBLE</div>
+                    <div class="fz-ec-pct">% EJEC.</div>
+                </div>
+                @if (_ejec is not null)
+                {
+                    @foreach (var r in _ejec.Rubros)
+                    {
+                        <div class="fz-ejec-row">
+                            <div class="fz-ejec-n">@r.Nombre</div>
+                            <div class="fz-ec">@Money(r.Presupuestado)</div>
+                            <div class="fz-ec" style="color:#B45309">@Money(r.Comprometido)</div>
+                            <div class="fz-ec" style="color:#6D4FE3">@Money(r.Ejecutado)</div>
+                            <div class="fz-ec" style="color:@(r.Disponible < 0 ? "#C0383C" : "#1A8754");font-weight:800">@Money(r.Disponible)</div>
+                            <div class="fz-ec-pct">
+                                <div class="fz-ec-bar"><div class="fz-ec-fill" style="width:@(Math.Min(100, r.PctEjecutado).ToString("0", Inv))%;background:@(r.PctEjecutado > 100 ? "#C0383C" : "#6D4FE3")"></div></div>
+                                <span>@r.PctEjecutado.ToString("0")%</span>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        }
     }
 </div>
 
@@ -338,6 +380,42 @@ else
                 <div style="flex:1"></div>
                 <button class="fz-btn fz-btn-ghost" @onclick="() => _showAprobar = false">Cancelar</button>
                 <button class="fz-btn fz-btn-primary" @onclick="Aprobar" disabled="@_busy">@(_busy ? "..." : "Aprobar")</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ===================== Modal registrar gasto ===================== *@
+@if (_showGasto && _detalle is not null)
+{
+    <div class="fz-modal-bd" @onclick="() => _showGasto = false">
+        <div class="fz-modal" @onclick:stopPropagation="true">
+            <div class="fz-modal-head">
+                <div class="fz-modal-tt"><div class="fz-modal-h">Registrar gasto</div><div class="fz-modal-s">Actualiza el ejecutado o el comprometido del rubro</div></div>
+                <button class="fz-modal-x" @onclick="() => _showGasto = false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+            </div>
+            <div class="fz-modal-body">
+                <div class="fz-fld"><label>Rubro</label>
+                    <select @bind="_gastoRubro">
+                        @foreach (var r in _detalle.Rubros.OrderBy(x => x.Orden)) { <option value="@r.Id">@r.Nombre</option> }
+                    </select>
+                </div>
+                <div class="fz-grid2">
+                    <div class="fz-fld"><label>Tipo</label>
+                        <select @bind="_gastoTipo">
+                            <option value="@TipoGasto.Ejecutado">Ejecutado (pagado)</option>
+                            <option value="@TipoGasto.Comprometido">Comprometido</option>
+                        </select>
+                    </div>
+                    <div class="fz-fld"><label>Fecha</label><input type="date" @bind="_gastoFecha" /></div>
+                </div>
+                <div class="fz-fld"><label>Monto (COP) *</label><input type="number" step="1000" @bind="_gastoMonto" placeholder="Ej. 4500000" /></div>
+                <div class="fz-fld"><label>Descripcion</label><input @bind="_gastoDesc" placeholder="Ej. Factura 8841 - recarga extintores" /></div>
+            </div>
+            <div class="fz-modal-foot">
+                <div style="flex:1"></div>
+                <button class="fz-btn fz-btn-ghost" @onclick="() => _showGasto = false">Cancelar</button>
+                <button class="fz-btn fz-btn-primary" @onclick="RegistrarGasto" disabled="@(_busy || _gastoMonto is null or <= 0 || _gastoRubro == Guid.Empty)">@(_busy ? "..." : "Registrar")</button>
             </div>
         </div>
     </div>
@@ -488,6 +566,20 @@ else
     .fz-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .fz-check { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #516F90; font-weight: 600; }
 
+    .fz-ejec-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 14px; flex-wrap: wrap; }
+    .fz-ejec-note { font-size: 13px; color: #7C98B6; }
+    .fz-ejec-note b { color: #516F90; }
+    .fz-ejec-thead { display: flex; align-items: center; gap: 10px; padding: 10px 18px; background: #FAFBFC; border-bottom: 1px solid #EEF3F8; font-size: 10px; letter-spacing: .4px; font-weight: 700; color: #A6B7C8; }
+    .fz-ec { width: 110px; flex-shrink: 0; text-align: right; }
+    .fz-ec-pct { width: 120px; flex-shrink: 0; text-align: right; }
+    .fz-ejec-row { display: flex; align-items: center; gap: 10px; padding: 11px 18px; border-bottom: 1px solid #F4F7FA; }
+    .fz-ejec-n { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: #33475B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .fz-ejec-row .fz-ec { font-size: 12.5px; font-weight: 700; color: #1B2A3A; }
+    .fz-ec-pct { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
+    .fz-ec-bar { width: 64px; height: 6px; border-radius: 4px; background: #EEF3F8; overflow: hidden; }
+    .fz-ec-fill { height: 100%; border-radius: 4px; }
+    .fz-ec-pct span { font-size: 11px; font-weight: 700; color: #516F90; width: 34px; text-align: right; }
+
     @@media (max-width: 980px) { .fz-kpis { grid-template-columns: repeat(2,1fr); } .fz-grid-2, .fz-grid-rubros { grid-template-columns: 1fr; } }
 </style>
 
@@ -517,6 +609,14 @@ else
     private TipoAprobacion _aprobarTipo = TipoAprobacion.Manual;
     private DateTime _aprobarFecha = DateTime.Today;
     private string? _aprobarActa;
+
+    private EjecucionResumenDto? _ejec;
+    private bool _showGasto;
+    private Guid _gastoRubro;
+    private TipoGasto _gastoTipo = TipoGasto.Ejecutado;
+    private decimal? _gastoMonto;
+    private string? _gastoDesc;
+    private DateTime _gastoFecha = DateTime.Today;
 
     private record TabDef(string Key, string Label);
     private readonly List<TabDef> _tabs = new() { new("resumen", "Resumen"), new("presupuesto", "Presupuesto"), new("ejecucion", "Ejecucion") };
@@ -559,7 +659,11 @@ else
             _presupuestos = await http.GetFromJsonAsync<List<PresupuestoDto>>("/api/presupuesto") ?? new();
             _activa = _presupuestos.FirstOrDefault(p => p.Estado == EstadoPresupuesto.EnEjecucion);
             _selId ??= _activa?.Id ?? _presupuestos.FirstOrDefault()?.Id;
-            if (_selId is not null) _detalle = await http.GetFromJsonAsync<PresupuestoDetalleDto>($"/api/presupuesto/{_selId}");
+            if (_selId is not null)
+            {
+                _detalle = await http.GetFromJsonAsync<PresupuestoDetalleDto>($"/api/presupuesto/{_selId}");
+                try { _ejec = await http.GetFromJsonAsync<EjecucionResumenDto>($"/api/presupuesto/{_selId}/ejecucion"); } catch { }
+            }
             if (_activa is not null)
             {
                 var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -575,7 +679,34 @@ else
 
     private async Task OnSelVigencia(ChangeEventArgs e)
     {
-        if (Guid.TryParse(e.Value?.ToString(), out var id)) { _selId = id; _detalle = await Auth().GetFromJsonAsync<PresupuestoDetalleDto>($"/api/presupuesto/{id}"); }
+        if (Guid.TryParse(e.Value?.ToString(), out var id))
+        {
+            _selId = id;
+            _detalle = await Auth().GetFromJsonAsync<PresupuestoDetalleDto>($"/api/presupuesto/{id}");
+            try { _ejec = await Auth().GetFromJsonAsync<EjecucionResumenDto>($"/api/presupuesto/{id}/ejecucion"); } catch { _ejec = null; }
+        }
+    }
+
+    private void AbrirGasto()
+    {
+        _gastoRubro = _detalle?.Rubros.OrderBy(r => r.Orden).FirstOrDefault()?.Id ?? Guid.Empty;
+        _gastoTipo = TipoGasto.Ejecutado; _gastoMonto = null; _gastoDesc = ""; _gastoFecha = DateTime.Today;
+        _showGasto = true;
+    }
+
+    private async Task RegistrarGasto()
+    {
+        if (_detalle is null || _gastoRubro == Guid.Empty || _gastoMonto is null or <= 0) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/presupuesto/{_detalle.Id}/gastos",
+                new RegistrarGastoRequest(_gastoRubro, _gastoTipo, _gastoMonto.Value, string.IsNullOrWhiteSpace(_gastoDesc) ? null : _gastoDesc, DateOnly.FromDateTime(_gastoFecha)));
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _showGasto = false;
+            _ejec = await Auth().GetFromJsonAsync<EjecucionResumenDto>($"/api/presupuesto/{_detalle.Id}/ejecucion");
+        }
+        finally { _busy = false; }
     }
 
     private void AbrirCrear() { _crear = new(); _showCrear = true; }

@@ -664,4 +664,67 @@ public class PresupuestoService : IPresupuestoService
         });
         await _db.SaveChangesAsync(ct);
     }
+
+    // ===================== Ejecucion presupuestal (tab Ejecucion) =====================
+
+    public async Task<EjecucionResumenDto> GetEjecucionAsync(Guid presupuestoId, CancellationToken ct)
+    {
+        var rubros = await _db.PresupuestoRubros.AsNoTracking()
+            .Where(r => r.PresupuestoId == presupuestoId && r.Activo)
+            .OrderBy(r => r.Orden).ToListAsync(ct);
+        var gastos = await _db.GastosPresupuestales.AsNoTracking()
+            .Where(g => g.PresupuestoId == presupuestoId).ToListAsync(ct);
+        var porRubro = gastos.GroupBy(g => g.RubroId).ToDictionary(grp => grp.Key, grp => grp.ToList());
+
+        var filas = new List<EjecucionRubroDto>();
+        decimal tP = 0, tC = 0, tE = 0;
+        foreach (var r in rubros)
+        {
+            var gs = porRubro.GetValueOrDefault(r.Id, new List<GastoPresupuestal>());
+            var comp = gs.Where(x => x.Tipo == TipoGasto.Comprometido).Sum(x => x.Monto);
+            var ejec = gs.Where(x => x.Tipo == TipoGasto.Ejecutado).Sum(x => x.Monto);
+            var disp = r.MontoAnual - comp - ejec;
+            var pct = r.MontoAnual > 0 ? Math.Round(ejec / r.MontoAnual * 100m, 1) : 0m;
+            filas.Add(new EjecucionRubroDto(r.Id, r.Nombre, r.MontoAnual, comp, ejec, disp, pct));
+            tP += r.MontoAnual; tC += comp; tE += ejec;
+        }
+        return new EjecucionResumenDto(tP, tC, tE, tP - tC - tE, filas);
+    }
+
+    public async Task<IReadOnlyList<GastoDto>> ListarGastosAsync(Guid presupuestoId, CancellationToken ct)
+    {
+        return await (
+            from g in _db.GastosPresupuestales.AsNoTracking().Where(x => x.PresupuestoId == presupuestoId)
+            join r in _db.PresupuestoRubros.AsNoTracking() on g.RubroId equals r.Id
+            orderby g.Fecha descending, g.CreatedAt descending
+            select new GastoDto(g.Id, g.RubroId, r.Nombre, g.Tipo, g.Monto, g.Descripcion, g.Fecha)
+        ).ToListAsync(ct);
+    }
+
+    public async Task<GastoDto> RegistrarGastoAsync(Guid presupuestoId, RegistrarGastoRequest req, CancellationToken ct)
+    {
+        if (req.Monto <= 0) throw new InvalidOperationException("El monto debe ser mayor a cero.");
+        var rubro = await _db.PresupuestoRubros.FirstOrDefaultAsync(r => r.Id == req.RubroId && r.PresupuestoId == presupuestoId, ct)
+            ?? throw new InvalidOperationException("Rubro no encontrado en el presupuesto.");
+        var g = new GastoPresupuestal
+        {
+            PresupuestoId = presupuestoId,
+            RubroId = req.RubroId,
+            Tipo = req.Tipo,
+            Monto = req.Monto,
+            Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim(),
+            Fecha = req.Fecha
+        };
+        _db.GastosPresupuestales.Add(g);
+        await _db.SaveChangesAsync(ct);
+        await RegistrarAuditoriaAsync("GastoPresupuestal", g.Id, "registrar", null,
+            $"{req.Tipo} {req.Monto:N0} en {rubro.Nombre}", ct);
+        return new GastoDto(g.Id, g.RubroId, rubro.Nombre, g.Tipo, g.Monto, g.Descripcion, g.Fecha);
+    }
+
+    public async Task<bool> EliminarGastoAsync(Guid gastoId, CancellationToken ct)
+    {
+        var n = await _db.GastosPresupuestales.Where(g => g.Id == gastoId).ExecuteDeleteAsync(ct);
+        return n > 0;
+    }
 }
