@@ -1,165 +1,530 @@
 @page "/presupuesto"
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using System.Globalization
 @using Propia.Application.Presupuesto
+@using Propia.Application.Cartera
 @using Propia.Domain.Enums
 @inject IHttpClientFactory HttpFactory
-@inject NavigationManager Nav
 @inject IJSRuntime Js
 
-<PageTitle>Presupuesto y Pagos - PROPIA</PageTitle>
-
-<div class="mb-4">
-    <h1 class="h3 mb-1 fw-semibold">Presupuesto y Pagos</h1>
-    <p class="text-muted mb-0">Motor financiero del modulo 2.6 - editor de presupuesto, motor de liquidacion y panel de recaudo</p>
-</div>
+<PageTitle>Finanzas - PROPIA</PageTitle>
 
 @if (string.IsNullOrEmpty(_jwt))
 {
     <AuthMessage />
-    return;
-}
-
-@* Vigencia activa + KPIs de recaudo *@
-@if (_vigenciaActiva is not null)
-{
-    <div class="card mb-3" style="border-left: 4px solid var(--propia-primary);">
-        <div class="card-body">
-            <div class="d-flex justify-content-between align-items-start">
-                <div>
-                    <div class="text-muted small">Vigencia activa</div>
-                    <h4 class="mb-1">@_vigenciaActiva.Nombre <span class="badge bg-success ms-2">En ejecucion</span></h4>
-                    <p class="text-muted small mb-0">
-                        @_vigenciaActiva.VigenciaInicio.ToString("MMM yyyy") - @_vigenciaActiva.VigenciaFin.ToString("MMM yyyy") &middot;
-                        Presupuesto total: <strong>@_vigenciaActiva.MontoTotal.ToString("N0") COP</strong>
-                    </p>
-                </div>
-                <a class="btn btn-sm btn-outline-dark" href="@($"/presupuesto/{_vigenciaActiva.Id}")">Ver/Editar</a>
-            </div>
-        </div>
-    </div>
-
-    @if (_recaudo is not null)
-    {
-        <div class="row g-3 mb-4">
-            <div class="col-md-3">
-                <div class="card kpi-mini"><div class="card-body py-3">
-                    <div class="text-muted small">Esperado del mes</div>
-                    <h4 class="mb-0">$@_recaudo.Esperado.ToString("N0")</h4>
-                    <small class="text-muted">@_recaudo.Periodo.ToString("MMMM yyyy")</small>
-                </div></div>
-            </div>
-            <div class="col-md-3">
-                <div class="card kpi-mini"><div class="card-body py-3">
-                    <div class="text-muted small">Recibido</div>
-                    <h4 class="mb-0 text-success">$@_recaudo.Recibido.ToString("N0")</h4>
-                    <small class="text-muted">@_recaudo.PorcentajeRecaudo.ToString("0.0")%</small>
-                </div></div>
-            </div>
-            <div class="col-md-3">
-                <div class="card kpi-mini"><div class="card-body py-3">
-                    <div class="text-muted small">Pendiente</div>
-                    <h4 class="mb-0 text-warning">$@_recaudo.Pendiente.ToString("N0")</h4>
-                    <small class="text-muted">@_recaudo.UnidadesPendientes unidades</small>
-                </div></div>
-            </div>
-            <div class="col-md-3">
-                <div class="card kpi-mini"><div class="card-body py-3">
-                    <div class="text-muted small">Vencidas</div>
-                    <h4 class="mb-0 text-danger">@_recaudo.UnidadesVencidas</h4>
-                    <small class="text-muted">de @_recaudo.UnidadesTotales unidades</small>
-                </div></div>
-            </div>
-        </div>
-    }
-}
-else if (_vigenciaActiva is null && _presupuestos is not null)
-{
-    <div class="card border-warning mb-3"><div class="card-body">
-        <h5 class="mb-2">Sin vigencia activa</h5>
-        <p class="text-muted mb-2">Crea tu primer presupuesto para empezar a liquidar cuotas a las unidades.</p>
-    </div></div>
-}
-
-@* Boton crear + lista de presupuestos *@
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h5 class="mb-0">Historial de vigencias</h5>
-    <button class="btn" style="background: var(--propia-primary); color: white;" @onclick="() => _showCrear = true">+ Nuevo presupuesto</button>
-</div>
-
-@if (_showCrear)
-{
-    <div class="card border-primary mb-3"><div class="card-body bg-light">
-        <h6 class="mb-2">Crear nuevo presupuesto</h6>
-        <div class="row g-2">
-            <div class="col-md-4"><label class="form-label small">Nombre</label>
-                <input class="form-control form-control-sm" @bind="_crear.Nombre" placeholder="Presupuesto 2026" /></div>
-            <div class="col-md-3"><label class="form-label small">Inicio vigencia</label>
-                <input type="date" class="form-control form-control-sm" @bind="_crear.Inicio" /></div>
-            <div class="col-md-3"><label class="form-label small">Fin vigencia</label>
-                <input type="date" class="form-control form-control-sm" @bind="_crear.Fin" /></div>
-            <div class="col-md-2"><label class="form-label small">&nbsp;</label>
-                <div class="form-check"><input class="form-check-input" type="checkbox" @bind="_crear.Catalogo" id="cat">
-                    <label class="form-check-label small" for="cat">Catalogo base</label></div></div>
-        </div>
-        <div class="mt-3">
-            <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="CrearPresupuesto" disabled="@_busy">@(_busy ? "Creando..." : "Crear")</button>
-            <button class="btn btn-sm btn-outline-dark ms-2" @onclick="() => _showCrear = false">Cancelar</button>
-        </div>
-    </div></div>
-}
-
-@if (!string.IsNullOrEmpty(_msg))
-{
-    <div class="alert @_msgClass py-2 small">@_msg</div>
-}
-
-@if (_presupuestos is null)
-{
-    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
-}
-else if (_presupuestos.Count == 0)
-{
-    <div class="card p-4 text-center text-muted">Sin presupuestos creados aun.</div>
 }
 else
 {
-    <div class="card"><table class="table table-hover mb-0 align-middle">
-        <thead class="bg-light small text-muted">
-            <tr><th>Nombre</th><th>Vigencia</th><th>Estado</th><th class="text-end">Total</th><th class="text-end">Rubros</th><th class="text-end">Liquidaciones</th><th></th></tr>
-        </thead>
-        <tbody class="small">
-            @foreach (var p in _presupuestos)
+<div class="fz-wrap">
+    @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+    <div class="fz-head">
+        <h1 class="fz-title">Finanzas</h1>
+        <p class="fz-sub">Presupuesto, cuotas y pagos de la copropiedad — el motor financiero operativo.</p>
+    </div>
+
+    <div class="fz-tabs">
+        @foreach (var t in _tabs)
+        {
+            var k = t.Key;
+            <button class="fz-tab @(_tab == k ? "on" : "")" @onclick="() => _tab = k">@t.Label</button>
+        }
+    </div>
+
+    @if (_loading)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color:#6D4FE3"></div></div>
+    }
+
+    @* ===================== TAB RESUMEN ===================== *@
+    else if (_tab == "resumen")
+    {
+        <div class="fz-kpis">
+            <div class="fz-kpi">
+                <div class="fz-kpi-l">Cuota vigente</div>
+                <div class="fz-kpi-v">@(_detalle is not null ? Money(_detalle.CuotaProyectadaPromedioMes) : "—")</div>
+                <div class="fz-kpi-s">promedio mensual por unidad</div>
+            </div>
+            <div class="fz-kpi">
+                <div class="fz-kpi-l">Recaudo del mes</div>
+                <div class="fz-kpi-v" style="color:#1A8754">@(_recaudo is not null ? _recaudo.PorcentajeRecaudo.ToString("0.0") : "0") %</div>
+                <div class="fz-bar"><div class="fz-bar-f" style="width:@((_recaudo?.PorcentajeRecaudo ?? 0).ToString("0", Inv))%;background:linear-gradient(90deg,#22A565,#1A8754)"></div></div>
+            </div>
+            <div class="fz-kpi">
+                <div class="fz-kpi-l">Presupuesto anual</div>
+                <div class="fz-kpi-v">@(_activa is not null ? Money(_activa.MontoTotal) : "—")</div>
+                <div class="fz-kpi-s">aprobado vigente</div>
+            </div>
+            <div class="fz-kpi fz-kpi-danger">
+                <div class="fz-kpi-l" style="color:#C0383C">Cartera en mora</div>
+                <div class="fz-kpi-v" style="color:#C0383C">@(_cartera is not null ? Money(_cartera.Kpis.TotalMoraCop) : "—")</div>
+                <div class="fz-kpi-s" style="color:#D98A8C">total adeudado</div>
+            </div>
+        </div>
+
+        @* Unidades en mora *@
+        <div class="fz-card fz-mb">
+            <div class="fz-card-head">
+                <div class="fz-card-ic" style="background:#FFF5F5;color:#C0383C"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></div>
+                <div class="fz-card-id"><div class="fz-card-t">Unidades en mora</div><div class="fz-card-d">@(_cartera?.UnidadesEnMora.Count ?? 0) unidades con saldo pendiente</div></div>
+                <a class="fz-btn fz-btn-soft" href="/cartera">Ver cartera</a>
+            </div>
+            @if (_cartera is null || _cartera.UnidadesEnMora.Count == 0)
             {
-                var id = p.Id;
-                <tr style="cursor: pointer;" @onclick="() => Ir(id)">
-                    <td><strong>@p.Nombre</strong></td>
-                    <td>@p.VigenciaInicio.ToString("MMM yyyy") - @p.VigenciaFin.ToString("MMM yyyy")</td>
-                    <td>@RenderEstado(p.Estado)</td>
-                    <td class="text-end">$@p.MontoTotal.ToString("N0")</td>
-                    <td class="text-end">@p.CantidadRubrosActivos</td>
-                    <td class="text-end">@p.CantidadLiquidaciones</td>
-                    <td><a class="btn btn-sm btn-outline-dark" href="@($"/presupuesto/{p.Id}")">Editar</a></td>
-                </tr>
+                <div class="fz-empty">Sin unidades en mora. Recaudo al dia.</div>
             }
-        </tbody>
-    </table></div>
+            else
+            {
+                <div class="fz-thead">
+                    <div class="fz-c fz-c-uni">PROPIETARIO / UNIDAD</div>
+                    <div class="fz-c fz-c-dias">DIAS MORA</div>
+                    <div class="fz-c fz-c-est">ESTADO</div>
+                    <div class="fz-c fz-c-val">SALDO</div>
+                </div>
+                @foreach (var u in _cartera.UnidadesEnMora.Take(8))
+                {
+                    <div class="fz-row">
+                        <div class="fz-c fz-c-uni">
+                            <div class="fz-row-nom">@(string.IsNullOrWhiteSpace(u.PropietarioNombre) ? "Sin propietario" : u.PropietarioNombre)</div>
+                            <div class="fz-row-sub">@u.UnidadNumero@(string.IsNullOrWhiteSpace(u.TorreNombre) ? "" : " · " + u.TorreNombre)</div>
+                        </div>
+                        <div class="fz-c fz-c-dias"><span class="@(u.DiasMora > 90 ? "fz-dias-crit" : "fz-dias")">@u.DiasMora dias</span></div>
+                        <div class="fz-c fz-c-est">@if (!string.IsNullOrWhiteSpace(u.EstadoGestionNombre)) { <span class="fz-pill" style="color:@(u.EstadoGestionColor ?? "#516F90");background:@(Tint(u.EstadoGestionColor))">@u.EstadoGestionNombre</span> }</div>
+                        <div class="fz-c fz-c-val">@Money(u.SaldoTotal)</div>
+                    </div>
+                }
+            }
+        </div>
+
+        <div class="fz-grid-2">
+            <div class="fz-card fz-pad">
+                <div class="fz-card-t fz-mb2">Ejecucion presupuestal</div>
+                <div class="fz-prog-row">
+                    <div class="fz-prog-l"><span>Recaudo del mes</span><span style="color:#1A8754">@((_recaudo?.PorcentajeRecaudo ?? 0).ToString("0.0"))%</span></div>
+                    <div class="fz-bar fz-bar-lg"><div class="fz-bar-f" style="width:@((_recaudo?.PorcentajeRecaudo ?? 0).ToString("0", Inv))%;background:linear-gradient(90deg,#22A565,#1A8754)"></div></div>
+                </div>
+                <div class="fz-disp">
+                    <span>Esperado del mes</span>
+                    <span class="fz-disp-v">@(_recaudo is not null ? Money(_recaudo.Esperado) : "—")</span>
+                </div>
+                <div class="fz-disp">
+                    <span>Recibido</span>
+                    <span class="fz-disp-v" style="color:#1A8754">@(_recaudo is not null ? Money(_recaudo.Recibido) : "—")</span>
+                </div>
+                <div class="fz-disp">
+                    <span>Pendiente</span>
+                    <span class="fz-disp-v" style="color:#B45309">@(_recaudo is not null ? Money(_recaudo.Pendiente) : "—")</span>
+                </div>
+            </div>
+
+            <div class="fz-card">
+                <div class="fz-card-head"><div class="fz-card-t" style="flex:1">Parametros base</div></div>
+                <div class="fz-params">
+                    <div class="fz-param"><span>Moneda</span><span>COP — Peso colombiano</span></div>
+                    <div class="fz-param"><span>Tasa de mora mensual</span><span>@(_cfg is not null ? _cfg.TasaMoraMensual.ToString("0.0") + "%" : "—")</span></div>
+                    <div class="fz-param"><span>Periodo de gracia</span><span>@(_cfg is not null ? _cfg.PeriodoGraciaDias + " dias" : "—")</span></div>
+                    <div class="fz-param"><span>Validez paz y salvo</span><span>@(_cfg is not null ? _cfg.ValidezPazSalvoDias + " dias" : "—")</span></div>
+                </div>
+                <div class="fz-params-foot"><a class="fz-btn fz-btn-ghost fz-w100" href="/cartera">Editar en Cartera</a></div>
+            </div>
+        </div>
+    }
+
+    @* ===================== TAB PRESUPUESTO ===================== *@
+    else if (_tab == "presupuesto")
+    {
+        @if (_detalle is null)
+        {
+            <div class="fz-card fz-pad fz-empty-cta">
+                <div class="fz-empty-t">Sin presupuesto creado</div>
+                <div class="fz-empty-s">Crea la primera vigencia para empezar a liquidar cuotas a las unidades.</div>
+                <button class="fz-btn fz-btn-primary" @onclick="() => AbrirCrear()"><i class="fi fi-rr-plus"></i>Nuevo presupuesto</button>
+            </div>
+        }
+        else
+        {
+            var d = _detalle;
+            <div class="fz-card fz-mb">
+                <div class="fz-vig-head">
+                    <div class="fz-vig-id">
+                        <div class="fz-vig-top">
+                            @if (_presupuestos.Count > 1)
+                            {
+                                <select class="fz-vig-sel" @onchange="OnSelVigencia">
+                                    @foreach (var p in _presupuestos) { <option value="@p.Id" selected="@(p.Id == _selId)">@p.Nombre</option> }
+                                </select>
+                            }
+                            else { <span class="fz-vig-nom">@d.Nombre</span> }
+                            <span class="fz-pill" style="color:@EstadoFg(d.Estado);background:@EstadoBg(d.Estado)">@EstadoLabel(d.Estado)</span>
+                        </div>
+                        <div class="fz-vig-fechas">@d.VigenciaInicio.ToString("d 'de' MMMM yyyy", Es) – @d.VigenciaFin.ToString("d 'de' MMMM yyyy", Es) · solo una vigencia En ejecucion a la vez</div>
+                    </div>
+                    <div class="fz-vig-acts">
+                        @if (d.Estado == EstadoPresupuesto.Borrador)
+                        {
+                            <button class="fz-btn fz-btn-primary" @onclick="EnviarAprobacion" disabled="@_busy">Enviar a aprobacion<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 18l6-6-6-6"/></svg></button>
+                        }
+                        else if (d.Estado == EstadoPresupuesto.EnAprobacion)
+                        {
+                            <button class="fz-btn fz-btn-primary" @onclick="() => _showAprobar = true" disabled="@_busy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>Aprobar (acta)</button>
+                        }
+                        else if (d.Estado == EstadoPresupuesto.Aprobado)
+                        {
+                            <button class="fz-btn fz-btn-green" @onclick="Activar" disabled="@_busy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L4.5 13H11l-1 9 8.5-11H12l1-9z"/></svg>Activar vigencia</button>
+                        }
+                        else if (d.Estado == EstadoPresupuesto.EnEjecucion)
+                        {
+                            <button class="fz-btn fz-btn-soft" @onclick="Liquidar" disabled="@_busy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Liquidar cuotas del mes</button>
+                            <button class="fz-btn fz-btn-ghost" @onclick="Cerrar" disabled="@_busy">Cerrar vigencia</button>
+                        }
+                        else if (d.Estado == EstadoPresupuesto.Cerrado)
+                        {
+                            <button class="fz-btn fz-btn-primary" @onclick="() => AbrirCrear()"><i class="fi fi-rr-plus"></i>Nueva vigencia</button>
+                        }
+                    </div>
+                </div>
+                <div class="fz-stepper">
+                    @foreach (var s in _steps)
+                    {
+                        var est = EstadoOrden(d.Estado);
+                        var done = s.Orden < est;
+                        var cur = s.Orden == est;
+                        <div class="fz-step">
+                            <div class="fz-step-dot @(done ? "done" : cur ? "cur" : "")">
+                                @if (done) { <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg> }
+                                else if (cur) { <span class="fz-step-pt"></span> }
+                            </div>
+                            <span class="fz-step-lbl @(done || cur ? "act" : "")">@s.Label</span>
+                            @if (s.Orden < 5) { <span class="fz-step-line"></span> }
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="fz-grid-rubros">
+                <div class="fz-card">
+                    <div class="fz-card-head">
+                        <span class="fz-card-t" style="flex:1">Rubros presupuestales</span>
+                        @if (d.Estado == EstadoPresupuesto.Borrador) { <span class="fz-pill" style="color:#6D4FE3;background:#F1ECFD">Edicion inline · calculo en tiempo real</span> }
+                        else { <span class="fz-pill" style="color:#7C98B6;background:#EEF3F8">Solo lectura — @EstadoLabel(d.Estado)</span> }
+                    </div>
+                    <div class="fz-rub-head">
+                        <div style="flex:1">RUBRO</div>
+                        <div class="fz-rub-monto">MONTO ANUAL</div>
+                        <div class="fz-rub-pct">%</div>
+                        <div class="fz-rub-x"></div>
+                    </div>
+                    @foreach (var r in d.Rubros.OrderBy(x => x.Orden))
+                    {
+                        var rubro = r;
+                        var pct = d.MontoTotal > 0 ? (r.MontoAnual / d.MontoTotal * 100m) : 0m;
+                        <div class="fz-rub">
+                            <div class="fz-rub-n">
+                                <span>@r.Nombre</span>
+                                @if (r.EsFondoImprevistos) { <span class="fz-tag-ob">Obligatorio · Ley 675</span> }
+                            </div>
+                            <div class="fz-rub-monto">
+                                @if (d.Estado == EstadoPresupuesto.Borrador)
+                                {
+                                    <input type="number" step="1000" value="@r.MontoAnual" @onchange="(e) => GuardarRubro(rubro, e)" />
+                                }
+                                else { <div class="fz-rub-mtxt">@Money(r.MontoAnual)</div> }
+                            </div>
+                            <div class="fz-rub-pct">@pct.ToString("0.0")%</div>
+                            <div class="fz-rub-x">
+                                @if (!r.EsFondoImprevistos && d.Estado == EstadoPresupuesto.Borrador)
+                                {
+                                    <button class="fz-rub-del" title="Eliminar rubro" @onclick="() => EliminarRubro(rubro)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
+                                }
+                            </div>
+                        </div>
+                    }
+                    @if (d.Estado == EstadoPresupuesto.Borrador)
+                    {
+                        <div class="fz-rub-add">
+                            <input @bind="_rubNombre" @bind:event="oninput" placeholder="Nuevo rubro personalizado" />
+                            <input type="number" step="1000" @bind="_rubMonto" placeholder="Monto anual" class="fz-rub-add-m" />
+                            <button class="fz-btn fz-btn-primary" @onclick="AgregarRubro" disabled="@(_busy || string.IsNullOrWhiteSpace(_rubNombre))">Agregar</button>
+                        </div>
+                    }
+                    <div class="fz-rub-total"><span style="flex:1">Presupuesto total</span><span>@Money(d.MontoTotal)</span></div>
+                </div>
+
+                <div class="fz-side">
+                    <div class="fz-cuota-card">
+                        <div class="fz-cuota-l">CUOTA PROYECTADA / UNIDAD</div>
+                        <div class="fz-cuota-v">@Money(d.CuotaProyectadaPromedioMes)</div>
+                        <div class="fz-cuota-s">promedio mensual · recalculo en tiempo real</div>
+                    </div>
+                    @if (d.CumpleMinimoFondoImprevistos)
+                    {
+                        <div class="fz-fondo ok"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1A8754" stroke-width="2.4"><path d="M5 12l5 5 9-11"/></svg><div>El <b>Fondo de imprevistos</b> cumple el minimo del <b>1%</b> (Art. 39, Ley 675).</div></div>
+                    }
+                    else
+                    {
+                        <div class="fz-fondo warn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B45309" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><div>El <b>Fondo de imprevistos</b> esta por debajo del <b>1%</b> del total (Art. 39, Ley 675). Advertencia suave.</div></div>
+                    }
+                    <div class="fz-card fz-pad">
+                        <div class="fz-como-h">COMO SE CREA</div>
+                        <div class="fz-como">
+                            <div><b>1.</b>Ajusta la estructura de rubros (edicion inline).</div>
+                            <div><b>2.</b>Envialo a aprobacion — asamblea o acta manual.</div>
+                            <div><b>3.</b>Activa la vigencia: el motor liquida cuotas por unidad.</div>
+                            <div><b>4.</b>Liquida cada mes y haz seguimiento del recaudo.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+
+    @* ===================== TAB EJECUCION (stub) ===================== *@
+    else if (_tab == "ejecucion")
+    {
+        <div class="fz-soon">
+            <div class="fz-soon-ic"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18M7 14l3-3 3 3 5-6"/></svg></div>
+            <div class="fz-soon-t">Ejecucion presupuestal</div>
+            <div class="fz-soon-s">Seguimiento del gasto por rubro (Presupuestado − Comprometido − Ejecutado = Disponible) y registro de gastos. Proximamente.</div>
+        </div>
+    }
+</div>
+
+@* ===================== Modal crear presupuesto ===================== *@
+@if (_showCrear)
+{
+    <div class="fz-modal-bd" @onclick="() => _showCrear = false">
+        <div class="fz-modal" @onclick:stopPropagation="true">
+            <div class="fz-modal-head">
+                <div class="fz-modal-tt"><div class="fz-modal-h">Nuevo presupuesto</div><div class="fz-modal-s">Define la vigencia anual</div></div>
+                <button class="fz-modal-x" @onclick="() => _showCrear = false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+            </div>
+            <div class="fz-modal-body">
+                <div class="fz-fld"><label>Nombre</label><input @bind="_crear.Nombre" placeholder="Presupuesto 2026" /></div>
+                <div class="fz-grid2">
+                    <div class="fz-fld"><label>Inicio vigencia</label><input type="date" @bind="_crear.Inicio" /></div>
+                    <div class="fz-fld"><label>Fin vigencia</label><input type="date" @bind="_crear.Fin" /></div>
+                </div>
+                <label class="fz-check"><input type="checkbox" @bind="_crear.Catalogo" /> Incluir catalogo base de rubros (recomendado)</label>
+            </div>
+            <div class="fz-modal-foot">
+                <div style="flex:1"></div>
+                <button class="fz-btn fz-btn-ghost" @onclick="() => _showCrear = false">Cancelar</button>
+                <button class="fz-btn fz-btn-primary" @onclick="CrearPresupuesto" disabled="@(_busy || string.IsNullOrWhiteSpace(_crear.Nombre))">@(_busy ? "Creando..." : "Crear presupuesto")</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ===================== Modal aprobar ===================== *@
+@if (_showAprobar)
+{
+    <div class="fz-modal-bd" @onclick="() => _showAprobar = false">
+        <div class="fz-modal" @onclick:stopPropagation="true">
+            <div class="fz-modal-head">
+                <div class="fz-modal-tt"><div class="fz-modal-h">Aprobar presupuesto</div><div class="fz-modal-s">Registra el acta de aprobacion</div></div>
+                <button class="fz-modal-x" @onclick="() => _showAprobar = false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+            </div>
+            <div class="fz-modal-body">
+                <div class="fz-fld"><label>Tipo de aprobacion</label>
+                    <select @bind="_aprobarTipo">
+                        <option value="@TipoAprobacion.Manual">Acta manual (Consejo)</option>
+                        <option value="@TipoAprobacion.Asamblea">Asamblea</option>
+                    </select>
+                </div>
+                <div class="fz-fld"><label>Fecha del acta</label><input type="date" @bind="_aprobarFecha" /></div>
+                <div class="fz-fld"><label>URL del acta (opcional)</label><input @bind="_aprobarActa" placeholder="https://..." /></div>
+            </div>
+            <div class="fz-modal-foot">
+                <div style="flex:1"></div>
+                <button class="fz-btn fz-btn-ghost" @onclick="() => _showAprobar = false">Cancelar</button>
+                <button class="fz-btn fz-btn-primary" @onclick="Aprobar" disabled="@_busy">@(_busy ? "..." : "Aprobar")</button>
+            </div>
+        </div>
+    </div>
+}
 }
 
 <style>
-    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
+    .fz-wrap { width: 100%; max-width: 1900px; margin: 0 auto; padding: 6px 28px 60px; font-family: 'Lexend', sans-serif; box-sizing: border-box; }
+    .fz-head { margin-bottom: 14px; }
+    .fz-title { font-size: 27px; font-weight: 800; letter-spacing: -.6px; color: #1B2A3A; margin: 0; }
+    .fz-sub { font-size: 14px; color: #7C98B6; margin: 4px 0 0; }
+    .fz-tabs { display: flex; align-items: center; gap: 18px; border-bottom: 1px solid #E1E8EE; margin-bottom: 18px; }
+    .fz-tab { padding: 11px 2px; font-size: 13.5px; font-weight: 700; color: #7C98B6; background: none; border: 0; border-bottom: 2.5px solid transparent; cursor: pointer; }
+    .fz-tab.on { color: #6D4FE3; border-bottom-color: #6D4FE3; }
+
+    .fz-btn { display: inline-flex; align-items: center; gap: 7px; padding: 9px 14px; border-radius: 9px; font-size: 12.5px; font-weight: 700; border: 0; cursor: pointer; white-space: nowrap; text-decoration: none; }
+    .fz-btn-primary { background: #6D4FE3; color: #fff; box-shadow: 0 4px 12px rgba(109,79,227,.3); }
+    .fz-btn-primary:hover { background: #5838C9; color: #fff; }
+    .fz-btn-primary:disabled { opacity: .6; cursor: default; }
+    .fz-btn-green { background: #1A8754; color: #fff; box-shadow: 0 4px 12px rgba(26,135,84,.3); }
+    .fz-btn-green:hover { background: #15703F; color: #fff; }
+    .fz-btn-soft { background: #F1ECFD; color: #6D4FE3; border: 1px solid #DCD2F8; }
+    .fz-btn-soft:hover { background: #E6DEFA; color: #6D4FE3; }
+    .fz-btn-ghost { background: #fff; color: #516F90; border: 1px solid #E1E8EE; }
+    .fz-btn-ghost:hover { border-color: #C3D0DD; color: #33475B; }
+    .fz-w100 { width: 100%; justify-content: center; }
+    .fz-mb { margin-bottom: 16px; }
+    .fz-mb2 { margin-bottom: 16px; }
+
+    .fz-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+    .fz-kpi { background: #fff; border: 1px solid #E1E8EE; border-radius: 14px; padding: 18px; box-shadow: 0 1px 2px rgba(45,62,80,.05); }
+    .fz-kpi-danger { background: #FFF5F5; border-color: #FBD5D5; }
+    .fz-kpi-l { font-size: 12px; font-weight: 700; color: #7C98B6; }
+    .fz-kpi-v { font-size: 24px; font-weight: 800; color: #1B2A3A; letter-spacing: -.5px; margin-top: 6px; }
+    .fz-kpi-s { font-size: 11px; color: #A6B7C8; margin-top: 2px; }
+    .fz-bar { height: 6px; border-radius: 5px; background: #EEF3F8; overflow: hidden; margin-top: 8px; }
+    .fz-bar-lg { height: 9px; border-radius: 6px; }
+    .fz-bar-f { height: 100%; border-radius: 5px; }
+
+    .fz-card { background: #fff; border: 1px solid #E1E8EE; border-radius: 14px; box-shadow: 0 1px 2px rgba(45,62,80,.05); overflow: hidden; }
+    .fz-pad { padding: 20px; }
+    .fz-card-head { display: flex; align-items: center; gap: 10px; padding: 16px 20px; border-bottom: 1px solid #EEF3F8; }
+    .fz-card-ic { width: 32px; height: 32px; border-radius: 9px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .fz-card-id { flex: 1; min-width: 0; }
+    .fz-card-t { font-size: 14px; font-weight: 700; color: #1B2A3A; }
+    .fz-card-d { font-size: 11.5px; color: #A6B7C8; }
+    .fz-empty { padding: 26px; text-align: center; font-size: 13px; color: #A6B7C8; }
+
+    .fz-thead { display: flex; align-items: center; gap: 12px; padding: 10px 20px; background: #FAFBFC; border-bottom: 1px solid #EEF3F8; }
+    .fz-thead .fz-c { font-size: 10.5px; letter-spacing: .4px; font-weight: 700; color: #A6B7C8; }
+    .fz-row { display: flex; align-items: center; gap: 12px; padding: 13px 20px; border-bottom: 1px solid #F4F7FA; }
+    .fz-c-uni { flex: 1; min-width: 0; }
+    .fz-c-dias { width: 100px; flex-shrink: 0; }
+    .fz-c-est { width: 150px; flex-shrink: 0; }
+    .fz-c-val { width: 130px; flex-shrink: 0; text-align: right; font-size: 13.5px; font-weight: 800; color: #1B2A3A; }
+    .fz-thead .fz-c-val { text-align: right; }
+    .fz-row-nom { font-size: 13px; font-weight: 700; color: #33475B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .fz-row-sub { font-size: 11px; color: #A6B7C8; }
+    .fz-dias { font-size: 12px; color: #7C98B6; font-weight: 600; }
+    .fz-dias-crit { font-size: 12px; color: #C0383C; font-weight: 700; }
+    .fz-pill { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 7px; }
+
+    .fz-grid-2 { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; align-items: start; }
+    .fz-prog-row { margin-bottom: 16px; }
+    .fz-prog-l { display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 600; color: #516F90; margin-bottom: 6px; }
+    .fz-disp { display: flex; align-items: center; justify-content: space-between; padding: 11px 13px; background: #F8FAFC; border: 1px solid #E1E8EE; border-radius: 11px; margin-top: 8px; font-size: 12.5px; color: #7C98B6; font-weight: 600; }
+    .fz-disp-v { font-size: 15px; font-weight: 800; color: #1B2A3A; }
+    .fz-params { padding: 6px 18px 12px; }
+    .fz-param { display: flex; align-items: center; justify-content: space-between; padding: 11px 0; border-bottom: 1px solid #F4F7FA; font-size: 12.5px; color: #7C98B6; }
+    .fz-param span:last-child { font-size: 13px; font-weight: 700; color: #33475B; }
+    .fz-param:last-child { border-bottom: 0; }
+    .fz-params-foot { padding: 0 18px 16px; }
+
+    .fz-empty-cta { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 44px 24px; }
+    .fz-empty-t { font-size: 17px; font-weight: 800; color: #1B2A3A; }
+    .fz-empty-s { font-size: 13px; color: #7C98B6; max-width: 420px; }
+    .fz-empty-cta .fz-btn { margin-top: 8px; }
+
+    .fz-vig-head { display: flex; align-items: flex-start; gap: 14px; padding: 16px 20px; border-bottom: 1px solid #EEF3F8; flex-wrap: wrap; }
+    .fz-vig-id { flex: 1; min-width: 200px; }
+    .fz-vig-top { display: flex; align-items: center; gap: 10px; }
+    .fz-vig-nom { font-size: 15px; font-weight: 800; color: #1B2A3A; }
+    .fz-vig-sel { font-size: 14px; font-weight: 800; color: #1B2A3A; border: 1px solid #E1E8EE; border-radius: 8px; padding: 5px 9px; outline: none; background: #fff; }
+    .fz-vig-fechas { font-size: 11.5px; color: #A6B7C8; margin-top: 3px; }
+    .fz-vig-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+    .fz-stepper { display: flex; align-items: center; padding: 16px 20px; overflow-x: auto; }
+    .fz-step { display: flex; align-items: center; flex-shrink: 0; }
+    .fz-step-dot { width: 26px; height: 26px; border-radius: 50%; background: #EEF3F8; color: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .fz-step-dot.done { background: #1A8754; }
+    .fz-step-dot.cur { background: #6D4FE3; }
+    .fz-step-pt { width: 8px; height: 8px; border-radius: 50%; background: #fff; }
+    .fz-step-lbl { font-size: 12px; font-weight: 700; color: #A6B7C8; white-space: nowrap; margin-left: 8px; }
+    .fz-step-lbl.act { color: #33475B; }
+    .fz-step-line { width: 34px; height: 2px; background: #EEF3F8; margin: 0 10px; }
+
+    .fz-grid-rubros { display: grid; grid-template-columns: 1fr 300px; gap: 16px; align-items: start; }
+    .fz-rub-head { display: flex; align-items: center; gap: 10px; padding: 9px 18px; background: #FAFBFC; border-bottom: 1px solid #EEF3F8; font-size: 10px; letter-spacing: .4px; font-weight: 700; color: #A6B7C8; }
+    .fz-rub-monto { width: 150px; flex-shrink: 0; text-align: right; }
+    .fz-rub-pct { width: 52px; flex-shrink: 0; text-align: right; }
+    .fz-rub-x { width: 26px; flex-shrink: 0; }
+    .fz-rub { display: flex; align-items: center; gap: 10px; padding: 9px 18px; border-bottom: 1px solid #F4F7FA; }
+    .fz-rub-n { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; color: #33475B; }
+    .fz-tag-ob { font-size: 9.5px; font-weight: 700; color: #B45309; background: #FEF3DC; padding: 2px 7px; border-radius: 5px; white-space: nowrap; }
+    .fz-rub-monto input { width: 100%; border: 1px solid #E1E8EE; border-radius: 8px; padding: 6px 9px; font-size: 12.5px; font-weight: 700; color: #1B2A3A; text-align: right; outline: none; background: #fff; box-sizing: border-box; }
+    .fz-rub-monto input:focus { border-color: #6D4FE3; }
+    .fz-rub-mtxt { font-size: 13px; font-weight: 700; color: #1B2A3A; text-align: right; }
+    .fz-rub .fz-rub-pct { font-size: 12px; font-weight: 600; color: #7C98B6; }
+    .fz-rub-del { width: 22px; height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #C3D0DD; border: 0; background: transparent; cursor: pointer; }
+    .fz-rub-del:hover { background: #FDE7E7; color: #D7263D; }
+    .fz-rub-add { display: flex; gap: 7px; align-items: center; padding: 12px 18px; background: #FBFAFE; border-top: 1px dashed #DCD2F8; }
+    .fz-rub-add input { flex: 1; min-width: 0; border: 1px solid #E1E8EE; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; color: #33475B; outline: none; background: #fff; box-sizing: border-box; }
+    .fz-rub-add input:focus { border-color: #6D4FE3; }
+    .fz-rub-add-m { flex: 0 0 130px !important; text-align: right; }
+    .fz-rub-total { display: flex; align-items: center; gap: 10px; padding: 13px 18px; background: #F8FAFC; border-top: 1px solid #EEF3F8; font-size: 13px; font-weight: 800; color: #1B2A3A; }
+    .fz-rub-total span:last-child { font-size: 16px; letter-spacing: -.3px; }
+
+    .fz-side { display: flex; flex-direction: column; gap: 12px; }
+    .fz-cuota-card { background: linear-gradient(150deg,#1B2A3A,#26384B); border-radius: 14px; padding: 18px; color: #fff; }
+    .fz-cuota-l { font-size: 11px; font-weight: 700; letter-spacing: .5px; color: #B9A8F5; margin-bottom: 8px; }
+    .fz-cuota-v { font-size: 26px; font-weight: 800; letter-spacing: -.8px; }
+    .fz-cuota-s { font-size: 11px; color: #9FB2C6; margin-top: 4px; }
+    .fz-fondo { display: flex; align-items: flex-start; gap: 9px; padding: 12px 14px; border-radius: 11px; font-size: 11.5px; line-height: 1.5; }
+    .fz-fondo svg { flex-shrink: 0; margin-top: 1px; }
+    .fz-fondo.ok { background: #E9F8EF; border: 1px solid #BFE8CF; color: #15703F; }
+    .fz-fondo.warn { background: #FEF9EE; border: 1px solid #F8E3B5; color: #92591A; }
+    .fz-como-h { font-size: 11px; letter-spacing: .5px; color: #A6B7C8; font-weight: 700; margin-bottom: 10px; }
+    .fz-como { display: flex; flex-direction: column; gap: 8px; font-size: 12px; color: #516F90; line-height: 1.45; }
+    .fz-como b { color: #6D4FE3; margin-right: 4px; }
+
+    .fz-soon { background: #fff; border: 1.5px dashed #D7E0EA; border-radius: 16px; padding: 50px 24px; text-align: center; }
+    .fz-soon-ic { width: 60px; height: 60px; border-radius: 16px; background: #F1ECFD; color: #6D4FE3; display: flex; align-items: center; justify-content: center; margin: 0 auto 14px; }
+    .fz-soon-t { font-size: 17px; font-weight: 800; color: #1B2A3A; }
+    .fz-soon-s { font-size: 13px; color: #7C98B6; margin-top: 5px; max-width: 460px; margin-left: auto; margin-right: auto; }
+
+    .fz-modal-bd { position: fixed; inset: 0; z-index: 1090; background: rgba(27,42,58,.55); display: flex; align-items: flex-start; justify-content: center; padding: 40px 20px; overflow-y: auto; }
+    .fz-modal { width: 480px; max-width: 100%; background: #fff; border-radius: 18px; box-shadow: 0 30px 70px rgba(27,42,58,.4); margin: auto; overflow: hidden; }
+    .fz-modal-head { display: flex; align-items: center; gap: 12px; padding: 18px 24px; border-bottom: 1px solid #EEF3F8; }
+    .fz-modal-tt { flex: 1; }
+    .fz-modal-h { font-size: 16.5px; font-weight: 800; letter-spacing: -.3px; color: #1B2A3A; }
+    .fz-modal-s { font-size: 12px; color: #7C98B6; }
+    .fz-modal-x { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; color: #7C98B6; border: 1px solid #E1E8EE; background: #fff; cursor: pointer; }
+    .fz-modal-body { padding: 22px 24px; display: flex; flex-direction: column; gap: 14px; }
+    .fz-modal-foot { display: flex; align-items: center; gap: 9px; padding: 16px 24px; border-top: 1px solid #EEF3F8; }
+    .fz-fld { display: flex; flex-direction: column; }
+    .fz-fld label { font-size: 11px; color: #7C98B6; font-weight: 700; margin-bottom: 5px; }
+    .fz-fld input, .fz-fld select { width: 100%; border: 1px solid #E1E8EE; border-radius: 9px; padding: 10px 12px; font-size: 13.5px; color: #33475B; outline: none; background: #fff; box-sizing: border-box; }
+    .fz-fld input:focus, .fz-fld select:focus { border-color: #6D4FE3; }
+    .fz-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .fz-check { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #516F90; font-weight: 600; }
+
+    @@media (max-width: 980px) { .fz-kpis { grid-template-columns: repeat(2,1fr); } .fz-grid-2, .fz-grid-rubros { grid-template-columns: 1fr; } }
 </style>
 
 @code {
+    private static readonly CultureInfo Es = CultureInfo.GetCultureInfo("es-CO");
+    private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
     private string? _jwt;
     private bool _busy;
+    private bool _loading = true;
     private string? _msg; private string _msgClass = "alert-info";
+    private string _tab = "resumen";
 
-    private List<PresupuestoDto>? _presupuestos;
-    private PresupuestoDto? _vigenciaActiva;
+    private List<PresupuestoDto> _presupuestos = new();
+    private PresupuestoDto? _activa;
+    private Guid? _selId;
+    private PresupuestoDetalleDto? _detalle;
     private RecaudoResumenDto? _recaudo;
+    private CarteraTableroDto? _cartera;
+    private CarteraConfigDto? _cfg;
 
     private bool _showCrear;
     private CrearForm _crear = new();
+    private string _rubNombre = "";
+    private decimal? _rubMonto;
+
+    private bool _showAprobar;
+    private TipoAprobacion _aprobarTipo = TipoAprobacion.Manual;
+    private DateTime _aprobarFecha = DateTime.Today;
+    private string? _aprobarActa;
+
+    private record TabDef(string Key, string Label);
+    private readonly List<TabDef> _tabs = new() { new("resumen", "Resumen"), new("presupuesto", "Presupuesto"), new("ejecucion", "Ejecucion") };
+    private record StepDef(int Orden, string Label);
+    private readonly List<StepDef> _steps = new()
+    {
+        new(1, "Borrador"), new(2, "En aprobacion"), new(3, "Aprobado"), new(4, "En ejecucion"), new(5, "Cerrado")
+    };
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -171,56 +536,13 @@ else
             {
                 _jwt = stored;
                 await CargarAsync();
+                _loading = false;
                 StateHasChanged();
             }
+            else { _loading = false; StateHasChanged(); }
         }
-        catch { }
+        catch { _loading = false; }
     }
-
-    private async Task CargarAsync()
-    {
-        try
-        {
-            var http = Auth();
-            _presupuestos = await http.GetFromJsonAsync<List<PresupuestoDto>>("/api/presupuesto") ?? new();
-            _vigenciaActiva = _presupuestos.FirstOrDefault(p => p.Estado == EstadoPresupuesto.EnEjecucion);
-            if (_vigenciaActiva is not null)
-            {
-                var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
-                _recaudo = await http.GetFromJsonAsync<RecaudoResumenDto>($"/api/presupuesto/recaudo?periodo={hoy:yyyy-MM-dd}");
-            }
-        }
-        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
-    }
-
-    private async Task CrearPresupuesto()
-    {
-        _busy = true; _msg = null;
-        try
-        {
-            var http = Auth();
-            var resp = await http.PostAsJsonAsync("/api/presupuesto",
-                new CrearPresupuestoRequest(_crear.Nombre, _crear.Inicio, _crear.Fin, _crear.Catalogo));
-            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
-            var p = await resp.Content.ReadFromJsonAsync<PresupuestoDto>();
-            _msg = "Presupuesto creado."; _msgClass = "alert-success";
-            _showCrear = false;
-            _crear = new();
-            await CargarAsync();
-            if (p is not null) Nav.NavigateTo($"/presupuesto/{p.Id}");
-        }
-        finally { _busy = false; }
-    }
-
-    private static MarkupString RenderEstado(EstadoPresupuesto e) => e switch
-    {
-        EstadoPresupuesto.Borrador => new MarkupString("<span class='badge bg-light text-dark border'>Borrador</span>"),
-        EstadoPresupuesto.EnAprobacion => new MarkupString("<span class='badge bg-warning text-dark'>En aprobacion</span>"),
-        EstadoPresupuesto.Aprobado => new MarkupString("<span class='badge bg-info text-dark'>Aprobado</span>"),
-        EstadoPresupuesto.EnEjecucion => new MarkupString("<span class='badge bg-success'>En ejecucion</span>"),
-        EstadoPresupuesto.Cerrado => new MarkupString("<span class='badge bg-secondary'>Cerrado</span>"),
-        _ => new MarkupString("")
-    };
 
     private HttpClient Auth()
     {
@@ -229,13 +551,169 @@ else
         return http;
     }
 
-    private void Ir(Guid id) => Nav.NavigateTo($"/presupuesto/{id}");
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = Auth();
+            _presupuestos = await http.GetFromJsonAsync<List<PresupuestoDto>>("/api/presupuesto") ?? new();
+            _activa = _presupuestos.FirstOrDefault(p => p.Estado == EstadoPresupuesto.EnEjecucion);
+            _selId ??= _activa?.Id ?? _presupuestos.FirstOrDefault()?.Id;
+            if (_selId is not null) _detalle = await http.GetFromJsonAsync<PresupuestoDetalleDto>($"/api/presupuesto/{_selId}");
+            if (_activa is not null)
+            {
+                var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+                try { _recaudo = await http.GetFromJsonAsync<RecaudoResumenDto>($"/api/presupuesto/recaudo?periodo={hoy:yyyy-MM-dd}"); } catch { }
+            }
+            try { _cartera = await http.GetFromJsonAsync<CarteraTableroDto>("/api/cartera/tablero"); } catch { }
+            try { _cfg = await http.GetFromJsonAsync<CarteraConfigDto>("/api/cartera/config"); } catch { }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task Recargar() { await CargarAsync(); StateHasChanged(); }
+
+    private async Task OnSelVigencia(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var id)) { _selId = id; _detalle = await Auth().GetFromJsonAsync<PresupuestoDetalleDto>($"/api/presupuesto/{id}"); }
+    }
+
+    private void AbrirCrear() { _crear = new(); _showCrear = true; }
+
+    private async Task CrearPresupuesto()
+    {
+        if (string.IsNullOrWhiteSpace(_crear.Nombre)) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/api/presupuesto",
+                new CrearPresupuestoRequest(_crear.Nombre.Trim(), DateOnly.FromDateTime(_crear.Inicio), DateOnly.FromDateTime(_crear.Fin), _crear.Catalogo));
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            var p = await resp.Content.ReadFromJsonAsync<PresupuestoDto>();
+            _showCrear = false;
+            _selId = p?.Id;
+            _tab = "presupuesto";
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task GuardarRubro(RubroDto r, ChangeEventArgs e)
+    {
+        if (!decimal.TryParse(e.Value?.ToString(), NumberStyles.Any, Inv, out var monto)) return;
+        var resp = await Auth().PutAsJsonAsync($"/api/presupuesto/rubros/{r.Id}",
+            new ActualizarRubroRequest(r.Nombre, monto, r.BaseLiquidacion, r.Activo, r.Orden, r.NotasInternas));
+        if (resp.IsSuccessStatusCode) await Recargar();
+        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+    }
+
+    private async Task AgregarRubro()
+    {
+        if (_detalle is null || string.IsNullOrWhiteSpace(_rubNombre)) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/presupuesto/{_detalle.Id}/rubros",
+                new AgregarRubroPersonalizadoRequest(_rubNombre.Trim(), _rubMonto ?? 0, BaseLiquidacion.Coeficiente));
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _rubNombre = ""; _rubMonto = null;
+            await Recargar();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task EliminarRubro(RubroDto r)
+    {
+        var resp = await Auth().DeleteAsync($"/api/presupuesto/rubros/{r.Id}");
+        if (resp.IsSuccessStatusCode) await Recargar();
+        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+    }
+
+    private async Task TransicionAsync(string verbo, string path)
+    {
+        if (_detalle is null) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Auth().PutAsync($"/api/presupuesto/{_detalle.Id}/{path}", null);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _msg = verbo; _msgClass = "alert-success";
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private Task EnviarAprobacion() => TransicionAsync("Presupuesto enviado a aprobacion.", "enviar-aprobacion");
+    private Task Activar() => TransicionAsync("Vigencia activada. El motor liquidara cuotas.", "activar");
+    private Task Cerrar() => TransicionAsync("Vigencia cerrada.", "cerrar");
+
+    private async Task Aprobar()
+    {
+        if (_detalle is null) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/presupuesto/{_detalle.Id}/aprobar",
+                new AprobarPresupuestoRequest(_aprobarTipo, DateOnly.FromDateTime(_aprobarFecha), string.IsNullOrWhiteSpace(_aprobarActa) ? null : _aprobarActa, null));
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _showAprobar = false;
+            _msg = "Presupuesto aprobado."; _msgClass = "alert-success";
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task Liquidar()
+    {
+        if (_detalle is null) return;
+        var hoy = DateTime.UtcNow;
+        var periodo = new DateOnly(hoy.Year, hoy.Month, 1);
+        if (!await Js.InvokeAsync<bool>("confirm", $"Liquidar las cuotas del periodo {periodo:MMMM yyyy}? El motor es idempotente (no duplica).")) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/api/presupuesto/liquidaciones", new EmitirLiquidacionRequest(_detalle.Id, periodo));
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _msg = "Cuotas liquidadas para el periodo."; _msgClass = "alert-success";
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private static string Money(decimal v) => "$ " + Math.Round(v).ToString("N0", Es);
+    private static int EstadoOrden(EstadoPresupuesto e) => (int)e;
+    private static string EstadoLabel(EstadoPresupuesto e) => e switch
+    {
+        EstadoPresupuesto.Borrador => "Borrador",
+        EstadoPresupuesto.EnAprobacion => "En aprobacion",
+        EstadoPresupuesto.Aprobado => "Aprobado",
+        EstadoPresupuesto.EnEjecucion => "En ejecucion",
+        EstadoPresupuesto.Cerrado => "Cerrado",
+        _ => ""
+    };
+    private static string EstadoFg(EstadoPresupuesto e) => e switch
+    {
+        EstadoPresupuesto.EnEjecucion => "#1A8754",
+        EstadoPresupuesto.Aprobado => "#2563EB",
+        EstadoPresupuesto.EnAprobacion => "#B45309",
+        EstadoPresupuesto.Cerrado => "#516F90",
+        _ => "#7C98B6"
+    };
+    private static string EstadoBg(EstadoPresupuesto e) => e switch
+    {
+        EstadoPresupuesto.EnEjecucion => "#E6F6EE",
+        EstadoPresupuesto.Aprobado => "#E6F2FB",
+        EstadoPresupuesto.EnAprobacion => "#FEF3DC",
+        EstadoPresupuesto.Cerrado => "#EEF3F8",
+        _ => "#F1F5F9"
+    };
+    private static string Tint(string? hex) => string.IsNullOrWhiteSpace(hex) ? "#F1F5F9" : "#F5F8FA";
 
     private class CrearForm
     {
         public string Nombre { get; set; } = $"Presupuesto {DateTime.UtcNow.Year}";
-        public DateOnly Inicio { get; set; } = new DateOnly(DateTime.UtcNow.Year, 1, 1);
-        public DateOnly Fin { get; set; } = new DateOnly(DateTime.UtcNow.Year, 12, 31);
+        public DateTime Inicio { get; set; } = new DateTime(DateTime.UtcNow.Year, 1, 1);
+        public DateTime Fin { get; set; } = new DateTime(DateTime.UtcNow.Year, 12, 31);
         public bool Catalogo { get; set; } = true;
     }
 }
