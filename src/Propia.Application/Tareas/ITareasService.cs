@@ -18,7 +18,7 @@ public interface ITareasService
     Task<bool> EliminarEtiquetaAsync(Guid id, CancellationToken ct);
 
     // Tareas
-    Task<IReadOnlyList<TareaListaDto>> ListarTareasAsync(Guid? estadoId, PrioridadTarea? prioridad, Guid? asignadoPersonaId, Guid? padreId, bool? soloRaiz, string? query, CancellationToken ct);
+    Task<IReadOnlyList<TareaListaDto>> ListarTareasAsync(Guid? estadoId, PrioridadTarea? prioridad, Guid? asignadoPersonaId, Guid? padreId, bool? soloRaiz, string? query, CancellationToken ct, Guid? tableroId = null);
     Task<TareaDetalleDto?> GetTareaAsync(Guid id, CancellationToken ct);
     Task<TareaDetalleDto> CrearTareaAsync(CrearTareaRequest req, CancellationToken ct);
     Task<bool> ActualizarTareaAsync(Guid id, ActualizarTareaRequest req, CancellationToken ct);
@@ -50,4 +50,8 @@ public interface ITareasService
     Task<TableroDto> CrearTableroAsync(GuardarTableroRequest req, CancellationToken ct);
     Task<bool> ActualizarTableroAsync(Guid id, GuardarTableroRequest req, CancellationToken ct);
     Task<bool> EliminarTableroAsync(Guid id, CancellationToken ct);
+
+    /// <summary>Vista completa de un tablero (tablero + estados + tarjetas).</summary>
+    Task<TableroBoardDto?> GetTableroBoardAsync(Guid tableroId, CancellationToken ct);
+    Task<bool> ActualizarProgresoAsync(Guid tareaId, int progreso, CancellationToken ct);
 }

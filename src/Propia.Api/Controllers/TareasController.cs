@@ -185,4 +185,15 @@ public class TareasController : ControllerBase
     [HttpDelete("tableros/{id:guid}")]
     public async Task<IActionResult> EliminarTablero(Guid id, CancellationToken ct)
         => await _svc.EliminarTableroAsync(id, ct) ? NoContent() : NotFound();
+
+    [HttpGet("tableros/{id:guid}/board")]
+    public async Task<IActionResult> GetTableroBoard(Guid id, CancellationToken ct)
+    {
+        var b = await _svc.GetTableroBoardAsync(id, ct);
+        return b is null ? NotFound() : Ok(b);
+    }
+
+    [HttpPut("{id:guid}/progreso")]
+    public async Task<IActionResult> ActualizarProgreso(Guid id, [FromBody] ActualizarProgresoRequest req, CancellationToken ct)
+        => await _svc.ActualizarProgresoAsync(id, req.Progreso, ct) ? NoContent() : NotFound();
 }

@@ -168,10 +168,11 @@ public class TareasService : ITareasService
 
     public async Task<IReadOnlyList<TareaListaDto>> ListarTareasAsync(
         Guid? estadoId, PrioridadTarea? prioridad, Guid? asignadoPersonaId, Guid? padreId, bool? soloRaiz, string? query,
-        CancellationToken ct)
+        CancellationToken ct, Guid? tableroId = null)
     {
         await AsegurarEstadosBaseAsync(ct);
         IQueryable<Tarea> q = _db.Tareas.AsNoTracking();
+        if (tableroId.HasValue) q = q.Where(t => t.TableroId == tableroId.Value);
         if (estadoId.HasValue) q = q.Where(t => t.EstadoId == estadoId.Value);
         if (prioridad.HasValue) q = q.Where(t => t.Prioridad == prioridad.Value);
         if (asignadoPersonaId.HasValue) q = q.Where(t => t.AsignadoPersonaId == asignadoPersonaId.Value);
@@ -202,7 +203,11 @@ public class TareasService : ITareasService
                 t.AsignadoPersonaId,
                 AsigNombre = p == null ? null : ((p.Nombres ?? "") + " " + (p.Apellidos ?? "")).Trim(),
                 t.FechaVencimiento,
-                t.PadreId
+                t.PadreId,
+                t.Progreso,
+                t.Color,
+                t.EsProyecto,
+                t.Valor
             }
         ).ToListAsync(ct);
 
@@ -229,7 +234,8 @@ public class TareasService : ITareasService
             r.PadreId,
             subs.GetValueOrDefault(r.Id, 0),
             coms.GetValueOrDefault(r.Id, 0),
-            etiquetasMap.GetValueOrDefault(r.Id, new List<EtiquetaTareaDto>()))).ToList();
+            etiquetasMap.GetValueOrDefault(r.Id, new List<EtiquetaTareaDto>()),
+            r.Progreso, r.Color, r.EsProyecto, r.Valor)).ToList();
     }
 
     public async Task<TareaDetalleDto?> GetTareaAsync(Guid id, CancellationToken ct)
@@ -303,6 +309,17 @@ public class TareasService : ITareasService
         if (string.IsNullOrWhiteSpace(req.Titulo)) throw new InvalidOperationException("Titulo obligatorio.");
         await AsegurarEstadosBaseAsync(ct);
 
+        // Tablero destino: el de la tarea padre si se hereda, el indicado, o el "General".
+        Guid? tableroId = req.TableroId;
+        if (req.PadreId.HasValue)
+        {
+            var padre = await _db.Tareas.AsNoTracking().Where(t => t.Id == req.PadreId.Value)
+                .Select(t => new { t.TableroId }).FirstOrDefaultAsync(ct);
+            if (padre is null) throw new InvalidOperationException("Tarea padre no encontrada.");
+            tableroId ??= padre.TableroId;
+        }
+        tableroId ??= await AsegurarTableroDefaultAsync(ct);
+
         Guid estadoId;
         if (req.EstadoId.HasValue)
         {
@@ -312,16 +329,18 @@ public class TareasService : ITareasService
         }
         else
         {
-            estadoId = (await _db.TareasEstados.Where(e => e.Nombre == EstadoTareaBase.Pendiente).Select(e => e.Id).FirstAsync(ct));
+            // Primera columna del tablero (orden), o la base Pendiente como respaldo.
+            estadoId = await _db.TareasEstados.Where(e => e.TableroId == tableroId)
+                .OrderBy(e => e.Orden).Select(e => e.Id).FirstOrDefaultAsync(ct);
+            if (estadoId == Guid.Empty)
+                estadoId = await _db.TareasEstados.Where(e => e.Nombre == EstadoTareaBase.Pendiente).Select(e => e.Id).FirstAsync(ct);
         }
-
-        if (req.PadreId.HasValue && !await _db.Tareas.AnyAsync(t => t.Id == req.PadreId.Value, ct))
-            throw new InvalidOperationException("Tarea padre no encontrada.");
 
         var numero = await GenerarNumeroAsync(ct);
         var t = new Tarea
         {
             NumeroTarea = numero,
+            TableroId = tableroId,
             Titulo = req.Titulo.Trim(),
             Descripcion = req.Descripcion?.Trim(),
             Prioridad = req.Prioridad,
@@ -900,6 +919,30 @@ public class TareasService : ITareasService
         if (t is null) return false;
         // Soft-delete: ocultamos el tablero pero conservamos sus tarjetas/estados.
         t.Activo = false;
+        t.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<TableroBoardDto?> GetTableroBoardAsync(Guid tableroId, CancellationToken ct)
+    {
+        await AsegurarTableroDefaultAsync(ct);
+        var t = await _db.Tableros.AsNoTracking().FirstOrDefaultAsync(x => x.Id == tableroId && x.Activo, ct);
+        if (t is null) return null;
+        var dto = await MapTableroAsync(t, ct);
+        var estados = await _db.TareasEstados.AsNoTracking().Where(e => e.TableroId == tableroId)
+            .OrderBy(e => e.Orden).ThenBy(e => e.Nombre)
+            .Select(e => new EstadoTareaDto(e.Id, e.Nombre, e.Color, e.Orden, e.EsTerminal, e.EsBase, e.Activo))
+            .ToListAsync(ct);
+        var tareas = await ListarTareasAsync(null, null, null, null, null, null, ct, tableroId);
+        return new TableroBoardDto(dto, estados, tareas);
+    }
+
+    public async Task<bool> ActualizarProgresoAsync(Guid tareaId, int progreso, CancellationToken ct)
+    {
+        var t = await _db.Tareas.FirstOrDefaultAsync(x => x.Id == tareaId, ct);
+        if (t is null) return false;
+        t.Progreso = Math.Clamp(progreso, 0, 100);
         t.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
         return true;

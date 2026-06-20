@@ -21,7 +21,11 @@ public record TareaListaDto(
     Guid? PadreId,
     int CantidadSubtareas,
     int CantidadComentarios,
-    IReadOnlyList<EtiquetaTareaDto> Etiquetas);
+    IReadOnlyList<EtiquetaTareaDto> Etiquetas,
+    int Progreso = 0,
+    string? Color = null,
+    bool EsProyecto = false,
+    decimal? Valor = null);
 
 public record TareaDetalleDto(
     Guid Id,
@@ -61,7 +65,8 @@ public record CrearTareaRequest(
     DateOnly? FechaInicio,
     DateOnly? FechaVencimiento,
     Guid? PadreId,
-    IReadOnlyList<Guid>? EtiquetaIds);
+    IReadOnlyList<Guid>? EtiquetaIds,
+    Guid? TableroId = null);
 
 public record ActualizarTareaRequest(
     string Titulo,
@@ -140,3 +145,11 @@ public record TableroDto(
     int NCards, IReadOnlyList<TableroUsuarioDto> Usuarios);
 public record GuardarTableroRequest(
     string Nombre, string? Descripcion, string Color, IReadOnlyList<Guid> UsuarioPersonaIds);
+
+/// <summary>Vista completa de un tablero: el tablero + sus columnas/estados + sus tarjetas.</summary>
+public record TableroBoardDto(
+    TableroDto Tablero,
+    IReadOnlyList<EstadoTareaDto> Estados,
+    IReadOnlyList<TareaListaDto> Tareas);
+
+public record ActualizarProgresoRequest(int Progreso);
