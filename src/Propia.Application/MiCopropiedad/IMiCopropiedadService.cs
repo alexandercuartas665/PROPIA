@@ -32,7 +32,20 @@ public interface IMiCopropiedadService
     // Personas vinculadas a una unidad (Propietario/Residente/Familiar)
     Task<IReadOnlyList<UnidadPersonaDto>> ListPersonasUnidadAsync(Guid unidadId, CancellationToken ct);
     Task<UnidadPersonaDto> AgregarPersonaUnidadAsync(Guid unidadId, AgregarPersonaUnidadRequest req, CancellationToken ct);
+    Task<UnidadPersonaDto?> EditarPersonaUnidadAsync(Guid unidadPersonaId, AgregarPersonaUnidadRequest req, CancellationToken ct);
     Task<bool> EliminarPersonaUnidadAsync(Guid unidadPersonaId, CancellationToken ct);
+
+    // Campos personalizados de unidad (definicion compartida por copropiedad + valor por unidad)
+    Task<IReadOnlyList<UnidadCampoDefinicionDto>> ListCamposDefinicionAsync(CancellationToken ct);
+    Task<UnidadCampoDefinicionDto> CrearCampoDefinicionAsync(CrearCampoDefinicionRequest req, CancellationToken ct);
+    Task<bool> EliminarCampoDefinicionAsync(Guid definicionId, CancellationToken ct);
+    Task<IReadOnlyList<UnidadCampoDto>> ListCamposUnidadAsync(Guid unidadId, CancellationToken ct);
+    Task SetCampoValorUnidadAsync(Guid unidadId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct);
+
+    // Documentos / anexos de una unidad
+    Task<IReadOnlyList<UnidadDocumentoDto>> ListDocumentosUnidadAsync(Guid unidadId, CancellationToken ct);
+    Task<UnidadDocumentoDto?> AgregarDocumentoUnidadAsync(Guid unidadId, string nombre, string url, long tamano, CancellationToken ct);
+    Task<bool> EliminarDocumentoUnidadAsync(Guid documentoId, CancellationToken ct);
 
     // Cuota consolidada de una unidad (principal + asociadas con incluyeEnFacturacion=true)
     Task<CuotaConsolidadaDto?> GetCuotaConsolidadaAsync(Guid unidadId, CancellationToken ct);

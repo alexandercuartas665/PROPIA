@@ -58,7 +58,7 @@ public sealed class RequiereRolFilter : IAsyncAuthorizationFilter
 
 /// <summary>
 /// Exige que el rol del usuario tenga habilitado (modulo, accion) en la matriz de permisos
-/// (rol_permisos), configurable por el Administrador en /configuracion/roles. El Administrador
+/// (rol_permisos), configurable por el Administrador en Usuarios y Accesos > Roles y permisos. El Administrador
 /// siempre pasa (bypass) - regla "Administrador conserva acceso". Devuelve 403 si no.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, AllowMultiple = true)]

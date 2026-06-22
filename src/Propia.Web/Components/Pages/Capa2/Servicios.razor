@@ -1,150 +1,375 @@
 @page "/servicios"
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.MiCopropiedad
-@using Propia.Web.Components.Shared.Modals
 @using Propia.Domain.Enums
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
-@inject NavigationManager Nav
-@inject IModalService Modals
 
-<PageTitle>Servicios - PROPIA</PageTitle>
+<PageTitle>Servicios y contratos - PROPIA</PageTitle>
 
-@* 2.5.2 Servicios: pagina dedicada que reusa GestionarServiciosModal. Muestra resumen
-   de contratos por estado y abre el modal para gestion completa. *@
+@* Modulo 2.5 (Finanzas) "Servicios y contratos". Estilo prototipo PROPIA.dc.html:
+   3 KPIs + proximos a vencer + lista de contratos + modal crear/detalle. API /api/mi-copropiedad/contratos. *@
 
-<div class="srv-page">
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <AuthMessage />
+}
+else
+{
+<div class="srv-wrap">
     <div class="srv-head">
         <div>
-            <h1 class="srv-title">Servicios</h1>
-            <p class="srv-sub">Contratos de aseo, seguridad, mantenimiento y otros servicios externalizados.</p>
-        </div>
-        <button class="srv-btn-brand" type="button" @onclick="AbrirGestionarAsync">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-            Gestionar servicios
-        </button>
-    </div>
-
-    <div class="srv-stats">
-        <div class="srv-stat srv-stat--ok" @onclick="AbrirGestionarAsync">
-            <div class="srv-stat-val">@_vigentes</div>
-            <div class="srv-stat-lbl">Vigentes</div>
-        </div>
-        <div class="srv-stat srv-stat--warn" @onclick="AbrirGestionarAsync">
-            <div class="srv-stat-val">@_renovacion</div>
-            <div class="srv-stat-lbl">En renovacion</div>
-        </div>
-        <div class="srv-stat srv-stat--neutral" @onclick="AbrirGestionarAsync">
-            <div class="srv-stat-val">@_vencidos</div>
-            <div class="srv-stat-lbl">Vencidos</div>
-        </div>
-        <div class="srv-stat srv-stat--total" @onclick="AbrirGestionarAsync">
-            <div class="srv-stat-val">@_contratos.Count</div>
-            <div class="srv-stat-lbl">Total contratos</div>
+            <h1 class="srv-title">Servicios y contratos</h1>
+            <p class="srv-sub">Contratos estrategicos de la copropiedad &mdash; alertas automaticas antes de cada vencimiento.</p>
         </div>
     </div>
 
-    @if (_contratos.Count > 0)
+    @{ var porVencer = _contratos.Where(c => c.AlertaVencimiento).OrderBy(c => c.DiasParaVencer).ToList(); }
+
+    <div class="srv-kpis">
+        <div class="srv-kpi"><div class="srv-kpi-lbl">Total de contratos</div><div class="srv-kpi-val">@_contratos.Count</div></div>
+        <div class="srv-kpi"><div class="srv-kpi-lbl">Vigentes</div><div class="srv-kpi-val ok">@_contratos.Count(c => c.Estado == EstadoContrato.Vigente)</div></div>
+        <div class="srv-kpi danger"><div class="srv-kpi-lbl danger">Por vencer</div><div class="srv-kpi-val danger">@porVencer.Count</div></div>
+    </div>
+
+    @if (porVencer.Count > 0)
     {
-        <div class="srv-list">
-            <div class="srv-list-head">Ultimos contratos</div>
-            <table class="srv-table">
-                <thead>
-                    <tr><th>Servicio</th><th>Proveedor</th><th>Estado</th><th>Fin</th></tr>
-                </thead>
-                <tbody>
-                    @foreach (var c in _contratos.OrderByDescending(x => x.FechaInicio).Take(8))
-                    {
-                        <tr @onclick="AbrirGestionarAsync">
-                            <td class="srv-cell-strong">@c.Tipo</td>
-                            <td>@(string.IsNullOrEmpty(c.Proveedor) ? "-" : c.Proveedor)</td>
-                            <td><span class="srv-pill srv-pill--@c.Estado.ToString().ToLowerInvariant()">@EstadoTexto(c.Estado)</span></td>
-                            <td>@(c.FechaFin?.ToString("dd MMM yyyy") ?? "-")</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+        <div class="srv-alert">
+            <div class="srv-alert-head"><i class="fi fi-rr-triangle-warning"></i> PROXIMOS A VENCER</div>
+            <div class="srv-alert-list">
+                @foreach (var c in porVencer)
+                {
+                    var cc = c;
+                    <div class="srv-alert-row">
+                        <div class="srv-row-ic danger">@TipoIcon(c.Tipo)</div>
+                        <div class="srv-row-body"><div class="srv-row-name">@c.Proveedor</div><div class="srv-row-meta">@TipoLabel(c.Tipo)@(c.FechaFin is { } f ? " - vence " + f.ToString("dd MMM yyyy") : "")</div></div>
+                        <span class="srv-dias">Vence en @c.DiasParaVencer dias</span>
+                        @if (c.Estado != EstadoContrato.EnRenovacion) { <button class="srv-renovar" @onclick="() => RenovarAsync(cc)" disabled="@_busy">Renovar</button> }
+                        else { <span class="srv-badge warn">En renovacion</span> }
+                    </div>
+                }
+            </div>
         </div>
     }
+
+    <div class="srv-card">
+        <div class="srv-card-head">
+            <span class="srv-card-title">Todos los contratos</span>
+            <button class="srv-btn-primary" @onclick="() => AbrirModal(null)"><i class="fi fi-rr-plus"></i> Nuevo contrato</button>
+        </div>
+        <div class="srv-list">
+            @if (_contratos.Count == 0)
+            {
+                <div class="srv-empty"><i class="fi fi-rr-shield"></i><div>Aun no hay contratos. Crea el primero con "Nuevo contrato".</div></div>
+            }
+            else
+            {
+                @foreach (var c in _contratos.OrderBy(x => x.Tipo).ThenBy(x => x.FechaFin))
+                {
+                    var cc = c;
+                    <button class="srv-row" @onclick="() => AbrirModal(cc)">
+                        <div class="srv-row-ic">@TipoIcon(c.Tipo)</div>
+                        <div class="srv-row-body">
+                            <div class="srv-row-name">@c.Proveedor</div>
+                            <div class="srv-row-meta">@TipoLabel(c.Tipo)@(c.FechaInicio is var fi ? " - desde " + fi.ToString("dd MMM yyyy") : "")@(c.FechaFin is { } ff ? " - hasta " + ff.ToString("dd MMM yyyy") : "")@(c.ValorMensual is { } v ? " - $" + v.ToString("N0") + "/mes" : "")</div>
+                        </div>
+                        @if (c.Estado == EstadoContrato.Vencido) { <span class="srv-badge vencido">Vencido</span> }
+                        else if (c.AlertaVencimiento) { <span class="srv-badge danger">Vence en @c.DiasParaVencer dias</span> }
+                        else if (c.Estado == EstadoContrato.EnRenovacion) { <span class="srv-badge warn">En renovacion</span> }
+                        else { <span class="srv-badge ok">Vigente</span> }
+                        <span class="srv-del" @onclick:stopPropagation="true" @onclick="() => EliminarAsync(cc.Id)" title="Eliminar"><i class="fi fi-rr-trash"></i></span>
+                    </button>
+                }
+            }
+        </div>
+    </div>
 </div>
 
-<ModalHost />
+@* ===== Modal crear / detalle de contrato ===== *@
+@if (_showModal)
+{
+    <div class="srv-ov" @onclick="() => _showModal = false"></div>
+    <div class="srv-modal">
+        <div class="srv-modal-head">
+            <div class="srv-modal-ic"><i class="fi fi-rr-shield"></i></div>
+            <div style="flex:1;min-width:0;">
+                <div class="srv-modal-title">@(_editId is null ? "Nuevo contrato" : "Detalle del contrato")</div>
+                <div class="srv-sub" style="margin:2px 0 0;">Datos del contrato y su vigencia.</div>
+            </div>
+            <button class="srv-x" @onclick="() => _showModal = false"><i class="fi fi-rr-cross-small"></i></button>
+        </div>
+        <div class="srv-modal-body">
+            <div class="srv-grid">
+                <div class="srv-col-full">
+                    <label class="srv-lbl">Nombre del contrato / servicio *</label>
+                    <input class="srv-input" @bind="_f.Proveedor" @bind:event="oninput" placeholder="Ej. Vigilancia Andina S.A." />
+                </div>
+                <div>
+                    <label class="srv-lbl">Tipo de servicio</label>
+                    <select class="srv-input" @bind="_f.Tipo">
+                        @foreach (var t in Enum.GetValues<TipoServicio>()) { <option value="@t">@TipoLabel(t)</option> }
+                    </select>
+                </div>
+                <div>
+                    <label class="srv-lbl">NIT del proveedor</label>
+                    <input class="srv-input" @bind="_f.Nit" @bind:event="oninput" placeholder="NIT o razon social" />
+                </div>
+                <div>
+                    <label class="srv-lbl">Contacto</label>
+                    <input class="srv-input" @bind="_f.Contacto" @bind:event="oninput" placeholder="Telefono / email" />
+                </div>
+                <div>
+                    <label class="srv-lbl">Valor mensual (COP)</label>
+                    <input class="srv-input" type="number" step="any" @bind="_f.Valor" placeholder="0" />
+                </div>
+                <div>
+                    <label class="srv-lbl">Fecha de inicio</label>
+                    <input class="srv-input" type="date" @bind="_f.Inicio" />
+                </div>
+                <div>
+                    <label class="srv-lbl">Fecha de finalizacion</label>
+                    <input class="srv-input" type="date" @bind="_f.Fin" />
+                </div>
+                <div>
+                    <label class="srv-lbl">Dias de alerta antes de vencer</label>
+                    <input class="srv-input" type="number" @bind="_f.Dias" />
+                </div>
+                @if (_editId is not null)
+                {
+                    <div>
+                        <label class="srv-lbl">Estado</label>
+                        <select class="srv-input" @bind="_f.Estado">
+                            <option value="@EstadoContrato.Vigente">Vigente</option>
+                            <option value="@EstadoContrato.EnRenovacion">En renovacion</option>
+                        </select>
+                    </div>
+                }
+                <div class="srv-col-full">
+                    <label class="srv-lbl">Observaciones</label>
+                    <textarea class="srv-input" rows="2" @bind="_f.Observaciones" @bind:event="oninput" placeholder="Ej. Renovacion automatica con 30 dias de aviso."></textarea>
+                </div>
+            </div>
+            @if (_modalError is not null) { <div class="srv-banner err">@_modalError</div> }
+            <div class="d-flex gap-2 justify-content-end mt-3">
+                <button class="srv-btn-ghost" @onclick="() => _showModal = false">Cancelar</button>
+                <button class="srv-btn-primary" @onclick="GuardarAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_f.Proveedor))"><i class="fi fi-rr-check"></i> @(_editId is null ? "Crear contrato" : "Guardar contrato")</button>
+            </div>
+        </div>
+    </div>
+}
+}
 
 <style>
-    .srv-page { padding: 22px 28px; font-family: var(--propia-font-base, 'Lexend', sans-serif); }
-    .srv-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 22px; }
-    .srv-title { font-size: 27px; font-weight: 800; letter-spacing: -0.6px; color: #1B2A3A; margin: 0; }
+    .srv-wrap { width: 100%; max-width: 1900px; margin: 0 auto; padding: 6px 28px 60px; box-sizing: border-box; font-family: 'Lexend', sans-serif; }
+    .srv-head { margin-bottom: 18px; }
+    .srv-title { font-size: 27px; font-weight: 800; letter-spacing: -.6px; color: #1B2A3A; margin: 0; }
     .srv-sub { font-size: 14px; color: #7C98B6; margin: 4px 0 0; }
-    .srv-btn-brand { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; padding: 9px 16px; border: 0; border-radius: 9px; background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(109,79,227,.25); }
-    .srv-btn-brand:hover { background: var(--propia-brand-hover, #5838C9); }
+    .srv-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
+    @@media (max-width: 760px) { .srv-kpis { grid-template-columns: 1fr; } .srv-grid { grid-template-columns: 1fr !important; } }
+    .srv-kpi { background: #fff; border: 1px solid #E1E8EE; border-radius: 14px; padding: 18px; box-shadow: 0 1px 2px rgba(45,62,80,.05); }
+    .srv-kpi.danger { background: #FFF5F5; border-color: #FBD5D5; }
+    .srv-kpi-lbl { font-size: 12px; font-weight: 700; color: #7C98B6; }
+    .srv-kpi-lbl.danger { color: #C0383C; }
+    .srv-kpi-val { font-size: 30px; font-weight: 800; letter-spacing: -1px; color: #1B2A3A; margin-top: 5px; }
+    .srv-kpi-val.ok { color: #1A8754; }
+    .srv-kpi-val.danger { color: #C0383C; }
 
-    .srv-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px; }
-    .srv-stat { background: #fff; border: 1px solid #EEF3F8; border-radius: 13px; padding: 16px; cursor: pointer; transition: border-color .15s, transform .15s; }
-    .srv-stat:hover { border-color: var(--propia-brand, #6D4FE3); transform: translateY(-1px); }
-    .srv-stat-val { font-size: 26px; font-weight: 800; color: #1B2A3A; line-height: 1; }
-    .srv-stat-lbl { font-size: 12px; color: #7C98B6; margin-top: 5px; text-transform: uppercase; letter-spacing: .3px; font-weight: 700; }
-    .srv-stat--ok .srv-stat-val { color: #2E7D32; }
-    .srv-stat--warn .srv-stat-val { color: #EF6C00; }
-    .srv-stat--neutral .srv-stat-val { color: #7C98B6; }
+    .srv-alert { background: #FFF5F5; border: 1px solid #FBD5D5; border-radius: 14px; padding: 16px 18px; margin-bottom: 18px; }
+    .srv-alert-head { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; letter-spacing: .4px; color: #C0383C; margin-bottom: 12px; }
+    .srv-alert-list { display: flex; flex-direction: column; gap: 8px; }
+    .srv-alert-row { display: flex; align-items: center; gap: 13px; background: #fff; border: 1px solid #FBD5D5; border-radius: 10px; padding: 11px 14px; }
+    .srv-dias { font-size: 11px; font-weight: 700; color: #C0383C; background: #FDE7E7; padding: 4px 10px; border-radius: 7px; white-space: nowrap; }
+    .srv-renovar { font-size: 11px; font-weight: 700; color: #6D4FE3; background: #F1ECFD; border: 1px solid #DCD2F8; padding: 5px 11px; border-radius: 7px; white-space: nowrap; cursor: pointer; }
+    .srv-renovar:hover:not(:disabled) { background: #E6DEFA; }
 
-    .srv-list { background: #fff; border: 1px solid #EEF3F8; border-radius: 13px; overflow: hidden; }
-    .srv-list-head { padding: 12px 18px; font-size: 13px; font-weight: 800; color: #1B2A3A; border-bottom: 1px solid #EEF3F8; }
-    .srv-table { width: 100%; border-collapse: collapse; }
-    .srv-table th { padding: 10px 18px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: #7C98B6; background: #FAFBFD; }
-    .srv-table td { padding: 11px 18px; border-bottom: 1px solid #F4F7FA; font-size: 13px; color: #33475B; }
-    .srv-table tbody tr { cursor: pointer; }
-    .srv-table tbody tr:hover { background: #FAFBFD; }
-    .srv-cell-strong { font-weight: 700; color: #1B2A3A; }
-    .srv-pill { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; }
-    .srv-pill--vigente { background: #E8F5E9; color: #2E7D32; }
-    .srv-pill--enrenovacion { background: #FFF3E0; color: #EF6C00; }
-    .srv-pill--vencido { background: #F4F7FA; color: #7C98B6; }
-    .srv-pill--terminado { background: #F4F7FA; color: #7C98B6; }
+    .srv-card { background: #fff; border: 1px solid #E1E8EE; border-radius: 14px; box-shadow: 0 1px 2px rgba(45,62,80,.05); overflow: hidden; }
+    .srv-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid #EEF3F8; }
+    .srv-card-title { font-size: 14px; font-weight: 700; color: #1B2A3A; }
+    .srv-btn-primary { display: inline-flex; align-items: center; gap: 7px; border: 0; background: var(--propia-primary, #6D4FE3); color: #fff; font-weight: 700; font-size: 13px; padding: 9px 15px; border-radius: 9px; cursor: pointer; box-shadow: 0 4px 12px rgba(109,79,227,.28); }
+    .srv-btn-primary:hover:not(:disabled) { background: #5838C9; }
+    .srv-btn-primary:disabled { opacity: .55; cursor: default; box-shadow: none; }
+    .srv-btn-ghost { border: 1px solid #E1E8EE; background: #fff; color: #516F90; font-weight: 600; font-size: 13px; padding: 9px 15px; border-radius: 9px; cursor: pointer; }
+    .srv-btn-ghost:hover { border-color: #C3D0DD; }
+    .srv-list { padding: 16px 20px; display: flex; flex-direction: column; gap: 9px; }
+    .srv-row { display: flex; align-items: center; gap: 13px; border: 1px solid #E1E8EE; border-radius: 10px; padding: 12px 15px; text-align: left; background: #fff; width: 100%; cursor: pointer; }
+    .srv-row:hover { border-color: #6D4FE3; background: #FBFAFE; }
+    .srv-row-ic { width: 34px; height: 34px; border-radius: 9px; background: #EEF3F8; color: #516F90; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .srv-row-ic.danger { background: #FDE7E7; color: #C0383C; }
+    .srv-row-body { flex: 1; min-width: 0; }
+    .srv-row-name { font-size: 13.5px; font-weight: 700; color: #33475B; }
+    .srv-row-meta { font-size: 11.5px; color: #A6B7C8; margin-top: 1px; }
+    .srv-badge { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 7px; white-space: nowrap; flex-shrink: 0; }
+    .srv-badge.ok { color: #1A8754; background: #E6F6EE; }
+    .srv-badge.warn { color: #92591A; background: #FEF3DC; }
+    .srv-badge.danger { color: #C0383C; background: #FDE7E7; }
+    .srv-badge.vencido { color: #92591A; background: #FEF3DC; }
+    .srv-del { width: 28px; height: 28px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: #C3D0DD; flex-shrink: 0; }
+    .srv-del:hover { background: #FDE7E7; color: #D7263D; }
+    .srv-empty { padding: 36px 20px; text-align: center; color: #A6B7C8; font-size: 13.5px; }
+    .srv-empty i { display: block; font-size: 28px; color: #C3D0DD; margin-bottom: 10px; }
+
+    .srv-ov { position: fixed; inset: 0; background: rgba(27,42,58,.55); z-index: 1200; }
+    .srv-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 1210; background: #fff; border-radius: 16px; box-shadow: 0 30px 70px rgba(27,42,58,.4); width: min(720px, 96vw); max-height: 92vh; display: flex; flex-direction: column; }
+    .srv-modal-head { display: flex; align-items: center; gap: 13px; padding: 18px 22px; border-bottom: 1px solid #EEF3F8; flex-shrink: 0; }
+    .srv-modal-ic { width: 38px; height: 38px; border-radius: 10px; background: #F1ECFD; color: #6D4FE3; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .srv-modal-title { font-size: 16px; font-weight: 800; letter-spacing: -.3px; color: #1B2A3A; }
+    .srv-modal-body { padding: 20px 22px; overflow-y: auto; }
+    .srv-x { width: 34px; height: 34px; border-radius: 9px; border: 1px solid #E1E8EE; background: #fff; color: #7C98B6; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; font-size: 17px; }
+    .srv-x:hover { background: #F5F8FA; color: #33475B; }
+    .srv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .srv-col-full { grid-column: 1 / -1; }
+    .srv-lbl { display: block; font-size: 11px; color: #7C98B6; font-weight: 700; margin-bottom: 5px; }
+    .srv-input { width: 100%; border: 1px solid #E1E8EE; border-radius: 9px; padding: 10px 12px; font-size: 13.5px; color: #33475B; outline: 0; background: #fff; box-sizing: border-box; }
+    .srv-input:focus { border-color: #6D4FE3; }
+    .srv-banner { border-radius: 9px; padding: 9px 12px; font-size: 12.5px; font-weight: 600; margin-top: 12px; }
+    .srv-banner.err { background: #FDE7E7; border: 1px solid #F5C2C2; color: #A1352E; }
 </style>
 
 @code {
     private string? _jwt;
+    private bool _busy;
     private List<ContratoServicioDto> _contratos = new();
-    private int _vigentes;
-    private int _renovacion;
-    private int _vencidos;
+
+    private bool _showModal;
+    private Guid? _editId;
+    private string? _modalError;
+    private Form _f = new();
+
+    private sealed class Form
+    {
+        public TipoServicio Tipo { get; set; } = TipoServicio.Seguridad;
+        public string Proveedor { get; set; } = "";
+        public string? Nit { get; set; }
+        public string? Contacto { get; set; }
+        public DateTime? Inicio { get; set; } = DateTime.Today;
+        public DateTime? Fin { get; set; }
+        public decimal? Valor { get; set; }
+        public int Dias { get; set; } = 30;
+        public string? Observaciones { get; set; }
+        public EstadoContrato Estado { get; set; } = EstadoContrato.Vigente;
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
-        try { _jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt"); } catch { }
-        if (string.IsNullOrEmpty(_jwt)) return;
-        await CargarAsync();
-        StateHasChanged();
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored)) { _jwt = stored; await CargarAsync(); StateHasChanged(); }
+        }
+        catch { }
     }
 
     private async Task CargarAsync()
     {
+        try { _contratos = await Auth().GetFromJsonAsync<List<ContratoServicioDto>>("/api/mi-copropiedad/contratos") ?? new(); }
+        catch { _contratos = new(); }
+    }
+
+    private void AbrirModal(ContratoServicioDto? c)
+    {
+        _modalError = null;
+        if (c is null)
+        {
+            _editId = null;
+            _f = new Form();
+        }
+        else
+        {
+            _editId = c.Id;
+            _f = new Form
+            {
+                Tipo = c.Tipo, Proveedor = c.Proveedor, Nit = c.NitProveedor, Contacto = c.Contacto,
+                Inicio = c.FechaInicio.ToDateTime(TimeOnly.MinValue),
+                Fin = c.FechaFin?.ToDateTime(TimeOnly.MinValue),
+                Valor = c.ValorMensual, Dias = c.DiasAnticipacionAlerta, Observaciones = c.Observaciones,
+                Estado = c.Estado == EstadoContrato.Vencido ? EstadoContrato.Vigente : c.Estado
+            };
+        }
+        _showModal = true;
+    }
+
+    private async Task GuardarAsync()
+    {
+        _modalError = null;
+        if (string.IsNullOrWhiteSpace(_f.Proveedor)) { _modalError = "El nombre del contrato es obligatorio."; return; }
+        _busy = true;
         try
         {
-            var http = HttpFactory.CreateClient("PropiaApi");
-            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
-            _contratos = await http.GetFromJsonAsync<List<ContratoServicioDto>>("/api/mi-copropiedad/contratos") ?? new();
-            _vigentes = _contratos.Count(c => c.Estado == EstadoContrato.Vigente);
-            _renovacion = _contratos.Count(c => c.Estado == EstadoContrato.EnRenovacion);
-            _vencidos = _contratos.Count(c => c.Estado == EstadoContrato.Vencido);
+            var inicio = DateOnly.FromDateTime(_f.Inicio ?? DateTime.Today);
+            DateOnly? fin = _f.Fin.HasValue ? DateOnly.FromDateTime(_f.Fin.Value) : null;
+            HttpResponseMessage resp;
+            if (_editId is null)
+            {
+                resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/contratos",
+                    new CrearContratoServicioRequest(_f.Tipo, _f.Proveedor.Trim(), Limpio(_f.Nit), Limpio(_f.Contacto),
+                        inicio, fin, _f.Valor, Limpio(_f.Observaciones), _f.Dias <= 0 ? 30 : _f.Dias));
+            }
+            else
+            {
+                resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/{_editId}",
+                    new ActualizarContratoRequest(_f.Estado, _f.Dias <= 0 ? 30 : _f.Dias, _f.Tipo, _f.Proveedor.Trim(),
+                        Limpio(_f.Nit) ?? "", Limpio(_f.Contacto) ?? "", inicio, fin, _f.Valor, Limpio(_f.Observaciones) ?? ""));
+            }
+            if (!resp.IsSuccessStatusCode) { _modalError = await resp.Content.ReadAsStringAsync(); return; }
+            _showModal = false;
+            await CargarAsync();
         }
-        catch { /* ignorar */ }
+        catch (Exception ex) { _modalError = ex.Message; }
+        finally { _busy = false; }
     }
 
-    private async Task AbrirGestionarAsync()
+    private async Task RenovarAsync(ContratoServicioDto c)
     {
-        var parameters = new ModalParameters().Set("Jwt", _jwt);
-        var options = new ModalOptions { Width = "980px" };
-        var hubo = await Modals.OpenAsync<GestionarServiciosModal, bool>(parameters, options);
-        if (hubo == true) await CargarAsync();
+        _busy = true;
+        try
+        {
+            await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/{c.Id}",
+                new ActualizarContratoRequest(EstadoContrato.EnRenovacion, c.DiasAnticipacionAlerta));
+            await CargarAsync();
+        }
+        finally { _busy = false; }
     }
 
-    private static string EstadoTexto(EstadoContrato e) => e switch
+    private async Task EliminarAsync(Guid id)
     {
-        EstadoContrato.Vigente => "Vigente",
-        EstadoContrato.EnRenovacion => "En renovacion",
-        EstadoContrato.Vencido => "Vencido",
-        _ => e.ToString()
+        if (!await Js.InvokeAsync<bool>("confirm", "Eliminar este contrato?")) return;
+        _busy = true;
+        try { await Auth().DeleteAsync($"/api/mi-copropiedad/contratos/{id}"); await CargarAsync(); }
+        finally { _busy = false; }
+    }
+
+    private static string? Limpio(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    private static string TipoLabel(TipoServicio t) => t switch
+    {
+        TipoServicio.PiscinaMantenimiento => "Mantenimiento piscina",
+        TipoServicio.InternetWifi => "Internet / WiFi",
+        TipoServicio.SeguroPH => "Seguro PH",
+        _ => t.ToString()
     };
+
+    private static MarkupString TipoIcon(TipoServicio t)
+    {
+        var path = t switch
+        {
+            TipoServicio.Aseo => "<path d='M3 21l1.5-4.5L17 4l3 3L7.5 19.5 3 21z'/>",
+            TipoServicio.Seguridad => "<path d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/>",
+            TipoServicio.Ascensores => "<path d='M6 2v20M18 2v20M9 7l3-3 3 3M9 17l3 3 3-3'/>",
+            TipoServicio.SeguroPH => "<path d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM9 12l2 2 4-4'/>",
+            TipoServicio.InternetWifi => "<path d='M5 12.55a11 11 0 0 1 14 0M8.5 16a6 6 0 0 1 7 0M2 8.82a15 15 0 0 1 20 0M12 20h.01'/>",
+            TipoServicio.Energia => "<path d='M13 2L3 14h9l-1 8 10-12h-9l1-8z'/>",
+            TipoServicio.Agua => "<path d='M12 3l7 10a7 7 0 1 1-14 0L12 3z'/>",
+            TipoServicio.Plagas => "<path d='M9 4h6v6H9zM4 11h16v6H4zM7 17v4M17 17v4'/>",
+            _ => "<path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/>"
+        };
+        return new MarkupString($"<svg width='17' height='17' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'>{path}</svg>");
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
 }

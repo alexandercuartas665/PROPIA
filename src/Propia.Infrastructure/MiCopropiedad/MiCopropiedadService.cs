@@ -295,7 +295,8 @@ public class MiCopropiedadService : IMiCopropiedadService
                           up.Id, up.PersonaId,
                           (p.Nombres + " " + p.Apellidos).Trim(),
                           p.Documento, p.Email, p.Telefono,
-                          up.Rol, up.Habita, up.Parentesco))
+                          up.Rol, up.Habita, up.Parentesco,
+                          p.Nombres, p.Apellidos))
                       .ToListAsync(ct);
     }
 
@@ -334,7 +335,51 @@ public class MiCopropiedadService : IMiCopropiedadService
 
         return new UnidadPersonaDto(up.Id, personaId,
             ($"{persona.Nombres} {persona.Apellidos}").Trim(), persona.Documento, persona.Email, persona.Telefono,
-            up.Rol, up.Habita, up.Parentesco);
+            up.Rol, up.Habita, up.Parentesco, persona.Nombres, persona.Apellidos);
+    }
+
+    public async Task<UnidadPersonaDto?> EditarPersonaUnidadAsync(Guid unidadPersonaId, AgregarPersonaUnidadRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Nombres)) throw new InvalidOperationException("Nombres obligatorios.");
+        if (string.IsNullOrWhiteSpace(req.Apellidos)) throw new InvalidOperationException("Apellidos obligatorios.");
+
+        var up = await _db.UnidadPersonas.FirstOrDefaultAsync(x => x.Id == unidadPersonaId, ct);
+        if (up is null) return null;
+        var persona = await _db.Personas.FirstOrDefaultAsync(p => p.Id == up.PersonaId, ct);
+        if (persona is null) return null;
+
+        var email = string.IsNullOrWhiteSpace(req.Email) ? null : req.Email.Trim();
+        if (email is not null && await _db.Personas.AnyAsync(p => p.Id != persona.Id && p.Email == email, ct))
+            throw new InvalidOperationException("El correo ya esta en uso por otra persona.");
+
+        var doc = string.IsNullOrWhiteSpace(req.Documento) ? persona.Documento : req.Documento.Trim();
+        if (!string.Equals(doc, persona.Documento, StringComparison.Ordinal))
+        {
+            if (await _db.Personas.AnyAsync(p => p.Id != persona.Id && p.TipoDocumento == persona.TipoDocumento && p.Documento == doc, ct))
+                throw new InvalidOperationException("El documento ya esta en uso por otra persona.");
+            persona.Documento = doc;
+        }
+
+        if (up.Rol != req.Rol)
+        {
+            if (await _db.UnidadPersonas.AnyAsync(x => x.Id != up.Id && x.UnidadId == up.UnidadId && x.PersonaId == up.PersonaId && x.Rol == req.Rol, ct))
+                throw new InvalidOperationException($"Esta persona ya tiene el rol {req.Rol} en la unidad.");
+            up.Rol = req.Rol;
+        }
+
+        persona.Nombres = req.Nombres.Trim();
+        persona.Apellidos = req.Apellidos.Trim();
+        persona.Email = email;
+        persona.Telefono = string.IsNullOrWhiteSpace(req.Telefono) ? null : req.Telefono.Trim();
+        up.Habita = req.Habita;
+        up.Parentesco = string.IsNullOrWhiteSpace(req.Parentesco) ? null : req.Parentesco.Trim();
+
+        await _db.SaveChangesAsync(ct);
+        await RegistrarBitacoraAsync("Unidad", $"Datos de '{persona.Nombres} {persona.Apellidos}' actualizados.", ct);
+
+        return new UnidadPersonaDto(up.Id, persona.Id,
+            ($"{persona.Nombres} {persona.Apellidos}").Trim(), persona.Documento, persona.Email, persona.Telefono,
+            up.Rol, up.Habita, up.Parentesco, persona.Nombres, persona.Apellidos);
     }
 
     public async Task<bool> EliminarPersonaUnidadAsync(Guid unidadPersonaId, CancellationToken ct)
@@ -342,6 +387,102 @@ public class MiCopropiedadService : IMiCopropiedadService
         var up = await _db.UnidadPersonas.FirstOrDefaultAsync(x => x.Id == unidadPersonaId, ct);
         if (up is null) return false;
         _db.UnidadPersonas.Remove(up);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    // -------- Campos personalizados de unidad (definicion compartida por copropiedad + valor por unidad) --------
+
+    public async Task<IReadOnlyList<UnidadCampoDefinicionDto>> ListCamposDefinicionAsync(CancellationToken ct)
+        => await _db.UnidadCamposDefiniciones.AsNoTracking()
+            .OrderBy(d => d.Orden).ThenBy(d => d.Label)
+            .Select(d => new UnidadCampoDefinicionDto(d.Id, d.Label, d.Orden))
+            .ToListAsync(ct);
+
+    public async Task<UnidadCampoDefinicionDto> CrearCampoDefinicionAsync(CrearCampoDefinicionRequest req, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) throw new InvalidOperationException("Sin copropiedad activa.");
+        var label = (req.Label ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(label)) throw new InvalidOperationException("El nombre del campo es obligatorio.");
+        if (label.Length > 80) label = label[..80];
+
+        var existente = await _db.UnidadCamposDefiniciones.FirstOrDefaultAsync(d => d.Label.ToLower() == label.ToLower(), ct);
+        if (existente is not null)
+            return new UnidadCampoDefinicionDto(existente.Id, existente.Label, existente.Orden);
+
+        var maxOrden = await _db.UnidadCamposDefiniciones.AnyAsync(ct)
+            ? await _db.UnidadCamposDefiniciones.MaxAsync(d => d.Orden, ct) : 0;
+        var def = new UnidadCampoDefinicion { TenantId = tid, Label = label, Orden = maxOrden + 1 };
+        _db.UnidadCamposDefiniciones.Add(def);
+        await _db.SaveChangesAsync(ct);
+        await RegistrarBitacoraAsync("Unidad", $"Campo personalizado '{label}' agregado a todas las unidades.", ct);
+        return new UnidadCampoDefinicionDto(def.Id, def.Label, def.Orden);
+    }
+
+    public async Task<bool> EliminarCampoDefinicionAsync(Guid definicionId, CancellationToken ct)
+    {
+        var def = await _db.UnidadCamposDefiniciones.FirstOrDefaultAsync(d => d.Id == definicionId, ct);
+        if (def is null) return false;
+        _db.UnidadCamposDefiniciones.Remove(def);  // cascade borra los valores por unidad
+        await _db.SaveChangesAsync(ct);
+        await RegistrarBitacoraAsync("Unidad", $"Campo personalizado '{def.Label}' eliminado de todas las unidades.", ct);
+        return true;
+    }
+
+    public async Task<IReadOnlyList<UnidadCampoDto>> ListCamposUnidadAsync(Guid unidadId, CancellationToken ct)
+    {
+        var defs = await _db.UnidadCamposDefiniciones.AsNoTracking()
+            .OrderBy(d => d.Orden).ThenBy(d => d.Label).ToListAsync(ct);
+        var valores = await _db.UnidadCamposValores.AsNoTracking()
+            .Where(v => v.UnidadId == unidadId).ToListAsync(ct);
+        return defs.Select(d => new UnidadCampoDto(
+            d.Id, d.Label, d.Orden,
+            valores.FirstOrDefault(v => v.DefinicionId == d.Id)?.Valor)).ToList();
+    }
+
+    public async Task SetCampoValorUnidadAsync(Guid unidadId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) throw new InvalidOperationException("Sin copropiedad activa.");
+        _ = await _db.UnidadCamposDefiniciones.AnyAsync(d => d.Id == definicionId, ct)
+            ? true : throw new InvalidOperationException("Campo no encontrado.");
+        _ = await _db.UnidadesPrivadas.AnyAsync(u => u.Id == unidadId, ct)
+            ? true : throw new InvalidOperationException("Unidad no encontrada.");
+        var valor = string.IsNullOrWhiteSpace(req.Valor) ? null : req.Valor.Trim();
+
+        var existente = await _db.UnidadCamposValores
+            .FirstOrDefaultAsync(v => v.DefinicionId == definicionId && v.UnidadId == unidadId, ct);
+        if (existente is null)
+            _db.UnidadCamposValores.Add(new UnidadCampoValor { TenantId = tid, DefinicionId = definicionId, UnidadId = unidadId, Valor = valor });
+        else
+            existente.Valor = valor;
+        await _db.SaveChangesAsync(ct);
+    }
+
+    // -------- Documentos / anexos de una unidad --------
+
+    public async Task<IReadOnlyList<UnidadDocumentoDto>> ListDocumentosUnidadAsync(Guid unidadId, CancellationToken ct)
+        => await _db.UnidadDocumentos.AsNoTracking()
+            .Where(d => d.UnidadId == unidadId)
+            .OrderByDescending(d => d.CreatedAt)
+            .Select(d => new UnidadDocumentoDto(d.Id, d.Nombre, d.Url, d.Tamano))
+            .ToListAsync(ct);
+
+    public async Task<UnidadDocumentoDto?> AgregarDocumentoUnidadAsync(Guid unidadId, string nombre, string url, long tamano, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) return null;
+        if (!await _db.UnidadesPrivadas.AnyAsync(u => u.Id == unidadId, ct)) return null;
+        var d = new UnidadDocumento { TenantId = tid, UnidadId = unidadId, Nombre = nombre.Trim(), Url = url, Tamano = tamano };
+        _db.UnidadDocumentos.Add(d);
+        await _db.SaveChangesAsync(ct);
+        await RegistrarBitacoraAsync("Unidad", $"Documento '{d.Nombre}' adjuntado a la unidad.", ct);
+        return new UnidadDocumentoDto(d.Id, d.Nombre, d.Url, d.Tamano);
+    }
+
+    public async Task<bool> EliminarDocumentoUnidadAsync(Guid documentoId, CancellationToken ct)
+    {
+        var d = await _db.UnidadDocumentos.FirstOrDefaultAsync(x => x.Id == documentoId, ct);
+        if (d is null) return false;
+        _db.UnidadDocumentos.Remove(d);
         await _db.SaveChangesAsync(ct);
         return true;
     }
@@ -902,6 +1043,15 @@ public class MiCopropiedadService : IMiCopropiedadService
         // "Vencido" se deriva por fecha; el admin solo declara Vigente o EnRenovacion.
         c.Estado = req.Estado == EstadoContrato.Vencido ? EstadoContrato.Vigente : req.Estado;
         c.DiasAnticipacionAlerta = req.DiasAnticipacionAlerta <= 0 ? 30 : req.DiasAnticipacionAlerta;
+        // MERGE de datos del contrato (solo lo provisto; conserva el resto). La tool MCP no manda estos.
+        if (req.Tipo.HasValue) c.Tipo = req.Tipo.Value;
+        if (!string.IsNullOrWhiteSpace(req.Proveedor)) c.Proveedor = req.Proveedor.Trim();
+        if (req.NitProveedor is not null) c.NitProveedor = string.IsNullOrWhiteSpace(req.NitProveedor) ? null : req.NitProveedor.Trim();
+        if (req.Contacto is not null) c.Contacto = string.IsNullOrWhiteSpace(req.Contacto) ? null : req.Contacto.Trim();
+        if (req.FechaInicio.HasValue) c.FechaInicio = req.FechaInicio.Value;
+        if (req.FechaFin.HasValue) c.FechaFin = req.FechaFin.Value;
+        if (req.ValorMensual.HasValue) c.ValorMensual = req.ValorMensual.Value;
+        if (req.Observaciones is not null) c.Observaciones = string.IsNullOrWhiteSpace(req.Observaciones) ? null : req.Observaciones.Trim();
         await _db.SaveChangesAsync(ct);
         return true;
     }

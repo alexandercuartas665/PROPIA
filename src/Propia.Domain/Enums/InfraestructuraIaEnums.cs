@@ -15,6 +15,16 @@ public enum WhatsAppLineStatus
     Disabled = 5
 }
 
+/// <summary>
+/// Proveedor de una linea WhatsApp. Evolution = API no oficial por QR (servidor maestro).
+/// Cloud = WhatsApp Cloud API oficial de Meta (token + phone number id). Portado de CUBOT.travels.
+/// </summary>
+public enum WhatsAppProvider
+{
+    Evolution = 1,
+    Cloud = 2
+}
+
 /// <summary>Direccion de un mensaje de chat. Portado de CUBOT.travels.</summary>
 public enum MessageDirection
 {

@@ -101,7 +101,8 @@ public record RegistroVisitaDto(
     Guid? AutorizacionId,
     string? Observacion,
     DateTimeOffset Timestamp,
-    Guid GuardaPersonaId);
+    Guid GuardaPersonaId,
+    IReadOnlyList<PorteriaCampoValorDto>? CamposValores = null);
 
 public record RegistrarVisitaRequest(
     TipoEventoAccesoPorteria TipoEvento,
@@ -114,7 +115,30 @@ public record RegistrarVisitaRequest(
     Guid? AutorizacionId,
     Guid? VisitanteFrecuenteId,
     string? Observacion,
-    bool AvisoTratamientoConfirmado);
+    bool AvisoTratamientoConfirmado,
+    IReadOnlyList<PorteriaCampoValorDto>? CamposValores = null);
+
+// ===========================================================================
+// Campos personalizados del modulo (estilo CUBOT.travels)
+// ===========================================================================
+
+public record PorteriaCampoDto(
+    Guid Id, string Label, int Orden,
+    TipoCampoTablero Tipo = TipoCampoTablero.Texto,
+    string? Opciones = null,
+    bool MostrarEnFiltro = false,
+    int Columna = 1,
+    string? Descripcion = null);
+
+public record GuardarPorteriaCampoRequest(
+    string Label,
+    TipoCampoTablero Tipo = TipoCampoTablero.Texto,
+    string? Opciones = null,
+    bool MostrarEnFiltro = false,
+    int Columna = 1,
+    string? Descripcion = null);
+
+public record PorteriaCampoValorDto(Guid CampoId, string? Valor);
 
 // ===========================================================================
 // Vehiculos
@@ -208,12 +232,21 @@ public record NovedadDto(
     Guid Id,
     Guid TurnoId,
     Guid GuardaPersonaId,
+    TipoNovedadPorteria Tipo,
     string Descripcion,
+    DestinoNovedad? DestinoTipo,
+    Guid? DestinoId,
+    string? DestinoNombre,
     bool GeneraTarea,
     Guid? TareaId,
     DateTimeOffset CreadoAt);
 
-public record CrearNovedadRequest(string Descripcion, bool GeneraTarea);
+public record CrearNovedadRequest(
+    string Descripcion,
+    bool GeneraTarea,
+    TipoNovedadPorteria Tipo = TipoNovedadPorteria.General,
+    DestinoNovedad? DestinoTipo = null,
+    Guid? DestinoId = null);
 
 // ===========================================================================
 // Panel monitoreo + configuracion

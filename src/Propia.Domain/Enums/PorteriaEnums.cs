@@ -109,3 +109,21 @@ public enum SemaforoPaquete
     Amarillo = 2,
     Rojo = 3
 }
+
+/// <summary>Tipo de novedad de turno reportada en la minuta. Spec 2.12 seccion 12.</summary>
+public enum TipoNovedadPorteria
+{
+    General = 1,
+    Dano = 2,
+    Reclamo = 3,
+    Seguridad = 4,
+    Mantenimiento = 5
+}
+
+/// <summary>Destino al que se asigna una novedad: inmueble, zona comun o equipo.</summary>
+public enum DestinoNovedad
+{
+    UnidadPrivada = 1,
+    ZonaComun = 2,
+    Equipo = 3
+}

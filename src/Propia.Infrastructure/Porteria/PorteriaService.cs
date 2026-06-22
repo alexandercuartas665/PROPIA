@@ -394,6 +394,21 @@ public class PorteriaService : IPorteriaService
             }
         }
 
+        // Campos personalizados: serializa a JSON solo los campos validos del tenant.
+        string? camposJson = null;
+        if (req.CamposValores is { Count: > 0 })
+        {
+            var validos = (await _db.PorteriaCampos.Where(c => c.TenantId == tenantId).Select(c => c.Id).ToListAsync(ct)).ToHashSet();
+            var dict = new Dictionary<string, string?>();
+            foreach (var v in req.CamposValores)
+            {
+                if (!validos.Contains(v.CampoId)) continue;
+                var val = string.IsNullOrWhiteSpace(v.Valor) ? null : v.Valor.Trim();
+                if (val is not null) dict[v.CampoId.ToString()] = val;
+            }
+            if (dict.Count > 0) camposJson = JsonSerializer.Serialize(dict);
+        }
+
         var r = new RegistroVisita
         {
             TenantId = tenantId,
@@ -410,7 +425,8 @@ public class PorteriaService : IPorteriaService
             Observacion = req.Observacion?.Trim(),
             Timestamp = DateTimeOffset.UtcNow,
             GuardaPersonaId = turno.GuardaPersonaId,
-            AvisoTratamientoConfirmado = req.AvisoTratamientoConfirmado
+            AvisoTratamientoConfirmado = req.AvisoTratamientoConfirmado,
+            CamposValoresJson = camposJson
         };
         _db.RegistrosVisita.Add(r);
 
@@ -465,7 +481,79 @@ public class PorteriaService : IPorteriaService
         else if (r.DestinoTipo == DestinoVisita.ZonaComun && r.DestinoId.HasValue)
             destinoNombre = await _db.ZonasComunes.Where(z => z.Id == r.DestinoId).Select(z => z.Nombre).FirstOrDefaultAsync(ct);
         return new RegistroVisitaDto(r.Id, r.TurnoId, r.TipoEvento, r.TipoVisitante, r.Nombre, r.Documento,
-            r.DestinoTipo, r.DestinoId, destinoNombre, r.AutorizacionId, r.Observacion, r.Timestamp, r.GuardaPersonaId);
+            r.DestinoTipo, r.DestinoId, destinoNombre, r.AutorizacionId, r.Observacion, r.Timestamp, r.GuardaPersonaId,
+            ParseCamposValores(r.CamposValoresJson));
+    }
+
+    private static IReadOnlyList<PorteriaCampoValorDto>? ParseCamposValores(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            var dict = JsonSerializer.Deserialize<Dictionary<string, string?>>(json);
+            if (dict is null || dict.Count == 0) return null;
+            var list = new List<PorteriaCampoValorDto>();
+            foreach (var kv in dict)
+                if (Guid.TryParse(kv.Key, out var id)) list.Add(new PorteriaCampoValorDto(id, kv.Value));
+            return list;
+        }
+        catch { return null; }
+    }
+
+    // ----- Campos personalizados (estilo CUBOT.travels) -----
+    private static int ClampCol(int c) => c < 1 ? 1 : (c > 2 ? 2 : c);
+
+    public async Task<IReadOnlyList<PorteriaCampoDto>> ListarCamposAsync(CancellationToken ct)
+        => await _db.PorteriaCampos.AsNoTracking().OrderBy(c => c.Orden)
+            .Select(c => new PorteriaCampoDto(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones, c.MostrarEnFiltro, c.Columna, c.Descripcion))
+            .ToListAsync(ct);
+
+    public async Task<PorteriaCampoDto> CrearCampoAsync(GuardarPorteriaCampoRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Label) || req.Label.Trim().Length < 2)
+            throw new InvalidOperationException("Etiqueta minimo 2 caracteres.");
+        var tenantId = RequireTenantId();
+        var lab = req.Label.Trim();
+        if (await _db.PorteriaCampos.AnyAsync(c => c.Label == lab, ct))
+            throw new InvalidOperationException("Ya existe un campo con esa etiqueta.");
+        var orden = (await _db.PorteriaCampos.Select(c => (int?)c.Orden).MaxAsync(ct) ?? 0) + 1;
+        var c2 = new PorteriaCampo
+        {
+            TenantId = tenantId, Label = lab, Orden = orden, Tipo = req.Tipo,
+            Opciones = string.IsNullOrWhiteSpace(req.Opciones) ? null : req.Opciones.Trim(),
+            MostrarEnFiltro = req.MostrarEnFiltro, Columna = ClampCol(req.Columna),
+            Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim()
+        };
+        _db.PorteriaCampos.Add(c2);
+        await _db.SaveChangesAsync(ct);
+        return new PorteriaCampoDto(c2.Id, c2.Label, c2.Orden, c2.Tipo, c2.Opciones, c2.MostrarEnFiltro, c2.Columna, c2.Descripcion);
+    }
+
+    public async Task<bool> ActualizarCampoAsync(Guid campoId, GuardarPorteriaCampoRequest req, CancellationToken ct)
+    {
+        var c = await _db.PorteriaCampos.FirstOrDefaultAsync(x => x.Id == campoId, ct);
+        if (c is null) return false;
+        if (string.IsNullOrWhiteSpace(req.Label) || req.Label.Trim().Length < 2)
+            throw new InvalidOperationException("Etiqueta minimo 2 caracteres.");
+        var lab = req.Label.Trim();
+        if (await _db.PorteriaCampos.AnyAsync(x => x.Label == lab && x.Id != campoId, ct))
+            throw new InvalidOperationException("Ya existe un campo con esa etiqueta.");
+        c.Label = lab; c.Tipo = req.Tipo;
+        c.Opciones = string.IsNullOrWhiteSpace(req.Opciones) ? null : req.Opciones.Trim();
+        c.MostrarEnFiltro = req.MostrarEnFiltro; c.Columna = ClampCol(req.Columna);
+        c.Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim();
+        c.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> EliminarCampoAsync(Guid campoId, CancellationToken ct)
+    {
+        var c = await _db.PorteriaCampos.FirstOrDefaultAsync(x => x.Id == campoId, ct);
+        if (c is null) return false;
+        _db.PorteriaCampos.Remove(c);
+        await _db.SaveChangesAsync(ct);
+        return true;
     }
 
     public async Task<IReadOnlyList<RegistroVisitaDto>> ListarVisitasAsync(Guid? turnoId, DateOnly? fecha, CancellationToken ct)
@@ -761,7 +849,10 @@ public class PorteriaService : IPorteriaService
             TenantId = tenantId,
             TurnoId = turnoId,
             GuardaPersonaId = turno.GuardaPersonaId,
+            Tipo = req.Tipo,
             Descripcion = req.Descripcion.Trim(),
+            DestinoTipo = req.DestinoTipo,
+            DestinoId = req.DestinoTipo is null ? null : req.DestinoId,
             GeneraTarea = req.GeneraTarea && cfg.GeneraTareaDesdeNovedad,
             TareaId = null  // RN-14 - integracion 2.10 diferida
         };
@@ -769,12 +860,25 @@ public class PorteriaService : IPorteriaService
         await _db.SaveChangesAsync(ct);
 
         await NotificarAdminsAsync("2.12", n.Id,
-            "Novedad de porteria",
-            $"El guarda reporto una novedad: {n.Descripcion}",
-            n.GeneraTarea ? Domain.Enums.PrioridadNotificacion.Alta : Domain.Enums.PrioridadNotificacion.Normal,
+            $"Novedad de porteria ({n.Tipo})",
+            $"El guarda reporto una novedad ({n.Tipo}): {n.Descripcion}",
+            n.GeneraTarea || n.Tipo is TipoNovedadPorteria.Dano or TipoNovedadPorteria.Seguridad ? Domain.Enums.PrioridadNotificacion.Alta : Domain.Enums.PrioridadNotificacion.Normal,
             ct);
 
-        return new NovedadDto(n.Id, n.TurnoId, n.GuardaPersonaId, n.Descripcion, n.GeneraTarea, n.TareaId, n.CreatedAt);
+        var nombre = await ResolverDestinoNovedadAsync(n.DestinoTipo, n.DestinoId, ct);
+        return new NovedadDto(n.Id, n.TurnoId, n.GuardaPersonaId, n.Tipo, n.Descripcion, n.DestinoTipo, n.DestinoId, nombre, n.GeneraTarea, n.TareaId, n.CreatedAt);
+    }
+
+    private async Task<string?> ResolverDestinoNovedadAsync(DestinoNovedad? tipo, Guid? id, CancellationToken ct)
+    {
+        if (tipo is null || id is null) return null;
+        return tipo switch
+        {
+            DestinoNovedad.UnidadPrivada => await _db.UnidadesPrivadas.Where(u => u.Id == id).Select(u => u.Numero).FirstOrDefaultAsync(ct),
+            DestinoNovedad.ZonaComun => await _db.ZonasComunes.Where(z => z.Id == id).Select(z => z.Nombre).FirstOrDefaultAsync(ct),
+            DestinoNovedad.Equipo => await _db.EquiposActivos.Where(e => e.Id == id).Select(e => e.Nombre).FirstOrDefaultAsync(ct),
+            _ => null
+        };
     }
 
     public async Task<IReadOnlyList<NovedadDto>> ListarNovedadesAsync(Guid? turnoId, DateOnly? fecha, CancellationToken ct)
@@ -787,9 +891,24 @@ public class PorteriaService : IPorteriaService
             var fin = new DateTimeOffset(DateTime.SpecifyKind(f.ToDateTime(TimeOnly.MaxValue), DateTimeKind.Utc));
             q = q.Where(n => n.CreatedAt >= ini && n.CreatedAt <= fin);
         }
-        return await q.OrderByDescending(n => n.CreatedAt).Take(100)
-            .Select(n => new NovedadDto(n.Id, n.TurnoId, n.GuardaPersonaId, n.Descripcion, n.GeneraTarea, n.TareaId, n.CreatedAt))
-            .ToListAsync(ct);
+        var rows = await q.OrderByDescending(n => n.CreatedAt).Take(100).ToListAsync(ct);
+
+        var uIds = rows.Where(n => n.DestinoTipo == DestinoNovedad.UnidadPrivada && n.DestinoId != null).Select(n => n.DestinoId!.Value).Distinct().ToList();
+        var zIds = rows.Where(n => n.DestinoTipo == DestinoNovedad.ZonaComun && n.DestinoId != null).Select(n => n.DestinoId!.Value).Distinct().ToList();
+        var eIds = rows.Where(n => n.DestinoTipo == DestinoNovedad.Equipo && n.DestinoId != null).Select(n => n.DestinoId!.Value).Distinct().ToList();
+        var uMap = uIds.Count == 0 ? new Dictionary<Guid, string>() : await _db.UnidadesPrivadas.Where(u => uIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.Numero, ct);
+        var zMap = zIds.Count == 0 ? new Dictionary<Guid, string>() : await _db.ZonasComunes.Where(z => zIds.Contains(z.Id)).ToDictionaryAsync(z => z.Id, z => z.Nombre, ct);
+        var eMap = eIds.Count == 0 ? new Dictionary<Guid, string>() : await _db.EquiposActivos.Where(e => eIds.Contains(e.Id)).ToDictionaryAsync(e => e.Id, e => e.Nombre, ct);
+
+        string? NombreDe(NovedadTurno n) => n.DestinoTipo switch
+        {
+            DestinoNovedad.UnidadPrivada => n.DestinoId is { } id && uMap.TryGetValue(id, out var v) ? v : null,
+            DestinoNovedad.ZonaComun => n.DestinoId is { } id && zMap.TryGetValue(id, out var v) ? v : null,
+            DestinoNovedad.Equipo => n.DestinoId is { } id && eMap.TryGetValue(id, out var v) ? v : null,
+            _ => null
+        };
+
+        return rows.Select(n => new NovedadDto(n.Id, n.TurnoId, n.GuardaPersonaId, n.Tipo, n.Descripcion, n.DestinoTipo, n.DestinoId, NombreDe(n), n.GeneraTarea, n.TareaId, n.CreatedAt)).ToList();
     }
 
     // ===========================================================================

@@ -121,9 +121,65 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [HttpPut("unidades-personas/{id:guid}")]
+    public async Task<IActionResult> EditarPersonaUnidad(Guid id, [FromBody] AgregarPersonaUnidadRequest req, CancellationToken ct)
+    {
+        try { var r = await _svc.EditarPersonaUnidadAsync(id, req, ct); return r is null ? NotFound() : Ok(r); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     [HttpDelete("unidades-personas/{id:guid}")]
     public async Task<IActionResult> EliminarPersonaUnidad(Guid id, CancellationToken ct)
         => await _svc.EliminarPersonaUnidadAsync(id, ct) ? NoContent() : NotFound();
+
+    // ---------- Campos personalizados de unidad (definicion por copropiedad + valor por unidad) ----------
+    [HttpGet("unidades-campos")]
+    public async Task<IActionResult> ListCamposDefinicion(CancellationToken ct) => Ok(await _svc.ListCamposDefinicionAsync(ct));
+
+    [HttpPost("unidades-campos")]
+    public async Task<IActionResult> CrearCampoDefinicion([FromBody] CrearCampoDefinicionRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.CrearCampoDefinicionAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpDelete("unidades-campos/{definicionId:guid}")]
+    public async Task<IActionResult> EliminarCampoDefinicion(Guid definicionId, CancellationToken ct)
+        => await _svc.EliminarCampoDefinicionAsync(definicionId, ct) ? NoContent() : NotFound();
+
+    [HttpGet("unidades/{id:guid}/campos")]
+    public async Task<IActionResult> ListCamposUnidad(Guid id, CancellationToken ct) => Ok(await _svc.ListCamposUnidadAsync(id, ct));
+
+    [HttpPut("unidades/{id:guid}/campos/{definicionId:guid}")]
+    public async Task<IActionResult> SetCampoValor(Guid id, Guid definicionId, [FromBody] SetCampoValorRequest req, CancellationToken ct)
+    {
+        try { await _svc.SetCampoValorUnidadAsync(id, definicionId, req, ct); return NoContent(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    // ---------- Documentos / anexos de una unidad ----------
+    [HttpGet("unidades/{id:guid}/documentos")]
+    public async Task<IActionResult> ListDocumentosUnidad(Guid id, CancellationToken ct) => Ok(await _svc.ListDocumentosUnidadAsync(id, ct));
+
+    [HttpPost("unidades/{id:guid}/documentos")]
+    [RequestSizeLimit(11_000_000)]
+    public async Task<IActionResult> SubirDocumentoUnidad(Guid id, IFormFile file, CancellationToken ct)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
+        if (file is null || file.Length == 0) return BadRequest(new { error = "Archivo vacio." });
+        if (file.Length > 10_000_000) return BadRequest(new { error = "Maximo 10 MB." });
+        var ext = System.IO.Path.GetExtension(file.FileName);
+        var key = $"tenants/{tenantId:N}/unidades/{id:N}/docs/{Guid.NewGuid():N}{ext}";
+        await using var stream = file.OpenReadStream();
+        var url = Absolutizar(await _storage.UploadAsync(key, stream, file.ContentType, ct));
+        var dto = await _svc.AgregarDocumentoUnidadAsync(id, file.FileName, url, file.Length, ct);
+        return dto is null ? BadRequest(new { error = "No se pudo registrar el documento." }) : Ok(dto);
+    }
+
+    [HttpDelete("unidades-documentos/{docId:guid}")]
+    public async Task<IActionResult> EliminarDocumentoUnidad(Guid docId, CancellationToken ct)
+        => await _svc.EliminarDocumentoUnidadAsync(docId, ct) ? NoContent() : NotFound();
 
     [HttpGet("unidades/{id:guid}/cuota-consolidada")]
     public async Task<IActionResult> GetCuotaConsolidada(Guid id, CancellationToken ct)

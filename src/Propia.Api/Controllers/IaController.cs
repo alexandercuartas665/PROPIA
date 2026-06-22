@@ -17,6 +17,8 @@ public class IaController : ControllerBase
     private readonly IWhatsAppLineService _lines;
     private readonly IWhatsAppConnectorService _connector;
     private readonly IAiAgentService _agents;
+    private readonly IAiAgentLineBindingService _bindings;
+    private readonly IAiAgentCacheService _cache;
     private readonly IAiInferenceService _inference;
     private readonly IAiUsageService _usage;
     private readonly IMcpGateway _mcp;
@@ -27,6 +29,8 @@ public class IaController : ControllerBase
         IWhatsAppLineService lines,
         IWhatsAppConnectorService connector,
         IAiAgentService agents,
+        IAiAgentLineBindingService bindings,
+        IAiAgentCacheService cache,
         IAiInferenceService inference,
         IAiUsageService usage,
         IMcpGateway mcp,
@@ -36,6 +40,8 @@ public class IaController : ControllerBase
         _lines = lines;
         _connector = connector;
         _agents = agents;
+        _bindings = bindings;
+        _cache = cache;
         _inference = inference;
         _usage = usage;
         _mcp = mcp;
@@ -211,6 +217,50 @@ public class IaController : ControllerBase
         var r = await _agents.RestorePromptVersionAsync(id, indice, ct);
         return r is null ? NotFound() : Ok(r);
     }
+
+    // ---------- Lineas WhatsApp atendidas por el agente ----------
+    [HttpGet("agentes/{id:guid}/lineas")]
+    public async Task<IActionResult> LineasAtendidas(Guid id, CancellationToken ct)
+        => Ok(await _bindings.ListForAgentAsync(id, ct));
+
+    [HttpPost("agentes/{id:guid}/lineas")]
+    public async Task<IActionResult> VincularLinea(Guid id, [FromBody] SetAgentLineBindingRequest req, CancellationToken ct)
+        => await _bindings.SetAsync(id, req, ct) ? NoContent() : BadRequest();
+
+    // ---------- Datos cache del agente ----------
+    [HttpGet("agentes/{id:guid}/cache")]
+    public async Task<IActionResult> ListarCache(Guid id, CancellationToken ct)
+        => Ok(await _cache.ListFieldsAsync(id, ct));
+
+    [HttpPost("agentes/{id:guid}/cache")]
+    public async Task<IActionResult> CrearCache(Guid id, [FromBody] CreateAgentCacheFieldRequest req, CancellationToken ct)
+    {
+        var r = await _cache.CreateFieldAsync(id, req, ct);
+        return r is null ? NotFound() : Created("", r);
+    }
+
+    [HttpPut("agentes/cache/{fieldId:guid}")]
+    public async Task<IActionResult> ActualizarCache(Guid fieldId, [FromBody] UpdateAgentCacheFieldRequest req, CancellationToken ct)
+    {
+        var r = await _cache.UpdateFieldAsync(fieldId, req, ct);
+        return r is null ? NotFound() : Ok(r);
+    }
+
+    [HttpDelete("agentes/cache/{fieldId:guid}")]
+    public async Task<IActionResult> EliminarCache(Guid fieldId, CancellationToken ct)
+        => await _cache.DeleteFieldAsync(fieldId, ct) ? NoContent() : NotFound();
+
+    [HttpPost("agentes/{id:guid}/cache/sticky")]
+    public async Task<IActionResult> BulkStickyCache(Guid id, [FromQuery] bool actualizable, CancellationToken ct)
+        => Ok(new { afectados = await _cache.BulkSetFieldsUpdatableAsync(id, actualizable, ct) });
+
+    [HttpGet("agentes/{id:guid}/cache/valores")]
+    public async Task<IActionResult> ValoresCache(Guid id, [FromQuery] Guid? sessionId, CancellationToken ct)
+        => Ok(await _cache.GetValuesAsync(id, sessionId ?? id, ct));
+
+    [HttpDelete("agentes/{id:guid}/cache/valores")]
+    public async Task<IActionResult> LimpiarValoresCache(Guid id, [FromQuery] Guid? sessionId, CancellationToken ct)
+        => Ok(new { borrados = await _cache.ClearValuesAsync(id, sessionId ?? id, ct) });
 
     // ---------- Recursos del agente ----------
     [HttpPost("agentes/recursos")]

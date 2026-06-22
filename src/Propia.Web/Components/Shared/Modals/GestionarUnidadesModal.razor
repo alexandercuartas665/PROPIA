@@ -9,6 +9,7 @@
 @using Propia.Domain.Enums
 
 @inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
 
 @* ====== HEADER ====== *@
 <div class="gum-header">
@@ -299,14 +300,6 @@
                                     Agregar @rolLower
                                 </button>
                             }
-                            else if (personasRol.Count == 0)
-                            {
-                                @* En vista, si no hay personas: boton ghost que activa edicion + abre form. *@
-                                <button class="gum-people-add gum-people-add--ghost" type="button" @onclick="() => ActivarEdicionYAgregar(grupo.Rol)" title="Activa la edicion y abre el formulario">
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-                                    Agregar @rolLower
-                                </button>
-                            }
                         </div>
                         @if (personasRol.Count > 0)
                         {
@@ -324,6 +317,9 @@
                                             </div>
                                             @if (_editMode)
                                             {
+                                                <button class="gum-person-edit" type="button" @onclick="() => EditarPersona(p)" title="Editar datos">
+                                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                                </button>
                                                 <button class="gum-person-del" type="button" @onclick="() => EliminarPersona(p.Id)" title="Quitar">
                                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
                                                 </button>
@@ -403,8 +399,8 @@
                                 <button class="gum-pf-add" type="button" @onclick="AddTel">+ Anadir telefono</button>
 
                                 <div class="gum-pf-footer">
-                                    <button class="gum-btn-ghost" type="button" @onclick="() => _formRol = null">Cancelar</button>
-                                    <button class="gum-btn-brand" type="button" @onclick="GuardarPersona" disabled="@(_busy || !PersonaFormValido)">Guardar</button>
+                                    <button class="gum-btn-ghost" type="button" @onclick="CancelarFormPersona">Cancelar</button>
+                                    <button class="gum-btn-brand" type="button" @onclick="GuardarPersona" disabled="@(_busy || !PersonaFormValido)">@(_editPersonaId is not null ? "Guardar cambios" : "Guardar")</button>
                                 </div>
                             </div>
                         }
@@ -541,19 +537,23 @@
                             </button>
                         }
                     </div>
-                    @if (_camposPersonalizados.Count > 0)
+                    @if (_campos.Count > 0)
                     {
                         <div class="gum-cf-grid">
-                            @foreach (var (k, v) in _camposPersonalizados)
+                            @foreach (var c in _campos)
                             {
                                 <div class="gum-cf-cell">
-                                    <div class="gum-cf-lbl">@k</div>
-                                    <div class="gum-cf-val">@v</div>
+                                    <div class="gum-cf-lbl">@c.Label</div>
                                     @if (_editMode)
                                     {
-                                        <button class="gum-cf-del" type="button" @onclick="() => _camposPersonalizados.Remove(k)" title="Quitar">
+                                        <input class="gum-input gum-cf-input" value="@c.Valor" @onchange="(e) => GuardarValorCampo(c, e.Value?.ToString())" placeholder="Sin dato" />
+                                        <button class="gum-cf-del" type="button" @onclick="() => EliminarCampoDefinicion(c)" title="Quitar campo de TODAS las unidades">
                                             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
                                         </button>
+                                    }
+                                    else
+                                    {
+                                        <div class="gum-cf-val">@(string.IsNullOrWhiteSpace(c.Valor) ? "Sin dato" : c.Valor)</div>
                                     }
                                 </div>
                             }
@@ -562,14 +562,14 @@
                     @if (_cfOpen)
                     {
                         <div class="gum-cf-form">
-                            <input class="gum-input" @bind="_cfLabel" @bind:event="oninput" placeholder="Nombre del campo (ej. N de medidor)" />
-                            <input class="gum-input" @bind="_cfValor" @bind:event="oninput" placeholder="Valor" />
-                            <button class="gum-btn-brand" type="button" @onclick="AgregarCampoPersonalizado" disabled="@(string.IsNullOrWhiteSpace(_cfLabel) || string.IsNullOrWhiteSpace(_cfValor))">Guardar</button>
+                            <input class="gum-input" @bind="_cfLabel" @bind:event="oninput" placeholder="Nombre del campo (ej. Mascotas, N de medidor)" />
+                            <input class="gum-input" @bind="_cfValor" @bind:event="oninput" placeholder="Valor para esta unidad (opcional)" />
+                            <button class="gum-btn-brand" type="button" @onclick="AgregarCampoPersonalizado" disabled="@(_busy || string.IsNullOrWhiteSpace(_cfLabel))">Crear campo</button>
                         </div>
                     }
-                    @if (_camposPersonalizados.Count == 0 && !_cfOpen)
+                    @if (_campos.Count == 0 && !_cfOpen)
                     {
-                        <div class="gum-people-empty">Aun no hay campos personalizados. Usa "Agregar campo" para extender la ficha tecnica (ej. medidor de agua, marca de cerradura, color de fachada...).</div>
+                        <div class="gum-people-empty">Aun no hay campos personalizados. Los campos que crees aqui (ej. Mascotas) se piden en TODAS las unidades de la copropiedad.</div>
                     }
                 </div>
 
@@ -598,11 +598,50 @@
                 @* === DOCUMENTOS (proto L.785-792) === *@
                 <div class="gum-unit-card">
                     <div class="gum-unit-eyebrow">DOCUMENTOS</div>
-                    <label class="gum-doc-upload">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
-                        Subir documento
-                        <input type="file" accept="image/*,application/pdf" />
-                    </label>
+                    @if (_documentos.Count > 0)
+                    {
+                        <div class="gum-doc-list">
+                            @foreach (var d in _documentos)
+                            {
+                                <div class="gum-doc-item">
+                                    <a class="gum-doc-link" href="@d.Url" target="_blank" rel="noopener" title="@d.Nombre">
+                                        @if (EsImagen(d.Nombre))
+                                        {
+                                            <span class="gum-doc-thumb" style="background-image:url('@d.Url')"></span>
+                                        }
+                                        else
+                                        {
+                                            <span class="gum-doc-ic">
+                                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                                            </span>
+                                        }
+                                        <span class="gum-doc-meta">
+                                            <span class="gum-doc-name">@d.Nombre</span>
+                                            <span class="gum-doc-sub">@FmtTamano(d.Tamano) · ver</span>
+                                        </span>
+                                    </a>
+                                    @if (_editMode)
+                                    {
+                                        <button class="gum-cf-del gum-doc-x" type="button" @onclick="() => EliminarDocumento(d.Id)" title="Quitar">
+                                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                        </button>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                    @if (_editMode)
+                    {
+                        <label class="gum-doc-upload">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
+                            @(_subiendoDoc ? "Subiendo..." : "Subir documentos")
+                            <InputFile OnChange="SubirDocumento" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx" multiple hidden disabled="@_subiendoDoc" />
+                        </label>
+                    }
+                    @if (_documentos.Count == 0 && !_editMode)
+                    {
+                        <div class="gum-people-empty">Sin documentos. Entra a "Editar ficha" para adjuntar anexos.</div>
+                    }
                 </div>
 
                 @* === FACTURAS - HISTORIAL DE PAGOS (proto L.767-783) === *@
@@ -915,8 +954,6 @@
         cursor: pointer;
     }
     .gum-people-add:hover { background: #E6DEFA; }
-    .gum-people-add--ghost { background: transparent; border-style: dashed; color: #7C98B6; border-color: #D7DFEA; }
-    .gum-people-add--ghost:hover { background: var(--propia-brand-soft, #F1ECFD); color: var(--propia-brand, #6D4FE3); border-color: var(--propia-brand, #6D4FE3); border-style: solid; }
     .gum-people-empty {
         font-size: 11.5px; color: #A6B7C8;
         padding: 4px 2px 10px;
@@ -947,6 +984,12 @@
         color: #C3D0DD; border: 0; background: transparent; cursor: pointer; flex-shrink: 0;
     }
     .gum-person-del:hover { background: #FDE7E7; color: #D7263D; }
+    .gum-person-edit {
+        width: 24px; height: 24px; border-radius: 6px;
+        display: flex; align-items: center; justify-content: center;
+        color: #C3D0DD; border: 0; background: transparent; cursor: pointer; flex-shrink: 0;
+    }
+    .gum-person-edit:hover { background: var(--propia-brand-soft, #F1ECFD); color: var(--propia-brand, #6D4FE3); }
     .gum-person-contact {
         display: flex; align-items: center; gap: 6px;
         font-size: 11.5px; color: #516F90;
@@ -1064,6 +1107,7 @@
         color: #C3D0DD; border: 0; background: transparent; cursor: pointer;
     }
     .gum-cf-del:hover { background: #FDE7E7; color: #D7263D; }
+    .gum-cf-input { margin-top: 4px; width: 100%; padding: 6px 8px; font-size: 12px; }
     .gum-cf-form {
         display: flex; gap: 7px; align-items: center;
         background: #FBFAFE; border: 1px dashed #DCD2F8; border-radius: 10px;
@@ -1099,6 +1143,20 @@
     }
     .gum-doc-upload:hover { background: #F5F1FE; border-color: var(--propia-brand, #6D4FE3); }
     .gum-doc-upload input[type="file"] { display: none; }
+    .gum-doc-list { display: flex; flex-direction: column; gap: 7px; margin-bottom: 9px; }
+    .gum-doc-item { display: flex; align-items: center; gap: 6px; }
+    .gum-doc-link {
+        flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px;
+        padding: 7px 9px; border: 1px solid #E1E8EE; border-radius: 9px;
+        text-decoration: none; background: #fff;
+    }
+    .gum-doc-link:hover { border-color: var(--propia-brand, #6D4FE3); box-shadow: 0 6px 14px rgba(109,79,227,.12); }
+    .gum-doc-thumb { width: 30px; height: 30px; border-radius: 7px; background-size: cover; background-position: center; flex-shrink: 0; border: 1px solid #E1E8EE; }
+    .gum-doc-ic { width: 30px; height: 30px; border-radius: 7px; background: var(--propia-brand-soft, #F1ECFD); color: var(--propia-brand, #6D4FE3); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .gum-doc-meta { min-width: 0; display: flex; flex-direction: column; }
+    .gum-doc-name { font-size: 11.5px; font-weight: 600; color: #33475B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .gum-doc-sub { font-size: 10px; color: #A6B7C8; }
+    .gum-doc-x { position: static; }
 
     /* Dark mode minimal */
     [data-bs-theme="dark"] .gum-header,
@@ -1133,15 +1191,27 @@
     private bool _nuevoVinculoFactura;
 
     // Campos personalizados (Ficha tecnica)
-    private Dictionary<string, string> _camposPersonalizados = new();
+    private List<CampoVM> _campos = new();  // definiciones (tenant) + valor de la unidad seleccionada
     private bool _cfOpen;
     private string _cfLabel = "";
     private string _cfValor = "";
+
+    private List<UnidadDocumentoDto> _documentos = new();
+    private bool _subiendoDoc;
+
+    private class CampoVM
+    {
+        public Guid DefinicionId { get; set; }
+        public string Label { get; set; } = "";
+        public int Orden { get; set; }
+        public string? Valor { get; set; }
+    }
 
     // Personas vinculadas a la unidad
     private List<UnidadPersonaDto> _personas = new();
     private RolUnidadPersona? _formRol;
     private PersonaForm _personaForm = new();
+    private Guid? _editPersonaId;  // null = agregar; con valor = editando esa persona
 
     private class PersonaForm
     {
@@ -1279,9 +1349,13 @@
         _vinculos.Clear();
         _personas.Clear();
         _cuota = null;
-        _camposPersonalizados.Clear();
+        _campos.Clear();
+        _documentos.Clear();
+        _subiendoDoc = false;
+        _cfLabel = ""; _cfValor = "";
         _cfOpen = false;
         _formRol = null;
+        _editPersonaId = null;
         _personaForm = new PersonaForm();
         _nuevoVinculoUnidadId = Guid.Empty;
         _nuevoVinculoFactura = false;
@@ -1300,24 +1374,57 @@
             _cuota = await Auth().GetFromJsonAsync<CuotaConsolidadaDto>($"/api/mi-copropiedad/unidades/{u.Id}/cuota-consolidada");
         }
         catch { _cuota = null; }
+        await CargarCamposAsync();
+        try
+        {
+            _documentos = await Auth().GetFromJsonAsync<List<UnidadDocumentoDto>>($"/api/mi-copropiedad/unidades/{u.Id}/documentos") ?? new();
+        }
+        catch { _documentos = new(); }
+    }
+
+    private async Task CargarCamposAsync()
+    {
+        if (_selected is null) { _campos = new(); return; }
+        try
+        {
+            var dtos = await Auth().GetFromJsonAsync<List<UnidadCampoDto>>($"/api/mi-copropiedad/unidades/{_selected.Id}/campos") ?? new();
+            _campos = dtos.Select(d => new CampoVM { DefinicionId = d.DefinicionId, Label = d.Label, Orden = d.Orden, Valor = d.Valor }).ToList();
+        }
+        catch { _campos = new(); }
     }
 
     private void AbrirFormPersona(RolUnidadPersona rol)
     {
+        _editPersonaId = null;
         if (_formRol == rol) { _formRol = null; return; }
         _formRol = rol;
         _personaForm = new PersonaForm();
     }
 
-    /// <summary>
-    /// Activa modo edicion (si no estaba) y abre el form de la persona. UX: el "+ Agregar" en vista
-    /// es un atajo sin que el usuario tenga que saber de "Editar ficha" primero.
-    /// </summary>
-    private void ActivarEdicionYAgregar(RolUnidadPersona rol)
+    private void EditarPersona(UnidadPersonaDto p)
     {
-        _editMode = true;
-        AbrirFormPersona(rol);
+        _formRol = p.Rol;
+        _editPersonaId = p.Id;
+        string codigo = "+57", numero = "";
+        if (!string.IsNullOrWhiteSpace(p.PersonaTelefono))
+        {
+            var t = p.PersonaTelefono.Trim();
+            if (t.StartsWith("+") && t.Contains(' ')) { var sp = t.Split(' ', 2); codigo = sp[0]; numero = sp[1]; }
+            else numero = t;
+        }
+        _personaForm = new PersonaForm
+        {
+            Documento = p.PersonaDocumento,
+            Nombres = p.PersonaNombres,
+            Apellidos = p.PersonaApellidos,
+            Parentesco = p.Parentesco ?? "",
+            Emails = new List<string> { string.IsNullOrWhiteSpace(p.PersonaEmail) ? "" : p.PersonaEmail! },
+            Telefonos = new List<string> { numero },
+            Codigos = new List<string> { codigo }
+        };
     }
+
+    private void CancelarFormPersona() { _formRol = null; _editPersonaId = null; }
 
     private async Task GuardarPersona()
     {
@@ -1332,15 +1439,25 @@
             _formRol.Value,
             true,
             string.IsNullOrWhiteSpace(_personaForm.Parentesco) ? null : _personaForm.Parentesco.Trim());
-        var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{_selected.Id}/personas", req);
+        HttpResponseMessage resp;
+        if (_editPersonaId is not null)
+            resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades-personas/{_editPersonaId}", req);
+        else
+            resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{_selected.Id}/personas", req);
+
         if (resp.IsSuccessStatusCode)
         {
-            var creada = await resp.Content.ReadFromJsonAsync<UnidadPersonaDto>();
-            if (creada is not null) _personas.Add(creada);
+            var dto = await resp.Content.ReadFromJsonAsync<UnidadPersonaDto>();
+            if (dto is not null)
+            {
+                var idx = _personas.FindIndex(x => x.Id == dto.Id);
+                if (idx >= 0) _personas[idx] = dto; else _personas.Add(dto);
+            }
+            ShowMsg(_editPersonaId is not null ? "Persona actualizada." : "Persona vinculada.", false);
             _formRol = null;
+            _editPersonaId = null;
             _personaForm = new PersonaForm();
             _huboCambios = true;
-            ShowMsg("Persona vinculada.", false);
         }
         else
         {
@@ -1385,6 +1502,7 @@
     {
         _editMode = false;
         _formRol = null;
+        _editPersonaId = null;
         _cfOpen = false;
     }
 
@@ -1529,13 +1647,106 @@
         }
     }
 
-    private void AgregarCampoPersonalizado()
+    private async Task AgregarCampoPersonalizado()
     {
-        if (string.IsNullOrWhiteSpace(_cfLabel) || string.IsNullOrWhiteSpace(_cfValor)) return;
-        _camposPersonalizados[_cfLabel.Trim()] = _cfValor.Trim();
-        _cfLabel = "";
-        _cfValor = "";
-        _cfOpen = false;
+        if (string.IsNullOrWhiteSpace(_cfLabel)) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/unidades-campos",
+                new CrearCampoDefinicionRequest(_cfLabel.Trim()));
+            if (!resp.IsSuccessStatusCode) { ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true); return; }
+            var def = await resp.Content.ReadFromJsonAsync<UnidadCampoDefinicionDto>();
+            await CargarCamposAsync();  // recarga catalogo (incluye el nuevo) + valores de esta unidad
+            // Si capturaron un valor inicial para esta unidad, lo guardamos
+            if (def is not null && !string.IsNullOrWhiteSpace(_cfValor) && _selected is not null)
+            {
+                var valor = _cfValor.Trim();
+                await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades/{_selected.Id}/campos/{def.Id}", new SetCampoValorRequest(valor));
+                var vm = _campos.FirstOrDefault(x => x.DefinicionId == def.Id);
+                if (vm is not null) vm.Valor = valor;
+            }
+            _cfLabel = ""; _cfValor = ""; _cfOpen = false;
+            _huboCambios = true;
+            ShowMsg("Campo creado. Aparece en todas las unidades.", false);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task GuardarValorCampo(CampoVM c, string? valor)
+    {
+        if (_selected is null) return;
+        c.Valor = string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+        await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades/{_selected.Id}/campos/{c.DefinicionId}",
+            new SetCampoValorRequest(c.Valor));
+        _huboCambios = true;
+    }
+
+    private async Task EliminarCampoDefinicion(CampoVM c)
+    {
+        var ok = await Js.InvokeAsync<bool>("confirm",
+            $"Quitar el campo \"{c.Label}\" de TODAS las unidades? Se perderan los valores guardados en cada una.");
+        if (!ok) return;
+        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades-campos/{c.DefinicionId}");
+        if (resp.IsSuccessStatusCode)
+        {
+            _campos.RemoveAll(x => x.DefinicionId == c.DefinicionId);
+            _huboCambios = true;
+        }
+        else { ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true); }
+    }
+
+    private async Task SubirDocumento(InputFileChangeEventArgs e)
+    {
+        if (_selected is null) return;
+        var files = e.GetMultipleFiles(20);
+        if (files.Count == 0) return;
+        _subiendoDoc = true;
+        try
+        {
+            int ok = 0; string? err = null;
+            foreach (var f in files)
+            {
+                if (f.Size > 10_000_000) { err = $"{f.Name}: supera 10 MB."; continue; }
+                using var content = new MultipartFormDataContent();
+                var sc = new StreamContent(f.OpenReadStream(10_000_000));
+                sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                    string.IsNullOrEmpty(f.ContentType) ? "application/octet-stream" : f.ContentType);
+                content.Add(sc, "file", f.Name);
+                var resp = await Auth().PostAsync($"/api/mi-copropiedad/unidades/{_selected.Id}/documentos", content);
+                if (resp.IsSuccessStatusCode)
+                {
+                    var dto = await resp.Content.ReadFromJsonAsync<UnidadDocumentoDto>();
+                    if (dto is not null) _documentos.Insert(0, dto);
+                    ok++;
+                }
+                else { err = await resp.Content.ReadAsStringAsync(); }
+            }
+            if (ok > 0) _huboCambios = true;
+            if (err is not null) ShowMsg("Error: " + err, true);
+            else ShowMsg(ok == 1 ? "Documento adjuntado." : $"{ok} documentos adjuntados.", false);
+        }
+        finally { _subiendoDoc = false; }
+    }
+
+    private async Task EliminarDocumento(Guid id)
+    {
+        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades-documentos/{id}");
+        if (resp.IsSuccessStatusCode) { _documentos.RemoveAll(d => d.Id == id); _huboCambios = true; }
+        else { ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true); }
+    }
+
+    private static bool EsImagen(string nombre)
+    {
+        var ext = System.IO.Path.GetExtension(nombre ?? "").ToLowerInvariant();
+        return ext is ".jpg" or ".jpeg" or ".png" or ".webp" or ".gif" or ".bmp";
+    }
+
+    private static string FmtTamano(long bytes)
+    {
+        if (bytes <= 0) return "archivo";
+        var kb = bytes / 1024.0;
+        return kb >= 1024 ? $"{kb / 1024.0:0.#} MB" : $"{Math.Max(1, (int)Math.Round(kb))} KB";
     }
 
     private async Task Rebalancear()

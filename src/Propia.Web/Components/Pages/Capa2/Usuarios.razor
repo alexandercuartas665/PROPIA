@@ -9,11 +9,6 @@
 
 <PageTitle>Usuarios y Accesos - PROPIA</PageTitle>
 
-<div class="mb-4">
-    <h1 class="h3 mb-1 fw-semibold">Usuarios y Accesos</h1>
-    <p class="text-muted mb-0">Gestion de invitaciones, roles y revocaciones del modulo 2.5</p>
-</div>
-
 @if (string.IsNullOrEmpty(_jwt))
 {
     <AuthMessage />
@@ -26,235 +21,627 @@
     return;
 }
 
-@* KPIs por estado *@
-<div class="row g-3 mb-3">
-    <div class="col-md-3">
-        <div class="card kpi-mini @(_tab == EstadoUsuarioTenant.Activo ? "border-primary" : "")" style="cursor:pointer;" @onclick="() => SetTab(EstadoUsuarioTenant.Activo)">
-            <div class="card-body py-3">
-                <div class="text-muted small">Activos</div>
-                <h3 class="mb-0">@(_usuarios?.Count(u => u.Estado == EstadoUsuarioTenant.Activo) ?? 0)</h3>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card kpi-mini @(_tab == EstadoUsuarioTenant.Pendiente ? "border-primary" : "")" style="cursor:pointer;" @onclick="() => SetTab(EstadoUsuarioTenant.Pendiente)">
-            <div class="card-body py-3">
-                <div class="text-muted small">Pendientes</div>
-                <h3 class="mb-0">@(_pendientes?.Count ?? 0)</h3>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card kpi-mini @(_tab == EstadoUsuarioTenant.Inactivo ? "border-primary" : "")" style="cursor:pointer;" @onclick="() => SetTab(EstadoUsuarioTenant.Inactivo)">
-            <div class="card-body py-3">
-                <div class="text-muted small">Inactivos</div>
-                <h3 class="mb-0">@(_usuarios?.Count(u => u.Estado == EstadoUsuarioTenant.Inactivo) ?? 0)</h3>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3 d-flex align-items-center justify-content-end gap-2">
-        <button class="btn" style="background: var(--propia-primary); color: white;" @onclick="() => _showInvitar = true">+ Invitar usuario</button>
-        <a class="btn btn-outline-dark" href="/configuracion/roles">Roles</a>
-    </div>
-</div>
+<div class="usr-wrap">
 
-@* Buscador *@
-<div class="mb-3">
-    <input class="form-control" placeholder="Buscar por nombre, documento, email o rol..." @bind="_query" @bind:event="oninput" @onkeyup="CargarAsync" />
-</div>
-
-@if (!string.IsNullOrEmpty(_msg))
-{
-    <div class="alert @_msgClass py-2 small">@_msg</div>
-}
-
-@if (_tab == EstadoUsuarioTenant.Pendiente)
-{
-    @if (_pendientes is null)
-    {
-        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
-    }
-    else if (_pendientes.Count == 0)
-    {
-        <div class="card p-4 text-center text-muted">Sin invitaciones pendientes.</div>
-    }
-    else
-    {
-        <div class="card">
-            <table class="table table-hover mb-0 align-middle">
-                <thead class="small text-muted bg-light">
-                    <tr><th>Persona</th><th>Documento</th><th>Rol</th><th>Expira</th><th class="text-end">Acciones</th></tr>
-                </thead>
-                <tbody class="small">
-                    @foreach (var i in _pendientes)
-                    {
-                        var iid = i.Id;
-                        <tr>
-                            <td><strong>@i.PersonaNombre</strong></td>
-                            <td>@i.PersonaDocumento</td>
-                            <td><span class="badge bg-light text-dark border">@i.RolNombre</span></td>
-                            <td>
-                                @i.ExpiraAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")
-                                @if (i.ExpiraAt < DateTimeOffset.UtcNow) { <span class="badge bg-warning text-dark ms-1">Expirada</span> }
-                            </td>
-                            <td class="text-end">
-                                <button class="btn btn-sm btn-outline-dark" @onclick="() => CopiarLink(i)">Copiar link</button>
-                                <button class="btn btn-sm btn-outline-dark" @onclick="() => Reenviar(iid)">Reenviar</button>
-                                <button class="btn btn-sm btn-outline-danger" @onclick="() => Cancelar(iid)">Cancelar</button>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+    @* ===================== Encabezado ===================== *@
+    <div class="usr-head">
+        <div>
+            <h1 class="usr-title">Usuarios y Accesos</h1>
+            <p class="usr-sub">Quien puede ingresar y con que permisos. La identidad vive en el Directorio.</p>
         </div>
-    }
-}
-else
-{
-    @if (_usuarios is null)
+        <div class="d-flex gap-2 flex-wrap">
+            <button class="usr-btn-ghost" @onclick="AbrirRoles">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 6 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 4.6 15H4.5a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 6 8.6a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H10a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V8c0 .7.4 1.3 1 1.5h.1a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1 1.5z"></path></svg>
+                Roles y permisos
+            </button>
+            <button class="usr-btn-primary" @onclick="AbrirInvitar">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM19 8v6M22 11h-6"></path></svg>
+                Invitar usuario
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_msg))
     {
-        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+        <div class="alert @_msgClass py-2 small">@_msg</div>
     }
-    else
+
+    @* ===================== Tarjetas de estado ===================== *@
+    <div class="usr-stats">
+        <div class="usr-stat @(_tab == EstadoUsuarioTenant.Activo ? "active" : "")" @onclick="() => SetTab(EstadoUsuarioTenant.Activo)">
+            <div class="usr-stat-label"><span class="usr-dot" style="background:#1A8754"></span>Activos</div>
+            <div class="usr-stat-num">@(_usuarios?.Count(u => u.Estado == EstadoUsuarioTenant.Activo) ?? 0)</div>
+        </div>
+        <div class="usr-stat @(_tab == EstadoUsuarioTenant.Pendiente ? "active" : "")" @onclick="() => SetTab(EstadoUsuarioTenant.Pendiente)">
+            <div class="usr-stat-label"><span class="usr-dot" style="background:#B45309"></span>Pendientes</div>
+            <div class="usr-stat-num">@(_pendientes?.Count ?? 0)</div>
+        </div>
+        <div class="usr-stat @(_tab == EstadoUsuarioTenant.Inactivo ? "active" : "")" @onclick="() => SetTab(EstadoUsuarioTenant.Inactivo)">
+            <div class="usr-stat-label"><span class="usr-dot" style="background:#C3D0DD"></span>Inactivos</div>
+            <div class="usr-stat-num">@(_usuarios?.Count(u => u.Estado == EstadoUsuarioTenant.Inactivo) ?? 0)</div>
+        </div>
+    </div>
+
+    @* ===================== Tabs ===================== *@
+    <div class="usr-tabs">
+        <button class="usr-tab @(_tab == EstadoUsuarioTenant.Activo ? "active" : "")" @onclick="() => SetTab(EstadoUsuarioTenant.Activo)">Activos</button>
+        <button class="usr-tab @(_tab == EstadoUsuarioTenant.Pendiente ? "active" : "")" @onclick="() => SetTab(EstadoUsuarioTenant.Pendiente)">Pendientes</button>
+        <button class="usr-tab @(_tab == EstadoUsuarioTenant.Inactivo ? "active" : "")" @onclick="() => SetTab(EstadoUsuarioTenant.Inactivo)">Inactivos</button>
+    </div>
+
+    @* ===================== Buscador ===================== *@
+    <input class="usr-search" placeholder="Buscar por nombre, documento, email o rol..." @bind="_query" @bind:event="oninput" @onkeyup="CargarAsync" />
+
+    @* ===================== Tabla Pendientes (invitaciones) ===================== *@
+    @if (_tab == EstadoUsuarioTenant.Pendiente)
     {
-        var lista = _usuarios.Where(u => u.Estado == _tab).ToList();
-        @if (lista.Count == 0)
+        @if (_pendientes is null)
         {
-            <div class="card p-4 text-center text-muted">Sin usuarios @_tab.ToString().ToLower() en esta copropiedad.</div>
+            <div class="text-center py-5"><div class="spinner-border" style="color:#6D4FE3"></div></div>
+        }
+        else if (_pendientes.Count == 0)
+        {
+            <div class="usr-empty">Sin invitaciones pendientes.</div>
         }
         else
         {
-            <div class="card">
-                <table class="table table-hover mb-0 align-middle">
-                    <thead class="small text-muted bg-light">
-                        <tr><th>Usuario</th><th>Rol</th><th>Estado</th><th>Ultimo acceso</th><th>Cuenta</th><th class="text-end">Acciones</th></tr>
-                    </thead>
-                    <tbody class="small">
-                        @foreach (var u in lista)
-                        {
-                            var uid = u.UsuarioTenantId;
-                            <tr>
-                                <td>
-                                    <div class="d-flex align-items-center gap-2">
-                                        <div class="avatar-mini">@Iniciales(u.NombreCompleto)</div>
-                                        <div>
-                                            <strong>@u.NombreCompleto</strong>
-                                            <div class="text-muted small">@(u.Email ?? "-")</div>
-                                        </div>
-                                    </div>
-                                </td>
-                                <td><span class="badge bg-light text-dark border">@u.RolNombre</span></td>
-                                <td>
-                                    @switch (u.Estado)
-                                    {
-                                        case EstadoUsuarioTenant.Activo: <span class="badge bg-success">Activo</span> break;
-                                        case EstadoUsuarioTenant.Inactivo: <span class="badge bg-secondary">Inactivo</span> break;
-                                        default: <span class="badge bg-warning text-dark">@u.Estado</span> break;
-                                    }
-                                </td>
-                                <td>@(u.UltimoAcceso?.LocalDateTime.ToString("yyyy-MM-dd HH:mm") ?? "Sin registro")</td>
-                                <td>
-                                    @if (u.TieneCuentaPropia) { <span class="badge bg-info text-dark">Con cuenta</span> }
-                                    else { <span class="badge bg-light text-dark border">Solo en directorio</span> }
-                                </td>
-                                <td class="text-end">
-                                    @if (u.Estado == EstadoUsuarioTenant.Activo)
-                                    {
-                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => RevocarAccesoAsync(uid)">Revocar</button>
-                                    }
-                                    else if (u.Estado == EstadoUsuarioTenant.Inactivo)
-                                    {
-                                        <button class="btn btn-sm btn-outline-dark" @onclick="() => Reactivar(uid)">Reactivar</button>
-                                    }
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
+            <div class="usr-table">
+                <div class="usr-th">
+                    <div style="width:42px;flex-shrink:0"></div>
+                    <div style="width:280px;flex-shrink:0">PERSONA</div>
+                    <div style="flex:1">ROL</div>
+                    <div style="width:170px;flex-shrink:0">ESTADO</div>
+                    <div style="width:240px;flex-shrink:0;text-align:right">ACCIONES</div>
+                </div>
+                @foreach (var i in _pendientes)
+                {
+                    var iid = i.Id;
+                    var vencida = i.ExpiraAt < DateTimeOffset.UtcNow;
+                    <div class="usr-row">
+                        <div class="usr-av">@Iniciales(i.PersonaNombre)</div>
+                        <div style="width:280px;flex-shrink:0;min-width:0">
+                            <div class="usr-name">@i.PersonaNombre</div>
+                            <div class="usr-email">@i.PersonaDocumento</div>
+                        </div>
+                        <div style="flex:1"><span class="usr-rol">@i.RolNombre</span></div>
+                        <div style="width:170px;flex-shrink:0">
+                            @if (vencida)
+                            {
+                                <span class="usr-badge-inact">Invitacion vencida</span>
+                            }
+                            else
+                            {
+                                <span class="usr-badge-pend">Invitacion enviada</span>
+                            }
+                            <div class="usr-email mt-1">Expira @i.ExpiraAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</div>
+                        </div>
+                        <div style="width:240px;flex-shrink:0;text-align:right" class="d-flex gap-1 justify-content-end">
+                            <button class="usr-rowbtn" @onclick="() => CopiarLink(i)">Copiar link</button>
+                            <button class="usr-rowbtn" @onclick="() => Reenviar(iid)">Reenviar</button>
+                            <button class="usr-rowbtn usr-rowbtn-danger" @onclick="() => Cancelar(iid)">Cancelar</button>
+                        </div>
+                    </div>
+                }
             </div>
         }
     }
-}
+    else
+    {
+        @* ===================== Tabla Activos / Inactivos ===================== *@
+        @if (_usuarios is null)
+        {
+            <div class="text-center py-5"><div class="spinner-border" style="color:#6D4FE3"></div></div>
+        }
+        else
+        {
+            var lista = _usuarios.Where(u => u.Estado == _tab).ToList();
+            @if (lista.Count == 0)
+            {
+                <div class="usr-empty">Sin usuarios @_tab.ToString().ToLower() en esta copropiedad.</div>
+            }
+            else
+            {
+                <div class="usr-table">
+                    <div class="usr-th">
+                        <div style="width:42px;flex-shrink:0"></div>
+                        <div style="width:280px;flex-shrink:0">USUARIO</div>
+                        <div style="flex:1">ROL</div>
+                        <div style="width:160px;flex-shrink:0">ULTIMO ACCESO</div>
+                        <div style="width:130px;flex-shrink:0;text-align:right"></div>
+                    </div>
+                    @foreach (var u in lista)
+                    {
+                        var uu = u;
+                        <div class="usr-row">
+                            <div class="usr-av">@Iniciales(u.NombreCompleto)</div>
+                            <div style="width:280px;flex-shrink:0;min-width:0">
+                                <div class="usr-name">@u.NombreCompleto</div>
+                                <div class="usr-email">@(u.Email ?? "Sin correo")</div>
+                            </div>
+                            <div style="flex:1"><span class="usr-rol">@u.RolNombre</span></div>
+                            <div style="width:160px;flex-shrink:0">
+                                @if (u.Estado == EstadoUsuarioTenant.Activo)
+                                {
+                                    <div style="font-size:12.5px;color:#516F90;font-weight:600">@(u.UltimoAcceso?.LocalDateTime.ToString("yyyy-MM-dd HH:mm") ?? "Sin registro")</div>
+                                    <div class="usr-email">@(u.TieneCuentaPropia ? "Con cuenta propia" : "Solo en directorio")</div>
+                                }
+                                else
+                                {
+                                    <span class="usr-badge-inact">Acceso revocado</span>
+                                }
+                            </div>
+                            <div style="width:130px;flex-shrink:0;text-align:right" class="d-flex gap-1 justify-content-end">
+                                @if (u.Estado == EstadoUsuarioTenant.Activo)
+                                {
+                                    <button class="usr-rowbtn" @onclick="() => AbrirEditar(uu)">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                                        Editar
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button class="usr-rowbtn" @onclick="() => Reactivar(uu.UsuarioTenantId)">Reactivar</button>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        }
+    }
+</div>
 
-@* Modal de invitar *@
+@* ============================================================ *@
+@* MODAL: Invitar usuario                                       *@
+@* ============================================================ *@
 @if (_showInvitar)
 {
-    <div class="card border-primary mt-4">
-        <div class="card-body bg-light">
-            <div class="d-flex justify-content-between">
-                <h5>Invitar usuario al sistema</h5>
-                <button class="btn btn-sm btn-outline-dark" @onclick="() => _showInvitar = false">Cerrar</button>
+    <div class="usr-modal-bg" @onclick="CerrarInvitar">
+        <div class="usr-modal" @onclick:stopPropagation="true">
+            <div class="usr-modal-head">
+                <div class="usr-modal-ico">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM19 8v6M22 11h-6"></path></svg>
+                </div>
+                <div class="flex-grow-1">
+                    <div class="usr-modal-title">Invitar usuario</div>
+                    <div class="usr-modal-subtitle">Busca la persona en el Directorio y asignale un rol</div>
+                </div>
+                <button class="usr-modal-x" @onclick="CerrarInvitar">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"></path></svg>
+                </button>
             </div>
-            <p class="text-muted small mb-3">
-                Busca la persona en el Directorio (2.4). Si no existe, agregala primero alli.
-                La invitacion expira en 72 horas (RN-11).
-            </p>
-            <div class="row g-2">
-                <div class="col-md-6">
-                    <label class="form-label small">Buscar persona</label>
-                    <input class="form-control form-control-sm" placeholder="Documento o nombre" @bind="_buscarPersona" @bind:event="oninput" @onkeyup="BuscarPersonas" />
-                    @if (_personasEncontradas.Count > 0 && _personaSel is null)
+            <div class="usr-modal-body">
+                <label class="usr-label">Buscar en el Directorio</label>
+                <input class="usr-input" placeholder="Nombre, documento o email" @bind="_buscarPersona" @bind:event="oninput" @onkeyup="BuscarPersonas" disabled="@(_personaSel is not null)" />
+
+                @if (_personaSel is null)
+                {
+                    @if (_personasEncontradas.Count > 0)
                     {
-                        <div class="list-group list-group-flush mt-1 small" style="max-height:140px; overflow:auto;">
+                        <div class="usr-results">
                             @foreach (var p in _personasEncontradas)
                             {
                                 var pp = p;
-                                <button type="button" class="list-group-item list-group-item-action" @onclick="() => SeleccionarPersona(pp)">
-                                    <strong>@p.Nombres @p.Apellidos</strong> · @p.TipoDocumento @p.Documento
+                                <button type="button" class="usr-result" @onclick="() => SeleccionarPersona(pp)">
+                                    <div class="usr-av" style="width:34px;height:34px;font-size:12px">@Iniciales($"{p.Nombres} {p.Apellidos}")</div>
+                                    <div class="min-w-0">
+                                        <div class="usr-name">@p.Nombres @p.Apellidos</div>
+                                        <div class="usr-email">@p.TipoDocumento @p.Documento @(string.IsNullOrEmpty(p.Email) ? "" : $". {p.Email}")</div>
+                                    </div>
                                 </button>
                             }
                         </div>
                     }
-                    @if (_personaSel is not null)
+                    else
                     {
-                        <div class="alert alert-info py-2 small mt-2">
-                            Seleccionada: <strong>@_personaSel.Nombres @_personaSel.Apellidos</strong> · @_personaSel.Email
-                            <button class="btn btn-sm btn-link text-danger p-0 ms-2" @onclick="() => _personaSel = null">cambiar</button>
-                        </div>
+                        <div class="usr-hint">El acceso siempre se otorga a una persona existente en el Directorio (RN-02). Si no aparece, agregala primero alli.</div>
                     }
+                }
+                else
+                {
+                    <div class="usr-pick">
+                        <div class="d-flex align-items-center gap-2 mb-3">
+                            <div class="usr-av">@Iniciales($"{_personaSel.Nombres} {_personaSel.Apellidos}")</div>
+                            <div class="min-w-0">
+                                <div class="usr-name">@_personaSel.Nombres @_personaSel.Apellidos</div>
+                                <div class="usr-email">@_personaSel.TipoDocumento @_personaSel.Documento @(string.IsNullOrEmpty(_personaSel.Email) ? "" : $". {_personaSel.Email}")</div>
+                            </div>
+                            <button class="usr-rowbtn ms-auto" @onclick="() => _personaSel = null">Cambiar</button>
+                        </div>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <label class="usr-label">Rol a asignar</label>
+                                <select class="usr-select" @bind="_invRolId">
+                                    <option value="@Guid.Empty">- Selecciona -</option>
+                                    @foreach (var r in _roles.Where(r => r.Activo))
+                                    {
+                                        <option value="@r.Id">@r.Nombre</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label class="usr-label">Canal de envio</label>
+                                <select class="usr-select" @bind="_invCanal">
+                                    <option value="@CanalEnvioInvitacion.Email">Email</option>
+                                    <option value="@CanalEnvioInvitacion.Whatsapp">WhatsApp</option>
+                                    <option value="@CanalEnvioInvitacion.Ambos">Email + WhatsApp</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="usr-note">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+                            El token de invitacion expira en 72 horas (RN-11).
+                        </div>
+                    </div>
+                }
+
+                @if (_ultimaInvitacion is not null)
+                {
+                    <div class="usr-link-ok">
+                        <div class="fw-bold mb-1" style="color:#15703F">Invitacion creada. Comparte este link:</div>
+                        <code class="user-select-all d-block mb-2" style="word-break:break-all">@LinkInvitacion(_ultimaInvitacion)</code>
+                        <button class="usr-rowbtn" @onclick="CopiarLinkUltima">Copiar link</button>
+                    </div>
+                }
+            </div>
+            <div class="usr-modal-foot">
+                <button class="usr-btn-ghost" @onclick="CerrarInvitar">Cerrar</button>
+                <button class="usr-btn-primary" @onclick="EnviarInvitacion" disabled="@(_busy || _personaSel is null || _invRolId == Guid.Empty)">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path></svg>
+                    @(_busy ? "Generando..." : "Enviar invitacion")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ============================================================ *@
+@* MODAL: Editar usuario                                        *@
+@* ============================================================ *@
+@if (_editUser is not null)
+{
+    <div class="usr-modal-bg" @onclick="CerrarEditar">
+        <div class="usr-modal" style="width:520px" @onclick:stopPropagation="true">
+            <div class="usr-modal-head">
+                <div class="usr-modal-ico">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                 </div>
-                <div class="col-md-3">
-                    <label class="form-label small">Rol asignado</label>
-                    <InputSelect @bind-Value="_invRolId" class="form-select form-select-sm">
-                        <option value="">- Selecciona -</option>
-                        @foreach (var r in _roles.Where(r => r.Activo))
+                <div class="flex-grow-1">
+                    <div class="usr-modal-title">Editar usuario</div>
+                    <div class="usr-modal-subtitle">Rol de acceso y estado de la cuenta</div>
+                </div>
+                <button class="usr-modal-x" @onclick="CerrarEditar">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="usr-modal-body">
+                <div class="d-flex align-items-center gap-3 mb-4">
+                    <div class="usr-av" style="width:64px;height:64px;border-radius:15px;font-size:21px">@Iniciales(_editUser.NombreCompleto)</div>
+                    <div>
+                        <div class="usr-name" style="font-size:16px">@_editUser.NombreCompleto</div>
+                        <div class="usr-email">@(_editUser.Email ?? "Sin correo") @(_editUser.TieneCuentaPropia ? ". Con cuenta propia" : ". Solo en directorio")</div>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="usr-label">Nombre completo</label>
+                    <input class="usr-input" value="@_editUser.NombreCompleto" disabled />
+                </div>
+                <div class="mb-3">
+                    <label class="usr-label">Correo de acceso</label>
+                    <input class="usr-input" value="@(_editUser.Email ?? "")" disabled />
+                </div>
+                <div class="usr-hint mb-3">Nombre y correo se editan en el Directorio (la identidad vive alli).</div>
+
+                <div class="mb-2">
+                    <label class="usr-label">Rol</label>
+                    <select class="usr-select" @bind="_editRolId">
+                        @foreach (var r in _roles.Where(r => r.Activo || r.Id == _editUser.RolId))
                         {
                             <option value="@r.Id">@r.Nombre</option>
                         }
-                    </InputSelect>
+                    </select>
                 </div>
-                <div class="col-md-3">
-                    <label class="form-label small">Canal de envio</label>
-                    <InputSelect @bind-Value="_invCanal" class="form-select form-select-sm">
-                        <option value="@CanalEnvioInvitacion.Email">Email</option>
-                        <option value="@CanalEnvioInvitacion.Whatsapp">WhatsApp</option>
-                        <option value="@CanalEnvioInvitacion.Ambos">Ambos</option>
-                    </InputSelect>
+
+                <div class="usr-security">
+                    <div class="usr-sec-label">ZONA DE ACCESO</div>
+                    <div class="d-flex align-items-center gap-3 usr-sec-box">
+                        <div class="usr-sec-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg></div>
+                        <div class="flex-grow-1">
+                            <div style="font-size:13px;font-weight:700;color:#33475B">Revocar acceso</div>
+                            <div style="font-size:12px;color:#A6B7C8;line-height:1.4">Invalida la sesion y bloquea el ingreso a la copropiedad. Se puede reactivar luego.</div>
+                        </div>
+                        <button class="usr-rowbtn usr-rowbtn-danger" @onclick="() => RevocarAccesoAsync(_editUser!.UsuarioTenantId)">Revocar</button>
+                    </div>
                 </div>
             </div>
-            <button class="btn btn-sm mt-3" style="background: var(--propia-primary); color: white;" @onclick="EnviarInvitacion" disabled="@(_busy || _personaSel is null || _invRolId == Guid.Empty)">
-                @(_busy ? "Generando..." : "Enviar invitacion")
-            </button>
-            @if (_ultimaInvitacion is not null)
-            {
-                <div class="alert alert-success py-2 small mt-3">
-                    Invitacion creada. <strong>Comparte este link:</strong>
-                    <code class="user-select-all">@LinkInvitacion(_ultimaInvitacion)</code>
-                    <button class="btn btn-sm btn-outline-success ms-2" @onclick="() => CopiarLinkUltima()">Copiar</button>
+            <div class="usr-modal-foot">
+                <button class="usr-btn-ghost" @onclick="CerrarEditar">Cancelar</button>
+                <button class="usr-btn-primary" @onclick="GuardarEditar" disabled="@_busy">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"></path></svg>
+                    Guardar cambios
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ============================================================ *@
+@* MODAL: Roles y permisos                                      *@
+@* ============================================================ *@
+@if (_showRoles)
+{
+    <div class="usr-modal-bg" @onclick="CerrarRoles">
+        <div class="usr-modal usr-modal-wide" @onclick:stopPropagation="true">
+            <div class="usr-modal-head">
+                @if (_rolEditando is not null)
+                {
+                    <button class="usr-modal-x" @onclick="VolverARoles">
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"></path></svg>
+                    </button>
+                }
+                else
+                {
+                    <div class="usr-modal-ico">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6l8-4z"></path><path d="M9 12l2 2 4-4"></path></svg>
+                    </div>
+                }
+                <div class="flex-grow-1">
+                    @if (_rolEditando is not null && _detalleEdit is not null)
+                    {
+                        <div class="usr-modal-title">Editando: @_detalleEdit.Nombre</div>
+                        <div class="usr-modal-subtitle">Matriz de permisos por modulo y accion</div>
+                    }
+                    else
+                    {
+                        <div class="usr-modal-title">Roles y permisos</div>
+                        <div class="usr-modal-subtitle">Configura que puede ver y hacer cada rol</div>
+                    }
                 </div>
-            }
+                <button class="usr-modal-x" @onclick="CerrarRoles">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="usr-modal-body">
+                @if (_roles is null)
+                {
+                    <div class="text-center py-5"><div class="spinner-border" style="color:#6D4FE3"></div></div>
+                }
+                else if (_rolEditando is not null)
+                {
+                    @if (_detalleEdit is null)
+                    {
+                        <div class="text-center py-5"><div class="spinner-border" style="color:#6D4FE3"></div></div>
+                    }
+                    else
+                    {
+                        <div class="usr-matrix">
+                            <div class="usr-matrix-head">
+                                <div style="flex:1;font-size:11px;letter-spacing:.4px;font-weight:700;color:#A6B7C8">MODULO</div>
+                                @foreach (var a in Enum.GetValues<AccionPermiso>())
+                                {
+                                    <div class="usr-matrix-col">@a.ToString().ToUpper()</div>
+                                }
+                                <div style="width:140px;flex-shrink:0;text-align:center;font-size:11px;letter-spacing:.3px;font-weight:700;color:#A6B7C8">NIVEL DE DATO</div>
+                            </div>
+                            @foreach (var mod in ModulosVisibles)
+                            {
+                                var modCodigo = mod;
+                                var nivelActual = _detalleEdit.Permisos.Where(p => p.ModuloCodigo == mod).Select(p => p.NivelDato).DefaultIfEmpty(NivelDato.SinAcceso).Max();
+                                <div class="usr-matrix-row">
+                                    <div class="usr-matrix-mod">@LabelModulo(mod)</div>
+                                    @foreach (var accion in Enum.GetValues<AccionPermiso>())
+                                    {
+                                        var celda = _detalleEdit.Permisos.FirstOrDefault(p => p.ModuloCodigo == mod && p.Accion == accion);
+                                        var hab = celda?.Habilitado ?? false;
+                                        var modC = mod; var accC = accion;
+                                        <div class="usr-cell">
+                                            <button class="usr-chk @(hab ? "on" : "")" @onclick="() => TogglePermiso(modC, accC, !hab)">
+                                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5 9-11"></path></svg>
+                                            </button>
+                                        </div>
+                                    }
+                                    <div style="width:140px;flex-shrink:0;display:flex;justify-content:center">
+                                        <select class="usr-select" style="font-size:12px;padding:5px 8px" @onchange="(e) => CambiarNivel(modCodigo, Enum.Parse<NivelDato>(e.Value!.ToString()!))">
+                                            <option value="@NivelDato.SinAcceso" selected="@(nivelActual == NivelDato.SinAcceso)">Sin acceso</option>
+                                            <option value="@NivelDato.Propio" selected="@(nivelActual == NivelDato.Propio)">Solo propio</option>
+                                            <option value="@NivelDato.Copropiedad" selected="@(nivelActual == NivelDato.Copropiedad)">Toda la PH</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                        <div class="usr-hint mt-3">Los cambios se guardan al instante. La regla "Administrador conserva acceso a Usuarios y Accesos" se aplica automaticamente.</div>
+                    }
+                }
+                else
+                {
+                    @* ---- Lista de roles ---- *@
+                    <div class="usr-sec-label">ROLES BASE . no eliminables</div>
+                    <div class="d-flex flex-column gap-2 mb-4">
+                        @foreach (var r in _roles.Where(r => r.Tipo == TipoRol.Base))
+                        {
+                            var rr = r;
+                            <div class="usr-rolecard">
+                                <span class="usr-dot" style="background:#1A8754;flex-shrink:0"></span>
+                                <div class="flex-grow-1">
+                                    <div style="font-size:13.5px;font-weight:700;color:#33475B">@r.Nombre</div>
+                                    <div class="usr-email">@(r.Descripcion ?? "Rol base del sistema")</div>
+                                </div>
+                                <span class="usr-count">@r.CantidadUsuariosActivos usuarios</span>
+                                <button class="usr-rowbtn" @onclick="() => EditarRol(rr.Id)">Editar</button>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="usr-sec-label">ROLES EXTENDIDOS . activables</div>
+                    <div class="usr-ext-grid mb-3">
+                        @foreach (var r in _roles.Where(r => r.Tipo == TipoRol.Extendido))
+                        {
+                            var rr = r;
+                            <div class="usr-rolecard @(r.Activo ? "" : "usr-rolecard-off")">
+                                <span class="usr-dot" style="background:@(r.Activo ? "#1A8754" : "#C3D0DD");flex-shrink:0"></span>
+                                <div class="flex-grow-1 min-w-0">
+                                    <div style="font-size:13px;font-weight:700;color:#33475B">@r.Nombre</div>
+                                    <div class="usr-email">@(r.Activo ? $"Activo . {r.CantidadUsuariosActivos} usuarios" : "Inactivo")</div>
+                                </div>
+                                <div class="d-flex gap-1 flex-shrink-0">
+                                    <button class="usr-link-btn" @onclick="() => ToggleExtendido(rr.Id)">@(r.Activo ? "Desactivar" : "Activar")</button>
+                                    <button class="usr-link-btn" @onclick="() => EditarRol(rr.Id)">Editar</button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    @if (_roles.Any(r => r.Tipo == TipoRol.Personalizado))
+                    {
+                        <div class="usr-sec-label">ROLES PERSONALIZADOS</div>
+                        <div class="usr-ext-grid mb-3">
+                            @foreach (var r in _roles.Where(r => r.Tipo == TipoRol.Personalizado))
+                            {
+                                var rr = r;
+                                <div class="usr-rolecard">
+                                    <span class="usr-dot" style="background:#6D4FE3;flex-shrink:0"></span>
+                                    <div class="flex-grow-1 min-w-0">
+                                        <div style="font-size:13px;font-weight:700;color:#33475B">@r.Nombre</div>
+                                        <div class="usr-email">@r.CantidadUsuariosActivos usuarios</div>
+                                    </div>
+                                    <div class="d-flex gap-1 flex-shrink-0">
+                                        <button class="usr-link-btn" @onclick="() => EditarRol(rr.Id)">Editar</button>
+                                        <button class="usr-link-btn text-danger" @onclick="() => EliminarRol(rr.Id)">Quitar</button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @if (_creandoRol)
+                    {
+                        <div class="usr-newrole">
+                            <label class="usr-label">Nombre del rol personalizado</label>
+                            <input class="usr-input mb-2" placeholder="Ej. Coordinador de zonas" @bind="_nuevoNombre" />
+                            <label class="usr-label">Copiar permisos de</label>
+                            <select class="usr-select mb-2" @bind="_copiarDe">
+                                <option value="">(Empezar vacio)</option>
+                                @foreach (var r in _roles.Where(r => r.Tipo != TipoRol.Sistema))
+                                {
+                                    <option value="@r.Id">@r.Nombre</option>
+                                }
+                            </select>
+                            <div class="d-flex gap-2">
+                                <button class="usr-btn-ghost" @onclick="() => _creandoRol = false">Cancelar</button>
+                                <button class="usr-btn-primary" @onclick="CrearRol" disabled="@_busy">Crear rol</button>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <button class="usr-newrole-btn" @onclick="() => _creandoRol = true">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"></path></svg>
+                            Crear rol personalizado
+                        </button>
+                    }
+                }
+            </div>
         </div>
     </div>
 }
 
 <style>
-    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
-    .avatar-mini {
-        width: 32px; height: 32px; border-radius: 50%;
-        background: linear-gradient(135deg, var(--propia-primary), var(--propia-primary-light));
-        color: white; font-weight: 600; font-size: 0.75rem;
-        display: inline-flex; align-items: center; justify-content: center;
-    }
+    .usr-wrap { width:100%; max-width:1900px; margin:0 auto; padding:6px 28px 60px; box-sizing:border-box; }
+    .usr-head { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; margin-bottom:20px; flex-wrap:wrap; }
+    .usr-title { font-size:27px; font-weight:800; letter-spacing:-.6px; color:#1B2A3A; margin:0; }
+    .usr-sub { font-size:14px; color:#7C98B6; margin-top:4px; margin-bottom:0; }
+
+    .usr-btn-primary { display:inline-flex; align-items:center; gap:7px; padding:10px 16px; border-radius:10px; background:#6D4FE3; color:#fff; font-size:13px; font-weight:700; border:none; box-shadow:0 6px 16px rgba(109,79,227,.3); cursor:pointer; }
+    .usr-btn-primary:hover { background:#5838C9; }
+    .usr-btn-primary:disabled { opacity:.55; cursor:default; box-shadow:none; }
+    .usr-btn-ghost { display:inline-flex; align-items:center; gap:7px; padding:10px 15px; border-radius:10px; border:1px solid #E1E8EE; background:#fff; font-size:13px; font-weight:600; color:#516F90; cursor:pointer; }
+    .usr-btn-ghost:hover { border-color:#C3D0DD; color:#33475B; }
+
+    .usr-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:18px; }
+    .usr-stat { background:#fff; border:1px solid #E1E8EE; border-radius:14px; padding:18px; box-shadow:0 1px 2px rgba(45,62,80,.05); cursor:pointer; transition:border-color .15s, box-shadow .15s; }
+    .usr-stat:hover { border-color:#C3D0DD; }
+    .usr-stat.active { border-color:#6D4FE3; box-shadow:0 0 0 1px #6D4FE3; }
+    .usr-stat-label { display:flex; align-items:center; gap:7px; font-size:12px; font-weight:700; color:#7C98B6; }
+    .usr-dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+    .usr-stat-num { font-size:30px; font-weight:800; color:#1B2A3A; letter-spacing:-1px; margin-top:5px; }
+
+    .usr-tabs { display:flex; align-items:center; gap:8px; border-bottom:1px solid #E1E8EE; }
+    .usr-tab { padding:11px 4px; margin-right:18px; font-size:14px; font-weight:700; color:#A6B7C8; border:none; background:none; border-bottom:2.5px solid transparent; cursor:pointer; }
+    .usr-tab.active { color:#6D4FE3; border-bottom-color:#6D4FE3; }
+
+    .usr-search { width:100%; max-width:380px; border:1px solid #E1E8EE; border-radius:9px; padding:9px 12px; font-size:13.5px; color:#33475B; outline:none; background:#fff; margin:14px 0; }
+    .usr-search:focus { border-color:#6D4FE3; }
+
+    .usr-table { background:#fff; border:1px solid #E1E8EE; border-radius:14px; box-shadow:0 1px 2px rgba(45,62,80,.05); overflow:hidden; }
+    .usr-th { display:flex; align-items:center; gap:14px; padding:11px 18px; border-bottom:1px solid #EEF3F8; background:#FAFBFC; font-size:11px; letter-spacing:.4px; font-weight:700; color:#A6B7C8; }
+    .usr-row { display:flex; align-items:center; gap:14px; padding:13px 18px; border-bottom:1px solid #F4F7FA; }
+    .usr-row:last-child { border-bottom:none; }
+    .usr-av { width:42px; height:42px; border-radius:11px; background:linear-gradient(135deg,#8366F0,#5838C9); color:#fff; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:700; flex-shrink:0; }
+    .usr-name { font-size:14px; font-weight:700; color:#33475B; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .usr-email { font-size:12px; color:#A6B7C8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .usr-rol { font-size:12px; font-weight:700; color:#6D4FE3; background:#F1ECFD; border:1px solid #DCD2F8; padding:4px 11px; border-radius:7px; }
+    .usr-badge-pend { font-size:11px; font-weight:700; color:#B45309; background:#FEF3DC; padding:4px 10px; border-radius:7px; }
+    .usr-badge-inact { font-size:11px; font-weight:700; color:#A6B7C8; background:#EEF3F8; padding:4px 10px; border-radius:7px; }
+    .usr-rowbtn { display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border-radius:8px; color:#6D4FE3; border:1px solid #DCD2F8; background:#fff; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap; }
+    .usr-rowbtn:hover { background:#F1ECFD; }
+    .usr-rowbtn-danger { color:#C0383C; border-color:#F3C9CB; }
+    .usr-rowbtn-danger:hover { background:#FBEBEC; }
+    .usr-empty { background:#fff; border:1px solid #E1E8EE; border-radius:14px; padding:34px; text-align:center; color:#7C98B6; font-size:13.5px; }
+    .min-w-0 { min-width:0; }
+
+    /* Modales */
+    .usr-modal-bg { position:fixed; inset:0; z-index:1080; background:rgba(27,42,58,.55); display:flex; align-items:flex-start; justify-content:center; padding:40px 20px; overflow-y:auto; }
+    .usr-modal { width:560px; max-width:100%; background:#fff; border-radius:18px; box-shadow:0 30px 70px rgba(27,42,58,.4); margin:auto; overflow:hidden; display:flex; flex-direction:column; max-height:88vh; }
+    .usr-modal-wide { width:880px; }
+    .usr-modal-head { display:flex; align-items:flex-start; gap:13px; padding:20px 24px; border-bottom:1px solid #EEF3F8; flex-shrink:0; }
+    .usr-modal-ico { width:38px; height:38px; border-radius:10px; background:#F1ECFD; color:#6D4FE3; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .usr-modal-title { font-size:16px; font-weight:800; letter-spacing:-.3px; color:#1B2A3A; }
+    .usr-modal-subtitle { font-size:12.5px; color:#7C98B6; }
+    .usr-modal-x { width:34px; height:34px; border-radius:9px; display:flex; align-items:center; justify-content:center; color:#7C98B6; border:1px solid #E1E8EE; background:#fff; cursor:pointer; flex-shrink:0; }
+    .usr-modal-x:hover { background:#F5F8FA; color:#33475B; }
+    .usr-modal-body { overflow-y:auto; padding:22px 24px; }
+    .usr-modal-foot { display:flex; justify-content:flex-end; gap:8px; padding:16px 24px; border-top:1px solid #EEF3F8; flex-shrink:0; }
+    .usr-label { font-size:11px; color:#7C98B6; font-weight:700; display:block; margin-bottom:5px; }
+    .usr-input, .usr-select { width:100%; border:1px solid #E1E8EE; border-radius:9px; padding:10px 12px; font-size:13.5px; color:#33475B; outline:none; background:#fff; }
+    .usr-input:focus, .usr-select:focus { border-color:#6D4FE3; }
+    .usr-input:disabled { background:#F8FAFC; color:#7C98B6; }
+
+    .usr-results { border:1px solid #E1E8EE; border-radius:11px; margin-top:10px; overflow:hidden; max-height:220px; overflow-y:auto; }
+    .usr-result { display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:10px 13px; border:none; border-bottom:1px solid #F4F7FA; background:#fff; cursor:pointer; }
+    .usr-result:last-child { border-bottom:none; }
+    .usr-result:hover { background:#F8FAFC; }
+    .usr-hint { font-size:12.5px; color:#A6B7C8; line-height:1.55; margin-top:14px; padding:12px 14px; background:#F8FAFC; border-radius:10px; border:1px dashed #D7E0EA; }
+    .usr-pick { border:1px solid #DCD2F8; background:#F5F1FE; border-radius:12px; padding:14px 16px; margin-top:14px; }
+    .usr-note { font-size:11.5px; color:#7C5CE8; margin-top:11px; display:flex; align-items:center; gap:6px; }
+    .usr-link-ok { background:#E6F6EE; border:1px solid #B6E2C9; border-radius:11px; padding:13px 15px; margin-top:16px; font-size:12.5px; }
+
+    .usr-security { margin-top:18px; border-top:1px solid #EEF3F8; padding-top:16px; }
+    .usr-sec-label { font-size:11px; letter-spacing:.5px; color:#A6B7C8; font-weight:700; margin-bottom:10px; }
+    .usr-sec-box { border:1px solid #E1E8EE; border-radius:11px; padding:13px 15px; }
+    .usr-sec-ico { width:36px; height:36px; border-radius:9px; background:#FBEBEC; color:#C0383C; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+
+    /* Roles */
+    .usr-rolecard { display:flex; align-items:center; gap:12px; border:1px solid #E1E8EE; border-radius:11px; padding:12px 15px; }
+    .usr-rolecard-off { opacity:.6; }
+    .usr-ext-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+    .usr-count { font-size:11px; font-weight:600; color:#7C98B6; background:#F5F8FA; border:1px solid #E1E8EE; padding:3px 9px; border-radius:6px; white-space:nowrap; }
+    .usr-link-btn { font-size:12px; font-weight:700; color:#6D4FE3; background:#F1ECFD; border:1px solid #DCD2F8; padding:6px 11px; border-radius:8px; cursor:pointer; white-space:nowrap; }
+    .usr-link-btn:hover { background:#E6DEFA; }
+    .usr-newrole-btn { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; border:1px dashed #DCD2F8; border-radius:11px; padding:13px; font-size:13px; font-weight:700; color:#6D4FE3; background:#FBFAFE; cursor:pointer; }
+    .usr-newrole-btn:hover { background:#F5F1FE; }
+    .usr-newrole { border:1px solid #DCD2F8; border-radius:12px; padding:16px; background:#FBFAFE; }
+
+    .usr-matrix { border:1px solid #E1E8EE; border-radius:12px; overflow:hidden; }
+    .usr-matrix-head { display:flex; align-items:center; padding:10px 14px; background:#FAFBFC; border-bottom:1px solid #EEF3F8; }
+    .usr-matrix-row { display:flex; align-items:center; padding:9px 14px; border-bottom:1px solid #F4F7FA; }
+    .usr-matrix-row:last-child { border-bottom:none; }
+    .usr-matrix-mod { flex:1; font-size:13px; font-weight:600; color:#33475B; }
+    .usr-matrix-col { width:62px; flex-shrink:0; text-align:center; font-size:10.5px; letter-spacing:.3px; font-weight:700; color:#A6B7C8; }
+    .usr-cell { width:62px; flex-shrink:0; display:flex; justify-content:center; }
+    .usr-chk { width:24px; height:24px; border-radius:7px; display:flex; align-items:center; justify-content:center; border:1.5px solid #E1E8EE; background:#fff; color:transparent; cursor:pointer; padding:0; }
+    .usr-chk.on { border-color:#6D4FE3; background:#6D4FE3; color:#fff; }
 </style>
 
 @code {
@@ -269,6 +656,7 @@ else
     private List<InvitacionDto>? _pendientes;
     private List<RolDto> _roles = new();
 
+    // Invitar
     private bool _showInvitar;
     private string _buscarPersona = "";
     private List<PersonaResumenDto> _personasEncontradas = new();
@@ -276,6 +664,25 @@ else
     private Guid _invRolId;
     private CanalEnvioInvitacion _invCanal = CanalEnvioInvitacion.Email;
     private InvitacionDto? _ultimaInvitacion;
+
+    // Editar usuario
+    private UsuarioListaDto? _editUser;
+    private Guid _editRolId;
+
+    // Roles y permisos
+    private bool _showRoles;
+    private Guid? _rolEditando;
+    private RolDetalleDto? _detalleEdit;
+    private bool _creandoRol;
+    private string _nuevoNombre = "";
+    private string _copiarDe = "";
+
+    private static readonly string[] ModulosVisibles =
+    {
+        "DASHBOARD", "MI_COPROPIEDAD", "DIRECTORIO", "USUARIOS_ACCESOS",
+        "PRESUPUESTO", "CARTERA", "ASAMBLEAS", "PQRS", "TAREAS",
+        "MANTENIMIENTO", "PORTERIA", "RESERVAS", "COMUNICACIONES", "DOCUMENTOS", "REPORTES"
+    };
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -317,8 +724,17 @@ else
             var http = Auth();
             _roles = await http.GetFromJsonAsync<List<RolDto>>("/api/roles") ?? new();
         }
-        catch { /* ignore - sin roles no podemos invitar pero el resto funciona */ }
+        catch { /* sin roles no podemos invitar pero el resto funciona */ }
     }
+
+    // ---------------- Invitar ----------------
+    private void AbrirInvitar()
+    {
+        _showInvitar = true;
+        _personaSel = null; _buscarPersona = ""; _personasEncontradas.Clear();
+        _invRolId = Guid.Empty; _invCanal = CanalEnvioInvitacion.Email; _ultimaInvitacion = null;
+    }
+    private void CerrarInvitar() => _showInvitar = false;
 
     private async Task BuscarPersonas()
     {
@@ -386,6 +802,37 @@ else
         _msg = "Link copiado al portapapeles."; _msgClass = "alert-info";
     }
 
+    // ---------------- Editar usuario ----------------
+    private void AbrirEditar(UsuarioListaDto u)
+    {
+        _editUser = u;
+        _editRolId = u.RolId ?? Guid.Empty;
+    }
+    private void CerrarEditar() => _editUser = null;
+
+    private async Task GuardarEditar()
+    {
+        if (_editUser is null) return;
+        _busy = true; _msg = null;
+        try
+        {
+            if (_editRolId != Guid.Empty && _editRolId != _editUser.RolId)
+            {
+                var http = Auth();
+                var resp = await http.PutAsJsonAsync($"/api/usuarios/{_editUser.UsuarioTenantId}/rol",
+                    new CambiarRolUsuarioRequest(_editRolId));
+                if (!resp.IsSuccessStatusCode)
+                {
+                    _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return;
+                }
+                _msg = "Rol actualizado."; _msgClass = "alert-success";
+            }
+            _editUser = null;
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
     private async Task RevocarAccesoAsync(Guid usuarioTenantId)
     {
         var http = Auth();
@@ -393,6 +840,7 @@ else
             new RevocarAccesoRequest(null));
         if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
         _msg = "Acceso revocado. Sesion invalidada."; _msgClass = "alert-success";
+        _editUser = null;
         await CargarAsync();
     }
 
@@ -400,9 +848,89 @@ else
     {
         var http = Auth();
         await http.PostAsync($"/api/usuarios/{usuarioTenantId}/reactivar", null);
+        _msg = "Acceso reactivado."; _msgClass = "alert-success";
         await CargarAsync();
     }
 
+    // ---------------- Roles y permisos ----------------
+    private async Task AbrirRoles()
+    {
+        _showRoles = true; _rolEditando = null; _detalleEdit = null; _creandoRol = false;
+        await CargarRolesAsync();
+    }
+    private void CerrarRoles() { _showRoles = false; _rolEditando = null; _detalleEdit = null; _creandoRol = false; }
+    private void VolverARoles() { _rolEditando = null; _detalleEdit = null; }
+
+    private async Task EditarRol(Guid rolId)
+    {
+        _rolEditando = rolId;
+        var http = Auth();
+        _detalleEdit = await http.GetFromJsonAsync<RolDetalleDto>($"/api/roles/{rolId}");
+    }
+
+    private async Task TogglePermiso(string modulo, AccionPermiso accion, bool habilitado)
+    {
+        if (_rolEditando is null || _detalleEdit is null) return;
+        var celda = _detalleEdit.Permisos.FirstOrDefault(p => p.ModuloCodigo == modulo && p.Accion == accion);
+        var nivel = celda?.NivelDato ?? NivelDato.Copropiedad;
+        if (habilitado && nivel == NivelDato.SinAcceso) nivel = NivelDato.Copropiedad;
+
+        var http = Auth();
+        var resp = await http.PutAsJsonAsync($"/api/roles/{_rolEditando}/permisos",
+            new ActualizarPermisoRequest(modulo, accion, habilitado, nivel));
+        if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        await EditarRol(_rolEditando.Value);
+    }
+
+    private async Task CambiarNivel(string modulo, NivelDato nivel)
+    {
+        if (_rolEditando is null || _detalleEdit is null) return;
+        var http = Auth();
+        foreach (var accion in Enum.GetValues<AccionPermiso>())
+        {
+            var celda = _detalleEdit.Permisos.FirstOrDefault(p => p.ModuloCodigo == modulo && p.Accion == accion);
+            if (celda is null || !celda.Habilitado) continue;
+            await http.PutAsJsonAsync($"/api/roles/{_rolEditando}/permisos",
+                new ActualizarPermisoRequest(modulo, accion, true, nivel));
+        }
+        await EditarRol(_rolEditando.Value);
+    }
+
+    private async Task ToggleExtendido(Guid rolId)
+    {
+        var http = Auth();
+        await http.PutAsync($"/api/roles/{rolId}/activar", null);
+        await CargarRolesAsync();
+    }
+
+    private async Task CrearRol()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevoNombre)) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var http = Auth();
+            Guid? copiar = Guid.TryParse(_copiarDe, out var g) ? g : null;
+            var resp = await http.PostAsJsonAsync("/api/roles",
+                new CrearRolRequest(_nuevoNombre.Trim(), null, copiar));
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _msg = $"Rol '{_nuevoNombre}' creado."; _msgClass = "alert-success";
+            _nuevoNombre = ""; _copiarDe = ""; _creandoRol = false;
+            await CargarRolesAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task EliminarRol(Guid rolId)
+    {
+        var http = Auth();
+        var resp = await http.DeleteAsync($"/api/roles/{rolId}");
+        if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+        _msg = "Rol eliminado."; _msgClass = "alert-success";
+        await CargarRolesAsync();
+    }
+
+    // ---------------- Helpers ----------------
     private HttpClient Auth()
     {
         var http = HttpFactory.CreateClient("PropiaApi");
@@ -417,4 +945,24 @@ else
         if (parts.Length == 1) return parts[0][0].ToString().ToUpperInvariant();
         return $"{parts[0][0]}{parts[^1][0]}".ToUpperInvariant();
     }
+
+    private static string LabelModulo(string codigo) => codigo switch
+    {
+        "DASHBOARD" => "Dashboard",
+        "MI_COPROPIEDAD" => "Mi Copropiedad",
+        "DIRECTORIO" => "Directorio",
+        "USUARIOS_ACCESOS" => "Usuarios y Accesos",
+        "PRESUPUESTO" => "Presupuesto y Pagos",
+        "CARTERA" => "Cartera",
+        "ASAMBLEAS" => "Asambleas",
+        "PQRS" => "PQRS y Convivencia",
+        "TAREAS" => "Tareas y Proyectos",
+        "MANTENIMIENTO" => "Mantenimiento",
+        "PORTERIA" => "Porteria",
+        "RESERVAS" => "Reservas",
+        "COMUNICACIONES" => "Comunicaciones",
+        "DOCUMENTOS" => "Documentos",
+        "REPORTES" => "Reportes",
+        _ => codigo
+    };
 }

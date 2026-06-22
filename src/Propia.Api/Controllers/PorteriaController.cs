@@ -184,4 +184,27 @@ public class PorteriaController : ControllerBase
         try { return Ok(await _svc.ActualizarConfiguracionAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+
+    // ----- Campos personalizados -----
+
+    [HttpGet("campos")]
+    public async Task<IActionResult> ListarCampos(CancellationToken ct) => Ok(await _svc.ListarCamposAsync(ct));
+
+    [HttpPost("campos")]
+    public async Task<IActionResult> CrearCampo([FromBody] GuardarPorteriaCampoRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.CrearCampoAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpPut("campos/{id:guid}")]
+    public async Task<IActionResult> ActualizarCampo(Guid id, [FromBody] GuardarPorteriaCampoRequest req, CancellationToken ct)
+    {
+        try { return await _svc.ActualizarCampoAsync(id, req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpDelete("campos/{id:guid}")]
+    public async Task<IActionResult> EliminarCampo(Guid id, CancellationToken ct)
+        => await _svc.EliminarCampoAsync(id, ct) ? NoContent() : NotFound();
 }

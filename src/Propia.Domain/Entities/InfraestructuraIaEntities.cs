@@ -30,6 +30,23 @@ public class WhatsAppLine : TenantEntity
 
     public DateTimeOffset? LastConnectedAt { get; set; }
     public DateTimeOffset? LastStatusAt { get; set; }
+
+    // === Proveedor (portado de CUBOT.travels) =================================
+    /// <summary>Proveedor de la linea. Inmutable despues del alta.</summary>
+    public WhatsAppProvider Provider { get; set; } = WhatsAppProvider.Evolution;
+
+    // === Credenciales Meta Cloud (solo cuando Provider == Cloud) ==============
+    /// <summary>ID del numero de telefono en Meta (consola WhatsApp Manager).</summary>
+    public string? CloudPhoneNumberId { get; set; }
+
+    /// <summary>ID de la WhatsApp Business Account (WABA) en Meta.</summary>
+    public string? CloudBusinessAccountId { get; set; }
+
+    /// <summary>Access token de la app de Meta, cifrado con DataProtection (ISecretProtector).</summary>
+    public string? CloudAccessTokenEncrypted { get; set; }
+
+    /// <summary>Verify token del webhook de Meta (cifrado). Usado en el handshake GET de /webhooks/meta.</summary>
+    public string? CloudWebhookVerifyTokenEncrypted { get; set; }
 }
 
 /// <summary>
@@ -90,6 +107,9 @@ public class Message : TenantEntity
     public string? MediaUrl { get; set; }
 
     public string? MediaMimeType { get; set; }
+
+    /// <summary>Emoji con el que el agente reacciono a este entrante (null = sin reaccion). Una sola por mensaje.</summary>
+    public string? Reaction { get; set; }
 }
 
 /// <summary>
@@ -122,8 +142,44 @@ public class AiAgent : TenantEntity
     /// </summary>
     public string? PromptHistoryJson { get; set; }
 
+    /// <summary>
+    /// Reacciones automaticas (emoji) a los mensajes del contacto, SIN pasar por el LLM (cero tokens).
+    /// El dispatcher pone un emoji al azar a algunos entrantes. Portado de CUBOT.travels.
+    /// </summary>
+    public bool ReactionsEnabled { get; set; }
+
+    /// <summary>Numerador de la frecuencia (ej. 3 de cada 4 -> N=3). Se aplica como probabilidad.</summary>
+    public int ReactionRatioN { get; set; } = 3;
+
+    /// <summary>Denominador (ej. 3 de cada 4 -> M=4).</summary>
+    public int ReactionRatioM { get; set; } = 4;
+
+    /// <summary>Emojis para reaccionar al azar, separados por coma.</summary>
+    public string? ReactionEmojis { get; set; }
+
     public ICollection<AiAgentPrompt> Prompts { get; set; } = new List<AiAgentPrompt>();
     public ICollection<AiAgentResource> Resources { get; set; } = new List<AiAgentResource>();
+}
+
+/// <summary>
+/// Vinculo agente IA &lt;-&gt; linea WhatsApp. Cuando una linea esta atendida (IsConnected) por un agente,
+/// cada entrante de esa linea se contesta automaticamente segun el prompt y los recursos del agente.
+/// Una linea solo puede estar atendida por un agente a la vez (indice unico filtrado). Portado de
+/// CUBOT.travels. El loop de auto-respuesta lo ejecuta el dispatcher (separado).
+/// </summary>
+public class AiAgentLineBinding : TenantEntity
+{
+    public Guid AgentId { get; set; }
+    public AiAgent? Agent { get; set; }
+
+    public Guid WhatsAppLineId { get; set; }
+    public WhatsAppLine? WhatsAppLine { get; set; }
+
+    /// <summary>true = la linea esta atendida por este agente. false = historico inactivo (no recibe trafico).</summary>
+    public bool IsConnected { get; set; } = true;
+
+    /// <summary>true = el agente envia la respuesta automaticamente. false = queda como sugerencia para un asesor.</summary>
+    public bool AutoConfirm { get; set; } = true;
 }
 
 /// <summary>
@@ -166,6 +222,56 @@ public class AiAgentResource : TenantEntity
     public string? FileName { get; set; }
 
     public int SortOrder { get; set; }
+}
+
+/// <summary>
+/// Definicion de un dato que el agente debe ir capturando durante la conversacion (datos cache, capa 3).
+/// Ej.: "numero de apartamento", "nombre del residente", "tipo de solicitud". El motor de inferencia
+/// intenta llenarlo a partir de los mensajes. Portado de CUBOT.travels (sin el mapeo a CRM).
+/// </summary>
+public class AiAgentCacheField : TenantEntity
+{
+    public Guid AgentId { get; set; }
+    public AiAgent? Agent { get; set; }
+
+    /// <summary>Clave del dato (slug derivado del nombre). Unica por agente.</summary>
+    public string FieldKey { get; set; } = null!;
+
+    /// <summary>Nombre visible del dato (ej. "Numero de apartamento").</summary>
+    public string Label { get; set; } = null!;
+
+    /// <summary>De que trata el dato; le sirve al motor para extraerlo del texto del residente.</summary>
+    public string? Description { get; set; }
+
+    public int SortOrder { get; set; }
+
+    /// <summary>
+    /// Si true, el motor puede sobrescribir el valor durante la conversacion (ej. cambia de unidad).
+    /// Si false (sticky), una vez capturado queda fijo y no se actualiza.
+    /// </summary>
+    public bool IsUpdatable { get; set; } = true;
+}
+
+/// <summary>
+/// Valor capturado para un campo de cache durante una sesion de conversacion (datos cache, capa 3).
+/// SessionId = AgentId en el playground de pruebas, o ConversationId en el chat real. Portado de CUBOT.
+/// </summary>
+public class AiAgentCacheValue : TenantEntity
+{
+    public Guid AgentId { get; set; }
+    public AiAgent? Agent { get; set; }
+
+    /// <summary>Identificador de la sesion (AgentId para pruebas, ConversationId en chat real).</summary>
+    public Guid SessionId { get; set; }
+
+    /// <summary>Clave del dato; coincide con AiAgentCacheField.FieldKey.</summary>
+    public string FieldKey { get; set; } = null!;
+
+    /// <summary>Valor capturado por el motor de inferencia.</summary>
+    public string? Value { get; set; }
+
+    /// <summary>Fuente del dato ("manual", "inference", "system"). Para auditoria.</summary>
+    public string? Source { get; set; }
 }
 
 /// <summary>

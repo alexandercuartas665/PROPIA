@@ -80,3 +80,49 @@ public class UnidadVinculo : TenantEntity
     /// <summary>Si el coeficiente de la asociada se factura junto al de la principal (cuenta consolidada).</summary>
     public bool IncluyeEnFacturacion { get; set; } = true;
 }
+
+/// <summary>
+/// Definicion de un campo personalizado de unidades a NIVEL de copropiedad (catalogo compartido).
+/// Aplica a TODAS las unidades: al crear "Mascotas" cada ficha de unidad pide ese dato.
+/// Es TenantEntity - aislada por tenant_id.
+/// </summary>
+public class UnidadCampoDefinicion : TenantEntity
+{
+    /// <summary>Nombre del campo (ej. Mascotas, N de medidor, Color de fachada).</summary>
+    public string Label { get; set; } = string.Empty;
+
+    /// <summary>Orden de presentacion en la ficha.</summary>
+    public int Orden { get; set; }
+}
+
+/// <summary>
+/// Valor de un campo personalizado para una unidad concreta (EAV con definicion compartida).
+/// La definicion vive a nivel de copropiedad; el valor es por unidad.
+/// Es TenantEntity - aislada por tenant_id.
+/// </summary>
+public class UnidadCampoValor : TenantEntity
+{
+    public Guid DefinicionId { get; set; }
+    public UnidadCampoDefinicion? Definicion { get; set; }
+
+    public Guid UnidadId { get; set; }
+    public UnidadPrivada? Unidad { get; set; }
+
+    public string? Valor { get; set; }
+}
+
+/// <summary>
+/// Documento/anexo adjunto a una unidad (escritura, plano, contrato, etc). El archivo se sube
+/// a blob storage y aqui se guarda el nombre + URL. Es TenantEntity - aislada por tenant_id.
+/// </summary>
+public class UnidadDocumento : TenantEntity
+{
+    public Guid UnidadId { get; set; }
+    public UnidadPrivada? Unidad { get; set; }
+
+    public string Nombre { get; set; } = string.Empty;
+    public string Url { get; set; } = string.Empty;
+
+    /// <summary>Tamano del archivo en bytes (para mostrar "X KB" en la ficha).</summary>
+    public long Tamano { get; set; }
+}

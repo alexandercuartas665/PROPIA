@@ -632,6 +632,22 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("provider");
 
+                    b.Property<string>("ReactionEmojis")
+                        .HasColumnType("text")
+                        .HasColumnName("reaction_emojis");
+
+                    b.Property<int>("ReactionRatioM")
+                        .HasColumnType("integer")
+                        .HasColumnName("reaction_ratio_m");
+
+                    b.Property<int>("ReactionRatioN")
+                        .HasColumnType("integer")
+                        .HasColumnName("reaction_ratio_n");
+
+                    b.Property<bool>("ReactionsEnabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("reactions_enabled");
+
                     b.Property<string>("Role")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
@@ -663,6 +679,193 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.HasIndex("TenantId", "IsActive");
 
                     b.ToTable("ai_agents");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.AiAgentCacheField", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agent_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(600)
+                        .HasColumnType("character varying(600)")
+                        .HasColumnName("description");
+
+                    b.Property<string>("FieldKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("field_key");
+
+                    b.Property<bool>("IsUpdatable")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_updatable");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("label");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AgentId", "FieldKey")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "AgentId", "SortOrder");
+
+                    b.ToTable("ai_agent_cache_fields", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.AiAgentCacheValue", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agent_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("FieldKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("field_key");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("session_id");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("source");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<string>("Value")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("value");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AgentId", "SessionId", "FieldKey")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "AgentId", "SessionId");
+
+                    b.ToTable("ai_agent_cache_values", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.AiAgentLineBinding", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agent_id");
+
+                    b.Property<bool>("AutoConfirm")
+                        .HasColumnType("boolean")
+                        .HasColumnName("auto_confirm");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<bool>("IsConnected")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_connected");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<Guid>("WhatsAppLineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("whats_app_line_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AgentId");
+
+                    b.HasIndex("WhatsAppLineId");
+
+                    b.HasIndex("TenantId", "AgentId");
+
+                    b.HasIndex("TenantId", "WhatsAppLineId", "IsConnected")
+                        .IsUnique()
+                        .HasFilter("is_connected");
+
+                    b.ToTable("ai_agent_line_bindings", (string)null);
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.AiAgentMcpTool", b =>
@@ -4978,6 +5181,197 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.ToTable("evolution_master_configs");
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.Expediente", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Codigo")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("codigo");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("nombre");
+
+                    b.Property<string>("Serie")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("serie");
+
+                    b.Property<string>("Subserie")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("subserie");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Codigo");
+
+                    b.ToTable("expedientes", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ExpedienteCampo", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Clave")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("clave");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid>("ExpedienteId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("expediente_id");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("label");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("integer")
+                        .HasColumnName("orden");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpedienteId");
+
+                    b.HasIndex("TenantId", "ExpedienteId", "Orden");
+
+                    b.ToTable("expediente_campos", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ExpedienteTipologia", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ArchivoMime")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("archivo_mime");
+
+                    b.Property<string>("ArchivoNombre")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("archivo_nombre");
+
+                    b.Property<long>("ArchivoTamano")
+                        .HasColumnType("bigint")
+                        .HasColumnName("archivo_tamano");
+
+                    b.Property<string>("ArchivoUrl")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("archivo_url");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid>("ExpedienteId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("expediente_id");
+
+                    b.Property<string>("MetaJson")
+                        .HasColumnType("text")
+                        .HasColumnName("meta_json");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("nombre");
+
+                    b.Property<bool>("Obligatoria")
+                        .HasColumnType("boolean")
+                        .HasColumnName("obligatoria");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("integer")
+                        .HasColumnName("orden");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpedienteId");
+
+                    b.HasIndex("TenantId", "ExpedienteId", "Orden");
+
+                    b.ToTable("expediente_tipologias", (string)null);
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.Factura", b =>
                 {
                     b.Property<Guid>("Id")
@@ -6007,6 +6401,11 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(30)")
                         .HasColumnName("message_type");
 
+                    b.Property<string>("Reaction")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("reaction");
+
                     b.Property<DateTimeOffset>("SentAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("sent_at");
@@ -6475,6 +6874,14 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("descripcion");
 
+                    b.Property<Guid?>("DestinoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("destino_id");
+
+                    b.Property<int?>("DestinoTipo")
+                        .HasColumnType("integer")
+                        .HasColumnName("destino_tipo");
+
                     b.Property<bool>("GeneraTarea")
                         .HasColumnType("boolean")
                         .HasColumnName("genera_tarea");
@@ -6490,6 +6897,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
                         .HasColumnName("tenant_id");
+
+                    b.Property<int>("Tipo")
+                        .HasColumnType("integer")
+                        .HasColumnName("tipo");
 
                     b.Property<Guid>("TurnoId")
                         .HasColumnType("uuid")
@@ -7878,6 +8289,67 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.ToTable("platform_brandings");
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.PorteriaCampo", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Columna")
+                        .HasColumnType("integer")
+                        .HasColumnName("columna");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Descripcion")
+                        .HasColumnType("text")
+                        .HasColumnName("descripcion");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("label");
+
+                    b.Property<bool>("MostrarEnFiltro")
+                        .HasColumnType("boolean")
+                        .HasColumnName("mostrar_en_filtro");
+
+                    b.Property<string>("Opciones")
+                        .HasColumnType("text")
+                        .HasColumnName("opciones");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("integer")
+                        .HasColumnName("orden");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<int>("Tipo")
+                        .HasColumnType("integer")
+                        .HasColumnName("tipo");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("porteria_campos");
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.PorteriaConfiguracion", b =>
                 {
                     b.Property<Guid>("Id")
@@ -8702,6 +9174,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Property<bool>("AvisoTratamientoConfirmado")
                         .HasColumnType("boolean")
                         .HasColumnName("aviso_tratamiento_confirmado");
+
+                    b.Property<string>("CamposValoresJson")
+                        .HasColumnType("text")
+                        .HasColumnName("campos_valores_json");
 
                     b.Property<Guid?>("CodigoIngresoId")
                         .HasColumnType("uuid")
@@ -9707,6 +10183,50 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.ToTable("rol_permisos");
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.SerieDocumental", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("nombre");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("integer")
+                        .HasColumnName("orden");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Orden");
+
+                    b.ToTable("series_documentales", (string)null);
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.Sesion", b =>
                 {
                     b.Property<Guid>("Id")
@@ -10369,6 +10889,162 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.ToTable("sistema_logs", (string)null);
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.SubserieCampo", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Clave")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("clave");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("label");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("integer")
+                        .HasColumnName("orden");
+
+                    b.Property<Guid>("SubserieId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("subserie_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SubserieId");
+
+                    b.HasIndex("TenantId", "SubserieId", "Orden");
+
+                    b.ToTable("subserie_campos", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.SubserieDocumental", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("nombre");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("integer")
+                        .HasColumnName("orden");
+
+                    b.Property<Guid>("SerieId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("serie_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SerieId");
+
+                    b.HasIndex("TenantId", "SerieId", "Orden");
+
+                    b.ToTable("subseries_documentales", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.SubserieTipologia", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("nombre");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("integer")
+                        .HasColumnName("orden");
+
+                    b.Property<Guid>("SubserieId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("subserie_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SubserieId");
+
+                    b.HasIndex("TenantId", "SubserieId", "Orden");
+
+                    b.ToTable("subserie_tipologias", (string)null);
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.SuperAdminLog", b =>
                 {
                     b.Property<Guid>("Id")
@@ -10740,6 +11416,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<int>("Columna")
+                        .HasColumnType("integer")
+                        .HasColumnName("columna");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -10748,10 +11428,22 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("created_by");
 
+                    b.Property<string>("Descripcion")
+                        .HasColumnType("text")
+                        .HasColumnName("descripcion");
+
                     b.Property<string>("Label")
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("label");
+
+                    b.Property<bool>("MostrarEnFiltro")
+                        .HasColumnType("boolean")
+                        .HasColumnName("mostrar_en_filtro");
+
+                    b.Property<string>("Opciones")
+                        .HasColumnType("text")
+                        .HasColumnName("opciones");
 
                     b.Property<int>("Orden")
                         .HasColumnType("integer")
@@ -10764,6 +11456,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
                         .HasColumnName("tenant_id");
+
+                    b.Property<int>("Tipo")
+                        .HasColumnType("integer")
+                        .HasColumnName("tipo");
 
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -12216,6 +12912,104 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.ToTable("turnos_porteria", (string)null);
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.UnidadCampoDefinicion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("label");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("integer")
+                        .HasColumnName("orden");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "Label")
+                        .IsUnique();
+
+                    b.ToTable("unidad_campos_definiciones");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.UnidadCampoValor", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid>("DefinicionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("definicion_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("UnidadId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("unidad_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<string>("Valor")
+                        .HasColumnType("text")
+                        .HasColumnName("valor");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("UnidadId");
+
+                    b.HasIndex("DefinicionId", "UnidadId")
+                        .IsUnique();
+
+                    b.ToTable("unidad_campos_valores");
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.UnidadCoeficiente", b =>
                 {
                     b.Property<Guid>("Id")
@@ -12266,6 +13060,61 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("unidad_coeficientes");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.UnidadDocumento", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("nombre");
+
+                    b.Property<long>("Tamano")
+                        .HasColumnType("bigint")
+                        .HasColumnName("tamano");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("UnidadId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("unidad_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("url");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("UnidadId");
+
+                    b.ToTable("unidad_documentos");
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.UnidadPersona", b =>
@@ -13126,6 +13975,22 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("assigned_to_usuario_tenant_id");
 
+                    b.Property<string>("CloudAccessTokenEncrypted")
+                        .HasColumnType("text")
+                        .HasColumnName("cloud_access_token_encrypted");
+
+                    b.Property<string>("CloudBusinessAccountId")
+                        .HasColumnType("text")
+                        .HasColumnName("cloud_business_account_id");
+
+                    b.Property<string>("CloudPhoneNumberId")
+                        .HasColumnType("text")
+                        .HasColumnName("cloud_phone_number_id");
+
+                    b.Property<string>("CloudWebhookVerifyTokenEncrypted")
+                        .HasColumnType("text")
+                        .HasColumnName("cloud_webhook_verify_token_encrypted");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -13152,6 +14017,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)")
                         .HasColumnName("phone_number");
+
+                    b.Property<int>("Provider")
+                        .HasColumnType("integer")
+                        .HasColumnName("provider");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -14100,6 +14969,47 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Navigation("UnidadPrivada");
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.AiAgentCacheField", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.AiAgent", "Agent")
+                        .WithMany()
+                        .HasForeignKey("AgentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Agent");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.AiAgentCacheValue", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.AiAgent", "Agent")
+                        .WithMany()
+                        .HasForeignKey("AgentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Agent");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.AiAgentLineBinding", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.AiAgent", "Agent")
+                        .WithMany()
+                        .HasForeignKey("AgentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Propia.Domain.Entities.WhatsAppLine", "WhatsAppLine")
+                        .WithMany()
+                        .HasForeignKey("WhatsAppLineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Agent");
+
+                    b.Navigation("WhatsAppLine");
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.AiAgentMcpTool", b =>
                 {
                     b.HasOne("Propia.Domain.Entities.AiAgent", "Agent")
@@ -14584,6 +15494,28 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("RepresentanteLegal");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ExpedienteCampo", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.Expediente", "Expediente")
+                        .WithMany("Campos")
+                        .HasForeignKey("ExpedienteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Expediente");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ExpedienteTipologia", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.Expediente", "Expediente")
+                        .WithMany("Tipologias")
+                        .HasForeignKey("ExpedienteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Expediente");
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.Factura", b =>
@@ -15416,6 +16348,39 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Navigation("Sesion");
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.SubserieCampo", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.SubserieDocumental", "Subserie")
+                        .WithMany("Campos")
+                        .HasForeignKey("SubserieId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Subserie");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.SubserieDocumental", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.SerieDocumental", "Serie")
+                        .WithMany("Subseries")
+                        .HasForeignKey("SerieId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Serie");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.SubserieTipologia", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.SubserieDocumental", "Subserie")
+                        .WithMany("Tipologias")
+                        .HasForeignKey("SubserieId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Subserie");
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.Suscripcion", b =>
                 {
                     b.HasOne("Propia.Domain.Entities.Tenant", "Copropiedad")
@@ -15649,6 +16614,25 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Navigation("GuardaPersona");
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.UnidadCampoValor", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.UnidadCampoDefinicion", "Definicion")
+                        .WithMany()
+                        .HasForeignKey("DefinicionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Propia.Domain.Entities.UnidadPrivada", "Unidad")
+                        .WithMany()
+                        .HasForeignKey("UnidadId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Definicion");
+
+                    b.Navigation("Unidad");
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.UnidadCoeficiente", b =>
                 {
                     b.HasOne("Propia.Domain.Entities.TipoCoeficiente", "TipoCoeficiente")
@@ -15664,6 +16648,17 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("TipoCoeficiente");
+
+                    b.Navigation("Unidad");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.UnidadDocumento", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.UnidadPrivada", "Unidad")
+                        .WithMany()
+                        .HasForeignKey("UnidadId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("Unidad");
                 });
@@ -15883,6 +16878,13 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Navigation("Candidatos");
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.Expediente", b =>
+                {
+                    b.Navigation("Campos");
+
+                    b.Navigation("Tipologias");
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.Liquidacion", b =>
                 {
                     b.Navigation("Detalle");
@@ -15951,6 +16953,11 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Navigation("Destinatarios");
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.SerieDocumental", b =>
+                {
+                    b.Navigation("Subseries");
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.Sesion", b =>
                 {
                     b.Navigation("Acta");
@@ -15962,6 +16969,13 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Navigation("Poderes");
 
                     b.Navigation("Puntos");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.SubserieDocumental", b =>
+                {
+                    b.Navigation("Campos");
+
+                    b.Navigation("Tipologias");
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.Tablero", b =>

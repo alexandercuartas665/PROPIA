@@ -141,6 +141,9 @@ public class RegistroVisita : TenantEntity
 
     /// <summary>RN-09 - obligatorio para visitantes externos.</summary>
     public bool AvisoTratamientoConfirmado { get; set; }
+
+    /// <summary>Valores de campos personalizados del modulo (JSON: { campoId: valor }). Patron CUBOT.travels.</summary>
+    public string? CamposValoresJson { get; set; }
 }
 
 /// <summary>
@@ -237,7 +240,14 @@ public class NovedadTurno : TenantEntity
 
     public Guid GuardaPersonaId { get; set; }
 
+    /// <summary>Clasificacion: novedad general, dano, reclamo, seguridad, mantenimiento.</summary>
+    public TipoNovedadPorteria Tipo { get; set; } = TipoNovedadPorteria.General;
+
     public string Descripcion { get; set; } = string.Empty;
+
+    /// <summary>Destino opcional al que se asigna la novedad (inmueble, zona o equipo).</summary>
+    public DestinoNovedad? DestinoTipo { get; set; }
+    public Guid? DestinoId { get; set; }
 
     public bool GeneraTarea { get; set; }
 
@@ -271,4 +281,27 @@ public class PorteriaConfiguracion : TenantEntity
 
     /// <summary>Dias de retencion de datos de visitantes. RN-08 minimo 365.</summary>
     public int RetencionDatosVisitantesDias { get; set; } = 365;
+}
+
+/// <summary>
+/// Campo personalizado del modulo de Porteria (a nivel copropiedad). Se captura en el registro
+/// de ingreso y se guarda por visita en RegistroVisita.CamposValoresJson. Tipado al estilo de los
+/// campos dinamicos de CUBOT.travels.
+/// </summary>
+public class PorteriaCampo : TenantEntity
+{
+    public string Label { get; set; } = string.Empty;
+    public int Orden { get; set; }
+    public TipoCampoTablero Tipo { get; set; } = TipoCampoTablero.Texto;
+
+    /// <summary>Opciones para tipo Seleccion, separadas por salto de linea.</summary>
+    public string? Opciones { get; set; }
+
+    /// <summary>Si es true, aparece como filtro en la minuta.</summary>
+    public bool MostrarEnFiltro { get; set; }
+
+    /// <summary>Ancho en el modal: 1 = normal, 2 = ancho completo.</summary>
+    public int Columna { get; set; } = 1;
+
+    public string? Descripcion { get; set; }
 }

@@ -91,6 +91,7 @@ public static class DependencyInjection
         // ---- Infraestructura IA (Capa 2, tenant-scoped) - portado de CUBOT.travels ----
         // Clientes HTTP externos (Evolution WhatsApp + proveedores de IA). Tipados via HttpClientFactory.
         services.AddHttpClient<Application.InfraestructuraIa.IEvolutionApiClient, InfraestructuraIa.EvolutionApiClient>();
+        services.AddHttpClient<Application.InfraestructuraIa.IWhatsAppCloudClient, InfraestructuraIa.WhatsAppCloudClient>();
         services.AddHttpClient<Application.InfraestructuraIa.IAiProviderClient, InfraestructuraIa.AiProviderClient>();
         services.AddScoped<Application.InfraestructuraIa.IWhatsAppLineService, InfraestructuraIa.WhatsAppLineService>();
         services.AddScoped<Application.InfraestructuraIa.IListaNegraService, InfraestructuraIa.ListaNegraService>();
@@ -98,6 +99,8 @@ public static class DependencyInjection
         services.AddScoped<Application.InfraestructuraIa.IChatIngestService, InfraestructuraIa.ChatIngestService>();
         services.AddScoped<Application.InfraestructuraIa.IWhatsAppConnectorService, InfraestructuraIa.WhatsAppConnectorService>();
         services.AddScoped<Application.InfraestructuraIa.IAiAgentService, InfraestructuraIa.AiAgentService>();
+        services.AddScoped<Application.InfraestructuraIa.IAiAgentLineBindingService, InfraestructuraIa.AiAgentLineBindingService>();
+        services.AddScoped<Application.InfraestructuraIa.IAiAgentCacheService, InfraestructuraIa.AiAgentCacheService>();
         services.AddScoped<Application.InfraestructuraIa.IAiUsageService, InfraestructuraIa.AiUsageService>();
         services.AddScoped<Application.InfraestructuraIa.IAiInferenceService, InfraestructuraIa.AiInferenceService>();
         services.AddScoped<Application.InfraestructuraIa.IAiAgentTemplateService, InfraestructuraIa.AiAgentTemplateService>();
@@ -158,6 +161,7 @@ public static class DependencyInjection
 
         // Modulo 2.15 Documentos y Archivo Digital
         services.AddScoped<Application.Documentos.IDocumentosService, Documentos.DocumentosService>();
+        services.AddScoped<Application.Documentos.IExpedientesService, Documentos.ExpedientesService>();
 
         // Modulo 2.16 Reportes e Indicadores (consumidor puro - depende de IndicadoresService cross-modulo)
         services.AddScoped<Application.Reportes.IIndicadoresService, Reportes.IndicadoresService>();

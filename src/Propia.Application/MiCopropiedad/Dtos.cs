@@ -68,12 +68,23 @@ public record CrearVinculoUnidadRequest(Guid UnidadAsociadaId, bool IncluyeEnFac
 public record UnidadPersonaDto(
     Guid Id, Guid PersonaId, string PersonaNombre, string PersonaDocumento,
     string? PersonaEmail, string? PersonaTelefono,
-    RolUnidadPersona Rol, bool Habita, string? Parentesco);
+    RolUnidadPersona Rol, bool Habita, string? Parentesco,
+    string PersonaNombres = "", string PersonaApellidos = "");
 
 public record AgregarPersonaUnidadRequest(
     string Documento, string Nombres, string Apellidos,
     string? Email, string? Telefono,
     RolUnidadPersona Rol, bool Habita = true, string? Parentesco = null);
+
+// ----- Campos personalizados de unidad: la DEFINICION es por copropiedad (catalogo compartido,
+//       aplica a todas las unidades) y el VALOR es por unidad. -----
+public record UnidadCampoDefinicionDto(Guid Id, string Label, int Orden);
+public record CrearCampoDefinicionRequest(string Label);
+public record UnidadCampoDto(Guid DefinicionId, string Label, int Orden, string? Valor);
+public record SetCampoValorRequest(string? Valor);
+
+// ----- Documentos / anexos de una unidad (archivo en blob + nombre) -----
+public record UnidadDocumentoDto(Guid Id, string Nombre, string Url, long Tamano);
 
 /// <summary>
 /// Cuota consolidada: coeficiente y cuota total de una unidad principal sumando
@@ -133,8 +144,16 @@ public record CrearContratoServicioRequest(
     DateOnly FechaInicio, DateOnly? FechaFin, decimal? ValorMensual, string? Observaciones,
     int DiasAnticipacionAlerta = 30);
 
-/// <summary>Actualiza estado (Vigente/EnRenovacion) y dias de alerta de un contrato.</summary>
-public record ActualizarContratoRequest(EstadoContrato Estado, int DiasAnticipacionAlerta);
+/// <summary>
+/// Actualiza un contrato. Estado + dias siempre se aplican. Los demas campos son opcionales:
+/// si vienen con valor se actualizan (MERGE, conserva los no provistos) - asi el editor de la
+/// pagina edita todo y la tool MCP (que solo manda estado+dias) sigue funcionando igual.
+/// </summary>
+public record ActualizarContratoRequest(
+    EstadoContrato Estado, int DiasAnticipacionAlerta,
+    TipoServicio? Tipo = null, string? Proveedor = null, string? NitProveedor = null,
+    string? Contacto = null, DateOnly? FechaInicio = null, DateOnly? FechaFin = null,
+    decimal? ValorMensual = null, string? Observaciones = null);
 
 // ----- Zonas Comunes (seccion 6) -----
 public record ZonaComunDto(

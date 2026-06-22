@@ -1,4 +1,5 @@
 using Propia.Domain.Common;
+using Propia.Domain.Enums;
 
 namespace Propia.Domain.Entities;
 
@@ -25,12 +26,30 @@ public class TableroUsuario : TenantEntity
     public Guid PersonaId { get; set; }
 }
 
-/// <summary>Campo personalizado de un tablero (se rellena por tarjeta en TareaCampoValor).</summary>
+/// <summary>
+/// Campo personalizado de un tablero (se rellena por tarjeta en TareaCampoValor).
+/// Tipado al estilo de los campos dinamicos de CUBOT.travels: cada campo define como se captura.
+/// </summary>
 public class TableroCampo : TenantEntity
 {
     public Guid TableroId { get; set; }
     public string Label { get; set; } = string.Empty;
     public int Orden { get; set; }
+
+    /// <summary>Tipo de captura/render del campo.</summary>
+    public TipoCampoTablero Tipo { get; set; } = TipoCampoTablero.Texto;
+
+    /// <summary>Opciones para tipo Seleccion, separadas por salto de linea.</summary>
+    public string? Opciones { get; set; }
+
+    /// <summary>Si es true, el campo aparece como filtro (chips por valor) en la vista del tablero.</summary>
+    public bool MostrarEnFiltro { get; set; }
+
+    /// <summary>Ancho en el modal: 1 = normal (media columna), 2 = ancho completo.</summary>
+    public int Columna { get; set; } = 1;
+
+    /// <summary>Ayuda/contexto del campo para el usuario (y para agentes IA a futuro).</summary>
+    public string? Descripcion { get; set; }
 }
 
 /// <summary>Valor de un campo personalizado del tablero para una tarea concreta.</summary>

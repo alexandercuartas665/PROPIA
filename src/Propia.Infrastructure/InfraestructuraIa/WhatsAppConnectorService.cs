@@ -18,12 +18,14 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
     private readonly PropiaDbContext _db;
     private readonly ISecretProtector _secret;
     private readonly IEvolutionApiClient _client;
+    private readonly IWhatsAppCloudClient _cloud;
 
-    public WhatsAppConnectorService(PropiaDbContext db, ISecretProtector secret, IEvolutionApiClient client)
+    public WhatsAppConnectorService(PropiaDbContext db, ISecretProtector secret, IEvolutionApiClient client, IWhatsAppCloudClient cloud)
     {
         _db = db;
         _secret = secret;
         _client = client;
+        _cloud = cloud;
     }
 
     public async Task<bool> MasterReadyAsync(CancellationToken ct = default)
@@ -33,6 +35,24 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
     {
         var line = await _db.WhatsAppLines.FirstOrDefaultAsync(l => l.Id == lineId, ct);
         if (line is null) { return new LineConnectResult(false, null, "La linea no existe."); }
+
+        // Cloud (Meta): no hay QR. "Conectar" = validar el token contra Graph y marcar conectada.
+        if (line.Provider == WhatsAppProvider.Cloud)
+        {
+            var creds = CloudCreds(line);
+            if (creds is null) { return new LineConnectResult(false, null, "Faltan credenciales Cloud (Phone Number ID / Access Token)."); }
+            var chk = await _cloud.CheckAsync(creds, ct);
+            var now = DateTimeOffset.UtcNow;
+            line.Status = chk.Ok ? WhatsAppLineStatus.Connected : WhatsAppLineStatus.Failed;
+            line.LastStatusAt = now;
+            if (chk.Ok)
+            {
+                line.LastConnectedAt = now;
+                if (string.IsNullOrWhiteSpace(line.PhoneNumber) && !string.IsNullOrWhiteSpace(chk.PhoneNumber)) line.PhoneNumber = chk.PhoneNumber;
+            }
+            await _db.SaveChangesAsync(ct);
+            return new LineConnectResult(chk.Ok, null, chk.Ok ? null : (chk.Error ?? "No se pudo validar el token de Meta."));
+        }
 
         var server = await ResolveServerAsync(ct);
         if (server is null) { return new LineConnectResult(false, null, "No hay servidor Evolution maestro configurado (consola SuperAdmin)."); }
@@ -66,6 +86,26 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
         var line = await _db.WhatsAppLines.FirstOrDefaultAsync(l => l.Id == lineId, ct);
         if (line is null) { return null; }
 
+        // Cloud (Meta): el estado se valida revalidando el token contra Graph.
+        if (line.Provider == WhatsAppProvider.Cloud)
+        {
+            var creds = CloudCreds(line);
+            if (creds is not null)
+            {
+                var chk = await _cloud.CheckAsync(creds, ct);
+                var mapped = chk.Ok ? WhatsAppLineStatus.Connected : WhatsAppLineStatus.Failed;
+                if (mapped != line.Status)
+                {
+                    var now = DateTimeOffset.UtcNow;
+                    line.Status = mapped;
+                    line.LastStatusAt = now;
+                    if (mapped == WhatsAppLineStatus.Connected) line.LastConnectedAt = now;
+                    await _db.SaveChangesAsync(ct);
+                }
+            }
+            return Map(line);
+        }
+
         var server = await ResolveServerAsync(ct);
         if (server is null) { return Map(line); }
 
@@ -97,6 +137,14 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
         var line = await _db.WhatsAppLines.FirstOrDefaultAsync(l => l.Id == lineId, ct);
         if (line is null) { return false; }
 
+        if (line.Provider == WhatsAppProvider.Cloud)
+        {
+            line.Status = WhatsAppLineStatus.Disconnected;
+            line.LastStatusAt = DateTimeOffset.UtcNow;
+            await _db.SaveChangesAsync(ct);
+            return true;
+        }
+
         var server = await ResolveServerAsync(ct);
         if (server is not null)
         {
@@ -120,6 +168,15 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
         var line = await _db.WhatsAppLines.FirstOrDefaultAsync(l => l.Id == lineId, ct);
         if (line is null) { return new LineSendResult(false, "La linea no existe."); }
         if (line.Status != WhatsAppLineStatus.Connected) { return new LineSendResult(false, "La linea no esta conectada."); }
+
+        if (line.Provider == WhatsAppProvider.Cloud)
+        {
+            var creds = CloudCreds(line);
+            if (creds is null) { return new LineSendResult(false, "Faltan credenciales Cloud."); }
+            var digitsCloud = new string(phone.Where(char.IsDigit).ToArray());
+            var rc = await _cloud.SendTextAsync(creds, digitsCloud, text.Trim(), ct);
+            return new LineSendResult(rc.Ok, rc.Error);
+        }
 
         var server = await ResolveServerAsync(ct);
         if (server is null) { return new LineSendResult(false, "No hay servidor Evolution maestro configurado."); }
@@ -155,6 +212,14 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
     // Nombre de instancia unico en el servidor compartido: propia_<tenant>_<linea>.
     private static string EvoInstance(WhatsAppLine line) => $"propia_{line.TenantId:N}_{line.Id:N}";
 
+    // Credenciales Cloud (Meta) de la linea, con el token descifrado. Null si faltan.
+    private WhatsAppCloudCredentials? CloudCreds(WhatsAppLine line)
+    {
+        if (string.IsNullOrWhiteSpace(line.CloudPhoneNumberId) || string.IsNullOrWhiteSpace(line.CloudAccessTokenEncrypted)) return null;
+        try { return new WhatsAppCloudCredentials(line.CloudPhoneNumberId!, _secret.Unprotect(line.CloudAccessTokenEncrypted!)); }
+        catch { return null; }
+    }
+
     private static WhatsAppLineDto Map(WhatsAppLine l) =>
-        new(l.Id, l.InstanceName, l.PhoneNumber, l.Status, l.AssignedToUsuarioTenantId, l.LastConnectedAt, l.LastStatusAt);
+        new(l.Id, l.InstanceName, l.PhoneNumber, l.Status, l.AssignedToUsuarioTenantId, l.LastConnectedAt, l.LastStatusAt, l.Provider, l.CloudPhoneNumberId);
 }

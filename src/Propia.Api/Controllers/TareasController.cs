@@ -203,7 +203,14 @@ public class TareasController : ControllerBase
     [HttpPost("tableros/{id:guid}/campos")]
     public async Task<IActionResult> AgregarCampo(Guid id, [FromBody] GuardarCampoRequest req, CancellationToken ct)
     {
-        try { return Created("", await _svc.AgregarCampoAsync(id, req.Label, ct)); }
+        try { return Created("", await _svc.AgregarCampoAsync(id, req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpPut("tableros/{id:guid}/campos/{campoId:guid}")]
+    public async Task<IActionResult> ActualizarCampo(Guid id, Guid campoId, [FromBody] GuardarCampoRequest req, CancellationToken ct)
+    {
+        try { return await _svc.ActualizarCampoAsync(id, campoId, req, ct) ? NoContent() : NotFound(); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 

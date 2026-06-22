@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Propia.Application.Common;
@@ -24,11 +25,12 @@ public sealed class AiInferenceService : IAiInferenceService
     private readonly IMcpGateway _mcp;
     private readonly ITenantContext _tenant;
     private readonly IListaNegraService _listaNegra;
+    private readonly IAiAgentCacheService _cache;
 
     /// <summary>Maximo de rondas de tool-calling para evitar bucles infinitos del modelo.</summary>
     private const int MaxToolRounds = 6;
 
-    public AiInferenceService(PropiaDbContext db, ISecretProtector secret, IAiProviderClient client, IAiUsageService usage, IMcpGateway mcp, ITenantContext tenant, IListaNegraService listaNegra)
+    public AiInferenceService(PropiaDbContext db, ISecretProtector secret, IAiProviderClient client, IAiUsageService usage, IMcpGateway mcp, ITenantContext tenant, IListaNegraService listaNegra, IAiAgentCacheService cache)
     {
         _db = db;
         _secret = secret;
@@ -37,7 +39,10 @@ public sealed class AiInferenceService : IAiInferenceService
         _mcp = mcp;
         _tenant = tenant;
         _listaNegra = listaNegra;
+        _cache = cache;
     }
+
+    private sealed record CacheFieldInfo(string FieldKey, string Label, string? Description, bool IsUpdatable);
 
     public async Task<AiChatResult> TestChatAsync(Guid agentId, IReadOnlyList<AiChatTurn> turns, string? systemPromptOverride = null, string? bearerToken = null, string? contactPhone = null, Guid? conversationId = null, CancellationToken ct = default)
     {
@@ -98,11 +103,25 @@ public sealed class AiInferenceService : IAiInferenceService
             .Select(r => new AiChatAttachment(r.Name, r.ResourceType, r.FileUrl, r.FileName, r.Detail))
             .ToListAsync(ct);
 
+        // Datos cache: la sesion es el AgentId en el playground, o el ConversationId en chat real.
+        var sessionId = conversationId ?? agentId;
+        var cacheFields = await _db.AiAgentCacheFields.AsNoTracking()
+            .Where(f => f.AgentId == agentId).OrderBy(f => f.SortOrder).ThenBy(f => f.Label)
+            .Select(f => new CacheFieldInfo(f.FieldKey, f.Label, f.Description, f.IsUpdatable))
+            .ToListAsync(ct);
+        var cacheValues = await _db.AiAgentCacheValues.AsNoTracking()
+            .Where(v => v.AgentId == agentId && v.SessionId == sessionId)
+            .ToDictionaryAsync(v => v.FieldKey, v => v.Value, ct);
+
         var systemPrompt = await BuildSystemPrompt(agentId, systemPromptOverride ?? agent.SystemPrompt, resources, ct);
+        systemPrompt = AppendCacheState(systemPrompt, cacheFields, cacheValues);
 
         // Contexto de la copropiedad ACTIVA (la seleccionada por el usuario): se antepone al
         // prompt para que el agente sepa SIEMPRE sobre que copropiedad responde, sin hardcodear.
         systemPrompt = await PrependContextoCopropiedadAsync(systemPrompt, ct);
+
+        AiChatResult result;
+        List<AiDebugPrompt> debug;
 
         // Tools MCP habilitadas para este agente. Si hay alguna y tenemos token del usuario,
         // corremos el loop de function-calling; si no, el camino simple de siempre.
@@ -114,23 +133,48 @@ public sealed class AiInferenceService : IAiInferenceService
                 + "Cuando te pregunten por unidades, torres, contratos, zonas, equipos, finanzas, consejo o cambios, USA las herramientas para responder con datos exactos; nunca inventes cifras. "
                 + "Si una pregunta abarca varios temas, llama a TODAS las herramientas necesarias antes de responder. "
                 + "Las herramientas de creacion son dry-run por defecto: confirma con el usuario antes de ejecutar cambios reales.";
-            return await RunToolLoopAsync(agent, model, apiKey, providerCfg.BaseUrl, systemPromptConTools, turns, toolSpecs, resources, bearerToken!, ct);
+            result = await RunToolLoopAsync(agent, model, apiKey, providerCfg.BaseUrl, systemPromptConTools, turns, toolSpecs, resources, bearerToken!, ct);
+            debug = result.DebugPrompts?.ToList() ?? new();
         }
-
-        var result = await _client.CompleteAsync(agent.Provider, apiKey, providerCfg.BaseUrl, model, systemPrompt, turns, ct);
-
-        if (result.Ok)
+        else
         {
-            await _usage.RecordAsync(agent.Id, agent.Provider, model, result.InputTokens, result.OutputTokens, "test", true, ct);
+            var raw = await _client.CompleteAsync(agent.Provider, apiKey, providerCfg.BaseUrl, model, systemPrompt, turns, ct);
+
+            // Bitacora de depuracion: registra el prompt exacto que se envio al LLM + su respuesta cruda.
+            var mainResponse = raw.Ok
+                ? (string.IsNullOrWhiteSpace(raw.Text) ? "(el LLM devolvio texto vacio)" : raw.Text)
+                : raw.Error;
+            debug = new List<AiDebugPrompt>
+            {
+                new("Prompt principal del agente (base + enrutador + recursos + contexto)", DateTimeOffset.UtcNow, systemPrompt, mainResponse)
+            };
+
+            if (raw.Ok)
+            {
+                await _usage.RecordAsync(agent.Id, agent.Provider, model, raw.InputTokens, raw.OutputTokens, "test", true, ct);
+            }
+
+            if (raw.Ok && !string.IsNullOrEmpty(raw.Text))
+            {
+                var (cleanText, attachments) = ExtractAttachments(raw.Text!, resources);
+                result = raw with { Text = cleanText, Attachments = attachments };
+            }
+            else { result = raw; }
         }
 
-        if (result.Ok && !string.IsNullOrEmpty(result.Text))
+        // Datos cache: tras responder, una segunda llamada (mas barata) infiere los datos cache del
+        // residente y los persiste (respeta sticky). No debe romper la respuesta si falla.
+        if (result.Ok && cacheFields.Count > 0 && !string.IsNullOrWhiteSpace(result.Text))
         {
-            var (cleanText, attachments) = ExtractAttachments(result.Text!, resources);
-            return result with { Text = cleanText, Attachments = attachments };
+            try
+            {
+                await ExtractAndStoreCacheUpdatesAsync(agentId, sessionId, agent.Provider, apiKey, providerCfg.BaseUrl, model,
+                    cacheFields, cacheValues, turns, result.Text!, debug, ct);
+            }
+            catch { /* la extraccion no debe romper la respuesta */ }
         }
 
-        return result;
+        return result with { DebugPrompts = debug };
     }
 
     /// <summary>
@@ -181,6 +225,8 @@ public sealed class AiInferenceService : IAiInferenceService
     {
         var msgs = new List<AiToolMessage>(turns.Select(t => new AiToolMessage(t.Role, t.Text)));
         int inTok = 0, outTok = 0;
+        // Bitacora de depuracion: el prompt principal (con herramientas) + una entrada por cada ronda de tools.
+        var debug = new List<AiDebugPrompt>();
 
         for (var ronda = 0; ronda < MaxToolRounds; ronda++)
         {
@@ -188,17 +234,25 @@ public sealed class AiInferenceService : IAiInferenceService
             inTok += comp.InputTokens;
             outTok += comp.OutputTokens;
 
-            if (!comp.Ok) { return new AiChatResult(false, null, comp.Error, inTok, outTok); }
+            if (!comp.Ok)
+            {
+                debug.Insert(0, new AiDebugPrompt("Prompt principal del agente (con herramientas MCP)", DateTimeOffset.UtcNow, systemPrompt, comp.Error));
+                return new AiChatResult(false, null, comp.Error, inTok, outTok, null, debug);
+            }
 
             if (comp.ToolCalls.Count == 0)
             {
                 await _usage.RecordAsync(agent.Id, agent.Provider, model, inTok, outTok, "test", true, ct);
                 var (clean, attachments) = ExtractAttachments(comp.Text ?? "", resources);
-                return new AiChatResult(true, clean, null, inTok, outTok, attachments);
+                debug.Insert(0, new AiDebugPrompt("Prompt principal del agente (con herramientas MCP)", DateTimeOffset.UtcNow, systemPrompt,
+                    string.IsNullOrWhiteSpace(comp.Text) ? "(el LLM devolvio texto vacio)" : comp.Text));
+                return new AiChatResult(true, clean, null, inTok, outTok, attachments, debug);
             }
 
             // El modelo pidio ejecutar tools: registramos su turno y ejecutamos cada una.
             msgs.Add(new AiToolMessage("assistant", comp.Text, comp.ToolCalls));
+            var pasoSb = new StringBuilder();
+            var resSb = new StringBuilder();
             foreach (var call in comp.ToolCalls)
             {
                 string resultado;
@@ -215,12 +269,16 @@ public sealed class AiInferenceService : IAiInferenceService
                 }
                 catch (Exception ex) { resultado = $"Error ejecutando '{call.Name}': {ex.Message}"; }
 
+                pasoSb.AppendLine($"{call.Name}({call.ArgumentsJson})");
+                resSb.AppendLine($"{call.Name} -> {resultado}");
                 msgs.Add(new AiToolMessage("tool", resultado, null, call.Id, call.Name));
             }
+            debug.Add(new AiDebugPrompt($"Herramientas ejecutadas (ronda {ronda + 1})", DateTimeOffset.UtcNow, pasoSb.ToString().TrimEnd(), resSb.ToString().TrimEnd()));
         }
 
         await _usage.RecordAsync(agent.Id, agent.Provider, model, inTok, outTok, "test", false, ct);
-        return new AiChatResult(false, null, $"El agente supero el maximo de pasos de herramientas ({MaxToolRounds}).", inTok, outTok);
+        debug.Insert(0, new AiDebugPrompt("Prompt principal del agente (con herramientas MCP)", DateTimeOffset.UtcNow, systemPrompt, $"Supero el maximo de pasos ({MaxToolRounds})."));
+        return new AiChatResult(false, null, $"El agente supero el maximo de pasos de herramientas ({MaxToolRounds}).", inTok, outTok, null, debug);
     }
 
     private static IReadOnlyDictionary<string, object?> ParseArgs(string argumentsJson)
@@ -337,4 +395,139 @@ public sealed class AiInferenceService : IAiInferenceService
         }
         return sb.ToString();
     }
+
+    // ===== Datos cache (capa 3) =====
+
+    /// <summary>Inyecta en el prompt el bloque "estado de la cache" con los datos ya capturados (solo los que tienen valor).</summary>
+    private static string AppendCacheState(string systemPrompt, IReadOnlyList<CacheFieldInfo> fields, IReadOnlyDictionary<string, string?> values)
+    {
+        var captured = fields
+            .Where(f => values.TryGetValue(f.FieldKey, out var v) && !string.IsNullOrWhiteSpace(v))
+            .ToList();
+        if (captured.Count == 0) { return systemPrompt; }
+
+        var sb = new StringBuilder(systemPrompt);
+        sb.AppendLine();
+        sb.AppendLine();
+        sb.AppendLine("### Datos que ya conocemos del residente (estado de la cache)");
+        sb.AppendLine("Estos datos ya estan capturados. Usalos para decidir tu siguiente paso: NO le pidas al residente algo que ya sabes.");
+        foreach (var f in captured)
+        {
+            sb.AppendLine($"- {f.Label}: {values[f.FieldKey]}");
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Segunda llamada (extractor): lee la conversacion y devuelve un JSON plano con los datos cache que
+    /// puede inferir CON CERTEZA. Persiste cada uno via IAiAgentCacheService (que respeta sticky).
+    /// Best-effort: cualquier fallo se traga sin romper la respuesta. Portado de CUBOT.travels.
+    /// </summary>
+    private async Task ExtractAndStoreCacheUpdatesAsync(
+        Guid agentId, Guid sessionId, AiProvider provider, string apiKey, string? baseUrl, string model,
+        IReadOnlyList<CacheFieldInfo> fields, IReadOnlyDictionary<string, string?> currentValues,
+        IReadOnlyList<AiChatTurn> turns, string botResponse, List<AiDebugPrompt> debug, CancellationToken ct)
+    {
+        var lastUser = turns.LastOrDefault(t => string.Equals(t.Role, "user", StringComparison.OrdinalIgnoreCase))?.Text ?? "";
+
+        var sys = new StringBuilder();
+        sys.AppendLine("Eres un extractor de datos de una copropiedad. NO debes responder al residente.");
+        sys.AppendLine("Tu unico trabajo es leer la conversacion y devolver un JSON plano con los campos que puedas inferir CON CERTEZA del mensaje del residente.");
+        sys.AppendLine("Reglas:");
+        sys.AppendLine("- NO inventes datos. Si no esta claro, NO incluyas el campo.");
+        sys.AppendLine("- Si un campo ya tiene valor y el residente no lo cambia, NO lo incluyas.");
+        sys.AppendLine("- NO incluyas el valor literal \"PENDIENTE\".");
+        sys.AppendLine("- Responde UNICAMENTE el JSON, sin texto antes ni despues, sin markdown.");
+        sys.AppendLine();
+        sys.AppendLine("### Campos a capturar");
+        foreach (var f in fields)
+        {
+            sys.AppendLine($"- {f.FieldKey}: {(string.IsNullOrWhiteSpace(f.Description) ? f.Label : f.Description)}");
+        }
+        sys.AppendLine();
+        sys.AppendLine("### Estado actual de la cache");
+        var anyKnown = false;
+        foreach (var f in fields)
+        {
+            if (currentValues.TryGetValue(f.FieldKey, out var v) && !string.IsNullOrWhiteSpace(v))
+            {
+                sys.AppendLine($"- {f.FieldKey} = {v}");
+                anyKnown = true;
+            }
+        }
+        if (!anyKnown) { sys.AppendLine("(vacio)"); }
+        sys.AppendLine();
+        sys.AppendLine("### Formato de respuesta");
+        sys.AppendLine("JSON plano. Ejemplo: {\"numero_apartamento\":\"302\",\"tipo_solicitud\":\"Reclamo\"}");
+        sys.AppendLine("Si no hay nada nuevo, responde {}");
+
+        var transcript = new StringBuilder();
+        transcript.AppendLine("### Transcripcion de la conversacion (orden cronologico)");
+        foreach (var t in turns)
+        {
+            var who = string.Equals(t.Role, "user", StringComparison.OrdinalIgnoreCase) ? "Residente" : "Agente";
+            transcript.AppendLine($"{who}: {(string.IsNullOrWhiteSpace(t.Text) ? "(turno vacio)" : t.Text.Trim())}");
+        }
+        transcript.AppendLine($"Agente (respuesta actual): {botResponse}");
+
+        var userTurn = new AiChatTurn("user",
+            transcript + "\n\nQue campos puedes inferir del residente a partir de TODA esta conversacion? Solo agrega campos que puedes inferir CON CERTEZA y que no tengan ya valor.");
+
+        var extractorSystem = sys.ToString();
+        var entry = new AiDebugPrompt(
+            $"Extractor de datos cache (ultimo mensaje: \"{Truncate(lastUser, 60)}\")",
+            DateTimeOffset.UtcNow, extractorSystem + "\n\n---\n[Turno al extractor]\n" + userTurn.Text);
+        debug.Add(entry);
+        var idx = debug.Count - 1;
+
+        AiChatResult ext;
+        try { ext = await _client.CompleteAsync(provider, apiKey, baseUrl, model, extractorSystem, new[] { userTurn }, ct); }
+        catch (Exception ex) { debug[idx] = entry with { Response = $"[Llamada fallida] {ex.Message}" }; return; }
+
+        debug[idx] = entry with { Response = ext.Ok ? (ext.Text ?? "(sin texto)") : $"[Sin Ok] {ext.Error}" };
+        if (!ext.Ok || string.IsNullOrWhiteSpace(ext.Text)) { return; }
+
+        await _usage.RecordAsync(agentId, provider, model, ext.InputTokens, ext.OutputTokens, "cache", true, ct);
+
+        var json = StripJsonFromMarkdown(ext.Text!);
+        Dictionary<string, JsonElement>? parsed;
+        try { parsed = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json); }
+        catch { return; }
+        if (parsed is null || parsed.Count == 0) { return; }
+
+        var fieldKeys = fields.Select(f => f.FieldKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, valEl) in parsed)
+        {
+            if (!fieldKeys.Contains(key)) { continue; }
+            string? v = valEl.ValueKind switch
+            {
+                JsonValueKind.String => valEl.GetString(),
+                JsonValueKind.Number => valEl.GetRawText(),
+                JsonValueKind.True => "true",
+                JsonValueKind.False => "false",
+                JsonValueKind.Array => string.Join(", ", valEl.EnumerateArray()
+                    .Select(e => e.ValueKind == JsonValueKind.String ? e.GetString() : e.GetRawText())
+                    .Where(s => !string.IsNullOrWhiteSpace(s))),
+                JsonValueKind.Object => valEl.GetRawText(),
+                _ => null
+            };
+            if (string.IsNullOrWhiteSpace(v)) { continue; }
+            if (string.Equals(v.Trim(), "PENDIENTE", StringComparison.OrdinalIgnoreCase)) { continue; }
+            try { await _cache.SetValueAsync(new SetAgentCacheValueRequest(agentId, sessionId, key, v.Trim(), "inference"), ct); }
+            catch { /* la falla de un campo no aborta el resto */ }
+        }
+    }
+
+    private static string StripJsonFromMarkdown(string text)
+    {
+        var t = text.Trim();
+        t = Regex.Replace(t, @"^```(?:json)?\s*\n?", "", RegexOptions.IgnoreCase);
+        t = Regex.Replace(t, @"\n?```\s*$", "");
+        var i = t.IndexOf('{');
+        var j = t.LastIndexOf('}');
+        if (i >= 0 && j > i) { t = t.Substring(i, j - i + 1); }
+        return t.Trim();
+    }
+
+    private static string Truncate(string s, int n) => string.IsNullOrEmpty(s) ? "" : (s.Length <= n ? s : s[..n] + "...");
 }

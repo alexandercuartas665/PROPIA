@@ -16,14 +16,29 @@ public sealed record WhatsAppLineDto(
     WhatsAppLineStatus Status,
     Guid? AssignedToUsuarioTenantId,
     DateTimeOffset? LastConnectedAt,
-    DateTimeOffset? LastStatusAt);
+    DateTimeOffset? LastStatusAt,
+    WhatsAppProvider Provider = WhatsAppProvider.Evolution,
+    string? CloudPhoneNumberId = null);
 
-public sealed record CreateWhatsAppLineRequest(string InstanceName, string? PhoneNumber);
+public sealed record CreateWhatsAppLineRequest(
+    string InstanceName,
+    string? PhoneNumber,
+    WhatsAppProvider Provider = WhatsAppProvider.Evolution,
+    string? CloudPhoneNumberId = null,
+    string? CloudBusinessAccountId = null,
+    string? CloudAccessToken = null,
+    string? CloudWebhookVerifyToken = null);
 
 /// <summary>Resultado de conectar una linea: QR (base64) para escanear o error.</summary>
 public sealed record LineConnectResult(bool Ok, string? QrBase64, string? Error);
 
 public sealed record LineSendResult(bool Ok, string? Error);
+
+// ---------- WhatsApp Cloud API (Meta) ----------
+public sealed record WhatsAppCloudCredentials(string PhoneNumberId, string AccessToken);
+public sealed record WhatsAppCloudCheckResult(bool Ok, string? PhoneNumber, string? VerifiedName, string? Error);
+public sealed record WhatsAppCloudSendResult(bool Ok, string? ExternalId, string? Error);
+public enum WhatsAppCloudMediaKind { Image, Video, Audio, Document }
 
 // ---------- Agentes de IA ----------
 
@@ -36,7 +51,11 @@ public sealed record AiAgentDto(
     string SystemPrompt,
     bool IsActive,
     int SortOrder,
-    int ResourceCount);
+    int ResourceCount,
+    bool ReactionsEnabled = false,
+    int ReactionRatioN = 3,
+    int ReactionRatioM = 4,
+    string? ReactionEmojis = null);
 
 /// <summary>Snapshot de un prompt enrutado en una version historica.</summary>
 public sealed record AgentPromptSnapshotDto(string Name, string? Rule, string Body, int SortOrder);
@@ -68,7 +87,31 @@ public sealed record AiAgentDetailDto(
     IReadOnlyList<AiAgentPromptDto> Prompts);
 
 public sealed record CreateAiAgentRequest(string? Name, string? Role, AiProvider Provider, string? Model, string? SystemPrompt);
-public sealed record UpdateAiAgentRequest(string? Name, string? Role, AiProvider Provider, string? Model, string? SystemPrompt);
+public sealed record UpdateAiAgentRequest(string? Name, string? Role, AiProvider Provider, string? Model, string? SystemPrompt,
+    bool ReactionsEnabled = false, int ReactionRatioN = 3, int ReactionRatioM = 4, string? ReactionEmojis = null);
+
+/// <summary>Una fila de "lineas WhatsApp atendidas" en el configurador del agente.</summary>
+public sealed record AgentLineBindingRowDto(
+    Guid WhatsAppLineId,
+    string LineInstanceName,
+    string? LinePhoneNumber,
+    bool IsBoundHere,
+    bool AutoConfirm,
+    Guid? BoundAgentId,
+    string? BoundAgentName);
+
+/// <summary>Vincula/desvincula una linea a un agente. Connected=false la libera.</summary>
+public sealed record SetAgentLineBindingRequest(Guid WhatsAppLineId, bool Connected, bool AutoConfirm = true);
+
+// --- Datos cache del agente (capa 3) ---
+/// <summary>Definicion de un dato que el agente debe ir capturando durante la conversacion.</summary>
+public sealed record AiAgentCacheFieldDto(Guid Id, Guid AgentId, string FieldKey, string Label, string? Description, int SortOrder, bool IsUpdatable);
+public sealed record CreateAgentCacheFieldRequest(string Label, string? Description, bool IsUpdatable = true);
+public sealed record UpdateAgentCacheFieldRequest(string Label, string? Description, bool IsUpdatable = true);
+
+/// <summary>Valor percibido por sesion. Sesion = AgentId en pruebas, ConversationId en chat real.</summary>
+public sealed record AiAgentCacheValueDto(string FieldKey, string Label, string? Description, string? Value, string? Source, DateTimeOffset? UpdatedAt);
+public sealed record SetAgentCacheValueRequest(Guid AgentId, Guid SessionId, string FieldKey, string? Value, string? Source);
 
 public sealed record CreateAgentResourceRequest(Guid AgentId, string? Name, AgentResourceType ResourceType, string? Detail, string? FileUrl, string? FileName);
 public sealed record UpdateAgentResourceRequest(string? Name, AgentResourceType ResourceType, string? Detail, string? FileUrl, string? FileName);
@@ -84,13 +127,17 @@ public sealed record AiChatTurn(string Role, string Text);
 /// <summary>Recurso adjuntable que el agente decidio entregar.</summary>
 public sealed record AiChatAttachment(string Name, AgentResourceType ResourceType, string? FileUrl, string? FileName, string? Detail);
 
+/// <summary>Una llamada al LLM registrada para depuracion: que prompt se envio y que respondio.</summary>
+public sealed record AiDebugPrompt(string Title, DateTimeOffset SentAt, string Content, string? Response = null);
+
 public sealed record AiChatResult(
     bool Ok,
     string? Text,
     string? Error,
     int InputTokens = 0,
     int OutputTokens = 0,
-    IReadOnlyList<AiChatAttachment>? Attachments = null);
+    IReadOnlyList<AiChatAttachment>? Attachments = null,
+    IReadOnlyList<AiDebugPrompt>? DebugPrompts = null);
 
 // ---------- Tool-calling (Fase B: agente como cliente MCP) ----------
 

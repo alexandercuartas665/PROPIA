@@ -26,7 +26,8 @@ public record TareaListaDto(
     string? Color = null,
     bool EsProyecto = false,
     decimal? Valor = null,
-    DateOnly? FechaInicio = null);
+    DateOnly? FechaInicio = null,
+    IReadOnlyList<TareaCampoValorDto>? CamposValores = null);
 
 public record TareaDetalleDto(
     Guid Id,
@@ -63,7 +64,8 @@ public record TareaDetalleDto(
     string? OrigenReferencia = null,
     Guid? TableroId = null,
     IReadOnlyList<TareaAdjuntoDto>? Adjuntos = null,
-    IReadOnlyList<SubtareaCheckDto>? Checklist = null);
+    IReadOnlyList<SubtareaCheckDto>? Checklist = null,
+    IReadOnlyList<TareaCampoValorDto>? CamposValores = null);
 
 public record TareaComentarioDto(Guid Id, Guid AutorUsuarioId, string Texto, DateTimeOffset CreatedAt);
 public record TareaHistorialDto(TipoEventoTarea TipoEvento, string Descripcion, Guid RealizadoPorUsuarioId, DateTimeOffset OcurridoAt);
@@ -93,7 +95,8 @@ public record CrearTareaRequest(
     string? OrigenTipo = null,
     string? OrigenReferencia = null,
     IReadOnlyList<Guid>? ResponsablePersonaIds = null,
-    IReadOnlyList<SubtareaCheckItem>? Checklist = null);
+    IReadOnlyList<SubtareaCheckItem>? Checklist = null,
+    IReadOnlyList<TareaCampoValorDto>? CamposValores = null);
 
 public record ActualizarTareaRequest(
     string Titulo,
@@ -112,7 +115,8 @@ public record ActualizarTareaRequest(
     string? OrigenTipo = null,
     string? OrigenReferencia = null,
     IReadOnlyList<Guid>? ResponsablePersonaIds = null,
-    IReadOnlyList<SubtareaCheckItem>? Checklist = null);
+    IReadOnlyList<SubtareaCheckItem>? Checklist = null,
+    IReadOnlyList<TareaCampoValorDto>? CamposValores = null);
 
 public record CambiarEstadoRequest(Guid EstadoId, string? MotivoCancelacion);
 public record CrearComentarioRequest(string Texto);
@@ -178,14 +182,29 @@ public record BulkResultDto(
 
 // ----- Tableros de trabajo (2.10) -----
 public record TableroUsuarioDto(Guid PersonaId, string Nombre, string Iniciales);
-public record TableroCampoDto(Guid Id, string Label, int Orden);
+public record TableroCampoDto(
+    Guid Id, string Label, int Orden,
+    TipoCampoTablero Tipo = TipoCampoTablero.Texto,
+    string? Opciones = null,
+    bool MostrarEnFiltro = false,
+    int Columna = 1,
+    string? Descripcion = null);
+
+/// <summary>Valor de un campo personalizado para una tarjeta (campoId -> valor).</summary>
+public record TareaCampoValorDto(Guid CampoId, string? Valor);
 public record TableroDto(
     Guid Id, string Nombre, string? Descripcion, string Color, int Orden,
     int NCards, IReadOnlyList<TableroUsuarioDto> Usuarios,
     IReadOnlyList<TableroCampoDto>? Campos = null);
 public record GuardarTableroRequest(
     string Nombre, string? Descripcion, string Color, IReadOnlyList<Guid> UsuarioPersonaIds);
-public record GuardarCampoRequest(string Label);
+public record GuardarCampoRequest(
+    string Label,
+    TipoCampoTablero Tipo = TipoCampoTablero.Texto,
+    string? Opciones = null,
+    bool MostrarEnFiltro = false,
+    int Columna = 1,
+    string? Descripcion = null);
 
 /// <summary>Vista completa de un tablero: el tablero + sus columnas/estados + sus tarjetas.</summary>
 public record TableroBoardDto(

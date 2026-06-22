@@ -72,6 +72,23 @@ public enum TipoEventoTarea
     Eliminada = 18
 }
 
+/// <summary>
+/// Tipo de un campo personalizado de un tablero (modulo 2.10). Define como se captura y renderiza
+/// en el modal de la tarjeta. Portado del patron de campos dinamicos de CUBOT.travels.
+/// </summary>
+public enum TipoCampoTablero
+{
+    Texto = 0,
+    AreaTexto = 1,
+    Numero = 2,
+    Moneda = 3,
+    Fecha = 4,
+    Hora = 5,
+    Telefono = 6,
+    Seleccion = 7,
+    Booleano = 8
+}
+
 /// <summary>Tipo de dependencia entre dos tareas. Spec 2.10 v1.0 Fase 2.</summary>
 public enum TipoDependenciaTarea
 {

@@ -73,4 +73,10 @@ public interface IPorteriaService
     // ----- Configuracion -----
     Task<ConfiguracionDto> GetConfiguracionAsync(CancellationToken ct);
     Task<ConfiguracionDto> ActualizarConfiguracionAsync(ActualizarConfiguracionRequest req, CancellationToken ct);
+
+    // ----- Campos personalizados (estilo CUBOT.travels) -----
+    Task<IReadOnlyList<PorteriaCampoDto>> ListarCamposAsync(CancellationToken ct);
+    Task<PorteriaCampoDto> CrearCampoAsync(GuardarPorteriaCampoRequest req, CancellationToken ct);
+    Task<bool> ActualizarCampoAsync(Guid campoId, GuardarPorteriaCampoRequest req, CancellationToken ct);
+    Task<bool> EliminarCampoAsync(Guid campoId, CancellationToken ct);
 }

@@ -56,6 +56,9 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<UnidadPrivada> UnidadesPrivadas => Set<UnidadPrivada>();
     public DbSet<UnidadVinculo> UnidadVinculos => Set<UnidadVinculo>();
     public DbSet<UnidadPersona> UnidadPersonas => Set<UnidadPersona>();
+    public DbSet<UnidadCampoDefinicion> UnidadCamposDefiniciones => Set<UnidadCampoDefinicion>();
+    public DbSet<UnidadCampoValor> UnidadCamposValores => Set<UnidadCampoValor>();
+    public DbSet<UnidadDocumento> UnidadDocumentos => Set<UnidadDocumento>();
     public DbSet<BitacoraMiCopropiedad> BitacoraMiCopropiedad => Set<BitacoraMiCopropiedad>();
     public DbSet<ZonaComun> ZonasComunes => Set<ZonaComun>();
     public DbSet<EquipoActivo> EquiposActivos => Set<EquipoActivo>();
@@ -190,6 +193,14 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<DocumentoDestacadoPersonal> DocumentoDestacadosPersonal => Set<DocumentoDestacadoPersonal>();
     public DbSet<DocumentoAuditoria> DocumentoAuditorias => Set<DocumentoAuditoria>();
     public DbSet<DocumentoConsumo> DocumentoConsumos => Set<DocumentoConsumo>();
+    // Documentos 2.15 - vista Expedientes (TRD)
+    public DbSet<SerieDocumental> SeriesDocumentales => Set<SerieDocumental>();
+    public DbSet<SubserieDocumental> SubseriesDocumentales => Set<SubserieDocumental>();
+    public DbSet<SubserieTipologia> SubserieTipologias => Set<SubserieTipologia>();
+    public DbSet<SubserieCampo> SubserieCampos => Set<SubserieCampo>();
+    public DbSet<Expediente> Expedientes => Set<Expediente>();
+    public DbSet<ExpedienteTipologia> ExpedienteTipologias => Set<ExpedienteTipologia>();
+    public DbSet<ExpedienteCampo> ExpedienteCampos => Set<ExpedienteCampo>();
 
     // Modulo 2.16 Reportes e Indicadores
     // (Categoria y Catalogo con TenantId nullable para mezclar globales PropIA + tenant)
@@ -211,6 +222,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<Correspondencia> Correspondencias => Set<Correspondencia>();
     public DbSet<NovedadTurno> NovedadesTurno => Set<NovedadTurno>();
     public DbSet<PorteriaConfiguracion> PorteriaConfiguraciones => Set<PorteriaConfiguracion>();
+    public DbSet<PorteriaCampo> PorteriaCampos => Set<PorteriaCampo>();
 
     // Modulo 2.13 Reservas de Zonas Comunes
     public DbSet<ZonaConfigReserva> ZonaConfigReservas => Set<ZonaConfigReserva>();
@@ -254,6 +266,9 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<AiAgent> AiAgents => Set<AiAgent>();
     public DbSet<AiAgentPrompt> AiAgentPrompts => Set<AiAgentPrompt>();
     public DbSet<AiAgentResource> AiAgentResources => Set<AiAgentResource>();
+    public DbSet<AiAgentLineBinding> AiAgentLineBindings => Set<AiAgentLineBinding>();
+    public DbSet<AiAgentCacheField> AiAgentCacheFields => Set<AiAgentCacheField>();
+    public DbSet<AiAgentCacheValue> AiAgentCacheValues => Set<AiAgentCacheValue>();
     public DbSet<AiAgentMcpTool> AiAgentMcpTools => Set<AiAgentMcpTool>();
     public DbSet<AiUsageLog> AiUsageLogs => Set<AiUsageLog>();
     public DbSet<AiAgentTemplate> AiAgentTemplates => Set<AiAgentTemplate>();
@@ -415,6 +430,33 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasOne(x => x.Unidad).WithMany().HasForeignKey(x => x.UnidadId).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.TenantId, x.UnidadId, x.PersonaId, x.Rol }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<UnidadCampoDefinicion>(b =>
+        {
+            b.Property(x => x.Label).IsRequired().HasMaxLength(80);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Label }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<UnidadCampoValor>(b =>
+        {
+            b.HasOne(x => x.Definicion).WithMany().HasForeignKey(x => x.DefinicionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Unidad).WithMany().HasForeignKey(x => x.UnidadId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.DefinicionId, x.UnidadId }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<UnidadDocumento>(b =>
+        {
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(255);
+            b.Property(x => x.Url).IsRequired();
+            b.HasOne(x => x.Unidad).WithMany().HasForeignKey(x => x.UnidadId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.UnidadId);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
@@ -1506,6 +1548,78 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
+        // -------------------- Modulo 2.15 Documentos - vista Expedientes (TRD) --------------------
+
+        modelBuilder.Entity<SerieDocumental>(b =>
+        {
+            b.ToTable("series_documentales");
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(150);
+            b.HasIndex(x => new { x.TenantId, x.Orden });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<SubserieDocumental>(b =>
+        {
+            b.ToTable("subseries_documentales");
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(150);
+            b.HasOne(x => x.Serie).WithMany(s => s.Subseries).HasForeignKey(x => x.SerieId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => new { x.TenantId, x.SerieId, x.Orden });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<SubserieTipologia>(b =>
+        {
+            b.ToTable("subserie_tipologias");
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(150);
+            b.HasOne(x => x.Subserie).WithMany(s => s.Tipologias).HasForeignKey(x => x.SubserieId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => new { x.TenantId, x.SubserieId, x.Orden });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<SubserieCampo>(b =>
+        {
+            b.ToTable("subserie_campos");
+            b.Property(x => x.Clave).IsRequired().HasMaxLength(80);
+            b.Property(x => x.Label).IsRequired().HasMaxLength(150);
+            b.HasOne(x => x.Subserie).WithMany(s => s.Campos).HasForeignKey(x => x.SubserieId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => new { x.TenantId, x.SubserieId, x.Orden });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<Expediente>(b =>
+        {
+            b.ToTable("expedientes");
+            b.Property(x => x.Codigo).IsRequired().HasMaxLength(40);
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(200);
+            b.Property(x => x.Serie).IsRequired().HasMaxLength(150);
+            b.Property(x => x.Subserie).IsRequired().HasMaxLength(150);
+            b.HasIndex(x => new { x.TenantId, x.Codigo });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<ExpedienteTipologia>(b =>
+        {
+            b.ToTable("expediente_tipologias");
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(150);
+            b.Property(x => x.ArchivoUrl).HasMaxLength(1024);
+            b.Property(x => x.ArchivoNombre).HasMaxLength(255);
+            b.Property(x => x.ArchivoMime).HasMaxLength(150);
+            b.Property(x => x.MetaJson).HasColumnType("text");
+            b.HasOne(x => x.Expediente).WithMany(e => e.Tipologias).HasForeignKey(x => x.ExpedienteId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => new { x.TenantId, x.ExpedienteId, x.Orden });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<ExpedienteCampo>(b =>
+        {
+            b.ToTable("expediente_campos");
+            b.Property(x => x.Clave).IsRequired().HasMaxLength(80);
+            b.Property(x => x.Label).IsRequired().HasMaxLength(150);
+            b.HasOne(x => x.Expediente).WithMany(e => e.Campos).HasForeignKey(x => x.ExpedienteId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => new { x.TenantId, x.ExpedienteId, x.Orden });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
         // -------------------- Modulo 2.15 Documentos y Archivo Digital --------------------
 
         modelBuilder.Entity<DocumentoCategoria>(b =>
@@ -2329,6 +2443,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.SentByName).HasMaxLength(200);
             b.Property(x => x.MediaUrl).HasMaxLength(1024);
             b.Property(x => x.MediaMimeType).HasMaxLength(150);
+            b.Property(x => x.Reaction).HasMaxLength(16);
             b.HasIndex(x => new { x.TenantId, x.ExternalId }).IsUnique().HasFilter("external_id IS NOT NULL");
             b.HasIndex(x => new { x.ConversationId, x.SentAt });
             b.HasOne(x => x.Conversation).WithMany(c => c.Messages).HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Cascade);
@@ -2342,7 +2457,20 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.Provider).HasConversion<string>().HasMaxLength(20);
             b.Property(x => x.Model).HasMaxLength(100);
             b.Property(x => x.SystemPrompt).HasColumnType("text");
+            b.Property(x => x.PromptHistoryJson).HasColumnType("text");
+            b.Property(x => x.ReactionEmojis).HasColumnType("text");
             b.HasIndex(x => new { x.TenantId, x.IsActive });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<AiAgentLineBinding>(b =>
+        {
+            b.ToTable("ai_agent_line_bindings");
+            b.HasOne(x => x.Agent).WithMany().HasForeignKey(x => x.AgentId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.WhatsAppLine).WithMany().HasForeignKey(x => x.WhatsAppLineId).OnDelete(DeleteBehavior.Cascade);
+            // Una linea solo puede tener un binding activo (is_connected = true) a la vez.
+            b.HasIndex(x => new { x.TenantId, x.WhatsAppLineId, x.IsConnected }).IsUnique().HasFilter("is_connected");
+            b.HasIndex(x => new { x.TenantId, x.AgentId });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
@@ -2365,6 +2493,31 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.FileName).HasMaxLength(255);
             b.HasIndex(x => new { x.TenantId, x.AgentId });
             b.HasOne(x => x.Agent).WithMany(a => a.Resources).HasForeignKey(x => x.AgentId).OnDelete(DeleteBehavior.Cascade);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<AiAgentCacheField>(b =>
+        {
+            b.ToTable("ai_agent_cache_fields");
+            b.Property(x => x.FieldKey).HasMaxLength(80).IsRequired();
+            b.Property(x => x.Label).HasMaxLength(150).IsRequired();
+            b.Property(x => x.Description).HasMaxLength(600);
+            b.Property(x => x.IsUpdatable).HasDefaultValue(true);
+            b.HasOne(x => x.Agent).WithMany().HasForeignKey(x => x.AgentId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => new { x.TenantId, x.AgentId, x.SortOrder });
+            b.HasIndex(x => new { x.AgentId, x.FieldKey }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<AiAgentCacheValue>(b =>
+        {
+            b.ToTable("ai_agent_cache_values");
+            b.Property(x => x.FieldKey).HasMaxLength(80).IsRequired();
+            b.Property(x => x.Value).HasMaxLength(2000);
+            b.Property(x => x.Source).HasMaxLength(40);
+            b.HasOne(x => x.Agent).WithMany().HasForeignKey(x => x.AgentId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => new { x.TenantId, x.AgentId, x.SessionId });
+            b.HasIndex(x => new { x.AgentId, x.SessionId, x.FieldKey }).IsUnique();
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

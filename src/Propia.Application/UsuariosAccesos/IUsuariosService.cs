@@ -58,7 +58,7 @@ public interface IRolesService
     /// <summary>
     /// Idempotente: crea los roles base (globales) con su matriz por defecto si no existen y
     /// linkea los usuarios de la copropiedad activa a su rol base por nombre. Habilita que el
-    /// Administrador edite la matriz en /configuracion/roles y que el enforcement use permisos.
+    /// Administrador edite la matriz en Usuarios y Accesos > Roles y permisos y que el enforcement use permisos.
     /// </summary>
     Task EnsureRolesBaseAsync(CancellationToken ct);
 }

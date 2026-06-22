@@ -11,12 +11,12 @@
 @* Infraestructura IA (Capa 2): agentes de IA de la copropiedad. Configurador estilo CUBOT:
    modal de 2 columnas (configuracion + chat de prueba fijo). *@
 
-<div class="mb-4 d-flex align-items-start">
+<div class="ai-head">
     <div>
-        <h1 class="h3 mb-1 fw-semibold">Agentes <span style="color: var(--propia-primary);">IA</span></h1>
-        <p class="text-muted mb-0">Configura cada agente: proveedor, comportamiento, recursos y ponlo en produccion</p>
+        <h1 class="ai-title">Agentes <span>IA</span></h1>
+        <p class="ai-sub">Configura cada agente: proveedor, comportamiento, recursos y ponlo en produccion</p>
     </div>
-    <button class="btn ms-auto" style="background: var(--propia-primary); color: white;" @onclick="AbrirNuevo">+ Nuevo agente</button>
+    <button class="ai-btn-primary" @onclick="AbrirNuevo">+ Nuevo agente</button>
 </div>
 
 @if (string.IsNullOrEmpty(_jwt))
@@ -27,26 +27,42 @@
 
 @if (_usage is not null)
 {
-    <div class="row g-3 mb-4">
-        <div class="col-6 col-lg-3"><div class="card p-3"><div class="small text-muted">Llamadas de IA</div><div class="h4 mb-0">@_usage.TotalCalls</div></div></div>
-        <div class="col-6 col-lg-3"><div class="card p-3"><div class="small text-muted">Tokens consumidos</div><div class="h4 mb-0">@_usage.TotalTokens.ToString("N0")</div></div></div>
-        <div class="col-6 col-lg-3"><div class="card p-3"><div class="small text-muted">Costo estimado</div><div class="h4 mb-0">$@_usage.EstimatedCostUsd.ToString("0.####")</div><div class="small text-muted">USD aprox.</div></div></div>
+    <div class="ai-kpis">
+        <div class="ai-kpi">
+            <div class="ai-kpi-label">Consumo de tokens</div>
+            <div class="ai-kpi-value">@_usage.TotalTokens.ToString("N0")</div>
+            <div class="ai-kpi-foot">@_usage.InputTokens.ToString("N0") entrada &middot; @_usage.OutputTokens.ToString("N0") salida</div>
+        </div>
+        <div class="ai-kpi">
+            <div class="ai-kpi-label">Llamadas de IA</div>
+            <div class="ai-kpi-value">@_usage.TotalCalls.ToString("N0")</div>
+            <div class="ai-kpi-foot">Total acumulado</div>
+        </div>
+        <div class="ai-kpi">
+            <div class="ai-kpi-label">Costo estimado</div>
+            <div class="ai-kpi-value">$@_usage.EstimatedCostUsd.ToString("0.####")</div>
+            <div class="ai-kpi-foot">USD aproximado</div>
+        </div>
         @if (_quota is { HasLimit: true })
         {
-            <div class="col-6 col-lg-3">
-                <div class="card p-3">
-                    <div class="small text-muted">Cupo mensual del plan</div>
-                    <div class="h4 mb-0">@_quota.MonthlyUsedCalls / @_quota.MonthlyLimitCalls</div>
-                    <div class="progress mt-1" style="height: 6px;">
-                        <div class="progress-bar @(_quota.Exceeded ? "bg-danger" : "")" style="width: @(_quota.UsedPct)%; background: var(--propia-primary);"></div>
-                    </div>
-                </div>
+            <div class="ai-kpi @(_quota.Exceeded ? "danger" : "")">
+                <div class="ai-kpi-label">Cupo mensual del plan</div>
+                <div class="ai-kpi-value">@_quota.MonthlyUsedCalls<span class="ai-kpi-of"> / @_quota.MonthlyLimitCalls</span></div>
+                <div class="ai-bar"><div class="ai-bar-fill @(_quota.Exceeded ? "over" : "")" style="width:@(_quota.UsedPct)%"></div></div>
+            </div>
+        }
+        else
+        {
+            <div class="ai-kpi">
+                <div class="ai-kpi-label">Cupo mensual del plan</div>
+                <div class="ai-kpi-value">Ilimitado</div>
+                <div class="ai-kpi-foot">Tu plan no tiene limite de llamadas</div>
             </div>
         }
     </div>
     @if (_quota is { Exceeded: true })
     {
-        <div class="alert alert-warning">Alcanzaste el limite de llamadas de IA de tu plan este mes. Actualiza tu plan para seguir usando los agentes.</div>
+        <div class="ai-warn"><i class="fi fi-rr-exclamation"></i> Alcanzaste el limite de llamadas de IA de tu plan este mes. Actualiza tu plan para seguir usando los agentes.</div>
     }
 }
 
@@ -61,30 +77,35 @@
 }
 else if (_agents.Count == 0)
 {
-    <div class="card p-4 text-center text-muted">Aun no hay agentes. Crea el primero con "+ Nuevo agente".</div>
+    <div class="ai-empty">
+        <i class="fi fi-rr-robot"></i>
+        <div>Aun no hay agentes. Crea el primero con "+ Nuevo agente".</div>
+    </div>
 }
 else
 {
-    <div class="row g-3">
+    <div class="ai-grid">
         @foreach (var a in _agents)
         {
             var agent = a;
-            <div class="col-md-6 col-xl-4">
-                <div class="card h-100">
-                    <div class="card-body">
-                        <div class="d-flex align-items-center gap-2 mb-1">
-                            <i class="fi fi-rr-robot fs-4" style="color: var(--propia-primary);"></i>
-                            <strong>@agent.Name</strong>
-                            <span class="badge ms-auto @(agent.IsActive ? "bg-success" : "bg-light text-dark border")">@(agent.IsActive ? "En produccion" : "Apagado")</span>
-                        </div>
-                        <div class="small text-muted mb-2">@(string.IsNullOrWhiteSpace(agent.Role) ? "Agente" : agent.Role) &middot; @ProviderLabel(agent.Provider) &middot; @agent.ResourceCount recurso(s)</div>
-                        <div class="d-flex flex-wrap gap-2">
-                            <button class="btn btn-sm btn-dark" @onclick="() => AbrirDetalle(agent.Id)">Configurar</button>
-                            <button class="btn btn-sm btn-outline-dark" @onclick="() => ToggleActivoAsync(agent)">@(agent.IsActive ? "Apagar" : "Encender")</button>
-                            <button class="btn btn-sm btn-outline-primary" @onclick="() => DuplicarAsync(agent.Id)" disabled="@_busy" title="Duplica el agente con su prompt y recursos. La copia queda apagada.">Duplicar</button>
-                            <button class="btn btn-sm btn-outline-danger ms-auto" @onclick="() => EliminarAsync(agent.Id)" disabled="@_busy">Eliminar</button>
-                        </div>
+            <div class="ai-card">
+                <div class="ai-card-top">
+                    <div class="ai-avatar"><i class="fi fi-rr-robot"></i></div>
+                    <div class="ai-card-id">
+                        <div class="ai-card-name">@agent.Name</div>
+                        <div class="ai-card-role">@(string.IsNullOrWhiteSpace(agent.Role) ? "Agente" : agent.Role)</div>
                     </div>
+                    <span class="ai-state @(agent.IsActive ? "on" : "off")">@(agent.IsActive ? "En produccion" : "Apagado")</span>
+                </div>
+                <div class="ai-card-meta">
+                    <span class="ai-chip">@ProviderLabel(agent.Provider)</span>
+                    <span class="ai-chip ghost">@agent.ResourceCount recurso(s)</span>
+                </div>
+                <div class="ai-card-actions">
+                    <button class="ai-btn-primary sm" @onclick="() => AbrirDetalle(agent.Id)">Configurar</button>
+                    <button class="ai-btn-ghost sm" @onclick="() => ToggleActivoAsync(agent)">@(agent.IsActive ? "Apagar" : "Encender")</button>
+                    <button class="ai-btn-ghost sm" @onclick="() => DuplicarAsync(agent.Id)" disabled="@_busy" title="Duplica el agente con su prompt y recursos. La copia queda apagada.">Duplicar</button>
+                    <button class="ai-btn-danger sm ms-auto" @onclick="() => EliminarAsync(agent.Id)" disabled="@_busy">Eliminar</button>
                 </div>
             </div>
         }
@@ -215,6 +236,167 @@ else
                             </div>
                         </div>
                     }
+
+                    @* ----- Lineas WhatsApp atendidas por el agente ----- *@
+                    <div class="ag-accordion mt-3">
+                        <button type="button" class="ag-accordion-head" @onclick="ToggleBindings">
+                            <span class="ag-accordion-chev @(_bindingsOpen ? "open" : "")">&#9656;</span>
+                            <span class="ag-accordion-title">Lineas WhatsApp atendidas</span>
+                            <span class="ag-accordion-count">@_bindings.Count(b => b.IsBoundHere)</span>
+                        </button>
+                        @if (_bindingsOpen)
+                        {
+                            <div class="ag-accordion-body">
+                                <div class="ag-acc-help">Cuando una linea esta atendida por este agente, sus mensajes entrantes se contestan automaticamente segun el prompt y los recursos. Una linea solo la atiende un agente a la vez.</div>
+                                @if (!string.IsNullOrEmpty(_bindingsError)) { <div class="alert alert-danger py-1 px-2 small mb-2">@_bindingsError</div> }
+                                @if (_bindings.Count == 0)
+                                {
+                                    <div class="text-muted small">No hay lineas WhatsApp. Crea una en el modulo Lineas.</div>
+                                }
+                                else
+                                {
+                                    <div class="ag-list">
+                                        @foreach (var b in _bindings)
+                                        {
+                                            var bb = b;
+                                            var takenByOther = !bb.IsBoundHere && bb.BoundAgentId is not null;
+                                            <div class="ag-item">
+                                                <span class="ag-rtype">@(string.IsNullOrWhiteSpace(bb.LinePhoneNumber) ? "WA" : "+")</span>
+                                                <div class="ag-item-main">
+                                                    <div class="ag-item-name">@(string.IsNullOrWhiteSpace(bb.LinePhoneNumber) ? bb.LineInstanceName : bb.LinePhoneNumber)</div>
+                                                    <div class="ag-item-sub">
+                                                        @if (bb.IsBoundHere) { <span style="color:#1f8a4c;">Atendida por este agente</span> }
+                                                        else if (takenByOther) { <span style="color:#b8860b;">Atendida por: @bb.BoundAgentName</span> }
+                                                        else { <span class="text-muted">Sin agente</span> }
+                                                    </div>
+                                                </div>
+                                                @if (bb.IsBoundHere) { <button class="btn btn-sm btn-outline-danger" @onclick="() => ToggleBindingAsync(bb, false)" disabled="@_busy">Desvincular</button> }
+                                                else if (takenByOther) { <button class="btn btn-sm btn-outline-secondary" disabled="true">Ocupada</button> }
+                                                else { <button class="btn btn-sm btn-outline-primary" @onclick="() => ToggleBindingAsync(bb, true)" disabled="@_busy">Vincular</button> }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    @* ----- Datos cache (lo que el agente captura del residente) ----- *@
+                    <div class="ag-accordion mt-2">
+                        <button type="button" class="ag-accordion-head" @onclick="ToggleCache">
+                            <span class="ag-accordion-chev @(_cacheOpen ? "open" : "")">&#9656;</span>
+                            <span class="ag-accordion-title">Datos cache (objetivo)</span>
+                            <span class="ag-accordion-count">@_cacheFields.Count</span>
+                        </button>
+                        @if (_cacheOpen)
+                        {
+                            <div class="ag-accordion-body">
+                                <div class="ag-acc-help">Define que datos debe ir capturando el agente del residente durante la conversacion (ej. numero de apartamento, nombre, tipo de solicitud). El motor los infiere solo. Los "sticky" no se sobrescriben una vez capturados.</div>
+                                <div class="d-flex flex-wrap gap-2 mb-2">
+                                    <button class="btn btn-sm btn-outline-dark" @onclick="() => AbrirCacheField(null)" disabled="@_busy">+ Agregar dato</button>
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="BulkStickyAsync" disabled="@(_busy || _cacheFields.Count == 0)">@(AllSticky() ? "Marcar todos actualizables" : "Marcar todos sticky")</button>
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="AbrirPercibidos" disabled="@_busy">Ver datos percibidos</button>
+                                </div>
+                                @if (_cacheFields.Count == 0)
+                                {
+                                    <div class="text-muted small">Sin datos definidos. Agrega el primero para que el agente empiece a capturarlos.</div>
+                                }
+                                else
+                                {
+                                    <div class="ag-list">
+                                        @foreach (var f in _cacheFields)
+                                        {
+                                            var ff = f;
+                                            <div class="ag-item">
+                                                <span class="ag-rtype">DATO</span>
+                                                <div class="ag-item-main">
+                                                    <div class="ag-item-name">@ff.Label <span class="text-muted" style="font-size:11px;">(@ff.FieldKey)</span>@if (!ff.IsUpdatable) { <span class="ag-pill-sticky">sticky</span> }</div>
+                                                    <div class="ag-item-sub">@(string.IsNullOrWhiteSpace(ff.Description) ? "Sin descripcion" : ff.Description)</div>
+                                                </div>
+                                                <button class="btn btn-sm btn-outline-dark" @onclick="() => AbrirCacheField(ff)" disabled="@_busy">Editar</button>
+                                                <button class="btn btn-sm btn-outline-danger" @onclick="() => EliminarCacheFieldAsync(ff.Id)" disabled="@_busy">&times;</button>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    @* ----- Reacciones automaticas (emoji, sin IA) ----- *@
+                    <div class="ag-accordion mt-2">
+                        <button type="button" class="ag-accordion-head" @onclick="() => _reactionsOpen = !_reactionsOpen">
+                            <span class="ag-accordion-chev @(_reactionsOpen ? "open" : "")">&#9656;</span>
+                            <span class="ag-accordion-title">Reacciones</span>
+                            <span class="ag-accordion-count">@ReactionEmojiList().Count</span>
+                            <span class="ag-acc-status" style="@(_form.ReactionsEnabled ? "color:#1f8a4c;" : "")">@(_form.ReactionsEnabled ? "Activas" : "Inactivas")</span>
+                        </button>
+                        @if (_reactionsOpen)
+                        {
+                            <div class="ag-accordion-body">
+                                <div class="ag-acc-help">El agente pone un emoji a algunos mensajes del contacto. No pasa por la IA: <strong>no consume tokens</strong>. Un mensaje que ya tiene reaccion no recibe otra.</div>
+                                <label class="ag-switch-row">
+                                    <span class="ag-switch"><input type="checkbox" checked="@_form.ReactionsEnabled" @onchange="@(e => _form.ReactionsEnabled = (bool)e.Value!)" disabled="@_busy" /><span class="ag-slider"></span></span>
+                                    <span>@(_form.ReactionsEnabled ? "Reacciones activadas" : "Reacciones desactivadas")</span>
+                                </label>
+                                <div class="mt-2">
+                                    <label class="form-label small mb-1">Frecuencia</label>
+                                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                                        <span class="small text-muted">Reaccionar a</span>
+                                        <input type="number" class="form-control form-control-sm" style="width:70px;" min="0" max="@_form.ReactionRatioM" @bind="_form.ReactionRatioN" disabled="@_busy" />
+                                        <span class="small text-muted">de cada</span>
+                                        <input type="number" class="form-control form-control-sm" style="width:70px;" min="1" max="20" @bind="_form.ReactionRatioM" disabled="@_busy" />
+                                        <span class="small text-muted">mensajes</span>
+                                    </div>
+                                    <div class="text-muted" style="font-size:11.5px;margin-top:4px;">Ej. 3 de cada 4 = reacciona ~75% de las veces, al azar.</div>
+                                </div>
+                                <div class="mt-2">
+                                    <label class="form-label small mb-1">Emojis (separados por coma)</label>
+                                    <input class="form-control form-control-sm" @bind="_form.ReactionEmojis" @bind:event="oninput" placeholder="Pega emojis separados por coma (Windows: tecla Windows + punto)" disabled="@_busy" />
+                                    @if (ReactionEmojiList().Count > 0)
+                                    {
+                                        <div class="d-flex flex-wrap gap-1 mt-2">
+                                            @foreach (var em in ReactionEmojiList()) { <span class="ag-emoji">@em</span> }
+                                        </div>
+                                    }
+                                </div>
+                                <div class="text-muted" style="font-size:11.5px;margin-top:8px;">Se guarda con el boton "Guardar cambios". El envio automatico lo hace el dispatcher.</div>
+                            </div>
+                        }
+                    </div>
+
+                    @* ----- Historial de versiones (red de seguridad) ----- *@
+                    <div class="ag-accordion mt-2">
+                        <button type="button" class="ag-accordion-head" @onclick="ToggleVersionHistory">
+                            <span class="ag-accordion-chev @(_versionsOpen ? "open" : "")">&#9656;</span>
+                            <span class="ag-accordion-title">Historial de versiones</span>
+                            <span class="ag-accordion-count">@_versions.Count</span>
+                        </button>
+                        @if (_versionsOpen)
+                        {
+                            <div class="ag-accordion-body">
+                                <div class="ag-acc-help">Cada vez que guardas se almacena una copia del prompt base + enrutados (ultimas @MaxVersionsShown). Si borras o editas algo por error, puedes restaurar una version anterior.</div>
+                                @if (_versionsLoading) { <div class="text-muted small">Cargando historial...</div> }
+                                else if (_versions.Count == 0) { <div class="text-muted small">Aun no hay versiones. Se crea una al pulsar "Guardar cambios".</div> }
+                                else
+                                {
+                                    <div class="ag-list">
+                                        @foreach (var v in _versions)
+                                        {
+                                            var ver = v;
+                                            <div class="ag-item">
+                                                <div class="ag-item-main">
+                                                    <div class="ag-item-name">@(ver.Index == 0 ? "Version actual" : $"Version #{_versions.Count - ver.Index}") &middot; @ver.SavedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</div>
+                                                    <div class="ag-item-sub">@ver.Prompts.Count prompt(s) enrutado(s)</div>
+                                                </div>
+                                                <button class="btn btn-sm btn-outline-dark" @onclick="() => AskRestoreVersion(ver)" disabled="@(_busy || ver.Index == 0)">Restaurar</button>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
                 }
             </div>
 
@@ -364,13 +546,229 @@ else
                             }
                         }
                     </div>
+
+                    @* ----- Prompts enviados a la IA (bitacora de depuracion del playground) ----- *@
+                    <div class="ag-accordion mt-4">
+                        <button type="button" class="ag-accordion-head" @onclick="() => _debugOpen = !_debugOpen">
+                            <span class="ag-accordion-chev @(_debugOpen ? "open" : "")">&#9656;</span>
+                            <span class="ag-accordion-title">Prompts enviados a la IA</span>
+                            @if (_debugLog.Count > 0) { <span class="ag-accordion-count">@_debugLog.Count</span> }
+                            @if (_debugLog.Count > 0)
+                            {
+                                <span class="ag-acc-status"><span class="ag-debug-clear" role="button" @onclick:stopPropagation="true" @onclick="ClearDebugLog">Limpiar</span></span>
+                            }
+                        </button>
+                        @if (_debugOpen)
+                        {
+                            <div class="ag-accordion-body">
+                                <div class="ag-acc-help">Cada vez que pruebas el agente arriba, aqui queda el prompt EXACTO que se envio al modelo (base + enrutador + recursos + contexto) y la respuesta cruda. Util para depurar el comportamiento. Mas reciente arriba.</div>
+                                @if (_debugLog.Count == 0)
+                                {
+                                    <div class="text-muted small">Aun no hay llamadas. Escribe un mensaje en "Probar agente" para registrar el primer prompt.</div>
+                                }
+                                else
+                                {
+                                    @for (int i = _debugLog.Count - 1; i >= 0; i--)
+                                    {
+                                        var entry = _debugLog[i];
+                                        <div class="ag-dbg">
+                                            <div class="ag-dbg-head">
+                                                <span class="ag-dbg-time">@entry.SentAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</span>
+                                                <span class="ag-dbg-title">@entry.Title</span>
+                                            </div>
+                                            <div class="ag-dbg-label">Prompt enviado</div>
+                                            <textarea class="ag-dbg-text" rows="8" readonly>@entry.Content</textarea>
+                                            @if (entry.Response is not null)
+                                            {
+                                                <div class="ag-dbg-label" style="margin-top:6px;">Respuesta del LLM</div>
+                                                <textarea class="ag-dbg-text" rows="4" readonly>@entry.Response</textarea>
+                                            }
+                                        </div>
+                                    }
+                                }
+                            </div>
+                        }
+                    </div>
                 }
             </div>
         </div>
     </div>
 }
 
+@* ===== Modal: confirmar restaurar version ===== *@
+@if (_versionPendingRestore is not null)
+{
+    <div class="modal-backdrop-propia" style="z-index:1300;" @onclick="() => _versionPendingRestore = null"></div>
+    <div class="ag-modal card" style="z-index:1310; width:min(480px,96vw);">
+        <div class="ag-modal-head">
+            <h5 class="mb-0">Restaurar version</h5>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="() => _versionPendingRestore = null">Cerrar</button>
+        </div>
+        <div class="ag-modal-body" style="flex-direction:column;">
+            <p class="mb-2">Se restaurara el <strong>prompt base</strong> y los <strong>prompts enrutados</strong> tal como estaban el <strong>@_versionPendingRestore.SavedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</strong>.</p>
+            <p class="text-muted small mb-3">Los prompts enrutados actuales se reemplazaran por los de esa version. El estado actual queda guardado en el historial, asi que podras volver a el.</p>
+            <div class="d-flex gap-2 justify-content-end">
+                <button class="btn btn-sm btn-outline-secondary" @onclick="() => _versionPendingRestore = null" disabled="@_busy">Cancelar</button>
+                <button class="btn btn-sm" style="background: var(--propia-primary); color:#fff;" @onclick="ConfirmRestoreVersionAsync" disabled="@_busy">Restaurar esta version</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ===== Modal: dato cache (crear/editar) ===== *@
+@if (_cacheModalOpen)
+{
+    <div class="modal-backdrop-propia" style="z-index:1300;" @onclick="() => _cacheModalOpen = false"></div>
+    <div class="ag-modal card" style="z-index:1310; width:min(540px,96vw);">
+        <div class="ag-modal-head">
+            <h5 class="mb-0">@(_cacheEditId is null ? "Nuevo dato cache" : "Editar dato cache")</h5>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="() => _cacheModalOpen = false">Cerrar</button>
+        </div>
+        <div class="ag-modal-body" style="flex-direction:column;">
+            <label class="form-label small mb-1">Nombre del dato *</label>
+            <input class="form-control mb-2" @bind="_cName" @bind:event="oninput" placeholder="Ej. Numero de apartamento, Nombre, Tipo de solicitud" />
+            <label class="form-label small mb-1">De que trata el dato</label>
+            <textarea class="form-control mb-2" rows="3" @bind="_cDescription" @bind:event="oninput" placeholder="Pista para el motor: que dato debe extraer del mensaje del residente"></textarea>
+            <label class="ag-switch-row mb-1">
+                <span class="ag-switch"><input type="checkbox" checked="@_cIsUpdatable" @onchange="@(e => _cIsUpdatable = (bool)e.Value!)" /><span class="ag-slider"></span></span>
+                <span>Actualizable durante la conversacion</span>
+            </label>
+            <div class="text-muted" style="font-size:11.5px;">@(_cIsUpdatable ? "El agente puede sobrescribir el valor si el residente cambia de opinion." : "Una vez capturado, el valor queda fijo (sticky) y no se sobrescribe.")</div>
+            @if (_cacheError is not null) { <div class="text-danger small mt-2">@_cacheError</div> }
+            <div class="d-flex gap-2 justify-content-end mt-3">
+                <button class="btn btn-sm btn-outline-secondary" @onclick="() => _cacheModalOpen = false" disabled="@_busy">Cancelar</button>
+                <button class="btn btn-sm" style="background: var(--propia-primary); color:#fff;" @onclick="GuardarCacheFieldAsync" disabled="@_busy">@(_cacheEditId is null ? "Agregar" : "Guardar")</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ===== Modal: datos percibidos ===== *@
+@if (_percibidosOpen)
+{
+    <div class="modal-backdrop-propia" style="z-index:1300;" @onclick="() => _percibidosOpen = false"></div>
+    <div class="ag-modal card" style="z-index:1310; width:min(640px,96vw);">
+        <div class="ag-modal-head">
+            <h5 class="mb-0">Datos percibidos (sesion de prueba)</h5>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="() => _percibidosOpen = false">Cerrar</button>
+        </div>
+        <div class="ag-modal-body" style="flex-direction:column;">
+            <div class="ag-acc-help">Lo que el motor ha logrado extraer en esta sesion de prueba (la clave es el id del agente). En un chat real sera la conversacion.</div>
+            @if (_cacheValues.Count == 0)
+            {
+                <div class="text-muted small">Aun no hay datos definidos. Agrega primero un dato cache.</div>
+            }
+            else
+            {
+                <div class="ag-list">
+                    @foreach (var v in _cacheValues)
+                    {
+                        <div class="ag-item">
+                            <div class="ag-item-main">
+                                <div class="ag-item-name">@v.Label</div>
+                                <div class="ag-item-sub">
+                                    @if (string.IsNullOrWhiteSpace(v.Value)) { <em class="text-muted">Sin capturar todavia</em> }
+                                    else { @v.Value }
+                                    @if (!string.IsNullOrWhiteSpace(v.Source)) { <span class="text-muted" style="font-size:11px;margin-left:6px;">(@v.Source)</span> }
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            <div class="d-flex gap-2 justify-content-end mt-3">
+                <button class="btn btn-sm btn-outline-danger" @onclick="LimpiarPercibidosAsync" disabled="@(_busy || _cacheValues.All(v => string.IsNullOrWhiteSpace(v.Value)))">Vaciar datos percibidos</button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="() => _percibidosOpen = false">Cerrar</button>
+            </div>
+        </div>
+    </div>
+}
+
 <style>
+    /* ===== Acordeones de configuracion del agente (lineas / reacciones / versiones) ===== */
+    .ag-accordion { border: 1px solid #e3e3ec; border-radius: 10px; overflow: hidden; }
+    .ag-accordion-head { display: flex; align-items: center; gap: 9px; width: 100%; border: 0; background: #f7f7fb; padding: 9px 12px; cursor: pointer; font-size: 13px; text-align: left; }
+    .ag-accordion-head:hover { background: #f0f0f8; }
+    .ag-accordion-chev { display: inline-block; transition: transform .15s ease; color: var(--propia-primary); font-size: 12px; width: 12px; }
+    .ag-accordion-chev.open { transform: rotate(90deg); }
+    .ag-accordion-title { font-weight: 600; color: #2d2d44; }
+    .ag-accordion-count { display: inline-grid; place-items: center; min-width: 24px; height: 20px; padding: 0 7px; border-radius: 11px; background: rgba(89,85,209,.12); color: var(--propia-primary); font-size: 11px; font-weight: 700; }
+    .ag-acc-status { margin-left: auto; font-size: 11.5px; color: #8a8a9a; font-weight: 600; }
+    .ag-accordion-body { padding: 10px 12px 12px; border-top: 1px solid #eef0f5; }
+    .ag-acc-help { font-size: 11.5px; color: #8a8a9a; line-height: 1.45; margin-bottom: 10px; }
+    .ag-list { display: flex; flex-direction: column; gap: 7px; }
+    .ag-item { display: flex; align-items: center; gap: 9px; border: 1px solid #e7e7ef; border-radius: 9px; padding: 7px 10px; background: #fff; }
+    .ag-item-main { flex: 1; min-width: 0; }
+    .ag-item-name { font-size: 12.5px; font-weight: 600; color: #2d2d44; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ag-item-sub { font-size: 11px; color: #8a8a9a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ag-rtype { flex: none; width: 34px; height: 24px; border-radius: 6px; background: #f1ecfd; color: var(--propia-primary); font-size: 11px; font-weight: 800; display: grid; place-items: center; }
+    .ag-switch-row { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; cursor: pointer; margin: 0; }
+    .ag-switch { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; }
+    .ag-switch input { opacity: 0; width: 0; height: 0; }
+    .ag-slider { position: absolute; inset: 0; background: #cfcfdd; border-radius: 999px; transition: .2s; cursor: pointer; }
+    .ag-slider::before { content: ''; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+    .ag-switch input:checked + .ag-slider { background: var(--propia-primary); }
+    .ag-switch input:checked + .ag-slider::before { transform: translateX(18px); }
+    .ag-emoji { font-size: 18px; line-height: 1; padding: 3px 7px; border-radius: 6px; background: #f1ecfd; }
+    .ag-pill-sticky { display: inline-block; margin-left: 6px; padding: 1px 7px; font-size: 9.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; border-radius: 999px; background: #fbeedc; color: #8a5a12; border: 1px solid #f0d9b0; vertical-align: middle; }
+    .ag-debug-clear { font-size: 11.5px; font-weight: 600; color: var(--propia-primary); cursor: pointer; }
+    .ag-debug-clear:hover { text-decoration: underline; }
+    .ag-dbg { border: 1px solid #e7e7ef; border-radius: 9px; padding: 9px 10px; margin-bottom: 8px; background: #fff; }
+    .ag-dbg-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+    .ag-dbg-time { font-size: 11px; color: #9a9aab; font-family: ui-monospace, monospace; }
+    .ag-dbg-title { font-size: 12px; font-weight: 600; color: #2d2d44; }
+    .ag-dbg-label { font-size: 10.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: #8a8a9a; margin-bottom: 3px; }
+    .ag-dbg-text { width: 100%; border: 1px solid #e3e3ec; border-radius: 6px; padding: 6px 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; line-height: 1.45; color: #2d2d44; background: #f7f7fb; resize: vertical; white-space: pre; }
+
+    /* ===== Cabecera / dashboard (estilo prototipo) ===== */
+    .ai-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
+    .ai-title { font-family: 'Lexend', sans-serif; font-size: 26px; font-weight: 600; margin: 0 0 2px; color: #1d1d2b; }
+    .ai-title span { color: var(--propia-primary, #6D4FE3); }
+    .ai-sub { color: #6b6b80; font-size: 13.5px; margin: 0; }
+    .ai-btn-primary { margin-left: auto; border: 0; background: var(--propia-primary, #6D4FE3); color: #fff; font-weight: 600; font-size: 13.5px; padding: 9px 16px; border-radius: 10px; cursor: pointer; white-space: nowrap; }
+    .ai-btn-primary:hover { background: #5838C9; }
+    .ai-btn-primary.sm { padding: 6px 12px; font-size: 12.5px; border-radius: 8px; margin-left: 0; }
+
+    .ai-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }
+    @@media (max-width: 1100px) { .ai-kpis { grid-template-columns: repeat(2, 1fr); } }
+    @@media (max-width: 620px) { .ai-kpis { grid-template-columns: 1fr; } }
+    .ai-kpi { background: #fff; border: 1px solid #ececf3; border-radius: 14px; padding: 16px 18px; }
+    .ai-kpi.danger { border-color: #f3c2c2; background: #fdf3f3; }
+    .ai-kpi-label { font-size: 11.5px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: #8a8a9a; margin-bottom: 6px; }
+    .ai-kpi-value { font-family: 'Lexend', sans-serif; font-size: 26px; font-weight: 600; color: #1d1d2b; line-height: 1.1; }
+    .ai-kpi-of { font-size: 15px; font-weight: 500; color: #9a9aab; }
+    .ai-kpi-foot { font-size: 11.5px; color: #9a9aab; margin-top: 6px; }
+    .ai-bar { height: 6px; border-radius: 99px; background: #eee9fb; margin-top: 10px; overflow: hidden; }
+    .ai-bar-fill { height: 100%; max-width: 100%; border-radius: 99px; background: var(--propia-primary, #6D4FE3); }
+    .ai-bar-fill.over { background: #d64545; }
+    .ai-warn { display: flex; align-items: center; gap: 8px; background: #fdf3f3; border: 1px solid #f3c2c2; color: #a13030; font-size: 13px; border-radius: 12px; padding: 10px 14px; margin-bottom: 16px; }
+
+    /* ===== Tarjetas de agente ===== */
+    .ai-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+    .ai-card { background: #fff; border: 1px solid #ececf3; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px; transition: box-shadow .15s, border-color .15s; }
+    .ai-card:hover { border-color: #d9d3f5; box-shadow: 0 6px 20px rgba(109,79,227,.08); }
+    .ai-card-top { display: flex; align-items: center; gap: 10px; }
+    .ai-avatar { width: 38px; height: 38px; border-radius: 10px; background: #f1ecfd; color: var(--propia-primary, #6D4FE3); display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; }
+    .ai-card-id { min-width: 0; flex: 1; }
+    .ai-card-name { font-weight: 600; font-size: 14.5px; color: #1d1d2b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ai-card-role { font-size: 12px; color: #9a9aab; }
+    .ai-state { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 99px; white-space: nowrap; }
+    .ai-state.on { background: #e7f7ee; color: #1f8a4c; }
+    .ai-state.off { background: #f1f1f5; color: #8a8a9a; }
+    .ai-card-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+    .ai-chip { font-size: 11.5px; font-weight: 600; padding: 3px 10px; border-radius: 99px; background: #f1ecfd; color: var(--propia-primary, #6D4FE3); }
+    .ai-chip.ghost { background: #f4f4f8; color: #6b6b80; }
+    .ai-card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; border-top: 1px solid #f1f1f5; padding-top: 12px; }
+    .ai-btn-ghost { border: 1px solid #e3e3ec; background: #fff; color: #4a4a63; font-weight: 600; font-size: 12.5px; padding: 6px 12px; border-radius: 8px; cursor: pointer; }
+    .ai-btn-ghost:hover:not(:disabled) { background: #f7f7fb; border-color: #d9d3f5; color: var(--propia-primary, #6D4FE3); }
+    .ai-btn-ghost.sm { padding: 6px 12px; }
+    .ai-btn-danger { border: 1px solid #f0d2d2; background: #fff; color: #c0392b; font-weight: 600; font-size: 12.5px; padding: 6px 12px; border-radius: 8px; cursor: pointer; }
+    .ai-btn-danger:hover:not(:disabled) { background: #fdf3f3; }
+    .ai-btn-danger.sm { padding: 6px 12px; }
+    .ai-btn-ghost:disabled, .ai-btn-danger:disabled { opacity: .5; cursor: default; }
+    .ai-empty { background: #fff; border: 1px dashed #d9d3f5; border-radius: 14px; padding: 36px 20px; text-align: center; color: #8a8a9a; font-size: 13.5px; }
+    .ai-empty i { display: block; font-size: 30px; color: #c9bff1; margin-bottom: 10px; }
+
     .modal-backdrop-propia { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1050; }
     .ag-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1060; width: min(1100px, 96vw); max-height: 94vh; display: flex; flex-direction: column; }
     .ag-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid #e3e3ec; }
@@ -443,6 +841,11 @@ else
     private string _chatInput = "";
     private string? _chatError;
 
+    // Bitacora de depuracion: prompts que se enviaron al LLM en cada llamada (mas reciente arriba).
+    private readonly List<AiDebugPrompt> _debugLog = new();
+    private bool _debugOpen;
+    private void ClearDebugLog() => _debugLog.Clear();
+
     private List<WhatsAppLineDto> _connectedLines = new();
     private bool _phoneSend;
     private Guid _phoneLineId;
@@ -496,6 +899,10 @@ else
         _editId = null; _form = new(); _editError = null; _detalle = null;
         _chat.Clear(); _chatError = null; _phoneInfo = null;
         _showPromptForm = false; _showRecursoForm = false; _editPromptId = null; _editRecursoId = null;
+        _bindings = new(); _bindingsError = null; _versions = new();
+        _bindingsOpen = false; _reactionsOpen = false; _versionsOpen = false;
+        _cacheFields = new(); _cacheValues = new(); _cacheOpen = false; _cacheModalOpen = false; _percibidosOpen = false;
+        _debugLog.Clear(); _debugOpen = false;
         _showEditor = true;
     }
 
@@ -503,6 +910,8 @@ else
     {
         _editError = null; _chat.Clear(); _chatError = null; _phoneInfo = null;
         _showPromptForm = false; _showRecursoForm = false; _editPromptId = null; _editRecursoId = null;
+        _debugLog.Clear(); _debugOpen = false;
+        _cacheOpen = false; _cacheModalOpen = false; _percibidosOpen = false;
         _showEditor = true;
         _editId = id;
         await CargarDetalleAsync(id);
@@ -516,9 +925,14 @@ else
             _form = new AgentForm
             {
                 Name = _detalle.Agent.Name, Role = _detalle.Agent.Role, Provider = _detalle.Agent.Provider,
-                Model = _detalle.Agent.Model, SystemPrompt = _detalle.Agent.SystemPrompt
+                Model = _detalle.Agent.Model, SystemPrompt = _detalle.Agent.SystemPrompt,
+                ReactionsEnabled = _detalle.Agent.ReactionsEnabled, ReactionRatioN = _detalle.Agent.ReactionRatioN,
+                ReactionRatioM = _detalle.Agent.ReactionRatioM, ReactionEmojis = _detalle.Agent.ReactionEmojis
             };
         }
+        await ReloadBindingsAsync(id);
+        await ReloadCacheAsync();
+        if (_versionsOpen) { await ReloadVersionsAsync(); }
         try
         {
             var lines = await Auth().GetFromJsonAsync<List<WhatsAppLineDto>>("/api/ia/lineas") ?? new();
@@ -541,7 +955,8 @@ else
             {
                 _mcpEnabled[c.Code] = c.Tools.Where(t => t.Enabled).Select(t => t.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
             }
-            if (_mcpExpanded.Count == 0 && cons.Count > 0) _mcpExpanded.Add(cons[0].Code);
+            // Las conexiones MCP arrancan colapsadas; el usuario las abre cuando quiera.
+            _mcpExpanded.Clear();
             _mcpConnections = cons;
         }
         catch (Exception ex) { _mcpOk = false; _mcpMsg = "No se pudieron cargar las conexiones: " + ex.Message; _mcpConnections = new(); }
@@ -596,7 +1011,8 @@ else
             else
             {
                 var resp = await Auth().PutAsJsonAsync($"/api/ia/agentes/{_editId}",
-                    new UpdateAiAgentRequest(_form.Name, _form.Role, _form.Provider, _form.Model, _form.SystemPrompt));
+                    new UpdateAiAgentRequest(_form.Name, _form.Role, _form.Provider, _form.Model, _form.SystemPrompt,
+                        _form.ReactionsEnabled, _form.ReactionRatioN, _form.ReactionRatioM, _form.ReactionEmojis));
                 if (!resp.IsSuccessStatusCode) { _editError = $"HTTP {(int)resp.StatusCode}"; return; }
                 await CargarDetalleAsync(_editId.Value);
             }
@@ -650,7 +1066,7 @@ else
         finally { _busy = false; }
     }
 
-    private void LimpiarChat() { _chat.Clear(); _chatError = null; _phoneInfo = null; }
+    private void LimpiarChat() { _chat.Clear(); _chatError = null; _phoneInfo = null; _debugLog.Clear(); }
 
     private async Task Fmt(string before, string after) { try { await Js.InvokeVoidAsync("propiaUI.wrapField", "agentPrompt", before, after); } catch { } }
 
@@ -746,6 +1162,7 @@ else
             var resp = await Auth().PostAsJsonAsync($"/api/ia/agentes/{_detalle.Agent.Id}/probar",
                 new { Turns = turns, SystemPromptOverride = (string?)null });
             var r = await resp.Content.ReadFromJsonAsync<AiChatResult>();
+            if (r?.DebugPrompts is { Count: > 0 }) { _debugLog.AddRange(r.DebugPrompts); }
             if (r?.Ok == true)
             {
                 _chat.Add(new ChatMsg("model", r.Text ?? "", r.Attachments));
@@ -778,6 +1195,177 @@ else
         return $"https://www.google.com/maps?q={Uri.EscapeDataString(latlng.Trim())}";
     }
 
+    // ===== Lineas atendidas + Reacciones + Historial de versiones (portado de CUBOT.travels) =====
+    private bool _bindingsOpen;
+    private List<AgentLineBindingRowDto> _bindings = new();
+    private string? _bindingsError;
+    private bool _reactionsOpen;
+    private bool _versionsOpen;
+    private bool _versionsLoading;
+    private const int MaxVersionsShown = 5;
+    private List<AiAgentPromptVersionDto> _versions = new();
+    private AiAgentPromptVersionDto? _versionPendingRestore;
+
+    private List<string> ReactionEmojiList() =>
+        string.IsNullOrWhiteSpace(_form.ReactionEmojis)
+            ? new List<string>()
+            : _form.ReactionEmojis.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
+    private void ToggleBindings() => _bindingsOpen = !_bindingsOpen;
+
+    private async Task ReloadBindingsAsync(Guid agentId)
+    {
+        _bindingsError = null;
+        try { _bindings = await Auth().GetFromJsonAsync<List<AgentLineBindingRowDto>>($"/api/ia/agentes/{agentId}/lineas") ?? new(); }
+        catch (Exception ex) { _bindings = new(); _bindingsError = "No se pudieron cargar las lineas: " + ex.Message; }
+    }
+
+    private async Task ToggleBindingAsync(AgentLineBindingRowDto b, bool connect)
+    {
+        if (_editId is null) return;
+        _busy = true; _bindingsError = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/ia/agentes/{_editId}/lineas",
+                new SetAgentLineBindingRequest(b.WhatsAppLineId, connect, true));
+            if (!resp.IsSuccessStatusCode)
+                _bindingsError = connect ? "No se pudo vincular (puede estar tomada por otro agente)." : "No se pudo desvincular.";
+            await ReloadBindingsAsync(_editId.Value);
+        }
+        catch (Exception ex) { _bindingsError = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task ToggleVersionHistory()
+    {
+        _versionsOpen = !_versionsOpen;
+        if (_versionsOpen) await ReloadVersionsAsync();
+    }
+
+    private async Task ReloadVersionsAsync()
+    {
+        if (_editId is null) { _versions = new(); return; }
+        _versionsLoading = true;
+        try { _versions = await Auth().GetFromJsonAsync<List<AiAgentPromptVersionDto>>($"/api/ia/agentes/{_editId}/versiones") ?? new(); }
+        catch { _versions = new(); }
+        finally { _versionsLoading = false; }
+    }
+
+    private void AskRestoreVersion(AiAgentPromptVersionDto v) => _versionPendingRestore = v;
+
+    private async Task ConfirmRestoreVersionAsync()
+    {
+        if (_versionPendingRestore is null || _editId is null) return;
+        var index = _versionPendingRestore.Index;
+        _busy = true;
+        try
+        {
+            await Auth().PostAsync($"/api/ia/agentes/{_editId}/versiones/{index}/restaurar", null);
+            _versionPendingRestore = null;
+            await CargarDetalleAsync(_editId.Value);
+            await ReloadVersionsAsync();
+        }
+        catch (Exception ex) { _editError = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    // ===== Datos cache del agente (portado de CUBOT.travels, sin CRM) =====
+    private bool _cacheOpen;
+    private List<AiAgentCacheFieldDto> _cacheFields = new();
+    private bool _cacheModalOpen;
+    private Guid? _cacheEditId;
+    private string _cName = "";
+    private string? _cDescription;
+    private bool _cIsUpdatable = true;
+    private string? _cacheError;
+    private bool _percibidosOpen;
+    private List<AiAgentCacheValueDto> _cacheValues = new();
+
+    private void ToggleCache() => _cacheOpen = !_cacheOpen;
+    private bool AllSticky() => _cacheFields.Count > 0 && _cacheFields.All(f => !f.IsUpdatable);
+
+    private async Task ReloadCacheAsync()
+    {
+        if (_editId is null) { _cacheFields = new(); return; }
+        try { _cacheFields = await Auth().GetFromJsonAsync<List<AiAgentCacheFieldDto>>($"/api/ia/agentes/{_editId}/cache") ?? new(); }
+        catch { _cacheFields = new(); }
+    }
+
+    private void AbrirCacheField(AiAgentCacheFieldDto? f)
+    {
+        _cacheError = null;
+        _cacheEditId = f?.Id;
+        _cName = f?.Label ?? "";
+        _cDescription = f?.Description;
+        _cIsUpdatable = f?.IsUpdatable ?? true;
+        _cacheModalOpen = true;
+    }
+
+    private async Task GuardarCacheFieldAsync()
+    {
+        _cacheError = null;
+        if (_editId is null) { return; }
+        if (string.IsNullOrWhiteSpace(_cName)) { _cacheError = "El nombre es obligatorio."; return; }
+        _busy = true;
+        try
+        {
+            HttpResponseMessage resp;
+            if (_cacheEditId is null)
+                resp = await Auth().PostAsJsonAsync($"/api/ia/agentes/{_editId}/cache", new CreateAgentCacheFieldRequest(_cName, _cDescription, _cIsUpdatable));
+            else
+                resp = await Auth().PutAsJsonAsync($"/api/ia/agentes/cache/{_cacheEditId}", new UpdateAgentCacheFieldRequest(_cName, _cDescription, _cIsUpdatable));
+            if (!resp.IsSuccessStatusCode) { _cacheError = $"HTTP {(int)resp.StatusCode}"; return; }
+            await ReloadCacheAsync();
+            _cacheModalOpen = false;
+        }
+        catch (Exception ex) { _cacheError = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task EliminarCacheFieldAsync(Guid id)
+    {
+        if (_editId is null) { return; }
+        _busy = true;
+        try { await Auth().DeleteAsync($"/api/ia/agentes/cache/{id}"); await ReloadCacheAsync(); }
+        catch (Exception ex) { _editError = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task BulkStickyAsync()
+    {
+        if (_editId is null || _cacheFields.Count == 0) { return; }
+        _busy = true;
+        try
+        {
+            var actualizable = AllSticky() ? "true" : "false"; // si todos sticky -> pasar a actualizable; si no -> volver sticky
+            await Auth().PostAsync($"/api/ia/agentes/{_editId}/cache/sticky?actualizable={actualizable}", null);
+            await ReloadCacheAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task AbrirPercibidos()
+    {
+        if (_editId is null) { return; }
+        _busy = true;
+        try { _cacheValues = await Auth().GetFromJsonAsync<List<AiAgentCacheValueDto>>($"/api/ia/agentes/{_editId}/cache/valores") ?? new(); _percibidosOpen = true; }
+        catch (Exception ex) { _editError = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task LimpiarPercibidosAsync()
+    {
+        if (_editId is null) { return; }
+        _busy = true;
+        try
+        {
+            await Auth().DeleteAsync($"/api/ia/agentes/{_editId}/cache/valores");
+            _cacheValues = await Auth().GetFromJsonAsync<List<AiAgentCacheValueDto>>($"/api/ia/agentes/{_editId}/cache/valores") ?? new();
+        }
+        catch (Exception ex) { _editError = ex.Message; }
+        finally { _busy = false; }
+    }
+
     private HttpClient Auth()
     {
         var http = HttpFactory.CreateClient("PropiaApi");
@@ -801,6 +1389,10 @@ else
         public AiProvider Provider { get; set; } = AiProvider.Claude;
         public string? Model { get; set; }
         public string SystemPrompt { get; set; } = "";
+        public bool ReactionsEnabled { get; set; }
+        public int ReactionRatioN { get; set; } = 3;
+        public int ReactionRatioM { get; set; } = 4;
+        public string? ReactionEmojis { get; set; }
     }
 
     private sealed class PromptForm

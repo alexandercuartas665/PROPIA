@@ -76,6 +76,33 @@ public interface IAiAgentService
     Task<AiAgentDetailDto?> RestorePromptVersionAsync(Guid agentId, int versionIndex, CancellationToken ct = default);
 }
 
+/// <summary>Vinculos agente IA &lt;-&gt; lineas WhatsApp ("lineas atendidas"). Portado de CUBOT.travels.</summary>
+public interface IAiAgentLineBindingService
+{
+    /// <summary>Una fila por cada linea de la copropiedad, marcando cual atiende este agente.</summary>
+    Task<IReadOnlyList<AgentLineBindingRowDto>> ListForAgentAsync(Guid agentId, CancellationToken ct = default);
+
+    /// <summary>Vincula/desvincula una linea al agente. Una linea solo la atiende un agente a la vez.</summary>
+    Task<bool> SetAsync(Guid agentId, SetAgentLineBindingRequest request, CancellationToken ct = default);
+}
+
+/// <summary>Datos cache del agente: definicion de campos + valores percibidos por sesion. Portado de CUBOT.travels.</summary>
+public interface IAiAgentCacheService
+{
+    Task<IReadOnlyList<AiAgentCacheFieldDto>> ListFieldsAsync(Guid agentId, CancellationToken ct = default);
+    Task<AiAgentCacheFieldDto?> CreateFieldAsync(Guid agentId, CreateAgentCacheFieldRequest request, CancellationToken ct = default);
+    Task<AiAgentCacheFieldDto?> UpdateFieldAsync(Guid fieldId, UpdateAgentCacheFieldRequest request, CancellationToken ct = default);
+    Task<bool> DeleteFieldAsync(Guid fieldId, CancellationToken ct = default);
+
+    /// <summary>Marca todos los campos del agente como actualizables o sticky de una vez. Devuelve cuantos cambiaron.</summary>
+    Task<int> BulkSetFieldsUpdatableAsync(Guid agentId, bool isUpdatable, CancellationToken ct = default);
+
+    /// <summary>Valores percibidos en una sesion (una fila por campo definido, valor null si no capturado).</summary>
+    Task<IReadOnlyList<AiAgentCacheValueDto>> GetValuesAsync(Guid agentId, Guid sessionId, CancellationToken ct = default);
+    Task<AiAgentCacheValueDto?> SetValueAsync(SetAgentCacheValueRequest request, CancellationToken ct = default);
+    Task<int> ClearValuesAsync(Guid agentId, Guid sessionId, CancellationToken ct = default);
+}
+
 /// <summary>Inferencia de IA (probar un agente). Resuelve credenciales del proveedor desde la config global de SuperAdmin.</summary>
 public interface IAiInferenceService
 {
@@ -107,6 +134,18 @@ public interface IEvolutionApiClient
     Task<bool> DeleteInstanceAsync(string baseUrl, string apiKey, string instanceName, CancellationToken ct = default);
     Task<EvolutionSendResult> SendTextAsync(string baseUrl, string apiKey, string instanceName, string phone, string text, CancellationToken ct = default);
     Task<EvolutionSendResult> SetWebhookAsync(string baseUrl, string apiKey, string instanceName, string webhookUrl, string token, CancellationToken ct = default);
+}
+
+/// <summary>
+/// Cliente HTTP de WhatsApp Cloud API (Meta Graph v21). Las credenciales (phone number id +
+/// access token) se entregan por llamada; el cliente no conoce la entidad ni el ISecretProtector.
+/// Portado de CUBOT.travels.
+/// </summary>
+public interface IWhatsAppCloudClient
+{
+    Task<WhatsAppCloudCheckResult> CheckAsync(WhatsAppCloudCredentials credentials, CancellationToken ct = default);
+    Task<WhatsAppCloudSendResult> SendTextAsync(WhatsAppCloudCredentials credentials, string toPhone, string text, CancellationToken ct = default);
+    Task<WhatsAppCloudSendResult> SendMediaAsync(WhatsAppCloudCredentials credentials, string toPhone, WhatsAppCloudMediaKind kind, string mediaUrl, string? caption, string? fileName, CancellationToken ct = default);
 }
 
 /// <summary>Cliente HTTP de inferencia para los proveedores de IA (Claude, Gemini, OpenAI, DeepSeek).</summary>

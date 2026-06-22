@@ -76,6 +76,13 @@ public sealed class AiAgentService : IAiAgentService
         agent.Model = string.IsNullOrWhiteSpace(request.Model) ? null : request.Model.Trim();
         agent.SystemPrompt = request.SystemPrompt ?? "";
 
+        // Reacciones automaticas (emoji). Saneo: M>=1 y 0<=N<=M; emojis vacios -> null. Portado de CUBOT.travels.
+        agent.ReactionsEnabled = request.ReactionsEnabled;
+        agent.ReactionRatioM = request.ReactionRatioM < 1 ? 1 : request.ReactionRatioM;
+        agent.ReactionRatioN = request.ReactionRatioN < 0 ? 0
+            : (request.ReactionRatioN > agent.ReactionRatioM ? agent.ReactionRatioM : request.ReactionRatioN);
+        agent.ReactionEmojis = string.IsNullOrWhiteSpace(request.ReactionEmojis) ? null : request.ReactionEmojis.Trim();
+
         // Snapshot del prompt al guardar (max 5 versiones). Portado de CUBOT.travels.
         var prompts = await _db.AiAgentPrompts.AsNoTracking()
             .Where(p => p.AgentId == id).OrderBy(p => p.SortOrder)
@@ -232,7 +239,8 @@ public sealed class AiAgentService : IAiAgentService
     }
 
     private static AiAgentDto Map(AiAgent a, int resourceCount) =>
-        new(a.Id, a.Name, a.Role, a.Provider, a.Model, a.SystemPrompt, a.IsActive, a.SortOrder, resourceCount);
+        new(a.Id, a.Name, a.Role, a.Provider, a.Model, a.SystemPrompt, a.IsActive, a.SortOrder, resourceCount,
+            a.ReactionsEnabled, a.ReactionRatioN, a.ReactionRatioM, a.ReactionEmojis);
 
     private static AiAgentResourceDto MapResource(AiAgentResource r) =>
         new(r.Id, r.AgentId, r.Name, r.ResourceType, r.Detail, r.FileUrl, r.FileName, r.SortOrder);
@@ -260,7 +268,11 @@ public sealed class AiAgentService : IAiAgentService
             SystemPrompt = src.SystemPrompt,
             IsActive = false,
             SortOrder = nextOrder,
-            PromptHistoryJson = src.PromptHistoryJson
+            PromptHistoryJson = src.PromptHistoryJson,
+            ReactionsEnabled = src.ReactionsEnabled,
+            ReactionRatioN = src.ReactionRatioN,
+            ReactionRatioM = src.ReactionRatioM,
+            ReactionEmojis = src.ReactionEmojis
         };
         _db.AiAgents.Add(copy);
         var newId = copy.Id;

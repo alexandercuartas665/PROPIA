@@ -245,6 +245,11 @@ public class TareasService : ITareasService
         ).ToListAsync(ct);
         var etiquetasMap = etiquetas.GroupBy(x => x.TareaId).ToDictionary(g => g.Key, g => (IReadOnlyList<EtiquetaTareaDto>)g.Select(x => x.Dto).ToList());
 
+        var camposVals = await _db.TareaCampoValores.AsNoTracking().Where(v => ids.Contains(v.TareaId))
+            .Select(v => new { v.TareaId, v.TableroCampoId, v.Valor }).ToListAsync(ct);
+        var camposMap = camposVals.GroupBy(x => x.TareaId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<TareaCampoValorDto>)g.Select(x => new TareaCampoValorDto(x.TableroCampoId, x.Valor)).ToList());
+
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
         return rows.Select(r => new TareaListaDto(
             r.Id, r.NumeroTarea, r.Titulo, r.Prioridad, r.EstadoId, r.EstadoNombre, r.EstadoColor, r.EstadoEsTerminal,
@@ -255,7 +260,8 @@ public class TareasService : ITareasService
             subs.GetValueOrDefault(r.Id, 0),
             coms.GetValueOrDefault(r.Id, 0),
             etiquetasMap.GetValueOrDefault(r.Id, new List<EtiquetaTareaDto>()),
-            r.Progreso, r.Color, r.EsProyecto, r.Valor, r.FechaInicio)).ToList();
+            r.Progreso, r.Color, r.EsProyecto, r.Valor, r.FechaInicio,
+            camposMap.GetValueOrDefault(r.Id))).ToList();
     }
 
     public async Task<TareaDetalleDto?> GetTareaAsync(Guid id, CancellationToken ct)
@@ -307,6 +313,11 @@ public class TareasService : ITareasService
             .Select(s => new SubtareaCheckDto(s.Id, s.Titulo, s.Hecho, s.Orden))
             .ToListAsync(ct);
 
+        var camposValores = await _db.TareaCampoValores.AsNoTracking()
+            .Where(v => v.TareaId == id)
+            .Select(v => new TareaCampoValorDto(v.TableroCampoId, v.Valor))
+            .ToListAsync(ct);
+
         var asigNombre = t.AsignadoPersona is null ? null
             : ((t.AsignadoPersona.Nombres ?? "") + " " + (t.AsignadoPersona.Apellidos ?? "")).Trim();
         var estadoDto = new EstadoTareaDto(t.Estado!.Id, t.Estado.Nombre, t.Estado.Color, t.Estado.Orden, t.Estado.EsTerminal, t.Estado.EsBase, t.Estado.Activo);
@@ -319,7 +330,7 @@ public class TareasService : ITareasService
             t.CreatedAt, t.CreadoPorUsuarioId,
             etiquetas, subtareas, comentarios, historial, colabs,
             t.Color, t.EsProyecto, t.Valor, t.Progreso, t.HoraInicio, t.HoraFin,
-            t.OrigenTipo, t.OrigenReferencia, t.TableroId, adjuntos, checklist);
+            t.OrigenTipo, t.OrigenReferencia, t.TableroId, adjuntos, checklist, camposValores);
     }
 
     private async Task<string> GenerarNumeroAsync(CancellationToken ct)
@@ -418,6 +429,7 @@ public class TareasService : ITareasService
         }
 
         await ReemplazarChecklistAsync(t.Id, req.Checklist, ct);
+        await ReemplazarCamposValoresAsync(t.Id, req.CamposValores, ct);
 
         await RegistrarHistorial(t.Id, TipoEventoTarea.Creada, $"Tarea creada con prioridad {req.Prioridad}", null, new { titulo = t.Titulo, prioridad = req.Prioridad.ToString() }, ct);
         await _db.SaveChangesAsync(ct);
@@ -496,6 +508,10 @@ public class TareasService : ITareasService
         // Checklist (reemplazo total) cuando se envia.
         if (req.Checklist is not null)
             await ReemplazarChecklistAsync(id, req.Checklist, ct);
+
+        // Valores de campos personalizados (upsert) cuando se envian.
+        if (req.CamposValores is not null)
+            await ReemplazarCamposValoresAsync(id, req.CamposValores, ct);
 
         return true;
     }
@@ -985,24 +1001,84 @@ public class TareasService : ITareasService
             .Select(p => new { p.Id, Nombre = p.Nombres + " " + p.Apellidos }).ToListAsync(ct);
         var usuarios = personas.Select(p => new TableroUsuarioDto(p.Id, p.Nombre.Trim(), Iniciales(p.Nombre))).ToList();
         var campos = await _db.TableroCampos.AsNoTracking().Where(c => c.TableroId == t.Id)
-            .OrderBy(c => c.Orden).Select(c => new TableroCampoDto(c.Id, c.Label, c.Orden)).ToListAsync(ct);
+            .OrderBy(c => c.Orden)
+            .Select(c => new TableroCampoDto(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones, c.MostrarEnFiltro, c.Columna, c.Descripcion))
+            .ToListAsync(ct);
         return new TableroDto(t.Id, t.Nombre, t.Descripcion, t.Color, t.Orden, nCards, usuarios, campos);
     }
 
-    public async Task<TableroCampoDto> AgregarCampoAsync(Guid tableroId, string label, CancellationToken ct)
+    private static int ClampColumna(int c) => c < 1 ? 1 : (c > 2 ? 2 : c);
+
+    public async Task<TableroCampoDto> AgregarCampoAsync(Guid tableroId, GuardarCampoRequest req, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(label) || label.Trim().Length < 2)
+        if (string.IsNullOrWhiteSpace(req.Label) || req.Label.Trim().Length < 2)
             throw new InvalidOperationException("Etiqueta minimo 2 caracteres.");
-        var lab = label.Trim();
+        var lab = req.Label.Trim();
         if (!await _db.Tableros.AnyAsync(t => t.Id == tableroId, ct))
             throw new InvalidOperationException("Tablero no encontrado.");
         if (await _db.TableroCampos.AnyAsync(c => c.TableroId == tableroId && c.Label == lab, ct))
             throw new InvalidOperationException("Ya existe un campo con esa etiqueta.");
         var orden = (await _db.TableroCampos.Where(c => c.TableroId == tableroId).Select(c => (int?)c.Orden).MaxAsync(ct) ?? 0) + 1;
-        var c2 = new TableroCampo { TableroId = tableroId, Label = lab, Orden = orden };
+        var c2 = new TableroCampo
+        {
+            TableroId = tableroId,
+            Label = lab,
+            Orden = orden,
+            Tipo = req.Tipo,
+            Opciones = string.IsNullOrWhiteSpace(req.Opciones) ? null : req.Opciones.Trim(),
+            MostrarEnFiltro = req.MostrarEnFiltro,
+            Columna = ClampColumna(req.Columna),
+            Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim()
+        };
         _db.TableroCampos.Add(c2);
         await _db.SaveChangesAsync(ct);
-        return new TableroCampoDto(c2.Id, c2.Label, c2.Orden);
+        return new TableroCampoDto(c2.Id, c2.Label, c2.Orden, c2.Tipo, c2.Opciones, c2.MostrarEnFiltro, c2.Columna, c2.Descripcion);
+    }
+
+    public async Task<bool> ActualizarCampoAsync(Guid tableroId, Guid campoId, GuardarCampoRequest req, CancellationToken ct)
+    {
+        var c = await _db.TableroCampos.FirstOrDefaultAsync(x => x.Id == campoId && x.TableroId == tableroId, ct);
+        if (c is null) return false;
+        if (string.IsNullOrWhiteSpace(req.Label) || req.Label.Trim().Length < 2)
+            throw new InvalidOperationException("Etiqueta minimo 2 caracteres.");
+        var lab = req.Label.Trim();
+        if (await _db.TableroCampos.AnyAsync(x => x.TableroId == tableroId && x.Label == lab && x.Id != campoId, ct))
+            throw new InvalidOperationException("Ya existe un campo con esa etiqueta.");
+        c.Label = lab;
+        c.Tipo = req.Tipo;
+        c.Opciones = string.IsNullOrWhiteSpace(req.Opciones) ? null : req.Opciones.Trim();
+        c.MostrarEnFiltro = req.MostrarEnFiltro;
+        c.Columna = ClampColumna(req.Columna);
+        c.Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim();
+        c.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    /// <summary>Inserta/actualiza los valores de campos personalizados de una tarjeta (solo campos validos del tablero).</summary>
+    private async Task ReemplazarCamposValoresAsync(Guid tareaId, IReadOnlyList<TareaCampoValorDto>? valores, CancellationToken ct)
+    {
+        if (valores is null) return;
+        var tableroId = await _db.Tareas.Where(t => t.Id == tareaId).Select(t => t.TableroId).FirstOrDefaultAsync(ct);
+        var validos = (await _db.TableroCampos.Where(c => c.TableroId == tableroId).Select(c => c.Id).ToListAsync(ct)).ToHashSet();
+        var existentes = await _db.TareaCampoValores.Where(v => v.TareaId == tareaId).ToListAsync(ct);
+        foreach (var v in valores)
+        {
+            if (!validos.Contains(v.CampoId)) continue;
+            var val = string.IsNullOrWhiteSpace(v.Valor) ? null : v.Valor.Trim();
+            var ex = existentes.FirstOrDefault(x => x.TableroCampoId == v.CampoId);
+            if (ex is null)
+            {
+                if (val is not null)
+                    _db.TareaCampoValores.Add(new TareaCampoValor { TareaId = tareaId, TableroCampoId = v.CampoId, Valor = val });
+            }
+            else
+            {
+                ex.Valor = val;
+                ex.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+        }
+        await _db.SaveChangesAsync(ct);
     }
 
     public async Task<bool> EliminarCampoAsync(Guid tableroId, Guid campoId, CancellationToken ct)
