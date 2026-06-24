@@ -81,6 +81,8 @@ public static class DependencyInjection
         services.AddScoped<Application.Integraciones.IEmailConfigService, Integraciones.EmailConfigService>();
         services.AddScoped<Application.Integraciones.IPlatformBrandingService, Integraciones.PlatformBrandingService>();
         services.AddScoped<Application.Integraciones.IAiServerConfigService, Integraciones.AiServerConfigService>();
+        services.AddScoped<Application.Integraciones.IOcrServerConfigService, Integraciones.OcrServerConfigService>();
+        services.AddScoped<Application.Ocr.IDocumentExtractionService, Ocr.AzureDocumentExtractionService>();
         services.AddScoped<Application.Integraciones.IWompiConfigService, Integraciones.WompiConfigService>();
         services.AddScoped<Application.Integraciones.IWompiWebhookService, Integraciones.WompiWebhookService>();
         services.AddScoped<Application.Integraciones.IEvolutionMasterConfigService, Integraciones.EvolutionMasterConfigService>();

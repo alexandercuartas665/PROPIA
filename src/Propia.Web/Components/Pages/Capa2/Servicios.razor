@@ -325,6 +325,14 @@ else
             <button class="srv-x" @onclick="() => _spReciboModal = false"><i class="fi fi-rr-cross-small"></i></button>
         </div>
         <div class="srv-modal-body">
+            <div class="sp-ocr">
+                <label class="sp-ocr-up">
+                    <i class="fi fi-rr-upload"></i>
+                    <span>@(_ocrBusy ? "Leyendo recibo con IA..." : "Cargar recibo (PDF/imagen) y extraer datos")</span>
+                    <InputFile OnChange="SubirReciboOcr" accept=".pdf,image/*" disabled="@_ocrBusy" />
+                </label>
+                @if (!string.IsNullOrEmpty(_ocrMsg)) { <div class="sp-ocr-msg @_ocrMsgCls">@_ocrMsg</div> }
+            </div>
             <div class="srv-grid">
                 <div><label class="srv-lbl">Anio</label><input class="srv-input" type="number" @bind="_fr.Anio" /></div>
                 <div><label class="srv-lbl">Mes</label>
@@ -445,6 +453,13 @@ else
     .sp-recl-desc { font-size: 12px; color: #516F90; line-height: 1.45; margin-top: 8px; }
     .sp-empty { padding: 40px 20px; text-align: center; color: #A6B7C8; font-size: 13px; background: #fff; border: 1px dashed #D7E0EA; border-radius: 14px; }
     .sp-empty-sm { padding: 24px; border: 0; }
+    .sp-ocr { margin-bottom: 14px; }
+    .sp-ocr-up { display: flex; align-items: center; gap: 9px; padding: 12px 14px; border: 1.5px dashed #DCD2F8; border-radius: 11px; background: #FBFAFE; color: #6D4FE3; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+    .sp-ocr-up:hover { border-color: #6D4FE3; background: #F5F1FE; }
+    .sp-ocr-up input[type=file] { display: none; }
+    .sp-ocr-msg { margin-top: 8px; font-size: 12px; font-weight: 600; padding: 8px 11px; border-radius: 8px; }
+    .sp-ocr-msg.ok { color: #15703F; background: #E7F6EE; }
+    .sp-ocr-msg.err { color: #B3243C; background: #FDE7E7; }
     @@media (max-width: 1000px) { .sp-kpis { grid-template-columns: repeat(2,1fr); } .sp-grid { grid-template-columns: 1fr; } }
     .srv-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
     @@media (max-width: 760px) { .srv-kpis { grid-template-columns: 1fr; } .srv-grid { grid-template-columns: 1fr !important; } }
@@ -633,7 +648,45 @@ else
         finally { _busy = false; }
     }
 
-    private void AbrirCargarRecibo() { _fr = new(); _spError = null; _spReciboModal = true; }
+    private void AbrirCargarRecibo() { _fr = new(); _spError = null; _ocrMsg = null; _spReciboModal = true; }
+
+    // ---- OCR: cargar recibo y prefilar valor/periodo con el proveedor configurado en SuperAdmin ----
+    private bool _ocrBusy;
+    private string? _ocrMsg; private string _ocrMsgCls = "ok";
+
+    private async Task SubirReciboOcr(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null) return;
+        _ocrBusy = true; _ocrMsg = null;
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var fileContent = new StreamContent(file.OpenReadStream(15 * 1024 * 1024));
+            fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType);
+            content.Add(fileContent, "file", file.Name);
+            var resp = await Auth().PostAsync("/api/ocr/extraer", content);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var err = await resp.Content.ReadFromJsonAsync<OcrError>();
+                _ocrMsg = "No se pudo leer el recibo: " + (err?.Error ?? resp.StatusCode.ToString()); _ocrMsgCls = "err";
+                return;
+            }
+            var r = await resp.Content.ReadFromJsonAsync<OcrResp>();
+            if (r is not null)
+            {
+                if (r.ValorSugerido is { } val && val > 0) _fr.Valor = val;
+                if (!string.IsNullOrEmpty(r.FechaSugerida) && DateTime.TryParse(r.FechaSugerida, out var d)) { _fr.Anio = d.Year; _fr.Mes = d.Month; }
+                _ocrMsg = "Datos extraidos. Revisa y confirma el registro."; _ocrMsgCls = "ok";
+            }
+        }
+        catch (Exception ex) { _ocrMsg = "Error leyendo el recibo: " + ex.Message; _ocrMsgCls = "err"; }
+        finally { _ocrBusy = false; }
+    }
+
+    private sealed record OcrResp(bool Ok, decimal? ValorSugerido, string? FechaSugerida);
+    private sealed record OcrError(string? Error);
     private async Task GuardarReciboAsync()
     {
         if (_spSel is not { } cid) return;

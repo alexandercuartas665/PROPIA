@@ -20,6 +20,7 @@ public class AdminIntegracionesController : ControllerBase
     private readonly IPlatformBrandingService _branding;
     private readonly IEmailSender _emailSender;
     private readonly IAiServerConfigService _ai;
+    private readonly IOcrServerConfigService _ocr;
     private readonly IWompiConfigService _wompi;
     private readonly IEvolutionMasterConfigService _evolution;
     private readonly IGoogleAuthConfigService _google;
@@ -30,6 +31,7 @@ public class AdminIntegracionesController : ControllerBase
         IPlatformBrandingService branding,
         IEmailSender emailSender,
         IAiServerConfigService ai,
+        IOcrServerConfigService ocr,
         IWompiConfigService wompi,
         IEvolutionMasterConfigService evolution,
         IGoogleAuthConfigService google,
@@ -39,6 +41,7 @@ public class AdminIntegracionesController : ControllerBase
         _branding = branding;
         _emailSender = emailSender;
         _ai = ai;
+        _ocr = ocr;
         _wompi = wompi;
         _evolution = evolution;
         _google = google;
@@ -132,6 +135,19 @@ public class AdminIntegracionesController : ControllerBase
         var (id, email) = Actor();
         var dto = await _ai.SaveAsync(req, id, email, Ip(), ct);
         return Ok(dto);
+    }
+
+    // -------------------- OCR / extraccion de documentos --------------------
+
+    [HttpGet("ocr-config")]
+    public async Task<IActionResult> GetOcrConfig(CancellationToken ct)
+        => Ok(await _ocr.GetAsync(ct));
+
+    [HttpPut("ocr-config")]
+    public async Task<IActionResult> SaveOcrConfig([FromBody] SaveOcrProviderRequest req, CancellationToken ct)
+    {
+        var (id, email) = Actor();
+        return Ok(await _ocr.SaveAsync(req, id, email, Ip(), ct));
     }
 
     // -------------------- Wompi (config maestra) --------------------

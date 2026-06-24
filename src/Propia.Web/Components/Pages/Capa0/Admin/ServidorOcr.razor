@@ -1,0 +1,151 @@
+@page "/admin/integraciones/ocr"
+@layout AdminLayout
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.Integraciones
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<PageTitle>OCR / Documentos - Plataforma</PageTitle>
+
+@* Config maestra del proveedor OCR. Lo usan recibos de servicios publicos (2.17), RUT/Camara
+   (Directorio) y contratos. Auth: token de plataforma en sessionStorage. *@
+
+<h1 class="h3 mb-1">OCR / Lectura de documentos</h1>
+<p class="text-muted mb-4">Proveedor maestro de OCR de la plataforma. La API key se guarda cifrada y nunca se muestra completa.</p>
+
+@if (_jwt is null || _cargando)
+{
+    <div class="text-center py-5"><div class="spinner-border"></div></div>
+}
+else if (_p is not null)
+{
+    @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgCls">@_msg</div> }
+    <div class="row g-4">
+        <div class="col-lg-7">
+            <div class="card">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <strong>@_p.DisplayName</strong>
+                    @if (_p.IsEnabled) { <span class="badge bg-success">Habilitado</span> } else { <span class="badge bg-secondary">Inactivo</span> }
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label">Endpoint</label>
+                            <input class="form-control" @bind="_p.Endpoint" placeholder="https://miorg-di.cognitiveservices.azure.com" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Modelo</label>
+                            <input class="form-control" list="ocr-models" @bind="_p.ModelId" placeholder="@_p.DefaultModel" />
+                            <datalist id="ocr-models">@foreach (var m in _p.SuggestedModels) { <option value="@m" /> }</datalist>
+                            <div class="form-text">Recibos: <code>prebuilt-invoice</code> o <code>prebuilt-receipt</code>. Texto plano: <code>prebuilt-read</code>.</div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">API Key @(_p.HasApiKey ? "(guardada - dejar vacio para conservar)" : "")</label>
+                            <input type="password" class="form-control" @bind="_p.NewApiKey" placeholder="@(_p.HasApiKey ? _p.ApiKeyMasked : "clave del recurso")" />
+                        </div>
+                        <div class="col-12">
+                            <div class="form-check"><input type="checkbox" class="form-check-input" id="ocr-en" @bind="_p.IsEnabled" /><label class="form-check-label" for="ocr-en">Habilitar (requiere endpoint + API key)</label></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer bg-white text-end">
+                    <button class="btn btn-dark btn-sm" @onclick="GuardarAsync" disabled="@_busy">Guardar</button>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="card bg-light">
+                <div class="card-body small text-muted">
+                    <strong class="text-dark">Como obtener las credenciales (Azure)</strong>
+                    <ol class="mt-2 mb-0 ps-3">
+                        <li>Crea un recurso <em>Document Intelligence</em> en el portal de Azure.</li>
+                        <li>En "Keys and Endpoint" copia el <em>Endpoint</em> y una <em>Key</em>.</li>
+                        <li>Pegalos aqui, deja el modelo en <code>prebuilt-invoice</code> y marca Habilitar.</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string? _jwt;
+    private bool _cargando = true;
+    private bool _busy;
+    private string? _msg;
+    private string _msgCls = "alert-info";
+    private Row? _p;
+
+    private class Row
+    {
+        public OcrProvider Provider { get; set; }
+        public string DisplayName { get; set; } = "";
+        public string? Endpoint { get; set; }
+        public string? ModelId { get; set; }
+        public string? ApiKeyMasked { get; set; }
+        public bool HasApiKey { get; set; }
+        public bool IsEnabled { get; set; }
+        public string DefaultModel { get; set; } = "";
+        public IReadOnlyList<string> SuggestedModels { get; set; } = Array.Empty<string>();
+        public string? NewApiKey { get; set; }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_admin_jwt");
+            if (string.IsNullOrWhiteSpace(jwt)) { Nav.NavigateTo("/login", forceLoad: true); return; }
+            _jwt = jwt;
+            await CargarAsync();
+            StateHasChanged();
+        }
+        catch { /* prerender */ }
+    }
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        try
+        {
+            var c = await Auth().GetFromJsonAsync<OcrProviderDto>("/admin/ocr-config");
+            if (c is not null)
+                _p = new Row
+                {
+                    Provider = c.Provider, DisplayName = c.DisplayName, Endpoint = c.Endpoint, ModelId = c.ModelId,
+                    ApiKeyMasked = c.ApiKeyMasked, HasApiKey = c.HasApiKey, IsEnabled = c.IsEnabled,
+                    DefaultModel = c.DefaultModel, SuggestedModels = c.SuggestedModels
+                };
+        }
+        finally { _cargando = false; }
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_p is null) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var req = new SaveOcrProviderRequest(_p.Provider, _p.Endpoint, _p.NewApiKey, _p.ModelId, _p.IsEnabled);
+            var resp = await Auth().PutAsJsonAsync("/admin/ocr-config", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                var dto = await resp.Content.ReadFromJsonAsync<OcrProviderDto>();
+                if (dto is not null) { _p.HasApiKey = dto.HasApiKey; _p.ApiKeyMasked = dto.ApiKeyMasked; _p.IsEnabled = dto.IsEnabled; _p.NewApiKey = null; }
+                _msg = "Configuracion de OCR guardada."; _msgCls = "alert-success";
+            }
+            else { _msg = $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}"; _msgCls = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}
