@@ -63,6 +63,10 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<ZonaComun> ZonasComunes => Set<ZonaComun>();
     public DbSet<EquipoActivo> EquiposActivos => Set<EquipoActivo>();
     public DbSet<ContratoServicio> ContratosServicio => Set<ContratoServicio>();
+    // Modulo 2.17 Servicios publicos
+    public DbSet<CuentaServicioPublico> CuentasServicioPublico => Set<CuentaServicioPublico>();
+    public DbSet<RegistroConsumoServicio> RegistrosConsumoServicio => Set<RegistroConsumoServicio>();
+    public DbSet<ReclamacionServicio> ReclamacionesServicio => Set<ReclamacionServicio>();
     public DbSet<MiembroConsejo> MiembrosConsejo => Set<MiembroConsejo>();
     public DbSet<TipoUnidadCustom> TiposUnidadCustom => Set<TipoUnidadCustom>();
     public DbSet<TipoCoeficiente> TiposCoeficiente => Set<TipoCoeficiente>();
@@ -494,6 +498,39 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.DiasAnticipacionAlerta).HasDefaultValue(30);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => x.FechaFin);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // Modulo 2.17 Servicios publicos
+        modelBuilder.Entity<CuentaServicioPublico>(b =>
+        {
+            b.Property(x => x.Alias).IsRequired().HasMaxLength(120);
+            b.Property(x => x.Prestador).HasMaxLength(160);
+            b.Property(x => x.NumeroCuenta).HasMaxLength(80);
+            b.Property(x => x.MetodoPago).HasMaxLength(80);
+            b.Property(x => x.UnidadMedida).HasMaxLength(20);
+            b.Property(x => x.UmbralAlertaPct).HasDefaultValue(25);
+            b.HasIndex(x => x.TenantId);
+            b.HasMany(x => x.Registros).WithOne(r => r.Cuenta!).HasForeignKey(r => r.CuentaServicioId).OnDelete(DeleteBehavior.Cascade);
+            b.HasMany(x => x.Reclamaciones).WithOne(r => r.Cuenta!).HasForeignKey(r => r.CuentaServicioId).OnDelete(DeleteBehavior.Cascade);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<RegistroConsumoServicio>(b =>
+        {
+            b.Property(x => x.Consumo).HasPrecision(14, 2);
+            b.Property(x => x.Valor).HasPrecision(14, 2);
+            b.Property(x => x.NotaAdmin).HasMaxLength(500);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.CuentaServicioId, x.Anio, x.Mes });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<ReclamacionServicio>(b =>
+        {
+            b.Property(x => x.Motivo).IsRequired().HasMaxLength(160);
+            b.Property(x => x.Radicado).HasMaxLength(80);
+            b.Property(x => x.Descripcion).HasMaxLength(1000);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.CuentaServicioId);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

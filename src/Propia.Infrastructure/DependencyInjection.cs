@@ -118,6 +118,9 @@ public static class DependencyInjection
         // Modulo 2.3 Mi Copropiedad
         services.AddScoped<Application.MiCopropiedad.IMiCopropiedadService, MiCopropiedad.MiCopropiedadService>();
 
+        // Modulo 2.17 Servicios publicos
+        services.AddScoped<Application.ServiciosPublicos.IServiciosPublicosService, ServiciosPublicos.ServiciosPublicosService>();
+
         // Modulo 2.1 Onboarding y Activacion
         services.AddScoped<Application.Onboarding.IOnboardingService, Onboarding.OnboardingService>();
 

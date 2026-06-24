@@ -1,6 +1,7 @@
 @page "/servicios"
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.MiCopropiedad
+@using Propia.Application.ServiciosPublicos
 @using Propia.Domain.Enums
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
@@ -28,7 +29,7 @@ else
         <button class="srv-tab @(_srvTab == "contratos" ? "on" : "")" @onclick='() => _srvTab = "contratos"'>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6l8-4z"/></svg>Contratos
         </button>
-        <button class="srv-tab @(_srvTab == "publicos" ? "on" : "")" @onclick='() => _srvTab = "publicos"'>
+        <button class="srv-tab @(_srvTab == "publicos" ? "on" : "")" @onclick="IrPublicos">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L4.5 13H11l-1 9 8.5-11H12l1-9z"/></svg>Servicios publicos
         </button>
     </div>
@@ -97,11 +98,114 @@ else
     }
     else
     {
-        <div class="srv-pub-ph">
-            <div class="srv-pub-ic"><i class="fi fi-rr-bolt"></i></div>
-            <div class="srv-pub-t">Servicios publicos &middot; 2.17</div>
-            <div class="srv-pub-s">Control de cuentas de servicio (energia, acueducto, gas, internet, aseo), seguimiento de consumo por periodo con alertas de desviacion, carga de recibos con IA y reclamaciones ante el prestador.</div>
-            <div class="srv-pub-tag">Disponible proximamente</div>
+        <div class="sp-kpis">
+            <div class="sp-kpi"><div class="sp-kpi-l">Cuentas activas</div><div class="sp-kpi-v">@(_spResumen?.CuentasActivas ?? 0)</div></div>
+            <div class="sp-kpi"><div class="sp-kpi-l">Gasto ultimo mes</div><div class="sp-kpi-v">$@((_spResumen?.GastoUltimoMes ?? 0).ToString("N0"))</div></div>
+            <div class="sp-kpi @(_spResumen?.CuentasConAlerta > 0 ? "danger" : "")"><div class="sp-kpi-l @(_spResumen?.CuentasConAlerta > 0 ? "danger" : "")">Cuentas con alerta</div><div class="sp-kpi-v @(_spResumen?.CuentasConAlerta > 0 ? "danger" : "")">@(_spResumen?.CuentasConAlerta ?? 0)</div></div>
+            <div class="sp-kpi"><div class="sp-kpi-l">Reclamaciones abiertas</div><div class="sp-kpi-v">@(_spResumen?.ReclamacionesAbiertas ?? 0)</div></div>
+        </div>
+
+        <div class="sp-grid">
+            @* ---- Columna cuentas ---- *@
+            <div class="sp-cuentas">
+                <div class="sp-cuentas-h">CUENTAS DE SERVICIO</div>
+                <div class="sp-cuentas-list">
+                    @foreach (var c in _spCuentas)
+                    {
+                        var cid = c.Id;
+                        <button class="sp-cuenta @(_spSel == c.Id ? "on" : "")" @onclick="() => SeleccionarCuentaAsync(cid)">
+                            <div class="sp-cuenta-ic">@SpIcon(c.Tipo)</div>
+                            <div class="sp-cuenta-b"><div class="sp-cuenta-a">@c.Alias</div><div class="sp-cuenta-p">@c.Prestador</div></div>
+                            @if (c.TieneAlerta) { <span class="sp-dot"></span> }
+                        </button>
+                    }
+                    <button class="sp-nueva" @onclick="AbrirNuevaCuenta"><i class="fi fi-rr-plus"></i> Nueva cuenta</button>
+                </div>
+            </div>
+
+            @* ---- Detalle ---- *@
+            <div class="sp-detalle">
+                @if (_spDetalle is null)
+                {
+                    <div class="sp-empty">@(_spCuentas.Count == 0 ? "Aun no hay cuentas de servicio. Crea la primera con \"Nueva cuenta\"." : "Selecciona una cuenta para ver su consumo.")</div>
+                }
+                else
+                {
+                    var d = _spDetalle;
+                    var barras = d.Registros.OrderBy(r => r.Anio * 100 + r.Mes).TakeLast(6).ToList();
+                    var maxc = barras.Count > 0 ? barras.Max(b => b.Consumo) : 0;
+                    <div class="sp-card">
+                        <div class="sp-det-head">
+                            <div class="sp-det-id">
+                                <div class="sp-det-t">@d.Cuenta.Alias @if (d.Cuenta.TieneAlerta && d.Cuenta.VariacionPct is { } vp) { <span class="sp-desv">Desviacion +@vp.ToString("0.#")%</span> }</div>
+                                <div class="sp-det-s">@d.Cuenta.Prestador @(string.IsNullOrEmpty(d.Cuenta.NumeroCuenta) ? "" : " - cuenta " + d.Cuenta.NumeroCuenta)@(string.IsNullOrEmpty(d.Cuenta.MetodoPago) ? "" : " - " + d.Cuenta.MetodoPago)</div>
+                            </div>
+                            <button class="srv-btn-primary" @onclick="AbrirCargarRecibo"><i class="fi fi-rr-upload"></i> Cargar recibo</button>
+                        </div>
+                        <div class="sp-chart">
+                            @if (barras.Count == 0)
+                            {
+                                <div class="sp-empty sp-empty-sm">Sin registros de consumo aun.</div>
+                            }
+                            else
+                            {
+                                <div class="sp-bars">
+                                    @foreach (var b in barras)
+                                    {
+                                        var h = maxc > 0 ? (int)Math.Round((double)(b.Consumo / maxc) * 100) : 0;
+                                        <div class="sp-bar-col">
+                                            <div class="sp-bar @(b.Alerta ? "alerta" : "")" style="height:@(Math.Max(h, 4))%" title="@b.Consumo"></div>
+                                            <span class="sp-bar-lbl">@b.PeriodoLabel</span>
+                                        </div>
+                                    }
+                                </div>
+                                <div class="sp-prom">Promedio historico: <b>@(d.PromedioConsumo?.ToString("N1") ?? "-") @d.Cuenta.UnidadMedida</b> &middot; umbral de alerta @d.Cuenta.UmbralAlertaPct%</div>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="sp-card">
+                        <div class="sp-thead"><div class="sp-c-per">PERIODO</div><div class="sp-c-con">CONSUMO</div><div class="sp-c-val">VALOR</div><div class="sp-c-var">VAR.</div><div class="sp-c-est">ESTADO</div></div>
+                        @if (d.Registros.Count == 0)
+                        {
+                            <div class="sp-empty sp-empty-sm">Sin registros.</div>
+                        }
+                        else
+                        {
+                            @foreach (var r in d.Registros)
+                            {
+                                <div class="sp-row">
+                                    <div class="sp-c-per">@r.PeriodoLabel</div>
+                                    <div class="sp-c-con">@r.Consumo.ToString("N0") @d.Cuenta.UnidadMedida</div>
+                                    <div class="sp-c-val">$@r.Valor.ToString("N0")</div>
+                                    <div class="sp-c-var">@if (r.VariacionPct is { } v) { <span class="@(r.Alerta ? "sp-var-up" : v < 0 ? "sp-var-down" : "sp-var-mid")">@(v > 0 ? "+" : "")@v.ToString("0.#")%</span> } else { <span class="sp-var-na">-</span> }</div>
+                                    <div class="sp-c-est">@if (r.Estado == EstadoRegistroConsumo.Estimado) { <span class="srv-badge warn">Estimado</span> } else { <span class="srv-badge ok">Confirmado</span> }</div>
+                                </div>
+                            }
+                        }
+                        <div class="sp-recl-bar">
+                            <button class="sp-recl-btn" @onclick="AbrirNuevaReclamacion"><i class="fi fi-rr-comment-alt"></i> Reclamaciones (@d.Reclamaciones.Count)</button>
+                        </div>
+                    </div>
+
+                    @if (d.Reclamaciones.Count > 0)
+                    {
+                        <div class="sp-card">
+                            <div class="sp-recl-h">RECLAMACIONES ANTE EL PRESTADOR</div>
+                            <div class="sp-recl-list">
+                                @foreach (var rc in d.Reclamaciones)
+                                {
+                                    <div class="sp-recl-item">
+                                        <div class="sp-recl-top"><span class="sp-recl-motivo">@rc.Motivo</span><span class="srv-badge warn">@rc.Estado</span></div>
+                                        <div class="sp-recl-meta">@(string.IsNullOrEmpty(rc.Radicado) ? "" : "Radicado " + rc.Radicado + " - ")@rc.Fecha.ToString("dd MMM yyyy")</div>
+                                        @if (!string.IsNullOrEmpty(rc.Descripcion)) { <div class="sp-recl-desc">@rc.Descripcion</div> }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
         </div>
     }
 </div>
@@ -178,6 +282,94 @@ else
         </div>
     </div>
 }
+
+@* ===== Modal: nueva cuenta de servicio ===== *@
+@if (_spCuentaModal)
+{
+    <div class="srv-ov" @onclick="() => _spCuentaModal = false"></div>
+    <div class="srv-modal">
+        <div class="srv-modal-head">
+            <div class="srv-modal-ic"><i class="fi fi-rr-bolt"></i></div>
+            <div style="flex:1;min-width:0;"><div class="srv-modal-title">Nueva cuenta de servicio</div><div class="srv-sub" style="margin:2px 0 0;">Medidor o numero de cuenta ante un prestador.</div></div>
+            <button class="srv-x" @onclick="() => _spCuentaModal = false"><i class="fi fi-rr-cross-small"></i></button>
+        </div>
+        <div class="srv-modal-body">
+            <div class="srv-grid">
+                <div><label class="srv-lbl">Tipo de servicio</label>
+                    <select class="srv-input" @bind="_fc.Tipo">@foreach (var t in Enum.GetValues<TipoServicioPublico>()) { <option value="@t">@SpLabel(t)</option> }</select>
+                </div>
+                <div><label class="srv-lbl">Unidad de medida</label><input class="srv-input" @bind="_fc.Unidad" placeholder="kWh, m3, GB..." /></div>
+                <div class="srv-col-full"><label class="srv-lbl">Identificador / alias *</label><input class="srv-input" @bind="_fc.Alias" placeholder="Ej. Energia - Torre B" /></div>
+                <div><label class="srv-lbl">Prestador</label><input class="srv-input" @bind="_fc.Prestador" placeholder="Razon social" /></div>
+                <div><label class="srv-lbl">Numero de cuenta</label><input class="srv-input" @bind="_fc.NumeroCuenta" /></div>
+                <div><label class="srv-lbl">Metodo de pago</label><input class="srv-input" @bind="_fc.MetodoPago" placeholder="Debito automatico..." /></div>
+                <div><label class="srv-lbl">Umbral de alerta %</label><input class="srv-input" type="number" @bind="_fc.Umbral" /></div>
+            </div>
+            @if (_spError is not null) { <div class="srv-banner err">@_spError</div> }
+            <div class="d-flex gap-2 justify-content-end mt-3">
+                <button class="srv-btn-ghost" @onclick="() => _spCuentaModal = false">Cancelar</button>
+                <button class="srv-btn-primary" @onclick="GuardarCuentaAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_fc.Alias))"><i class="fi fi-rr-check"></i> Crear cuenta</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ===== Modal: cargar recibo / registro de consumo ===== *@
+@if (_spReciboModal && _spDetalle is not null)
+{
+    <div class="srv-ov" @onclick="() => _spReciboModal = false"></div>
+    <div class="srv-modal">
+        <div class="srv-modal-head">
+            <div class="srv-modal-ic"><i class="fi fi-rr-upload"></i></div>
+            <div style="flex:1;min-width:0;"><div class="srv-modal-title">Cargar recibo - @_spDetalle.Cuenta.Alias</div><div class="srv-sub" style="margin:2px 0 0;">Registra el consumo y valor del periodo.</div></div>
+            <button class="srv-x" @onclick="() => _spReciboModal = false"><i class="fi fi-rr-cross-small"></i></button>
+        </div>
+        <div class="srv-modal-body">
+            <div class="srv-grid">
+                <div><label class="srv-lbl">Anio</label><input class="srv-input" type="number" @bind="_fr.Anio" /></div>
+                <div><label class="srv-lbl">Mes</label>
+                    <select class="srv-input" @bind="_fr.Mes">@for (int m = 1; m <= 12; m++) { <option value="@m">@MesNombre(m)</option> }</select>
+                </div>
+                <div><label class="srv-lbl">Consumo (@(_spDetalle.Cuenta.UnidadMedida))</label><input class="srv-input" type="number" step="any" @bind="_fr.Consumo" /></div>
+                <div><label class="srv-lbl">Valor facturado (COP)</label><input class="srv-input" type="number" step="any" @bind="_fr.Valor" /></div>
+                <div><label class="srv-lbl">Estado</label>
+                    <select class="srv-input" @bind="_fr.Estado"><option value="@EstadoRegistroConsumo.Confirmado">Confirmado</option><option value="@EstadoRegistroConsumo.Estimado">Estimado</option></select>
+                </div>
+                <div class="srv-col-full"><label class="srv-lbl">Nota del administrador (opcional)</label><textarea class="srv-input" rows="2" @bind="_fr.Nota"></textarea></div>
+            </div>
+            @if (_spError is not null) { <div class="srv-banner err">@_spError</div> }
+            <div class="d-flex gap-2 justify-content-end mt-3">
+                <button class="srv-btn-ghost" @onclick="() => _spReciboModal = false">Cancelar</button>
+                <button class="srv-btn-primary" @onclick="GuardarReciboAsync" disabled="@_busy"><i class="fi fi-rr-check"></i> Confirmar registro</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ===== Modal: nueva reclamacion ===== *@
+@if (_spReclModal && _spDetalle is not null)
+{
+    <div class="srv-ov" @onclick="() => _spReclModal = false"></div>
+    <div class="srv-modal">
+        <div class="srv-modal-head">
+            <div class="srv-modal-ic"><i class="fi fi-rr-comment-alt"></i></div>
+            <div style="flex:1;min-width:0;"><div class="srv-modal-title">Nueva reclamacion</div><div class="srv-sub" style="margin:2px 0 0;">@_spDetalle.Cuenta.Alias - @_spDetalle.Cuenta.Prestador</div></div>
+            <button class="srv-x" @onclick="() => _spReclModal = false"><i class="fi fi-rr-cross-small"></i></button>
+        </div>
+        <div class="srv-modal-body">
+            <div class="srv-grid">
+                <div class="srv-col-full"><label class="srv-lbl">Motivo *</label><input class="srv-input" @bind="_frc.Motivo" placeholder="Ej. Cobro excesivo" /></div>
+                <div class="srv-col-full"><label class="srv-lbl">N. de radicado</label><input class="srv-input" @bind="_frc.Radicado" placeholder="Radicado ante el prestador" /></div>
+                <div class="srv-col-full"><label class="srv-lbl">Descripcion</label><textarea class="srv-input" rows="3" @bind="_frc.Descripcion"></textarea></div>
+            </div>
+            @if (_spError is not null) { <div class="srv-banner err">@_spError</div> }
+            <div class="d-flex gap-2 justify-content-end mt-3">
+                <button class="srv-btn-ghost" @onclick="() => _spReclModal = false">Cancelar</button>
+                <button class="srv-btn-primary" @onclick="GuardarReclamacionAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_frc.Motivo))"><i class="fi fi-rr-check"></i> Radicar reclamacion</button>
+            </div>
+        </div>
+    </div>
+}
 }
 
 <style>
@@ -192,12 +384,68 @@ else
     .srv-tab:hover { color: var(--propia-brand, #6D4FE3); }
     .srv-tab.on { color: var(--propia-brand, #6D4FE3); border-bottom-color: var(--propia-brand, #6D4FE3); }
 
-    /* Placeholder Servicios publicos 2.17 */
-    .srv-pub-ph { background: #fff; border: 1px dashed #D7E0EA; border-radius: 16px; padding: 48px 32px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; }
-    .srv-pub-ic { width: 56px; height: 56px; border-radius: 15px; background: #F1ECFD; color: var(--propia-brand, #6D4FE3); display: flex; align-items: center; justify-content: center; font-size: 26px; }
-    .srv-pub-t { font-size: 17px; font-weight: 800; color: #1B2A3A; }
-    .srv-pub-s { font-size: 13px; color: #7C98B6; max-width: 560px; line-height: 1.55; }
-    .srv-pub-tag { font-size: 11.5px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: #F1ECFD; border: 1px solid #DCD2F8; padding: 5px 13px; border-radius: 20px; margin-top: 4px; }
+    /* Servicios publicos 2.17 */
+    .sp-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+    .sp-kpi { background: #fff; border: 1px solid #E1E8EE; border-radius: 14px; padding: 16px 18px; box-shadow: 0 1px 2px rgba(45,62,80,.05); }
+    .sp-kpi.danger { background: #FFF5F5; border-color: #FBD5D5; }
+    .sp-kpi-l { font-size: 11.5px; font-weight: 700; color: #7C98B6; }
+    .sp-kpi-l.danger { color: #C0383C; }
+    .sp-kpi-v { font-size: 23px; font-weight: 800; color: #1B2A3A; letter-spacing: -.6px; margin-top: 5px; }
+    .sp-kpi-v.danger { color: #C0383C; }
+
+    .sp-grid { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
+    .sp-cuentas { background: #fff; border: 1px solid #E1E8EE; border-radius: 14px; box-shadow: 0 1px 2px rgba(45,62,80,.05); overflow: hidden; }
+    .sp-cuentas-h { padding: 13px 16px; border-bottom: 1px solid #EEF3F8; font-size: 11px; letter-spacing: .5px; color: #A6B7C8; font-weight: 700; }
+    .sp-cuentas-list { padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+    .sp-cuenta { display: flex; align-items: center; gap: 10px; padding: 10px 11px; border-radius: 10px; text-align: left; background: #fff; border: 1px solid #E1E8EE; cursor: pointer; font-family: inherit; }
+    .sp-cuenta:hover { border-color: #6D4FE3; }
+    .sp-cuenta.on { background: #F1ECFD; border-color: #DCD2F8; }
+    .sp-cuenta-ic { width: 30px; height: 30px; border-radius: 8px; background: #EEF3F8; color: #516F90; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .sp-cuenta-b { flex: 1; min-width: 0; }
+    .sp-cuenta-a { font-size: 12.5px; font-weight: 700; color: #33475B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sp-cuenta-p { font-size: 10.5px; color: #A6B7C8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sp-dot { width: 8px; height: 8px; border-radius: 50%; background: #C0383C; flex-shrink: 0; }
+    .sp-nueva { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px; border-radius: 10px; border: 1px dashed #D7E0EA; background: #FBFAFE; font-size: 12px; font-weight: 700; color: #6D4FE3; cursor: pointer; font-family: inherit; }
+    .sp-nueva:hover { border-color: #6D4FE3; background: #F5F1FE; }
+
+    .sp-detalle { display: flex; flex-direction: column; gap: 14px; }
+    .sp-card { background: #fff; border: 1px solid #E1E8EE; border-radius: 14px; box-shadow: 0 1px 2px rgba(45,62,80,.05); overflow: hidden; }
+    .sp-det-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid #EEF3F8; }
+    .sp-det-id { flex: 1; min-width: 0; }
+    .sp-det-t { font-size: 15px; font-weight: 800; color: #1B2A3A; display: flex; align-items: center; gap: 9px; }
+    .sp-det-s { font-size: 11.5px; color: #A6B7C8; margin-top: 2px; }
+    .sp-desv { font-size: 10.5px; font-weight: 700; color: #C0383C; background: #FDE7E7; padding: 3px 9px; border-radius: 7px; }
+    .sp-chart { padding: 18px 20px; }
+    .sp-bars { display: flex; align-items: flex-end; gap: 8px; height: 130px; padding-bottom: 6px; border-bottom: 1px solid #EEF3F8; }
+    .sp-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; height: 100%; justify-content: flex-end; }
+    .sp-bar { width: 100%; max-width: 38px; border-radius: 6px 6px 0 0; background: linear-gradient(180deg,#8366F0,#6D4FE3); }
+    .sp-bar.alerta { background: #C0383C; }
+    .sp-bar-lbl { font-size: 10px; color: #A6B7C8; font-weight: 600; }
+    .sp-prom { font-size: 10.5px; color: #A6B7C8; margin-top: 8px; }
+
+    .sp-thead { display: flex; align-items: center; gap: 12px; padding: 11px 20px; background: #FAFBFC; border-bottom: 1px solid #EEF3F8; font-size: 10.5px; letter-spacing: .4px; font-weight: 700; color: #A6B7C8; }
+    .sp-row { display: flex; align-items: center; gap: 12px; padding: 11px 20px; border-bottom: 1px solid #F4F7FA; font-size: 12.5px; color: #33475B; }
+    .sp-c-per { flex: 1; font-weight: 700; }
+    .sp-c-con { width: 120px; color: #516F90; }
+    .sp-c-val { width: 110px; font-weight: 600; }
+    .sp-c-var { width: 70px; }
+    .sp-c-est { width: 100px; }
+    .sp-var-up { font-size: 11.5px; font-weight: 700; color: #C0383C; }
+    .sp-var-mid { font-size: 11.5px; font-weight: 700; color: #B45309; }
+    .sp-var-down { font-size: 11.5px; font-weight: 700; color: #1A8754; }
+    .sp-var-na { color: #C3D0DD; }
+    .sp-recl-bar { display: flex; padding: 12px 20px; }
+    .sp-recl-btn { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: #6D4FE3; background: none; border: 0; cursor: pointer; font-family: inherit; }
+    .sp-recl-h { padding: 13px 20px; border-bottom: 1px solid #EEF3F8; font-size: 11px; letter-spacing: .5px; color: #A6B7C8; font-weight: 700; }
+    .sp-recl-list { padding: 14px 20px; display: flex; flex-direction: column; gap: 13px; }
+    .sp-recl-item { border: 1px solid #E1E8EE; border-radius: 12px; padding: 14px 16px; }
+    .sp-recl-top { display: flex; align-items: center; gap: 9px; margin-bottom: 6px; }
+    .sp-recl-motivo { font-size: 13px; font-weight: 800; color: #1B2A3A; flex: 1; }
+    .sp-recl-meta { font-size: 11px; color: #A6B7C8; }
+    .sp-recl-desc { font-size: 12px; color: #516F90; line-height: 1.45; margin-top: 8px; }
+    .sp-empty { padding: 40px 20px; text-align: center; color: #A6B7C8; font-size: 13px; background: #fff; border: 1px dashed #D7E0EA; border-radius: 14px; }
+    .sp-empty-sm { padding: 24px; border: 0; }
+    @@media (max-width: 1000px) { .sp-kpis { grid-template-columns: repeat(2,1fr); } .sp-grid { grid-template-columns: 1fr; } }
     .srv-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
     @@media (max-width: 760px) { .srv-kpis { grid-template-columns: 1fr; } .srv-grid { grid-template-columns: 1fr !important; } }
     .srv-kpi { background: #fff; border: 1px solid #E1E8EE; border-radius: 14px; padding: 18px; box-shadow: 0 1px 2px rgba(45,62,80,.05); }
@@ -299,6 +547,152 @@ else
     {
         try { _contratos = await Auth().GetFromJsonAsync<List<ContratoServicioDto>>("/api/mi-copropiedad/contratos") ?? new(); }
         catch { _contratos = new(); }
+    }
+
+    // ===================== Servicios publicos (2.17) =====================
+    private ServiciosPublicosResumenDto? _spResumen;
+    private List<CuentaServicioDto> _spCuentas = new();
+    private Guid? _spSel;
+    private CuentaServicioDetalleDto? _spDetalle;
+    private bool _spLoaded;
+    private string? _spError;
+
+    private bool _spCuentaModal, _spReciboModal, _spReclModal;
+    private CuentaForm _fc = new();
+    private ReciboForm _fr = new();
+    private ReclForm _frc = new();
+
+    private sealed class CuentaForm
+    {
+        public TipoServicioPublico Tipo { get; set; } = TipoServicioPublico.EnergiaElectrica;
+        public string Alias { get; set; } = "";
+        public string? Prestador { get; set; }
+        public string? NumeroCuenta { get; set; }
+        public string? MetodoPago { get; set; }
+        public string? Unidad { get; set; }
+        public int Umbral { get; set; } = 25;
+    }
+    private sealed class ReciboForm
+    {
+        public int Anio { get; set; } = DateTime.Today.Year;
+        public int Mes { get; set; } = DateTime.Today.Month;
+        public decimal Consumo { get; set; }
+        public decimal Valor { get; set; }
+        public EstadoRegistroConsumo Estado { get; set; } = EstadoRegistroConsumo.Confirmado;
+        public string? Nota { get; set; }
+    }
+    private sealed class ReclForm
+    {
+        public string Motivo { get; set; } = "";
+        public string? Radicado { get; set; }
+        public string? Descripcion { get; set; }
+    }
+
+    private async Task IrPublicos()
+    {
+        _srvTab = "publicos";
+        if (_spLoaded) return;
+        await CargarSpAsync();
+    }
+
+    private async Task CargarSpAsync()
+    {
+        try
+        {
+            _spResumen = await Auth().GetFromJsonAsync<ServiciosPublicosResumenDto>("/api/servicios-publicos/resumen");
+            _spCuentas = await Auth().GetFromJsonAsync<List<CuentaServicioDto>>("/api/servicios-publicos/cuentas") ?? new();
+            _spLoaded = true;
+            if (_spCuentas.Count > 0 && _spSel is null) await SeleccionarCuentaAsync(_spCuentas[0].Id);
+            else if (_spSel is { } id && _spCuentas.Any(c => c.Id == id)) await SeleccionarCuentaAsync(id);
+            else { _spSel = null; _spDetalle = null; }
+        }
+        catch { _spCuentas = new(); }
+    }
+
+    private async Task SeleccionarCuentaAsync(Guid id)
+    {
+        _spSel = id;
+        try { _spDetalle = await Auth().GetFromJsonAsync<CuentaServicioDetalleDto>($"/api/servicios-publicos/cuentas/{id}"); }
+        catch { _spDetalle = null; }
+    }
+
+    private void AbrirNuevaCuenta() { _fc = new(); _spError = null; _spCuentaModal = true; }
+    private async Task GuardarCuentaAsync()
+    {
+        _busy = true; _spError = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/api/servicios-publicos/cuentas",
+                new CrearCuentaServicioRequest(_fc.Tipo, _fc.Alias, _fc.Prestador ?? "", _fc.NumeroCuenta, _fc.MetodoPago, _fc.Unidad, _fc.Umbral));
+            if (!resp.IsSuccessStatusCode) { _spError = await resp.Content.ReadAsStringAsync(); return; }
+            var nueva = await resp.Content.ReadFromJsonAsync<CuentaServicioDto>();
+            _spCuentaModal = false;
+            await CargarSpAsync();
+            if (nueva is not null) await SeleccionarCuentaAsync(nueva.Id);
+        }
+        finally { _busy = false; }
+    }
+
+    private void AbrirCargarRecibo() { _fr = new(); _spError = null; _spReciboModal = true; }
+    private async Task GuardarReciboAsync()
+    {
+        if (_spSel is not { } cid) return;
+        _busy = true; _spError = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/servicios-publicos/cuentas/{cid}/registros",
+                new CrearRegistroConsumoRequest(_fr.Anio, _fr.Mes, _fr.Consumo, _fr.Valor, _fr.Estado, _fr.Nota));
+            if (!resp.IsSuccessStatusCode) { _spError = await resp.Content.ReadAsStringAsync(); return; }
+            _spReciboModal = false;
+            await SeleccionarCuentaAsync(cid);
+            _spResumen = await Auth().GetFromJsonAsync<ServiciosPublicosResumenDto>("/api/servicios-publicos/resumen");
+            _spCuentas = await Auth().GetFromJsonAsync<List<CuentaServicioDto>>("/api/servicios-publicos/cuentas") ?? _spCuentas;
+        }
+        finally { _busy = false; }
+    }
+
+    private void AbrirNuevaReclamacion() { _frc = new(); _spError = null; _spReclModal = true; }
+    private async Task GuardarReclamacionAsync()
+    {
+        if (_spSel is not { } cid) return;
+        _busy = true; _spError = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/servicios-publicos/cuentas/{cid}/reclamaciones",
+                new CrearReclamacionRequest(_frc.Motivo, _frc.Radicado, _frc.Descripcion));
+            if (!resp.IsSuccessStatusCode) { _spError = await resp.Content.ReadAsStringAsync(); return; }
+            _spReclModal = false;
+            await SeleccionarCuentaAsync(cid);
+            _spResumen = await Auth().GetFromJsonAsync<ServiciosPublicosResumenDto>("/api/servicios-publicos/resumen");
+        }
+        finally { _busy = false; }
+    }
+
+    private static string SpLabel(TipoServicioPublico t) => t switch
+    {
+        TipoServicioPublico.EnergiaElectrica => "Energia electrica",
+        TipoServicioPublico.Acueducto => "Acueducto y alcantarillado",
+        TipoServicioPublico.Gas => "Gas natural",
+        TipoServicioPublico.TelefoniaFija => "Telefonia fija",
+        TipoServicioPublico.Internet => "Internet",
+        TipoServicioPublico.Aseo => "Aseo / recoleccion",
+        _ => t.ToString()
+    };
+    private static string SpIconClass(TipoServicioPublico t) => t switch
+    {
+        TipoServicioPublico.EnergiaElectrica => "fi fi-rr-bolt",
+        TipoServicioPublico.Acueducto => "fi fi-rr-raindrops",
+        TipoServicioPublico.Gas => "fi fi-rr-flame",
+        TipoServicioPublico.TelefoniaFija => "fi fi-rr-phone-call",
+        TipoServicioPublico.Internet => "fi fi-rr-wifi",
+        TipoServicioPublico.Aseo => "fi fi-rr-trash",
+        _ => "fi fi-rr-bolt"
+    };
+    private RenderFragment SpIcon(TipoServicioPublico t) => @<i class="@SpIconClass(t)"></i>;
+    private static string MesNombre(int m)
+    {
+        string[] n = { "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre" };
+        return m >= 1 && m <= 12 ? n[m - 1] : m.ToString();
     }
 
     private void AbrirModal(ContratoServicioDto? c)
