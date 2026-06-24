@@ -434,6 +434,9 @@ public class TareasService : ITareasService
         await RegistrarHistorial(t.Id, TipoEventoTarea.Creada, $"Tarea creada con prioridad {req.Prioridad}", null, new { titulo = t.Titulo, prioridad = req.Prioridad.ToString() }, ct);
         await _db.SaveChangesAsync(ct);
 
+        // Si es subtarea, el padre ahora se vuelve derivado: recalcular su progreso.
+        if (req.PadreId.HasValue) await RecomputarProgresoAncestrosAsync(req.PadreId, ct);
+
         return (await GetTareaAsync(t.Id, ct))!;
     }
 
@@ -538,6 +541,7 @@ public class TareasService : ITareasService
         foreach (var h in hijos) { h.Eliminada = true; h.UpdatedAt = DateTimeOffset.UtcNow; }
         await RegistrarHistorial(id, TipoEventoTarea.Eliminada, "Tarjeta eliminada", null, null, ct);
         await _db.SaveChangesAsync(ct);
+        await RecomputarProgresoAncestrosAsync(t.PadreId, ct);
         return true;
     }
 
@@ -573,7 +577,10 @@ public class TareasService : ITareasService
 
         t.EstadoId = nuevo.Id;
         if (nuevo.EsTerminal && nuevo.Nombre == EstadoTareaBase.Completada)
+        {
             t.FechaCompletada = DateTimeOffset.UtcNow;
+            t.Progreso = 100;   // cerrar una tarea la deja al 100% (alimenta el progreso del padre).
+        }
         if (nuevo.Nombre == EstadoTareaBase.Cancelada)
             t.MotivoCancelacion = req.MotivoCancelacion;
         t.UpdatedAt = DateTimeOffset.UtcNow;
@@ -585,6 +592,7 @@ public class TareasService : ITareasService
             new { nuevo = nuevo.Nombre, motivo = req.MotivoCancelacion },
             ct);
         await _db.SaveChangesAsync(ct);
+        await RecomputarProgresoAncestrosAsync(t.PadreId, ct);
         return true;
     }
 
@@ -1190,9 +1198,36 @@ public class TareasService : ITareasService
     {
         var t = await _db.Tareas.FirstOrDefaultAsync(x => x.Id == tareaId, ct);
         if (t is null) return false;
-        t.Progreso = Math.Clamp(progreso, 0, 100);
-        t.UpdatedAt = DateTimeOffset.UtcNow;
-        await _db.SaveChangesAsync(ct);
+        // El progreso de una tarea PADRE se deriva de sus hijas; solo las hojas se editan directo.
+        var tieneHijos = await _db.Tareas.AnyAsync(x => x.PadreId == tareaId && !x.Eliminada, ct);
+        if (!tieneHijos)
+        {
+            t.Progreso = Math.Clamp(progreso, 0, 100);
+            t.UpdatedAt = DateTimeOffset.UtcNow;
+            await _db.SaveChangesAsync(ct);
+        }
+        await RecomputarProgresoAncestrosAsync(t.PadreId, ct);
         return true;
+    }
+
+    /// <summary>Recalcula el progreso de los ancestros (padre, abuelo...) como promedio del progreso
+    /// efectivo de sus hijas directas. Una hija en estado Completada cuenta como 100%.</summary>
+    private async Task RecomputarProgresoAncestrosAsync(Guid? padreId, CancellationToken ct)
+    {
+        var changed = false;
+        while (padreId is { } pid)
+        {
+            var padre = await _db.Tareas.FirstOrDefaultAsync(x => x.Id == pid && !x.Eliminada, ct);
+            if (padre is null) break;
+            var hijos = await _db.Tareas.Where(x => x.PadreId == pid && !x.Eliminada)
+                .Select(x => new { x.Progreso, Nombre = x.Estado!.Nombre }).ToListAsync(ct);
+            if (hijos.Count > 0)
+            {
+                var prom = (int)Math.Round(hijos.Average(h => h.Nombre == EstadoTareaBase.Completada ? 100.0 : h.Progreso));
+                if (padre.Progreso != prom) { padre.Progreso = prom; padre.UpdatedAt = DateTimeOffset.UtcNow; changed = true; }
+            }
+            padreId = padre.PadreId;
+        }
+        if (changed) await _db.SaveChangesAsync(ct);
     }
 }

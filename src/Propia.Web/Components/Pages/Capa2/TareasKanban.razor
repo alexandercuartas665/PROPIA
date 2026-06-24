@@ -173,6 +173,13 @@ else
                     <option value="">Toda prioridad</option>
                     @foreach (var p in Enum.GetValues<PrioridadTarea>()) { <option value="@p">@p</option> }
                 </select>
+                @if (_etiquetasCat.Count > 0)
+                {
+                    <select class="tb-filter" @bind="_fEtiqueta">
+                        <option value="">Toda etiqueta</option>
+                        @foreach (var et in _etiquetasCat) { <option value="@et.Id">@et.Nombre</option> }
+                    </select>
+                }
                 @foreach (var cf in CamposFiltrables())
                 {
                     var campo = cf;
@@ -697,6 +704,44 @@ else
                             }
                         </div>
                     </div>
+
+                    @if (d.Id is not null)
+                    {
+                        <div class="tbc-fld">
+                            <label>Progreso @if (d.TieneHijos) { <span class="tbc-mut">- se calcula desde las subtareas</span> }</label>
+                            @if (d.TieneHijos)
+                            {
+                                <div class="tbc-prog-ro">
+                                    <div class="tb-prog-bar"><div class="tb-prog-fill" style="width:@(d.Progreso)%;background:@(d.Progreso >= 100 ? "#1A8754" : "#6D4FE3")"></div></div>
+                                    <span class="tbc-prog-v" style="color:@(d.Progreso >= 100 ? "#1A8754" : "#516F90")">@d.Progreso%</span>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="tbc-prog-edit">
+                                    <input type="range" min="0" max="100" step="5" @bind="d.Progreso" @bind:event="oninput" style="accent-color:@(d.Progreso >= 100 ? "#1A8754" : "#6D4FE3")" />
+                                    <span class="tbc-prog-v" style="color:@(d.Progreso >= 100 ? "#1A8754" : "#516F90")">@d.Progreso%</span>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    <div class="tbc-fld">
+                        <label>Etiquetas</label>
+                        <div class="tbc-tags">
+                            @foreach (var et in _etiquetasCat)
+                            {
+                                var eid = et.Id; var on = d.EtiquetaIds.Contains(et.Id);
+                                <button class="tbc-tag @(on ? "on" : "")" style="@(on ? $"background:{et.Color ?? "#6D4FE3"};border-color:{et.Color ?? "#6D4FE3"};color:#fff" : "")" @onclick="() => ToggleEtiquetaDraft(eid)">@et.Nombre</button>
+                            }
+                            @if (_etiquetasCat.Count == 0) { <span class="tbc-mut">Aun no hay etiquetas. Crea la primera abajo.</span> }
+                        </div>
+                        <div class="tbc-tag-add">
+                            <input @bind="_nuevaEtiqueta" @bind:event="oninput" placeholder="Nueva etiqueta..." @onkeydown="EtiquetaKeyDown" />
+                            <button class="tbc-add-btn" @onclick="CrearEtiquetaInline" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevaEtiqueta))"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Crear</button>
+                        </div>
+                    </div>
+
                     <div class="tbc-fld">
                         <label>Responsables</label>
                         @if (d.Responsables.Count > 0)
@@ -1035,6 +1080,20 @@ else
     .tbc-prio2:hover { border-color: #6D4FE3; }
     .tbc-prio2.on { border-color: #6D4FE3; color: #fff; background: #6D4FE3; }
 
+    /* Progreso en el modal */
+    .tbc-prog-edit, .tbc-prog-ro { display: flex; align-items: center; gap: 10px; }
+    .tbc-prog-edit input[type=range] { flex: 1; }
+    .tbc-prog-v { font-size: 12.5px; font-weight: 700; width: 42px; text-align: right; }
+
+    /* Etiquetas (tags) en el modal */
+    .tbc-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tbc-tag { font-size: 11.5px; font-weight: 700; padding: 4px 11px; border-radius: 20px; border: 1px solid #E1E8EE; color: #516F90; background: #fff; cursor: pointer; }
+    .tbc-tag:hover { border-color: #6D4FE3; }
+    .tbc-tag.on { color: #fff; }
+    .tbc-tag-add { display: flex; gap: 6px; margin-top: 8px; }
+    .tbc-tag-add input { flex: 1; border: 1px solid #E1E8EE; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; color: #33475B; outline: none; }
+    .tbc-tag-add input:focus { border-color: #6D4FE3; }
+
     .tbc-resps { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 7px; }
     .tbc-resp { display: flex; align-items: center; gap: 6px; background: #F5F8FA; border: 1px solid #E1E8EE; border-radius: 20px; padding: 3px 9px 3px 3px; }
     .tbc-resp .tb-ava { width: 24px; height: 24px; font-size: 10px; border: 0; }
@@ -1225,9 +1284,11 @@ else
     private List<PersonaMini>? _personas;
     private readonly HashSet<Guid> _expandidas = new();
 
-    private string _fEstado = ""; private string _fResp = ""; private string _fPrio = ""; private bool _sortTitulo;
+    private string _fEstado = ""; private string _fResp = ""; private string _fPrio = ""; private string _fEtiqueta = ""; private bool _sortTitulo;
     private bool _pinTitulo; private bool _colsMenu;
     private bool _colResp = true; private bool _colEtiq = true; private bool _colPrio = true; private bool _colDue = true;
+    private List<EtiquetaTareaDto> _etiquetasCat = new();   // catalogo de etiquetas (tags) del tenant
+    private string _nuevaEtiqueta = "";
 
     private TableroDraft? _tableroDraft;
     private CardDraft? _cardDraft;
@@ -1291,6 +1352,9 @@ else
         public List<AdjuntoVM> Adjuntos { get; set; } = new();
         public List<LogVM> Historial { get; set; } = new();
         public Dictionary<Guid, string?> Campos { get; set; } = new();
+        public HashSet<Guid> EtiquetaIds { get; set; } = new();        // etiquetas asignadas (editable)
+        public HashSet<Guid> EtiquetaIdsOrig { get; set; } = new();    // snapshot para diff al guardar
+        public bool TieneHijos { get; set; }                            // si tiene subtareas: progreso derivado
     }
 
     private class SubChk { public string Titulo { get; set; } = ""; public bool Hecho { get; set; } }
@@ -1347,6 +1411,7 @@ else
         {
             _tableros = await Auth().GetFromJsonAsync<List<TableroDto>>("/api/tareas/tableros") ?? new();
             try { _resumen = await Auth().GetFromJsonAsync<ResumenTareasDto>("/api/tareas/resumen"); } catch { _resumen = null; }
+            try { _etiquetasCat = await Auth().GetFromJsonAsync<List<EtiquetaTareaDto>>("/api/tareas/etiquetas") ?? new(); } catch { _etiquetasCat = new(); }
             if (_tenants.Count == 0)
             {
                 try
@@ -1485,8 +1550,8 @@ else
     private List<TareaListaDto> Hijos(Guid padreId) =>
         _board?.Tareas.Where(t => t.PadreId == padreId).ToList() ?? new();
 
-    private bool HayFiltros => !string.IsNullOrEmpty(_fEstado) || !string.IsNullOrEmpty(_fResp) || !string.IsNullOrEmpty(_fPrio) || _fCampo.Count > 0;
-    private void LimpiarFiltros() { _fEstado = ""; _fResp = ""; _fPrio = ""; _fCampo.Clear(); }
+    private bool HayFiltros => !string.IsNullOrEmpty(_fEstado) || !string.IsNullOrEmpty(_fResp) || !string.IsNullOrEmpty(_fPrio) || !string.IsNullOrEmpty(_fEtiqueta) || _fCampo.Count > 0;
+    private void LimpiarFiltros() { _fEstado = ""; _fResp = ""; _fPrio = ""; _fEtiqueta = ""; _fCampo.Clear(); }
     private IEnumerable<string> RespOptions() =>
         (_board?.Tareas ?? new List<TareaListaDto>()).Where(t => !string.IsNullOrWhiteSpace(t.AsignadoNombre))
             .Select(t => t.AsignadoNombre!).Distinct().OrderBy(x => x);
@@ -1495,6 +1560,7 @@ else
         if (!string.IsNullOrEmpty(_fEstado) && t.EstadoId.ToString() != _fEstado) return false;
         if (!string.IsNullOrEmpty(_fResp) && t.AsignadoNombre != _fResp) return false;
         if (!string.IsNullOrEmpty(_fPrio) && t.Prioridad.ToString() != _fPrio) return false;
+        if (!string.IsNullOrEmpty(_fEtiqueta) && !t.Etiquetas.Any(et => et.Id.ToString() == _fEtiqueta)) return false;
         foreach (var kv in _fCampo)
         {
             if (string.IsNullOrEmpty(kv.Value)) continue;
@@ -1697,13 +1763,15 @@ else
             </div>
             @if (_colResp) { <div class="tb-row-resp">@(string.IsNullOrWhiteSpace(t.AsignadoNombre) ? "-" : t.AsignadoNombre)</div> }
             <div class="tb-row-prog">
-                @if (!esHija)
+                @if (t.CantidadSubtareas == 0)
                 {
+                    @* Tarea hoja (suelta o hija sin hijos): progreso editable directo. *@
                     <input type="range" min="0" max="100" step="5" value="@t.Progreso" style="accent-color:@(t.Progreso >= 100 ? "#1A8754" : "#6D4FE3")" @onchange="(e) => CambiarProgresoFila(tarea.Id, e)" />
                 }
                 else
                 {
-                    <div class="tb-prog-bar"><div class="tb-prog-fill" style="width:@(t.Progreso)%;background:@(t.Progreso >= 100 ? "#1A8754" : "#6D4FE3")"></div></div>
+                    @* Tarea padre: progreso derivado del cierre de sus hijas (solo lectura). *@
+                    <div class="tb-prog-bar" title="Se calcula desde las subtareas"><div class="tb-prog-fill" style="width:@(t.Progreso)%;background:@(t.Progreso >= 100 ? "#1A8754" : "#6D4FE3")"></div></div>
                 }
                 <span class="tb-row-progv" style="color:@(t.Progreso >= 100 ? "#1A8754" : "#516F90")">@t.Progreso%</span>
             </div>
@@ -1921,7 +1989,10 @@ else
                 Checklist = (det.Checklist ?? new List<SubtareaCheckDto>()).Select(s => new SubChk { Titulo = s.Titulo, Hecho = s.Hecho }).ToList(),
                 Adjuntos = (det.Adjuntos ?? new List<TareaAdjuntoDto>()).Select(a => new AdjuntoVM(a.Id, a.Nombre, a.Url)).ToList(),
                 Historial = det.Historial.OrderBy(h => h.OcurridoAt).Select(h => new LogVM(h.Descripcion, h.OcurridoAt)).ToList(),
-                Campos = (det.CamposValores ?? new List<TareaCampoValorDto>()).GroupBy(v => v.CampoId).ToDictionary(g => g.Key, g => g.First().Valor)
+                Campos = (det.CamposValores ?? new List<TareaCampoValorDto>()).GroupBy(v => v.CampoId).ToDictionary(g => g.Key, g => g.First().Valor),
+                EtiquetaIds = t.Etiquetas.Select(e => e.Id).ToHashSet(),
+                EtiquetaIdsOrig = t.Etiquetas.Select(e => e.Id).ToHashSet(),
+                TieneHijos = t.CantidadSubtareas > 0
             };
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
@@ -1949,7 +2020,7 @@ else
             {
                 var req = new CrearTareaRequest(
                     d.Titulo.Trim(), d.Descripcion, d.Prioridad, d.EstadoId,
-                    null, ini, venc, d.PadreId, null, _board.Tablero.Id,
+                    null, ini, venc, d.PadreId, d.EtiquetaIds.ToList(), _board.Tablero.Id,
                     d.Color, d.EsProyecto, d.Valor, d.HoraInicio, d.HoraFin,
                     origenTipo, origenRef, responsables, checklist, camposValores);
                 resp = await Auth().PostAsJsonAsync("/api/tareas", req);
@@ -1963,6 +2034,16 @@ else
                 resp = await Auth().PutAsJsonAsync($"/api/tareas/{d.Id}", req);
             }
             if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+
+            // Etiquetas: en tarjeta existente, sincronizar (asignar nuevas / quitar removidas) via endpoints.
+            if (d.Id is { } tid)
+            {
+                foreach (var add in d.EtiquetaIds.Where(x => !d.EtiquetaIdsOrig.Contains(x)))
+                    await Auth().PostAsJsonAsync($"/api/tareas/{tid}/etiquetas", new AsignarEtiquetaRequest(add));
+                foreach (var rem in d.EtiquetaIdsOrig.Where(x => !d.EtiquetaIds.Contains(x)))
+                    await Auth().DeleteAsync($"/api/tareas/{tid}/etiquetas/{rem}");
+            }
+
             // Si era una tarea hija, deja el padre expandido para verla en la lista.
             if (d.PadreId is { } pid) { _expandidas.Add(pid); if (_boardMode == "tablero") _boardMode = "lista"; }
             CerrarCard();
@@ -2020,6 +2101,40 @@ else
         _respPick = "";
     }
     private void CardRemoveResp(Guid pid) { _cardDraft?.Responsables.Remove(pid); }
+
+    // ----- Etiquetas (tags) de la tarjeta -----
+    private void ToggleEtiquetaDraft(Guid id)
+    {
+        if (_cardDraft is null) return;
+        if (!_cardDraft.EtiquetaIds.Add(id)) _cardDraft.EtiquetaIds.Remove(id);
+    }
+
+    private async Task EtiquetaKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await CrearEtiquetaInline();
+    }
+
+    private async Task CrearEtiquetaInline()
+    {
+        if (_cardDraft is null || string.IsNullOrWhiteSpace(_nuevaEtiqueta)) return;
+        var nombre = _nuevaEtiqueta.Trim();
+        // Si ya existe en el catalogo, solo la seleccionamos.
+        var existente = _etiquetasCat.FirstOrDefault(x => string.Equals(x.Nombre, nombre, StringComparison.OrdinalIgnoreCase));
+        if (existente is not null) { _cardDraft.EtiquetaIds.Add(existente.Id); _nuevaEtiqueta = ""; return; }
+        _busy = true;
+        try
+        {
+            var color = _colores[Math.Abs(nombre.GetHashCode()) % _colores.Length];
+            var resp = await Auth().PostAsJsonAsync("/api/tareas/etiquetas", new CrearEtiquetaRequest(nombre, color));
+            if (resp.IsSuccessStatusCode)
+            {
+                var nueva = await resp.Content.ReadFromJsonAsync<EtiquetaTareaDto>();
+                if (nueva is not null) { _etiquetasCat.Add(nueva); _cardDraft.EtiquetaIds.Add(nueva.Id); _nuevaEtiqueta = ""; }
+            }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
 
     private string PersonaNombre(Guid id) => _personas?.FirstOrDefault(p => p.Id == id)?.Nombre ?? "Persona";
     private static string RespColor(int idx) => _avaColors[idx % _avaColors.Length];
