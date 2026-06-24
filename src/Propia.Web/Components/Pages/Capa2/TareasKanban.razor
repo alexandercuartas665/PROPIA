@@ -3,8 +3,10 @@
 @using System.Globalization
 @using Propia.Application.Tareas
 @using Propia.Domain.Enums
+@using Propia.Shared.Auth
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
+@inject NavigationManager Nav
 
 <PageTitle>Tareas y proyectos - PROPIA</PageTitle>
 
@@ -26,8 +28,29 @@ else
                 <h1 class="tb-title">Tableros de trabajo</h1>
                 <p class="tb-sub">Gestiona las acciones de la copropiedad en tableros configurables.</p>
             </div>
-            <button class="tb-btn tb-btn-primary" @onclick="() => AbrirTableroDraft(null)"><i class="fi fi-rr-plus"></i>Nuevo tablero</button>
+            <div class="tb-head-actions">
+                @SelectorCopropiedad
+                <button class="tb-btn tb-btn-primary" @onclick="() => AbrirTableroDraft(null)"><i class="fi fi-rr-plus"></i>Nuevo tablero</button>
+            </div>
         </div>
+
+        @* ----- Indicadores (KPIs de todo el modulo, prototipo v2) ----- *@
+        @if (_resumen is not null)
+        {
+            <div class="tb-kpis">
+                @foreach (var k in TaskKpis())
+                {
+                    <div class="tb-kpi" style="background:@k.Grad">
+                        <svg class="tb-kpi-wm" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6"><path d="@k.Icon"/></svg>
+                        <div class="tb-kpi-body">
+                            <div class="tb-kpi-label">@k.Label</div>
+                            <div class="tb-kpi-n">@k.Valor</div>
+                            <div class="tb-kpi-sub">@k.Sub</div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
 
         @if (_tableros is null)
         {
@@ -92,6 +115,7 @@ else
                     </button>
                 }
             </div>
+            @SelectorCopropiedad
             <button class="tb-btn tb-btn-soft" @onclick="AbrirConfigBoard"><i class="fi fi-rr-settings"></i>Configurar</button>
             <button class="tb-btn tb-btn-primary" @onclick="() => AbrirCardDraft(null, _board.Estados.FirstOrDefault()?.Id)"><i class="fi fi-rr-plus"></i>Nueva tarjeta</button>
         </div>
@@ -162,16 +186,33 @@ else
                 <button class="tb-filter-btn @(_sortTitulo ? "on" : "")" @onclick="() => _sortTitulo = !_sortTitulo" title="Ordenar por titulo">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h11M3 12h7M3 18h4M17 5v14M17 19l3-3M17 19l-3-3"/></svg>@(_sortTitulo ? "Titulo A-Z" : "Orden")
                 </button>
+                <button class="tb-filter-btn @(_pinTitulo ? "on" : "")" @onclick="() => _pinTitulo = !_pinTitulo" title="Fijar columna Titulo">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4v6l-2 4h10l-2-4V4M12 14v6M8 4h8"/></svg>Fijar titulo
+                </button>
+                <button class="tb-filter-btn" @onclick="() => _colsMenu = !_colsMenu" title="Columnas visibles">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M7 12h10M10 18h4"/></svg>Campos
+                </button>
+                @if (_colsMenu)
+                {
+                    <div class="tb-colsmenu">
+                        <div class="tb-colsmenu-h">COLUMNAS VISIBLES</div>
+                        <button class="tb-colsmenu-i" @onclick="() => _colResp = !_colResp"><span class="tb-chk @(_colResp ? "on" : "")">@if (_colResp){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span>Asignado</button>
+                        <button class="tb-colsmenu-i" @onclick="() => _colEtiq = !_colEtiq"><span class="tb-chk @(_colEtiq ? "on" : "")">@if (_colEtiq){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span>Etiquetas</button>
+                        <button class="tb-colsmenu-i" @onclick="() => _colPrio = !_colPrio"><span class="tb-chk @(_colPrio ? "on" : "")">@if (_colPrio){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span>Prioridad</button>
+                        <button class="tb-colsmenu-i" @onclick="() => _colDue = !_colDue"><span class="tb-chk @(_colDue ? "on" : "")">@if (_colDue){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span>Vence</button>
+                    </div>
+                }
             </div>
 
             <div class="tb-list">
                 <div class="tb-list-hdr">
-                    <div class="tb-lc tb-lc-tit">TITULO</div>
+                    <div class="tb-lc tb-lc-tit @(_pinTitulo ? "tb-pin tb-pin-h" : "")">TITULO</div>
                     <div class="tb-lc tb-lc-est">ETAPA</div>
-                    <div class="tb-lc tb-lc-resp">ASIGNADO</div>
+                    @if (_colResp) { <div class="tb-lc tb-lc-resp">ASIGNADO</div> }
                     <div class="tb-lc tb-lc-prog">PROGRESO</div>
-                    <div class="tb-lc tb-lc-prio">PRIORIDAD</div>
-                    <div class="tb-lc tb-lc-due">VENCE</div>
+                    @if (_colEtiq) { <div class="tb-lc tb-lc-etiq">ETIQUETAS</div> }
+                    @if (_colPrio) { <div class="tb-lc tb-lc-prio">PRIORIDAD</div> }
+                    @if (_colDue) { <div class="tb-lc tb-lc-due">VENCE</div> }
                     @foreach (var c in _board.Tablero.Campos ?? new List<TableroCampoDto>()) { <div class="tb-lc tb-lc-campo">@c.Label.ToUpperInvariant()</div> }
                 </div>
                 @foreach (var est in _board.Estados)
@@ -200,31 +241,63 @@ else
         {
             <div class="tcal">
                 <div class="tcal-head">
-                    <button class="tcal-nav" title="Mes anterior" @onclick="() => CalMover(-1)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
+                    <button class="tcal-nav" title="Anterior" @onclick="() => CalMover(-1)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
                     <div class="tcal-title">@CalTitulo()</div>
-                    <button class="tcal-nav" title="Mes siguiente" @onclick="() => CalMover(1)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button>
+                    <button class="tcal-nav" title="Siguiente" @onclick="() => CalMover(1)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button>
                     <button class="tcal-today" @onclick="CalHoy">Hoy</button>
                     <div class="tb-flex"></div>
-                    <span class="tcal-count">@CalCards().Count con vencimiento</span>
+                    <div class="tcal-modes">
+                        <button class="tcal-mode @(_calMode == "semana" ? "on" : "")" @onclick='() => _calMode = "semana"'>Semana</button>
+                        <button class="tcal-mode @(_calMode == "mes" ? "on" : "")" @onclick='() => _calMode = "mes"'>Mes</button>
+                    </div>
                 </div>
-                <div class="tcal-grid-h">
-                    @foreach (var d in _diasSemana) { <div class="tcal-dow">@d</div> }
-                </div>
-                <div class="tcal-grid">
-                    @foreach (var cell in CalCeldas())
-                    {
-                        <div class="tcal-cell @(cell.EsMes ? "" : "tcal-out") @(cell.EsFinde ? "tcal-finde" : "")">
-                            <div class="tcal-daynum @(cell.EsHoy ? "tcal-hoy" : "")">@cell.Dia</div>
-                            <div class="tcal-events">
-                                @foreach (var t in cell.Cards)
-                                {
-                                    var tarea = t;
-                                    <button class="tcal-ev @(t.Vencida ? "venc" : "")" style="border-left-color:@(t.Color ?? t.EstadoColor ?? "#6D4FE3")" title="@t.Titulo - @t.EstadoNombre" @onclick="() => AbrirCardDraft(tarea, null)">@t.Titulo</button>
-                                }
+                @if (_calMode == "mes")
+                {
+                    <div class="tcal-grid-h">
+                        @foreach (var d in _diasSemana) { <div class="tcal-dow">@d</div> }
+                    </div>
+                    <div class="tcal-grid">
+                        @foreach (var cell in CalCeldas())
+                        {
+                            <div class="tcal-cell @(cell.EsMes ? "" : "tcal-out") @(cell.EsFinde ? "tcal-finde" : "")">
+                                <div class="tcal-daynum @(cell.EsHoy ? "tcal-hoy" : "")">@cell.Dia</div>
+                                <div class="tcal-events">
+                                    @foreach (var t in cell.Cards.Take(3))
+                                    {
+                                        var tarea = t;
+                                        <button class="tcal-ev @(t.Vencida ? "venc" : "")" style="border-left-color:@(t.Color ?? t.EstadoColor ?? "#6D4FE3")" title="@t.Titulo - @t.EstadoNombre" @onclick="() => AbrirCardDraft(tarea, null)">@t.Titulo</button>
+                                    }
+                                    @if (cell.Cards.Count > 3) { <span class="tcal-more">+@(cell.Cards.Count - 3) mas</span> }
+                                </div>
                             </div>
-                        </div>
-                    }
-                </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="tcal-week">
+                        @foreach (var d in CalSemanaDias())
+                        {
+                            <div class="tcal-wcol">
+                                <div class="tcal-whead @(d.EsHoy ? "hoy" : "")">
+                                    <div class="tcal-wdow">@d.Dow</div>
+                                    <div class="tcal-wnum">@d.Dia <span class="tcal-wmes">@d.Mes</span></div>
+                                </div>
+                                <div class="tcal-wbody">
+                                    @foreach (var t in d.Cards)
+                                    {
+                                        var tarea = t;
+                                        <button class="tcal-wev" style="border-left-color:@(t.Color ?? t.EstadoColor ?? "#6D4FE3")" @onclick="() => AbrirCardDraft(tarea, null)">
+                                            <div class="tcal-wev-t">@t.Titulo</div>
+                                            @if (!string.IsNullOrWhiteSpace(t.AsignadoNombre)) { <div class="tcal-wev-r">@t.AsignadoNombre</div> }
+                                        </button>
+                                    }
+                                    @if (d.Cards.Count == 0) { <div class="tcal-wempty">&mdash;</div> }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
             </div>
         }
 
@@ -237,7 +310,10 @@ else
             var sinFecha = GanttSinFecha();
             <div class="tg">
                 <div class="tg-titlebar">
+                    <button class="tcal-nav" title="Anterior" @onclick="() => GanttMover(-1)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
                     <div class="tg-title">Cronograma · @FechaCortaSimple(gIni) – @FechaCortaSimple(gIni.AddDays(gDias - 1))</div>
+                    <button class="tcal-nav" title="Siguiente" @onclick="() => GanttMover(1)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button>
+                    <button class="tcal-today" @onclick="GanttHoy">Hoy</button>
                     <div class="tb-flex"></div>
                     <span class="tcal-count">@filas.Count en cronograma</span>
                 </div>
@@ -258,18 +334,25 @@ else
                                 }
                             </div>
                         </div>
-                        @* filas de tareas *@
-                        @foreach (var t in filas)
+                        @* filas de tareas (jerarquia: raices + subtareas expandibles) *@
+                        @foreach (var (t, depth) in GanttFilasOrden())
                         {
                             var tarea = t;
-                            var ini = GIni(t)!.Value; var fin = GFin(t)!.Value;
-                            var off = ini.DayNumber - gIni.DayNumber;
-                            var dur = Math.Max(1, fin.DayNumber - ini.DayNumber + 1);
+                            var tieneFecha = GIni(t).HasValue;
+                            var kids = Hijos(t.Id).Where(GanttVisible).ToList();
                             <div class="tg-row">
-                                <button class="tg-left tg-task" @onclick="() => AbrirCardDraft(tarea, null)" title="@t.Titulo">
+                                <div class="tg-left tg-task" style="padding-left:@(12 + depth * 16)px">
+                                    @if (kids.Count > 0)
+                                    {
+                                        <button class="tg-exp" @onclick="() => ToggleExp(tarea.Id)" title="Ver subtareas">
+                                            @if (_expandidas.Contains(t.Id)) { <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14"/></svg> }
+                                            else { <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 5v14M5 12h14"/></svg> }
+                                        </button>
+                                    }
+                                    else { <span class="tg-exp-sp"></span> }
                                     <span class="tg-dot" style="background:@(t.EstadoColor ?? "#94a3b8")"></span>
-                                    <span class="tg-task-t">@t.Titulo</span>
-                                </button>
+                                    <button class="tg-task-btn" @onclick="() => AbrirCardDraft(tarea, null)" title="@t.Titulo"><span class="tg-task-t" style="font-weight:@(depth == 0 ? 700 : 500)">@t.Titulo</span></button>
+                                </div>
                                 <div class="tg-time tg-lane">
                                     @for (int i = 0; i < gDias; i++)
                                     {
@@ -277,10 +360,24 @@ else
                                         var fin2 = d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
                                         <div class="tg-cell @(fin2 ? "tg-we" : "") @(d == hoy ? "tg-today" : "")" style="width:@(GColW)px"></div>
                                     }
-                                    <button class="tg-bar" style="left:@(off * GColW + 2)px;width:@(dur * GColW - 4)px;background:@(t.Color ?? t.EstadoColor ?? "#6D4FE3")" @onclick="() => AbrirCardDraft(tarea, null)" title="@t.Titulo (@t.Progreso%)">
-                                        @if (t.Progreso < 100) { <span class="tg-bar-rest" style="left:@(t.Progreso)%"></span> }
-                                        <span class="tg-bar-lbl">@t.Titulo</span>
-                                    </button>
+                                    @if (tieneFecha)
+                                    {
+                                        var ini = GIni(t)!.Value; var fin = GFin(t)!.Value;
+                                        var off = ini.DayNumber - gIni.DayNumber;
+                                        var dur = Math.Max(1, fin.DayNumber - ini.DayNumber + 1);
+                                        var visIni = Math.Max(0, off);
+                                        var visFin = Math.Min(gDias, off + dur);
+                                        @* solo dibujamos la barra si intersecta la ventana visible; la recortamos a los bordes *@
+                                        @if (visFin > visIni)
+                                        {
+                                            var clipL = off < 0;             // empieza antes de la ventana
+                                            var clipR = off + dur > gDias;   // termina despues de la ventana
+                                            <button class="tg-bar @(clipL ? "tg-bar-cl" : "") @(clipR ? "tg-bar-cr" : "")" style="left:@(visIni * GColW + 2)px;width:@((visFin - visIni) * GColW - 4)px;background:@(t.Color ?? t.EstadoColor ?? "#6D4FE3")" @onclick="() => AbrirCardDraft(tarea, null)" title="@t.Titulo (@t.Progreso%)">
+                                                @if (t.Progreso < 100) { <span class="tg-bar-rest" style="left:@(t.Progreso)%"></span> }
+                                                <span class="tg-bar-lbl">@t.Titulo</span>
+                                            </button>
+                                        }
+                                    }
                                 </div>
                             </div>
                         }
@@ -710,6 +807,21 @@ else
     .tb-wrap { width: 100%; max-width: 1900px; margin: 0 auto; padding: 6px 28px 60px; font-family: 'Lexend', sans-serif; box-sizing: border-box; }
     .tb-head, .tb-board-head { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 20px; }
     .tb-head { justify-content: space-between; }
+    .tb-head-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+    /* Selector de copropiedad (prototipo v2) */
+    .tb-cosel { position: relative; flex-shrink: 0; }
+    .tb-cosel-btn { display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid #E1E8EE; border-radius: 10px; padding: 9px 12px; font-size: 13px; font-weight: 700; color: #33475B; cursor: pointer; }
+    .tb-cosel-btn:hover:not(:disabled) { border-color: #6D4FE3; }
+    .tb-cosel-btn.tb-cosel-single { cursor: default; }
+    .tb-cosel-nom { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tb-cosel-caret { color: #7C98B6; flex-shrink: 0; }
+    .tb-cosel-menu { position: absolute; top: calc(100% + 6px); right: 0; min-width: 250px; background: #fff; border: 1px solid #E1E8EE; border-radius: 12px; box-shadow: 0 12px 30px rgba(45,62,80,.16); padding: 6px; z-index: 60; max-height: 340px; overflow-y: auto; }
+    .tb-cosel-item { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; background: transparent; border: 0; border-radius: 8px; padding: 9px 10px; font-size: 13px; font-weight: 600; color: #33475B; cursor: pointer; }
+    .tb-cosel-item:hover:not(:disabled) { background: #F5F8FA; }
+    .tb-cosel-item.on { color: #6D4FE3; background: #F1ECFD; }
+    .tb-cosel-item > span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tb-cosel-check { color: #6D4FE3; flex-shrink: 0; }
     .tb-title { font-size: 27px; font-weight: 800; letter-spacing: -.6px; color: #1B2A3A; margin: 0; }
     .tb-sub { font-size: 14px; color: #7C98B6; margin: 4px 0 0; }
     .tb-btn { display: inline-flex; align-items: center; gap: 7px; padding: 9px 15px; border-radius: 10px; font-size: 13px; font-weight: 700; border: 0; cursor: pointer; white-space: nowrap; }
@@ -723,6 +835,16 @@ else
     .tb-btn-danger { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: #D7263D; padding: 9px 13px; border-radius: 9px; border: 1px solid #FBD5D5; background: #fff; cursor: pointer; }
     .tb-btn-danger:hover { background: #FFF5F5; }
     .tb-flex { flex: 1; }
+
+    /* Indicadores (KPIs) del modulo, prototipo v2 */
+    .tb-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 13px; margin-bottom: 20px; }
+    .tb-kpi { position: relative; border-radius: 16px; padding: 17px 18px; overflow: hidden; box-shadow: 0 8px 22px rgba(45,62,80,.16); }
+    .tb-kpi-wm { position: absolute; right: -14px; bottom: -14px; width: 88px; height: 88px; opacity: .16; }
+    .tb-kpi-body { position: relative; }
+    .tb-kpi-label { font-size: 11px; font-weight: 700; letter-spacing: .3px; color: rgba(255,255,255,.85); }
+    .tb-kpi-n { font-size: 33px; font-weight: 800; letter-spacing: -1px; color: #fff; margin-top: 6px; line-height: 1; }
+    .tb-kpi-sub { font-size: 11.5px; font-weight: 600; color: rgba(255,255,255,.82); margin-top: 6px; }
+    @@media (max-width: 1100px) { .tb-kpis { grid-template-columns: repeat(2, 1fr); } }
 
     .tb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
     .tb-card { background: #fff; border: 1px solid #E1E8EE; border-radius: 15px; overflow: hidden; box-shadow: 0 1px 2px rgba(45,62,80,.05); }
@@ -783,6 +905,18 @@ else
     .tb-filter-clear:hover { background: #FDE7E7; }
     .tb-filter-btn { display: flex; align-items: center; gap: 6px; padding: 7px 11px; border-radius: 9px; border: 1px solid #E1E8EE; background: #fff; font-size: 12px; font-weight: 700; color: #516F90; cursor: pointer; }
     .tb-filter-btn.on { border-color: #6D4FE3; background: #F1ECFD; color: #6D4FE3; }
+    .tb-filters { position: relative; }
+    .tb-colsmenu { position: absolute; top: 44px; right: 0; z-index: 20; width: 200px; background: #fff; border: 1px solid #E1E8EE; border-radius: 12px; box-shadow: 0 12px 30px rgba(27,42,58,.16); padding: 8px; }
+    .tb-colsmenu-h { font-size: 10px; letter-spacing: .4px; color: #A6B7C8; font-weight: 700; padding: 5px 8px; }
+    .tb-colsmenu-i { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; padding: 8px; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: #33475B; background: none; border: 0; cursor: pointer; }
+    .tb-colsmenu-i:hover { background: #F5F8FA; }
+    .tb-chk { width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid #C3D0DD; background: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .tb-chk.on { border-color: #6D4FE3; background: #6D4FE3; }
+    .tb-lc-etiq { flex: 1; min-width: 120px; }
+    .tb-row-etiq { flex: 1; min-width: 120px; display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+    .tb-tag { font-size: 10px; font-weight: 700; color: #5838C9; background: #F1ECFD; border: 1px solid #DCD2F8; padding: 2px 8px; border-radius: 6px; }
+    .tb-pin { position: sticky; left: 0; z-index: 2; background: #fff; }
+    .tb-pin-h { position: sticky; left: 0; z-index: 3; background: #FAFBFC; }
 
     .tb-list { background: #fff; border: 1px solid #E1E8EE; border-radius: 14px; box-shadow: 0 1px 2px rgba(45,62,80,.05); overflow: auto; }
     .tb-list-hdr { display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-bottom: 1px solid #EEF3F8; background: #FAFBFC; min-width: 860px; }
@@ -976,6 +1110,25 @@ else
     .tcal-ev { display: block; width: 100%; text-align: left; font-size: 10.5px; font-weight: 700; color: #33475B; line-height: 1.25; background: #F8FAFC; border: 0; border-left: 3px solid #6D4FE3; border-radius: 6px; padding: 4px 7px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .tcal-ev:hover { background: #F1ECFD; }
     .tcal-ev.venc { background: #FDE7E7; color: #C0383C; }
+    .tcal-more { font-size: 9.5px; color: #A6B7C8; font-weight: 700; padding-left: 3px; }
+    .tcal-modes { display: flex; align-items: center; gap: 2px; background: #F1F5F9; border: 1px solid #E1E8EE; border-radius: 9px; padding: 3px; }
+    .tcal-mode { padding: 6px 13px; border-radius: 7px; font-size: 12px; font-weight: 700; color: #7C98B6; background: transparent; border: 0; cursor: pointer; }
+    .tcal-mode.on { color: #6D4FE3; background: #fff; box-shadow: 0 1px 2px rgba(45,62,80,.12); }
+    /* vista semana */
+    .tcal-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: #EEF3F8; }
+    .tcal-wcol { background: #fff; min-height: 220px; display: flex; flex-direction: column; }
+    .tcal-whead { padding: 9px 10px; border-bottom: 1px solid #EEF3F8; background: #FAFBFC; }
+    .tcal-whead.hoy { background: #F1ECFD; }
+    .tcal-wdow { font-size: 10px; font-weight: 700; color: #A6B7C8; letter-spacing: .3px; }
+    .tcal-wnum { font-size: 15px; font-weight: 800; color: #1B2A3A; }
+    .tcal-whead.hoy .tcal-wnum { color: #6D4FE3; }
+    .tcal-wmes { font-size: 10px; color: #A6B7C8; font-weight: 600; }
+    .tcal-wbody { padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+    .tcal-wev { display: block; width: 100%; text-align: left; border: 1px solid #E1E8EE; border-left: 3px solid #6D4FE3; border-radius: 8px; padding: 7px 9px; background: #fff; cursor: pointer; }
+    .tcal-wev:hover { border-color: #6D4FE3; background: #FBFAFE; }
+    .tcal-wev-t { font-size: 11.5px; font-weight: 700; color: #33475B; line-height: 1.3; }
+    .tcal-wev-r { font-size: 10px; color: #A6B7C8; margin-top: 2px; }
+    .tcal-wempty { font-size: 10.5px; color: #C3D0DD; text-align: center; padding: 14px 0; }
 
     /* ===== Vista Gantt ===== */
     .tg { background: #fff; border: 1px solid #E1E8EE; border-radius: 14px; box-shadow: 0 1px 2px rgba(45,62,80,.05); overflow: hidden; }
@@ -992,6 +1145,11 @@ else
     .tg-task:hover .tg-task-t { color: #6D4FE3; }
     .tg-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
     .tg-task-t { font-size: 12.5px; font-weight: 600; color: #33475B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tg-task-btn { flex: 1; min-width: 0; text-align: left; background: none; border: 0; cursor: pointer; padding: 0; overflow: hidden; }
+    .tg-task-btn:hover .tg-task-t { color: #6D4FE3; }
+    .tg-exp { width: 18px; height: 18px; flex-shrink: 0; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: #6D4FE3; background: #F1ECFD; border: 0; cursor: pointer; padding: 0; }
+    .tg-exp:hover { background: #E6DEFA; }
+    .tg-exp-sp { width: 18px; flex-shrink: 0; display: inline-block; }
     .tg-time { display: flex; position: relative; }
     .tg-daycol { flex-shrink: 0; padding: 5px 0; text-align: center; border-right: 1px solid #F4F7FA; }
     .tg-daycol.tg-we { background: #FBFCFD; }
@@ -1005,6 +1163,8 @@ else
     .tg-cell.tg-today { background: #F5F1FE; }
     .tg-bar { position: absolute; top: 8px; height: 24px; border-radius: 7px; border: 0; cursor: pointer; overflow: hidden; display: flex; align-items: center; box-shadow: 0 1px 3px rgba(27,42,58,.18); }
     .tg-bar:hover { filter: brightness(1.05); }
+    .tg-bar-cl { border-top-left-radius: 0; border-bottom-left-radius: 0; } /* recortada por la izquierda (continua antes) */
+    .tg-bar-cr { border-top-right-radius: 0; border-bottom-right-radius: 0; } /* recortada por la derecha (continua despues) */
     .tg-bar-rest { position: absolute; top: 0; bottom: 0; right: 0; background: rgba(255,255,255,.5); }
     .tg-bar-lbl { position: relative; z-index: 1; font-size: 10.5px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 8px; text-shadow: 0 1px 1px rgba(0,0,0,.15); }
     .tg-note { font-size: 11.5px; color: #A6B7C8; padding: 11px 18px; border-top: 1px solid #EEF3F8; background: #FBFCFD; }
@@ -1055,12 +1215,19 @@ else
     private string _msgClass = "alert-info";
 
     private List<TableroDto>? _tableros;
+    private ResumenTareasDto? _resumen;   // KPIs globales del modulo (todos los tableros)
+    private List<TenantInfoDto> _tenants = new();   // copropiedades a las que tiene acceso el usuario
+    private Guid? _activeTenantId;
+    private bool _coMenuOpen;
+    private bool _coBusy;
     private TableroBoardDto? _board;
     private string _boardMode = "tablero";
     private List<PersonaMini>? _personas;
     private readonly HashSet<Guid> _expandidas = new();
 
     private string _fEstado = ""; private string _fResp = ""; private string _fPrio = ""; private bool _sortTitulo;
+    private bool _pinTitulo; private bool _colsMenu;
+    private bool _colResp = true; private bool _colEtiq = true; private bool _colPrio = true; private bool _colDue = true;
 
     private TableroDraft? _tableroDraft;
     private CardDraft? _cardDraft;
@@ -1179,6 +1346,17 @@ else
         try
         {
             _tableros = await Auth().GetFromJsonAsync<List<TableroDto>>("/api/tareas/tableros") ?? new();
+            try { _resumen = await Auth().GetFromJsonAsync<ResumenTareasDto>("/api/tareas/resumen"); } catch { _resumen = null; }
+            if (_tenants.Count == 0)
+            {
+                try
+                {
+                    var me = await Auth().GetFromJsonAsync<MeResponseDto>("/connect/me");
+                    _tenants = me?.AvailableTenants?.ToList() ?? new();
+                    _activeTenantId = me?.ActiveTenantId;
+                }
+                catch { _tenants = new(); }
+            }
             if (_personas is null)
             {
                 try
@@ -1201,6 +1379,96 @@ else
         try { var z = await Auth().GetFromJsonAsync<List<ZonaMini>>("/api/mi-copropiedad/zonas"); _zonas = z?.Select(x => new OpcionOrigen(x.Id, x.Nombre)).ToList() ?? new(); } catch { _zonas = new(); }
         try { var e = await Auth().GetFromJsonAsync<List<EquipoMini>>("/api/mi-copropiedad/equipos"); _equipos = e?.Select(x => new OpcionOrigen(x.Id, x.Nombre)).ToList() ?? new(); } catch { _equipos = new(); }
     }
+
+    // Indicadores del modulo (prototipo v2): 4 tarjetas con gradiente sobre todos los tableros.
+    private record KpiVm(string Label, string Valor, string Sub, string Grad, string Icon);
+    private List<KpiVm> TaskKpis()
+    {
+        var r = _resumen!;
+        var hoyTxt = DateTime.Today.ToString("d 'de' MMMM", Es);
+        var vencGrad = r.Vencidas > 0 ? "linear-gradient(135deg,#E0556B,#B3243C)" : "linear-gradient(135deg,#34C77B,#1A8754)";
+        return new()
+        {
+            new("Tareas pendientes", r.Activas.ToString(), $"de {r.Total} totales",
+                "linear-gradient(135deg,#6D4FE3,#4B2BB0)",
+                "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"),
+            new("Tareas vencidas", r.Vencidas.ToString(), r.Vencidas > 0 ? "requieren atencion" : "todo al dia",
+                vencGrad,
+                "M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"),
+            new("Vencen hoy", r.VencenHoy.ToString(), hoyTxt,
+                "linear-gradient(135deg,#F0A23C,#C5781A)",
+                "M3 4h18v18H3zM3 10h18M8 2v4M16 2v4"),
+            new("Avance global", r.AvancePct + "%", $"{r.Completadas} completadas",
+                "linear-gradient(135deg,#2BB7C4,#1E7A8C)",
+                "M3 3v18h18M7 14l3-4 3 3 4-6"),
+        };
+    }
+
+    // ---- Selector de copropiedad (prototipo v2): cambia el tenant activo sin salir del modulo ----
+    private string NombreCopropiedadActiva()
+        => (_tenants.FirstOrDefault(t => t.TenantId == _activeTenantId) ?? _tenants.FirstOrDefault())?.Nombre ?? "Copropiedad";
+
+    private void ToggleCoMenu() { if (_tenants.Count > 1) _coMenuOpen = !_coMenuOpen; }
+
+    private async Task SwitchCopropiedadAsync(TenantInfoDto t)
+    {
+        _coMenuOpen = false;
+        if (t.TenantId == _activeTenantId) return;
+        _coBusy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/connect/switch-tenant", new SwitchTenantRequestDto(t.TenantId));
+            if (resp.IsSuccessStatusCode)
+            {
+                var dto = await resp.Content.ReadFromJsonAsync<LoginResponseDto>();
+                if (dto is not null)
+                {
+                    // Persistir el nuevo contexto y recargar el modulo de Tareas re-scopeado al tenant elegido.
+                    await Js.InvokeVoidAsync("propiaAuth.save", dto.AccessToken, t.TenantId.ToString(), t.Nombre);
+                    Nav.NavigateTo("/tareas", forceLoad: true);
+                    return;
+                }
+            }
+        }
+        catch { /* error de red: dejamos el menu para reintentar */ }
+        finally { _coBusy = false; }
+    }
+
+    private const string IconEdificio = "M3 21h18M5 21V7l7-4 7 4v14M9 9h.01M15 9h.01M9 13h.01M15 13h.01";
+
+    private RenderFragment SelectorCopropiedad =>
+        @<text>
+        @if (_tenants.Count > 0)
+        {
+            <div class="tb-cosel">
+                <button class="tb-cosel-btn @(_tenants.Count > 1 ? "" : "tb-cosel-single")" @onclick="ToggleCoMenu" disabled="@(_tenants.Count <= 1)" title="@(_tenants.Count > 1 ? "Cambiar de copropiedad" : NombreCopropiedadActiva())">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6D4FE3" stroke-width="2"><path d="@IconEdificio"/></svg>
+                    <span class="tb-cosel-nom">@NombreCopropiedadActiva()</span>
+                    @if (_tenants.Count > 1)
+                    {
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="tb-cosel-caret"><path d="M6 9l6 6 6-6"/></svg>
+                    }
+                </button>
+                @if (_coMenuOpen)
+                {
+                    <div class="tb-cosel-menu">
+                        @foreach (var t in _tenants)
+                        {
+                            var ten = t;
+                            <button class="tb-cosel-item @(t.TenantId == _activeTenantId ? "on" : "")" @onclick="() => SwitchCopropiedadAsync(ten)" disabled="@_coBusy">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="@IconEdificio"/></svg>
+                                <span>@t.Nombre</span>
+                                @if (t.TenantId == _activeTenantId)
+                                {
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" class="tb-cosel-check"><path d="M20 6L9 17l-5-5"/></svg>
+                                }
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+        }
+        </text>;
 
     private async Task AbrirBoardAsync(Guid id)
     {
@@ -1238,16 +1506,55 @@ else
     // ----- Vista Calendario (mensual por fecha de vencimiento) -----
     private static readonly string[] _diasSemana = { "LUN", "MAR", "MIE", "JUE", "VIE", "SAB", "DOM" };
     private int _calYear; private int _calMonth; private bool _calInit;
+    private string _calMode = "mes";          // "mes" | "semana"
+    private DateOnly _calWeek;                  // lunes de la semana mostrada
     private record CalCelda(int Dia, bool EsMes, bool EsHoy, bool EsFinde, List<TareaListaDto> Cards);
+    private record CalDia(string Dow, int Dia, string Mes, bool EsHoy, List<TareaListaDto> Cards);
 
-    private void CalInit() { if (_calInit) return; var t = DateTime.Today; _calYear = t.Year; _calMonth = t.Month; _calInit = true; }
-    private void CalMover(int delta) { CalInit(); var d = new DateTime(_calYear, _calMonth, 1).AddMonths(delta); _calYear = d.Year; _calMonth = d.Month; }
-    private void CalHoy() { var t = DateTime.Today; _calYear = t.Year; _calMonth = t.Month; _calInit = true; }
+    private static DateOnly LunesDe(DateOnly d) => d.AddDays(-(((int)d.DayOfWeek + 6) % 7));
+
+    private void CalInit()
+    {
+        if (_calInit) return;
+        var t = DateTime.Today; _calYear = t.Year; _calMonth = t.Month;
+        _calWeek = LunesDe(DateOnly.FromDateTime(t)); _calInit = true;
+    }
+    private void CalMover(int delta)
+    {
+        CalInit();
+        if (_calMode == "mes") { var d = new DateTime(_calYear, _calMonth, 1).AddMonths(delta); _calYear = d.Year; _calMonth = d.Month; }
+        else { _calWeek = _calWeek.AddDays(7 * delta); }
+    }
+    private void CalHoy() { var t = DateTime.Today; _calYear = t.Year; _calMonth = t.Month; _calWeek = LunesDe(DateOnly.FromDateTime(t)); _calInit = true; }
     private string CalTitulo()
     {
         CalInit();
+        if (_calMode == "semana")
+        {
+            var fin = _calWeek.AddDays(6);
+            return $"{_calWeek.Day} {_calWeek.ToString("MMM", Es)} - {fin.Day} {fin.ToString("MMM yyyy", Es)}";
+        }
         var s = new DateTime(_calYear, _calMonth, 1).ToString("MMMM yyyy", Es);
         return char.ToUpper(s[0]) + s.Substring(1);
+    }
+
+    private List<CalDia> CalSemanaDias()
+    {
+        CalInit();
+        var hoy = DateOnly.FromDateTime(DateTime.Today);
+        var porDia = (_board?.Tareas ?? new List<TareaListaDto>())
+            .Where(t => t.FechaVencimiento.HasValue)
+            .GroupBy(t => t.FechaVencimiento!.Value)
+            .ToDictionary(g => g.Key, g => g.OrderBy(t => t.Prioridad).ToList());
+        var dows = new[] { "LUN", "MAR", "MIE", "JUE", "VIE", "SAB", "DOM" };
+        var res = new List<CalDia>(7);
+        for (int i = 0; i < 7; i++)
+        {
+            var d = _calWeek.AddDays(i);
+            res.Add(new CalDia(dows[i], d.Day, d.ToString("MMM", Es), d == hoy,
+                porDia.GetValueOrDefault(d, new List<TareaListaDto>())));
+        }
+        return res;
     }
     private List<TareaListaDto> CalCards() => _board?.Tareas.Where(t => t.FechaVencimiento.HasValue).ToList() ?? new();
 
@@ -1286,16 +1593,52 @@ else
         (_board?.Tareas ?? new List<TareaListaDto>()).Where(t => GIni(t).HasValue)
             .OrderBy(t => GIni(t)!.Value).ThenBy(t => t.Titulo).ToList();
     private List<TareaListaDto> GanttSinFecha() =>
-        (_board?.Tareas ?? new List<TareaListaDto>()).Where(t => !GIni(t).HasValue && t.PadreId == null).ToList();
+        (_board?.Tareas ?? new List<TareaListaDto>()).Where(t => !GIni(t).HasValue && t.PadreId == null && Hijos(t.Id).All(h => !GIni(h).HasValue)).ToList();
 
+    // Una tarea entra al gantt si ella o alguna descendiente tiene fecha.
+    private bool GanttVisible(TareaListaDto t) => GIni(t).HasValue || Hijos(t.Id).Any(GanttVisible);
+
+    // Filas del gantt en orden jerarquico, respetando expandidas.
+    private List<(TareaListaDto t, int depth)> GanttFilasOrden()
+    {
+        var res = new List<(TareaListaDto, int)>();
+        void Walk(TareaListaDto t, int depth)
+        {
+            res.Add((t, depth));
+            if (_expandidas.Contains(t.Id))
+                foreach (var h in Hijos(t.Id).Where(GanttVisible).OrderBy(x => GIni(x) ?? DateOnly.MaxValue).ThenBy(x => x.Titulo))
+                    Walk(h, depth + 1);
+        }
+        var raices = (_board?.Tareas ?? new List<TareaListaDto>())
+            .Where(t => t.PadreId == null && GanttVisible(t))
+            .OrderBy(t => GIni(t) ?? DateOnly.MaxValue).ThenBy(t => t.Titulo);
+        foreach (var r in raices) Walk(r, 0);
+        return res;
+    }
+
+    // El cronograma usa una ventana fija de GanttDias dias anclada en _ganttAncla, navegable
+    // con los botones Anterior/Siguiente/Hoy (igual que el calendario). Las tareas fuera de la
+    // ventana siguen listadas a la izquierda, pero su barra solo se dibuja cuando entra en rango.
+    private DateOnly _ganttAncla; private bool _ganttInit;
+    private const int GanttDias = 35;   // ancho de la ventana visible (5 semanas)
+    private const int GanttPaso = 14;   // dias que avanza/retrocede cada salto
+
+    private void GanttInitRango()
+    {
+        if (_ganttInit) return;
+        var hoy = DateOnly.FromDateTime(DateTime.Today);
+        var ds = GanttTareas();
+        var primera = ds.Count > 0 ? ds.Min(t => GIni(t)!.Value) : hoy;
+        _ganttAncla = (primera < hoy ? primera : hoy).AddDays(-2);
+        _ganttInit = true;
+    }
     private (DateOnly ini, int dias) GanttRango()
     {
-        var ds = GanttTareas();
-        if (ds.Count == 0) { var h = DateOnly.FromDateTime(DateTime.Today).AddDays(-2); return (h, 21); }
-        var ini = ds.Min(t => GIni(t)!.Value).AddDays(-1);
-        var fin = ds.Max(t => GFin(t)!.Value).AddDays(1);
-        return (ini, fin.DayNumber - ini.DayNumber + 1);
+        GanttInitRango();
+        return (_ganttAncla, GanttDias);
     }
+    private void GanttMover(int delta) { GanttInitRango(); _ganttAncla = _ganttAncla.AddDays(GanttPaso * delta); }
+    private void GanttHoy() { _ganttAncla = DateOnly.FromDateTime(DateTime.Today).AddDays(-4); _ganttInit = true; }
 
     private static string DowLetra(DateOnly d) => d.DayOfWeek switch
     {
@@ -1322,7 +1665,7 @@ else
         var tarea = t;
         var esHija = depth > 0;
         <div class="tb-row @(esHija ? "tb-row-child" : "")" style="border-left-color:@(t.Color ?? (esHija ? "#E1E8EE" : "transparent"))">
-            <div class="tb-row-tit" style="padding-left:@(depth * 22)px">
+            <div class="tb-row-tit @(_pinTitulo ? "tb-pin" : "")" style="padding-left:@(depth * 22)px">
                 @if (t.CantidadSubtareas > 0)
                 {
                     <button class="tb-exp" @onclick="() => ToggleExp(tarea.Id)" title="Ver tareas hijas">
@@ -1352,7 +1695,7 @@ else
                 }
                 else { <span class="tb-subtag">Subtarea</span> }
             </div>
-            <div class="tb-row-resp">@(string.IsNullOrWhiteSpace(t.AsignadoNombre) ? "-" : t.AsignadoNombre)</div>
+            @if (_colResp) { <div class="tb-row-resp">@(string.IsNullOrWhiteSpace(t.AsignadoNombre) ? "-" : t.AsignadoNombre)</div> }
             <div class="tb-row-prog">
                 @if (!esHija)
                 {
@@ -1364,8 +1707,14 @@ else
                 }
                 <span class="tb-row-progv" style="color:@(t.Progreso >= 100 ? "#1A8754" : "#516F90")">@t.Progreso%</span>
             </div>
-            <div class="tb-row-prio"><span class="tb-prio" style="color:@PrioFg(t.Prioridad);background:@PrioBg(t.Prioridad)">@t.Prioridad</span></div>
-            <div class="tb-row-due">@(t.FechaVencimiento.HasValue ? FechaCorta(t.FechaVencimiento.Value) : "-")</div>
+            @if (_colEtiq)
+            {
+                <div class="tb-row-etiq">
+                    @foreach (var tag in t.Etiquetas) { <span class="tb-tag">@tag.Nombre</span> }
+                </div>
+            }
+            @if (_colPrio) { <div class="tb-row-prio"><span class="tb-prio" style="color:@PrioFg(t.Prioridad);background:@PrioBg(t.Prioridad)">@t.Prioridad</span></div> }
+            @if (_colDue) { <div class="tb-row-due">@(t.FechaVencimiento.HasValue ? FechaCorta(t.FechaVencimiento.Value) : "-")</div> }
             @foreach (var c in _board?.Tablero.Campos ?? new List<TableroCampoDto>()) { <div class="tb-row-campo">@CampoDisplay(t, c)</div> }
         </div>
     };

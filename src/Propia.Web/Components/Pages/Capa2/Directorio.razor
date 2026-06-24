@@ -8,22 +8,21 @@
 
 <PageTitle>Directorio - PROPIA</PageTitle>
 
-@* Modulo 2.4 Directorio (spec v1.0): bandeja maestra de Personas y Empresas
-   vinculadas a la copropiedad activa. *@
+@* Modulo 2.4 Directorio (prototipo PROPIA v2): bandeja maestra de Personas y Empresas
+   vinculadas a la copropiedad activa, con vista 360 en modal y alta por documento. *@
 
-@* Layout fiel al prototipo PROPIA.dc.html L.1382+ *@
 <div class="dir-page">
     <div class="dir-head">
         <div>
             <h1 class="dir-title">Directorio</h1>
-            <p class="dir-sub">Personas y empresas vinculadas a @CopropiedadNombre — la fuente unica de identidad.</p>
+            <p class="dir-sub">Personas y empresas vinculadas a @CopropiedadNombre - la fuente unica de identidad.</p>
         </div>
         <div class="dir-actions">
             <button class="dir-btn-ghost" type="button" title="Importar (proximamente)">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
                 Importar
             </button>
-            <button class="dir-btn-brand" type="button" @onclick='@(() => { if (_tab == "personas") _showCrearPersona = true; else _showCrearEmpresa = true; })'>
+            <button class="dir-btn-brand" type="button" @onclick="AbrirCrear">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
                 Agregar
             </button>
@@ -77,7 +76,7 @@
                     @foreach (var p in _personas)
                     {
                         var pid = p.Id;
-                        <button type="button" class="dir-row" @onclick="() => IrAPersona(pid)">
+                        <button type="button" class="dir-row" @onclick="() => AbrirPersona(pid)">
                             <div class="dir-avatar dir-avatar--persona">@Iniciales(p.Nombres, p.Apellidos)</div>
                             <div class="dir-col-main">
                                 <div class="dir-name">@p.Nombres @p.Apellidos</div>
@@ -122,7 +121,7 @@
                     @foreach (var e in _empresas)
                     {
                         var eid = e.Id;
-                        <button type="button" class="dir-row" @onclick="() => IrAEmpresa(eid)">
+                        <button type="button" class="dir-row" @onclick="() => AbrirEmpresa(eid)">
                             <div class="dir-avatar dir-avatar--empresa">@InicialesEmpresa(e.RazonSocial)</div>
                             <div class="dir-col-main">
                                 <div class="dir-name">@e.RazonSocial</div>
@@ -146,131 +145,356 @@
     }
 </div>
 
-@if (_showCrearPersona)
+@* ===================== MODAL 360 (Persona / Empresa) ===================== *@
+@if (_detalleAbierto)
 {
-    <div class="card border-primary mt-4">
-        <div class="card-body bg-light">
-            <div class="d-flex justify-content-between">
-                <h5>Nueva persona</h5>
-                <button class="btn btn-sm btn-outline-dark" @onclick="() => _showCrearPersona = false">Cerrar</button>
+    var esEmpresa = _detalleTipo == "empresa";
+    var nombre = esEmpresa ? (_e360?.Empresa.RazonSocial ?? "") : $"{_p360?.Persona.Nombres} {_p360?.Persona.Apellidos}";
+    var ini = esEmpresa ? InicialesEmpresa(_e360?.Empresa.RazonSocial ?? "") : Iniciales(_p360?.Persona.Nombres ?? "", _p360?.Persona.Apellidos ?? "");
+    var docNit = esEmpresa ? $"NIT {_e360?.Empresa.Nit}{(string.IsNullOrEmpty(_e360?.Empresa.DigitoVerificacion) ? "" : "-" + _e360!.Empresa.DigitoVerificacion)}"
+                           : $"{_p360?.Persona.TipoDocumento} {_p360?.Persona.Documento}";
+    var email = esEmpresa ? _e360?.Empresa.Email : _p360?.Persona.Email;
+    var tel = esEmpresa ? _e360?.Empresa.Telefono : _p360?.Persona.Telefono;
+    var vincs = esEmpresa ? _e360?.VinculosEnCopropiedad : _p360?.VinculosEnCopropiedad;
+    var contactos = esEmpresa ? _e360?.Contactos : _p360?.Contactos;
+
+    <div class="dir-modal-backdrop" @onclick="CerrarDetalle">
+        <div class="dir-modal dir-modal--lg" @onclick:stopPropagation="true">
+            <div class="dir-dt-head">
+                <div class="dir-dt-headrow">
+                    <div class="dir-dt-avatar @(esEmpresa ? "dir-dt-avatar--empresa" : "")">@ini</div>
+                    <div class="dir-dt-id">
+                        @if (!_detalleEdit)
+                        {
+                            <div class="dir-dt-nombre">@nombre</div>
+                        }
+                        else if (esEmpresa)
+                        {
+                            <input class="dir-dt-nombre-input" @bind="_edRazon" />
+                        }
+                        else
+                        {
+                            <div class="dir-dt-nombre-edit">
+                                <input class="dir-dt-nombre-input" @bind="_edNombres" placeholder="Nombres" />
+                                <input class="dir-dt-nombre-input" @bind="_edApellidos" placeholder="Apellidos" />
+                            </div>
+                        }
+                        <div class="dir-dt-sub">@docNit@(string.IsNullOrEmpty(email) ? "" : $" - {email}")@(string.IsNullOrEmpty(tel) ? "" : $" - {tel}")</div>
+                        @if (vincs is not null)
+                        {
+                            <div class="dir-dt-tags">
+                                @foreach (var et in vincs.SelectMany(v => v.Etiquetas).GroupBy(e => e.EtiquetaId).Select(g => g.First()))
+                                {
+                                    <span class="dir-tag @(et.Grupo == GrupoEtiqueta.Identidad ? "dir-tag--brand" : "dir-tag--mute")">@et.Nombre</span>
+                                }
+                            </div>
+                        }
+                    </div>
+                    <div class="dir-dt-acts">
+                        @if (!_detalleEdit)
+                        {
+                            <button class="dir-btn-edit" @onclick="EntrarEdicion">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                Editar
+                            </button>
+                        }
+                        else
+                        {
+                            <button class="dir-btn-cancel" @onclick="CancelarEdicion" disabled="@_detalleBusy">Cancelar</button>
+                            <button class="dir-btn-save" @onclick="GuardarDetalle" disabled="@_detalleBusy">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>
+                                @(_detalleBusy ? "Guardando..." : "Guardar")
+                            </button>
+                        }
+                        <button class="dir-x" @onclick="CerrarDetalle" title="Cerrar"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                    </div>
+                </div>
             </div>
-            <p class="text-muted small mb-3">Primero buscamos el documento. Si existe ya, te ofrecemos vincular. Si no, completas el resto.</p>
-            <div class="row g-2">
-                <div class="col-md-3">
-                    <InputSelect @bind-Value="_persona.TipoDocumento" class="form-select form-select-sm">
-                        @foreach (var td in Enum.GetValues<TipoDocumento>()) { <option value="@td">@td</option> }
-                    </InputSelect>
-                </div>
-                <div class="col-md-3">
-                    <input type="text" class="form-control form-control-sm" @bind="_persona.Documento" @bind:event="oninput" @onkeyup="BuscarPersonaPorDocumento" placeholder="Numero documento" />
-                </div>
-                <div class="col-md-3">
-                    <input class="form-control form-control-sm" @bind="_persona.Nombres" placeholder="Nombres" />
-                </div>
-                <div class="col-md-3">
-                    <input class="form-control form-control-sm" @bind="_persona.Apellidos" placeholder="Apellidos" />
-                </div>
-                <div class="col-md-4">
-                    <input class="form-control form-control-sm" @bind="_persona.Email" placeholder="Email" />
-                </div>
-                <div class="col-md-3">
-                    <input class="form-control form-control-sm" @bind="_persona.Telefono" placeholder="Telefono" />
-                </div>
-                <div class="col-md-2">
-                    <input type="date" class="form-control form-control-sm" @bind="_persona.FechaNacimiento" />
-                </div>
-                <div class="col-md-3">
-                    <InputSelect @bind-Value="_persona.Genero" class="form-select form-select-sm">
-                        <option value="">- Genero -</option>
-                        @foreach (var g in Enum.GetValues<GeneroPersona>()) { <option value="@g">@g</option> }
-                    </InputSelect>
-                </div>
-            </div>
-            <h6 class="small mt-3">Etiquetas iniciales (identidad)</h6>
-            <div class="d-flex flex-wrap gap-1 mb-2">
-                @foreach (var et in _etiquetasIdentidadPersona)
+
+            <div class="dir-dt-tabs">
+                @foreach (var t in _detTabs)
                 {
-                    var seleccionada = _etiquetasSeleccionadas.Contains(et.Id);
-                    var eid = et.Id;
-                    <button type="button" class="btn btn-sm @(seleccionada ? "btn-dark" : "btn-outline-dark")" @onclick="() => ToggleEtiqueta(eid)">@et.Nombre</button>
+                    var tk = t.Key;
+                    <button class="dir-dt-tab @(_detalleTab == t.Key ? "on" : "")" @onclick="() => _detalleTab = tk">@t.Value</button>
                 }
             </div>
-            @if (_personaEncontrada is not null)
-            {
-                <div class="alert alert-info py-2 small">
-                    <strong>Persona ya existe en plataforma:</strong> @_personaEncontrada.Nombres @_personaEncontrada.Apellidos
-                    (@_personaEncontrada.TipoDocumento @_personaEncontrada.Documento)
-                    <button class="btn btn-sm btn-primary ms-3" @onclick="VincularPersonaExistente">Vincular a esta copropiedad</button>
-                </div>
-            }
-            @if (!string.IsNullOrEmpty(_msgPersona))
-            {
-                <div class="alert @_msgPersonaClass py-2 small">@_msgPersona</div>
-            }
-            <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="CrearPersona" disabled="@(_busy || _personaEncontrada is not null)">@(_busy ? "Guardando..." : "Crear + vincular")</button>
+
+            <div class="dir-dt-body">
+                @if (_detalleCargando)
+                {
+                    <div class="dir-loading"><div class="spinner-border" style="color: var(--propia-brand, #6D4FE3);"></div></div>
+                }
+                else if (!string.IsNullOrEmpty(_detalleError))
+                {
+                    <div class="alert alert-danger">@_detalleError</div>
+                }
+                else if (_detalleTab == "perfil")
+                {
+                    @if (!_detalleEdit)
+                    {
+                        <div class="dir-grid">
+                            <div class="dir-cell"><div class="dir-cell-k">Documento / NIT</div><div class="dir-cell-v">@docNit</div></div>
+                            <div class="dir-cell"><div class="dir-cell-k">Email</div><div class="dir-cell-v">@(string.IsNullOrEmpty(email) ? "Sin registrar" : email)</div></div>
+                            <div class="dir-cell"><div class="dir-cell-k">Telefono</div><div class="dir-cell-v">@(string.IsNullOrEmpty(tel) ? "Sin registrar" : tel)</div></div>
+                            @if (esEmpresa)
+                            {
+                                <div class="dir-cell"><div class="dir-cell-k">Nombre comercial</div><div class="dir-cell-v">@(string.IsNullOrEmpty(_e360?.Empresa.NombreComercial) ? "-" : _e360!.Empresa.NombreComercial)</div></div>
+                                <div class="dir-cell"><div class="dir-cell-k">Direccion</div><div class="dir-cell-v">@(string.IsNullOrEmpty(_e360?.Empresa.Direccion) ? "-" : _e360!.Empresa.Direccion)</div></div>
+                                <div class="dir-cell"><div class="dir-cell-k">Sector economico</div><div class="dir-cell-v">@(string.IsNullOrEmpty(_e360?.Empresa.SectorEconomico) ? "-" : _e360!.Empresa.SectorEconomico)</div></div>
+                                <div class="dir-cell"><div class="dir-cell-k">Tipo / regimen</div><div class="dir-cell-v">@(JoinDash(_e360?.Empresa.TipoEmpresa, _e360?.Empresa.RegimenTributario))</div></div>
+                                <div class="dir-cell"><div class="dir-cell-k">Representante legal</div><div class="dir-cell-v">@(string.IsNullOrEmpty(_e360?.Empresa.RepresentanteLegalNombre) ? "-" : _e360!.Empresa.RepresentanteLegalNombre)</div></div>
+                                <div class="dir-cell"><div class="dir-cell-k">Estado</div><div class="dir-cell-v">@_e360?.Empresa.Estado</div></div>
+                            }
+                            else
+                            {
+                                <div class="dir-cell"><div class="dir-cell-k">Fecha de nacimiento</div><div class="dir-cell-v">@(_p360?.Persona.FechaNacimiento?.ToString() ?? "-")</div></div>
+                                <div class="dir-cell"><div class="dir-cell-k">Genero</div><div class="dir-cell-v">@(_p360?.Persona.Genero?.ToString() ?? "-")</div></div>
+                                <div class="dir-cell"><div class="dir-cell-k">Estado</div><div class="dir-cell-v">@_p360?.Persona.Estado</div></div>
+                                <div class="dir-cell dir-cell--wide">
+                                    <div class="dir-cell-k">Tratamiento de datos (Ley 1581)</div>
+                                    <div class="dir-cell-v">
+                                        @if (_p360?.Persona.AceptoTratamientoDatos == true)
+                                        { <span class="dir-tag dir-tag--ok">Aceptado @_p360.Persona.FechaAceptacionDatos?.ToString("yyyy-MM-dd")</span> }
+                                        else { <span class="dir-tag dir-tag--warn">Pendiente</span> }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+
+                        @if (contactos is not null && contactos.Count > 0)
+                        {
+                            <div class="dir-section-title">CONTACTOS ADICIONALES</div>
+                            <div class="dir-contactos">
+                                @foreach (var c in contactos)
+                                {
+                                    <div class="dir-contacto">
+                                        <span class="dir-tag dir-tag--mute">@c.Tipo</span>
+                                        <strong>@c.Valor</strong>
+                                        @if (c.EsPrincipal) { <span class="dir-tag dir-tag--brand">Principal</span> }
+                                        <span class="dir-contacto-vis">@c.Visibilidad</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="dir-form-grid">
+                            <div class="dir-field"><label>Email</label><input @bind="_edEmail" /></div>
+                            <div class="dir-field"><label>Telefono</label><input @bind="_edTel" /></div>
+                            @if (esEmpresa)
+                            {
+                                <div class="dir-field"><label>Nombre comercial</label><input @bind="_edNombreComercial" /></div>
+                                <div class="dir-field dir-field--wide"><label>Direccion</label><input @bind="_edDireccion" /></div>
+                                <div class="dir-field"><label>Sector economico</label><input @bind="_edSector" /></div>
+                                <div class="dir-field"><label>Tipo de empresa</label><input @bind="_edTipoEmpresa" /></div>
+                                <div class="dir-field"><label>Regimen tributario</label><input @bind="_edRegimen" /></div>
+                                <div class="dir-field"><label>Sitio web</label><input @bind="_edSitioWeb" /></div>
+                            }
+                            else
+                            {
+                                <div class="dir-field"><label>Fecha de nacimiento</label><input type="date" @bind="_edFechaNac" /></div>
+                                <div class="dir-field"><label>Genero</label>
+                                    <select @bind="_edGenero">
+                                        <option value="">- Genero -</option>
+                                        @foreach (var g in Enum.GetValues<GeneroPersona>()) { <option value="@g">@g</option> }
+                                    </select>
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+                else if (_detalleTab == "documentos")
+                {
+                    <div class="dir-empty dir-empty--tab">
+                        <div class="dir-empty-ic">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                        </div>
+                        <strong>Sin documentos cargados</strong>
+                        <span>RUT, Camara de Comercio y certificados se podran adjuntar aqui (proximamente).</span>
+                    </div>
+                }
+                else if (_detalleTab == "vinculos")
+                {
+                    <div class="dir-section-row">
+                        <div class="dir-section-title dir-section-title--inline">Vinculos con la copropiedad <span class="dir-muted">- @(vincs?.Count ?? 0)</span></div>
+                    </div>
+                    @if (vincs is null || vincs.Count == 0)
+                    {
+                        <div class="dir-empty dir-empty--tab"><strong>Sin vinculos en esta copropiedad.</strong></div>
+                    }
+                    else
+                    {
+                        <div class="dir-vinc-list">
+                            @foreach (var v in vincs)
+                            {
+                                var vid = v.Id;
+                                <div class="dir-vinc">
+                                    <div class="dir-vinc-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l7-4 7 4v14"/></svg></div>
+                                    <div class="dir-vinc-main">
+                                        <div class="dir-vinc-fecha">Desde @v.FechaDesde@(v.FechaHasta.HasValue ? $" hasta {v.FechaHasta}" : "")</div>
+                                        <div class="dir-vinc-tags">
+                                            <span class="dir-tag @(v.Estado == EstadoVinculo.Activo ? "dir-tag--ok" : "dir-tag--mute")">@v.Estado</span>
+                                            @foreach (var et in v.Etiquetas)
+                                            {
+                                                <span class="dir-tag @(et.Grupo == GrupoEtiqueta.Identidad ? "dir-tag--brand" : "dir-tag--mute")">@et.Nombre</span>
+                                            }
+                                        </div>
+                                    </div>
+                                    @if (v.Estado == EstadoVinculo.Activo)
+                                    {
+                                        <button class="dir-vinc-del" title="Inactivar vinculo" @onclick="() => InactivarVinculo(vid)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+                else if (_detalleTab == "acceso")
+                {
+                    <div class="dir-acceso">
+                        <div class="dir-acceso-ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6"/></svg></div>
+                        <div class="dir-acceso-main">
+                            <div class="dir-acceso-t">El acceso al sistema se gestiona en Usuarios y Accesos</div>
+                            <div class="dir-acceso-s">La identidad vive en el Directorio; las credenciales viven en 2.5. Una persona puede existir aqui sin tener acceso.</div>
+                        </div>
+                        <button class="dir-acceso-btn" @onclick='() => Nav.NavigateTo("/usuarios")'>Ir a 2.5</button>
+                    </div>
+                    <div class="dir-note">La identidad vive en el Directorio. El acceso vive en Usuarios y Accesos (2.5). Una persona puede existir aqui sin tener acceso al sistema.</div>
+                }
+                else if (_detalleTab == "historial")
+                {
+                    <div class="dir-empty dir-empty--tab"><strong>Sin actividad registrada</strong><span>La bitacora de cambios de la ficha aparecera aqui.</span></div>
+                }
+            </div>
         </div>
     </div>
 }
 
-@if (_showCrearEmpresa)
+@* ===================== MODAL CREAR (Persona / Empresa) ===================== *@
+@if (_showCrear)
 {
-    <div class="card border-primary mt-4">
-        <div class="card-body bg-light">
-            <div class="d-flex justify-content-between">
-                <h5>Nueva empresa</h5>
-                <button class="btn btn-sm btn-outline-dark" @onclick="() => _showCrearEmpresa = false">Cerrar</button>
+    <div class="dir-modal-backdrop" @onclick="CerrarCrear">
+        <div class="dir-modal" @onclick:stopPropagation="true">
+            <div class="dir-cr-head">
+                <div class="dir-cr-head-ic">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6"/></svg>
+                </div>
+                <div class="dir-cr-head-id">
+                    <div class="dir-cr-head-t">@(_tab == "personas" ? "Nueva persona" : "Nueva empresa")</div>
+                    <div class="dir-cr-head-s">@(_tab == "personas" ? "Primero busca por documento para evitar duplicados" : "El NIT se valida con digito DIAN")</div>
+                </div>
+                <button class="dir-x" @onclick="CerrarCrear" title="Cerrar"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
             </div>
-            <p class="text-muted small mb-3">El NIT se valida con digito DIAN al salir del campo.</p>
-            <div class="row g-2">
-                <div class="col-md-3">
-                    <input class="form-control form-control-sm" @bind="_empresa.Nit" @bind:event="oninput" @onblur="CalcularDvNit" placeholder="NIT (solo numeros)" />
-                </div>
-                <div class="col-md-1">
-                    <input class="form-control form-control-sm" @bind="_empresa.DigitoVerificacion" placeholder="DV" readonly />
-                </div>
-                <div class="col-md-4">
-                    <input class="form-control form-control-sm" @bind="_empresa.RazonSocial" placeholder="Razon social" />
-                </div>
-                <div class="col-md-4">
-                    <input class="form-control form-control-sm" @bind="_empresa.NombreComercial" placeholder="Nombre comercial" />
-                </div>
-                <div class="col-md-4">
-                    <input class="form-control form-control-sm" @bind="_empresa.Email" placeholder="Email" />
-                </div>
-                <div class="col-md-3">
-                    <input class="form-control form-control-sm" @bind="_empresa.Telefono" placeholder="Telefono" />
-                </div>
-                <div class="col-md-5">
-                    <input class="form-control form-control-sm" @bind="_empresa.Direccion" placeholder="Direccion" />
-                </div>
-            </div>
-            <h6 class="small mt-3">Etiquetas iniciales (identidad)</h6>
-            <div class="d-flex flex-wrap gap-1 mb-2">
-                @foreach (var et in _etiquetasIdentidadEmpresa)
+
+            <div class="dir-cr-body">
+                @if (_tab == "personas")
                 {
-                    var seleccionada = _etiquetasSeleccionadas.Contains(et.Id);
-                    var eid = et.Id;
-                    <button type="button" class="btn btn-sm @(seleccionada ? "btn-dark" : "btn-outline-dark")" @onclick="() => ToggleEtiqueta(eid)">@et.Nombre</button>
+                    <div class="dir-cr-docrow">
+                        <div class="dir-field dir-field--doc">
+                            <label>Tipo doc.</label>
+                            <select @bind="_persona.TipoDocumento">
+                                @foreach (var td in Enum.GetValues<TipoDocumento>()) { <option value="@td">@td</option> }
+                            </select>
+                        </div>
+                        <div class="dir-field dir-field--grow">
+                            <label>Numero de documento</label>
+                            <input @bind="_persona.Documento" placeholder="Ej. 1234567890" />
+                        </div>
+                        <button class="dir-cr-search" @onclick="BuscarDoc"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>Buscar</button>
+                    </div>
+
+                    @if (_personaEncontrada is not null)
+                    {
+                        <div class="dir-cr-found">
+                            <div class="dir-cr-found-row">
+                                <div class="dir-cr-found-av">@Iniciales(_personaEncontrada.Nombres, _personaEncontrada.Apellidos)</div>
+                                <div class="dir-cr-found-main">
+                                    <div class="dir-cr-found-n">@_personaEncontrada.Nombres @_personaEncontrada.Apellidos - @_personaEncontrada.TipoDocumento @_personaEncontrada.Documento</div>
+                                    <div class="dir-cr-found-s">Ya existe en el sistema. Vincularlo a esta copropiedad?</div>
+                                </div>
+                            </div>
+                            <div class="dir-cr-found-acts">
+                                <button class="dir-btn-cancel" @onclick="CerrarCrear">Cancelar</button>
+                                <button class="dir-btn-save" @onclick="VincularPersonaExistente" disabled="@_busy">Si, vincular</button>
+                            </div>
+                        </div>
+                    }
+                    else if (_busquedaHecha)
+                    {
+                        <div class="dir-cr-notfound">
+                            <div class="dir-cr-ok"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12l5 5 9-11"/></svg>No existe - completa los datos para crearla</div>
+                            <div class="dir-form-grid">
+                                <div class="dir-field"><label>Nombres *</label><input @bind="_persona.Nombres" /></div>
+                                <div class="dir-field"><label>Apellidos *</label><input @bind="_persona.Apellidos" /></div>
+                                <div class="dir-field"><label>Email</label><input @bind="_persona.Email" /></div>
+                                <div class="dir-field"><label>Telefono / WhatsApp</label><input @bind="_persona.Telefono" /></div>
+                                <div class="dir-field dir-field--wide"><label>Etiqueta de identidad</label>
+                                    <select @bind="_etiquetaPersonaSel">
+                                        <option value="">- Sin etiqueta -</option>
+                                        @foreach (var et in _etiquetasIdentidadPersona) { <option value="@et.Id">@et.Nombre</option> }
+                                    </select>
+                                </div>
+                            </div>
+                            <label class="dir-cr-check"><input type="checkbox" @bind="_invitarAlGuardar" />Invitar al sistema al guardar (continua en Usuarios y Accesos)</label>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(_msgPersona))
+                    {
+                        <div class="alert @_msgPersonaClass py-2 small mt-3 mb-0">@_msgPersona</div>
+                    }
+                }
+                else
+                {
+                    <div class="dir-form-grid">
+                        <div class="dir-field"><label>NIT (solo numeros)</label><input @bind="_empresa.Nit" @bind:event="oninput" @onblur="CalcularDvNit" /></div>
+                        <div class="dir-field dir-field--dv"><label>DV</label><input @bind="_empresa.DigitoVerificacion" readonly /></div>
+                        <div class="dir-field dir-field--wide"><label>Razon social *</label><input @bind="_empresa.RazonSocial" /></div>
+                        <div class="dir-field"><label>Nombre comercial</label><input @bind="_empresa.NombreComercial" /></div>
+                        <div class="dir-field"><label>Email</label><input @bind="_empresa.Email" /></div>
+                        <div class="dir-field"><label>Telefono</label><input @bind="_empresa.Telefono" /></div>
+                        <div class="dir-field"><label>Direccion</label><input @bind="_empresa.Direccion" /></div>
+                        <div class="dir-field dir-field--wide"><label>Etiqueta de identidad</label>
+                            <select @bind="_etiquetaEmpresaSel">
+                                <option value="">- Sin etiqueta -</option>
+                                @foreach (var et in _etiquetasIdentidadEmpresa) { <option value="@et.Id">@et.Nombre</option> }
+                            </select>
+                        </div>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_msgEmpresa))
+                    {
+                        <div class="alert @_msgEmpresaClass py-2 small mt-3 mb-0">@_msgEmpresa</div>
+                    }
                 }
             </div>
-            @if (!string.IsNullOrEmpty(_msgEmpresa))
+
+            @if (_personaEncontrada is null)
             {
-                <div class="alert @_msgEmpresaClass py-2 small">@_msgEmpresa</div>
+                <div class="dir-cr-foot">
+                    <button class="dir-btn-cancel" @onclick="CerrarCrear">Cancelar</button>
+                    @if (_tab == "personas")
+                    {
+                        <button class="dir-btn-save" @onclick="CrearPersona" disabled="@(_busy || !_busquedaHecha)">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>
+                            @(_busy ? "Guardando..." : "Guardar")
+                        </button>
+                    }
+                    else
+                    {
+                        <button class="dir-btn-save" @onclick="CrearEmpresa" disabled="@_busy">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>
+                            @(_busy ? "Guardando..." : "Guardar")
+                        </button>
+                    }
+                </div>
             }
-            <button class="btn btn-sm" style="background: var(--propia-primary); color: white;" @onclick="CrearEmpresa" disabled="@_busy">@(_busy ? "Guardando..." : "Crear + vincular")</button>
         </div>
     </div>
 }
 
 <style>
-    .avatar-iniciales {
-        width: 32px; height: 32px; border-radius: 50%;
-        background: linear-gradient(135deg, var(--propia-primary), var(--propia-primary-light));
-        color: white; font-weight: 600; font-size: 0.75rem;
-        display: inline-flex; align-items: center; justify-content: center;
-    }
-
-    /* === Directorio: layout fiel al prototipo PROPIA.dc.html === */
+    /* === Directorio: layout fiel al prototipo PROPIA v2 === */
     .dir-page { width: 100%; max-width: 1900px; margin: 0 auto; padding: 30px 34px 70px; font-family: var(--propia-font-base, 'Lexend', sans-serif); box-sizing: border-box; }
     .dir-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 20px; }
     .dir-title { font-size: 27px; font-weight: 800; letter-spacing: -0.6px; color: #1B2A3A; margin: 0; }
@@ -306,6 +530,8 @@
     .dir-tag { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 7px; white-space: nowrap; }
     .dir-tag--mute { color: #516F90; background: #F4F7FA; }
     .dir-tag--warn { color: #B7791F; background: #FFF7E6; }
+    .dir-tag--brand { color: var(--propia-brand, #6D4FE3); background: #F1ECFD; }
+    .dir-tag--ok { color: #1A8754; background: #E7F6EE; }
     .dir-unidad { width: 110px; flex-shrink: 0; font-size: 12.5px; color: #516F90; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .dir-estado { width: 96px; flex-shrink: 0; display: flex; align-items: center; gap: 5px; justify-content: flex-end; }
     .dir-dot { width: 7px; height: 7px; border-radius: 50%; }
@@ -317,8 +543,106 @@
     .dir-chev { flex-shrink: 0; }
 
     .dir-loading { text-align: center; padding: 40px; }
-    .dir-empty { background: #fff; border: 1px dashed #D7E0EA; border-radius: 12px; padding: 28px; text-align: center; color: #7C98B6; font-size: 13.5px; display: flex; flex-direction: column; gap: 5px; }
+    .dir-empty { background: #fff; border: 1px dashed #D7E0EA; border-radius: 12px; padding: 28px; text-align: center; color: #7C98B6; font-size: 13.5px; display: flex; flex-direction: column; gap: 5px; align-items: center; }
     .dir-empty strong { color: #1B2A3A; font-weight: 700; font-size: 14px; }
+    .dir-empty--tab { background: #FBFAFE; }
+    .dir-empty-ic { width: 46px; height: 46px; border-radius: 12px; background: #F1ECFD; color: var(--propia-brand, #6D4FE3); display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }
+
+    /* === Modales (overlay) === */
+    .dir-modal-backdrop { position: fixed; inset: 0; z-index: 1080; background: rgba(27,42,58,.55); display: flex; align-items: flex-start; justify-content: center; padding: 34px 20px; overflow-y: auto; }
+    .dir-modal { width: 600px; max-width: 100%; background: #fff; border-radius: 18px; box-shadow: 0 30px 70px rgba(27,42,58,.4); margin: auto; overflow: hidden; display: flex; flex-direction: column; max-height: 90vh; font-family: var(--propia-font-base, 'Lexend', sans-serif); }
+    .dir-modal--lg { width: 880px; }
+    .dir-x { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; color: #7C98B6; border: 1px solid #E1E8EE; background: #fff; cursor: pointer; flex-shrink: 0; }
+    .dir-x:hover { background: #F5F8FA; color: #33475B; }
+
+    /* Detalle 360 header */
+    .dir-dt-head { padding: 22px 24px; border-bottom: 1px solid #EEF3F8; background: linear-gradient(120deg, #F5F1FE, #FBFAFE); }
+    .dir-dt-headrow { display: flex; align-items: flex-start; gap: 16px; }
+    .dir-dt-avatar { width: 64px; height: 64px; border-radius: 15px; background: linear-gradient(135deg, #8366F0, #5838C9); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 21px; font-weight: 800; flex-shrink: 0; }
+    .dir-dt-avatar--empresa { background: #EEF3F8; color: #516F90; font-size: 18px; }
+    .dir-dt-id { flex: 1; min-width: 0; }
+    .dir-dt-nombre { font-size: 20px; font-weight: 800; letter-spacing: -.3px; color: #1B2A3A; }
+    .dir-dt-nombre-edit { display: flex; gap: 8px; }
+    .dir-dt-nombre-input { font-size: 16px; font-weight: 800; color: #1B2A3A; border: 1px solid #DCD2F8; border-radius: 9px; padding: 7px 11px; outline: none; background: #fff; width: 100%; font-family: inherit; }
+    .dir-dt-nombre-input:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .dir-dt-sub { font-size: 12.5px; color: #7C98B6; margin-top: 4px; }
+    .dir-dt-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
+    .dir-dt-acts { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .dir-btn-edit { display: flex; align-items: center; gap: 7px; padding: 9px 14px; border-radius: 9px; border: 1px solid #DCD2F8; background: #fff; font-size: 13px; font-weight: 700; color: var(--propia-brand, #6D4FE3); cursor: pointer; font-family: inherit; }
+    .dir-btn-edit:hover { background: #F1ECFD; }
+    .dir-btn-cancel { padding: 9px 13px; border-radius: 9px; border: 1px solid #E1E8EE; background: #fff; font-size: 13px; font-weight: 600; color: #516F90; cursor: pointer; font-family: inherit; }
+    .dir-btn-cancel:hover { border-color: #C3D0DD; }
+    .dir-btn-save { display: flex; align-items: center; gap: 6px; padding: 9px 15px; border-radius: 9px; background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 13px; font-weight: 700; border: 0; cursor: pointer; box-shadow: 0 4px 12px rgba(109,79,227,.3); font-family: inherit; }
+    .dir-btn-save:hover:not(:disabled) { background: var(--propia-brand-hover, #5838C9); }
+    .dir-btn-save:disabled, .dir-btn-cancel:disabled { opacity: .6; cursor: default; }
+
+    .dir-dt-tabs { display: flex; gap: 4px; padding: 0 24px; border-bottom: 1px solid #EEF3F8; flex-shrink: 0; }
+    .dir-dt-tab { padding: 12px 12px; font-size: 13px; font-weight: 700; color: #7C98B6; border: 0; border-bottom: 2.5px solid transparent; background: transparent; cursor: pointer; font-family: inherit; margin-bottom: -1px; }
+    .dir-dt-tab.on { color: var(--propia-brand, #6D4FE3); border-bottom-color: var(--propia-brand, #6D4FE3); }
+    .dir-dt-body { overflow-y: auto; padding: 22px 24px; }
+
+    .dir-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: #EEF3F8; border: 1px solid #EEF3F8; border-radius: 11px; overflow: hidden; }
+    .dir-cell { background: #fff; padding: 13px 15px; }
+    .dir-cell--wide { grid-column: 1 / -1; }
+    .dir-cell-k { font-size: 11px; color: #A6B7C8; font-weight: 600; }
+    .dir-cell-v { font-size: 13.5px; font-weight: 600; color: #33475B; margin-top: 2px; }
+
+    .dir-section-title { font-size: 11px; letter-spacing: .5px; color: #A6B7C8; font-weight: 700; margin: 16px 0 8px; }
+    .dir-section-title--inline { margin: 0; }
+    .dir-section-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .dir-muted { color: #A6B7C8; font-weight: 600; }
+    .dir-contactos { display: flex; flex-direction: column; gap: 6px; }
+    .dir-contacto { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #33475B; padding: 8px 0; border-bottom: 1px solid #F4F7FA; }
+    .dir-contacto-vis { color: #A6B7C8; font-size: 11px; margin-left: auto; }
+
+    .dir-form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 13px; }
+    .dir-field { display: flex; flex-direction: column; }
+    .dir-field--wide { grid-column: 1 / -1; }
+    .dir-field label { font-size: 11px; color: #7C98B6; font-weight: 700; margin-bottom: 5px; }
+    .dir-field input, .dir-field select { border: 1px solid #E1E8EE; border-radius: 9px; padding: 10px 12px; font-size: 13.5px; color: #33475B; outline: none; background: #fff; font-family: inherit; }
+    .dir-field input:focus, .dir-field select:focus { border-color: var(--propia-brand, #6D4FE3); }
+
+    .dir-vinc-list { display: flex; flex-direction: column; gap: 9px; }
+    .dir-vinc { display: flex; align-items: center; gap: 12px; border: 1px solid #E1E8EE; border-radius: 11px; padding: 12px 15px; }
+    .dir-vinc-ic { width: 38px; height: 38px; border-radius: 10px; background: #F1ECFD; color: var(--propia-brand, #6D4FE3); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .dir-vinc-main { flex: 1; }
+    .dir-vinc-fecha { font-size: 13px; font-weight: 700; color: #33475B; }
+    .dir-vinc-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 5px; }
+    .dir-vinc-del { width: 28px; height: 28px; border-radius: 7px; border: 0; background: transparent; color: #C3D0DD; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .dir-vinc-del:hover { background: #FDE7E7; color: #D7263D; }
+
+    .dir-acceso { display: flex; align-items: center; gap: 12px; border: 1px solid #E1E8EE; border-radius: 12px; padding: 15px 17px; }
+    .dir-acceso-ic { width: 40px; height: 40px; border-radius: 10px; background: #EEF3F8; color: #7C98B6; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .dir-acceso-main { flex: 1; }
+    .dir-acceso-t { font-size: 13.5px; font-weight: 700; color: #33475B; }
+    .dir-acceso-s { font-size: 11.5px; color: #A6B7C8; margin-top: 2px; }
+    .dir-acceso-btn { font-size: 12px; font-weight: 700; color: #fff; background: var(--propia-brand, #6D4FE3); border: 0; padding: 7px 12px; border-radius: 8px; cursor: pointer; flex-shrink: 0; }
+    .dir-note { font-size: 11.5px; color: #A6B7C8; line-height: 1.55; margin-top: 12px; padding: 11px 13px; background: #F8FAFC; border-radius: 10px; border: 1px dashed #D7E0EA; }
+
+    /* Crear */
+    .dir-cr-head { display: flex; align-items: flex-start; gap: 13px; padding: 20px 24px; border-bottom: 1px solid #EEF3F8; flex-shrink: 0; }
+    .dir-cr-head-ic { width: 38px; height: 38px; border-radius: 10px; background: #F1ECFD; color: var(--propia-brand, #6D4FE3); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .dir-cr-head-id { flex: 1; }
+    .dir-cr-head-t { font-size: 16px; font-weight: 800; letter-spacing: -.3px; color: #1B2A3A; }
+    .dir-cr-head-s { font-size: 12.5px; color: #7C98B6; }
+    .dir-cr-body { overflow-y: auto; padding: 22px 24px; }
+    .dir-cr-docrow { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 16px; }
+    .dir-field--doc { width: 120px; }
+    .dir-field--grow { flex: 1; }
+    .dir-field--dv { width: 80px; }
+    .dir-cr-search { display: flex; align-items: center; gap: 6px; padding: 11px 15px; border-radius: 9px; background: #33475B; color: #fff; font-size: 13px; font-weight: 700; border: 0; cursor: pointer; font-family: inherit; }
+    .dir-cr-search:hover { background: #1B2A3A; }
+    .dir-cr-found { border: 1px solid #FBD9C4; background: #FFF8F3; border-radius: 12px; padding: 15px 17px; }
+    .dir-cr-found-row { display: flex; align-items: center; gap: 12px; }
+    .dir-cr-found-av { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg, #F2670A, #B9450A); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; flex-shrink: 0; }
+    .dir-cr-found-n { font-size: 13.5px; font-weight: 700; color: #33475B; }
+    .dir-cr-found-s { font-size: 11.5px; color: #B45309; }
+    .dir-cr-found-acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 13px; }
+    .dir-cr-notfound { border-top: 1px dashed #E1E8EE; padding-top: 16px; }
+    .dir-cr-ok { font-size: 12px; font-weight: 700; color: #1A8754; display: flex; align-items: center; gap: 7px; margin-bottom: 14px; }
+    .dir-cr-check { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 13px; color: #516F90; font-weight: 600; cursor: pointer; }
+    .dir-cr-check input { width: 16px; height: 16px; accent-color: var(--propia-brand, #6D4FE3); cursor: pointer; }
+    .dir-cr-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 16px 24px; border-top: 1px solid #EEF3F8; flex-shrink: 0; }
 </style>
 
 @code {
@@ -331,17 +655,48 @@
     private List<PersonaResumenDto>? _personas;
     private List<EmpresaResumenDto>? _empresas;
 
-    private bool _showCrearPersona;
-    private bool _showCrearEmpresa;
+    // ----- Crear -----
+    private bool _showCrear;
     private PersonaForm _persona = new();
     private EmpresaForm _empresa = new();
     private PersonaDetalleDto? _personaEncontrada;
+    private bool _busquedaHecha;
+    private bool _invitarAlGuardar;
+    private string _etiquetaPersonaSel = "";
+    private string _etiquetaEmpresaSel = "";
     private string? _msgPersona; private string _msgPersonaClass = "alert-info";
     private string? _msgEmpresa; private string _msgEmpresaClass = "alert-info";
 
     private List<EtiquetaCatalogoDto> _etiquetasIdentidadPersona = new();
     private List<EtiquetaCatalogoDto> _etiquetasIdentidadEmpresa = new();
-    private HashSet<Guid> _etiquetasSeleccionadas = new();
+
+    // ----- Detalle 360 -----
+    private bool _detalleAbierto;
+    private string _detalleTipo = "persona";   // "persona" | "empresa"
+    private string _detalleTab = "perfil";
+    private bool _detalleEdit;
+    private bool _detalleBusy;
+    private bool _detalleCargando;
+    private string? _detalleError;
+    private Persona360Dto? _p360;
+    private Empresa360Dto? _e360;
+    private Guid _detalleId;
+
+    // campos de edicion (compartidos)
+    private string _edNombres = ""; private string _edApellidos = "";
+    private string _edRazon = ""; private string _edNombreComercial = "";
+    private string? _edEmail; private string? _edTel; private string? _edDireccion;
+    private string? _edSector; private string? _edTipoEmpresa; private string? _edRegimen; private string? _edSitioWeb;
+    private DateOnly? _edFechaNac; private GeneroPersona? _edGenero;
+
+    private readonly Dictionary<string, string> _detTabs = new()
+    {
+        ["perfil"] = "Perfil",
+        ["documentos"] = "Documentos",
+        ["vinculos"] = "Vinculos",
+        ["acceso"] = "Acceso",
+        ["historial"] = "Historial"
+    };
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -367,8 +722,6 @@
     }
 
     private void SetTab(string tab) { _tab = tab; _ = CargarAsync(); }
-    private void IrAPersona(Guid id) => Nav.NavigateTo($"/directorio/personas/{id}");
-    private void IrAEmpresa(Guid id) => Nav.NavigateTo($"/directorio/empresas/{id}");
 
     private async Task CargarAsync()
     {
@@ -399,27 +752,130 @@
     private async Task CargarEtiquetasAsync()
     {
         var http = Auth();
-        var p = await http.GetFromJsonAsync<List<EtiquetaCatalogoDto>>("/api/directorio/etiquetas?aplicaA=Persona&grupo=Identidad");
-        _etiquetasIdentidadPersona = p ?? new();
-        var e = await http.GetFromJsonAsync<List<EtiquetaCatalogoDto>>("/api/directorio/etiquetas?aplicaA=Empresa&grupo=Identidad");
-        _etiquetasIdentidadEmpresa = e ?? new();
+        _etiquetasIdentidadPersona = await http.GetFromJsonAsync<List<EtiquetaCatalogoDto>>("/api/directorio/etiquetas?aplicaA=Persona&grupo=Identidad") ?? new();
+        _etiquetasIdentidadEmpresa = await http.GetFromJsonAsync<List<EtiquetaCatalogoDto>>("/api/directorio/etiquetas?aplicaA=Empresa&grupo=Identidad") ?? new();
     }
 
-    private void ToggleEtiqueta(Guid id)
+    // ===================== Detalle 360 =====================
+    private async Task AbrirPersona(Guid id)
     {
-        if (!_etiquetasSeleccionadas.Add(id)) _etiquetasSeleccionadas.Remove(id);
+        _detalleAbierto = true; _detalleTipo = "persona"; _detalleTab = "perfil"; _detalleEdit = false;
+        _detalleId = id; _p360 = null; _e360 = null; _detalleError = null; _detalleCargando = true;
+        try
+        {
+            var resp = await Auth().GetAsync($"/api/directorio/personas/{id}");
+            if (resp.StatusCode == System.Net.HttpStatusCode.NotFound) { _detalleError = "Persona no encontrada"; return; }
+            resp.EnsureSuccessStatusCode();
+            _p360 = await resp.Content.ReadFromJsonAsync<Persona360Dto>();
+        }
+        catch (Exception ex) { _detalleError = ex.Message; }
+        finally { _detalleCargando = false; }
     }
 
-    private async Task BuscarPersonaPorDocumento()
+    private async Task AbrirEmpresa(Guid id)
     {
-        _personaEncontrada = null;
-        if (string.IsNullOrWhiteSpace(_persona.Documento) || _persona.Documento.Length < 4) return;
-        var http = Auth();
-        var resp = await http.PostAsJsonAsync("/api/directorio/personas/buscar",
+        _detalleAbierto = true; _detalleTipo = "empresa"; _detalleTab = "perfil"; _detalleEdit = false;
+        _detalleId = id; _p360 = null; _e360 = null; _detalleError = null; _detalleCargando = true;
+        try
+        {
+            var resp = await Auth().GetAsync($"/api/directorio/empresas/{id}");
+            if (resp.StatusCode == System.Net.HttpStatusCode.NotFound) { _detalleError = "Empresa no encontrada"; return; }
+            resp.EnsureSuccessStatusCode();
+            _e360 = await resp.Content.ReadFromJsonAsync<Empresa360Dto>();
+        }
+        catch (Exception ex) { _detalleError = ex.Message; }
+        finally { _detalleCargando = false; }
+    }
+
+    private void CerrarDetalle() { _detalleAbierto = false; _detalleEdit = false; }
+
+    private void EntrarEdicion()
+    {
+        _detalleTab = "perfil";
+        if (_detalleTipo == "persona" && _p360 is not null)
+        {
+            var p = _p360.Persona;
+            _edNombres = p.Nombres; _edApellidos = p.Apellidos;
+            _edEmail = p.Email; _edTel = p.Telefono; _edFechaNac = p.FechaNacimiento; _edGenero = p.Genero;
+        }
+        else if (_e360 is not null)
+        {
+            var e = _e360.Empresa;
+            _edRazon = e.RazonSocial; _edNombreComercial = e.NombreComercial;
+            _edEmail = e.Email; _edTel = e.Telefono; _edDireccion = e.Direccion;
+            _edSector = e.SectorEconomico; _edTipoEmpresa = e.TipoEmpresa; _edRegimen = e.RegimenTributario; _edSitioWeb = e.SitioWeb;
+        }
+        _detalleEdit = true;
+    }
+
+    private void CancelarEdicion() => _detalleEdit = false;
+
+    private async Task GuardarDetalle()
+    {
+        _detalleBusy = true; _detalleError = null;
+        try
+        {
+            var http = Auth();
+            if (_detalleTipo == "persona" && _p360 is not null)
+            {
+                var req = new ActualizarPersonaRequest(_edNombres.Trim(), _edApellidos.Trim(), _edEmail, _edTel, _p360.Persona.FotoUrl, _edFechaNac, _edGenero);
+                var resp = await http.PutAsJsonAsync($"/api/directorio/personas/{_detalleId}", req);
+                if (!resp.IsSuccessStatusCode) { _detalleError = await resp.Content.ReadAsStringAsync(); return; }
+                await AbrirPersona(_detalleId);
+            }
+            else if (_e360 is not null)
+            {
+                var e = _e360.Empresa;
+                var req = new ActualizarEmpresaRequest(_edRazon.Trim(), _edNombreComercial, _edEmail, _edTel, _edDireccion,
+                    _edTipoEmpresa, _edSector, _edRegimen, _edSitioWeb, e.LogoUrl, e.RepresentanteLegalPersonaId);
+                var resp = await http.PutAsJsonAsync($"/api/directorio/empresas/{_detalleId}", req);
+                if (!resp.IsSuccessStatusCode) { _detalleError = await resp.Content.ReadAsStringAsync(); return; }
+                await AbrirEmpresa(_detalleId);
+            }
+            _detalleEdit = false;
+            await CargarAsync();
+        }
+        catch (Exception ex) { _detalleError = ex.Message; }
+        finally { _detalleBusy = false; }
+    }
+
+    private async Task InactivarVinculo(Guid vinculoId)
+    {
+        await Auth().PutAsync($"/api/directorio/vinculos/{vinculoId}/inactivar", null);
+        if (_detalleTipo == "persona") await AbrirPersona(_detalleId); else await AbrirEmpresa(_detalleId);
+        await CargarAsync();
+    }
+
+    // ===================== Crear =====================
+    private void AbrirCrear()
+    {
+        _showCrear = true;
+        _persona = new(); _empresa = new();
+        _personaEncontrada = null; _busquedaHecha = false; _invitarAlGuardar = false;
+        _etiquetaPersonaSel = ""; _etiquetaEmpresaSel = "";
+        _msgPersona = null; _msgEmpresa = null;
+    }
+
+    private void CerrarCrear() { _showCrear = false; }
+
+    private async Task BuscarDoc()
+    {
+        _personaEncontrada = null; _busquedaHecha = false; _msgPersona = null;
+        if (string.IsNullOrWhiteSpace(_persona.Documento) || _persona.Documento.Length < 3)
+        {
+            _msgPersona = "Ingresa un numero de documento valido."; _msgPersonaClass = "alert-warning"; return;
+        }
+        var resp = await Auth().PostAsJsonAsync("/api/directorio/personas/buscar",
             new BuscarPorDocumentoRequest(_persona.TipoDocumento, _persona.Documento.Trim()));
         if (resp.StatusCode == System.Net.HttpStatusCode.OK)
             _personaEncontrada = await resp.Content.ReadFromJsonAsync<PersonaDetalleDto>();
+        _busquedaHecha = true;
     }
+
+    private List<Guid> EtiquetasPersonaSel()
+        => string.IsNullOrEmpty(_etiquetaPersonaSel) ? new() : new() { Guid.Parse(_etiquetaPersonaSel) };
+    private List<Guid> EtiquetasEmpresaSel()
+        => string.IsNullOrEmpty(_etiquetaEmpresaSel) ? new() : new() { Guid.Parse(_etiquetaEmpresaSel) };
 
     private async Task VincularPersonaExistente()
     {
@@ -427,17 +883,10 @@
         _busy = true; _msgPersona = null;
         try
         {
-            var http = Auth();
-            var resp = await http.PostAsJsonAsync("/api/directorio/vinculos",
+            var resp = await Auth().PostAsJsonAsync("/api/directorio/vinculos",
                 new CrearVinculoRequest(EntidadDirectorio.Persona, _personaEncontrada.Id,
-                    DateOnly.FromDateTime(DateTime.UtcNow), _etiquetasSeleccionadas.ToList()));
-            if (resp.IsSuccessStatusCode)
-            {
-                _msgPersona = "Persona vinculada."; _msgPersonaClass = "alert-success";
-                _persona = new(); _personaEncontrada = null; _etiquetasSeleccionadas.Clear();
-                _showCrearPersona = false;
-                await CargarAsync();
-            }
+                    DateOnly.FromDateTime(DateTime.UtcNow), EtiquetasPersonaSel()));
+            if (resp.IsSuccessStatusCode) { _showCrear = false; await CargarAsync(); }
             else { _msgPersona = await resp.Content.ReadAsStringAsync(); _msgPersonaClass = "alert-danger"; }
         }
         finally { _busy = false; }
@@ -452,21 +901,18 @@
             var http = Auth();
             var crear = await http.PostAsJsonAsync("/api/directorio/personas",
                 new CrearPersonaRequest(_persona.TipoDocumento, _persona.Documento.Trim(),
-                    _persona.Nombres.Trim(), _persona.Apellidos.Trim(), _persona.Email, _persona.Telefono,
-                    _persona.FechaNacimiento, _persona.Genero));
+                    _persona.Nombres.Trim(), _persona.Apellidos.Trim(), _persona.Email, _persona.Telefono, null, null));
             if (!crear.IsSuccessStatusCode) { _msgPersona = await crear.Content.ReadAsStringAsync(); _msgPersonaClass = "alert-danger"; return; }
             var nueva = await crear.Content.ReadFromJsonAsync<PersonaDetalleDto>();
             if (nueva is null) return;
 
             await http.PostAsJsonAsync("/api/directorio/vinculos",
                 new CrearVinculoRequest(EntidadDirectorio.Persona, nueva.Id,
-                    DateOnly.FromDateTime(DateTime.UtcNow), _etiquetasSeleccionadas.ToList()));
+                    DateOnly.FromDateTime(DateTime.UtcNow), EtiquetasPersonaSel()));
 
-            _msgPersona = $"Persona '{nueva.Nombres} {nueva.Apellidos}' creada y vinculada.";
-            _msgPersonaClass = "alert-success";
-            _persona = new(); _etiquetasSeleccionadas.Clear();
-            _showCrearPersona = false;
+            _showCrear = false;
             await CargarAsync();
+            if (_invitarAlGuardar) Nav.NavigateTo("/usuarios");
         }
         finally { _busy = false; }
     }
@@ -475,8 +921,7 @@
     {
         var nit = (_empresa.Nit ?? "").Replace(".", "").Replace("-", "");
         if (string.IsNullOrEmpty(nit)) { _empresa.DigitoVerificacion = ""; return; }
-        var http = Auth();
-        var resp = await http.GetAsync($"/api/directorio/nit/dv?nit={nit}");
+        var resp = await Auth().GetAsync($"/api/directorio/nit/dv?nit={nit}");
         if (resp.IsSuccessStatusCode)
         {
             var body = await resp.Content.ReadFromJsonAsync<DvResponse>();
@@ -501,12 +946,9 @@
 
             await http.PostAsJsonAsync("/api/directorio/vinculos",
                 new CrearVinculoRequest(EntidadDirectorio.Empresa, nueva.Id,
-                    DateOnly.FromDateTime(DateTime.UtcNow), _etiquetasSeleccionadas.ToList()));
+                    DateOnly.FromDateTime(DateTime.UtcNow), EtiquetasEmpresaSel()));
 
-            _msgEmpresa = $"Empresa '{nueva.RazonSocial}' creada y vinculada.";
-            _msgEmpresaClass = "alert-success";
-            _empresa = new(); _etiquetasSeleccionadas.Clear();
-            _showCrearEmpresa = false;
+            _showCrear = false;
             await CargarAsync();
         }
         finally { _busy = false; }
@@ -528,6 +970,12 @@
         var partes = razon.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (partes.Length == 1) return partes[0].Substring(0, Math.Min(2, partes[0].Length)).ToUpperInvariant();
         return (partes[0][0].ToString() + partes[partes.Length - 1][0].ToString()).ToUpperInvariant();
+    }
+
+    private static string JoinDash(string? a, string? b)
+    {
+        var parts = new[] { a, b }.Where(x => !string.IsNullOrWhiteSpace(x)).ToArray();
+        return parts.Length == 0 ? "-" : string.Join(" / ", parts);
     }
 
     private string CopropiedadNombre { get; set; } = "tu copropiedad";
@@ -552,8 +1000,6 @@
         public string Apellidos { get; set; } = "";
         public string? Email { get; set; }
         public string? Telefono { get; set; }
-        public DateOnly? FechaNacimiento { get; set; }
-        public GeneroPersona? Genero { get; set; }
     }
 
     private class EmpresaForm

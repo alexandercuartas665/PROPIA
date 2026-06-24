@@ -136,7 +136,13 @@ public record ResumenTareasDto(
     int Vencidas,
     int CompletadasUltimoMes,
     IReadOnlyList<(string Estado, int Cantidad)> PorEstado,
-    IReadOnlyList<(string Prioridad, int Cantidad)> PorPrioridad);
+    IReadOnlyList<(string Prioridad, int Cantidad)> PorPrioridad,
+    // KPIs del tablero (prototipo v2): tareas activas (no terminales), que vencen hoy,
+    // total completadas y porcentaje de avance global.
+    int Activas = 0,
+    int VencenHoy = 0,
+    int Completadas = 0,
+    int AvancePct = 0);
 
 // ===========================================================================
 // Dependencias entre tareas (Fase 2)

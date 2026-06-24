@@ -698,14 +698,27 @@ public class TareasService : ITareasService
 
         var porEstado = tareas.GroupBy(t => t.Estado!.Nombre).Select(g => (g.Key, g.Count())).ToList();
         var porPri = tareas.GroupBy(t => t.Prioridad.ToString()).Select(g => (g.Key, g.Count())).ToList();
+
+        // KPIs del tablero (prototipo v2). "Completada" = estado Completada o progreso 100%.
+        bool EstaCompletada(Tarea t) => t.Estado!.Nombre == EstadoTareaBase.Completada || t.Progreso >= 100;
+        var total = tareas.Count;
+        var activas = tareas.Count(t => !t.Estado!.EsTerminal && !EstaCompletada(t));
+        var vencenHoy = tareas.Count(t => !t.Estado!.EsTerminal && !EstaCompletada(t) && t.FechaVencimiento == hoy);
+        var completadas = tareas.Count(EstaCompletada);
+        var avancePct = total > 0 ? (int)Math.Round(completadas * 100.0 / total) : 0;
+
         return new ResumenTareasDto(
-            tareas.Count,
+            total,
             tareas.Count(t => t.EstadoId == pendienteId),
             tareas.Count(t => t.EstadoId == enProgresoId),
-            tareas.Count(t => !t.Estado!.EsTerminal && t.FechaVencimiento.HasValue && t.FechaVencimiento.Value < hoy),
+            tareas.Count(t => !t.Estado!.EsTerminal && !EstaCompletada(t) && t.FechaVencimiento.HasValue && t.FechaVencimiento.Value < hoy),
             tareas.Count(t => t.Estado!.Nombre == EstadoTareaBase.Completada && t.FechaCompletada.HasValue && t.FechaCompletada.Value.UtcDateTime >= mesAtras),
             porEstado,
-            porPri);
+            porPri,
+            activas,
+            vencenHoy,
+            completadas,
+            avancePct);
     }
 
     // ===================== Helpers =====================
