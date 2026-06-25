@@ -137,23 +137,31 @@ public record ContratoServicioDto(
     Guid Id, TipoServicio Tipo, string Proveedor, string? NitProveedor, string? Contacto,
     DateOnly FechaInicio, DateOnly? FechaFin, decimal? ValorMensual, string? Observaciones,
     EstadoContrato Estado, int DiasAnticipacionAlerta,
-    int? DiasParaVencer, bool AlertaVencimiento);
+    int? DiasParaVencer, bool AlertaVencimiento,
+    bool RenovacionAutomatica = false, Guid? ServicioId = null, Guid? ExpedienteId = null,
+    Guid? ProyectoTareaId = null, int CantidadAdjuntos = 0);
 
 public record CrearContratoServicioRequest(
     TipoServicio Tipo, string Proveedor, string? NitProveedor, string? Contacto,
     DateOnly FechaInicio, DateOnly? FechaFin, decimal? ValorMensual, string? Observaciones,
-    int DiasAnticipacionAlerta = 30);
+    int DiasAnticipacionAlerta = 30,
+    bool RenovacionAutomatica = false, Guid? ServicioId = null, Guid? ExpedienteId = null,
+    Guid? ProyectoTareaId = null);
 
 /// <summary>
 /// Actualiza un contrato. Estado + dias siempre se aplican. Los demas campos son opcionales:
 /// si vienen con valor se actualizan (MERGE, conserva los no provistos) - asi el editor de la
 /// pagina edita todo y la tool MCP (que solo manda estado+dias) sigue funcionando igual.
+/// Los vinculos (servicio/expediente/proyecto/renovacion) solo se aplican si
+/// ActualizarVinculos=true, asi la tool MCP no los borra al actualizar estado+dias.
 /// </summary>
 public record ActualizarContratoRequest(
     EstadoContrato Estado, int DiasAnticipacionAlerta,
     TipoServicio? Tipo = null, string? Proveedor = null, string? NitProveedor = null,
     string? Contacto = null, DateOnly? FechaInicio = null, DateOnly? FechaFin = null,
-    decimal? ValorMensual = null, string? Observaciones = null);
+    decimal? ValorMensual = null, string? Observaciones = null,
+    bool ActualizarVinculos = false, bool RenovacionAutomatica = false,
+    Guid? ServicioId = null, Guid? ExpedienteId = null, Guid? ProyectoTareaId = null);
 
 // ----- Zonas Comunes (seccion 6) -----
 public record ZonaComunDto(

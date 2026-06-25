@@ -26,4 +26,20 @@ public class ContratoServicio : TenantEntity
 
     /// <summary>Dias de anticipacion para alertar el vencimiento (RN-15, default 30).</summary>
     public int DiasAnticipacionAlerta { get; set; } = 30;
+
+    /// <summary>Clausula de renovacion automatica del contrato.</summary>
+    public bool RenovacionAutomatica { get; set; }
+
+    /// <summary>Servicio al que pertenece (un servicio agrupa uno o mas contratos). Opcional.</summary>
+    public Guid? ServicioId { get; set; }
+    public Servicio? Servicio { get; set; }
+
+    /// <summary>FK logico a Expediente (modulo 2.15): un contrato puede pertenecer a un expediente.</summary>
+    public Guid? ExpedienteId { get; set; }
+
+    /// <summary>FK logico a Tarea con EsProyecto=true (modulo 2.10): un contrato puede atarse a un proyecto.</summary>
+    public Guid? ProyectoTareaId { get; set; }
+
+    /// <summary>Archivos del contrato (PDF firmado, anexos, otrosi).</summary>
+    public ICollection<ContratoAdjunto> Adjuntos { get; set; } = new List<ContratoAdjunto>();
 }

@@ -64,6 +64,14 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<ZonaComun> ZonasComunes => Set<ZonaComun>();
     public DbSet<EquipoActivo> EquiposActivos => Set<EquipoActivo>();
     public DbSet<ContratoServicio> ContratosServicio => Set<ContratoServicio>();
+    // Servicios y contratos (Finanzas)
+    public DbSet<Servicio> Servicios => Set<Servicio>();
+    public DbSet<ServicioContacto> ServicioContactos => Set<ServicioContacto>();
+    public DbSet<ServicioAdjunto> ServicioAdjuntos => Set<ServicioAdjunto>();
+    public DbSet<ContratoAdjunto> ContratoAdjuntos => Set<ContratoAdjunto>();
+    // Programador de tareas (2.10)
+    public DbSet<ProgramacionTarea> ProgramacionTareas => Set<ProgramacionTarea>();
+    public DbSet<ProgramacionTareaResponsable> ProgramacionTareaResponsables => Set<ProgramacionTareaResponsable>();
     // Modulo 2.17 Servicios publicos
     public DbSet<CuentaServicioPublico> CuentasServicioPublico => Set<CuentaServicioPublico>();
     public DbSet<RegistroConsumoServicio> RegistrosConsumoServicio => Set<RegistroConsumoServicio>();
@@ -499,6 +507,72 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.DiasAnticipacionAlerta).HasDefaultValue(30);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => x.FechaFin);
+            b.HasIndex(x => x.ServicioId);
+            b.HasMany(x => x.Adjuntos).WithOne(a => a.Contrato!).HasForeignKey(a => a.ContratoId).OnDelete(DeleteBehavior.Cascade);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // Servicios y contratos (Finanzas)
+        modelBuilder.Entity<Servicio>(b =>
+        {
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(200);
+            b.Property(x => x.Descripcion).HasMaxLength(1000);
+            b.Property(x => x.EjecutorNombre).HasMaxLength(200);
+            b.Property(x => x.CostoMensual).HasPrecision(14, 2);
+            b.Property(x => x.CostoAnual).HasPrecision(14, 2);
+            b.Property(x => x.Estado).HasDefaultValue(EstadoServicio.Activo);
+            b.HasIndex(x => x.TenantId);
+            b.HasMany(x => x.Contactos).WithOne(c => c.Servicio!).HasForeignKey(c => c.ServicioId).OnDelete(DeleteBehavior.Cascade);
+            b.HasMany(x => x.Adjuntos).WithOne(a => a.Servicio!).HasForeignKey(a => a.ServicioId).OnDelete(DeleteBehavior.Cascade);
+            b.HasMany(x => x.Contratos).WithOne(c => c.Servicio!).HasForeignKey(c => c.ServicioId).OnDelete(DeleteBehavior.SetNull);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<ServicioContacto>(b =>
+        {
+            b.Property(x => x.NombreSnapshot).IsRequired().HasMaxLength(200);
+            b.Property(x => x.Rol).HasMaxLength(80);
+            b.Property(x => x.Telefono).HasMaxLength(40);
+            b.Property(x => x.Email).HasMaxLength(160);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.ServicioId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<ServicioAdjunto>(b =>
+        {
+            b.Property(x => x.NombreArchivo).IsRequired().HasMaxLength(255);
+            b.Property(x => x.TipoMime).HasMaxLength(120);
+            b.Property(x => x.UrlStorage).IsRequired().HasMaxLength(500);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.ServicioId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<ContratoAdjunto>(b =>
+        {
+            b.Property(x => x.NombreArchivo).IsRequired().HasMaxLength(255);
+            b.Property(x => x.TipoMime).HasMaxLength(120);
+            b.Property(x => x.UrlStorage).IsRequired().HasMaxLength(500);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.ContratoId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // Programador de tareas (2.10)
+        modelBuilder.Entity<ProgramacionTarea>(b =>
+        {
+            b.Property(x => x.Titulo).IsRequired().HasMaxLength(200);
+            b.Property(x => x.Descripcion).HasMaxLength(2000);
+            b.Property(x => x.ModuloOrigenCodigo).HasMaxLength(40);
+            b.Property(x => x.OrigenReferencia).HasMaxLength(200);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.Activa, x.FechaProximaEjecucion });
+            b.HasMany(x => x.Responsables).WithOne(r => r.ProgramacionTarea!).HasForeignKey(r => r.ProgramacionTareaId).OnDelete(DeleteBehavior.Cascade);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<ProgramacionTareaResponsable>(b =>
+        {
+            b.Property(x => x.NombreSnapshot).HasMaxLength(200);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.ProgramacionTareaId);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

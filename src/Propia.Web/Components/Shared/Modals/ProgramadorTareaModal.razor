@@ -1,0 +1,251 @@
+@* ProgramadorTareaModal - componente global reutilizable.
+   Captura la programacion de una tarea recurrente: a que TABLERO va, con que PERIODICIDAD
+   se dispara, en que FECHA de ejecucion y a que USUARIOS afecta. Devuelve un
+   CrearProgramacionRequest (o null si se cancela); el caller lo persiste en /api/programaciones.
+   Llamable desde cualquier escenario (vencimiento de contrato, mantenimiento, etc.). *@
+
+@inherits ModalBase<Propia.Application.Programaciones.CrearProgramacionRequest>
+@using Propia.Application.Programaciones
+@using Propia.Domain.Enums
+
+<div class="ptm-header">
+    <div class="ptm-header-ic">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 4h18v18H3zM3 10h18M8 2v4M16 2v4"/><path d="M12 14v3M10.5 15.5h3" stroke-width="1.6"/></svg>
+    </div>
+    <div class="ptm-header-tx">
+        <div class="ptm-title">Programar tarea</div>
+        <div class="ptm-sub">Se crea automaticamente en el panel de Tareas segun la periodicidad.</div>
+    </div>
+    <button class="ptm-close" @onclick="Cancel" type="button" aria-label="Cerrar">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+</div>
+
+<div class="ptm-body">
+    <div class="ptm-field">
+        <label class="ptm-lbl">Titulo de la tarea <span class="ptm-req">*</span></label>
+        <input class="ptm-input" @bind="_titulo" @bind:event="oninput" placeholder="Ej. Renovar contrato de vigilancia" />
+    </div>
+    <div class="ptm-field">
+        <label class="ptm-lbl">Descripcion</label>
+        <textarea class="ptm-input ptm-ta" rows="2" @bind="_descripcion" placeholder="Detalle / alcance de la tarea"></textarea>
+    </div>
+
+    <div class="ptm-row">
+        <div class="ptm-field ptm-grow">
+            <label class="ptm-lbl">Tablero de destino</label>
+            <select class="ptm-input" @bind="_tableroId">
+                <option value="">- Tablero General -</option>
+                @foreach (var t in Tableros) { <option value="@t.Id">@t.Nombre</option> }
+            </select>
+        </div>
+        <div class="ptm-field ptm-w160">
+            <label class="ptm-lbl">Prioridad</label>
+            <select class="ptm-input" @bind="_prioridad">
+                <option value="@PrioridadTarea.Urgente">Urgente</option>
+                <option value="@PrioridadTarea.Alta">Alta</option>
+                <option value="@PrioridadTarea.Normal">Normal</option>
+                <option value="@PrioridadTarea.Baja">Baja</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="ptm-field">
+        <label class="ptm-lbl">Periodicidad</label>
+        <div class="ptm-chips">
+            @foreach (var p in _periodos)
+            {
+                var pp = p;
+                <button type="button" class="ptm-chip @(_periodicidad == pp ? "on" : "")" @onclick="() => _periodicidad = pp">@PeriodicidadLabel(pp)</button>
+            }
+        </div>
+    </div>
+
+    <div class="ptm-row">
+        <div class="ptm-field ptm-grow">
+            <label class="ptm-lbl">@(_periodicidad == PeriodicidadProgramacion.Unica ? "Fecha de ejecucion" : "Primera ejecucion") <span class="ptm-req">*</span></label>
+            <input class="ptm-input" type="date" @bind="_fecha" />
+        </div>
+        @if (_periodicidad != PeriodicidadProgramacion.Unica)
+        {
+            <div class="ptm-field ptm-grow">
+                <label class="ptm-lbl">Hasta (opcional)</label>
+                <input class="ptm-input" type="date" @bind="_fechaFin" />
+            </div>
+        }
+    </div>
+
+    <div class="ptm-field">
+        <label class="ptm-lbl">Usuarios afectados (responsables)</label>
+        @if (Personas.Count == 0)
+        {
+            <div class="ptm-empty">No hay usuarios disponibles; la tarea quedara sin responsable (se puede asignar luego en el tablero).</div>
+        }
+        else
+        {
+            <input class="ptm-input ptm-mb" placeholder="Filtrar usuarios..." value="@_filtro" @oninput="(e) => _filtro = e.Value?.ToString() ?? string.Empty" />
+            <div class="ptm-personas">
+                @foreach (var per in PersonasFiltradas())
+                {
+                    var pid = per.Id;
+                    <label class="ptm-persona @(_responsables.Contains(pid) ? "on" : "")">
+                        <input type="checkbox" checked="@_responsables.Contains(pid)" @onchange="() => ToggleResponsable(pid)" />
+                        <span>@per.Nombre</span>
+                    </label>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="ptm-callout">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="ptm-callout-ic"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <div class="ptm-callout-tx">
+            @if (_periodicidad == PeriodicidadProgramacion.Unica)
+            {
+                <text>Se creara <b>una tarea</b> en la fecha indicada.</text>
+            }
+            else
+            {
+                <text>Se creara una tarea <b>@(PeriodicidadLabel(_periodicidad).ToLower())</b> desde la fecha indicada@(_fechaFin.HasValue ? " hasta el tope." : ".")</text>
+            }
+        </div>
+    </div>
+</div>
+
+<div class="ptm-footer">
+    <button type="button" class="ptm-btn ptm-ghost" @onclick="Cancel">Cancelar</button>
+    <button type="button" class="ptm-btn ptm-brand" @onclick="Confirmar" disabled="@(!IsValid)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>
+        Programar
+    </button>
+</div>
+
+@code {
+    [Parameter] public List<TableroOpcion> Tableros { get; set; } = new();
+    [Parameter] public List<PersonaOpcion> Personas { get; set; } = new();
+    [Parameter] public string? PrefillTitulo { get; set; }
+    [Parameter] public string? PrefillDescripcion { get; set; }
+    [Parameter] public DateOnly? PrefillFecha { get; set; }
+    [Parameter] public Guid? PrefillTableroId { get; set; }
+    [Parameter] public PeriodicidadProgramacion PrefillPeriodicidad { get; set; } = PeriodicidadProgramacion.Unica;
+    [Parameter] public string? ModuloOrigenCodigo { get; set; }
+    [Parameter] public Guid? EntidadOrigenId { get; set; }
+    [Parameter] public string? OrigenReferencia { get; set; }
+
+    private string _titulo = "";
+    private string? _descripcion;
+    private string _tableroId = "";
+    private PrioridadTarea _prioridad = PrioridadTarea.Normal;
+    private PeriodicidadProgramacion _periodicidad = PeriodicidadProgramacion.Unica;
+    private DateTime? _fecha = DateTime.Today;
+    private DateTime? _fechaFin;
+    private string _filtro = "";
+    private readonly HashSet<Guid> _responsables = new();
+
+    private readonly PeriodicidadProgramacion[] _periodos =
+    {
+        PeriodicidadProgramacion.Unica, PeriodicidadProgramacion.Diaria, PeriodicidadProgramacion.Semanal,
+        PeriodicidadProgramacion.Quincenal, PeriodicidadProgramacion.Mensual, PeriodicidadProgramacion.Bimestral,
+        PeriodicidadProgramacion.Trimestral, PeriodicidadProgramacion.Semestral, PeriodicidadProgramacion.Anual
+    };
+
+    protected override void OnInitialized()
+    {
+        if (!string.IsNullOrWhiteSpace(PrefillTitulo)) _titulo = PrefillTitulo!;
+        if (!string.IsNullOrWhiteSpace(PrefillDescripcion)) _descripcion = PrefillDescripcion;
+        if (PrefillFecha.HasValue) _fecha = PrefillFecha.Value.ToDateTime(TimeOnly.MinValue);
+        if (PrefillTableroId.HasValue) _tableroId = PrefillTableroId.Value.ToString();
+        _periodicidad = PrefillPeriodicidad;
+    }
+
+    private bool IsValid => !string.IsNullOrWhiteSpace(_titulo) && _fecha.HasValue;
+
+    private IEnumerable<PersonaOpcion> PersonasFiltradas()
+        => string.IsNullOrWhiteSpace(_filtro)
+            ? Personas
+            : Personas.Where(p => p.Nombre.Contains(_filtro, StringComparison.OrdinalIgnoreCase));
+
+    private void ToggleResponsable(Guid id)
+    {
+        if (!_responsables.Add(id)) _responsables.Remove(id);
+    }
+
+    private void Confirmar()
+    {
+        if (!IsValid) return;
+        var responsables = Personas.Where(p => _responsables.Contains(p.Id))
+            .Select(p => new ResponsableProgramacionDto(p.Id, p.Nombre)).ToList();
+        Guid? tablero = Guid.TryParse(_tableroId, out var g) ? g : null;
+        var req = new CrearProgramacionRequest(
+            _titulo.Trim(),
+            string.IsNullOrWhiteSpace(_descripcion) ? null : _descripcion!.Trim(),
+            _prioridad,
+            tablero,
+            _periodicidad,
+            DateOnly.FromDateTime(_fecha ?? DateTime.Today),
+            _fechaFin.HasValue ? DateOnly.FromDateTime(_fechaFin.Value) : null,
+            responsables,
+            ModuloOrigenCodigo,
+            EntidadOrigenId,
+            OrigenReferencia);
+        Close(req);
+    }
+
+    private static string PeriodicidadLabel(PeriodicidadProgramacion p) => p switch
+    {
+        PeriodicidadProgramacion.Unica => "Unica",
+        PeriodicidadProgramacion.Diaria => "Diaria",
+        PeriodicidadProgramacion.Semanal => "Semanal",
+        PeriodicidadProgramacion.Quincenal => "Quincenal",
+        PeriodicidadProgramacion.Mensual => "Mensual",
+        PeriodicidadProgramacion.Bimestral => "Bimestral",
+        PeriodicidadProgramacion.Trimestral => "Trimestral",
+        PeriodicidadProgramacion.Semestral => "Semestral",
+        PeriodicidadProgramacion.Anual => "Anual",
+        _ => p.ToString()
+    };
+}
+
+<style>
+    .ptm-header { display: flex; align-items: center; gap: 12px; padding: 18px 24px; border-bottom: 1px solid var(--propia-border-divider, #EEF3F8); flex-shrink: 0; }
+    .ptm-header-ic { width: 38px; height: 38px; border-radius: 10px; background: var(--propia-brand-soft, #F1ECFD); color: var(--propia-brand, #6D4FE3); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .ptm-title { font-size: 16px; font-weight: 800; letter-spacing: -.3px; color: var(--propia-text-h1, #1B2A3A); }
+    .ptm-sub { font-size: 12px; color: var(--propia-text-muted, #7C98B6); margin-top: 1px; }
+    .ptm-close { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; color: var(--propia-text-muted, #7C98B6); border: 1px solid var(--propia-border-card, #E1E8EE); background: transparent; cursor: pointer; }
+    .ptm-close:hover { background: var(--propia-bg-app, #F5F8FA); }
+
+    .ptm-body { overflow-y: auto; padding: 18px 24px; display: flex; flex-direction: column; gap: 13px; }
+    .ptm-field { display: flex; flex-direction: column; }
+    .ptm-lbl { font-size: 11px; color: var(--propia-text-muted, #7C98B6); font-weight: 700; margin-bottom: 5px; }
+    .ptm-req { color: var(--propia-error, #C0383C); }
+    .ptm-input { border: 1px solid var(--propia-border-card, #E1E8EE); border-radius: 9px; padding: 10px 12px; font-size: 13.5px; color: var(--propia-text-body, #33475B); background: var(--propia-bg-card, #fff); outline: none; font-family: inherit; box-sizing: border-box; }
+    .ptm-input:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .ptm-ta { resize: vertical; line-height: 1.5; }
+    .ptm-mb { margin-bottom: 7px; }
+    .ptm-row { display: flex; gap: 12px; }
+    .ptm-grow { flex: 1; min-width: 0; }
+    .ptm-w160 { width: 160px; }
+
+    .ptm-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .ptm-chip { font-size: 11.5px; font-weight: 700; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--propia-border-card, #E1E8EE); color: var(--propia-text-secondary, #516F90); background: var(--propia-bg-card, #fff); cursor: pointer; }
+    .ptm-chip:hover { border-color: var(--propia-brand, #6D4FE3); }
+    .ptm-chip.on { border-color: var(--propia-brand, #6D4FE3); color: #fff; background: var(--propia-brand, #6D4FE3); }
+
+    .ptm-personas { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; border: 1px solid var(--propia-border-card, #E1E8EE); border-radius: 9px; padding: 8px; }
+    .ptm-persona { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 7px; font-size: 13px; color: #33475B; cursor: pointer; }
+    .ptm-persona:hover { background: #F5F8FA; }
+    .ptm-persona.on { background: #F1ECFD; }
+    .ptm-persona input { width: 15px; height: 15px; accent-color: #6D4FE3; }
+    .ptm-empty { font-size: 12px; color: #A6B7C8; padding: 10px; border: 1px dashed #D7E0EA; border-radius: 9px; }
+
+    .ptm-callout { display: flex; align-items: center; gap: 9px; padding: 11px 13px; background: var(--propia-brand-soft-2, #EEF3FF); border: 1px solid var(--propia-brand-border, #D5E0FB); border-radius: 10px; }
+    .ptm-callout-ic { color: var(--propia-brand, #6D4FE3); flex-shrink: 0; }
+    .ptm-callout-tx { font-size: 11.5px; color: var(--propia-brand-text-2, #2F4B7C); line-height: 1.45; }
+
+    .ptm-footer { display: flex; justify-content: flex-end; gap: 9px; padding: 16px 24px; border-top: 1px solid var(--propia-border-divider, #EEF3F8); flex-shrink: 0; }
+    .ptm-btn { display: flex; align-items: center; gap: 7px; padding: 10px 18px; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; border: none; }
+    .ptm-ghost { background: var(--propia-bg-card, #fff); border: 1px solid var(--propia-border-card, #E1E8EE); color: var(--propia-text-secondary, #516F90); font-weight: 600; }
+    .ptm-brand { background: var(--propia-brand, #6D4FE3); color: #fff; box-shadow: 0 4px 12px rgba(109,79,227,.28); }
+    .ptm-brand:hover { background: #5838C9; }
+    .ptm-brand:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+</style>

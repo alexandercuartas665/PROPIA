@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Propia.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using Propia.Infrastructure.Persistence;
 namespace Propia.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(PropiaDbContext))]
-    partial class PropiaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260624232544_AddServiciosYContratos")]
+    partial class AddServiciosYContratos
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -9286,152 +9289,6 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.ToTable("presupuesto_rubros");
                 });
 
-            modelBuilder.Entity("Propia.Domain.Entities.ProgramacionTarea", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<bool>("Activa")
-                        .HasColumnType("boolean")
-                        .HasColumnName("activa");
-
-                    b.Property<Guid>("CreadoPorUsuarioId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("creado_por_usuario_id");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("created_by");
-
-                    b.Property<string>("Descripcion")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)")
-                        .HasColumnName("descripcion");
-
-                    b.Property<Guid?>("EntidadOrigenId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("entidad_origen_id");
-
-                    b.Property<DateOnly?>("FechaFin")
-                        .HasColumnType("date")
-                        .HasColumnName("fecha_fin");
-
-                    b.Property<DateOnly>("FechaProximaEjecucion")
-                        .HasColumnType("date")
-                        .HasColumnName("fecha_proxima_ejecucion");
-
-                    b.Property<string>("ModuloOrigenCodigo")
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)")
-                        .HasColumnName("modulo_origen_codigo");
-
-                    b.Property<string>("OrigenReferencia")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("origen_referencia");
-
-                    b.Property<int>("Periodicidad")
-                        .HasColumnType("integer")
-                        .HasColumnName("periodicidad");
-
-                    b.Property<int>("Prioridad")
-                        .HasColumnType("integer")
-                        .HasColumnName("prioridad");
-
-                    b.Property<Guid?>("TableroId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("tablero_id");
-
-                    b.Property<int>("TareasGeneradas")
-                        .HasColumnType("integer")
-                        .HasColumnName("tareas_generadas");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("tenant_id");
-
-                    b.Property<string>("Titulo")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("titulo");
-
-                    b.Property<DateTimeOffset?>("UltimaEjecucion")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("ultima_ejecucion");
-
-                    b.Property<DateTimeOffset?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("updated_by");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TenantId");
-
-                    b.HasIndex("Activa", "FechaProximaEjecucion");
-
-                    b.ToTable("programacion_tareas");
-                });
-
-            modelBuilder.Entity("Propia.Domain.Entities.ProgramacionTareaResponsable", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("created_by");
-
-                    b.Property<string>("NombreSnapshot")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("nombre_snapshot");
-
-                    b.Property<Guid>("PersonaId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("persona_id");
-
-                    b.Property<Guid>("ProgramacionTareaId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("programacion_tarea_id");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("tenant_id");
-
-                    b.Property<DateTimeOffset?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("updated_by");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProgramacionTareaId");
-
-                    b.HasIndex("TenantId");
-
-                    b.ToTable("programacion_tarea_responsables");
-                });
-
             modelBuilder.Entity("Propia.Domain.Entities.ReclamacionServicio", b =>
                 {
                     b.Property<Guid>("Id")
@@ -16785,17 +16642,6 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Navigation("Presupuesto");
                 });
 
-            modelBuilder.Entity("Propia.Domain.Entities.ProgramacionTareaResponsable", b =>
-                {
-                    b.HasOne("Propia.Domain.Entities.ProgramacionTarea", "ProgramacionTarea")
-                        .WithMany("Responsables")
-                        .HasForeignKey("ProgramacionTareaId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ProgramacionTarea");
-                });
-
             modelBuilder.Entity("Propia.Domain.Entities.ReclamacionServicio", b =>
                 {
                     b.HasOne("Propia.Domain.Entities.CuentaServicioPublico", "Cuenta")
@@ -17739,11 +17585,6 @@ namespace Propia.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Propia.Domain.Entities.Presupuesto", b =>
                 {
                     b.Navigation("Rubros");
-                });
-
-            modelBuilder.Entity("Propia.Domain.Entities.ProgramacionTarea", b =>
-                {
-                    b.Navigation("Responsables");
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.ReporteProgramacion", b =>

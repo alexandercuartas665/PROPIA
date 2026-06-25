@@ -122,9 +122,35 @@ public class ServiciosPublicosService : IServiciosPublicosService
         var previos = c.Registros.Where(x => Orden(x) < Orden(r)).OrderByDescending(Orden).FirstOrDefault();
         decimal? varPct = previos is not null && previos.Consumo != 0
             ? Math.Round((r.Consumo - previos.Consumo) / previos.Consumo * 100, 1) : null;
+
+        // Alerta de consumo: si supera el umbral, genera una AlertaCopropiedad (banda del dashboard 2.2).
+        var superaUmbral = varPct is { } vp && vp > c.UmbralAlertaPct;
+        if (superaUmbral)
+        {
+            var periodoTxt = PeriodoLabel(r.Anio, r.Mes);
+            var yaExiste = await _db.AlertasCopropiedad.AnyAsync(
+                a => a.Activa && a.ModuloOrigenCodigo == "servicios-publicos"
+                     && a.EntidadId == cuentaId && a.Descripcion.Contains(periodoTxt), ct);
+            if (!yaExiste)
+            {
+                _db.AlertasCopropiedad.Add(new AlertaCopropiedad
+                {
+                    Tipo = TipoAlertaDashboard.Otro,
+                    Severidad = varPct!.Value >= c.UmbralAlertaPct * 2 ? SeveridadAlerta.Critica : SeveridadAlerta.Advertencia,
+                    Titulo = $"Consumo elevado: {c.Alias}",
+                    Descripcion = $"El consumo de {periodoTxt} subio {varPct.Value}% frente al periodo anterior (umbral {c.UmbralAlertaPct}%).",
+                    UrlAccion = "/servicios",
+                    ModuloOrigenCodigo = "servicios-publicos",
+                    EntidadId = cuentaId,
+                    Activa = true
+                });
+                await _db.SaveChangesAsync(ct);
+            }
+        }
+
         return new RegistroConsumoDto(r.Id, r.CuentaServicioId, r.Anio, r.Mes,
             PeriodoLabel(r.Anio, r.Mes), r.Consumo, r.Valor, r.Estado,
-            varPct, varPct is { } vp && vp > c.UmbralAlertaPct, r.NotaAdmin);
+            varPct, superaUmbral, r.NotaAdmin);
     }
 
     public async Task<bool> EliminarRegistroAsync(Guid registroId, CancellationToken ct)

@@ -82,7 +82,9 @@ public static class DependencyInjection
         services.AddScoped<Application.Integraciones.IPlatformBrandingService, Integraciones.PlatformBrandingService>();
         services.AddScoped<Application.Integraciones.IAiServerConfigService, Integraciones.AiServerConfigService>();
         services.AddScoped<Application.Integraciones.IOcrServerConfigService, Integraciones.OcrServerConfigService>();
-        services.AddScoped<Application.Ocr.IDocumentExtractionService, Ocr.AzureDocumentExtractionService>();
+        services.AddScoped<Ocr.AzureDocumentExtractionService>();
+        services.AddScoped<Ocr.AzureComputerVisionExtractionService>();
+        services.AddScoped<Application.Ocr.IDocumentExtractionService, Ocr.OcrDispatcherService>();
         services.AddScoped<Application.Integraciones.IWompiConfigService, Integraciones.WompiConfigService>();
         services.AddScoped<Application.Integraciones.IWompiWebhookService, Integraciones.WompiWebhookService>();
         services.AddScoped<Application.Integraciones.IEvolutionMasterConfigService, Integraciones.EvolutionMasterConfigService>();
@@ -122,6 +124,12 @@ public static class DependencyInjection
 
         // Modulo 2.17 Servicios publicos
         services.AddScoped<Application.ServiciosPublicos.IServiciosPublicosService, ServiciosPublicos.ServiciosPublicosService>();
+
+        // Servicios y contratos (Finanzas)
+        services.AddScoped<Application.Servicios.IServiciosService, Servicios.ServiciosService>();
+
+        // Programador de tareas (2.10)
+        services.AddScoped<Application.Programaciones.IProgramacionTareasService, Programaciones.ProgramacionTareasService>();
 
         // Modulo 2.1 Onboarding y Activacion
         services.AddScoped<Application.Onboarding.IOnboardingService, Onboarding.OnboardingService>();
@@ -210,6 +218,7 @@ public static class DependencyInjection
         services.AddScoped<Jobs.IBackgroundJob, Jobs.PqrsdCierreNocturnoJob>();
         services.AddScoped<Jobs.IBackgroundJob, Jobs.MetricasDiariasJob>();
         services.AddScoped<Jobs.IBackgroundJob, Jobs.CobroRecurrenteJob>();
+        services.AddScoped<Jobs.IBackgroundJob, Jobs.ProgramacionTareasJob>();
 
         // Storage de blobs (logos, fachadas, portadas, futuros adjuntos).
         // Provider seleccionado por config: "R2" en produccion, cualquier otro valor (o ausente)

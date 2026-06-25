@@ -1010,6 +1010,7 @@ public class MiCopropiedadService : IMiCopropiedadService
     {
         var contratos = await _db.ContratosServicio
             .AsNoTracking()
+            .Include(x => x.Adjuntos)
             .OrderBy(c => c.Tipo)
             .ToListAsync(ct);
         return contratos.Select(ToContratoDto).ToList();
@@ -1029,7 +1030,11 @@ public class MiCopropiedadService : IMiCopropiedadService
             FechaFin = req.FechaFin,
             ValorMensual = req.ValorMensual,
             Observaciones = req.Observaciones,
-            DiasAnticipacionAlerta = req.DiasAnticipacionAlerta <= 0 ? 30 : req.DiasAnticipacionAlerta
+            DiasAnticipacionAlerta = req.DiasAnticipacionAlerta <= 0 ? 30 : req.DiasAnticipacionAlerta,
+            RenovacionAutomatica = req.RenovacionAutomatica,
+            ServicioId = req.ServicioId,
+            ExpedienteId = req.ExpedienteId,
+            ProyectoTareaId = req.ProyectoTareaId
         };
         _db.ContratosServicio.Add(c);
         await _db.SaveChangesAsync(ct);
@@ -1052,6 +1057,14 @@ public class MiCopropiedadService : IMiCopropiedadService
         if (req.FechaFin.HasValue) c.FechaFin = req.FechaFin.Value;
         if (req.ValorMensual.HasValue) c.ValorMensual = req.ValorMensual.Value;
         if (req.Observaciones is not null) c.Observaciones = string.IsNullOrWhiteSpace(req.Observaciones) ? null : req.Observaciones.Trim();
+        // Vinculos: solo el editor de la pagina los toca (ActualizarVinculos=true). La tool MCP no.
+        if (req.ActualizarVinculos)
+        {
+            c.RenovacionAutomatica = req.RenovacionAutomatica;
+            c.ServicioId = req.ServicioId;
+            c.ExpedienteId = req.ExpedienteId;
+            c.ProyectoTareaId = req.ProyectoTareaId;
+        }
         await _db.SaveChangesAsync(ct);
         return true;
     }
@@ -1064,7 +1077,9 @@ public class MiCopropiedadService : IMiCopropiedadService
         var alerta = dias is >= 0 && dias <= c.DiasAnticipacionAlerta;
         return new ContratoServicioDto(c.Id, c.Tipo, c.Proveedor, c.NitProveedor, c.Contacto,
             c.FechaInicio, c.FechaFin, c.ValorMensual, c.Observaciones,
-            estado, c.DiasAnticipacionAlerta, dias, alerta);
+            estado, c.DiasAnticipacionAlerta, dias, alerta,
+            c.RenovacionAutomatica, c.ServicioId, c.ExpedienteId, c.ProyectoTareaId,
+            c.Adjuntos?.Count ?? 0);
     }
 
     public async Task<bool> EliminarContratoAsync(Guid contratoId, CancellationToken ct)

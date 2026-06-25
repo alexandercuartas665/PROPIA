@@ -2,9 +2,14 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.MiCopropiedad
 @using Propia.Application.ServiciosPublicos
+@using Propia.Application.Servicios
+@using Propia.Application.Directorio
+@using Propia.Application.Programaciones
 @using Propia.Domain.Enums
+@using Propia.Web.Components.Shared.Modals
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
+@inject IModalService Modals
 
 <PageTitle>Servicios y contratos - PROPIA</PageTitle>
 
@@ -26,6 +31,9 @@ else
     </div>
 
     <div class="srv-tabs">
+        <button class="srv-tab @(_srvTab == "servicios" ? "on" : "")" @onclick='() => _srvTab = "servicios"'>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18M3 12h18M3 17h18"/></svg>Servicios
+        </button>
         <button class="srv-tab @(_srvTab == "contratos" ? "on" : "")" @onclick='() => _srvTab = "contratos"'>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6l8-4z"/></svg>Contratos
         </button>
@@ -33,6 +41,65 @@ else
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L4.5 13H11l-1 9 8.5-11H12l1-9z"/></svg>Servicios publicos
         </button>
     </div>
+
+    @if (_srvTab == "servicios")
+    {
+        var costoMes = _servicios.Sum(s => s.CostoMensual ?? 0);
+        <div class="srv-kpis srv-kpis-4">
+            <div class="srv-kpi"><div class="srv-kpi-lbl">Total de servicios</div><div class="srv-kpi-val">@_servicios.Count</div></div>
+            <div class="srv-kpi"><div class="srv-kpi-lbl">Activos</div><div class="srv-kpi-val ok">@_servicios.Count(s => s.Estado == EstadoServicio.Activo)</div></div>
+            <div class="srv-kpi"><div class="srv-kpi-lbl">Costo mensual</div><div class="srv-kpi-val">$@costoMes.ToString("N0")</div></div>
+            <div class="srv-kpi"><div class="srv-kpi-lbl">Contratos vinculados</div><div class="srv-kpi-val">@_servicios.Sum(s => s.CantidadContratos)</div></div>
+        </div>
+
+        <div class="srv-card">
+            <div class="srv-card-head">
+                <span class="srv-card-title">Servicios contratados</span>
+                <button class="srv-btn-primary" @onclick="() => AbrirServicioModal(null)"><i class="fi fi-rr-plus"></i> Nuevo servicio</button>
+            </div>
+            @if (_servicios.Count == 0)
+            {
+                <div class="srv-empty"><i class="fi fi-rr-briefcase"></i><div>Aun no hay servicios. Crea el primero con "Nuevo servicio".</div></div>
+            }
+            else
+            {
+                <div class="svc-table">
+                    <div class="svc-thead">
+                        <div class="svc-c-name">SERVICIO</div>
+                        <div class="svc-c-tipo">TIPO</div>
+                        <div class="svc-c-ejec">EJECUTA</div>
+                        <div class="svc-c-cost">COSTO MES</div>
+                        <div class="svc-c-cost">COSTO ANO</div>
+                        <div class="svc-c-num">CONTRATOS</div>
+                        <div class="svc-c-est">ESTADO</div>
+                        <div class="svc-c-act"></div>
+                    </div>
+                    @foreach (var s in _servicios)
+                    {
+                        var ss = s;
+                        <div class="svc-row" @onclick="() => AbrirServicioModal(ss)">
+                            <div class="svc-c-name">
+                                <div class="svc-row-ic">@TipoIcon(s.Tipo)</div>
+                                <div style="min-width:0;"><div class="svc-name">@s.Nombre</div>@if (!string.IsNullOrEmpty(s.Descripcion)) { <div class="svc-desc">@s.Descripcion</div> }</div>
+                            </div>
+                            <div class="svc-c-tipo">@TipoLabel(s.Tipo)</div>
+                            <div class="svc-c-ejec">@(string.IsNullOrEmpty(s.EjecutorNombre) ? "-" : s.EjecutorNombre)</div>
+                            <div class="svc-c-cost">@(s.CostoMensual is { } cm ? "$" + cm.ToString("N0") : "-")</div>
+                            <div class="svc-c-cost">@(s.CostoAnual is { } ca ? "$" + ca.ToString("N0") : "-")</div>
+                            <div class="svc-c-num"><span class="svc-pill">@s.CantidadContratos</span></div>
+                            <div class="svc-c-est">
+                                @if (s.Estado == EstadoServicio.Activo) { <span class="srv-badge ok">Activo</span> }
+                                else if (s.Estado == EstadoServicio.Suspendido) { <span class="srv-badge warn">Suspendido</span> }
+                                else { <span class="srv-badge vencido">Inactivo</span> }
+                            </div>
+                            <div class="svc-c-act"><span class="srv-del" @onclick:stopPropagation="true" @onclick="() => EliminarServicioAsync(ss.Id)" title="Eliminar"><i class="fi fi-rr-trash"></i></span></div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+    else if (_srvTab == "contratos")
 
     @if (_srvTab == "contratos")
     {
@@ -269,15 +336,231 @@ else
                         </select>
                     </div>
                 }
+                <div>
+                    <label class="srv-lbl">Servicio (al que pertenece)</label>
+                    <select class="srv-input" @bind="_f.ServicioId">
+                        <option value="">- Sin servicio -</option>
+                        @foreach (var s in _servicios) { <option value="@s.Id">@s.Nombre</option> }
+                    </select>
+                </div>
+                <div>
+                    <label class="srv-lbl">Expediente (modulo 2.15)</label>
+                    <select class="srv-input" @bind="_f.ExpedienteId">
+                        <option value="">- Sin expediente -</option>
+                        @foreach (var e in _expedientes) { <option value="@e.Id">@e.Codigo - @e.Nombre</option> }
+                    </select>
+                </div>
+                <div>
+                    <label class="srv-lbl">Proyecto (modulo 2.10)</label>
+                    <select class="srv-input" @bind="_f.ProyectoId">
+                        <option value="">- Sin proyecto -</option>
+                        @foreach (var p in _proyectos) { <option value="@p.Id">@p.Titulo</option> }
+                    </select>
+                </div>
+                <div class="srv-col-full">
+                    <label class="srv-check"><input type="checkbox" @bind="_f.RenovacionAutomatica" /> Tiene clausula de renovacion automatica</label>
+                </div>
                 <div class="srv-col-full">
                     <label class="srv-lbl">Observaciones</label>
                     <textarea class="srv-input" rows="2" @bind="_f.Observaciones" @bind:event="oninput" placeholder="Ej. Renovacion automatica con 30 dias de aviso."></textarea>
                 </div>
             </div>
+
+            @if (_editId is not null)
+            {
+                <div class="srv-attach">
+                    <div class="srv-attach-h"><i class="fi fi-rr-clip"></i> Archivos del contrato (@_contratoAdjuntos.Count)</div>
+                    <div class="srv-attach-list">
+                        @foreach (var a in _contratoAdjuntos)
+                        {
+                            var aa = a;
+                            <div class="srv-attach-item">
+                                <i class="fi fi-rr-document"></i>
+                                <a href="@a.Url" target="_blank" class="srv-attach-name">@a.NombreArchivo</a>
+                                <span class="srv-attach-size">@FmtBytes(a.TamanoBytes)</span>
+                                <span class="srv-del" @onclick="() => EliminarAdjuntoContratoAsync(aa.Id)" title="Eliminar"><i class="fi fi-rr-trash"></i></span>
+                            </div>
+                        }
+                        <label class="srv-attach-up">
+                            <i class="fi fi-rr-upload"></i><span>@(_attachBusy ? "Subiendo..." : "Adjuntar (PDF, imagen, Word, Excel)")</span>
+                            <InputFile OnChange="(e) => SubirAdjuntoContratoAsync(e)" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" disabled="@_attachBusy" />
+                        </label>
+                    </div>
+                </div>
+
+                <div class="srv-attach">
+                    <div class="srv-attach-h"><i class="fi fi-rr-calendar-clock"></i> Programacion de vencimiento</div>
+                    <div class="srv-prog-row">
+                        <span class="srv-prog-tx">Crea una tarea (unica o recurrente) en un tablero para no olvidar la renovacion.</span>
+                        <button class="srv-btn-ghost" @onclick="AbrirProgramadorContrato"><i class="fi fi-rr-calendar-plus"></i> Programar tarea</button>
+                    </div>
+                </div>
+            }
+
             @if (_modalError is not null) { <div class="srv-banner err">@_modalError</div> }
             <div class="d-flex gap-2 justify-content-end mt-3">
                 <button class="srv-btn-ghost" @onclick="() => _showModal = false">Cancelar</button>
                 <button class="srv-btn-primary" @onclick="GuardarAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_f.Proveedor))"><i class="fi fi-rr-check"></i> @(_editId is null ? "Crear contrato" : "Guardar contrato")</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ===== Modal: crear / editar servicio ===== *@
+@if (_showSrvModal)
+{
+    <div class="srv-ov" @onclick="CerrarServicioModal"></div>
+    <div class="srv-modal srv-modal-lg">
+        <div class="srv-modal-head">
+            <div class="srv-modal-ic"><i class="fi fi-rr-briefcase"></i></div>
+            <div style="flex:1;min-width:0;">
+                <div class="srv-modal-title">@(_srvEditId is null ? "Nuevo servicio" : "Detalle del servicio")</div>
+                <div class="srv-sub" style="margin:2px 0 0;">Servicio contratado, su ejecutor, contactos y contratos.</div>
+            </div>
+            <button class="srv-x" @onclick="CerrarServicioModal"><i class="fi fi-rr-cross-small"></i></button>
+        </div>
+        <div class="srv-modal-body">
+            <div class="srv-grid">
+                <div class="srv-col-full"><label class="srv-lbl">Nombre del servicio *</label><input class="srv-input" @bind="_sf.Nombre" @bind:event="oninput" placeholder="Ej. Vigilancia y seguridad" /></div>
+                <div><label class="srv-lbl">Tipo de servicio</label><select class="srv-input" @bind="_sf.Tipo">@foreach (var t in Enum.GetValues<TipoServicio>()) { <option value="@t">@TipoLabel(t)</option> }</select></div>
+                <div><label class="srv-lbl">Estado</label><select class="srv-input" @bind="_sf.Estado"><option value="@EstadoServicio.Activo">Activo</option><option value="@EstadoServicio.Suspendido">Suspendido</option><option value="@EstadoServicio.Inactivo">Inactivo</option></select></div>
+                <div><label class="srv-lbl">Costo mensual (COP)</label><input class="srv-input" type="number" step="any" @bind="_sf.CostoMensual" placeholder="0" /></div>
+                <div><label class="srv-lbl">Costo anual (COP)</label><input class="srv-input" type="number" step="any" @bind="_sf.CostoAnual" placeholder="0" /></div>
+                <div class="srv-col-full"><label class="srv-lbl">Descripcion</label><textarea class="srv-input" rows="2" @bind="_sf.Descripcion" @bind:event="oninput"></textarea></div>
+
+                <div class="srv-col-full">
+                    <label class="srv-lbl">Quien ejecuta el servicio (tercero del Directorio)</label>
+                    @if (!string.IsNullOrEmpty(_sf.EjecutorNombre))
+                    {
+                        <div class="svc-pick-sel"><i class="fi fi-rr-user"></i> <span>@_sf.EjecutorNombre</span> <button class="svc-pick-clear" @onclick="LimpiarEjecutor">Cambiar</button></div>
+                    }
+                    else
+                    {
+                        <button class="srv-btn-ghost" @onclick='() => AbrirPicker("ejecutor")'><i class="fi fi-rr-search"></i> Seleccionar ejecutor</button>
+                        @if (_tTarget == "ejecutor") { @PickerPanel() }
+                    }
+                </div>
+            </div>
+
+            @if (_srvEditId is not null && _srvDetalle is not null)
+            {
+                @* ---- Contactos ---- *@
+                <div class="srv-attach">
+                    <div class="srv-attach-h"><i class="fi fi-rr-users"></i> Contactos relacionados (@_srvDetalle.Contactos.Count)</div>
+                    <div class="srv-attach-list">
+                        @foreach (var c in _srvDetalle.Contactos)
+                        {
+                            var cc = c;
+                            <div class="srv-attach-item">
+                                <i class="fi fi-rr-user"></i>
+                                <span class="srv-attach-name">@c.NombreSnapshot @(string.IsNullOrEmpty(c.Rol) ? "" : "- " + c.Rol)</span>
+                                <span class="srv-attach-size">@(string.Join(" ", new[] { c.Telefono, c.Email }.Where(x => !string.IsNullOrEmpty(x))))</span>
+                                <span class="srv-del" @onclick="() => EliminarContactoAsync(cc.Id)" title="Quitar"><i class="fi fi-rr-trash"></i></span>
+                            </div>
+                        }
+                        <div class="svc-contacto-add">
+                            @if (!string.IsNullOrEmpty(_co.Nombre))
+                            {
+                                <span class="svc-pick-sel sm"><i class="fi fi-rr-user"></i> @_co.Nombre <button class="svc-pick-clear" @onclick="LimpiarContactoTercero">x</button></span>
+                            }
+                            else
+                            {
+                                <button class="srv-btn-ghost sm" @onclick='() => AbrirPicker("contacto")'><i class="fi fi-rr-search"></i> Elegir tercero</button>
+                            }
+                            <input class="srv-input sm" @bind="_co.Rol" placeholder="Rol (Supervisor...)" />
+                            <input class="srv-input sm" @bind="_co.Telefono" placeholder="Telefono" />
+                            <input class="srv-input sm" @bind="_co.Email" placeholder="Email" />
+                            <button class="srv-btn-primary sm" @onclick="AgregarContactoAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_co.Nombre))">Agregar</button>
+                        </div>
+                        @if (_tTarget == "contacto") { @PickerPanel() }
+                    </div>
+                </div>
+
+                @* ---- Adjuntos del servicio ---- *@
+                <div class="srv-attach">
+                    <div class="srv-attach-h"><i class="fi fi-rr-clip"></i> Archivos del servicio (@_srvDetalle.Adjuntos.Count)</div>
+                    <div class="srv-attach-list">
+                        @foreach (var a in _srvDetalle.Adjuntos)
+                        {
+                            var aa = a;
+                            <div class="srv-attach-item">
+                                <i class="fi fi-rr-document"></i>
+                                <a href="@a.Url" target="_blank" class="srv-attach-name">@a.NombreArchivo</a>
+                                <span class="srv-attach-size">@FmtBytes(a.TamanoBytes)</span>
+                                <span class="srv-del" @onclick="() => EliminarAdjuntoServicioAsync(aa.Id)" title="Eliminar"><i class="fi fi-rr-trash"></i></span>
+                            </div>
+                        }
+                        <label class="srv-attach-up">
+                            <i class="fi fi-rr-upload"></i><span>@(_attachBusy ? "Subiendo..." : "Adjuntar (PDF, imagen, Word, Excel)")</span>
+                            <InputFile OnChange="(e) => SubirAdjuntoServicioAsync(e)" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" disabled="@_attachBusy" />
+                        </label>
+                    </div>
+                </div>
+
+                @* ---- Contratos asociados ---- *@
+                <div class="srv-attach">
+                    <div class="srv-attach-h"><i class="fi fi-rr-document-signed"></i> Contratos del servicio (@_srvDetalle.Contratos.Count)</div>
+                    <div class="srv-attach-list">
+                        @foreach (var ct in _srvDetalle.Contratos)
+                        {
+                            var cct = ct;
+                            <div class="srv-attach-item">
+                                <i class="fi fi-rr-shield"></i>
+                                <span class="srv-attach-name">@ct.Proveedor <span class="svc-mini">@TipoLabel(ct.Tipo)@(ct.RenovacionAutomatica ? " - renov. auto" : "")</span></span>
+                                <span class="srv-attach-size">@(ct.ValorMensual is { } v ? "$" + v.ToString("N0") + "/mes" : "")</span>
+                                <span class="srv-del" @onclick="() => DesasociarContratoAsync(cct.Id)" title="Quitar del servicio"><i class="fi fi-rr-link-slash"></i></span>
+                            </div>
+                        }
+                        <div class="svc-contacto-add">
+                            <select class="srv-input sm" @bind="_asociarContratoId">
+                                <option value="">- Asociar contrato existente -</option>
+                                @foreach (var c in _contratos.Where(x => x.ServicioId is null)) { <option value="@c.Id">@c.Proveedor (@TipoLabel(c.Tipo))</option> }
+                            </select>
+                            <button class="srv-btn-primary sm" @onclick="AsociarContratoAsync" disabled="@(_busy || string.IsNullOrEmpty(_asociarContratoId))">Asociar</button>
+                        </div>
+                    </div>
+                </div>
+
+                @* ---- Alertas del servicio ---- *@
+                <div class="srv-attach">
+                    <div class="srv-attach-h"><i class="fi fi-rr-bell"></i> Alertas del servicio (@_srvDetalle.Alertas.Count(a => a.Activa) activas)</div>
+                    <div class="srv-attach-list">
+                        @foreach (var al in _srvDetalle.Alertas)
+                        {
+                            var aa = al;
+                            <div class="srv-attach-item @(al.Activa ? "" : "srv-alert-done")">
+                                <i class="fi fi-rr-triangle-warning"></i>
+                                <span class="srv-attach-name">@al.Titulo@(string.IsNullOrEmpty(al.Descripcion) ? "" : "") <span class="svc-mini">@al.Descripcion</span></span>
+                                @if (al.Activa)
+                                {
+                                    <span class="srv-badge @SevCls(al.Severidad)">@al.Severidad</span>
+                                    <button class="srv-btn-ghost sm" @onclick="() => ResolverAlertaServicioAsync(aa.Id)" disabled="@_busy">Resolver</button>
+                                }
+                                else { <span class="srv-badge ok">Resuelta</span> }
+                            </div>
+                        }
+                        <div class="svc-contacto-add">
+                            <input class="srv-input sm" @bind="_alTitulo" placeholder="Titulo de la alerta" />
+                            <input class="srv-input sm" @bind="_alDescripcion" placeholder="Descripcion (opcional)" />
+                            <select class="srv-input sm" @bind="_alSeveridad">
+                                <option value="@SeveridadAlerta.Info">Info</option>
+                                <option value="@SeveridadAlerta.Advertencia">Advertencia</option>
+                                <option value="@SeveridadAlerta.Critica">Critica</option>
+                            </select>
+                            <button class="srv-btn-primary sm" @onclick="AgregarAlertaServicioAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_alTitulo))">Agregar</button>
+                        </div>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="srv-banner info">Guarda el servicio para agregar contactos, archivos, contratos y alertas.</div>
+            }
+
+            @if (_srvError is not null) { <div class="srv-banner err">@_srvError</div> }
+            <div class="d-flex gap-2 justify-content-end mt-3">
+                <button class="srv-btn-ghost" @onclick="CerrarServicioModal">Cerrar</button>
+                <button class="srv-btn-primary" @onclick="GuardarServicioAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_sf.Nombre))"><i class="fi fi-rr-check"></i> @(_srvEditId is null ? "Crear servicio" : "Guardar cambios")</button>
             </div>
         </div>
     </div>
@@ -379,6 +662,9 @@ else
     </div>
 }
 }
+
+@* Host de modales globales (programador de tareas). Vive aqui por boundary de render mode. *@
+<ModalHost />
 
 <style>
     .srv-wrap { width: 100%; max-width: 1900px; margin: 0 auto; padding: 6px 28px 60px; box-sizing: border-box; font-family: 'Lexend', sans-serif; }
@@ -520,18 +806,131 @@ else
     .srv-input:focus { border-color: #6D4FE3; }
     .srv-banner { border-radius: 9px; padding: 9px 12px; font-size: 12.5px; font-weight: 600; margin-top: 12px; }
     .srv-banner.err { background: #FDE7E7; border: 1px solid #F5C2C2; color: #A1352E; }
+    .srv-banner.info { background: #EEF3FF; border: 1px solid #D5E0FB; color: #2F4B7C; }
+
+    /* KPIs de 4 columnas (pestana Servicios) */
+    .srv-kpis-4 { grid-template-columns: repeat(4, 1fr); }
+    @@media (max-width: 760px) { .srv-kpis-4 { grid-template-columns: 1fr 1fr; } }
+
+    /* Tabla de servicios */
+    .svc-table { width: 100%; }
+    .svc-thead, .svc-row { display: grid; grid-template-columns: 2.4fr 1.2fr 1.4fr 1fr 1fr .8fr 1fr 40px; gap: 10px; align-items: center; }
+    .svc-thead { padding: 11px 20px; background: #FAFBFC; border-bottom: 1px solid #EEF3F8; font-size: 10.5px; letter-spacing: .4px; font-weight: 700; color: #A6B7C8; }
+    .svc-row { padding: 12px 20px; border-bottom: 1px solid #F4F7FA; font-size: 12.5px; color: #33475B; cursor: pointer; background: #fff; }
+    .svc-row:hover { background: #FBFAFE; }
+    .svc-c-name { display: flex; align-items: center; gap: 11px; min-width: 0; }
+    .svc-row-ic { width: 32px; height: 32px; border-radius: 8px; background: #EEF3F8; color: #516F90; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .svc-name { font-size: 13px; font-weight: 700; color: #1B2A3A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .svc-desc { font-size: 11px; color: #A6B7C8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .svc-c-tipo, .svc-c-ejec, .svc-c-cost, .svc-c-num, .svc-c-est { min-width: 0; }
+    .svc-c-ejec { color: #516F90; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .svc-pill { display: inline-block; min-width: 22px; text-align: center; font-size: 11.5px; font-weight: 700; color: #516F90; background: #EEF3F8; border-radius: 7px; padding: 3px 8px; }
+    .svc-mini { font-size: 10.5px; color: #A6B7C8; font-weight: 600; }
+
+    /* Selector de tercero */
+    .svc-pick-sel { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #33475B; background: #F1ECFD; border: 1px solid #DCD2F8; border-radius: 9px; padding: 8px 12px; }
+    .svc-pick-sel.sm { font-size: 12px; padding: 6px 10px; }
+    .svc-pick-clear { font-size: 11px; font-weight: 700; color: #6D4FE3; background: none; border: 0; cursor: pointer; }
+    .svc-picker { margin-top: 8px; border: 1px solid #E1E8EE; border-radius: 11px; padding: 10px; background: #FBFCFE; }
+    .svc-picker-results { display: flex; flex-direction: column; gap: 4px; max-height: 200px; overflow-y: auto; margin: 8px 0; }
+    .svc-picker-item { display: flex; align-items: center; gap: 8px; text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid #E1E8EE; background: #fff; font-size: 12.5px; color: #33475B; cursor: pointer; }
+    .svc-picker-item:hover { border-color: #6D4FE3; background: #F5F1FE; }
+    .svc-picker-empty { font-size: 12px; color: #A6B7C8; padding: 10px; text-align: center; }
+    .svc-picker-create { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: #6D4FE3; background: none; border: 0; cursor: pointer; padding: 4px 2px; }
+    .svc-picker-new { display: flex; flex-direction: column; gap: 8px; }
+    .svc-kind { display: flex; gap: 16px; font-size: 12.5px; font-weight: 600; color: #33475B; }
+    .svc-kind label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+    .svc-contacto-add { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+    .srv-input.sm, .srv-btn-primary.sm, .srv-btn-ghost.sm { font-size: 12px; padding: 7px 10px; }
+    .srv-btn-primary.sm, .srv-btn-ghost.sm { box-shadow: none; }
+
+    /* Checkbox renovacion */
+    .srv-check { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #33475B; cursor: pointer; }
+    .srv-check input { width: 16px; height: 16px; accent-color: #6D4FE3; }
+
+    /* Adjuntos / secciones del modal */
+    .srv-modal-lg { width: min(820px, 96vw); }
+    .srv-attach { margin-top: 16px; border-top: 1px solid #EEF3F8; padding-top: 14px; }
+    .srv-attach-h { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 800; color: #1B2A3A; margin-bottom: 10px; }
+    .srv-attach-list { display: flex; flex-direction: column; gap: 7px; }
+    .srv-attach-item { display: flex; align-items: center; gap: 10px; border: 1px solid #E1E8EE; border-radius: 9px; padding: 9px 12px; font-size: 12.5px; color: #33475B; }
+    .srv-attach-name { flex: 1; min-width: 0; font-weight: 600; color: #33475B; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    a.srv-attach-name:hover { color: #6D4FE3; text-decoration: underline; }
+    .srv-attach-size { font-size: 11px; color: #A6B7C8; white-space: nowrap; }
+    .srv-attach-up { display: flex; align-items: center; gap: 9px; padding: 10px 13px; border: 1.5px dashed #DCD2F8; border-radius: 10px; background: #FBFAFE; color: #6D4FE3; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+    .srv-attach-up:hover { border-color: #6D4FE3; background: #F5F1FE; }
+    .srv-attach-up input[type=file] { display: none; }
+    .srv-prog-row { display: flex; align-items: center; gap: 12px; justify-content: space-between; flex-wrap: wrap; }
+    .srv-prog-tx { font-size: 12.5px; color: #516F90; flex: 1; min-width: 200px; }
+    .srv-alert-done { opacity: .55; }
 </style>
 
 @code {
     private string? _jwt;
     private bool _busy;
-    private string _srvTab = "contratos";   // "contratos" | "publicos" (2.17)
+    private string _srvTab = "servicios";   // "servicios" | "contratos" | "publicos" (2.17)
     private List<ContratoServicioDto> _contratos = new();
 
     private bool _showModal;
     private Guid? _editId;
     private string? _modalError;
     private Form _f = new();
+
+    // ===================== Servicios (catalogo) =====================
+    private List<ServicioDto> _servicios = new();
+    private List<ExpedienteLite> _expedientes = new();
+    private List<ProyectoLite> _proyectos = new();
+    private bool _dropdownsLoaded;
+
+    private bool _showSrvModal;
+    private Guid? _srvEditId;
+    private string? _srvError;
+    private ServicioForm _sf = new();
+    private ServicioDetalleDto? _srvDetalle;
+    private string _asociarContratoId = "";
+    private string _alTitulo = "", _alDescripcion = "";
+    private SeveridadAlerta _alSeveridad = SeveridadAlerta.Advertencia;
+
+    // Adjuntos (servicio + contrato comparten el flag de subida)
+    private bool _attachBusy;
+    private List<AdjuntoDto> _contratoAdjuntos = new();
+
+    // Picker de tercero del Directorio (compartido ejecutor/contacto)
+    private string _tTarget = "";   // "", "ejecutor", "contacto"
+    private string _tQuery = "";
+    private List<PersonaResumenDto> _tPersonas = new();
+    private List<EmpresaResumenDto> _tEmpresas = new();
+    private bool _tCreating;
+    private int _tNewKind;           // 0 persona, 1 empresa
+    private string _tNewDoc = "", _tNewNombres = "", _tNewApellidos = "", _tNewNit = "", _tNewRazon = "";
+
+    private ContactoDraft _co = new();
+
+    private sealed record ExpedienteLite(Guid Id, string Codigo, string Nombre);
+    private sealed record ProyectoLite(Guid Id, string Titulo, bool EsProyecto);
+
+    private sealed class ServicioForm
+    {
+        public TipoServicio Tipo { get; set; } = TipoServicio.Seguridad;
+        public string Nombre { get; set; } = "";
+        public string? Descripcion { get; set; }
+        public Guid? EjecutorPersonaId { get; set; }
+        public Guid? EjecutorEmpresaId { get; set; }
+        public string? EjecutorNombre { get; set; }
+        public decimal? CostoMensual { get; set; }
+        public decimal? CostoAnual { get; set; }
+        public EstadoServicio Estado { get; set; } = EstadoServicio.Activo;
+    }
+
+    private sealed class ContactoDraft
+    {
+        public Guid? PersonaId { get; set; }
+        public Guid? EmpresaId { get; set; }
+        public string? Nombre { get; set; }
+        public string? Rol { get; set; }
+        public string? Telefono { get; set; }
+        public string? Email { get; set; }
+    }
 
     private sealed class Form
     {
@@ -545,6 +944,10 @@ else
         public int Dias { get; set; } = 30;
         public string? Observaciones { get; set; }
         public EstadoContrato Estado { get; set; } = EstadoContrato.Vigente;
+        public bool RenovacionAutomatica { get; set; }
+        public string? ServicioId { get; set; }
+        public string? ExpedienteId { get; set; }
+        public string? ProyectoId { get; set; }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -562,6 +965,23 @@ else
     {
         try { _contratos = await Auth().GetFromJsonAsync<List<ContratoServicioDto>>("/api/mi-copropiedad/contratos") ?? new(); }
         catch { _contratos = new(); }
+        try { _servicios = await Auth().GetFromJsonAsync<List<ServicioDto>>("/api/servicios") ?? new(); }
+        catch { _servicios = new(); }
+    }
+
+    // Carga perezosa de expedientes + proyectos para los desplegables del contrato.
+    private async Task CargarDropdownsAsync()
+    {
+        if (_dropdownsLoaded) return;
+        try { _expedientes = await Auth().GetFromJsonAsync<List<ExpedienteLite>>("/api/expedientes") ?? new(); }
+        catch { _expedientes = new(); }
+        try
+        {
+            var ps = await Auth().GetFromJsonAsync<List<ProyectoLite>>("/api/tareas?soloRaiz=true") ?? new();
+            _proyectos = ps.Where(p => p.EsProyecto).ToList();
+        }
+        catch { _proyectos = new(); }
+        _dropdownsLoaded = true;
     }
 
     // ===================== Servicios publicos (2.17) =====================
@@ -748,9 +1168,11 @@ else
         return m >= 1 && m <= 12 ? n[m - 1] : m.ToString();
     }
 
-    private void AbrirModal(ContratoServicioDto? c)
+    private async Task AbrirModal(ContratoServicioDto? c)
     {
         _modalError = null;
+        _contratoAdjuntos = new();
+        await CargarDropdownsAsync();
         if (c is null)
         {
             _editId = null;
@@ -765,8 +1187,14 @@ else
                 Inicio = c.FechaInicio.ToDateTime(TimeOnly.MinValue),
                 Fin = c.FechaFin?.ToDateTime(TimeOnly.MinValue),
                 Valor = c.ValorMensual, Dias = c.DiasAnticipacionAlerta, Observaciones = c.Observaciones,
-                Estado = c.Estado == EstadoContrato.Vencido ? EstadoContrato.Vigente : c.Estado
+                Estado = c.Estado == EstadoContrato.Vencido ? EstadoContrato.Vigente : c.Estado,
+                RenovacionAutomatica = c.RenovacionAutomatica,
+                ServicioId = c.ServicioId?.ToString(),
+                ExpedienteId = c.ExpedienteId?.ToString(),
+                ProyectoId = c.ProyectoTareaId?.ToString()
             };
+            try { _contratoAdjuntos = await Auth().GetFromJsonAsync<List<AdjuntoDto>>($"/api/servicios/contratos/{c.Id}/adjuntos") ?? new(); }
+            catch { _contratoAdjuntos = new(); }
         }
         _showModal = true;
     }
@@ -785,13 +1213,15 @@ else
             {
                 resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/contratos",
                     new CrearContratoServicioRequest(_f.Tipo, _f.Proveedor.Trim(), Limpio(_f.Nit), Limpio(_f.Contacto),
-                        inicio, fin, _f.Valor, Limpio(_f.Observaciones), _f.Dias <= 0 ? 30 : _f.Dias));
+                        inicio, fin, _f.Valor, Limpio(_f.Observaciones), _f.Dias <= 0 ? 30 : _f.Dias,
+                        _f.RenovacionAutomatica, ParseG(_f.ServicioId), ParseG(_f.ExpedienteId), ParseG(_f.ProyectoId)));
             }
             else
             {
                 resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/{_editId}",
                     new ActualizarContratoRequest(_f.Estado, _f.Dias <= 0 ? 30 : _f.Dias, _f.Tipo, _f.Proveedor.Trim(),
-                        Limpio(_f.Nit) ?? "", Limpio(_f.Contacto) ?? "", inicio, fin, _f.Valor, Limpio(_f.Observaciones) ?? ""));
+                        Limpio(_f.Nit) ?? "", Limpio(_f.Contacto) ?? "", inicio, fin, _f.Valor, Limpio(_f.Observaciones) ?? "",
+                        true, _f.RenovacionAutomatica, ParseG(_f.ServicioId), ParseG(_f.ExpedienteId), ParseG(_f.ProyectoId)));
             }
             if (!resp.IsSuccessStatusCode) { _modalError = await resp.Content.ReadAsStringAsync(); return; }
             _showModal = false;
@@ -846,6 +1276,416 @@ else
             _ => "<path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/>"
         };
         return new MarkupString($"<svg width='17' height='17' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'>{path}</svg>");
+    }
+
+    // ===================== Servicios: modal + CRUD =====================
+    private async Task AbrirServicioModal(ServicioDto? s)
+    {
+        _srvError = null; _tTarget = ""; _co = new(); _asociarContratoId = "";
+        if (s is null)
+        {
+            _srvEditId = null; _srvDetalle = null; _sf = new ServicioForm();
+        }
+        else
+        {
+            _srvEditId = s.Id;
+            _sf = new ServicioForm
+            {
+                Tipo = s.Tipo, Nombre = s.Nombre, Descripcion = s.Descripcion,
+                EjecutorPersonaId = s.EjecutorPersonaId, EjecutorEmpresaId = s.EjecutorEmpresaId, EjecutorNombre = s.EjecutorNombre,
+                CostoMensual = s.CostoMensual, CostoAnual = s.CostoAnual, Estado = s.Estado
+            };
+            await CargarServicioDetalleAsync(s.Id);
+        }
+        _showSrvModal = true;
+    }
+
+    private void CerrarServicioModal() { _showSrvModal = false; _tTarget = ""; }
+
+    private async Task CargarServicioDetalleAsync(Guid id)
+    {
+        try { _srvDetalle = await Auth().GetFromJsonAsync<ServicioDetalleDto>($"/api/servicios/{id}"); }
+        catch { _srvDetalle = null; }
+    }
+
+    private async Task GuardarServicioAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_sf.Nombre)) { _srvError = "El nombre del servicio es obligatorio."; return; }
+        _busy = true; _srvError = null;
+        try
+        {
+            if (_srvEditId is null)
+            {
+                var resp = await Auth().PostAsJsonAsync("/api/servicios",
+                    new CrearServicioRequest(_sf.Tipo, _sf.Nombre.Trim(), Limpio(_sf.Descripcion),
+                        _sf.EjecutorPersonaId, _sf.EjecutorEmpresaId, Limpio(_sf.EjecutorNombre), _sf.CostoMensual, _sf.CostoAnual));
+                if (!resp.IsSuccessStatusCode) { _srvError = await ReadErr(resp); return; }
+                var nuevo = await resp.Content.ReadFromJsonAsync<ServicioDto>();
+                await CargarAsync();
+                if (nuevo is not null) { _srvEditId = nuevo.Id; await CargarServicioDetalleAsync(nuevo.Id); }
+            }
+            else
+            {
+                var resp = await Auth().PutAsJsonAsync($"/api/servicios/{_srvEditId}",
+                    new ActualizarServicioRequest(_sf.Tipo, _sf.Nombre.Trim(), Limpio(_sf.Descripcion),
+                        _sf.EjecutorPersonaId, _sf.EjecutorEmpresaId, Limpio(_sf.EjecutorNombre), _sf.CostoMensual, _sf.CostoAnual, _sf.Estado));
+                if (!resp.IsSuccessStatusCode) { _srvError = await ReadErr(resp); return; }
+                await CargarAsync();
+                await CargarServicioDetalleAsync(_srvEditId.Value);
+            }
+        }
+        catch (Exception ex) { _srvError = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task EliminarServicioAsync(Guid id)
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", "Eliminar este servicio? Los contratos quedaran sin servicio asignado.")) return;
+        _busy = true;
+        try { await Auth().DeleteAsync($"/api/servicios/{id}"); await CargarAsync(); }
+        finally { _busy = false; }
+    }
+
+    // ----- Picker de tercero (Directorio) -----
+    private void AbrirPicker(string target)
+    {
+        _tTarget = target; _tQuery = ""; _tPersonas = new(); _tEmpresas = new();
+        _tCreating = false; _tNewKind = 0; _tNewDoc = _tNewNombres = _tNewApellidos = _tNewNit = _tNewRazon = "";
+    }
+
+    private async Task OnPickerQuery(ChangeEventArgs e)
+    {
+        _tQuery = e.Value?.ToString() ?? "";
+        await BuscarTerceros();
+    }
+
+    private async Task BuscarTerceros()
+    {
+        var q = _tQuery.Trim();
+        if (q.Length < 2) { _tPersonas = new(); _tEmpresas = new(); return; }
+        try { _tPersonas = await Auth().GetFromJsonAsync<List<PersonaResumenDto>>($"/api/directorio/personas?q={Uri.EscapeDataString(q)}") ?? new(); }
+        catch { _tPersonas = new(); }
+        try { _tEmpresas = await Auth().GetFromJsonAsync<List<EmpresaResumenDto>>($"/api/directorio/empresas?q={Uri.EscapeDataString(q)}") ?? new(); }
+        catch { _tEmpresas = new(); }
+    }
+
+    private void PickTercero(Guid? personaId, Guid? empresaId, string nombre)
+    {
+        if (_tTarget == "ejecutor")
+        {
+            _sf.EjecutorPersonaId = personaId; _sf.EjecutorEmpresaId = empresaId; _sf.EjecutorNombre = nombre;
+        }
+        else if (_tTarget == "contacto")
+        {
+            _co.PersonaId = personaId; _co.EmpresaId = empresaId; _co.Nombre = nombre;
+        }
+        _tTarget = "";
+    }
+
+    private async Task CrearTerceroYSeleccionarAsync()
+    {
+        _srvError = null;
+        try
+        {
+            if (_tNewKind == 0)
+            {
+                if (string.IsNullOrWhiteSpace(_tNewNombres) || string.IsNullOrWhiteSpace(_tNewDoc)) { _srvError = "Documento y nombres son obligatorios."; return; }
+                var resp = await Auth().PostAsJsonAsync("/api/directorio/personas",
+                    new CrearPersonaRequest(TipoDocumento.CC, _tNewDoc.Trim(), _tNewNombres.Trim(), _tNewApellidos.Trim(), null, null, null, null));
+                if (!resp.IsSuccessStatusCode) { _srvError = await ReadErr(resp); return; }
+                var p = await resp.Content.ReadFromJsonAsync<CreatedId>();
+                if (p is not null) PickTercero(p.Id, null, $"{_tNewNombres} {_tNewApellidos}".Trim());
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(_tNewRazon) || string.IsNullOrWhiteSpace(_tNewNit)) { _srvError = "NIT y razon social son obligatorios."; return; }
+                var resp = await Auth().PostAsJsonAsync("/api/directorio/empresas",
+                    new CrearEmpresaRequest(_tNewNit.Trim(), null, _tNewRazon.Trim(), null, null, null, null, null, null, null, null));
+                if (!resp.IsSuccessStatusCode) { _srvError = await ReadErr(resp); return; }
+                var em = await resp.Content.ReadFromJsonAsync<CreatedId>();
+                if (em is not null) PickTercero(null, em.Id, _tNewRazon.Trim());
+            }
+        }
+        catch (Exception ex) { _srvError = ex.Message; }
+    }
+
+    private void LimpiarEjecutor() { _sf.EjecutorPersonaId = null; _sf.EjecutorEmpresaId = null; _sf.EjecutorNombre = null; }
+    private void LimpiarContactoTercero() { _co.PersonaId = null; _co.EmpresaId = null; _co.Nombre = null; }
+
+    // ----- Contactos -----
+    private async Task AgregarContactoAsync()
+    {
+        if (_srvEditId is not { } sid) return;
+        if (string.IsNullOrWhiteSpace(_co.Nombre)) { _srvError = "Elige un tercero para el contacto."; return; }
+        _busy = true; _srvError = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/servicios/{sid}/contactos",
+                new AgregarServicioContactoRequest(_co.PersonaId, _co.EmpresaId, _co.Nombre!.Trim(), Limpio(_co.Rol), Limpio(_co.Telefono), Limpio(_co.Email)));
+            if (!resp.IsSuccessStatusCode) { _srvError = await ReadErr(resp); return; }
+            _co = new();
+            await CargarServicioDetalleAsync(sid);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task EliminarContactoAsync(Guid contactoId)
+    {
+        if (_srvEditId is not { } sid) return;
+        _busy = true;
+        try { await Auth().DeleteAsync($"/api/servicios/contactos/{contactoId}"); await CargarServicioDetalleAsync(sid); }
+        finally { _busy = false; }
+    }
+
+    // ----- Adjuntos -----
+    private async Task SubirAdjuntoServicioAsync(InputFileChangeEventArgs e)
+    {
+        if (_srvEditId is not { } sid) return;
+        var file = e.File; if (file is null) return;
+        _attachBusy = true; _srvError = null;
+        try
+        {
+            var b64 = await ToBase64(file);
+            var resp = await Auth().PostAsJsonAsync($"/api/servicios/{sid}/adjuntos",
+                new SubirAdjuntoRequest(file.Name, file.ContentType ?? "", b64));
+            if (!resp.IsSuccessStatusCode) { _srvError = await ReadErr(resp); return; }
+            await CargarServicioDetalleAsync(sid);
+            await CargarAsync();
+        }
+        catch (Exception ex) { _srvError = ex.Message; }
+        finally { _attachBusy = false; }
+    }
+
+    private async Task EliminarAdjuntoServicioAsync(Guid id)
+    {
+        if (_srvEditId is not { } sid) return;
+        _attachBusy = true;
+        try { await Auth().DeleteAsync($"/api/servicios/adjuntos/{id}"); await CargarServicioDetalleAsync(sid); }
+        finally { _attachBusy = false; }
+    }
+
+    private async Task SubirAdjuntoContratoAsync(InputFileChangeEventArgs e)
+    {
+        if (_editId is not { } cid) return;
+        var file = e.File; if (file is null) return;
+        _attachBusy = true; _modalError = null;
+        try
+        {
+            var b64 = await ToBase64(file);
+            var resp = await Auth().PostAsJsonAsync($"/api/servicios/contratos/{cid}/adjuntos",
+                new SubirAdjuntoRequest(file.Name, file.ContentType ?? "", b64));
+            if (!resp.IsSuccessStatusCode) { _modalError = await ReadErr(resp); return; }
+            _contratoAdjuntos = await Auth().GetFromJsonAsync<List<AdjuntoDto>>($"/api/servicios/contratos/{cid}/adjuntos") ?? _contratoAdjuntos;
+            await CargarAsync();
+        }
+        catch (Exception ex) { _modalError = ex.Message; }
+        finally { _attachBusy = false; }
+    }
+
+    private async Task EliminarAdjuntoContratoAsync(Guid id)
+    {
+        if (_editId is not { } cid) return;
+        _attachBusy = true;
+        try
+        {
+            await Auth().DeleteAsync($"/api/servicios/contratos/adjuntos/{id}");
+            _contratoAdjuntos = await Auth().GetFromJsonAsync<List<AdjuntoDto>>($"/api/servicios/contratos/{cid}/adjuntos") ?? new();
+            await CargarAsync();
+        }
+        finally { _attachBusy = false; }
+    }
+
+    // ----- Asociar contratos al servicio -----
+    private async Task AsociarContratoAsync()
+    {
+        if (_srvEditId is not { } sid) return;
+        if (!Guid.TryParse(_asociarContratoId, out var cid)) return;
+        _busy = true; _srvError = null;
+        try
+        {
+            var resp = await Auth().PostAsync($"/api/servicios/{sid}/contratos/{cid}", null);
+            if (!resp.IsSuccessStatusCode) { _srvError = await ReadErr(resp); return; }
+            _asociarContratoId = "";
+            await CargarAsync();
+            await CargarServicioDetalleAsync(sid);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task DesasociarContratoAsync(Guid contratoId)
+    {
+        if (_srvEditId is not { } sid) return;
+        _busy = true;
+        try
+        {
+            await Auth().DeleteAsync($"/api/servicios/contratos/{contratoId}/servicio");
+            await CargarAsync();
+            await CargarServicioDetalleAsync(sid);
+        }
+        finally { _busy = false; }
+    }
+
+    // ----- Alertas del servicio -----
+    private async Task AgregarAlertaServicioAsync()
+    {
+        if (_srvEditId is not { } sid) return;
+        if (string.IsNullOrWhiteSpace(_alTitulo)) return;
+        _busy = true; _srvError = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/servicios/{sid}/alertas",
+                new AgregarAlertaServicioRequest(_alTitulo.Trim(), string.IsNullOrWhiteSpace(_alDescripcion) ? null : _alDescripcion.Trim(), _alSeveridad));
+            if (!resp.IsSuccessStatusCode) { _srvError = await ReadErr(resp); return; }
+            _alTitulo = ""; _alDescripcion = ""; _alSeveridad = SeveridadAlerta.Advertencia;
+            await CargarServicioDetalleAsync(sid);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ResolverAlertaServicioAsync(Guid alertaId)
+    {
+        if (_srvEditId is not { } sid) return;
+        _busy = true;
+        try { await Auth().PutAsync($"/api/servicios/alertas/{alertaId}/resolver", null); await CargarServicioDetalleAsync(sid); }
+        finally { _busy = false; }
+    }
+
+    private static string SevCls(SeveridadAlerta s) => s switch
+    {
+        SeveridadAlerta.Critica => "danger",
+        SeveridadAlerta.Advertencia => "warn",
+        _ => "ok"
+    };
+
+    // ----- Helpers -----
+    private static Guid? ParseG(string? s) => Guid.TryParse(s, out var g) ? g : (Guid?)null;
+    private static string FmtBytes(long b) => b < 1024 ? $"{b} B" : b < 1024 * 1024 ? $"{b / 1024.0:0.#} KB" : $"{b / 1024.0 / 1024.0:0.#} MB";
+
+    private static async Task<string> ToBase64(IBrowserFile file)
+    {
+        using var ms = new MemoryStream();
+        await file.OpenReadStream(20L * 1024 * 1024).CopyToAsync(ms);
+        return Convert.ToBase64String(ms.ToArray());
+    }
+
+    private static async Task<string> ReadErr(HttpResponseMessage resp)
+    {
+        try { var e = await resp.Content.ReadFromJsonAsync<ErrResp>(); return e?.Error ?? resp.StatusCode.ToString(); }
+        catch { return resp.StatusCode.ToString(); }
+    }
+    private sealed record ErrResp(string? Error);
+    private sealed record CreatedId(Guid Id);
+
+    // Panel de busqueda/alta de tercero (compartido por ejecutor y contacto).
+    private RenderFragment PickerPanel() => @<div class="svc-picker">
+        <input class="srv-input" placeholder="Buscar por nombre, documento o NIT..." value="@_tQuery" @oninput="OnPickerQuery" />
+        @if (!_tCreating)
+        {
+            <div class="svc-picker-results">
+                @foreach (var p in _tPersonas)
+                {
+                    var pp = p; var nombre = (p.Nombres + " " + p.Apellidos).Trim();
+                    <button class="svc-picker-item" @onclick="() => PickTercero(pp.Id, null, nombre)"><i class="fi fi-rr-user"></i> @nombre <span class="svc-mini">@p.Documento</span></button>
+                }
+                @foreach (var em in _tEmpresas)
+                {
+                    var ee = em;
+                    <button class="svc-picker-item" @onclick="() => PickTercero(null, ee.Id, ee.RazonSocial)"><i class="fi fi-rr-building"></i> @em.RazonSocial <span class="svc-mini">NIT @em.Nit</span></button>
+                }
+                @if (_tQuery.Trim().Length >= 2 && _tPersonas.Count == 0 && _tEmpresas.Count == 0)
+                {
+                    <div class="svc-picker-empty">Sin resultados. Crea un tercero nuevo.</div>
+                }
+            </div>
+            <button class="svc-picker-create" @onclick="() => _tCreating = true"><i class="fi fi-rr-plus"></i> Crear nuevo tercero</button>
+        }
+        else
+        {
+            <div class="svc-picker-new">
+                <div class="svc-kind">
+                    <label><input type="radio" name="tkind" checked="@(_tNewKind == 0)" @onchange="() => _tNewKind = 0" /> Persona</label>
+                    <label><input type="radio" name="tkind" checked="@(_tNewKind == 1)" @onchange="() => _tNewKind = 1" /> Empresa</label>
+                </div>
+                @if (_tNewKind == 0)
+                {
+                    <input class="srv-input sm" @bind="_tNewDoc" placeholder="Documento *" />
+                    <input class="srv-input sm" @bind="_tNewNombres" placeholder="Nombres *" />
+                    <input class="srv-input sm" @bind="_tNewApellidos" placeholder="Apellidos" />
+                }
+                else
+                {
+                    <input class="srv-input sm" @bind="_tNewNit" placeholder="NIT *" />
+                    <input class="srv-input sm" @bind="_tNewRazon" placeholder="Razon social *" />
+                }
+                <div class="d-flex gap-2 mt-2">
+                    <button class="srv-btn-ghost sm" @onclick="() => _tCreating = false">Volver</button>
+                    <button class="srv-btn-primary sm" @onclick="CrearTerceroYSeleccionarAsync">Crear y seleccionar</button>
+                </div>
+            </div>
+        }
+    </div>;
+
+    // ===================== Programador de tareas (vencimiento de contrato) =====================
+    private bool _progDataLoaded;
+    private List<TableroOpcion> _tablerosProg = new();
+    private List<PersonaOpcion> _personasProg = new();
+
+    private sealed record TableroLite(Guid Id, string Nombre);
+
+    private async Task CargarProgramadorDataAsync()
+    {
+        if (_progDataLoaded) return;
+        try
+        {
+            var tbs = await Auth().GetFromJsonAsync<List<TableroLite>>("/api/tareas/tableros") ?? new();
+            _tablerosProg = tbs.Select(t => new TableroOpcion { Id = t.Id, Nombre = t.Nombre }).ToList();
+        }
+        catch { _tablerosProg = new(); }
+        try
+        {
+            var ps = await Auth().GetFromJsonAsync<List<PersonaResumenDto>>("/api/directorio/personas") ?? new();
+            _personasProg = ps.Select(p => new PersonaOpcion { Id = p.Id, Nombre = (p.Nombres + " " + p.Apellidos).Trim() })
+                .Where(p => !string.IsNullOrWhiteSpace(p.Nombre)).ToList();
+        }
+        catch { _personasProg = new(); }
+        _progDataLoaded = true;
+    }
+
+    private async Task AbrirProgramadorContrato()
+    {
+        if (_editId is not { } cid) return;
+        await CargarProgramadorDataAsync();
+
+        var dias = _f.Dias <= 0 ? 30 : _f.Dias;
+        DateOnly fechaEjec;
+        if (_f.Fin.HasValue) fechaEjec = DateOnly.FromDateTime(_f.Fin.Value).AddDays(-dias);
+        else fechaEjec = DateOnly.FromDateTime(DateTime.Today);
+        var prov = string.IsNullOrWhiteSpace(_f.Proveedor) ? "contrato" : _f.Proveedor.Trim();
+
+        _showModal = false; // cerrar el modal de contrato para que el programador quede al frente
+
+        var pars = new ModalParameters()
+            .Set("Tableros", _tablerosProg)
+            .Set("Personas", _personasProg)
+            .Set("PrefillTitulo", $"Renovar contrato: {prov}")
+            .Set("PrefillDescripcion", $"Vencimiento del contrato con {prov}. Revisar renovacion o nuevo proceso.")
+            .Set("PrefillFecha", (DateOnly?)fechaEjec)
+            .Set("PrefillPeriodicidad", PeriodicidadProgramacion.Unica)
+            .Set("ModuloOrigenCodigo", "contrato")
+            .Set("EntidadOrigenId", (Guid?)cid)
+            .Set("OrigenReferencia", prov);
+
+        var req = await Modals.OpenAsync<ProgramadorTareaModal, CrearProgramacionRequest>(pars, new ModalOptions { Width = "580px" });
+        if (req is null) return;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/api/programaciones", req);
+            if (resp.IsSuccessStatusCode)
+                await Js.InvokeVoidAsync("alert", "Tarea programada para el vencimiento del contrato.");
+            else
+                await Js.InvokeVoidAsync("alert", "No se pudo programar la tarea: " + await ReadErr(resp));
+        }
+        catch (Exception ex) { await Js.InvokeVoidAsync("alert", "Error programando la tarea: " + ex.Message); }
     }
 
     private HttpClient Auth()
