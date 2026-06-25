@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Propia.Application.Common;
 using Propia.Application.Integraciones;
+using Propia.Domain.Enums;
 using Propia.Infrastructure.Storage;
 
 namespace Propia.Api.Controllers;
@@ -140,8 +141,8 @@ public class AdminIntegracionesController : ControllerBase
     // -------------------- OCR / extraccion de documentos --------------------
 
     [HttpGet("ocr-config")]
-    public async Task<IActionResult> GetOcrConfig(CancellationToken ct)
-        => Ok(await _ocr.GetAsync(ct));
+    public async Task<IActionResult> GetOcrConfig([FromQuery] OcrProvider? provider, CancellationToken ct)
+        => Ok(await _ocr.GetAsync(provider, ct));
 
     [HttpPut("ocr-config")]
     public async Task<IActionResult> SaveOcrConfig([FromBody] SaveOcrProviderRequest req, CancellationToken ct)

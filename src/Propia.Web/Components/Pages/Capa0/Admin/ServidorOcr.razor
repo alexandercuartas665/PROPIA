@@ -32,14 +32,31 @@ else if (_p is not null)
                 <div class="card-body">
                     <div class="row g-3">
                         <div class="col-12">
-                            <label class="form-label">Endpoint</label>
-                            <input class="form-control" @bind="_p.Endpoint" placeholder="https://miorg-di.cognitiveservices.azure.com" />
+                            <label class="form-label">Proveedor de OCR</label>
+                            <select class="form-select" @onchange="CambiarProveedor" disabled="@_busy">
+                                @foreach (var p in OcrProviderCatalog.Todos)
+                                {
+                                    <option value="@((int)p)" selected="@(p == _provSel)">@OcrProviderCatalog.For(p).DisplayName</option>
+                                }
+                            </select>
+                            <div class="form-text">Solo un proveedor puede estar habilitado a la vez. Al habilitar uno se desactiva el otro.</div>
                         </div>
                         <div class="col-12">
-                            <label class="form-label">Modelo</label>
+                            <label class="form-label">Endpoint</label>
+                            <input class="form-control" @bind="_p.Endpoint" placeholder="@(_esVision ? "https://miorg-vision.cognitiveservices.azure.com" : "https://miorg-di.cognitiveservices.azure.com")" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">@(_esVision ? "Feature (Image Analysis)" : "Modelo")</label>
                             <input class="form-control" list="ocr-models" @bind="_p.ModelId" placeholder="@_p.DefaultModel" />
                             <datalist id="ocr-models">@foreach (var m in _p.SuggestedModels) { <option value="@m" /> }</datalist>
-                            <div class="form-text">Recibos: <code>prebuilt-invoice</code> o <code>prebuilt-receipt</code>. Texto plano: <code>prebuilt-read</code>.</div>
+                            @if (_esVision)
+                            {
+                                <div class="form-text">Computer Vision 4.0 usa la feature <code>read</code> (texto crudo del documento). Solo imagenes (JPG/PNG); no PDF.</div>
+                            }
+                            else
+                            {
+                                <div class="form-text">Recibos: <code>prebuilt-invoice</code> o <code>prebuilt-receipt</code>. Texto plano: <code>prebuilt-read</code>.</div>
+                            }
                         </div>
                         <div class="col-12">
                             <label class="form-label">API Key @(_p.HasApiKey ? "(guardada - dejar vacio para conservar)" : "")</label>
@@ -59,11 +76,23 @@ else if (_p is not null)
             <div class="card bg-light">
                 <div class="card-body small text-muted">
                     <strong class="text-dark">Como obtener las credenciales (Azure)</strong>
-                    <ol class="mt-2 mb-0 ps-3">
-                        <li>Crea un recurso <em>Document Intelligence</em> en el portal de Azure.</li>
-                        <li>En "Keys and Endpoint" copia el <em>Endpoint</em> y una <em>Key</em>.</li>
-                        <li>Pegalos aqui, deja el modelo en <code>prebuilt-invoice</code> y marca Habilitar.</li>
-                    </ol>
+                    @if (_esVision)
+                    {
+                        <ol class="mt-2 mb-0 ps-3">
+                            <li>Crea un recurso <em>Azure AI Vision (Computer Vision)</em> en el portal de Azure.</li>
+                            <li>En "Keys and Endpoint" copia el <em>Endpoint</em> y una <em>Key</em>.</li>
+                            <li>Pegalos aqui, deja la feature en <code>read</code> y marca Habilitar.</li>
+                        </ol>
+                        <p class="mt-2 mb-0">Devuelve el texto crudo del documento (no campos estructurados como total o fecha).</p>
+                    }
+                    else
+                    {
+                        <ol class="mt-2 mb-0 ps-3">
+                            <li>Crea un recurso <em>Document Intelligence</em> en el portal de Azure.</li>
+                            <li>En "Keys and Endpoint" copia el <em>Endpoint</em> y una <em>Key</em>.</li>
+                            <li>Pegalos aqui, deja el modelo en <code>prebuilt-invoice</code> y marca Habilitar.</li>
+                        </ol>
+                    }
                 </div>
             </div>
         </div>
@@ -77,6 +106,8 @@ else if (_p is not null)
     private string? _msg;
     private string _msgCls = "alert-info";
     private Row? _p;
+    private OcrProvider _provSel = OcrProvider.AzureDocumentIntelligence;
+    private bool _esVision => _provSel == OcrProvider.AzureComputerVision;
 
     private class Row
     {
@@ -106,21 +137,34 @@ else if (_p is not null)
         catch { /* prerender */ }
     }
 
-    private async Task CargarAsync()
+    private async Task CargarAsync(OcrProvider? provider = null)
     {
         _cargando = true;
         try
         {
-            var c = await Auth().GetFromJsonAsync<OcrProviderDto>("/admin/ocr-config");
+            var url = provider.HasValue ? $"/admin/ocr-config?provider={(int)provider.Value}" : "/admin/ocr-config";
+            var c = await Auth().GetFromJsonAsync<OcrProviderDto>(url);
             if (c is not null)
+            {
+                _provSel = c.Provider;
                 _p = new Row
                 {
                     Provider = c.Provider, DisplayName = c.DisplayName, Endpoint = c.Endpoint, ModelId = c.ModelId,
                     ApiKeyMasked = c.ApiKeyMasked, HasApiKey = c.HasApiKey, IsEnabled = c.IsEnabled,
                     DefaultModel = c.DefaultModel, SuggestedModels = c.SuggestedModels
                 };
+            }
         }
         finally { _cargando = false; }
+    }
+
+    private async Task CambiarProveedor(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var v))
+        {
+            _msg = null;
+            await CargarAsync((OcrProvider)v);
+        }
     }
 
     private async Task GuardarAsync()

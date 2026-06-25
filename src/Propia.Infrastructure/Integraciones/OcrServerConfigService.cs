@@ -24,11 +24,18 @@ public sealed class OcrServerConfigService : IOcrServerConfigService
         _secretProtector = secretProtector;
     }
 
-    public async Task<OcrProviderDto> GetAsync(CancellationToken ct = default)
+    public async Task<OcrProviderDto> GetAsync(OcrProvider? provider = null, CancellationToken ct = default)
     {
-        var config = await _db.OcrProviderConfigs.AsNoTracking()
-            .FirstOrDefaultAsync(c => c.Provider == DefaultProvider, ct);
-        return Map(DefaultProvider, config);
+        OcrProvider target;
+        if (provider.HasValue)
+            target = provider.Value;
+        else
+        {
+            var enabled = await _db.OcrProviderConfigs.AsNoTracking().FirstOrDefaultAsync(c => c.IsEnabled, ct);
+            target = enabled?.Provider ?? DefaultProvider;
+        }
+        var config = await _db.OcrProviderConfigs.AsNoTracking().FirstOrDefaultAsync(c => c.Provider == target, ct);
+        return Map(target, config);
     }
 
     public async Task<OcrProviderDto> SaveAsync(SaveOcrProviderRequest request, Guid actorId, string actorEmail, string? ip, CancellationToken ct = default)
@@ -53,6 +60,19 @@ public sealed class OcrServerConfigService : IOcrServerConfigService
         config.Endpoint = string.IsNullOrWhiteSpace(request.Endpoint) ? null : request.Endpoint.Trim().TrimEnd('/');
         config.ModelId = string.IsNullOrWhiteSpace(request.ModelId) ? null : request.ModelId.Trim();
         config.IsEnabled = request.IsEnabled && config.ApiKeyEncrypted is not null && config.Endpoint is not null;
+
+        // Solo un proveedor OCR activo a la vez: al habilitar uno se deshabilitan los demas.
+        if (config.IsEnabled)
+        {
+            var otros = await _db.OcrProviderConfigs
+                .Where(c => c.Provider != request.Provider && c.IsEnabled).ToListAsync(ct);
+            foreach (var o in otros)
+            {
+                o.IsEnabled = false;
+                o.UpdatedAt = DateTimeOffset.UtcNow;
+                o.UpdatedBy = actorId;
+            }
+        }
 
         _db.SuperAdminLogs.Add(new SuperAdminLog
         {

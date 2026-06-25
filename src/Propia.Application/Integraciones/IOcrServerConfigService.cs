@@ -26,7 +26,8 @@ public sealed record SaveOcrProviderRequest(
 /// </summary>
 public interface IOcrServerConfigService
 {
-    Task<OcrProviderDto> GetAsync(CancellationToken ct = default);
+    /// <summary>Devuelve la config de un proveedor. Si provider es null, devuelve el habilitado (o el default).</summary>
+    Task<OcrProviderDto> GetAsync(OcrProvider? provider = null, CancellationToken ct = default);
     Task<OcrProviderDto> SaveAsync(SaveOcrProviderRequest request, Guid actorId, string actorEmail, string? ip, CancellationToken ct = default);
 }
 
@@ -35,10 +36,19 @@ public static class OcrProviderCatalog
 {
     public sealed record Meta(string DisplayName, string DefaultModel, IReadOnlyList<string> Models);
 
+    /// <summary>Todos los proveedores soportados (para el selector de Super Admin).</summary>
+    public static readonly IReadOnlyList<OcrProvider> Todos = new[]
+    {
+        OcrProvider.AzureDocumentIntelligence,
+        OcrProvider.AzureComputerVision
+    };
+
     public static Meta For(OcrProvider p) => p switch
     {
         OcrProvider.AzureDocumentIntelligence => new("Azure AI Document Intelligence", "prebuilt-invoice",
             new[] { "prebuilt-invoice", "prebuilt-receipt", "prebuilt-document", "prebuilt-read" }),
+        OcrProvider.AzureComputerVision => new("Azure AI Vision (Computer Vision)", "read",
+            new[] { "read" }),
         _ => new(p.ToString(), "", Array.Empty<string>())
     };
 }
