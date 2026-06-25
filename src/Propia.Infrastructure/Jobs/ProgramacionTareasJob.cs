@@ -37,10 +37,12 @@ public class ProgramacionTareasJob : IBackgroundJob
         // Tenants es global (sin RLS); nos da la lista para iterar.
         var tenantIds = await _db.Tenants.AsNoTracking().Select(t => t.Id).ToListAsync(ct);
 
-        int tareasCreadas = 0, programacionesProcesadas = 0, desactivadas = 0, tenantsConTrabajo = 0;
+        int tareasCreadas = 0, programacionesProcesadas = 0, desactivadas = 0, tenantsConTrabajo = 0, errores = 0;
 
         foreach (var tid in tenantIds)
         {
+          try
+          {
             _tenant.SetTenant(tid);
             await _db.Database.CloseConnectionAsync(); // el interceptor aplica app.tenant_id al reabrir
 
@@ -107,6 +109,14 @@ public class ProgramacionTareasJob : IBackgroundJob
             }
 
             await _db.SaveChangesAsync(ct);
+          }
+          catch
+          {
+            // Aisla el fallo de un tenant para no abortar el resto + limpia el tracker
+            // (evita arrastrar cambios pendientes al siguiente tenant).
+            errores++;
+            _db.ChangeTracker.Clear();
+          }
         }
 
         _tenant.Clear();
@@ -117,6 +127,7 @@ public class ProgramacionTareasJob : IBackgroundJob
             programacionesProcesadas,
             tareasCreadas,
             desactivadas,
+            errores,
             fecha = hoy.ToString("yyyy-MM-dd")
         };
     }

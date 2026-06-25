@@ -164,6 +164,11 @@ public class ServiciosService : IServiciosService
         var contratos = await _db.ContratosServicio.Where(c => c.ServicioId == id).ToListAsync(ct);
         foreach (var c in contratos) c.ServicioId = null;
 
+        // Resolver alertas activas del servicio para que no queden huerfanas en el dashboard.
+        var alertas = await _db.AlertasCopropiedad
+            .Where(a => a.ModuloOrigenCodigo == ModuloServicio && a.EntidadId == id && a.Activa).ToListAsync(ct);
+        foreach (var al in alertas) { al.Activa = false; al.ResueltaAt = DateTimeOffset.UtcNow; }
+
         // Borrar blobs de adjuntos del servicio.
         foreach (var a in s.Adjuntos)
             await _blob.DeleteAsync(a.UrlStorage, ct);
