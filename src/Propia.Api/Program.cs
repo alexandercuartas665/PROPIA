@@ -184,7 +184,9 @@ builder.Services.AddMcpServer()
     })
     .WithTools<Propia.Api.Mcp.MiCopropiedadConsultaTools>(mcpJsonOptions)
     .WithTools<Propia.Api.Mcp.MiCopropiedadCreacionTools>(mcpJsonOptions)
-    .WithTools<Propia.Api.Mcp.MiCopropiedadEdicionTools>(mcpJsonOptions);
+    .WithTools<Propia.Api.Mcp.MiCopropiedadEdicionTools>(mcpJsonOptions)
+    .WithTools<Propia.Api.Mcp.ServiciosConsultaTools>(mcpJsonOptions)
+    .WithTools<Propia.Api.Mcp.ServiciosCreacionTools>(mcpJsonOptions);
 
 var app = builder.Build();
 
@@ -198,6 +200,7 @@ if (app.Environment.IsDevelopment())
 {
     await SuperAdminSeeder.EnsureDevFounderAsync(app.Services);
     await DemoSeeder.EnsureDemoDataAsync(app.Services);
+    await AgenteDocumentalSeeder.EnsureAsync(app.Services);
     app.MapOpenApi();
     app.UseHttpsRedirection();  // Local dev usa cert self-signed en puerto HTTPS
 

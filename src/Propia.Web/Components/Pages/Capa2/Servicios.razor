@@ -615,6 +615,31 @@ else
                     <InputFile OnChange="SubirReciboOcr" accept=".pdf,image/*" disabled="@_ocrBusy" />
                 </label>
                 @if (!string.IsNullOrEmpty(_ocrMsg)) { <div class="sp-ocr-msg @_ocrMsgCls">@_ocrMsg</div> }
+                <label class="sp-ocr-up" style="margin-top:8px;border-style:dashed;">
+                    <i class="fi fi-rr-brain"></i>
+                    <span>@(_agenteBusy ? "Analizando con el Agente Documental..." : "Analizar con el Agente Documental (IA)")</span>
+                    <InputFile OnChange="AnalizarReciboAgente" accept=".pdf,image/*" disabled="@_agenteBusy" />
+                </label>
+                @if (!string.IsNullOrEmpty(_agenteAnalisis))
+                {
+                    <div style="margin-top:10px;border:1px solid var(--border,#e3e6ee);border-radius:10px;padding:12px 14px;background:var(--surface-2,#f7f8fc);">
+                        <div style="font-weight:600;display:flex;align-items:center;gap:6px;margin-bottom:6px;"><i class="fi fi-rr-brain"></i> Agente Documental</div>
+                        <div style="white-space:pre-wrap;font-size:.9rem;line-height:1.45;">@_agenteAnalisis</div>
+                        @if (_agenteConv is not null && !_agenteConfirmado)
+                        {
+                            <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
+                                <button class="srv-btn-primary" @onclick="ConfirmarAgenteAsync" disabled="@_agenteBusy">
+                                    <i class="fi fi-rr-check-circle"></i> @(_agenteBusy ? "Registrando..." : "Confirmar y registrar")
+                                </button>
+                                <span style="font-size:.78rem;opacity:.65;">El agente persistira lo propuesto (dry-run=false).</span>
+                            </div>
+                        }
+                        else if (_agenteConfirmado)
+                        {
+                            <div style="font-size:.82rem;color:var(--success,#1a7f37);margin-top:8px;"><i class="fi fi-rr-check"></i> Registrado por el agente. Revisa el historial actualizado.</div>
+                        }
+                    </div>
+                }
             </div>
             <div class="srv-grid">
                 <div><label class="srv-lbl">Anio</label><input class="srv-input" type="number" @bind="_fr.Anio" /></div>
@@ -1096,17 +1121,80 @@ else
             var r = await resp.Content.ReadFromJsonAsync<OcrResp>();
             if (r is not null)
             {
-                if (r.ValorSugerido is { } val && val > 0) _fr.Valor = val;
-                if (!string.IsNullOrEmpty(r.FechaSugerida) && DateTime.TryParse(r.FechaSugerida, out var d)) { _fr.Anio = d.Year; _fr.Mes = d.Month; }
-                _ocrMsg = "Datos extraidos. Revisa y confirma el registro."; _ocrMsgCls = "ok";
+                var algo = false;
+                if (r.ValorSugerido is { } val && val > 0) { _fr.Valor = val; algo = true; }
+                if (!string.IsNullOrEmpty(r.FechaSugerida) && DateTime.TryParse(r.FechaSugerida, out var d)) { _fr.Anio = d.Year; _fr.Mes = d.Month; algo = true; }
+                _ocrMsg = algo
+                    ? "Datos extraidos. Revisa y confirma el registro."
+                    : "Recibo leido, pero el OCR no detecto valor/fecha. Usa 'Analizar con el Agente Documental' o ingresa los datos a mano.";
+                _ocrMsgCls = algo ? "ok" : "err";
             }
         }
         catch (Exception ex) { _ocrMsg = "Error leyendo el recibo: " + ex.Message; _ocrMsgCls = "err"; }
         finally { _ocrBusy = false; }
     }
 
+    // ---- Agente Documental: OCR + IA que clasifica y propone el registro via MCP ----
+    private bool _agenteBusy;
+    private string? _agenteAnalisis;
+    private bool _agenteConfirmado;
+    private List<TurnoDto>? _agenteConv;
+
+    private async Task AnalizarReciboAgente(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null) return;
+        _agenteBusy = true; _agenteAnalisis = null; _agenteConv = null; _agenteConfirmado = false;
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var fileContent = new StreamContent(file.OpenReadStream(15 * 1024 * 1024));
+            fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType);
+            content.Add(fileContent, "file", file.Name);
+            var resp = await Auth().PostAsync("/api/ocr/analizar", content);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var err = await resp.Content.ReadFromJsonAsync<OcrError>();
+                _agenteAnalisis = "No se pudo analizar: " + (err?.Error ?? resp.StatusCode.ToString());
+                return;
+            }
+            var r = await resp.Content.ReadFromJsonAsync<AnalisisResp>();
+            _agenteAnalisis = string.IsNullOrWhiteSpace(r?.Analisis) ? "(El agente no devolvio analisis.)" : r!.Analisis;
+            _agenteConv = r?.Conversacion;
+        }
+        catch (Exception ex) { _agenteAnalisis = "Error analizando con el agente: " + ex.Message; }
+        finally { _agenteBusy = false; }
+    }
+
+    /// <summary>Confirma la propuesta: el agente ejecuta las tools MCP con dryRun=false y se refresca la lista.</summary>
+    private async Task ConfirmarAgenteAsync()
+    {
+        if (_agenteConv is null) return;
+        _agenteBusy = true;
+        try
+        {
+            var body = new { conversacion = _agenteConv, mensaje = (string?)null };
+            var resp = await Auth().PostAsJsonAsync("/api/ocr/analizar/continuar", body);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var err = await resp.Content.ReadFromJsonAsync<OcrError>();
+                _agenteAnalisis += "\n\n[Error al confirmar: " + (err?.Error ?? resp.StatusCode.ToString()) + "]";
+                return;
+            }
+            var r = await resp.Content.ReadFromJsonAsync<AnalisisResp>();
+            _agenteAnalisis = string.IsNullOrWhiteSpace(r?.Analisis) ? _agenteAnalisis : r!.Analisis;
+            _agenteConfirmado = true;
+            await IrPublicos(); // refrescar cuentas + detalle con lo recien registrado
+        }
+        catch (Exception ex) { _agenteAnalisis += "\n\n[Error al confirmar: " + ex.Message + "]"; }
+        finally { _agenteBusy = false; }
+    }
+
     private sealed record OcrResp(bool Ok, decimal? ValorSugerido, string? FechaSugerida);
     private sealed record OcrError(string? Error);
+    private sealed record TurnoDto(string Role, string Text);
+    private sealed record AnalisisResp(bool Ok, string? Analisis, string? OcrTexto, string? ProveedorOcr, List<TurnoDto>? Conversacion);
     private async Task GuardarReciboAsync()
     {
         if (_spSel is not { } cid) return;

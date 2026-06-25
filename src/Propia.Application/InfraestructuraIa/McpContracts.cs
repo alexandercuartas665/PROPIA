@@ -24,7 +24,7 @@ public static class McpConnectionCatalog
         new McpConnectionInfo(
             Copropiedades,
             "MCP Copropiedades",
-            "Consulta y gestion de la ficha de la copropiedad activa (unidades, contratos, zonas, equipos, finanzas, bitacora).")
+            "Consulta y gestion de la ficha de la copropiedad activa (unidades, contratos, zonas, equipos, finanzas, bitacora) y del modulo de Servicios: servicios contratados, polizas y servicios publicos (registrar consumo de recibos, crear cuentas, alertas).")
     };
 
     public static McpConnectionInfo? Find(string code) =>
