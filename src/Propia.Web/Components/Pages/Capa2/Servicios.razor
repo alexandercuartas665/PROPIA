@@ -9,6 +9,7 @@
 @using Propia.Web.Components.Shared.Modals
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
+@inject NavigationManager Nav
 @inject IModalService Modals
 
 <PageTitle>Servicios y contratos - PROPIA</PageTitle>
@@ -986,9 +987,11 @@ else
 
     private async Task CargarAsync()
     {
-        try { _contratos = await Auth().GetFromJsonAsync<List<ContratoServicioDto>>("/api/mi-copropiedad/contratos") ?? new(); }
+        try { _contratos = await GetAuthAsync<List<ContratoServicioDto>>("/api/mi-copropiedad/contratos") ?? new(); }
+        catch (SesionRedirigidaException) { return; }
         catch { _contratos = new(); }
-        try { _servicios = await Auth().GetFromJsonAsync<List<ServicioDto>>("/api/servicios") ?? new(); }
+        try { _servicios = await GetAuthAsync<List<ServicioDto>>("/api/servicios") ?? new(); }
+        catch (SesionRedirigidaException) { return; }
         catch { _servicios = new(); }
     }
 
@@ -996,13 +999,15 @@ else
     private async Task CargarDropdownsAsync()
     {
         if (_dropdownsLoaded) return;
-        try { _expedientes = await Auth().GetFromJsonAsync<List<ExpedienteLite>>("/api/expedientes") ?? new(); }
+        try { _expedientes = await GetAuthAsync<List<ExpedienteLite>>("/api/expedientes") ?? new(); }
+        catch (SesionRedirigidaException) { return; }
         catch { _expedientes = new(); }
         try
         {
-            var ps = await Auth().GetFromJsonAsync<List<ProyectoLite>>("/api/tareas?soloRaiz=true") ?? new();
+            var ps = await GetAuthAsync<List<ProyectoLite>>("/api/tareas?soloRaiz=true") ?? new();
             _proyectos = ps.Where(p => p.EsProyecto).ToList();
         }
+        catch (SesionRedirigidaException) { return; }
         catch { _proyectos = new(); }
         _dropdownsLoaded = true;
     }
@@ -1057,20 +1062,22 @@ else
     {
         try
         {
-            _spResumen = await Auth().GetFromJsonAsync<ServiciosPublicosResumenDto>("/api/servicios-publicos/resumen");
-            _spCuentas = await Auth().GetFromJsonAsync<List<CuentaServicioDto>>("/api/servicios-publicos/cuentas") ?? new();
+            _spResumen = await GetAuthAsync<ServiciosPublicosResumenDto>("/api/servicios-publicos/resumen");
+            _spCuentas = await GetAuthAsync<List<CuentaServicioDto>>("/api/servicios-publicos/cuentas") ?? new();
             _spLoaded = true;
             if (_spCuentas.Count > 0 && _spSel is null) await SeleccionarCuentaAsync(_spCuentas[0].Id);
             else if (_spSel is { } id && _spCuentas.Any(c => c.Id == id)) await SeleccionarCuentaAsync(id);
             else { _spSel = null; _spDetalle = null; }
         }
+        catch (SesionRedirigidaException) { /* sesion expirada: redirigiendo a /login */ }
         catch { _spCuentas = new(); }
     }
 
     private async Task SeleccionarCuentaAsync(Guid id)
     {
         _spSel = id;
-        try { _spDetalle = await Auth().GetFromJsonAsync<CuentaServicioDetalleDto>($"/api/servicios-publicos/cuentas/{id}"); }
+        try { _spDetalle = await GetAuthAsync<CuentaServicioDetalleDto>($"/api/servicios-publicos/cuentas/{id}"); }
+        catch (SesionRedirigidaException) { }
         catch { _spDetalle = null; }
     }
 
@@ -1779,5 +1786,24 @@ else
         var http = HttpFactory.CreateClient("PropiaApi");
         http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
         return http;
+    }
+
+    // GET con manejo centralizado de 401: si la sesion expiro, intenta refresh sliding (y reintenta)
+    // o redirige a /login en vez de tragarse el error y mostrar el modulo vacio. Lanza
+    // SesionRedirigidaException cuando ya se esta redirigiendo, para que el llamador no siga.
+    private sealed class SesionRedirigidaException : Exception { }
+
+    private async Task<T?> GetAuthAsync<T>(string url)
+    {
+        var resp = await Auth().GetAsync(url);
+        if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            var nuevo = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+            if (string.IsNullOrEmpty(nuevo)) throw new SesionRedirigidaException(); // redirigiendo a /login
+            _jwt = nuevo;
+            resp = await Auth().GetAsync(url);
+        }
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<T>();
     }
 }
