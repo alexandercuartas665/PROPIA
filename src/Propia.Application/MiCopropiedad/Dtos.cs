@@ -107,6 +107,15 @@ public record CrearUnidadMascotaRequest(string Nombre, TipoMascota Tipo, string?
 public record UnidadEmpleadaDto(Guid Id, string Nombre, string? Documento, string? Celular, string? Horario);
 public record CrearUnidadEmpleadaRequest(string Nombre, string? Documento, string? Celular, string? Horario);
 
+// ----- Prototipo v3 Oleada 2 -----
+// Historico de titularidad (propietarios) de la unidad. Actual = Hasta es null.
+public record UnidadTitularidadDto(Guid Id, string Nombre, string? Rol, DateOnly Desde, DateOnly? Hasta, bool Actual);
+public record CrearUnidadTitularidadRequest(string Nombre, string? Rol, DateOnly Desde, DateOnly? Hasta);
+
+// Campos dinamicos (EAV) por persona vinculada a la unidad.
+public record UnidadPersonaCampoDto(Guid Id, string Label, string? Valor);
+public record CrearUnidadPersonaCampoRequest(string Label, string? Valor);
+
 /// <summary>
 /// Cuota consolidada: coeficiente y cuota total de una unidad principal sumando
 /// sus unidades asociadas con IncluyeEnFacturacion=true (RN-09).

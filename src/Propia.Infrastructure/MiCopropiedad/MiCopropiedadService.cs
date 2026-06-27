@@ -626,6 +626,82 @@ public class MiCopropiedadService : IMiCopropiedadService
         return true;
     }
 
+    // -------- Oleada 2: Historico de titularidad (propietarios) --------
+    public async Task<IReadOnlyList<UnidadTitularidadDto>> ListTitularidadUnidadAsync(Guid unidadId, CancellationToken ct)
+        => await _db.UnidadTitularidades.AsNoTracking()
+            .Where(t => t.UnidadId == unidadId)
+            .OrderByDescending(t => t.Desde)
+            .Select(t => new UnidadTitularidadDto(t.Id, t.Nombre, t.Rol, t.Desde, t.Hasta, t.Hasta == null))
+            .ToListAsync(ct);
+
+    public async Task<UnidadTitularidadDto?> AgregarTitularidadUnidadAsync(Guid unidadId, CrearUnidadTitularidadRequest req, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) return null;
+        if (!await _db.UnidadesPrivadas.AnyAsync(u => u.Id == unidadId, ct)) return null;
+        var nombre = (req.Nombre ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(nombre)) throw new InvalidOperationException("El nombre del titular es obligatorio.");
+        if (nombre.Length > 160) nombre = nombre[..160];
+        if (req.Hasta is { } h && h < req.Desde) throw new InvalidOperationException("La fecha 'hasta' no puede ser anterior a 'desde'.");
+        var e = new UnidadTitularidad
+        {
+            TenantId = tid,
+            UnidadId = unidadId,
+            Nombre = nombre,
+            Rol = string.IsNullOrWhiteSpace(req.Rol) ? null : req.Rol.Trim(),
+            Desde = req.Desde,
+            Hasta = req.Hasta
+        };
+        _db.UnidadTitularidades.Add(e);
+        await _db.SaveChangesAsync(ct);
+        await RegistrarBitacoraAsync("Unidad", $"Titularidad historica '{nombre}' agregada a la unidad.", ct);
+        return new UnidadTitularidadDto(e.Id, e.Nombre, e.Rol, e.Desde, e.Hasta, e.Hasta == null);
+    }
+
+    public async Task<bool> EliminarTitularidadUnidadAsync(Guid titularidadId, CancellationToken ct)
+    {
+        var e = await _db.UnidadTitularidades.FirstOrDefaultAsync(x => x.Id == titularidadId, ct);
+        if (e is null) return false;
+        _db.UnidadTitularidades.Remove(e);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    // -------- Oleada 2: Campos dinamicos por persona vinculada --------
+    public async Task<IReadOnlyList<UnidadPersonaCampoDto>> ListCamposPersonaAsync(Guid unidadPersonaId, CancellationToken ct)
+        => await _db.UnidadPersonaCampos.AsNoTracking()
+            .Where(c => c.UnidadPersonaId == unidadPersonaId)
+            .OrderBy(c => c.Label)
+            .Select(c => new UnidadPersonaCampoDto(c.Id, c.Label, c.Valor))
+            .ToListAsync(ct);
+
+    public async Task<UnidadPersonaCampoDto?> AgregarCampoPersonaAsync(Guid unidadPersonaId, CrearUnidadPersonaCampoRequest req, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) return null;
+        if (!await _db.UnidadPersonas.AnyAsync(p => p.Id == unidadPersonaId, ct)) return null;
+        var label = (req.Label ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(label)) throw new InvalidOperationException("El nombre del campo es obligatorio.");
+        if (label.Length > 80) label = label[..80];
+        var e = new UnidadPersonaCampo
+        {
+            TenantId = tid,
+            UnidadPersonaId = unidadPersonaId,
+            Label = label,
+            Valor = string.IsNullOrWhiteSpace(req.Valor) ? null : req.Valor.Trim()
+        };
+        _db.UnidadPersonaCampos.Add(e);
+        await _db.SaveChangesAsync(ct);
+        return new UnidadPersonaCampoDto(e.Id, e.Label, e.Valor);
+    }
+
+    public async Task<bool> EliminarCampoPersonaAsync(Guid campoId, CancellationToken ct)
+    {
+        var e = await _db.UnidadPersonaCampos.FirstOrDefaultAsync(x => x.Id == campoId, ct);
+        if (e is null) return false;
+        _db.UnidadPersonaCampos.Remove(e);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
     // ----------------------------- Rebalanceo de coeficientes (Ley 675 art. 26: suma = 100) -----------------------------
 
     public async Task<RebalanceoCoeficientesDto> RebalancearCoeficientesAsync(CancellationToken ct)

@@ -197,3 +197,40 @@ public class UnidadEmpleada : TenantEntity
     /// <summary>Dias / horario de trabajo (texto libre, ej. "Lun-Vie 8am-5pm").</summary>
     public string? Horario { get; set; }
 }
+
+/// <summary>
+/// Registro del historico de titularidad (propietarios) de una unidad: linea de tiempo
+/// de quien fue propietario y en que periodo. Prototipo v3, tab "Historico de propietarios".
+/// El registro con Hasta == null es el ACTUAL. Es TenantEntity - aislada por tenant_id.
+/// </summary>
+public class UnidadTitularidad : TenantEntity
+{
+    public Guid UnidadId { get; set; }
+    public UnidadPrivada? Unidad { get; set; }
+
+    /// <summary>Nombre del titular (texto libre: titulares historicos pueden no estar en el sistema).</summary>
+    public string Nombre { get; set; } = string.Empty;
+
+    /// <summary>Rol del titular en el periodo (ej. Propietario, Arrendatario). Texto libre.</summary>
+    public string? Rol { get; set; }
+
+    /// <summary>Inicio del periodo de titularidad.</summary>
+    public DateOnly Desde { get; set; }
+
+    /// <summary>Fin del periodo. null = titular actual.</summary>
+    public DateOnly? Hasta { get; set; }
+}
+
+/// <summary>
+/// Campo dinamico (EAV) de una persona vinculada a una unidad: cada contacto puede tener sus
+/// propios pares label/valor. Prototipo v3, "+ Agregar campo dinamico" por contacto.
+/// Distinto del EAV por-unidad (UnidadCampoDefinicion/Valor). Es TenantEntity - aislada por tenant_id.
+/// </summary>
+public class UnidadPersonaCampo : TenantEntity
+{
+    public Guid UnidadPersonaId { get; set; }
+    public UnidadPersona? UnidadPersona { get; set; }
+
+    public string Label { get; set; } = string.Empty;
+    public string? Valor { get; set; }
+}

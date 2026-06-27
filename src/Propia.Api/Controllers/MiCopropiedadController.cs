@@ -242,6 +242,36 @@ public class MiCopropiedadController : ControllerBase
     public async Task<IActionResult> EliminarEmpleadaUnidad(Guid empleadaId, CancellationToken ct)
         => await _svc.EliminarEmpleadaUnidadAsync(empleadaId, ct) ? NoContent() : NotFound();
 
+    // ---------- Oleada 2: historico de titularidad (propietarios) ----------
+    [HttpGet("unidades/{id:guid}/titularidad")]
+    public async Task<IActionResult> ListTitularidadUnidad(Guid id, CancellationToken ct) => Ok(await _svc.ListTitularidadUnidadAsync(id, ct));
+
+    [HttpPost("unidades/{id:guid}/titularidad")]
+    public async Task<IActionResult> AgregarTitularidadUnidad(Guid id, [FromBody] CrearUnidadTitularidadRequest req, CancellationToken ct)
+    {
+        try { var dto = await _svc.AgregarTitularidadUnidadAsync(id, req, ct); return dto is null ? NotFound() : Created("", dto); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpDelete("unidades-titularidad/{titularidadId:guid}")]
+    public async Task<IActionResult> EliminarTitularidadUnidad(Guid titularidadId, CancellationToken ct)
+        => await _svc.EliminarTitularidadUnidadAsync(titularidadId, ct) ? NoContent() : NotFound();
+
+    // ---------- Oleada 2: campos dinamicos por persona vinculada ----------
+    [HttpGet("unidades-personas/{id:guid}/campos")]
+    public async Task<IActionResult> ListCamposPersona(Guid id, CancellationToken ct) => Ok(await _svc.ListCamposPersonaAsync(id, ct));
+
+    [HttpPost("unidades-personas/{id:guid}/campos")]
+    public async Task<IActionResult> AgregarCampoPersona(Guid id, [FromBody] CrearUnidadPersonaCampoRequest req, CancellationToken ct)
+    {
+        try { var dto = await _svc.AgregarCampoPersonaAsync(id, req, ct); return dto is null ? NotFound() : Created("", dto); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpDelete("unidades-personas-campos/{campoId:guid}")]
+    public async Task<IActionResult> EliminarCampoPersona(Guid campoId, CancellationToken ct)
+        => await _svc.EliminarCampoPersonaAsync(campoId, ct) ? NoContent() : NotFound();
+
     [HttpGet("unidades/{id:guid}/cuota-consolidada")]
     public async Task<IActionResult> GetCuotaConsolidada(Guid id, CancellationToken ct)
     {

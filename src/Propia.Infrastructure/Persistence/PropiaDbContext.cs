@@ -64,6 +64,8 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<UnidadArriendo> UnidadArriendos => Set<UnidadArriendo>();
     public DbSet<UnidadMascota> UnidadMascotas => Set<UnidadMascota>();
     public DbSet<UnidadEmpleada> UnidadEmpleadas => Set<UnidadEmpleada>();
+    public DbSet<UnidadTitularidad> UnidadTitularidades => Set<UnidadTitularidad>();
+    public DbSet<UnidadPersonaCampo> UnidadPersonaCampos => Set<UnidadPersonaCampo>();
     public DbSet<BitacoraMiCopropiedad> BitacoraMiCopropiedad => Set<BitacoraMiCopropiedad>();
     public DbSet<ZonaComun> ZonasComunes => Set<ZonaComun>();
     public DbSet<EquipoActivo> EquiposActivos => Set<EquipoActivo>();
@@ -518,6 +520,27 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasOne(x => x.Unidad).WithMany().HasForeignKey(x => x.UnidadId).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => x.UnidadId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // Prototipo v3 Oleada 2 - historico de titularidad + campos dinamicos por persona
+        modelBuilder.Entity<UnidadTitularidad>(b =>
+        {
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(160);
+            b.Property(x => x.Rol).HasMaxLength(40);
+            b.HasOne(x => x.Unidad).WithMany().HasForeignKey(x => x.UnidadId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.UnidadId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<UnidadPersonaCampo>(b =>
+        {
+            b.Property(x => x.Label).IsRequired().HasMaxLength(80);
+            b.Property(x => x.Valor).HasMaxLength(400);
+            b.HasOne(x => x.UnidadPersona).WithMany().HasForeignKey(x => x.UnidadPersonaId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.UnidadPersonaId);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

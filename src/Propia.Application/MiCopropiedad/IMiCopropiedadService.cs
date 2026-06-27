@@ -68,6 +68,16 @@ public interface IMiCopropiedadService
     Task<UnidadEmpleadaDto?> AgregarEmpleadaUnidadAsync(Guid unidadId, CrearUnidadEmpleadaRequest req, CancellationToken ct);
     Task<bool> EliminarEmpleadaUnidadAsync(Guid empleadaId, CancellationToken ct);
 
+    // Oleada 2 - Historico de titularidad (propietarios)
+    Task<IReadOnlyList<UnidadTitularidadDto>> ListTitularidadUnidadAsync(Guid unidadId, CancellationToken ct);
+    Task<UnidadTitularidadDto?> AgregarTitularidadUnidadAsync(Guid unidadId, CrearUnidadTitularidadRequest req, CancellationToken ct);
+    Task<bool> EliminarTitularidadUnidadAsync(Guid titularidadId, CancellationToken ct);
+
+    // Oleada 2 - Campos dinamicos por persona vinculada
+    Task<IReadOnlyList<UnidadPersonaCampoDto>> ListCamposPersonaAsync(Guid unidadPersonaId, CancellationToken ct);
+    Task<UnidadPersonaCampoDto?> AgregarCampoPersonaAsync(Guid unidadPersonaId, CrearUnidadPersonaCampoRequest req, CancellationToken ct);
+    Task<bool> EliminarCampoPersonaAsync(Guid campoId, CancellationToken ct);
+
     // Cuota consolidada de una unidad (principal + asociadas con incluyeEnFacturacion=true)
     Task<CuotaConsolidadaDto?> GetCuotaConsolidadaAsync(Guid unidadId, CancellationToken ct);
 
