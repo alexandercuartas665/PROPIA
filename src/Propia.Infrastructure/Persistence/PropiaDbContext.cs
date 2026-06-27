@@ -60,6 +60,10 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<UnidadCampoDefinicion> UnidadCamposDefiniciones => Set<UnidadCampoDefinicion>();
     public DbSet<UnidadCampoValor> UnidadCamposValores => Set<UnidadCampoValor>();
     public DbSet<UnidadDocumento> UnidadDocumentos => Set<UnidadDocumento>();
+    public DbSet<UnidadPlaca> UnidadPlacas => Set<UnidadPlaca>();
+    public DbSet<UnidadArriendo> UnidadArriendos => Set<UnidadArriendo>();
+    public DbSet<UnidadMascota> UnidadMascotas => Set<UnidadMascota>();
+    public DbSet<UnidadEmpleada> UnidadEmpleadas => Set<UnidadEmpleada>();
     public DbSet<BitacoraMiCopropiedad> BitacoraMiCopropiedad => Set<BitacoraMiCopropiedad>();
     public DbSet<ZonaComun> ZonasComunes => Set<ZonaComun>();
     public DbSet<EquipoActivo> EquiposActivos => Set<EquipoActivo>();
@@ -414,6 +418,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.MatriculaInmobiliaria).HasMaxLength(50);
             b.Property(x => x.CoeficientePropiedad).HasPrecision(7, 4);
             b.Property(x => x.AreaM2).HasPrecision(10, 2);
+            b.Property(x => x.CuotaMensual).HasPrecision(14, 2);
             b.HasOne(x => x.Torre).WithMany().HasForeignKey(x => x.TorreId).OnDelete(DeleteBehavior.SetNull);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.TenantId, x.Numero }).IsUnique();
@@ -467,6 +472,49 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
         {
             b.Property(x => x.Nombre).IsRequired().HasMaxLength(255);
             b.Property(x => x.Url).IsRequired();
+            b.HasOne(x => x.Unidad).WithMany().HasForeignKey(x => x.UnidadId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.UnidadId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // Prototipo v3 - bloques nuevos de la ficha de inmueble (placas, arriendos, mascotas, empleadas)
+        modelBuilder.Entity<UnidadPlaca>(b =>
+        {
+            b.Property(x => x.Placa).IsRequired().HasMaxLength(15);
+            b.HasOne(x => x.Unidad).WithMany().HasForeignKey(x => x.UnidadId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.UnidadId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<UnidadArriendo>(b =>
+        {
+            b.Property(x => x.Concepto).IsRequired().HasMaxLength(120);
+            b.Property(x => x.Referencia).HasMaxLength(120);
+            b.Property(x => x.ValorMensual).HasPrecision(14, 2);
+            b.HasOne(x => x.Unidad).WithMany().HasForeignKey(x => x.UnidadId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.UnidadId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<UnidadMascota>(b =>
+        {
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(80);
+            b.Property(x => x.Raza).HasMaxLength(80);
+            b.HasOne(x => x.Unidad).WithMany().HasForeignKey(x => x.UnidadId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.UnidadId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<UnidadEmpleada>(b =>
+        {
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(120);
+            b.Property(x => x.Documento).HasMaxLength(40);
+            b.Property(x => x.Celular).HasMaxLength(40);
+            b.Property(x => x.Horario).HasMaxLength(120);
             b.HasOne(x => x.Unidad).WithMany().HasForeignKey(x => x.UnidadId).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => x.UnidadId);

@@ -40,6 +40,10 @@ public class UnidadPrivada : TenantEntity
 
     /// <summary>Si la unidad paga cuota de administracion (un deposito/util puede no pagar).</summary>
     public bool PagaAdministracion { get; set; } = true;
+
+    /// <summary>Cuota de administracion mensual fijada manualmente para la unidad (override).
+    /// Si es null, la cuota se deriva del coeficiente en 2.6. Prototipo v3, ficha de inmueble.</summary>
+    public decimal? CuotaMensual { get; set; }
 }
 
 /// <summary>
@@ -125,4 +129,71 @@ public class UnidadDocumento : TenantEntity
 
     /// <summary>Tamano del archivo en bytes (para mostrar "X KB" en la ficha).</summary>
     public long Tamano { get; set; }
+}
+
+/// <summary>
+/// Placa de vehiculo habilitada para el ingreso de una unidad (control de acceso de Porteria 2.12).
+/// Prototipo v3, ficha de inmueble. Es TenantEntity - aislada por tenant_id.
+/// </summary>
+public class UnidadPlaca : TenantEntity
+{
+    public Guid UnidadId { get; set; }
+    public UnidadPrivada? Unidad { get; set; }
+
+    /// <summary>Placa del vehiculo (ej. ABC123). Se almacena en mayusculas.</summary>
+    public string Placa { get; set; } = string.Empty;
+
+    /// <summary>Reusa el enum de Porteria 2.12 (Automovil/Moto/...). En la ficha v3 se muestra Carro/Moto.</summary>
+    public TipoVehiculo TipoVehiculo { get; set; } = TipoVehiculo.Automovil;
+}
+
+/// <summary>
+/// Arriendo o cobro mensual adicional de una unidad (ej. arriendo de un parqueadero, cuota extra).
+/// Opcionalmente referencia a un inmueble de la unidad. Prototipo v3, ficha de inmueble.
+/// Es TenantEntity - aislada por tenant_id.
+/// </summary>
+public class UnidadArriendo : TenantEntity
+{
+    public Guid UnidadId { get; set; }
+    public UnidadPrivada? Unidad { get; set; }
+
+    /// <summary>Concepto del cobro (ej. Arriendo mensual, Cuota parqueadero).</summary>
+    public string Concepto { get; set; } = string.Empty;
+
+    /// <summary>Valor mensual del arriendo/cobro.</summary>
+    public decimal ValorMensual { get; set; }
+
+    /// <summary>Referencia opcional a que se arrienda (ej. "Parqueadero P-1011"). Texto libre.</summary>
+    public string? Referencia { get; set; }
+}
+
+/// <summary>
+/// Mascota registrada en una unidad. Prototipo v3, ficha de inmueble.
+/// Es TenantEntity - aislada por tenant_id.
+/// </summary>
+public class UnidadMascota : TenantEntity
+{
+    public Guid UnidadId { get; set; }
+    public UnidadPrivada? Unidad { get; set; }
+
+    public string Nombre { get; set; } = string.Empty;
+    public TipoMascota Tipo { get; set; } = TipoMascota.Perro;
+    public string? Raza { get; set; }
+}
+
+/// <summary>
+/// Empleada(s) de servicio de una unidad (datos de contacto + horario). Prototipo v3, ficha de inmueble.
+/// Es TenantEntity - aislada por tenant_id.
+/// </summary>
+public class UnidadEmpleada : TenantEntity
+{
+    public Guid UnidadId { get; set; }
+    public UnidadPrivada? Unidad { get; set; }
+
+    public string Nombre { get; set; } = string.Empty;
+    public string? Documento { get; set; }
+    public string? Celular { get; set; }
+
+    /// <summary>Dias / horario de trabajo (texto libre, ej. "Lun-Vie 8am-5pm").</summary>
+    public string? Horario { get; set; }
 }

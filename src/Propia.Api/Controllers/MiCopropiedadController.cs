@@ -181,6 +181,67 @@ public class MiCopropiedadController : ControllerBase
     public async Task<IActionResult> EliminarDocumentoUnidad(Guid docId, CancellationToken ct)
         => await _svc.EliminarDocumentoUnidadAsync(docId, ct) ? NoContent() : NotFound();
 
+    // ---------- Prototipo v3: bloques nuevos de la ficha de inmueble ----------
+    // Placas habilitadas para ingreso
+    [HttpGet("unidades/{id:guid}/placas")]
+    public async Task<IActionResult> ListPlacasUnidad(Guid id, CancellationToken ct) => Ok(await _svc.ListPlacasUnidadAsync(id, ct));
+
+    [HttpPost("unidades/{id:guid}/placas")]
+    public async Task<IActionResult> AgregarPlacaUnidad(Guid id, [FromBody] CrearUnidadPlacaRequest req, CancellationToken ct)
+    {
+        try { var dto = await _svc.AgregarPlacaUnidadAsync(id, req, ct); return dto is null ? NotFound() : Created("", dto); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpDelete("unidades-placas/{placaId:guid}")]
+    public async Task<IActionResult> EliminarPlacaUnidad(Guid placaId, CancellationToken ct)
+        => await _svc.EliminarPlacaUnidadAsync(placaId, ct) ? NoContent() : NotFound();
+
+    // Arriendos y cobros mensuales
+    [HttpGet("unidades/{id:guid}/arriendos")]
+    public async Task<IActionResult> ListArriendosUnidad(Guid id, CancellationToken ct) => Ok(await _svc.ListArriendosUnidadAsync(id, ct));
+
+    [HttpPost("unidades/{id:guid}/arriendos")]
+    public async Task<IActionResult> AgregarArriendoUnidad(Guid id, [FromBody] CrearUnidadArriendoRequest req, CancellationToken ct)
+    {
+        try { var dto = await _svc.AgregarArriendoUnidadAsync(id, req, ct); return dto is null ? NotFound() : Created("", dto); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpDelete("unidades-arriendos/{arriendoId:guid}")]
+    public async Task<IActionResult> EliminarArriendoUnidad(Guid arriendoId, CancellationToken ct)
+        => await _svc.EliminarArriendoUnidadAsync(arriendoId, ct) ? NoContent() : NotFound();
+
+    // Mascotas
+    [HttpGet("unidades/{id:guid}/mascotas")]
+    public async Task<IActionResult> ListMascotasUnidad(Guid id, CancellationToken ct) => Ok(await _svc.ListMascotasUnidadAsync(id, ct));
+
+    [HttpPost("unidades/{id:guid}/mascotas")]
+    public async Task<IActionResult> AgregarMascotaUnidad(Guid id, [FromBody] CrearUnidadMascotaRequest req, CancellationToken ct)
+    {
+        try { var dto = await _svc.AgregarMascotaUnidadAsync(id, req, ct); return dto is null ? NotFound() : Created("", dto); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpDelete("unidades-mascotas/{mascotaId:guid}")]
+    public async Task<IActionResult> EliminarMascotaUnidad(Guid mascotaId, CancellationToken ct)
+        => await _svc.EliminarMascotaUnidadAsync(mascotaId, ct) ? NoContent() : NotFound();
+
+    // Empleada(s) de servicio
+    [HttpGet("unidades/{id:guid}/empleadas")]
+    public async Task<IActionResult> ListEmpleadasUnidad(Guid id, CancellationToken ct) => Ok(await _svc.ListEmpleadasUnidadAsync(id, ct));
+
+    [HttpPost("unidades/{id:guid}/empleadas")]
+    public async Task<IActionResult> AgregarEmpleadaUnidad(Guid id, [FromBody] CrearUnidadEmpleadaRequest req, CancellationToken ct)
+    {
+        try { var dto = await _svc.AgregarEmpleadaUnidadAsync(id, req, ct); return dto is null ? NotFound() : Created("", dto); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpDelete("unidades-empleadas/{empleadaId:guid}")]
+    public async Task<IActionResult> EliminarEmpleadaUnidad(Guid empleadaId, CancellationToken ct)
+        => await _svc.EliminarEmpleadaUnidadAsync(empleadaId, ct) ? NoContent() : NotFound();
+
     [HttpGet("unidades/{id:guid}/cuota-consolidada")]
     public async Task<IActionResult> GetCuotaConsolidada(Guid id, CancellationToken ct)
     {

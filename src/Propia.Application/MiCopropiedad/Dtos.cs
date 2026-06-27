@@ -40,14 +40,16 @@ public record UnidadDto(
     decimal CoeficientePropiedad, decimal? AreaM2,
     int? Habitaciones, int? Banos, int? Parqueaderos,
     string? Estado, string? Observaciones,
-    string? MatriculaInmobiliaria = null, bool PagaAdministracion = true);
+    string? MatriculaInmobiliaria = null, bool PagaAdministracion = true,
+    decimal? CuotaMensual = null);
 
 public record CrearUnidadRequest(
     string Numero, TipoUnidad Tipo, Guid? TorreId, int? Piso,
     decimal CoeficientePropiedad, decimal? AreaM2,
     int? Habitaciones, int? Banos, int? Parqueaderos,
     string? Estado, string? Observaciones,
-    string? MatriculaInmobiliaria = null, bool PagaAdministracion = true);
+    string? MatriculaInmobiliaria = null, bool PagaAdministracion = true,
+    decimal? CuotaMensual = null);
 
 /// <summary>Actualiza la ficha completa de una unidad (todos los campos editables).</summary>
 public record ActualizarUnidadRequest(
@@ -55,7 +57,8 @@ public record ActualizarUnidadRequest(
     decimal CoeficientePropiedad, decimal? AreaM2,
     int? Habitaciones, int? Banos, int? Parqueaderos,
     string? Estado, string? Observaciones,
-    string? MatriculaInmobiliaria, bool PagaAdministracion);
+    string? MatriculaInmobiliaria, bool PagaAdministracion,
+    decimal? CuotaMensual = null);
 
 // ----- Vinculos entre unidades (seccion 2 - RN-09) -----
 public record UnidadVinculoDto(
@@ -85,6 +88,24 @@ public record SetCampoValorRequest(string? Valor);
 
 // ----- Documentos / anexos de una unidad (archivo en blob + nombre) -----
 public record UnidadDocumentoDto(Guid Id, string Nombre, string Url, long Tamano);
+
+// ----- Prototipo v3, ficha de inmueble: bloques nuevos por unidad -----
+
+// Placas habilitadas para ingreso (control de acceso de Porteria 2.12).
+public record UnidadPlacaDto(Guid Id, string Placa, TipoVehiculo TipoVehiculo);
+public record CrearUnidadPlacaRequest(string Placa, TipoVehiculo TipoVehiculo);
+
+// Arriendos y cobros mensuales de la unidad.
+public record UnidadArriendoDto(Guid Id, string Concepto, decimal ValorMensual, string? Referencia);
+public record CrearUnidadArriendoRequest(string Concepto, decimal ValorMensual, string? Referencia);
+
+// Mascotas registradas en la unidad.
+public record UnidadMascotaDto(Guid Id, string Nombre, TipoMascota Tipo, string? Raza);
+public record CrearUnidadMascotaRequest(string Nombre, TipoMascota Tipo, string? Raza);
+
+// Empleada(s) de servicio de la unidad.
+public record UnidadEmpleadaDto(Guid Id, string Nombre, string? Documento, string? Celular, string? Horario);
+public record CrearUnidadEmpleadaRequest(string Nombre, string? Documento, string? Celular, string? Horario);
 
 /// <summary>
 /// Cuota consolidada: coeficiente y cuota total de una unidad principal sumando

@@ -47,6 +47,27 @@ public interface IMiCopropiedadService
     Task<UnidadDocumentoDto?> AgregarDocumentoUnidadAsync(Guid unidadId, string nombre, string url, long tamano, CancellationToken ct);
     Task<bool> EliminarDocumentoUnidadAsync(Guid documentoId, CancellationToken ct);
 
+    // Prototipo v3 - bloques nuevos de la ficha de inmueble
+    // Placas habilitadas para ingreso
+    Task<IReadOnlyList<UnidadPlacaDto>> ListPlacasUnidadAsync(Guid unidadId, CancellationToken ct);
+    Task<UnidadPlacaDto?> AgregarPlacaUnidadAsync(Guid unidadId, CrearUnidadPlacaRequest req, CancellationToken ct);
+    Task<bool> EliminarPlacaUnidadAsync(Guid placaId, CancellationToken ct);
+
+    // Arriendos y cobros mensuales
+    Task<IReadOnlyList<UnidadArriendoDto>> ListArriendosUnidadAsync(Guid unidadId, CancellationToken ct);
+    Task<UnidadArriendoDto?> AgregarArriendoUnidadAsync(Guid unidadId, CrearUnidadArriendoRequest req, CancellationToken ct);
+    Task<bool> EliminarArriendoUnidadAsync(Guid arriendoId, CancellationToken ct);
+
+    // Mascotas
+    Task<IReadOnlyList<UnidadMascotaDto>> ListMascotasUnidadAsync(Guid unidadId, CancellationToken ct);
+    Task<UnidadMascotaDto?> AgregarMascotaUnidadAsync(Guid unidadId, CrearUnidadMascotaRequest req, CancellationToken ct);
+    Task<bool> EliminarMascotaUnidadAsync(Guid mascotaId, CancellationToken ct);
+
+    // Empleada(s) de servicio
+    Task<IReadOnlyList<UnidadEmpleadaDto>> ListEmpleadasUnidadAsync(Guid unidadId, CancellationToken ct);
+    Task<UnidadEmpleadaDto?> AgregarEmpleadaUnidadAsync(Guid unidadId, CrearUnidadEmpleadaRequest req, CancellationToken ct);
+    Task<bool> EliminarEmpleadaUnidadAsync(Guid empleadaId, CancellationToken ct);
+
     // Cuota consolidada de una unidad (principal + asociadas con incluyeEnFacturacion=true)
     Task<CuotaConsolidadaDto?> GetCuotaConsolidadaAsync(Guid unidadId, CancellationToken ct);
 

@@ -166,6 +166,15 @@ public enum RolUnidadPersona
     Apoderado = 5
 }
 
+/// <summary>Tipo de mascota registrada en una unidad (prototipo v3, ficha de inmueble).</summary>
+public enum TipoMascota
+{
+    Perro = 1,
+    Gato = 2,
+    Ave = 3,
+    Otro = 4
+}
+
 /// <summary>Rol operativo del equipo de trabajo (catalogo base).</summary>
 public enum RolEquipo
 {
