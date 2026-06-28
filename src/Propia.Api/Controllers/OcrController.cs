@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -44,6 +45,11 @@ public class OcrController : ControllerBase
         var valorRaw = r.Campo("InvoiceTotal", "AmountDue", "Total", "TotalPrice", "SubTotal");
         decimal? valor = decimal.TryParse(valorRaw, NumberStyles.Any, CultureInfo.InvariantCulture, out var v) ? v : null;
         var fecha = r.Campo("InvoiceDate", "TransactionDate", "DueDate", "ServiceStartDate");
+
+        // Fallback: proveedores que solo devuelven texto crudo (ej. Azure Computer Vision) no traen
+        // campos estructurados; parseamos el texto para inferir el total y la fecha del recibo.
+        if (valor is null) valor = InferirValorDesdeTexto(r.TextoCompleto);
+        if (string.IsNullOrWhiteSpace(fecha)) fecha = InferirFechaDesdeTexto(r.TextoCompleto);
 
         return Ok(new
         {
@@ -163,6 +169,99 @@ public class OcrController : ControllerBase
             analisis = res.Text,
             conversacion = turns.Select(t => new TurnoDto(t.Role, t.Text)).ToList()
         });
+    }
+
+    // ---- Inferencia desde texto crudo (para proveedores OCR que no devuelven campos estructurados) ----
+
+    /// <summary>Busca el total a pagar en el texto del recibo. Prioriza lineas con "total a pagar"/etc;
+    /// si no, toma el monto mas grande. Maneja formato colombiano ($ 528.000 = 528000).</summary>
+    internal static decimal? InferirValorDesdeTexto(string? texto)
+    {
+        if (string.IsNullOrWhiteSpace(texto)) return null;
+        var lineas = texto.Split('\n');
+        var prioridad = new[] { "total a pagar", "valor a pagar", "neto a pagar", "total factura", "saldo a pagar", "total" };
+        foreach (var key in prioridad)
+            foreach (var ln in lineas)
+                if (ln.ToLowerInvariant().Contains(key))
+                {
+                    var m = MontoMaximoEnLinea(ln);
+                    if (m is not null) return m;
+                }
+        // Fallback: el monto mas grande de todo el documento.
+        decimal? max = null;
+        foreach (var ln in lineas)
+        {
+            var m = MontoMaximoEnLinea(ln);
+            if (m is not null && (max is null || m > max)) max = m;
+        }
+        return max;
+    }
+
+    private static decimal? MontoMaximoEnLinea(string linea)
+    {
+        // Tokens monetarios: con simbolo $ o con separadores de miles (evita capturar "315 kWh").
+        var rx = new Regex(@"\$\s*\d[\d.,]*|\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?");
+        decimal? max = null;
+        foreach (Match mt in rx.Matches(linea))
+        {
+            var val = ParseMontoColombiano(mt.Value);
+            if (val is not null && (max is null || val > max)) max = val;
+        }
+        return max;
+    }
+
+    private static decimal? ParseMontoColombiano(string raw)
+    {
+        raw = raw.Replace("$", "").Replace(" ", "").Trim();
+        if (raw.Length == 0) return null;
+        bool hasDot = raw.Contains('.'), hasComma = raw.Contains(',');
+        string norm;
+        if (hasDot && hasComma)
+        {
+            // El ultimo separador es el decimal; el otro son miles.
+            char dec = raw.LastIndexOf('.') > raw.LastIndexOf(',') ? '.' : ',';
+            char miles = dec == '.' ? ',' : '.';
+            norm = raw.Replace(miles.ToString(), "").Replace(dec, '.');
+        }
+        else if (hasComma)
+        {
+            var p = raw.Split(',');
+            norm = (p.Length == 2 && p[1].Length <= 2) ? raw.Replace(',', '.') : raw.Replace(",", "");
+        }
+        else if (hasDot)
+        {
+            var p = raw.Split('.');
+            norm = (p.Length == 2 && p[1].Length <= 2) ? raw : raw.Replace(".", "");
+        }
+        else norm = raw;
+        return decimal.TryParse(norm, NumberStyles.Any, CultureInfo.InvariantCulture, out var v) ? v : null;
+    }
+
+    /// <summary>Infiere la fecha del recibo desde el texto. Prefiere la fecha de emision/factura
+    /// (mas cercana al periodo de consumo) sobre la fecha limite de pago. Devuelve ISO yyyy-MM-dd.</summary>
+    internal static string? InferirFechaDesdeTexto(string? texto)
+    {
+        if (string.IsNullOrWhiteSpace(texto)) return null;
+        var rx = new Regex(@"\b(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}/\d{1,2}/\d{4}|\d{1,2}-\d{1,2}-\d{4})\b");
+        var lineas = texto.Split('\n');
+        var prefer = new[] { "emision", "expedicion", "factura", "generaci", "periodo", "fecha" };
+        foreach (var key in prefer)
+            foreach (var ln in lineas)
+                if (ln.ToLowerInvariant().Contains(key))
+                {
+                    var m = rx.Match(ln);
+                    if (m.Success) return NormalizarFechaIso(m.Value);
+                }
+        var any = rx.Match(texto);
+        return any.Success ? NormalizarFechaIso(any.Value) : null;
+    }
+
+    private static string? NormalizarFechaIso(string raw)
+    {
+        foreach (var fmt in new[] { "yyyy-M-d", "yyyy-MM-dd", "d/M/yyyy", "dd/MM/yyyy", "d-M-yyyy", "dd-MM-yyyy" })
+            if (DateTime.TryParseExact(raw, fmt, CultureInfo.InvariantCulture, DateTimeStyles.None, out var d))
+                return d.ToString("yyyy-MM-dd");
+        return DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dd) ? dd.ToString("yyyy-MM-dd") : raw;
     }
 
     public sealed record TurnoDto(string Role, string Text);
