@@ -93,7 +93,15 @@ public class CarteraController : ControllerBase
     [HttpPut("acuerdos/{id:guid}/aceptar")]
     public async Task<IActionResult> AceptarAcuerdo(Guid id, [FromBody] AceptarAcuerdoRequest req, CancellationToken ct)
     {
-        try { return await _svc.AceptarAcuerdoAsync(id, req, ct) ? NoContent() : NotFound(); }
+        // El metodo de aceptacion y la IP se derivan del lado servidor: no se confia en lo que
+        // envie el cliente (spoofeable). La IP sale de la conexion y el metodo identifica al
+        // usuario autenticado que acepto desde la consola, para dejar trazabilidad real.
+        var email = User.FindFirst("email")?.Value
+                    ?? User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+                    ?? "administrador";
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? req.Ip ?? "desconocida";
+        var seguro = new AceptarAcuerdoRequest($"Consola administrador ({email})", ip);
+        try { return await _svc.AceptarAcuerdoAsync(id, seguro, ct) ? NoContent() : NotFound(); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
