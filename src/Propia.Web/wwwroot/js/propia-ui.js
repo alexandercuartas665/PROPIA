@@ -140,6 +140,21 @@
         });
     }
 
+    var _searchHotkeyBound = false;
+    // Atajo Cmd/Ctrl+K -> abre el buscador global del topbar (clic sobre [data-propia-search]).
+    // Delegado en document e idempotente (sobrevive a la navegacion enhanced de Blazor).
+    function bindSearchHotkey() {
+        if (_searchHotkeyBound) return;
+        _searchHotkeyBound = true;
+        document.addEventListener('keydown', function (e) {
+            var k = (e.key || '').toLowerCase();
+            if (k === 'k' && (e.metaKey || e.ctrlKey)) {
+                var trigger = document.querySelector('[data-propia-search]');
+                if (trigger) { e.preventDefault(); trigger.click(); }
+            }
+        });
+    }
+
     function bindThemeButtons() {
         var btns = document.querySelectorAll('.theme-btn');
         for (var i = 0; i < btns.length; i++) {
@@ -198,6 +213,7 @@
     function init() {
         applyTheme(getPreferredTheme());
         bindSidebarToggle();
+        bindSearchHotkey();
         restoreSidebar();
         bindThemeButtons();
         bindRailTabs();
@@ -280,6 +296,7 @@
     // los bindings deben re-aplicarse porque algunos elementos pueden recrearse.
     window.propiaUI.rebind = function () {
         bindSidebarToggle();
+        bindSearchHotkey();
         restoreSidebar();
         bindThemeButtons();
         bindRailTabs();

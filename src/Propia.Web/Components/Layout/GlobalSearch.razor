@@ -1,0 +1,310 @@
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.Directorio
+@using Propia.Application.MiCopropiedad
+@using Propia.Application.Tareas
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+@* Buscador global del topbar (00.1 MENU DEL SISTEMA L.82: "Buscador global ... agregar";
+   PROXIMOS PASOS A3 P1: "Topbar con ... buscador Cmd+K"). Isla interactiva dentro del
+   MainLayout (SSR), igual patron que CopropiedadSwitcher/HeaderTools. Atajo Cmd/Ctrl+K via
+   propia-ui.js (clic delegado sobre [data-propia-search]). Busca unidades, personas y tareas
+   y navega a su ficha. *@
+
+@if (_jwt is not null)
+{
+    <button class="gs-trigger" type="button" data-propia-search @onclick="AbrirAsync"
+            title="Buscar (Ctrl+K)" aria-label="Buscar">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" />
+        </svg>
+        <span class="gs-trigger-txt">Buscar...</span>
+        <span class="gs-kbd">Ctrl K</span>
+    </button>
+
+    @if (_open)
+    {
+        <div class="gs-backdrop" @onclick="Cerrar">
+            <div class="gs-panel" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+                <div class="gs-input-row">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" />
+                    </svg>
+                    <input @ref="_inputRef" class="gs-input" placeholder="Buscar unidades, personas, tareas..."
+                           value="@_q" @oninput="OnInput" @onkeydown="OnKeyDown" autocomplete="off" />
+                    <span class="gs-esc">esc</span>
+                </div>
+
+                <div class="gs-results">
+                    @if (_cargando)
+                    {
+                        <div class="gs-empty">Cargando indice...</div>
+                    }
+                    else if (string.IsNullOrWhiteSpace(_q))
+                    {
+                        <div class="gs-hint">Escribe para buscar en unidades, personas y tareas.</div>
+                    }
+                    else if (_total == 0)
+                    {
+                        <div class="gs-empty">Sin resultados para "@_q".</div>
+                    }
+                    else
+                    {
+                        @if (_unidades.Count > 0)
+                        {
+                            <div class="gs-group">Unidades</div>
+                            @foreach (var u in _unidades)
+                            {
+                                var url = $"/mi-copropiedad/unidades/{u.Id}";
+                                <button class="gs-item" type="button" @onclick="() => Ir(url)">
+                                    <span class="gs-ico gs-ico--u">U</span>
+                                    <span class="gs-item-body">
+                                        <span class="gs-item-title">@u.Numero</span>
+                                        <span class="gs-item-sub">@(u.TorreNombre ?? "Sin torre")@(u.Piso is not null ? $" - piso {u.Piso}" : "") - @u.Tipo</span>
+                                    </span>
+                                </button>
+                            }
+                        }
+                        @if (_personas.Count > 0)
+                        {
+                            <div class="gs-group">Personas</div>
+                            @foreach (var p in _personas)
+                            {
+                                var url = $"/directorio/personas/{p.Id}";
+                                <button class="gs-item" type="button" @onclick="() => Ir(url)">
+                                    <span class="gs-ico gs-ico--p">@Ini(p.Nombres, p.Apellidos)</span>
+                                    <span class="gs-item-body">
+                                        <span class="gs-item-title">@p.Nombres @p.Apellidos</span>
+                                        <span class="gs-item-sub">@p.Documento@(string.IsNullOrWhiteSpace(p.Email) ? "" : $" - {p.Email}")</span>
+                                    </span>
+                                </button>
+                            }
+                        }
+                        @if (_tareas.Count > 0)
+                        {
+                            <div class="gs-group">Tareas</div>
+                            @foreach (var t in _tareas)
+                            {
+                                var url = $"/tareas/{t.Id}";
+                                <button class="gs-item" type="button" @onclick="() => Ir(url)">
+                                    <span class="gs-ico gs-ico--t">T</span>
+                                    <span class="gs-item-body">
+                                        <span class="gs-item-title">@t.Titulo</span>
+                                        <span class="gs-item-sub">@t.NumeroTarea - @t.EstadoNombre</span>
+                                    </span>
+                                </button>
+                            }
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private string? _jwt;
+    private bool _open;
+    private bool _cargando;
+    private string _q = "";
+    private ElementReference _inputRef;
+    private bool _focusPend;
+
+    // Indice cacheado (se carga una vez al abrir; filtrado en cliente)
+    private List<UnidadDto> _idxUnidades = new();
+    private List<PersonaResumenDto> _idxPersonas = new();
+    private List<TareaListaDto> _idxTareas = new();
+    private bool _indexado;
+
+    // Resultados filtrados
+    private List<UnidadDto> _unidades = new();
+    private List<PersonaResumenDto> _personas = new();
+    private List<TareaListaDto> _tareas = new();
+    private int _total => _unidades.Count + _personas.Count + _tareas.Count;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _jwt is null)
+        {
+            try
+            {
+                var jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+                if (!string.IsNullOrWhiteSpace(jwt)) { _jwt = jwt; StateHasChanged(); }
+            }
+            catch { }
+        }
+        if (_focusPend)
+        {
+            _focusPend = false;
+            try { await _inputRef.FocusAsync(); } catch { }
+        }
+    }
+
+    private async Task AbrirAsync()
+    {
+        _open = true;
+        _q = "";
+        _unidades = new(); _personas = new(); _tareas = new();
+        _focusPend = true;
+        StateHasChanged();
+        if (!_indexado) await CargarIndiceAsync();
+    }
+
+    private void Cerrar() => _open = false;
+
+    private async Task CargarIndiceAsync()
+    {
+        _cargando = true;
+        try
+        {
+            var http = Auth();
+            var tU = http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades");
+            var tP = http.GetFromJsonAsync<List<PersonaResumenDto>>("/api/directorio/personas");
+            var tT = http.GetFromJsonAsync<List<TareaListaDto>>("/api/tareas?soloRaiz=false");
+            await Task.WhenAll(tU, tP, tT);
+            _idxUnidades = (await tU) ?? new();
+            _idxPersonas = (await tP) ?? new();
+            _idxTareas = (await tT) ?? new();
+            _indexado = true;
+        }
+        catch { /* indice parcial: lo que haya cargado */ }
+        finally { _cargando = false; Filtrar(); StateHasChanged(); }
+    }
+
+    private void OnInput(ChangeEventArgs e)
+    {
+        _q = e.Value?.ToString() ?? "";
+        Filtrar();
+    }
+
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") { Cerrar(); return; }
+        if (e.Key == "Enter")
+        {
+            var dest = PrimerDestino();
+            if (dest is not null) Ir(dest);
+        }
+    }
+
+    private void Filtrar()
+    {
+        var q = _q?.Trim().ToLowerInvariant() ?? "";
+        if (q.Length == 0) { _unidades = new(); _personas = new(); _tareas = new(); return; }
+
+        _unidades = _idxUnidades
+            .Where(u => (u.Numero ?? "").ToLowerInvariant().Contains(q)
+                     || (u.TorreNombre ?? "").ToLowerInvariant().Contains(q))
+            .Take(6).ToList();
+
+        _personas = _idxPersonas
+            .Where(p => $"{p.Nombres} {p.Apellidos}".ToLowerInvariant().Contains(q)
+                     || (p.Documento ?? "").ToLowerInvariant().Contains(q)
+                     || (p.Email ?? "").ToLowerInvariant().Contains(q))
+            .Take(6).ToList();
+
+        _tareas = _idxTareas
+            .Where(t => (t.Titulo ?? "").ToLowerInvariant().Contains(q)
+                     || (t.NumeroTarea ?? "").ToLowerInvariant().Contains(q))
+            .Take(6).ToList();
+    }
+
+    private string? PrimerDestino()
+    {
+        if (_unidades.Count > 0) return $"/mi-copropiedad/unidades/{_unidades[0].Id}";
+        if (_personas.Count > 0) return $"/directorio/personas/{_personas[0].Id}";
+        if (_tareas.Count > 0) return $"/tareas/{_tareas[0].Id}";
+        return null;
+    }
+
+    private void Ir(string url)
+    {
+        _open = false;
+        Nav.NavigateTo(url);
+    }
+
+    private static string Ini(string? n, string? a)
+    {
+        var i1 = !string.IsNullOrWhiteSpace(n) ? n.Trim()[..1] : "";
+        var i2 = !string.IsNullOrWhiteSpace(a) ? a.Trim()[..1] : "";
+        var r = (i1 + i2).ToUpperInvariant();
+        return r.Length > 0 ? r : "?";
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}
+
+<style>
+    .gs-trigger {
+        display: inline-flex; align-items: center; gap: 8px;
+        height: 38px; padding: 0 10px 0 12px;
+        min-width: 190px;
+        border: 1px solid var(--bs-border-color); border-radius: 10px;
+        background: var(--bs-body-bg); color: var(--bs-secondary-color);
+        font-size: .85rem; cursor: text; transition: border-color .15s, background .15s;
+    }
+    .gs-trigger:hover { border-color: var(--propia-primary); background: rgba(89,85,209,.05); }
+    .gs-trigger-txt { flex: 1; text-align: left; }
+    .gs-kbd {
+        font-size: .68rem; font-weight: 700; color: var(--bs-secondary-color);
+        border: 1px solid var(--bs-border-color); border-radius: 5px; padding: 1px 6px;
+        background: var(--bs-secondary-bg);
+    }
+    @@media (max-width: 991px) { .gs-trigger-txt, .gs-kbd { display: none; } .gs-trigger { min-width: 0; padding: 0 10px; } }
+
+    .gs-backdrop {
+        position: fixed; inset: 0; z-index: 1110;
+        background: rgba(15,15,30,.45);
+        display: flex; align-items: flex-start; justify-content: center;
+        padding-top: 12vh; animation: gs-fade .12s ease-out;
+    }
+    @@keyframes gs-fade { from { opacity: 0; } to { opacity: 1; } }
+    .gs-panel {
+        width: 600px; max-width: calc(100vw - 32px);
+        background: var(--bs-body-bg); border: 1px solid var(--bs-border-color);
+        border-radius: 16px; box-shadow: 0 18px 48px rgba(0,0,0,.3); overflow: hidden;
+    }
+    .gs-input-row {
+        display: flex; align-items: center; gap: 11px;
+        padding: 14px 16px; border-bottom: 1px solid var(--bs-border-color);
+        color: var(--bs-secondary-color);
+    }
+    .gs-input {
+        flex: 1; border: 0; outline: 0; background: transparent;
+        font-size: 1rem; color: var(--bs-heading-color); font-family: inherit;
+    }
+    .gs-esc { font-size: .66rem; font-weight: 700; color: var(--bs-secondary-color); border: 1px solid var(--bs-border-color); border-radius: 5px; padding: 2px 6px; }
+    .gs-results { max-height: 56vh; overflow-y: auto; padding: 6px; }
+    .gs-empty, .gs-hint { padding: 26px 16px; text-align: center; color: var(--bs-secondary-color); font-size: .88rem; }
+    .gs-group {
+        font-size: .68rem; text-transform: uppercase; letter-spacing: .04em;
+        color: var(--bs-secondary-color); font-weight: 700; padding: 10px 12px 4px;
+    }
+    .gs-item {
+        display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
+        padding: 9px 12px; border: 0; border-radius: 9px; background: transparent; cursor: pointer;
+        transition: background .1s;
+    }
+    .gs-item:hover { background: rgba(89,85,209,.08); }
+    .gs-ico {
+        width: 30px; height: 30px; flex: 0 0 30px; border-radius: 8px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: .8rem; font-weight: 700; color: #fff;
+    }
+    .gs-ico--u { background: linear-gradient(135deg,#3b82f6,#60a5fa); }
+    .gs-ico--p { background: linear-gradient(135deg,#8366F0,#5838C9); }
+    .gs-ico--t { background: linear-gradient(135deg,#10b981,#34d399); }
+    .gs-item-body { display: flex; flex-direction: column; min-width: 0; }
+    .gs-item-title {
+        font-size: .9rem; font-weight: 600; color: var(--bs-heading-color);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 480px;
+    }
+    .gs-item-sub { font-size: .76rem; color: var(--bs-secondary-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 480px; }
+</style>
