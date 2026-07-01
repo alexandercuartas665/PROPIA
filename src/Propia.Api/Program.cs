@@ -195,6 +195,11 @@ var app = builder.Build();
 // ForwardedHeaders DEBE ir antes de cualquier middleware que use HttpContext.Request.Scheme
 app.UseForwardedHeaders();
 
+// Bootstrap del founder SuperAdmin para PRODUCCION (idempotente, desde env vars
+// SuperAdmin__BootstrapEmail / SuperAdmin__BootstrapPassword). No-op si no estan configuradas.
+// En Development el founder dev se crea abajo; en prod este es el unico camino de aprovisionamiento.
+await SuperAdminSeeder.EnsureBootstrapFounderAsync(app.Services, app.Configuration);
+
 // Seed dev del founder SuperAdmin (solo en Development)
 if (app.Environment.IsDevelopment())
 {
