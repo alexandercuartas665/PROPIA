@@ -99,8 +99,13 @@ public class CarteraController : ControllerBase
         var email = User.FindFirst("email")?.Value
                     ?? User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
                     ?? "administrador";
+        // AceptacionMetodo y AceptacionIp son varchar(50): recortamos para no desbordar la columna
+        // (emails largos harian fallar SaveChanges con 22001 / 500). Ver PropiaDbContext AcuerdoPago.
+        var metodo = $"Consola administrador ({email})";
+        if (metodo.Length > 50) metodo = metodo[..50];
         var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? req.Ip ?? "desconocida";
-        var seguro = new AceptarAcuerdoRequest($"Consola administrador ({email})", ip);
+        if (ip.Length > 50) ip = ip[..50];
+        var seguro = new AceptarAcuerdoRequest(metodo, ip);
         try { return await _svc.AceptarAcuerdoAsync(id, seguro, ct) ? NoContent() : NotFound(); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
