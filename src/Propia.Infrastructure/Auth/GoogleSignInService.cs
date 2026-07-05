@@ -118,21 +118,21 @@ public sealed class GoogleSignInService : IGoogleSignInService
         }
         if (dirty) await _userManager.UpdateAsync(user);
 
-        // Resolver tenant activo (similar a /connect/login)
+        // Resolver tenant activo. IMPORTANTE: se usa la funcion SQL SECURITY DEFINER
+        // get_tenants_for_persona (igual que AuthService.LoadAvailableTenantsAsync) para
+        // bypassar la RLS de usuarios_tenant. Un query EF con IgnoreQueryFilters() solo
+        // quita el filtro global de EF, NO la RLS a nivel Postgres (FORCE ROW LEVEL
+        // SECURITY): sin app.tenant_id seteado la RLS oculta la fila y el usuario quedaba
+        // "sin copropiedades activas" al iniciar sesion con Google.
         Guid? tenantId = null;
         string? tenantNombre = null;
         if (user.PersonaId.HasValue)
         {
-            var membresia = await _db.UsuariosTenant
-                .IgnoreQueryFilters()
-                .Where(ut => ut.PersonaId == user.PersonaId.Value && ut.Estado == EstadoUsuarioTenant.Activo)
-                .Join(_db.Tenants.IgnoreQueryFilters(), ut => ut.TenantId, t => t.Id, (ut, t) => new { ut, t })
-                .OrderBy(x => x.ut.CreatedAt)
-                .FirstOrDefaultAsync(cancellationToken);
+            var membresia = await ResolverPrimerTenantAsync(user.PersonaId.Value, cancellationToken);
             if (membresia is not null)
             {
-                tenantId = membresia.t.Id;
-                tenantNombre = membresia.t.Nombre;
+                tenantId = membresia.Value.TenantId;
+                tenantNombre = membresia.Value.Nombre;
             }
         }
 
@@ -147,6 +147,37 @@ public sealed class GoogleSignInService : IGoogleSignInService
             TenantNombre: tenantNombre,
             OnboardingSessionId: user.OnboardingSessionId,
             AutoRegistrado: false);
+    }
+
+    /// <summary>
+    /// Resuelve la primera copropiedad activa de la persona via la funcion SQL
+    /// SECURITY DEFINER get_tenants_for_persona (bypassa RLS; ya filtra estado=Activo).
+    /// Necesario porque el login de Google corre antes de tener tenant activo, sin
+    /// app.tenant_id en la conexion, y la RLS de usuarios_tenant bloquearia un SELECT directo.
+    /// </summary>
+    private async Task<(Guid TenantId, string Nombre)?> ResolverPrimerTenantAsync(Guid personaId, CancellationToken ct)
+    {
+        var conn = _db.Database.GetDbConnection();
+        var openedHere = conn.State != System.Data.ConnectionState.Open;
+        if (openedHere) await conn.OpenAsync(ct);
+        try
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT tenant_id, nombre FROM get_tenants_for_persona(@p_persona_id) LIMIT 1";
+            var p = cmd.CreateParameter();
+            p.ParameterName = "@p_persona_id";
+            p.Value = personaId;
+            cmd.Parameters.Add(p);
+
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            if (await reader.ReadAsync(ct))
+                return (reader.GetGuid(0), reader.GetString(1));
+            return null;
+        }
+        finally
+        {
+            if (openedHere) await conn.CloseAsync();
+        }
     }
 
     private async Task<GoogleSignInResult> AutoRegistrarAsync(GoogleIdentity identity, string email, CancellationToken ct)
