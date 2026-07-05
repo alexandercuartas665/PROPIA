@@ -23,13 +23,15 @@ public class MiCopropiedadController : ControllerBase
     private readonly IPresupuestoService _presupuesto;
     private readonly ICarteraService _cartera;
     private readonly IBlobStorage _storage;
+    private readonly IDistribucionImportService _import;
 
-    public MiCopropiedadController(IMiCopropiedadService svc, IPresupuestoService presupuesto, ICarteraService cartera, IBlobStorage storage)
+    public MiCopropiedadController(IMiCopropiedadService svc, IPresupuestoService presupuesto, ICarteraService cartera, IBlobStorage storage, IDistribucionImportService import)
     {
         _svc = svc;
         _presupuesto = presupuesto;
         _cartera = cartera;
         _storage = storage;
+        _import = import;
     }
 
     // ---------- Resumen ----------
@@ -67,6 +69,31 @@ public class MiCopropiedadController : ControllerBase
     [HttpDelete("torres/{id:guid}")]
     public async Task<IActionResult> EliminarTorre(Guid id, CancellationToken ct)
         => await _svc.EliminarTorreAsync(id, ct) ? NoContent() : NotFound();
+
+    // ---------- Seccion 2: Distribucion - Carga masiva por plantilla Excel ----------
+    /// <summary>Descarga la plantilla .xlsx (Instrucciones + Unidades + Torres + Catalogos) con un ejemplo cargable.</summary>
+    [HttpGet("distribucion/plantilla")]
+    public IActionResult DescargarPlantillaDistribucion()
+    {
+        var bytes = _import.GenerarPlantilla();
+        return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "plantilla-distribucion-propia.xlsx");
+    }
+
+    /// <summary>Procesa la plantilla subida: crea torres y unidades del tenant. Devuelve el resumen + errores por fila.</summary>
+    [HttpPost("distribucion/importar")]
+    [RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<IActionResult> ImportarDistribucion([FromForm] IFormFile? file, CancellationToken ct)
+    {
+        if (file is null || file.Length == 0) return BadRequest(new { error = "archivo_vacio" });
+        try
+        {
+            await using var s = file.OpenReadStream();
+            var res = await _import.ImportarAsync(s, ct);
+            return Ok(res);
+        }
+        catch (Exception ex) { return BadRequest(new { error = "archivo_invalido", detalle = ex.Message }); }
+    }
 
     // ---------- Seccion 2: Distribucion - Unidades ----------
     [HttpGet("unidades")] public async Task<IActionResult> ListUnidades(CancellationToken ct) => Ok(await _svc.ListUnidadesAsync(ct));

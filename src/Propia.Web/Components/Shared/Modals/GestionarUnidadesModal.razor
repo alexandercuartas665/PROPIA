@@ -170,16 +170,43 @@
         @if (_mode == "import")
         {
             <div class="gum-card-soft">
-                <div class="gum-card-title">Importar desde Excel / CSV</div>
-                <div class="gum-card-sub">Pega una columna de identificadores (uno por linea). Se validan antes de importar.</div>
-                <textarea class="gum-input" rows="4" @bind="_csv" @bind:event="oninput" placeholder="1501&#10;1502&#10;1503"></textarea>
-                <div class="gum-import-foot">
-                    <span class="gum-import-count">@CsvCount unidades detectadas</span>
-                    <button class="gum-btn-brand" @onclick="ImportarCsv" disabled="@(CsvCount == 0)">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
-                        Importar
+                <div class="gum-card-title">Importar distribucion desde Excel</div>
+                <div class="gum-card-sub">Descarga la plantilla, llena las hojas <b>Torres</b> y <b>Unidades</b> y subela. La plantilla trae un ejemplo cargable y una hoja de instrucciones.</div>
+
+                <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;">
+                    <button type="button" @onclick="DescargarPlantilla" disabled="@_impBusy"
+                            style="display:inline-flex;align-items:center;gap:7px;padding:9px 15px;border:1px solid #d7e0ea;border-radius:9px;background:#fff;color:#33475b;font-size:13px;font-weight:600;cursor:pointer;">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
+                        Descargar plantilla
                     </button>
+                    <label class="gum-btn-brand" style="@(_impBusy ? "opacity:.6;pointer-events:none;" : "")">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
+                        @(_impBusy ? "Importando..." : "Subir archivo (.xlsx)")
+                        <InputFile OnChange="OnArchivoImport" accept=".xlsx" style="display:none" disabled="@_impBusy" />
+                    </label>
                 </div>
+
+                @if (_impResult is not null)
+                {
+                    <div style="margin-top:14px;border-top:1px solid #eef3f8;padding-top:12px;">
+                        <div style="font-size:13.5px;color:#1b2a3a;">
+                            Importadas <strong>@_impResult.UnidadesCreadas</strong> unidades y <strong>@_impResult.TorresCreadas</strong> torres.
+                            @if (_impResult.FilasConError > 0)
+                            {
+                                <span style="color:#b91c1c;font-weight:600;"> - @_impResult.FilasConError fila(s) con error</span>
+                            }
+                        </div>
+                        @if (_impResult.Errores.Count > 0)
+                        {
+                            <ul style="margin:8px 0 0;padding-left:18px;font-size:12px;color:#7c98b6;max-height:160px;overflow:auto;">
+                                @foreach (var er in _impResult.Errores.Take(20))
+                                {
+                                    <li><span style="color:#b45309;font-weight:600;">@er.Hoja fila @er.Fila:</span> @er.Mensaje</li>
+                                }
+                            </ul>
+                        }
+                    </div>
+                }
             </div>
         }
 
@@ -749,12 +776,12 @@
                     }
                 </div>
 
-                @* === Card EMPLEADA(S) DE SERVICIO (proto v3) === *@
+                @* === Card PERSONAL DE APOYO (proto v3) === *@
                 <div class="gum-unit-card">
-                    <div class="gum-unit-eyebrow">EMPLEADA(S) DE SERVICIO</div>
+                    <div class="gum-unit-eyebrow">PERSONAL DE APOYO</div>
                     @if (_empleadas.Count == 0)
                     {
-                        <div class="gum-people-empty">Sin empleadas de servicio registradas.</div>
+                        <div class="gum-people-empty">Sin personal de apoyo registrado.</div>
                     }
                     else
                     {
@@ -2125,6 +2152,49 @@
         await CargarAsync();
         SetMode(null);
         _busy = false;
+    }
+
+    private bool _impBusy;
+    private ImportarDistribucionResultado? _impResult;
+
+    private async Task DescargarPlantilla()
+    {
+        _impBusy = true;
+        try
+        {
+            var bytes = await Auth().GetByteArrayAsync("/api/mi-copropiedad/distribucion/plantilla");
+            var b64 = Convert.ToBase64String(bytes);
+            await Js.InvokeVoidAsync("propiaUI.downloadBase64", "plantilla-distribucion-propia.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", b64);
+        }
+        catch (Exception ex) { ShowMsg("No se pudo descargar la plantilla: " + ex.Message, true); }
+        finally { _impBusy = false; }
+    }
+
+    private async Task OnArchivoImport(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null) return;
+        _impBusy = true; _impResult = null; StateHasChanged();
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            content.Add(new StreamContent(file.OpenReadStream(10 * 1024 * 1024)), "file", file.Name);
+            var resp = await Auth().PostAsync("/api/mi-copropiedad/distribucion/importar", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                _impResult = await resp.Content.ReadFromJsonAsync<ImportarDistribucionResultado>();
+                _huboCambios = true;
+                await CargarAsync();
+                ShowMsg($"Importacion completa: {_impResult?.UnidadesCreadas} unidades, {_impResult?.TorresCreadas} torres.", false);
+            }
+            else
+            {
+                ShowMsg("Error al importar: " + await resp.Content.ReadAsStringAsync(), true);
+            }
+        }
+        catch (Exception ex) { ShowMsg("Error al importar: " + ex.Message, true); }
+        finally { _impBusy = false; StateHasChanged(); }
     }
 
     private async Task ImportarCsv()
