@@ -84,7 +84,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 });
 
 // ---- CORS para el frontend Web (Blazor Web App) ----
-// En Prod la API recibe Cors:AllowedOrigins=https://app.propia.cubot.com.co (env var Railway).
+// En Prod la API recibe Cors:AllowedOrigins=https://app.propia-ad.com (env var Railway).
 // En Dev sin config explicita: fallback a localhost + dominio piloto.
 // Nota: AllowAnyOrigin no es compatible con AllowCredentials en navegadores.
 var allowedOrigins = (builder.Configuration["Cors:AllowedOrigins"] ?? "")
