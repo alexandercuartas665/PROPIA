@@ -73,9 +73,13 @@ public static class DependencyInjection
 
         // ---- Integraciones de plataforma (Super Admin) - portadas de CUBOT.travels ----
         // Data Protection cifra secretos en reposo (SMTP, API keys, OAuth). En produccion
-        // (Railway/Linux) las llaves DEBEN persistirse fuera del proceso para sobrevivir redeploys
-        // (PersistKeysToFileSystem a un volumen, o PersistKeysToDbContext). En dev usa el default.
-        services.AddDataProtection().SetApplicationName("Propia");
+        // (Railway/Linux) las llaves DEBEN persistirse fuera del proceso para sobrevivir redeploys:
+        // sin esto, cada redeploy/reinicio regenera llaves y los secretos cifrados dejan de
+        // descifrarse (ej. el login Google mostraba "no habilitado"). Se persisten en la BD via
+        // PersistKeysToDbContext (sobrevive redeploys y multi-instancia, sin necesidad de volumen).
+        services.AddDataProtection()
+            .SetApplicationName("Propia")
+            .PersistKeysToDbContext<PropiaDbContext>();
         services.AddSingleton<Application.Common.ISecretProtector, Security.SecretProtector>();
         services.AddScoped<Application.Common.IEmailSender, Email.SmtpEmailSender>();
         services.AddScoped<Application.Integraciones.IEmailConfigService, Integraciones.EmailConfigService>();

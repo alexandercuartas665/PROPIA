@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Propia.Application.Common;
@@ -21,7 +22,7 @@ namespace Propia.Infrastructure.Persistence;
 /// no llevan tenant_id. La gestion de quien tiene acceso a que copropiedad
 /// vive en UsuarioTenant (modulo 2.5).
 /// </summary>
-public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>
+public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>, IDataProtectionKeyContext
 {
     private readonly ITenantContext _tenantContext;
 
@@ -32,6 +33,9 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     }
 
     // Entidades globales (sin tenant_id)
+    // Llaves de Data Protection (infra global, sin tenant_id ni RLS). Persisten los secretos
+    // cifrados a traves de redeploys en produccion (ver AddDataProtection en DependencyInjection).
+    public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
     public DbSet<Organizacion> Organizaciones => Set<Organizacion>();
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<Persona> Personas => Set<Persona>();
