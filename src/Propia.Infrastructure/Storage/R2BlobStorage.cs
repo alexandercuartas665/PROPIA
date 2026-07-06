@@ -100,5 +100,27 @@ public sealed class R2BlobStorage : IBlobStorage, IDisposable
         return $"{_options.Endpoint}/{_options.BucketName}/{key}";
     }
 
+    public string? ResolveUrl(string? storedValueOrKey)
+    {
+        if (string.IsNullOrWhiteSpace(storedValueOrKey)) return null;
+        var val = storedValueOrKey.Trim();
+        // data URIs o rutas relativas (ej. LocalBlobStorage): dejar igual.
+        if (val.StartsWith("data:", StringComparison.OrdinalIgnoreCase) || val.StartsWith("/")) return val;
+
+        var key = val;
+        if (val.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || val.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            // URL completa (posiblemente con dominio viejo): extraer la key (path) y re-hostear.
+            if (!Uri.TryCreate(val, UriKind.Absolute, out var uri)) return val;
+            key = Uri.UnescapeDataString(uri.AbsolutePath).TrimStart('/');
+            // Forma fallback {endpoint}/{bucket}/{key}: quitar el bucket del path.
+            var bucketPrefix = _options.BucketName + "/";
+            if (key.StartsWith(bucketPrefix, StringComparison.OrdinalIgnoreCase))
+                key = key.Substring(bucketPrefix.Length);
+        }
+        return GetPublicUrl(key);
+    }
+
     public void Dispose() => _client.Dispose();
 }

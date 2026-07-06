@@ -52,4 +52,20 @@ public sealed class LocalBlobStorage : IBlobStorage
     {
         return $"/uploads/{key}?v={DateTime.UtcNow.Ticks}";
     }
+
+    public string? ResolveUrl(string? storedValueOrKey)
+    {
+        if (string.IsNullOrWhiteSpace(storedValueOrKey)) return null;
+        var val = storedValueOrKey.Trim();
+        // Ya es ruta relativa servida por el app o data URI: dejar igual.
+        if (val.StartsWith("data:", StringComparison.OrdinalIgnoreCase) || val.StartsWith("/")) return val;
+        // URL absoluta (ej. dato migrado desde R2): extraer la key y re-hostear local.
+        if (val.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || val.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!Uri.TryCreate(val, UriKind.Absolute, out var uri)) return val;
+            return GetPublicUrl(Uri.UnescapeDataString(uri.AbsolutePath).TrimStart('/'));
+        }
+        return GetPublicUrl(val);
+    }
 }

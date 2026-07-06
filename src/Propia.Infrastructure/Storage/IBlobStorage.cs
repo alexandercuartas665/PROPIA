@@ -18,6 +18,15 @@ public interface IBlobStorage
     string GetPublicUrl(string key);
 
     /// <summary>
+    /// Normaliza un valor guardado (key relativa o URL completa, incluso con un dominio
+    /// viejo) a una URL publica viva contra el PublicUrl/base ACTUAL. Devuelve null si el
+    /// valor es vacio; deja igual data URIs y rutas relativas. Esto evita que un cambio de
+    /// dominio (custom domain de R2) rompa las imagenes ya guardadas: al leer, la key se
+    /// re-hostea en el dominio actual sin necesidad de migrar datos.
+    /// </summary>
+    string? ResolveUrl(string? storedValueOrKey);
+
+    /// <summary>
     /// Descarga el contenido completo del blob (modulo 2.15 sirve PDFs por API).
     /// Devuelve null si la key no existe.
     /// </summary>

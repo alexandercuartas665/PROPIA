@@ -11,10 +11,12 @@ public class MiCopropiedadService : IMiCopropiedadService
 {
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenant;
-    public MiCopropiedadService(PropiaDbContext db, ITenantContext tenant)
+    private readonly Storage.IBlobStorage _blob;
+    public MiCopropiedadService(PropiaDbContext db, ITenantContext tenant, Storage.IBlobStorage blob)
     {
         _db = db;
         _tenant = tenant;
+        _blob = blob;
     }
 
     // ----------------------------- Resumen -----------------------------
@@ -61,11 +63,11 @@ public class MiCopropiedadService : IMiCopropiedadService
             pct, completas);
     }
 
-    private static IdentidadDto ToIdentidadDto(Tenant t) =>
+    private IdentidadDto ToIdentidadDto(Tenant t) =>
         new(t.Id, t.Nombre, t.Nit, t.DigitoVerificacion,
             t.Direccion, t.Ciudad, t.Departamento,
             t.CodigoPropia, t.TipoCopropiedad, t.Estrato,
-            t.FotoFachadaUrl, t.LogoUrl, t.Descripcion,
+            _blob.ResolveUrl(t.FotoFachadaUrl), _blob.ResolveUrl(t.LogoUrl), t.Descripcion,
             t.NumeroReglamentoPh, t.NotariaRegistro,
             t.MatriculaInmobiliaria, t.LicenciaConstruccion,
             t.FechaConstitucion,
