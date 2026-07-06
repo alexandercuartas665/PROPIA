@@ -95,8 +95,9 @@
                 <div class="gum-form-row">
                     <div class="gum-field gum-grow">
                         <label class="gum-lbl">@AgrupacionLabelSingular</label>
-                        <select class="gum-input" @bind="_manTorreId">
+                        <select class="gum-input" @bind="ManTorreSel">
                             @foreach (var t in _torres) { <option value="@t.Id">@t.Nombre</option> }
+                            <option value="__nueva__">@($"+ Nueva {AgrupacionLabelSingular.ToLower()}...")</option>
                         </select>
                     </div>
                     <div class="gum-field" style="width:110px">
@@ -104,6 +105,13 @@
                         <input type="number" min="1" class="gum-input" @bind="_manPiso" placeholder="1" />
                     </div>
                 </div>
+                @if (_manNuevaTorre)
+                {
+                    <div class="gum-form-row">
+                        <input class="gum-input gum-grow" @bind="_manNuevaTorreNombre" @bind:event="oninput"
+                               placeholder="@($"Nombre de la nueva {AgrupacionLabelSingular.ToLower()} (ej. Torre A)")" />
+                    </div>
+                }
                 <div class="gum-form-row">
                     <input class="gum-input gum-grow" @bind="_manNumero" @bind:event="oninput" placeholder="Identificador (ej. 1501)" />
                     <select class="gum-input" @bind="_manTipo">
@@ -1649,6 +1657,21 @@
     private int? _manPiso;
     private string _manNumero = "";
     private TipoUnidad _manTipo = TipoUnidad.Apartamento;
+    private bool _manNuevaTorre;              // modo "crear torre nueva" desde el mismo selector
+    private string _manNuevaTorreNombre = "";
+
+    // Binding del <select> de torre: ademas de las torres existentes soporta la opcion
+    // "+ Nueva torre..." (sentinel), que activa el input inline para crearla al agregar.
+    private string ManTorreSel
+    {
+        get => _manNuevaTorre ? "__nueva__" : (_manTorreId == Guid.Empty ? "" : _manTorreId.ToString());
+        set
+        {
+            if (value == "__nueva__") _manNuevaTorre = true;
+            else if (Guid.TryParse(value, out var g)) { _manNuevaTorre = false; _manTorreId = g; }
+            else { _manNuevaTorre = false; _manTorreId = Guid.Empty; }
+        }
+    }
 
     // Generador
     private int _genN = 2;
@@ -1688,6 +1711,8 @@
                 _torresAbiertas.Add(_torres[0].Id);
             if (_manTorreId == Guid.Empty && _torres.Count > 0)
                 _manTorreId = _torres[0].Id;
+            // Sin torres: el selector arranca en "+ Nueva torre..." para no dejar al usuario atascado.
+            if (_torres.Count == 0) _manNuevaTorre = true;
         }
         catch (Exception ex) { ShowMsg(ex.Message, true); }
     }
@@ -2099,6 +2124,42 @@
     private async Task AgregarUnidadManual()
     {
         if (string.IsNullOrWhiteSpace(_manNumero)) return;
+
+        // Si el usuario eligio "+ Nueva torre...", la creamos primero y usamos su Id.
+        if (_manNuevaTorre)
+        {
+            var nombre = _manNuevaTorreNombre.Trim();
+            if (string.IsNullOrWhiteSpace(nombre))
+            {
+                ShowMsg($"Escribe el nombre de la nueva {AgrupacionLabelSingular.ToLower()}.", true);
+                return;
+            }
+            _busy = true;
+            var existe = _torres.FirstOrDefault(t => t.Nombre.Equals(nombre, StringComparison.OrdinalIgnoreCase));
+            if (existe is not null)
+            {
+                _manTorreId = existe.Id;
+            }
+            else
+            {
+                var respTorre = await Auth().PostAsJsonAsync("/api/mi-copropiedad/torres", new CrearTorreRequest(nombre, null, null));
+                if (!respTorre.IsSuccessStatusCode)
+                {
+                    ShowMsg($"Error al crear {AgrupacionLabelSingular.ToLower()}: " + await respTorre.Content.ReadAsStringAsync(), true);
+                    _busy = false;
+                    return;
+                }
+                var nuevaTorre = await respTorre.Content.ReadFromJsonAsync<TorreDto>();
+                if (nuevaTorre is null) { ShowMsg($"Respuesta inesperada al crear {AgrupacionLabelSingular.ToLower()}.", true); _busy = false; return; }
+                _torres.Add(nuevaTorre);
+                _manTorreId = nuevaTorre.Id;
+                _huboCambios = true;
+            }
+            _manNuevaTorre = false;
+            _manNuevaTorreNombre = "";
+            _busy = false;
+        }
+
         if (_manTorreId == Guid.Empty) { ShowMsg($"Selecciona {AgrupacionLabelSingular.ToLower()}.", true); return; }
         _busy = true;
         var req = new CrearUnidadRequest(_manNumero.Trim(), _manTipo, _manTorreId, _manPiso, 0m, null, null, null, null, null, null);
