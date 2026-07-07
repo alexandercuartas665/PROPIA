@@ -25,6 +25,34 @@ public class UsuariosAccesosController : ControllerBase
     public async Task<IActionResult> ListarUsuarios([FromQuery] EstadoUsuarioTenant? estado, [FromQuery] string? q, CancellationToken ct)
         => Ok(await _svc.ListarUsuariosAsync(estado, q, ct));
 
+    // -------- Etiquetas de usuario (2.5) --------
+    [HttpGet("etiquetas")]
+    public async Task<IActionResult> ListarEtiquetas(CancellationToken ct)
+        => Ok(await _svc.ListarEtiquetasAsync(ct));
+
+    [HttpPost("etiquetas")]
+    public async Task<IActionResult> CrearEtiqueta([FromBody] CrearEtiquetaUsuarioRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.CrearEtiquetaAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpPut("etiquetas/{etiquetaId:guid}")]
+    public async Task<IActionResult> ActualizarEtiqueta(Guid etiquetaId, [FromBody] ActualizarEtiquetaUsuarioRequest req, CancellationToken ct)
+        => await _svc.ActualizarEtiquetaAsync(etiquetaId, req, ct) ? NoContent() : NotFound();
+
+    [HttpDelete("etiquetas/{etiquetaId:guid}")]
+    public async Task<IActionResult> EliminarEtiqueta(Guid etiquetaId, CancellationToken ct)
+        => await _svc.EliminarEtiquetaAsync(etiquetaId, ct) ? NoContent() : NotFound();
+
+    [HttpPost("{usuarioTenantId:guid}/etiquetas/{etiquetaId:guid}")]
+    public async Task<IActionResult> AsignarEtiqueta(Guid usuarioTenantId, Guid etiquetaId, CancellationToken ct)
+        => await _svc.AsignarEtiquetaAsync(usuarioTenantId, etiquetaId, ct) ? NoContent() : NotFound();
+
+    [HttpDelete("{usuarioTenantId:guid}/etiquetas/{etiquetaId:guid}")]
+    public async Task<IActionResult> QuitarEtiqueta(Guid usuarioTenantId, Guid etiquetaId, CancellationToken ct)
+        => await _svc.QuitarEtiquetaAsync(usuarioTenantId, etiquetaId, ct) ? NoContent() : NotFound();
+
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetUsuario(Guid id, CancellationToken ct)
     {

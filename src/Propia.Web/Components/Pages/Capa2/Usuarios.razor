@@ -34,12 +34,39 @@
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 6 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 4.6 15H4.5a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 6 8.6a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H10a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V8c0 .7.4 1.3 1 1.5h.1a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1 1.5z"></path></svg>
                 Roles y permisos
             </button>
+            <button class="usr-btn-ghost" @onclick="() => _showEtiquetas = !_showEtiquetas">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                Etiquetas
+            </button>
             <button class="usr-btn-primary" @onclick="AbrirInvitar">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM19 8v6M22 11h-6"></path></svg>
                 Invitar usuario
             </button>
         </div>
     </div>
+
+    @if (_showEtiquetas)
+    {
+        <div class="usr-etq-panel">
+            <div class="usr-etq-panel-t">Etiquetas de usuario <span class="usr-etq-panel-hint">Clasifica a tus usuarios (Consejo, Aseo, Mantenimiento...). Se muestran como chips y sirven para filtrar.</span></div>
+            <div class="usr-etq-list">
+                @foreach (var e in _etiquetas)
+                {
+                    var eid = e.Id;
+                    <span class="usr-etq-chip" style="background:@ChipBg(e.Color);color:@(e.Color ?? "#6D4FE3");border-color:@(e.Color ?? "#DCD2F8")">
+                        @e.Nombre
+                        <button class="usr-etq-x" @onclick="() => EliminarEtiqueta(eid)" title="Eliminar etiqueta">&times;</button>
+                    </span>
+                }
+                @if (_etiquetas.Count == 0) { <span class="usr-etq-empty">Aun no hay etiquetas. Crea la primera abajo.</span> }
+            </div>
+            <div class="usr-etq-form">
+                <input class="usr-etq-in" @bind="_nuevaEtqNombre" @bind:event="oninput" placeholder="Nueva etiqueta (ej. Aseo)" />
+                <input type="color" class="usr-etq-color" @bind="_nuevaEtqColor" title="Color" />
+                <button class="usr-btn-primary usr-etq-add" @onclick="CrearEtiqueta" disabled="@(string.IsNullOrWhiteSpace(_nuevaEtqNombre))">Crear</button>
+            </div>
+        </div>
+    }
 
     @if (!string.IsNullOrEmpty(_msg))
     {
@@ -157,6 +184,35 @@
                             <div style="width:280px;flex-shrink:0;min-width:0">
                                 <div class="usr-name">@u.NombreCompleto</div>
                                 <div class="usr-email">@(u.Email ?? "Sin correo")</div>
+                                <div class="usr-etq-row">
+                                    @foreach (var et in u.Etiquetas)
+                                    {
+                                        var etId = et.Id; var utId = uu.UsuarioTenantId;
+                                        <span class="usr-etq-chip usr-etq-chip-sm" style="background:@ChipBg(et.Color);color:@(et.Color ?? "#6D4FE3");border-color:@(et.Color ?? "#DCD2F8")">
+                                            @et.Nombre
+                                            <button class="usr-etq-x" @onclick="() => QuitarEtiqueta(utId, etId)" title="Quitar">&times;</button>
+                                        </span>
+                                    }
+                                    @if (_etiquetas.Any(e => u.Etiquetas.All(a => a.Id != e.Id)))
+                                    {
+                                        var utId2 = uu.UsuarioTenantId;
+                                        <span class="usr-etq-addwrap">
+                                            <button class="usr-etq-plus" @onclick="() => _pickerUsuario = (_pickerUsuario == utId2 ? (Guid?)null : utId2)" title="Agregar etiqueta">+</button>
+                                            @if (_pickerUsuario == utId2)
+                                            {
+                                                <div class="usr-etq-picker">
+                                                    @foreach (var e in _etiquetas.Where(e => u.Etiquetas.All(a => a.Id != e.Id)))
+                                                    {
+                                                        var eid = e.Id;
+                                                        <button class="usr-etq-pick" @onclick="() => AsignarEtiqueta(utId2, eid)">
+                                                            <span class="usr-etq-dot" style="background:@(e.Color ?? "#6D4FE3")"></span>@e.Nombre
+                                                        </button>
+                                                    }
+                                                </div>
+                                            }
+                                        </span>
+                                    }
+                                </div>
                             </div>
                             <div style="flex:1"><span class="usr-rol">@u.RolNombre</span></div>
                             <div style="width:160px;flex-shrink:0">
@@ -582,6 +638,30 @@
     .usr-name { font-size:14px; font-weight:700; color:#33475B; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .usr-email { font-size:12px; color:#A6B7C8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .usr-rol { font-size:12px; font-weight:700; color:#6D4FE3; background:#F1ECFD; border:1px solid #DCD2F8; padding:4px 11px; border-radius:7px; }
+
+    /* Etiquetas de usuario (2.5) */
+    .usr-etq-panel { background:#FBFCFD; border:1px solid #E1E8EE; border-radius:12px; padding:14px 16px; margin-bottom:14px; }
+    .usr-etq-panel-t { font-size:13px; font-weight:800; color:#1B2A3A; margin-bottom:10px; }
+    .usr-etq-panel-hint { font-size:11.5px; font-weight:500; color:#7C98B6; margin-left:6px; }
+    .usr-etq-list { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:12px; }
+    .usr-etq-empty { font-size:12px; color:#A6B7C8; }
+    .usr-etq-chip { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:700; padding:3px 9px; border-radius:20px; border:1px solid; }
+    .usr-etq-chip-sm { font-size:10.5px; padding:2px 8px; }
+    .usr-etq-x { border:0; background:transparent; color:inherit; opacity:.6; cursor:pointer; font-size:14px; line-height:1; padding:0; }
+    .usr-etq-x:hover { opacity:1; }
+    .usr-etq-form { display:flex; align-items:center; gap:8px; }
+    .usr-etq-in { flex:1; max-width:260px; border:1px solid #E1E8EE; border-radius:9px; padding:8px 11px; font-size:13px; color:#33475B; outline:none; }
+    .usr-etq-in:focus { border-color:#6D4FE3; }
+    .usr-etq-color { width:38px; height:36px; border:1px solid #E1E8EE; border-radius:9px; background:#fff; cursor:pointer; padding:2px; }
+    .usr-etq-add { padding:8px 16px; }
+    .usr-etq-row { display:flex; flex-wrap:wrap; align-items:center; gap:5px; margin-top:5px; }
+    .usr-etq-addwrap { position:relative; display:inline-flex; }
+    .usr-etq-plus { width:20px; height:20px; border-radius:50%; border:1px dashed #C3D0DD; background:#fff; color:#7C98B6; font-size:13px; line-height:1; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
+    .usr-etq-plus:hover { border-color:#6D4FE3; color:#6D4FE3; }
+    .usr-etq-picker { position:absolute; top:24px; left:0; z-index:20; background:#fff; border:1px solid #E1E8EE; border-radius:10px; box-shadow:0 8px 24px rgba(45,62,80,.15); padding:5px; min-width:150px; max-height:220px; overflow-y:auto; }
+    .usr-etq-pick { display:flex; align-items:center; gap:7px; width:100%; text-align:left; border:0; background:transparent; padding:6px 8px; border-radius:7px; font-size:12px; color:#33475B; cursor:pointer; }
+    .usr-etq-pick:hover { background:#F5F1FE; }
+    .usr-etq-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
     .usr-badge-pend { font-size:11px; font-weight:700; color:#B45309; background:#FEF3DC; padding:4px 10px; border-radius:7px; }
     .usr-badge-inact { font-size:11px; font-weight:700; color:#A6B7C8; background:#EEF3F8; padding:4px 10px; border-radius:7px; }
     .usr-rowbtn { display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border-radius:8px; color:#6D4FE3; border:1px solid #DCD2F8; background:#fff; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap; }
@@ -677,6 +757,13 @@
     private string _nuevoNombre = "";
     private string _copiarDe = "";
 
+    // Etiquetas de usuario (2.5)
+    private bool _showEtiquetas;
+    private List<EtiquetaUsuarioDto> _etiquetas = new();
+    private string _nuevaEtqNombre = "";
+    private string _nuevaEtqColor = "#6D4FE3";
+    private Guid? _pickerUsuario;
+
     private static readonly string[] ModulosVisibles =
     {
         "DASHBOARD", "MI_COPROPIEDAD", "DIRECTORIO", "USUARIOS_ACCESOS",
@@ -713,9 +800,42 @@
             resp.EnsureSuccessStatusCode();
             _usuarios = await resp.Content.ReadFromJsonAsync<List<UsuarioListaDto>>() ?? new();
             _pendientes = await http.GetFromJsonAsync<List<InvitacionDto>>("/api/usuarios/invitaciones") ?? new();
+            _etiquetas = await http.GetFromJsonAsync<List<EtiquetaUsuarioDto>>("/api/usuarios/etiquetas") ?? new();
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
     }
+
+    // ---------------- Etiquetas de usuario (2.5) ----------------
+    private async Task CrearEtiqueta()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevaEtqNombre)) return;
+        var resp = await Auth().PostAsJsonAsync("/api/usuarios/etiquetas",
+            new CrearEtiquetaUsuarioRequest(_nuevaEtqNombre.Trim(), _nuevaEtqColor));
+        if (resp.IsSuccessStatusCode) { _nuevaEtqNombre = ""; _nuevaEtqColor = "#6D4FE3"; await CargarAsync(); }
+        else { _msg = "Error al crear la etiqueta."; _msgClass = "alert-danger"; }
+    }
+
+    private async Task EliminarEtiqueta(Guid etiquetaId)
+    {
+        var resp = await Auth().DeleteAsync($"/api/usuarios/etiquetas/{etiquetaId}");
+        if (resp.IsSuccessStatusCode) await CargarAsync();
+    }
+
+    private async Task AsignarEtiqueta(Guid usuarioTenantId, Guid etiquetaId)
+    {
+        var resp = await Auth().PostAsync($"/api/usuarios/{usuarioTenantId}/etiquetas/{etiquetaId}", null);
+        if (resp.IsSuccessStatusCode) { _pickerUsuario = null; await CargarAsync(); }
+    }
+
+    private async Task QuitarEtiqueta(Guid usuarioTenantId, Guid etiquetaId)
+    {
+        var resp = await Auth().DeleteAsync($"/api/usuarios/{usuarioTenantId}/etiquetas/{etiquetaId}");
+        if (resp.IsSuccessStatusCode) await CargarAsync();
+    }
+
+    // Fondo tenue del chip a partir del color (hex + alpha ~10%).
+    private static string ChipBg(string? color)
+        => string.IsNullOrWhiteSpace(color) ? "#F1ECFD" : (color.Length == 7 ? color + "1A" : "#F1ECFD");
 
     private async Task CargarRolesAsync()
     {

@@ -36,7 +36,8 @@ public record UsuarioListaDto(
     EstadoUsuarioTenant Estado,
     DateTimeOffset? UltimoAcceso,
     DateTimeOffset? FechaInvitacion,
-    bool TieneCuentaPropia);  // si Persona tiene ApplicationUser asociado
+    bool TieneCuentaPropia,   // si Persona tiene ApplicationUser asociado
+    IReadOnlyList<EtiquetaUsuarioDto> Etiquetas);
 
 public record UsuarioDetalleDto(
     Guid UsuarioTenantId,
@@ -62,6 +63,14 @@ public record AuthMetodoDto(TipoAuthMetodo Tipo, bool Activo);
 public record CambiarRolUsuarioRequest(Guid RolId);
 
 public record RevocarAccesoRequest(string? Motivo);
+
+// ====================== Etiquetas de usuario (2.5) ======================
+
+public record EtiquetaUsuarioDto(Guid Id, string Nombre, string? Color, bool Activo);
+
+public record CrearEtiquetaUsuarioRequest(string Nombre, string? Color);
+
+public record ActualizarEtiquetaUsuarioRequest(string Nombre, string? Color, bool Activo);
 
 // ====================== Invitaciones ======================
 

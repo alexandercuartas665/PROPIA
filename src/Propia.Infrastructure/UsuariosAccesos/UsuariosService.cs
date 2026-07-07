@@ -71,6 +71,17 @@ public class UsuariosService : IUsuariosService
             .ToListAsync(ct);
         var setCuentas = new HashSet<string>(emailsConCuenta, StringComparer.OrdinalIgnoreCase);
 
+        // Etiquetas asignadas por usuario (2.5)
+        var utIds = lista.Select(u => u.Id).ToList();
+        var etiquetasPorUsuario = (await _db.UsuarioTenantEtiquetas.AsNoTracking()
+                .Where(ute => utIds.Contains(ute.UsuarioTenantId))
+                .Join(_db.EtiquetasUsuario, ute => ute.EtiquetaId, e => e.Id,
+                      (ute, e) => new { ute.UsuarioTenantId, e })
+                .ToListAsync(ct))
+            .GroupBy(x => x.UsuarioTenantId)
+            .ToDictionary(g => g.Key,
+                g => (IReadOnlyList<EtiquetaUsuarioDto>)g.Select(x => new EtiquetaUsuarioDto(x.e.Id, x.e.Nombre, x.e.Color, x.e.Activo)).ToList());
+
         return lista.Select(u => new UsuarioListaDto(
             u.Id, u.PersonaId,
             $"{u.Persona!.Nombres} {u.Persona.Apellidos}",
@@ -78,8 +89,75 @@ public class UsuariosService : IUsuariosService
             u.Persona.Email, u.Persona.Telefono,
             u.RolId, u.RolNavigation?.Nombre ?? u.Rol,
             u.Estado, u.UltimoAcceso, u.FechaInvitacion,
-            u.Persona.Email is not null && setCuentas.Contains(u.Persona.Email)
+            u.Persona.Email is not null && setCuentas.Contains(u.Persona.Email),
+            etiquetasPorUsuario.TryGetValue(u.Id, out var ets) ? ets : new List<EtiquetaUsuarioDto>()
         )).ToList();
+    }
+
+    // ===================== Etiquetas de usuario (2.5) =====================
+
+    public async Task<IReadOnlyList<EtiquetaUsuarioDto>> ListarEtiquetasAsync(CancellationToken ct)
+        => await _db.EtiquetasUsuario.AsNoTracking()
+            .OrderBy(e => e.Nombre)
+            .Select(e => new EtiquetaUsuarioDto(e.Id, e.Nombre, e.Color, e.Activo))
+            .ToListAsync(ct);
+
+    public async Task<EtiquetaUsuarioDto> CrearEtiquetaAsync(CrearEtiquetaUsuarioRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Nombre))
+            throw new InvalidOperationException("El nombre de la etiqueta es obligatorio.");
+        var e = new EtiquetaUsuario
+        {
+            Nombre = req.Nombre.Trim(),
+            Color = string.IsNullOrWhiteSpace(req.Color) ? null : req.Color.Trim(),
+            Activo = true
+        };
+        _db.EtiquetasUsuario.Add(e);
+        await _db.SaveChangesAsync(ct);
+        return new EtiquetaUsuarioDto(e.Id, e.Nombre, e.Color, e.Activo);
+    }
+
+    public async Task<bool> ActualizarEtiquetaAsync(Guid etiquetaId, ActualizarEtiquetaUsuarioRequest req, CancellationToken ct)
+    {
+        var e = await _db.EtiquetasUsuario.FirstOrDefaultAsync(x => x.Id == etiquetaId, ct);
+        if (e is null) return false;
+        e.Nombre = req.Nombre.Trim();
+        e.Color = string.IsNullOrWhiteSpace(req.Color) ? null : req.Color.Trim();
+        e.Activo = req.Activo;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> EliminarEtiquetaAsync(Guid etiquetaId, CancellationToken ct)
+    {
+        var e = await _db.EtiquetasUsuario.FirstOrDefaultAsync(x => x.Id == etiquetaId, ct);
+        if (e is null) return false;
+        var asigs = await _db.UsuarioTenantEtiquetas.Where(a => a.EtiquetaId == etiquetaId).ToListAsync(ct);
+        _db.UsuarioTenantEtiquetas.RemoveRange(asigs);
+        _db.EtiquetasUsuario.Remove(e);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> AsignarEtiquetaAsync(Guid usuarioTenantId, Guid etiquetaId, CancellationToken ct)
+    {
+        if (await _db.UsuarioTenantEtiquetas.AnyAsync(a => a.UsuarioTenantId == usuarioTenantId && a.EtiquetaId == etiquetaId, ct))
+            return true; // idempotente
+        var utOk = await _db.UsuariosTenant.AnyAsync(u => u.Id == usuarioTenantId, ct);
+        var etOk = await _db.EtiquetasUsuario.AnyAsync(e => e.Id == etiquetaId, ct);
+        if (!utOk || !etOk) return false;
+        _db.UsuarioTenantEtiquetas.Add(new UsuarioTenantEtiqueta { UsuarioTenantId = usuarioTenantId, EtiquetaId = etiquetaId });
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> QuitarEtiquetaAsync(Guid usuarioTenantId, Guid etiquetaId, CancellationToken ct)
+    {
+        var a = await _db.UsuarioTenantEtiquetas.FirstOrDefaultAsync(x => x.UsuarioTenantId == usuarioTenantId && x.EtiquetaId == etiquetaId, ct);
+        if (a is null) return false;
+        _db.UsuarioTenantEtiquetas.Remove(a);
+        await _db.SaveChangesAsync(ct);
+        return true;
     }
 
     public async Task<UsuarioDetalleDto?> GetUsuarioDetalleAsync(Guid usuarioTenantId, CancellationToken ct)

@@ -32,6 +32,14 @@ public interface IUsuariosService
 
     // --- Auditoria ---
     Task<IReadOnlyList<AuditoriaEntradaDto>> ListarAuditoriaAsync(int limit, CancellationToken ct);
+
+    // --- Etiquetas de usuario (2.5) ---
+    Task<IReadOnlyList<EtiquetaUsuarioDto>> ListarEtiquetasAsync(CancellationToken ct);
+    Task<EtiquetaUsuarioDto> CrearEtiquetaAsync(CrearEtiquetaUsuarioRequest req, CancellationToken ct);
+    Task<bool> ActualizarEtiquetaAsync(Guid etiquetaId, ActualizarEtiquetaUsuarioRequest req, CancellationToken ct);
+    Task<bool> EliminarEtiquetaAsync(Guid etiquetaId, CancellationToken ct);
+    Task<bool> AsignarEtiquetaAsync(Guid usuarioTenantId, Guid etiquetaId, CancellationToken ct);
+    Task<bool> QuitarEtiquetaAsync(Guid usuarioTenantId, Guid etiquetaId, CancellationToken ct);
 }
 
 /// <summary>Servicio de gestion de roles y permisos (configurable por copropiedad).</summary>

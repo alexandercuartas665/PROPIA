@@ -110,6 +110,8 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<UsuarioAuthMetodo> UsuarioAuthMetodos => Set<UsuarioAuthMetodo>();
     public DbSet<UsuarioSesion> UsuarioSesiones => Set<UsuarioSesion>();
     public DbSet<AccesoAuditoria> AccesoAuditorias => Set<AccesoAuditoria>();
+    public DbSet<EtiquetaUsuario> EtiquetasUsuario => Set<EtiquetaUsuario>();
+    public DbSet<UsuarioTenantEtiqueta> UsuarioTenantEtiquetas => Set<UsuarioTenantEtiqueta>();
 
     // Modulo 2.6 Presupuesto, Cuotas y Pagos
     public DbSet<Domain.Entities.Presupuesto> Presupuestos => Set<Domain.Entities.Presupuesto>();
@@ -2443,6 +2445,27 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             // Red de seguridad de aplicacion. RLS de Postgres es la red final.
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null
                                   || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // Etiquetas de usuario (2.5): definicion con color + asignacion N:N. Patron TareaEtiqueta.
+        modelBuilder.Entity<EtiquetaUsuario>(b =>
+        {
+            b.ToTable("etiquetas_usuario");
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(80);
+            b.Property(x => x.Color).HasMaxLength(20);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Nombre }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<UsuarioTenantEtiqueta>(b =>
+        {
+            b.ToTable("usuario_tenant_etiquetas");
+            b.HasOne(x => x.UsuarioTenant).WithMany().HasForeignKey(x => x.UsuarioTenantId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Etiqueta).WithMany().HasForeignKey(x => x.EtiquetaId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.UsuarioTenantId, x.EtiquetaId }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
         // SuperAdminUsuario
