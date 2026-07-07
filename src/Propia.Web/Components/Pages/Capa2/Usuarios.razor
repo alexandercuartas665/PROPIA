@@ -2,7 +2,9 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.UsuariosAccesos
 @using Propia.Application.Directorio
+@using Propia.Application.MiCopropiedad
 @using Propia.Domain.Enums
+@using Microsoft.AspNetCore.Components.Forms
 @inject IHttpClientFactory HttpFactory
 @inject NavigationManager Nav
 @inject IJSRuntime Js
@@ -96,8 +98,35 @@
         <button class="usr-tab @(_tab == EstadoUsuarioTenant.Inactivo ? "active" : "")" @onclick="() => SetTab(EstadoUsuarioTenant.Inactivo)">Inactivos</button>
     </div>
 
-    @* ===================== Buscador ===================== *@
-    <input class="usr-search" placeholder="Buscar por nombre, documento, email o rol..." @bind="_query" @bind:event="oninput" @onkeyup="CargarAsync" />
+    @* ===================== Buscador + filtros + vista ===================== *@
+    <div class="usr-toolbar2">
+        <input class="usr-search" placeholder="Buscar por nombre, documento, email o rol..." @bind="_query" @bind:event="oninput" @onkeyup="CargarAsync" />
+        @if (_tab != EstadoUsuarioTenant.Pendiente)
+        {
+            <select class="usr-fsel" @bind="_filtroRolId">
+                <option value="@Guid.Empty">Todos los roles</option>
+                @foreach (var r in RolesDisponibles())
+                {
+                    <option value="@r.Id">@r.Nombre</option>
+                }
+            </select>
+            <select class="usr-fsel" @bind="_filtroEtiquetaId">
+                <option value="@Guid.Empty">Todas las etiquetas</option>
+                @foreach (var e in _etiquetas)
+                {
+                    <option value="@e.Id">@e.Nombre</option>
+                }
+            </select>
+            <div class="usr-viewtoggle">
+                <button class="usr-vbtn @(_vista == "tabla" ? "on" : "")" @onclick='() => _vista = "tabla"' title="Vista tabla">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                </button>
+                <button class="usr-vbtn @(_vista == "tarjetas" ? "on" : "")" @onclick='() => _vista = "tarjetas"' title="Vista tarjetas">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect></svg>
+                </button>
+            </div>
+        }
+    </div>
 
     @* ===================== Tabla Pendientes (invitaciones) ===================== *@
     @if (_tab == EstadoUsuarioTenant.Pendiente)
@@ -161,10 +190,64 @@
         }
         else
         {
-            var lista = _usuarios.Where(u => u.Estado == _tab).ToList();
+            var lista = _usuarios.Where(u => u.Estado == _tab)
+                .Where(u => _filtroRolId == Guid.Empty || u.RolId == _filtroRolId)
+                .Where(u => _filtroEtiquetaId == Guid.Empty || u.Etiquetas.Any(e => e.Id == _filtroEtiquetaId))
+                .ToList();
             @if (lista.Count == 0)
             {
                 <div class="usr-empty">Sin usuarios @_tab.ToString().ToLower() en esta copropiedad.</div>
+            }
+            else if (_vista == "tarjetas")
+            {
+                <div class="usr-cards">
+                    @foreach (var u in lista)
+                    {
+                        var uu = u;
+                        <div class="usr-card">
+                            <div class="usr-card-top">
+                                @if (!string.IsNullOrWhiteSpace(u.FotoUrl))
+                                {
+                                    <img class="usr-av usr-av-lg usr-av-img" src="@u.FotoUrl" alt="@u.NombreCompleto" />
+                                }
+                                else
+                                {
+                                    <div class="usr-av usr-av-lg">@Iniciales(u.NombreCompleto)</div>
+                                }
+                                <div style="min-width:0">
+                                    <div class="usr-name">@u.NombreCompleto</div>
+                                    <div class="usr-email">@(u.Email ?? "Sin correo")</div>
+                                    <span class="usr-rol">@u.RolNombre</span>
+                                </div>
+                            </div>
+                            @if (u.GruposGobierno.Count > 0 || u.Etiquetas.Count > 0)
+                            {
+                                <div class="usr-etq-row usr-card-tags">
+                                    @foreach (var gg in u.GruposGobierno)
+                                    {
+                                        <span class="usr-gob-tag">@gg</span>
+                                    }
+                                    @foreach (var et in u.Etiquetas)
+                                    {
+                                        <span class="usr-etq-chip usr-etq-chip-sm" style="background:@ChipBg(et.Color);color:@(et.Color ?? "#6D4FE3");border-color:@(et.Color ?? "#DCD2F8")">@et.Nombre</span>
+                                    }
+                                </div>
+                            }
+                            <div class="usr-card-foot">
+                                @if (u.Estado == EstadoUsuarioTenant.Activo)
+                                {
+                                    <span class="usr-email">@(u.UltimoAcceso?.LocalDateTime.ToString("yyyy-MM-dd HH:mm") ?? "Sin acceso")</span>
+                                    <button class="usr-rowbtn" @onclick="() => AbrirEditar(uu)">Editar</button>
+                                }
+                                else
+                                {
+                                    <span class="usr-badge-inact">Revocado</span>
+                                    <button class="usr-rowbtn" @onclick="() => Reactivar(uu.UsuarioTenantId)">Reactivar</button>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
             }
             else
             {
@@ -180,11 +263,22 @@
                     {
                         var uu = u;
                         <div class="usr-row">
-                            <div class="usr-av">@Iniciales(u.NombreCompleto)</div>
+                            @if (!string.IsNullOrWhiteSpace(u.FotoUrl))
+                            {
+                                <img class="usr-av usr-av-img" src="@u.FotoUrl" alt="@u.NombreCompleto" />
+                            }
+                            else
+                            {
+                                <div class="usr-av">@Iniciales(u.NombreCompleto)</div>
+                            }
                             <div style="width:280px;flex-shrink:0;min-width:0">
                                 <div class="usr-name">@u.NombreCompleto</div>
                                 <div class="usr-email">@(u.Email ?? "Sin correo")</div>
                                 <div class="usr-etq-row">
+                                    @foreach (var gg in u.GruposGobierno)
+                                    {
+                                        <span class="usr-gob-tag">@gg</span>
+                                    }
                                     @foreach (var et in u.Etiquetas)
                                     {
                                         var etId = et.Id; var utId = uu.UsuarioTenantId;
@@ -372,10 +466,24 @@
             </div>
             <div class="usr-modal-body">
                 <div class="d-flex align-items-center gap-3 mb-4">
-                    <div class="usr-av" style="width:64px;height:64px;border-radius:15px;font-size:21px">@Iniciales(_editUser.NombreCompleto)</div>
+                    <div class="usr-av-edit">
+                        @if (!string.IsNullOrWhiteSpace(_editFotoUrl))
+                        {
+                            <img class="usr-av usr-av-img" style="width:64px;height:64px;border-radius:15px" src="@_editFotoUrl" alt="@_editUser.NombreCompleto" />
+                        }
+                        else
+                        {
+                            <div class="usr-av" style="width:64px;height:64px;border-radius:15px;font-size:21px">@Iniciales(_editUser.NombreCompleto)</div>
+                        }
+                        <label class="usr-av-cam" title="Cambiar foto">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                            <InputFile OnChange="SubirFoto" accept="image/png,image/jpeg,image/webp" style="display:none" />
+                        </label>
+                    </div>
                     <div>
                         <div class="usr-name" style="font-size:16px">@_editUser.NombreCompleto</div>
                         <div class="usr-email">@(_editUser.Email ?? "Sin correo") @(_editUser.TieneCuentaPropia ? ". Con cuenta propia" : ". Solo en directorio")</div>
+                        @if (_subiendoFoto) { <div class="usr-email" style="color:#1E88E5">Subiendo foto...</div> }
                     </div>
                 </div>
 
@@ -398,6 +506,123 @@
                         }
                     </select>
                 </div>
+
+                @if (_gobUser is not null)
+                {
+                    <div class="usr-gob-sec">
+                        <div class="usr-gob-sec-t">GOBIERNO Y EQUIPO DE TRABAJO</div>
+                        <div class="usr-gob-sec-hint">Activa a esta persona en los grupos de gobierno. Un usuario puede estar en varios a la vez.</div>
+
+                        @* Consejo de administracion *@
+                        <div class="usr-gob-card @(_gobUser.Consejo is not null ? "on" : "")">
+                            <div class="usr-gob-card-h">
+                                <span class="usr-gob-card-name">Consejo de administracion</span>
+                                @if (_gobUser.Consejo is not null) { <span class="usr-gob-badge">Miembro</span> }
+                            </div>
+                            @if (_gobUser.Consejo is not null)
+                            {
+                                <div class="usr-gob-tagrow">
+                                    <span class="usr-gob-tag2">@CargoConsejoTxt(_gobUser.Consejo.Cargo)</span>
+                                    <button class="usr-gob-quitar" @onclick="QuitarConsejo" disabled="@_busy">Quitar</button>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="usr-gob-form">
+                                    <select class="usr-gob-in" @bind="_gobCargoConsejo">
+                                        @foreach (var c in Enum.GetValues<CargoConsejo>()) { <option value="@c">@CargoConsejoTxt(c)</option> }
+                                    </select>
+                                    <button class="usr-gob-add" @onclick="AgregarConsejo" disabled="@_busy">+ Agregar</button>
+                                </div>
+                            }
+                        </div>
+
+                        @* Comites *@
+                        <div class="usr-gob-card @(_gobUser.Comites.Count > 0 ? "on" : "")">
+                            <div class="usr-gob-card-h">
+                                <span class="usr-gob-card-name">Comites</span>
+                                @if (_gobUser.Comites.Count > 0) { <span class="usr-gob-badge">@_gobUser.Comites.Count</span> }
+                            </div>
+                            @if (_gobUser.Comites.Count > 0)
+                            {
+                                <div class="usr-gob-tagrow">
+                                    @foreach (var cm in _gobUser.Comites)
+                                    {
+                                        var mid = cm.MiembroId;
+                                        <span class="usr-gob-tag2">@cm.ComiteNombre <button class="usr-gob-x2" @onclick="() => QuitarComite(mid)" disabled="@_busy">&times;</button></span>
+                                    }
+                                </div>
+                            }
+                            @if (_comites.Count > 0)
+                            {
+                                <div class="usr-gob-form">
+                                    <select class="usr-gob-in" @bind="_gobComiteId">
+                                        <option value="@Guid.Empty">Elegir comite...</option>
+                                        @foreach (var c in _comites.Where(c => _gobUser.Comites.All(m => m.ComiteId != c.Id)))
+                                        {
+                                            <option value="@c.Id">@c.Nombre</option>
+                                        }
+                                    </select>
+                                    <button class="usr-gob-add" @onclick="AgregarComite" disabled="@(_busy || _gobComiteId == Guid.Empty)">+ Agregar</button>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="usr-gob-note">No hay comites creados. Crealos en el modulo Gobierno.</div>
+                            }
+                        </div>
+
+                        @* Revisor fiscal *@
+                        <div class="usr-gob-card @(_gobUser.Revisor is not null ? "on" : "")">
+                            <div class="usr-gob-card-h">
+                                <span class="usr-gob-card-name">Revisor fiscal</span>
+                                @if (_gobUser.Revisor is not null) { <span class="usr-gob-badge">Activo</span> }
+                            </div>
+                            @if (_gobUser.Revisor is not null)
+                            {
+                                <div class="usr-gob-tagrow">
+                                    <span class="usr-gob-tag2">Revisor fiscal@(string.IsNullOrWhiteSpace(_gobUser.Revisor.NumeroTarjetaProfesional) ? "" : " - TP " + _gobUser.Revisor.NumeroTarjetaProfesional)</span>
+                                    <button class="usr-gob-quitar" @onclick="QuitarRevisor" disabled="@_busy">Quitar</button>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="usr-gob-form">
+                                    <input class="usr-gob-in" @bind="_gobRevisorTp" placeholder="Tarjeta profesional (opcional)" />
+                                    <button class="usr-gob-add" @onclick="DesignarRevisor" disabled="@_busy">+ Designar</button>
+                                </div>
+                            }
+                        </div>
+
+                        @* Equipo de trabajo *@
+                        <div class="usr-gob-card @(_gobUser.Equipo is not null ? "on" : "")">
+                            <div class="usr-gob-card-h">
+                                <span class="usr-gob-card-name">Equipo de trabajo</span>
+                                @if (_gobUser.Equipo is not null) { <span class="usr-gob-badge">Miembro</span> }
+                            </div>
+                            @if (_gobUser.Equipo is not null)
+                            {
+                                <div class="usr-gob-tagrow">
+                                    <span class="usr-gob-tag2">@(string.IsNullOrWhiteSpace(_gobUser.Equipo.RolPersonalizado) ? RolEquipoTxt(_gobUser.Equipo.Rol) : _gobUser.Equipo.RolPersonalizado)</span>
+                                    <button class="usr-gob-quitar" @onclick="QuitarEquipo" disabled="@_busy">Quitar</button>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="usr-gob-form">
+                                    <select class="usr-gob-in" @bind="_gobEquipoRol">
+                                        @foreach (var rr in Enum.GetValues<RolEquipo>()) { <option value="@rr">@RolEquipoTxt(rr)</option> }
+                                    </select>
+                                    <select class="usr-gob-in" @bind="_gobEquipoTipo">
+                                        <option value="@TipoVinculacion.Interno">Interno</option>
+                                        <option value="@TipoVinculacion.Externo">Externo</option>
+                                    </select>
+                                    <button class="usr-gob-add" @onclick="AgregarEquipo" disabled="@_busy">+ Agregar</button>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
 
                 <div class="usr-security">
                     <div class="usr-sec-label">ZONA DE ACCESO</div>
@@ -629,6 +854,26 @@
 
     .usr-search { width:100%; max-width:380px; border:1px solid #E1E8EE; border-radius:9px; padding:9px 12px; font-size:13.5px; color:#33475B; outline:none; background:#fff; margin:14px 0; }
     .usr-search:focus { border-color:#6D4FE3; }
+    /* Toolbar de filtros + vista (2.5.C) */
+    .usr-toolbar2 { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:14px 0; }
+    .usr-toolbar2 .usr-search { margin:0; flex:1 1 320px; }
+    .usr-fsel { border:1px solid #E1E8EE; border-radius:9px; padding:9px 12px; font-size:13px; color:#33475B; background:#fff; outline:none; cursor:pointer; }
+    .usr-fsel:focus { border-color:#6D4FE3; }
+    .usr-viewtoggle { display:flex; border:1px solid #E1E8EE; border-radius:9px; overflow:hidden; margin-left:auto; }
+    .usr-vbtn { border:none; background:#fff; color:#7C98B6; padding:8px 11px; cursor:pointer; display:flex; align-items:center; }
+    .usr-vbtn.on { background:#6D4FE3; color:#fff; }
+    /* Avatares con foto */
+    .usr-av-img { object-fit:cover; border-radius:11px; }
+    .usr-av-lg { width:52px; height:52px; border-radius:13px; font-size:18px; flex-shrink:0; }
+    .usr-av-edit { position:relative; width:64px; height:64px; flex-shrink:0; }
+    .usr-av-cam { position:absolute; right:-4px; bottom:-4px; width:24px; height:24px; border-radius:50%; background:#6D4FE3; color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; border:2px solid #fff; box-shadow:0 1px 3px rgba(45,62,80,.25); }
+    /* Vista de tarjetas */
+    .usr-cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:14px; }
+    .usr-card { background:#fff; border:1px solid #E1E8EE; border-radius:14px; padding:16px; box-shadow:0 1px 2px rgba(45,62,80,.05); display:flex; flex-direction:column; gap:12px; }
+    .usr-card:hover { border-color:#C3D0DD; }
+    .usr-card-top { display:flex; align-items:center; gap:12px; min-width:0; }
+    .usr-card-tags { margin:0; }
+    .usr-card-foot { display:flex; align-items:center; justify-content:space-between; gap:8px; border-top:1px solid #EEF2F6; padding-top:10px; margin-top:auto; }
 
     .usr-table { background:#fff; border:1px solid #E1E8EE; border-radius:14px; box-shadow:0 1px 2px rgba(45,62,80,.05); overflow:hidden; }
     .usr-th { display:flex; align-items:center; gap:14px; padding:11px 18px; border-bottom:1px solid #EEF3F8; background:#FAFBFC; font-size:11px; letter-spacing:.4px; font-weight:700; color:#A6B7C8; }
@@ -662,6 +907,28 @@
     .usr-etq-pick { display:flex; align-items:center; gap:7px; width:100%; text-align:left; border:0; background:transparent; padding:6px 8px; border-radius:7px; font-size:12px; color:#33475B; cursor:pointer; }
     .usr-etq-pick:hover { background:#F5F1FE; }
     .usr-etq-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+    /* Tags de gobierno (2.5.1) en la lista */
+    .usr-gob-tag { display:inline-flex; align-items:center; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:20px; color:#B45309; background:#FEF3DC; border:1px solid #FCE7A3; }
+    /* Seccion Gobierno dentro del modal Editar (2.5.1) */
+    .usr-gob-sec { margin:6px 0 18px; }
+    .usr-gob-sec-t { font-size:11px; font-weight:800; letter-spacing:.5px; color:#7A8DA0; margin-bottom:2px; }
+    .usr-gob-sec-hint { font-size:12px; color:#A6B7C8; line-height:1.4; margin-bottom:10px; }
+    .usr-gob-card { border:1.5px solid #E4EBF1; border-radius:12px; padding:11px 13px; margin-bottom:9px; transition:border-color .15s, background .15s; }
+    .usr-gob-card.on { border-color:#B9E0C9; background:#F4FBF7; }
+    .usr-gob-card-h { display:flex; align-items:center; gap:8px; }
+    .usr-gob-card-name { font-size:13.5px; font-weight:700; color:#33475B; }
+    .usr-gob-badge { font-size:10px; font-weight:800; padding:1px 8px; border-radius:20px; color:#0F8A4F; background:#DBF3E5; }
+    .usr-gob-tagrow { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:9px; }
+    .usr-gob-tag2 { display:inline-flex; align-items:center; gap:4px; font-size:12px; font-weight:700; padding:3px 10px; border-radius:20px; color:#0F6E43; background:#E4F6EC; border:1px solid #BEE7CE; }
+    .usr-gob-x2 { border:none; background:transparent; color:#0F8A4F; font-size:15px; line-height:1; cursor:pointer; padding:0 0 0 2px; }
+    .usr-gob-x2:disabled { opacity:.4; cursor:default; }
+    .usr-gob-quitar { margin-left:auto; border:1px solid #E4EBF1; background:#fff; color:#C0392B; font-size:11.5px; font-weight:700; padding:3px 12px; border-radius:8px; cursor:pointer; }
+    .usr-gob-quitar:disabled { opacity:.5; cursor:default; }
+    .usr-gob-form { display:flex; gap:8px; margin-top:9px; }
+    .usr-gob-in { flex:1 1 auto; min-width:0; border:1px solid #E4EBF1; border-radius:8px; padding:7px 10px; font-size:13px; color:#33475B; background:#fff; }
+    .usr-gob-add { flex:0 0 auto; border:none; background:#1E88E5; color:#fff; font-size:12.5px; font-weight:700; padding:7px 14px; border-radius:8px; cursor:pointer; }
+    .usr-gob-add:disabled { opacity:.5; cursor:default; }
+    .usr-gob-note { font-size:12px; color:#A6B7C8; margin-top:8px; font-style:italic; }
     .usr-badge-pend { font-size:11px; font-weight:700; color:#B45309; background:#FEF3DC; padding:4px 10px; border-radius:7px; }
     .usr-badge-inact { font-size:11px; font-weight:700; color:#A6B7C8; background:#EEF3F8; padding:4px 10px; border-radius:7px; }
     .usr-rowbtn { display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border-radius:8px; color:#6D4FE3; border:1px solid #DCD2F8; background:#fff; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap; }
@@ -730,6 +997,11 @@
     private string _query = "";
     private bool _busy;
     private bool _sinPermiso;
+
+    // Filtros y vista (2.5.C)
+    private Guid _filtroRolId;
+    private Guid _filtroEtiquetaId;
+    private string _vista = "tabla";  // "tabla" | "tarjetas"
     private string? _msg; private string _msgClass = "alert-info";
 
     private List<UsuarioListaDto>? _usuarios;
@@ -748,6 +1020,19 @@
     // Editar usuario
     private UsuarioListaDto? _editUser;
     private Guid _editRolId;
+
+    // Gobierno y equipo (2.5.1) dentro del modal Editar
+    private GobiernoPersonaDto? _gobUser;
+    private List<ComiteDto> _comites = new();
+    private CargoConsejo _gobCargoConsejo = CargoConsejo.Vocal;
+    private Guid _gobComiteId;
+    private string _gobRevisorTp = "";
+    private RolEquipo _gobEquipoRol = RolEquipo.Otro;
+    private TipoVinculacion _gobEquipoTipo = TipoVinculacion.Interno;
+
+    // Foto de perfil (2.5.C) dentro del modal Editar
+    private string? _editFotoUrl;
+    private bool _subiendoFoto;
 
     // Roles y permisos
     private bool _showRoles;
@@ -837,6 +1122,41 @@
     private static string ChipBg(string? color)
         => string.IsNullOrWhiteSpace(color) ? "#F1ECFD" : (color.Length == 7 ? color + "1A" : "#F1ECFD");
 
+    // ---------------- Filtros y foto (2.5.C) ----------------
+    private IEnumerable<(Guid Id, string Nombre)> RolesDisponibles()
+        => _usuarios is null
+            ? Enumerable.Empty<(Guid, string)>()
+            : _usuarios.Where(u => u.RolId is not null)
+                .GroupBy(u => u.RolId!.Value)
+                .Select(g => (Id: g.Key, Nombre: g.First().RolNombre))
+                .OrderBy(x => x.Nombre)
+                .ToList();
+
+    private async Task SubirFoto(InputFileChangeEventArgs e)
+    {
+        if (_editUser is null || e.File is null) return;
+        if (e.File.Size > 5_000_000) { _msg = "La imagen supera 5 MB."; _msgClass = "alert-danger"; return; }
+        _subiendoFoto = true; _msg = null;
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var sc = new StreamContent(e.File.OpenReadStream(5_000_000));
+            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(e.File.ContentType);
+            content.Add(sc, "file", e.File.Name);
+            var r = await Auth().PostAsync($"/api/usuarios/{_editUser.UsuarioTenantId}/foto", content);
+            if (r.IsSuccessStatusCode)
+            {
+                var res = await r.Content.ReadFromJsonAsync<FotoResp>();
+                _editFotoUrl = res?.Url;
+                await CargarAsync();
+            }
+            else { _msg = "No se pudo subir la foto (" + (int)r.StatusCode + ")."; _msgClass = "alert-danger"; }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _subiendoFoto = false; }
+    }
+    private sealed record FotoResp(string? Url);
+
     private async Task CargarRolesAsync()
     {
         try
@@ -923,12 +1243,146 @@
     }
 
     // ---------------- Editar usuario ----------------
-    private void AbrirEditar(UsuarioListaDto u)
+    private async Task AbrirEditar(UsuarioListaDto u)
     {
         _editUser = u;
         _editRolId = u.RolId ?? Guid.Empty;
+        _editFotoUrl = u.FotoUrl;
+        _gobUser = null;
+        _gobComiteId = Guid.Empty; _gobRevisorTp = ""; _gobCargoConsejo = CargoConsejo.Vocal;
+        _gobEquipoRol = RolEquipo.Otro; _gobEquipoTipo = TipoVinculacion.Interno;
+        try
+        {
+            var http = Auth();
+            _comites = await http.GetFromJsonAsync<List<ComiteDto>>("/api/mi-copropiedad/comites") ?? new();
+            _gobUser = await http.GetFromJsonAsync<GobiernoPersonaDto>($"/api/mi-copropiedad/gobierno/persona/{u.PersonaId}")
+                       ?? new GobiernoPersonaDto(null, new List<GobiernoComiteTag>(), null, null);
+        }
+        catch { _gobUser = new GobiernoPersonaDto(null, new List<GobiernoComiteTag>(), null, null); }
     }
-    private void CerrarEditar() => _editUser = null;
+    private void CerrarEditar() { _editUser = null; _gobUser = null; }
+
+    // ---------------- Gobierno / equipo dentro de Editar (2.5.1) ----------------
+    private async Task RecargarGobiernoAsync()
+    {
+        if (_editUser is null) return;
+        _gobUser = await Auth().GetFromJsonAsync<GobiernoPersonaDto>($"/api/mi-copropiedad/gobierno/persona/{_editUser.PersonaId}")
+                   ?? new GobiernoPersonaDto(null, new List<GobiernoComiteTag>(), null, null);
+        await CargarAsync();  // refresca los tags de gobierno en la lista
+    }
+    private void GobErr(HttpResponseMessage r)
+    { _msg = "No se pudo actualizar el gobierno (" + (int)r.StatusCode + ")."; _msgClass = "alert-danger"; }
+
+    private async Task AgregarConsejo()
+    {
+        if (_editUser is null) return; _busy = true; _msg = null;
+        try
+        {
+            var req = new AgregarMiembroConsejoRequest(_editUser.PersonaId, _gobCargoConsejo, DateOnly.FromDateTime(DateTime.Today), null);
+            var r = await Auth().PostAsJsonAsync("/api/mi-copropiedad/consejo", req);
+            if (r.IsSuccessStatusCode) await RecargarGobiernoAsync(); else GobErr(r);
+        }
+        finally { _busy = false; }
+    }
+    private async Task QuitarConsejo()
+    {
+        if (_gobUser?.Consejo is null) return; _busy = true; _msg = null;
+        try
+        {
+            var r = await Auth().PutAsync($"/api/mi-copropiedad/consejo/{_gobUser.Consejo.MiembroId}/desactivar", null);
+            if (r.IsSuccessStatusCode) await RecargarGobiernoAsync(); else GobErr(r);
+        }
+        finally { _busy = false; }
+    }
+    private async Task AgregarComite()
+    {
+        if (_editUser is null || _gobComiteId == Guid.Empty) return; _busy = true; _msg = null;
+        try
+        {
+            var req = new AgregarComiteMiembroRequest(_gobComiteId, _editUser.PersonaId, null);
+            var r = await Auth().PostAsJsonAsync("/api/mi-copropiedad/comites/miembros", req);
+            if (r.IsSuccessStatusCode) { _gobComiteId = Guid.Empty; await RecargarGobiernoAsync(); } else GobErr(r);
+        }
+        finally { _busy = false; }
+    }
+    private async Task QuitarComite(Guid miembroId)
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/comites/miembros/{miembroId}");
+            if (r.IsSuccessStatusCode) await RecargarGobiernoAsync(); else GobErr(r);
+        }
+        finally { _busy = false; }
+    }
+    private async Task DesignarRevisor()
+    {
+        if (_editUser is null) return; _busy = true; _msg = null;
+        try
+        {
+            var req = new DesignarRevisorFiscalRequest(_editUser.PersonaId,
+                string.IsNullOrWhiteSpace(_gobRevisorTp) ? null : _gobRevisorTp.Trim(),
+                DateOnly.FromDateTime(DateTime.Today));
+            var r = await Auth().PostAsJsonAsync("/api/mi-copropiedad/revisor-fiscal", req);
+            if (r.IsSuccessStatusCode) { _gobRevisorTp = ""; await RecargarGobiernoAsync(); } else GobErr(r);
+        }
+        finally { _busy = false; }
+    }
+    private async Task QuitarRevisor()
+    {
+        if (_gobUser?.Revisor is null) return; _busy = true; _msg = null;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/revisor-fiscal/{_gobUser.Revisor.RevisorId}");
+            if (r.IsSuccessStatusCode) await RecargarGobiernoAsync(); else GobErr(r);
+        }
+        finally { _busy = false; }
+    }
+    private async Task AgregarEquipo()
+    {
+        if (_editUser is null) return; _busy = true; _msg = null;
+        try
+        {
+            var req = new AgregarMiembroEquipoRequest(_editUser.PersonaId, _gobEquipoRol, null, _gobEquipoTipo,
+                DateOnly.FromDateTime(DateTime.Today), null, null, null);
+            var r = await Auth().PostAsJsonAsync("/api/mi-copropiedad/equipo", req);
+            if (r.IsSuccessStatusCode) await RecargarGobiernoAsync(); else GobErr(r);
+        }
+        finally { _busy = false; }
+    }
+    private async Task QuitarEquipo()
+    {
+        if (_gobUser?.Equipo is null) return; _busy = true; _msg = null;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/equipo/{_gobUser.Equipo.MiembroId}");
+            if (r.IsSuccessStatusCode) await RecargarGobiernoAsync(); else GobErr(r);
+        }
+        finally { _busy = false; }
+    }
+
+    private static string CargoConsejoTxt(CargoConsejo c) => c switch
+    {
+        CargoConsejo.Presidente => "Presidente",
+        CargoConsejo.Vicepresidente => "Vicepresidente",
+        CargoConsejo.Secretario => "Secretario",
+        CargoConsejo.Tesorero => "Tesorero",
+        CargoConsejo.Vocal => "Vocal",
+        CargoConsejo.Suplente => "Suplente",
+        _ => c.ToString()
+    };
+    private static string RolEquipoTxt(RolEquipo r) => r switch
+    {
+        RolEquipo.AdministradorDelegado => "Administrador delegado",
+        RolEquipo.Contador => "Contador",
+        RolEquipo.AuxiliarCartera => "Auxiliar de cartera",
+        RolEquipo.CoordinadorOperativo => "Coordinador operativo",
+        RolEquipo.SupervisorVigilancia => "Supervisor de vigilancia",
+        RolEquipo.PersonalAseo => "Personal de aseo",
+        RolEquipo.Mantenimiento => "Mantenimiento",
+        RolEquipo.Recepcion => "Recepcion",
+        _ => "Otro"
+    };
 
     private async Task GuardarEditar()
     {

@@ -37,7 +37,9 @@ public record UsuarioListaDto(
     DateTimeOffset? UltimoAcceso,
     DateTimeOffset? FechaInvitacion,
     bool TieneCuentaPropia,   // si Persona tiene ApplicationUser asociado
-    IReadOnlyList<EtiquetaUsuarioDto> Etiquetas);
+    string? FotoUrl,          // avatar de la Persona (resuelto a URL publica actual)
+    IReadOnlyList<EtiquetaUsuarioDto> Etiquetas,
+    IReadOnlyList<string> GruposGobierno);  // "Consejo", "Comite: X", "Revisor fiscal", "Equipo: Rol"
 
 public record UsuarioDetalleDto(
     Guid UsuarioTenantId,

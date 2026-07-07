@@ -125,6 +125,9 @@ public interface IMiCopropiedadService
     Task<IReadOnlyList<MiembroEquipoDto>> ListEquipoAsync(CancellationToken ct);
     Task<MiembroEquipoDto> AgregarMiembroEquipoAsync(AgregarMiembroEquipoRequest req, CancellationToken ct);
     Task<bool> DesactivarMiembroEquipoAsync(Guid miembroId, CancellationToken ct);
+
+    // Gobierno + equipo consolidado por persona (modulo Usuarios 2.5 - tags de gobierno)
+    Task<GobiernoPersonaDto> GetGobiernoPersonaAsync(Guid personaId, CancellationToken ct);
     // Helper compartido: busca o crea una Persona global por documento. Necesario hasta que exista 2.4 Directorio.
     Task<Guid> VincularPersonaPorDocumentoAsync(VincularPersonaPorDocumentoRequest req, CancellationToken ct);
 

@@ -9,6 +9,7 @@ using Propia.Domain.Entities;
 using Propia.Domain.Enums;
 using Propia.Infrastructure.Auth;
 using Propia.Infrastructure.Persistence;
+using Propia.Infrastructure.Storage;
 using Propia.Infrastructure.UsuariosAccesos;
 using Xunit;
 
@@ -271,9 +272,18 @@ public class UsuariosAccesosFlowTests : IAsyncLifetime
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         var tokenSvc = scope.ServiceProvider.GetRequiredService<ITokenService>();
         var jwt = scope.ServiceProvider.GetRequiredService<IOptions<JwtSettings>>();
-        var svc = new UsuariosService(db, tenantCtx, userManager, tokenSvc, jwt);
+        var svc = new UsuariosService(db, tenantCtx, userManager, tokenSvc, jwt, new NoopBlobStorage());
         var roles = new RolesService(db, tenantCtx);
         return (svc, roles, (TenantContext)tenantCtx, db);
+    }
+
+    private sealed class NoopBlobStorage : IBlobStorage
+    {
+        public Task<string> UploadAsync(string key, Stream content, string contentType, CancellationToken ct) => Task.FromResult($"/mem/{key}");
+        public Task DeleteAsync(string key, CancellationToken ct) => Task.CompletedTask;
+        public string GetPublicUrl(string key) => $"/mem/{key}";
+        public string? ResolveUrl(string? storedValueOrKey) => storedValueOrKey;
+        public Task<byte[]?> DownloadAsync(string key, CancellationToken ct) => Task.FromResult<byte[]?>(null);
     }
 
     private async Task<Guid> SeedTenantAsync(string nombre)

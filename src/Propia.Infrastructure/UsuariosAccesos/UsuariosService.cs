@@ -23,19 +23,22 @@ public class UsuariosService : IUsuariosService
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly ITokenService _tokenService;
     private readonly JwtSettings _jwt;
+    private readonly Storage.IBlobStorage _blob;
 
     public UsuariosService(
         PropiaDbContext db,
         ITenantContext tenantContext,
         UserManager<ApplicationUser> userManager,
         ITokenService tokenService,
-        IOptions<JwtSettings> jwt)
+        IOptions<JwtSettings> jwt,
+        Storage.IBlobStorage blob)
     {
         _db = db;
         _tenantContext = tenantContext;
         _userManager = userManager;
         _tokenService = tokenService;
         _jwt = jwt.Value;
+        _blob = blob;
     }
 
     // ===================== Bandeja =====================
@@ -82,6 +85,30 @@ public class UsuariosService : IUsuariosService
             .ToDictionary(g => g.Key,
                 g => (IReadOnlyList<EtiquetaUsuarioDto>)g.Select(x => new EtiquetaUsuarioDto(x.e.Id, x.e.Nombre, x.e.Color, x.e.Activo)).ToList());
 
+        // Grupos de gobierno / equipo por persona (2.5.1) -> tags en la lista de usuarios
+        var personaIds = lista.Select(u => u.PersonaId).Distinct().ToList();
+        var gConsejo = await _db.MiembrosConsejo.AsNoTracking()
+            .Where(m => personaIds.Contains(m.PersonaId) && m.Activo).Select(m => m.PersonaId).ToListAsync(ct);
+        var gComites = await _db.ComiteMiembros.AsNoTracking()
+            .Where(cm => personaIds.Contains(cm.PersonaId) && cm.Activo)
+            .Join(_db.Comites, cm => cm.ComiteId, c => c.Id, (cm, c) => new { cm.PersonaId, c.Nombre }).ToListAsync(ct);
+        var gRevisor = await _db.RevisoresFiscales.AsNoTracking()
+            .Where(r => personaIds.Contains(r.PersonaId) && r.Activo).Select(r => r.PersonaId).ToListAsync(ct);
+        var gEquipo = await _db.MiembrosEquipo.AsNoTracking()
+            .Where(e => personaIds.Contains(e.PersonaId) && e.Activo)
+            .Select(e => new { e.PersonaId, e.Rol, e.RolPersonalizado }).ToListAsync(ct);
+
+        IReadOnlyList<string> GruposDe(Guid pid)
+        {
+            var g = new List<string>();
+            if (gConsejo.Contains(pid)) g.Add("Consejo");
+            foreach (var cm in gComites.Where(c => c.PersonaId == pid)) g.Add("Comite: " + cm.Nombre);
+            if (gRevisor.Contains(pid)) g.Add("Revisor fiscal");
+            var eq = gEquipo.FirstOrDefault(e => e.PersonaId == pid);
+            if (eq is not null) g.Add("Equipo: " + (string.IsNullOrWhiteSpace(eq.RolPersonalizado) ? eq.Rol.ToString() : eq.RolPersonalizado));
+            return g;
+        }
+
         return lista.Select(u => new UsuarioListaDto(
             u.Id, u.PersonaId,
             $"{u.Persona!.Nombres} {u.Persona.Apellidos}",
@@ -90,7 +117,9 @@ public class UsuariosService : IUsuariosService
             u.RolId, u.RolNavigation?.Nombre ?? u.Rol,
             u.Estado, u.UltimoAcceso, u.FechaInvitacion,
             u.Persona.Email is not null && setCuentas.Contains(u.Persona.Email),
-            etiquetasPorUsuario.TryGetValue(u.Id, out var ets) ? ets : new List<EtiquetaUsuarioDto>()
+            _blob.ResolveUrl(u.Persona.FotoUrl),
+            etiquetasPorUsuario.TryGetValue(u.Id, out var ets) ? ets : new List<EtiquetaUsuarioDto>(),
+            GruposDe(u.PersonaId)
         )).ToList();
     }
 
@@ -158,6 +187,19 @@ public class UsuariosService : IUsuariosService
         _db.UsuarioTenantEtiquetas.Remove(a);
         await _db.SaveChangesAsync(ct);
         return true;
+    }
+
+    public async Task<string?> SubirFotoAsync(Guid usuarioTenantId, System.IO.Stream content, string contentType, string ext, CancellationToken ct)
+    {
+        var ut = await _db.UsuariosTenant.Include(u => u.Persona)
+            .FirstOrDefaultAsync(u => u.Id == usuarioTenantId, ct);
+        if (ut?.Persona is null) return null;
+
+        var key = $"tenants/{_tenantContext.CurrentTenantId}/personas/{ut.PersonaId}/avatar{ext}";
+        var url = await _blob.UploadAsync(key, content, contentType, ct);
+        ut.Persona.FotoUrl = url;
+        await _db.SaveChangesAsync(ct);
+        return _blob.ResolveUrl(url);
     }
 
     public async Task<UsuarioDetalleDto?> GetUsuarioDetalleAsync(Guid usuarioTenantId, CancellationToken ct)

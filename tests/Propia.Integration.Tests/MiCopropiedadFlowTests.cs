@@ -4,6 +4,7 @@ using Propia.Domain.Entities;
 using Propia.Domain.Enums;
 using Propia.Infrastructure.MiCopropiedad;
 using Propia.Infrastructure.Persistence;
+using Propia.Infrastructure.Storage;
 using Xunit;
 
 namespace Propia.Integration.Tests;
@@ -546,7 +547,17 @@ public class MiCopropiedadFlowTests
             .Options;
 
         var db = new PropiaDbContext(options, tenantCtx);
-        return (new MiCopropiedadService(db, tenantCtx), db, tenantCtx);
+        return (new MiCopropiedadService(db, tenantCtx, new NoopBlobStorage()), db, tenantCtx);
+    }
+
+    private sealed class NoopBlobStorage : IBlobStorage
+    {
+        public Task<string> UploadAsync(string key, Stream content, string contentType, CancellationToken ct)
+            => Task.FromResult($"/mem/{key}");
+        public Task DeleteAsync(string key, CancellationToken ct) => Task.CompletedTask;
+        public string GetPublicUrl(string key) => $"/mem/{key}";
+        public string? ResolveUrl(string? storedValueOrKey) => storedValueOrKey;
+        public Task<byte[]?> DownloadAsync(string key, CancellationToken ct) => Task.FromResult<byte[]?>(null);
     }
 
     private async Task<Guid> SeedTenantAsync(string nombre)

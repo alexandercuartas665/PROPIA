@@ -1838,6 +1838,32 @@ public class MiCopropiedadService : IMiCopropiedadService
         return true;
     }
 
+    public async Task<GobiernoPersonaDto> GetGobiernoPersonaAsync(Guid personaId, CancellationToken ct)
+    {
+        var consejo = await _db.MiembrosConsejo.AsNoTracking()
+            .Where(m => m.PersonaId == personaId && m.Activo)
+            .Select(m => new GobiernoConsejoTag(m.Id, m.Cargo))
+            .FirstOrDefaultAsync(ct);
+
+        var comites = await _db.ComiteMiembros.AsNoTracking()
+            .Where(cm => cm.PersonaId == personaId && cm.Activo)
+            .Join(_db.Comites, cm => cm.ComiteId, c => c.Id,
+                  (cm, c) => new GobiernoComiteTag(cm.Id, c.Id, c.Nombre, cm.CargoEnComite))
+            .ToListAsync(ct);
+
+        var revisor = await _db.RevisoresFiscales.AsNoTracking()
+            .Where(r => r.PersonaId == personaId && r.Activo)
+            .Select(r => new GobiernoRevisorTag(r.Id, r.NumeroTarjetaProfesional))
+            .FirstOrDefaultAsync(ct);
+
+        var equipo = await _db.MiembrosEquipo.AsNoTracking()
+            .Where(e => e.PersonaId == personaId && e.Activo)
+            .Select(e => new GobiernoEquipoTag(e.Id, e.Rol, e.RolPersonalizado))
+            .FirstOrDefaultAsync(ct);
+
+        return new GobiernoPersonaDto(consejo, comites, revisor, equipo);
+    }
+
     public async Task<Guid> VincularPersonaPorDocumentoAsync(VincularPersonaPorDocumentoRequest req, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.Documento))

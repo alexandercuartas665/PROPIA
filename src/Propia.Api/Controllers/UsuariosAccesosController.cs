@@ -53,6 +53,27 @@ public class UsuariosAccesosController : ControllerBase
     public async Task<IActionResult> QuitarEtiqueta(Guid usuarioTenantId, Guid etiquetaId, CancellationToken ct)
         => await _svc.QuitarEtiquetaAsync(usuarioTenantId, etiquetaId, ct) ? NoContent() : NotFound();
 
+    // Foto de perfil del usuario (2.5.C): sube y persiste Persona.FotoUrl.
+    [HttpPost("{usuarioTenantId:guid}/foto")]
+    [RequestSizeLimit(5_500_000)]
+    public async Task<IActionResult> SubirFoto(Guid usuarioTenantId, IFormFile file, CancellationToken ct)
+    {
+        if (file is null || file.Length == 0) return BadRequest(new { error = "Archivo vacio." });
+        if (file.Length > 5_000_000) return BadRequest(new { error = "Maximo 5 MB." });
+        var ext = file.ContentType switch
+        {
+            "image/jpeg" => ".jpg",
+            "image/png" => ".png",
+            "image/webp" => ".webp",
+            _ => null
+        };
+        if (ext is null) return BadRequest(new { error = "Formato no soportado. Usa JPG, PNG o WEBP." });
+
+        await using var stream = file.OpenReadStream();
+        var url = await _svc.SubirFotoAsync(usuarioTenantId, stream, file.ContentType, ext, ct);
+        return url is null ? NotFound() : Ok(new { url });
+    }
+
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetUsuario(Guid id, CancellationToken ct)
     {

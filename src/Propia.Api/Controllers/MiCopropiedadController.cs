@@ -424,6 +424,11 @@ public class MiCopropiedadController : ControllerBase
     [HttpDelete("equipo/{id:guid}")]
     public async Task<IActionResult> DesactivarMiembroEquipo(Guid id, CancellationToken ct)
         => await _svc.DesactivarMiembroEquipoAsync(id, ct) ? NoContent() : NotFound();
+
+    // Gobierno + equipo consolidado por persona (para tags en Usuarios 2.5)
+    [HttpGet("gobierno/persona/{personaId:guid}")]
+    public async Task<IActionResult> GetGobiernoPersona(Guid personaId, CancellationToken ct)
+        => Ok(await _svc.GetGobiernoPersonaAsync(personaId, ct));
     [HttpPost("vincular-persona")]
     public async Task<IActionResult> VincularPersona([FromBody] VincularPersonaPorDocumentoRequest req, CancellationToken ct)
     {

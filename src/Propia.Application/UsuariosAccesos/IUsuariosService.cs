@@ -40,6 +40,9 @@ public interface IUsuariosService
     Task<bool> EliminarEtiquetaAsync(Guid etiquetaId, CancellationToken ct);
     Task<bool> AsignarEtiquetaAsync(Guid usuarioTenantId, Guid etiquetaId, CancellationToken ct);
     Task<bool> QuitarEtiquetaAsync(Guid usuarioTenantId, Guid etiquetaId, CancellationToken ct);
+
+    // Foto de perfil (2.5.C) -> actualiza Persona.FotoUrl; devuelve la URL publica resuelta o null si no existe el usuario.
+    Task<string?> SubirFotoAsync(Guid usuarioTenantId, System.IO.Stream content, string contentType, string ext, CancellationToken ct);
 }
 
 /// <summary>Servicio de gestion de roles y permisos (configurable por copropiedad).</summary>

@@ -469,6 +469,8 @@ public class DocumentosFlowTests : IAsyncLifetime
 
         public string GetPublicUrl(string key) => $"/mem/{key}";
 
+        public string? ResolveUrl(string? storedValueOrKey) => storedValueOrKey;
+
         public Task<byte[]?> DownloadAsync(string key, CancellationToken ct)
         {
             return Task.FromResult(_store.TryGetValue(key, out var bytes) ? bytes : null);

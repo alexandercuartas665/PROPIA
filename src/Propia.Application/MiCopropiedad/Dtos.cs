@@ -162,6 +162,17 @@ public record AgregarMiembroEquipoRequest(
 // Para crear o buscar Persona on-the-fly al vincular un miembro de equipo
 public record VincularPersonaPorDocumentoRequest(string Documento, string Nombres, string Apellidos, string? Email, string? Telefono);
 
+// ----- Gobierno consolidado por persona (para tags en el modulo Usuarios 2.5) -----
+public record GobiernoConsejoTag(Guid MiembroId, CargoConsejo Cargo);
+public record GobiernoComiteTag(Guid MiembroId, Guid ComiteId, string ComiteNombre, string? Cargo);
+public record GobiernoRevisorTag(Guid RevisorId, string? NumeroTarjetaProfesional);
+public record GobiernoEquipoTag(Guid MiembroId, RolEquipo Rol, string? RolPersonalizado);
+public record GobiernoPersonaDto(
+    GobiernoConsejoTag? Consejo,
+    IReadOnlyList<GobiernoComiteTag> Comites,
+    GobiernoRevisorTag? Revisor,
+    GobiernoEquipoTag? Equipo);
+
 // ----- Servicios: Contratos (seccion 5) -----
 public record ContratoServicioDto(
     Guid Id, TipoServicio Tipo, string Proveedor, string? NitProveedor, string? Contacto,
