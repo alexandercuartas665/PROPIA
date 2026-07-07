@@ -3,7 +3,7 @@
    gimnasio, etc.). Grid 2-col con cards (icono + nombre + categoria + badge estado) +
    formulario inline al final para agregar uno nuevo. *@
 
-@inherits ModalBase<bool>
+@inherits ModalBase<EquipoActivoDto?>
 @using Propia.Application.MiCopropiedad
 @using Propia.Domain.Enums
 
@@ -19,47 +19,13 @@
         <div class="gea-title">5. Equipos y Activos</div>
         <div class="gea-subtitle">Que activos fisicos tiene?</div>
     </div>
-    <button class="gea-close" @onclick="@(() => Close(_dirty))" type="button" aria-label="Cerrar">
+    <button class="gea-close" @onclick="@(() => Close(null))" type="button" aria-label="Cerrar">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
     </button>
 </div>
 
 <div class="gea-body">
-    @if (_equipos.Count == 0)
-    {
-        <div class="gea-empty">
-            <strong>Sin equipos registrados.</strong>
-            <span>Usa el formulario de abajo para registrar el primero (ascensor, bomba, planta electrica, CCTV, etc.).</span>
-        </div>
-    }
-    else
-    {
-        <div class="gea-grid">
-            @foreach (var e in _equipos)
-            {
-                var eid = e.Id;
-                <div class="gea-card">
-                    <div class="gea-card-icon">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 7h6M9 11h6M10 16h4"/></svg>
-                    </div>
-                    <div class="gea-card-body">
-                        <div class="gea-card-name">@e.Nombre</div>
-                        <div class="gea-card-meta">@CategoriaTxt(e.Categoria)@(string.IsNullOrEmpty(e.Marca) ? "" : $" - {e.Marca}")</div>
-                    </div>
-                    <span class="gea-badge gea-badge--@(BadgeClass(e.Estado))">@EstadoTxt(e.Estado)</span>
-                    <select class="gea-estado-select" @onchange="(ev) => CambiarEstadoAsync(eid, ev)">
-                        @foreach (var s in (EstadoEquipoActivo[])System.Enum.GetValues(typeof(EstadoEquipoActivo)))
-                        {
-                            <option value="@s" selected="@(e.Estado == s)">@EstadoTxt(s)</option>
-                        }
-                    </select>
-                    <button class="gea-del" type="button" title="Eliminar" @onclick="@(() => EliminarAsync(eid))">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
-                    </button>
-                </div>
-            }
-        </div>
-    }
+    <div class="gea-hint">Registra el activo con sus datos basicos. Al agregar se abre la ficha para completar la configuracion (ficha tecnica, fotos, facturas, depreciacion, disponibilidad).</div>
 
     <div class="gea-form">
         <div class="gea-form-row">
@@ -120,8 +86,7 @@
     .gea-close:hover { background: #F5F8FA; color: #33475B; }
 
     .gea-body { padding: 18px 22px; max-height: 70vh; overflow-y: auto; }
-    .gea-empty { background: #F8FAFC; border: 1px dashed #D7E0EA; border-radius: 11px; padding: 22px; text-align: center; color: #7C98B6; font-size: 13px; display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
-    .gea-empty strong { color: #1B2A3A; font-weight: 700; font-size: 13.5px; }
+    .gea-hint { font-size: 12px; color: #7C98B6; line-height: 1.45; background: var(--propia-brand-soft, #F5F1FE); border: 1px solid var(--propia-brand-border, #DCD2F8); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; }
 
     .gea-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
     .gea-card { display: flex; align-items: center; gap: 11px; border: 1px solid #E1E8EE; border-radius: 11px; padding: 12px 14px; background: #fff; }
@@ -166,17 +131,10 @@
 @code {
     [Parameter] public string? Jwt { get; set; }
 
-    private List<EquipoActivoDto> _equipos = new();
     private NuevoEquipoForm _nuevo = new();
     private bool _busy;
-    private bool _dirty;
     private string? _msg;
     private bool _msgError;
-
-    protected override async Task OnInitializedAsync()
-    {
-        await CargarAsync();
-    }
 
     private HttpClient Auth()
     {
@@ -184,12 +142,6 @@
         if (!string.IsNullOrEmpty(Jwt))
             http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
         return http;
-    }
-
-    private async Task CargarAsync()
-    {
-        try { _equipos = await Auth().GetFromJsonAsync<List<EquipoActivoDto>>("/api/mi-copropiedad/equipos") ?? new(); }
-        catch (Exception ex) { Toast(ex.Message, true); }
     }
 
     private async Task AgregarAsync()
@@ -202,38 +154,15 @@
             var r = await Auth().PostAsJsonAsync("/api/mi-copropiedad/equipos", req);
             if (r.IsSuccessStatusCode)
             {
-                _dirty = true;
-                _nuevo = new NuevoEquipoForm();
-                await CargarAsync();
-                Toast("Equipo agregado.", false);
+                // Devolvemos el activo creado; el padre abre su ficha para completar la configuracion.
+                var creado = await r.Content.ReadFromJsonAsync<EquipoActivoDto>();
+                Close(creado);
+                return;
             }
-            else Toast($"Error: {(int)r.StatusCode}", true);
+            Toast($"Error: {(int)r.StatusCode}", true);
         }
         catch (Exception ex) { Toast(ex.Message, true); }
         _busy = false;
-    }
-
-    private async Task CambiarEstadoAsync(Guid id, ChangeEventArgs e)
-    {
-        if (!Enum.TryParse<EstadoEquipoActivo>(e.Value?.ToString(), out var nuevo)) return;
-        try
-        {
-            var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos/{id}/estado", new CambiarEstadoEquipoRequest(nuevo));
-            if (r.IsSuccessStatusCode) { _dirty = true; await CargarAsync(); Toast("Estado actualizado.", false); }
-            else Toast($"Error: {(int)r.StatusCode}", true);
-        }
-        catch (Exception ex) { Toast(ex.Message, true); }
-    }
-
-    private async Task EliminarAsync(Guid id)
-    {
-        try
-        {
-            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/equipos/{id}");
-            if (r.IsSuccessStatusCode) { _dirty = true; _equipos.RemoveAll(x => x.Id == id); Toast("Equipo eliminado.", false); }
-            else Toast($"Error: {(int)r.StatusCode}", true);
-        }
-        catch (Exception ex) { Toast(ex.Message, true); }
     }
 
     private void Toast(string m, bool err) { _msg = m; _msgError = err; }
@@ -249,22 +178,6 @@
         CategoriaEquipo.Recreacion => "Recreacion",
         CategoriaEquipo.Otros => "Otros",
         _ => c.ToString()
-    };
-
-    private static string EstadoTxt(EstadoEquipoActivo s) => s switch
-    {
-        EstadoEquipoActivo.Operativo => "Operativo",
-        EstadoEquipoActivo.EnMantenimiento => "Mantenimiento",
-        EstadoEquipoActivo.FueraDeServicio => "Fuera",
-        _ => s.ToString()
-    };
-
-    private static string BadgeClass(EstadoEquipoActivo s) => s switch
-    {
-        EstadoEquipoActivo.Operativo => "ok",
-        EstadoEquipoActivo.EnMantenimiento => "mant",
-        EstadoEquipoActivo.FueraDeServicio => "fuera",
-        _ => "ok"
     };
 
     private class NuevoEquipoForm
