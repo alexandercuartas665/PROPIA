@@ -193,6 +193,15 @@ public class TareasController : ControllerBase
     public async Task<IActionResult> EliminarTablero(Guid id, CancellationToken ct)
         => await _svc.EliminarTableroAsync(id, ct) ? NoContent() : NotFound();
 
+    // Enlazar/desenlazar una persona a un tablero (2.5.D: desde el modulo Usuarios).
+    [HttpPost("tableros/{id:guid}/usuarios/{personaId:guid}")]
+    public async Task<IActionResult> AgregarUsuarioTablero(Guid id, Guid personaId, CancellationToken ct)
+        => await _svc.AgregarUsuarioTableroAsync(id, personaId, ct) ? NoContent() : NotFound();
+
+    [HttpDelete("tableros/{id:guid}/usuarios/{personaId:guid}")]
+    public async Task<IActionResult> QuitarUsuarioTablero(Guid id, Guid personaId, CancellationToken ct)
+        => await _svc.QuitarUsuarioTableroAsync(id, personaId, ct) ? NoContent() : NotFound();
+
     [HttpGet("tableros/{id:guid}/board")]
     public async Task<IActionResult> GetTableroBoard(Guid id, CancellationToken ct)
     {

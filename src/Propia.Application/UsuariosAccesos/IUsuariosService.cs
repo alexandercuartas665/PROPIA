@@ -43,6 +43,9 @@ public interface IUsuariosService
 
     // Foto de perfil (2.5.C) -> actualiza Persona.FotoUrl; devuelve la URL publica resuelta o null si no existe el usuario.
     Task<string?> SubirFotoAsync(Guid usuarioTenantId, System.IO.Stream content, string contentType, string ext, CancellationToken ct);
+
+    // Registrar en Directorio (2.5.E) -> crea el vinculo de la Persona con el tenant. null si no existe el usuario.
+    Task<RegistroDirectorioDto?> RegistrarEnDirectorioAsync(Guid usuarioTenantId, CancellationToken ct);
 }
 
 /// <summary>Servicio de gestion de roles y permisos (configurable por copropiedad).</summary>

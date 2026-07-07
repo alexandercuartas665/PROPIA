@@ -38,8 +38,11 @@ public record UsuarioListaDto(
     DateTimeOffset? FechaInvitacion,
     bool TieneCuentaPropia,   // si Persona tiene ApplicationUser asociado
     string? FotoUrl,          // avatar de la Persona (resuelto a URL publica actual)
+    bool EnDirectorio,        // si la Persona ya tiene vinculo activo en el Directorio del tenant (2.5.E)
     IReadOnlyList<EtiquetaUsuarioDto> Etiquetas,
     IReadOnlyList<string> GruposGobierno);  // "Consejo", "Comite: X", "Revisor fiscal", "Equipo: Rol"
+
+public record RegistroDirectorioDto(bool YaEstaba, bool PerfilIncompleto);
 
 public record UsuarioDetalleDto(
     Guid UsuarioTenantId,

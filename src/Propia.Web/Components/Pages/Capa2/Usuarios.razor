@@ -3,6 +3,7 @@
 @using Propia.Application.UsuariosAccesos
 @using Propia.Application.Directorio
 @using Propia.Application.MiCopropiedad
+@using Propia.Application.Tareas
 @using Propia.Domain.Enums
 @using Microsoft.AspNetCore.Components.Forms
 @inject IHttpClientFactory HttpFactory
@@ -218,6 +219,10 @@
                                     <div class="usr-name">@u.NombreCompleto</div>
                                     <div class="usr-email">@(u.Email ?? "Sin correo")</div>
                                     <span class="usr-rol">@u.RolNombre</span>
+                                    @if (!u.EnDirectorio)
+                                    {
+                                        <span class="usr-nodir" style="margin-left:6px">Sin Directorio</span>
+                                    }
                                 </div>
                             </div>
                             @if (u.GruposGobierno.Count > 0 || u.Etiquetas.Count > 0)
@@ -275,6 +280,10 @@
                                 <div class="usr-name">@u.NombreCompleto</div>
                                 <div class="usr-email">@(u.Email ?? "Sin correo")</div>
                                 <div class="usr-etq-row">
+                                    @if (!u.EnDirectorio)
+                                    {
+                                        <span class="usr-nodir">Sin Directorio</span>
+                                    }
                                     @foreach (var gg in u.GruposGobierno)
                                     {
                                         <span class="usr-gob-tag">@gg</span>
@@ -624,6 +633,73 @@
                     </div>
                 }
 
+                @if (_tablerosUser is not null)
+                {
+                    var misTableros = _tablerosUser.Where(t => t.Usuarios.Any(x => x.PersonaId == _editUser.PersonaId)).ToList();
+                    var otrosTableros = _tablerosUser.Where(t => t.Usuarios.All(x => x.PersonaId != _editUser.PersonaId)).ToList();
+                    <div class="usr-gob-sec">
+                        <div class="usr-gob-sec-t">TABLEROS DE TRABAJO</div>
+                        <div class="usr-gob-sec-hint">Tableros de tareas (2.10) en los que participa esta persona.</div>
+                        @if (misTableros.Count > 0)
+                        {
+                            <div class="usr-gob-tagrow" style="margin-top:0">
+                                @foreach (var t in misTableros)
+                                {
+                                    var tid = t.Id;
+                                    <span class="usr-tab-chip">
+                                        <span class="usr-tab-dot" style="background:@t.Color"></span>
+                                        <a class="usr-tab-link" href="/tareas" title="Abrir Tareas">@t.Nombre</a>
+                                        <span class="usr-tab-n">@t.NCards</span>
+                                        <button class="usr-gob-x2" @onclick="() => QuitarTablero(tid)" disabled="@_busy" title="Quitar del tablero">&times;</button>
+                                    </span>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="usr-gob-note" style="margin-top:0">Esta persona no participa en ningun tablero.</div>
+                        }
+                        @if (otrosTableros.Count > 0)
+                        {
+                            <div class="usr-gob-form">
+                                <select class="usr-gob-in" @bind="_tableroSel">
+                                    <option value="@Guid.Empty">Agregar a un tablero...</option>
+                                    @foreach (var t in otrosTableros)
+                                    {
+                                        <option value="@t.Id">@t.Nombre</option>
+                                    }
+                                </select>
+                                <button class="usr-gob-add" @onclick="AgregarTablero" disabled="@(_busy || _tableroSel == Guid.Empty)">+ Agregar</button>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <div class="usr-dir-box @(_editUser.EnDirectorio ? "on" : "")">
+                    <div class="usr-dir-ico">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                    </div>
+                    <div class="flex-grow-1">
+                        <div style="font-size:13px;font-weight:700;color:#33475B">Directorio de terceros</div>
+                        @if (_editUser.EnDirectorio)
+                        {
+                            <div style="font-size:12px;color:#0F8A4F">Registrado en el Directorio de la copropiedad.</div>
+                            @if (_perfilIncompletoAviso)
+                            {
+                                <div style="font-size:12px;color:#B45309">Perfil incompleto: <a href="/directorio">completar datos en el Directorio</a>.</div>
+                            }
+                        }
+                        else
+                        {
+                            <div style="font-size:12px;color:#A6B7C8;line-height:1.4">Aun no aparece en el Directorio. Registralo para gestionarlo como tercero (datos, vinculos, etiquetas).</div>
+                        }
+                    </div>
+                    @if (!_editUser.EnDirectorio)
+                    {
+                        <button class="usr-gob-add" @onclick="RegistrarDirectorioModal" disabled="@_busy">Registrar</button>
+                    }
+                </div>
+
                 <div class="usr-security">
                     <div class="usr-sec-label">ZONA DE ACCESO</div>
                     <div class="d-flex align-items-center gap-3 usr-sec-box">
@@ -929,6 +1005,18 @@
     .usr-gob-add { flex:0 0 auto; border:none; background:#1E88E5; color:#fff; font-size:12.5px; font-weight:700; padding:7px 14px; border-radius:8px; cursor:pointer; }
     .usr-gob-add:disabled { opacity:.5; cursor:default; }
     .usr-gob-note { font-size:12px; color:#A6B7C8; margin-top:8px; font-style:italic; }
+    /* Chips de tablero (2.5.D) */
+    .usr-tab-chip { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; padding:3px 8px 3px 10px; border-radius:20px; color:#33475B; background:#F4F7FA; border:1px solid #E4EBF1; }
+    .usr-tab-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+    .usr-tab-link { color:#33475B; text-decoration:none; }
+    .usr-tab-link:hover { text-decoration:underline; }
+    .usr-tab-n { font-size:10px; font-weight:800; color:#7A8DA0; background:#E4EBF1; border-radius:10px; padding:0 6px; }
+    /* Directorio (2.5.E) */
+    .usr-nodir { display:inline-flex; align-items:center; font-size:10px; font-weight:800; padding:2px 8px; border-radius:20px; color:#B45309; background:#FFF4E0; border:1px solid #FBD9A0; }
+    .usr-dir-box { display:flex; align-items:center; gap:12px; border:1.5px solid #E4EBF1; border-radius:12px; padding:12px 14px; margin:6px 0 16px; }
+    .usr-dir-box.on { border-color:#B9E0C9; background:#F4FBF7; }
+    .usr-dir-ico { width:38px; height:38px; border-radius:10px; background:#EEF2F6; color:#516F90; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .usr-dir-box.on .usr-dir-ico { background:#DBF3E5; color:#0F8A4F; }
     .usr-badge-pend { font-size:11px; font-weight:700; color:#B45309; background:#FEF3DC; padding:4px 10px; border-radius:7px; }
     .usr-badge-inact { font-size:11px; font-weight:700; color:#A6B7C8; background:#EEF3F8; padding:4px 10px; border-radius:7px; }
     .usr-rowbtn { display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border-radius:8px; color:#6D4FE3; border:1px solid #DCD2F8; background:#fff; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap; }
@@ -1033,6 +1121,13 @@
     // Foto de perfil (2.5.C) dentro del modal Editar
     private string? _editFotoUrl;
     private bool _subiendoFoto;
+
+    // Tableros de trabajo (2.5.D) dentro del modal Editar
+    private List<TableroDto>? _tablerosUser;
+    private Guid _tableroSel;
+
+    // Directorio (2.5.E) dentro del modal Editar
+    private bool _perfilIncompletoAviso;
 
     // Roles y permisos
     private bool _showRoles;
@@ -1157,6 +1252,54 @@
     }
     private sealed record FotoResp(string? Url);
 
+    // ---------------- Tableros de trabajo (2.5.D) ----------------
+    private async Task RecargarTablerosAsync()
+    {
+        _tablerosUser = await Auth().GetFromJsonAsync<List<TableroDto>>("/api/tareas/tableros") ?? new();
+    }
+    private async Task AgregarTablero()
+    {
+        if (_editUser is null || _tableroSel == Guid.Empty) return; _busy = true; _msg = null;
+        try
+        {
+            var r = await Auth().PostAsync($"/api/tareas/tableros/{_tableroSel}/usuarios/{_editUser.PersonaId}", null);
+            if (r.IsSuccessStatusCode) { _tableroSel = Guid.Empty; await RecargarTablerosAsync(); }
+            else { _msg = "No se pudo enlazar el tablero (" + (int)r.StatusCode + ")."; _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+    private async Task QuitarTablero(Guid tableroId)
+    {
+        if (_editUser is null) return; _busy = true; _msg = null;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/tareas/tableros/{tableroId}/usuarios/{_editUser.PersonaId}");
+            if (r.IsSuccessStatusCode) await RecargarTablerosAsync();
+            else { _msg = "No se pudo quitar del tablero (" + (int)r.StatusCode + ")."; _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    // ---------------- Directorio (2.5.E) ----------------
+    private async Task RegistrarDirectorioModal()
+    {
+        if (_editUser is null) return; _busy = true; _msg = null;
+        try
+        {
+            var r = await Auth().PostAsync($"/api/usuarios/{_editUser.UsuarioTenantId}/directorio", null);
+            if (r.IsSuccessStatusCode)
+            {
+                var res = await r.Content.ReadFromJsonAsync<RegistroDirectorioDto>();
+                _perfilIncompletoAviso = res?.PerfilIncompleto ?? false;
+                _editUser = _editUser with { EnDirectorio = true };
+                _msg = "Usuario registrado en el Directorio."; _msgClass = "alert-success";
+                await CargarAsync();
+            }
+            else { _msg = "No se pudo registrar en el Directorio (" + (int)r.StatusCode + ")."; _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
     private async Task CargarRolesAsync()
     {
         try
@@ -1251,16 +1394,19 @@
         _gobUser = null;
         _gobComiteId = Guid.Empty; _gobRevisorTp = ""; _gobCargoConsejo = CargoConsejo.Vocal;
         _gobEquipoRol = RolEquipo.Otro; _gobEquipoTipo = TipoVinculacion.Interno;
+        _tablerosUser = null; _tableroSel = Guid.Empty;
+        _perfilIncompletoAviso = false;
         try
         {
             var http = Auth();
             _comites = await http.GetFromJsonAsync<List<ComiteDto>>("/api/mi-copropiedad/comites") ?? new();
             _gobUser = await http.GetFromJsonAsync<GobiernoPersonaDto>($"/api/mi-copropiedad/gobierno/persona/{u.PersonaId}")
                        ?? new GobiernoPersonaDto(null, new List<GobiernoComiteTag>(), null, null);
+            _tablerosUser = await http.GetFromJsonAsync<List<TableroDto>>("/api/tareas/tableros") ?? new();
         }
-        catch { _gobUser = new GobiernoPersonaDto(null, new List<GobiernoComiteTag>(), null, null); }
+        catch { _gobUser = new GobiernoPersonaDto(null, new List<GobiernoComiteTag>(), null, null); _tablerosUser = new(); }
     }
-    private void CerrarEditar() { _editUser = null; _gobUser = null; }
+    private void CerrarEditar() { _editUser = null; _gobUser = null; _tablerosUser = null; }
 
     // ---------------- Gobierno / equipo dentro de Editar (2.5.1) ----------------
     private async Task RecargarGobiernoAsync()

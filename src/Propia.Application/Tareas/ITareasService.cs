@@ -56,6 +56,8 @@ public interface ITareasService
     Task<TableroDto> CrearTableroAsync(GuardarTableroRequest req, CancellationToken ct);
     Task<bool> ActualizarTableroAsync(Guid id, GuardarTableroRequest req, CancellationToken ct);
     Task<bool> EliminarTableroAsync(Guid id, CancellationToken ct);
+    Task<bool> AgregarUsuarioTableroAsync(Guid tableroId, Guid personaId, CancellationToken ct);
+    Task<bool> QuitarUsuarioTableroAsync(Guid tableroId, Guid personaId, CancellationToken ct);
 
     /// <summary>Vista completa de un tablero (tablero + estados + tarjetas).</summary>
     Task<TableroBoardDto?> GetTableroBoardAsync(Guid tableroId, CancellationToken ct);

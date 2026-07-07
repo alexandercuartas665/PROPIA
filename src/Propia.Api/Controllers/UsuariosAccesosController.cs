@@ -74,6 +74,14 @@ public class UsuariosAccesosController : ControllerBase
         return url is null ? NotFound() : Ok(new { url });
     }
 
+    // Registrar al usuario (tercero) en el Directorio del tenant (2.5.E).
+    [HttpPost("{usuarioTenantId:guid}/directorio")]
+    public async Task<IActionResult> RegistrarEnDirectorio(Guid usuarioTenantId, CancellationToken ct)
+    {
+        var res = await _svc.RegistrarEnDirectorioAsync(usuarioTenantId, ct);
+        return res is null ? NotFound() : Ok(res);
+    }
+
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetUsuario(Guid id, CancellationToken ct)
     {

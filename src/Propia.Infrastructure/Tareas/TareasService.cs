@@ -1169,6 +1169,26 @@ public class TareasService : ITareasService
         return true;
     }
 
+    // Enlazar/desenlazar una persona a un tablero (2.5.D: gestion de tableros desde el usuario).
+    public async Task<bool> AgregarUsuarioTableroAsync(Guid tableroId, Guid personaId, CancellationToken ct)
+    {
+        var existe = await _db.Tableros.AnyAsync(t => t.Id == tableroId, ct);
+        if (!existe) return false;
+        var ya = await _db.TableroUsuarios.AnyAsync(u => u.TableroId == tableroId && u.PersonaId == personaId, ct);
+        if (!ya)
+        {
+            _db.TableroUsuarios.Add(new TableroUsuario { TableroId = tableroId, PersonaId = personaId });
+            await _db.SaveChangesAsync(ct);
+        }
+        return true;
+    }
+
+    public async Task<bool> QuitarUsuarioTableroAsync(Guid tableroId, Guid personaId, CancellationToken ct)
+    {
+        var n = await _db.TableroUsuarios.Where(u => u.TableroId == tableroId && u.PersonaId == personaId).ExecuteDeleteAsync(ct);
+        return n > 0;
+    }
+
     public async Task<bool> EliminarTableroAsync(Guid id, CancellationToken ct)
     {
         var t = await _db.Tableros.FirstOrDefaultAsync(x => x.Id == id, ct);

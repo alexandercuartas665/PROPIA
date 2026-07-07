@@ -98,6 +98,13 @@ public class UsuariosService : IUsuariosService
             .Where(e => personaIds.Contains(e.PersonaId) && e.Activo)
             .Select(e => new { e.PersonaId, e.Rol, e.RolPersonalizado }).ToListAsync(ct);
 
+        // Personas ya registradas en el Directorio del tenant (2.5.E)
+        var enDirectorio = (await _db.DirectorioVinculos.AsNoTracking()
+            .Where(v => v.EntidadTipo == Domain.Enums.EntidadDirectorio.Persona
+                        && v.Estado == Domain.Enums.EstadoVinculo.Activo
+                        && personaIds.Contains(v.EntidadId))
+            .Select(v => v.EntidadId).ToListAsync(ct)).ToHashSet();
+
         IReadOnlyList<string> GruposDe(Guid pid)
         {
             var g = new List<string>();
@@ -118,6 +125,7 @@ public class UsuariosService : IUsuariosService
             u.Estado, u.UltimoAcceso, u.FechaInvitacion,
             u.Persona.Email is not null && setCuentas.Contains(u.Persona.Email),
             _blob.ResolveUrl(u.Persona.FotoUrl),
+            enDirectorio.Contains(u.PersonaId),
             etiquetasPorUsuario.TryGetValue(u.Id, out var ets) ? ets : new List<EtiquetaUsuarioDto>(),
             GruposDe(u.PersonaId)
         )).ToList();
@@ -200,6 +208,31 @@ public class UsuariosService : IUsuariosService
         ut.Persona.FotoUrl = url;
         await _db.SaveChangesAsync(ct);
         return _blob.ResolveUrl(url);
+    }
+
+    public async Task<RegistroDirectorioDto?> RegistrarEnDirectorioAsync(Guid usuarioTenantId, CancellationToken ct)
+    {
+        var ut = await _db.UsuariosTenant.Include(u => u.Persona)
+            .FirstOrDefaultAsync(u => u.Id == usuarioTenantId, ct);
+        if (ut?.Persona is null) return null;
+
+        var yaEstaba = await _db.DirectorioVinculos.AnyAsync(v =>
+            v.EntidadTipo == Domain.Enums.EntidadDirectorio.Persona
+            && v.EntidadId == ut.PersonaId
+            && v.Estado == Domain.Enums.EstadoVinculo.Activo, ct);
+
+        if (!yaEstaba)
+        {
+            _db.DirectorioVinculos.Add(new DirectorioVinculo
+            {
+                EntidadTipo = Domain.Enums.EntidadDirectorio.Persona,
+                EntidadId = ut.PersonaId,
+                FechaDesde = DateOnly.FromDateTime(DateTime.Today),
+                Estado = Domain.Enums.EstadoVinculo.Activo
+            });
+            await _db.SaveChangesAsync(ct);
+        }
+        return new RegistroDirectorioDto(yaEstaba, ut.Persona.PerfilIncompleto);
     }
 
     public async Task<UsuarioDetalleDto?> GetUsuarioDetalleAsync(Guid usuarioTenantId, CancellationToken ct)
