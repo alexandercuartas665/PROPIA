@@ -212,6 +212,75 @@ public class AdminIntegracionesController : ControllerBase
         return Ok(dto);
     }
 
+    // -------------------- Diagnostico de Storage (R2 / Local) --------------------
+
+    /// <summary>
+    /// Salud del blob storage. Reporta el provider ACTIVO (R2 vs Local), la URL publica que se
+    /// genera para una key de ejemplo, y hace un round-trip real: sube un blob de prueba, lo baja,
+    /// verifica que su URL publica sea accesible por HTTP GET, y lo borra. Sirve para validar la
+    /// config de R2 en produccion tras un deploy sin depender de subir imagenes a mano.
+    /// Solo SuperAdmin (hereda la policy del controller).
+    /// </summary>
+    [HttpGet("storage/health")]
+    public async Task<IActionResult> StorageHealth(CancellationToken ct)
+    {
+        var providerType = _storage.GetType().Name;  // "R2BlobStorage" o "LocalBlobStorage"
+        var res = new Dictionary<string, object?>
+        {
+            ["provider"] = providerType,
+            ["esR2"] = providerType.Contains("R2", StringComparison.OrdinalIgnoreCase),
+            ["urlPublicaEjemplo"] = _storage.GetPublicUrl("tenants/EJEMPLO/logo.png"),
+            ["resolveUrlEjemplo"] = _storage.ResolveUrl("https://uploads.propia.cubot.com.co/algun-bucket/tenants/EJEMPLO/logo.png"),
+        };
+
+        try
+        {
+            var probeKey = $"diagnostics/health-{Guid.NewGuid():N}.txt";
+            var payload = System.Text.Encoding.UTF8.GetBytes("propia storage health check");
+            string uploadedUrl;
+            using (var ms = new MemoryStream(payload))
+            {
+                uploadedUrl = await _storage.UploadAsync(probeKey, ms, "text/plain", ct);
+            }
+            res["probeSubida"] = "ok";
+            res["probeUrl"] = uploadedUrl;
+
+            var bajado = await _storage.DownloadAsync(probeKey, ct);
+            res["probeBajadaOk"] = bajado is not null && bajado.Length == payload.Length;
+
+            if (uploadedUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+                    var httpResp = await http.GetAsync(uploadedUrl, ct);
+                    res["probePublicoHttpStatus"] = (int)httpResp.StatusCode;
+                    res["probePublicoAccesible"] = httpResp.IsSuccessStatusCode;
+                    if (!httpResp.IsSuccessStatusCode)
+                        res["probePublicoNota"] = "La URL publica NO sirve el objeto: revisa Storage__R2__PublicUrl y el acceso publico del bucket R2.";
+                }
+                catch (Exception ex)
+                {
+                    res["probePublicoHttpStatus"] = "error";
+                    res["probePublicoError"] = ex.Message;
+                }
+            }
+            else
+            {
+                res["probePublicoNota"] = "URL relativa (LocalBlobStorage): el dominio del sitio NO la sirve en prod y se pierde al redeploy. Falta Storage__Provider=R2.";
+            }
+
+            await _storage.DeleteAsync(probeKey, ct);
+            res["probeLimpieza"] = "ok";
+        }
+        catch (Exception ex)
+        {
+            res["probeError"] = ex.GetType().Name + ": " + ex.Message;
+        }
+
+        return Ok(res);
+    }
+
     // -------------------- Helpers --------------------
 
     private (Guid Id, string Email) Actor()
