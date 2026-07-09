@@ -59,12 +59,16 @@ public sealed class LocalBlobStorage : IBlobStorage
         var val = storedValueOrKey.Trim();
         // Ya es ruta relativa servida por el app o data URI: dejar igual.
         if (val.StartsWith("data:", StringComparison.OrdinalIgnoreCase) || val.StartsWith("/")) return val;
-        // URL absoluta (ej. dato migrado desde R2): extraer la key y re-hostear local.
+        // URL absoluta (dato viejo: se guardaba con el host del request, ej. http://localhost:8080/uploads/...).
+        // El path ya es la ruta servida por el app; devolverla RELATIVA al mismo origen (sin re-prefijar
+        // /uploads/, que la duplicaria). Si el path trae un prefijo raro antes de /uploads/, se recorta.
         if (val.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
             || val.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
             if (!Uri.TryCreate(val, UriKind.Absolute, out var uri)) return val;
-            return GetPublicUrl(Uri.UnescapeDataString(uri.AbsolutePath).TrimStart('/'));
+            var pathQuery = uri.PathAndQuery;
+            var idx = pathQuery.IndexOf("/uploads/", StringComparison.OrdinalIgnoreCase);
+            return idx >= 0 ? pathQuery.Substring(idx) : pathQuery;
         }
         return GetPublicUrl(val);
     }

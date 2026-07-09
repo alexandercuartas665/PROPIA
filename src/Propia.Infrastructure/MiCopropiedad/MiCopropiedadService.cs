@@ -465,11 +465,15 @@ public class MiCopropiedadService : IMiCopropiedadService
     // -------- Documentos / anexos de una unidad --------
 
     public async Task<IReadOnlyList<UnidadDocumentoDto>> ListDocumentosUnidadAsync(Guid unidadId, CancellationToken ct)
-        => await _db.UnidadDocumentos.AsNoTracking()
+    {
+        var rows = await _db.UnidadDocumentos.AsNoTracking()
             .Where(d => d.UnidadId == unidadId)
             .OrderByDescending(d => d.CreatedAt)
-            .Select(d => new UnidadDocumentoDto(d.Id, d.Nombre, d.Url, d.Tamano))
+            .Select(d => new { d.Id, d.Nombre, d.Url, d.Tamano })
             .ToListAsync(ct);
+        // ResolveUrl normaliza URLs viejas absolutas (ej. localhost:8080/uploads/...) a ruta del mismo origen.
+        return rows.Select(d => new UnidadDocumentoDto(d.Id, d.Nombre, _blob.ResolveUrl(d.Url) ?? d.Url, d.Tamano)).ToList();
+    }
 
     public async Task<UnidadDocumentoDto?> AgregarDocumentoUnidadAsync(Guid unidadId, string nombre, string url, long tamano, CancellationToken ct)
     {
@@ -479,7 +483,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         _db.UnidadDocumentos.Add(d);
         await _db.SaveChangesAsync(ct);
         await RegistrarBitacoraAsync("Unidad", $"Documento '{d.Nombre}' adjuntado a la unidad.", ct);
-        return new UnidadDocumentoDto(d.Id, d.Nombre, d.Url, d.Tamano);
+        return new UnidadDocumentoDto(d.Id, d.Nombre, _blob.ResolveUrl(d.Url) ?? d.Url, d.Tamano);
     }
 
     public async Task<bool> EliminarDocumentoUnidadAsync(Guid documentoId, CancellationToken ct)
@@ -1491,12 +1495,14 @@ public class MiCopropiedadService : IMiCopropiedadService
         var e = await _db.EquiposActivos.AsNoTracking().FirstOrDefaultAsync(x => x.Id == equipoId, ct);
         if (e is null) return null;
 
-        var fotos = await _db.EquipoFotos.AsNoTracking().Where(f => f.EquipoActivoId == equipoId)
-            .Select(f => new EquipoFotoDto(f.Id, f.Url)).ToListAsync(ct);
+        var fotos = (await _db.EquipoFotos.AsNoTracking().Where(f => f.EquipoActivoId == equipoId)
+            .Select(f => new { f.Id, f.Url }).ToListAsync(ct))
+            .Select(f => new EquipoFotoDto(f.Id, _blob.ResolveUrl(f.Url) ?? f.Url)).ToList();
 
-        var mejoras = await _db.EquipoMejoras.AsNoTracking().Where(m => m.EquipoActivoId == equipoId)
+        var mejoras = (await _db.EquipoMejoras.AsNoTracking().Where(m => m.EquipoActivoId == equipoId)
             .OrderByDescending(m => m.Fecha)
-            .Select(m => new EquipoMejoraDto(m.Id, m.Descripcion, m.Valor, m.Fecha, m.DocumentoUrl)).ToListAsync(ct);
+            .Select(m => new { m.Id, m.Descripcion, m.Valor, m.Fecha, m.DocumentoUrl }).ToListAsync(ct))
+            .Select(m => new EquipoMejoraDto(m.Id, m.Descripcion, m.Valor, m.Fecha, _blob.ResolveUrl(m.DocumentoUrl))).ToList();
 
         var campos = await _db.EquipoCamposPersonalizados.AsNoTracking().Where(c => c.EquipoActivoId == equipoId)
             .OrderBy(c => c.CreatedAt)
@@ -1574,7 +1580,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         var f = new EquipoFoto { TenantId = tid, EquipoActivoId = equipoId, Url = url.Trim() };
         _db.EquipoFotos.Add(f);
         await _db.SaveChangesAsync(ct);
-        return new EquipoFotoDto(f.Id, f.Url);
+        return new EquipoFotoDto(f.Id, _blob.ResolveUrl(f.Url) ?? f.Url);
     }
 
     public async Task<bool> EliminarFotoEquipoAsync(Guid fotoId, CancellationToken ct)
@@ -1595,7 +1601,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         _db.EquipoMejoras.Add(m);
         await _db.SaveChangesAsync(ct);
         await RegistrarBitacoraAsync("Equipos", $"Mejora capitalizada registrada: {m.Descripcion} ({m.Valor:N0}).", ct);
-        return new EquipoMejoraDto(m.Id, m.Descripcion, m.Valor, m.Fecha, m.DocumentoUrl);
+        return new EquipoMejoraDto(m.Id, m.Descripcion, m.Valor, m.Fecha, _blob.ResolveUrl(m.DocumentoUrl));
     }
 
     public async Task<bool> EliminarMejoraEquipoAsync(Guid mejoraId, CancellationToken ct)
@@ -2126,9 +2132,10 @@ public class MiCopropiedadService : IMiCopropiedadService
             .OrderByDescending(f => f.Fecha)
             .Select(f => new ZonaFacturaDto(f.Id, f.Concepto, f.Valor, f.Fecha)).ToListAsync(ct);
 
-        var docs = await _db.ZonaDocumentos.AsNoTracking().Where(d => d.ZonaComunId == zonaId)
+        var docs = (await _db.ZonaDocumentos.AsNoTracking().Where(d => d.ZonaComunId == zonaId)
             .OrderByDescending(d => d.CreatedAt)
-            .Select(d => new ZonaDocumentoDto(d.Id, d.Nombre, d.Url)).ToListAsync(ct);
+            .Select(d => new { d.Id, d.Nombre, d.Url }).ToListAsync(ct))
+            .Select(d => new ZonaDocumentoDto(d.Id, d.Nombre, _blob.ResolveUrl(d.Url) ?? d.Url)).ToList();
 
         var campos = await _db.ZonaCamposPersonalizados.AsNoTracking().Where(c => c.ZonaComunId == zonaId)
             .OrderBy(c => c.CreatedAt)
@@ -2154,13 +2161,13 @@ public class MiCopropiedadService : IMiCopropiedadService
             : new List<Guid>();
 
         var novedades = novedadesRaw.Select(n => new ZonaNovedadDto(
-            n.Id, n.Titulo, n.Texto, n.ImagenUrl, n.AutorNombre, Iniciales(n.AutorNombre), FechaRel(n.CreatedAt),
+            n.Id, n.Titulo, n.Texto, _blob.ResolveUrl(n.ImagenUrl), n.AutorNombre, Iniciales(n.AutorNombre), FechaRel(n.CreatedAt),
             n.LikesCount, misLikes.Contains(n.Id),
             comentarios.Where(c => c.ZonaNovedadId == n.Id)
                 .Select(c => new ZonaComentarioDto(c.Id, c.AutorNombre, Iniciales(c.AutorNombre), c.Texto, FechaRel(c.CreatedAt))).ToList()
         )).ToList();
 
-        return new ZonaFichaDto(zonaDto, z.ImagenUrl, z.MantenimientoTipo, z.MantenimientoContrato,
+        return new ZonaFichaDto(zonaDto, _blob.ResolveUrl(z.ImagenUrl), z.MantenimientoTipo, z.MantenimientoContrato,
             z.MantenimientoFrecuencia, z.MantenimientoDiaMes, facturas, docs, campos, horarios, contratos, novedades);
     }
 
@@ -2214,7 +2221,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         var d = new ZonaDocumento { TenantId = tid, ZonaComunId = zonaId, Nombre = nombre.Trim(), Url = url };
         _db.ZonaDocumentos.Add(d);
         await _db.SaveChangesAsync(ct);
-        return new ZonaDocumentoDto(d.Id, d.Nombre, d.Url);
+        return new ZonaDocumentoDto(d.Id, d.Nombre, _blob.ResolveUrl(d.Url) ?? d.Url);
     }
 
     public async Task<bool> EliminarZonaDocumentoAsync(Guid docId, CancellationToken ct)
@@ -2265,7 +2272,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         };
         _db.ZonaNovedades.Add(n);
         await _db.SaveChangesAsync(ct);
-        return new ZonaNovedadDto(n.Id, n.Titulo, n.Texto, n.ImagenUrl, n.AutorNombre, Iniciales(n.AutorNombre),
+        return new ZonaNovedadDto(n.Id, n.Titulo, n.Texto, _blob.ResolveUrl(n.ImagenUrl), n.AutorNombre, Iniciales(n.AutorNombre),
             FechaRel(n.CreatedAt), 0, false, new List<ZonaComentarioDto>());
     }
 

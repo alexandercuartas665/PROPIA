@@ -828,9 +828,10 @@ public class MiCopropiedadController : ControllerBase
     }
 
     /// <summary>
-    /// El blob local (Development) devuelve URLs relativas (/uploads/...). El Web se sirve en otro
-    /// origen que el API, asi que esas URLs no resuelven. Las absolutizamos contra el API. En
-    /// produccion R2 ya devuelve URLs absolutas (no empiezan con '/') y esto las deja igual.
+    /// Host unificado: la Web y la API se sirven en el MISMO origen, asi que las URLs relativas
+    /// (/uploads/...) resuelven bien en el navegador. NO se absolutizan: absolutizar contra el
+    /// host del request grababa el loopback (localhost:8080) al subir via el HttpClient server-side,
+    /// rompiendo el visor. Se guarda tal cual (relativo en Local, absoluto si el blob ya lo es).
     /// </summary>
-    private string Absolutizar(string url) => url.StartsWith('/') ? $"{Request.Scheme}://{Request.Host}{url}" : url;
+    private string Absolutizar(string url) => url;
 }
