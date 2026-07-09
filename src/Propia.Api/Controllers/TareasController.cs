@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Propia.Application.Tareas;
+using Propia.Application.UsuariosAccesos;
 using Propia.Domain.Enums;
 using Propia.Infrastructure.Storage;
 
@@ -14,10 +15,12 @@ public class TareasController : ControllerBase
 {
     private readonly ITareasService _svc;
     private readonly IBlobStorage _storage;
-    public TareasController(ITareasService svc, IBlobStorage storage)
+    private readonly IUsuariosService _usuarios;
+    public TareasController(ITareasService svc, IBlobStorage storage, IUsuariosService usuarios)
     {
         _svc = svc;
         _storage = storage;
+        _usuarios = usuarios;
     }
 
     // --- Estados ---
@@ -201,6 +204,21 @@ public class TareasController : ControllerBase
     [HttpDelete("tableros/{id:guid}/usuarios/{personaId:guid}")]
     public async Task<IActionResult> QuitarUsuarioTablero(Guid id, Guid personaId, CancellationToken ct)
         => await _svc.QuitarUsuarioTableroAsync(id, personaId, ct) ? NoContent() : NotFound();
+
+    // Invitar a un externo (por email) a colaborar en el tablero: crea la persona si no existe,
+    // genera el link de aceptacion y envia el correo. Devuelve la invitacion (con LinkAceptacion).
+    [HttpPost("tableros/{id:guid}/invitar-externo")]
+    public async Task<IActionResult> InvitarExternoTablero(Guid id, [FromBody] InvitarExternoTableroBody body, CancellationToken ct)
+    {
+        try
+        {
+            var req = new InvitarExternoTableroRequest(body.Email, body.Nombre, body.RolId, id);
+            return Ok(await _usuarios.InvitarExternoTableroAsync(req, ct));
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    public record InvitarExternoTableroBody(string Email, string Nombre, Guid RolId);
 
     [HttpGet("tableros/{id:guid}/board")]
     public async Task<IActionResult> GetTableroBoard(Guid id, CancellationToken ct)

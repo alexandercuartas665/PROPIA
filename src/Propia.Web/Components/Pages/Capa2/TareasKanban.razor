@@ -2,6 +2,7 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using System.Globalization
 @using Propia.Application.Tareas
+@using Propia.Application.Directorio
 @using Propia.Domain.Enums
 @using Propia.Shared.Auth
 @inject IHttpClientFactory HttpFactory
@@ -426,22 +427,90 @@ else
                 </div>
                 <div class="tb-fld">
                     <label>Usuarios que pueden trabajar en el tablero</label>
-                    <div class="tb-userlist">
-                        @if (_personas is not null)
+                    <div class="tb-userpick">
+                        @if (_tableroDraft.UsuarioIds.Count > 0)
                         {
-                            @foreach (var p in _personas)
-                            {
-                                var pid = p.Id;
-                                var on = _tableroDraft.UsuarioIds.Contains(pid);
-                                <button class="tb-user @(on ? "on" : "")" @onclick="() => ToggleUsuario(pid)">
-                                    <div class="tb-ava">@Iniciales(p.Nombre)</div>
-                                    <span class="tb-user-nom">@p.Nombre</span>
-                                    @if (on) { <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6D4FE3" stroke-width="2.6"><path d="M5 12l5 5 9-11"/></svg> }
-                                </button>
-                            }
+                            <div class="tb-chips">
+                                @foreach (var pid in _tableroDraft.UsuarioIds)
+                                {
+                                    var id = pid;
+                                    var info = SelInfo(pid);
+                                    <span class="tb-chip">
+                                        @if (!string.IsNullOrEmpty(info.Foto))
+                                        {
+                                            <img class="tb-chip-ava" src="@info.Foto" alt="" />
+                                        }
+                                        else
+                                        {
+                                            <span class="tb-ava tb-ava-sm">@Iniciales(info.Nombre)</span>
+                                        }
+                                        <span class="tb-chip-nom">@info.Nombre</span>
+                                        <button type="button" class="tb-chip-x" @onclick="() => QuitarMiembroTb(id)" title="Quitar">&times;</button>
+                                    </span>
+                                }
+                            </div>
                         }
+                        <div class="tb-search-wrap">
+                            <input class="tb-input" placeholder="Buscar persona por nombre, documento o correo..." @bind="_tbBuscar" @bind:event="oninput" @onkeyup="BuscarPersonasTb" autocomplete="off" />
+                            @if (_tbResultados.Count > 0)
+                            {
+                                <div class="tb-search-drop">
+                                    @foreach (var p in _tbResultados.Where(x => !_tableroDraft.UsuarioIds.Contains(x.Id)))
+                                    {
+                                        var per = p;
+                                        var nombre = $"{p.Nombres} {p.Apellidos}".Trim();
+                                        <button type="button" class="tb-search-item" @onclick="() => AgregarMiembroTb(per)">
+                                            @if (!string.IsNullOrEmpty(p.FotoUrl))
+                                            {
+                                                <img class="tb-chip-ava" src="@p.FotoUrl" alt="" />
+                                            }
+                                            else
+                                            {
+                                                <span class="tb-ava tb-ava-sm">@Iniciales(nombre)</span>
+                                            }
+                                            <span class="tb-search-nom">@nombre</span>
+                                            <span class="tb-search-doc">@p.Documento</span>
+                                        </button>
+                                    }
+                                </div>
+                            }
+                            else if (!string.IsNullOrWhiteSpace(_tbBuscar) && _tbBuscar.Trim().Length >= 2)
+                            {
+                                <div class="tb-search-empty">Sin resultados en el directorio.</div>
+                            }
+                        </div>
                     </div>
                 </div>
+                @if (_tableroDraft.Id is not null)
+                {
+                    <div class="tb-fld tb-invite">
+                        <label>Invitar a un externo por correo</label>
+                        <div class="tb-invite-hint">Se crea su cuenta y queda con acceso a este tablero. Recibe un enlace por correo que vence en 72 horas.</div>
+                        <div class="tb-invite-grid">
+                            <input class="tb-input" type="email" placeholder="correo@@ejemplo.com" @bind="_extEmail" autocomplete="off" />
+                            <input class="tb-input" placeholder="Nombre y apellido" @bind="_extNombre" autocomplete="off" />
+                            <select class="tb-input" @bind="_extRolId">
+                                <option value="">Rol...</option>
+                                @foreach (var r in _rolesInv) { <option value="@r.Id">@r.Nombre</option> }
+                            </select>
+                            <button class="tb-btn tb-btn-primary" @onclick="InvitarExterno"
+                                    disabled="@(_extBusy || string.IsNullOrWhiteSpace(_extEmail) || string.IsNullOrWhiteSpace(_extNombre) || string.IsNullOrEmpty(_extRolId))">
+                                @(_extBusy ? "Enviando..." : "Invitar")
+                            </button>
+                        </div>
+                        @if (_extMsg is not null)
+                        {
+                            <div class="tb-invite-msg @(_extError ? "err" : "ok")">@_extMsg</div>
+                        }
+                        @if (!string.IsNullOrEmpty(_extLink))
+                        {
+                            <div class="tb-invite-link">
+                                <input class="tb-input" readonly value="@_extLink" />
+                                <button class="tb-btn tb-btn-ghost" @onclick="CopiarLinkExt">Copiar</button>
+                            </div>
+                        }
+                    </div>
+                }
             </div>
             <div class="tb-modal-foot">
                 @if (_tableroDraft.Id is not null) { <button class="tb-btn-danger" @onclick="EliminarTablero"><i class="fi fi-rr-trash"></i>Eliminar</button> }
@@ -1021,7 +1090,32 @@ else
     .tb-user.on { border-color: #6D4FE3; background: #F5F1FE; }
     .tb-user .tb-ava { margin-right: 0; }
     .tb-user-nom { flex: 1; font-size: 13px; font-weight: 600; color: #33475B; }
+    /* Buscador de miembros con autocompletado (reemplaza la lista de checkboxes) */
+    .tb-userpick { display: flex; flex-direction: column; gap: 9px; }
+    .tb-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+    .tb-chip { display: inline-flex; align-items: center; gap: 7px; background: #F5F1FE; border: 1px solid #DCD2F8; border-radius: 20px; padding: 3px 8px 3px 4px; font-size: 12.5px; font-weight: 600; color: #33475B; }
+    .tb-chip-ava { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; border: 2px solid #fff; flex-shrink: 0; }
+    .tb-ava-sm { width: 24px; height: 24px; font-size: 9px; margin-right: 0; }
+    .tb-chip-nom { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tb-chip-x { border: none; background: transparent; color: #8B7BD8; font-size: 16px; line-height: 1; cursor: pointer; padding: 0 2px; }
+    .tb-search-wrap { position: relative; }
+    .tb-search-drop { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20; background: #fff; border: 1px solid #E1E8EE; border-radius: 10px; box-shadow: 0 8px 24px rgba(45,62,80,.14); max-height: 240px; overflow-y: auto; padding: 4px; }
+    .tb-search-item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: none; background: #fff; border-radius: 8px; padding: 7px 9px; cursor: pointer; }
+    .tb-search-item:hover { background: #F5F1FE; }
+    .tb-search-nom { flex: 1; font-size: 13px; font-weight: 600; color: #33475B; }
+    .tb-search-doc { font-size: 11.5px; color: #90A4B7; }
+    .tb-search-empty { padding: 9px 11px; font-size: 12.5px; color: #90A4B7; font-style: italic; }
     .tb-note { font-size: 11.5px; color: #7C5CE8; background: #FBFAFE; border: 1px dashed #DCD2F8; border-radius: 9px; padding: 9px 11px; }
+    .tb-invite { border-top: 1px dashed #E1E8EE; padding-top: 14px; }
+    .tb-invite-hint { font-size: 11.5px; color: #90A4B7; margin: -3px 0 8px; }
+    .tb-invite-grid { display: grid; grid-template-columns: 1.3fr 1fr .8fr auto; gap: 8px; align-items: center; }
+    .tb-invite-grid .tb-input { min-width: 0; }
+    .tb-invite-msg { margin-top: 9px; font-size: 12.5px; font-weight: 600; border-radius: 9px; padding: 8px 11px; }
+    .tb-invite-msg.ok { color: #1E7A50; background: #EAF7F0; border: 1px solid #C6EAD6; }
+    .tb-invite-msg.err { color: #B4453B; background: #FCEEEC; border: 1px solid #F2CFC9; }
+    .tb-invite-link { display: flex; gap: 8px; align-items: center; margin-top: 9px; }
+    .tb-invite-link .tb-input { flex: 1; font-size: 12px; color: #5A6B7B; background: #F7FAFC; }
+    @@media (max-width: 620px) { .tb-invite-grid { grid-template-columns: 1fr 1fr; } }
 
     /* ===== Modal de tarjeta rico (3 columnas) ===== */
     .tbc-modal { width: 980px; max-width: 100%; background: #fff; border-radius: 18px; box-shadow: 0 30px 70px rgba(27,42,58,.4); margin: auto; overflow: hidden; display: flex; flex-direction: column; max-height: 92vh; }
@@ -1815,13 +1909,120 @@ else
         await RecargarBoard();
     }
 
-    private void AbrirTableroDraft(TableroDto? b)
+    private async Task AbrirTableroDraft(TableroDto? b)
     {
         _tableroDraft = b is null
             ? new TableroDraft()
             : new TableroDraft { Id = b.Id, Nombre = b.Nombre, Descripcion = b.Descripcion, Color = b.Color, UsuarioIds = b.Usuarios.Select(u => u.PersonaId).ToHashSet() };
+        // Info de display de los miembros ya seleccionados (nombre + iniciales; sin foto en el DTO del tablero).
+        _tbSelInfo = b?.Usuarios.ToDictionary(u => u.PersonaId, u => (u.Nombre, (string?)null)) ?? new();
+        _tbBuscar = ""; _tbResultados.Clear();
+        // Reset del bloque "invitar externo"
+        _extEmail = ""; _extNombre = ""; _extRolId = ""; _extLink = null; _extMsg = null; _extError = false;
+        // El bloque solo aplica a tableros que ya existen (se necesita su Id).
+        if (b is not null)
+        {
+            if (_rolesInv.Count == 0)
+            {
+                try { _rolesInv = await Auth().GetFromJsonAsync<List<RolMini>>("/api/roles") ?? new(); }
+                catch { _rolesInv = new(); }
+            }
+            // Rol por defecto: el primero que no sea Administrador (o el primero disponible).
+            _extRolId = (_rolesInv.FirstOrDefault(r => r.Nombre != "Administrador")?.Id
+                         ?? _rolesInv.FirstOrDefault()?.Id)?.ToString() ?? "";
+        }
     }
     private void ToggleUsuario(Guid pid) { if (_tableroDraft is null) return; if (!_tableroDraft.UsuarioIds.Add(pid)) _tableroDraft.UsuarioIds.Remove(pid); }
+
+    // ---- Buscador de personas con autocompletado (miembros del tablero) ----
+    private string _tbBuscar = "";
+    private List<PersonaResumenDto> _tbResultados = new();
+    private Dictionary<Guid, (string Nombre, string? Foto)> _tbSelInfo = new();
+
+    private (string Nombre, string? Foto) SelInfo(Guid pid)
+        => _tbSelInfo.TryGetValue(pid, out var v) ? v : (PersonaNombre(pid), (string?)null);
+
+    private async Task BuscarPersonasTb()
+    {
+        var q = _tbBuscar?.Trim() ?? "";
+        if (q.Length < 2) { _tbResultados.Clear(); return; }
+        try
+        {
+            _tbResultados = await Auth().GetFromJsonAsync<List<PersonaResumenDto>>(
+                $"/api/directorio/personas?q={Uri.EscapeDataString(q)}") ?? new();
+        }
+        catch { _tbResultados.Clear(); }
+    }
+
+    private void AgregarMiembroTb(PersonaResumenDto p)
+    {
+        if (_tableroDraft is null) return;
+        _tableroDraft.UsuarioIds.Add(p.Id);
+        _tbSelInfo[p.Id] = ($"{p.Nombres} {p.Apellidos}".Trim(), p.FotoUrl);
+        _tbBuscar = ""; _tbResultados.Clear();
+    }
+
+    private void QuitarMiembroTb(Guid pid)
+    {
+        _tableroDraft?.UsuarioIds.Remove(pid);
+        _tbSelInfo.Remove(pid);
+    }
+
+    // ---- Invitar externo al tablero (crea cuenta + acceso, envia correo) ----
+    private record RolMini(Guid Id, string Nombre);
+    private record InvitacionResultMini(string LinkAceptacion);
+    private List<RolMini> _rolesInv = new();
+    private string _extEmail = "";
+    private string _extNombre = "";
+    private string _extRolId = "";
+    private bool _extBusy;
+    private bool _extError;
+    private string? _extMsg;
+    private string? _extLink;
+
+    private async Task InvitarExterno()
+    {
+        if (_tableroDraft?.Id is not Guid tableroId) return;
+        var email = _extEmail?.Trim() ?? "";
+        var nombre = _extNombre?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(email) || !email.Contains('@') || string.IsNullOrWhiteSpace(nombre))
+        {
+            _extError = true; _extMsg = "Completa un correo valido y el nombre."; return;
+        }
+        if (!Guid.TryParse(_extRolId, out var rolId))
+        {
+            _extError = true; _extMsg = "Selecciona un rol para el invitado."; return;
+        }
+        _extBusy = true; _extError = false; _extMsg = null; _extLink = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync(
+                $"/api/tareas/tableros/{tableroId}/invitar-externo",
+                new { Email = email, Nombre = nombre, RolId = rolId });
+            if (resp.IsSuccessStatusCode)
+            {
+                var inv = await resp.Content.ReadFromJsonAsync<InvitacionResultMini>();
+                _extLink = Nav.BaseUri.TrimEnd('/') + (inv?.LinkAceptacion ?? "");
+                _extMsg = $"Invitacion enviada por correo a {email}.";
+                _extError = false;
+                _extEmail = ""; _extNombre = "";
+            }
+            else
+            {
+                _extError = true;
+                var body = await resp.Content.ReadAsStringAsync();
+                _extMsg = "No se pudo invitar. " + body;
+            }
+        }
+        catch (Exception ex) { _extError = true; _extMsg = "Error: " + ex.Message; }
+        finally { _extBusy = false; }
+    }
+
+    private async Task CopiarLinkExt()
+    {
+        if (string.IsNullOrEmpty(_extLink)) return;
+        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", _extLink); } catch { }
+    }
     private async Task GuardarTablero()
     {
         if (_tableroDraft is null || string.IsNullOrWhiteSpace(_tableroDraft.Nombre)) return;
@@ -2039,7 +2240,7 @@ else
             if (d.Id is { } tid)
             {
                 foreach (var add in d.EtiquetaIds.Where(x => !d.EtiquetaIdsOrig.Contains(x)))
-                    await Auth().PostAsJsonAsync($"/api/tareas/{tid}/etiquetas", new AsignarEtiquetaRequest(add));
+                    await Auth().PostAsJsonAsync($"/api/tareas/{tid}/etiquetas", new Propia.Application.Tareas.AsignarEtiquetaRequest(add));
                 foreach (var rem in d.EtiquetaIdsOrig.Where(x => !d.EtiquetaIds.Contains(x)))
                     await Auth().DeleteAsync($"/api/tareas/{tid}/etiquetas/{rem}");
             }

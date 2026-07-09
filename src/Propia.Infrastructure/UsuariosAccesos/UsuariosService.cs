@@ -24,6 +24,8 @@ public class UsuariosService : IUsuariosService
     private readonly ITokenService _tokenService;
     private readonly JwtSettings _jwt;
     private readonly Storage.IBlobStorage _blob;
+    private readonly IEmailSender _emailSender;
+    private readonly Microsoft.Extensions.Configuration.IConfiguration _config;
 
     public UsuariosService(
         PropiaDbContext db,
@@ -31,7 +33,9 @@ public class UsuariosService : IUsuariosService
         UserManager<ApplicationUser> userManager,
         ITokenService tokenService,
         IOptions<JwtSettings> jwt,
-        Storage.IBlobStorage blob)
+        Storage.IBlobStorage blob,
+        IEmailSender emailSender,
+        Microsoft.Extensions.Configuration.IConfiguration config)
     {
         _db = db;
         _tenantContext = tenantContext;
@@ -39,6 +43,8 @@ public class UsuariosService : IUsuariosService
         _tokenService = tokenService;
         _jwt = jwt.Value;
         _blob = blob;
+        _emailSender = emailSender;
+        _config = config;
     }
 
     // ===================== Bandeja =====================
@@ -320,6 +326,124 @@ public class UsuariosService : IUsuariosService
         return ArmarInvitacionDto(inv, persona, rol);
     }
 
+    public async Task<InvitacionDto> InvitarExternoTableroAsync(InvitarExternoTableroRequest req, CancellationToken ct)
+    {
+        var tenantId = _tenantContext.CurrentTenantId
+            ?? throw new InvalidOperationException("Sin tenant activo.");
+
+        var email = (req.Email ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(email) || !email.Contains('@'))
+            throw new InvalidOperationException("Email invalido.");
+        var nombre = (req.Nombre ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(nombre))
+            throw new InvalidOperationException("Nombre requerido.");
+
+        var tablero = await _db.Tableros.FirstOrDefaultAsync(t => t.Id == req.TableroId, ct)
+            ?? throw new InvalidOperationException("Tablero no encontrado.");
+        var rol = await _db.RolesCopropiedad.FirstOrDefaultAsync(r => r.Id == req.RolId, ct)
+            ?? throw new InvalidOperationException("Rol no encontrado.");
+
+        // Persona es GLOBAL: la buscamos por email (unico). Si no existe, la creamos al vuelo
+        // con un documento placeholder unico (perfil incompleto: el externo lo completa luego).
+        var persona = await _db.Personas.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(p => p.Email == email, ct);
+        if (persona is null)
+        {
+            var (nombres, apellidos) = PartirNombre(nombre);
+            persona = new Persona
+            {
+                TipoDocumento = TipoDocumento.CC,
+                Documento = GenerarDocumentoPlaceholder(),
+                Nombres = nombres,
+                Apellidos = apellidos,
+                Email = email,
+                PerfilIncompleto = true,
+                CanalAceptacion = CanalAceptacionDatos.Manual,
+                EstadoDirectorio = EstadoDirectorio.Activo
+            };
+            _db.Personas.Add(persona);
+            await _db.SaveChangesAsync(ct);
+        }
+
+        // Aseguramos vinculo con la copropiedad para que aparezca en el Directorio/buscador.
+        var yaVinculada = await _db.DirectorioVinculos.AnyAsync(v =>
+            v.EntidadTipo == EntidadDirectorio.Persona && v.EntidadId == persona.Id, ct);
+        if (!yaVinculada)
+        {
+            _db.DirectorioVinculos.Add(new DirectorioVinculo
+            {
+                EntidadTipo = EntidadDirectorio.Persona,
+                EntidadId = persona.Id,
+                FechaDesde = DateOnly.FromDateTime(DateTime.UtcNow),
+                Estado = EstadoVinculo.Activo
+            });
+        }
+
+        // Cancelamos invitaciones pendientes previas de esta persona a este mismo tablero.
+        var previas = await _db.UsuarioInvitaciones
+            .Where(i => i.PersonaId == persona.Id && i.TableroId == req.TableroId
+                        && i.Estado == EstadoInvitacion.Pendiente)
+            .ToListAsync(ct);
+        foreach (var pi in previas) { pi.Estado = EstadoInvitacion.Cancelada; pi.CanceladaAt = DateTimeOffset.UtcNow; }
+
+        var token = GenerarTokenSeguro();
+        var inv = new UsuarioInvitacion
+        {
+            PersonaId = persona.Id,
+            RolId = req.RolId,
+            Token = token,
+            Estado = EstadoInvitacion.Pendiente,
+            ExpiraAt = DateTimeOffset.UtcNow.AddHours(72),  // RN-11: 72h vigencia
+            CanalEnvio = CanalEnvioInvitacion.Email,
+            TableroId = req.TableroId
+        };
+        _db.UsuarioInvitaciones.Add(inv);
+        await _db.SaveChangesAsync(ct);
+
+        await RegistrarAuditoriaAsync(TipoEventoAuditoria.InvitacionEnviada, tenantId, inv.Id, email, ct);
+
+        // Enviamos el correo. Si el envio falla, NO revienta la invitacion: el link se puede copiar.
+        var copropiedad = (await _db.Tenants.FirstOrDefaultAsync(t => t.Id == tenantId, ct))?.Nombre ?? "la copropiedad";
+        var linkAbsoluto = ConstruirLinkAbsoluto($"/invitacion/{token}");
+        await EnviarCorreoInvitacionTableroAsync(email, nombre, copropiedad, tablero.Nombre, linkAbsoluto, ct);
+
+        return ArmarInvitacionDto(inv, persona, rol);
+    }
+
+    private static (string Nombres, string Apellidos) PartirNombre(string full)
+    {
+        var parts = full.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0) return (full, "");
+        if (parts.Length == 1) return (parts[0], "");
+        return (parts[0], string.Join(' ', parts[1..]));
+    }
+
+    private static string GenerarDocumentoPlaceholder()
+        => "EXT" + Convert.ToHexString(RandomNumberGenerator.GetBytes(6)).ToLowerInvariant();  // 15 chars, unico
+
+    private string ConstruirLinkAbsoluto(string relative)
+    {
+        var baseUrl = (_config["App:PublicBaseUrl"] ?? "").Trim().TrimEnd('/');
+        return string.IsNullOrWhiteSpace(baseUrl) ? relative : baseUrl + relative;
+    }
+
+    private async Task EnviarCorreoInvitacionTableroAsync(
+        string email, string nombre, string copropiedad, string tablero, string link, CancellationToken ct)
+    {
+        var subject = $"Invitacion para colaborar en el tablero \"{tablero}\"";
+        var html = $@"<div style=""font-family:Segoe UI,Arial,sans-serif;max-width:520px;margin:0 auto;color:#1f2937"">
+  <h2 style=""color:#111827"">Hola {System.Net.WebUtility.HtmlEncode(nombre)},</h2>
+  <p>Te invitaron a colaborar en el tablero <strong>{System.Net.WebUtility.HtmlEncode(tablero)}</strong> de <strong>{System.Net.WebUtility.HtmlEncode(copropiedad)}</strong> en PROPIA.</p>
+  <p>Haz clic en el boton para crear tu cuenta y entrar al tablero. El enlace vence en 72 horas.</p>
+  <p style=""margin:28px 0"">
+    <a href=""{link}"" style=""background:#2563eb;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:600"">Aceptar invitacion</a>
+  </p>
+  <p style=""font-size:12px;color:#6b7280"">Si el boton no funciona, copia y pega este enlace en tu navegador:<br>{link}</p>
+</div>";
+        try { await _emailSender.SendAsync(email, subject, html, ct); }
+        catch { /* el correo es best-effort: la invitacion queda creada y el link se puede copiar */ }
+    }
+
     public async Task<bool> ReenviarInvitacionAsync(Guid invitacionId, CancellationToken ct)
     {
         var inv = await _db.UsuarioInvitaciones.FirstOrDefaultAsync(i => i.Id == invitacionId, ct);
@@ -494,6 +618,22 @@ public class UsuariosService : IUsuariosService
             ut.FechaActivacion = DateTimeOffset.UtcNow;
             ut.MotivoRevocacion = null;
             ut.FechaRevocacion = null;
+        }
+
+        // Si la invitacion apunta a un tablero (externo invitado a colaborar), lo agregamos como miembro.
+        if (inv.TableroId is Guid tableroId)
+        {
+            var yaMiembro = await _db.TableroUsuarios
+                .AnyAsync(tu => tu.TableroId == tableroId && tu.PersonaId == inv.PersonaId, ct);
+            if (!yaMiembro)
+            {
+                _db.TableroUsuarios.Add(new TableroUsuario
+                {
+                    TenantId = inv.TenantId,
+                    TableroId = tableroId,
+                    PersonaId = inv.PersonaId
+                });
+            }
         }
 
         inv.Estado = EstadoInvitacion.Aceptada;

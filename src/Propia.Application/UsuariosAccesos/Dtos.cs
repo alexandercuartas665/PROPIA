@@ -89,6 +89,11 @@ public record InvitacionDto(
 public record CrearInvitacionRequest(
     Guid PersonaId, Guid RolId, CanalEnvioInvitacion Canal);
 
+// Invitar a un externo (por email) a colaborar en un tablero de Tareas.
+// Si la persona no existe en el Directorio se crea al vuelo con documento placeholder.
+public record InvitarExternoTableroRequest(
+    string Email, string Nombre, Guid RolId, Guid TableroId);
+
 // Datos para vista publica de aceptar invitacion (sin auth)
 public record InvitacionPublicaDto(
     string CopropiedadNombre,

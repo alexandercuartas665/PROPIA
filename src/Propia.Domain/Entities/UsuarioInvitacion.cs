@@ -24,4 +24,10 @@ public class UsuarioInvitacion : TenantEntity
     public DateTimeOffset? CanceladaAt { get; set; }
     public CanalEnvioInvitacion CanalEnvio { get; set; } = CanalEnvioInvitacion.Email;
     public Guid? CreadaPorUsuarioId { get; set; }
+
+    /// <summary>
+    /// Tablero de trabajo (2.10) destino: si esta seteado, al aceptar la invitacion la persona
+    /// queda agregada a ese tablero. Usado para invitar externos a colaborar en un tablero.
+    /// </summary>
+    public Guid? TableroId { get; set; }
 }

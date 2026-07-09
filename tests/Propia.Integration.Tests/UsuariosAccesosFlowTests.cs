@@ -272,9 +272,16 @@ public class UsuariosAccesosFlowTests : IAsyncLifetime
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         var tokenSvc = scope.ServiceProvider.GetRequiredService<ITokenService>();
         var jwt = scope.ServiceProvider.GetRequiredService<IOptions<JwtSettings>>();
-        var svc = new UsuariosService(db, tenantCtx, userManager, tokenSvc, jwt, new NoopBlobStorage());
+        var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build();
+        var svc = new UsuariosService(db, tenantCtx, userManager, tokenSvc, jwt, new NoopBlobStorage(), new NoopEmailSender(), config);
         var roles = new RolesService(db, tenantCtx);
         return (svc, roles, (TenantContext)tenantCtx, db);
+    }
+
+    private sealed class NoopEmailSender : Propia.Application.Common.IEmailSender
+    {
+        public Task<Propia.Application.Common.EmailSendResult> SendAsync(string toEmail, string subject, string htmlBody, CancellationToken cancellationToken = default)
+            => Task.FromResult(new Propia.Application.Common.EmailSendResult(true, null));
     }
 
     private sealed class NoopBlobStorage : IBlobStorage

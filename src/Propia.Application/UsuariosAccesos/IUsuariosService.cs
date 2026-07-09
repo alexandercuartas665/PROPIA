@@ -17,6 +17,8 @@ public interface IUsuariosService
 
     // --- Invitacion (envio + aceptacion publica) ---
     Task<InvitacionDto> InvitarAsync(CrearInvitacionRequest req, CancellationToken ct);
+    // Invita a un externo (por email) a un tablero: crea la persona si no existe y envia correo.
+    Task<InvitacionDto> InvitarExternoTableroAsync(InvitarExternoTableroRequest req, CancellationToken ct);
     Task<bool> ReenviarInvitacionAsync(Guid invitacionId, CancellationToken ct);
     Task<bool> CancelarInvitacionAsync(Guid invitacionId, CancellationToken ct);
     Task<IReadOnlyList<InvitacionDto>> ListarPendientesAsync(CancellationToken ct);
