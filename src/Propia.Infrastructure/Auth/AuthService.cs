@@ -18,17 +18,20 @@ public class AuthService : IAuthService
     private readonly PropiaDbContext _db;
     private readonly ITokenService _tokenService;
     private readonly JwtSettings _jwt;
+    private readonly Storage.IBlobStorage _blob;
 
     public AuthService(
         UserManager<ApplicationUser> userManager,
         PropiaDbContext db,
         ITokenService tokenService,
-        IOptions<JwtSettings> jwtOptions)
+        IOptions<JwtSettings> jwtOptions,
+        Storage.IBlobStorage blob)
     {
         _userManager = userManager;
         _db = db;
         _tokenService = tokenService;
         _jwt = jwtOptions.Value;
+        _blob = blob;
     }
 
     public async Task<LoginResponse?> LoginAsync(LoginRequest request, CancellationToken ct)
@@ -172,7 +175,7 @@ public class AuthService : IAuthService
             while (await reader.ReadAsync(ct))
             {
                 var logo = reader.IsDBNull(3) ? null : reader.GetString(3);
-                rows.Add(new TenantInfo(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), logo));
+                rows.Add(new TenantInfo(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), _blob.ResolveUrl(logo)));
             }
         }
         finally

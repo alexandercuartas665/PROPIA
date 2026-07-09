@@ -4,6 +4,7 @@ using Propia.Application.Directorio;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
 using Propia.Infrastructure.Persistence;
+using Propia.Infrastructure.Storage;
 
 namespace Propia.Infrastructure.Directorio;
 
@@ -11,12 +12,14 @@ public class DirectorioService : IDirectorioService
 {
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenantContext;
+    private readonly IBlobStorage _blob;
     private static readonly int[] PesosNit = { 41, 37, 29, 23, 19, 17, 13, 7, 3 };
 
-    public DirectorioService(PropiaDbContext db, ITenantContext tenantContext)
+    public DirectorioService(PropiaDbContext db, ITenantContext tenantContext, IBlobStorage blob)
     {
         _db = db;
         _tenantContext = tenantContext;
+        _blob = blob;
     }
 
     // ============================ Persona ============================
@@ -110,14 +113,14 @@ public class DirectorioService : IDirectorioService
                 (p.Email != null && p.Email.ToLower().Contains(q)));
         }
 
-        return await personasQuery
+        var rows = await personasQuery
             .OrderBy(p => p.Apellidos).ThenBy(p => p.Nombres)
-            .Select(p => new PersonaResumenDto(
-                p.Id, p.TipoDocumento, p.Documento,
-                p.Nombres, p.Apellidos, p.Email, p.Telefono,
-                p.FotoUrl, p.PerfilIncompleto, p.EstadoDirectorio))
+            .Select(p => new { p.Id, p.TipoDocumento, p.Documento, p.Nombres, p.Apellidos, p.Email, p.Telefono, p.FotoUrl, p.PerfilIncompleto, p.EstadoDirectorio })
             .Take(200)
             .ToListAsync(ct);
+        return rows.Select(p => new PersonaResumenDto(
+            p.Id, p.TipoDocumento, p.Documento, p.Nombres, p.Apellidos, p.Email, p.Telefono,
+            _blob.ResolveUrl(p.FotoUrl), p.PerfilIncompleto, p.EstadoDirectorio)).ToList();
     }
 
     public async Task<Persona360Dto?> GetPersona360Async(Guid personaId, CancellationToken ct)
@@ -243,14 +246,14 @@ public class DirectorioService : IDirectorioService
                 (e.Email != null && e.Email.ToLower().Contains(q)));
         }
 
-        return await empresasQuery
+        var rows = await empresasQuery
             .OrderBy(e => e.RazonSocial)
-            .Select(e => new EmpresaResumenDto(
-                e.Id, e.Nit, e.DigitoVerificacion,
-                e.RazonSocial, e.NombreComercial, e.Email, e.Telefono,
-                e.LogoUrl, e.PerfilIncompleto, e.EstadoDirectorio))
+            .Select(e => new { e.Id, e.Nit, e.DigitoVerificacion, e.RazonSocial, e.NombreComercial, e.Email, e.Telefono, e.LogoUrl, e.PerfilIncompleto, e.EstadoDirectorio })
             .Take(200)
             .ToListAsync(ct);
+        return rows.Select(e => new EmpresaResumenDto(
+            e.Id, e.Nit, e.DigitoVerificacion, e.RazonSocial, e.NombreComercial, e.Email, e.Telefono,
+            _blob.ResolveUrl(e.LogoUrl), e.PerfilIncompleto, e.EstadoDirectorio)).ToList();
     }
 
     public async Task<Empresa360Dto?> GetEmpresa360Async(Guid empresaId, CancellationToken ct)
@@ -459,17 +462,17 @@ public class DirectorioService : IDirectorioService
         return dv.ToString();
     }
 
-    private static PersonaDetalleDto ToPersonaDetalle(Persona p) =>
+    private PersonaDetalleDto ToPersonaDetalle(Persona p) =>
         new(p.Id, p.TipoDocumento, p.Documento, p.Nombres, p.Apellidos,
-            p.Email, p.Telefono, p.FotoUrl, p.FechaNacimiento, p.Genero,
+            p.Email, p.Telefono, _blob.ResolveUrl(p.FotoUrl), p.FechaNacimiento, p.Genero,
             p.AceptoTratamientoDatos, p.FechaAceptacionDatos,
             p.PerfilIncompleto, p.EstadoDirectorio);
 
-    private static EmpresaDetalleDto ToEmpresaDetalle(Empresa e) =>
+    private EmpresaDetalleDto ToEmpresaDetalle(Empresa e) =>
         new(e.Id, e.Nit, e.DigitoVerificacion, e.RazonSocial, e.NombreComercial,
             e.Email, e.Telefono, e.Direccion,
             e.TipoEmpresa, e.SectorEconomico, e.RegimenTributario,
-            e.SitioWeb, e.LogoUrl,
+            e.SitioWeb, _blob.ResolveUrl(e.LogoUrl),
             e.RepresentanteLegalPersonaId,
             e.RepresentanteLegal is null ? null : $"{e.RepresentanteLegal.Nombres} {e.RepresentanteLegal.Apellidos}",
             e.PerfilIncompleto, e.EstadoDirectorio);

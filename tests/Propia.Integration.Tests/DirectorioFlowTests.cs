@@ -244,7 +244,16 @@ public class DirectorioFlowTests
             .AddInterceptors(interceptor)
             .Options;
         var db = new PropiaDbContext(options, tenantCtx);
-        return (new DirectorioService(db, tenantCtx), db, tenantCtx);
+        return (new DirectorioService(db, tenantCtx, new NoopBlobStorage()), db, tenantCtx);
+    }
+
+    private sealed class NoopBlobStorage : Propia.Infrastructure.Storage.IBlobStorage
+    {
+        public Task<string> UploadAsync(string key, Stream content, string contentType, CancellationToken ct) => Task.FromResult($"/mem/{key}");
+        public Task DeleteAsync(string key, CancellationToken ct) => Task.CompletedTask;
+        public string GetPublicUrl(string key) => $"/mem/{key}";
+        public string? ResolveUrl(string? storedValueOrKey) => storedValueOrKey;
+        public Task<byte[]?> DownloadAsync(string key, CancellationToken ct) => Task.FromResult<byte[]?>(null);
     }
 
     private async Task<Guid> SeedTenantAsync(string nombre)

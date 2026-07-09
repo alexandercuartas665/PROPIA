@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Propia.Application.Integraciones;
 using Propia.Domain.Entities;
 using Propia.Infrastructure.Persistence;
+using Propia.Infrastructure.Storage;
 
 namespace Propia.Infrastructure.Integraciones;
 
@@ -12,20 +13,25 @@ namespace Propia.Infrastructure.Integraciones;
 public sealed class PlatformBrandingService : IPlatformBrandingService
 {
     private readonly PropiaDbContext _db;
+    private readonly IBlobStorage _blob;
 
-    public PlatformBrandingService(PropiaDbContext db) => _db = db;
+    public PlatformBrandingService(PropiaDbContext db, IBlobStorage blob)
+    {
+        _db = db;
+        _blob = blob;
+    }
 
     public async Task<PlatformBrandingDto> GetAsync(CancellationToken ct = default)
     {
         var row = await _db.PlatformBrandings.AsNoTracking().FirstOrDefaultAsync(ct);
         if (row is null) return PlatformBrandingDto.Default;
-        // Si un campo de logo quedo vacio, caemos al asset por defecto para que el sistema
-        // siempre tenga una marca que pintar (login/sidebar nunca quedan sin logo).
+        // Si un campo de logo quedo vacio, caemos al asset por defecto (asset estatico del app).
+        // Si tiene valor (logo subido), se pasa por ResolveUrl -> ruta del mismo origen.
         return new PlatformBrandingDto(
             row.PlatformName,
             row.Tagline,
-            string.IsNullOrWhiteSpace(row.LoginLogoUrl) ? PlatformBrandingDto.DefaultLoginLogoUrl : row.LoginLogoUrl,
-            string.IsNullOrWhiteSpace(row.IconUrl) ? PlatformBrandingDto.DefaultIconUrl : row.IconUrl,
+            string.IsNullOrWhiteSpace(row.LoginLogoUrl) ? PlatformBrandingDto.DefaultLoginLogoUrl : (_blob.ResolveUrl(row.LoginLogoUrl) ?? PlatformBrandingDto.DefaultLoginLogoUrl),
+            string.IsNullOrWhiteSpace(row.IconUrl) ? PlatformBrandingDto.DefaultIconUrl : (_blob.ResolveUrl(row.IconUrl) ?? PlatformBrandingDto.DefaultIconUrl),
             row.LoginHeadline,
             row.LoginSubtext);
     }
