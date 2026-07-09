@@ -89,7 +89,9 @@ public class AdminController : ControllerBase
 
     // -------------------- Organizaciones --------------------
 
-    [HttpGet("organizaciones")]
+    // Ruta absoluta bajo /api para NO colisionar con la pagina Blazor @page "/admin/organizaciones"
+    // (host unificado: el GET del controller y la pagina compartian ruta -> AmbiguousMatch/500).
+    [HttpGet("~/api/admin/organizaciones")]
     [Authorize(Policy = SuperAdminPolicy)]
     public async Task<IActionResult> ListOrganizaciones(CancellationToken ct)
         => Ok(await _svc.ListOrganizacionesAsync(ct));
@@ -138,7 +140,8 @@ public class AdminController : ControllerBase
 
     // -------------------- Equipo A&D GROUP --------------------
 
-    [HttpGet("equipo")]
+    // Ruta absoluta bajo /api para NO colisionar con la pagina Blazor @page "/admin/equipo".
+    [HttpGet("~/api/admin/equipo")]
     [Authorize(Policy = SuperAdminPolicy)]
     public async Task<IActionResult> ListEquipo(CancellationToken ct)
         => Ok(await _svc.ListEquipoAsync(ct));

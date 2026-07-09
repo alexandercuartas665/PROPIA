@@ -10,7 +10,7 @@ namespace Propia.Api.Controllers;
 /// Rutas: /admin/billing/* - solo SuperAdmin (claim is_super_admin=true).
 /// </summary>
 [ApiController]
-[Route("admin/billing")]
+[Route("api/admin/billing")]
 [Authorize(Policy = AdminController.SuperAdminPolicy)]
 public class BillingController : ControllerBase
 {
