@@ -11,6 +11,12 @@
 
 <PageTitle>Tareas y proyectos - PROPIA</PageTitle>
 
+@if (!_authChecked)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    return;
+}
+
 @if (string.IsNullOrEmpty(_jwt))
 {
     <AuthMessage />
@@ -687,8 +693,32 @@ else
                         </div>
                     </div>
 
+                    @* Subtareas REALES (tareas hijas con PadreId): anidan en modo lista y muestran el chip "N sub" en tarjetas. *@
+                    @if (d.Id is not null)
+                    {
+                        var kids = Hijos(d.Id.Value);
+                        <div class="tbc-fld">
+                            <label>Subtareas @if (kids.Count > 0) { <span class="tbc-mut">- @kids.Count(k => k.EstadoEsTerminal)/@kids.Count</span> }</label>
+                            <div class="tbc-sublist">
+                                @foreach (var k in kids)
+                                {
+                                    var kid = k;
+                                    <div class="tbc-sub tbc-subtask" @onclick="() => AbrirCardDraft(kid, null)" title="Abrir subtarea">
+                                        <span class="tbc-sub-dot" style="background:@(k.EstadoColor ?? "#6D4FE3")"></span>
+                                        <span class="tbc-sub-t @(k.EstadoEsTerminal ? "done" : "")">@k.Titulo</span>
+                                        <span class="tbc-sub-est">@k.EstadoNombre</span>
+                                    </div>
+                                }
+                                <div class="tbc-sub-add">
+                                    <input @bind="_subtareaNew" @bind:event="oninput" placeholder="Nueva subtarea (tarea hija)..." />
+                                    <button class="tbc-add-btn" @onclick="CrearSubtareaRapida" disabled="@(_busy || string.IsNullOrWhiteSpace(_subtareaNew))"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Agregar</button>
+                                </div>
+                            </div>
+                        </div>
+                    }
+
                     <div class="tbc-fld">
-                        <label>Tareas relacionadas @if (d.Checklist.Count > 0) { <span class="tbc-mut">- @d.Checklist.Count(x => x.Hecho)/@d.Checklist.Count</span> }</label>
+                        <label>Checklist @if (d.Checklist.Count > 0) { <span class="tbc-mut">- @d.Checklist.Count(x => x.Hecho)/@d.Checklist.Count</span> }</label>
                         <div class="tbc-sublist">
                             @for (int i = 0; i < d.Checklist.Count; i++)
                             {
@@ -702,7 +732,7 @@ else
                                 </div>
                             }
                             <div class="tbc-sub-add">
-                                <input @bind="_subNew" @bind:event="oninput" placeholder="Nueva tarea relacionada..." />
+                                <input @bind="_subNew" @bind:event="oninput" placeholder="Nuevo item del checklist..." />
                                 <button class="tbc-add-btn" @onclick="CardAddSub"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Agregar</button>
                             </div>
                         </div>
@@ -1166,6 +1196,10 @@ else
     .tbc-sub-t.done { color: #A6B7C8; text-decoration: line-through; }
     .tbc-sub-x { width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #C3D0DD; flex-shrink: 0; border: 0; background: transparent; cursor: pointer; }
     .tbc-sub-x:hover { background: #FDE7E7; color: #D7263D; }
+    .tbc-subtask { cursor: pointer; }
+    .tbc-subtask:hover { border-color: #B9AEF3; background: #F7F5FE; }
+    .tbc-sub-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .tbc-sub-est { font-size: 10.5px; font-weight: 700; color: #7C98B6; background: #EEF3F8; border-radius: 20px; padding: 2px 8px; flex-shrink: 0; }
     .tbc-sub-add { display: flex; gap: 7px; }
     .tbc-sub-add input { flex: 1; min-width: 0; border: 1px solid #E1E8EE; border-radius: 8px; padding: 8px 11px; font-size: 12.5px; color: #33475B; outline: none; background: #fff; box-sizing: border-box; }
     .tbc-sub-add input:focus { border-color: #6D4FE3; }
@@ -1370,6 +1404,7 @@ else
 @code {
     private static readonly CultureInfo Es = CultureInfo.GetCultureInfo("es-CO");
     private string? _jwt;
+    private bool _authChecked;
     private bool _busy;
     private string? _msg;
     private string _msgClass = "alert-info";
@@ -1394,6 +1429,34 @@ else
     private TableroDraft? _tableroDraft;
     private CardDraft? _cardDraft;
     private string _subNew = "";
+    private string _subtareaNew = "";
+
+    // Crea una SUBTAREA real (tarea hija con PadreId) desde el modal de la tarjeta.
+    // Al recargar el board, la hija aparece anidada en modo lista y suma al chip "N sub" en tarjetas.
+    private async Task CrearSubtareaRapida()
+    {
+        if (_cardDraft?.Id is not Guid padreId || _board is null) return;
+        var titulo = _subtareaNew?.Trim();
+        if (string.IsNullOrWhiteSpace(titulo)) return;
+        _busy = true;
+        try
+        {
+            var req = new CrearTareaRequest(
+                titulo, null, _cardDraft.Prioridad, _cardDraft.EstadoId,
+                null, null, null, padreId, new List<Guid>(), _board.Tablero.Id,
+                null, false, null, null, null, null, null,
+                new List<Guid>(), new List<SubtareaCheckItem>(), new List<TareaCampoValorDto>());
+            var resp = await Auth().PostAsJsonAsync("/api/tareas", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                _subtareaNew = "";
+                if (_boardMode == "tablero") _expandidas.Add(padreId);
+                await RecargarBoard();   // refresca _board.Tareas -> Hijos(padreId) + chip del padre
+            }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
     private string _respPick = "";
     private bool _subiendo;
     private bool _cfgOpen;
@@ -1489,6 +1552,7 @@ else
         try
         {
             var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            _authChecked = true;
             if (!string.IsNullOrWhiteSpace(stored))
             {
                 _jwt = stored;
