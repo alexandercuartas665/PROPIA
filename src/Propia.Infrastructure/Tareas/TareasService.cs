@@ -227,7 +227,8 @@ public class TareasService : ITareasService
                 t.Progreso,
                 t.Color,
                 t.EsProyecto,
-                t.Valor
+                t.Valor,
+                t.Descripcion
             }
         ).ToListAsync(ct);
 
@@ -250,18 +251,33 @@ public class TareasService : ITareasService
         var camposMap = camposVals.GroupBy(x => x.TareaId)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<TareaCampoValorDto>)g.Select(x => new TareaCampoValorDto(x.TableroCampoId, x.Valor)).ToList());
 
+        // Responsables (asignado principal + colaboradores) para la vista tabla editable.
+        var colabs = await (
+            from c in _db.TareaColaboradores.AsNoTracking().Where(c => ids.Contains(c.TareaId))
+            join p in _db.Personas.AsNoTracking() on c.PersonaId equals p.Id
+            select new { c.TareaId, c.PersonaId, Nombre = ((p.Nombres ?? "") + " " + (p.Apellidos ?? "")).Trim() }
+        ).ToListAsync(ct);
+        var colabsMap = colabs.GroupBy(x => x.TareaId).ToDictionary(g => g.Key, g => g.ToList());
+
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
-        return rows.Select(r => new TareaListaDto(
-            r.Id, r.NumeroTarea, r.Titulo, r.Prioridad, r.EstadoId, r.EstadoNombre, r.EstadoColor, r.EstadoEsTerminal,
-            r.AsignadoPersonaId, r.AsigNombre,
-            r.FechaVencimiento,
-            !r.EstadoEsTerminal && r.FechaVencimiento.HasValue && r.FechaVencimiento.Value < hoy,
-            r.PadreId,
-            subs.GetValueOrDefault(r.Id, 0),
-            coms.GetValueOrDefault(r.Id, 0),
-            etiquetasMap.GetValueOrDefault(r.Id, new List<EtiquetaTareaDto>()),
-            r.Progreso, r.Color, r.EsProyecto, r.Valor, r.FechaInicio,
-            camposMap.GetValueOrDefault(r.Id))).ToList();
+        return rows.Select(r =>
+        {
+            var resp = new List<ResponsableMiniDto>();
+            if (r.AsignadoPersonaId is Guid ap) resp.Add(new ResponsableMiniDto(ap, r.AsigNombre ?? "", null));
+            if (colabsMap.TryGetValue(r.Id, out var cs)) resp.AddRange(cs.Select(c => new ResponsableMiniDto(c.PersonaId, c.Nombre, null)));
+            return new TareaListaDto(
+                r.Id, r.NumeroTarea, r.Titulo, r.Prioridad, r.EstadoId, r.EstadoNombre, r.EstadoColor, r.EstadoEsTerminal,
+                r.AsignadoPersonaId, r.AsigNombre,
+                r.FechaVencimiento,
+                !r.EstadoEsTerminal && r.FechaVencimiento.HasValue && r.FechaVencimiento.Value < hoy,
+                r.PadreId,
+                subs.GetValueOrDefault(r.Id, 0),
+                coms.GetValueOrDefault(r.Id, 0),
+                etiquetasMap.GetValueOrDefault(r.Id, new List<EtiquetaTareaDto>()),
+                r.Progreso, r.Color, r.EsProyecto, r.Valor, r.FechaInicio,
+                camposMap.GetValueOrDefault(r.Id),
+                resp, r.Descripcion);
+        }).ToList();
     }
 
     public async Task<TareaDetalleDto?> GetTareaAsync(Guid id, CancellationToken ct)
@@ -517,6 +533,111 @@ public class TareasService : ITareasService
             await ReemplazarCamposValoresAsync(id, req.CamposValores, ct);
 
         return true;
+    }
+
+    public async Task<bool> ActualizarCampoInlineAsync(Guid id, InlineUpdateTareaRequest req, CancellationToken ct)
+    {
+        var t = await _db.Tareas.FirstOrDefaultAsync(x => x.Id == id && !x.Eliminada, ct);
+        if (t is null) return false;
+        switch ((req.Campo ?? "").Trim().ToLowerInvariant())
+        {
+            case "titulo":
+                if (string.IsNullOrWhiteSpace(req.Texto)) throw new InvalidOperationException("Titulo obligatorio.");
+                t.Titulo = req.Texto.Trim();
+                break;
+            case "descripcion":
+                t.Descripcion = string.IsNullOrWhiteSpace(req.Texto) ? null : req.Texto.Trim();
+                break;
+            case "valor":
+                t.Valor = req.Numero;
+                break;
+            case "prioridad":
+                if (req.Numero is decimal pn && Enum.IsDefined(typeof(PrioridadTarea), (int)pn)) t.Prioridad = (PrioridadTarea)(int)pn;
+                else if (Enum.TryParse<PrioridadTarea>(req.Texto, true, out var pp)) t.Prioridad = pp;
+                else throw new InvalidOperationException("Prioridad invalida.");
+                break;
+            case "fechavencimiento":
+                t.FechaVencimiento = req.Fecha;
+                break;
+            case "fechainicio":
+                t.FechaInicio = req.Fecha;
+                break;
+            case "asignados":
+                var ids = (req.Guids ?? new List<Guid>()).Where(g => g != Guid.Empty).Distinct().ToList();
+                t.AsignadoPersonaId = ids.Count > 0 ? ids[0] : (Guid?)null;
+                await _db.TareaColaboradores.Where(c => c.TareaId == id).ExecuteDeleteAsync(ct);
+                foreach (var extra in ids.Skip(1))
+                    _db.TareaColaboradores.Add(new TareaColaborador { TareaId = id, PersonaId = extra });
+                break;
+            default:
+                throw new InvalidOperationException($"Campo '{req.Campo}' no editable inline.");
+        }
+        t.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> SetCampoValorAsync(Guid tareaId, Guid campoId, string? valor, CancellationToken ct)
+    {
+        var t = await _db.Tareas.Where(x => x.Id == tareaId && !x.Eliminada).Select(x => new { x.TableroId }).FirstOrDefaultAsync(ct);
+        if (t is null) return false;
+        var campoValido = await _db.TableroCampos.AnyAsync(c => c.Id == campoId && c.TableroId == t.TableroId, ct);
+        if (!campoValido) throw new InvalidOperationException("El campo no pertenece al tablero de la tarea.");
+        var val = string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+        var ex = await _db.TareaCampoValores.FirstOrDefaultAsync(v => v.TareaId == tareaId && v.TableroCampoId == campoId, ct);
+        if (ex is null)
+        {
+            if (val is not null)
+                _db.TareaCampoValores.Add(new TareaCampoValor { TareaId = tareaId, TableroCampoId = campoId, Valor = val });
+        }
+        else { ex.Valor = val; ex.UpdatedAt = DateTimeOffset.UtcNow; }
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<TareaListaDto?> DuplicarTareaAsync(Guid id, CancellationToken ct)
+    {
+        var src = await _db.Tareas.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && !x.Eliminada, ct);
+        if (src is null) return null;
+        var numero = await GenerarNumeroAsync(ct);
+        var nueva = new Tarea
+        {
+            NumeroTarea = numero,
+            TableroId = src.TableroId,
+            Titulo = (src.Titulo + " (copia)").Trim(),
+            Descripcion = src.Descripcion,
+            Prioridad = src.Prioridad,
+            EstadoId = src.EstadoId,
+            AsignadoPersonaId = src.AsignadoPersonaId,
+            FechaInicio = src.FechaInicio,
+            FechaVencimiento = src.FechaVencimiento,
+            PadreId = src.PadreId,
+            Origen = OrigenTarea.Manual,
+            Color = src.Color,
+            EsProyecto = src.EsProyecto,
+            Valor = src.Valor,
+            HoraInicio = src.HoraInicio,
+            HoraFin = src.HoraFin,
+            Progreso = 0,
+            CreadoPorUsuarioId = GetUsuarioActualId()
+        };
+        _db.Tareas.Add(nueva);
+        await _db.SaveChangesAsync(ct);
+
+        // Copiar colaboradores + campos personalizados + etiquetas (NO subtareas hijas ni checklist).
+        var colabs = await _db.TareaColaboradores.AsNoTracking().Where(c => c.TareaId == id).ToListAsync(ct);
+        foreach (var c in colabs) _db.TareaColaboradores.Add(new TareaColaborador { TareaId = nueva.Id, PersonaId = c.PersonaId });
+        var campos = await _db.TareaCampoValores.AsNoTracking().Where(v => v.TareaId == id).ToListAsync(ct);
+        foreach (var v in campos) _db.TareaCampoValores.Add(new TareaCampoValor { TareaId = nueva.Id, TableroCampoId = v.TableroCampoId, Valor = v.Valor });
+        var etis = await _db.TareaEtiquetaAsignaciones.AsNoTracking().Where(e => e.TareaId == id).ToListAsync(ct);
+        foreach (var e in etis) _db.TareaEtiquetaAsignaciones.Add(new TareaEtiquetaAsignacion { TareaId = nueva.Id, EtiquetaId = e.EtiquetaId });
+        if (colabs.Count > 0 || campos.Count > 0 || etis.Count > 0) await _db.SaveChangesAsync(ct);
+
+        await RegistrarHistorial(nueva.Id, TipoEventoTarea.Creada, $"Tarea duplicada de {src.NumeroTarea}", null, new { origen = src.NumeroTarea }, ct);
+        await _db.SaveChangesAsync(ct);
+
+        var lista = await ListarTareasAsync(null, null, null, null, null, null, ct, nueva.TableroId);
+        return lista.FirstOrDefault(x => x.Id == nueva.Id);
     }
 
     /// <summary>Reemplaza la checklist (tareas relacionadas) de una tarjeta.</summary>

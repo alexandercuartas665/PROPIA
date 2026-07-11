@@ -96,6 +96,31 @@ public class TareasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    // Edicion inline de un solo campo (vista tabla tipo Excel): titulo, descripcion, valor,
+    // prioridad, fechaVencimiento, fechaInicio, asignados. Preserva el resto de la tarea.
+    [HttpPatch("{id:guid}/inline")]
+    public async Task<IActionResult> ActualizarInline(Guid id, [FromBody] InlineUpdateTareaRequest req, CancellationToken ct)
+    {
+        try { return await _svc.ActualizarCampoInlineAsync(id, req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    // Set del valor de UN campo personalizado (TableroCampo) de la tarea, inline.
+    [HttpPut("{id:guid}/campo-valor/{campoId:guid}")]
+    public async Task<IActionResult> SetCampoValor(Guid id, Guid campoId, [FromBody] SetCampoValorRequest req, CancellationToken ct)
+    {
+        try { return await _svc.SetCampoValorAsync(id, campoId, req.Valor, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    // Duplicar la tarea como una nueva ("(copia)"), sin subtareas hijas.
+    [HttpPost("{id:guid}/duplicar")]
+    public async Task<IActionResult> Duplicar(Guid id, CancellationToken ct)
+    {
+        var nueva = await _svc.DuplicarTareaAsync(id, ct);
+        return nueva is null ? NotFound() : Ok(nueva);
+    }
+
     [HttpPut("{id:guid}/estado")]
     public async Task<IActionResult> CambiarEstado(Guid id, [FromBody] CambiarEstadoRequest req, CancellationToken ct)
     {

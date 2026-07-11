@@ -27,7 +27,18 @@ public record TareaListaDto(
     bool EsProyecto = false,
     decimal? Valor = null,
     DateOnly? FechaInicio = null,
-    IReadOnlyList<TareaCampoValorDto>? CamposValores = null);
+    IReadOnlyList<TareaCampoValorDto>? CamposValores = null,
+    IReadOnlyList<ResponsableMiniDto>? Responsables = null,
+    string? Descripcion = null);
+
+// Responsable de una tarea (asignado principal + colaboradores) con foto para la vista tabla.
+public record ResponsableMiniDto(Guid PersonaId, string Nombre, string? FotoUrl);
+
+// Edicion inline de UN campo de la tarea (vista tabla tipo Excel). Campo indica cual.
+public record InlineUpdateTareaRequest(string Campo, string? Texto, decimal? Numero, DateOnly? Fecha, IReadOnlyList<Guid>? Guids);
+
+// Set del valor de UN campo personalizado (TableroCampo) de la tarea.
+public record SetCampoValorRequest(string? Valor);
 
 public record TareaDetalleDto(
     Guid Id,

@@ -124,7 +124,7 @@ else
             </div>
             @SelectorCopropiedad
             <button class="tb-btn tb-btn-soft" @onclick="AbrirConfigBoard"><i class="fi fi-rr-settings"></i>Configurar</button>
-            <button class="tb-btn tb-btn-primary" @onclick="() => AbrirCardDraft(null, _board.Estados.FirstOrDefault()?.Id)"><i class="fi fi-rr-plus"></i>Nueva tarjeta</button>
+            <button class="tb-btn tb-btn-primary" @onclick="() => AbrirCardDraft(null, _board.Estados.FirstOrDefault()?.Id)"><i class="fi fi-rr-plus"></i>Nueva tarea</button>
         </div>
 
         @* ---------- TABLERO (Kanban) ---------- *@
@@ -162,7 +162,69 @@ else
                                     </div>
                                 </button>
                             }
-                            <button class="tb-col-add" @onclick="() => AbrirCardDraft(null, estado.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Agregar</button>
+                            @if (_composerEstado == estado.Id)
+                            {
+                                @* Compositor progresivo: titulo primero; cada Tab revela el siguiente campo. Enter crea, Esc cierra. *@
+                                <div class="tb-composer">
+                                    <input class="tb-composer-inp" placeholder="Titulo de la tarea..." autofocus
+                                           value="@_composerDraft.Titulo"
+                                           @oninput="@(e => { _composerDraft.Titulo = e.Value?.ToString() ?? string.Empty; RevealComposerNext(0); })"
+                                           @onkeydown="@(e => ComposerKeydown(e, estado.Id, 0))" />
+                                    @if (_composerReveal >= 1)
+                                    {
+                                        <input class="tb-composer-sub tb-composer-appear" placeholder="Descripcion (opcional)"
+                                               @bind="_composerDraft.Descripcion" @bind:event="oninput"
+                                               @onfocus="@(() => RevealComposerNext(1))" @onkeydown="@(e => ComposerKeydown(e, estado.Id, 1))" />
+                                    }
+                                    @if (_composerReveal >= 2)
+                                    {
+                                        <select class="tb-composer-sel tb-composer-appear" @onchange="SetComposerAsignado"
+                                                @onfocus="@(() => RevealComposerNext(2))" @onkeydown="@(e => ComposerKeydown(e, estado.Id, 2))">
+                                            <option value="">Sin asignar</option>
+                                            @foreach (var p in _personas ?? new List<PersonaMini>()) { <option value="@p.Id">@p.Nombre</option> }
+                                        </select>
+                                    }
+                                    @if (_composerReveal >= 3)
+                                    {
+                                        <select class="tb-composer-sel tb-composer-appear" @bind="_composerDraft.Prioridad"
+                                                @onfocus="@(() => RevealComposerNext(3))" @onkeydown="@(e => ComposerKeydown(e, estado.Id, 3))">
+                                            @foreach (var pr in Enum.GetValues<PrioridadTarea>()) { <option value="@pr">@pr</option> }
+                                        </select>
+                                    }
+                                    @if (_composerReveal >= 4)
+                                    {
+                                        <input type="date" class="tb-composer-sel tb-composer-appear" @bind="_composerDraft.FechaVencimiento"
+                                               @onfocus="@(() => RevealComposerNext(4))" @onkeydown="@(e => ComposerKeydown(e, estado.Id, 4))" />
+                                    }
+                                    @if (_composerReveal >= 5)
+                                    {
+                                        <input type="number" step="1000" class="tb-composer-sel tb-composer-appear" placeholder="Valor ($)"
+                                               @bind="_composerDraft.Valor" @bind:event="oninput"
+                                               @onfocus="@(() => RevealComposerNext(5))" @onkeydown="@(e => ComposerKeydown(e, estado.Id, 5))" />
+                                    }
+                                    @{ var campos = _board?.Tablero.Campos ?? new List<TableroCampoDto>(); }
+                                    @for (int ci = 0; ci < campos.Count; ci++)
+                                    {
+                                        var campo = campos[ci];
+                                        var fidx = 6 + ci;
+                                        if (_composerReveal >= fidx)
+                                        {
+                                            <input class="tb-composer-sel tb-composer-appear" placeholder="@campo.Label"
+                                                   value="@(_composerDraft.Campos.GetValueOrDefault(campo.Id))"
+                                                   @oninput="@(e => _composerDraft.Campos[campo.Id] = e.Value?.ToString())"
+                                                   @onfocus="@(() => RevealComposerNext(fidx))" @onkeydown="@(e => ComposerKeydown(e, estado.Id, fidx))" />
+                                        }
+                                    }
+                                    <div class="tb-composer-foot">
+                                        <span class="tb-composer-hint">Tab agrega campos &middot; Enter crea &middot; Esc cierra</span>
+                                        <button class="tb-composer-btn" @onclick="() => CrearDesdeComposer(estado.Id)" disabled="@string.IsNullOrWhiteSpace(_composerDraft.Titulo)">Agregar</button>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <button class="tb-col-add" @onclick="() => AbrirComposer(estado.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Agregar</button>
+                            }
                         </div>
                     </div>
                 }
@@ -219,6 +281,8 @@ else
                         <button class="tb-colsmenu-i" @onclick="() => _colEtiq = !_colEtiq"><span class="tb-chk @(_colEtiq ? "on" : "")">@if (_colEtiq){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span>Etiquetas</button>
                         <button class="tb-colsmenu-i" @onclick="() => _colPrio = !_colPrio"><span class="tb-chk @(_colPrio ? "on" : "")">@if (_colPrio){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span>Prioridad</button>
                         <button class="tb-colsmenu-i" @onclick="() => _colDue = !_colDue"><span class="tb-chk @(_colDue ? "on" : "")">@if (_colDue){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span>Vence</button>
+                        <button class="tb-colsmenu-i" @onclick="() => _colDesc = !_colDesc"><span class="tb-chk @(_colDesc ? "on" : "")">@if (_colDesc){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span>Descripcion</button>
+                        <button class="tb-colsmenu-i" @onclick="() => _colValor = !_colValor"><span class="tb-chk @(_colValor ? "on" : "")">@if (_colValor){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span>Valor</button>
                     </div>
                 }
             </div>
@@ -226,13 +290,16 @@ else
             <div class="tb-list">
                 <div class="tb-list-hdr">
                     <div class="tb-lc tb-lc-tit @(_pinTitulo ? "tb-pin tb-pin-h" : "")">TITULO</div>
+                    @if (_colDesc) { <div class="tb-lc tb-lc-desc">DESCRIPCION</div> }
                     <div class="tb-lc tb-lc-est">ETAPA</div>
                     @if (_colResp) { <div class="tb-lc tb-lc-resp">ASIGNADO</div> }
                     <div class="tb-lc tb-lc-prog">PROGRESO</div>
                     @if (_colEtiq) { <div class="tb-lc tb-lc-etiq">ETIQUETAS</div> }
                     @if (_colPrio) { <div class="tb-lc tb-lc-prio">PRIORIDAD</div> }
                     @if (_colDue) { <div class="tb-lc tb-lc-due">VENCE</div> }
+                    @if (_colValor) { <div class="tb-lc tb-lc-valor">VALOR</div> }
                     @foreach (var c in _board.Tablero.Campos ?? new List<TableroCampoDto>()) { <div class="tb-lc tb-lc-campo">@c.Label.ToUpperInvariant()</div> }
+                    <div class="tb-lc tb-lc-acc">ACCIONES</div>
                 </div>
                 @foreach (var est in _board.Estados)
                 {
@@ -251,6 +318,73 @@ else
                     {
                         @RenderArbol(t, 0)
                     }
+                    @* Fila "nueva tarea" inline estilo Excel: Tab salta entre campos, Enter crea. *@
+                    var nf = NuevaFilaDe(estado.Id);
+                    <div class="tb-newrow">
+                        <div class="tb-row-tit">
+                            <span class="tb-newrow-plus">+</span>
+                            <input class="tb-nf-inp tb-nf-tit" placeholder="Nueva tarea..." @bind="nf.Titulo" @bind:event="oninput" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" />
+                        </div>
+                        @if (_colDesc)
+                        {
+                            <div class="tb-row-desc"><input class="tb-nf-inp" placeholder="Descripcion" @bind="nf.Descripcion" @bind:event="oninput" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" /></div>
+                        }
+                        <div class="tb-row-cell-est">
+                            <select class="tb-est-sel" style="background:#6D4FE3" @bind="nf.EstadoId">
+                                @if (_board is not null) { @foreach (var es in _board.Estados) { <option value="@es.Id" style="background:#fff;color:#33475B">@es.Nombre</option> } }
+                            </select>
+                        </div>
+                        @if (_colResp)
+                        {
+                            <div class="tb-row-resp">
+                                <select class="tb-nf-inp" value="@(nf.Asignados.Count > 0 ? nf.Asignados[0].ToString() : "")" @onchange="@(e => SetNuevaFilaAsignado(nf, e))">
+                                    <option value="">Sin asignar</option>
+                                    @foreach (var p in _personas ?? new List<PersonaMini>()) { <option value="@p.Id">@p.Nombre</option> }
+                                </select>
+                            </div>
+                        }
+                        <div class="tb-row-prog"><span class="tb-nf-mut">&mdash;</span></div>
+                        @if (_colEtiq) { <div class="tb-row-etiq"></div> }
+                        @if (_colPrio)
+                        {
+                            <div class="tb-row-prio">
+                                <select class="tb-prio-sel" style="color:@PrioFg(nf.Prioridad);background:@PrioBg(nf.Prioridad)" @bind="nf.Prioridad" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))">
+                                    @foreach (var pr in Enum.GetValues<PrioridadTarea>()) { <option value="@pr" style="background:#fff;color:#33475B">@pr</option> }
+                                </select>
+                            </div>
+                        }
+                        @if (_colDue)
+                        {
+                            <div class="tb-row-due"><input type="date" class="tb-nf-inp" @bind="nf.FechaVencimiento" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" /></div>
+                        }
+                        @if (_colValor)
+                        {
+                            <div class="tb-row-valor"><input type="number" step="1000" class="tb-nf-inp" placeholder="$" @bind="nf.Valor" @bind:event="oninput" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" /></div>
+                        }
+                        @foreach (var c in _board?.Tablero.Campos ?? new List<TableroCampoDto>())
+                        {
+                            var campo = c;
+                            <div class="tb-row-campo">
+                                @if (campo.Tipo == TipoCampoTablero.Numero || campo.Tipo == TipoCampoTablero.Moneda)
+                                {
+                                    <input type="number" class="tb-nf-inp" placeholder="@campo.Label" value="@(nf.Campos.GetValueOrDefault(campo.Id))" @oninput="@(e => nf.Campos[campo.Id] = e.Value?.ToString())" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" />
+                                }
+                                else if (campo.Tipo == TipoCampoTablero.Fecha)
+                                {
+                                    <input type="date" class="tb-nf-inp" value="@(nf.Campos.GetValueOrDefault(campo.Id))" @oninput="@(e => nf.Campos[campo.Id] = e.Value?.ToString())" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" />
+                                }
+                                else
+                                {
+                                    <input class="tb-nf-inp" placeholder="@campo.Label" value="@(nf.Campos.GetValueOrDefault(campo.Id))" @oninput="@(e => nf.Campos[campo.Id] = e.Value?.ToString())" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" />
+                                }
+                            </div>
+                        }
+                        <div class="tb-row-acc">
+                            <button class="tb-nf-crear" title="Crear tarea (Enter)" @onclick="() => CrearDesdeNuevaFila(estado.Id)" disabled="@string.IsNullOrWhiteSpace(nf.Titulo)">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>
+                            </button>
+                        </div>
+                    </div>
                 }
             </div>
         }
@@ -635,7 +769,7 @@ else
                 <div class="tbc-head-bar"></div>
                 <div class="tbc-head-id">
                     <div class="tbc-head-tt">
-                        @(d.Id is null ? "Nueva tarjeta" : "Detalle de la tarjeta")
+                        @(d.Id is null ? "Nueva tarea" : "Detalle de la tarea")
                         @if (d.EsProyecto)
                         {
                             <span class="tbc-proy"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3 7h7l2 2h9v11H3z"/></svg>PROYECTO</span>
@@ -1100,6 +1234,62 @@ else
     .tb-row-due { flex: 1; min-width: 70px; font-size: 12px; color: #7C98B6; }
     .tb-subtag { font-size: 10px; font-weight: 700; color: #7C98B6; background: #EEF3F8; padding: 3px 8px; border-radius: 6px; }
 
+    /* ===== Tabla editable inline (vista Lista tipo Excel) ===== */
+    .tb-list { overflow-x: auto; }
+    .tb-list-hdr, .tb-row, .tb-list-group, .tb-newrow { min-width: 1440px; }
+    .tb-lc-desc { width: 200px; flex-shrink: 0; } .tb-row-desc { width: 200px; flex-shrink: 0; position: relative; }
+    .tb-lc-etiq { width: 130px; flex-shrink: 0; } .tb-row-etiq { width: 130px; flex-shrink: 0; display: flex; gap: 4px; flex-wrap: wrap; overflow: hidden; }
+    .tb-lc-valor { width: 110px; flex-shrink: 0; } .tb-row-valor { width: 110px; flex-shrink: 0; position: relative; font-size: 12px; color: #1E7A50; font-weight: 700; }
+    .tb-lc-acc { width: 74px; flex-shrink: 0; text-align: right; } .tb-row-acc { width: 74px; flex-shrink: 0; display: flex; gap: 4px; justify-content: flex-end; opacity: 0; transition: opacity .12s; }
+    .tb-row:hover .tb-row-acc { opacity: 1; }
+    .tb-row-cell-est { width: 130px; flex-shrink: 0; }
+    .tb-row-cell-est .tb-est-sel { width: 100%; }
+    .tb-row-due, .tb-row-campo { position: relative; }
+    .tb-editable { cursor: text; border-radius: 6px; padding: 3px 6px; min-height: 22px; border: 1px solid transparent; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tb-editable:hover { background: #F5F1FE; border-color: #E1DAF7; }
+    .tb-row-desc-prev { color: #7C98B6; font-size: 12px; }
+    .tb-cell-inp, .tb-cell-area { width: 100%; border: 1px solid #6D4FE3; border-radius: 6px; padding: 4px 7px; font-size: 12.5px; color: #33475B; outline: none; box-shadow: 0 0 0 2px rgba(109,79,227,.12); box-sizing: border-box; font-family: inherit; }
+    .tb-cell-area { position: absolute; z-index: 30; min-width: 280px; min-height: 74px; background: #fff; box-shadow: 0 12px 32px rgba(45,62,80,.2); resize: vertical; top: 2px; left: 2px; }
+    .tb-row-open { width: 20px; height: 20px; flex-shrink: 0; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: #A6B7C8; background: transparent; border: 0; cursor: pointer; opacity: 0; }
+    .tb-row:hover .tb-row-open { opacity: 1; }
+    .tb-row-open:hover { background: #EEF3F8; color: #6D4FE3; }
+    .tb-prio-sel { width: 100%; font-size: 11px; font-weight: 700; border: 0; border-radius: 20px; padding: 3px 7px; outline: none; cursor: pointer; }
+    .tb-acc-btn { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: #7C98B6; background: transparent; border: 1px solid #E1E8EE; cursor: pointer; }
+    .tb-acc-btn:hover { background: #F5F1FE; color: #6D4FE3; border-color: #B9AEF3; }
+    .tb-acc-del:hover { background: #FDE7E7; color: #D7263D; border-color: #F2CFC9; }
+    .tb-row-resp { display: flex; align-items: center; gap: 3px; position: relative; }
+    .tb-row-resp-empty { color: #A6B7C8; font-style: italic; }
+    .tb-ava-more { font-size: 10px; font-weight: 700; color: #7C98B6; }
+    .tb-asig-drop { position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; width: 235px; background: #fff; border: 1px solid #E1E8EE; border-radius: 10px; box-shadow: 0 12px 32px rgba(45,62,80,.2); padding: 5px; max-height: 270px; overflow-y: auto; }
+    .tb-asig-item { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: #fff; border-radius: 7px; padding: 6px 8px; cursor: pointer; font-size: 12.5px; color: #33475B; text-align: left; }
+    .tb-asig-item:hover { background: #F5F1FE; }
+    .tb-asig-item.on { background: #F1ECFD; }
+    .tb-asig-chk { width: 15px; height: 15px; border-radius: 4px; border: 1.5px solid #C3D0DD; flex-shrink: 0; }
+    .tb-asig-chk.on { background: #6D4FE3; border-color: #6D4FE3; box-shadow: inset 0 0 0 2px #fff; }
+    .tb-asig-nom { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tb-asig-close { width: 100%; margin-top: 4px; border: 0; background: #33475B; color: #fff; border-radius: 7px; padding: 6px; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .tb-newrow { display: flex; align-items: center; gap: 12px; padding: 8px 18px; border-bottom: 1px solid #F4F7FA; background: #FCFDFF; }
+    .tb-newrow:focus-within { background: #F7F5FE; }
+    .tb-newrow-plus { width: 18px; text-align: center; color: #B7A6F0; font-weight: 700; flex-shrink: 0; font-size: 15px; }
+    .tb-nf-inp { width: 100%; box-sizing: border-box; border: 1px dashed #D7E0EA; border-radius: 7px; padding: 5px 8px; font-size: 12.5px; color: #33475B; outline: none; background: #fff; font-family: inherit; }
+    .tb-nf-inp:focus { border-style: solid; border-color: #6D4FE3; box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
+    .tb-nf-tit { flex: 1; min-width: 0; }
+    .tb-nf-mut { color: #C3D0DD; font-size: 12px; }
+    .tb-nf-crear { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: #fff; background: #6D4FE3; border: 0; cursor: pointer; }
+    .tb-nf-crear:hover { background: #5B3FD1; }
+    .tb-nf-crear:disabled { background: #D7DCE6; cursor: default; }
+    /* Compositor rapido en tarjetas (kanban) */
+    .tb-composer { background: #fff; border: 1.5px solid #6D4FE3; border-radius: 11px; padding: 9px; box-shadow: 0 4px 14px rgba(109,79,227,.15); display: flex; flex-direction: column; gap: 7px; }
+    .tb-composer-inp { width: 100%; border: 0; outline: none; font-size: 13px; color: #33475B; font-weight: 600; background: transparent; box-sizing: border-box; }
+    .tb-composer-sub, .tb-composer-sel { width: 100%; box-sizing: border-box; border: 1px solid #E1E8EE; border-radius: 7px; padding: 6px 9px; font-size: 12.5px; color: #33475B; outline: none; background: #FAFBFC; font-family: inherit; }
+    .tb-composer-sub:focus, .tb-composer-sel:focus { border-color: #6D4FE3; background: #fff; box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
+    .tb-composer-appear { animation: tbComposerIn .18s ease; }
+    @@keyframes tbComposerIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+    .tb-composer-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 1px; }
+    .tb-composer-hint { font-size: 10px; color: #A6B7C8; }
+    .tb-composer-btn { border: 0; background: #6D4FE3; color: #fff; border-radius: 7px; padding: 5px 12px; font-size: 11.5px; font-weight: 700; cursor: pointer; }
+    .tb-composer-btn:disabled { opacity: .5; cursor: default; }
+
     .tb-soon { background: #fff; border: 1.5px dashed #D7E0EA; border-radius: 16px; padding: 50px 24px; text-align: center; }
     .tb-soon-ic { width: 60px; height: 60px; border-radius: 16px; background: #F1ECFD; color: #6D4FE3; display: flex; align-items: center; justify-content: center; margin: 0 auto 14px; }
     .tb-soon-t { font-size: 17px; font-weight: 800; color: #1B2A3A; }
@@ -1423,6 +1613,7 @@ else
     private string _fEstado = ""; private string _fResp = ""; private string _fPrio = ""; private string _fEtiqueta = ""; private bool _sortTitulo;
     private bool _pinTitulo; private bool _colsMenu;
     private bool _colResp = true; private bool _colEtiq = true; private bool _colPrio = true; private bool _colDue = true;
+    private bool _colValor = true; private bool _colDesc = true;
     private List<EtiquetaTareaDto> _etiquetasCat = new();   // catalogo de etiquetas (tags) del tenant
     private string _nuevaEtiqueta = "";
 
@@ -1700,25 +1891,36 @@ else
         }
         </text>;
 
+    // Lista mutable de tareas (copia de _board.Tareas) para edicion inline optimista sin recargar todo el board.
+    private List<TareaListaDto> _tareas = new();
+    private void SyncTareas() => _tareas = _board?.Tareas.ToList() ?? new();
+
     private async Task AbrirBoardAsync(Guid id)
     {
         _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tareas/tableros/{id}/board");
+        SyncTareas();
         _boardMode = "tablero";
         _expandidas.Clear();
+        _nuevaFilas.Clear();
         LimpiarFiltros();
+        if (_personas is null)
+        {
+            try { var raw = await Auth().GetFromJsonAsync<List<PersonaRaw>>("/api/directorio/personas") ?? new(); _personas = raw.Select(p => new PersonaMini(p.Id, ($"{p.Nombres} {p.Apellidos}").Trim())).ToList(); }
+            catch { _personas = new(); }
+        }
     }
-    private void CerrarBoard() { _board = null; }
-    private async Task RecargarBoard() { if (_board is not null) _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tareas/tableros/{_board.Tablero.Id}/board"); }
+    private void CerrarBoard() { _board = null; _tareas = new(); }
+    private async Task RecargarBoard() { if (_board is not null) { _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tareas/tableros/{_board.Tablero.Id}/board"); SyncTareas(); } }
 
     private List<TareaListaDto> RaicesPorEstado(Guid estadoId) =>
-        _board?.Tareas.Where(t => t.PadreId == null && t.EstadoId == estadoId).ToList() ?? new();
+        _tareas.Where(t => t.PadreId == null && t.EstadoId == estadoId).ToList();
     private List<TareaListaDto> Hijos(Guid padreId) =>
-        _board?.Tareas.Where(t => t.PadreId == padreId).ToList() ?? new();
+        _tareas.Where(t => t.PadreId == padreId).ToList();
 
     private bool HayFiltros => !string.IsNullOrEmpty(_fEstado) || !string.IsNullOrEmpty(_fResp) || !string.IsNullOrEmpty(_fPrio) || !string.IsNullOrEmpty(_fEtiqueta) || _fCampo.Count > 0;
     private void LimpiarFiltros() { _fEstado = ""; _fResp = ""; _fPrio = ""; _fEtiqueta = ""; _fCampo.Clear(); }
     private IEnumerable<string> RespOptions() =>
-        (_board?.Tareas ?? new List<TareaListaDto>()).Where(t => !string.IsNullOrWhiteSpace(t.AsignadoNombre))
+        _tareas.AsEnumerable().Where(t => !string.IsNullOrWhiteSpace(t.AsignadoNombre))
             .Select(t => t.AsignadoNombre!).Distinct().OrderBy(x => x);
     private bool PasaFiltros(TareaListaDto t)
     {
@@ -1773,7 +1975,7 @@ else
     {
         CalInit();
         var hoy = DateOnly.FromDateTime(DateTime.Today);
-        var porDia = (_board?.Tareas ?? new List<TareaListaDto>())
+        var porDia = _tareas.AsEnumerable()
             .Where(t => t.FechaVencimiento.HasValue)
             .GroupBy(t => t.FechaVencimiento!.Value)
             .ToDictionary(g => g.Key, g => g.OrderBy(t => t.Prioridad).ToList());
@@ -1787,7 +1989,7 @@ else
         }
         return res;
     }
-    private List<TareaListaDto> CalCards() => _board?.Tareas.Where(t => t.FechaVencimiento.HasValue).ToList() ?? new();
+    private List<TareaListaDto> CalCards() => _tareas.Where(t => t.FechaVencimiento.HasValue).ToList();
 
     private List<CalCelda> CalCeldas()
     {
@@ -1798,7 +2000,7 @@ else
         int dias = DateTime.DaysInMonth(_calYear, _calMonth);
         int total = (int)Math.Ceiling((offset + dias) / 7.0) * 7;
         var hoy = DateTime.Today;
-        var porDia = (_board?.Tareas ?? new List<TareaListaDto>())
+        var porDia = _tareas.AsEnumerable()
             .Where(t => t.FechaVencimiento.HasValue)
             .GroupBy(t => t.FechaVencimiento!.Value)
             .ToDictionary(g => g.Key, g => g.OrderBy(t => t.Prioridad).ToList());
@@ -1821,10 +2023,10 @@ else
     private DateOnly? GIni(TareaListaDto t) => t.FechaInicio ?? t.FechaVencimiento;
     private DateOnly? GFin(TareaListaDto t) => t.FechaVencimiento ?? t.FechaInicio;
     private List<TareaListaDto> GanttTareas() =>
-        (_board?.Tareas ?? new List<TareaListaDto>()).Where(t => GIni(t).HasValue)
+        _tareas.AsEnumerable().Where(t => GIni(t).HasValue)
             .OrderBy(t => GIni(t)!.Value).ThenBy(t => t.Titulo).ToList();
     private List<TareaListaDto> GanttSinFecha() =>
-        (_board?.Tareas ?? new List<TareaListaDto>()).Where(t => !GIni(t).HasValue && t.PadreId == null && Hijos(t.Id).All(h => !GIni(h).HasValue)).ToList();
+        _tareas.AsEnumerable().Where(t => !GIni(t).HasValue && t.PadreId == null && Hijos(t.Id).All(h => !GIni(h).HasValue)).ToList();
 
     // Una tarea entra al gantt si ella o alguna descendiente tiene fecha.
     private bool GanttVisible(TareaListaDto t) => GIni(t).HasValue || Hijos(t.Id).Any(GanttVisible);
@@ -1840,7 +2042,7 @@ else
                 foreach (var h in Hijos(t.Id).Where(GanttVisible).OrderBy(x => GIni(x) ?? DateOnly.MaxValue).ThenBy(x => x.Titulo))
                     Walk(h, depth + 1);
         }
-        var raices = (_board?.Tareas ?? new List<TareaListaDto>())
+        var raices = _tareas.AsEnumerable()
             .Where(t => t.PadreId == null && GanttVisible(t))
             .OrderBy(t => GIni(t) ?? DateOnly.MaxValue).ThenBy(t => t.Titulo);
         foreach (var r in raices) Walk(r, 0);
@@ -1891,11 +2093,14 @@ else
         }
     };
 
+    private string? CampoValor(TareaListaDto t, Guid campoId) => t.CamposValores?.FirstOrDefault(v => v.CampoId == campoId)?.Valor;
+
     private RenderFragment RenderFila(TareaListaDto t, int depth) => __builder =>
     {
         var tarea = t;
         var esHija = depth > 0;
         <div class="tb-row @(esHija ? "tb-row-child" : "")" style="border-left-color:@(t.Color ?? (esHija ? "#E1E8EE" : "transparent"))">
+            @* ---- TITULO (editable inline) ---- *@
             <div class="tb-row-tit @(_pinTitulo ? "tb-pin" : "")" style="padding-left:@(depth * 22)px">
                 @if (t.CantidadSubtareas > 0)
                 {
@@ -1909,15 +2114,38 @@ else
                 {
                     <span class="tb-row-kidmark">&rsaquo;</span>
                 }
-                <button class="tb-row-titbtn" @onclick="() => AbrirCardDraft(tarea, null)">
-                    <div class="tb-row-t">@t.Titulo</div>
-                </button>
+                @if (EnEd(t.Id, "titulo"))
+                {
+                    <input class="tb-cell-inp" @bind="_editVal" @bind:event="oninput" autofocus
+                           @onblur='() => GuardarEd(tarea.Id, "titulo")' @onkeydown='@(e => EdKeydown(e, tarea.Id, "titulo"))' />
+                }
+                else
+                {
+                    <div class="tb-row-t tb-editable" title="Click para editar" @onclick='() => IniciarEd(tarea.Id, "titulo", tarea.Titulo)'>@t.Titulo</div>
+                }
                 @if (depth < 3)
                 {
                     <button class="tb-row-addsub" title="Agregar tarea hija" @onclick="() => AbrirSubtareaDraft(tarea)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg></button>
                 }
+                <button class="tb-row-open" title="Abrir detalle" @onclick="() => AbrirCardDraft(tarea, null)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18l6-6-6-6"/></svg></button>
             </div>
-            <div style="width:130px;flex-shrink:0">
+            @* ---- DESCRIPCION (click -> caja expandible) ---- *@
+            @if (_colDesc)
+            {
+                <div class="tb-row-desc">
+                    @if (EnEd(t.Id, "descripcion"))
+                    {
+                        <textarea class="tb-cell-area" rows="3" @bind="_editVal" @bind:event="oninput" autofocus
+                                  @onblur='() => GuardarEd(tarea.Id, "descripcion")' @onkeydown='@(e => { if (e.Key == "Escape") CancelarEd(); })'></textarea>
+                    }
+                    else
+                    {
+                        <div class="tb-editable tb-row-desc-prev" title="Click para editar" @onclick='() => IniciarEd(tarea.Id, "descripcion", tarea.Descripcion)'>@(string.IsNullOrWhiteSpace(t.Descripcion) ? "—" : t.Descripcion)</div>
+                    }
+                </div>
+            }
+            @* ---- ETAPA ---- *@
+            <div class="tb-row-cell-est">
                 @if (!esHija)
                 {
                     <select class="tb-est-sel" style="background:@(t.EstadoColor ?? "#6D4FE3")" value="@t.EstadoId" @onchange="(e) => CambiarEstadoFila(tarea.Id, e)">
@@ -1926,29 +2154,131 @@ else
                 }
                 else { <span class="tb-subtag">Subtarea</span> }
             </div>
-            @if (_colResp) { <div class="tb-row-resp">@(string.IsNullOrWhiteSpace(t.AsignadoNombre) ? "-" : t.AsignadoNombre)</div> }
+            @* ---- ASIGNADO (multi-select) ---- *@
+            @if (_colResp)
+            {
+                var resp = tarea.Responsables ?? new List<ResponsableMiniDto>();
+                <div class="tb-row-resp tb-editable" @onclick="() => AbrirAsigDrop(tarea)">
+                    @if (resp.Count == 0) { <span class="tb-row-resp-empty">Sin asignar</span> }
+                    else
+                    {
+                        @foreach (var r in resp.Take(3)) { <span class="tb-ava tb-ava-sm" title="@r.Nombre">@Iniciales(r.Nombre)</span> }
+                        @if (resp.Count > 3) { <span class="tb-ava-more">+@(resp.Count - 3)</span> }
+                    }
+                    @if (_asigDropId == tarea.Id)
+                    {
+                        <div class="tb-asig-drop" @onclick:stopPropagation="true">
+                            @foreach (var u in _personas ?? new List<PersonaMini>())
+                            {
+                                var uu = u;
+                                <button type="button" class="tb-asig-item @(_asigSel.Contains(u.Id) ? "on" : "")" @onclick="() => ToggleAsig(tarea.Id, uu.Id)">
+                                    <span class="tb-asig-chk @(_asigSel.Contains(u.Id) ? "on" : "")"></span>
+                                    <span class="tb-ava tb-ava-sm">@Iniciales(u.Nombre)</span><span class="tb-asig-nom">@u.Nombre</span>
+                                </button>
+                            }
+                            @if ((_personas ?? new()).Count == 0) { <div class="tb-asig-empty">Sin personas en el directorio</div> }
+                            <button type="button" class="tb-asig-close" @onclick="CerrarAsigDrop">Listo</button>
+                        </div>
+                    }
+                </div>
+            }
+            @* ---- PROGRESO ---- *@
             <div class="tb-row-prog">
                 @if (t.CantidadSubtareas == 0)
                 {
-                    @* Tarea hoja (suelta o hija sin hijos): progreso editable directo. *@
                     <input type="range" min="0" max="100" step="5" value="@t.Progreso" style="accent-color:@(t.Progreso >= 100 ? "#1A8754" : "#6D4FE3")" @onchange="(e) => CambiarProgresoFila(tarea.Id, e)" />
                 }
                 else
                 {
-                    @* Tarea padre: progreso derivado del cierre de sus hijas (solo lectura). *@
                     <div class="tb-prog-bar" title="Se calcula desde las subtareas"><div class="tb-prog-fill" style="width:@(t.Progreso)%;background:@(t.Progreso >= 100 ? "#1A8754" : "#6D4FE3")"></div></div>
                 }
                 <span class="tb-row-progv" style="color:@(t.Progreso >= 100 ? "#1A8754" : "#516F90")">@t.Progreso%</span>
             </div>
+            @* ---- ETIQUETAS ---- *@
             @if (_colEtiq)
             {
                 <div class="tb-row-etiq">
                     @foreach (var tag in t.Etiquetas) { <span class="tb-tag">@tag.Nombre</span> }
                 </div>
             }
-            @if (_colPrio) { <div class="tb-row-prio"><span class="tb-prio" style="color:@PrioFg(t.Prioridad);background:@PrioBg(t.Prioridad)">@t.Prioridad</span></div> }
-            @if (_colDue) { <div class="tb-row-due">@(t.FechaVencimiento.HasValue ? FechaCorta(t.FechaVencimiento.Value) : "-")</div> }
-            @foreach (var c in _board?.Tablero.Campos ?? new List<TableroCampoDto>()) { <div class="tb-row-campo">@CampoDisplay(t, c)</div> }
+            @* ---- PRIORIDAD (inline select) ---- *@
+            @if (_colPrio)
+            {
+                <div class="tb-row-prio">
+                    <select class="tb-prio-sel" style="color:@PrioFg(t.Prioridad);background:@PrioBg(t.Prioridad)" value="@t.Prioridad" @onchange="(e) => CambiarPrioridadFila(tarea.Id, e)">
+                        @foreach (var pr in Enum.GetValues<PrioridadTarea>()) { <option value="@pr" style="background:#fff;color:#33475B">@pr</option> }
+                    </select>
+                </div>
+            }
+            @* ---- VENCE (inline date) ---- *@
+            @if (_colDue)
+            {
+                <div class="tb-row-due">
+                    @if (EnEd(t.Id, "fechaVencimiento"))
+                    {
+                        <input type="date" class="tb-cell-inp" value="@_editVal" @oninput='e => _editVal = e.Value?.ToString() ?? string.Empty' autofocus
+                               @onblur='() => GuardarEd(tarea.Id, "fechaVencimiento")' @onkeydown='@(e => EdKeydown(e, tarea.Id, "fechaVencimiento"))' />
+                    }
+                    else
+                    {
+                        <div class="tb-editable" @onclick='() => IniciarEd(tarea.Id, "fechaVencimiento", tarea.FechaVencimiento?.ToString("yyyy-MM-dd"))'>@(t.FechaVencimiento.HasValue ? FechaCorta(t.FechaVencimiento.Value) : "—")</div>
+                    }
+                </div>
+            }
+            @* ---- VALOR (inline number) ---- *@
+            @if (_colValor)
+            {
+                <div class="tb-row-valor">
+                    @if (EnEd(t.Id, "valor"))
+                    {
+                        <input type="number" step="1000" class="tb-cell-inp" @bind="_editVal" @bind:event="oninput" autofocus
+                               @onblur='() => GuardarEd(tarea.Id, "valor")' @onkeydown='@(e => EdKeydown(e, tarea.Id, "valor"))' />
+                    }
+                    else
+                    {
+                        <div class="tb-editable" @onclick='() => IniciarEd(tarea.Id, "valor", tarea.Valor?.ToString(System.Globalization.CultureInfo.InvariantCulture))'>@(t.Valor.HasValue ? "$" + t.Valor.Value.ToString("N0") : "—")</div>
+                    }
+                </div>
+            }
+            @* ---- CAMPOS PERSONALIZADOS (editable por tipo) ---- *@
+            @foreach (var c in _board?.Tablero.Campos ?? new List<TableroCampoDto>())
+            {
+                var campo = c;
+                <div class="tb-row-campo">
+                    @if (EnEd(t.Id, "campo:" + campo.Id))
+                    {
+                        @if (campo.Tipo == TipoCampoTablero.AreaTexto || campo.Tipo == TipoCampoTablero.Texto || campo.Tipo == TipoCampoTablero.Telefono)
+                        {
+                            <textarea class="tb-cell-area" rows="3" @bind="_editVal" @bind:event="oninput" autofocus
+                                      @onblur="() => GuardarCampoValor(tarea.Id, campo.Id)" @onkeydown="@(e => CampoKeydown(e, tarea.Id, campo.Id))"></textarea>
+                        }
+                        else if (campo.Tipo == TipoCampoTablero.Numero || campo.Tipo == TipoCampoTablero.Moneda)
+                        {
+                            <input type="number" class="tb-cell-inp" @bind="_editVal" @bind:event="oninput" autofocus
+                                   @onblur="() => GuardarCampoValor(tarea.Id, campo.Id)" @onkeydown="@(e => CampoKeydown(e, tarea.Id, campo.Id))" />
+                        }
+                        else if (campo.Tipo == TipoCampoTablero.Fecha)
+                        {
+                            <input type="date" class="tb-cell-inp" value="@_editVal" @oninput='e => _editVal = e.Value?.ToString() ?? string.Empty' autofocus
+                                   @onblur="() => GuardarCampoValor(tarea.Id, campo.Id)" @onkeydown="@(e => CampoKeydown(e, tarea.Id, campo.Id))" />
+                        }
+                        else
+                        {
+                            <input class="tb-cell-inp" @bind="_editVal" @bind:event="oninput" autofocus
+                                   @onblur="() => GuardarCampoValor(tarea.Id, campo.Id)" @onkeydown="@(e => CampoKeydown(e, tarea.Id, campo.Id))" />
+                        }
+                    }
+                    else
+                    {
+                        <div class="tb-editable" title="Click para editar" @onclick='() => IniciarEd(tarea.Id, "campo:" + campo.Id, CampoValor(tarea, campo.Id))'>@(string.IsNullOrWhiteSpace(CampoDisplay(t, campo)) ? "—" : CampoDisplay(t, campo))</div>
+                    }
+                </div>
+            }
+            @* ---- ACCIONES ---- *@
+            <div class="tb-row-acc">
+                <button class="tb-acc-btn" title="Duplicar tarea" @onclick="() => DuplicarFila(tarea.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg></button>
+                <button class="tb-acc-btn tb-acc-del" title="Eliminar tarea" @onclick="() => EliminarFila(tarea.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>
+            </div>
         </div>
     };
 
@@ -1969,8 +2299,222 @@ else
     private async Task CambiarEstadoFila(Guid tareaId, ChangeEventArgs e)
     {
         if (!Guid.TryParse(e.Value?.ToString(), out var estadoId)) return;
+        PatchLocal(tareaId, t => t with { EstadoId = estadoId, EstadoNombre = _board?.Estados.FirstOrDefault(x => x.Id == estadoId)?.Nombre ?? t.EstadoNombre, EstadoColor = _board?.Estados.FirstOrDefault(x => x.Id == estadoId)?.Color ?? t.EstadoColor });
         var resp = await Auth().PutAsJsonAsync($"/api/tareas/{tareaId}/estado", new CambiarEstadoRequest(estadoId, null));
         if (resp.IsSuccessStatusCode) await RecargarBoard();
+        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; await RecargarBoard(); }
+    }
+
+    // ================= Edicion inline tipo Excel (vista tabla) =================
+    private string? _editKey;      // "{tareaId}:{campo}" de la celda en edicion
+    private string _editVal = "";  // valor temporal
+    private bool _editBusy;
+
+    private bool EnEd(Guid id, string campo) => _editKey == id + ":" + campo;
+    private void IniciarEd(Guid id, string campo, string? actual) { _editKey = id + ":" + campo; _editVal = actual ?? ""; }
+    private void CancelarEd() { _editKey = null; _editVal = ""; }
+
+    private void PatchLocal(Guid id, Func<TareaListaDto, TareaListaDto> f)
+    {
+        var i = _tareas.FindIndex(x => x.Id == id);
+        if (i >= 0) _tareas[i] = f(_tareas[i]);
+    }
+
+    private async Task GuardarEd(Guid id, string campo)
+    {
+        if (_editKey != id + ":" + campo || _editBusy) return;
+        _editBusy = true;
+        try
+        {
+            object? body = null;
+            switch (campo)
+            {
+                case "titulo":
+                    var tit = _editVal.Trim();
+                    if (string.IsNullOrWhiteSpace(tit)) { CancelarEd(); return; }
+                    PatchLocal(id, t => t with { Titulo = tit });
+                    body = new { Campo = "titulo", Texto = tit };
+                    break;
+                case "descripcion":
+                    var des = string.IsNullOrWhiteSpace(_editVal) ? null : _editVal.Trim();
+                    PatchLocal(id, t => t with { Descripcion = des });
+                    body = new { Campo = "descripcion", Texto = des };
+                    break;
+                case "valor":
+                    decimal? val = decimal.TryParse(_editVal, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var dv) ? dv : (decimal?)null;
+                    PatchLocal(id, t => t with { Valor = val });
+                    body = new { Campo = "valor", Numero = val };
+                    break;
+                case "fechaVencimiento":
+                    DateOnly? fv = DateOnly.TryParse(_editVal, out var d0) ? d0 : (DateOnly?)null;
+                    PatchLocal(id, t => t with { FechaVencimiento = fv });
+                    body = new { Campo = "fechaVencimiento", Fecha = fv };
+                    break;
+            }
+            CancelarEd();
+            if (body is not null)
+            {
+                var resp = await Auth().PatchAsJsonAsync($"/api/tareas/{id}/inline", body);
+                if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; await RecargarBoard(); }
+            }
+        }
+        finally { _editBusy = false; }
+    }
+
+    private async Task EdKeydown(KeyboardEventArgs e, Guid id, string campo)
+    {
+        if (e.Key == "Enter") await GuardarEd(id, campo);
+        else if (e.Key == "Escape") CancelarEd();
+    }
+
+    private async Task CambiarPrioridadFila(Guid id, ChangeEventArgs e)
+    {
+        if (!Enum.TryParse<PrioridadTarea>(e.Value?.ToString(), out var pr)) return;
+        PatchLocal(id, t => t with { Prioridad = pr });
+        var resp = await Auth().PatchAsJsonAsync($"/api/tareas/{id}/inline", new { Campo = "prioridad", Texto = pr.ToString() });
+        if (!resp.IsSuccessStatusCode) await RecargarBoard();
+    }
+
+    // ---- Valor de un campo personalizado inline ----
+    private async Task GuardarCampoValor(Guid id, Guid campoId)
+    {
+        if (_editKey != id + ":campo:" + campoId || _editBusy) return;
+        _editBusy = true;
+        try
+        {
+            var val = _editVal;
+            PatchLocal(id, t =>
+            {
+                var lista = (t.CamposValores ?? new List<TareaCampoValorDto>()).Where(v => v.CampoId != campoId).ToList();
+                if (!string.IsNullOrWhiteSpace(val)) lista.Add(new TareaCampoValorDto(campoId, val.Trim()));
+                return t with { CamposValores = lista };
+            });
+            CancelarEd();
+            var resp = await Auth().PutAsJsonAsync($"/api/tareas/{id}/campo-valor/{campoId}", new { Valor = val });
+            if (!resp.IsSuccessStatusCode) await RecargarBoard();
+        }
+        finally { _editBusy = false; }
+    }
+    private async Task CampoKeydown(KeyboardEventArgs e, Guid id, Guid campoId)
+    {
+        if (e.Key == "Enter") await GuardarCampoValor(id, campoId);
+        else if (e.Key == "Escape") CancelarEd();
+    }
+
+    // ---- Asignados inline (multi-select desde miembros del tablero) ----
+    private Guid? _asigDropId;
+    private HashSet<Guid> _asigSel = new();
+    private async Task AbrirAsigDrop(TareaListaDto t)
+    {
+        _asigDropId = t.Id;
+        _asigSel = (t.Responsables ?? new List<ResponsableMiniDto>()).Select(r => r.PersonaId).ToHashSet();
+        if (_personas is null)
+        {
+            try { var raw = await Auth().GetFromJsonAsync<List<PersonaRaw>>("/api/directorio/personas") ?? new(); _personas = raw.Select(p => new PersonaMini(p.Id, ($"{p.Nombres} {p.Apellidos}").Trim())).ToList(); }
+            catch { _personas = new(); }
+        }
+    }
+    private void CerrarAsigDrop() { _asigDropId = null; }
+    private string NombreMiembro(Guid pid) => _personas?.FirstOrDefault(p => p.Id == pid)?.Nombre ?? PersonaNombre(pid);
+    private async Task ToggleAsig(Guid tareaId, Guid personaId)
+    {
+        if (!_asigSel.Add(personaId)) _asigSel.Remove(personaId);
+        var ids = _asigSel.ToList();
+        PatchLocal(tareaId, t =>
+        {
+            var resp = ids.Select(pid => new ResponsableMiniDto(pid, NombreMiembro(pid), null)).ToList();
+            return t with { Responsables = resp, AsignadoPersonaId = ids.Count > 0 ? ids[0] : (Guid?)null, AsignadoNombre = ids.Count > 0 ? NombreMiembro(ids[0]) : null };
+        });
+        var r = await Auth().PatchAsJsonAsync($"/api/tareas/{tareaId}/inline", new { Campo = "asignados", Guids = ids });
+        if (!r.IsSuccessStatusCode) await RecargarBoard();
+    }
+
+    // ---- Duplicar / eliminar fila ----
+    private async Task DuplicarFila(Guid id)
+    {
+        var resp = await Auth().PostAsync($"/api/tareas/{id}/duplicar", null);
+        if (resp.IsSuccessStatusCode) await RecargarBoard();
+        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+    }
+    private async Task EliminarFila(Guid id)
+    {
+        var resp = await Auth().DeleteAsync($"/api/tareas/{id}");
+        if (resp.IsSuccessStatusCode) _tareas.RemoveAll(t => t.Id == id);
+    }
+
+    // ---- Fila "nueva tarea" inline tipo Excel: Tab entre campos, Enter crea con todo lo lleno ----
+    private class NuevaFilaDraft
+    {
+        public string Titulo = "";
+        public string Descripcion = "";
+        public Guid EstadoId;
+        public PrioridadTarea Prioridad = PrioridadTarea.Normal;
+        public DateOnly? FechaVencimiento;
+        public decimal? Valor;
+        public List<Guid> Asignados = new();
+        public Dictionary<Guid, string?> Campos = new();
+    }
+    private readonly Dictionary<Guid, NuevaFilaDraft> _nuevaFilas = new();
+    private NuevaFilaDraft NuevaFilaDe(Guid estadoId)
+    {
+        if (!_nuevaFilas.TryGetValue(estadoId, out var d)) { d = new NuevaFilaDraft { EstadoId = estadoId }; _nuevaFilas[estadoId] = d; }
+        return d;
+    }
+    private void SetNuevaFilaAsignado(NuevaFilaDraft d, ChangeEventArgs e)
+        => d.Asignados = Guid.TryParse(e.Value?.ToString(), out var g) && g != Guid.Empty ? new List<Guid> { g } : new List<Guid>();
+
+    private async Task NuevaFilaKeydown(KeyboardEventArgs e, Guid estadoId)
+    {
+        if (e.Key == "Enter") await CrearDesdeNuevaFila(estadoId);
+        else if (e.Key == "Escape") _nuevaFilas[estadoId] = new NuevaFilaDraft { EstadoId = estadoId };
+    }
+    private async Task CrearDesdeNuevaFila(Guid estadoId)
+    {
+        var d = NuevaFilaDe(estadoId);
+        if (string.IsNullOrWhiteSpace(d.Titulo) || _board is null) return;
+        var camposValores = d.Campos.Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+            .Select(kv => new TareaCampoValorDto(kv.Key, kv.Value)).ToList();
+        var req = new CrearTareaRequest(d.Titulo.Trim(), string.IsNullOrWhiteSpace(d.Descripcion) ? null : d.Descripcion.Trim(),
+            d.Prioridad, d.EstadoId, null, null, d.FechaVencimiento, null, new List<Guid>(), _board.Tablero.Id,
+            null, false, d.Valor, null, null, null, null, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores);
+        var resp = await Auth().PostAsJsonAsync("/api/tareas", req);
+        if (resp.IsSuccessStatusCode) { _nuevaFilas[estadoId] = new NuevaFilaDraft { EstadoId = estadoId }; await RecargarBoard(); }
+        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+    }
+
+    // Compositor progresivo en la vista tarjetas (kanban): titulo primero y, a medida
+    // que se tabula, van apareciendo los demas campos (descripcion, asignado, prioridad,
+    // vence, valor y campos personalizados). Enter crea, Esc cierra. Reusa NuevaFilaDraft.
+    private Guid? _composerEstado;
+    private NuevaFilaDraft _composerDraft = new();
+    private int _composerReveal;   // indice del ultimo campo revelado (0 = solo titulo)
+    private int ComposerMaxIdx => 5 + (_board?.Tablero.Campos?.Count ?? 0);
+    private void AbrirComposer(Guid estadoId) { _composerEstado = estadoId; _composerDraft = new NuevaFilaDraft { EstadoId = estadoId }; _composerReveal = 0; }
+    private void CerrarComposer() { _composerEstado = null; }
+    private void RevealComposerNext(int idx)
+    {
+        var target = idx + 1;
+        if (target <= ComposerMaxIdx && _composerReveal < target) _composerReveal = target;
+    }
+    private void SetComposerAsignado(ChangeEventArgs e)
+        => _composerDraft.Asignados = Guid.TryParse(e.Value?.ToString(), out var g) && g != Guid.Empty ? new List<Guid> { g } : new List<Guid>();
+    private async Task ComposerKeydown(KeyboardEventArgs e, Guid estadoId, int idx)
+    {
+        if (e.Key == "Enter") await CrearDesdeComposer(estadoId);
+        else if (e.Key == "Escape") CerrarComposer();
+        // Tab: foco nativo; el siguiente campo ya fue revelado por el @onfocus del campo actual.
+    }
+    private async Task CrearDesdeComposer(Guid estadoId)
+    {
+        var d = _composerDraft;
+        if (string.IsNullOrWhiteSpace(d.Titulo) || _board is null) return;
+        var camposValores = d.Campos.Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+            .Select(kv => new TareaCampoValorDto(kv.Key, kv.Value)).ToList();
+        var req = new CrearTareaRequest(d.Titulo.Trim(), string.IsNullOrWhiteSpace(d.Descripcion) ? null : d.Descripcion.Trim(),
+            d.Prioridad, estadoId, null, null, d.FechaVencimiento, null, new List<Guid>(), _board.Tablero.Id,
+            null, false, d.Valor, null, null, null, null, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores);
+        var resp = await Auth().PostAsJsonAsync("/api/tareas", req);
+        if (resp.IsSuccessStatusCode) { _composerDraft = new NuevaFilaDraft { EstadoId = estadoId }; _composerReveal = 0; await RecargarBoard(); }
         else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
     }
 
@@ -1984,7 +2528,7 @@ else
         var tareaId = _dragTareaId;
         _dragTareaId = null;
         if (tareaId is null || _board is null) return;
-        var tarea = _board.Tareas.FirstOrDefault(t => t.Id == tareaId.Value);
+        var tarea = _tareas.FirstOrDefault(t => t.Id == tareaId.Value);
         if (tarea is null || tarea.EstadoId == estadoId) return;  // misma columna: nada que hacer
         var resp = await Auth().PutAsJsonAsync($"/api/tareas/{tareaId}/estado", new CambiarEstadoRequest(estadoId, null));
         if (resp.IsSuccessStatusCode) await RecargarBoard();
@@ -2139,7 +2683,7 @@ else
     // ----- Configurar tablero (estados + campos) -----
     private void AbrirConfigBoard() { _cfgOpen = true; _cfgEstadoNew = ""; _cfgCampoNew = ""; }
     private void CerrarConfigBoard() { _cfgOpen = false; }
-    private int CountEstado(Guid estadoId) => _board?.Tareas.Count(t => t.EstadoId == estadoId && t.PadreId == null) ?? 0;
+    private int CountEstado(Guid estadoId) => _tareas.Count(t => t.EstadoId == estadoId && t.PadreId == null);
 
     private async Task CfgAddEstado()
     {
@@ -2230,7 +2774,7 @@ else
     }
 
     private List<TableroCampoDto> CamposFiltrables() => (_board?.Tablero.Campos ?? new List<TableroCampoDto>()).Where(c => c.MostrarEnFiltro).ToList();
-    private List<string> CampoValoresDistintos(Guid campoId) => (_board?.Tareas ?? new List<TareaListaDto>())
+    private List<string> CampoValoresDistintos(Guid campoId) => _tareas.AsEnumerable()
         .Select(t => CampoDeTarea(t, campoId)).Where(v => !string.IsNullOrWhiteSpace(v))
         .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(v => v).ToList();
     private string FCampoVal(Guid id) => _fCampo.GetValueOrDefault(id, "");

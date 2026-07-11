@@ -22,6 +22,12 @@ public interface ITareasService
     Task<TareaDetalleDto?> GetTareaAsync(Guid id, CancellationToken ct);
     Task<TareaDetalleDto> CrearTareaAsync(CrearTareaRequest req, CancellationToken ct);
     Task<bool> ActualizarTareaAsync(Guid id, ActualizarTareaRequest req, CancellationToken ct);
+    /// <summary>Edicion inline de un solo campo (vista tabla tipo Excel), preservando el resto.</summary>
+    Task<bool> ActualizarCampoInlineAsync(Guid id, InlineUpdateTareaRequest req, CancellationToken ct);
+    /// <summary>Set del valor de un campo personalizado (TableroCampo) de la tarea.</summary>
+    Task<bool> SetCampoValorAsync(Guid tareaId, Guid campoId, string? valor, CancellationToken ct);
+    /// <summary>Duplica la tarea como una NUEVA (mismos datos + "(copia)"), sin subtareas hijas.</summary>
+    Task<TareaListaDto?> DuplicarTareaAsync(Guid id, CancellationToken ct);
     Task<bool> CambiarEstadoAsync(Guid id, CambiarEstadoRequest req, CancellationToken ct);
     /// <summary>Soft-delete de una tarjeta y sus tareas hijas.</summary>
     Task<bool> EliminarTareaAsync(Guid id, CancellationToken ct);
