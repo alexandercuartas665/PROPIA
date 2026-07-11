@@ -1180,11 +1180,13 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasOne(x => x.Estado).WithMany().HasForeignKey(x => x.EstadoId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(x => x.AsignadoPersona).WithMany().HasForeignKey(x => x.AsignadoPersonaId).OnDelete(DeleteBehavior.SetNull);
             b.HasOne(x => x.Padre).WithMany(t => t.Subtareas).HasForeignKey(x => x.PadreId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(x => x.CopiaDe).WithMany(t => t.Copias).HasForeignKey(x => x.CopiaDeTareaId).OnDelete(DeleteBehavior.SetNull);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.TenantId, x.NumeroTarea }).IsUnique();
             b.HasIndex(x => new { x.TenantId, x.EstadoId });
             b.HasIndex(x => new { x.TenantId, x.AsignadoPersonaId });
             b.HasIndex(x => new { x.TenantId, x.PadreId });
+            b.HasIndex(x => new { x.TenantId, x.CopiaDeTareaId });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

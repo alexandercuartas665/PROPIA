@@ -28,6 +28,9 @@ public interface ITareasService
     Task<bool> SetCampoValorAsync(Guid tareaId, Guid campoId, string? valor, CancellationToken ct);
     /// <summary>Duplica la tarea como una NUEVA (mismos datos + "(copia)"), sin subtareas hijas.</summary>
     Task<TareaListaDto?> DuplicarTareaAsync(Guid id, CancellationToken ct);
+    /// <summary>Copia una tarea N veces con opciones (titulo, etapa, que conservar). Cada copia
+    /// es INDEPENDIENTE y queda enlazada al original via CopiaDeTareaId (traza). Devuelve las copias.</summary>
+    Task<IReadOnlyList<TareaListaDto>> CopiarTareaAsync(Guid id, CopiarTareaRequest req, CancellationToken ct);
     Task<bool> CambiarEstadoAsync(Guid id, CambiarEstadoRequest req, CancellationToken ct);
     /// <summary>Soft-delete de una tarjeta y sus tareas hijas.</summary>
     Task<bool> EliminarTareaAsync(Guid id, CancellationToken ct);

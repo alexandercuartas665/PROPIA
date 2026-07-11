@@ -79,7 +79,22 @@ public record TareaDetalleDto(
     Guid? TableroId = null,
     IReadOnlyList<TareaAdjuntoDto>? Adjuntos = null,
     IReadOnlyList<SubtareaCheckDto>? Checklist = null,
-    IReadOnlyList<TareaCampoValorDto>? CamposValores = null);
+    IReadOnlyList<TareaCampoValorDto>? CamposValores = null,
+    // ----- Traza de copias (copia independiente, NO subtarea) -----
+    Guid? CopiadaDeTareaId = null,
+    string? CopiadaDeNumero = null,
+    string? CopiadaDeTitulo = null,
+    IReadOnlyList<TareaListaDto>? Copias = null);
+
+/// <summary>Opciones para copiar una tarea (mini-modal). La copia es independiente, no subtarea.</summary>
+public record CopiarTareaRequest(
+    string? Titulo = null,
+    Guid? EstadoId = null,
+    int Cantidad = 1,
+    bool ConservarResponsables = true,
+    bool ConservarEtiquetas = true,
+    bool ConservarRelacion = true,
+    bool ConservarCampos = true);
 
 public record TareaComentarioDto(Guid Id, Guid AutorUsuarioId, string Texto, DateTimeOffset CreatedAt);
 public record TareaHistorialDto(TipoEventoTarea TipoEvento, string Descripcion, Guid RealizadoPorUsuarioId, DateTimeOffset OcurridoAt);

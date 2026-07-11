@@ -288,6 +288,7 @@ public class TareasService : ITareasService
             .Include(x => x.Estado)
             .Include(x => x.AsignadoPersona)
             .Include(x => x.Padre)
+            .Include(x => x.CopiaDe)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (t is null) return null;
 
@@ -336,6 +337,18 @@ public class TareasService : ITareasService
             .Select(v => new TareaCampoValorDto(v.TableroCampoId, v.Valor))
             .ToListAsync(ct);
 
+        // Traza: copias hechas a partir de esta tarea (copias independientes, no subtareas).
+        var copias = await (
+            from c in _db.Tareas.AsNoTracking().Where(c => c.CopiaDeTareaId == id && !c.Eliminada)
+            join e in _db.TareasEstados on c.EstadoId equals e.Id
+            orderby c.CreatedAt
+            select new TareaListaDto(
+                c.Id, c.NumeroTarea, c.Titulo, c.Prioridad, c.EstadoId, e.Nombre, e.Color, e.EsTerminal,
+                c.AsignadoPersonaId, null, c.FechaVencimiento, false, c.PadreId, 0, 0,
+                new List<EtiquetaTareaDto>(), c.Progreso, c.Color, c.EsProyecto, c.Valor, c.FechaInicio,
+                null, null, null, c.OrigenTipo, c.OrigenReferencia)
+        ).ToListAsync(ct);
+
         var asigNombre = t.AsignadoPersona is null ? null
             : ((t.AsignadoPersona.Nombres ?? "") + " " + (t.AsignadoPersona.Apellidos ?? "")).Trim();
         var estadoDto = new EstadoTareaDto(t.Estado!.Id, t.Estado.Nombre, t.Estado.Color, t.Estado.Orden, t.Estado.EsTerminal, t.Estado.EsBase, t.Estado.Activo);
@@ -348,7 +361,8 @@ public class TareasService : ITareasService
             t.CreatedAt, t.CreadoPorUsuarioId,
             etiquetas, subtareas, comentarios, historial, colabs,
             t.Color, t.EsProyecto, t.Valor, t.Progreso, t.HoraInicio, t.HoraFin,
-            t.OrigenTipo, t.OrigenReferencia, t.TableroId, adjuntos, checklist, camposValores);
+            t.OrigenTipo, t.OrigenReferencia, t.TableroId, adjuntos, checklist, camposValores,
+            t.CopiaDeTareaId, t.CopiaDe?.NumeroTarea, t.CopiaDe?.Titulo, copias);
     }
 
     private async Task<string> GenerarNumeroAsync(CancellationToken ct)
@@ -644,6 +658,72 @@ public class TareasService : ITareasService
 
         var lista = await ListarTareasAsync(null, null, null, null, null, null, ct, nueva.TableroId);
         return lista.FirstOrDefault(x => x.Id == nueva.Id);
+    }
+
+    public async Task<IReadOnlyList<TareaListaDto>> CopiarTareaAsync(Guid id, CopiarTareaRequest req, CancellationToken ct)
+    {
+        var src = await _db.Tareas.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && !x.Eliminada, ct);
+        if (src is null) return new List<TareaListaDto>();
+
+        var cantidad = Math.Clamp(req.Cantidad <= 0 ? 1 : req.Cantidad, 1, 20);
+        var estadoId = req.EstadoId ?? src.EstadoId;
+        if (req.EstadoId is Guid es && es != src.EstadoId && !await _db.TareasEstados.AnyAsync(e => e.Id == es, ct))
+            estadoId = src.EstadoId;
+        var baseTitulo = string.IsNullOrWhiteSpace(req.Titulo) ? (src.Titulo + " (copia)").Trim() : req.Titulo.Trim();
+
+        // Datos a conservar (leidos una sola vez).
+        List<Guid> colabIds = new();
+        List<TareaCampoValorDto> campoVals = new();
+        List<Guid> etiquetaIds = new();
+        if (req.ConservarResponsables) colabIds = await _db.TareaColaboradores.AsNoTracking().Where(c => c.TareaId == id).Select(c => c.PersonaId).ToListAsync(ct);
+        if (req.ConservarCampos) campoVals = await _db.TareaCampoValores.AsNoTracking().Where(v => v.TareaId == id).Select(v => new TareaCampoValorDto(v.TableroCampoId, v.Valor)).ToListAsync(ct);
+        if (req.ConservarEtiquetas) etiquetaIds = await _db.TareaEtiquetaAsignaciones.AsNoTracking().Where(e => e.TareaId == id).Select(e => e.EtiquetaId).ToListAsync(ct);
+
+        var nuevasIds = new List<Guid>();
+        for (int i = 0; i < cantidad; i++)
+        {
+            var numero = await GenerarNumeroAsync(ct);
+            var titulo = cantidad > 1 ? $"{baseTitulo} ({i + 1})" : baseTitulo;
+            if (titulo.Length > 200) titulo = titulo[..200];
+            var nueva = new Tarea
+            {
+                NumeroTarea = numero,
+                TableroId = src.TableroId,
+                Titulo = titulo,
+                Descripcion = src.Descripcion,
+                Prioridad = src.Prioridad,
+                EstadoId = estadoId,
+                AsignadoPersonaId = req.ConservarResponsables ? src.AsignadoPersonaId : null,
+                FechaInicio = src.FechaInicio,
+                FechaVencimiento = src.FechaVencimiento,
+                PadreId = null,                 // una copia NUNCA es subtarea
+                CopiaDeTareaId = src.Id,         // traza: enlace a la original
+                Origen = OrigenTarea.Manual,
+                Color = src.Color,
+                EsProyecto = src.EsProyecto,
+                Valor = src.Valor,
+                HoraInicio = src.HoraInicio,
+                HoraFin = src.HoraFin,
+                OrigenTipo = req.ConservarRelacion ? src.OrigenTipo : null,
+                OrigenReferencia = req.ConservarRelacion ? src.OrigenReferencia : null,
+                Progreso = 0,
+                CreadoPorUsuarioId = GetUsuarioActualId()
+            };
+            _db.Tareas.Add(nueva);
+            await _db.SaveChangesAsync(ct);
+
+            foreach (var pid in colabIds) _db.TareaColaboradores.Add(new TareaColaborador { TareaId = nueva.Id, PersonaId = pid });
+            foreach (var v in campoVals) _db.TareaCampoValores.Add(new TareaCampoValor { TareaId = nueva.Id, TableroCampoId = v.CampoId, Valor = v.Valor });
+            foreach (var eid in etiquetaIds) _db.TareaEtiquetaAsignaciones.Add(new TareaEtiquetaAsignacion { TareaId = nueva.Id, EtiquetaId = eid });
+            if (colabIds.Count > 0 || campoVals.Count > 0 || etiquetaIds.Count > 0) await _db.SaveChangesAsync(ct);
+
+            await RegistrarHistorial(nueva.Id, TipoEventoTarea.Creada, $"Copia de {src.NumeroTarea}", null, new { origen = src.NumeroTarea }, ct);
+            await _db.SaveChangesAsync(ct);
+            nuevasIds.Add(nueva.Id);
+        }
+
+        var lista = await ListarTareasAsync(null, null, null, null, null, null, ct, src.TableroId);
+        return lista.Where(x => nuevasIds.Contains(x.Id)).ToList();
     }
 
     /// <summary>Reemplaza la checklist (tareas relacionadas) de una tarjeta.</summary>

@@ -151,6 +151,7 @@ else
                                         @ondragstart="() => IniciarArrastre(tarea.Id)"
                                         @ondragend="() => _dragTareaId = null"
                                         style="border-left-color:@(t.Color ?? est.Color ?? "#6D4FE3")" @onclick="() => AbrirCardDraft(tarea, null)">
+                                    <span class="tb-tcard-copy" title="Copiar tarea" @onclick:stopPropagation="true" @onclick="() => AbrirCopiaDialog(tarea.Id, tarea.Titulo, tarea.EstadoId)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg></span>
                                     <div class="tb-tcard-tit">@t.Titulo</div>
                                     <div class="tb-tcard-meta">
                                         <span class="tb-prio" style="color:@PrioFg(t.Prioridad);background:@PrioBg(t.Prioridad)">@t.Prioridad</span>
@@ -820,6 +821,7 @@ else
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l7-4 7 4v14"/></svg>
                         <span>@_coNombre</span>
                         @if (d.PadreId is not null) { <span class="tbc-sep">&rsaquo;</span><span class="tbc-bold">Subtarea de @d.PadreTitulo</span> }
+                        @if (d.CopiadaDeTareaId is not null) { <span class="tbc-sep">&rsaquo;</span><button type="button" class="tbc-copia-bc" title="Abrir tarea original" @onclick="AbrirCopiaOriginal"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>Copia de @d.CopiadaDeTitulo</button> }
                         @if (!string.IsNullOrEmpty(d.OrigenTipo)) { <span class="tbc-sep">&rsaquo;</span><span>@OrigenTipoLabel(d.OrigenTipo)</span> }
                         @if (!string.IsNullOrEmpty(d.OrigenReferencia)) { <span class="tbc-sep">&rsaquo;</span><span class="tbc-bold">@d.OrigenReferencia</span> }
                     </div>
@@ -888,6 +890,25 @@ else
                                     <input @bind="_subtareaNew" @bind:event="oninput" placeholder="Nueva subtarea (tarea hija)..." />
                                     <button class="tbc-add-btn" @onclick="CrearSubtareaRapida" disabled="@(_busy || string.IsNullOrWhiteSpace(_subtareaNew))"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Agregar</button>
                                 </div>
+                            </div>
+                        </div>
+                    }
+
+                    @* Traza de COPIAS: copias independientes hechas desde esta tarea (NO son subtareas). *@
+                    @if (d.Id is not null && d.Copias.Count > 0)
+                    {
+                        <div class="tbc-fld">
+                            <label>Copias de esta tarea <span class="tbc-mut">- @d.Copias.Count</span></label>
+                            <div class="tbc-sublist">
+                                @foreach (var cp in d.Copias)
+                                {
+                                    var copia = cp;
+                                    <div class="tbc-sub tbc-subtask" @onclick="() => AbrirCardDraft(copia, null)" title="Abrir copia">
+                                        <span class="tbc-copia-ic"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg></span>
+                                        <span class="tbc-sub-t">@copia.Titulo</span>
+                                        <span class="tbc-sub-est">@copia.EstadoNombre</span>
+                                    </div>
+                                }
                             </div>
                         </div>
                     }
@@ -1115,6 +1136,7 @@ else
                 @if (d.Id is not null)
                 {
                     <button class="tb-btn-danger" @onclick="EliminarCard"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>Eliminar</button>
+                    <button class="tb-btn tb-btn-ghost" @onclick="() => AbrirCopiaDialog(d.Id!.Value, d.Titulo, d.EstadoId)" title="Crear una copia de esta tarea"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>Copiar</button>
                 }
                 <div class="tb-flex"></div>
                 <button class="tb-btn tb-btn-ghost" @onclick="CerrarCard">Cancelar</button>
@@ -1125,6 +1147,47 @@ else
         </div>
     </div>
 }
+}
+
+@* ---------- Mini-modal: copiar tarea (pregunta al usuario que copiar) ---------- *@
+@if (_copiaDlg is not null)
+{
+    <div class="tb-modal-bd" @onclick="CerrarCopiaDialog">
+        <div class="tbcopy" @onclick:stopPropagation="true">
+            <div class="tbcopy-h">
+                <span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>Copiar tarea</span>
+                <button class="tbc-head-x" @onclick="CerrarCopiaDialog"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+            </div>
+            <div class="tbcopy-bd">
+                <div class="tbcopy-src">Original: <b>@_copiaDlg.TareaTitulo</b></div>
+                <div class="tbc-fld"><label>Titulo de la copia</label><input @bind="_copiaDlg.Titulo" @bind:event="oninput" placeholder="Titulo de la copia..." /></div>
+                <div class="tbcopy-row">
+                    <div class="tbc-fld tbcopy-grow">
+                        <label>Etapa destino</label>
+                        <select @bind="_copiaDlg.EstadoId">
+                            @if (_board is not null) { @foreach (var es in _board.Estados) { <option value="@es.Id">@es.Nombre</option> } }
+                        </select>
+                    </div>
+                    <div class="tbc-fld tbcopy-cant">
+                        <label>Cuantas</label>
+                        <input type="number" min="1" max="20" @bind="_copiaDlg.Cantidad" />
+                    </div>
+                </div>
+                <div class="tbcopy-tglbl">Conservar del original:</div>
+                <div class="tbcopy-toggles">
+                    <label class="tbcopy-tg"><input type="checkbox" @bind="_copiaDlg.ConservarResponsables" />Responsables</label>
+                    <label class="tbcopy-tg"><input type="checkbox" @bind="_copiaDlg.ConservarEtiquetas" />Etiquetas</label>
+                    <label class="tbcopy-tg"><input type="checkbox" @bind="_copiaDlg.ConservarRelacion" />Relacionado con</label>
+                    <label class="tbcopy-tg"><input type="checkbox" @bind="_copiaDlg.ConservarCampos" />Campos personalizados</label>
+                </div>
+                <div class="tbcopy-note">Cada copia es una tarea <b>independiente</b> (no una subtarea). Queda una traza en el original.</div>
+            </div>
+            <div class="tbcopy-foot">
+                <button class="tb-btn tb-btn-ghost" @onclick="CerrarCopiaDialog">Cancelar</button>
+                <button class="tb-btn tb-btn-primary" @onclick="ConfirmarCopia" disabled="@(_copiaBusy || string.IsNullOrWhiteSpace(_copiaDlg.Titulo))">@(_copiaBusy ? "Copiando..." : (_copiaDlg.Cantidad > 1 ? $"Crear {_copiaDlg.Cantidad} copias" : "Crear copia"))</button>
+            </div>
+        </div>
+    </div>
 }
 
 <style>
@@ -1210,7 +1273,10 @@ else
     .tb-col-nom { font-size: 13px; font-weight: 700; color: #33475B; flex: 1; }
     .tb-col-count { font-size: 11.5px; font-weight: 700; color: #7C98B6; background: #fff; border: 1px solid #E1E8EE; padding: 1px 8px; border-radius: 20px; }
     .tb-col-body { display: flex; flex-direction: column; gap: 9px; }
-    .tb-tcard { display: block; width: 100%; text-align: left; background: #fff; border: 1px solid #E1E8EE; border-left: 3px solid #6D4FE3; border-radius: 11px; padding: 12px 13px; box-shadow: 0 1px 2px rgba(45,62,80,.04); cursor: grab; }
+    .tb-tcard { display: block; width: 100%; text-align: left; background: #fff; border: 1px solid #E1E8EE; border-left: 3px solid #6D4FE3; border-radius: 11px; padding: 12px 13px; box-shadow: 0 1px 2px rgba(45,62,80,.04); cursor: grab; position: relative; }
+    .tb-tcard-copy { position: absolute; top: 7px; right: 7px; width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #7C98B6; background: #F4F7FA; opacity: 0; transition: opacity .12s; cursor: pointer; }
+    .tb-tcard:hover .tb-tcard-copy { opacity: 1; }
+    .tb-tcard-copy:hover { color: #6D4FE3; background: #F1ECFD; }
     .tb-tcard:active { cursor: grabbing; }
     .tb-tcard:hover { border-color: #6D4FE3; box-shadow: 0 6px 16px rgba(109,79,227,.12); }
     .tb-tcard-tit { font-size: 13px; font-weight: 700; color: #33475B; line-height: 1.35; }
@@ -1498,6 +1564,28 @@ else
     .tbc-adj-hint { grid-column: 1 / -1; font-size: 11px; color: #A6B7C8; background: #F8FAFC; border: 1px dashed #D7E0EA; border-radius: 10px; padding: 11px; text-align: center; line-height: 1.4; }
 
     .tbc-foot { display: flex; align-items: center; gap: 9px; padding: 16px 24px; border-top: 1px solid #EEF3F8; flex-shrink: 0; }
+    /* Traza de copias */
+    .tbc-copia-bc { display: inline-flex; align-items: center; gap: 4px; border: 0; background: rgba(255,255,255,.22); color: #fff; font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 20px; cursor: pointer; }
+    .tbc-copia-bc:hover { background: rgba(255,255,255,.35); }
+    .tbc-copia-ic { width: 20px; height: 20px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #6D4FE3; background: #F1ECFD; border-radius: 6px; }
+    /* Mini-modal copiar tarea */
+    .tbcopy { width: min(460px, 94vw); background: #fff; border-radius: 16px; box-shadow: 0 24px 60px rgba(45,62,80,.28); overflow: hidden; display: flex; flex-direction: column; }
+    .tbcopy-h { display: flex; align-items: center; justify-content: space-between; padding: 15px 18px; border-bottom: 1px solid #EEF3F8; }
+    .tbcopy-h span { display: flex; align-items: center; gap: 8px; font-size: 14.5px; font-weight: 800; color: #33475B; }
+    .tbcopy-bd { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+    .tbcopy-src { font-size: 12px; color: #7C98B6; }
+    .tbcopy-src b { color: #33475B; }
+    .tbcopy-row { display: flex; gap: 10px; }
+    .tbcopy-grow { flex: 1; }
+    .tbcopy-cant { width: 84px; flex-shrink: 0; }
+    .tbcopy-bd input, .tbcopy-bd select { width: 100%; box-sizing: border-box; border: 1px solid #D7E0EA; border-radius: 8px; padding: 7px 10px; font-size: 13px; color: #33475B; outline: none; }
+    .tbcopy-bd input:focus, .tbcopy-bd select:focus { border-color: #6D4FE3; }
+    .tbcopy-tglbl { font-size: 11px; font-weight: 700; letter-spacing: .3px; color: #A6B7C8; }
+    .tbcopy-toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 12px; }
+    .tbcopy-tg { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #516F90; font-weight: 600; cursor: pointer; }
+    .tbcopy-tg input { width: auto !important; accent-color: #6D4FE3; }
+    .tbcopy-note { font-size: 11.5px; color: #7C98B6; background: #F7F9FB; border-radius: 8px; padding: 8px 10px; }
+    .tbcopy-foot { display: flex; align-items: center; justify-content: flex-end; gap: 9px; padding: 14px 18px; border-top: 1px solid #EEF3F8; }
 
     /* ===== Modal Configurar tablero ===== */
     .tbcfg-h { font-size: 11px; letter-spacing: .5px; color: #A6B7C8; font-weight: 700; margin-bottom: 10px; }
@@ -1756,6 +1844,11 @@ else
         public HashSet<Guid> EtiquetaIds { get; set; } = new();        // etiquetas asignadas (editable)
         public HashSet<Guid> EtiquetaIdsOrig { get; set; } = new();    // snapshot para diff al guardar
         public bool TieneHijos { get; set; }                            // si tiene subtareas: progreso derivado
+        // ----- Traza de copias (copia independiente, NO subtarea) -----
+        public Guid? CopiadaDeTareaId { get; set; }                     // si esta tarea ES una copia, apunta a la original
+        public string? CopiadaDeNumero { get; set; }
+        public string? CopiadaDeTitulo { get; set; }
+        public List<TareaListaDto> Copias { get; set; } = new();        // copias hechas desde esta tarea
     }
 
     private class SubChk { public string Titulo { get; set; } = ""; public bool Hecho { get; set; } }
@@ -2365,7 +2458,7 @@ else
             }
             @* ---- ACCIONES ---- *@
             <div class="tb-row-acc">
-                <button class="tb-acc-btn" title="Duplicar tarea" @onclick="() => DuplicarFila(tarea.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg></button>
+                <button class="tb-acc-btn" title="Copiar tarea" @onclick="() => AbrirCopiaDialog(tarea.Id, tarea.Titulo, tarea.EstadoId)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg></button>
                 <button class="tb-acc-btn tb-acc-del" title="Eliminar tarea" @onclick="() => EliminarFila(tarea.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>
             </div>
         </div>
@@ -2519,12 +2612,6 @@ else
     }
 
     // ---- Duplicar / eliminar fila ----
-    private async Task DuplicarFila(Guid id)
-    {
-        var resp = await Auth().PostAsync($"/api/tareas/{id}/duplicar", null);
-        if (resp.IsSuccessStatusCode) await RecargarBoard();
-        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
-    }
     private async Task EliminarFila(Guid id)
     {
         var resp = await Auth().DeleteAsync($"/api/tareas/{id}");
@@ -2877,6 +2964,58 @@ else
 
     private void CerrarCard() { _cardDraft = null; _subNew = ""; _respPick = ""; }
 
+    // ---- Copiar tarea (mini-modal): copia INDEPENDIENTE con traza; se invoca desde modal/tabla/tarjeta ----
+    private class CopiaDialog
+    {
+        public Guid TareaId { get; set; }
+        public string TareaTitulo { get; set; } = "";
+        public string Titulo { get; set; } = "";
+        public Guid EstadoId { get; set; }
+        public int Cantidad { get; set; } = 1;
+        public bool ConservarResponsables { get; set; } = true;
+        public bool ConservarEtiquetas { get; set; } = true;
+        public bool ConservarRelacion { get; set; } = true;
+        public bool ConservarCampos { get; set; } = true;
+    }
+    private CopiaDialog? _copiaDlg;
+    private bool _copiaBusy;
+    private void AbrirCopiaDialog(Guid id, string titulo, Guid estadoId)
+        => _copiaDlg = new CopiaDialog { TareaId = id, TareaTitulo = titulo, Titulo = (titulo + " (copia)").Trim(), EstadoId = estadoId, Cantidad = 1 };
+    private void CerrarCopiaDialog() { _copiaDlg = null; }
+    private async Task ConfirmarCopia()
+    {
+        if (_copiaDlg is null) return;
+        _copiaBusy = true;
+        try
+        {
+            var d = _copiaDlg;
+            var req = new CopiarTareaRequest(
+                string.IsNullOrWhiteSpace(d.Titulo) ? null : d.Titulo.Trim(),
+                d.EstadoId, Math.Clamp(d.Cantidad, 1, 20),
+                d.ConservarResponsables, d.ConservarEtiquetas, d.ConservarRelacion, d.ConservarCampos);
+            var resp = await Auth().PostAsJsonAsync($"/api/tareas/{d.TareaId}/copiar", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                var srcId = d.TareaId;
+                _copiaDlg = null;
+                await RecargarBoard();
+                if (_cardDraft?.Id == srcId)   // refrescar la traza si el modal del original sigue abierto
+                {
+                    var t2 = _tareas.FirstOrDefault(x => x.Id == srcId);
+                    if (t2 is not null) await AbrirCardDraft(t2, null);
+                }
+            }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _copiaBusy = false; }
+    }
+    private async Task AbrirCopiaOriginal()
+    {
+        if (_cardDraft?.CopiadaDeTareaId is not Guid oid) return;
+        var t = _tareas.FirstOrDefault(x => x.Id == oid);
+        if (t is not null) await AbrirCardDraft(t, null);
+    }
+
     private async Task AbrirCardDraft(TareaListaDto? t, Guid? estadoIdDefault)
     {
         _subNew = ""; _respPick = "";
@@ -2920,7 +3059,11 @@ else
                 Campos = (det.CamposValores ?? new List<TareaCampoValorDto>()).GroupBy(v => v.CampoId).ToDictionary(g => g.Key, g => g.First().Valor),
                 EtiquetaIds = t.Etiquetas.Select(e => e.Id).ToHashSet(),
                 EtiquetaIdsOrig = t.Etiquetas.Select(e => e.Id).ToHashSet(),
-                TieneHijos = t.CantidadSubtareas > 0
+                TieneHijos = t.CantidadSubtareas > 0,
+                CopiadaDeTareaId = det.CopiadaDeTareaId,
+                CopiadaDeNumero = det.CopiadaDeNumero,
+                CopiadaDeTitulo = det.CopiadaDeTitulo,
+                Copias = (det.Copias ?? new List<TareaListaDto>()).ToList()
             };
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }

@@ -47,6 +47,13 @@ public class Tarea : TenantEntity
     public Guid? PadreId { get; set; }
     public Tarea? Padre { get; set; }
 
+    /// <summary>Si esta tarea es una COPIA de otra, apunta a la original. Es una copia
+    /// INDEPENDIENTE (no una subtarea): solo alimenta la traza de copias en el modal. Null = no es copia.</summary>
+    public Guid? CopiaDeTareaId { get; set; }
+    public Tarea? CopiaDe { get; set; }
+    /// <summary>Copias hechas a partir de esta tarea (traza en el modal del original).</summary>
+    public ICollection<Tarea> Copias { get; set; } = new List<Tarea>();
+
     public OrigenTarea Origen { get; set; } = OrigenTarea.Manual;
 
     /// <summary>Modulo origen si Origen == ModuloExterno (PQRSD, Asamblea, Mantenimiento).</summary>

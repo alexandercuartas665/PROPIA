@@ -121,6 +121,14 @@ public class TareasController : ControllerBase
         return nueva is null ? NotFound() : Ok(nueva);
     }
 
+    // Copiar la tarea N veces con opciones (titulo, etapa, que conservar). Copias independientes con traza.
+    [HttpPost("{id:guid}/copiar")]
+    public async Task<IActionResult> Copiar(Guid id, [FromBody] CopiarTareaRequest req, CancellationToken ct)
+    {
+        var copias = await _svc.CopiarTareaAsync(id, req, ct);
+        return copias.Count == 0 ? NotFound() : Ok(copias);
+    }
+
     [HttpPut("{id:guid}/estado")]
     public async Task<IActionResult> CambiarEstado(Guid id, [FromBody] CambiarEstadoRequest req, CancellationToken ct)
     {
