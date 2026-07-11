@@ -202,11 +202,32 @@ else
                                                @bind="_composerDraft.Valor" @bind:event="oninput"
                                                @onfocus="@(() => RevealComposerNext(5))" @onkeydown="@(e => ComposerKeydown(e, estado.Id, 5))" />
                                     }
+                                    @if (_composerReveal >= 6)
+                                    {
+                                        <div class="tb-composer-orig tb-composer-appear">
+                                            <select class="tb-composer-sel" @onfocus="@(() => RevealComposerNext(6))"
+                                                    @onchange="@(e => { _composerDraft.OrigenTipo = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString(); _composerDraft.OrigenReferencia = null; })"
+                                                    @onkeydown="@(e => ComposerKeydown(e, estado.Id, 6))">
+                                                <option value="" selected="@(_composerDraft.OrigenTipo is null)">Relacionar con... (opcional)</option>
+                                                <option value="inmueble" selected="@(_composerDraft.OrigenTipo == "inmueble")">Inmueble / unidad</option>
+                                                <option value="zona" selected="@(_composerDraft.OrigenTipo == "zona")">Zona comun</option>
+                                                <option value="equipo" selected="@(_composerDraft.OrigenTipo == "equipo")">Equipo / activo</option>
+                                            </select>
+                                            @if (!string.IsNullOrEmpty(_composerDraft.OrigenTipo))
+                                            {
+                                                <select class="tb-composer-sel" @onchange="@(e => _composerDraft.OrigenReferencia = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString())"
+                                                        @onkeydown="@(e => ComposerKeydown(e, estado.Id, 6))">
+                                                    <option value="">(elegir)</option>
+                                                    @foreach (var o in OrigenOpcionesDe(_composerDraft.OrigenTipo)) { <option value="@o.Label" selected="@(_composerDraft.OrigenReferencia == o.Label)">@o.Label</option> }
+                                                </select>
+                                            }
+                                        </div>
+                                    }
                                     @{ var campos = _board?.Tablero.Campos ?? new List<TableroCampoDto>(); }
                                     @for (int ci = 0; ci < campos.Count; ci++)
                                     {
                                         var campo = campos[ci];
-                                        var fidx = 6 + ci;
+                                        var fidx = 7 + ci;
                                         if (_composerReveal >= fidx)
                                         {
                                             <input class="tb-composer-sel tb-composer-appear" placeholder="@campo.Label"
@@ -283,6 +304,7 @@ else
                         <button class="tb-colsmenu-i" @onclick="() => _colDue = !_colDue"><span class="tb-chk @(_colDue ? "on" : "")">@if (_colDue){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span>Vence</button>
                         <button class="tb-colsmenu-i" @onclick="() => _colDesc = !_colDesc"><span class="tb-chk @(_colDesc ? "on" : "")">@if (_colDesc){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span>Descripcion</button>
                         <button class="tb-colsmenu-i" @onclick="() => _colValor = !_colValor"><span class="tb-chk @(_colValor ? "on" : "")">@if (_colValor){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span>Valor</button>
+                        <button class="tb-colsmenu-i" @onclick="() => _colOrigen = !_colOrigen"><span class="tb-chk @(_colOrigen ? "on" : "")">@if (_colOrigen){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span>Relacionado con</button>
                     </div>
                 }
             </div>
@@ -298,6 +320,7 @@ else
                     @if (_colPrio) { <div class="tb-lc tb-lc-prio">PRIORIDAD</div> }
                     @if (_colDue) { <div class="tb-lc tb-lc-due">VENCE</div> }
                     @if (_colValor) { <div class="tb-lc tb-lc-valor">VALOR</div> }
+                    @if (_colOrigen) { <div class="tb-lc tb-lc-orig">RELACIONADO CON</div> }
                     @foreach (var c in _board.Tablero.Campos ?? new List<TableroCampoDto>()) { <div class="tb-lc tb-lc-campo">@c.Label.ToUpperInvariant()</div> }
                     <div class="tb-lc tb-lc-acc">ACCIONES</div>
                 </div>
@@ -360,6 +383,24 @@ else
                         @if (_colValor)
                         {
                             <div class="tb-row-valor"><input type="number" step="1000" class="tb-nf-inp" placeholder="$" @bind="nf.Valor" @bind:event="oninput" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" /></div>
+                        }
+                        @if (_colOrigen)
+                        {
+                            <div class="tb-row-orig">
+                                <select class="tb-orig-tsel" @onchange="@(e => { nf.OrigenTipo = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString(); nf.OrigenReferencia = null; })">
+                                    <option value="" selected="@(nf.OrigenTipo is null)">Sin relacion</option>
+                                    <option value="inmueble" selected="@(nf.OrigenTipo == "inmueble")">Inmueble</option>
+                                    <option value="zona" selected="@(nf.OrigenTipo == "zona")">Zona comun</option>
+                                    <option value="equipo" selected="@(nf.OrigenTipo == "equipo")">Equipo/activo</option>
+                                </select>
+                                @if (!string.IsNullOrEmpty(nf.OrigenTipo))
+                                {
+                                    <select class="tb-orig-rsel" @onchange="@(e => nf.OrigenReferencia = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString())">
+                                        <option value="">(elegir)</option>
+                                        @foreach (var o in OrigenOpcionesDe(nf.OrigenTipo)) { <option value="@o.Label" selected="@(nf.OrigenReferencia == o.Label)">@o.Label</option> }
+                                    </select>
+                                }
+                            </div>
                         }
                         @foreach (var c in _board?.Tablero.Campos ?? new List<TableroCampoDto>())
                         {
@@ -1236,10 +1277,15 @@ else
 
     /* ===== Tabla editable inline (vista Lista tipo Excel) ===== */
     .tb-list { overflow-x: auto; }
-    .tb-list-hdr, .tb-row, .tb-list-group, .tb-newrow { min-width: 1440px; }
+    .tb-list-hdr, .tb-row, .tb-list-group, .tb-newrow { min-width: 1660px; }
     .tb-lc-desc { width: 200px; flex-shrink: 0; } .tb-row-desc { width: 200px; flex-shrink: 0; position: relative; }
     .tb-lc-etiq { width: 130px; flex-shrink: 0; } .tb-row-etiq { width: 130px; flex-shrink: 0; display: flex; gap: 4px; flex-wrap: wrap; overflow: hidden; }
     .tb-lc-valor { width: 110px; flex-shrink: 0; } .tb-row-valor { width: 110px; flex-shrink: 0; position: relative; font-size: 12px; color: #1E7A50; font-weight: 700; }
+    .tb-lc-orig { width: 210px; flex-shrink: 0; } .tb-row-orig { width: 210px; flex-shrink: 0; display: flex; gap: 4px; align-items: center; }
+    .tb-orig-tsel { flex: 0 0 84px; font-size: 11px; font-weight: 600; color: #516F90; border: 1px solid #E1E8EE; border-radius: 6px; padding: 4px 5px; outline: none; background: #FAFBFC; cursor: pointer; }
+    .tb-orig-rsel { flex: 1; min-width: 0; font-size: 11px; font-weight: 600; color: #33475B; border: 1px solid #E1E8EE; border-radius: 6px; padding: 4px 5px; outline: none; background: #fff; cursor: pointer; }
+    .tb-orig-tsel:focus, .tb-orig-rsel:focus { border-color: #6D4FE3; }
+    .tb-composer-orig { display: flex; flex-direction: column; gap: 6px; }
     .tb-lc-acc { width: 74px; flex-shrink: 0; text-align: right; } .tb-row-acc { width: 74px; flex-shrink: 0; display: flex; gap: 4px; justify-content: flex-end; opacity: 0; transition: opacity .12s; }
     .tb-row:hover .tb-row-acc { opacity: 1; }
     .tb-row-cell-est { width: 130px; flex-shrink: 0; }
@@ -1613,7 +1659,7 @@ else
     private string _fEstado = ""; private string _fResp = ""; private string _fPrio = ""; private string _fEtiqueta = ""; private bool _sortTitulo;
     private bool _pinTitulo; private bool _colsMenu;
     private bool _colResp = true; private bool _colEtiq = true; private bool _colPrio = true; private bool _colDue = true;
-    private bool _colValor = true; private bool _colDesc = true;
+    private bool _colValor = true; private bool _colDesc = true; private bool _colOrigen = true;
     private List<EtiquetaTareaDto> _etiquetasCat = new();   // catalogo de etiquetas (tags) del tenant
     private string _nuevaEtiqueta = "";
 
@@ -1908,6 +1954,30 @@ else
             try { var raw = await Auth().GetFromJsonAsync<List<PersonaRaw>>("/api/directorio/personas") ?? new(); _personas = raw.Select(p => new PersonaMini(p.Id, ($"{p.Nombres} {p.Apellidos}").Trim())).ToList(); }
             catch { _personas = new(); }
         }
+        if (_unidades is null || _zonas is null || _equipos is null) await CargarContextoAsync();
+    }
+
+    // Opciones (etiquetas) del selector de origen segun el tipo elegido; reusado por Lista y compositor.
+    private IReadOnlyList<OpcionOrigen> OrigenOpcionesDe(string? tipo) => tipo switch
+    {
+        "inmueble" => _unidades ?? new(),
+        "zona" => _zonas ?? new(),
+        "equipo" => _equipos ?? new(),
+        _ => new List<OpcionOrigen>()
+    };
+
+    // Edicion inline de la relacion (origen) de una tarea existente en la Lista.
+    private async Task CambiarOrigenTipoFila(Guid tareaId, ChangeEventArgs e)
+    {
+        var tipo = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString();
+        PatchLocal(tareaId, t => t with { OrigenTipo = tipo, OrigenReferencia = null });
+        await Auth().PatchAsJsonAsync($"/api/tareas/{tareaId}/inline", new InlineUpdateTareaRequest("origen", tipo, null, null, null, null));
+    }
+    private async Task CambiarOrigenRefFila(Guid tareaId, string? tipo, ChangeEventArgs e)
+    {
+        var refv = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString();
+        PatchLocal(tareaId, t => t with { OrigenReferencia = refv });
+        await Auth().PatchAsJsonAsync($"/api/tareas/{tareaId}/inline", new InlineUpdateTareaRequest("origen", tipo, null, null, null, refv));
     }
     private void CerrarBoard() { _board = null; _tareas = new(); }
     private async Task RecargarBoard() { if (_board is not null) { _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tareas/tableros/{_board.Tablero.Id}/board"); SyncTareas(); } }
@@ -2240,6 +2310,25 @@ else
                     }
                 </div>
             }
+            @* ---- RELACIONADO CON (inmueble / zona / equipo) ---- *@
+            @if (_colOrigen)
+            {
+                <div class="tb-row-orig">
+                    <select class="tb-orig-tsel" value="@(t.OrigenTipo ?? "")" @onchange="(e) => CambiarOrigenTipoFila(tarea.Id, e)">
+                        <option value="">Sin relacion</option>
+                        <option value="inmueble">Inmueble</option>
+                        <option value="zona">Zona comun</option>
+                        <option value="equipo">Equipo/activo</option>
+                    </select>
+                    @if (!string.IsNullOrEmpty(t.OrigenTipo))
+                    {
+                        <select class="tb-orig-rsel" value="@(t.OrigenReferencia ?? "")" @onchange="(e) => CambiarOrigenRefFila(tarea.Id, tarea.OrigenTipo, e)">
+                            <option value="">(elegir)</option>
+                            @foreach (var o in OrigenOpcionesDe(t.OrigenTipo)) { <option value="@o.Label">@o.Label</option> }
+                        </select>
+                    }
+                </div>
+            }
             @* ---- CAMPOS PERSONALIZADOS (editable por tipo) ---- *@
             @foreach (var c in _board?.Tablero.Campos ?? new List<TableroCampoDto>())
             {
@@ -2453,6 +2542,8 @@ else
         public decimal? Valor;
         public List<Guid> Asignados = new();
         public Dictionary<Guid, string?> Campos = new();
+        public string? OrigenTipo;
+        public string? OrigenReferencia;
     }
     private readonly Dictionary<Guid, NuevaFilaDraft> _nuevaFilas = new();
     private NuevaFilaDraft NuevaFilaDe(Guid estadoId)
@@ -2474,9 +2565,11 @@ else
         if (string.IsNullOrWhiteSpace(d.Titulo) || _board is null) return;
         var camposValores = d.Campos.Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
             .Select(kv => new TareaCampoValorDto(kv.Key, kv.Value)).ToList();
+        var oTipo = string.IsNullOrWhiteSpace(d.OrigenTipo) ? null : d.OrigenTipo;
+        var oRef = oTipo is null || string.IsNullOrWhiteSpace(d.OrigenReferencia) ? null : d.OrigenReferencia;
         var req = new CrearTareaRequest(d.Titulo.Trim(), string.IsNullOrWhiteSpace(d.Descripcion) ? null : d.Descripcion.Trim(),
             d.Prioridad, d.EstadoId, null, null, d.FechaVencimiento, null, new List<Guid>(), _board.Tablero.Id,
-            null, false, d.Valor, null, null, null, null, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores);
+            null, false, d.Valor, null, null, oTipo, oRef, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores);
         var resp = await Auth().PostAsJsonAsync("/api/tareas", req);
         if (resp.IsSuccessStatusCode) { _nuevaFilas[estadoId] = new NuevaFilaDraft { EstadoId = estadoId }; await RecargarBoard(); }
         else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
@@ -2488,7 +2581,7 @@ else
     private Guid? _composerEstado;
     private NuevaFilaDraft _composerDraft = new();
     private int _composerReveal;   // indice del ultimo campo revelado (0 = solo titulo)
-    private int ComposerMaxIdx => 5 + (_board?.Tablero.Campos?.Count ?? 0);
+    private int ComposerMaxIdx => 6 + (_board?.Tablero.Campos?.Count ?? 0);
     private void AbrirComposer(Guid estadoId) { _composerEstado = estadoId; _composerDraft = new NuevaFilaDraft { EstadoId = estadoId }; _composerReveal = 0; }
     private void CerrarComposer() { _composerEstado = null; }
     private void RevealComposerNext(int idx)
@@ -2510,9 +2603,11 @@ else
         if (string.IsNullOrWhiteSpace(d.Titulo) || _board is null) return;
         var camposValores = d.Campos.Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
             .Select(kv => new TareaCampoValorDto(kv.Key, kv.Value)).ToList();
+        var oTipo = string.IsNullOrWhiteSpace(d.OrigenTipo) ? null : d.OrigenTipo;
+        var oRef = oTipo is null || string.IsNullOrWhiteSpace(d.OrigenReferencia) ? null : d.OrigenReferencia;
         var req = new CrearTareaRequest(d.Titulo.Trim(), string.IsNullOrWhiteSpace(d.Descripcion) ? null : d.Descripcion.Trim(),
             d.Prioridad, estadoId, null, null, d.FechaVencimiento, null, new List<Guid>(), _board.Tablero.Id,
-            null, false, d.Valor, null, null, null, null, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores);
+            null, false, d.Valor, null, null, oTipo, oRef, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores);
         var resp = await Auth().PostAsJsonAsync("/api/tareas", req);
         if (resp.IsSuccessStatusCode) { _composerDraft = new NuevaFilaDraft { EstadoId = estadoId }; _composerReveal = 0; await RecargarBoard(); }
         else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }

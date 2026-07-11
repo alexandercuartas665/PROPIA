@@ -29,13 +29,16 @@ public record TareaListaDto(
     DateOnly? FechaInicio = null,
     IReadOnlyList<TareaCampoValorDto>? CamposValores = null,
     IReadOnlyList<ResponsableMiniDto>? Responsables = null,
-    string? Descripcion = null);
+    string? Descripcion = null,
+    string? OrigenTipo = null,
+    string? OrigenReferencia = null);
 
 // Responsable de una tarea (asignado principal + colaboradores) con foto para la vista tabla.
 public record ResponsableMiniDto(Guid PersonaId, string Nombre, string? FotoUrl);
 
 // Edicion inline de UN campo de la tarea (vista tabla tipo Excel). Campo indica cual.
-public record InlineUpdateTareaRequest(string Campo, string? Texto, decimal? Numero, DateOnly? Fecha, IReadOnlyList<Guid>? Guids);
+// TextoAux se usa para campos con dos valores (ej. "origen": Texto=tipo, TextoAux=referencia).
+public record InlineUpdateTareaRequest(string Campo, string? Texto, decimal? Numero, DateOnly? Fecha, IReadOnlyList<Guid>? Guids, string? TextoAux = null);
 
 // Set del valor de UN campo personalizado (TableroCampo) de la tarea.
 public record SetCampoValorRequest(string? Valor);

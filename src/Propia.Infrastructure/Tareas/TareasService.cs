@@ -228,7 +228,9 @@ public class TareasService : ITareasService
                 t.Color,
                 t.EsProyecto,
                 t.Valor,
-                t.Descripcion
+                t.Descripcion,
+                t.OrigenTipo,
+                t.OrigenReferencia
             }
         ).ToListAsync(ct);
 
@@ -276,7 +278,7 @@ public class TareasService : ITareasService
                 etiquetasMap.GetValueOrDefault(r.Id, new List<EtiquetaTareaDto>()),
                 r.Progreso, r.Color, r.EsProyecto, r.Valor, r.FechaInicio,
                 camposMap.GetValueOrDefault(r.Id),
-                resp, r.Descripcion);
+                resp, r.Descripcion, r.OrigenTipo, r.OrigenReferencia);
         }).ToList();
     }
 
@@ -568,6 +570,10 @@ public class TareasService : ITareasService
                 await _db.TareaColaboradores.Where(c => c.TareaId == id).ExecuteDeleteAsync(ct);
                 foreach (var extra in ids.Skip(1))
                     _db.TareaColaboradores.Add(new TareaColaborador { TareaId = id, PersonaId = extra });
+                break;
+            case "origen":
+                t.OrigenTipo = string.IsNullOrWhiteSpace(req.Texto) ? null : req.Texto.Trim();
+                t.OrigenReferencia = t.OrigenTipo is null || string.IsNullOrWhiteSpace(req.TextoAux) ? null : req.TextoAux.Trim();
                 break;
             default:
                 throw new InvalidOperationException($"Campo '{req.Campo}' no editable inline.");
