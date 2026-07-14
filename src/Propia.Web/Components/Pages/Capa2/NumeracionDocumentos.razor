@@ -1,0 +1,205 @@
+@page "/finanzas/numeracion"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.MiCopropiedad
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<PageTitle>Numeracion de documentos - PROPIA</PageTitle>
+
+@* Modulo Finanzas: "Numeracion de documentos". Consecutivos (Factura, RC, Nota credito,
+   Paz y salvo, Acta de consejo, Acta de asamblea). Se movieron desde el modal de configuracion
+   de Finanzas. Carga la config completa (GET) y guarda el request completo (PUT) editando solo
+   los consecutivos, para no pisar el resto de la configuracion financiera. *@
+
+@if (!_authChecked)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    return;
+}
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <AuthMessage />
+}
+else
+{
+    <div class="numd-wrap">
+        <div class="numd-head">
+            <h1 class="numd-title">Numeracion de documentos</h1>
+            <p class="numd-sub">Consecutivos de los documentos de la copropiedad. Admite prefijos (ej. FAC-001, RC-2026-0042).</p>
+        </div>
+
+        @if (_dto is null)
+        {
+            <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+        }
+        else
+        {
+            <div class="numd-card">
+                <div class="numd-card-title">Consecutivos</div>
+                <div class="numd-grid">
+                    <div class="numd-fld">
+                        <label class="numd-lbl">Factura</label>
+                        <input type="text" class="numd-input" @bind="_factura" placeholder="FAC-001" />
+                    </div>
+                    <div class="numd-fld">
+                        <label class="numd-lbl">Recibo de caja (RC)</label>
+                        <input type="text" class="numd-input" @bind="_rc" placeholder="RC-2026-0042" />
+                    </div>
+                    <div class="numd-fld">
+                        <label class="numd-lbl">Nota credito</label>
+                        <input type="text" class="numd-input" @bind="_notaCredito" placeholder="NC-001" />
+                    </div>
+                    <div class="numd-fld">
+                        <label class="numd-lbl">Paz y salvo</label>
+                        <input type="text" class="numd-input" @bind="_pazSalvo" placeholder="PYS-001" />
+                    </div>
+                    <div class="numd-fld">
+                        <label class="numd-lbl">Acta de consejo</label>
+                        <input type="text" class="numd-input" @bind="_actaConsejo" placeholder="ACT-CONS-001" />
+                    </div>
+                    <div class="numd-fld">
+                        <label class="numd-lbl">Acta de asamblea</label>
+                        <input type="text" class="numd-input" @bind="_actaAsamblea" placeholder="ACT-ASAM-001" />
+                    </div>
+                </div>
+
+                <div class="numd-foot">
+                    @if (!string.IsNullOrEmpty(_msg))
+                    {
+                        <span class="numd-toast @(_msgError ? "err" : "ok")">@_msg</span>
+                    }
+                    <div class="numd-flex"></div>
+                    <button class="numd-btn" @onclick="GuardarAsync" disabled="@_busy">
+                        @(_busy ? "Guardando..." : "Guardar")
+                    </button>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<style>
+    .numd-wrap { max-width: 980px; margin: 0 auto; padding: 8px 4px 40px; }
+    .numd-head { margin-bottom: 18px; }
+    .numd-title { font-size: 26px; font-weight: 800; color: #33475B; margin: 0; }
+    .numd-sub { color: #7C98B6; font-size: 13.5px; margin: 4px 0 0; }
+    .numd-card { background: #fff; border: 1px solid #E1E8EE; border-radius: 14px; box-shadow: 0 1px 2px rgba(45,62,80,.05); padding: 20px 22px; }
+    .numd-card-title { font-size: 12px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; color: var(--propia-primary, #6D4FE3); margin-bottom: 16px; }
+    .numd-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px 18px; }
+    .numd-fld { display: flex; flex-direction: column; gap: 6px; }
+    .numd-lbl { font-size: 12.5px; font-weight: 700; color: #33475B; }
+    .numd-input { border: 1px solid #D7E0EA; border-radius: 9px; padding: 9px 12px; font-size: 13.5px; color: #33475B; outline: none; background: #fff; }
+    .numd-input:focus { border-color: var(--propia-primary, #6D4FE3); box-shadow: 0 0 0 3px rgba(109,79,227,.12); }
+    .numd-foot { display: flex; align-items: center; gap: 12px; margin-top: 22px; padding-top: 16px; border-top: 1px solid #EEF3F8; }
+    .numd-flex { flex: 1; }
+    .numd-toast { font-size: 12.5px; font-weight: 600; padding: 5px 12px; border-radius: 20px; }
+    .numd-toast.ok { color: #1A8754; background: #E6F5EC; }
+    .numd-toast.err { color: #C0383C; background: #FDE7E7; }
+    .numd-btn { border: 0; background: var(--propia-primary, #6D4FE3); color: #fff; border-radius: 9px; padding: 10px 22px; font-size: 13.5px; font-weight: 700; cursor: pointer; }
+    .numd-btn:disabled { opacity: .6; cursor: default; }
+    @@media (max-width: 720px) { .numd-grid { grid-template-columns: 1fr; } }
+</style>
+
+@code {
+    private string? _jwt;
+    private bool _authChecked;
+    private bool _busy;
+    private string _msg = "";
+    private bool _msgError;
+
+    private ConfiguracionFinanzasDto? _dto;
+    // Campos editables (consecutivos). El resto de la config se preserva desde _dto al guardar.
+    private string? _factura;
+    private string? _rc;
+    private string? _notaCredito;
+    private string? _pazSalvo;
+    private string? _actaConsejo;
+    private string? _actaAsamblea;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            _authChecked = true;
+            if (!string.IsNullOrWhiteSpace(stored)) { _jwt = stored; await CargarAsync(); StateHasChanged(); }
+            else StateHasChanged();
+        }
+        catch { }
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            _dto = await GetAuthAsync<ConfiguracionFinanzasDto>("/api/mi-copropiedad/finanzas/configuracion");
+            if (_dto is not null)
+            {
+                _factura = _dto.ConsecutivoFactura;
+                _rc = _dto.ConsecutivoRC;
+                _notaCredito = _dto.ConsecutivoNotaCredito;
+                _pazSalvo = _dto.ConsecutivoPazYSalvo;
+                _actaConsejo = _dto.ConsecutivoActaConsejo;
+                _actaAsamblea = _dto.ConsecutivoActaAsamblea;
+            }
+        }
+        catch (SesionRedirigidaException) { }
+        catch { }
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_dto is null) return;
+        _busy = true; _msg = "";
+        try
+        {
+            static string? N(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+            // Preserva TODA la config financiera; solo sobreescribe los consecutivos.
+            var req = new ActualizarConfiguracionFinanzasRequest(
+                _dto.MultiploRedondeo, _dto.MultiploRedondeoCuotaExtra, _dto.MultiploRedondeoProntoPago,
+                N(_factura), N(_rc), N(_notaCredito), N(_pazSalvo), N(_actaConsejo), N(_actaAsamblea),
+                _dto.ConvenioRecaudo, _dto.Chartld, _dto.ComunicacionFactura, _dto.WenjoyCodigoRecaudo,
+                _dto.TiposPagoPermitidos, _dto.FormasDePago, _dto.MinimoSaldoProntoPago, _dto.MinimoSaldoCartera,
+                _dto.CuentaContable, _dto.ZonaFacturacion, _dto.EstratoFacturacion);
+            var r = await Auth().PutAsJsonAsync("/api/mi-copropiedad/finanzas/configuracion", req);
+            if (r.IsSuccessStatusCode)
+            {
+                _dto = _dto with
+                {
+                    ConsecutivoFactura = N(_factura), ConsecutivoRC = N(_rc), ConsecutivoNotaCredito = N(_notaCredito),
+                    ConsecutivoPazYSalvo = N(_pazSalvo), ConsecutivoActaConsejo = N(_actaConsejo), ConsecutivoActaAsamblea = N(_actaAsamblea)
+                };
+                _msg = "Numeracion guardada."; _msgError = false;
+            }
+            else { _msg = $"Error: {(int)r.StatusCode}"; _msgError = true; }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
+        _busy = false;
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+
+    private sealed class SesionRedirigidaException : Exception { }
+
+    private async Task<T?> GetAuthAsync<T>(string url)
+    {
+        var resp = await Auth().GetAsync(url);
+        if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            var nuevo = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+            if (string.IsNullOrEmpty(nuevo)) throw new SesionRedirigidaException();
+            _jwt = nuevo;
+            resp = await Auth().GetAsync(url);
+        }
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<T>();
+    }
+}
