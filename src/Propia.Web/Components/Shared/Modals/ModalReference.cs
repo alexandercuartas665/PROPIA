@@ -32,6 +32,9 @@ public class ModalReference
     /// <summary>Ancho preferido del modal (CSS). Ej. "540px", "780px", "1640px".</summary>
     public string Width { get; set; } = "540px";
 
+    /// <summary>Alto fijo del shell (CSS, ej. "88vh"). Si es null el modal crece con su contenido.</summary>
+    public string? Height { get; set; }
+
     /// <summary>Layout fullscreen estilo prototipo (max 1640px x 95vh, padding reducido).</summary>
     public bool Fullscreen { get; set; }
 }

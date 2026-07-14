@@ -1354,6 +1354,26 @@ public class MiCopropiedadService : IMiCopropiedadService
             z.EsReservable, z.TarifaReserva, z.CapacidadPersonas, z.HorariosUso, z.ReglasUso, z.Estado);
     }
 
+    public async Task<ZonaComunDto?> ActualizarZonaComunAsync(Guid zonaId, ActualizarZonaComunRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Nombre))
+            throw new InvalidOperationException("Nombre de la zona obligatorio.");
+        var z = await _db.ZonasComunes.FirstOrDefaultAsync(x => x.Id == zonaId, ct);
+        if (z is null) return null;
+        var prevEstado = z.Estado;
+        z.Nombre = req.Nombre.Trim();
+        z.Categoria = req.Categoria;
+        z.Descripcion = req.Descripcion;
+        z.TarifaReserva = req.TarifaReserva;
+        z.ReglasUso = req.ReglasUso;
+        z.Estado = req.Estado;
+        await _db.SaveChangesAsync(ct);
+        if (prevEstado != req.Estado)
+            await RegistrarBitacoraAsync("Zona", $"Zona '{z.Nombre}': estado {prevEstado} -> {req.Estado}.", ct);
+        return new ZonaComunDto(z.Id, z.Nombre, z.Categoria, z.Descripcion,
+            z.EsReservable, z.TarifaReserva, z.CapacidadPersonas, z.HorariosUso, z.ReglasUso, z.Estado);
+    }
+
     public async Task<bool> CambiarEstadoZonaAsync(Guid zonaId, CambiarEstadoZonaRequest req, CancellationToken ct)
     {
         var z = await _db.ZonasComunes.FirstOrDefaultAsync(x => x.Id == zonaId, ct);

@@ -465,6 +465,16 @@ public class MiCopropiedadController : ControllerBase
         try { return Created("", await _svc.CrearZonaComunAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [HttpPut("zonas/{id:guid}")]
+    public async Task<IActionResult> ActualizarZona(Guid id, [FromBody] ActualizarZonaComunRequest req, CancellationToken ct)
+    {
+        try
+        {
+            var z = await _svc.ActualizarZonaComunAsync(id, req, ct);
+            return z is null ? NotFound() : Ok(z);
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
     [HttpPut("zonas/{id:guid}/estado")]
     public async Task<IActionResult> CambiarEstadoZona(Guid id, [FromBody] CambiarEstadoZonaRequest req, CancellationToken ct)
         => await _svc.CambiarEstadoZonaAsync(id, req, ct) ? NoContent() : NotFound();

@@ -127,6 +127,9 @@ public static class DependencyInjection
         services.AddScoped<Application.MiCopropiedad.IMiCopropiedadService, MiCopropiedad.MiCopropiedadService>();
         services.AddScoped<Application.MiCopropiedad.IDistribucionImportService, MiCopropiedad.DistribucionImportService>();
 
+        // Alta de copropiedades desde el selector (cliente autenticado)
+        services.AddScoped<Application.MisCopropiedades.IMisCopropiedadesService, MisCopropiedades.MisCopropiedadesService>();
+
         // Modulo 2.17 Servicios publicos
         services.AddScoped<Application.ServiciosPublicos.IServiciosPublicosService, ServiciosPublicos.ServiciosPublicosService>();
 

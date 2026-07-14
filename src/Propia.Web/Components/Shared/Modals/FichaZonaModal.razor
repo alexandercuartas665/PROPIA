@@ -25,6 +25,14 @@ else
     <button class="fz-x" @onclick="Cerrar"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
 </div>
 
+@* Pestanas: mismo patron que FichaEquipoModal (el editor de datos vive detras, en su propia pestana). *@
+<div class="fz-tabs">
+    <button class="fz-tab @(_tab == "ficha" ? "fz-tab--on" : "")" type="button" @onclick='() => _tab = "ficha"'>Ficha de la zona</button>
+    <button class="fz-tab @(_tab == "editar" ? "fz-tab--on" : "")" type="button" @onclick="IniciarEdicion">Editar datos</button>
+</div>
+
+@if (_tab == "ficha")
+{
 <div class="fz-grid">
     @* ===================== IZQUIERDA ===================== *@
     <div class="fz-left">
@@ -221,6 +229,37 @@ else
     <button class="fz-btn-brand" @onclick="GuardarConfig" disabled="@_busy">@(_busy ? "Guardando..." : "Guardar cambios")</button>
 </div>
 }
+else if (_tab == "editar")
+{
+<div class="fz-ebody">
+    <div class="fz-section">Identificacion</div>
+    <div class="fz-egrid">
+        <div><label class="fz-lbl">Nombre</label><input class="fz-in" @bind="_form.Nombre" /></div>
+        <div>
+            <label class="fz-lbl">Categoria</label>
+            <select class="fz-in" @bind="_form.Categoria">
+                @foreach (var c in (CategoriaZonaComun[])System.Enum.GetValues(typeof(CategoriaZonaComun))) { <option value="@c">@c</option> }
+            </select>
+        </div>
+        <div>
+            <label class="fz-lbl">Estado</label>
+            <select class="fz-in" @bind="_form.Estado">
+                @foreach (var s in (EstadoZonaComunMantenimiento[])System.Enum.GetValues(typeof(EstadoZonaComunMantenimiento))) { <option value="@s">@s</option> }
+            </select>
+        </div>
+        <div><label class="fz-lbl">Tarifa de reserva</label><input class="fz-in" type="number" min="0" step="any" @bind="_form.TarifaReserva" placeholder="$ 0" /></div>
+        <div class="fz-col-2"><label class="fz-lbl">Descripcion</label><textarea class="fz-in fz-ta" rows="2" @bind="_form.Descripcion"></textarea></div>
+        <div class="fz-col-2"><label class="fz-lbl">Reglas de uso</label><textarea class="fz-in fz-ta" rows="3" @bind="_form.ReglasUso"></textarea></div>
+    </div>
+    <div class="fz-ehint">La disponibilidad (reservable, aforo y horarios) se configura en la pestana "Ficha de la zona".</div>
+</div>
+<div class="fz-foot">
+    @if (!string.IsNullOrEmpty(_msg)) { <span class="fz-foot-msg">@_msg</span> }
+    <button class="fz-btn-ghost" type="button" @onclick='() => _tab = "ficha"'>Cancelar</button>
+    <button class="fz-btn-brand" type="button" @onclick="GuardarDatosAsync" disabled="@_busy">@(_busy ? "Guardando..." : "Guardar cambios")</button>
+</div>
+}
+}
 
 <style>
     .fz-loading { padding: 80px; display: flex; justify-content: center; }
@@ -232,6 +271,17 @@ else
     .fz-badge-res { font-size: 11px; font-weight: 700; color: #1A8754; background: #E6F6EE; padding: 5px 11px; border-radius: 8px; flex-shrink: 0; }
     .fz-x { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; color: #7C98B6; border: 1px solid #E1E8EE; background: #fff; cursor: pointer; flex-shrink: 0; }
     .fz-x:hover { background: #F5F8FA; color: #33475B; }
+
+    /* Pestanas: mismos valores que .fem-tabs de FichaEquipoModal. */
+    .fz-tabs { display: flex; gap: 2px; padding: 0 22px; border-bottom: 1px solid #EEF3F8; flex-shrink: 0; }
+    .fz-tab { background: transparent; border: 0; padding: 11px 14px; font-size: 13px; font-weight: 700; color: #7C98B6; cursor: pointer; border-bottom: 2px solid transparent; font-family: inherit; }
+    .fz-tab--on { color: var(--propia-brand, #6D4FE3); border-bottom-color: var(--propia-brand, #6D4FE3); }
+
+    .fz-ebody { padding: 18px 22px; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+    .fz-section { font-size: 12px; font-weight: 800; color: #33475B; letter-spacing: .3px; margin-bottom: 10px; }
+    .fz-egrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .fz-col-2 { grid-column: 1 / -1; }
+    .fz-ehint { margin-top: 14px; font-size: 12px; color: #7C98B6; background: var(--propia-brand-soft, #F5F1FE); border: 1px solid var(--propia-brand-border, #DCD2F8); border-radius: 10px; padding: 10px 12px; }
 
     .fz-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); min-height: 0; flex: 1; overflow: hidden; }
     .fz-left { overflow-y: auto; padding: 18px 20px; border-right: 1px solid #EEF3F8; background: #FBFCFD; display: flex; flex-direction: column; gap: 16px; }
@@ -358,6 +408,9 @@ else
     private readonly Dictionary<Guid, string> _comentTexto = new();
 
     private DisponibilidadHorariosEditor? _horariosEditor;
+
+    private string _tab = "ficha";
+    private readonly ZonaDatosForm _form = new();
 
     protected override async Task OnInitializedAsync() => await CargarAsync();
 
@@ -563,7 +616,55 @@ else
         finally { _busy = false; }
     }
 
+    private void IniciarEdicion()
+    {
+        if (_ficha is null) return;
+        var z = _ficha.Zona;
+        _form.Nombre = z.Nombre;
+        _form.Categoria = z.Categoria;
+        _form.Estado = z.Estado;
+        _form.Descripcion = z.Descripcion;
+        _form.TarifaReserva = z.TarifaReserva;
+        _form.ReglasUso = z.ReglasUso;
+        _msg = "";
+        _tab = "editar";
+    }
+
+    private async Task GuardarDatosAsync()
+    {
+        if (Zona is null) return;
+        if (string.IsNullOrWhiteSpace(_form.Nombre)) { _msg = "El nombre es obligatorio."; return; }
+        _busy = true; _msg = "";
+        try
+        {
+            var req = new ActualizarZonaComunRequest(
+                _form.Nombre.Trim(), _form.Categoria,
+                string.IsNullOrWhiteSpace(_form.Descripcion) ? null : _form.Descripcion.Trim(),
+                _form.TarifaReserva,
+                string.IsNullOrWhiteSpace(_form.ReglasUso) ? null : _form.ReglasUso.Trim(),
+                _form.Estado);
+            var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/zonas/{Zona.Id}", req);
+            if (!resp.IsSuccessStatusCode) { _msg = "Error: " + await resp.Content.ReadAsStringAsync(); return; }
+            _dirty = true;
+            await Recargar();
+            _tab = "ficha";
+            _msg = "Datos guardados.";
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+        finally { _busy = false; }
+    }
+
     private void Cerrar() => Close(_dirty);
+
+    private sealed class ZonaDatosForm
+    {
+        public string Nombre = "";
+        public CategoriaZonaComun Categoria;
+        public EstadoZonaComunMantenimiento Estado;
+        public string? Descripcion;
+        public decimal? TarifaReserva;
+        public string? ReglasUso;
+    }
 
     private sealed class UrlResp { public string? url { get; set; } }
 }

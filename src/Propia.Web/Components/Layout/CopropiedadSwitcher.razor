@@ -1,5 +1,8 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Shared.Auth
+@using Propia.Domain.Enums
+@using Propia.Web.Services
+@using System.Net.Http.Json
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
 @inject NavigationManager Nav
@@ -69,6 +72,126 @@
                             <span class="cs-card-rol">@t.Rol</span>
                         </button>
                     }
+                    @if (PuedeCrear)
+                    {
+                        <button class="cs-card cs-card--nueva" type="button" @onclick="AbrirWizard" disabled="@_busy">
+                            <span class="cs-card-thumb cs-thumb--nueva">
+                                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                            </span>
+                            <span class="cs-card-nombre">Nueva copropiedad</span>
+                            <span class="cs-card-rol">Agregar a tu organizacion</span>
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    @* ---------- Wizard de alta (solo identidad; el resto se completa despues en Mi Copropiedad) ---------- *@
+    @if (_wizard)
+    {
+        <div class="cs-backdrop">
+            <div class="cs-modal cs-wiz" role="dialog" aria-modal="true">
+                <div class="cs-modal-head">
+                    <div>
+                        <div class="cs-modal-title">Nueva copropiedad</div>
+                        <div class="cs-modal-sub">Paso @_paso de 2 &middot; @(_paso == 1 ? "Datos basicos" : "Ubicacion")</div>
+                    </div>
+                    <button class="cs-close" type="button" @onclick="CerrarWizard" aria-label="Cerrar">&times;</button>
+                </div>
+
+                <div class="cs-wiz-steps">
+                    <span class="cs-step @(_paso >= 1 ? "on" : "")"></span>
+                    <span class="cs-step @(_paso >= 2 ? "on" : "")"></span>
+                </div>
+
+                <div class="cs-wiz-body">
+                    @if (_paso == 1)
+                    {
+                        <label class="cs-lbl">Nombre de la copropiedad *</label>
+                        <input class="cs-in" @bind="_form.Nombre" @bind:event="oninput" placeholder="Ej. Conjunto Altos del Bosque" />
+
+                        <label class="cs-lbl">Tipo</label>
+                        <select class="cs-in" @bind="_form.Tipo">
+                            @foreach (var t in (TipoCopropiedad[])Enum.GetValues(typeof(TipoCopropiedad)))
+                            {
+                                <option value="@t">@t</option>
+                            }
+                        </select>
+
+                        <div class="cs-grid2">
+                            <div>
+                                <label class="cs-lbl">NIT</label>
+                                <input class="cs-in" @bind="_form.Nit" placeholder="900123456" />
+                            </div>
+                            <div>
+                                <label class="cs-lbl">Digito de verificacion</label>
+                                <input class="cs-in" @bind="_form.Dv" maxlength="1" placeholder="7" />
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="cs-grid2">
+                            <div>
+                                <label class="cs-lbl">Departamento</label>
+                                <select class="cs-in" @bind="_form.Departamento" @bind:after="OnDeptoCambio">
+                                    <option value="">Seleccionar...</option>
+                                    @foreach (var d in ColombiaCatalogo.DepartamentosColombia)
+                                    {
+                                        <option value="@d">@d</option>
+                                    }
+                                </select>
+                            </div>
+                            <div>
+                                <label class="cs-lbl">Ciudad</label>
+                                <select class="cs-in" @bind="_form.Ciudad" disabled="@string.IsNullOrWhiteSpace(_form.Departamento)">
+                                    <option value="">Seleccionar...</option>
+                                    @foreach (var c in ColombiaCatalogo.CiudadesDelDepartamento(_form.Departamento))
+                                    {
+                                        <option value="@c">@c</option>
+                                    }
+                                </select>
+                            </div>
+                        </div>
+
+                        <label class="cs-lbl">Direccion</label>
+                        <input class="cs-in" @bind="_form.Direccion" placeholder="Cra 45 # 100-20" />
+
+                        <label class="cs-lbl">Estrato</label>
+                        <select class="cs-in" @bind="_form.Estrato">
+                            @foreach (var e in (Estrato[])Enum.GetValues(typeof(Estrato)))
+                            {
+                                <option value="@e">@((int)e)</option>
+                            }
+                        </select>
+
+                        <div class="cs-wiz-note">
+                            Se creara dentro de tu organizacion y quedaras como <b>Administrador</b>.
+                            La distribucion, zonas y equipos los cargas despues en Mi Copropiedad.
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(_error))
+                    {
+                        <div class="cs-wiz-error">@_error</div>
+                    }
+                </div>
+
+                <div class="cs-wiz-foot">
+                    @if (_paso == 1)
+                    {
+                        <button class="cs-btn-ghost" type="button" @onclick="CerrarWizard">Cancelar</button>
+                        <button class="cs-btn-brand" type="button" @onclick="() => _paso = 2"
+                                disabled="@string.IsNullOrWhiteSpace(_form.Nombre)">Siguiente</button>
+                    }
+                    else
+                    {
+                        <button class="cs-btn-ghost" type="button" @onclick="() => _paso = 1">Atras</button>
+                        <button class="cs-btn-brand" type="button" @onclick="CrearAsync" disabled="@_busy">
+                            @(_busy ? "Creando..." : "Crear copropiedad")
+                        </button>
+                    }
                 </div>
             </div>
         </div>
@@ -104,13 +227,92 @@
         _activa = _tenants.FirstOrDefault(t => t.TenantId == me.ActiveTenantId) ?? _tenants.FirstOrDefault();
     }
 
+    // Se abre si hay algo que elegir O si el usuario puede crear una copropiedad nueva
+    // (con una sola PH el modal sigue siendo la unica puerta al wizard).
     private void Abrir()
     {
-        // Con una sola copropiedad no hay nada que elegir.
-        if (_tenants.Count > 1) _open = true;
+        if (_tenants.Count > 1 || PuedeCrear) _open = true;
     }
 
     private void Cerrar() => _open = false;
+
+    /// <summary>Solo un Administrador de la copropiedad activa da de alta otras (el backend lo revalida).</summary>
+    private bool PuedeCrear =>
+        _activa is not null && string.Equals(_activa.Rol, "Administrador", StringComparison.OrdinalIgnoreCase);
+
+    private bool _wizard;
+    private int _paso = 1;
+    private string? _error;
+    private NuevaCopropiedadForm _form = new();
+
+    private void AbrirWizard()
+    {
+        _form = new NuevaCopropiedadForm();
+        _paso = 1;
+        _error = null;
+        _open = false;
+        _wizard = true;
+    }
+
+    private void CerrarWizard()
+    {
+        _wizard = false;
+        _error = null;
+    }
+
+    private void OnDeptoCambio() => _form.Ciudad = "";
+
+    private async Task CrearAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_form.Nombre)) { _paso = 1; _error = "El nombre es obligatorio."; return; }
+        _busy = true; _error = null;
+        try
+        {
+            var req = new CrearCopropiedadDto(
+                _form.Nombre.Trim(),
+                string.IsNullOrWhiteSpace(_form.Nit) ? null : _form.Nit.Trim(),
+                string.IsNullOrWhiteSpace(_form.Dv) ? null : _form.Dv.Trim(),
+                (int)_form.Tipo,
+                (int)_form.Estrato,
+                string.IsNullOrWhiteSpace(_form.Direccion) ? null : _form.Direccion.Trim(),
+                string.IsNullOrWhiteSpace(_form.Departamento) ? null : _form.Departamento,
+                string.IsNullOrWhiteSpace(_form.Ciudad) ? null : _form.Ciudad);
+
+            var resp = await Auth().PostAsJsonAsync("/api/mis-copropiedades", req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var err = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+                _error = err is not null && err.TryGetValue("error", out var m) ? m : "No se pudo crear la copropiedad.";
+                return;
+            }
+
+            var creada = await resp.Content.ReadFromJsonAsync<CopropiedadCreadaResp>();
+            if (creada is null) { _error = "Respuesta inesperada del servidor."; return; }
+
+            // Queda parado en la copropiedad recien creada (switch-tenant + recarga).
+            await SeleccionarAsync(new TenantInfoDto(creada.TenantId, creada.Nombre, "Administrador"));
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private sealed class NuevaCopropiedadForm
+    {
+        public string Nombre = "";
+        public string? Nit;
+        public string? Dv;
+        public TipoCopropiedad Tipo = TipoCopropiedad.Residencial;
+        public Estrato Estrato = Estrato.Tres;
+        public string? Direccion;
+        public string? Departamento;
+        public string? Ciudad;
+    }
+
+    private record CrearCopropiedadDto(
+        string Nombre, string? Nit, string? DigitoVerificacion,
+        int Tipo, int Estrato, string? Direccion, string? Departamento, string? Ciudad);
+
+    private record CopropiedadCreadaResp(Guid TenantId, string Nombre);
 
     private async Task SeleccionarAsync(TenantInfoDto t)
     {
@@ -259,6 +461,58 @@
         line-height: 1.15;
     }
     .cs-card-rol { font-size: .76rem; color: var(--bs-secondary-color); }
+
+    /* Tarjeta "Nueva copropiedad": punteada para leerse como una accion, no como una PH mas. */
+    .cs-card--nueva { border-style: dashed; }
+    .cs-thumb--nueva {
+        width: 64px; height: 64px; border-radius: 14px;
+        background: rgba(89,85,209,.08); color: var(--propia-primary);
+        border: 1px solid var(--bs-border-color);
+    }
+
+    .cs-wiz { width: 520px; max-width: 96vw; }
+    .cs-wiz-steps { display: flex; gap: 6px; padding: 0 20px 4px; }
+    .cs-step { flex: 1; height: 4px; border-radius: 3px; background: var(--bs-border-color); }
+    .cs-step.on { background: var(--propia-primary); }
+
+    .cs-wiz-body { padding: 16px 20px; max-height: 60vh; overflow-y: auto; }
+    .cs-lbl {
+        display: block; font-size: .74rem; font-weight: 600;
+        color: var(--bs-secondary-color); margin: 10px 0 4px;
+    }
+    .cs-in {
+        width: 100%; height: 40px; padding: 0 12px;
+        border: 1px solid var(--bs-border-color); border-radius: 10px;
+        background: var(--bs-body-bg); color: var(--bs-body-color);
+        font-size: .88rem; font-family: inherit; box-sizing: border-box;
+    }
+    .cs-in:focus { outline: none; border-color: var(--propia-primary); }
+    .cs-in:disabled { opacity: .6; }
+    .cs-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    .cs-wiz-note {
+        margin-top: 14px; padding: 10px 12px; border-radius: 10px;
+        font-size: .78rem; line-height: 1.45;
+        background: rgba(89,85,209,.07); color: var(--bs-secondary-color);
+        border: 1px solid rgba(89,85,209,.2);
+    }
+    .cs-wiz-error {
+        margin-top: 12px; padding: 10px 12px; border-radius: 10px;
+        font-size: .8rem; color: #B91C1C; background: #FEE2E2; border: 1px solid #FCA5A5;
+    }
+
+    .cs-wiz-foot {
+        display: flex; justify-content: flex-end; gap: 8px;
+        padding: 14px 20px; border-top: 1px solid var(--bs-border-color);
+    }
+    .cs-btn-ghost, .cs-btn-brand {
+        height: 38px; padding: 0 16px; border-radius: 10px;
+        font-size: .85rem; font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    .cs-btn-ghost { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); color: var(--bs-body-color); }
+    .cs-btn-brand { background: var(--propia-primary); border: 1px solid var(--propia-primary); color: #fff; }
+    .cs-btn-brand:disabled { opacity: .55; cursor: default; }
+
     .cs-card-badge {
         position: absolute; top: 8px; right: 8px;
         font-size: .66rem; font-weight: 600; color: #fff;

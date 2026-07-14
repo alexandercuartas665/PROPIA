@@ -27,6 +27,7 @@ public class ModalService : IModalService
             Parameters = parameters ?? new ModalParameters(),
             Tcs = tcs,
             Width = options?.Width ?? "540px",
+            Height = options?.Height,
             CloseOnBackdrop = options?.CloseOnBackdrop ?? true,
             Fullscreen = options?.Fullscreen ?? false
         };

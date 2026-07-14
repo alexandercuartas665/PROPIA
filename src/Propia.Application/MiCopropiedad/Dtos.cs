@@ -219,6 +219,12 @@ public record CrearZonaComunRequest(
 /// <summary>Cambia el estado operativo de una zona (RN-13/RN-14).</summary>
 public record CambiarEstadoZonaRequest(EstadoZonaComunMantenimiento Estado);
 
+/// <summary>Datos base de la zona (pestana "Editar datos" de la ficha). La disponibilidad
+/// (reservable, aforo, horarios) NO va aqui: esa se guarda con GuardarZonaFichaRequest.</summary>
+public record ActualizarZonaComunRequest(
+    string Nombre, CategoriaZonaComun Categoria, string? Descripcion,
+    decimal? TarifaReserva, string? ReglasUso, EstadoZonaComunMantenimiento Estado);
+
 // ----- Tipos de unidad personalizados (spec 2.3 - distribucion) -----
 public record TipoUnidadCustomDto(Guid Id, string Nombre, bool PagaAdministracionPorDefecto, string? Descripcion, bool Activo);
 

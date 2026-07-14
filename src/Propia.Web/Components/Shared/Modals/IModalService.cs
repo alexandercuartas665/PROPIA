@@ -46,7 +46,9 @@ public interface IModalService
 public class ModalOptions
 {
     public string Width { get; set; } = "540px";
+    /// <summary>Alto fijo (ej. "88vh"). Si es null el modal crece con su contenido hasta 94vh.</summary>
+    public string? Height { get; set; }
     public bool CloseOnBackdrop { get; set; } = true;
-    /// <summary>Layout fullscreen tipo prototipo (1640px max, 95vh). Ignora Width.</summary>
+    /// <summary>Layout fullscreen tipo prototipo (1640px max, 95vh). Ignora Width y Height.</summary>
     public bool Fullscreen { get; set; }
 }
