@@ -50,7 +50,7 @@ public class DistribucionImportService : IDistribucionImportService
             ("PLANTILLA DE DISTRIBUCION - PROPIA", true, true),
             ("", false, false),
             ("Con esta plantilla cargas de una sola vez las TORRES y las UNIDADES privadas de la copropiedad.", false, false),
-            ("El archivo ya trae un ejemplo completo (2 torres + 6 unidades). Reemplaza esas filas por tus datos reales.", false, false),
+            ("El archivo ya trae un ejemplo completo (2 torres + 8 unidades, incluye un Parqueadero y un Cuarto util con coeficiente). Reemplaza esas filas por tus datos reales.", false, false),
             ("", false, false),
             ("PASOS:", true, false),
             ("1. Llena primero la hoja 'Torres' (tabla de apoyo). Cada torre se identifica por su Nombre.", false, false),
@@ -63,6 +63,7 @@ public class DistribucionImportService : IDistribucionImportService
             ("- Los campos marcados con * son obligatorios (Numero y Tipo en Unidades; Nombre en Torres).", false, false),
             ("- 'Tipo' debe ser uno de los valores validos (ver hoja 'Catalogos'): Apartamento, Local, Casa, Oficina, Bodega, Parqueadero, UtilCuarto.", false, false),
             ("- 'Coeficiente (%)' es el porcentaje de participacion de la unidad. La suma de todas deberia dar 100.", false, false),
+            ("- Parqueaderos y Cuartos utiles TAMBIEN pueden tener coeficiente. Si 'Paga administracion' = Si, su coeficiente cuenta dentro del 100% (como en el ejemplo P-01 y CU-01).", false, false),
             ("- Numeros decimales: acepta coma o punto (ej. 18,5 o 18.5). No uses separador de miles.", false, false),
             ("- 'Paga administracion': escribe Si o No (por defecto Si).", false, false),
             ("- El 'Numero' de la unidad debe ser unico en la copropiedad (ej. A101, B102, L-01).", false, false),
@@ -85,15 +86,18 @@ public class DistribucionImportService : IDistribucionImportService
         var ws = wb.AddWorksheet("Unidades");
         EscribirEncabezado(ws, UnidadesHeaders);
 
-        // Ejemplo completo y cargable (coeficientes suman 100).
+        // Ejemplo completo y cargable (coeficientes suman 100). Incluye un Parqueadero y un
+        // Cuarto util CON coeficiente para dejar claro que esos tipos tambien participan del 100%.
         object[][] ejemplo =
         {
-            new object[] { "A101", "Apartamento", "Torre A", 1, 18, 72, 3, 2, 1, "Ocupado",    "MAT-A101", "Si", 350000, "" },
-            new object[] { "A102", "Apartamento", "Torre A", 1, 18, 72, 3, 2, 1, "Ocupado",    "MAT-A102", "Si", 350000, "" },
-            new object[] { "A201", "Apartamento", "Torre A", 2, 18, 80, 3, 2, 1, "Desocupado", "MAT-A201", "Si", 380000, "" },
-            new object[] { "B101", "Apartamento", "Torre B", 1, 18, 72, 3, 2, 1, "Arrendado",  "MAT-B101", "Si", 350000, "" },
-            new object[] { "B102", "Apartamento", "Torre B", 1, 18, 72, 3, 2, 1, "Ocupado",    "MAT-B102", "Si", 350000, "" },
-            new object[] { "L-01", "Local",       "",        1, 10, 45, 0, 1, 0, "Arrendado",  "MAT-L01",  "Si", 600000, "Local comercial esquinero" },
+            new object[] { "A101",  "Apartamento", "Torre A", 1, 16, 72, 3, 2, 1, "Ocupado",    "MAT-A101", "Si", 350000, "" },
+            new object[] { "A102",  "Apartamento", "Torre A", 1, 16, 72, 3, 2, 1, "Ocupado",    "MAT-A102", "Si", 350000, "" },
+            new object[] { "A201",  "Apartamento", "Torre A", 2, 16, 80, 3, 2, 1, "Desocupado", "MAT-A201", "Si", 380000, "" },
+            new object[] { "B101",  "Apartamento", "Torre B", 1, 16, 72, 3, 2, 1, "Arrendado",  "MAT-B101", "Si", 350000, "" },
+            new object[] { "B102",  "Apartamento", "Torre B", 1, 16, 72, 3, 2, 1, "Ocupado",    "MAT-B102", "Si", 350000, "" },
+            new object[] { "L-01",  "Local",       "",        1, 10, 45, 0, 1, 0, "Arrendado",  "MAT-L01",  "Si", 600000, "Local comercial esquinero" },
+            new object[] { "P-01",  "Parqueadero", "Torre A", 1,  5, 12, 0, 0, 0, "Disponible", "MAT-P01",  "Si", "",     "Parqueadero con coeficiente (cuenta en el 100%)" },
+            new object[] { "CU-01", "UtilCuarto",  "Torre A", 1,  5,  6, 0, 0, 0, "Disponible", "MAT-CU01", "Si", "",     "Cuarto util con coeficiente (cuenta en el 100%)" },
         };
         int r = 2;
         foreach (var fila in ejemplo)
