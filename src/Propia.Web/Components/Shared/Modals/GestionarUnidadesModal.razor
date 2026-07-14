@@ -137,10 +137,15 @@
                 </div>
                 <div class="gum-lbl">Cuantas @AgrupacionLabelPlural.ToLower() tiene tu conjunto?</div>
                 <div class="gum-n-options">
-                    @for (int n = 1; n <= 6; n++)
+                    @for (int n = 1; n <= GenMaxChip; n++)
                     {
                         var i = n;
                         <button class="gum-n @(_genN == i ? "gum-n--active" : "")" @onclick="() => SetGenN(i)">@i</button>
+                    }
+                    @if (_genN < GenTopeAgrupaciones)
+                    {
+                        <button class="gum-n gum-n--add" title="Agregar otra @AgrupacionLabelSingular.ToLower()"
+                                @onclick="() => SetGenN(_genN + 1)">+</button>
                     }
                 </div>
                 <div class="gum-lbl">Nombre de cada @AgrupacionLabelSingular.ToLower()</div>
@@ -303,15 +308,18 @@
                 }
                 else
                 {
+                    <button class="gum-unit-del" type="button" @onclick="EliminarUnidad" disabled="@_busy" title="Eliminar unidad">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M10 11v6M14 11v6"/>
+                        </svg>
+                        Eliminar
+                    </button>
                     <button class="gum-unit-save" type="button" @onclick="GuardarUnidad" disabled="@_busy" title="Guardar">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>
                         @(_busy ? "Guardando..." : "Guardar")
                     </button>
                     <button class="gum-unit-cancel" type="button" @onclick="CancelarEdicion">Cancelar</button>
                 }
-                <button class="gum-unit-del" @onclick="EliminarUnidad" title="Eliminar unidad">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                </button>
             </div>
             <div class="gum-unit-cards">
                 @* === Card PROPIETARIO, RESIDENTE Y CONTACTOS (proto L.696-715) === *@
@@ -1075,13 +1083,15 @@
     .gum-genicon { width: 32px; height: 32px; border-radius: 9px; background: var(--propia-brand, #6D4FE3); color: #fff; display: flex; align-items: center; justify-content: center; }
     .gum-gen-title { font-size: 14px; font-weight: 800; color: #4B2BB0; }
     .gum-gen-sub { font-size: 11.5px; color: #7C5CE8; }
-    .gum-n-options { display: flex; gap: 7px; margin: 8px 0 16px; }
+    .gum-n-options { display: flex; flex-wrap: wrap; gap: 7px; margin: 8px 0 16px; }
     .gum-n {
         width: 40px; height: 40px; border-radius: 10px;
         border: 1.5px solid #DCD2F8; background: #fff; color: #516F90;
         font-size: 14px; font-weight: 700; cursor: pointer;
     }
     .gum-n--active { background: var(--propia-brand, #6D4FE3); color: #fff; border-color: var(--propia-brand, #6D4FE3); }
+    .gum-n--add { border-style: dashed; color: var(--propia-brand, #6D4FE3); font-size: 20px; line-height: 1; }
+    .gum-n--add:hover { background: #F3EFFE; }
     .gum-grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
     .gum-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
     .gum-preview { background: #fff; border: 1px dashed #DCD2F8; border-radius: 11px; padding: 13px 15px; margin-bottom: 16px; }
@@ -1178,9 +1188,9 @@
     .gum-unit-title { font-size: 17px; font-weight: 800; letter-spacing: -0.3px; color: #1B2A3A; }
     .gum-unit-meta { font-size: 12px; color: #7C98B6; }
     .gum-unit-del {
-        width: 32px; height: 32px; border-radius: 8px;
+        height: 34px; padding: 0 12px; border-radius: 8px; gap: 6px;
         border: 1px solid #FCA5A5; background: #fff;
-        color: #DC2626; cursor: pointer;
+        color: #DC2626; font-size: 13px; font-weight: 600; cursor: pointer;
         display: flex; align-items: center; justify-content: center;
     }
     .gum-unit-del:hover { background: #FEE2E2; }
@@ -1728,11 +1738,15 @@
     }
 
     private void SetMode(string? m) { _mode = (_mode == m) ? null : m; _genToast = 0; }
+    // Tope 26: los nombres de la secuencia van de la A a la Z.
+    private const int GenTopeAgrupaciones = 26;
+    private int GenMaxChip => Math.Max(6, _genN);
+
     private void SetGenN(int n)
     {
-        _genN = n;
-        while (_genNombres.Count < n) _genNombres.Add($"{AgrupacionLabelSingular} {(char)('A' + _genNombres.Count)}");
-        while (_genNombres.Count > n) _genNombres.RemoveAt(_genNombres.Count - 1);
+        _genN = Math.Clamp(n, 1, GenTopeAgrupaciones);
+        while (_genNombres.Count < _genN) _genNombres.Add($"{AgrupacionLabelSingular} {(char)('A' + _genNombres.Count)}");
+        while (_genNombres.Count > _genN) _genNombres.RemoveAt(_genNombres.Count - 1);
     }
 
     private void ToggleTorre(Guid id)
@@ -2444,17 +2458,35 @@
         _busy = false;
     }
 
+    // El backend bloquea si la unidad tiene registros asociados (guarda) y devuelve el motivo.
     private async Task EliminarUnidad()
     {
         if (_selected is null) return;
-        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades/{_selected.Id}");
-        if (resp.IsSuccessStatusCode)
+        var ok = await Js.InvokeAsync<bool>("confirm",
+            $"Eliminar {_selected.Tipo} {_selected.Numero}? Esta accion no se puede deshacer.");
+        if (!ok) return;
+        _busy = true;
+        try
         {
-            _huboCambios = true;
-            _selected = null;
-            await CargarAsync();
+            var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades/{_selected.Id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                _huboCambios = true;
+                _selected = null;
+                _editMode = false;
+                ShowMsg("Unidad eliminada.", false);
+                await CargarAsync();
+            }
+            else
+            {
+                string msg;
+                try { var e = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>(); msg = e != null && e.TryGetValue("error", out var m) ? m : "No se pudo eliminar."; }
+                catch { msg = "No se pudo eliminar."; }
+                ShowMsg(msg, true);
+            }
         }
-        else { ShowMsg("No se pudo eliminar", true); }
+        catch (Exception ex) { ShowMsg(ex.Message, true); }
+        finally { _busy = false; }
     }
 
     // Elimina una torre/bloque. El backend bloquea si aun tiene unidades (guarda) y devuelve el motivo.

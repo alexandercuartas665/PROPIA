@@ -124,7 +124,10 @@ public class MiCopropiedadController : ControllerBase
     }
     [HttpDelete("unidades/{id:guid}")]
     public async Task<IActionResult> EliminarUnidad(Guid id, CancellationToken ct)
-        => await _svc.EliminarUnidadAsync(id, ct) ? NoContent() : NotFound();
+    {
+        try { return await _svc.EliminarUnidadAsync(id, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
 
     // ---------- Vinculos entre unidades (RN-09) ----------
     [HttpGet("unidades/{id:guid}/vinculos")]

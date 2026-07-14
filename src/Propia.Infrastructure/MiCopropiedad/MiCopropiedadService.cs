@@ -1173,7 +1173,12 @@ public class MiCopropiedadService : IMiCopropiedadService
         var u = await _db.UnidadesPrivadas.FirstOrDefaultAsync(x => x.Id == unidadId, ct);
         if (u is null) return false;
         _db.UnidadesPrivadas.Remove(u);
-        await _db.SaveChangesAsync(ct);
+        try { await _db.SaveChangesAsync(ct); }
+        catch (DbUpdateException)
+        {
+            throw new InvalidOperationException(
+                "No se puede eliminar: la unidad tiene registros asociados (cartera, PQRS, reservas, etc.). Desvinculalos primero.");
+        }
         return true;
     }
 
