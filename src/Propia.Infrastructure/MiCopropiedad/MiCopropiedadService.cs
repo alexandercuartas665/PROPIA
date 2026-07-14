@@ -138,6 +138,10 @@ public class MiCopropiedadService : IMiCopropiedadService
     {
         var t = await _db.Torres.FirstOrDefaultAsync(x => x.Id == torreId, ct);
         if (t is null) return false;
+        // Guarda: no eliminar una torre/bloque que aun tiene unidades (evita orfanarlas via SetNull).
+        var nUnidades = await _db.UnidadesPrivadas.CountAsync(u => u.TorreId == torreId, ct);
+        if (nUnidades > 0)
+            throw new InvalidOperationException($"No se puede eliminar: tiene {nUnidades} unidad(es) asignada(s). Elimina o reasigna las unidades primero.");
         _db.Torres.Remove(t);
         await _db.SaveChangesAsync(ct);
         return true;
@@ -1361,6 +1365,10 @@ public class MiCopropiedadService : IMiCopropiedadService
     {
         var z = await _db.ZonasComunes.FirstOrDefaultAsync(x => x.Id == zonaId, ct);
         if (z is null) return false;
+        // Guarda: no eliminar una zona con reservas asociadas (FK Restrict en Reserva).
+        var nReservas = await _db.Reservas.CountAsync(r => r.ZonaComunId == zonaId, ct);
+        if (nReservas > 0)
+            throw new InvalidOperationException($"No se puede eliminar: la zona tiene {nReservas} reserva(s) asociada(s).");
         _db.ZonasComunes.Remove(z);
         await _db.SaveChangesAsync(ct);
         return true;
@@ -1484,7 +1492,12 @@ public class MiCopropiedadService : IMiCopropiedadService
         var e = await _db.EquiposActivos.FirstOrDefaultAsync(x => x.Id == equipoId, ct);
         if (e is null) return false;
         _db.EquiposActivos.Remove(e);
-        await _db.SaveChangesAsync(ct);
+        // Los hijos de ficha (fotos/mejoras/campos) caen en cascada; si algo mas lo referencia, avisar.
+        try { await _db.SaveChangesAsync(ct); }
+        catch (DbUpdateException)
+        {
+            throw new InvalidOperationException("No se puede eliminar: el equipo/activo tiene registros asociados.");
+        }
         return true;
     }
 

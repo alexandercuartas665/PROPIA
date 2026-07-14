@@ -68,7 +68,10 @@ public class MiCopropiedadController : ControllerBase
     }
     [HttpDelete("torres/{id:guid}")]
     public async Task<IActionResult> EliminarTorre(Guid id, CancellationToken ct)
-        => await _svc.EliminarTorreAsync(id, ct) ? NoContent() : NotFound();
+    {
+        try { return await _svc.EliminarTorreAsync(id, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
 
     // ---------- Seccion 2: Distribucion - Carga masiva por plantilla Excel ----------
     /// <summary>Descarga la plantilla .xlsx (Instrucciones + Unidades + Torres + Catalogos) con un ejemplo cargable.</summary>
@@ -464,7 +467,10 @@ public class MiCopropiedadController : ControllerBase
         => await _svc.CambiarEstadoZonaAsync(id, req, ct) ? NoContent() : NotFound();
     [HttpDelete("zonas/{id:guid}")]
     public async Task<IActionResult> EliminarZona(Guid id, CancellationToken ct)
-        => await _svc.EliminarZonaComunAsync(id, ct) ? NoContent() : NotFound();
+    {
+        try { return await _svc.EliminarZonaComunAsync(id, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
 
     // ---------- Seccion 7: Equipos ----------
     [HttpGet("equipos")] public async Task<IActionResult> ListEquipos(CancellationToken ct) => Ok(await _svc.ListEquiposAsync(ct));
@@ -489,7 +495,10 @@ public class MiCopropiedadController : ControllerBase
     }
     [HttpDelete("equipos/{id:guid}")]
     public async Task<IActionResult> EliminarEquipo(Guid id, CancellationToken ct)
-        => await _svc.EliminarEquipoAsync(id, ct) ? NoContent() : NotFound();
+    {
+        try { return await _svc.EliminarEquipoAsync(id, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
 
     // ---------- Ficha tecnica completa del equipo/activo ----------
     [HttpGet("equipos/{id:guid}/ficha")]

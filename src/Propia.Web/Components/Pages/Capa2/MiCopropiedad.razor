@@ -519,6 +519,9 @@ else
                             <div class="mc-zn-card-meta">@z.Categoria@(z.CapacidadPersonas.HasValue ? $" · Aforo {z.CapacidadPersonas}" : "") · @(z.EsReservable ? "Reservable" : "No reservable")</div>
                         </div>
                         @if (z.Estado == EstadoZonaComunMantenimiento.EnMantenimiento) { <span class="mc-zn-card-mant">Mant.</span> }
+                        <span class="mc-card-del" role="button" @onclick:stopPropagation="true" @onclick="() => EliminarZona(zona.Id, zona.Nombre)" title="Eliminar zona">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+                        </span>
                         <svg class="mc-zn-card-arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18l6-6-6-6"/></svg>
                     </button>
                 }
@@ -570,6 +573,9 @@ else
                             </div>
                         </div>
                         <span class="mc-eq-badge mc-eq-badge--@EstadoEquipoBadge(e.Estado)">@EstadoEquipoTextoCorto(e.Estado)</span>
+                        <span class="mc-card-del" role="button" @onclick:stopPropagation="true" @onclick="() => EliminarEquipo(eq.Id, eq.Nombre)" title="Eliminar equipo/activo">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+                        </span>
                     </div>
                 }
             </div>
@@ -1004,6 +1010,10 @@ else
     .mc-zn-card-mant { font-size: 9.5px; font-weight: 700; color: #B45309; background: #FEF3DC; padding: 3px 7px; border-radius: 6px; white-space: nowrap; }
     .mc-zn-card-arrow { color: #C3D0DD; flex-shrink: 0; }
     [data-bs-theme="dark"] .mc-zn-card { background: #232B40; border-color: #2D3650; }
+    /* Boton eliminar en tarjetas de zona y equipo (aparece al hover) */
+    .mc-card-del { flex-shrink: 0; width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: #B0BEC9; cursor: pointer; opacity: 0; transition: opacity .12s, color .12s, background .12s; }
+    .mc-zn-card:hover .mc-card-del, .mc-eq-card:hover .mc-card-del { opacity: 1; }
+    .mc-card-del:hover { color: #B91C1C; background: #FEE2E2; }
     [data-bs-theme="dark"] .mc-zn-card-nom { color: #E5E7EB; }
     [data-bs-theme="dark"] .mc-srv-stat,
     [data-bs-theme="dark"] .mc-zn-stat { background: #232B40; border-color: #2D3650; }
@@ -1816,7 +1826,13 @@ else
         if (resp.IsSuccessStatusCode) { _nuevaZona = new(); await CargarAsync(); }
         else Msg(await resp.Content.ReadAsStringAsync(), false);
     }
-    private async Task EliminarZona(Guid id) { await Auth().DeleteAsync($"/api/mi-copropiedad/zonas/{id}"); await CargarAsync(); }
+    private async Task EliminarZona(Guid id, string nombre)
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", $"Eliminar la zona \"{nombre}\"?")) return;
+        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/zonas/{id}");
+        if (resp.IsSuccessStatusCode) { await CargarAsync(); Msg("Zona eliminada.", true); }
+        else { var err = await resp.Content.ReadFromJsonAsync<ApiError>(); Msg(err?.Error ?? "No se pudo eliminar la zona.", false); }
+    }
 
     private async Task CambiarEstadoZona(Guid id, ChangeEventArgs ev)
     {
@@ -1849,7 +1865,13 @@ else
         if (resp.IsSuccessStatusCode) { _nuevoEquipo = new(); await CargarAsync(); }
         else Msg(await resp.Content.ReadAsStringAsync(), false);
     }
-    private async Task EliminarEquipo(Guid id) { await Auth().DeleteAsync($"/api/mi-copropiedad/equipos/{id}"); await CargarAsync(); }
+    private async Task EliminarEquipo(Guid id, string nombre)
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", $"Eliminar el equipo/activo \"{nombre}\"?")) return;
+        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/equipos/{id}");
+        if (resp.IsSuccessStatusCode) { await CargarAsync(); Msg("Equipo eliminado.", true); }
+        else { var err = await resp.Content.ReadFromJsonAsync<ApiError>(); Msg(err?.Error ?? "No se pudo eliminar el equipo.", false); }
+    }
 
     private async Task AbrirProgramarMantenimientoAsync(EquipoActivoDto equipo)
     {
