@@ -61,90 +61,15 @@
             <div class="alert alert-danger">@_loadError <button class="btn btn-sm btn-outline-danger ms-2" @onclick="CargarAsync">Reintentar</button></div>
         }
 
+        @* Las vistas de personas y empresas (lista + tabla con alta inline) viven en componentes
+           extraidos para no engrosar esta pagina. *@
         @if (_tab == "personas")
         {
-            @if (_personas is null)
-            {
-                <div class="dir-loading"><div class="spinner-border" style="color: var(--propia-brand, #6D4FE3);"></div></div>
-            }
-            else if (_personas.Count == 0)
-            {
-                <div class="dir-empty">
-                    <strong>Sin personas vinculadas a esta copropiedad aun.</strong>
-                    <span>Las personas creadas en Mi Copropiedad (Equipo, Comites, Revisor Fiscal) apareceran aqui cuando esten vinculadas.</span>
-                </div>
-            }
-            else
-            {
-                <div class="dir-list">
-                    @foreach (var p in _personas)
-                    {
-                        var pid = p.Id;
-                        <button type="button" class="dir-row" @onclick="() => AbrirPersona(pid)">
-                            <div class="dir-avatar dir-avatar--persona">@Iniciales(p.Nombres, p.Apellidos)</div>
-                            <div class="dir-col-main">
-                                <div class="dir-name">@p.Nombres @p.Apellidos</div>
-                                <div class="dir-meta">@p.TipoDocumento @p.Documento</div>
-                            </div>
-                            <div class="dir-tags">
-                                @if (p.PerfilIncompleto) { <span class="dir-tag dir-tag--warn">Incompleto</span> }
-                                @if (!string.IsNullOrEmpty(p.Email)) { <span class="dir-tag dir-tag--mute">@p.Email</span> }
-                            </div>
-                            <div class="dir-unidad">@(p.Telefono ?? "")</div>
-                            <div class="dir-estado">
-                                @if (p.Estado == EstadoDirectorio.Activo)
-                                {
-                                    <span class="dir-dot dir-dot--ok"></span>
-                                    <span class="dir-estado-txt dir-estado-txt--ok">Activo</span>
-                                }
-                                else
-                                {
-                                    <span class="dir-dot dir-dot--off"></span>
-                                    <span class="dir-estado-txt dir-estado-txt--off">@p.Estado</span>
-                                }
-                            </div>
-                            <svg class="dir-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C3D0DD" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
-                        </button>
-                    }
-                </div>
-            }
+            <DirectorioPersonasVista Personas="_personas" OnAbrir="AbrirPersona" OnCrear="CrearPersonaTabla" />
         }
         else
         {
-            @if (_empresas is null)
-            {
-                <div class="dir-loading"><div class="spinner-border" style="color: var(--propia-brand, #6D4FE3);"></div></div>
-            }
-            else if (_empresas.Count == 0)
-            {
-                <div class="dir-empty"><strong>Sin empresas vinculadas a esta copropiedad aun.</strong></div>
-            }
-            else
-            {
-                <div class="dir-list">
-                    @foreach (var e in _empresas)
-                    {
-                        var eid = e.Id;
-                        <button type="button" class="dir-row" @onclick="() => AbrirEmpresa(eid)">
-                            <div class="dir-avatar dir-avatar--empresa">@InicialesEmpresa(e.RazonSocial)</div>
-                            <div class="dir-col-main">
-                                <div class="dir-name">@e.RazonSocial</div>
-                                <div class="dir-meta">NIT @e.Nit@(string.IsNullOrEmpty(e.DigitoVerificacion) ? "" : $"-{e.DigitoVerificacion}")</div>
-                            </div>
-                            <div class="dir-tags">
-                                @if (!string.IsNullOrEmpty(e.NombreComercial)) { <span class="dir-tag dir-tag--mute">@e.NombreComercial</span> }
-                                @if (!string.IsNullOrEmpty(e.Email)) { <span class="dir-tag dir-tag--mute">@e.Email</span> }
-                            </div>
-                            <div class="dir-unidad">@(e.Telefono ?? "")</div>
-                            <div class="dir-estado">
-                                <span class="dir-dot dir-dot--ok"></span>
-                                <span class="dir-estado-txt dir-estado-txt--ok">@e.Estado</span>
-                            </div>
-                            <svg class="dir-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C3D0DD" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
-                        </button>
-                    }
-                </div>
-            }
+            <DirectorioEmpresasVista Empresas="_empresas" OnAbrir="AbrirEmpresa" OnCrear="CrearEmpresaTabla" />
         }
     }
 </div>
@@ -727,7 +652,9 @@
         catch { /* prerender */ }
     }
 
-    private void SetTab(string tab) { _tab = tab; _ = CargarAsync(); }
+    // await (no fire-and-forget) para que Blazor re-renderice al terminar la carga;
+    // antes quedaba en "loading" al cambiar de pestana porque _ = CargarAsync() no re-renderiza.
+    private async Task SetTab(string tab) { _tab = tab; await CargarAsync(); }
 
     private async Task CargarAsync()
     {
@@ -896,6 +823,42 @@
             else { _msgPersona = await resp.Content.ReadAsStringAsync(); _msgPersonaClass = "alert-danger"; }
         }
         finally { _busy = false; }
+    }
+
+    // Alta inline desde la vista Tabla (personas). Crea la persona + la vincula a la copropiedad.
+    private async Task CrearPersonaTabla(NuevaPersonaDir d)
+    {
+        var http = Auth();
+        var crear = await http.PostAsJsonAsync("/api/directorio/personas",
+            new CrearPersonaRequest(d.TipoDocumento, d.Documento, d.Nombres, d.Apellidos, d.Email, d.Telefono, null, null));
+        if (!crear.IsSuccessStatusCode)
+        {
+            _loadError = "No se pudo crear la persona: " + await crear.Content.ReadAsStringAsync();
+            return;
+        }
+        var nueva = await crear.Content.ReadFromJsonAsync<PersonaDetalleDto>();
+        if (nueva is not null)
+            await http.PostAsJsonAsync("/api/directorio/vinculos",
+                new CrearVinculoRequest(EntidadDirectorio.Persona, nueva.Id, DateOnly.FromDateTime(DateTime.UtcNow), new List<Guid>()));
+        await CargarAsync();
+    }
+
+    // Alta inline desde la vista Tabla (empresas).
+    private async Task CrearEmpresaTabla(NuevaEmpresaDir d)
+    {
+        var http = Auth();
+        var crear = await http.PostAsJsonAsync("/api/directorio/empresas",
+            new CrearEmpresaRequest(d.Nit, d.Dv, d.RazonSocial, d.NombreComercial, d.Email, d.Telefono, null, null, null, null, null));
+        if (!crear.IsSuccessStatusCode)
+        {
+            _loadError = "No se pudo crear la empresa: " + await crear.Content.ReadAsStringAsync();
+            return;
+        }
+        var nueva = await crear.Content.ReadFromJsonAsync<EmpresaDetalleDto>();
+        if (nueva is not null)
+            await http.PostAsJsonAsync("/api/directorio/vinculos",
+                new CrearVinculoRequest(EntidadDirectorio.Empresa, nueva.Id, DateOnly.FromDateTime(DateTime.UtcNow), new List<Guid>()));
+        await CargarAsync();
     }
 
     private async Task CrearPersona()
