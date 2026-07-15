@@ -306,6 +306,8 @@
                             </div>
                         </div>
                     }
+                    @* Alta inline: crea/encuentra la persona en el Directorio y la invita con un rol *@
+                    <UsuariosInvitarFila Roles="_roles" OnInvitar="InvitarUsuarioTabla" />
                 </div>
             }
         }
@@ -1403,6 +1405,41 @@
     }
 
     private void SeleccionarPersona(PersonaResumenDto p) { _personaSel = p; _personasEncontradas.Clear(); }
+
+    // Alta inline desde la tabla: encuentra o crea la persona en el Directorio y la invita con el rol.
+    private async Task InvitarUsuarioTabla(NuevoUsuarioInvitar d)
+    {
+        _msg = null;
+        var http = Auth();
+
+        // 1) Buscar la persona por documento; si no existe, crearla en el Directorio.
+        Guid personaId;
+        var buscar = await http.PostAsJsonAsync("/api/directorio/personas/buscar",
+            new BuscarPorDocumentoRequest(d.TipoDocumento, d.Documento));
+        if (buscar.StatusCode == System.Net.HttpStatusCode.OK)
+        {
+            var existente = await buscar.Content.ReadFromJsonAsync<PersonaDetalleDto>();
+            if (existente is null) { _msg = "No se pudo leer la persona."; _msgClass = "alert-danger"; return; }
+            personaId = existente.Id;
+        }
+        else
+        {
+            var crear = await http.PostAsJsonAsync("/api/directorio/personas",
+                new CrearPersonaRequest(d.TipoDocumento, d.Documento, d.Nombres, d.Apellidos, null, null, null, null));
+            if (!crear.IsSuccessStatusCode) { _msg = "No se pudo crear la persona: " + await crear.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            var nueva = await crear.Content.ReadFromJsonAsync<PersonaDetalleDto>();
+            if (nueva is null) { _msg = "No se pudo crear la persona."; _msgClass = "alert-danger"; return; }
+            personaId = nueva.Id;
+        }
+
+        // 2) Enviar la invitacion (queda en Pendientes hasta que la persona la acepte).
+        var inv = await http.PostAsJsonAsync("/api/usuarios/invitaciones",
+            new CrearInvitacionRequest(personaId, d.RolId, CanalEnvioInvitacion.Email));
+        if (!inv.IsSuccessStatusCode) { _msg = "No se pudo invitar: " + await inv.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+
+        _msg = $"Invitacion enviada a {d.Nombres} {d.Apellidos}. Aparece en Pendientes."; _msgClass = "alert-success";
+        await CargarAsync();
+    }
 
     private async Task EnviarInvitacion()
     {
