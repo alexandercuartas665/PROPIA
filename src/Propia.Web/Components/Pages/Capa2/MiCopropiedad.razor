@@ -454,21 +454,25 @@ else
 
     @* Seccion 6 - Zonas Comunes *@
     <SeccionCard Titulo="3. Zonas Comunes" Subtitulo="Salones, deportivas, parques..." Completa="@CompZonasComunes" Abierta="@_secciones[SecZon]" OnToggle="() => ToggleSec(SecZon)">
-        <div class="mc-zn-summary">
-            <div class="mc-zn-stat">
-                <div class="mc-zn-stat-val">@_zonas.Count(z => z.Estado == EstadoZonaComunMantenimiento.Activa)</div>
-                <div class="mc-zn-stat-lbl">activas</div>
+        <div class="mc-sec-bar">
+            <div class="mc-zn-summary">
+                <div class="mc-zn-stat"><div class="mc-zn-stat-val">@_zonas.Count(z => z.Estado == EstadoZonaComunMantenimiento.Activa)</div><div class="mc-zn-stat-lbl">activas</div></div>
+                <div class="mc-zn-stat"><div class="mc-zn-stat-val">@_zonas.Count(z => z.Estado == EstadoZonaComunMantenimiento.EnMantenimiento)</div><div class="mc-zn-stat-lbl">en mantenimiento</div></div>
+                <div class="mc-zn-stat"><div class="mc-zn-stat-val">@_zonas.Count(z => z.EsReservable)</div><div class="mc-zn-stat-lbl">reservables</div></div>
             </div>
-            <div class="mc-zn-stat">
-                <div class="mc-zn-stat-val">@_zonas.Count(z => z.Estado == EstadoZonaComunMantenimiento.EnMantenimiento)</div>
-                <div class="mc-zn-stat-lbl">en mantenimiento</div>
-            </div>
-            <div class="mc-zn-stat">
-                <div class="mc-zn-stat-val">@_zonas.Count(z => z.EsReservable)</div>
-                <div class="mc-zn-stat-lbl">reservables</div>
+            <div class="mc-viewtoggle">
+                <button type="button" class="mc-vt @(_znView == "cards" ? "on" : "")" @onclick='() => _znView = "cards"' title="Tarjetas">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                    Tarjetas
+                </button>
+                <button type="button" class="mc-vt @(_znView == "list" ? "on" : "")" @onclick='() => _znView = "list"' title="Lista">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                    Lista
+                </button>
             </div>
         </div>
-        @if (_zonas.Count > 0)
+
+        @if (_znView == "cards")
         {
             <div class="mc-zn-cards">
                 @foreach (var z in _zonas.OrderBy(x => x.Categoria).ThenBy(x => x.Nombre))
@@ -487,35 +491,115 @@ else
                         <svg class="mc-zn-card-arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18l6-6-6-6"/></svg>
                     </button>
                 }
+
+                @* Compositor progresivo: la tarjeta crece a medida que se agregan datos (estilo tablero) *@
+                @if (_znComposerOpen)
+                {
+                    <div class="mc-composer">
+                        <input class="mc-composer-inp" placeholder="Nombre de la zona..." autofocus
+                               value="@_znDraft.Nombre"
+                               @oninput="@(e => { _znDraft.Nombre = e.Value?.ToString() ?? string.Empty; RevealZn(0); })"
+                               @onkeydown="ZnKeydown" />
+                        @if (_znReveal >= 1)
+                        {
+                            <select class="mc-composer-sel mc-composer-appear" @bind="_znDraft.Categoria" @onfocus="@(() => RevealZn(1))">
+                                @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c">@c</option> }
+                            </select>
+                        }
+                        @if (_znReveal >= 2)
+                        {
+                            <select class="mc-composer-sel mc-composer-appear" @onfocus="@(() => RevealZn(2))"
+                                    @onchange="@(e => _znDraft.EsReservable = e.Value?.ToString() == "true")">
+                                <option value="false" selected="@(!_znDraft.EsReservable)">No reservable</option>
+                                <option value="true" selected="@_znDraft.EsReservable">Reservable</option>
+                            </select>
+                        }
+                        @if (_znReveal >= 3)
+                        {
+                            <input type="number" min="0" class="mc-composer-sel mc-composer-appear" placeholder="Aforo (personas)"
+                                   @bind="_znDraft.Aforo" @onfocus="@(() => RevealZn(3))" />
+                        }
+                        <div class="mc-composer-foot">
+                            <button type="button" class="mc-composer-cancel" @onclick="CancelarZnComposer">Cancelar</button>
+                            <button type="button" class="mc-composer-ok" @onclick="() => CrearZonaDesdeDraft()" disabled="@(_znBusy || string.IsNullOrWhiteSpace(_znDraft.Nombre))">@(_znBusy ? "Creando..." : "Crear")</button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <button type="button" class="mc-add-card" @onclick="AbrirZnComposer">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                        Agregar zona comun
+                    </button>
+                }
             </div>
         }
-        <div class="mc-actions">
-            <button class="propia-btn-brand" @onclick="AbrirGestionarZonasAsync">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-                Gestionar zonas
-            </button>
-        </div>
+        else
+        {
+            @* Vista Lista tipo tablero: gestiona el alta de registros desde el modo tabla *@
+            <div class="mc-list">
+                <div class="mc-list-head mc-zn-grid">
+                    <div>NOMBRE</div><div>CATEGORIA</div><div>RESERVA</div><div>AFORO</div><div>ESTADO</div><div></div>
+                </div>
+                @foreach (var z in _zonas.OrderBy(x => x.Categoria).ThenBy(x => x.Nombre))
+                {
+                    var zona = z;
+                    <div class="mc-list-row mc-zn-grid">
+                        <button type="button" class="mc-list-link" @onclick="() => AbrirFichaZonaAsync(zona)" title="Abrir ficha">@z.Nombre</button>
+                        <div class="mc-list-c">@z.Categoria</div>
+                        <div class="mc-list-c">@(z.EsReservable ? "Si" : "No")</div>
+                        <div class="mc-list-c">@(z.CapacidadPersonas?.ToString() ?? "-")</div>
+                        <div class="mc-list-c"><span class="mc-list-badge">@z.Estado</span></div>
+                        <div class="mc-list-act">
+                            <button type="button" class="mc-card-del2" @onclick="() => EliminarZona(zona.Id, zona.Nombre)" title="Eliminar">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                }
+                @* Fila nueva: alta inline *@
+                <div class="mc-list-newrow mc-zn-grid">
+                    <input class="mc-row-inp" placeholder="Nueva zona comun..." value="@_znDraft.Nombre"
+                           @oninput="@(e => _znDraft.Nombre = e.Value?.ToString() ?? string.Empty)" @onkeydown="ZnKeydown" />
+                    <select class="mc-row-inp" @bind="_znDraft.Categoria">
+                        @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c">@c</option> }
+                    </select>
+                    <select class="mc-row-inp" @onchange="@(e => _znDraft.EsReservable = e.Value?.ToString() == "true")">
+                        <option value="false" selected="@(!_znDraft.EsReservable)">No</option>
+                        <option value="true" selected="@_znDraft.EsReservable">Si</option>
+                    </select>
+                    <input type="number" min="0" class="mc-row-inp" placeholder="-" @bind="_znDraft.Aforo" />
+                    <div class="mc-list-c">Activa</div>
+                    <div class="mc-list-act">
+                        <button type="button" class="mc-row-add" @onclick="() => CrearZonaDesdeDraft()" disabled="@(_znBusy || string.IsNullOrWhiteSpace(_znDraft.Nombre))">+ Agregar</button>
+                    </div>
+                </div>
+            </div>
+        }
     </SeccionCard>
 
     @* Seccion 7 - Equipos *@
     <SeccionCard Titulo="4. Equipos y Activos" Subtitulo="Que activos fisicos tiene?" Completa="@CompEquipos" Abierta="@_secciones[SecEq]" OnToggle="() => ToggleSec(SecEq)">
-        <div class="mc-eq-summary">
-            <div class="mc-eq-stat">
-                <div class="mc-eq-stat-val">@_equipos.Count(e => e.Estado == EstadoEquipoActivo.Operativo)</div>
-                <div class="mc-eq-stat-lbl">operativos</div>
+        <div class="mc-sec-bar">
+            <div class="mc-eq-summary">
+                <div class="mc-eq-stat"><div class="mc-eq-stat-val">@_equipos.Count(e => e.Estado == EstadoEquipoActivo.Operativo)</div><div class="mc-eq-stat-lbl">operativos</div></div>
+                <div class="mc-eq-stat"><div class="mc-eq-stat-val">@_equipos.Count(e => e.Estado == EstadoEquipoActivo.EnMantenimiento)</div><div class="mc-eq-stat-lbl">en mantenimiento</div></div>
+                <div class="mc-eq-stat @(_equipos.Any(e => e.Estado == EstadoEquipoActivo.FueraDeServicio) ? "mc-eq-stat--warn" : "")"><div class="mc-eq-stat-val">@_equipos.Count(e => e.Estado == EstadoEquipoActivo.FueraDeServicio)</div><div class="mc-eq-stat-lbl">fuera de servicio</div></div>
             </div>
-            <div class="mc-eq-stat">
-                <div class="mc-eq-stat-val">@_equipos.Count(e => e.Estado == EstadoEquipoActivo.EnMantenimiento)</div>
-                <div class="mc-eq-stat-lbl">en mantenimiento</div>
-            </div>
-            <div class="mc-eq-stat @(_equipos.Any(e => e.Estado == EstadoEquipoActivo.FueraDeServicio) ? "mc-eq-stat--warn" : "")">
-                <div class="mc-eq-stat-val">@_equipos.Count(e => e.Estado == EstadoEquipoActivo.FueraDeServicio)</div>
-                <div class="mc-eq-stat-lbl">fuera de servicio</div>
+            <div class="mc-viewtoggle">
+                <button type="button" class="mc-vt @(_eqView == "cards" ? "on" : "")" @onclick='() => _eqView = "cards"' title="Tarjetas">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                    Tarjetas
+                </button>
+                <button type="button" class="mc-vt @(_eqView == "list" ? "on" : "")" @onclick='() => _eqView = "list"' title="Lista">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                    Lista
+                </button>
             </div>
         </div>
-        @if (_equipos.Count > 0)
+
+        @if (_eqView == "cards")
         {
-            @* Cards estilo prototipo: click abre ficha tecnica. *@
             <div class="mc-eq-grid">
                 @foreach (var e in _equipos)
                 {
@@ -540,14 +624,97 @@ else
                         </span>
                     </div>
                 }
+
+                @* Compositor progresivo: la tarjeta crece a medida que se agregan datos *@
+                @if (_eqComposerOpen)
+                {
+                    <div class="mc-composer">
+                        <input class="mc-composer-inp" placeholder="Nombre del equipo o activo..." autofocus
+                               value="@_eqDraft.Nombre"
+                               @oninput="@(e => { _eqDraft.Nombre = e.Value?.ToString() ?? string.Empty; RevealEq(0); })"
+                               @onkeydown="EqKeydown" />
+                        @if (_eqReveal >= 1)
+                        {
+                            <select class="mc-composer-sel mc-composer-appear" @bind="_eqDraft.Categoria" @onfocus="@(() => RevealEq(1))">
+                                @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c">@c</option> }
+                            </select>
+                        }
+                        @if (_eqReveal >= 2)
+                        {
+                            <select class="mc-composer-sel mc-composer-appear" @bind="_eqDraft.Tipo" @onfocus="@(() => RevealEq(2))">
+                                <option value="@TipoElemento.Equipo">Equipo (unitario)</option>
+                                <option value="@TipoElemento.Activo">Activo (agrupado)</option>
+                            </select>
+                        }
+                        @if (_eqReveal >= 3 && _eqDraft.Tipo == TipoElemento.Activo)
+                        {
+                            <input type="number" min="1" class="mc-composer-sel mc-composer-appear" placeholder="Cantidad"
+                                   @bind="_eqDraft.Cantidad" @onfocus="@(() => RevealEq(3))" />
+                        }
+                        @if (_eqReveal >= 3)
+                        {
+                            <select class="mc-composer-sel mc-composer-appear" @onfocus="@(() => RevealEq(3))"
+                                    @onchange="@(e => _eqDraft.EsReservable = e.Value?.ToString() == "true")">
+                                <option value="false" selected="@(!_eqDraft.EsReservable)">No reservable</option>
+                                <option value="true" selected="@_eqDraft.EsReservable">Reservable</option>
+                            </select>
+                        }
+                        <div class="mc-composer-foot">
+                            <button type="button" class="mc-composer-cancel" @onclick="CancelarEqComposer">Cancelar</button>
+                            <button type="button" class="mc-composer-ok" @onclick="() => CrearEquipoDesdeDraft()" disabled="@(_eqBusy || string.IsNullOrWhiteSpace(_eqDraft.Nombre))">@(_eqBusy ? "Creando..." : "Crear")</button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <button type="button" class="mc-add-card" @onclick="AbrirEqComposer">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                        Agregar equipo o activo
+                    </button>
+                }
             </div>
         }
-        <div class="mc-actions">
-            <button class="propia-btn-brand" type="button" @onclick="AbrirGestionarEquiposAsync">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-                Gestionar equipos
-            </button>
-        </div>
+        else
+        {
+            @* Vista Lista tipo tablero: alta de registros desde el modo tabla *@
+            <div class="mc-list">
+                <div class="mc-list-head mc-eqlist-grid">
+                    <div>NOMBRE</div><div>CATEGORIA</div><div>TIPO</div><div>CANT</div><div>ESTADO</div><div></div>
+                </div>
+                @foreach (var e in _equipos)
+                {
+                    var eq = e;
+                    <div class="mc-list-row mc-eqlist-grid">
+                        <button type="button" class="mc-list-link" @onclick="() => AbrirFichaEquipoAsync(eq)" title="Abrir ficha">@e.Nombre</button>
+                        <div class="mc-list-c">@e.Categoria</div>
+                        <div class="mc-list-c">@e.Tipo</div>
+                        <div class="mc-list-c">@e.Cantidad</div>
+                        <div class="mc-list-c"><span class="mc-eq-badge mc-eq-badge--@EstadoEquipoBadge(e.Estado)">@EstadoEquipoTextoCorto(e.Estado)</span></div>
+                        <div class="mc-list-act">
+                            <button type="button" class="mc-card-del2" @onclick="() => EliminarEquipo(eq.Id, eq.Nombre)" title="Eliminar">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                }
+                <div class="mc-list-newrow mc-eqlist-grid">
+                    <input class="mc-row-inp" placeholder="Nuevo equipo o activo..." value="@_eqDraft.Nombre"
+                           @oninput="@(e => _eqDraft.Nombre = e.Value?.ToString() ?? string.Empty)" @onkeydown="EqKeydown" />
+                    <select class="mc-row-inp" @bind="_eqDraft.Categoria">
+                        @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c">@c</option> }
+                    </select>
+                    <select class="mc-row-inp" @bind="_eqDraft.Tipo">
+                        <option value="@TipoElemento.Equipo">Equipo</option>
+                        <option value="@TipoElemento.Activo">Activo</option>
+                    </select>
+                    <input type="number" min="1" class="mc-row-inp" @bind="_eqDraft.Cantidad" disabled="@(_eqDraft.Tipo == TipoElemento.Equipo)" />
+                    <div class="mc-list-c">Operativo</div>
+                    <div class="mc-list-act">
+                        <button type="button" class="mc-row-add" @onclick="() => CrearEquipoDesdeDraft()" disabled="@(_eqBusy || string.IsNullOrWhiteSpace(_eqDraft.Nombre))">+ Agregar</button>
+                    </div>
+                </div>
+            </div>
+        }
     </SeccionCard>
 
     @* Seccion 2 - Finanzas (movida al puesto 2 desde el final). Placeholder vacio:
@@ -962,6 +1129,47 @@ else
         background: #F5F8FA; border: 1px solid #E1E8EE;
         padding: 4px 10px; border-radius: 7px;
     }
+    /* Barra de seccion: resumen + toggle de vista (tarjetas/lista) */
+    .mc-sec-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+    .mc-viewtoggle { display: inline-flex; gap: 2px; background: #EEF2F6; border-radius: 9px; padding: 3px; }
+    .mc-vt { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: #6B7C8F; font-size: 12.5px; font-weight: 600; padding: 5px 11px; border-radius: 7px; cursor: pointer; font-family: inherit; }
+    .mc-vt.on { background: #fff; color: var(--propia-primary, #6D4FE3); box-shadow: 0 1px 3px rgba(27,42,58,.12); }
+
+    /* Tarjeta "Agregar" + compositor progresivo (estilo tablero) */
+    .mc-add-card { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; border: 1.5px dashed #CBD6E2; border-radius: 11px; padding: 13px; background: #FBFCFD; color: var(--propia-primary, #6D4FE3); font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .mc-add-card:hover { border-color: var(--propia-primary, #6D4FE3); background: #F5F1FE; }
+    .mc-composer { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px; border: 1.5px solid var(--propia-primary, #6D4FE3); border-radius: 11px; padding: 12px; background: #fff; }
+    .mc-composer-inp, .mc-composer-sel { width: 100%; border: 1px solid #E1E8EE; border-radius: 8px; padding: 8px 11px; font-size: 13px; color: #33475B; outline: none; font-family: inherit; box-sizing: border-box; }
+    .mc-composer-inp { font-weight: 600; }
+    .mc-composer-inp:focus, .mc-composer-sel:focus { border-color: var(--propia-primary, #6D4FE3); }
+    .mc-composer-appear { animation: mcComposerIn .18s ease; }
+    @@keyframes mcComposerIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+    .mc-composer-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
+    .mc-composer-cancel, .mc-composer-ok { height: 32px; padding: 0 14px; border-radius: 8px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .mc-composer-cancel { background: #fff; border: 1px solid #E1E8EE; color: #516F90; }
+    .mc-composer-ok { background: var(--propia-primary, #6D4FE3); border: 1px solid var(--propia-primary, #6D4FE3); color: #fff; }
+    .mc-composer-ok:disabled { opacity: .55; cursor: default; }
+
+    /* Vista Lista (tabla) con alta inline */
+    .mc-list { border: 1px solid #E1E8EE; border-radius: 11px; overflow: hidden; margin-bottom: 12px; }
+    .mc-zn-grid { display: grid; grid-template-columns: minmax(0,2.2fr) 1.2fr .8fr .8fr 1fr 70px; align-items: center; gap: 8px; padding: 8px 14px; }
+    .mc-eqlist-grid { display: grid; grid-template-columns: minmax(0,2.2fr) 1.3fr 1fr .6fr 1fr 70px; align-items: center; gap: 8px; padding: 8px 14px; }
+    .mc-list-head { background: #F7F9FB; font-size: 10.5px; font-weight: 700; color: #90A4B7; letter-spacing: .4px; border-bottom: 1px solid #E1E8EE; }
+    .mc-list-row { border-bottom: 1px solid #EEF2F6; font-size: 13px; color: #33475B; }
+    .mc-list-row:hover { background: #FBFCFD; }
+    .mc-list-link { border: 0; background: transparent; text-align: left; padding: 0; font-size: 13px; font-weight: 600; color: var(--propia-primary, #6D4FE3); cursor: pointer; font-family: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mc-list-link:hover { text-decoration: underline; }
+    .mc-list-c { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mc-list-badge { font-size: 11px; font-weight: 600; color: #516F90; background: #EEF2F6; padding: 2px 8px; border-radius: 6px; }
+    .mc-list-act { display: flex; justify-content: flex-end; }
+    .mc-card-del2 { width: 28px; height: 28px; border-radius: 7px; border: 1px solid transparent; background: transparent; color: #B0BEC9; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .mc-card-del2:hover { color: #B91C1C; background: #FEE2E2; }
+    .mc-list-newrow { background: #FBFAFE; }
+    .mc-row-inp { width: 100%; border: 1px solid #E1E8EE; border-radius: 7px; padding: 6px 9px; font-size: 12.5px; color: #33475B; outline: none; font-family: inherit; box-sizing: border-box; background: #fff; }
+    .mc-row-inp:focus { border-color: var(--propia-primary, #6D4FE3); }
+    .mc-row-add { border: 1px solid var(--propia-primary, #6D4FE3); background: var(--propia-primary, #6D4FE3); color: #fff; font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 7px; cursor: pointer; white-space: nowrap; font-family: inherit; }
+    .mc-row-add:disabled { opacity: .5; cursor: default; }
+
     .mc-zn-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
     .mc-zn-card { display: flex; align-items: center; gap: 11px; border: 1px solid #E1E8EE; border-radius: 11px; padding: 11px 14px; width: 100%; text-align: left; background: #fff; cursor: pointer; transition: border-color .12s, background .12s; }
     .mc-zn-card:hover { border-color: #6D4FE3; background: #FBFAFE; }
@@ -1916,6 +2124,114 @@ else
         var http = HttpFactory.CreateClient("PropiaApi");
         http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
         return http;
+    }
+
+    // ---------- Zonas Comunes: vista (tarjetas/lista) + compositor progresivo + alta inline ----------
+    private string _znView = "cards";
+    private bool _znComposerOpen;
+    private int _znReveal;
+    private bool _znBusy;
+    private readonly ZonaDraft _znDraft = new();
+
+    private sealed class ZonaDraft
+    {
+        public string Nombre = "";
+        public CategoriaZonaComun Categoria = CategoriaZonaComun.Social;
+        public bool EsReservable;
+        public int? Aforo;
+        public void Reset() { Nombre = ""; Categoria = CategoriaZonaComun.Social; EsReservable = false; Aforo = null; }
+    }
+
+    private void AbrirZnComposer() { _znDraft.Reset(); _znReveal = 0; _znComposerOpen = true; }
+    private void CancelarZnComposer() { _znComposerOpen = false; _znDraft.Reset(); _znReveal = 0; }
+    private void RevealZn(int idx) { var t = idx + 1; if (t <= 3 && _znReveal < t) _znReveal = t; }
+
+    private async Task ZnKeydown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await CrearZonaDesdeDraft();
+        else if (e.Key == "Escape") CancelarZnComposer();
+    }
+
+    private async Task CrearZonaDesdeDraft()
+    {
+        if (string.IsNullOrWhiteSpace(_znDraft.Nombre)) return;
+        _znBusy = true;
+        try
+        {
+            var req = new CrearZonaComunRequest(_znDraft.Nombre.Trim(), _znDraft.Categoria, null,
+                _znDraft.EsReservable, null, _znDraft.Aforo, null, null);
+            var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/zonas", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                _znDraft.Reset(); _znReveal = 0; _znComposerOpen = false;
+                await CargarAsync();
+                Msg("Zona comun creada. Haz clic en ella para completar la ficha.", true);
+            }
+            else
+            {
+                string m;
+                try { var err = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>(); m = err != null && err.TryGetValue("error", out var e) ? e : "No se pudo crear la zona."; }
+                catch { m = "No se pudo crear la zona."; }
+                Msg(m, false);
+            }
+        }
+        catch (Exception ex) { Msg(ex.Message, false); }
+        finally { _znBusy = false; }
+    }
+
+    // ---------- Equipos y Activos: vista (tarjetas/lista) + compositor progresivo + alta inline ----------
+    private string _eqView = "cards";
+    private bool _eqComposerOpen;
+    private int _eqReveal;
+    private bool _eqBusy;
+    private readonly EquipoDraft _eqDraft = new();
+
+    private sealed class EquipoDraft
+    {
+        public string Nombre = "";
+        public CategoriaEquipo Categoria = CategoriaEquipo.Otros;
+        public TipoElemento Tipo = TipoElemento.Equipo;
+        public int Cantidad = 1;
+        public bool EsReservable;
+        public void Reset() { Nombre = ""; Categoria = CategoriaEquipo.Otros; Tipo = TipoElemento.Equipo; Cantidad = 1; EsReservable = false; }
+    }
+
+    private void AbrirEqComposer() { _eqDraft.Reset(); _eqReveal = 0; _eqComposerOpen = true; }
+    private void CancelarEqComposer() { _eqComposerOpen = false; _eqDraft.Reset(); _eqReveal = 0; }
+    private void RevealEq(int idx) { var t = idx + 1; if (t <= 3 && _eqReveal < t) _eqReveal = t; }
+
+    private async Task EqKeydown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await CrearEquipoDesdeDraft();
+        else if (e.Key == "Escape") CancelarEqComposer();
+    }
+
+    private async Task CrearEquipoDesdeDraft()
+    {
+        if (string.IsNullOrWhiteSpace(_eqDraft.Nombre)) return;
+        _eqBusy = true;
+        try
+        {
+            // Un "Equipo" es unitario (cantidad 1); solo un "Activo" agrupa varias unidades.
+            var cant = _eqDraft.Tipo == TipoElemento.Equipo ? 1 : Math.Max(1, _eqDraft.Cantidad);
+            var req = new CrearEquipoActivoRequest(_eqDraft.Nombre.Trim(), _eqDraft.Categoria, _eqDraft.Tipo, cant, _eqDraft.EsReservable);
+            var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/equipos", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                _eqDraft.Reset(); _eqReveal = 0; _eqComposerOpen = false;
+                await CargarAsync();
+                Msg("Equipo/activo creado. Haz clic en el para completar la ficha.", true);
+            }
+            else
+            {
+                string m;
+                try { var err = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>(); m = err != null && err.TryGetValue("error", out var e) ? e : "No se pudo crear el equipo."; }
+                catch { m = "No se pudo crear el equipo."; }
+                Msg(m, false);
+            }
+        }
+        catch (Exception ex) { Msg(ex.Message, false); }
+        finally { _eqBusy = false; }
     }
 
     private void Msg(string m, bool exito) { _actionMsg = m; _actionMsgClass = exito ? "alert-success" : "alert-danger"; }
