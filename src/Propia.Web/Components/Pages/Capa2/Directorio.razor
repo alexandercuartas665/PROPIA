@@ -572,6 +572,42 @@
     .dir-cr-check { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 13px; color: #516F90; font-weight: 600; cursor: pointer; }
     .dir-cr-check input { width: 16px; height: 16px; accent-color: var(--propia-brand, #6D4FE3); cursor: pointer; }
     .dir-cr-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 16px 24px; border-top: 1px solid #EEF3F8; flex-shrink: 0; }
+
+    /* Tabla del Directorio (dtab-*): compartida por las vistas de Personas y Empresas.
+       Vive aqui, en la pagina, y no dentro de una de las vistas: los estilos declarados
+       en un componente solo estan en el DOM mientras ese componente se renderiza, asi
+       que la vista que no estuviera activa se quedaba sin ellos. Cada vista aporta solo
+       su grid (.dvp-grid personas / .dve-grid empresas), que es lo unico que difiere. */
+    .dtab-bar { display: flex; justify-content: flex-end; margin-bottom: 10px; }
+    .dtab-toggle { display: inline-flex; gap: 2px; background: #EEF2F6; border-radius: 9px; padding: 3px; }
+    .dtab-vt { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: #6B7C8F; font-size: 12.5px; font-weight: 600; padding: 5px 11px; border-radius: 7px; cursor: pointer; font-family: inherit; }
+    .dtab-vt.on { background: #fff; color: var(--propia-brand, #6D4FE3); box-shadow: 0 1px 3px rgba(27,42,58,.12); }
+
+    .dtab-table { border: 1px solid #E1E8EE; border-radius: 11px; overflow: hidden; background: #fff; }
+    .dtab-scroll { overflow-x: auto; }
+    .dtab-head { background: #F7F9FB; font-size: 10.5px; font-weight: 700; color: #90A4B7; letter-spacing: .4px; border-bottom: 1px solid #E1E8EE; }
+    .dtab-row { border-bottom: 1px solid #EEF2F6; font-size: 13px; color: #33475B; }
+    .dtab-row:hover { background: #FBFCFD; }
+    .dtab-c { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dtab-link { border: 0; background: transparent; text-align: left; padding: 0; font-size: 13px; font-weight: 600; color: var(--propia-brand, #6D4FE3); cursor: pointer; font-family: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dtab-link:hover { text-decoration: underline; }
+    .dtab-badge { font-size: 11px; font-weight: 600; color: #516F90; background: #EEF2F6; padding: 2px 8px; border-radius: 6px; }
+    .dtab-badge--ok { color: #0F8A4F; background: #E6F6EE; }
+    .dtab-act { display: flex; justify-content: flex-end; }
+
+    /* Fila de alta inline: se lee como una fila mas de la tabla, igual que la fila
+       "nueva tarea" de Tareas. Sin separador propio que la corte del cuerpo: el fondo
+       es casi blanco y solo se tine al enfocarla, y los inputs van punteados para
+       insinuar que son editables sin romper la lectura de la tabla. */
+    .dtab-newrow { background: #FCFDFF; }
+    .dtab-newrow:focus-within { background: #F7F5FE; }
+    .dtab-inp { width: 100%; box-sizing: border-box; border: 1px dashed #D7E0EA; border-radius: 7px; padding: 5px 8px; font-size: 12.5px; color: #33475B; outline: none; background: #fff; font-family: inherit; }
+    .dtab-inp:focus { border-style: solid; border-color: var(--propia-brand, #6D4FE3); box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
+    .dtab-nf-mut { color: #C3D0DD; font-size: 12px; }
+    /* Va en la celda de acciones (44px), donde las otras filas llevan su chevron. */
+    .dtab-add { width: 26px; height: 26px; padding: 0; line-height: 1; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 7px; background: transparent; color: #B7A6F0; font-size: 17px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .dtab-add:hover:not(:disabled) { background: #F1ECFD; color: var(--propia-brand, #6D4FE3); }
+    .dtab-add:disabled { opacity: .45; cursor: default; }
 </style>
 
 @code {
@@ -828,12 +864,13 @@
     // Alta inline desde la vista Tabla (personas). Crea la persona + la vincula a la copropiedad.
     private async Task CrearPersonaTabla(NuevaPersonaDir d)
     {
+        _loadError = null;
         var http = Auth();
         var crear = await http.PostAsJsonAsync("/api/directorio/personas",
             new CrearPersonaRequest(d.TipoDocumento, d.Documento, d.Nombres, d.Apellidos, d.Email, d.Telefono, null, null));
         if (!crear.IsSuccessStatusCode)
         {
-            _loadError = "No se pudo crear la persona: " + await crear.Content.ReadAsStringAsync();
+            _loadError = "No se pudo crear la persona: " + await MensajeDeError(crear, "revisa los datos de la fila.");
             return;
         }
         var nueva = await crear.Content.ReadFromJsonAsync<PersonaDetalleDto>();
@@ -846,12 +883,13 @@
     // Alta inline desde la vista Tabla (empresas).
     private async Task CrearEmpresaTabla(NuevaEmpresaDir d)
     {
+        _loadError = null;
         var http = Auth();
         var crear = await http.PostAsJsonAsync("/api/directorio/empresas",
             new CrearEmpresaRequest(d.Nit, d.Dv, d.RazonSocial, d.NombreComercial, d.Email, d.Telefono, null, null, null, null, null));
         if (!crear.IsSuccessStatusCode)
         {
-            _loadError = "No se pudo crear la empresa: " + await crear.Content.ReadAsStringAsync();
+            _loadError = "No se pudo crear la empresa: " + await MensajeDeError(crear, "revisa los datos de la fila.");
             return;
         }
         var nueva = await crear.Content.ReadFromJsonAsync<EmpresaDetalleDto>();
@@ -859,6 +897,18 @@
             await http.PostAsJsonAsync("/api/directorio/vinculos",
                 new CrearVinculoRequest(EntidadDirectorio.Empresa, nueva.Id, DateOnly.FromDateTime(DateTime.UtcNow), new List<Guid>()));
         await CargarAsync();
+    }
+
+    // La API responde {"error":"..."} en los 400; sin esto el banner mostraba el JSON crudo.
+    private static async Task<string> MensajeDeError(HttpResponseMessage resp, string porDefecto)
+    {
+        try
+        {
+            var err = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+            if (err is not null && err.TryGetValue("error", out var m) && !string.IsNullOrWhiteSpace(m)) return m;
+        }
+        catch { }
+        return porDefecto;
     }
 
     private async Task CrearPersona()
