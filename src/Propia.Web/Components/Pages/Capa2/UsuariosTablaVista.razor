@@ -1,0 +1,123 @@
+@* Vista Tabla de Usuarios: todas las columnas + fila de alta inline (invitar en caliente),
+   equivalente a la Tabla del Directorio. Extraida de Usuarios.razor, que aporta las clases
+   usr-* y utb-*; aqui no va estilo propio (los estilos de un componente solo estan en el
+   DOM mientras se renderiza, y la otra vista los necesitaria igual). *@
+@using Propia.Application.UsuariosAccesos
+@using Propia.Domain.Enums
+
+<div class="usr-table">
+    <div class="utb-scroll">
+        <div class="utb-head utb-grid">
+            <div>DOCUMENTO</div><div>USUARIO</div><div>EMAIL</div><div>TELEFONO</div>
+            <div>ROL</div><div>ULTIMO ACCESO</div><div>ESTADO</div><div></div>
+        </div>
+        @foreach (var u in Usuarios)
+        {
+            var uu = u;
+            <div class="utb-row utb-grid">
+                <div class="utb-c">@(string.IsNullOrWhiteSpace(u.Documento) ? "-" : u.Documento)</div>
+                <button type="button" class="utb-link" title="Abrir usuario" @onclick="() => OnEditar.InvokeAsync(uu)">@u.NombreCompleto</button>
+                <div class="utb-c">@(u.Email ?? "-")</div>
+                <div class="utb-c">@(u.Telefono ?? "-")</div>
+                <div class="utb-c"><span class="usr-rol">@u.RolNombre</span></div>
+                <div class="utb-c">@(u.UltimoAcceso?.LocalDateTime.ToString("yyyy-MM-dd HH:mm") ?? "Sin registro")</div>
+                <div class="utb-c">
+                    @if (u.Estado == EstadoUsuarioTenant.Activo) { <span class="utb-badge utb-badge--ok">Activo</span> }
+                    else { <span class="utb-badge">@u.Estado</span> }
+                </div>
+                <div class="utb-act">
+                    @if (u.Estado == EstadoUsuarioTenant.Activo)
+                    {
+                        <button class="utb-icon" title="Editar" @onclick="() => OnEditar.InvokeAsync(uu)">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                        </button>
+                    }
+                    else
+                    {
+                        <button class="utb-icon" title="Reactivar" @onclick="() => OnReactivar.InvokeAsync(uu.UsuarioTenantId)">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+                        </button>
+                    }
+                </div>
+            </div>
+        }
+        @* Fila de alta: crea/encuentra la persona en el Directorio y le envia la invitacion.
+           El "+" del inicio y el placeholder "Nuevo usuario..." son los que la anuncian. *@
+        <div class="utb-newrow utb-grid">
+            <div class="utb-nf-first">
+                <span class="utb-nf-plus">+</span>
+                <select class="utb-inp utb-inp-tipo" @bind="_d.TipoDocumento">
+                    <option value="@TipoDocumento.CC">CC</option>
+                    <option value="@TipoDocumento.CE">CE</option>
+                    <option value="@TipoDocumento.PA">PA</option>
+                    <option value="@TipoDocumento.TI">TI</option>
+                </select>
+                <input class="utb-inp" placeholder="Documento" @bind="_d.Documento" @bind:event="oninput" @onkeydown="Key" />
+            </div>
+            <div class="utb-nf-nombre">
+                <input class="utb-inp" placeholder="Nuevo usuario..." @bind="_d.Nombres" @bind:event="oninput" @onkeydown="Key" />
+                <input class="utb-inp" placeholder="Apellidos" @bind="_d.Apellidos" @bind:event="oninput" @onkeydown="Key" />
+            </div>
+            <div class="utb-nf-mut">Al aceptar</div>
+            <div class="utb-nf-mut">&mdash;</div>
+            <select class="utb-inp" @bind="_d.RolId">
+                <option value="@Guid.Empty">Rol...</option>
+                @foreach (var r in Roles.Where(r => r.Activo))
+                {
+                    <option value="@r.Id">@r.Nombre</option>
+                }
+            </select>
+            <div class="utb-nf-mut">&mdash;</div>
+            <div class="utb-nf-mut">Pendiente</div>
+            <div class="utb-act">
+                <button type="button" class="utb-add" title="Invitar (Enter)" @onclick="Invitar" disabled="@(_busy || !Valido)">+</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public List<UsuarioListaDto> Usuarios { get; set; } = new();
+    [Parameter] public List<RolDto> Roles { get; set; } = new();
+    [Parameter] public EventCallback<UsuarioListaDto> OnEditar { get; set; }
+    [Parameter] public EventCallback<Guid> OnReactivar { get; set; }
+    [Parameter] public EventCallback<NuevoUsuarioInvitar> OnInvitar { get; set; }
+
+    private bool _busy;
+    private readonly Draft _d = new();
+
+    private bool Valido =>
+        !string.IsNullOrWhiteSpace(_d.Documento) &&
+        !string.IsNullOrWhiteSpace(_d.Nombres) &&
+        !string.IsNullOrWhiteSpace(_d.Apellidos) &&
+        _d.RolId != Guid.Empty;
+
+    private sealed class Draft
+    {
+        public TipoDocumento TipoDocumento = TipoDocumento.CC;
+        public string Documento = "";
+        public string Nombres = "";
+        public string Apellidos = "";
+        public Guid RolId = Guid.Empty;
+        public void Reset() { TipoDocumento = TipoDocumento.CC; Documento = ""; Nombres = ""; Apellidos = ""; RolId = Guid.Empty; }
+    }
+
+    private async Task Key(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && Valido) await Invitar();
+    }
+
+    // UI "tonta": recolecta y emite; la pagina hace los POST con su propio Auth().
+    private async Task Invitar()
+    {
+        if (!Valido) return;
+        _busy = true;
+        try
+        {
+            await OnInvitar.InvokeAsync(new NuevoUsuarioInvitar(
+                _d.TipoDocumento, _d.Documento.Trim(), _d.Nombres.Trim(), _d.Apellidos.Trim(), _d.RolId));
+            _d.Reset();
+        }
+        finally { _busy = false; }
+    }
+}

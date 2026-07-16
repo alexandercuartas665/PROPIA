@@ -100,12 +100,16 @@
                     <option value="@e.Id">@e.Nombre</option>
                 }
             </select>
+            @* Dos vistas, las mismas que el Directorio: Lista (filas con avatar) y Tabla
+               (todas las columnas + alta inline). Mismo toggle para que se lean igual. *@
             <div class="usr-viewtoggle">
-                <button class="usr-vbtn @(_vista == "tabla" ? "on" : "")" @onclick='() => _vista = "tabla"' title="Vista tabla">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                <button class="usr-vbtn @(_vista == "lista" ? "on" : "")" @onclick='() => _vista = "lista"'>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                    Lista
                 </button>
-                <button class="usr-vbtn @(_vista == "tarjetas" ? "on" : "")" @onclick='() => _vista = "tarjetas"' title="Vista tarjetas">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect></svg>
+                <button class="usr-vbtn @(_vista == "tabla" ? "on" : "")" @onclick='() => _vista = "tabla"'>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>
+                    Tabla
                 </button>
             </div>
         }
@@ -177,138 +181,20 @@
                 .Where(u => _filtroRolId == Guid.Empty || u.RolId == _filtroRolId)
                 .Where(u => _filtroEtiquetaId == Guid.Empty || u.Etiquetas.Any(e => e.Id == _filtroEtiquetaId))
                 .ToList();
-            @if (lista.Count == 0)
+            @if (lista.Count == 0 && _vista == "lista")
             {
                 <div class="usr-empty">Sin usuarios @_tab.ToString().ToLower() en esta copropiedad.</div>
             }
-            else if (_vista == "tarjetas")
+            else if (_vista == "lista")
             {
-                <div class="usr-cards">
-                    @foreach (var u in lista)
-                    {
-                        var uu = u;
-                        <div class="usr-card">
-                            <div class="usr-card-top">
-                                @if (!string.IsNullOrWhiteSpace(u.FotoUrl))
-                                {
-                                    <img class="usr-av usr-av-lg usr-av-img" src="@u.FotoUrl" alt="@u.NombreCompleto" />
-                                }
-                                else
-                                {
-                                    <div class="usr-av usr-av-lg">@Iniciales(u.NombreCompleto)</div>
-                                }
-                                <div style="min-width:0">
-                                    <div class="usr-name">@u.NombreCompleto</div>
-                                    <div class="usr-email">@(u.Email ?? "Sin correo")</div>
-                                    <span class="usr-rol">@u.RolNombre</span>
-                                    @if (!u.EnDirectorio)
-                                    {
-                                        <span class="usr-nodir" style="margin-left:6px">Sin Directorio</span>
-                                    }
-                                </div>
-                            </div>
-                            @if (u.GruposGobierno.Count > 0 || u.Etiquetas.Count > 0)
-                            {
-                                <div class="usr-etq-row usr-card-tags">
-                                    @foreach (var gg in u.GruposGobierno)
-                                    {
-                                        <span class="usr-gob-tag">@gg</span>
-                                    }
-                                    @foreach (var et in u.Etiquetas)
-                                    {
-                                        <span class="usr-etq-chip usr-etq-chip-sm" style="background:@ChipBg(et.Color);color:@(et.Color ?? "#6D4FE3");border-color:@(et.Color ?? "#DCD2F8")">@et.Nombre</span>
-                                    }
-                                </div>
-                            }
-                            <div class="usr-card-foot">
-                                @if (u.Estado == EstadoUsuarioTenant.Activo)
-                                {
-                                    <span class="usr-email">@(u.UltimoAcceso?.LocalDateTime.ToString("yyyy-MM-dd HH:mm") ?? "Sin acceso")</span>
-                                    <button class="usr-rowbtn" @onclick="() => AbrirEditar(uu)">Editar</button>
-                                }
-                                else
-                                {
-                                    <span class="usr-badge-inact">Revocado</span>
-                                    <button class="usr-rowbtn" @onclick="() => Reactivar(uu.UsuarioTenantId)">Reactivar</button>
-                                }
-                            </div>
-                        </div>
-                    }
-                </div>
+                <UsuariosListaVista Usuarios="lista" OnEditar="AbrirEditar" OnReactivar="Reactivar" />
             }
             else
             {
-                <div class="usr-table">
-                    <div class="usr-th">
-                        <div style="width:42px;flex-shrink:0"></div>
-                        <div style="width:280px;flex-shrink:0">USUARIO</div>
-                        <div style="flex:1">ROL</div>
-                        <div style="width:160px;flex-shrink:0">ULTIMO ACCESO</div>
-                        <div style="width:130px;flex-shrink:0;text-align:right"></div>
-                    </div>
-                    @foreach (var u in lista)
-                    {
-                        var uu = u;
-                        <div class="usr-row">
-                            @if (!string.IsNullOrWhiteSpace(u.FotoUrl))
-                            {
-                                <img class="usr-av usr-av-img" src="@u.FotoUrl" alt="@u.NombreCompleto" />
-                            }
-                            else
-                            {
-                                <div class="usr-av">@Iniciales(u.NombreCompleto)</div>
-                            }
-                            <div style="width:280px;flex-shrink:0;min-width:0">
-                                <div class="usr-name">@u.NombreCompleto</div>
-                                <div class="usr-email">@(u.Email ?? "Sin correo")</div>
-                                <div class="usr-etq-row">
-                                    @if (!u.EnDirectorio)
-                                    {
-                                        <span class="usr-nodir">Sin Directorio</span>
-                                    }
-                                    @foreach (var gg in u.GruposGobierno)
-                                    {
-                                        <span class="usr-gob-tag">@gg</span>
-                                    }
-                                    @* Solo lectura: las etiquetas se asignan en el modal del usuario. *@
-                                    @foreach (var et in u.Etiquetas)
-                                    {
-                                        <span class="usr-etq-chip usr-etq-chip-sm" style="background:@ChipBg(et.Color);color:@(et.Color ?? "#6D4FE3");border-color:@(et.Color ?? "#DCD2F8")">
-                                            @et.Nombre
-                                        </span>
-                                    }
-                                </div>
-                            </div>
-                            <div style="flex:1"><span class="usr-rol">@u.RolNombre</span></div>
-                            <div style="width:160px;flex-shrink:0">
-                                @if (u.Estado == EstadoUsuarioTenant.Activo)
-                                {
-                                    <div style="font-size:12.5px;color:#516F90;font-weight:600">@(u.UltimoAcceso?.LocalDateTime.ToString("yyyy-MM-dd HH:mm") ?? "Sin registro")</div>
-                                    <div class="usr-email">@(u.TieneCuentaPropia ? "Con cuenta propia" : "Solo en directorio")</div>
-                                }
-                                else
-                                {
-                                    <span class="usr-badge-inact">Acceso revocado</span>
-                                }
-                            </div>
-                            <div style="width:130px;flex-shrink:0;text-align:right" class="d-flex gap-1 justify-content-end">
-                                @if (u.Estado == EstadoUsuarioTenant.Activo)
-                                {
-                                    <button class="usr-rowbtn" @onclick="() => AbrirEditar(uu)">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                                        Editar
-                                    </button>
-                                }
-                                else
-                                {
-                                    <button class="usr-rowbtn" @onclick="() => Reactivar(uu.UsuarioTenantId)">Reactivar</button>
-                                }
-                            </div>
-                        </div>
-                    }
-                    @* Alta inline: crea/encuentra la persona en el Directorio y la invita con un rol *@
-                    <UsuariosInvitarFila Roles="_roles" OnInvitar="InvitarUsuarioTabla" />
-                </div>
+                @* La Tabla siempre se pinta aunque no haya usuarios: su fila de alta es la
+                   via para invitar en caliente (mismo criterio que el Directorio). *@
+                <UsuariosTablaVista Usuarios="lista" Roles="_roles" OnEditar="AbrirEditar"
+                                    OnReactivar="Reactivar" OnInvitar="InvitarUsuarioTabla" />
             }
         }
     }
@@ -949,21 +835,48 @@
     .usr-toolbar2 .usr-search { margin:0; flex:1 1 320px; }
     .usr-fsel { border:1px solid #E1E8EE; border-radius:9px; padding:9px 12px; font-size:13px; color:#33475B; background:#fff; outline:none; cursor:pointer; }
     .usr-fsel:focus { border-color:#6D4FE3; }
-    .usr-viewtoggle { display:flex; border:1px solid #E1E8EE; border-radius:9px; overflow:hidden; margin-left:auto; }
-    .usr-vbtn { border:none; background:#fff; color:#7C98B6; padding:8px 11px; cursor:pointer; display:flex; align-items:center; }
-    .usr-vbtn.on { background:#6D4FE3; color:#fff; }
+    /* Toggle de vista: mismo lenguaje que el del Directorio (texto + icono). */
+    .usr-viewtoggle { display:inline-flex; gap:2px; background:#EEF2F6; border-radius:9px; padding:3px; margin-left:auto; }
+    .usr-vbtn { display:inline-flex; align-items:center; gap:5px; border:0; background:transparent; color:#6B7C8F; font-size:12.5px; font-weight:600; padding:5px 11px; border-radius:7px; cursor:pointer; font-family:inherit; }
+    .usr-vbtn.on { background:#fff; color:#6D4FE3; box-shadow:0 1px 3px rgba(27,42,58,.12); }
     /* Avatares con foto */
     .usr-av-img { object-fit:cover; border-radius:11px; }
-    .usr-av-lg { width:52px; height:52px; border-radius:13px; font-size:18px; flex-shrink:0; }
     .usr-av-edit { position:relative; width:64px; height:64px; flex-shrink:0; }
     .usr-av-cam { position:absolute; right:-4px; bottom:-4px; width:24px; height:24px; border-radius:50%; background:#6D4FE3; color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; border:2px solid #fff; box-shadow:0 1px 3px rgba(45,62,80,.25); }
-    /* Vista de tarjetas */
-    .usr-cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:14px; }
-    .usr-card { background:#fff; border:1px solid #E1E8EE; border-radius:14px; padding:16px; box-shadow:0 1px 2px rgba(45,62,80,.05); display:flex; flex-direction:column; gap:12px; }
-    .usr-card:hover { border-color:#C3D0DD; }
-    .usr-card-top { display:flex; align-items:center; gap:12px; min-width:0; }
-    .usr-card-tags { margin:0; }
-    .usr-card-foot { display:flex; align-items:center; justify-content:space-between; gap:8px; border-top:1px solid #EEF2F6; padding-top:10px; margin-top:auto; }
+
+    /* ---- Vista Tabla (utb-*): la usa UsuariosTablaVista. Vive aqui, en la pagina, y no
+       en el componente: los estilos declarados dentro de un componente solo estan en el
+       DOM mientras ese componente se renderiza. ---- */
+    .utb-scroll { overflow-x:auto; }
+    /* Ajustado para que la fila entera (incluido el "+" de confirmar) quepa sin scroll
+       horizontal en una pantalla normal; con menos ancho, .utb-scroll se encarga. */
+    .utb-grid { display:grid; grid-template-columns:186px 1.3fr 1.5fr .9fr 118px 132px 88px 34px; align-items:center; gap:8px; padding:8px 14px; min-width:1040px; }
+    .utb-head { background:#FAFBFC; font-size:11px; font-weight:700; color:#A6B7C8; letter-spacing:.4px; border-bottom:1px solid #EEF3F8; }
+    .utb-row { border-bottom:1px solid #F4F7FA; font-size:13px; color:#33475B; }
+    .utb-row:hover { background:#FBFCFD; }
+    .utb-c { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .utb-link { border:0; background:transparent; text-align:left; padding:0; font-size:13px; font-weight:600; color:#6D4FE3; cursor:pointer; font-family:inherit; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .utb-link:hover { text-decoration:underline; }
+    .utb-badge { font-size:11px; font-weight:600; color:#516F90; background:#EEF2F6; padding:2px 8px; border-radius:6px; }
+    .utb-badge--ok { color:#0F8A4F; background:#E6F6EE; }
+    .utb-act { display:flex; justify-content:flex-end; }
+    .utb-icon { width:26px; height:26px; display:flex; align-items:center; justify-content:center; padding:0; border:0; border-radius:7px; background:transparent; color:#94A9BF; cursor:pointer; }
+    .utb-icon:hover { background:#F1ECFD; color:#6D4FE3; }
+    /* Fila de alta: una fila mas de la tabla; solo se tine al enfocarla (como en Tareas). */
+    .utb-newrow { background:#FCFDFF; }
+    .utb-newrow:focus-within { background:#F7F5FE; }
+    .utb-nf-nombre { display:grid; grid-template-columns:1fr 1fr; gap:6px; min-width:0; }
+    .utb-nf-mut { color:#C3D0DD; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .utb-inp { width:100%; box-sizing:border-box; border:1px dashed #D7E0EA; border-radius:7px; padding:5px 8px; font-size:12.5px; color:#33475B; outline:none; background:#fff; font-family:inherit; }
+    .utb-inp:focus { border-style:solid; border-color:#6D4FE3; box-shadow:0 0 0 2px rgba(109,79,227,.12); }
+    .utb-inp-tipo { width:62px; flex-shrink:0; }
+    /* El "+" del inicio es lo que anuncia que la fila es de alta; sin el se lee como filtro. */
+    .utb-nf-first { display:flex; align-items:center; gap:6px; min-width:0; }
+    .utb-nf-plus { flex-shrink:0; color:#B7A6F0; font-size:15px; font-weight:700; }
+    /* Confirmar: se pinta solo cuando la fila ya es valida; antes seria ruido. */
+    .utb-add { width:26px; height:26px; padding:0; line-height:1; display:flex; align-items:center; justify-content:center; border:0; border-radius:7px; background:#6D4FE3; color:#fff; font-size:17px; font-weight:700; cursor:pointer; font-family:inherit; }
+    .utb-add:hover:not(:disabled) { filter:brightness(1.08); }
+    .utb-add:disabled { background:transparent; color:#D9E0E8; cursor:default; }
 
     .usr-table { background:#fff; border:1px solid #E1E8EE; border-radius:14px; box-shadow:0 1px 2px rgba(45,62,80,.05); overflow:hidden; }
     .usr-th { display:flex; align-items:center; gap:14px; padding:11px 18px; border-bottom:1px solid #EEF3F8; background:#FAFBFC; font-size:11px; letter-spacing:.4px; font-weight:700; color:#A6B7C8; }
@@ -1114,7 +1027,7 @@
     // Filtros y vista (2.5.C)
     private Guid _filtroRolId;
     private Guid _filtroEtiquetaId;
-    private string _vista = "tabla";  // "tabla" | "tarjetas"
+    private string _vista = "lista";  // "lista" | "tabla" (las mismas dos vistas del Directorio)
     private string? _msg; private string _msgClass = "alert-info";
 
     private List<UsuarioListaDto>? _usuarios;
