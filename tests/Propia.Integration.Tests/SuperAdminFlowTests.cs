@@ -105,11 +105,22 @@ public class SuperAdminFlowTests : IAsyncLifetime
     {
         var client = await LoggedInClientAsync();
 
-        // Confirmamos que solo hay 1 SuperAdmin activo (el founder) y intentamos desactivarlo
-        var equipoResp = await client.GetAsync("/admin/equipo");
+        // La regla solo aplica cuando queda UNO, asi que el test debe garantizar esa premisa en
+        // vez de darla por hecha: el entorno puede traer mas SuperAdmins activos aparte del
+        // founder (el bootstrap de produccion se crea si SuperAdmin:BootstrapEmail/Password estan
+        // configurados por env var o user-secrets, cosa que no se ve en el repo). Antes se asumia
+        // "solo hay 1" y el test fallaba en la maquina que tuviera ese bootstrap configurado.
+        var equipoResp = await client.GetAsync("/api/admin/equipo");
         var equipo = await equipoResp.Content.ReadFromJsonAsync<List<SuperAdminUsuarioDto>>();
         var founder = equipo!.First(u => u.Email == "founder@adgroup.com.co" && u.Rol == RolSuperAdmin.SuperAdmin && u.Activo);
 
+        foreach (var otro in equipo.Where(u => u.Rol == RolSuperAdmin.SuperAdmin && u.Activo && u.Id != founder.Id))
+        {
+            var previo = await client.PutAsync($"/admin/equipo/{otro.Id}/desactivar", null);
+            Assert.Equal(HttpStatusCode.NoContent, previo.StatusCode);
+        }
+
+        // Ahora el founder si es el ultimo activo: la regla debe impedir desactivarlo.
         var resp = await client.PutAsync($"/admin/equipo/{founder.Id}/desactivar", null);
         Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
         var body = await resp.Content.ReadAsStringAsync();

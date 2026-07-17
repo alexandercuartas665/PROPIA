@@ -59,7 +59,7 @@ public class BillingFlowTests : IAsyncLifetime
     public async Task Crear_plan_y_suscripcion_genera_factura_y_marca_pagada()
     {
         // 1) Crear plan
-        var planResp = await _client.PostAsJsonAsync("/admin/billing/planes",
+        var planResp = await _client.PostAsJsonAsync("/api/admin/billing/planes",
             new CrearPlanRequest("Plan Test", "Desc", 150000m, 5000m, true, true, 10m, null, null, null, null, null, 0));
         var planBody = await planResp.Content.ReadAsStringAsync();
         Assert.True(planResp.StatusCode == HttpStatusCode.Created,
@@ -74,7 +74,7 @@ public class BillingFlowTests : IAsyncLifetime
         var org = await orgResp.Content.ReadFromJsonAsync<OrganizacionDto>();
 
         // 3) Crear suscripcion ligada a la org
-        var subResp = await _client.PostAsJsonAsync("/admin/billing/suscripciones",
+        var subResp = await _client.PostAsJsonAsync("/api/admin/billing/suscripciones",
             new CrearSuscripcionRequest(org!.Id, null, plan!.Id, CicloFacturacion.Mensual));
         Assert.Equal(HttpStatusCode.Created, subResp.StatusCode);
         var sub = await subResp.Content.ReadFromJsonAsync<SuscripcionDto>();
@@ -83,7 +83,7 @@ public class BillingFlowTests : IAsyncLifetime
 
         // 4) Generar factura del periodo actual
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
-        var facResp = await _client.PostAsJsonAsync("/admin/billing/facturas/generar",
+        var facResp = await _client.PostAsJsonAsync("/api/admin/billing/facturas/generar",
             new GenerarFacturaRequest(sub.Id, hoy.AddDays(-30), hoy));
         Assert.Equal(HttpStatusCode.Created, facResp.StatusCode);
         var fac = await facResp.Content.ReadFromJsonAsync<FacturaDto>();
@@ -92,7 +92,7 @@ public class BillingFlowTests : IAsyncLifetime
 
         // 5) Marcar pagada - numero de factura unico por run (constraint unique)
         var numeroFactura = $"F-{Guid.NewGuid():N}";
-        var pagoResp = await _client.PostAsJsonAsync($"/admin/billing/facturas/{fac.Id}/registrar-pago",
+        var pagoResp = await _client.PostAsJsonAsync($"/api/admin/billing/facturas/{fac.Id}/registrar-pago",
             new RegistrarPagoFacturaRequest("WMP-TEST-001", numeroFactura));
         Assert.Equal(HttpStatusCode.OK, pagoResp.StatusCode);
         var pagada = await pagoResp.Content.ReadFromJsonAsync<FacturaDto>();
@@ -100,7 +100,7 @@ public class BillingFlowTests : IAsyncLifetime
         Assert.Equal(numeroFactura, pagada.NumeroFactura);
 
         // 6) Historial registra activacion
-        var hist = await _client.GetFromJsonAsync<List<SuscripcionHistorialDto>>($"/admin/billing/suscripciones/{sub.Id}/historial");
+        var hist = await _client.GetFromJsonAsync<List<SuscripcionHistorialDto>>($"/api/admin/billing/suscripciones/{sub.Id}/historial");
         Assert.NotNull(hist);
         Assert.Contains(hist!, h => h.Tipo == TipoEventoSuscripcion.Activacion);
     }
@@ -109,7 +109,7 @@ public class BillingFlowTests : IAsyncLifetime
     public async Task No_se_puede_desactivar_plan_con_suscripciones_activas()
     {
         // Crear plan
-        var planResp = await _client.PostAsJsonAsync("/admin/billing/planes",
+        var planResp = await _client.PostAsJsonAsync("/api/admin/billing/planes",
             new CrearPlanRequest("Plan Bloqueado", null, 100000m, 0m, true, false, 0m, null, null, null, null, null, 0));
         var plan = await planResp.Content.ReadFromJsonAsync<PlanDto>();
 
@@ -117,11 +117,11 @@ public class BillingFlowTests : IAsyncLifetime
         var orgResp = await _client.PostAsJsonAsync("/admin/organizaciones",
             new CrearOrganizacionRequest($"Org B {Guid.NewGuid():N}", TipoOrganizacion.Administradora, null, null, null));
         var org = await orgResp.Content.ReadFromJsonAsync<OrganizacionDto>();
-        await _client.PostAsJsonAsync("/admin/billing/suscripciones",
+        await _client.PostAsJsonAsync("/api/admin/billing/suscripciones",
             new CrearSuscripcionRequest(org!.Id, null, plan!.Id, CicloFacturacion.Mensual));
 
         // Intentar archivar el plan -> debe fallar
-        var resp = await _client.PutAsJsonAsync($"/admin/billing/planes/{plan.Id}",
+        var resp = await _client.PutAsJsonAsync($"/api/admin/billing/planes/{plan.Id}",
             new ActualizarPlanRequest(plan.Nombre, null, plan.FeeBase, plan.FeeVariablePorUnidad,
                 true, false, 0m, null, null, null, null, null, 0, EstadoPlan.Archivado));
         Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
@@ -132,9 +132,9 @@ public class BillingFlowTests : IAsyncLifetime
     [Fact]
     public async Task Cambio_de_plan_se_registra_como_upgrade_o_downgrade_en_historial()
     {
-        var basicoResp = await _client.PostAsJsonAsync("/admin/billing/planes",
+        var basicoResp = await _client.PostAsJsonAsync("/api/admin/billing/planes",
             new CrearPlanRequest("Basico", null, 100000m, 0m, true, false, 0m, null, null, null, null, null, 0));
-        var premiumResp = await _client.PostAsJsonAsync("/admin/billing/planes",
+        var premiumResp = await _client.PostAsJsonAsync("/api/admin/billing/planes",
             new CrearPlanRequest("Premium", null, 500000m, 0m, true, false, 0m, null, null, null, null, null, 0));
         var basico = await basicoResp.Content.ReadFromJsonAsync<PlanDto>();
         var premium = await premiumResp.Content.ReadFromJsonAsync<PlanDto>();
@@ -142,22 +142,22 @@ public class BillingFlowTests : IAsyncLifetime
         var orgResp = await _client.PostAsJsonAsync("/admin/organizaciones",
             new CrearOrganizacionRequest($"Org Up {Guid.NewGuid():N}", TipoOrganizacion.Administradora, null, null, null));
         var org = await orgResp.Content.ReadFromJsonAsync<OrganizacionDto>();
-        var subResp = await _client.PostAsJsonAsync("/admin/billing/suscripciones",
+        var subResp = await _client.PostAsJsonAsync("/api/admin/billing/suscripciones",
             new CrearSuscripcionRequest(org!.Id, null, basico!.Id, CicloFacturacion.Mensual));
         var sub = await subResp.Content.ReadFromJsonAsync<SuscripcionDto>();
 
-        var upgResp = await _client.PutAsJsonAsync($"/admin/billing/suscripciones/{sub!.Id}/plan",
+        var upgResp = await _client.PutAsJsonAsync($"/api/admin/billing/suscripciones/{sub!.Id}/plan",
             new CambiarPlanRequest(premium!.Id, "Validacion test upgrade"));
         Assert.Equal(HttpStatusCode.OK, upgResp.StatusCode);
 
-        var hist = await _client.GetFromJsonAsync<List<SuscripcionHistorialDto>>($"/admin/billing/suscripciones/{sub.Id}/historial");
+        var hist = await _client.GetFromJsonAsync<List<SuscripcionHistorialDto>>($"/api/admin/billing/suscripciones/{sub.Id}/historial");
         Assert.Contains(hist!, h => h.Tipo == TipoEventoSuscripcion.Upgrade && h.Notas!.Contains("upgrade"));
     }
 
     [Fact]
     public async Task BillingConfig_singleton_es_legible_y_modificable()
     {
-        var c = await _client.GetFromJsonAsync<BillingConfigDto>("/admin/billing/config");
+        var c = await _client.GetFromJsonAsync<BillingConfigDto>("/api/admin/billing/config");
         Assert.NotNull(c);
         Assert.Equal("COP", c!.Moneda);
         Assert.Equal(0m, c.ImpuestoPct);  // IVA SaaS excluido por defecto
@@ -169,7 +169,7 @@ public class BillingFlowTests : IAsyncLifetime
             c.DiaAlertaCancelacion, c.DiaCancelacion, c.ReintentosCobro,
             c.DiasEntreReintentos, c.DiasPreavisoCobro, c.RetencionDatosMeses,
             c.RetencionFacturasAnios, nuevoIva, nuevoMoneda, c.ProveedorContable);
-        var resp = await _client.PutAsJsonAsync("/admin/billing/config", req);
+        var resp = await _client.PutAsJsonAsync("/api/admin/billing/config", req);
         Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
     }
 
@@ -177,13 +177,13 @@ public class BillingFlowTests : IAsyncLifetime
     public async Task SuscripcionHistorial_es_inmutable_no_acepta_update_ni_delete()
     {
         // Setup minimo: crear plan, org, suscripcion -> genera entrada en historial
-        var planResp = await _client.PostAsJsonAsync("/admin/billing/planes",
+        var planResp = await _client.PostAsJsonAsync("/api/admin/billing/planes",
             new CrearPlanRequest("Plan Imm", null, 50000m, 0m, true, false, 0m, null, null, null, null, null, 0));
         var plan = await planResp.Content.ReadFromJsonAsync<PlanDto>();
         var orgResp = await _client.PostAsJsonAsync("/admin/organizaciones",
             new CrearOrganizacionRequest($"Org Imm {Guid.NewGuid():N}", TipoOrganizacion.Administradora, null, null, null));
         var org = await orgResp.Content.ReadFromJsonAsync<OrganizacionDto>();
-        await _client.PostAsJsonAsync("/admin/billing/suscripciones",
+        await _client.PostAsJsonAsync("/api/admin/billing/suscripciones",
             new CrearSuscripcionRequest(org!.Id, null, plan!.Id, CicloFacturacion.Mensual));
 
         // Intentar UPDATE/DELETE directo via SQL -> debe fallar por trigger
