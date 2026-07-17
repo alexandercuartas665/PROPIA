@@ -34,6 +34,9 @@ public record ActualizarIdentidadRequest(
 public record TorreDto(Guid Id, string Nombre, int? CantidadPisos, string? Descripcion, int CantidadUnidades);
 public record CrearTorreRequest(string Nombre, int? CantidadPisos, string? Descripcion);
 
+// PropietarioNombre/PropietariosCount vienen resueltos en el listado (ListUnidadesAsync) para
+// que la tabla de Distribucion pueda mostrar el propietario sin pedir las personas de cada
+// unidad una por una. Van al final y con default: los demas consumidores no se enteran.
 public record UnidadDto(
     Guid Id, string Numero, TipoUnidad Tipo,
     Guid? TorreId, string? TorreNombre, int? Piso,
@@ -41,7 +44,8 @@ public record UnidadDto(
     int? Habitaciones, int? Banos, int? Parqueaderos,
     string? Estado, string? Observaciones,
     string? MatriculaInmobiliaria = null, bool PagaAdministracion = true,
-    decimal? CuotaMensual = null);
+    decimal? CuotaMensual = null,
+    string? PropietarioNombre = null, int PropietariosCount = 0);
 
 public record CrearUnidadRequest(
     string Numero, TipoUnidad Tipo, Guid? TorreId, int? Piso,

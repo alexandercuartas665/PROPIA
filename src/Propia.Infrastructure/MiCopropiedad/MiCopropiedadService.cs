@@ -149,6 +149,10 @@ public class MiCopropiedadService : IMiCopropiedadService
 
     public async Task<IReadOnlyList<UnidadDto>> ListUnidadesAsync(CancellationToken ct)
     {
+        // El propietario se resuelve con subconsultas dentro del mismo query (no con una llamada a
+        // las personas por unidad): la tabla de Distribucion lista todas las unidades de la
+        // copropiedad y pedirlas una a una seria N+1. Si hay varios propietarios se devuelve el
+        // primero + el conteo, y la UI decide como mostrarlo.
         return await _db.UnidadesPrivadas
             .AsNoTracking()
             .Include(u => u.Torre)
@@ -158,7 +162,13 @@ public class MiCopropiedadService : IMiCopropiedadService
                 u.TorreId, u.Torre != null ? u.Torre.Nombre : null, u.Piso,
                 u.CoeficientePropiedad, u.AreaM2,
                 u.Habitaciones, u.Banos, u.Parqueaderos,
-                u.Estado, u.Observaciones, u.MatriculaInmobiliaria, u.PagaAdministracion, u.CuotaMensual))
+                u.Estado, u.Observaciones, u.MatriculaInmobiliaria, u.PagaAdministracion, u.CuotaMensual,
+                (from up in _db.UnidadPersonas
+                 join p in _db.Personas on up.PersonaId equals p.Id
+                 where up.UnidadId == u.Id && up.Rol == RolUnidadPersona.Propietario
+                 orderby p.Apellidos, p.Nombres
+                 select (p.Nombres + " " + p.Apellidos).Trim()).FirstOrDefault(),
+                _db.UnidadPersonas.Count(up => up.UnidadId == u.Id && up.Rol == RolUnidadPersona.Propietario)))
             .ToListAsync(ct);
     }
 
@@ -793,7 +803,14 @@ public class MiCopropiedadService : IMiCopropiedadService
                 u.TorreId, u.Torre != null ? u.Torre.Nombre : null, u.Piso,
                 u.CoeficientePropiedad, u.AreaM2,
                 u.Habitaciones, u.Banos, u.Parqueaderos,
-                u.Estado, u.Observaciones, u.MatriculaInmobiliaria, u.PagaAdministracion, u.CuotaMensual))
+                u.Estado, u.Observaciones, u.MatriculaInmobiliaria, u.PagaAdministracion, u.CuotaMensual,
+                // Mismo propietario que en el listado, para que el DTO diga lo mismo venga de donde venga.
+                (from up in _db.UnidadPersonas
+                 join p in _db.Personas on up.PersonaId equals p.Id
+                 where up.UnidadId == u.Id && up.Rol == RolUnidadPersona.Propietario
+                 orderby p.Apellidos, p.Nombres
+                 select (p.Nombres + " " + p.Apellidos).Trim()).FirstOrDefault(),
+                _db.UnidadPersonas.Count(up => up.UnidadId == u.Id && up.Rol == RolUnidadPersona.Propietario)))
             .FirstOrDefaultAsync(ct);
     }
 
