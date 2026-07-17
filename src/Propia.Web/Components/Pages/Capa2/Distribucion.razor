@@ -1,0 +1,319 @@
+@page "/distribucion"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.MiCopropiedad
+@using Propia.Domain.Enums
+@using Propia.Web.Components.Shared.Modals
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+@inject IModalService Modals
+
+<PageTitle>Distribucion - PROPIA</PageTitle>
+
+@* Distribucion: modulo propio (antes era la seccion 2 del acordeon de Mi copropiedad).
+   Muestra la composicion de la PH (agrupaciones, unidades, coeficientes) y lista todas las
+   unidades en tabla. El detalle y la edicion siguen viviendo en GestionarUnidadesModal: la
+   tabla es de consulta y el clic en una fila abre la ficha de esa unidad. *@
+
+<div class="dst-pagehead">
+    <div>
+        <h1 class="dst-pagetitle">Distribucion</h1>
+        <p class="dst-pagesub">Composicion de @(_resumen?.Identidad.Nombre ?? "la copropiedad") &mdash; @LabelAgrupacionPlural.ToLower(), @LabelPisoSingular.ToLower()s y unidades con su coeficiente.</p>
+    </div>
+    @if (_authChecked && _jwt is not null)
+    {
+        <button class="propia-btn-brand" @onclick="AbrirGestionarUnidadesAsync">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            Gestionar unidades
+        </button>
+    }
+</div>
+
+@if (!_authChecked)
+{
+    <div class="dst-loading"><div class="spinner-border" style="color: var(--propia-brand, #6D4FE3);"></div></div>
+}
+else if (_loadError is not null)
+{
+    <div class="alert alert-danger">@_loadError</div>
+}
+else
+{
+    <div class="dst-stats">
+        <div class="dst-stat">
+            <div class="dst-stat-icon">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M6 21V5h8v16M14 21V9h4v12M9 9h.01M9 13h.01M9 17h.01"/></svg>
+            </div>
+            <div>
+                <div class="dst-stat-n">@_torres.Count</div>
+                <div class="dst-stat-l">@LabelAgrupacionPlural.ToLower()</div>
+            </div>
+        </div>
+        <div class="dst-stat">
+            <div class="dst-stat-icon">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-6 9 6v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>
+            </div>
+            <div>
+                <div class="dst-stat-n">@_unidades.Count</div>
+                <div class="dst-stat-l">unidades</div>
+            </div>
+        </div>
+        @if (_unidades.Count > 0)
+        {
+            var suma = _unidades.Sum(u => u.CoeficientePropiedad);
+            var completo = Math.Abs(suma - 100m) < 0.01m;
+            <div class="dst-stat dst-stat--coef @(completo ? "ok" : "warn")">
+                @if (completo)
+                {
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>
+                    <span>Coeficientes: 100%</span>
+                }
+                else
+                {
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+                    <span>Coeficientes: @suma.ToString("0.####")% (falta @((100m - suma).ToString("0.####"))%)</span>
+                }
+            </div>
+        }
+    </div>
+
+    @if (_unidades.Count == 0)
+    {
+        <div class="dst-empty">
+            <strong>Sin unidades registradas aun.</strong>
+            <span>Usa "Gestionar unidades" para crear @LabelAgrupacionPlural.ToLower() y unidades.</span>
+        </div>
+    }
+    else
+    {
+        <div class="dst-table">
+            <div class="dst-scroll">
+                <div class="dst-head dst-grid">
+                    <div>UNIDAD</div><div>@LabelAgrupacionSingular.ToUpper()</div><div>@LabelPisoSingular.ToUpper()</div>
+                    <div>TIPO</div><div>AREA</div><div>COEFICIENTE</div><div>PROPIETARIO</div><div></div>
+                </div>
+                @foreach (var u in UnidadesPagina)
+                {
+                    var uu = u;
+                    <div class="dst-row dst-grid" @onclick="() => AbrirFichaAsync(uu)" title="Abrir ficha de la unidad">
+                        <div class="dst-c dst-c--num">
+                            <span class="dst-num-icon">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-6 9 6v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+                            </span>
+                            @u.Numero
+                        </div>
+                        <div class="dst-c dst-c--torre">@(u.TorreNombre ?? "-")</div>
+                        <div class="dst-c">@(u.Piso?.ToString() ?? "-")</div>
+                        <div class="dst-c">@Etiqueta(u.Tipo)</div>
+                        <div class="dst-c">@(u.AreaM2 is null ? "-" : $"{u.AreaM2:0.##} m2")</div>
+                        <div class="dst-c">@u.CoeficientePropiedad.ToString("0.######")</div>
+                        <div class="dst-c">
+                            @if (string.IsNullOrWhiteSpace(u.PropietarioNombre))
+                            {
+                                <span class="dst-sin">Sin propietario</span>
+                            }
+                            else
+                            {
+                                <span>@u.PropietarioNombre</span>
+                                @if (u.PropietariosCount > 1)
+                                {
+                                    <span class="dst-mas" title="@u.PropietariosCount propietarios">+@(u.PropietariosCount - 1)</span>
+                                }
+                            }
+                        </div>
+                        <div class="dst-act">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#C3D0DD" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            @* Paginacion: una PH puede tener cientos de unidades y no se listan todas de golpe. *@
+            <div class="dst-pager">
+                <div class="dst-pager-info">
+                    Mostrando @(_unidades.Count == 0 ? 0 : Desde + 1)-@Hasta de @_unidades.Count unidades
+                </div>
+                <div class="dst-pager-ctrl">
+                    <select class="dst-pager-sel" @onchange="CambiarTamanoPagina">
+                        @foreach (var n in TamanosPagina)
+                        {
+                            <option value="@n" selected="@(n == _porPagina)">@n por pagina</option>
+                        }
+                    </select>
+                    @if (TotalPaginas > 1)
+                    {
+                        <button class="dst-pager-btn" disabled="@(_pagina <= 1)" @onclick="() => IrAPagina(_pagina - 1)" title="Anterior">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg>
+                        </button>
+                        <span class="dst-pager-pos">@_pagina / @TotalPaginas</span>
+                        <button class="dst-pager-btn" disabled="@(_pagina >= TotalPaginas)" @onclick="() => IrAPagina(_pagina + 1)" title="Siguiente">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@* Obligatorio en cada pagina que abre modales: IModalService es Scoped por circuit y
+   MainLayout vive en otro boundary de render, asi que el host debe estar aqui dentro
+   (sin esto el modal se registra pero no se pinta hasta navegar a otra pagina). *@
+<ModalHost />
+
+@code {
+    private string? _jwt;
+    private bool _authChecked;
+    private string? _loadError;
+
+    private ResumenMiCopropiedadDto? _resumen;
+    private List<TorreDto> _torres = new();
+    private List<UnidadDto> _unidades = new();
+
+    private string LabelAgrupacionSingular => string.IsNullOrWhiteSpace(_resumen?.Identidad.LabelAgrupacion) ? "Torre" : _resumen!.Identidad.LabelAgrupacion!;
+    private string LabelAgrupacionPlural => LabelAgrupacionSingular + "s";
+    private string LabelPisoSingular => string.IsNullOrWhiteSpace(_resumen?.Identidad.LabelPiso) ? "Piso" : _resumen!.Identidad.LabelPiso!;
+
+    // Paginacion en cliente: el listado ya viene completo en una sola llamada y una PH real
+    // tiene cientos de unidades, no miles; no vale la pena paginar contra la API todavia.
+    private static readonly int[] TamanosPagina = { 25, 50, 100 };
+    private int _porPagina = 25;
+    private int _pagina = 1;
+
+    private int TotalPaginas => _unidades.Count == 0 ? 1 : (int)Math.Ceiling(_unidades.Count / (double)_porPagina);
+    private int Desde => (_pagina - 1) * _porPagina;
+    private int Hasta => Math.Min(Desde + _porPagina, _unidades.Count);
+    private IEnumerable<UnidadDto> UnidadesPagina => _unidades.Skip(Desde).Take(_porPagina);
+
+    private void IrAPagina(int p) => _pagina = Math.Clamp(p, 1, TotalPaginas);
+
+    private void CambiarTamanoPagina(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var n)) _porPagina = n;
+        _pagina = 1;   // el offset viejo puede no existir con el tamano nuevo
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            _authChecked = true;
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarAsync();
+            }
+            else
+            {
+                Nav.NavigateTo("/login?returnUrl=%2Fdistribucion", true);
+                return;
+            }
+            StateHasChanged();
+        }
+        catch { /* prerender */ }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(_jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
+        return http;
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            _loadError = null;
+            var http = Auth();
+            var resp = await http.GetAsync("/api/mi-copropiedad/resumen");
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                var nuevoJwt = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+                if (string.IsNullOrEmpty(nuevoJwt)) return;
+                _jwt = nuevoJwt;
+                http = Auth();
+                resp = await http.GetAsync("/api/mi-copropiedad/resumen");
+            }
+            resp.EnsureSuccessStatusCode();
+            _resumen = await resp.Content.ReadFromJsonAsync<ResumenMiCopropiedadDto>();
+
+            _torres = await http.GetFromJsonAsync<List<TorreDto>>("/api/mi-copropiedad/torres") ?? new();
+            _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
+            // Si en el modal se borraron unidades, la pagina en la que estabamos puede ya no existir.
+            if (_pagina > TotalPaginas) _pagina = TotalPaginas;
+        }
+        catch (Exception ex) { _loadError = ex.Message; }
+    }
+
+    private Task AbrirGestionarUnidadesAsync() => AbrirModalAsync(null);
+
+    private Task AbrirFichaAsync(UnidadDto u) => AbrirModalAsync(u.Id);
+
+    // Mismo modal para el boton y para el clic en una fila; con UnidadInicialId abre en su ficha.
+    private async Task AbrirModalAsync(Guid? unidadId)
+    {
+        if (_resumen is null) return;
+        var parameters = new ModalParameters()
+            .Set("Jwt", _jwt)
+            .Set("AgrupacionLabelSingular", LabelAgrupacionSingular)
+            .Set("PisoLabelSingular", LabelPisoSingular);
+        if (unidadId is not null) parameters.Set("UnidadInicialId", unidadId);
+        var hubo = await Modals.OpenAsync<GestionarUnidadesModal, bool>(parameters, new ModalOptions { Fullscreen = true });
+        if (hubo == true) await CargarAsync();
+    }
+
+    private static string Etiqueta(TipoUnidad t) => t switch
+    {
+        TipoUnidad.UtilCuarto => "Cuarto util",
+        _ => t.ToString()   // Apartamento, Local, Casa, Oficina, Bodega, Parqueadero ya se leen bien
+    };
+}
+
+<style>
+    .dst-pagehead { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+    .dst-pagetitle { font-size: 30px; font-weight: 800; color: #1B2A3A; margin: 0 0 4px; letter-spacing: -.5px; }
+    .dst-pagesub { font-size: 14px; color: #6B7C8F; margin: 0; }
+    .dst-loading { display: flex; justify-content: center; padding: 60px 0; }
+
+    /* Tarjetas de resumen: agrupaciones, unidades y estado de coeficientes. */
+    .dst-stats { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
+    .dst-stat { display: flex; align-items: center; gap: 12px; background: #fff; border: 1px solid #E1E8EE; border-radius: 12px; padding: 14px 18px; min-width: 150px; }
+    .dst-stat-icon { width: 34px; height: 34px; flex-shrink: 0; border-radius: 9px; background: #F3EFFE; color: var(--propia-brand, #6D4FE3); display: flex; align-items: center; justify-content: center; }
+    .dst-stat-n { font-size: 21px; font-weight: 800; color: #1B2A3A; line-height: 1.1; }
+    .dst-stat-l { font-size: 12px; color: #6B7C8F; }
+    .dst-stat--coef { gap: 8px; font-size: 13px; font-weight: 700; }
+    .dst-stat--coef.ok { background: #E6F6EE; border-color: #BFE8D2; color: #0F8A4F; }
+    .dst-stat--coef.warn { background: #FEF6E7; border-color: #F7DFB2; color: #B45309; }
+
+    .dst-empty { background: #fff; border: 1px dashed #DCE4EC; border-radius: 12px; padding: 34px; text-align: center; display: flex; flex-direction: column; gap: 5px; }
+    .dst-empty strong { font-size: 14.5px; color: #33475B; }
+    .dst-empty span { font-size: 13px; color: #90A4B7; }
+
+    .dst-table { background: #fff; border: 1px solid #E1E8EE; border-radius: 12px; overflow: hidden; }
+    .dst-scroll { overflow-x: auto; }
+    .dst-grid { display: grid; grid-template-columns: 120px 1fr .7fr 1.1fr .9fr 1fr 1.5fr 34px; align-items: center; gap: 8px; padding: 9px 16px; min-width: 940px; }
+    .dst-head { background: #F7F9FB; font-size: 10.5px; font-weight: 700; color: #90A4B7; letter-spacing: .4px; border-bottom: 1px solid #E1E8EE; }
+    .dst-row { border-bottom: 1px solid #EEF2F6; font-size: 13px; color: #33475B; cursor: pointer; }
+    .dst-row:hover { background: #FBFAFE; }
+    .dst-c { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dst-c--num { display: flex; align-items: center; gap: 8px; font-weight: 700; color: #1B2A3A; }
+    .dst-num-icon { width: 24px; height: 24px; flex-shrink: 0; border-radius: 7px; background: #F3EFFE; color: var(--propia-brand, #6D4FE3); display: flex; align-items: center; justify-content: center; }
+    .dst-c--torre { color: var(--propia-brand, #6D4FE3); font-weight: 600; }
+    .dst-sin { color: #C3D0DD; font-style: italic; }
+    .dst-mas { margin-left: 6px; font-size: 11px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: #F3EFFE; padding: 1px 6px; border-radius: 6px; }
+    .dst-act { display: flex; justify-content: flex-end; }
+
+    .dst-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 16px; background: #FAFBFC; border-top: 1px solid #EEF2F6; }
+    .dst-pager-info { font-size: 12.5px; color: #6B7C8F; }
+    .dst-pager-ctrl { display: flex; align-items: center; gap: 8px; }
+    .dst-pager-sel { border: 1px solid #E1E8EE; border-radius: 7px; padding: 5px 8px; font-size: 12.5px; color: #33475B; background: #fff; outline: none; cursor: pointer; font-family: inherit; }
+    .dst-pager-sel:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .dst-pager-btn { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 1px solid #E1E8EE; border-radius: 7px; background: #fff; color: #516F90; cursor: pointer; }
+    .dst-pager-btn:hover:not(:disabled) { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); background: #F7F5FE; }
+    .dst-pager-btn:disabled { opacity: .4; cursor: default; }
+    .dst-pager-pos { font-size: 12.5px; font-weight: 700; color: #33475B; min-width: 52px; text-align: center; }
+</style>
