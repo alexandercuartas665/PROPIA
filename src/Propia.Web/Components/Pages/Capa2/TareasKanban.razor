@@ -170,14 +170,19 @@ else
                             {
                                 @* Compositor progresivo: titulo primero; cada Tab revela el siguiente campo. Enter crea, Esc cierra. *@
                                 <div class="tb-composer">
-                                    <input class="tb-composer-inp" placeholder="Titulo de la tarea..." autofocus
-                                           value="@_composerDraft.Titulo"
+                                    @* SIN value= a proposito: con value= + @@oninput en Blazor Server cada tecla
+                                       hace round-trip y el re-render reafirma value con el modelo, pisando las
+                                       teclas escritas mientras el round-trip esta en vuelo (se pierden pulsaciones).
+                                       El modelo se mantiene por @@oninput; @@key limpia el input al abrir/crear y el
+                                       foco se restaura a mano en OnAfterRenderAsync. *@
+                                    <input class="tb-composer-inp" placeholder="Titulo de la tarea..."
+                                           @key="_composerNonce" @ref="_composerTituloRef"
                                            @oninput="@(e => { _composerDraft.Titulo = e.Value?.ToString() ?? string.Empty; RevealComposerNext(0); })"
                                            @onkeydown="@(e => ComposerKeydown(e, estado.Id, 0))" />
                                     @if (_composerReveal >= 1)
                                     {
                                         <input class="tb-composer-sub tb-composer-appear" placeholder="Descripcion (opcional)"
-                                               @bind="_composerDraft.Descripcion" @bind:event="oninput"
+                                               @oninput="@(e => _composerDraft.Descripcion = e.Value?.ToString())"
                                                @onfocus="@(() => RevealComposerNext(1))" @onkeydown="@(e => ComposerKeydown(e, estado.Id, 1))" />
                                     }
                                     @if (_composerReveal >= 2)
@@ -1881,6 +1886,14 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // Foco del compositor: al abrir o tras crear una tarea el input de titulo se recrea (@key),
+        // asi que hay que devolverle el foco a mano (autofocus solo aplica en la carga inicial).
+        if (_composerFocusPending)
+        {
+            _composerFocusPending = false;
+            try { await _composerTituloRef.FocusAsync(); } catch { }
+        }
+
         if (!firstRender || _jwt is not null) return;
         try
         {
@@ -2671,8 +2684,11 @@ else
     private Guid? _composerEstado;
     private NuevaFilaDraft _composerDraft = new();
     private int _composerReveal;   // indice del ultimo campo revelado (0 = solo titulo)
+    private int _composerNonce;    // cambia al abrir/crear: recrea el input de titulo (lo limpia sin value=)
+    private bool _composerFocusPending;   // pide devolver el foco al titulo tras recrearlo
+    private ElementReference _composerTituloRef;
     private int ComposerMaxIdx => 6 + (_board?.Tablero.Campos?.Count ?? 0);
-    private void AbrirComposer(Guid estadoId) { _composerEstado = estadoId; _composerDraft = new NuevaFilaDraft { EstadoId = estadoId }; _composerReveal = 0; }
+    private void AbrirComposer(Guid estadoId) { _composerEstado = estadoId; _composerDraft = new NuevaFilaDraft { EstadoId = estadoId }; _composerReveal = 0; _composerNonce++; _composerFocusPending = true; }
     private void CerrarComposer() { _composerEstado = null; }
     private void RevealComposerNext(int idx)
     {
@@ -2699,7 +2715,7 @@ else
             d.Prioridad, estadoId, null, null, d.FechaVencimiento, null, new List<Guid>(), _board.Tablero.Id,
             null, false, d.Valor, null, null, oTipo, oRef, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores);
         var resp = await Auth().PostAsJsonAsync("/api/tareas", req);
-        if (resp.IsSuccessStatusCode) { _composerDraft = new NuevaFilaDraft { EstadoId = estadoId }; _composerReveal = 0; await RecargarBoard(); }
+        if (resp.IsSuccessStatusCode) { _composerDraft = new NuevaFilaDraft { EstadoId = estadoId }; _composerReveal = 0; _composerNonce++; _composerFocusPending = true; await RecargarBoard(); }
         else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
     }
 
