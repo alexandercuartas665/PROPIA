@@ -323,6 +323,12 @@
         el.dispatchEvent(new Event('input', { bubbles: true }));
     };
 
+    // Enfoca el primer elemento que coincida con el selector. Lo usan las filas de alta
+    // inline que se recrean con @key tras crear (Blazor pierde el foco al recrear el DOM).
+    window.propiaUI.focusBySelector = function (selector) {
+        try { var el = document.querySelector(selector); if (el) el.focus(); } catch (e) { }
+    };
+
     // Helper para descargar bytes desde base64 (modulo 2.15 Documentos).
     window.propiaUI.downloadBase64 = function (filename, mime, base64) {
         var byteCharacters = atob(base64);

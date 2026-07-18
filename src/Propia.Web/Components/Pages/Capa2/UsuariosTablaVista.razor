@@ -43,7 +43,9 @@
         }
         @* Fila de alta: crea/encuentra la persona en el Directorio y le envia la invitacion.
            El "+" del inicio y el placeholder "Nuevo usuario..." son los que la anuncian. *@
-        <div class="utb-newrow utb-grid">
+        @* @@key limpia la fila al invitar; @@oninput SIN value= evita perder pulsaciones
+           (value= se reafirma en cada re-render y pisa lo escrito en Blazor Server). *@
+        <div class="utb-newrow utb-grid" @key="_nonce">
             <div class="utb-nf-first">
                 <span class="utb-nf-plus">+</span>
                 <select class="utb-inp utb-inp-tipo" @bind="_d.TipoDocumento">
@@ -52,11 +54,11 @@
                     <option value="@TipoDocumento.PA">PA</option>
                     <option value="@TipoDocumento.TI">TI</option>
                 </select>
-                <input class="utb-inp" placeholder="Documento" @bind="_d.Documento" @bind:event="oninput" @onkeydown="Key" />
+                <input class="utb-inp" @ref="_firstRef" placeholder="Documento" @oninput="@(e => _d.Documento = e.Value?.ToString() ?? string.Empty)" @onkeydown="Key" />
             </div>
             <div class="utb-nf-nombre">
-                <input class="utb-inp" placeholder="Nuevo usuario..." @bind="_d.Nombres" @bind:event="oninput" @onkeydown="Key" />
-                <input class="utb-inp" placeholder="Apellidos" @bind="_d.Apellidos" @bind:event="oninput" @onkeydown="Key" />
+                <input class="utb-inp" placeholder="Nuevo usuario..." @oninput="@(e => _d.Nombres = e.Value?.ToString() ?? string.Empty)" @onkeydown="Key" />
+                <input class="utb-inp" placeholder="Apellidos" @oninput="@(e => _d.Apellidos = e.Value?.ToString() ?? string.Empty)" @onkeydown="Key" />
             </div>
             <div class="utb-nf-mut">Al aceptar</div>
             <div class="utb-nf-mut">&mdash;</div>
@@ -85,6 +87,14 @@
 
     private bool _busy;
     private readonly Draft _d = new();
+    private int _nonce;
+    private bool _focusPending;
+    private ElementReference _firstRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusPending) { _focusPending = false; try { await _firstRef.FocusAsync(); } catch { } }
+    }
 
     private bool Valido =>
         !string.IsNullOrWhiteSpace(_d.Documento) &&
@@ -116,7 +126,7 @@
         {
             await OnInvitar.InvokeAsync(new NuevoUsuarioInvitar(
                 _d.TipoDocumento, _d.Documento.Trim(), _d.Nombres.Trim(), _d.Apellidos.Trim(), _d.RolId));
-            _d.Reset();
+            _d.Reset(); _nonce++; _focusPending = true;
         }
         finally { _busy = false; }
     }

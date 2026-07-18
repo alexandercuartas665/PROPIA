@@ -350,16 +350,19 @@ else
                     {
                         @RenderArbol(t, 0)
                     }
-                    @* Fila "nueva tarea" inline estilo Excel: Tab salta entre campos, Enter crea. *@
+                    @* Fila "nueva tarea" inline estilo Excel: Tab salta entre campos, Enter crea.
+                       @@key=nf usa la identidad del draft (se reemplaza por uno nuevo al crear/Esc)
+                       para limpiar la fila; los inputs de texto usan @@oninput SIN value= para no
+                       perder pulsaciones (value= se reafirma en cada re-render en Blazor Server). *@
                     var nf = NuevaFilaDe(estado.Id);
-                    <div class="tb-newrow">
+                    <div class="tb-newrow" @key="nf">
                         <div class="tb-row-tit">
                             <span class="tb-newrow-plus">+</span>
-                            <input class="tb-nf-inp tb-nf-tit" placeholder="Nueva tarea..." @bind="nf.Titulo" @bind:event="oninput" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" />
+                            <input class="tb-nf-inp tb-nf-tit" data-nf-tit="@estado.Id" placeholder="Nueva tarea..." @oninput="@(e => nf.Titulo = e.Value?.ToString() ?? string.Empty)" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" />
                         </div>
                         @if (_colDesc)
                         {
-                            <div class="tb-row-desc"><input class="tb-nf-inp" placeholder="Descripcion" @bind="nf.Descripcion" @bind:event="oninput" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" /></div>
+                            <div class="tb-row-desc"><input class="tb-nf-inp" placeholder="Descripcion" @oninput="@(e => nf.Descripcion = e.Value?.ToString())" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" /></div>
                         }
                         <div class="tb-row-cell-est">
                             <select class="tb-est-sel" style="background:#6D4FE3" @bind="nf.EstadoId">
@@ -1893,6 +1896,13 @@ else
             _composerFocusPending = false;
             try { await _composerTituloRef.FocusAsync(); } catch { }
         }
+        // Fila lista (por columna): tras crear, el @key recrea la fila; se reenfoca su titulo por
+        // selector (no hay ElementReference por columna en el foreach).
+        if (_nfFocusEstado is Guid nfe)
+        {
+            _nfFocusEstado = null;
+            try { await Js.InvokeVoidAsync("propiaUI.focusBySelector", $"[data-nf-tit='{nfe}']"); } catch { }
+        }
 
         if (!firstRender || _jwt is not null) return;
         try
@@ -2649,6 +2659,7 @@ else
         public string? OrigenReferencia;
     }
     private readonly Dictionary<Guid, NuevaFilaDraft> _nuevaFilas = new();
+    private Guid? _nfFocusEstado;   // columna cuyo titulo hay que reenfocar tras crear en la vista Lista
     private NuevaFilaDraft NuevaFilaDe(Guid estadoId)
     {
         if (!_nuevaFilas.TryGetValue(estadoId, out var d)) { d = new NuevaFilaDraft { EstadoId = estadoId }; _nuevaFilas[estadoId] = d; }
@@ -2674,7 +2685,7 @@ else
             d.Prioridad, d.EstadoId, null, null, d.FechaVencimiento, null, new List<Guid>(), _board.Tablero.Id,
             null, false, d.Valor, null, null, oTipo, oRef, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores);
         var resp = await Auth().PostAsJsonAsync("/api/tareas", req);
-        if (resp.IsSuccessStatusCode) { _nuevaFilas[estadoId] = new NuevaFilaDraft { EstadoId = estadoId }; await RecargarBoard(); }
+        if (resp.IsSuccessStatusCode) { _nuevaFilas[estadoId] = new NuevaFilaDraft { EstadoId = estadoId }; _nfFocusEstado = estadoId; await RecargarBoard(); }
         else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
     }
 

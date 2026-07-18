@@ -454,8 +454,10 @@ else
                 @if (_znComposerOpen)
                 {
                     <div class="mc-composer">
+                        @* SIN value=: value= se reafirma en cada re-render en Blazor Server y pisa
+                           lo escrito mientras el round-trip esta en vuelo (se pierden pulsaciones).
+                           El compositor de tarjetas se desmonta al crear, asi que se limpia solo. *@
                         <input class="mc-composer-inp" placeholder="Nombre de la zona..." autofocus
-                               value="@_znDraft.Nombre"
                                @oninput="@(e => { _znDraft.Nombre = e.Value?.ToString() ?? string.Empty; RevealZn(0); })"
                                @onkeydown="ZnKeydown" />
                         @if (_znReveal >= 1)
@@ -515,9 +517,10 @@ else
                         </div>
                     </div>
                 }
-                @* Fila nueva: alta inline *@
-                <div class="mc-list-newrow mc-zn-grid">
-                    <input class="mc-row-inp" placeholder="Nueva zona comun..." value="@_znDraft.Nombre"
+                @* Fila nueva: alta inline. @@key limpia la fila al crear; @@oninput SIN value=
+                   evita perder pulsaciones (value= se reafirma en cada re-render en Blazor Server). *@
+                <div class="mc-list-newrow mc-zn-grid" @key="_znNonce">
+                    <input class="mc-row-inp" @ref="_znNombreRef" placeholder="Nueva zona comun..."
                            @oninput="@(e => _znDraft.Nombre = e.Value?.ToString() ?? string.Empty)" @onkeydown="ZnKeydown" />
                     <select class="mc-row-inp" @bind="_znDraft.Categoria">
                         @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c">@c</option> }
@@ -587,8 +590,9 @@ else
                 @if (_eqComposerOpen)
                 {
                     <div class="mc-composer">
+                        @* SIN value= (ver Zonas): evita perder pulsaciones; el compositor se
+                           desmonta al crear y se limpia solo. *@
                         <input class="mc-composer-inp" placeholder="Nombre del equipo o activo..." autofocus
-                               value="@_eqDraft.Nombre"
                                @oninput="@(e => { _eqDraft.Nombre = e.Value?.ToString() ?? string.Empty; RevealEq(0); })"
                                @onkeydown="EqKeydown" />
                         @if (_eqReveal >= 1)
@@ -655,8 +659,9 @@ else
                         </div>
                     </div>
                 }
-                <div class="mc-list-newrow mc-eqlist-grid">
-                    <input class="mc-row-inp" placeholder="Nuevo equipo o activo..." value="@_eqDraft.Nombre"
+                @* @@key limpia la fila al crear; @@oninput SIN value= evita perder pulsaciones. *@
+                <div class="mc-list-newrow mc-eqlist-grid" @key="_eqNonce">
+                    <input class="mc-row-inp" @ref="_eqNombreRef" placeholder="Nuevo equipo o activo..."
                            @oninput="@(e => _eqDraft.Nombre = e.Value?.ToString() ?? string.Empty)" @onkeydown="EqKeydown" />
                     <select class="mc-row-inp" @bind="_eqDraft.Categoria">
                         @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c">@c</option> }
@@ -1293,6 +1298,12 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // Foco de las filas de alta de Zonas/Equipos: tras crear, la fila se recrea (@key) y hay
+        // que devolverle el foco a mano. En vista tarjetas el compositor se cierra y el ref no
+        // esta montado; el try/catch lo absorbe.
+        if (_znFocusPending) { _znFocusPending = false; try { await _znNombreRef.FocusAsync(); } catch { } }
+        if (_eqFocusPending) { _eqFocusPending = false; try { await _eqNombreRef.FocusAsync(); } catch { } }
+
         if (!firstRender || _jwt is not null) return;
         try
         {
@@ -2091,6 +2102,9 @@ else
     private int _znReveal;
     private bool _znBusy;
     private readonly ZonaDraft _znDraft = new();
+    private int _znNonce;                      // @key limpia la fila lista al crear
+    private bool _znFocusPending;              // reenfocar el nombre tras recrear la fila lista
+    private ElementReference _znNombreRef;
 
     private sealed class ZonaDraft
     {
@@ -2122,7 +2136,7 @@ else
             var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/zonas", req);
             if (resp.IsSuccessStatusCode)
             {
-                _znDraft.Reset(); _znReveal = 0; _znComposerOpen = false;
+                _znDraft.Reset(); _znReveal = 0; _znComposerOpen = false; _znNonce++; _znFocusPending = true;
                 await CargarAsync();
                 Msg("Zona comun creada. Haz clic en ella para completar la ficha.", true);
             }
@@ -2144,6 +2158,9 @@ else
     private int _eqReveal;
     private bool _eqBusy;
     private readonly EquipoDraft _eqDraft = new();
+    private int _eqNonce;
+    private bool _eqFocusPending;
+    private ElementReference _eqNombreRef;
 
     private sealed class EquipoDraft
     {
@@ -2177,7 +2194,7 @@ else
             var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/equipos", req);
             if (resp.IsSuccessStatusCode)
             {
-                _eqDraft.Reset(); _eqReveal = 0; _eqComposerOpen = false;
+                _eqDraft.Reset(); _eqReveal = 0; _eqComposerOpen = false; _eqNonce++; _eqFocusPending = true;
                 await CargarAsync();
                 Msg("Equipo/activo creado. Haz clic en el para completar la ficha.", true);
             }

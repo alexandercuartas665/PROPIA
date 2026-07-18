@@ -92,8 +92,11 @@ else
                     </div>
                 </div>
             }
-            @* Fila nueva: alta inline con todos los campos *@
-            <div class="dtab-newrow dvp-grid">
+            @* Fila nueva: alta inline con todos los campos.
+               @@key limpia la fila al crear (recrea los inputs); los inputs usan @@oninput SIN
+               value= para no perder pulsaciones en Blazor Server (value= se reafirma en cada
+               re-render y pisa lo escrito mientras el round-trip esta en vuelo). *@
+            <div class="dtab-newrow dvp-grid" @key="_nonce">
                 <div class="dtab-nf-first">
                     <span class="dtab-nf-plus">+</span>
                     <select class="dtab-inp" @bind="_draft.TipoDocumento">
@@ -103,11 +106,11 @@ else
                         <option value="@TipoDocumento.TI">T. Identidad</option>
                     </select>
                 </div>
-                <input class="dtab-inp" placeholder="Documento" @bind="_draft.Documento" @bind:event="oninput" @onkeydown="RowKeydown" />
-                <input class="dtab-inp" placeholder="Nueva persona..." @bind="_draft.Nombres" @bind:event="oninput" @onkeydown="RowKeydown" />
-                <input class="dtab-inp" placeholder="Apellidos" @bind="_draft.Apellidos" @bind:event="oninput" @onkeydown="RowKeydown" />
-                <input class="dtab-inp" placeholder="Email" @bind="_draft.Email" @bind:event="oninput" @onkeydown="RowKeydown" />
-                <input class="dtab-inp" placeholder="Telefono" @bind="_draft.Telefono" @bind:event="oninput" @onkeydown="RowKeydown" />
+                <input class="dtab-inp" @ref="_firstRef" placeholder="Documento" @oninput="@(e => _draft.Documento = e.Value?.ToString() ?? string.Empty)" @onkeydown="RowKeydown" />
+                <input class="dtab-inp" placeholder="Nueva persona..." @oninput="@(e => _draft.Nombres = e.Value?.ToString() ?? string.Empty)" @onkeydown="RowKeydown" />
+                <input class="dtab-inp" placeholder="Apellidos" @oninput="@(e => _draft.Apellidos = e.Value?.ToString() ?? string.Empty)" @onkeydown="RowKeydown" />
+                <input class="dtab-inp" placeholder="Email" @oninput="@(e => _draft.Email = e.Value?.ToString())" @onkeydown="RowKeydown" />
+                <input class="dtab-inp" placeholder="Telefono" @oninput="@(e => _draft.Telefono = e.Value?.ToString())" @onkeydown="RowKeydown" />
                 <div class="dtab-nf-mut">Activo</div>
                 <div class="dtab-act">
                     <button type="button" class="dtab-add" title="Agregar (Enter)" @onclick="CrearPersonaInline" disabled="@(_busy || !DraftValido)">+</button>
@@ -125,6 +128,14 @@ else
     private string _view = "lista";
     private bool _busy;
     private readonly PersonaDraft _draft = new();
+    private int _nonce;                 // cambia al crear: @key recrea la fila y la limpia
+    private bool _focusPending;         // devolver el foco al primer campo tras recrear la fila
+    private ElementReference _firstRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusPending) { _focusPending = false; try { await _firstRef.FocusAsync(); } catch { } }
+    }
 
     private bool DraftValido =>
         !string.IsNullOrWhiteSpace(_draft.Documento) &&
@@ -159,7 +170,7 @@ else
                 _draft.Nombres.Trim(), _draft.Apellidos.Trim(),
                 string.IsNullOrWhiteSpace(_draft.Email) ? null : _draft.Email.Trim(),
                 string.IsNullOrWhiteSpace(_draft.Telefono) ? null : _draft.Telefono.Trim()));
-            _draft.Reset();
+            _draft.Reset(); _nonce++; _focusPending = true;
         }
         finally { _busy = false; }
     }

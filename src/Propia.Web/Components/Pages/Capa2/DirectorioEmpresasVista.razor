@@ -74,16 +74,18 @@ else
                     <div class="dtab-act"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#C3D0DD" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></div>
                 </div>
             }
-            <div class="dtab-newrow dve-grid">
+            @* @@key limpia la fila al crear; @@oninput SIN value= evita perder pulsaciones
+               (value= se reafirma en cada re-render y pisa lo escrito en Blazor Server). *@
+            <div class="dtab-newrow dve-grid" @key="_nonce">
                 <div class="dtab-nf-first">
                     <span class="dtab-nf-plus">+</span>
-                    <input class="dtab-inp" placeholder="NIT" @bind="_draft.Nit" @bind:event="oninput" @onkeydown="RowKeydown" />
+                    <input class="dtab-inp" @ref="_firstRef" placeholder="NIT" @oninput="@(e => _draft.Nit = e.Value?.ToString() ?? string.Empty)" @onkeydown="RowKeydown" />
                 </div>
-                <input class="dtab-inp" placeholder="DV" @bind="_draft.Dv" @bind:event="oninput" @onkeydown="RowKeydown" />
-                <input class="dtab-inp" placeholder="Nueva empresa..." @bind="_draft.RazonSocial" @bind:event="oninput" @onkeydown="RowKeydown" />
-                <input class="dtab-inp" placeholder="Nombre comercial" @bind="_draft.NombreComercial" @bind:event="oninput" @onkeydown="RowKeydown" />
-                <input class="dtab-inp" placeholder="Email" @bind="_draft.Email" @bind:event="oninput" @onkeydown="RowKeydown" />
-                <input class="dtab-inp" placeholder="Telefono" @bind="_draft.Telefono" @bind:event="oninput" @onkeydown="RowKeydown" />
+                <input class="dtab-inp" placeholder="DV" @oninput="@(e => _draft.Dv = e.Value?.ToString())" @onkeydown="RowKeydown" />
+                <input class="dtab-inp" placeholder="Nueva empresa..." @oninput="@(e => _draft.RazonSocial = e.Value?.ToString() ?? string.Empty)" @onkeydown="RowKeydown" />
+                <input class="dtab-inp" placeholder="Nombre comercial" @oninput="@(e => _draft.NombreComercial = e.Value?.ToString())" @onkeydown="RowKeydown" />
+                <input class="dtab-inp" placeholder="Email" @oninput="@(e => _draft.Email = e.Value?.ToString())" @onkeydown="RowKeydown" />
+                <input class="dtab-inp" placeholder="Telefono" @oninput="@(e => _draft.Telefono = e.Value?.ToString())" @onkeydown="RowKeydown" />
                 <div class="dtab-nf-mut">Activo</div>
                 <div class="dtab-act"><button type="button" class="dtab-add" title="Agregar (Enter)" @onclick="CrearEmpresaInline" disabled="@(_busy || !DraftValido)">+</button></div>
             </div>
@@ -99,6 +101,14 @@ else
     private string _view = "lista";
     private bool _busy;
     private readonly EmpresaDraft _draft = new();
+    private int _nonce;
+    private bool _focusPending;
+    private ElementReference _firstRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusPending) { _focusPending = false; try { await _firstRef.FocusAsync(); } catch { } }
+    }
 
     private bool DraftValido =>
         !string.IsNullOrWhiteSpace(_draft.Nit) && !string.IsNullOrWhiteSpace(_draft.RazonSocial);
@@ -132,7 +142,7 @@ else
                 string.IsNullOrWhiteSpace(_draft.NombreComercial) ? null : _draft.NombreComercial.Trim(),
                 string.IsNullOrWhiteSpace(_draft.Email) ? null : _draft.Email.Trim(),
                 string.IsNullOrWhiteSpace(_draft.Telefono) ? null : _draft.Telefono.Trim()));
-            _draft.Reset();
+            _draft.Reset(); _nonce++; _focusPending = true;
         }
         finally { _busy = false; }
     }
