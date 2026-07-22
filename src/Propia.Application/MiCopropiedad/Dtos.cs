@@ -113,13 +113,17 @@ public record UnidadMascotaDto(Guid Id, string Nombre, TipoMascota Tipo, string?
 public record CrearUnidadMascotaRequest(string Nombre, TipoMascota Tipo, string? Raza);
 
 // Empleada(s) de servicio de la unidad.
-public record UnidadEmpleadaDto(Guid Id, string Nombre, string? Documento, string? Celular, string? Horario);
-public record CrearUnidadEmpleadaRequest(string Nombre, string? Documento, string? Celular, string? Horario);
+public record UnidadEmpleadaDto(Guid Id, string Nombre, string? Documento, string? Celular, string? Horario, Guid? PersonaId = null);
+// PersonaId llega del SelectorPersona. Sin el, se conserva el alta por texto (una empleada
+// puede registrarse antes de completar sus datos).
+public record CrearUnidadEmpleadaRequest(string Nombre, string? Documento, string? Celular, string? Horario, Guid? PersonaId = null);
 
 // ----- Prototipo v3 Oleada 2 -----
 // Historico de titularidad (propietarios) de la unidad. Actual = Hasta es null.
-public record UnidadTitularidadDto(Guid Id, string Nombre, string? Rol, DateOnly Desde, DateOnly? Hasta, bool Actual);
-public record CrearUnidadTitularidadRequest(string Nombre, string? Rol, DateOnly Desde, DateOnly? Hasta);
+public record UnidadTitularidadDto(Guid Id, string Nombre, string? Rol, DateOnly Desde, DateOnly? Hasta, bool Actual, Guid? PersonaId = null);
+// PersonaId opcional: un titular historico puede no existir en el Directorio y aun asi
+// debe poder registrarse por nombre.
+public record CrearUnidadTitularidadRequest(string Nombre, string? Rol, DateOnly Desde, DateOnly? Hasta, Guid? PersonaId = null);
 
 // Campos dinamicos (EAV) por persona vinculada a la unidad.
 public record UnidadPersonaCampoDto(Guid Id, string Label, string? Valor);
@@ -191,12 +195,15 @@ public record ContratoServicioDto(
     bool RenovacionAutomatica = false, Guid? ServicioId = null, Guid? ExpedienteId = null,
     Guid? ProyectoTareaId = null, int CantidadAdjuntos = 0);
 
+// Directriz: el proveedor de un contrato es un tercero del Directorio (Persona o Empresa).
+// Los campos de texto quedan como snapshot para los contratos ya cargados a mano.
 public record CrearContratoServicioRequest(
     TipoServicio Tipo, string Proveedor, string? NitProveedor, string? Contacto,
     DateOnly FechaInicio, DateOnly? FechaFin, decimal? ValorMensual, string? Observaciones,
     int DiasAnticipacionAlerta = 30,
     bool RenovacionAutomatica = false, Guid? ServicioId = null, Guid? ExpedienteId = null,
-    Guid? ProyectoTareaId = null);
+    Guid? ProyectoTareaId = null,
+    Guid? ProveedorPersonaId = null, Guid? ProveedorEmpresaId = null, Guid? ContactoPersonaId = null);
 
 /// <summary>
 /// Actualiza un contrato. Estado + dias siempre se aplican. Los demas campos son opcionales:

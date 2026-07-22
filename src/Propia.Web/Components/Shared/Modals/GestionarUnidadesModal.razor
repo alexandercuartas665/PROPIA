@@ -540,12 +540,19 @@
                         }
                         @if (_editMode)
                         {
+                            @* El titular se busca en el Directorio; si es un propietario
+                               antiguo que no esta en el sistema, el nombre a mano sigue
+                               sirviendo (por eso PersonaId es opcional aqui). *@
+                            <div style="margin-top:9px">
+                                <SelectorPersona Jwt="@Jwt" @bind-Seleccionada="_titSel"
+                                                 Placeholder="Buscar al titular en el Directorio (opcional)..." />
+                            </div>
                             <div class="gum-inm-add" style="flex-wrap:wrap;margin-top:9px">
-                                <input class="gum-inm-input" style="flex:1;min-width:140px" @bind="_titNombre" @bind:event="oninput" placeholder="Nombre del titular" />
+                                <input class="gum-inm-input" style="flex:1;min-width:140px" @bind="_titNombre" @bind:event="oninput" placeholder="@(_titSel is null ? "Nombre del titular" : _titSel.NombreCompleto)" />
                                 <input class="gum-inm-input" style="width:110px" @bind="_titRol" @bind:event="oninput" placeholder="Rol" />
                                 <input class="gum-inm-input" type="date" style="width:140px" @bind="_titDesde" />
                                 <input class="gum-inm-input" type="date" style="width:140px" @bind="_titHasta" />
-                                <button class="gum-inm-add-btn" type="button" @onclick="AgregarTitularidad" disabled="@(_busy || string.IsNullOrWhiteSpace(_titNombre) || _titDesde is null)">
+                                <button class="gum-inm-add-btn" type="button" @onclick="AgregarTitularidad" disabled="@(_busy || (_titSel is null && string.IsNullOrWhiteSpace(_titNombre)) || _titDesde is null)">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
                                 </button>
                             </div>
@@ -846,12 +853,18 @@
                     }
                     @if (_editMode)
                     {
+                        @* Directriz: todo tercero queda en el Directorio. El nombre a mano
+                           se conserva para registrar antes de tener los datos completos. *@
+                        <div style="margin-bottom:9px">
+                            <SelectorPersona Jwt="@Jwt" @bind-Seleccionada="_empSel"
+                                             Placeholder="Buscar en el Directorio (opcional)..." />
+                        </div>
                         <div class="gum-inm-add" style="flex-wrap:wrap">
-                            <input class="gum-inm-input" style="flex:1;min-width:110px" @bind="_nuevaEmpNombre" @bind:event="oninput" placeholder="Nombre" />
+                            <input class="gum-inm-input" style="flex:1;min-width:110px" @bind="_nuevaEmpNombre" @bind:event="oninput" placeholder="@(_empSel is null ? "Nombre" : _empSel.NombreCompleto)" />
                             <input class="gum-inm-input" style="width:96px" @bind="_nuevaEmpDoc" @bind:event="oninput" placeholder="Documento" />
                             <input class="gum-inm-input" style="width:90px" @bind="_nuevaEmpCel" @bind:event="oninput" placeholder="Celular" />
                             <input class="gum-inm-input" style="flex:1;min-width:90px" @bind="_nuevaEmpHorario" @bind:event="oninput" placeholder="Dias / horario" />
-                            <button class="gum-inm-add-btn" type="button" @onclick="AgregarEmpleada" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevaEmpNombre))">
+                            <button class="gum-inm-add-btn" type="button" @onclick="AgregarEmpleada" disabled="@(_busy || (_empSel is null && string.IsNullOrWhiteSpace(_nuevaEmpNombre)))">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
                             </button>
                         </div>
@@ -1593,6 +1606,10 @@
     private string _nuevaMascRaza = "";
 
     private List<UnidadEmpleadaDto> _empleadas = new();
+    // Terceros elegidos del Directorio. Opcionales: el alta por nombre sigue valiendo.
+    private Propia.Application.Directorio.PersonaCandidatoDto? _empSel;
+    private Propia.Application.Directorio.PersonaCandidatoDto? _titSel;
+
     private string _nuevaEmpNombre = "";
     private string _nuevaEmpDoc = "";
     private string _nuevaEmpCel = "";
@@ -2032,19 +2049,22 @@
 
     private async Task AgregarEmpleada()
     {
-        if (_selected is null || string.IsNullOrWhiteSpace(_nuevaEmpNombre)) return;
+        if (_selected is null || (_empSel is null && string.IsNullOrWhiteSpace(_nuevaEmpNombre))) return;
         _busy = true;
         try
         {
             var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{_selected.Id}/empleadas",
-                new CrearUnidadEmpleadaRequest(_nuevaEmpNombre.Trim(),
+                // Si se eligio del Directorio, el nombre viene de ahi (snapshot).
+                new CrearUnidadEmpleadaRequest(
+                    _empSel?.NombreCompleto ?? _nuevaEmpNombre.Trim(),
                     string.IsNullOrWhiteSpace(_nuevaEmpDoc) ? null : _nuevaEmpDoc.Trim(),
                     string.IsNullOrWhiteSpace(_nuevaEmpCel) ? null : _nuevaEmpCel.Trim(),
-                    string.IsNullOrWhiteSpace(_nuevaEmpHorario) ? null : _nuevaEmpHorario.Trim()));
+                    string.IsNullOrWhiteSpace(_nuevaEmpHorario) ? null : _nuevaEmpHorario.Trim(),
+                    _empSel?.PersonaId));
             if (resp.IsSuccessStatusCode)
             {
                 _empleadas = await Auth().GetFromJsonAsync<List<UnidadEmpleadaDto>>($"/api/mi-copropiedad/unidades/{_selected.Id}/empleadas") ?? _empleadas;
-                _nuevaEmpNombre = ""; _nuevaEmpDoc = ""; _nuevaEmpCel = ""; _nuevaEmpHorario = "";
+                _nuevaEmpNombre = ""; _nuevaEmpDoc = ""; _nuevaEmpCel = ""; _nuevaEmpHorario = ""; _empSel = null;
             }
             else { ShowMsg(await resp.Content.ReadAsStringAsync(), true); }
         }
@@ -2062,16 +2082,19 @@
     // ===== Oleada 2: historico de propietarios =====
     private async Task AgregarTitularidad()
     {
-        if (_selected is null || string.IsNullOrWhiteSpace(_titNombre) || _titDesde is not DateOnly desde) return;
+        if (_selected is null || (_titSel is null && string.IsNullOrWhiteSpace(_titNombre)) || _titDesde is not DateOnly desde) return;
         _busy = true;
         try
         {
             var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{_selected.Id}/titularidad",
-                new CrearUnidadTitularidadRequest(_titNombre.Trim(), string.IsNullOrWhiteSpace(_titRol) ? null : _titRol.Trim(), desde, _titHasta));
+                new CrearUnidadTitularidadRequest(
+                    _titSel?.NombreCompleto ?? _titNombre.Trim(),
+                    string.IsNullOrWhiteSpace(_titRol) ? null : _titRol.Trim(), desde, _titHasta,
+                    _titSel?.PersonaId));
             if (resp.IsSuccessStatusCode)
             {
                 _titularidad = await Auth().GetFromJsonAsync<List<UnidadTitularidadDto>>($"/api/mi-copropiedad/unidades/{_selected.Id}/titularidad") ?? _titularidad;
-                _titNombre = ""; _titRol = "Propietario"; _titDesde = null; _titHasta = null;
+                _titNombre = ""; _titRol = "Propietario"; _titDesde = null; _titHasta = null; _titSel = null;
             }
             else { ShowMsg(await resp.Content.ReadAsStringAsync(), true); }
         }

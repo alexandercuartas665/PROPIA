@@ -190,6 +190,13 @@ public class UnidadEmpleada : TenantEntity
     public Guid UnidadId { get; set; }
     public UnidadPrivada? Unidad { get; set; }
 
+    /// <summary>
+    /// Persona del Directorio. Opcional a proposito: la directriz es que todo tercero
+    /// quede en el Directorio, pero una empleada puede registrarse antes de tener sus
+    /// datos completos. Cuando esta, Nombre/Documento son el snapshot de esa persona.
+    /// </summary>
+    public Guid? PersonaId { get; set; }
+
     public string Nombre { get; set; } = string.Empty;
     public string? Documento { get; set; }
     public string? Celular { get; set; }
@@ -208,7 +215,14 @@ public class UnidadTitularidad : TenantEntity
     public Guid UnidadId { get; set; }
     public UnidadPrivada? Unidad { get; set; }
 
-    /// <summary>Nombre del titular (texto libre: titulares historicos pueden no estar en el sistema).</summary>
+    /// <summary>
+    /// Persona del Directorio, cuando el titular existe en el sistema. Se queda OPCIONAL
+    /// a proposito: un propietario de hace 20 anios puede no estar en el Directorio y aun
+    /// asi debe poder registrarse en el historico. Nombre es el respaldo, no el reemplazo.
+    /// </summary>
+    public Guid? PersonaId { get; set; }
+
+    /// <summary>Nombre del titular (texto libre cuando no hay PersonaId; snapshot cuando si).</summary>
     public string Nombre { get; set; } = string.Empty;
 
     /// <summary>Rol del titular en el periodo (ej. Propietario, Arrendatario). Texto libre.</summary>

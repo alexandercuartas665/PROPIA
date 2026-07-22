@@ -10,8 +10,19 @@ namespace Propia.Domain.Entities;
 public class ContratoServicio : TenantEntity
 {
     public TipoServicio Tipo { get; set; }
+    /// <summary>
+    /// Directriz: "en servicios el proveedor es un tercero de directorio". Puede ser una
+    /// Persona o una Empresa; los campos de texto quedan como snapshot para no perder los
+    /// contratos viejos que se cargaron a mano.
+    /// </summary>
+    public Guid? ProveedorPersonaId { get; set; }
+    public Guid? ProveedorEmpresaId { get; set; }
+
     public string Proveedor { get; set; } = string.Empty;
     public string? NitProveedor { get; set; }
+
+    /// <summary>Persona de contacto del contrato, tambien del Directorio.</summary>
+    public Guid? ContactoPersonaId { get; set; }
     public string? Contacto { get; set; }
 
     public DateOnly FechaInicio { get; set; }

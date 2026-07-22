@@ -629,7 +629,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         => await _db.UnidadEmpleadas.AsNoTracking()
             .Where(x => x.UnidadId == unidadId)
             .OrderBy(x => x.Nombre)
-            .Select(x => new UnidadEmpleadaDto(x.Id, x.Nombre, x.Documento, x.Celular, x.Horario))
+            .Select(x => new UnidadEmpleadaDto(x.Id, x.Nombre, x.Documento, x.Celular, x.Horario, x.PersonaId))
             .ToListAsync(ct);
 
     public async Task<UnidadEmpleadaDto?> AgregarEmpleadaUnidadAsync(Guid unidadId, CrearUnidadEmpleadaRequest req, CancellationToken ct)
@@ -643,6 +643,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         {
             TenantId = tid,
             UnidadId = unidadId,
+            PersonaId = req.PersonaId,
             Nombre = nombre,
             Documento = string.IsNullOrWhiteSpace(req.Documento) ? null : req.Documento.Trim(),
             Celular = string.IsNullOrWhiteSpace(req.Celular) ? null : req.Celular.Trim(),
@@ -651,7 +652,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         _db.UnidadEmpleadas.Add(e);
         await _db.SaveChangesAsync(ct);
         await RegistrarBitacoraAsync("Unidad", $"Empleada de servicio '{nombre}' registrada en la unidad.", ct);
-        return new UnidadEmpleadaDto(e.Id, e.Nombre, e.Documento, e.Celular, e.Horario);
+        return new UnidadEmpleadaDto(e.Id, e.Nombre, e.Documento, e.Celular, e.Horario, e.PersonaId);
     }
 
     public async Task<bool> EliminarEmpleadaUnidadAsync(Guid empleadaId, CancellationToken ct)
@@ -668,7 +669,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         => await _db.UnidadTitularidades.AsNoTracking()
             .Where(t => t.UnidadId == unidadId)
             .OrderByDescending(t => t.Desde)
-            .Select(t => new UnidadTitularidadDto(t.Id, t.Nombre, t.Rol, t.Desde, t.Hasta, t.Hasta == null))
+            .Select(t => new UnidadTitularidadDto(t.Id, t.Nombre, t.Rol, t.Desde, t.Hasta, t.Hasta == null, t.PersonaId))
             .ToListAsync(ct);
 
     public async Task<UnidadTitularidadDto?> AgregarTitularidadUnidadAsync(Guid unidadId, CrearUnidadTitularidadRequest req, CancellationToken ct)
@@ -683,6 +684,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         {
             TenantId = tid,
             UnidadId = unidadId,
+            PersonaId = req.PersonaId,
             Nombre = nombre,
             Rol = string.IsNullOrWhiteSpace(req.Rol) ? null : req.Rol.Trim(),
             Desde = req.Desde,
@@ -691,7 +693,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         _db.UnidadTitularidades.Add(e);
         await _db.SaveChangesAsync(ct);
         await RegistrarBitacoraAsync("Unidad", $"Titularidad historica '{nombre}' agregada a la unidad.", ct);
-        return new UnidadTitularidadDto(e.Id, e.Nombre, e.Rol, e.Desde, e.Hasta, e.Hasta == null);
+        return new UnidadTitularidadDto(e.Id, e.Nombre, e.Rol, e.Desde, e.Hasta, e.Hasta == null, e.PersonaId);
     }
 
     public async Task<bool> EliminarTitularidadUnidadAsync(Guid titularidadId, CancellationToken ct)
@@ -1287,8 +1289,11 @@ public class MiCopropiedadService : IMiCopropiedadService
         var c = new ContratoServicio
         {
             Tipo = req.Tipo,
+            ProveedorPersonaId = req.ProveedorPersonaId,
+            ProveedorEmpresaId = req.ProveedorEmpresaId,
             Proveedor = req.Proveedor,
             NitProveedor = req.NitProveedor,
+            ContactoPersonaId = req.ContactoPersonaId,
             Contacto = req.Contacto,
             FechaInicio = req.FechaInicio,
             FechaFin = req.FechaFin,

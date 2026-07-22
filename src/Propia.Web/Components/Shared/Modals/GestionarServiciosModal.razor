@@ -104,8 +104,16 @@
                     <option value="@t">@TipoLabel(t)</option>
                 }
             </select>
-            <input class="gsv-input gsv-grow" @bind="_form.Proveedor" @bind:event="oninput" placeholder="Proveedor *" />
+            <input class="gsv-input gsv-grow" @bind="_form.Proveedor" @bind:event="oninput" placeholder="@(_provSel is null ? "Proveedor *" : _provSel.NombreCompleto)" />
             <input class="gsv-input gsv-grow" @bind="_form.NitProveedor" @bind:event="oninput" placeholder="NIT del proveedor" />
+        </div>
+        @* Directriz: "en servicios el proveedor es un tercero de directorio". Si el proveedor
+           es una empresa y aun no esta como persona, el texto libre sigue funcionando. *@
+        <div class="gsv-form-row" style="flex-direction:column;align-items:stretch;gap:7px">
+            <SelectorPersona Jwt="@Jwt" @bind-Seleccionada="_provSel"
+                             Placeholder="Buscar al proveedor en el Directorio..." />
+            <SelectorPersona Jwt="@Jwt" @bind-Seleccionada="_contactoSel"
+                             Placeholder="Buscar la persona de contacto (opcional)..." />
         </div>
         <div class="gsv-form-row">
             <input class="gsv-input gsv-grow" @bind="_form.Contacto" @bind:event="oninput" placeholder="Contacto (telefono/email)" />
@@ -252,6 +260,10 @@
 @code {
     [Parameter] public string? Jwt { get; set; }
 
+    // Proveedor y contacto como terceros del Directorio (directriz de notas de desarrollo).
+    private Propia.Application.Directorio.PersonaCandidatoDto? _provSel;
+    private Propia.Application.Directorio.PersonaCandidatoDto? _contactoSel;
+
     private List<ContratoServicioDto> _contratos = new();
     private ContratoForm _form = new();
     private bool _busy;
@@ -298,18 +310,22 @@
         _busy = true;
         var req = new CrearContratoServicioRequest(
             _form.Tipo,
-            _form.Proveedor.Trim(),
+            _provSel?.NombreCompleto ?? _form.Proveedor.Trim(),
             string.IsNullOrWhiteSpace(_form.NitProveedor) ? null : _form.NitProveedor.Trim(),
             string.IsNullOrWhiteSpace(_form.Contacto) ? null : _form.Contacto.Trim(),
             DateOnly.FromDateTime(_form.FechaInicio),
             _form.FechaFin.HasValue ? DateOnly.FromDateTime(_form.FechaFin.Value) : null,
             _form.ValorMensual,
             string.IsNullOrWhiteSpace(_form.Observaciones) ? null : _form.Observaciones.Trim(),
-            _form.DiasAnticipacionAlerta);
+            _form.DiasAnticipacionAlerta,
+            RenovacionAutomatica: false,
+            ProveedorPersonaId: _provSel?.PersonaId,
+            ContactoPersonaId: _contactoSel?.PersonaId);
         var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/contratos", req);
         if (resp.IsSuccessStatusCode)
         {
             _form = new ContratoForm();
+            _provSel = null; _contactoSel = null;
             _huboCambios = true;
             await CargarAsync();
             ShowMsg("Contrato creado.", false);
