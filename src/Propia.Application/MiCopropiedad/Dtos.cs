@@ -78,10 +78,15 @@ public record UnidadPersonaDto(
     RolUnidadPersona Rol, bool Habita, string? Parentesco,
     string PersonaNombres = "", string PersonaApellidos = "");
 
+// PersonaId llega cuando la persona se eligio con el SelectorPersona (ya existe y ya quedo
+// vinculada a la copropiedad). En ese caso Documento/Nombres/Apellidos van vacios y no se
+// usan: el selector solo devuelve el documento enmascarado, asi que no hay con que buscarla.
+// Sin PersonaId se conserva el camino viejo de buscar-o-crear por documento.
 public record AgregarPersonaUnidadRequest(
     string Documento, string Nombres, string Apellidos,
     string? Email, string? Telefono,
-    RolUnidadPersona Rol, bool Habita = true, string? Parentesco = null);
+    RolUnidadPersona Rol, bool Habita = true, string? Parentesco = null,
+    Guid? PersonaId = null);
 
 // ----- Campos personalizados de unidad: la DEFINICION es por copropiedad (catalogo compartido,
 //       aplica a todas las unidades) y el VALOR es por unidad. -----

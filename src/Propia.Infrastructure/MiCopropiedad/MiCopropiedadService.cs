@@ -320,16 +320,33 @@ public class MiCopropiedadService : IMiCopropiedadService
 
     public async Task<UnidadPersonaDto> AgregarPersonaUnidadAsync(Guid unidadId, AgregarPersonaUnidadRequest req, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Documento)) throw new InvalidOperationException("Documento obligatorio.");
-        if (string.IsNullOrWhiteSpace(req.Nombres)) throw new InvalidOperationException("Nombres obligatorios.");
-        if (string.IsNullOrWhiteSpace(req.Apellidos)) throw new InvalidOperationException("Apellidos obligatorios.");
+        // Con PersonaId la identidad ya viene resuelta por el SelectorPersona; sin el, se
+        // exigen los datos para poder buscar o crear la persona por documento.
+        if (req.PersonaId is null)
+        {
+            if (string.IsNullOrWhiteSpace(req.Documento)) throw new InvalidOperationException("Documento obligatorio.");
+            if (string.IsNullOrWhiteSpace(req.Nombres)) throw new InvalidOperationException("Nombres obligatorios.");
+            if (string.IsNullOrWhiteSpace(req.Apellidos)) throw new InvalidOperationException("Apellidos obligatorios.");
+        }
 
         var unidad = await _db.UnidadesPrivadas.FirstOrDefaultAsync(u => u.Id == unidadId, ct)
             ?? throw new InvalidOperationException("Unidad no encontrada.");
 
-        // Reusa el helper que busca o crea Persona por documento (ya existente)
-        var personaId = await VincularPersonaPorDocumentoAsync(
-            new VincularPersonaPorDocumentoRequest(req.Documento, req.Nombres, req.Apellidos, req.Email, req.Telefono), ct);
+        Guid personaId;
+        if (req.PersonaId is Guid elegida)
+        {
+            if (!await _db.Personas.IgnoreQueryFilters().AnyAsync(p => p.Id == elegida, ct))
+                throw new InvalidOperationException("La persona seleccionada no existe.");
+            personaId = elegida;
+            // El selector ya la vincula, pero se asegura por si llega por otra via (API, MCP).
+            await Directorio.VinculoDirectorio.AsegurarPersonaAsync(_db, _tenant, personaId, ct);
+        }
+        else
+        {
+            // Camino viejo: busca o crea Persona por documento (tambien deja el vinculo).
+            personaId = await VincularPersonaPorDocumentoAsync(
+                new VincularPersonaPorDocumentoRequest(req.Documento, req.Nombres, req.Apellidos, req.Email, req.Telefono), ct);
+        }
 
         // Evita duplicar mismo (unidad + persona + rol)
         var existente = await _db.UnidadPersonas

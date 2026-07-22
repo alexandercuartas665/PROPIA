@@ -435,15 +435,31 @@
                         {
                             @* Form estilo prototipo L.703: nombre+rol fila, documento, eyebrows CORREOS y TELEFONOS con listas + boton brand *@
                             <div class="gum-pf">
-                                <div class="gum-pf-row">
-                                    <input class="gum-pf-input gum-grow" @bind="_personaForm.Nombres" @bind:event="oninput" placeholder="Nombre *" />
-                                    <input class="gum-pf-input gum-grow" @bind="_personaForm.Apellidos" @bind:event="oninput" placeholder="Apellidos *" />
+                                @* Al agregar se busca la persona con el selector compartido: la
+                                   encuentra en esta copropiedad, la trae de otra de la organizacion
+                                   o la crea. Al EDITAR se conservan los campos manuales, porque ahi
+                                   se estan corrigiendo los datos de la persona ya vinculada. *@
+                                @if (_editPersonaId is null)
+                                {
+                                    <SelectorPersona Jwt="@Jwt" @bind-Seleccionada="_personaSel"
+                                                     Placeholder="Buscar persona por nombre o documento..." />
                                     @if (grupo.Rol == RolUnidadPersona.Familiar)
                                     {
-                                        <input class="gum-pf-input gum-grow" style="max-width:160px" @bind="_personaForm.Parentesco" @bind:event="oninput" placeholder="Parentesco" />
+                                        <input class="gum-pf-input" @bind="_personaForm.Parentesco" @bind:event="oninput" placeholder="Parentesco" />
                                     }
-                                </div>
-                                <input class="gum-pf-input" @bind="_personaForm.Documento" @bind:event="oninput" placeholder="Documento (CC, NIT...) *" />
+                                }
+                                else
+                                {
+                                    <div class="gum-pf-row">
+                                        <input class="gum-pf-input gum-grow" @bind="_personaForm.Nombres" @bind:event="oninput" placeholder="Nombre *" />
+                                        <input class="gum-pf-input gum-grow" @bind="_personaForm.Apellidos" @bind:event="oninput" placeholder="Apellidos *" />
+                                        @if (grupo.Rol == RolUnidadPersona.Familiar)
+                                        {
+                                            <input class="gum-pf-input gum-grow" style="max-width:160px" @bind="_personaForm.Parentesco" @bind:event="oninput" placeholder="Parentesco" />
+                                        }
+                                    </div>
+                                    <input class="gum-pf-input" @bind="_personaForm.Documento" @bind:event="oninput" placeholder="Documento (CC, NIT...) *" />
+                                }
 
                                 @* === CORREOS === *@
                                 <div class="gum-pf-eyebrow">CORREOS</div>
@@ -1644,10 +1660,17 @@
         if (idx >= 0 && idx < _personaForm.Codigos.Count) _personaForm.Codigos.RemoveAt(idx);
     }
 
+    /// <summary>Persona elegida con el SelectorPersona al agregar (null en modo edicion).</summary>
+    private Propia.Application.Directorio.PersonaCandidatoDto? _personaSel;
+
     private bool PersonaFormValido =>
-        !string.IsNullOrWhiteSpace(_personaForm.Documento) &&
-        !string.IsNullOrWhiteSpace(_personaForm.Nombres) &&
-        !string.IsNullOrWhiteSpace(_personaForm.Apellidos);
+        _editPersonaId is not null
+            // Editando: se corrigen los datos de la persona ya vinculada.
+            ? !string.IsNullOrWhiteSpace(_personaForm.Documento) &&
+              !string.IsNullOrWhiteSpace(_personaForm.Nombres) &&
+              !string.IsNullOrWhiteSpace(_personaForm.Apellidos)
+            // Agregando: basta con haber elegido a alguien en el selector.
+            : _personaSel is not null;
 
     private class EditUnidadForm
     {
@@ -1876,21 +1899,25 @@
         };
     }
 
-    private void CancelarFormPersona() { _formRol = null; _editPersonaId = null; }
+    private void CancelarFormPersona() { _formRol = null; _editPersonaId = null; _personaSel = null; }
 
     private async Task GuardarPersona()
     {
         if (_selected is null || _formRol is null || !PersonaFormValido) return;
         _busy = true;
+        // Al agregar, la identidad viaja como PersonaId (el selector ya la resolvio y vinculo);
+        // los campos de texto van vacios porque el selector solo expone el documento
+        // enmascarado. Al editar se manda todo como siempre.
         var req = new AgregarPersonaUnidadRequest(
-            _personaForm.Documento.Trim(),
-            _personaForm.Nombres.Trim(),
-            _personaForm.Apellidos.Trim(),
+            _editPersonaId is null ? "" : _personaForm.Documento.Trim(),
+            _editPersonaId is null ? "" : _personaForm.Nombres.Trim(),
+            _editPersonaId is null ? "" : _personaForm.Apellidos.Trim(),
             _personaForm.PrimerEmail,
             _personaForm.PrimerTelefono,
             _formRol.Value,
             true,
-            string.IsNullOrWhiteSpace(_personaForm.Parentesco) ? null : _personaForm.Parentesco.Trim());
+            string.IsNullOrWhiteSpace(_personaForm.Parentesco) ? null : _personaForm.Parentesco.Trim(),
+            _editPersonaId is null ? _personaSel?.PersonaId : null);
         HttpResponseMessage resp;
         if (_editPersonaId is not null)
             resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades-personas/{_editPersonaId}", req);
@@ -1909,6 +1936,7 @@
             _formRol = null;
             _editPersonaId = null;
             _personaForm = new PersonaForm();
+            _personaSel = null;
             _huboCambios = true;
         }
         else
