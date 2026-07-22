@@ -82,11 +82,9 @@
     @* Form de agregar persona al equipo *@
     <div class="gem-form">
         <div class="gem-form-title">+ Vincular nueva persona al equipo</div>
-        <div class="gem-form-row">
-            <input class="gem-input gem-grow" @bind="_form.Documento" @bind:event="oninput" placeholder="Documento *" />
-            <input class="gem-input gem-grow" @bind="_form.Nombres" @bind:event="oninput" placeholder="Nombres *" />
-            <input class="gem-input gem-grow" @bind="_form.Apellidos" @bind:event="oninput" placeholder="Apellidos *" />
-        </div>
+        @* Selector compartido, mismo control que el resto de las fichas. *@
+        <SelectorPersona Jwt="@Jwt" @bind-Seleccionada="_personaSel"
+                         Placeholder="Buscar quien entra al equipo..." />
         <div class="gem-form-row">
             <input class="gem-input gem-grow" @bind="_form.Email" @bind:event="oninput" placeholder="Email" />
             <input class="gem-input gem-grow" @bind="_form.Telefono" @bind:event="oninput" placeholder="Telefono" />
@@ -269,10 +267,11 @@
         public TipoVinculacion Tipo { get; set; } = TipoVinculacion.Interno;
     }
 
+    // Persona elegida con el SelectorPersona (ya resuelta y vinculada a la copropiedad).
+    private Propia.Application.Directorio.PersonaCandidatoDto? _personaSel;
+
     private bool FormValido =>
-        !string.IsNullOrWhiteSpace(_form.Documento) &&
-        !string.IsNullOrWhiteSpace(_form.Nombres) &&
-        !string.IsNullOrWhiteSpace(_form.Apellidos) &&
+        _personaSel is not null &&
         (_form.Rol != RolEquipo.Otro || !string.IsNullOrWhiteSpace(_form.RolPersonalizado));
 
     protected override async Task OnInitializedAsync() => await CargarAsync();
@@ -300,19 +299,8 @@
         _busy = true;
         try
         {
-            var vincReq = new VincularPersonaPorDocumentoRequest(
-                _form.Documento.Trim(), _form.Nombres.Trim(), _form.Apellidos.Trim(),
-                string.IsNullOrWhiteSpace(_form.Email) ? null : _form.Email.Trim(),
-                string.IsNullOrWhiteSpace(_form.Telefono) ? null : _form.Telefono.Trim());
-            var vincResp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/vincular-persona", vincReq);
-            if (!vincResp.IsSuccessStatusCode)
-            {
-                ShowMsg("No se pudo crear/buscar persona: " + await vincResp.Content.ReadAsStringAsync(), true);
-                _busy = false; return;
-            }
-            var vincDto = await vincResp.Content.ReadFromJsonAsync<VincularResp>();
-            var personaId = vincDto?.PersonaId ?? Guid.Empty;
-            if (personaId == Guid.Empty) { ShowMsg("No se pudo crear/buscar persona.", true); _busy = false; return; }
+            // El selector ya resolvio la identidad y dejo el vinculo con la copropiedad.
+            var personaId = _personaSel!.PersonaId;
 
             var req = new AgregarMiembroEquipoRequest(
                 personaId, _form.Rol,
@@ -326,6 +314,7 @@
             if (resp.IsSuccessStatusCode)
             {
                 _form = new MiembroForm();
+                _personaSel = null;
                 _huboCambios = true;
                 await CargarAsync();
                 ShowMsg("Miembro vinculado al equipo.", false);

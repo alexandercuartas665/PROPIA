@@ -72,11 +72,10 @@
 
         <div class="ggov-form">
             <div class="ggov-form-title">+ Agregar miembro al consejo</div>
-            <div class="ggov-form-row">
-                <input class="ggov-input ggov-grow" @bind="_consejoForm.Documento" @bind:event="oninput" placeholder="Documento *" />
-                <input class="ggov-input ggov-grow" @bind="_consejoForm.Nombres" @bind:event="oninput" placeholder="Nombres *" />
-                <input class="ggov-input ggov-grow" @bind="_consejoForm.Apellidos" @bind:event="oninput" placeholder="Apellidos *" />
-            </div>
+            @* Selector compartido: busca en toda la organizacion, trae de otra copropiedad
+               o crea. Reemplaza el trio documento+nombres+apellidos escrito a mano. *@
+            <SelectorPersona Jwt="@Jwt" @bind-Seleccionada="_consejoSel"
+                             Placeholder="Buscar quien entra al consejo..." />
             <div class="ggov-form-row">
                 <select class="ggov-input ggov-grow" @bind="_consejoForm.Cargo">
                     @foreach (var c in Enum.GetValues<CargoConsejo>()) { <option value="@c">@c</option> }
@@ -154,11 +153,8 @@
             <div class="ggov-empty">Sin revisor fiscal designado.</div>
             <div class="ggov-form">
                 <div class="ggov-form-title">+ Designar revisor fiscal</div>
-                <div class="ggov-form-row">
-                    <input class="ggov-input ggov-grow" @bind="_revisorForm.Documento" @bind:event="oninput" placeholder="Documento *" />
-                    <input class="ggov-input ggov-grow" @bind="_revisorForm.Nombres" @bind:event="oninput" placeholder="Nombres *" />
-                    <input class="ggov-input ggov-grow" @bind="_revisorForm.Apellidos" @bind:event="oninput" placeholder="Apellidos *" />
-                </div>
+                <SelectorPersona Jwt="@Jwt" @bind-Seleccionada="_revisorSel"
+                                 Placeholder="Buscar al revisor fiscal..." />
                 <div class="ggov-form-row">
                     <input class="ggov-input ggov-grow" @bind="_revisorForm.TarjetaProfesional" @bind:event="oninput" placeholder="TP (opcional)" />
                     <input type="date" class="ggov-input" @bind="_revisorForm.FechaPosesion" />
@@ -340,7 +336,6 @@
     {
         public string Documento { get; set; } = "";
         public string Nombres { get; set; } = "";
-        public string Apellidos { get; set; } = "";
         public CargoConsejo Cargo { get; set; } = CargoConsejo.Presidente;
         public DateTime FechaInicio { get; set; } = DateTime.Today;
     }
@@ -361,15 +356,12 @@
         public DateTime FechaPosesion { get; set; } = DateTime.Today;
     }
 
-    private bool ConsejoFormValido =>
-        !string.IsNullOrWhiteSpace(_consejoForm.Documento) &&
-        !string.IsNullOrWhiteSpace(_consejoForm.Nombres) &&
-        !string.IsNullOrWhiteSpace(_consejoForm.Apellidos);
+    // Personas elegidas con el SelectorPersona (ya resueltas y vinculadas a la copropiedad).
+    private Propia.Application.Directorio.PersonaCandidatoDto? _consejoSel;
+    private Propia.Application.Directorio.PersonaCandidatoDto? _revisorSel;
 
-    private bool RevisorFormValido =>
-        !string.IsNullOrWhiteSpace(_revisorForm.Documento) &&
-        !string.IsNullOrWhiteSpace(_revisorForm.Nombres) &&
-        !string.IsNullOrWhiteSpace(_revisorForm.Apellidos);
+    private bool ConsejoFormValido => _consejoSel is not null;
+    private bool RevisorFormValido => _revisorSel is not null;
 
     protected override async Task OnInitializedAsync() => await CargarAsync();
 
@@ -403,18 +395,6 @@
         catch { _revisor = null; }
     }
 
-    private async Task<Guid?> VincularPersona(string doc, string nom, string ape, string? mail = null, string? tel = null)
-    {
-        var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/vincular-persona",
-            new VincularPersonaPorDocumentoRequest(doc.Trim(), nom.Trim(), ape.Trim(), mail, tel));
-        if (!resp.IsSuccessStatusCode)
-        {
-            ShowMsg("No se pudo crear/buscar persona: " + await resp.Content.ReadAsStringAsync(), true);
-            return null;
-        }
-        var dto = await resp.Content.ReadFromJsonAsync<VincularResp>();
-        return dto?.PersonaId;
-    }
 
     private record VincularResp(Guid PersonaId);
 
@@ -422,13 +402,13 @@
     {
         if (!ConsejoFormValido) return;
         _busy = true;
-        var personaId = await VincularPersona(_consejoForm.Documento, _consejoForm.Nombres, _consejoForm.Apellidos);
-        if (personaId is null) { _busy = false; return; }
-        var req = new AgregarMiembroConsejoRequest(personaId.Value, _consejoForm.Cargo, DateOnly.FromDateTime(_consejoForm.FechaInicio), null);
+        var personaId = _consejoSel!.PersonaId;
+        var req = new AgregarMiembroConsejoRequest(personaId, _consejoForm.Cargo, DateOnly.FromDateTime(_consejoForm.FechaInicio), null);
         var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/consejo", req);
         if (resp.IsSuccessStatusCode)
         {
             _consejoForm = new ConsejoForm();
+            _consejoSel = null;
             _huboCambios = true;
             await CargarAsync();
             ShowMsg("Miembro agregado al consejo.", false);
@@ -472,16 +452,15 @@
     {
         if (!RevisorFormValido) return;
         _busy = true;
-        var personaId = await VincularPersona(_revisorForm.Documento, _revisorForm.Nombres, _revisorForm.Apellidos);
-        if (personaId is null) { _busy = false; return; }
         var req = new DesignarRevisorFiscalRequest(
-            personaId.Value,
+            _revisorSel!.PersonaId,
             string.IsNullOrWhiteSpace(_revisorForm.TarjetaProfesional) ? null : _revisorForm.TarjetaProfesional.Trim(),
             DateOnly.FromDateTime(_revisorForm.FechaPosesion));
         var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/revisor-fiscal", req);
         if (resp.IsSuccessStatusCode)
         {
             _revisorForm = new RevisorForm();
+            _revisorSel = null;
             _huboCambios = true;
             await CargarAsync();
             ShowMsg("Revisor fiscal designado.", false);
