@@ -1932,7 +1932,13 @@ public class MiCopropiedadService : IMiCopropiedadService
         var doc = req.Documento.Trim();
 
         var existente = await _db.Personas.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Documento == doc, ct);
-        if (existente is not null) return existente.Id;
+        if (existente is not null)
+        {
+            // Ya existia en la plataforma (quiza creada en otra copropiedad). Se vincula a
+            // esta para que aparezca en el Directorio y en todos los selectores de persona.
+            await Directorio.VinculoDirectorio.AsegurarPersonaAsync(_db, _tenant, existente.Id, ct);
+            return existente.Id;
+        }
 
         if (string.IsNullOrWhiteSpace(req.Nombres) || string.IsNullOrWhiteSpace(req.Apellidos))
             throw new InvalidOperationException("Nombres y apellidos son obligatorios al crear una persona nueva.");
@@ -1948,6 +1954,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         };
         _db.Personas.Add(nueva);
         await _db.SaveChangesAsync(ct);
+        await Directorio.VinculoDirectorio.AsegurarPersonaAsync(_db, _tenant, nueva.Id, ct);
         return nueva.Id;
     }
 
@@ -2205,25 +2212,8 @@ public class MiCopropiedadService : IMiCopropiedadService
         var contratos = await _db.ContratosServicio.AsNoTracking()
             .Select(c => new ZonaContratoRefDto(c.Id, c.Tipo + " - " + c.Proveedor)).ToListAsync(ct);
 
-        var novedadesRaw = await _db.ZonaNovedades.AsNoTracking().Where(n => n.ZonaComunId == zonaId)
-            .OrderByDescending(n => n.CreatedAt).ToListAsync(ct);
-        var novIds = novedadesRaw.Select(n => n.Id).ToList();
-        var comentarios = await _db.ZonaNovedadComentarios.AsNoTracking()
-            .Where(c => novIds.Contains(c.ZonaNovedadId)).OrderBy(c => c.CreatedAt).ToListAsync(ct);
-        var misLikes = personaId is Guid pid
-            ? await _db.ZonaNovedadLikes.AsNoTracking().Where(l => novIds.Contains(l.ZonaNovedadId) && l.PersonaId == pid)
-                .Select(l => l.ZonaNovedadId).ToListAsync(ct)
-            : new List<Guid>();
-
-        var novedades = novedadesRaw.Select(n => new ZonaNovedadDto(
-            n.Id, n.Titulo, n.Texto, _blob.ResolveUrl(n.ImagenUrl), n.AutorNombre, Iniciales(n.AutorNombre), FechaRel(n.CreatedAt),
-            n.LikesCount, misLikes.Contains(n.Id),
-            comentarios.Where(c => c.ZonaNovedadId == n.Id)
-                .Select(c => new ZonaComentarioDto(c.Id, c.AutorNombre, Iniciales(c.AutorNombre), c.Texto, FechaRel(c.CreatedAt))).ToList()
-        )).ToList();
-
         return new ZonaFichaDto(zonaDto, _blob.ResolveUrl(z.ImagenUrl), z.MantenimientoTipo, z.MantenimientoContrato,
-            z.MantenimientoFrecuencia, z.MantenimientoDiaMes, facturas, docs, campos, horarios, contratos, novedades);
+            z.MantenimientoFrecuencia, z.MantenimientoDiaMes, facturas, docs, campos, horarios, contratos);
     }
 
     public async Task<bool> GuardarZonaFichaAsync(Guid zonaId, GuardarZonaFichaRequest req, CancellationToken ct)
@@ -2306,76 +2296,6 @@ public class MiCopropiedadService : IMiCopropiedadService
         _db.ZonaCamposPersonalizados.Remove(c);
         await _db.SaveChangesAsync(ct);
         return true;
-    }
-
-    public async Task<ZonaNovedadDto?> PublicarZonaNovedadAsync(Guid zonaId, PublicarZonaNovedadRequest req, Guid? personaId, CancellationToken ct)
-    {
-        if (_tenant.CurrentTenantId is not Guid tid) return null;
-        if (string.IsNullOrWhiteSpace(req.Titulo)) return null;
-        if (!await _db.ZonasComunes.AnyAsync(z => z.Id == zonaId, ct)) return null;
-        var autor = await ResolverNombrePersonaAsync(personaId, "Administracion", ct);
-        var n = new ZonaNovedad
-        {
-            TenantId = tid,
-            ZonaComunId = zonaId,
-            Titulo = req.Titulo.Trim(),
-            Texto = string.IsNullOrWhiteSpace(req.Texto) ? null : req.Texto.Trim(),
-            ImagenUrl = string.IsNullOrWhiteSpace(req.ImagenUrl) ? null : req.ImagenUrl.Trim(),
-            AutorNombre = autor,
-            AutorPersonaId = personaId,
-            LikesCount = 0
-        };
-        _db.ZonaNovedades.Add(n);
-        await _db.SaveChangesAsync(ct);
-        return new ZonaNovedadDto(n.Id, n.Titulo, n.Texto, _blob.ResolveUrl(n.ImagenUrl), n.AutorNombre, Iniciales(n.AutorNombre),
-            FechaRel(n.CreatedAt), 0, false, new List<ZonaComentarioDto>());
-    }
-
-    public async Task<bool> EliminarZonaNovedadAsync(Guid novedadId, CancellationToken ct)
-    {
-        var n = await _db.ZonaNovedades.FirstOrDefaultAsync(x => x.Id == novedadId, ct);
-        if (n is null) return false;
-        _db.ZonaNovedadComentarios.RemoveRange(_db.ZonaNovedadComentarios.Where(c => c.ZonaNovedadId == novedadId));
-        _db.ZonaNovedadLikes.RemoveRange(_db.ZonaNovedadLikes.Where(l => l.ZonaNovedadId == novedadId));
-        _db.ZonaNovedades.Remove(n);
-        await _db.SaveChangesAsync(ct);
-        return true;
-    }
-
-    public async Task<ZonaComentarioDto?> ComentarZonaNovedadAsync(Guid novedadId, ComentarZonaNovedadRequest req, Guid? personaId, CancellationToken ct)
-    {
-        if (_tenant.CurrentTenantId is not Guid tid) return null;
-        if (string.IsNullOrWhiteSpace(req.Texto)) return null;
-        if (!await _db.ZonaNovedades.AnyAsync(n => n.Id == novedadId, ct)) return null;
-        var autor = await ResolverNombrePersonaAsync(personaId, "Residente", ct);
-        var c = new ZonaNovedadComentario { TenantId = tid, ZonaNovedadId = novedadId, AutorNombre = autor, AutorPersonaId = personaId, Texto = req.Texto.Trim() };
-        _db.ZonaNovedadComentarios.Add(c);
-        await _db.SaveChangesAsync(ct);
-        return new ZonaComentarioDto(c.Id, c.AutorNombre, Iniciales(c.AutorNombre), c.Texto, FechaRel(c.CreatedAt));
-    }
-
-    public async Task<int> ToggleZonaNovedadLikeAsync(Guid novedadId, Guid? personaId, CancellationToken ct)
-    {
-        var n = await _db.ZonaNovedades.FirstOrDefaultAsync(x => x.Id == novedadId, ct);
-        if (n is null) return 0;
-        if (personaId is Guid pid)
-        {
-            var existing = await _db.ZonaNovedadLikes.FirstOrDefaultAsync(l => l.ZonaNovedadId == novedadId && l.PersonaId == pid, ct);
-            if (existing is null)
-            {
-                if (_tenant.CurrentTenantId is Guid tid)
-                    _db.ZonaNovedadLikes.Add(new ZonaNovedadLike { TenantId = tid, ZonaNovedadId = novedadId, PersonaId = pid });
-                n.LikesCount += 1;
-            }
-            else
-            {
-                _db.ZonaNovedadLikes.Remove(existing);
-                n.LikesCount = Math.Max(0, n.LikesCount - 1);
-            }
-        }
-        else { n.LikesCount += 1; }
-        await _db.SaveChangesAsync(ct);
-        return n.LikesCount;
     }
 
     private async Task<string> ResolverNombrePersonaAsync(Guid? personaId, string fallback, CancellationToken ct)

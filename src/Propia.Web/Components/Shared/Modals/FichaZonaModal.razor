@@ -1,6 +1,9 @@
 @* FichaZonaModal - ficha completa de zona comun (2.3 seccion 4), fiel al prototipo zonaDet.
-   2 columnas: izq = imagen + mantenimiento + facturas + documentos + campos dinamicos + disponibilidad;
-   der = muro de novedades (publicar + likes + comentarios). *@
+   Dos pestanas:
+   - "Ficha de la zona": lo que se consulta. 2 columnas: izq = imagen + mantenimiento +
+     disponibilidad/horarios; der = muro de novedades (publicar + likes + comentarios).
+   - "Editar datos": la captura de datos. Identificacion + facturas de compra + documentos
+     + campos dinamicos. *@
 
 @inherits ModalBase<bool>
 @using Propia.Application.MiCopropiedad
@@ -54,102 +57,37 @@ else
                     <InputFile OnChange="SubirImagen" accept="image/png,image/jpeg,image/webp" hidden disabled="@_subiendoImg" />
                 </label>
             }
-        </div>
 
-        @* Mantenimiento *@
-        <div class="fz-block">
-            <div class="fz-block-t">PROGRAMA DE MANTENIMIENTO</div>
-            <label class="fz-lbl">Tipo</label>
-            <select class="fz-in" @bind="_mantTipo">
-                <option value="Interno">Interno</option>
-                <option value="Contrato">Por contrato</option>
-            </select>
-            @if (_mantTipo == "Contrato")
-            {
-                <label class="fz-lbl">Contrato relacionado</label>
-                <select class="fz-in" @bind="_mantContrato">
-                    <option value="">Seleccionar...</option>
-                    @foreach (var c in _ficha.ContratosDisponibles) { <option value="@c.Nombre">@c.Nombre</option> }
-                </select>
-            }
-            <label class="fz-lbl">Frecuencia</label>
-            <select class="fz-in" @bind="_mantFrec">
-                @foreach (var f in new[] { "Semanal", "Quincenal", "Mensual", "Trimestral", "Semestral" }) { <option value="@f">@f</option> }
-            </select>
-            @if (_mantFrec == "Mensual")
-            {
-                <div class="fz-diames">Cae el dia <input type="number" min="1" max="31" class="fz-in-sm" @bind="_mantDia" /> de cada mes</div>
-            }
-            <button class="fz-btn-green" @onclick="GenerarTarea" disabled="@_busy">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                Generar tarea de mantenimiento
-            </button>
-            @if (!string.IsNullOrEmpty(_tareaMsg)) { <div class="fz-ok-note">@_tareaMsg</div> }
-        </div>
-
-        @* Facturas *@
-        <div class="fz-block">
-            <div class="fz-block-t">FACTURAS DE COMPRA</div>
-            @foreach (var f in _ficha.Facturas)
-            {
-                var fid = f.Id;
-                <div class="fz-row-item">
-                    <div class="fz-row-ic fz-ic-blue"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg></div>
-                    <div class="fz-row-main"><div class="fz-row-nom">@f.Concepto</div><div class="fz-row-sub">@(f.Valor.HasValue ? "$ " + f.Valor.Value.ToString("N0") : "") @(f.Fecha.HasValue ? "- " + f.Fecha.Value.ToString("yyyy-MM-dd") : "")</div></div>
-                    <button class="fz-del-sm" @onclick="() => EliminarFactura(fid)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-                </div>
-            }
-            <div class="fz-addrow">
-                <input class="fz-in fz-grow" @bind="_facConcepto" placeholder="Concepto de compra" />
-                <input class="fz-in-sm2" type="number" @bind="_facValor" placeholder="$ valor" />
-                <button class="fz-add" @onclick="AgregarFactura"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></button>
+            @* El interruptor de reservable va aqui, pegado a la imagen, igual que en la
+               ficha de equipos: es lo primero que se cambia al abrir la zona. *@
+            <div class="fz-resv">
+                <button class="fz-toggle @(_reservable ? "on" : "")" type="button" @onclick="() => _reservable = !_reservable">
+                    <span class="fz-toggle-track"><span class="fz-toggle-knob"></span></span>
+                    @(_reservable ? "Reservable" : "No reservable")
+                </button>
             </div>
         </div>
 
-        @* Documentos *@
+        @* Mantenimiento: una sola entrada. Los selects de tipo/frecuencia y el boton de
+           "generar tarea ahora" salieron de aqui porque la frecuencia ahora la define la
+           regla del programador; tener las tres cosas a la vez era redundante. *@
         <div class="fz-block">
-            <div class="fz-block-t">DOCUMENTOS</div>
-            @foreach (var d in _ficha.Documentos)
-            {
-                var did = d.Id;
-                <div class="fz-row-item">
-                    <div class="fz-row-ic fz-ic-violet"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg></div>
-                    <a class="fz-row-main fz-doc-link" href="@d.Url" target="_blank"><div class="fz-row-nom">@d.Nombre</div></a>
-                    <button class="fz-del-sm" @onclick="() => EliminarDocumento(did)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-                </div>
-            }
-            <label class="fz-upload">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>@(_subiendoDoc ? "Subiendo..." : "Cargar documento")
-                <InputFile OnChange="SubirDocumento" hidden disabled="@_subiendoDoc" />
-            </label>
+            <ProgramacionesPanel Jwt="@Jwt"
+                                 ModuloOrigenCodigo="zona"
+                                 EntidadOrigenId="@ZonaId"
+                                 OrigenReferencia="@($"Zona: {_ficha.Zona.Nombre}")"
+                                 PrefillTitulo="@($"Mantenimiento: {_ficha.Zona.Nombre}")"
+                                 Titulo="PROGRAMA DE MANTENIMIENTO" />
         </div>
 
-        @* Campos dinamicos *@
-        <div class="fz-block">
-            <div class="fz-block-t">CAMPOS DINAMICOS</div>
-            @foreach (var c in _ficha.Campos)
-            {
-                var cid = c.Id;
-                <div class="fz-row-item">
-                    <div class="fz-row-main"><div class="fz-row-nom">@c.Label</div><div class="fz-row-sub">@c.Valor</div></div>
-                    <button class="fz-del-sm" @onclick="() => EliminarCampo(cid)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-                </div>
-            }
-            <div class="fz-addrow">
-                <input class="fz-in" style="width:42%" @bind="_campoLabel" placeholder="Campo" />
-                <input class="fz-in fz-grow" @bind="_campoValor" placeholder="Valor" />
-                <button class="fz-add" @onclick="AgregarCampo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></button>
-            </div>
-        </div>
+        @* Facturas, documentos y campos dinamicos viven ahora en la pestana "Editar datos":
+           la ficha se queda con lo que se consulta (imagen, mantenimiento, disponibilidad
+           y el muro de novedades), no con la captura de datos. *@
 
         @* Disponibilidad *@
         <div class="fz-block">
             <div class="fz-disp-head">
                 <div class="fz-block-t" style="margin:0">DISPONIBILIDAD</div>
-                <button class="fz-toggle @(_reservable ? "on" : "")" @onclick="() => _reservable = !_reservable">
-                    <span class="fz-toggle-track"><span class="fz-toggle-knob"></span></span>
-                    @(_reservable ? "Reservable" : "No reservable")
-                </button>
             </div>
             <div class="fz-aforo">Aforo maximo <input type="number" min="0" class="fz-in-sm" @bind="_aforo" /> personas</div>
             @if (_reservable)
@@ -160,73 +98,16 @@ else
         </div>
     </div>
 
-    @* ===================== DERECHA: muro de novedades ===================== *@
+    @* ===================== DERECHA: muro de novedades =====================
+       El muro se extrajo a MuroNovedadesPanel: el mismo componente lo usa la ficha de
+       equipos. Aqui solo se le dice de que entidad cuelga. *@
     <div class="fz-right">
-        <div class="fz-right-t">NOVEDADES DE LA ZONA</div>
-        <div class="fz-publish">
-            <div class="fz-publish-head"><div class="fz-ava">AD</div><span>Publicar novedad</span></div>
-            <input class="fz-in" @bind="_novTitulo" placeholder="Titulo (ej. Cancha renovada)" />
-            <textarea class="fz-in fz-ta" rows="2" @bind="_novTexto" placeholder="Cuenta la novedad..."></textarea>
-            @if (!string.IsNullOrWhiteSpace(_novImagenUrl))
-            {
-                <div class="fz-nov-preview" style="background-image:url('@_novImagenUrl')">
-                    <button class="fz-nov-preview-x" @onclick="() => _novImagenUrl = null" title="Quitar imagen">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                    </button>
-                </div>
-            }
-            <div class="fz-publish-foot">
-                <label class="fz-attach">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-9 7"/></svg>
-                    @(_subiendoNovImg ? "Subiendo..." : "Imagen")
-                    <InputFile OnChange="SubirNovedadImagen" accept="image/png,image/jpeg,image/webp" hidden disabled="@_subiendoNovImg" />
-                </label>
-                <button class="fz-btn-brand" @onclick="PublicarNovedad" disabled="@(_busy || string.IsNullOrWhiteSpace(_novTitulo))">Publicar</button>
-            </div>
-        </div>
-
-        <div class="fz-feed">
-            @if (_ficha.Novedades.Count == 0)
-            {
-                <div class="fz-feed-empty">Aun no hay novedades. Publica la primera.</div>
-            }
-            @foreach (var n in _ficha.Novedades)
-            {
-                var nid = n.Id;
-                <div class="fz-post">
-                    <div class="fz-post-head">
-                        <div class="fz-ava">@n.AutorIniciales</div>
-                        <div class="fz-post-meta"><div class="fz-post-autor">@n.AutorNombre</div><div class="fz-post-fecha">@n.FechaTexto</div></div>
-                        <button class="fz-del-sm" @onclick="() => EliminarNovedad(nid)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-                    </div>
-                    <div class="fz-post-tit">@n.Titulo</div>
-                    @if (!string.IsNullOrWhiteSpace(n.Texto)) { <div class="fz-post-txt">@n.Texto</div> }
-                    @if (!string.IsNullOrWhiteSpace(n.ImagenUrl)) { <div class="fz-post-img" style="background-image:url('@n.ImagenUrl')"></div> }
-                    <div class="fz-post-actions">
-                        <button class="fz-like @(n.YoDiLike ? "on" : "")" @onclick="() => ToggleLike(nid)">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="@(n.YoDiLike ? "currentColor" : "none")" stroke="currentColor" stroke-width="2"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
-                            @n.Likes
-                        </button>
-                        <span class="fz-coment-count">@n.Comentarios.Count comentarios</span>
-                    </div>
-                    @foreach (var cm in n.Comentarios)
-                    {
-                        <div class="fz-coment"><div class="fz-ava fz-ava-sm">@cm.AutorIniciales</div><div class="fz-coment-body"><span class="fz-coment-autor">@cm.AutorNombre</span> @cm.Texto <span class="fz-coment-fecha">&middot; @cm.FechaTexto</span></div></div>
-                    }
-                    <div class="fz-coment-add">
-                        <input class="fz-in fz-in-coment" placeholder="Escribe un comentario..." value="@(_comentTexto.TryGetValue(nid, out var v) ? v : "")" @oninput="(e) => _comentTexto[nid] = e.Value?.ToString() ?? string.Empty" />
-                        <button class="fz-add" @onclick="() => Comentar(nid)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
-                    </div>
-                </div>
-            }
-        </div>
+        <MuroNovedadesPanel Jwt="@Jwt"
+                            EntidadTipo="TipoEntidadNovedad.ZonaComun"
+                            EntidadId="@ZonaId"
+                            Titulo="NOVEDADES DE LA ZONA"
+                            PlaceholderTitulo="Titulo (ej. Cancha renovada)" />
     </div>
-</div>
-
-<div class="fz-foot">
-    @if (!string.IsNullOrEmpty(_msg)) { <span class="fz-foot-msg">@_msg</span> }
-    <button class="fz-btn-ghost" @onclick="Cerrar">Cerrar</button>
-    <button class="fz-btn-brand" @onclick="GuardarConfig" disabled="@_busy">@(_busy ? "Guardando..." : "Guardar cambios")</button>
 </div>
 }
 else if (_tab == "editar")
@@ -251,7 +132,67 @@ else if (_tab == "editar")
         <div class="fz-col-2"><label class="fz-lbl">Descripcion</label><textarea class="fz-in fz-ta" rows="2" @bind="_form.Descripcion"></textarea></div>
         <div class="fz-col-2"><label class="fz-lbl">Reglas de uso</label><textarea class="fz-in fz-ta" rows="3" @bind="_form.ReglasUso"></textarea></div>
     </div>
-    <div class="fz-ehint">La disponibilidad (reservable, aforo y horarios) se configura en la pestana "Ficha de la zona".</div>
+
+    @* Facturas de compra, con el mismo tratamiento visual del modal de equipos (fila con
+       icono, etiqueta COMPRA y boton "Anadir factura"). Se guardan al instante con su propio
+       boton: no dependen de "Guardar cambios", que solo persiste identificacion. *@
+    <div class="fz-section">Facturas de compra</div>
+    <div class="fz-block">
+        @foreach (var f in _ficha.Facturas)
+        {
+            var fid = f.Id;
+            <div class="fz-doc">
+                <div class="fz-doc-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg></div>
+                <div class="fz-doc-body">
+                    <div class="fz-doc-name">@f.Concepto</div>
+                    <div class="fz-doc-meta">Factura de compra@(f.Valor.HasValue ? $" · $ {f.Valor.Value:N0}" : "")@(f.Fecha.HasValue ? $" · {f.Fecha.Value:dd MMM yyyy}" : "")</div>
+                </div>
+                <span class="fz-tag">COMPRA</span>
+                <button class="fz-mini-del" type="button" title="Eliminar" @onclick="() => EliminarFactura(fid)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
+            </div>
+        }
+        <div class="fz-fac-form">
+            <input class="fz-in fz-grow" @bind="_facConcepto" placeholder="Concepto de compra (ej. Dotacion salon)" />
+            <input type="number" min="0" class="fz-in fz-mini" @bind="_facValor" placeholder="Valor" />
+            <button class="fz-btn-brand" type="button" @onclick="AgregarFactura" disabled="@_busy">Anadir factura</button>
+        </div>
+    </div>
+
+    <div class="fz-section">Documentos</div>
+    <div class="fz-block">
+        @foreach (var d in _ficha.Documentos)
+        {
+            var did = d.Id;
+            <div class="fz-row-item">
+                <div class="fz-row-ic fz-ic-violet"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg></div>
+                <a class="fz-row-main fz-doc-link" href="@d.Url" target="_blank"><div class="fz-row-nom">@d.Nombre</div></a>
+                <button class="fz-del-sm" @onclick="() => EliminarDocumento(did)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+            </div>
+        }
+        <label class="fz-upload">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>@(_subiendoDoc ? "Subiendo..." : "Cargar documento")
+            <InputFile OnChange="SubirDocumento" hidden disabled="@_subiendoDoc" />
+        </label>
+    </div>
+
+    <div class="fz-section">Campos dinamicos</div>
+    <div class="fz-block">
+        @foreach (var c in _ficha.Campos)
+        {
+            var cid = c.Id;
+            <div class="fz-row-item">
+                <div class="fz-row-main"><div class="fz-row-nom">@c.Label</div><div class="fz-row-sub">@c.Valor</div></div>
+                <button class="fz-del-sm" @onclick="() => EliminarCampo(cid)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+            </div>
+        }
+        <div class="fz-addrow">
+            <input class="fz-in" style="width:42%" @bind="_campoLabel" placeholder="Campo" />
+            <input class="fz-in fz-grow" @bind="_campoValor" placeholder="Valor" />
+            <button class="fz-add" @onclick="AgregarCampo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></button>
+        </div>
+    </div>
+
+    <div class="fz-ehint">La disponibilidad (reservable, aforo y horarios), la imagen y el programa de mantenimiento se configuran en la pestana "Ficha de la zona".</div>
 </div>
 <div class="fz-foot">
     @if (!string.IsNullOrEmpty(_msg)) { <span class="fz-foot-msg">@_msg</span> }
@@ -279,16 +220,33 @@ else if (_tab == "editar")
 
     .fz-ebody { padding: 18px 22px; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
     .fz-section { font-size: 12px; font-weight: 800; color: #33475B; letter-spacing: .3px; margin-bottom: 10px; }
+    /* Separacion entre los bloques del editor (identificacion / facturas / documentos / campos). */
+    .fz-section:not(:first-child) { margin-top: 22px; }
+
+    /* Facturas: mismo tratamiento visual que el modal de equipos (fem-doc / fem-tag). */
+    .fz-doc { display: flex; align-items: center; gap: 10px; border: 1px solid #E1E8EE; border-radius: 10px; padding: 10px 13px; margin-bottom: 7px; background: #fff; }
+    .fz-doc-icon { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; background: #E6F2FB; color: #2563EB; }
+    .fz-doc-body { flex: 1; min-width: 0; }
+    .fz-doc-name { font-size: 12.5px; font-weight: 700; color: #33475B; }
+    .fz-doc-meta { font-size: 10.5px; color: #A6B7C8; }
+    .fz-tag { font-size: 9.5px; font-weight: 800; padding: 3px 8px; border-radius: 5px; flex-shrink: 0; color: #2563EB; background: #E6F2FB; }
+    .fz-mini-del { width: 24px; height: 24px; border-radius: 6px; background: transparent; border: 0; color: #C3D0DD; cursor: pointer; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; }
+    .fz-mini-del:hover { background: #FDE7E7; color: #D7263D; }
+    .fz-fac-form { display: flex; gap: 7px; align-items: center; padding: 11px; background: #F8FAFC; border: 1px dashed #D7E0EA; border-radius: 10px; margin-top: 3px; }
+    .fz-mini { width: 110px; flex-shrink: 0; }
     .fz-egrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .fz-col-2 { grid-column: 1 / -1; }
     .fz-ehint { margin-top: 14px; font-size: 12px; color: #7C98B6; background: var(--propia-brand-soft, #F5F1FE); border: 1px solid var(--propia-brand-border, #DCD2F8); border-radius: 10px; padding: 10px 12px; }
 
-    .fz-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); min-height: 0; flex: 1; overflow: hidden; }
+    /* Dos columnas del mismo ancho (igual que el modal de equipos). */
+    /* 4/8 de un grid de 12: la columna de la imagen es la angosta. Igual en equipos. */
+    .fz-grid { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); min-height: 0; flex: 1; overflow: hidden; }
     .fz-left { overflow-y: auto; padding: 18px 20px; border-right: 1px solid #EEF3F8; background: #FBFCFD; display: flex; flex-direction: column; gap: 16px; }
     .fz-right { display: flex; flex-direction: column; min-height: 0; background: #F5F7FA; overflow: hidden; }
 
     .fz-img { height: 150px; border-radius: 12px; background-size: cover; background-position: center; }
     .fz-img-change { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 7px; font-size: 11.5px; font-weight: 700; color: #6D4FE3; cursor: pointer; }
+    .fz-resv { margin-top: 12px; }
     .fz-img-drop { height: 150px; border-radius: 12px; border: 1.5px dashed #C3D0DD; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; cursor: pointer; color: #6D4FE3; font-size: 12px; font-weight: 700; }
     .fz-img-drop:hover { border-color: #6D4FE3; background: #F5F1FE; }
 
@@ -379,16 +337,20 @@ else if (_tab == "editar")
     [Parameter] public string? Jwt { get; set; }
     [Parameter] public ZonaComunDto? Zona { get; set; }
 
+    private Guid ZonaId => Zona?.Id ?? Guid.Empty;
+
     private ZonaFichaDto? _ficha;
     private bool _busy;
     private bool _subiendoImg;
     private bool _subiendoDoc;
     private bool _dirty;
     private string _msg = "";
-    private string _tareaMsg = "";
 
     // estado editable de config
     private string? _imagenUrl;
+    // Programa de mantenimiento antiguo de la zona: ya no se edita desde la ficha (la
+    // frecuencia la define ahora la regla del programador), pero se sigue leyendo y
+    // guardando tal cual para no borrar el dato de las zonas que ya lo tenian.
     private string _mantTipo = "Interno";
     private string? _mantContrato;
     private string _mantFrec = "Mensual";
@@ -401,11 +363,6 @@ else if (_tab == "editar")
     private decimal? _facValor;
     private string _campoLabel = "";
     private string _campoValor = "";
-    private string _novTitulo = "";
-    private string _novTexto = "";
-    private string? _novImagenUrl;
-    private bool _subiendoNovImg;
-    private readonly Dictionary<Guid, string> _comentTexto = new();
 
     private DisponibilidadHorariosEditor? _horariosEditor;
 
@@ -466,31 +423,6 @@ else if (_tab == "editar")
         finally { _subiendoImg = false; }
     }
 
-    private async Task GenerarTarea()
-    {
-        if (Zona is null) return;
-        _busy = true; _tareaMsg = "";
-        try
-        {
-            var req = new
-            {
-                Titulo = $"Mantenimiento {_mantFrec.ToLower()}: {Zona.Nombre}",
-                Descripcion = $"Tarea generada desde la ficha de la zona comun. Tipo: {_mantTipo}." + (string.IsNullOrWhiteSpace(_mantContrato) ? "" : $" Contrato: {_mantContrato}."),
-                Prioridad = 2,
-                EstadoId = (Guid?)null,
-                AsignadoPersonaId = (Guid?)null,
-                FechaInicio = (DateOnly?)null,
-                FechaVencimiento = (DateOnly?)null,
-                PadreId = (Guid?)null,
-                EtiquetaIds = (List<Guid>?)null
-            };
-            var resp = await Auth().PostAsJsonAsync("/api/tareas", req);
-            _tareaMsg = resp.IsSuccessStatusCode ? "Tarea de mantenimiento creada en Tareas (2.10)." : "No se pudo generar la tarea.";
-        }
-        catch (Exception ex) { _tareaMsg = ex.Message; }
-        finally { _busy = false; }
-    }
-
     private async Task AgregarFactura()
     {
         if (Zona is null || string.IsNullOrWhiteSpace(_facConcepto)) return;
@@ -538,57 +470,6 @@ else if (_tab == "editar")
     {
         var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/zonas/campos/{id}");
         if (resp.IsSuccessStatusCode) { _dirty = true; await Recargar(); }
-    }
-
-    private async Task SubirNovedadImagen(InputFileChangeEventArgs e)
-    {
-        if (Zona is null || e.File is null) return;
-        _subiendoNovImg = true; _msg = "";
-        try
-        {
-            using var content = new MultipartFormDataContent();
-            var sc = new StreamContent(e.File.OpenReadStream(5_000_000));
-            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(e.File.ContentType);
-            content.Add(sc, "file", e.File.Name);
-            var resp = await Auth().PostAsync($"/api/mi-copropiedad/zonas/{Zona.Id}/novedad-imagen", content);
-            if (resp.IsSuccessStatusCode)
-            {
-                var dto = await resp.Content.ReadFromJsonAsync<UrlResp>();
-                _novImagenUrl = dto?.url;
-            }
-            else { _msg = await resp.Content.ReadAsStringAsync(); }
-        }
-        catch (Exception ex) { _msg = ex.Message; }
-        finally { _subiendoNovImg = false; }
-    }
-
-    private async Task PublicarNovedad()
-    {
-        if (Zona is null || string.IsNullOrWhiteSpace(_novTitulo)) return;
-        _busy = true;
-        try
-        {
-            var req = new PublicarZonaNovedadRequest(_novTitulo.Trim(), string.IsNullOrWhiteSpace(_novTexto) ? null : _novTexto.Trim(), _novImagenUrl);
-            var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/zonas/{Zona.Id}/novedades", req);
-            if (resp.IsSuccessStatusCode) { _novTitulo = ""; _novTexto = ""; _novImagenUrl = null; _dirty = true; await Recargar(); }
-        }
-        finally { _busy = false; }
-    }
-    private async Task EliminarNovedad(Guid id)
-    {
-        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/zonas/novedades/{id}");
-        if (resp.IsSuccessStatusCode) { _dirty = true; await Recargar(); }
-    }
-    private async Task ToggleLike(Guid id)
-    {
-        var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/zonas/novedades/{id}/like", new { });
-        if (resp.IsSuccessStatusCode) { _dirty = true; await Recargar(); }
-    }
-    private async Task Comentar(Guid novedadId)
-    {
-        if (!_comentTexto.TryGetValue(novedadId, out var txt) || string.IsNullOrWhiteSpace(txt)) return;
-        var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/zonas/novedades/{novedadId}/comentarios", new ComentarZonaNovedadRequest(txt.Trim()));
-        if (resp.IsSuccessStatusCode) { _comentTexto[novedadId] = ""; _dirty = true; await Recargar(); }
     }
 
     private async Task GuardarConfig()

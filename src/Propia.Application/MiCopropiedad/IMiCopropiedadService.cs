@@ -176,10 +176,6 @@ public interface IMiCopropiedadService
     Task<bool> EliminarZonaDocumentoAsync(Guid docId, CancellationToken ct);
     Task<ZonaCampoDto?> AgregarZonaCampoAsync(Guid zonaId, AgregarZonaCampoRequest req, CancellationToken ct);
     Task<bool> EliminarZonaCampoAsync(Guid campoId, CancellationToken ct);
-    Task<ZonaNovedadDto?> PublicarZonaNovedadAsync(Guid zonaId, PublicarZonaNovedadRequest req, Guid? personaId, CancellationToken ct);
-    Task<bool> EliminarZonaNovedadAsync(Guid novedadId, CancellationToken ct);
-    Task<ZonaComentarioDto?> ComentarZonaNovedadAsync(Guid novedadId, ComentarZonaNovedadRequest req, Guid? personaId, CancellationToken ct);
-    Task<int> ToggleZonaNovedadLikeAsync(Guid novedadId, Guid? personaId, CancellationToken ct);
 
     // Seccion 8 - Finanzas (parametros). El resumen en tiempo real lo orquesta el controller
     // combinando 2.6 Presupuesto + 2.7 Cartera.

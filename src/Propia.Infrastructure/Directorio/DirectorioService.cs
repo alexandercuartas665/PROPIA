@@ -68,6 +68,10 @@ public class DirectorioService : IDirectorioService
         };
         _db.Personas.Add(p);
         await _db.SaveChangesAsync(ct);
+        // Toda persona creada queda vinculada a la copropiedad activa. Antes dependia de que
+        // el llamador hiciera un POST /vinculos aparte, y varios no lo hacian (alta de
+        // terceros en Servicios, ficha de unidad), dejando gente fuera de los selectores.
+        await VinculoDirectorio.AsegurarPersonaAsync(_db, _tenantContext, p.Id, ct);
         return ToPersonaDetalle(p);
     }
 
@@ -288,9 +292,13 @@ public class DirectorioService : IDirectorioService
             : await _db.Empresas.IgnoreQueryFilters().AnyAsync(e => e.Id == req.EntidadId, ct);
         if (!existeEntidad) throw new InvalidOperationException("La entidad referenciada no existe.");
 
-        var yaExiste = await _db.DirectorioVinculos.AnyAsync(v =>
+        // Idempotente: si ya esta vinculada se devuelve el vinculo existente en vez de fallar.
+        // Ahora que el alta de persona crea el vinculo sola, el flujo de la UI (crear +
+        // vincular) llegaria aqui con el vinculo ya hecho; y pedir vincular a alguien que ya
+        // esta no es un error que valga la pena mostrarle al usuario.
+        var vinculoExistente = await _db.DirectorioVinculos.FirstOrDefaultAsync(v =>
             v.EntidadTipo == req.EntidadTipo && v.EntidadId == req.EntidadId && v.Estado == EstadoVinculo.Activo, ct);
-        if (yaExiste) throw new InvalidOperationException("Esta entidad ya tiene un vinculo activo con la copropiedad.");
+        if (vinculoExistente is not null) return await GetVinculoConEtiquetasAsync(vinculoExistente.Id, ct);
 
         var v = new DirectorioVinculo
         {
@@ -524,5 +532,129 @@ public class DirectorioService : IDirectorioService
             .Select(c => new ContactoDto(c.Id, c.EntidadTipo, c.EntidadId, c.Tipo, c.SubtipoLabel,
                 c.Valor, c.Ciudad, c.Departamento, c.EsPrincipal, c.Visibilidad, c.Activo))
             .ToListAsync(ct);
+    }
+
+    // ============================ Selector de personas ============================
+    // El autocompletado busca en las copropiedades de la ORGANIZACION del usuario, no en
+    // toda la plataforma. Persona es global (sin tenant_id ni RLS), asi que el acotamiento
+    // tiene que ser explicito aqui: se parte de los vinculos de esos tenants y solo despues
+    // se cruza contra Personas. Nunca al reves.
+
+    public async Task<IReadOnlyList<PersonaCandidatoDto>> BuscarCandidatosAsync(string query, CancellationToken ct)
+    {
+        var q = (query ?? "").Trim();
+        // Minimo 3 caracteres: evita que alguien enumere el directorio letra por letra.
+        if (q.Length < 3) return Array.Empty<PersonaCandidatoDto>();
+
+        var tenantActual = _tenantContext.CurrentTenantId;
+        if (tenantActual is null) return Array.Empty<PersonaCandidatoDto>();
+
+        // Se consulta por la funcion SECURITY DEFINER y no por EF: directorio_vinculos esta
+        // bajo RLS y el rol de la app no puede saltarla, asi que desde EF una busqueda
+        // cross-copropiedad siempre saldria vacia. El tenant sale del contexto del servidor,
+        // NUNCA de la peticion: es lo unico que acota el alcance de la funcion.
+        var filas = new List<(Guid PersonaId, string Nombres, string Apellidos, int TipoDoc, string Documento, Guid TenantId, string TenantNombre)>();
+
+        var conn = _db.Database.GetDbConnection();
+        var abiertaAqui = conn.State != System.Data.ConnectionState.Open;
+        if (abiertaAqui) await conn.OpenAsync(ct);
+        try
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText =
+                "SELECT persona_id, nombres, apellidos, tipo_documento, documento, tenant_id, tenant_nombre " +
+                "FROM buscar_personas_organizacion(@p_tenant_id, @p_query)";
+
+            var pTenant = cmd.CreateParameter();
+            pTenant.ParameterName = "@p_tenant_id";
+            pTenant.Value = tenantActual.Value;
+            cmd.Parameters.Add(pTenant);
+
+            var pQuery = cmd.CreateParameter();
+            pQuery.ParameterName = "@p_query";
+            pQuery.Value = q;
+            cmd.Parameters.Add(pQuery);
+
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                filas.Add((
+                    reader.GetGuid(0), reader.GetString(1), reader.GetString(2),
+                    reader.GetInt32(3), reader.GetString(4),
+                    reader.GetGuid(5), reader.GetString(6)));
+            }
+        }
+        finally
+        {
+            if (abiertaAqui) await conn.CloseAsync();
+        }
+
+        if (filas.Count == 0) return Array.Empty<PersonaCandidatoDto>();
+
+        // Una persona puede venir repetida (una fila por copropiedad donde esta vinculada).
+        return filas
+            .GroupBy(f => f.PersonaId)
+            .Select(g =>
+            {
+                var f = g.First();
+                var tenants = g.Select(x => x.TenantId).Distinct().ToList();
+                return new PersonaCandidatoDto(
+                    f.PersonaId,
+                    $"{f.Nombres} {f.Apellidos}".Trim(),
+                    (TipoDocumento)f.TipoDoc,
+                    Enmascarar(f.Documento),
+                    tenants.Contains(tenantActual.Value),
+                    g.Where(x => x.TenantId != tenantActual.Value)
+                     .Select(x => x.TenantNombre).Distinct().ToList());
+            })
+            .OrderByDescending(c => c.EnEstaCopropiedad)   // lo de casa primero
+            .ThenBy(c => c.NombreCompleto)
+            .Take(20)
+            .ToList();
+    }
+
+    public async Task<bool> VincularCandidatoAsync(Guid personaId, CancellationToken ct)
+    {
+        var tenantActual = _tenantContext.CurrentTenantId;
+        if (tenantActual is null) return false;
+
+        // Solo se puede traer gente que ya este en la organizacion. Se comprueba con la misma
+        // funcion acotada: sin esto, el endpoint permitiria vincular cualquier persona de la
+        // plataforma con solo conocer su id.
+        var persona = await _db.Personas.AsNoTracking().IgnoreQueryFilters()
+            .Where(p => p.Id == personaId)
+            .Select(p => new { p.Documento })
+            .FirstOrDefaultAsync(ct);
+        if (persona is null) throw new InvalidOperationException("Esa persona no existe.");
+
+        var candidatos = await BuscarCandidatosAsync(persona.Documento, ct);
+        if (!candidatos.Any(c => c.PersonaId == personaId))
+            throw new InvalidOperationException("Esa persona no pertenece a tu organizacion.");
+
+        await VinculoDirectorio.AsegurarPersonaAsync(_db, _tenantContext, personaId, ct);
+        return true;
+    }
+
+    /// <summary>
+    /// Copropiedades activas de la organizacion duena del tenant dado. Si la copropiedad no
+    /// tiene organizacion, el alcance se reduce a ella misma (nunca se amplia).
+    /// </summary>
+    private async Task<List<Guid>> TenantsDeLaOrganizacionAsync(Guid tenantId, CancellationToken ct)
+    {
+        var orgId = await _db.Tenants.AsNoTracking()
+            .Where(t => t.Id == tenantId).Select(t => t.OrganizacionId).FirstOrDefaultAsync(ct);
+        if (orgId is null) return new List<Guid> { tenantId };
+
+        return await _db.Tenants.AsNoTracking()
+            .Where(t => t.OrganizacionId == orgId && t.Estado == EstadoCopropiedad.Activa)
+            .Select(t => t.Id).ToListAsync(ct);
+    }
+
+    /// <summary>Deja visibles solo los ultimos 4 digitos: basta para desambiguar homonimos.</summary>
+    private static string Enmascarar(string? documento)
+    {
+        var d = (documento ?? "").Trim();
+        if (d.Length <= 4) return d;
+        return new string('*', Math.Min(4, d.Length - 4)) + d[^4..];
     }
 }

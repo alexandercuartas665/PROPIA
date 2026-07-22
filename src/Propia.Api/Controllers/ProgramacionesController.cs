@@ -50,4 +50,13 @@ public class ProgramacionesController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Eliminar(Guid id, CancellationToken ct)
         => await _svc.EliminarAsync(id, ct) ? NoContent() : NotFound();
+
+    /// <summary>
+    /// Valida una expresion cron y devuelve sus proximas corridas. Sirve para que la UI
+    /// muestre "cuando va a correr esto" antes de guardar, en vez de dejar al usuario
+    /// adivinando si "0 8 * * 1" es lo que queria.
+    /// </summary>
+    [HttpPost("cron/preview")]
+    public IActionResult CronPreview([FromBody] CronPreviewRequest req)
+        => Ok(_svc.PreviewCron(req));
 }

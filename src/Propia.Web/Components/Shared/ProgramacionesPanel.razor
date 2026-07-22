@@ -1,0 +1,253 @@
+@* ProgramacionesPanel - bloque reutilizable de "programador de tareas" para cualquier entidad.
+   Lista las reglas colgadas de (ModuloOrigen, EntidadOrigenId), permite crear nuevas con el
+   ProgramadorTareaModal, activarlas/desactivarlas y borrarlas. Se embebe en fichas (zonas,
+   equipos, contratos...) sin que cada una repita la logica.
+
+   No maneja sesion: recibe el Jwt del contenedor, igual que los modales de ficha. *@
+
+@using Propia.Application.Programaciones
+@using Propia.Application.Tareas
+@using Propia.Domain.Enums
+@using Propia.Web.Components.Shared.Modals
+@inject IHttpClientFactory HttpFactory
+@inject IModalService Modals
+@inject IJSRuntime Js
+
+<div class="pgp">
+    <div class="pgp-t">@Titulo</div>
+
+    @* Unica entrada al programador. Antes convivia con un boton aparte de "generar tarea
+       ahora": eran dos caminos para lo mismo y confundia. Una tarea de una sola vez se
+       arma aqui con periodicidad "Unica". *@
+    <button class="pgp-new" type="button" @onclick="NuevaAsync" disabled="@_busy">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 4h18v18H3zM3 10h18M8 2v4M16 2v4"/></svg>
+        @TextoBoton
+    </button>
+
+    @if (_cargando)
+    {
+        <div class="pgp-empty">Cargando programaciones...</div>
+    }
+    else if (_progs.Count == 0)
+    {
+        <div class="pgp-empty">Sin reglas programadas. Crea una para que el sistema genere las tareas solo.</div>
+    }
+    else
+    {
+        @foreach (var p in _progs)
+        {
+            var pp = p;
+            <div class="pgp-row @(p.Activa ? "" : "off")">
+                <div class="pgp-row-main">
+                    <div class="pgp-row-t">@p.Titulo</div>
+                    <div class="pgp-row-meta">
+                        @ReglaTexto(p)
+                        @if (!string.IsNullOrWhiteSpace(p.TableroNombre)) { <span> &middot; @p.TableroNombre</span> }
+                        @if (p.NotificarPorCorreo) { <span> &middot; con correo</span> }
+                    </div>
+                    <div class="pgp-row-meta2">
+                        Proxima: @ProximaTexto(p) &middot; @p.TareasGeneradas @(p.TareasGeneradas == 1 ? "tarea generada" : "tareas generadas")
+                    </div>
+                </div>
+                <button class="pgp-toggle @(p.Activa ? "on" : "")" type="button"
+                        title="@(p.Activa ? "Desactivar" : "Activar")"
+                        @onclick="() => ToggleAsync(pp)" disabled="@_busy">
+                    <span class="pgp-toggle-track"><span class="pgp-toggle-knob"></span></span>
+                </button>
+                <button class="pgp-del" type="button" title="Eliminar" @onclick="() => EliminarAsync(pp)" disabled="@_busy">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+                </button>
+            </div>
+        }
+    }
+
+    @if (!string.IsNullOrEmpty(_msg)) { <div class="pgp-msg @(_error ? "bad" : "")">@_msg</div> }
+</div>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+    /// <summary>Codigo del modulo dueno de la entidad, ej. "zona" o "equipo".</summary>
+    [Parameter, EditorRequired] public string ModuloOrigenCodigo { get; set; } = "";
+    [Parameter, EditorRequired] public Guid EntidadOrigenId { get; set; }
+    /// <summary>Texto legible del origen; se copia a la tarea creada. Ej. "Zona: Salon social".</summary>
+    [Parameter] public string? OrigenReferencia { get; set; }
+    [Parameter] public string Titulo { get; set; } = "TAREAS PROGRAMADAS";
+    [Parameter] public string TextoBoton { get; set; } = "Programar mantenimiento";
+    /// <summary>Titulo sugerido al crear una regla nueva.</summary>
+    [Parameter] public string? PrefillTitulo { get; set; }
+
+    private List<ProgramacionTareaDto> _progs = new();
+    private List<TableroOpcion> _tableros = new();
+    private List<PersonaOpcion> _personas = new();
+    private bool _cargando = true, _busy;
+    private string _msg = "";
+    private bool _error;
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        try
+        {
+            var url = $"/api/programaciones?moduloOrigen={Uri.EscapeDataString(ModuloOrigenCodigo)}&entidadOrigenId={EntidadOrigenId}";
+            _progs = await Auth().GetFromJsonAsync<List<ProgramacionTareaDto>>(url) ?? new();
+        }
+        catch (Exception ex) { Aviso(ex.Message, true); }
+        _cargando = false;
+    }
+
+    // Tableros y personas solo se cargan al abrir el modal: la mayoria de las veces el
+    // usuario solo mira la lista y no vale la pena pagar dos consultas de mas por ficha.
+    private async Task CargarOpcionesAsync()
+    {
+        try
+        {
+            var tabs = await Auth().GetFromJsonAsync<List<TableroApi>>("/api/tareas/tableros") ?? new();
+            _tableros = tabs.Select(t => new TableroOpcion { Id = t.Id, Nombre = t.Nombre }).ToList();
+        }
+        catch { _tableros = new(); }
+
+        try
+        {
+            var personas = await Auth().GetFromJsonAsync<List<PersonaApi>>("/api/directorio/personas") ?? new();
+            _personas = personas
+                .Select(p => new PersonaOpcion { Id = p.Id, Nombre = $"{p.Nombres} {p.Apellidos}".Trim() })
+                .Where(p => !string.IsNullOrWhiteSpace(p.Nombre))
+                .ToList();
+        }
+        catch { _personas = new(); }
+    }
+
+    private async Task NuevaAsync()
+    {
+        _busy = true;
+        await CargarOpcionesAsync();
+        _busy = false;
+
+        var pars = new ModalParameters()
+            .Set("Tableros", _tableros)
+            .Set("Personas", _personas)
+            .Set("PrefillTitulo", PrefillTitulo)
+            .Set("ModuloOrigenCodigo", ModuloOrigenCodigo)
+            .Set("EntidadOrigenId", (Guid?)EntidadOrigenId)
+            .Set("OrigenReferencia", OrigenReferencia);
+        var req = await Modals.OpenAsync<ProgramadorTareaModal, CrearProgramacionRequest>(pars, new ModalOptions { Width = "580px" });
+        if (req is null) return;
+
+        _busy = true;
+        try
+        {
+            var r = await Auth().PostAsJsonAsync("/api/programaciones", req);
+            if (r.IsSuccessStatusCode) { Aviso("Regla programada.", false); await CargarAsync(); }
+            else Aviso(await MensajeDeError(r, "No se pudo guardar la programacion."), true);
+        }
+        catch (Exception ex) { Aviso(ex.Message, true); }
+        _busy = false;
+    }
+
+    private async Task ToggleAsync(ProgramacionTareaDto p)
+    {
+        _busy = true;
+        try
+        {
+            var r = await Auth().PutAsync($"/api/programaciones/{p.Id}/activa?activa={(!p.Activa).ToString().ToLower()}", null);
+            if (r.IsSuccessStatusCode) await CargarAsync();
+            else Aviso("No se pudo cambiar el estado de la regla.", true);
+        }
+        catch (Exception ex) { Aviso(ex.Message, true); }
+        _busy = false;
+    }
+
+    private async Task EliminarAsync(ProgramacionTareaDto p)
+    {
+        var ok = await Js.InvokeAsync<bool>("confirm",
+            $"Eliminar la regla \"{p.Titulo}\"? Las tareas ya generadas se conservan.");
+        if (!ok) return;
+
+        _busy = true;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/programaciones/{p.Id}");
+            if (r.IsSuccessStatusCode) { Aviso("Regla eliminada.", false); await CargarAsync(); }
+            else Aviso("No se pudo eliminar la regla.", true);
+        }
+        catch (Exception ex) { Aviso(ex.Message, true); }
+        _busy = false;
+    }
+
+    private void Aviso(string m, bool esError) { _msg = m; _error = esError; }
+
+    private static async Task<string> MensajeDeError(HttpResponseMessage resp, string porDefecto)
+    {
+        try
+        {
+            var err = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+            if (err is not null && err.TryGetValue("error", out var m) && !string.IsNullOrWhiteSpace(m)) return m;
+        }
+        catch { }
+        return porDefecto;
+    }
+
+    private static string ReglaTexto(ProgramacionTareaDto p)
+        => p.Tipo == TipoProgramacion.Cron
+            ? $"cron {p.CronExpresion}"
+            : p.Periodicidad.ToString().ToLower();
+
+    private static string ProximaTexto(ProgramacionTareaDto p)
+    {
+        if (!p.Activa) return "inactiva";
+        if (p.Tipo == TipoProgramacion.Cron && p.ProximaEjecucionUtc.HasValue)
+        {
+            try
+            {
+                var zona = Propia.Infrastructure.Programaciones.CronHelper.Zona(p.ZonaHoraria);
+                return TimeZoneInfo.ConvertTime(p.ProximaEjecucionUtc.Value, zona).ToString("dd MMM yyyy HH:mm");
+            }
+            catch { return p.ProximaEjecucionUtc.Value.ToString("dd MMM yyyy HH:mm"); }
+        }
+        return p.FechaProximaEjecucion.ToString("dd MMM yyyy");
+    }
+
+    // Formas minimas de lo que devuelve la API: aqui solo hacen falta id y nombre, y asi el
+    // panel no se acopla a los DTOs completos de Tareas y Directorio.
+    private sealed record TableroApi(Guid Id, string Nombre);
+    private sealed record PersonaApi(Guid Id, string? Nombres, string? Apellidos);
+}
+
+<style>
+    .pgp { display: flex; flex-direction: column; gap: 6px; }
+    .pgp-t { font-size: 11px; letter-spacing: .5px; color: #A6B7C8; font-weight: 700; }
+    /* Mismo verde que tenia el boton de "generar tarea": es el que el usuario reconoce. */
+    .pgp-new { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; font-size: 13px; font-weight: 700; color: #fff; background: #1A8754; border: 0; padding: 11px 14px; border-radius: 9px; cursor: pointer; font-family: inherit; box-shadow: 0 4px 12px rgba(26,135,84,.22); }
+    .pgp-new:hover { background: #15703F; }
+    .pgp-new:disabled { opacity: .55; cursor: default; box-shadow: none; }
+
+    .pgp-row { display: flex; align-items: center; gap: 9px; border: 1px solid #E1E8EE; border-radius: 9px; padding: 9px 12px; background: #fff; }
+    .pgp-row.off { background: #FAFBFC; opacity: .7; }
+    .pgp-row-main { flex: 1; min-width: 0; }
+    .pgp-row-t { font-size: 12.5px; font-weight: 700; color: #33475B; }
+    .pgp-row-meta { font-size: 11px; color: #6D4FE3; font-weight: 600; }
+    .pgp-row-meta2 { font-size: 10.5px; color: #A6B7C8; margin-top: 1px; }
+
+    .pgp-toggle { border: 0; background: transparent; padding: 0; cursor: pointer; flex-shrink: 0; }
+    .pgp-toggle-track { width: 30px; height: 17px; border-radius: 10px; background: #C3D0DD; position: relative; display: inline-block; transition: background .15s; }
+    .pgp-toggle.on .pgp-toggle-track { background: #1A8754; }
+    .pgp-toggle-knob { position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: #fff; transition: left .15s; }
+    .pgp-toggle.on .pgp-toggle-knob { left: 15px; }
+
+    .pgp-del { width: 26px; height: 26px; border-radius: 7px; border: 1px solid #E1E8EE; background: #fff; color: #A6B7C8; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .pgp-del:hover { color: #D7263D; border-color: #F0C9C9; }
+
+    .pgp-empty { font-size: 11.5px; color: #A6B7C8; padding: 10px; border: 1px dashed #D7E0EA; border-radius: 9px; }
+    .pgp-msg { font-size: 11.5px; color: #15703F; font-weight: 600; }
+    .pgp-msg.bad { color: #C0383C; }
+</style>

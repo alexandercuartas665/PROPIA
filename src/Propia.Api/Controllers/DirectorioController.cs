@@ -25,6 +25,26 @@ public class DirectorioController : ControllerBase
     public async Task<IActionResult> ListarPersonas([FromQuery] string? q, CancellationToken ct)
         => Ok(await _svc.ListarPersonasDelTenantAsync(q, ct));
 
+    // ---------- Selector de personas (autocompletado a nivel organizacion) ----------
+    // Va ANTES de personas/{id} a proposito: si se declara despues, "candidatos" intenta
+    // parsearse como guid y la ruta nunca se alcanza.
+
+    /// <summary>
+    /// Candidatos del selector: personas de cualquier copropiedad de la organizacion,
+    /// marcadas segun ya esten o no en la copropiedad activa. Minimo 3 caracteres.
+    /// </summary>
+    [HttpGet("personas/candidatos")]
+    public async Task<IActionResult> BuscarCandidatos([FromQuery] string? q, CancellationToken ct)
+        => Ok(await _svc.BuscarCandidatosAsync(q ?? "", ct));
+
+    /// <summary>Trae a la copropiedad activa una persona que ya existe en la organizacion.</summary>
+    [HttpPost("personas/{id:guid}/vincular")]
+    public async Task<IActionResult> VincularCandidato(Guid id, CancellationToken ct)
+    {
+        try { return Ok(new { vinculada = await _svc.VincularCandidatoAsync(id, ct) }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     [HttpGet("personas/{id:guid}")]
     public async Task<IActionResult> ObtenerPersona(Guid id, CancellationToken ct)
     {

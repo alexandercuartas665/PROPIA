@@ -139,6 +139,9 @@ public static class DependencyInjection
         // Programador de tareas (2.10)
         services.AddScoped<Application.Programaciones.IProgramacionTareasService, Programaciones.ProgramacionTareasService>();
 
+        // Muro de novedades reutilizable (zonas comunes, equipos, ...)
+        services.AddScoped<Application.Novedades.INovedadesService, Novedades.NovedadesService>();
+
         // Modulo 2.1 Onboarding y Activacion
         services.AddScoped<Application.Onboarding.IOnboardingService, Onboarding.OnboardingService>();
 

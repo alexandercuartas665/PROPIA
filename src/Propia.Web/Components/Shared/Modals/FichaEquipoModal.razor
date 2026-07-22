@@ -45,11 +45,8 @@ else
     </div>
 
     <div class="fem-tabs">
+        @* Solo dos pestanas, como en zonas: los horarios se editan dentro de la ficha. *@
         <button class="fem-tab @(_tab == "ficha" ? "fem-tab--on" : "")" type="button" @onclick='() => _tab = "ficha"'>Ficha del activo</button>
-        @if (eq.EsReservable)
-        {
-            <button class="fem-tab @(_tab == "horarios" ? "fem-tab--on" : "")" type="button" @onclick='() => _tab = "horarios"'>Horarios disponibilidad</button>
-        }
         <button class="fem-tab @(_tab == "editar" ? "fem-tab--on" : "")" type="button" @onclick="IniciarEdicion">Editar datos</button>
     </div>
 
@@ -58,59 +55,73 @@ else
         <div class="fem-grid">
             @* ===== IZQUIERDA ===== *@
             <div class="fem-left">
-                <div class="fem-sectlbl">FOTOS DEL ACTIVO</div>
-                <div class="fem-fotos">
-                    @foreach (var f in _ficha.Fotos)
-                    {
-                        var fid = f.Id;
-                        <div class="fem-foto" style="background-image:url('@f.Url')">
-                            <button class="fem-foto-del" type="button" title="Eliminar" @onclick="@(() => EliminarFotoAsync(fid))">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                            </button>
-                        </div>
-                    }
-                    <label class="fem-foto-add">
-                        <InputFile OnChange="OnFotoSeleccionada" accept="image/png,image/jpeg,image/webp" class="fem-foto-input" />
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-                        <span>Foto</span>
+                @* Imagen: mismo tratamiento que el modal de zonas comunes (una imagen grande
+                   + zona de carga). El backend sigue soportando varias fotos; aqui se muestra
+                   la principal (la primera) y al cargar una nueva pasa a ser la principal. *@
+                <div class="fem-sectlbl">IMAGEN DEL ACTIVO</div>
+                @{ var fotoPrincipal = _ficha.Fotos.FirstOrDefault(); }
+                @if (fotoPrincipal is not null)
+                {
+                    <div class="fem-img" style="background-image:url('@fotoPrincipal.Url')">
+                        <button class="fem-img-del" type="button" title="Quitar imagen" @onclick="@(() => EliminarFotoAsync(fotoPrincipal.Id))">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                        </button>
+                    </div>
+                    <label class="fem-img-change">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>Cambiar imagen
+                        <InputFile OnChange="OnFotoSeleccionada" accept="image/png,image/jpeg,image/webp" hidden />
                     </label>
+                }
+                else
+                {
+                    <label class="fem-img-drop">
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-9 7"/></svg>
+                        <span>Cargar imagen</span>
+                        <InputFile OnChange="OnFotoSeleccionada" accept="image/png,image/jpeg,image/webp" hidden />
+                    </label>
+                }
+
+                @* Reservable: se cambia aqui, en la ficha, junto a la imagen (igual que zonas).
+                   Lee y persiste directo sobre el equipo (sin estado local que se desincronice). *@
+                <div class="fem-resv">
+                    <button class="fem-toggle @(eq.EsReservable ? "on" : "")" type="button" @onclick="ToggleReservableAsync" disabled="@_busy">
+                        <span class="fem-toggle-track"><span class="fem-toggle-knob"></span></span>
+                        @(eq.EsReservable ? "Reservable" : "No reservable")
+                    </button>
                 </div>
 
-                <div class="fem-sectlbl">DATOS DEL ACTIVO</div>
+                @* Mantenimiento y horarios viven en esta columna, igual que en la ficha de
+                   zonas comunes. Una sola entrada: el programador compartido, cuyas reglas
+                   cuelgan de este activo y las materializa el job. *@
+                <div class="fem-prog fem-sectlbl--sep">
+                    <ProgramacionesPanel Jwt="@Jwt"
+                                         ModuloOrigenCodigo="equipo"
+                                         EntidadOrigenId="@EqId"
+                                         OrigenReferencia="@($"Activo: {eq.Nombre}")"
+                                         PrefillTitulo="@($"Mantenimiento: {eq.Nombre}")"
+                                         Titulo="PROGRAMA DE MANTENIMIENTO" />
+                </div>
+
+                @if (eq.EsReservable)
+                {
+                    <div class="fem-sectlbl fem-sectlbl--sep">HORARIOS DE SERVICIO</div>
+                    <DisponibilidadHorariosEditor @ref="_editor" Iniciales="_ventanasIniciales" />
+                    <button class="fem-btn-brand fem-btn-block" type="button" @onclick="GuardarHorariosAsync" disabled="@_busy">Guardar horarios</button>
+                }
+
+                <div class="fem-sectlbl fem-sectlbl--sep">DATOS DEL ACTIVO</div>
                 <div class="fem-datos">
                     <div class="fem-dato"><span>Ubicacion</span><b>@(string.IsNullOrEmpty(eq.Ubicacion) ? "—" : eq.Ubicacion)</b></div>
                     <div class="fem-dato"><span>Fecha de compra</span><b>@(eq.FechaAdquisicion?.ToString("dd MMM yyyy") ?? "—")</b></div>
                     <div class="fem-dato"><span>Proximo manten.</span><b>@ProximoMantenimiento()</b></div>
+                    @* Los campos dinamicos se consultan aqui; se agregan y quitan en la
+                       pestana "Editar datos" (misma UI que zonas comunes). *@
                     @foreach (var c in _ficha.CamposPersonalizados)
                     {
-                        var cid = c.Id;
                         <div class="fem-dato fem-dato--custom">
                             <span>@c.Label</span>
                             <b>@(string.IsNullOrEmpty(c.Valor) ? "—" : c.Valor)</b>
-                            <button class="fem-dato-del" type="button" title="Quitar campo" @onclick="@(() => EliminarCampoAsync(cid))">
-                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                            </button>
                         </div>
-                    }
-                </div>
-                <div class="fem-campo-add">
-                    @if (_campoOpen)
-                    {
-                        <div class="fem-campo-form">
-                            <input class="fem-input" @bind="_campoLabel" placeholder="Nombre del campo (ej. N de medidor)" />
-                            <input class="fem-input" @bind="_campoValor" placeholder="Valor" />
-                            <div class="fem-campo-actions">
-                                <button class="fem-btn-ghost-sm" type="button" @onclick="CancelarCampo">Cancelar</button>
-                                <button class="fem-btn-brand-sm" type="button" @onclick="AgregarCampoAsync" disabled="@_busy">Guardar</button>
-                            </div>
-                        </div>
-                    }
-                    else
-                    {
-                        <button class="fem-campo-btn" type="button" @onclick="@(() => _campoOpen = true)">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-                            Agregar campo personalizado
-                        </button>
                     }
                 </div>
 
@@ -144,146 +155,17 @@ else
                 </div>
             </div>
 
-            @* ===== DERECHA ===== *@
+            @* ===== DERECHA: solo el muro =====
+               Facturas, contratos, activos vinculados, tareas y mantenimientos viven en
+               "Editar datos". Esta columna es exclusivamente el muro de novedades, igual
+               que en la ficha de zonas comunes. *@
             <div class="fem-right">
-                @* FACTURAS *@
-                <div class="fem-block">
-                    <div class="fem-sectlbl">FACTURAS</div>
-                    @if (!string.IsNullOrEmpty(eq.NumeroFactura) || dep.CostoAdquisicion > 0)
-                    {
-                        <div class="fem-doc">
-                            <div class="fem-doc-icon fem-doc-icon--compra"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg></div>
-                            <div class="fem-doc-body">
-                                <div class="fem-doc-name">@(string.IsNullOrEmpty(eq.NumeroFactura) ? "Factura de compra" : eq.NumeroFactura)</div>
-                                <div class="fem-doc-meta">Factura de compra · $ @dep.CostoAdquisicion.ToString("N0") @(string.IsNullOrEmpty(eq.Proveedor) ? "" : $" · {eq.Proveedor}")</div>
-                            </div>
-                            <span class="fem-tag fem-tag--compra">COMPRA</span>
-                        </div>
-                    }
-                    @foreach (var m in _ficha.Mejoras)
-                    {
-                        var mid = m.Id;
-                        <div class="fem-doc">
-                            <div class="fem-doc-icon fem-doc-icon--mejora"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg></div>
-                            <div class="fem-doc-body">
-                                <div class="fem-doc-name">@m.Descripcion</div>
-                                <div class="fem-doc-meta">Mejora · $ @m.Valor.ToString("N0") · @m.Fecha.ToString("dd MMM yyyy")</div>
-                            </div>
-                            <span class="fem-tag fem-tag--mejora">MEJORA</span>
-                            <button class="fem-mini-del" type="button" title="Eliminar" @onclick="@(() => EliminarMejoraAsync(mid))"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
-                        </div>
-                    }
-                    <div class="fem-mejora-form">
-                        <input class="fem-input fem-grow" @bind="_mejoraDesc" placeholder="Mejora (ej. Cambio de motor)" />
-                        <input type="number" min="0" class="fem-input fem-mini" @bind="_mejoraValor" placeholder="Valor" />
-                        <button class="fem-btn-brand" type="button" @onclick="AgregarMejoraAsync" disabled="@_busy">Anadir factura</button>
-                    </div>
-                </div>
-
-                @* CONTRATOS + ACTIVOS VINCULADOS *@
-                <div class="fem-2col">
-                    <div>
-                        <div class="fem-sectlbl">CONTRATOS VINCULADOS</div>
-                        @foreach (var c in _ficha.ContratosVinculados)
-                        {
-                            var cid = c.Id;
-                            <div class="fem-link fem-link--on">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6D4FE3" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>
-                                <div class="fem-link-body"><div class="fem-link-name">@c.Nombre</div><div class="fem-link-meta">@c.Meta</div></div>
-                                <button type="button" class="fem-mini-del" title="Quitar" @onclick="@(() => ToggleContratoAsync(cid, false))"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-                            </div>
-                        }
-                        <div class="fem-disp-lbl">DISPONIBLES (SERVICIOS)</div>
-                        @foreach (var c in _ficha.ContratosDisponibles)
-                        {
-                            var cid = c.Id;
-                            <button type="button" class="fem-pick" @onclick="@(() => ToggleContratoAsync(cid, true))">
-                                <span>@c.Nombre</span>
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-                            </button>
-                        }
-                        @if (_ficha.ContratosDisponibles.Count == 0 && _ficha.ContratosVinculados.Count == 0)
-                        {
-                            <div class="fem-mini-empty">Aun no hay contratos en seccion 5 Servicios.</div>
-                        }
-                    </div>
-                    <div>
-                        <div class="fem-sectlbl">ACTIVOS VINCULADOS</div>
-                        @foreach (var v in _ficha.ActivosVinculados)
-                        {
-                            var vid = v.Id;
-                            <div class="fem-link">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#516F90" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
-                                <div class="fem-link-body"><div class="fem-link-name">@v.Nombre</div></div>
-                                <button type="button" class="fem-mini-del" title="Quitar" @onclick="@(() => ToggleActivoAsync(vid, false))"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-                            </div>
-                        }
-                        <div class="fem-disp-lbl">OTROS ACTIVOS</div>
-                        @foreach (var v in _ficha.ActivosDisponibles)
-                        {
-                            var vid = v.Id;
-                            <button type="button" class="fem-pick" @onclick="@(() => ToggleActivoAsync(vid, true))">
-                                <span>@v.Nombre</span>
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-                            </button>
-                        }
-                        @if (_ficha.ActivosDisponibles.Count == 0 && _ficha.ActivosVinculados.Count == 0)
-                        {
-                            <div class="fem-mini-empty">No hay otros activos registrados.</div>
-                        }
-                    </div>
-                </div>
-
-                @* TAREAS ASOCIADAS *@
-                <div class="fem-block">
-                    <div class="fem-sectlbl">TAREAS ASOCIADAS <span class="fem-sectlbl-soft">· desde los tableros</span></div>
-                    @if (_ficha.Tareas.Count == 0)
-                    {
-                        <div class="fem-mini-empty">Sin tareas asociadas. Las intervenciones de mantenimiento generan tareas en 2.10.</div>
-                    }
-                    else
-                    {
-                        @foreach (var t in _ficha.Tareas)
-                        {
-                            <div class="fem-tarea">
-                                <div class="fem-tarea-body"><div class="fem-tarea-t">@t.Titulo</div><div class="fem-tarea-board">@t.Tablero</div></div>
-                                <span class="fem-tarea-estado">@t.Estado</span>
-                            </div>
-                        }
-                    }
-                </div>
-
-                @* MANTENIMIENTOS *@
-                <div class="fem-block">
-                    <div class="fem-sectlbl">MANTENIMIENTOS</div>
-                    @if (_ficha.Mantenimientos.Count == 0)
-                    {
-                        <div class="fem-mini-empty">Sin mantenimientos registrados. Programalos desde el modulo 2.11 Mantenimiento.</div>
-                    }
-                    else
-                    {
-                        @foreach (var m in _ficha.Mantenimientos)
-                        {
-                            <div class="fem-mant">
-                                <span class="fem-mant-tipo">@m.Tipo</span>
-                                <div class="fem-mant-body"><div class="fem-mant-t">@m.Titulo</div></div>
-                                <span class="fem-mant-fecha">@(m.Fecha?.ToString("dd MMM yyyy") ?? "")</span>
-                                <span class="fem-mant-estado">@m.Estado</span>
-                            </div>
-                        }
-                    }
-                </div>
+                <MuroNovedadesPanel Jwt="@Jwt"
+                                    EntidadTipo="TipoEntidadNovedad.EquipoActivo"
+                                    EntidadId="@EqId"
+                                    Titulo="NOVEDADES DEL ACTIVO"
+                                    PlaceholderTitulo="Titulo (ej. Cambio de rodamientos)" />
             </div>
-        </div>
-    }
-    else if (_tab == "horarios")
-    {
-        <div class="fem-body">
-            <DisponibilidadHorariosEditor @ref="_editor" Iniciales="_ventanasIniciales" />
-        </div>
-        <div class="fem-footer">
-            <button class="fem-btn-ghost" type="button" @onclick="@(() => _tab = "ficha")">Volver</button>
-            <button class="fem-btn-brand" type="button" @onclick="GuardarHorariosAsync" disabled="@_busy">Guardar horarios</button>
         </div>
     }
     else if (_tab == "editar")
@@ -306,7 +188,8 @@ else
                 <div><label class="fem-lbl">Modelo</label><input class="fem-input" @bind="_form.Modelo" /></div>
                 <div><label class="fem-lbl">Numero de serie</label><input class="fem-input" @bind="_form.NumeroSerie" /></div>
                 <div><label class="fem-lbl">Ubicacion</label><input class="fem-input" @bind="_form.Ubicacion" placeholder="Ej. Cuarto tecnico nivel -1" /></div>
-                <div class="fem-col-2"><label class="fem-check"><input type="checkbox" @bind="_form.EsReservable" /><span>Es reservable (zonas comunes, gimnasio, salones)</span></label></div>
+                @* "Es reservable" salio de aqui: se cambia en la ficha, junto a la imagen.
+                   _form.EsReservable conserva el valor actual, asi que guardar no lo pisa. *@
             </div>
 
             <div class="fem-section">Vida util y costos</div>
@@ -319,6 +202,177 @@ else
                 <div><label class="fem-lbl">Proveedor</label><input class="fem-input" @bind="_form.Proveedor" /></div>
                 <div><label class="fem-lbl">Numero de factura</label><input class="fem-input" @bind="_form.NumeroFactura" /></div>
                 <div class="fem-col-2"><label class="fem-lbl">Observaciones</label><textarea class="fem-input" rows="2" @bind="_form.Observaciones"></textarea></div>
+            </div>
+
+            @* Campos dinamicos con la misma UI que zonas comunes (fila + alta inline).
+               Se guardan al instante con su boton, no con "Guardar cambios". *@
+            <div class="fem-section">Campos dinamicos</div>
+            <div class="fem-campos">
+                @foreach (var c in _ficha.CamposPersonalizados)
+                {
+                    var cid = c.Id;
+                    <div class="fem-campo-row">
+                        <div class="fem-campo-main"><div class="fem-campo-nom">@c.Label</div><div class="fem-campo-val">@c.Valor</div></div>
+                        <button class="fem-mini-del" type="button" title="Quitar campo" @onclick="@(() => EliminarCampoAsync(cid))"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                    </div>
+                }
+                <div class="fem-campo-addrow">
+                    <input class="fem-input" style="width:42%" @bind="_campoLabel" placeholder="Campo" />
+                    <input class="fem-input fem-grow" @bind="_campoValor" placeholder="Valor" />
+                    <button class="fem-add" type="button" @onclick="AgregarCampoAsync" disabled="@_busy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></button>
+                </div>
+            </div>
+
+            @* Facturas: la de compra sale de los datos de arriba; las demas son mejoras
+               capitalizadas, que suman al valor en libros. *@
+            <div class="fem-section">Facturas</div>
+            @if (!string.IsNullOrEmpty(eq.NumeroFactura) || dep.CostoAdquisicion > 0)
+            {
+                <div class="fem-doc">
+                    <div class="fem-doc-icon fem-doc-icon--compra"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg></div>
+                    <div class="fem-doc-body">
+                        <div class="fem-doc-name">@(string.IsNullOrEmpty(eq.NumeroFactura) ? "Factura de compra" : eq.NumeroFactura)</div>
+                        <div class="fem-doc-meta">Factura de compra · $ @dep.CostoAdquisicion.ToString("N0") @(string.IsNullOrEmpty(eq.Proveedor) ? "" : $" · {eq.Proveedor}")</div>
+                    </div>
+                    <span class="fem-tag fem-tag--compra">COMPRA</span>
+                </div>
+            }
+            @foreach (var m in _ficha.Mejoras)
+            {
+                var mid = m.Id;
+                <div class="fem-doc">
+                    <div class="fem-doc-icon fem-doc-icon--mejora"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg></div>
+                    <div class="fem-doc-body">
+                        <div class="fem-doc-name">@m.Descripcion</div>
+                        <div class="fem-doc-meta">Mejora · $ @m.Valor.ToString("N0") · @m.Fecha.ToString("dd MMM yyyy")</div>
+                    </div>
+                    <span class="fem-tag fem-tag--mejora">MEJORA</span>
+                    <button class="fem-mini-del" type="button" title="Eliminar" @onclick="@(() => EliminarMejoraAsync(mid))"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
+                </div>
+            }
+            <div class="fem-mejora-form">
+                <input class="fem-input fem-grow" @bind="_mejoraDesc" placeholder="Mejora (ej. Cambio de motor)" />
+                <input type="number" min="0" class="fem-input fem-mini" @bind="_mejoraValor" placeholder="Valor" />
+                <button class="fem-btn-brand" type="button" @onclick="AgregarMejoraAsync" disabled="@_busy">Anadir factura</button>
+            </div>
+
+            @* Contratos: antes se listaban TODOS los del modulo de Servicios, que en una
+               copropiedad real son decenas. Ahora se buscan y se agregan de a uno. *@
+            <div class="fem-section">Contratos vinculados</div>
+            @foreach (var c in _ficha.ContratosVinculados)
+            {
+                var cid = c.Id;
+                <div class="fem-link fem-link--on">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6D4FE3" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>
+                    <div class="fem-link-body"><div class="fem-link-name">@c.Nombre</div><div class="fem-link-meta">@c.Meta</div></div>
+                    <button type="button" class="fem-mini-del" title="Quitar" @onclick="@(() => ToggleContratoAsync(cid, false))"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                </div>
+            }
+            @if (_ficha.ContratosVinculados.Count == 0)
+            {
+                <div class="fem-mini-empty">Este activo no tiene contratos vinculados.</div>
+            }
+
+            @{ var encontrados = ContratosFiltrados().ToList(); }
+            @if (_ficha.ContratosDisponibles.Count == 0)
+            {
+                <div class="fem-mini-empty" style="margin-top:8px">No hay mas contratos disponibles en Servicios.</div>
+            }
+            else
+            {
+                @* Sin value= a proposito: en Blazor Server reafirmarlo en cada re-render
+                   se come pulsaciones mientras se escribe. *@
+                <input class="fem-input fem-buscar" placeholder="Buscar contrato por nombre..."
+                       @oninput="@(e => _buscarContrato = e.Value?.ToString() ?? string.Empty)" />
+                @if (encontrados.Count == 0)
+                {
+                    <div class="fem-mini-empty">Ningun contrato coincide con "@_buscarContrato".</div>
+                }
+                else
+                {
+                    <div class="fem-picklist">
+                        @foreach (var c in encontrados)
+                        {
+                            var cid = c.Id;
+                            <button type="button" class="fem-pick" @onclick="@(() => ToggleContratoAsync(cid, true))" disabled="@_busy">
+                                <span>@c.Nombre</span>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+                            </button>
+                        }
+                    </div>
+                    @if (_contratosOcultos > 0)
+                    {
+                        <div class="fem-mini-empty">y @_contratosOcultos mas. Escribe para filtrar.</div>
+                    }
+                }
+            }
+
+            @* Vinculos y consultas del activo. Viven aqui y no en la ficha porque esa
+               columna quedo dedicada al muro de novedades. *@
+            <div class="fem-section">Activos vinculados</div>
+            <div class="fem-block">
+                @foreach (var v in _ficha.ActivosVinculados)
+                {
+                    var vid = v.Id;
+                    <div class="fem-link">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#516F90" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
+                        <div class="fem-link-body"><div class="fem-link-name">@v.Nombre</div></div>
+                        <button type="button" class="fem-mini-del" title="Quitar" @onclick="@(() => ToggleActivoAsync(vid, false))"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                    </div>
+                }
+                <div class="fem-disp-lbl">OTROS ACTIVOS</div>
+                @foreach (var v in _ficha.ActivosDisponibles)
+                {
+                    var vid = v.Id;
+                    <button type="button" class="fem-pick" @onclick="@(() => ToggleActivoAsync(vid, true))">
+                        <span>@v.Nombre</span>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+                    </button>
+                }
+                @if (_ficha.ActivosDisponibles.Count == 0 && _ficha.ActivosVinculados.Count == 0)
+                {
+                    <div class="fem-mini-empty">No hay otros activos registrados.</div>
+                }
+            </div>
+
+            @* TAREAS ASOCIADAS *@
+            <div class="fem-section">Tareas asociadas</div>
+            <div class="fem-block">
+                @if (_ficha.Tareas.Count == 0)
+                {
+                    <div class="fem-mini-empty">Sin tareas asociadas. Las intervenciones de mantenimiento generan tareas en 2.10.</div>
+                }
+                else
+                {
+                    @foreach (var t in _ficha.Tareas)
+                    {
+                        <div class="fem-tarea">
+                            <div class="fem-tarea-body"><div class="fem-tarea-t">@t.Titulo</div><div class="fem-tarea-board">@t.Tablero</div></div>
+                            <span class="fem-tarea-estado">@t.Estado</span>
+                        </div>
+                    }
+                }
+            </div>
+
+            @* MANTENIMIENTOS *@
+            <div class="fem-section">Mantenimientos</div>
+            <div class="fem-block">
+                @if (_ficha.Mantenimientos.Count == 0)
+                {
+                    <div class="fem-mini-empty">Sin mantenimientos registrados. Programalos desde el modulo 2.11 Mantenimiento.</div>
+                }
+                else
+                {
+                    @foreach (var m in _ficha.Mantenimientos)
+                    {
+                        <div class="fem-mant">
+                            <span class="fem-mant-tipo">@m.Tipo</span>
+                            <div class="fem-mant-body"><div class="fem-mant-t">@m.Titulo</div></div>
+                            <span class="fem-mant-fecha">@(m.Fecha?.ToString("dd MMM yyyy") ?? "")</span>
+                            <span class="fem-mant-estado">@m.Estado</span>
+                        </div>
+                    }
+                }
             </div>
         </div>
         <div class="fem-footer">
@@ -350,12 +404,33 @@ else
     .fem-tab { background: transparent; border: 0; padding: 11px 14px; font-size: 13px; font-weight: 700; color: #7C98B6; cursor: pointer; border-bottom: 2px solid transparent; font-family: inherit; }
     .fem-tab--on { color: var(--propia-brand, #6D4FE3); border-bottom-color: var(--propia-brand, #6D4FE3); }
 
-    .fem-grid { display: grid; grid-template-columns: 340px 1fr; flex: 1 1 auto; min-height: 0; }
+    /* 4/8 de un grid de 12: la columna de la imagen es la angosta. Igual en zonas. */
+    .fem-grid { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); flex: 1 1 auto; min-height: 0; }
     .fem-left { border-right: 1px solid #EEF3F8; background: #FBFCFD; overflow-y: auto; min-height: 0; padding: 18px 20px; }
     .fem-right { overflow-y: auto; min-height: 0; padding: 18px 22px; display: flex; flex-direction: column; gap: 20px; }
     .fem-sectlbl { font-size: 11px; letter-spacing: .5px; color: #A6B7C8; font-weight: 700; margin-bottom: 9px; }
+    .fem-sectlbl--sep { margin-top: 18px; }
+    .fem-prog { margin-top: 14px; }
+    .fem-buscar { width: 100%; margin: 10px 0 7px; box-sizing: border-box; }
+    .fem-picklist { display: flex; flex-direction: column; gap: 5px; max-height: 200px; overflow-y: auto; }
+    .fem-btn-block { width: 100%; margin-top: 9px; }
     .fem-sectlbl-soft { color: #C3D0DD; font-weight: 600; }
 
+    /* Imagen: mismo tratamiento que el modal de zonas comunes (una imagen grande + carga). */
+    .fem-img { height: 150px; border-radius: 12px; background-size: cover; background-position: center; position: relative; }
+    .fem-img-del { position: absolute; top: 7px; right: 7px; width: 26px; height: 26px; border-radius: 8px; border: 0; background: rgba(27,42,58,.55); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .fem-img-del:hover { background: #D7263D; }
+    .fem-img-change { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 7px; font-size: 11.5px; font-weight: 700; color: #6D4FE3; cursor: pointer; }
+    .fem-img-drop { height: 150px; border-radius: 12px; border: 1.5px dashed #C3D0DD; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; cursor: pointer; color: #6D4FE3; font-size: 12px; font-weight: 700; }
+    .fem-img-drop:hover { border-color: #6D4FE3; background: #F5F1FE; }
+    /* Reservable en la ficha, junto a la imagen (mismo toggle que zonas). */
+    .fem-resv { margin: 12px 0 16px; }
+    .fem-toggle { display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 700; color: #7C98B6; border: 0; background: transparent; cursor: pointer; padding: 0; }
+    .fem-toggle.on { color: #1A8754; }
+    .fem-toggle-track { width: 34px; height: 19px; border-radius: 11px; background: #C3D0DD; position: relative; display: inline-block; transition: background .15s; }
+    .fem-toggle.on .fem-toggle-track { background: #1A8754; }
+    .fem-toggle-knob { position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; transition: left .15s; }
+    .fem-toggle.on .fem-toggle-knob { left: 17px; }
     .fem-fotos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-bottom: 16px; }
     .fem-foto { aspect-ratio: 1; border-radius: 10px; background-size: cover; background-position: center; position: relative; border: 1px solid #E1E8EE; }
     .fem-foto-del { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 6px; background: rgba(27,42,58,.6); color: #fff; border: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; }
@@ -372,6 +447,16 @@ else
     .fem-dato-del:hover { background: #FDE7E7; color: #D7263D; }
 
     .fem-campo-add { margin-bottom: 16px; }
+    /* Campos dinamicos en "Editar datos", con la misma UI que zonas comunes. */
+    .fem-campos { display: flex; flex-direction: column; gap: 6px; }
+    .fem-campo-row { display: flex; align-items: center; gap: 9px; border: 1px solid #E1E8EE; border-radius: 9px; padding: 8px 12px; background: #fff; }
+    .fem-campo-main { flex: 1; min-width: 0; }
+    .fem-campo-nom { font-size: 12.5px; font-weight: 700; color: #33475B; }
+    .fem-campo-val { font-size: 11px; color: #7C98B6; }
+    .fem-campo-addrow { display: flex; gap: 7px; align-items: center; padding: 10px; background: #F8FAFC; border: 1px dashed #D7E0EA; border-radius: 10px; }
+    .fem-add { width: 32px; height: 32px; flex-shrink: 0; border-radius: 8px; border: 0; background: var(--propia-brand, #6D4FE3); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .fem-add:disabled { opacity: .5; cursor: default; }
+
     .fem-campo-btn { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: #F1ECFD; border: 1px solid #DCD2F8; padding: 6px 11px; border-radius: 7px; cursor: pointer; font-family: inherit; }
     .fem-campo-btn:hover { background: #E6DEFA; }
     .fem-campo-form { background: #FBFAFE; border: 1px dashed #DCD2F8; border-radius: 10px; padding: 11px; display: flex; flex-direction: column; gap: 7px; }
@@ -483,9 +568,26 @@ else
     private string _mejoraDesc = "";
     private decimal? _mejoraValor;
 
-    private bool _campoOpen;
     private string _campoLabel = "";
     private string _campoValor = "";
+
+    private string _buscarContrato = "";
+    private int _contratosOcultos;
+
+    /// <summary>
+    /// Contratos que se pueden vincular, filtrados por el texto de busqueda y recortados a
+    /// unos pocos: en una copropiedad real la lista completa son decenas y llenaba la ficha.
+    /// </summary>
+    private IEnumerable<EquipoRefDto> ContratosFiltrados()
+    {
+        const int tope = 8;
+        var todos = _ficha?.ContratosDisponibles ?? (IReadOnlyList<EquipoRefDto>)Array.Empty<EquipoRefDto>();
+        var filtrados = string.IsNullOrWhiteSpace(_buscarContrato)
+            ? todos
+            : todos.Where(c => c.Nombre.Contains(_buscarContrato.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+        _contratosOcultos = Math.Max(0, filtrados.Count - tope);
+        return filtrados.Take(tope);
+    }
 
     private FormState _form = new();
 
@@ -553,6 +655,26 @@ else
         _busy = false;
     }
 
+    // Reservable desde la ficha (junto a la imagen). Mismo patron que AjustarVidaAsync:
+    // se reenvia el equipo completo cambiando solo esta bandera y se recarga.
+    private async Task ToggleReservableAsync()
+    {
+        if (_ficha is null) return;
+        _busy = true;
+        try
+        {
+            var e = _ficha.Equipo;
+            var req = new ActualizarEquipoActivoRequest(e.Nombre, e.Categoria, e.Tipo, e.Cantidad, !e.EsReservable,
+                e.Modelo, e.NumeroSerie, e.FechaInstalacion, e.GarantiaHasta, e.Ubicacion, e.Observaciones,
+                _ficha.Depreciacion.VidaUtilAnios, e.FechaAdquisicion, e.ValorAdquisicion, e.Proveedor, e.NumeroFactura);
+            var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos/{EqId}", req);
+            if (r.IsSuccessStatusCode) { _dirty = true; await CargarAsync(); }
+            else Toast("No se pudo cambiar la disponibilidad.", true);
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+        _busy = false;
+    }
+
     private async Task OnFotoSeleccionada(InputFileChangeEventArgs e)
     {
         var f = e.File;
@@ -600,7 +722,7 @@ else
         catch (Exception ex) { Toast(ex.Message, true); }
     }
 
-    private void CancelarCampo() { _campoOpen = false; _campoLabel = ""; _campoValor = ""; }
+    private void CancelarCampo() { _campoLabel = ""; _campoValor = ""; }
 
     private async Task AgregarCampoAsync()
     {

@@ -14,4 +14,7 @@ public interface IProgramacionTareasService
     Task<bool> ActualizarAsync(Guid id, ActualizarProgramacionRequest req, CancellationToken ct);
     Task<bool> ToggleActivaAsync(Guid id, bool activa, CancellationToken ct);
     Task<bool> EliminarAsync(Guid id, CancellationToken ct);
+
+    /// <summary>Valida una expresion cron y devuelve sus proximas corridas (para previsualizar en la UI).</summary>
+    CronPreviewResult PreviewCron(CronPreviewRequest req);
 }

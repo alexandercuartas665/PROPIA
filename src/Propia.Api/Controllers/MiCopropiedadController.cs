@@ -671,44 +671,6 @@ public class MiCopropiedadController : ControllerBase
     public async Task<IActionResult> EliminarZonaCampo(Guid campoId, CancellationToken ct)
         => await _svc.EliminarZonaCampoAsync(campoId, ct) ? NoContent() : NotFound();
 
-    [HttpPost("zonas/{id:guid}/novedad-imagen")]
-    [RequestSizeLimit(6_000_000)]
-    public async Task<IActionResult> SubirImagenNovedadZona(Guid id, IFormFile file, CancellationToken ct)
-    {
-        var tenantId = GetTenantId();
-        if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
-        if (file is null || file.Length == 0) return BadRequest(new { error = "Archivo vacio." });
-        if (file.Length > 5_000_000) return BadRequest(new { error = "Maximo 5 MB." });
-        var ext = file.ContentType switch { "image/jpeg" => ".jpg", "image/png" => ".png", "image/webp" => ".webp", _ => "" };
-        if (ext == "") return BadRequest(new { error = "Formato no soportado. Usa JPG, PNG o WEBP." });
-        var key = $"tenants/{tenantId:N}/zonas/{id:N}/novedades/{Guid.NewGuid():N}{ext}";
-        await using var stream = file.OpenReadStream();
-        var url = Absolutizar(await _storage.UploadAsync(key, stream, file.ContentType, ct));
-        return Ok(new { url });
-    }
-
-    [HttpPost("zonas/{id:guid}/novedades")]
-    public async Task<IActionResult> PublicarZonaNovedad(Guid id, [FromBody] PublicarZonaNovedadRequest req, CancellationToken ct)
-    {
-        var dto = await _svc.PublicarZonaNovedadAsync(id, req, GetPersonaId(), ct);
-        return dto is null ? BadRequest(new { error = "no_se_pudo" }) : Ok(dto);
-    }
-
-    [HttpDelete("zonas/novedades/{novedadId:guid}")]
-    public async Task<IActionResult> EliminarZonaNovedad(Guid novedadId, CancellationToken ct)
-        => await _svc.EliminarZonaNovedadAsync(novedadId, ct) ? NoContent() : NotFound();
-
-    [HttpPost("zonas/novedades/{novedadId:guid}/comentarios")]
-    public async Task<IActionResult> ComentarZonaNovedad(Guid novedadId, [FromBody] ComentarZonaNovedadRequest req, CancellationToken ct)
-    {
-        var dto = await _svc.ComentarZonaNovedadAsync(novedadId, req, GetPersonaId(), ct);
-        return dto is null ? BadRequest(new { error = "no_se_pudo" }) : Ok(dto);
-    }
-
-    [HttpPost("zonas/novedades/{novedadId:guid}/like")]
-    public async Task<IActionResult> LikeZonaNovedad(Guid novedadId, CancellationToken ct)
-        => Ok(new { likes = await _svc.ToggleZonaNovedadLikeAsync(novedadId, GetPersonaId(), ct) });
-
     // ---------- Seccion 8: Finanzas ----------
     [HttpGet("finanzas/monedas")]
     public IActionResult ListMonedas() => Ok(_svc.ListMonedas());

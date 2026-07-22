@@ -16,3 +16,15 @@ public enum PeriodicidadProgramacion
     Semestral = 8,
     Anual = 9
 }
+
+/// <summary>
+/// Como se calcula la proxima ejecucion de una programacion.
+/// Periodicidad = el enum de arriba (dia completo, sin hora).
+/// Cron = expresion cron estandar de 5 campos, con hora y zona horaria.
+/// El default es Periodicidad para que las programaciones que ya existen sigan igual.
+/// </summary>
+public enum TipoProgramacion
+{
+    Periodicidad = 1,
+    Cron = 2
+}

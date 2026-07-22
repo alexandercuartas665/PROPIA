@@ -50,30 +50,87 @@
         </div>
     </div>
 
+    @* Dos formas de programar: la simple de siempre, o cron para horarios finos. *@
     <div class="ptm-field">
-        <label class="ptm-lbl">Periodicidad</label>
-        <div class="ptm-chips">
-            @foreach (var p in _periodos)
-            {
-                var pp = p;
-                <button type="button" class="ptm-chip @(_periodicidad == pp ? "on" : "")" @onclick="() => _periodicidad = pp">@PeriodicidadLabel(pp)</button>
-            }
+        <label class="ptm-lbl">Regla de disparo</label>
+        <div class="ptm-tipos">
+            <button type="button" class="ptm-tipo @(_tipo == TipoProgramacion.Periodicidad ? "on" : "")"
+                    @onclick="() => _tipo = TipoProgramacion.Periodicidad">Periodicidad</button>
+            <button type="button" class="ptm-tipo @(_tipo == TipoProgramacion.Cron ? "on" : "")"
+                    @onclick="ActivarCron">Cron (avanzado)</button>
         </div>
     </div>
 
-    <div class="ptm-row">
-        <div class="ptm-field ptm-grow">
-            <label class="ptm-lbl">@(_periodicidad == PeriodicidadProgramacion.Unica ? "Fecha de ejecucion" : "Primera ejecucion") <span class="ptm-req">*</span></label>
-            <input class="ptm-input" type="date" @bind="_fecha" />
+    @if (_tipo == TipoProgramacion.Periodicidad)
+    {
+        <div class="ptm-field">
+            <label class="ptm-lbl">Periodicidad</label>
+            <div class="ptm-chips">
+                @foreach (var p in _periodos)
+                {
+                    var pp = p;
+                    <button type="button" class="ptm-chip @(_periodicidad == pp ? "on" : "")" @onclick="() => _periodicidad = pp">@PeriodicidadLabel(pp)</button>
+                }
+            </div>
         </div>
-        @if (_periodicidad != PeriodicidadProgramacion.Unica)
-        {
+
+        <div class="ptm-row">
             <div class="ptm-field ptm-grow">
-                <label class="ptm-lbl">Hasta (opcional)</label>
-                <input class="ptm-input" type="date" @bind="_fechaFin" />
+                <label class="ptm-lbl">@(_periodicidad == PeriodicidadProgramacion.Unica ? "Fecha de ejecucion" : "Primera ejecucion") <span class="ptm-req">*</span></label>
+                <input class="ptm-input" type="date" @bind="_fecha" />
+            </div>
+            @if (_periodicidad != PeriodicidadProgramacion.Unica)
+            {
+                <div class="ptm-field ptm-grow">
+                    <label class="ptm-lbl">Hasta (opcional)</label>
+                    <input class="ptm-input" type="date" @bind="_fechaFin" />
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="ptm-field">
+            <label class="ptm-lbl">Expresion cron <span class="ptm-req">*</span></label>
+            @* Sin value= a proposito: en Blazor Server reafirmar value en cada re-render
+               se come pulsaciones mientras se escribe. *@
+            <input class="ptm-input ptm-cron" placeholder="minuto hora dia-del-mes mes dia-de-semana"
+                   @oninput="OnCronInput" />
+            <div class="ptm-cron-presets">
+                @foreach (var p in _presets)
+                {
+                    var pp = p;
+                    <button type="button" class="ptm-preset" @onclick="() => AplicarPreset(pp.Expr)">@pp.Label</button>
+                }
+            </div>
+        </div>
+
+        <div class="ptm-field">
+            <label class="ptm-lbl">Hasta (opcional)</label>
+            <input class="ptm-input" type="date" @bind="_fechaFin" />
+        </div>
+
+        @* Previsualizacion: el usuario no deberia tener que adivinar que hace "0 8 * * 1". *@
+        @if (_cronPreview is not null)
+        {
+            <div class="ptm-cron-box @(_cronPreview.Valida ? "ok" : "bad")">
+                @if (!_cronPreview.Valida)
+                {
+                    <div class="ptm-cron-err">@_cronPreview.Error</div>
+                }
+                else
+                {
+                    <div class="ptm-cron-t">Proximas ejecuciones (@_zonaHoraria)</div>
+                    <ul class="ptm-cron-list">
+                        @foreach (var f in _cronPreview.Proximas)
+                        {
+                            <li>@FechaLocal(f)</li>
+                        }
+                    </ul>
+                }
             </div>
         }
-    </div>
+    }
 
     <div class="ptm-field">
         <label class="ptm-lbl">Usuarios afectados (responsables)</label>
@@ -97,10 +154,27 @@
         }
     </div>
 
+    @* El correo sale al generarse la tarea, a los responsables marcados arriba que tengan
+       email en el Directorio. Por eso el aviso cuando no hay ninguno seleccionado. *@
+    <div class="ptm-field">
+        <label class="ptm-check">
+            <input type="checkbox" checked="@_notificarCorreo" @onchange="() => _notificarCorreo = !_notificarCorreo" />
+            <span>Enviar correo a los responsables al generarse la tarea</span>
+        </label>
+        @if (_notificarCorreo && _responsables.Count == 0)
+        {
+            <div class="ptm-warn">Selecciona al menos un responsable: el correo va a la direccion registrada de esos usuarios.</div>
+        }
+    </div>
+
     <div class="ptm-callout">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="ptm-callout-ic"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
         <div class="ptm-callout-tx">
-            @if (_periodicidad == PeriodicidadProgramacion.Unica)
+            @if (_tipo == TipoProgramacion.Cron)
+            {
+                <text>Se creara una tarea <b>cada vez que corra el cron</b>@(_fechaFin.HasValue ? ", hasta el tope indicado." : ".")</text>
+            }
+            else if (_periodicidad == PeriodicidadProgramacion.Unica)
             {
                 <text>Se creara <b>una tarea</b> en la fecha indicada.</text>
             }
@@ -142,6 +216,22 @@
     private string _filtro = "";
     private readonly HashSet<Guid> _responsables = new();
 
+    private TipoProgramacion _tipo = TipoProgramacion.Periodicidad;
+    private string _cron = "";
+    private string _zonaHoraria = Propia.Infrastructure.Programaciones.CronHelper.ZonaHorariaPorDefecto;
+    private CronPreviewResult? _cronPreview;
+    private bool _notificarCorreo;
+
+    private readonly (string Label, string Expr)[] _presets =
+    {
+        ("Cada dia 8:00", "0 8 * * *"),
+        ("Lunes 8:00", "0 8 * * 1"),
+        ("Dia 1 del mes 8:00", "0 8 1 * *"),
+        ("Dia 15 del mes 8:00", "0 8 15 * *"),
+        ("Cada 6 horas", "0 */6 * * *"),
+        ("Trimestral (1 ene/abr/jul/oct)", "0 8 1 1,4,7,10 *")
+    };
+
     private readonly PeriodicidadProgramacion[] _periodos =
     {
         PeriodicidadProgramacion.Unica, PeriodicidadProgramacion.Diaria, PeriodicidadProgramacion.Semanal,
@@ -158,7 +248,45 @@
         _periodicidad = PrefillPeriodicidad;
     }
 
-    private bool IsValid => !string.IsNullOrWhiteSpace(_titulo) && _fecha.HasValue;
+    private bool IsValid => !string.IsNullOrWhiteSpace(_titulo) && (
+        _tipo == TipoProgramacion.Periodicidad
+            ? _fecha.HasValue
+            : _cronPreview is { Valida: true });
+
+    private void ActivarCron()
+    {
+        _tipo = TipoProgramacion.Cron;
+        if (string.IsNullOrWhiteSpace(_cron)) AplicarPreset(_presets[0].Expr);
+    }
+
+    private void OnCronInput(ChangeEventArgs e)
+    {
+        _cron = e.Value?.ToString() ?? string.Empty;
+        RefrescarPreview();
+    }
+
+    private void AplicarPreset(string expr)
+    {
+        _cron = expr;
+        RefrescarPreview();
+    }
+
+    // Blazor Server: el componente ya corre en el servidor, asi que la previsualizacion
+    // se calcula en proceso con el mismo helper que usa el job. Sin viaje HTTP.
+    private void RefrescarPreview()
+    {
+        if (string.IsNullOrWhiteSpace(_cron)) { _cronPreview = null; return; }
+        var helper = Propia.Infrastructure.Programaciones.CronHelper.Proximas(_cron, _zonaHoraria, DateTimeOffset.UtcNow, 4);
+        _cronPreview = helper.Count > 0
+            ? new CronPreviewResult(true, null, helper)
+            : new CronPreviewResult(false, "Expresion no valida. Formato: minuto hora dia-del-mes mes dia-de-semana (ej. 0 8 * * 1).", Array.Empty<DateTimeOffset>());
+    }
+
+    private string FechaLocal(DateTimeOffset utc)
+    {
+        var zona = Propia.Infrastructure.Programaciones.CronHelper.Zona(_zonaHoraria);
+        return TimeZoneInfo.ConvertTime(utc, zona).ToString("ddd dd MMM yyyy, HH:mm");
+    }
 
     private IEnumerable<PersonaOpcion> PersonasFiltradas()
         => string.IsNullOrWhiteSpace(_filtro)
@@ -187,7 +315,11 @@
             responsables,
             ModuloOrigenCodigo,
             EntidadOrigenId,
-            OrigenReferencia);
+            OrigenReferencia,
+            _tipo,
+            _tipo == TipoProgramacion.Cron ? _cron.Trim() : null,
+            _zonaHoraria,
+            _notificarCorreo);
         Close(req);
     }
 
@@ -230,6 +362,26 @@
     .ptm-chip { font-size: 11.5px; font-weight: 700; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--propia-border-card, #E1E8EE); color: var(--propia-text-secondary, #516F90); background: var(--propia-bg-card, #fff); cursor: pointer; }
     .ptm-chip:hover { border-color: var(--propia-brand, #6D4FE3); }
     .ptm-chip.on { border-color: var(--propia-brand, #6D4FE3); color: #fff; background: var(--propia-brand, #6D4FE3); }
+
+    .ptm-tipos { display: flex; gap: 0; border: 1px solid var(--propia-border-card, #E1E8EE); border-radius: 9px; overflow: hidden; width: fit-content; }
+    .ptm-tipo { font-size: 12px; font-weight: 700; padding: 8px 16px; border: 0; background: var(--propia-bg-card, #fff); color: var(--propia-text-secondary, #516F90); cursor: pointer; font-family: inherit; }
+    .ptm-tipo.on { background: var(--propia-brand, #6D4FE3); color: #fff; }
+
+    .ptm-cron { font-family: Consolas, "Courier New", monospace; letter-spacing: .5px; }
+    .ptm-cron-presets { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+    .ptm-preset { font-size: 10.5px; font-weight: 700; padding: 5px 9px; border-radius: 7px; border: 1px solid var(--propia-border-card, #E1E8EE); background: var(--propia-bg-app, #F5F8FA); color: var(--propia-text-secondary, #516F90); cursor: pointer; font-family: inherit; }
+    .ptm-preset:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
+
+    .ptm-cron-box { border-radius: 10px; padding: 11px 13px; border: 1px solid; }
+    .ptm-cron-box.ok { background: #F0FAF4; border-color: #C6E8D5; }
+    .ptm-cron-box.bad { background: #FDF2F2; border-color: #F0C9C9; }
+    .ptm-cron-t { font-size: 10.5px; font-weight: 800; letter-spacing: .4px; color: #15703F; margin-bottom: 5px; }
+    .ptm-cron-list { margin: 0; padding-left: 17px; font-size: 12px; color: #33475B; line-height: 1.65; }
+    .ptm-cron-err { font-size: 12px; color: #C0383C; font-weight: 600; }
+
+    .ptm-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #33475B; cursor: pointer; }
+    .ptm-check input { width: 15px; height: 15px; accent-color: #6D4FE3; }
+    .ptm-warn { margin-top: 6px; font-size: 11.5px; color: #9A6A00; background: #FFF8E6; border: 1px solid #F5E2AE; border-radius: 8px; padding: 7px 10px; }
 
     .ptm-personas { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; border: 1px solid var(--propia-border-card, #E1E8EE); border-radius: 9px; padding: 8px; }
     .ptm-persona { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 7px; font-size: 13px; color: #33475B; cursor: pointer; }

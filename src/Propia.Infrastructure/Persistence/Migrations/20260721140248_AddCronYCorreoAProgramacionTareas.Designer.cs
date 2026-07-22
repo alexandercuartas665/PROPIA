@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Propia.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using Propia.Infrastructure.Persistence;
 namespace Propia.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(PropiaDbContext))]
-    partial class PropiaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260721140248_AddCronYCorreoAProgramacionTareas")]
+    partial class AddCronYCorreoAProgramacionTareas
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -7085,168 +7088,6 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.HasIndex("ModuloOrigenCodigo", "EntidadOrigenId");
 
                     b.ToTable("notificaciones", (string)null);
-                });
-
-            modelBuilder.Entity("Propia.Domain.Entities.Novedad", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<string>("AutorNombre")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("autor_nombre");
-
-                    b.Property<Guid?>("AutorPersonaId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("autor_persona_id");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("created_by");
-
-                    b.Property<Guid>("EntidadId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("entidad_id");
-
-                    b.Property<int>("EntidadTipo")
-                        .HasColumnType("integer")
-                        .HasColumnName("entidad_tipo");
-
-                    b.Property<string>("ImagenUrl")
-                        .HasColumnType("text")
-                        .HasColumnName("imagen_url");
-
-                    b.Property<int>("LikesCount")
-                        .HasColumnType("integer")
-                        .HasColumnName("likes_count");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("tenant_id");
-
-                    b.Property<string>("Texto")
-                        .HasColumnType("text")
-                        .HasColumnName("texto");
-
-                    b.Property<string>("Titulo")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("titulo");
-
-                    b.Property<DateTimeOffset?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("updated_by");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("EntidadTipo", "EntidadId");
-
-                    b.ToTable("novedades");
-                });
-
-            modelBuilder.Entity("Propia.Domain.Entities.NovedadComentario", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<string>("AutorNombre")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("autor_nombre");
-
-                    b.Property<Guid?>("AutorPersonaId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("autor_persona_id");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("created_by");
-
-                    b.Property<Guid>("NovedadId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("novedad_id");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("tenant_id");
-
-                    b.Property<string>("Texto")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("texto");
-
-                    b.Property<DateTimeOffset?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("updated_by");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("NovedadId");
-
-                    b.ToTable("novedad_comentarios");
-                });
-
-            modelBuilder.Entity("Propia.Domain.Entities.NovedadLike", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("created_by");
-
-                    b.Property<Guid>("NovedadId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("novedad_id");
-
-                    b.Property<Guid>("PersonaId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("persona_id");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("tenant_id");
-
-                    b.Property<DateTimeOffset?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("updated_by");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("NovedadId", "PersonaId");
-
-                    b.ToTable("novedad_likes");
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.NovedadTurno", b =>
@@ -16088,6 +15929,158 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.HasIndex("ZonaConfigReservaId", "DiaSemana");
 
                     b.ToTable("zona_franjas", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ZonaNovedad", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AutorNombre")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("autor_nombre");
+
+                    b.Property<Guid?>("AutorPersonaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("autor_persona_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("ImagenUrl")
+                        .HasColumnType("text")
+                        .HasColumnName("imagen_url");
+
+                    b.Property<int>("LikesCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("likes_count");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Texto")
+                        .HasColumnType("text")
+                        .HasColumnName("texto");
+
+                    b.Property<string>("Titulo")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("titulo");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<Guid>("ZonaComunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("zona_comun_id");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("zona_novedades");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ZonaNovedadComentario", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AutorNombre")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("autor_nombre");
+
+                    b.Property<Guid?>("AutorPersonaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("autor_persona_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Texto")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("texto");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<Guid>("ZonaNovedadId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("zona_novedad_id");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("zona_novedad_comentarios");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.ZonaNovedadLike", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid>("PersonaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("persona_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<Guid>("ZonaNovedadId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("zona_novedad_id");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("zona_novedad_likes");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>

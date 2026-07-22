@@ -311,9 +311,10 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<ZonaFactura> ZonaFacturas => Set<ZonaFactura>();
     public DbSet<ZonaDocumento> ZonaDocumentos => Set<ZonaDocumento>();
     public DbSet<ZonaCampoPersonalizado> ZonaCamposPersonalizados => Set<ZonaCampoPersonalizado>();
-    public DbSet<ZonaNovedad> ZonaNovedades => Set<ZonaNovedad>();
-    public DbSet<ZonaNovedadComentario> ZonaNovedadComentarios => Set<ZonaNovedadComentario>();
-    public DbSet<ZonaNovedadLike> ZonaNovedadLikes => Set<ZonaNovedadLike>();
+    // Muro de novedades generico: cuelga de cualquier entidad via (EntidadTipo, EntidadId).
+    public DbSet<Novedad> Novedades => Set<Novedad>();
+    public DbSet<NovedadComentario> NovedadComentarios => Set<NovedadComentario>();
+    public DbSet<NovedadLike> NovedadLikes => Set<NovedadLike>();
 
     // Modulo 0.2 - Billing y Suscripciones (todo GLOBAL, sin tenant_id)
     public DbSet<Plan> Planes => Set<Plan>();
@@ -633,6 +634,14 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
+        // Muro de novedades generico (nacio en zonas comunes, hoy sirve para cualquier entidad).
+        modelBuilder.Entity<Novedad>(b =>
+        {
+            b.HasIndex(x => new { x.EntidadTipo, x.EntidadId });
+        });
+        modelBuilder.Entity<NovedadComentario>(b => b.HasIndex(x => x.NovedadId));
+        modelBuilder.Entity<NovedadLike>(b => b.HasIndex(x => new { x.NovedadId, x.PersonaId }));
+
         // Programador de tareas (2.10)
         modelBuilder.Entity<ProgramacionTarea>(b =>
         {
@@ -640,8 +649,12 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.Descripcion).HasMaxLength(2000);
             b.Property(x => x.ModuloOrigenCodigo).HasMaxLength(40);
             b.Property(x => x.OrigenReferencia).HasMaxLength(200);
+            b.Property(x => x.CronExpresion).HasMaxLength(120);
+            b.Property(x => x.ZonaHoraria).IsRequired().HasMaxLength(60).HasDefaultValue("America/Bogota");
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.Activa, x.FechaProximaEjecucion });
+            // El job barre por esta columna en modo cron; sin indice haria seq scan cada 15 min.
+            b.HasIndex(x => new { x.Activa, x.ProximaEjecucionUtc });
             b.HasMany(x => x.Responsables).WithOne(r => r.ProgramacionTarea!).HasForeignKey(r => r.ProgramacionTareaId).OnDelete(DeleteBehavior.Cascade);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });

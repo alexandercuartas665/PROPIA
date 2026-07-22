@@ -1,0 +1,250 @@
+@* MuroNovedadesPanel - muro de novedades reutilizable para cualquier entidad.
+   Publicar (con imagen), comentar, dar like y eliminar. Nacio dentro de la ficha de zonas
+   comunes; se extrajo para que equipos (y lo que venga) lo usen sin duplicar nada.
+
+   No maneja sesion: recibe el Jwt del contenedor, igual que las fichas. *@
+
+@using Propia.Application.Novedades
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+
+<div class="mn">
+    <div class="mn-t">@Titulo</div>
+
+    <div class="mn-publish">
+        <div class="mn-publish-head"><div class="mn-ava">AD</div><span>Publicar novedad</span></div>
+        <input class="mn-in" @bind="_titulo" placeholder="@PlaceholderTitulo" />
+        <textarea class="mn-in mn-ta" rows="2" @bind="_texto" placeholder="Cuenta la novedad..."></textarea>
+        @if (!string.IsNullOrWhiteSpace(_imagenUrl))
+        {
+            <div class="mn-preview" style="background-image:url('@_imagenUrl')">
+                <button class="mn-preview-x" type="button" @onclick="() => _imagenUrl = null" title="Quitar imagen">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+        }
+        <div class="mn-publish-foot">
+            <label class="mn-attach">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-9 7"/></svg>
+                @(_subiendoImg ? "Subiendo..." : "Imagen")
+                <InputFile OnChange="SubirImagenAsync" accept="image/png,image/jpeg,image/webp" hidden disabled="@_subiendoImg" />
+            </label>
+            <button class="mn-btn-brand" type="button" @onclick="PublicarAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_titulo))">Publicar</button>
+        </div>
+    </div>
+
+    <div class="mn-feed">
+        @if (_cargando)
+        {
+            <div class="mn-empty">Cargando novedades...</div>
+        }
+        else if (_novedades.Count == 0)
+        {
+            <div class="mn-empty">Aun no hay novedades. Publica la primera.</div>
+        }
+        @foreach (var n in _novedades)
+        {
+            var nid = n.Id;
+            <div class="mn-post">
+                <div class="mn-post-head">
+                    <div class="mn-ava">@n.AutorIniciales</div>
+                    <div class="mn-post-meta"><div class="mn-post-autor">@n.AutorNombre</div><div class="mn-post-fecha">@n.FechaTexto</div></div>
+                    <button class="mn-del-sm" type="button" title="Eliminar" @onclick="() => EliminarAsync(nid)">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                    </button>
+                </div>
+                <div class="mn-post-tit">@n.Titulo</div>
+                @if (!string.IsNullOrWhiteSpace(n.Texto)) { <div class="mn-post-txt">@n.Texto</div> }
+                @if (!string.IsNullOrWhiteSpace(n.ImagenUrl)) { <div class="mn-post-img" style="background-image:url('@n.ImagenUrl')"></div> }
+                <div class="mn-post-actions">
+                    <button class="mn-like @(n.YoDiLike ? "on" : "")" type="button" @onclick="() => ToggleLikeAsync(nid)">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="@(n.YoDiLike ? "currentColor" : "none")" stroke="currentColor" stroke-width="2"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
+                        @n.Likes
+                    </button>
+                    <span class="mn-coment-count">@n.Comentarios.Count comentarios</span>
+                </div>
+                @foreach (var cm in n.Comentarios)
+                {
+                    <div class="mn-coment">
+                        <div class="mn-ava mn-ava-sm">@cm.AutorIniciales</div>
+                        <div class="mn-coment-body"><span class="mn-coment-autor">@cm.AutorNombre</span> @cm.Texto <span class="mn-coment-fecha">&middot; @cm.FechaTexto</span></div>
+                    </div>
+                }
+                <div class="mn-coment-add">
+                    @* value= sin @@bind a proposito: hay un input por novedad y el texto vive
+                       en un diccionario por id. *@
+                    <input class="mn-in mn-in-coment" placeholder="Escribe un comentario..."
+                           value="@(_comentTexto.TryGetValue(nid, out var v) ? v : "")"
+                           @oninput="(e) => _comentTexto[nid] = e.Value?.ToString() ?? string.Empty" />
+                    <button class="mn-add" type="button" @onclick="() => ComentarAsync(nid)">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                    </button>
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(_msg)) { <div class="mn-msg">@_msg</div> }
+</div>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+    [Parameter, EditorRequired] public TipoEntidadNovedad EntidadTipo { get; set; }
+    [Parameter, EditorRequired] public Guid EntidadId { get; set; }
+    [Parameter] public string Titulo { get; set; } = "NOVEDADES";
+    [Parameter] public string PlaceholderTitulo { get; set; } = "Titulo de la novedad";
+
+    private List<NovedadDto> _novedades = new();
+    private readonly Dictionary<Guid, string> _comentTexto = new();
+    private string _titulo = "";
+    private string? _texto;
+    private string? _imagenUrl;
+    private bool _cargando = true, _busy, _subiendoImg;
+    private string _msg = "";
+
+    private string Base => $"/api/novedades/{EntidadTipo}/{EntidadId}";
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        try { _novedades = await Auth().GetFromJsonAsync<List<NovedadDto>>(Base) ?? new(); }
+        catch (Exception ex) { _msg = ex.Message; }
+        _cargando = false;
+    }
+
+    private async Task PublicarAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_titulo)) return;
+        _busy = true;
+        try
+        {
+            var req = new PublicarNovedadRequest(_titulo.Trim(), _texto, _imagenUrl);
+            var r = await Auth().PostAsJsonAsync(Base, req);
+            if (r.IsSuccessStatusCode)
+            {
+                _titulo = ""; _texto = null; _imagenUrl = null; _msg = "";
+                await CargarAsync();
+            }
+            else _msg = "No se pudo publicar la novedad.";
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+        _busy = false;
+    }
+
+    private async Task EliminarAsync(Guid novedadId)
+    {
+        _busy = true;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/novedades/{novedadId}");
+            if (r.IsSuccessStatusCode) await CargarAsync();
+            else _msg = "No se pudo eliminar la novedad.";
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+        _busy = false;
+    }
+
+    private async Task ComentarAsync(Guid novedadId)
+    {
+        if (!_comentTexto.TryGetValue(novedadId, out var txt) || string.IsNullOrWhiteSpace(txt)) return;
+        _busy = true;
+        try
+        {
+            var r = await Auth().PostAsJsonAsync($"/api/novedades/{novedadId}/comentarios", new ComentarNovedadRequest(txt.Trim()));
+            if (r.IsSuccessStatusCode) { _comentTexto[novedadId] = ""; await CargarAsync(); }
+            else _msg = "No se pudo comentar.";
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+        _busy = false;
+    }
+
+    private async Task ToggleLikeAsync(Guid novedadId)
+    {
+        try
+        {
+            var r = await Auth().PostAsync($"/api/novedades/{novedadId}/like", null);
+            if (r.IsSuccessStatusCode) await CargarAsync();
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+    }
+
+    private async Task SubirImagenAsync(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null) return;
+        _subiendoImg = true; _msg = "";
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var stream = file.OpenReadStream(5_000_000);
+            var sc = new StreamContent(stream);
+            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(sc, "file", file.Name);
+
+            var r = await Auth().PostAsync($"{Base}/imagen", content);
+            if (r.IsSuccessStatusCode)
+            {
+                var res = await r.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+                if (res is not null && res.TryGetValue("url", out var url)) _imagenUrl = url;
+            }
+            else _msg = "No se pudo subir la imagen.";
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+        _subiendoImg = false;
+    }
+}
+
+<style>
+    .mn { display: flex; flex-direction: column; gap: 11px; min-height: 0; }
+    .mn-t { font-size: 11px; letter-spacing: .5px; color: #A6B7C8; font-weight: 700; }
+
+    .mn-publish { border: 1px solid #E1E8EE; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: #fff; }
+    .mn-publish-head { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: #33475B; }
+    .mn-ava { width: 28px; height: 28px; border-radius: 50%; background: #6D4FE3; color: #fff; font-size: 10.5px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .mn-ava-sm { width: 22px; height: 22px; font-size: 9px; background: #A6B7C8; }
+    .mn-in { border: 1px solid #E1E8EE; border-radius: 9px; padding: 9px 11px; font-size: 13px; color: #33475B; outline: none; font-family: inherit; box-sizing: border-box; width: 100%; }
+    .mn-in:focus { border-color: #6D4FE3; }
+    .mn-ta { resize: vertical; line-height: 1.5; }
+    .mn-publish-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .mn-attach { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: #6D4FE3; cursor: pointer; }
+    .mn-btn-brand { padding: 8px 15px; border-radius: 8px; border: 0; background: #6D4FE3; color: #fff; font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .mn-btn-brand:disabled { opacity: .5; cursor: default; }
+    .mn-preview { height: 120px; border-radius: 10px; background-size: cover; background-position: center; position: relative; }
+    .mn-preview-x { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border-radius: 7px; border: 0; background: rgba(27,42,58,.55); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+
+    .mn-feed { display: flex; flex-direction: column; gap: 10px; }
+    .mn-empty { font-size: 11.5px; color: #A6B7C8; padding: 12px; border: 1px dashed #D7E0EA; border-radius: 10px; }
+    .mn-post { border: 1px solid #E1E8EE; border-radius: 12px; padding: 12px; background: #fff; display: flex; flex-direction: column; gap: 7px; }
+    .mn-post-head { display: flex; align-items: center; gap: 8px; }
+    .mn-post-meta { flex: 1; min-width: 0; }
+    .mn-post-autor { font-size: 12.5px; font-weight: 700; color: #33475B; }
+    .mn-post-fecha { font-size: 10.5px; color: #A6B7C8; }
+    .mn-del-sm { width: 24px; height: 24px; border-radius: 7px; border: 1px solid #E1E8EE; background: #fff; color: #A6B7C8; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .mn-del-sm:hover { color: #D7263D; border-color: #F0C9C9; }
+    .mn-post-tit { font-size: 13.5px; font-weight: 700; color: #1B2A3A; }
+    .mn-post-txt { font-size: 12.5px; color: #516F90; line-height: 1.5; }
+    .mn-post-img { height: 150px; border-radius: 10px; background-size: cover; background-position: center; }
+    .mn-post-actions { display: flex; align-items: center; gap: 12px; }
+    .mn-like { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 700; color: #7C98B6; border: 0; background: transparent; cursor: pointer; padding: 0; font-family: inherit; }
+    .mn-like.on { color: #6D4FE3; }
+    .mn-coment-count { font-size: 11px; color: #A6B7C8; }
+    .mn-coment { display: flex; gap: 7px; align-items: flex-start; }
+    .mn-coment-body { font-size: 12px; color: #516F90; line-height: 1.45; }
+    .mn-coment-autor { font-weight: 700; color: #33475B; }
+    .mn-coment-fecha { font-size: 10.5px; color: #A6B7C8; }
+    .mn-coment-add { display: flex; gap: 6px; align-items: center; }
+    .mn-in-coment { padding: 7px 10px; font-size: 12px; }
+    .mn-add { width: 30px; height: 30px; flex-shrink: 0; border-radius: 8px; border: 0; background: #6D4FE3; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+
+    .mn-msg { font-size: 11.5px; color: #C0383C; font-weight: 600; }
+</style>

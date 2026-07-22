@@ -346,4 +346,62 @@
         a.click();
         setTimeout(function () { URL.revokeObjectURL(url); document.body.removeChild(a); }, 100);
     };
+
+    // -------------------------------------------------------------------------
+    // Tooltip del rail de iconos (titulo + descripcion de lo que hace el modulo).
+    //
+    // No se usa el de Bootstrap: su init vive en assets/js/main.js, que esta app no
+    // carga, y ademas solo admite texto plano. Tampoco sirve un tooltip CSS dentro
+    // del <li>: el rail es un contenedor con scroll (simplebar) y lo recortaria.
+    // Por eso el globo se crea UNA vez en el <body> y se posiciona a mano.
+    //
+    // Delegacion en document: los items del rail los pinta Blazor y se re-renderizan,
+    // asi que enganchar un listener a cada uno se perderia en el siguiente render.
+    // -------------------------------------------------------------------------
+    var tipEl = null;
+
+    function asegurarTip() {
+        if (tipEl && document.body.contains(tipEl)) return tipEl;
+        tipEl = document.createElement('div');
+        tipEl.className = 'propia-railtip';
+        tipEl.innerHTML = '<div class="propia-railtip-t"></div><div class="propia-railtip-d"></div>';
+        document.body.appendChild(tipEl);
+        return tipEl;
+    }
+
+    function mostrarTip(target) {
+        var titulo = target.getAttribute('data-tip-title');
+        if (!titulo) return;
+        var el = asegurarTip();
+        el.querySelector('.propia-railtip-t').textContent = titulo;
+        el.querySelector('.propia-railtip-d').textContent = target.getAttribute('data-tip-desc') || '';
+
+        // Se muestra invisible primero para poder medir el alto real y centrarlo.
+        el.style.visibility = 'hidden';
+        el.classList.add('is-on');
+
+        var r = target.getBoundingClientRect();
+        var top = r.top + (r.height / 2) - (el.offsetHeight / 2);
+        // Que no se salga por arriba ni por abajo de la ventana.
+        top = Math.max(8, Math.min(top, window.innerHeight - el.offsetHeight - 8));
+        el.style.top = top + 'px';
+        el.style.left = (r.right + 12) + 'px';
+        el.style.visibility = '';
+    }
+
+    function ocultarTip() {
+        if (tipEl) tipEl.classList.remove('is-on');
+    }
+
+    document.addEventListener('mouseover', function (e) {
+        var t = e.target && e.target.closest ? e.target.closest('[data-tip-title]') : null;
+        if (t) mostrarTip(t);
+    });
+    document.addEventListener('mouseout', function (e) {
+        var t = e.target && e.target.closest ? e.target.closest('[data-tip-title]') : null;
+        if (t) ocultarTip();
+    });
+    // Al hacer click se navega: el globo no debe quedar flotando sobre la pantalla nueva.
+    document.addEventListener('click', ocultarTip);
+    window.addEventListener('scroll', ocultarTip, true);
 })();

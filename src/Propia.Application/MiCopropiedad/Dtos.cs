@@ -482,13 +482,8 @@ public record ZonaDocumentoDto(Guid Id, string Nombre, string Url);
 public record ZonaCampoDto(Guid Id, string Label, string? Valor);
 public record ZonaContratoRefDto(Guid Id, string Nombre);
 
-public record ZonaComentarioDto(Guid Id, string AutorNombre, string AutorIniciales, string Texto, string FechaTexto);
-
-public record ZonaNovedadDto(
-    Guid Id, string Titulo, string? Texto, string? ImagenUrl,
-    string AutorNombre, string AutorIniciales, string FechaTexto,
-    int Likes, bool YoDiLike,
-    IReadOnlyList<ZonaComentarioDto> Comentarios);
+// El muro de novedades dejo de ser exclusivo de zonas: sus DTOs y su servicio viven en
+// Propia.Application.Novedades y se consumen desde la ficha de zona y la de equipos.
 
 /// <summary>Agregado que alimenta el modal de ficha completa de la zona comun.</summary>
 public record ZonaFichaDto(
@@ -502,8 +497,7 @@ public record ZonaFichaDto(
     IReadOnlyList<ZonaDocumentoDto> Documentos,
     IReadOnlyList<ZonaCampoDto> Campos,
     IReadOnlyList<VentanaDisponibilidadDto> Horarios,
-    IReadOnlyList<ZonaContratoRefDto> ContratosDisponibles,
-    IReadOnlyList<ZonaNovedadDto> Novedades);
+    IReadOnlyList<ZonaContratoRefDto> ContratosDisponibles);
 
 /// <summary>Guarda la config de la ficha (imagen + mantenimiento + reservable + aforo).</summary>
 public record GuardarZonaFichaRequest(
@@ -517,5 +511,3 @@ public record GuardarZonaFichaRequest(
 
 public record AgregarZonaFacturaRequest(string Concepto, decimal? Valor, DateOnly? Fecha);
 public record AgregarZonaCampoRequest(string Label, string? Valor);
-public record PublicarZonaNovedadRequest(string Titulo, string? Texto, string? ImagenUrl);
-public record ComentarZonaNovedadRequest(string Texto);

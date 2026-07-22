@@ -1,4 +1,5 @@
 using Propia.Domain.Common;
+using Propia.Domain.Enums;
 
 namespace Propia.Domain.Entities;
 
@@ -27,10 +28,15 @@ public class ZonaCampoPersonalizado : TenantEntity
     public string? Valor { get; set; }
 }
 
-/// <summary>Novedad publicada en el muro de una zona comun (prototipo: "Novedades de la zona").</summary>
-public class ZonaNovedad : TenantEntity
+/// <summary>
+/// Novedad publicada en el muro de una entidad. Nacio atada a las zonas comunes; ahora el
+/// muro es generico (EntidadTipo + EntidadId) para colgarlo tambien de equipos y de lo que
+/// venga despues sin duplicar tablas.
+/// </summary>
+public class Novedad : TenantEntity
 {
-    public Guid ZonaComunId { get; set; }
+    public TipoEntidadNovedad EntidadTipo { get; set; }
+    public Guid EntidadId { get; set; }
     public string Titulo { get; set; } = null!;
     public string? Texto { get; set; }
     public string? ImagenUrl { get; set; }
@@ -39,18 +45,18 @@ public class ZonaNovedad : TenantEntity
     public int LikesCount { get; set; }
 }
 
-/// <summary>Comentario sobre una novedad del muro de una zona comun.</summary>
-public class ZonaNovedadComentario : TenantEntity
+/// <summary>Comentario sobre una novedad del muro.</summary>
+public class NovedadComentario : TenantEntity
 {
-    public Guid ZonaNovedadId { get; set; }
+    public Guid NovedadId { get; set; }
     public string AutorNombre { get; set; } = "Residente";
     public Guid? AutorPersonaId { get; set; }
     public string Texto { get; set; } = null!;
 }
 
 /// <summary>Like de una persona sobre una novedad (evita doble like).</summary>
-public class ZonaNovedadLike : TenantEntity
+public class NovedadLike : TenantEntity
 {
-    public Guid ZonaNovedadId { get; set; }
+    public Guid NovedadId { get; set; }
     public Guid PersonaId { get; set; }
 }

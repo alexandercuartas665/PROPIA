@@ -27,6 +27,20 @@ public interface IDirectorioService
     Task<IReadOnlyList<PersonaResumenDto>> ListarPersonasDelTenantAsync(string? query, CancellationToken ct);
     Task<IReadOnlyList<EmpresaResumenDto>> ListarEmpresasDelTenantAsync(string? query, CancellationToken ct);
 
+    // --- Selector de personas (autocompletado a nivel organizacion) ---
+
+    /// <summary>
+    /// Busca en TODAS las copropiedades de la organizacion del usuario, marcando cuales
+    /// candidatos ya estan en la copropiedad activa. Nunca sale de la organizacion.
+    /// </summary>
+    Task<IReadOnlyList<PersonaCandidatoDto>> BuscarCandidatosAsync(string query, CancellationToken ct);
+
+    /// <summary>
+    /// Trae a la copropiedad activa una persona que ya existe en otra de la organizacion.
+    /// No duplica la persona (es global): crea el vinculo que faltaba.
+    /// </summary>
+    Task<bool> VincularCandidatoAsync(Guid personaId, CancellationToken ct);
+
     // --- Vista 360 (incluye vinculos del tenant activo) ---
     Task<Persona360Dto?> GetPersona360Async(Guid personaId, CancellationToken ct);
     Task<Empresa360Dto?> GetEmpresa360Async(Guid empresaId, CancellationToken ct);

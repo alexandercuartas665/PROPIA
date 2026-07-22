@@ -77,11 +77,43 @@ else
         }
     </div>
 
+    @* Filtros. Sin value= en el buscador: Blazor Server lo reafirma en cada re-render y
+       se come pulsaciones mientras el round-trip esta en vuelo. *@
+    @if (_unidades.Count > 0)
+    {
+        <div class="dst-filtros">
+            <div class="dst-search">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                <input class="dst-search-inp" placeholder="Buscar unidad o propietario..."
+                       @oninput="@(e => { _q = e.Value?.ToString() ?? string.Empty; _pagina = 1; })" />
+            </div>
+            <select class="dst-fsel" @bind="_fTipo" @bind:after="() => _pagina = 1">
+                <option value="">Todo tipo</option>
+                @foreach (var t in Enum.GetValues<TipoUnidad>()) { <option value="@t">@t</option> }
+            </select>
+            <select class="dst-fsel" @bind="_fTorreId" @bind:after="() => _pagina = 1">
+                <option value="">@("Toda " + LabelAgrupacionSingular.ToLower())</option>
+                @foreach (var t in _torres.OrderBy(x => x.Nombre)) { <option value="@t.Id">@t.Nombre</option> }
+            </select>
+            @if (HayFiltros)
+            {
+                <button type="button" class="dst-fclear" @onclick="LimpiarFiltros" title="Limpiar filtros">Limpiar</button>
+            }
+        </div>
+    }
+
     @if (_unidades.Count == 0)
     {
         <div class="dst-empty">
             <strong>Sin unidades registradas aun.</strong>
             <span>Usa "Gestionar unidades" para crear @LabelAgrupacionPlural.ToLower() y unidades.</span>
+        </div>
+    }
+    else if (Filtradas.Count == 0)
+    {
+        <div class="dst-empty">
+            <strong>Ninguna unidad coincide con el filtro.</strong>
+            <span>Ajusta la busqueda o limpia los filtros.</span>
         </div>
     }
     else
@@ -131,7 +163,7 @@ else
             @* Paginacion: una PH puede tener cientos de unidades y no se listan todas de golpe. *@
             <div class="dst-pager">
                 <div class="dst-pager-info">
-                    Mostrando @(_unidades.Count == 0 ? 0 : Desde + 1)-@Hasta de @_unidades.Count unidades
+                    Mostrando @(Filtradas.Count == 0 ? 0 : Desde + 1)-@Hasta de @Filtradas.Count unidades
                 </div>
                 <div class="dst-pager-ctrl">
                     <select class="dst-pager-sel" @onchange="CambiarTamanoPagina">
@@ -180,10 +212,35 @@ else
     private int _porPagina = 25;
     private int _pagina = 1;
 
-    private int TotalPaginas => _unidades.Count == 0 ? 1 : (int)Math.Ceiling(_unidades.Count / (double)_porPagina);
+    // Filtros (client-side). La paginacion cuenta sobre la lista YA filtrada: si contara
+    // sobre el total, el pie diria "de 120" mostrando 3 resultados.
+    private string _q = "";
+    private string _fTipo = "";
+    private string _fTorreId = "";
+
+    private bool HayFiltros => !string.IsNullOrWhiteSpace(_q) || _fTipo != "" || _fTorreId != "";
+
+    private void LimpiarFiltros() { _q = ""; _fTipo = ""; _fTorreId = ""; _pagina = 1; }
+
+    private List<UnidadDto> Filtradas
+    {
+        get
+        {
+            var q = _q.Trim();
+            return _unidades
+                .Where(u => q == ""
+                    || u.Numero.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || (u.PropietarioNombre ?? "").Contains(q, StringComparison.OrdinalIgnoreCase))
+                .Where(u => _fTipo == "" || u.Tipo.ToString() == _fTipo)
+                .Where(u => _fTorreId == "" || u.TorreId?.ToString() == _fTorreId)
+                .ToList();
+        }
+    }
+
+    private int TotalPaginas => Filtradas.Count == 0 ? 1 : (int)Math.Ceiling(Filtradas.Count / (double)_porPagina);
     private int Desde => (_pagina - 1) * _porPagina;
-    private int Hasta => Math.Min(Desde + _porPagina, _unidades.Count);
-    private IEnumerable<UnidadDto> UnidadesPagina => _unidades.Skip(Desde).Take(_porPagina);
+    private int Hasta => Math.Min(Desde + _porPagina, Filtradas.Count);
+    private IEnumerable<UnidadDto> UnidadesPagina => Filtradas.Skip(Desde).Take(_porPagina);
 
     private void IrAPagina(int p) => _pagina = Math.Clamp(p, 1, TotalPaginas);
 
@@ -281,6 +338,15 @@ else
 
     /* Tarjetas de resumen: agrupaciones, unidades y estado de coeficientes. */
     .dst-stats { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
+
+    .dst-filtros { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .dst-search { display: flex; align-items: center; gap: 7px; border: 1px solid #E1E8EE; border-radius: 9px; padding: 0 11px; background: #fff; }
+    .dst-search svg { color: #A6B7C8; flex-shrink: 0; }
+    .dst-search:focus-within { border-color: var(--propia-brand, #6D4FE3); }
+    .dst-search-inp { border: 0; outline: none; padding: 8px 0; font-size: 12.5px; color: #33475B; font-family: inherit; width: 210px; background: transparent; }
+    .dst-fsel { border: 1px solid #E1E8EE; border-radius: 9px; padding: 8px 10px; font-size: 12px; color: #516F90; background: #fff; outline: none; font-family: inherit; cursor: pointer; }
+    .dst-fsel:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .dst-fclear { border: 1px solid #DCD2F8; border-radius: 9px; padding: 8px 12px; font-size: 11.5px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: #F1ECFD; cursor: pointer; font-family: inherit; }
     .dst-stat { display: flex; align-items: center; gap: 12px; background: #fff; border: 1px solid #E1E8EE; border-radius: 12px; padding: 14px 18px; min-width: 150px; }
     .dst-stat-icon { width: 34px; height: 34px; flex-shrink: 0; border-radius: 9px; background: #F3EFFE; color: var(--propia-brand, #6D4FE3); display: flex; align-items: center; justify-content: center; }
     .dst-stat-n { font-size: 21px; font-weight: 800; color: #1B2A3A; line-height: 1.1; }

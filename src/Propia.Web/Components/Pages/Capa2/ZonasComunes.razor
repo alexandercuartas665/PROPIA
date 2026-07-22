@@ -1,0 +1,478 @@
+@page "/zonas-comunes"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.MiCopropiedad
+@using Propia.Domain.Enums
+@using Propia.Web.Components.Shared.Modals
+@using Microsoft.AspNetCore.Components.Web
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+@inject IModalService Modals
+
+<PageTitle>Zonas comunes - PROPIA</PageTitle>
+
+@* Zonas comunes: modulo propio (antes era una seccion del acordeon de Mi copropiedad).
+   Mismo contenido que tenia alli - resumen, tarjetas/lista y alta rapida - pero sin
+   acordeon y sin numeral. El detalle vive en FichaZonaModal; el alta masiva en
+   GestionarZonasModal.
+
+   El CSS va con prefijo zc-* y propio: las clases mc-* solo existen mientras se renderiza
+   MiCopropiedad, asi que en esta pagina no estarian disponibles. *@
+
+<div class="zc-pagehead">
+    <div>
+        <h1 class="zc-pagetitle">Zonas comunes</h1>
+        <p class="zc-pagesub">Salones, zonas deportivas, parques y demas areas de uso comun de la copropiedad.</p>
+    </div>
+    @if (_authChecked && _jwt is not null)
+    {
+        <button class="propia-btn-brand" @onclick="AbrirGestionarZonasAsync">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V8h14v13M9 12h.01M15 12h.01"/></svg>
+            Gestionar zonas
+        </button>
+    }
+</div>
+
+@if (!_authChecked)
+{
+    <div class="zc-loading"><div class="spinner-border" style="color: var(--propia-brand, #6D4FE3);"></div></div>
+}
+else if (_loadError is not null)
+{
+    <div class="alert alert-danger">@_loadError</div>
+}
+else
+{
+    <div class="zc-bar">
+        @* Cada conteo es una tarjeta con su color de estado: sueltos, los numeros no se
+           leian como indicadores. *@
+        <div class="zc-summary">
+            <div class="zc-stat zc-stat--ok">
+                <span class="zc-stat-dot"></span>
+                <div><div class="zc-stat-val">@_zonas.Count(z => z.Estado == EstadoZonaComunMantenimiento.Activa)</div><div class="zc-stat-lbl">Activas</div></div>
+            </div>
+            <div class="zc-stat zc-stat--mant">
+                <span class="zc-stat-dot"></span>
+                <div><div class="zc-stat-val">@_zonas.Count(z => z.Estado == EstadoZonaComunMantenimiento.EnMantenimiento)</div><div class="zc-stat-lbl">En mantenimiento</div></div>
+            </div>
+            <div class="zc-stat zc-stat--res">
+                <span class="zc-stat-dot"></span>
+                <div><div class="zc-stat-val">@_zonas.Count(z => z.EsReservable)</div><div class="zc-stat-lbl">Reservables</div></div>
+            </div>
+            <div class="zc-stat">
+                <span class="zc-stat-dot"></span>
+                <div><div class="zc-stat-val">@_zonas.Count</div><div class="zc-stat-lbl">Total</div></div>
+            </div>
+        </div>
+        @* Filtros: sin value= en el buscador (Blazor Server se come pulsaciones al
+           reafirmarlo en cada re-render). *@
+        <div class="zc-filtros">
+            <div class="zc-search">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                <input class="zc-search-inp" placeholder="Buscar zona..."
+                       @oninput="@(e => _q = e.Value?.ToString() ?? string.Empty)" />
+            </div>
+            <select class="zc-fsel" @bind="_fCategoria">
+                <option value="">Toda categoria</option>
+                @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c">@c</option> }
+            </select>
+            <select class="zc-fsel" @bind="_fEstado">
+                <option value="">Todo estado</option>
+                @foreach (var s in Enum.GetValues<EstadoZonaComunMantenimiento>()) { <option value="@s">@s</option> }
+            </select>
+            <select class="zc-fsel" @bind="_fReservable">
+                <option value="">Reservable: todas</option>
+                <option value="si">Solo reservables</option>
+                <option value="no">No reservables</option>
+            </select>
+            @if (HayFiltros)
+            {
+                <button type="button" class="zc-fclear" @onclick="LimpiarFiltros" title="Limpiar filtros">Limpiar</button>
+            }
+        </div>
+
+        <div class="zc-viewtoggle">
+            <button type="button" class="zc-vt @(_view == "cards" ? "on" : "")" @onclick='() => _view = "cards"' title="Tarjetas">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                Tarjetas
+            </button>
+            <button type="button" class="zc-vt @(_view == "list" ? "on" : "")" @onclick='() => _view = "list"' title="Lista">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                Lista
+            </button>
+        </div>
+    </div>
+
+    @if (_view == "cards")
+    {
+        <div class="zc-cards">
+            @foreach (var z in Filtradas())
+            {
+                var zona = z;
+                <button type="button" class="zc-card" @onclick="() => AbrirFichaZonaAsync(zona)" title="Abrir ficha de la zona">
+                    <div class="zc-card-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V8h14v13M9 12h.01M15 12h.01"/></svg></div>
+                    <div class="zc-card-id">
+                        <div class="zc-card-nom">@z.Nombre</div>
+                        <div class="zc-card-meta">@z.Categoria@(z.CapacidadPersonas.HasValue ? $" · Aforo {z.CapacidadPersonas}" : "") · @(z.EsReservable ? "Reservable" : "No reservable")</div>
+                    </div>
+                    @if (z.Estado == EstadoZonaComunMantenimiento.EnMantenimiento) { <span class="zc-card-mant">Mant.</span> }
+                    <span class="zc-card-del" role="button" @onclick:stopPropagation="true" @onclick="() => EliminarZonaAsync(zona.Id, zona.Nombre)" title="Eliminar zona">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+                    </span>
+                    <svg class="zc-card-arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18l6-6-6-6"/></svg>
+                </button>
+            }
+
+            @* Compositor progresivo: la tarjeta crece a medida que se agregan datos. *@
+            @if (_composerOpen)
+            {
+                <div class="zc-composer">
+                    @* SIN value=: en Blazor Server se reafirma en cada re-render y se come
+                       pulsaciones mientras el round-trip esta en vuelo. *@
+                    <input class="zc-composer-inp" placeholder="Nombre de la zona..." autofocus
+                           @oninput="@(e => { _draft.Nombre = e.Value?.ToString() ?? string.Empty; Reveal(0); })"
+                           @onkeydown="Keydown" />
+                    @if (_reveal >= 1)
+                    {
+                        <select class="zc-composer-sel" @bind="_draft.Categoria" @onfocus="@(() => Reveal(1))">
+                            @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c">@c</option> }
+                        </select>
+                    }
+                    @if (_reveal >= 2)
+                    {
+                        <select class="zc-composer-sel" @onfocus="@(() => Reveal(2))"
+                                @onchange="@(e => _draft.EsReservable = e.Value?.ToString() == "true")">
+                            <option value="false" selected="@(!_draft.EsReservable)">No reservable</option>
+                            <option value="true" selected="@_draft.EsReservable">Reservable</option>
+                        </select>
+                    }
+                    @if (_reveal >= 3)
+                    {
+                        <input type="number" min="0" class="zc-composer-sel" placeholder="Aforo (personas)"
+                               @bind="_draft.Aforo" @onfocus="@(() => Reveal(3))" />
+                    }
+                    <div class="zc-composer-foot">
+                        <button type="button" class="zc-composer-cancel" @onclick="CancelarComposer">Cancelar</button>
+                        <button type="button" class="zc-composer-ok" @onclick="CrearDesdeDraftAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_draft.Nombre))">@(_busy ? "Creando..." : "Crear")</button>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <button type="button" class="zc-add-card" @onclick="AbrirComposer">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                    Agregar zona comun
+                </button>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="zc-list">
+            <div class="zc-list-head zc-grid">
+                <div>NOMBRE</div><div>CATEGORIA</div><div>RESERVA</div><div>AFORO</div><div>ESTADO</div><div></div>
+            </div>
+            @foreach (var z in Filtradas())
+            {
+                var zona = z;
+                <div class="zc-list-row zc-grid">
+                    <button type="button" class="zc-list-link" @onclick="() => AbrirFichaZonaAsync(zona)" title="Abrir ficha">@z.Nombre</button>
+                    <div class="zc-list-c">@z.Categoria</div>
+                    <div class="zc-list-c">@(z.EsReservable ? "Si" : "No")</div>
+                    <div class="zc-list-c">@(z.CapacidadPersonas?.ToString() ?? "-")</div>
+                    <div class="zc-list-c"><span class="zc-list-badge">@z.Estado</span></div>
+                    <div class="zc-list-act">
+                        <button type="button" class="zc-row-del" @onclick="() => EliminarZonaAsync(zona.Id, zona.Nombre)" title="Eliminar">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+                        </button>
+                    </div>
+                </div>
+            }
+            @* Alta inline. @@key limpia la fila al crear; @@oninput SIN value= evita perder pulsaciones. *@
+            <div class="zc-list-newrow zc-grid" @key="_nonce">
+                <input class="zc-row-inp" @ref="_nombreRef" placeholder="Nueva zona comun..."
+                       @oninput="@(e => _draft.Nombre = e.Value?.ToString() ?? string.Empty)" @onkeydown="Keydown" />
+                <select class="zc-row-inp" @bind="_draft.Categoria">
+                    @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c">@c</option> }
+                </select>
+                <select class="zc-row-inp" @onchange="@(e => _draft.EsReservable = e.Value?.ToString() == "true")">
+                    <option value="false" selected="@(!_draft.EsReservable)">No</option>
+                    <option value="true" selected="@_draft.EsReservable">Si</option>
+                </select>
+                <input type="number" min="0" class="zc-row-inp" placeholder="-" @bind="_draft.Aforo" />
+                <div class="zc-list-c">Activa</div>
+                <div class="zc-list-act">
+                    <button type="button" class="zc-row-add" @onclick="CrearDesdeDraftAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_draft.Nombre))">+ Agregar</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (!Filtradas().Any())
+    {
+        <div class="zc-empty">
+            @(HayFiltros ? "Ninguna zona coincide con el filtro." : "Aun no hay zonas comunes registradas.")
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_msg)) { <div class="zc-msg @(_msgOk ? "ok" : "bad")">@_msg</div> }
+}
+
+@* ModalHost debe declararse en CADA pagina: IModalService es scoped por circuito y
+   MainLayout es otra frontera de render (ver comentario en MainLayout.razor). *@
+<ModalHost />
+
+@code {
+    private List<ZonaComunDto> _zonas = new();
+    private string? _jwt;
+    private bool _authChecked;
+    private string? _loadError;
+
+    private string _view = "cards";
+    private bool _composerOpen;
+    private int _reveal;
+    private bool _busy;
+    private readonly ZonaDraft _draft = new();
+    private int _nonce;
+    private bool _focusPending;
+    private ElementReference _nombreRef;
+
+    private string _msg = "";
+    private bool _msgOk = true;
+
+    // Filtros (client-side: la lista de zonas de una copropiedad es corta).
+    private string _q = "";
+    private string _fCategoria = "";
+    private string _fEstado = "";
+    private string _fReservable = "";
+
+    private bool HayFiltros =>
+        !string.IsNullOrWhiteSpace(_q) || _fCategoria != "" || _fEstado != "" || _fReservable != "";
+
+    private void LimpiarFiltros() { _q = ""; _fCategoria = ""; _fEstado = ""; _fReservable = ""; }
+
+    private IEnumerable<ZonaComunDto> Filtradas()
+    {
+        var q = _q.Trim();
+        return _zonas
+            .Where(z => q == "" || z.Nombre.Contains(q, StringComparison.OrdinalIgnoreCase))
+            .Where(z => _fCategoria == "" || z.Categoria.ToString() == _fCategoria)
+            .Where(z => _fEstado == "" || z.Estado.ToString() == _fEstado)
+            .Where(z => _fReservable == "" || (_fReservable == "si" ? z.EsReservable : !z.EsReservable))
+            .OrderBy(z => z.Categoria).ThenBy(z => z.Nombre);
+    }
+
+    private sealed class ZonaDraft
+    {
+        public string Nombre = "";
+        public CategoriaZonaComun Categoria = CategoriaZonaComun.Social;
+        public bool EsReservable;
+        public int? Aforo;
+        public void Reset() { Nombre = ""; Categoria = CategoriaZonaComun.Social; EsReservable = false; Aforo = null; }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(_jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
+        return http;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _jwt is null)
+        {
+            // Mismo arranque que las demas paginas de Capa 2: el JWT vive en sessionStorage
+            // y solo es legible tras el primer render (no existe en prerender).
+            try
+            {
+                var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+                _authChecked = true;
+                if (string.IsNullOrWhiteSpace(stored))
+                {
+                    Nav.NavigateTo("/login?returnUrl=%2Fzonas-comunes", true);
+                    return;
+                }
+                _jwt = stored;
+                await CargarAsync();
+                StateHasChanged();
+            }
+            catch { /* prerender */ }
+            return;
+        }
+        if (_focusPending)
+        {
+            _focusPending = false;
+            try { await _nombreRef.FocusAsync(); } catch { }
+        }
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = Auth();
+            var resp = await http.GetAsync("/api/mi-copropiedad/zonas");
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                var nuevoJwt = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+                if (nuevoJwt is null) return;
+                _jwt = nuevoJwt;
+                resp = await Auth().GetAsync("/api/mi-copropiedad/zonas");
+            }
+            resp.EnsureSuccessStatusCode();
+            _zonas = await resp.Content.ReadFromJsonAsync<List<ZonaComunDto>>() ?? new();
+            _loadError = null;
+        }
+        catch (Exception ex) { _loadError = ex.Message; }
+    }
+
+    private async Task AbrirGestionarZonasAsync()
+    {
+        var parameters = new ModalParameters().Set("Jwt", _jwt);
+        var options = new ModalOptions { Width = "640px", Height = "540px" };
+        var creada = await Modals.OpenAsync<GestionarZonasModal, ZonaComunDto?>(parameters, options);
+        if (creada is not null)
+        {
+            await CargarAsync();
+            // Tras crear la zona se abre su ficha para completar imagen, horarios, etc.
+            await AbrirFichaZonaAsync(creada);
+        }
+    }
+
+    private async Task AbrirFichaZonaAsync(ZonaComunDto zona)
+    {
+        var parameters = new ModalParameters().Set("Jwt", _jwt).Set("Zona", zona);
+        var options = new ModalOptions { Width = "1280px", Height = "88vh" };
+        var hubo = await Modals.OpenAsync<FichaZonaModal, bool>(parameters, options);
+        if (hubo == true) { await CargarAsync(); Msg("Ficha de zona actualizada.", true); }
+    }
+
+    private void AbrirComposer() { _draft.Reset(); _reveal = 0; _composerOpen = true; }
+    private void CancelarComposer() { _composerOpen = false; _draft.Reset(); _reveal = 0; }
+    private void Reveal(int idx) { var t = idx + 1; if (t <= 3 && _reveal < t) _reveal = t; }
+
+    private async Task Keydown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_draft.Nombre)) await CrearDesdeDraftAsync();
+        else if (e.Key == "Escape") CancelarComposer();
+    }
+
+    private async Task CrearDesdeDraftAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_draft.Nombre)) return;
+        _busy = true;
+        try
+        {
+            var req = new CrearZonaComunRequest(_draft.Nombre.Trim(), _draft.Categoria, null,
+                _draft.EsReservable, null, _draft.Aforo, null, null);
+            var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/zonas", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                _draft.Reset(); _reveal = 0; _composerOpen = false; _nonce++; _focusPending = true;
+                await CargarAsync();
+                Msg("Zona comun creada. Haz clic en ella para completar la ficha.", true);
+            }
+            else Msg(await MensajeDeError(resp, "No se pudo crear la zona."), false);
+        }
+        catch (Exception ex) { Msg(ex.Message, false); }
+        _busy = false;
+    }
+
+    private async Task EliminarZonaAsync(Guid id, string nombre)
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", $"Eliminar la zona \"{nombre}\"?")) return;
+        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/zonas/{id}");
+        if (resp.IsSuccessStatusCode) { await CargarAsync(); Msg("Zona eliminada.", true); }
+        else Msg(await MensajeDeError(resp, "No se pudo eliminar la zona."), false);
+    }
+
+    private void Msg(string m, bool ok) { _msg = m; _msgOk = ok; }
+
+    private static async Task<string> MensajeDeError(HttpResponseMessage resp, string porDefecto)
+    {
+        try
+        {
+            var err = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+            if (err is not null && err.TryGetValue("error", out var m) && !string.IsNullOrWhiteSpace(m)) return m;
+        }
+        catch { }
+        return porDefecto;
+    }
+}
+
+<style>
+    .zc-pagehead { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+    .zc-pagetitle { font-size: 22px; font-weight: 800; letter-spacing: -.4px; color: var(--bs-heading-color, #1B2A3A); margin: 0; }
+    .zc-pagesub { font-size: 13px; color: var(--bs-secondary-color, #7C98B6); margin: 4px 0 0; }
+    .zc-loading { display: flex; justify-content: center; padding: 60px; }
+
+    .zc-bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 14px; flex-wrap: wrap; }
+    .zc-summary { display: flex; gap: 10px; flex-wrap: wrap; }
+    .zc-stat { display: flex; align-items: center; gap: 9px; padding: 9px 14px; border: 1px solid #E1E8EE; border-radius: 10px; background: #fff; }
+    .zc-stat-dot { width: 8px; height: 8px; border-radius: 50%; background: #C3D0DD; flex-shrink: 0; }
+    .zc-stat-val { font-size: 19px; font-weight: 800; color: var(--bs-heading-color, #1B2A3A); line-height: 1.05; }
+    .zc-stat-lbl { font-size: 10.5px; color: #A6B7C8; font-weight: 700; letter-spacing: .2px; white-space: nowrap; }
+    .zc-stat--ok .zc-stat-dot { background: #1A8754; }
+    .zc-stat--mant .zc-stat-dot { background: #E0A106; }
+    .zc-stat--res .zc-stat-dot { background: var(--propia-brand, #6D4FE3); }
+
+    .zc-filtros { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .zc-search { display: flex; align-items: center; gap: 7px; border: 1px solid #E1E8EE; border-radius: 9px; padding: 0 11px; background: #fff; }
+    .zc-search svg { color: #A6B7C8; flex-shrink: 0; }
+    .zc-search:focus-within { border-color: var(--propia-brand, #6D4FE3); }
+    .zc-search-inp { border: 0; outline: none; padding: 8px 0; font-size: 12.5px; color: #33475B; font-family: inherit; width: 170px; background: transparent; }
+    .zc-fsel { border: 1px solid #E1E8EE; border-radius: 9px; padding: 8px 10px; font-size: 12px; color: #516F90; background: #fff; outline: none; font-family: inherit; cursor: pointer; }
+    .zc-fsel:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .zc-fclear { border: 1px solid #DCD2F8; border-radius: 9px; padding: 8px 12px; font-size: 11.5px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: #F1ECFD; cursor: pointer; font-family: inherit; }
+
+    .zc-viewtoggle { display: flex; gap: 0; border: 1px solid #E1E8EE; border-radius: 9px; overflow: hidden; }
+    .zc-vt { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; padding: 7px 12px; border: 0; background: #fff; color: #7C98B6; cursor: pointer; font-family: inherit; }
+    .zc-vt.on { background: var(--propia-brand, #6D4FE3); color: #fff; }
+
+    .zc-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+    .zc-card { display: flex; align-items: center; gap: 11px; padding: 12px 14px; border: 1px solid #E1E8EE; border-radius: 12px; background: #fff; cursor: pointer; text-align: left; font-family: inherit; }
+    .zc-card:hover { border-color: var(--propia-brand, #6D4FE3); box-shadow: 0 4px 14px rgba(109,79,227,.10); }
+    .zc-card-ic { width: 38px; height: 38px; border-radius: 10px; background: #F1ECFD; color: var(--propia-brand, #6D4FE3); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .zc-card-id { flex: 1; min-width: 0; }
+    .zc-card-nom { font-size: 13.5px; font-weight: 700; color: #33475B; }
+    .zc-card-meta { font-size: 11px; color: #A6B7C8; }
+    .zc-card-mant { font-size: 10px; font-weight: 700; color: #9A6A00; background: #FFF8E6; border: 1px solid #F5E2AE; border-radius: 6px; padding: 3px 7px; }
+    .zc-card-del { color: #C3D0DD; display: flex; align-items: center; }
+    .zc-card-del:hover { color: #D7263D; }
+    .zc-card-arrow { color: #C3D0DD; flex-shrink: 0; }
+
+    .zc-add-card { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px; border: 1.5px dashed #C3D0DD; border-radius: 12px; background: transparent; color: var(--propia-brand, #6D4FE3); font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .zc-add-card:hover { border-color: var(--propia-brand, #6D4FE3); background: #F8F5FE; }
+
+    .zc-composer { display: flex; flex-direction: column; gap: 7px; padding: 12px; border: 1.5px solid var(--propia-brand, #6D4FE3); border-radius: 12px; background: #fff; box-shadow: 0 6px 18px rgba(109,79,227,.12); }
+    .zc-composer-inp, .zc-composer-sel { border: 1px solid #E1E8EE; border-radius: 8px; padding: 9px 11px; font-size: 13px; color: #33475B; outline: none; font-family: inherit; width: 100%; box-sizing: border-box; }
+    .zc-composer-inp:focus, .zc-composer-sel:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .zc-composer-foot { display: flex; justify-content: flex-end; gap: 7px; margin-top: 3px; }
+    .zc-composer-cancel { font-size: 12px; font-weight: 600; color: #7C98B6; background: transparent; border: 0; cursor: pointer; padding: 7px 12px; font-family: inherit; }
+    .zc-composer-ok { font-size: 12.5px; font-weight: 700; color: #fff; background: var(--propia-brand, #6D4FE3); border: 0; border-radius: 8px; padding: 8px 16px; cursor: pointer; font-family: inherit; }
+    .zc-composer-ok:disabled { opacity: .5; cursor: default; }
+
+    .zc-list { border: 1px solid #E1E8EE; border-radius: 12px; overflow: hidden; background: #fff; }
+    .zc-grid { display: grid; grid-template-columns: 2fr 1.2fr .8fr .8fr 1fr 60px; gap: 10px; align-items: center; }
+    .zc-list-head { padding: 10px 14px; background: #F8FAFC; font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: #A6B7C8; border-bottom: 1px solid #EEF3F8; }
+    .zc-list-row { padding: 10px 14px; border-bottom: 1px solid #F3F7FA; }
+    .zc-list-row:hover { background: #FBFCFD; }
+    .zc-list-link { font-size: 13px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: none; border: 0; padding: 0; text-align: left; cursor: pointer; font-family: inherit; }
+    .zc-list-c { font-size: 12.5px; color: #516F90; }
+    .zc-list-badge { font-size: 10.5px; font-weight: 700; color: #516F90; background: #EEF3F8; border-radius: 6px; padding: 3px 8px; }
+    .zc-list-act { display: flex; justify-content: flex-end; }
+    .zc-row-del { width: 26px; height: 26px; border-radius: 7px; border: 1px solid #E1E8EE; background: #fff; color: #A6B7C8; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .zc-row-del:hover { color: #D7263D; border-color: #F0C9C9; }
+    .zc-list-newrow { padding: 10px 14px; background: #F8FAFC; }
+    .zc-row-inp { border: 1px solid #E1E8EE; border-radius: 7px; padding: 7px 9px; font-size: 12.5px; color: #33475B; outline: none; font-family: inherit; width: 100%; box-sizing: border-box; }
+    .zc-row-inp:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .zc-row-add { font-size: 11.5px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: #F1ECFD; border: 1px solid #DCD2F8; border-radius: 7px; padding: 6px 10px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+    .zc-row-add:disabled { opacity: .5; cursor: default; }
+
+    .zc-empty { font-size: 12.5px; color: #A6B7C8; padding: 16px; border: 1px dashed #D7E0EA; border-radius: 10px; margin-top: 12px; }
+    .zc-msg { margin-top: 12px; font-size: 12.5px; font-weight: 600; }
+    .zc-msg.ok { color: #15703F; }
+    .zc-msg.bad { color: #C0383C; }
+</style>

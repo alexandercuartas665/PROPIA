@@ -1,0 +1,352 @@
+@* SelectorPersona - control reutilizable para vincular una persona en cualquier ficha.
+
+   Tres fases, en este orden:
+     1. AUTOCOMPLETADO sobre TODAS las copropiedades de la organizacion (min. 3 letras).
+     2. Si el candidato ya esta en esta copropiedad -> se asigna directo.
+        Si existe pero en OTRA copropiedad -> al elegirlo se le crea el vinculo con la
+        actual. La persona NO se duplica: es una fila global identificada por documento.
+     3. Si no existe en ningun lado -> se crea desde la misma lista, sin salir del formulario.
+
+   Reemplaza los formularios sueltos de documento+nombres+apellidos repartidos por las
+   fichas, que creaban personas invisibles para el resto del sistema.
+
+   No maneja sesion: recibe el Jwt del contenedor, como los demas componentes compartidos. *@
+
+@using Propia.Application.Directorio
+@using Propia.Domain.Enums
+@using Microsoft.AspNetCore.Components.Web
+@inject IHttpClientFactory HttpFactory
+
+<div class="sp">
+    @if (Seleccionada is not null)
+    {
+        @* Ya hay persona elegida: se muestra como chip con opcion de cambiarla. *@
+        <div class="sp-chip">
+            <span class="sp-chip-ava">@Iniciales(Seleccionada.NombreCompleto)</span>
+            <div class="sp-chip-body">
+                <div class="sp-chip-nom">@Seleccionada.NombreCompleto</div>
+                <div class="sp-chip-doc">@Seleccionada.TipoDocumento @Seleccionada.DocumentoEnmascarado</div>
+            </div>
+            <button type="button" class="sp-chip-x" title="Cambiar persona" @onclick="Limpiar">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+    }
+    else
+    {
+        <div class="sp-search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            @* Sin value=: en Blazor Server reafirmarlo en cada re-render se come pulsaciones. *@
+            <input class="sp-search-inp" placeholder="@Placeholder" @oninput="OnBuscarInput" @onkeydown="OnKeydown" />
+            @if (_buscando) { <span class="sp-spin"></span> }
+        </div>
+
+        @if (_q.Length > 0 && _q.Length < 3)
+        {
+            <div class="sp-hint">Escribe al menos 3 letras del nombre o del documento.</div>
+        }
+        else if (_q.Length >= 3)
+        {
+            <div class="sp-list">
+                @foreach (var c in _candidatos)
+                {
+                    var cand = c;
+                    <button type="button" class="sp-item" @onclick="() => ElegirAsync(cand)" disabled="@_busy">
+                        <span class="sp-item-ava">@Iniciales(c.NombreCompleto)</span>
+                        <span class="sp-item-body">
+                            <span class="sp-item-nom">@c.NombreCompleto</span>
+                            <span class="sp-item-meta">
+                                @c.TipoDocumento @c.DocumentoEnmascarado
+                                @if (!c.EnEstaCopropiedad && c.Copropiedades.Count > 0)
+                                {
+                                    <span class="sp-item-otra">&middot; en @string.Join(", ", c.Copropiedades)</span>
+                                }
+                            </span>
+                        </span>
+                        @if (c.EnEstaCopropiedad)
+                        {
+                            <span class="sp-badge sp-badge--aqui">Aqui</span>
+                        }
+                        else
+                        {
+                            <span class="sp-badge sp-badge--traer">Traer</span>
+                        }
+                    </button>
+                }
+
+                @if (!_buscando && _candidatos.Count == 0)
+                {
+                    <div class="sp-vacio">Nadie coincide con "@_q" en tus copropiedades.</div>
+                }
+
+                @* Fase 3: crear sin salir del formulario. *@
+                @if (!_creando)
+                {
+                    <button type="button" class="sp-nueva" @onclick="AbrirCrear">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+                        Crear persona nueva
+                    </button>
+                }
+                else
+                {
+                    <div class="sp-form">
+                        <div class="sp-form-row">
+                            <select class="sp-inp sp-inp-tipo" @bind="_nuevoTipoDoc">
+                                @foreach (var t in Enum.GetValues<TipoDocumento>()) { <option value="@t">@t</option> }
+                            </select>
+                            <input class="sp-inp sp-grow" placeholder="Documento"
+                                   @oninput="@(e => _nuevoDoc = e.Value?.ToString() ?? string.Empty)" />
+                        </div>
+                        <div class="sp-form-row">
+                            <input class="sp-inp sp-grow" placeholder="Nombres"
+                                   @oninput="@(e => _nuevoNombres = e.Value?.ToString() ?? string.Empty)" />
+                            <input class="sp-inp sp-grow" placeholder="Apellidos"
+                                   @oninput="@(e => _nuevoApellidos = e.Value?.ToString() ?? string.Empty)" />
+                        </div>
+                        <div class="sp-form-row">
+                            <input class="sp-inp sp-grow" placeholder="Email (opcional)"
+                                   @oninput="@(e => _nuevoEmail = e.Value?.ToString() ?? string.Empty)" />
+                            <input class="sp-inp sp-grow" placeholder="Telefono (opcional)"
+                                   @oninput="@(e => _nuevoTel = e.Value?.ToString() ?? string.Empty)" />
+                        </div>
+                        <div class="sp-form-foot">
+                            <button type="button" class="sp-cancel" @onclick="() => _creando = false">Cancelar</button>
+                            <button type="button" class="sp-ok" @onclick="CrearAsync" disabled="@(_busy || !CrearValido)">
+                                @(_busy ? "Creando..." : "Crear y asignar")
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    }
+
+    @if (!string.IsNullOrEmpty(_msg)) { <div class="sp-msg">@_msg</div> }
+</div>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+    /// <summary>Persona elegida. Enlazar con @bind-Seleccionada desde el contenedor.</summary>
+    [Parameter] public PersonaCandidatoDto? Seleccionada { get; set; }
+    [Parameter] public EventCallback<PersonaCandidatoDto?> SeleccionadaChanged { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Buscar por nombre o documento...";
+
+    private string _q = "";
+    private List<PersonaCandidatoDto> _candidatos = new();
+    private bool _buscando, _busy, _creando;
+    private string _msg = "";
+
+    private TipoDocumento _nuevoTipoDoc = TipoDocumento.CC;
+    private string _nuevoDoc = "", _nuevoNombres = "", _nuevoApellidos = "", _nuevoEmail = "", _nuevoTel = "";
+
+    private bool CrearValido =>
+        !string.IsNullOrWhiteSpace(_nuevoDoc) &&
+        !string.IsNullOrWhiteSpace(_nuevoNombres) &&
+        !string.IsNullOrWhiteSpace(_nuevoApellidos);
+
+    // Un token por pulsacion: si llega tarde la respuesta de una busqueda vieja se descarta,
+    // si no el listado parpadea con resultados de lo que el usuario ya borro.
+    private int _busquedaToken;
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    private async Task OnBuscarInput(ChangeEventArgs e)
+    {
+        _q = e.Value?.ToString() ?? string.Empty;
+        _msg = "";
+        if (_q.Trim().Length < 3) { _candidatos.Clear(); return; }
+        await BuscarAsync();
+    }
+
+    private async Task OnKeydown(KeyboardEventArgs e)
+    {
+        // Enter con un unico candidato: atajo para no obligar a soltar el teclado.
+        if (e.Key == "Enter" && _candidatos.Count == 1) await ElegirAsync(_candidatos[0]);
+    }
+
+    private async Task BuscarAsync()
+    {
+        var token = ++_busquedaToken;
+        _buscando = true;
+        try
+        {
+            var url = $"/api/directorio/personas/candidatos?q={Uri.EscapeDataString(_q.Trim())}";
+            var res = await Auth().GetFromJsonAsync<List<PersonaCandidatoDto>>(url);
+            if (token != _busquedaToken) return;   // llego tarde: la descartamos
+            _candidatos = res ?? new();
+        }
+        catch (Exception ex) { if (token == _busquedaToken) _msg = ex.Message; }
+        if (token == _busquedaToken) _buscando = false;
+    }
+
+    private async Task ElegirAsync(PersonaCandidatoDto c)
+    {
+        _busy = true; _msg = "";
+        try
+        {
+            // Fase 2: si viene de otra copropiedad, se trae a esta antes de asignarla.
+            if (!c.EnEstaCopropiedad)
+            {
+                var r = await Auth().PostAsync($"/api/directorio/personas/{c.PersonaId}/vincular", null);
+                if (!r.IsSuccessStatusCode)
+                {
+                    _msg = await MensajeDeError(r, "No se pudo vincular a esta copropiedad.");
+                    _busy = false;
+                    return;
+                }
+                c = c with { EnEstaCopropiedad = true };
+            }
+            Seleccionada = c;
+            await SeleccionadaChanged.InvokeAsync(c);
+            _q = ""; _candidatos.Clear(); _creando = false;
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+        _busy = false;
+    }
+
+    private void AbrirCrear()
+    {
+        _creando = true;
+        // Si lo escrito parece un documento se precarga ahi; si no, en nombres.
+        if (_q.All(char.IsDigit)) _nuevoDoc = _q.Trim();
+        else _nuevoNombres = _q.Trim();
+    }
+
+    private async Task CrearAsync()
+    {
+        if (!CrearValido) return;
+        _busy = true; _msg = "";
+        try
+        {
+            var req = new
+            {
+                TipoDocumento = _nuevoTipoDoc,
+                Documento = _nuevoDoc.Trim(),
+                Nombres = _nuevoNombres.Trim(),
+                Apellidos = _nuevoApellidos.Trim(),
+                Email = string.IsNullOrWhiteSpace(_nuevoEmail) ? null : _nuevoEmail.Trim(),
+                Telefono = string.IsNullOrWhiteSpace(_nuevoTel) ? null : _nuevoTel.Trim()
+            };
+            // El alta ya deja el vinculo con la copropiedad activa (DirectorioService).
+            var r = await Auth().PostAsJsonAsync("/api/directorio/personas", req);
+            if (!r.IsSuccessStatusCode)
+            {
+                _msg = await MensajeDeError(r, "No se pudo crear la persona.");
+                _busy = false;
+                return;
+            }
+            var creada = await r.Content.ReadFromJsonAsync<PersonaCreadaApi>();
+            if (creada is not null)
+            {
+                var c = new PersonaCandidatoDto(
+                    creada.Id, $"{creada.Nombres} {creada.Apellidos}".Trim(),
+                    creada.TipoDocumento, Enmascarar(creada.Documento), true, Array.Empty<string>());
+                Seleccionada = c;
+                await SeleccionadaChanged.InvokeAsync(c);
+            }
+            _q = ""; _candidatos.Clear(); _creando = false;
+            LimpiarFormulario();
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+        _busy = false;
+    }
+
+    private async Task Limpiar()
+    {
+        Seleccionada = null;
+        await SeleccionadaChanged.InvokeAsync(null);
+        _q = ""; _candidatos.Clear(); _msg = "";
+    }
+
+    private void LimpiarFormulario()
+    {
+        _nuevoTipoDoc = TipoDocumento.CC;
+        _nuevoDoc = ""; _nuevoNombres = ""; _nuevoApellidos = ""; _nuevoEmail = ""; _nuevoTel = "";
+    }
+
+    private static string Iniciales(string? nombre)
+    {
+        var parts = (nombre ?? "").Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return "?";
+        if (parts.Length == 1) return parts[0][..Math.Min(2, parts[0].Length)].ToUpperInvariant();
+        return ("" + parts[0][0] + parts[1][0]).ToUpperInvariant();
+    }
+
+    private static string Enmascarar(string? doc)
+    {
+        var d = (doc ?? "").Trim();
+        if (d.Length <= 4) return d;
+        return new string('*', Math.Min(4, d.Length - 4)) + d[^4..];
+    }
+
+    private static async Task<string> MensajeDeError(HttpResponseMessage resp, string porDefecto)
+    {
+        try
+        {
+            var err = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+            if (err is not null && err.TryGetValue("error", out var m) && !string.IsNullOrWhiteSpace(m)) return m;
+        }
+        catch { }
+        return porDefecto;
+    }
+
+    /// <summary>Forma minima de lo que devuelve POST /api/directorio/personas.</summary>
+    private sealed record PersonaCreadaApi(Guid Id, string Nombres, string Apellidos, TipoDocumento TipoDocumento, string Documento);
+}
+
+<style>
+    .sp { display: flex; flex-direction: column; gap: 7px; }
+
+    .sp-search { display: flex; align-items: center; gap: 8px; border: 1px solid #E1E8EE; border-radius: 9px; padding: 0 11px; background: #fff; }
+    .sp-search svg { color: #A6B7C8; flex-shrink: 0; }
+    .sp-search:focus-within { border-color: var(--propia-brand, #6D4FE3); }
+    .sp-search-inp { flex: 1; border: 0; outline: none; padding: 9px 0; font-size: 13px; color: #33475B; font-family: inherit; background: transparent; }
+    .sp-spin { width: 13px; height: 13px; border: 2px solid #E1E8EE; border-top-color: var(--propia-brand, #6D4FE3); border-radius: 50%; animation: sp-rot .6s linear infinite; }
+    @@keyframes sp-rot { to { transform: rotate(360deg); } }
+
+    .sp-hint { font-size: 11.5px; color: #A6B7C8; padding-left: 2px; }
+
+    .sp-list { display: flex; flex-direction: column; gap: 3px; border: 1px solid #E1E8EE; border-radius: 10px; padding: 6px; background: #fff; max-height: 290px; overflow-y: auto; }
+    .sp-item { display: flex; align-items: center; gap: 9px; padding: 8px 9px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; text-align: left; font-family: inherit; width: 100%; }
+    .sp-item:hover { background: #F5F1FE; }
+    .sp-item:disabled { opacity: .5; cursor: default; }
+    .sp-item-ava { width: 30px; height: 30px; border-radius: 50%; background: #EEF3F8; color: #516F90; font-size: 10.5px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .sp-item-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .sp-item-nom { font-size: 13px; font-weight: 700; color: #33475B; }
+    .sp-item-meta { font-size: 10.5px; color: #A6B7C8; }
+    .sp-item-otra { color: #9A6A00; }
+    .sp-badge { font-size: 9.5px; font-weight: 800; border-radius: 5px; padding: 3px 7px; letter-spacing: .3px; flex-shrink: 0; }
+    .sp-badge--aqui { color: #15703F; background: #E7F6EE; }
+    .sp-badge--traer { color: #9A6A00; background: #FFF8E6; }
+    .sp-vacio { font-size: 11.5px; color: #A6B7C8; padding: 9px; }
+
+    .sp-nueva { display: flex; align-items: center; gap: 6px; width: 100%; padding: 9px; border: 1px dashed #C3D0DD; border-radius: 8px; background: transparent; color: var(--propia-brand, #6D4FE3); font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; justify-content: center; }
+    .sp-nueva:hover { border-color: var(--propia-brand, #6D4FE3); background: #F8F5FE; }
+
+    .sp-form { display: flex; flex-direction: column; gap: 6px; padding: 9px; border: 1px solid #DCD2F8; border-radius: 9px; background: #FBFAFE; }
+    .sp-form-row { display: flex; gap: 6px; }
+    .sp-inp { border: 1px solid #E1E8EE; border-radius: 7px; padding: 8px 10px; font-size: 12.5px; color: #33475B; outline: none; font-family: inherit; box-sizing: border-box; min-width: 0; }
+    .sp-inp:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .sp-inp-tipo { width: 78px; flex-shrink: 0; }
+    .sp-grow { flex: 1; }
+    .sp-form-foot { display: flex; justify-content: flex-end; gap: 6px; }
+    .sp-cancel { font-size: 12px; font-weight: 600; color: #7C98B6; background: transparent; border: 0; cursor: pointer; padding: 7px 11px; font-family: inherit; }
+    .sp-ok { font-size: 12.5px; font-weight: 700; color: #fff; background: var(--propia-brand, #6D4FE3); border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; font-family: inherit; }
+    .sp-ok:disabled { opacity: .5; cursor: default; }
+
+    .sp-chip { display: flex; align-items: center; gap: 10px; border: 1px solid #DCD2F8; border-radius: 10px; padding: 9px 12px; background: #F8F5FE; }
+    .sp-chip-ava { width: 32px; height: 32px; border-radius: 50%; background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .sp-chip-body { flex: 1; min-width: 0; }
+    .sp-chip-nom { font-size: 13px; font-weight: 700; color: #33475B; }
+    .sp-chip-doc { font-size: 10.5px; color: #A6B7C8; }
+    .sp-chip-x { width: 26px; height: 26px; border-radius: 7px; border: 1px solid #DCD2F8; background: #fff; color: #A6B7C8; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .sp-chip-x:hover { color: #D7263D; border-color: #F0C9C9; }
+
+    .sp-msg { font-size: 11.5px; color: #C0383C; font-weight: 600; }
+</style>

@@ -1,0 +1,511 @@
+@page "/equipos-activos"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.MiCopropiedad
+@using Propia.Domain.Enums
+@using Propia.Web.Components.Shared.Modals
+@using Microsoft.AspNetCore.Components.Web
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+@inject IModalService Modals
+
+<PageTitle>Equipos y activos - PROPIA</PageTitle>
+
+@* Equipos y activos: modulo propio (antes era una seccion del acordeon de Mi copropiedad).
+   Mismo contenido que tenia alli - resumen, tarjetas/lista y alta rapida - sin acordeon y
+   sin numeral. El detalle vive en FichaEquipoModal; el alta masiva en
+   GestionarEquiposActivosModal.
+
+   CSS con prefijo ea-* y propio: las clases mc-* solo existen mientras se renderiza
+   MiCopropiedad, asi que en esta pagina no estarian disponibles. *@
+
+<div class="ea-pagehead">
+    <div>
+        <h1 class="ea-pagetitle">Equipos y activos</h1>
+        <p class="ea-pagesub">Ascensores, bombas, plantas y demas activos fisicos de la copropiedad, con su estado.</p>
+    </div>
+    @if (_authChecked && _jwt is not null)
+    {
+        <button class="propia-btn-brand" @onclick="AbrirGestionarEquiposAsync">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 7h6M9 11h6M10 16h4"/></svg>
+            Gestionar equipos
+        </button>
+    }
+</div>
+
+@if (!_authChecked)
+{
+    <div class="ea-loading"><div class="spinner-border" style="color: var(--propia-brand, #6D4FE3);"></div></div>
+}
+else if (_loadError is not null)
+{
+    <div class="alert alert-danger">@_loadError</div>
+}
+else
+{
+    <div class="ea-bar">
+        @* Cada conteo es una tarjeta con su color de estado: sueltos, los numeros no se
+           leian como indicadores. "Fuera de servicio" se resalta solo si hay alguno. *@
+        <div class="ea-summary">
+            <div class="ea-stat ea-stat--ok">
+                <span class="ea-stat-dot"></span>
+                <div><div class="ea-stat-val">@_equipos.Count(e => e.Estado == EstadoEquipoActivo.Operativo)</div><div class="ea-stat-lbl">Operativos</div></div>
+            </div>
+            <div class="ea-stat ea-stat--mant">
+                <span class="ea-stat-dot"></span>
+                <div><div class="ea-stat-val">@_equipos.Count(e => e.Estado == EstadoEquipoActivo.EnMantenimiento)</div><div class="ea-stat-lbl">En mantenimiento</div></div>
+            </div>
+            <div class="ea-stat @(_equipos.Any(e => e.Estado == EstadoEquipoActivo.FueraDeServicio) ? "ea-stat--fuera" : "")">
+                <span class="ea-stat-dot"></span>
+                <div><div class="ea-stat-val">@_equipos.Count(e => e.Estado == EstadoEquipoActivo.FueraDeServicio)</div><div class="ea-stat-lbl">Fuera de servicio</div></div>
+            </div>
+            <div class="ea-stat">
+                <span class="ea-stat-dot"></span>
+                <div><div class="ea-stat-val">@_equipos.Count</div><div class="ea-stat-lbl">Total</div></div>
+            </div>
+        </div>
+        @* Filtros: sin value= en el buscador (Blazor Server se come pulsaciones al
+           reafirmarlo en cada re-render). *@
+        <div class="ea-filtros">
+            <div class="ea-search">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                <input class="ea-search-inp" placeholder="Buscar equipo o activo..."
+                       @oninput="@(e => _q = e.Value?.ToString() ?? string.Empty)" />
+            </div>
+            <select class="ea-fsel" @bind="_fCategoria">
+                <option value="">Toda categoria</option>
+                @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c">@c</option> }
+            </select>
+            <select class="ea-fsel" @bind="_fEstado">
+                <option value="">Todo estado</option>
+                @foreach (var s in Enum.GetValues<EstadoEquipoActivo>()) { <option value="@s">@EstadoTextoCorto(s)</option> }
+            </select>
+            <select class="ea-fsel" @bind="_fTipo">
+                <option value="">Equipos y activos</option>
+                <option value="@TipoElemento.Equipo">Solo equipos</option>
+                <option value="@TipoElemento.Activo">Solo activos</option>
+            </select>
+            @if (HayFiltros)
+            {
+                <button type="button" class="ea-fclear" @onclick="LimpiarFiltros" title="Limpiar filtros">Limpiar</button>
+            }
+        </div>
+
+        <div class="ea-viewtoggle">
+            <button type="button" class="ea-vt @(_view == "cards" ? "on" : "")" @onclick='() => _view = "cards"' title="Tarjetas">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                Tarjetas
+            </button>
+            <button type="button" class="ea-vt @(_view == "list" ? "on" : "")" @onclick='() => _view = "list"' title="Lista">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                Lista
+            </button>
+        </div>
+    </div>
+
+    @if (_view == "cards")
+    {
+        <div class="ea-grid">
+            @foreach (var e in Filtrados())
+            {
+                var eq = e;
+                <div class="ea-card" @onclick="@(() => AbrirFichaEquipoAsync(eq))">
+                    <div class="ea-card-icon">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 7h6M9 11h6M10 16h4"/></svg>
+                    </div>
+                    <div class="ea-card-body">
+                        <div class="ea-card-name">
+                            @e.Nombre
+                            @if (e.Tipo == TipoElemento.Activo && e.Cantidad > 1) { <span class="ea-qty">x@(e.Cantidad)</span> }
+                        </div>
+                        <div class="ea-card-meta">
+                            @e.Categoria
+                            @if (e.EsReservable) { <span class="ea-flag">reservable</span> }
+                        </div>
+                    </div>
+                    <span class="ea-badge ea-badge--@EstadoBadge(e.Estado)">@EstadoTextoCorto(e.Estado)</span>
+                    <span class="ea-card-del" role="button" @onclick:stopPropagation="true" @onclick="() => EliminarEquipoAsync(eq.Id, eq.Nombre)" title="Eliminar equipo/activo">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+                    </span>
+                </div>
+            }
+
+            @* Compositor progresivo: la tarjeta crece a medida que se agregan datos. *@
+            @if (_composerOpen)
+            {
+                <div class="ea-composer">
+                    @* SIN value=: en Blazor Server se reafirma en cada re-render y se come pulsaciones. *@
+                    <input class="ea-composer-inp" placeholder="Nombre del equipo o activo..." autofocus
+                           @oninput="@(e => { _draft.Nombre = e.Value?.ToString() ?? string.Empty; Reveal(0); })"
+                           @onkeydown="Keydown" />
+                    @if (_reveal >= 1)
+                    {
+                        <select class="ea-composer-sel" @bind="_draft.Categoria" @onfocus="@(() => Reveal(1))">
+                            @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c">@c</option> }
+                        </select>
+                    }
+                    @if (_reveal >= 2)
+                    {
+                        <select class="ea-composer-sel" @bind="_draft.Tipo" @onfocus="@(() => Reveal(2))">
+                            <option value="@TipoElemento.Equipo">Equipo (unitario)</option>
+                            <option value="@TipoElemento.Activo">Activo (agrupado)</option>
+                        </select>
+                    }
+                    @if (_reveal >= 3 && _draft.Tipo == TipoElemento.Activo)
+                    {
+                        <input type="number" min="1" class="ea-composer-sel" placeholder="Cantidad"
+                               @bind="_draft.Cantidad" @onfocus="@(() => Reveal(3))" />
+                    }
+                    @if (_reveal >= 3)
+                    {
+                        <select class="ea-composer-sel" @onfocus="@(() => Reveal(3))"
+                                @onchange="@(e => _draft.EsReservable = e.Value?.ToString() == "true")">
+                            <option value="false" selected="@(!_draft.EsReservable)">No reservable</option>
+                            <option value="true" selected="@_draft.EsReservable">Reservable</option>
+                        </select>
+                    }
+                    <div class="ea-composer-foot">
+                        <button type="button" class="ea-composer-cancel" @onclick="CancelarComposer">Cancelar</button>
+                        <button type="button" class="ea-composer-ok" @onclick="CrearDesdeDraftAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_draft.Nombre))">@(_busy ? "Creando..." : "Crear")</button>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <button type="button" class="ea-add-card" @onclick="AbrirComposer">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                    Agregar equipo o activo
+                </button>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="ea-list">
+            <div class="ea-list-head ea-listgrid">
+                <div>NOMBRE</div><div>CATEGORIA</div><div>TIPO</div><div>CANT</div><div>ESTADO</div><div></div>
+            </div>
+            @foreach (var e in Filtrados())
+            {
+                var eq = e;
+                <div class="ea-list-row ea-listgrid">
+                    <button type="button" class="ea-list-link" @onclick="() => AbrirFichaEquipoAsync(eq)" title="Abrir ficha">@e.Nombre</button>
+                    <div class="ea-list-c">@e.Categoria</div>
+                    <div class="ea-list-c">@e.Tipo</div>
+                    <div class="ea-list-c">@e.Cantidad</div>
+                    <div class="ea-list-c"><span class="ea-badge ea-badge--@EstadoBadge(e.Estado)">@EstadoTextoCorto(e.Estado)</span></div>
+                    <div class="ea-list-act">
+                        <button type="button" class="ea-row-del" @onclick="() => EliminarEquipoAsync(eq.Id, eq.Nombre)" title="Eliminar">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+                        </button>
+                    </div>
+                </div>
+            }
+            @* @@key limpia la fila al crear; @@oninput SIN value= evita perder pulsaciones. *@
+            <div class="ea-list-newrow ea-listgrid" @key="_nonce">
+                <input class="ea-row-inp" @ref="_nombreRef" placeholder="Nuevo equipo o activo..."
+                       @oninput="@(e => _draft.Nombre = e.Value?.ToString() ?? string.Empty)" @onkeydown="Keydown" />
+                <select class="ea-row-inp" @bind="_draft.Categoria">
+                    @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c">@c</option> }
+                </select>
+                <select class="ea-row-inp" @bind="_draft.Tipo">
+                    <option value="@TipoElemento.Equipo">Equipo</option>
+                    <option value="@TipoElemento.Activo">Activo</option>
+                </select>
+                <input type="number" min="1" class="ea-row-inp" @bind="_draft.Cantidad" disabled="@(_draft.Tipo == TipoElemento.Equipo)" />
+                <div class="ea-list-c">Operativo</div>
+                <div class="ea-list-act">
+                    <button type="button" class="ea-row-add" @onclick="CrearDesdeDraftAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_draft.Nombre))">+ Agregar</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (!Filtrados().Any())
+    {
+        <div class="ea-empty">
+            @(HayFiltros ? "Ningun equipo o activo coincide con el filtro." : "Aun no hay equipos ni activos registrados.")
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_msg)) { <div class="ea-msg @(_msgOk ? "ok" : "bad")">@_msg</div> }
+}
+
+@* ModalHost debe declararse en CADA pagina: IModalService es scoped por circuito. *@
+<ModalHost />
+
+@code {
+    private List<EquipoActivoDto> _equipos = new();
+    private string? _jwt;
+    private bool _authChecked;
+    private string? _loadError;
+
+    private string _view = "cards";
+    private bool _composerOpen;
+    private int _reveal;
+    private bool _busy;
+    private readonly EquipoDraft _draft = new();
+    private int _nonce;
+    private bool _focusPending;
+    private ElementReference _nombreRef;
+
+    private string _msg = "";
+    private bool _msgOk = true;
+
+    // Filtros (client-side: el inventario de una copropiedad cabe de sobra en memoria).
+    private string _q = "";
+    private string _fCategoria = "";
+    private string _fEstado = "";
+    private string _fTipo = "";
+
+    private bool HayFiltros =>
+        !string.IsNullOrWhiteSpace(_q) || _fCategoria != "" || _fEstado != "" || _fTipo != "";
+
+    private void LimpiarFiltros() { _q = ""; _fCategoria = ""; _fEstado = ""; _fTipo = ""; }
+
+    private IEnumerable<EquipoActivoDto> Filtrados()
+    {
+        var q = _q.Trim();
+        return _equipos
+            .Where(e => q == "" || e.Nombre.Contains(q, StringComparison.OrdinalIgnoreCase))
+            .Where(e => _fCategoria == "" || e.Categoria.ToString() == _fCategoria)
+            .Where(e => _fEstado == "" || e.Estado.ToString() == _fEstado)
+            .Where(e => _fTipo == "" || e.Tipo.ToString() == _fTipo);
+    }
+
+    private sealed class EquipoDraft
+    {
+        public string Nombre = "";
+        public CategoriaEquipo Categoria = CategoriaEquipo.Otros;
+        public TipoElemento Tipo = TipoElemento.Equipo;
+        public int Cantidad = 1;
+        public bool EsReservable;
+        public void Reset() { Nombre = ""; Categoria = CategoriaEquipo.Otros; Tipo = TipoElemento.Equipo; Cantidad = 1; EsReservable = false; }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(_jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
+        return http;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _jwt is null)
+        {
+            try
+            {
+                var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+                _authChecked = true;
+                if (string.IsNullOrWhiteSpace(stored))
+                {
+                    Nav.NavigateTo("/login?returnUrl=%2Fequipos-activos", true);
+                    return;
+                }
+                _jwt = stored;
+                await CargarAsync();
+                StateHasChanged();
+            }
+            catch { /* prerender */ }
+            return;
+        }
+        if (_focusPending)
+        {
+            _focusPending = false;
+            try { await _nombreRef.FocusAsync(); } catch { }
+        }
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = Auth();
+            var resp = await http.GetAsync("/api/mi-copropiedad/equipos");
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                var nuevoJwt = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+                if (nuevoJwt is null) return;
+                _jwt = nuevoJwt;
+                resp = await Auth().GetAsync("/api/mi-copropiedad/equipos");
+            }
+            resp.EnsureSuccessStatusCode();
+            _equipos = await resp.Content.ReadFromJsonAsync<List<EquipoActivoDto>>() ?? new();
+            _loadError = null;
+        }
+        catch (Exception ex) { _loadError = ex.Message; }
+    }
+
+    private async Task AbrirGestionarEquiposAsync()
+    {
+        var parameters = new ModalParameters().Set("Jwt", _jwt);
+        var options = new ModalOptions { Width = "640px", Height = "540px" };
+        var creado = await Modals.OpenAsync<GestionarEquiposActivosModal, EquipoActivoDto?>(parameters, options);
+        if (creado is not null)
+        {
+            await CargarAsync();
+            // Tras agregar el activo se abre su ficha para completar la configuracion.
+            await AbrirFichaEquipoAsync(creado);
+        }
+    }
+
+    private async Task AbrirFichaEquipoAsync(EquipoActivoDto equipo)
+    {
+        var parameters = new ModalParameters().Set("Jwt", _jwt).Set("Equipo", equipo);
+        var options = new ModalOptions { Width = "1280px", Height = "88vh" };
+        var hubo = await Modals.OpenAsync<FichaEquipoModal, bool>(parameters, options);
+        if (hubo == true) { await CargarAsync(); Msg("Ficha actualizada.", true); }
+    }
+
+    private void AbrirComposer() { _draft.Reset(); _reveal = 0; _composerOpen = true; }
+    private void CancelarComposer() { _composerOpen = false; _draft.Reset(); _reveal = 0; }
+    private void Reveal(int idx) { var t = idx + 1; if (t <= 3 && _reveal < t) _reveal = t; }
+
+    private async Task Keydown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_draft.Nombre)) await CrearDesdeDraftAsync();
+        else if (e.Key == "Escape") CancelarComposer();
+    }
+
+    private async Task CrearDesdeDraftAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_draft.Nombre)) return;
+        _busy = true;
+        try
+        {
+            // Un "Equipo" es unitario (cantidad 1); solo un "Activo" agrupa varias unidades.
+            var cant = _draft.Tipo == TipoElemento.Equipo ? 1 : Math.Max(1, _draft.Cantidad);
+            var req = new CrearEquipoActivoRequest(_draft.Nombre.Trim(), _draft.Categoria, _draft.Tipo, cant, _draft.EsReservable);
+            var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/equipos", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                _draft.Reset(); _reveal = 0; _composerOpen = false; _nonce++; _focusPending = true;
+                await CargarAsync();
+                Msg("Equipo/activo creado. Haz clic en el para completar la ficha.", true);
+            }
+            else Msg(await MensajeDeError(resp, "No se pudo crear el equipo."), false);
+        }
+        catch (Exception ex) { Msg(ex.Message, false); }
+        _busy = false;
+    }
+
+    private async Task EliminarEquipoAsync(Guid id, string nombre)
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", $"Eliminar el equipo/activo \"{nombre}\"?")) return;
+        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/equipos/{id}");
+        if (resp.IsSuccessStatusCode) { await CargarAsync(); Msg("Equipo eliminado.", true); }
+        else Msg(await MensajeDeError(resp, "No se pudo eliminar el equipo."), false);
+    }
+
+    private void Msg(string m, bool ok) { _msg = m; _msgOk = ok; }
+
+    private static string EstadoBadge(EstadoEquipoActivo s) => s switch
+    {
+        EstadoEquipoActivo.Operativo => "ok",
+        EstadoEquipoActivo.EnMantenimiento => "mant",
+        EstadoEquipoActivo.FueraDeServicio => "fuera",
+        _ => "ok"
+    };
+
+    private static string EstadoTextoCorto(EstadoEquipoActivo s) => s switch
+    {
+        EstadoEquipoActivo.Operativo => "Operativo",
+        EstadoEquipoActivo.EnMantenimiento => "Mantenimiento",
+        EstadoEquipoActivo.FueraDeServicio => "Fuera",
+        _ => s.ToString()
+    };
+
+    private static async Task<string> MensajeDeError(HttpResponseMessage resp, string porDefecto)
+    {
+        try
+        {
+            var err = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+            if (err is not null && err.TryGetValue("error", out var m) && !string.IsNullOrWhiteSpace(m)) return m;
+        }
+        catch { }
+        return porDefecto;
+    }
+}
+
+<style>
+    .ea-pagehead { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+    .ea-pagetitle { font-size: 22px; font-weight: 800; letter-spacing: -.4px; color: var(--bs-heading-color, #1B2A3A); margin: 0; }
+    .ea-pagesub { font-size: 13px; color: var(--bs-secondary-color, #7C98B6); margin: 4px 0 0; }
+    .ea-loading { display: flex; justify-content: center; padding: 60px; }
+
+    .ea-bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 14px; flex-wrap: wrap; }
+    .ea-summary { display: flex; gap: 10px; flex-wrap: wrap; }
+    .ea-stat { display: flex; align-items: center; gap: 9px; padding: 9px 14px; border: 1px solid #E1E8EE; border-radius: 10px; background: #fff; }
+    .ea-stat-dot { width: 8px; height: 8px; border-radius: 50%; background: #C3D0DD; flex-shrink: 0; }
+    .ea-stat-val { font-size: 19px; font-weight: 800; color: var(--bs-heading-color, #1B2A3A); line-height: 1.05; }
+    .ea-stat-lbl { font-size: 10.5px; color: #A6B7C8; font-weight: 700; letter-spacing: .2px; white-space: nowrap; }
+    .ea-stat--ok .ea-stat-dot { background: #1A8754; }
+    .ea-stat--mant .ea-stat-dot { background: #E0A106; }
+    /* Solo cuando hay activos caidos el indicador se pone en rojo. */
+    .ea-stat--fuera { border-color: #F0C9C9; background: #FDF6F6; }
+    .ea-stat--fuera .ea-stat-dot { background: #D7263D; }
+    .ea-stat--fuera .ea-stat-val { color: #C0383C; }
+
+    .ea-filtros { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .ea-search { display: flex; align-items: center; gap: 7px; border: 1px solid #E1E8EE; border-radius: 9px; padding: 0 11px; background: #fff; }
+    .ea-search svg { color: #A6B7C8; flex-shrink: 0; }
+    .ea-search:focus-within { border-color: var(--propia-brand, #6D4FE3); }
+    .ea-search-inp { border: 0; outline: none; padding: 8px 0; font-size: 12.5px; color: #33475B; font-family: inherit; width: 170px; background: transparent; }
+    .ea-fsel { border: 1px solid #E1E8EE; border-radius: 9px; padding: 8px 10px; font-size: 12px; color: #516F90; background: #fff; outline: none; font-family: inherit; cursor: pointer; }
+    .ea-fsel:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .ea-fclear { border: 1px solid #DCD2F8; border-radius: 9px; padding: 8px 12px; font-size: 11.5px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: #F1ECFD; cursor: pointer; font-family: inherit; }
+
+    .ea-viewtoggle { display: flex; gap: 0; border: 1px solid #E1E8EE; border-radius: 9px; overflow: hidden; }
+    .ea-vt { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; padding: 7px 12px; border: 0; background: #fff; color: #7C98B6; cursor: pointer; font-family: inherit; }
+    .ea-vt.on { background: var(--propia-brand, #6D4FE3); color: #fff; }
+
+    .ea-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+    .ea-card { display: flex; align-items: center; gap: 11px; padding: 12px 14px; border: 1px solid #E1E8EE; border-radius: 12px; background: #fff; cursor: pointer; }
+    .ea-card:hover { border-color: var(--propia-brand, #6D4FE3); box-shadow: 0 4px 14px rgba(109,79,227,.10); }
+    .ea-card-icon { width: 38px; height: 38px; border-radius: 10px; background: #EEF3F8; color: #516F90; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .ea-card-body { flex: 1; min-width: 0; }
+    .ea-card-name { font-size: 13.5px; font-weight: 700; color: #33475B; }
+    .ea-qty { font-size: 10.5px; font-weight: 700; color: #6D4FE3; background: #F1ECFD; border-radius: 5px; padding: 2px 6px; margin-left: 5px; }
+    .ea-card-meta { font-size: 11px; color: #A6B7C8; }
+    .ea-flag { font-size: 10px; font-weight: 700; color: #1A8754; background: #E7F6EE; border-radius: 5px; padding: 2px 6px; margin-left: 5px; }
+    .ea-badge { font-size: 10px; font-weight: 700; border-radius: 6px; padding: 3px 8px; white-space: nowrap; }
+    .ea-badge--ok { color: #15703F; background: #E7F6EE; }
+    .ea-badge--mant { color: #9A6A00; background: #FFF8E6; }
+    .ea-badge--fuera { color: #C0383C; background: #FDF2F2; }
+    .ea-card-del { color: #C3D0DD; display: flex; align-items: center; }
+    .ea-card-del:hover { color: #D7263D; }
+
+    .ea-add-card { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px; border: 1.5px dashed #C3D0DD; border-radius: 12px; background: transparent; color: var(--propia-brand, #6D4FE3); font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .ea-add-card:hover { border-color: var(--propia-brand, #6D4FE3); background: #F8F5FE; }
+
+    .ea-composer { display: flex; flex-direction: column; gap: 7px; padding: 12px; border: 1.5px solid var(--propia-brand, #6D4FE3); border-radius: 12px; background: #fff; box-shadow: 0 6px 18px rgba(109,79,227,.12); }
+    .ea-composer-inp, .ea-composer-sel { border: 1px solid #E1E8EE; border-radius: 8px; padding: 9px 11px; font-size: 13px; color: #33475B; outline: none; font-family: inherit; width: 100%; box-sizing: border-box; }
+    .ea-composer-inp:focus, .ea-composer-sel:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .ea-composer-foot { display: flex; justify-content: flex-end; gap: 7px; margin-top: 3px; }
+    .ea-composer-cancel { font-size: 12px; font-weight: 600; color: #7C98B6; background: transparent; border: 0; cursor: pointer; padding: 7px 12px; font-family: inherit; }
+    .ea-composer-ok { font-size: 12.5px; font-weight: 700; color: #fff; background: var(--propia-brand, #6D4FE3); border: 0; border-radius: 8px; padding: 8px 16px; cursor: pointer; font-family: inherit; }
+    .ea-composer-ok:disabled { opacity: .5; cursor: default; }
+
+    .ea-list { border: 1px solid #E1E8EE; border-radius: 12px; overflow: hidden; background: #fff; }
+    .ea-listgrid { display: grid; grid-template-columns: 2fr 1.2fr 1fr .6fr 1.1fr 60px; gap: 10px; align-items: center; }
+    .ea-list-head { padding: 10px 14px; background: #F8FAFC; font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: #A6B7C8; border-bottom: 1px solid #EEF3F8; }
+    .ea-list-row { padding: 10px 14px; border-bottom: 1px solid #F3F7FA; }
+    .ea-list-row:hover { background: #FBFCFD; }
+    .ea-list-link { font-size: 13px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: none; border: 0; padding: 0; text-align: left; cursor: pointer; font-family: inherit; }
+    .ea-list-c { font-size: 12.5px; color: #516F90; }
+    .ea-list-act { display: flex; justify-content: flex-end; }
+    .ea-row-del { width: 26px; height: 26px; border-radius: 7px; border: 1px solid #E1E8EE; background: #fff; color: #A6B7C8; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .ea-row-del:hover { color: #D7263D; border-color: #F0C9C9; }
+    .ea-list-newrow { padding: 10px 14px; background: #F8FAFC; }
+    .ea-row-inp { border: 1px solid #E1E8EE; border-radius: 7px; padding: 7px 9px; font-size: 12.5px; color: #33475B; outline: none; font-family: inherit; width: 100%; box-sizing: border-box; }
+    .ea-row-inp:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .ea-row-add { font-size: 11.5px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: #F1ECFD; border: 1px solid #DCD2F8; border-radius: 7px; padding: 6px 10px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+    .ea-row-add:disabled { opacity: .5; cursor: default; }
+
+    .ea-empty { font-size: 12.5px; color: #A6B7C8; padding: 16px; border: 1px dashed #D7E0EA; border-radius: 10px; margin-top: 12px; }
+    .ea-msg { margin-top: 12px; font-size: 12.5px; font-weight: 600; }
+    .ea-msg.ok { color: #15703F; }
+    .ea-msg.bad { color: #C0383C; }
+</style>
