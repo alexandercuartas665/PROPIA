@@ -21,7 +21,7 @@
        arma aqui con periodicidad "Unica". *@
     <button class="pgp-new" type="button" @onclick="NuevaAsync" disabled="@_busy">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 4h18v18H3zM3 10h18M8 2v4M16 2v4"/></svg>
-        @TextoBoton
+        @(_progs.Count == 0 ? TextoBoton : "Agregar otra regla")
     </button>
 
     @if (_cargando)
@@ -38,12 +38,13 @@
         {
             var pp = p;
             <div class="pgp-row @(p.Activa ? "" : "off")">
-                <div class="pgp-row-main">
+                <div class="pgp-row-main" role="button" title="Editar esta regla" @onclick="() => EditarAsync(pp)">
                     <div class="pgp-row-t">@p.Titulo</div>
                     <div class="pgp-row-meta">
                         @ReglaTexto(p)
                         @if (!string.IsNullOrWhiteSpace(p.TableroNombre)) { <span> &middot; @p.TableroNombre</span> }
                         @if (p.NotificarPorCorreo) { <span> &middot; con correo</span> }
+                        @if (p.HorizonteDias > 0) { <span> &middot; adelanta @HorizonteTexto(p.HorizonteDias)</span> }
                     </div>
                     <div class="pgp-row-meta2">
                         Proxima: @ProximaTexto(p) &middot; @p.TareasGeneradas @(p.TareasGeneradas == 1 ? "tarea generada" : "tareas generadas")
@@ -154,6 +155,60 @@
         _busy = false;
     }
 
+    /// <summary>
+    /// Abre la regla existente en el mismo modal y la guarda con PUT. Ojo: al cambiar cuando o
+    /// que genera, el backend borra las tareas FUTURAS que nadie ha tocado y el job las rehace
+    /// con los datos nuevos; lo ya empezado o cerrado se respeta. Por eso se avisa antes.
+    /// </summary>
+    private async Task EditarAsync(ProgramacionTareaDto p)
+    {
+        _busy = true;
+        await CargarOpcionesAsync();
+        _busy = false;
+
+        var pars = new ModalParameters()
+            .Set("Tableros", _tableros)
+            .Set("Personas", _personas)
+            .Set("ModuloOrigenCodigo", ModuloOrigenCodigo)
+            .Set("EntidadOrigenId", (Guid?)EntidadOrigenId)
+            .Set("OrigenReferencia", OrigenReferencia)
+            .Set("Existente", p);
+        var req = await Modals.OpenAsync<ProgramadorTareaModal, CrearProgramacionRequest>(pars, new ModalOptions { Width = "580px" });
+        if (req is null) return;
+
+        if (p.HorizonteDias > 0 || req.HorizonteDias > 0)
+        {
+            var ok = await Js.InvokeAsync<bool>("confirm",
+                "Se van a rehacer las tareas futuras de esta regla que nadie haya empezado. " +
+                "Las que ya tengan avance, comentarios o esten cerradas se conservan. Continuar?");
+            if (!ok) return;
+        }
+
+        var upd = new ActualizarProgramacionRequest(
+            req.Titulo, req.Descripcion, req.Prioridad, req.TableroId, req.Periodicidad,
+            req.FechaProximaEjecucion, req.FechaFin, p.Activa, req.Responsables,
+            req.Tipo, req.CronExpresion, req.ZonaHoraria, req.NotificarPorCorreo, req.HorizonteDias);
+
+        _busy = true;
+        try
+        {
+            var r = await Auth().PutAsJsonAsync($"/api/programaciones/{p.Id}", upd);
+            if (r.IsSuccessStatusCode) { Aviso("Regla actualizada.", false); await CargarAsync(); }
+            else Aviso(await MensajeDeError(r, "No se pudo actualizar la programacion."), true);
+        }
+        catch (Exception ex) { Aviso(ex.Message, true); }
+        _busy = false;
+    }
+
+    private static string HorizonteTexto(int dias) => dias switch
+    {
+        30 => "un mes",
+        90 => "un trimestre",
+        180 => "un semestre",
+        365 => "un anio",
+        _ => $"{dias} dias"
+    };
+
     private async Task ToggleAsync(ProgramacionTareaDto p)
     {
         _busy = true;
@@ -233,7 +288,8 @@
 
     .pgp-row { display: flex; align-items: center; gap: 9px; border: 1px solid #E1E8EE; border-radius: 9px; padding: 9px 12px; background: #fff; }
     .pgp-row.off { background: #FAFBFC; opacity: .7; }
-    .pgp-row-main { flex: 1; min-width: 0; }
+    .pgp-row-main { flex: 1; min-width: 0; cursor: pointer; }
+    .pgp-row-main:hover .pgp-row-t { color: #6D4FE3; }
     .pgp-row-t { font-size: 12.5px; font-weight: 700; color: #33475B; }
     .pgp-row-meta { font-size: 11px; color: #6D4FE3; font-weight: 600; }
     .pgp-row-meta2 { font-size: 10.5px; color: #A6B7C8; margin-top: 1px; }

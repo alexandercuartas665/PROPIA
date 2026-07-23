@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Propia.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using Propia.Infrastructure.Persistence;
 namespace Propia.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(PropiaDbContext))]
-    partial class PropiaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260722193421_ProgramadorHorizonteYTrazabilidad")]
+    partial class ProgramadorHorizonteYTrazabilidad
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -14308,14 +14311,6 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("created_by");
 
-                    b.Property<Guid?>("EmpresaId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("empresa_id");
-
-                    b.Property<int>("EntidadTipo")
-                        .HasColumnType("integer")
-                        .HasColumnName("entidad_tipo");
-
                     b.Property<bool>("Habita")
                         .HasColumnType("boolean")
                         .HasColumnName("habita");
@@ -14324,7 +14319,7 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("parentesco");
 
-                    b.Property<Guid?>("PersonaId")
+                    b.Property<Guid>("PersonaId")
                         .HasColumnType("uuid")
                         .HasColumnName("persona_id");
 
@@ -14354,7 +14349,8 @@ namespace Propia.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("UnidadId");
 
-                    b.HasIndex("TenantId", "UnidadId", "EmpresaId", "Rol");
+                    b.HasIndex("TenantId", "UnidadId", "PersonaId", "Rol")
+                        .IsUnique();
 
                     b.ToTable("unidad_personas");
                 });

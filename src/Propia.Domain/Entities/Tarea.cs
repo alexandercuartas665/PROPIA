@@ -44,6 +44,16 @@ public class Tarea : TenantEntity
     public DateTimeOffset? FechaCompletada { get; set; }
 
     /// <summary>Padre en la jerarquia. NULL = proyecto o tarea simple raiz.</summary>
+    /// <summary>
+    /// Regla del programador que genero esta tarea (null = tarea creada a mano).
+    /// Junto con OcurrenciaUtc identifica la ocurrencia exacta: es lo que evita duplicar
+    /// al generar por adelantado y lo que permite regenerar el futuro al editar la regla.
+    /// </summary>
+    public Guid? ProgramacionTareaId { get; set; }
+
+    /// <summary>Instante programado que materializo esta tarea (UTC).</summary>
+    public DateTimeOffset? OcurrenciaUtc { get; set; }
+
     public Guid? PadreId { get; set; }
     public Tarea? Padre { get; set; }
 

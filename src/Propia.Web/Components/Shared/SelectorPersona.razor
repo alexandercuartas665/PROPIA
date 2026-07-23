@@ -84,31 +84,56 @@
                 {
                     <button type="button" class="sp-nueva" @onclick="AbrirCrear">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-                        Crear persona nueva
+                        Crear @(PermiteEmpresa ? "contacto" : "persona") nuevo
                     </button>
                 }
                 else
                 {
                     <div class="sp-form">
-                        <div class="sp-form-row">
-                            <select class="sp-inp sp-inp-tipo" @bind="_nuevoTipoDoc">
-                                @foreach (var t in Enum.GetValues<TipoDocumento>()) { <option value="@t">@t</option> }
-                            </select>
-                            <input class="sp-inp sp-grow" placeholder="Documento"
-                                   @oninput="@(e => _nuevoDoc = e.Value?.ToString() ?? string.Empty)" />
-                        </div>
-                        <div class="sp-form-row">
-                            <input class="sp-inp sp-grow" placeholder="Nombres"
-                                   @oninput="@(e => _nuevoNombres = e.Value?.ToString() ?? string.Empty)" />
-                            <input class="sp-inp sp-grow" placeholder="Apellidos"
-                                   @oninput="@(e => _nuevoApellidos = e.Value?.ToString() ?? string.Empty)" />
-                        </div>
+                        @* Persona natural o empresa (tercero juridico). El toggle solo aparece donde el
+                           contenedor lo habilita: en un propietario, un residente o un proveedor tiene
+                           sentido una empresa; en otros contextos no. *@
+                        @if (PermiteEmpresa)
+                        {
+                            <div class="sp-tipos">
+                                <button type="button" class="sp-tipo @(_nuevoEsEmpresa ? "" : "on")" @onclick="() => _nuevoEsEmpresa = false">Persona natural</button>
+                                <button type="button" class="sp-tipo @(_nuevoEsEmpresa ? "on" : "")" @onclick="() => _nuevoEsEmpresa = true">Empresa</button>
+                            </div>
+                        }
+
+                        @if (!_nuevoEsEmpresa)
+                        {
+                            <div class="sp-form-row">
+                                <select class="sp-inp sp-inp-tipo" @bind="_nuevoTipoDoc">
+                                    @foreach (var t in Enum.GetValues<TipoDocumento>().Where(t => t != TipoDocumento.NIT)) { <option value="@t">@t</option> }
+                                </select>
+                                <input class="sp-inp sp-grow" placeholder="Documento"
+                                       @oninput="@(e => _nuevoDoc = e.Value?.ToString() ?? string.Empty)" />
+                            </div>
+                            <div class="sp-form-row">
+                                <input class="sp-inp sp-grow" placeholder="Nombres"
+                                       @oninput="@(e => _nuevoNombres = e.Value?.ToString() ?? string.Empty)" />
+                                <input class="sp-inp sp-grow" placeholder="Apellidos"
+                                       @oninput="@(e => _nuevoApellidos = e.Value?.ToString() ?? string.Empty)" />
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="sp-form-row">
+                                <input class="sp-inp sp-inp-tipo" placeholder="NIT" style="width:120px;"
+                                       @oninput="@(e => _nuevoDoc = e.Value?.ToString() ?? string.Empty)" />
+                                <input class="sp-inp sp-grow" placeholder="Razon social"
+                                       @oninput="@(e => _nuevoNombres = e.Value?.ToString() ?? string.Empty)" />
+                            </div>
+                        }
+
                         <div class="sp-form-row">
                             <input class="sp-inp sp-grow" placeholder="Email (opcional)"
                                    @oninput="@(e => _nuevoEmail = e.Value?.ToString() ?? string.Empty)" />
                             <input class="sp-inp sp-grow" placeholder="Telefono (opcional)"
                                    @oninput="@(e => _nuevoTel = e.Value?.ToString() ?? string.Empty)" />
                         </div>
+                        <div class="sp-hint">Los demas correos, telefonos y direcciones se completan en la ficha.</div>
                         <div class="sp-form-foot">
                             <button type="button" class="sp-cancel" @onclick="() => _creando = false">Cancelar</button>
                             <button type="button" class="sp-ok" @onclick="CrearAsync" disabled="@(_busy || !CrearValido)">
@@ -126,10 +151,14 @@
 
 @code {
     [Parameter] public string? Jwt { get; set; }
-    /// <summary>Persona elegida. Enlazar con @bind-Seleccionada desde el contenedor.</summary>
+    /// <summary>Persona/empresa elegida. Enlazar con @bind-Seleccionada desde el contenedor.</summary>
     [Parameter] public PersonaCandidatoDto? Seleccionada { get; set; }
     [Parameter] public EventCallback<PersonaCandidatoDto?> SeleccionadaChanged { get; set; }
     [Parameter] public string Placeholder { get; set; } = "Buscar por nombre o documento...";
+
+    /// <summary>Habilita el toggle Persona/Empresa al crear. Se activa donde un tercero juridico
+    /// tiene sentido (propietario, residente, proveedor). Por defecto false = solo personas.</summary>
+    [Parameter] public bool PermiteEmpresa { get; set; }
 
     private string _q = "";
     private List<PersonaCandidatoDto> _candidatos = new();
@@ -137,12 +166,16 @@
     private string _msg = "";
 
     private TipoDocumento _nuevoTipoDoc = TipoDocumento.CC;
+    private bool _nuevoEsEmpresa;
     private string _nuevoDoc = "", _nuevoNombres = "", _nuevoApellidos = "", _nuevoEmail = "", _nuevoTel = "";
 
-    private bool CrearValido =>
-        !string.IsNullOrWhiteSpace(_nuevoDoc) &&
-        !string.IsNullOrWhiteSpace(_nuevoNombres) &&
-        !string.IsNullOrWhiteSpace(_nuevoApellidos);
+    private bool CrearValido => _nuevoEsEmpresa
+        // Empresa: NIT + razon social.
+        ? !string.IsNullOrWhiteSpace(_nuevoDoc) && !string.IsNullOrWhiteSpace(_nuevoNombres)
+        // Persona: documento + nombres + apellidos.
+        : !string.IsNullOrWhiteSpace(_nuevoDoc) &&
+          !string.IsNullOrWhiteSpace(_nuevoNombres) &&
+          !string.IsNullOrWhiteSpace(_nuevoApellidos);
 
     // Un token por pulsacion: si llega tarde la respuesta de una busqueda vieja se descarta,
     // si no el listado parpadea con resultados de lo que el usuario ya borro.
@@ -190,10 +223,14 @@
         _busy = true; _msg = "";
         try
         {
-            // Fase 2: si viene de otra copropiedad, se trae a esta antes de asignarla.
+            // Fase 2: si viene de otra copropiedad, se trae a esta antes de asignarla. El endpoint
+            // depende de si es persona o empresa.
             if (!c.EnEstaCopropiedad)
             {
-                var r = await Auth().PostAsync($"/api/directorio/personas/{c.PersonaId}/vincular", null);
+                var url = c.EntidadTipo == EntidadDirectorio.Empresa
+                    ? $"/api/directorio/empresas/{c.PersonaId}/vincular"
+                    : $"/api/directorio/personas/{c.PersonaId}/vincular";
+                var r = await Auth().PostAsync(url, null);
                 if (!r.IsSuccessStatusCode)
                 {
                     _msg = await MensajeDeError(r, "No se pudo vincular a esta copropiedad.");
@@ -202,6 +239,8 @@
                 }
                 c = c with { EnEstaCopropiedad = true };
             }
+            // Trae los contactos globales del elegido para que el formulario los precargue.
+            c = c with { Contactos = await CargarContactosAsync(c.EntidadTipo, c.PersonaId) };
             Seleccionada = c;
             await SeleccionadaChanged.InvokeAsync(c);
             _q = ""; _candidatos.Clear(); _creando = false;
@@ -210,10 +249,20 @@
         _busy = false;
     }
 
+    private async Task<IReadOnlyList<ContactoRapidoDto>?> CargarContactosAsync(EntidadDirectorio tipo, Guid id)
+    {
+        try
+        {
+            var url = $"/api/directorio/contactos-rapidos?tipo={(int)tipo}&id={id}";
+            return await Auth().GetFromJsonAsync<List<ContactoRapidoDto>>(url);
+        }
+        catch { return null; }   // best-effort: sin contactos el formulario simplemente queda vacio
+    }
+
     private void AbrirCrear()
     {
         _creando = true;
-        // Si lo escrito parece un documento se precarga ahi; si no, en nombres.
+        // Si lo escrito parece un documento se precarga ahi; si no, en nombres/razon social.
         if (_q.All(char.IsDigit)) _nuevoDoc = _q.Trim();
         else _nuevoNombres = _q.Trim();
     }
@@ -224,29 +273,57 @@
         _busy = true; _msg = "";
         try
         {
-            var req = new
+            // El email/telefono capturados aqui se guardan como contactos globales (principal),
+            // de modo que despues se recargan en la ficha. El resto se completa en el formulario.
+            var contactos = new List<object>();
+            if (!string.IsNullOrWhiteSpace(_nuevoEmail))
+                contactos.Add(new { Tipo = TipoContacto.Email, Valor = _nuevoEmail.Trim(), Principal = true });
+            if (!string.IsNullOrWhiteSpace(_nuevoTel))
+                contactos.Add(new { Tipo = TipoContacto.Telefono, Valor = _nuevoTel.Trim(), Principal = true });
+
+            PersonaCandidatoDto? c;
+            if (_nuevoEsEmpresa)
             {
-                TipoDocumento = _nuevoTipoDoc,
-                Documento = _nuevoDoc.Trim(),
-                Nombres = _nuevoNombres.Trim(),
-                Apellidos = _nuevoApellidos.Trim(),
-                Email = string.IsNullOrWhiteSpace(_nuevoEmail) ? null : _nuevoEmail.Trim(),
-                Telefono = string.IsNullOrWhiteSpace(_nuevoTel) ? null : _nuevoTel.Trim()
-            };
-            // El alta ya deja el vinculo con la copropiedad activa (DirectorioService).
-            var r = await Auth().PostAsJsonAsync("/api/directorio/personas", req);
-            if (!r.IsSuccessStatusCode)
-            {
-                _msg = await MensajeDeError(r, "No se pudo crear la persona.");
-                _busy = false;
-                return;
+                var req = new
+                {
+                    Nit = _nuevoDoc.Trim(),
+                    RazonSocial = _nuevoNombres.Trim(),
+                    Email = string.IsNullOrWhiteSpace(_nuevoEmail) ? null : _nuevoEmail.Trim(),
+                    Telefono = string.IsNullOrWhiteSpace(_nuevoTel) ? null : _nuevoTel.Trim(),
+                    Contactos = contactos
+                };
+                var r = await Auth().PostAsJsonAsync("/api/directorio/empresas", req);
+                if (!r.IsSuccessStatusCode) { _msg = await MensajeDeError(r, "No se pudo crear la empresa."); _busy = false; return; }
+                var creada = await r.Content.ReadFromJsonAsync<EmpresaCreadaApi>();
+                c = creada is null ? null : new PersonaCandidatoDto(
+                    creada.Id, creada.RazonSocial, TipoDocumento.NIT, Enmascarar(creada.Nit),
+                    true, Array.Empty<string>(), EntidadDirectorio.Empresa,
+                    await CargarContactosAsync(EntidadDirectorio.Empresa, creada.Id));
             }
-            var creada = await r.Content.ReadFromJsonAsync<PersonaCreadaApi>();
-            if (creada is not null)
+            else
             {
-                var c = new PersonaCandidatoDto(
+                var req = new
+                {
+                    TipoDocumento = _nuevoTipoDoc,
+                    Documento = _nuevoDoc.Trim(),
+                    Nombres = _nuevoNombres.Trim(),
+                    Apellidos = _nuevoApellidos.Trim(),
+                    Email = string.IsNullOrWhiteSpace(_nuevoEmail) ? null : _nuevoEmail.Trim(),
+                    Telefono = string.IsNullOrWhiteSpace(_nuevoTel) ? null : _nuevoTel.Trim(),
+                    Contactos = contactos
+                };
+                // El alta ya deja el vinculo con la copropiedad activa (DirectorioService).
+                var r = await Auth().PostAsJsonAsync("/api/directorio/personas", req);
+                if (!r.IsSuccessStatusCode) { _msg = await MensajeDeError(r, "No se pudo crear la persona."); _busy = false; return; }
+                var creada = await r.Content.ReadFromJsonAsync<PersonaCreadaApi>();
+                c = creada is null ? null : new PersonaCandidatoDto(
                     creada.Id, $"{creada.Nombres} {creada.Apellidos}".Trim(),
-                    creada.TipoDocumento, Enmascarar(creada.Documento), true, Array.Empty<string>());
+                    creada.TipoDocumento, Enmascarar(creada.Documento), true, Array.Empty<string>(),
+                    EntidadDirectorio.Persona, await CargarContactosAsync(EntidadDirectorio.Persona, creada.Id));
+            }
+
+            if (c is not null)
+            {
                 Seleccionada = c;
                 await SeleccionadaChanged.InvokeAsync(c);
             }
@@ -267,6 +344,7 @@
     private void LimpiarFormulario()
     {
         _nuevoTipoDoc = TipoDocumento.CC;
+        _nuevoEsEmpresa = false;
         _nuevoDoc = ""; _nuevoNombres = ""; _nuevoApellidos = ""; _nuevoEmail = ""; _nuevoTel = "";
     }
 
@@ -298,6 +376,9 @@
 
     /// <summary>Forma minima de lo que devuelve POST /api/directorio/personas.</summary>
     private sealed record PersonaCreadaApi(Guid Id, string Nombres, string Apellidos, TipoDocumento TipoDocumento, string Documento);
+
+    /// <summary>Forma minima de lo que devuelve POST /api/directorio/empresas.</summary>
+    private sealed record EmpresaCreadaApi(Guid Id, string RazonSocial, string Nit);
 }
 
 <style>
@@ -330,6 +411,9 @@
     .sp-nueva:hover { border-color: var(--propia-brand, #6D4FE3); background: #F8F5FE; }
 
     .sp-form { display: flex; flex-direction: column; gap: 6px; padding: 9px; border: 1px solid #DCD2F8; border-radius: 9px; background: #FBFAFE; }
+    .sp-tipos { display: flex; gap: 6px; margin-bottom: 2px; }
+    .sp-tipo { flex: 1; padding: 7px 8px; border: 1px solid #DCD2F8; border-radius: 7px; background: #fff; color: #7C98B6; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .sp-tipo.on { border-color: var(--propia-brand, #6D4FE3); background: #F1ECFD; color: var(--propia-brand, #6D4FE3); }
     .sp-form-row { display: flex; gap: 6px; }
     .sp-inp { border: 1px solid #E1E8EE; border-radius: 7px; padding: 8px 10px; font-size: 12.5px; color: #33475B; outline: none; font-family: inherit; box-sizing: border-box; min-width: 0; }
     .sp-inp:focus { border-color: var(--propia-brand, #6D4FE3); }

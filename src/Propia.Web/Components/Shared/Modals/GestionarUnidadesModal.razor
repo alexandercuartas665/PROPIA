@@ -6,6 +6,7 @@
 @inherits ModalBase<bool>
 @using Propia.Web.Components.Shared.Modals
 @using Propia.Application.MiCopropiedad
+@using Propia.Application.Directorio
 @using Propia.Domain.Enums
 
 @inject IHttpClientFactory HttpFactory
@@ -441,8 +442,11 @@
                                    se estan corrigiendo los datos de la persona ya vinculada. *@
                                 @if (_editPersonaId is null)
                                 {
-                                    <SelectorPersona Jwt="@Jwt" @bind-Seleccionada="_personaSel"
-                                                     Placeholder="Buscar persona por nombre o documento..." />
+                                    @* PermiteEmpresa: un propietario/residente puede ser una empresa (dueno juridico).
+                                       Al elegir, OnPersonaSel precarga los correos/telefonos/direcciones globales. *@
+                                    <SelectorPersona Jwt="@Jwt" Seleccionada="_personaSel" SeleccionadaChanged="OnPersonaSel"
+                                                     PermiteEmpresa="true"
+                                                     Placeholder="Buscar persona o empresa por nombre/documento..." />
                                     @if (grupo.Rol == RolUnidadPersona.Familiar)
                                     {
                                         <input class="gum-pf-input" @bind="_personaForm.Parentesco" @bind:event="oninput" placeholder="Parentesco" />
@@ -497,6 +501,23 @@
                                     </div>
                                 }
                                 <button class="gum-pf-add" type="button" @onclick="AddTel">+ Anadir telefono</button>
+
+                                @* === DIRECCIONES === *@
+                                <div class="gum-pf-eyebrow">DIRECCIONES</div>
+                                @for (int i = 0; i < _personaForm.Direcciones.Count; i++)
+                                {
+                                    var idx = i;
+                                    <div class="gum-pf-item">
+                                        <input class="gum-pf-input" @bind="_personaForm.Direcciones[idx]" @bind:event="oninput" placeholder="Calle 00 # 00-00, ciudad" />
+                                        @if (_personaForm.Direcciones.Count > 1)
+                                        {
+                                            <button class="gum-pf-x" type="button" @onclick="() => _personaForm.Direcciones.RemoveAt(idx)" title="Quitar">
+                                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                                <button class="gum-pf-add" type="button" @onclick="() => _personaForm.Direcciones.Add(string.Empty)">+ Anadir direccion</button>
 
                                 <div class="gum-pf-footer">
                                     <button class="gum-btn-ghost" type="button" @onclick="CancelarFormPersona">Cancelar</button>
@@ -1649,6 +1670,7 @@
         public List<string> Emails { get; set; } = new() { "" };
         public List<string> Telefonos { get; set; } = new() { "" };
         public List<string> Codigos { get; set; } = new() { "+57" };
+        public List<string> Direcciones { get; set; } = new() { "" };
         public string Parentesco { get; set; } = "";
 
         public string? PrimerEmail => Emails.FirstOrDefault(e => !string.IsNullOrWhiteSpace(e))?.Trim();
@@ -1893,30 +1915,128 @@
         _personaForm = new PersonaForm();
     }
 
-    private void EditarPersona(UnidadPersonaDto p)
+    // Entidad (persona o empresa) cuyos contactos edita el formulario, para poder recargarlos y
+    // guardarlos globales. En alta sale del selector; en edicion, de la fila que se abre.
+    private EntidadDirectorio _formEntidadTipo = EntidadDirectorio.Persona;
+    private Guid _formEntidadId;
+
+    /// <summary>El selector eligio persona/empresa: se guarda y se precargan sus contactos globales.</summary>
+    private void OnPersonaSel(PersonaCandidatoDto? c)
+    {
+        _personaSel = c;
+        _formEntidadTipo = c?.EntidadTipo ?? EntidadDirectorio.Persona;
+        _formEntidadId = c?.PersonaId ?? Guid.Empty;
+        if (c?.Contactos is { Count: > 0 })
+            AplicarContactosAlForm(c.Contactos);
+    }
+
+    /// <summary>Vuelca los correos/telefonos/direcciones del contacto en las listas del formulario.</summary>
+    private void AplicarContactosAlForm(IReadOnlyList<ContactoRapidoDto> contactos)
+    {
+        var correos = contactos.Where(x => x.Tipo == TipoContacto.Email && !string.IsNullOrWhiteSpace(x.Valor))
+            .Select(x => x.Valor.Trim()).ToList();
+        var tels = contactos.Where(x => x.Tipo == TipoContacto.Telefono && !string.IsNullOrWhiteSpace(x.Valor)).ToList();
+        var dirs = contactos.Where(x => x.Tipo == TipoContacto.Direccion && !string.IsNullOrWhiteSpace(x.Valor))
+            .Select(x => x.Valor.Trim()).ToList();
+
+        _personaForm.Emails = correos.Count > 0 ? correos : new List<string> { "" };
+
+        var numeros = new List<string>();
+        var codigos = new List<string>();
+        foreach (var t in tels)
+        {
+            var (cod, num) = PartirTelefono(t.Valor);
+            codigos.Add(cod); numeros.Add(num);
+        }
+        _personaForm.Telefonos = numeros.Count > 0 ? numeros : new List<string> { "" };
+        _personaForm.Codigos = codigos.Count > 0 ? codigos : new List<string> { "+57" };
+
+        _personaForm.Direcciones = dirs.Count > 0 ? dirs : new List<string> { "" };
+    }
+
+    private static (string Codigo, string Numero) PartirTelefono(string valor)
+    {
+        var t = (valor ?? "").Trim();
+        if (t.StartsWith("+") && t.Contains(' ')) { var sp = t.Split(' ', 2); return (sp[0], sp[1]); }
+        return ("+57", t);
+    }
+
+    private async Task EditarPersona(UnidadPersonaDto p)
     {
         _formRol = p.Rol;
         _editPersonaId = p.Id;
-        string codigo = "+57", numero = "";
-        if (!string.IsNullOrWhiteSpace(p.PersonaTelefono))
-        {
-            var t = p.PersonaTelefono.Trim();
-            if (t.StartsWith("+") && t.Contains(' ')) { var sp = t.Split(' ', 2); codigo = sp[0]; numero = sp[1]; }
-            else numero = t;
-        }
+        _formEntidadTipo = p.EntidadTipo;
+        _formEntidadId = p.EntidadTipo == EntidadDirectorio.Empresa ? (p.EmpresaId ?? Guid.Empty) : p.PersonaId;
+
         _personaForm = new PersonaForm
         {
             Documento = p.PersonaDocumento,
             Nombres = p.PersonaNombres,
             Apellidos = p.PersonaApellidos,
             Parentesco = p.Parentesco ?? "",
-            Emails = new List<string> { string.IsNullOrWhiteSpace(p.PersonaEmail) ? "" : p.PersonaEmail! },
-            Telefonos = new List<string> { numero },
-            Codigos = new List<string> { codigo }
         };
+
+        // Carga la lista COMPLETA de contactos globales (no solo el principal denormalizado).
+        try
+        {
+            var url = $"/api/directorio/contactos-rapidos?tipo={(int)_formEntidadTipo}&id={_formEntidadId}";
+            var contactos = await Auth().GetFromJsonAsync<List<ContactoRapidoDto>>(url);
+            if (contactos is { Count: > 0 }) AplicarContactosAlForm(contactos);
+            else PrecargarContactoUnico(p);
+        }
+        catch { PrecargarContactoUnico(p); }
+    }
+
+    // Respaldo si no se pudieron traer los contactos globales: usa el principal del propio DTO.
+    private void PrecargarContactoUnico(UnidadPersonaDto p)
+    {
+        var (cod, num) = PartirTelefono(p.PersonaTelefono ?? "");
+        _personaForm.Emails = new List<string> { string.IsNullOrWhiteSpace(p.PersonaEmail) ? "" : p.PersonaEmail! };
+        _personaForm.Telefonos = new List<string> { num };
+        _personaForm.Codigos = new List<string> { cod };
+        _personaForm.Direcciones = new List<string> { "" };
     }
 
     private void CancelarFormPersona() { _formRol = null; _editPersonaId = null; _personaSel = null; }
+
+    /// <summary>
+    /// Guarda las listas de correos/telefonos/direcciones del formulario como contactos globales
+    /// del contacto (persona o empresa), reemplazando los previos. Es lo que hace que al volver a
+    /// abrir la ficha -aqui o en otra copropiedad- los datos vuelvan a aparecer. Best-effort: un
+    /// fallo aqui no revierte el vinculo ya creado.
+    /// </summary>
+    private async Task GuardarContactosGlobalesAsync(UnidadPersonaDto dto)
+    {
+        var tipo = dto.EntidadTipo;
+        var entId = tipo == EntidadDirectorio.Empresa ? (dto.EmpresaId ?? Guid.Empty) : dto.PersonaId;
+        if (entId == Guid.Empty) return;
+
+        var contactos = new List<ContactoRapidoDto>();
+        var correos = _personaForm.Emails.Select(e => e?.Trim()).Where(e => !string.IsNullOrWhiteSpace(e)).ToList();
+        for (int i = 0; i < correos.Count; i++)
+            contactos.Add(new ContactoRapidoDto(TipoContacto.Email, correos[i]!, Principal: i == 0));
+
+        var telIdx = 0;
+        for (int i = 0; i < _personaForm.Telefonos.Count; i++)
+        {
+            var num = _personaForm.Telefonos[i]?.Trim();
+            if (string.IsNullOrWhiteSpace(num)) continue;
+            var cod = i < _personaForm.Codigos.Count ? _personaForm.Codigos[i] : "+57";
+            contactos.Add(new ContactoRapidoDto(TipoContacto.Telefono, $"{cod} {num}".Trim(), Principal: telIdx == 0));
+            telIdx++;
+        }
+
+        var dirs = _personaForm.Direcciones.Select(d => d?.Trim()).Where(d => !string.IsNullOrWhiteSpace(d)).ToList();
+        for (int i = 0; i < dirs.Count; i++)
+            contactos.Add(new ContactoRapidoDto(TipoContacto.Direccion, dirs[i]!, Principal: i == 0));
+
+        try
+        {
+            var req = new ReemplazarContactosRequest(tipo, entId, contactos);
+            await Auth().PutAsJsonAsync("/api/directorio/contactos-rapidos", req);
+        }
+        catch { /* best-effort */ }
+    }
 
     private async Task GuardarPersona()
     {
@@ -1925,6 +2045,9 @@
         // Al agregar, la identidad viaja como PersonaId (el selector ya la resolvio y vinculo);
         // los campos de texto van vacios porque el selector solo expone el documento
         // enmascarado. Al editar se manda todo como siempre.
+        // En alta, la empresa (si aplica) viaja por EntidadTipo/EmpresaId; el resto de identidad
+        // la resuelve el selector. En edicion el backend usa la entidad ya guardada.
+        var esEmpresaAlta = _editPersonaId is null && _personaSel?.EntidadTipo == EntidadDirectorio.Empresa;
         var req = new AgregarPersonaUnidadRequest(
             _editPersonaId is null ? "" : _personaForm.Documento.Trim(),
             _editPersonaId is null ? "" : _personaForm.Nombres.Trim(),
@@ -1934,7 +2057,9 @@
             _formRol.Value,
             true,
             string.IsNullOrWhiteSpace(_personaForm.Parentesco) ? null : _personaForm.Parentesco.Trim(),
-            _editPersonaId is null ? _personaSel?.PersonaId : null);
+            _editPersonaId is null && !esEmpresaAlta ? _personaSel?.PersonaId : null,
+            esEmpresaAlta ? EntidadDirectorio.Empresa : EntidadDirectorio.Persona,
+            esEmpresaAlta ? _personaSel?.PersonaId : null);
         HttpResponseMessage resp;
         if (_editPersonaId is not null)
             resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades-personas/{_editPersonaId}", req);
@@ -1948,6 +2073,8 @@
             {
                 var idx = _personas.FindIndex(x => x.Id == dto.Id);
                 if (idx >= 0) _personas[idx] = dto; else _personas.Add(dto);
+                // Persiste correos/telefonos/direcciones como contactos GLOBALES del contacto.
+                await GuardarContactosGlobalesAsync(dto);
             }
             ShowMsg(_editPersonaId is not null ? "Persona actualizada." : "Persona vinculada.", false);
             _formRol = null;

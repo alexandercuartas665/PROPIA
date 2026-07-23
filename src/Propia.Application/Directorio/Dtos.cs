@@ -21,7 +21,10 @@ public record CrearPersonaRequest(
     TipoDocumento TipoDocumento, string Documento,
     string Nombres, string Apellidos,
     string? Email, string? Telefono,
-    DateOnly? FechaNacimiento, GeneroPersona? Genero);
+    DateOnly? FechaNacimiento, GeneroPersona? Genero,
+    // Contactos ricos (correos/telefonos/direcciones) capturados en el alta. Opcional: si viene,
+    // se persisten a directorio_contactos y el principal sincroniza Email/Telefono de la persona.
+    IReadOnlyList<ContactoRapidoDto>? Contactos = null);
 
 public record ActualizarPersonaRequest(
     string Nombres, string Apellidos,
@@ -49,7 +52,9 @@ public record CrearEmpresaRequest(
     string RazonSocial, string? NombreComercial,
     string? Email, string? Telefono, string? Direccion,
     string? TipoEmpresa, string? SectorEconomico, string? RegimenTributario,
-    string? SitioWeb);
+    string? SitioWeb,
+    // Contactos ricos capturados en el alta (mismo trato que en persona).
+    IReadOnlyList<ContactoRapidoDto>? Contactos = null);
 
 public record ActualizarEmpresaRequest(
     string RazonSocial, string? NombreComercial,

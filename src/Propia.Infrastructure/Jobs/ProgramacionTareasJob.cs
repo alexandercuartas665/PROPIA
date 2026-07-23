@@ -60,71 +60,102 @@ public class ProgramacionTareasJob : IBackgroundJob
             _tenant.SetTenant(tid);
             await _db.Database.CloseConnectionAsync(); // el interceptor aplica app.tenant_id al reabrir
 
-            var due = await _db.ProgramacionTareas
+            // Candidatas: las vencidas (modo clasico) mas TODAS las que generan por adelantado.
+            // A estas ultimas hay que revisarlas aunque su proxima ocurrencia sea lejana: lo que
+            // las hace trabajar no es vencer, es tener huecos sin materializar dentro del horizonte.
+            var candidatas = await _db.ProgramacionTareas
                 .Include(p => p.Responsables)
                 .Where(p => p.Activa && (
+                    p.HorizonteDias > 0 ||
                     (p.Tipo == TipoProgramacion.Periodicidad && p.FechaProximaEjecucion <= hoy) ||
                     (p.Tipo == TipoProgramacion.Cron && p.ProximaEjecucionUtc != null && p.ProximaEjecucionUtc <= ahora)))
                 .OrderBy(p => p.FechaProximaEjecucion)
                 .Take(500)
                 .ToListAsync(ct);
-            if (due.Count == 0) continue;
+            if (candidatas.Count == 0) continue;
             tenantsConTrabajo++;
 
-            foreach (var prog in due)
+            foreach (var prog in candidatas)
             {
-                // Fecha que se le pone de vencimiento a la tarea. En cron es el dia local de
-                // la ocurrencia; en periodicidad es la fecha programada tal cual.
-                var fechaEjecucion = prog.Tipo == TipoProgramacion.Cron && prog.ProximaEjecucionUtc.HasValue
-                    ? DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(prog.ProximaEjecucionUtc.Value, CronHelper.Zona(prog.ZonaHoraria)).DateTime)
-                    : prog.FechaProximaEjecucion;
+                var ocurrencias = PlanificadorOcurrencias.Calcular(prog, ahora, hoy);
 
-                // Vencio la ventana de vigencia: desactivar sin crear.
-                if (prog.FechaFin.HasValue && fechaEjecucion > prog.FechaFin.Value)
+                // Sin ocurrencias y ademas vencida: la corto FechaFin. Se desactiva sin crear.
+                if (ocurrencias.Count == 0)
                 {
-                    prog.Activa = false;
-                    desactivadas++;
+                    if (PlanificadorOcurrencias.Vencida(prog, ahora, hoy)) { prog.Activa = false; desactivadas++; }
                     continue;
                 }
+
+                // Ocurrencias ya materializadas. Sin este dedupe, cada corrida del job volveria
+                // a crear las mismas tareas del horizonte cada 15 minutos.
+                // Se excluyen las Eliminada a proposito: son las que retiro la edicion de la regla
+                // justamente para que se rehagan con los datos nuevos.
+                var vistas = (await _db.Tareas.AsNoTracking()
+                        .Where(t => t.ProgramacionTareaId == prog.Id && !t.Eliminada && t.OcurrenciaUtc != null)
+                        .Select(t => t.OcurrenciaUtc!.Value)
+                        .ToListAsync(ct))
+                    .ToHashSet();
 
                 var responsables = prog.Responsables.Select(r => r.PersonaId).Distinct().ToList();
                 Guid? asignado = responsables.Count > 0 ? responsables[0] : null;
                 var colaboradores = responsables.Skip(1).ToList();
 
-                var req = new CrearTareaRequest(
-                    prog.Titulo,
-                    prog.Descripcion,
-                    prog.Prioridad,
-                    null,                       // EstadoId -> primer estado por defecto
-                    asignado,
-                    null,                       // FechaInicio
-                    fechaEjecucion,             // FechaVencimiento = fecha de ejecucion programada
-                    null,                       // PadreId
-                    null,                       // EtiquetaIds
-                    TableroId: prog.TableroId,
-                    OrigenTipo: prog.ModuloOrigenCodigo,
-                    OrigenReferencia: prog.OrigenReferencia,
-                    ResponsablePersonaIds: colaboradores.Count > 0 ? colaboradores : null);
+                int generadasAqui = 0;
 
-                var tarea = await _tareas.CrearTareaAsync(req, ct);
-                tareasCreadas++;
-                programacionesProcesadas++;
-
-                if (prog.NotificarPorCorreo && responsables.Count > 0)
+                foreach (var oc in ocurrencias)
                 {
-                    var (ok, fallo) = await NotificarAsync(prog, tarea.NumeroTarea, fechaEjecucion, responsables, ct);
-                    correosEnviados += ok;
-                    correosFallidos += fallo;
+                    if (!vistas.Add(oc.Instante)) continue;   // esa ocurrencia ya existe
+
+                    var req = new CrearTareaRequest(
+                        prog.Titulo,
+                        prog.Descripcion,
+                        prog.Prioridad,
+                        null,                       // EstadoId -> primer estado por defecto
+                        asignado,
+                        null,                       // FechaInicio
+                        oc.Fecha,                   // FechaVencimiento = fecha de la ocurrencia
+                        null,                       // PadreId
+                        null,                       // EtiquetaIds
+                        TableroId: prog.TableroId,
+                        OrigenTipo: prog.ModuloOrigenCodigo,
+                        OrigenReferencia: prog.OrigenReferencia,
+                        ResponsablePersonaIds: colaboradores.Count > 0 ? colaboradores : null);
+
+                    var tarea = await _tareas.CrearTareaAsync(req, ct);
+
+                    // Marca de origen: identifica la ocurrencia exacta. Es lo que permite
+                    // deduplicar aqui y regenerar el futuro cuando se edita la regla.
+                    var creada = await _db.Tareas.FirstOrDefaultAsync(t => t.Id == tarea.Id, ct);
+                    if (creada is not null)
+                    {
+                        creada.ProgramacionTareaId = prog.Id;
+                        creada.OcurrenciaUtc = oc.Instante;
+                    }
+
+                    tareasCreadas++;
+                    generadasAqui++;
+
+                    if (prog.NotificarPorCorreo && responsables.Count > 0)
+                    {
+                        var (ok, fallo) = await NotificarAsync(prog, tarea.NumeroTarea, oc.Fecha, responsables, ct);
+                        correosEnviados += ok;
+                        correosFallidos += fallo;
+                    }
                 }
 
-                prog.TareasGeneradas += 1;
+                if (generadasAqui == 0) continue;   // el horizonte ya estaba cubierto
+                programacionesProcesadas++;
+                prog.TareasGeneradas += generadasAqui;
                 prog.UltimaEjecucion = DateTimeOffset.UtcNow;
+
+                // Los punteros quedan en la primera ocurrencia POSTERIOR a la ultima generada, no
+                // en "la siguiente a hoy": si ya adelantamos todo el anio, la proxima pendiente
+                // real es la del anio que viene.
+                var ultima = ocurrencias[ocurrencias.Count - 1];
 
                 if (prog.Tipo == TipoProgramacion.Cron)
                 {
-                    // Se calcula desde "ahora" y no desde la ocurrencia vencida: si el job
-                    // estuvo caido dos dias no queremos crear las tareas atrasadas de golpe.
-                    var siguiente = CronHelper.ProximaEjecucion(prog.CronExpresion, prog.ZonaHoraria, ahora);
+                    var siguiente = CronHelper.ProximaEjecucion(prog.CronExpresion, prog.ZonaHoraria, ultima.Instante.AddMinutes(1));
                     prog.ProximaEjecucionUtc = siguiente;
                     if (siguiente is null) { prog.Activa = false; desactivadas++; }
                     else
@@ -141,7 +172,7 @@ public class ProgramacionTareasJob : IBackgroundJob
                 }
                 else
                 {
-                    var next = Avanzar(prog.FechaProximaEjecucion, prog.Periodicidad);
+                    var next = PlanificadorOcurrencias.Avanzar(ultima.Fecha, prog.Periodicidad);
                     prog.FechaProximaEjecucion = next;
                     if (prog.FechaFin.HasValue && next > prog.FechaFin.Value)
                     {
@@ -210,17 +241,4 @@ public class ProgramacionTareasJob : IBackgroundJob
         catch { fallo++; }
         return (ok, fallo);
     }
-
-    private static DateOnly Avanzar(DateOnly d, PeriodicidadProgramacion p) => p switch
-    {
-        PeriodicidadProgramacion.Diaria => d.AddDays(1),
-        PeriodicidadProgramacion.Semanal => d.AddDays(7),
-        PeriodicidadProgramacion.Quincenal => d.AddDays(14),
-        PeriodicidadProgramacion.Mensual => d.AddMonths(1),
-        PeriodicidadProgramacion.Bimestral => d.AddMonths(2),
-        PeriodicidadProgramacion.Trimestral => d.AddMonths(3),
-        PeriodicidadProgramacion.Semestral => d.AddMonths(6),
-        PeriodicidadProgramacion.Anual => d.AddYears(1),
-        _ => d.AddDays(1)
-    };
 }

@@ -42,6 +42,14 @@ public class ProgramacionTarea : TenantEntity
     /// <summary>Al generar la tarea, avisar por correo a los responsables que tengan email.</summary>
     public bool NotificarPorCorreo { get; set; }
 
+    /// <summary>
+    /// Dias de generacion ANTICIPADA. 0 = comportamiento clasico: una tarea por vez, cuando
+    /// la fecha llega. Mayor que 0 = el job adelanta todas las ocurrencias que caigan dentro
+    /// de la ventana, para poder verlas en el calendario y repartirlas con tiempo
+    /// (ej. 365 = todo un anio de mantenimientos de una vez).
+    /// </summary>
+    public int HorizonteDias { get; set; }
+
     /// <summary>Fecha tope: al superarla la programacion se desactiva. Opcional.</summary>
     public DateOnly? FechaFin { get; set; }
 

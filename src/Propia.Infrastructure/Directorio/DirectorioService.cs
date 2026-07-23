@@ -72,6 +72,8 @@ public class DirectorioService : IDirectorioService
         // el llamador hiciera un POST /vinculos aparte, y varios no lo hacian (alta de
         // terceros en Servicios, ficha de unidad), dejando gente fuera de los selectores.
         await VinculoDirectorio.AsegurarPersonaAsync(_db, _tenantContext, p.Id, ct);
+        if (req.Contactos is { Count: > 0 })
+            await PersistirContactosAsync(EntidadDirectorio.Persona, p.Id, req.Contactos, reemplazar: false, ct);
         return ToPersonaDetalle(p);
     }
 
@@ -195,6 +197,11 @@ public class DirectorioService : IDirectorioService
         };
         _db.Empresas.Add(e);
         await _db.SaveChangesAsync(ct);
+        // Igual que las personas: la empresa creada queda vinculada a la copropiedad activa para
+        // aparecer en los selectores, y se persisten sus contactos ricos si vinieron.
+        await VinculoDirectorio.AsegurarEmpresaAsync(_db, _tenantContext, e.Id, ct);
+        if (req.Contactos is { Count: > 0 })
+            await PersistirContactosAsync(EntidadDirectorio.Empresa, e.Id, req.Contactos, reemplazar: false, ct);
         return ToEmpresaDetalle(e);
     }
 
@@ -589,10 +596,8 @@ public class DirectorioService : IDirectorioService
             if (abiertaAqui) await conn.CloseAsync();
         }
 
-        if (filas.Count == 0) return Array.Empty<PersonaCandidatoDto>();
-
         // Una persona puede venir repetida (una fila por copropiedad donde esta vinculada).
-        return filas
+        var personas = filas
             .GroupBy(f => f.PersonaId)
             .Select(g =>
             {
@@ -605,12 +610,195 @@ public class DirectorioService : IDirectorioService
                     Enmascarar(f.Documento),
                     tenants.Contains(tenantActual.Value),
                     g.Where(x => x.TenantId != tenantActual.Value)
-                     .Select(x => x.TenantNombre).Distinct().ToList());
-            })
+                     .Select(x => x.TenantNombre).Distinct().ToList(),
+                    EntidadDirectorio.Persona);
+            });
+
+        // Mismo autocompletado, tambien sobre empresas (dueno/tercero juridico). Se mezclan en
+        // una sola lista; el candidato lleva EntidadTipo para que el selector sepa que eligio.
+        var empresas = await BuscarEmpresasCandidatasAsync(q, tenantActual.Value, ct);
+
+        return personas.Concat(empresas)
             .OrderByDescending(c => c.EnEstaCopropiedad)   // lo de casa primero
             .ThenBy(c => c.NombreCompleto)
             .Take(20)
             .ToList();
+    }
+
+    /// <summary>
+    /// Empresas de la organizacion que coinciden con la busqueda. Mismo molde SECURITY DEFINER que
+    /// personas: directorio_vinculos esta bajo RLS y desde EF una busqueda cross-copropiedad saldria
+    /// vacia. El resultado se moldea como PersonaCandidatoDto con EntidadTipo = Empresa.
+    /// </summary>
+    private async Task<List<PersonaCandidatoDto>> BuscarEmpresasCandidatasAsync(string q, Guid tenantActual, CancellationToken ct)
+    {
+        var filas = new List<(Guid EmpresaId, string RazonSocial, string Nit, Guid TenantId, string TenantNombre)>();
+
+        var conn = _db.Database.GetDbConnection();
+        var abiertaAqui = conn.State != System.Data.ConnectionState.Open;
+        if (abiertaAqui) await conn.OpenAsync(ct);
+        try
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText =
+                "SELECT empresa_id, razon_social, nit, tenant_id, tenant_nombre " +
+                "FROM buscar_empresas_organizacion(@p_tenant_id, @p_query)";
+
+            var pTenant = cmd.CreateParameter();
+            pTenant.ParameterName = "@p_tenant_id";
+            pTenant.Value = tenantActual;
+            cmd.Parameters.Add(pTenant);
+
+            var pQuery = cmd.CreateParameter();
+            pQuery.ParameterName = "@p_query";
+            pQuery.Value = q;
+            cmd.Parameters.Add(pQuery);
+
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                filas.Add((reader.GetGuid(0), reader.GetString(1), reader.GetString(2),
+                           reader.GetGuid(3), reader.GetString(4)));
+            }
+        }
+        finally
+        {
+            if (abiertaAqui) await conn.CloseAsync();
+        }
+
+        return filas
+            .GroupBy(f => f.EmpresaId)
+            .Select(g =>
+            {
+                var f = g.First();
+                var tenants = g.Select(x => x.TenantId).Distinct().ToList();
+                return new PersonaCandidatoDto(
+                    f.EmpresaId,
+                    f.RazonSocial,
+                    TipoDocumento.NIT,
+                    Enmascarar(f.Nit),
+                    tenants.Contains(tenantActual),
+                    g.Where(x => x.TenantId != tenantActual).Select(x => x.TenantNombre).Distinct().ToList(),
+                    EntidadDirectorio.Empresa);
+            })
+            .ToList();
+    }
+
+    public async Task<bool> VincularCandidatoEmpresaAsync(Guid empresaId, CancellationToken ct)
+    {
+        var tenantActual = _tenantContext.CurrentTenantId;
+        if (tenantActual is null) return false;
+
+        var empresa = await _db.Empresas.AsNoTracking().IgnoreQueryFilters()
+            .Where(e => e.Id == empresaId).Select(e => new { e.RazonSocial }).FirstOrDefaultAsync(ct);
+        if (empresa is null) throw new InvalidOperationException("Esa empresa no existe.");
+
+        // Solo se traen empresas que ya esten en la organizacion (mismo criterio que personas).
+        var candidatas = await BuscarEmpresasCandidatasAsync(empresa.RazonSocial, tenantActual.Value, ct);
+        if (!candidatas.Any(c => c.PersonaId == empresaId))
+            throw new InvalidOperationException("Esa empresa no pertenece a tu organizacion.");
+
+        await VinculoDirectorio.AsegurarEmpresaAsync(_db, _tenantContext, empresaId, ct);
+        return true;
+    }
+
+    // ============================ Contactos rapidos (globales) ============================
+
+    public async Task<IReadOnlyList<ContactoRapidoDto>> ObtenerContactosRapidosAsync(EntidadDirectorio tipo, Guid entidadId, CancellationToken ct)
+    {
+        // DirectorioContacto es global (sin RLS ni filtro por tenant): se lee por (tipo, id).
+        return await _db.DirectorioContactos.AsNoTracking()
+            .Where(c => c.EntidadTipo == tipo && c.EntidadId == entidadId && c.Activo &&
+                        (c.Tipo == TipoContacto.Email || c.Tipo == TipoContacto.Telefono || c.Tipo == TipoContacto.Direccion))
+            .OrderBy(c => c.Tipo).ThenByDescending(c => c.EsPrincipal)
+            .Select(c => new ContactoRapidoDto(c.Tipo, c.Valor, c.SubtipoLabel, c.Ciudad, c.EsPrincipal))
+            .ToListAsync(ct);
+    }
+
+    public async Task ReemplazarContactosAsync(ReemplazarContactosRequest req, CancellationToken ct)
+    {
+        var existe = req.EntidadTipo == EntidadDirectorio.Persona
+            ? await _db.Personas.IgnoreQueryFilters().AnyAsync(p => p.Id == req.EntidadId, ct)
+            : await _db.Empresas.IgnoreQueryFilters().AnyAsync(e => e.Id == req.EntidadId, ct);
+        if (!existe) throw new InvalidOperationException("La entidad de contacto no existe.");
+
+        await PersistirContactosAsync(req.EntidadTipo, req.EntidadId, req.Contactos, reemplazar: true, ct);
+    }
+
+    /// <summary>
+    /// Escribe la lista de contactos ricos (email/telefono/direccion) y sincroniza el
+    /// Email/Telefono/Direccion "principal" denormalizado de la persona/empresa. Con reemplazar=true
+    /// borra primero los del mismo tipo (edicion en bloque desde la ficha); con false solo agrega.
+    /// </summary>
+    private async Task PersistirContactosAsync(
+        EntidadDirectorio tipo, Guid entidadId, IReadOnlyList<ContactoRapidoDto> contactos, bool reemplazar, CancellationToken ct)
+    {
+        var tiposGestionados = new[] { TipoContacto.Email, TipoContacto.Telefono, TipoContacto.Direccion };
+
+        if (reemplazar)
+        {
+            var previos = await _db.DirectorioContactos
+                .Where(c => c.EntidadTipo == tipo && c.EntidadId == entidadId && tiposGestionados.Contains(c.Tipo))
+                .ToListAsync(ct);
+            _db.DirectorioContactos.RemoveRange(previos);
+        }
+
+        var limpios = (contactos ?? Array.Empty<ContactoRapidoDto>())
+            .Where(c => tiposGestionados.Contains(c.Tipo) && !string.IsNullOrWhiteSpace(c.Valor))
+            .ToList();
+
+        foreach (var c in limpios)
+        {
+            _db.DirectorioContactos.Add(new DirectorioContacto
+            {
+                EntidadTipo = tipo,
+                EntidadId = entidadId,
+                Tipo = c.Tipo,
+                SubtipoLabel = string.IsNullOrWhiteSpace(c.Etiqueta) ? null : c.Etiqueta.Trim(),
+                Valor = c.Valor.Trim(),
+                Ciudad = string.IsNullOrWhiteSpace(c.Ciudad) ? null : c.Ciudad.Trim(),
+                EsPrincipal = c.Principal,
+                Visibilidad = VisibilidadContacto.Plataforma,   // global: visible donde aparezca la entidad
+                Activo = true
+            });
+        }
+
+        // Principal por tipo: el marcado, o el primero como respaldo.
+        string? PrincipalDe(TipoContacto t) =>
+            limpios.FirstOrDefault(x => x.Tipo == t && x.Principal)?.Valor
+            ?? limpios.FirstOrDefault(x => x.Tipo == t)?.Valor;
+
+        if (tipo == EntidadDirectorio.Persona)
+        {
+            var p = await _db.Personas.FirstOrDefaultAsync(x => x.Id == entidadId, ct);
+            if (p is not null)
+            {
+                var email = PrincipalDe(TipoContacto.Email)?.Trim();
+                if (!string.IsNullOrEmpty(email) && !string.Equals(email, p.Email, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (await _db.Personas.AnyAsync(x => x.Id != p.Id && x.Email == email, ct))
+                        throw new InvalidOperationException("El correo principal ya esta en uso por otra persona.");
+                    p.Email = email;
+                }
+                var tel = PrincipalDe(TipoContacto.Telefono)?.Trim();
+                if (!string.IsNullOrEmpty(tel)) p.Telefono = tel;
+            }
+        }
+        else
+        {
+            var e = await _db.Empresas.FirstOrDefaultAsync(x => x.Id == entidadId, ct);
+            if (e is not null)
+            {
+                var email = PrincipalDe(TipoContacto.Email)?.Trim();
+                if (!string.IsNullOrEmpty(email)) e.Email = email;
+                var tel = PrincipalDe(TipoContacto.Telefono)?.Trim();
+                if (!string.IsNullOrEmpty(tel)) e.Telefono = tel;
+                var dir = PrincipalDe(TipoContacto.Direccion)?.Trim();
+                if (!string.IsNullOrEmpty(dir)) e.Direccion = dir;
+            }
+        }
+
+        await _db.SaveChangesAsync(ct);
     }
 
     public async Task<bool> VincularCandidatoAsync(Guid personaId, CancellationToken ct)

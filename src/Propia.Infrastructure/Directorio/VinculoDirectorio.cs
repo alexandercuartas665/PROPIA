@@ -48,4 +48,32 @@ internal static class VinculoDirectorio
         await db.SaveChangesAsync(ct);
         return true;
     }
+
+    /// <summary>
+    /// Garantiza que la empresa tenga vinculo activo con la copropiedad actual. Gemelo del de
+    /// persona: desde que un dueno/tercero puede ser juridico, las empresas tambien deben quedar
+    /// en el directorio para aparecer en los selectores.
+    /// </summary>
+    public static async Task<bool> AsegurarEmpresaAsync(
+        PropiaDbContext db, ITenantContext tenant, Guid empresaId, CancellationToken ct)
+    {
+        if (tenant.CurrentTenantId is null) return false;
+        if (empresaId == Guid.Empty) return false;
+
+        var yaVinculada = await db.DirectorioVinculos.AnyAsync(v =>
+            v.EntidadTipo == EntidadDirectorio.Empresa &&
+            v.EntidadId == empresaId &&
+            v.Estado == EstadoVinculo.Activo, ct);
+        if (yaVinculada) return false;
+
+        db.DirectorioVinculos.Add(new DirectorioVinculo
+        {
+            EntidadTipo = EntidadDirectorio.Empresa,
+            EntidadId = empresaId,
+            FechaDesde = DateOnly.FromDateTime(DateTime.UtcNow),
+            Estado = EstadoVinculo.Activo
+        });
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
 }

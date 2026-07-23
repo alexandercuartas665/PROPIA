@@ -13,7 +13,7 @@
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 4h18v18H3zM3 10h18M8 2v4M16 2v4"/><path d="M12 14v3M10.5 15.5h3" stroke-width="1.6"/></svg>
     </div>
     <div class="ptm-header-tx">
-        <div class="ptm-title">Programar tarea</div>
+        <div class="ptm-title">@(Existente is null ? "Programar tarea" : "Editar programacion")</div>
         <div class="ptm-sub">Se crea automaticamente en el panel de Tareas segun la periodicidad.</div>
     </div>
     <button class="ptm-close" @onclick="Cancel" type="button" aria-label="Cerrar">
@@ -94,8 +94,18 @@
             <label class="ptm-lbl">Expresion cron <span class="ptm-req">*</span></label>
             @* Sin value= a proposito: en Blazor Server reafirmar value en cada re-render
                se come pulsaciones mientras se escribe. *@
-            <input class="ptm-input ptm-cron" placeholder="minuto hora dia-del-mes mes dia-de-semana"
-                   @oninput="OnCronInput" />
+            @* value= solo mientras nadie ha escrito: al editar hay que mostrar el cron guardado,
+               pero reafirmarlo en cada re-render se come pulsaciones en Blazor Server. *@
+            @if (_cronTocado)
+            {
+                <input class="ptm-input ptm-cron" placeholder="minuto hora dia-del-mes mes dia-de-semana"
+                       @oninput="OnCronInput" />
+            }
+            else
+            {
+                <input class="ptm-input ptm-cron" placeholder="minuto hora dia-del-mes mes dia-de-semana"
+                       value="@_cron" @oninput="OnCronInput" />
+            }
             <div class="ptm-cron-presets">
                 @foreach (var p in _presets)
                 {
@@ -154,6 +164,33 @@
         }
     </div>
 
+    @* Cuando se MATERIALIZAN las tareas, que es distinto de cada cuanto se repiten. Con
+       "al llegar la fecha" el tablero solo muestra la proxima; con un horizonte se adelantan
+       todas las del periodo y el calendario queda completo desde ya. *@
+    @if (_periodicidad != PeriodicidadProgramacion.Unica || _tipo == TipoProgramacion.Cron)
+    {
+        <div class="ptm-field">
+            <label class="ptm-lbl">Cuando se crean las tareas</label>
+            <div class="ptm-chips">
+                @foreach (var h in Horizontes)
+                {
+                    <button type="button" class="ptm-chip @(_horizonteDias == h.Dias ? "on" : "")"
+                            @onclick="() => _horizonteDias = h.Dias">@h.Label</button>
+                }
+            </div>
+            <div class="ptm-hint">
+                @if (_horizonteDias == 0)
+                {
+                    <text>Cada tarea aparece el dia que toca. En el calendario solo se ve la proxima.</text>
+                }
+                else
+                {
+                    <text>Se adelantan todas las ocurrencias de los proximos @_horizonteDias dias, para verlas en el calendario y repartirlas con tiempo.</text>
+                }
+            </div>
+        </div>
+    }
+
     @* El correo sale al generarse la tarea, a los responsables marcados arriba que tengan
        email en el Directorio. Por eso el aviso cuando no hay ninguno seleccionado. *@
     <div class="ptm-field">
@@ -181,6 +218,10 @@
             else
             {
                 <text>Se creara una tarea <b>@(PeriodicidadLabel(_periodicidad).ToLower())</b> desde la fecha indicada@(_fechaFin.HasValue ? " hasta el tope." : ".")</text>
+                @if (_horizonteDias > 0)
+                {
+                    <text> Las de los proximos <b>@HorizonteLabel()</b> se crean de una vez.</text>
+                }
             }
         </div>
     </div>
@@ -190,7 +231,7 @@
     <button type="button" class="ptm-btn ptm-ghost" @onclick="Cancel">Cancelar</button>
     <button type="button" class="ptm-btn ptm-brand" @onclick="Confirmar" disabled="@(!IsValid)">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>
-        Programar
+        @(Existente is null ? "Programar" : "Guardar cambios")
     </button>
 </div>
 
@@ -206,6 +247,10 @@
     [Parameter] public Guid? EntidadOrigenId { get; set; }
     [Parameter] public string? OrigenReferencia { get; set; }
 
+    /// <summary>Regla que se esta editando. Null = alta. Solo cambia el prefill y el rotulo del boton;
+    /// el modal devuelve siempre el mismo request y es el panel quien decide POST o PUT.</summary>
+    [Parameter] public ProgramacionTareaDto? Existente { get; set; }
+
     private string _titulo = "";
     private string? _descripcion;
     private string _tableroId = "";
@@ -220,7 +265,26 @@
     private string _cron = "";
     private string _zonaHoraria = Propia.Infrastructure.Programaciones.CronHelper.ZonaHorariaPorDefecto;
     private CronPreviewResult? _cronPreview;
+    private bool _cronTocado;
     private bool _notificarCorreo;
+
+    /// <summary>
+    /// Dias de generacion anticipada. 0 = la tarea aparece cuando llega la fecha (comportamiento
+    /// clasico). Mayor que 0 = el job adelanta todo lo que caiga en la ventana.
+    /// </summary>
+    private int _horizonteDias;
+
+    private static readonly (int Dias, string Label)[] Horizontes =
+    {
+        (0,   "Al llegar la fecha"),
+        (30,  "Un mes antes"),
+        (90,  "Un trimestre"),
+        (180, "Un semestre"),
+        (365, "Todo el anio")
+    };
+
+    private string HorizonteLabel() =>
+        Horizontes.FirstOrDefault(h => h.Dias == _horizonteDias).Label?.ToLower() ?? $"{_horizonteDias} dias";
 
     private readonly (string Label, string Expr)[] _presets =
     {
@@ -246,6 +310,27 @@
         if (PrefillFecha.HasValue) _fecha = PrefillFecha.Value.ToDateTime(TimeOnly.MinValue);
         if (PrefillTableroId.HasValue) _tableroId = PrefillTableroId.Value.ToString();
         _periodicidad = PrefillPeriodicidad;
+
+        // Edicion: la regla guardada manda sobre cualquier prefill del escenario que abrio el modal.
+        if (Existente is { } ex)
+        {
+            _titulo = ex.Titulo;
+            _descripcion = ex.Descripcion;
+            _prioridad = ex.Prioridad;
+            _tableroId = ex.TableroId?.ToString() ?? "";
+            _tipo = ex.Tipo;
+            _periodicidad = ex.Periodicidad;
+            _cron = ex.CronExpresion ?? "";
+            _zonaHoraria = ex.ZonaHoraria;
+            _fecha = ex.FechaProximaEjecucion.ToDateTime(TimeOnly.MinValue);
+            _fechaFin = ex.FechaFin?.ToDateTime(TimeOnly.MinValue);
+            _notificarCorreo = ex.NotificarPorCorreo;
+            _horizonteDias = ex.HorizonteDias;
+            foreach (var r in ex.Responsables) _responsables.Add(r.PersonaId);
+
+            // El preview valida el boton Guardar: sin esto una regla cron abre deshabilitada.
+            if (_tipo == TipoProgramacion.Cron && !string.IsNullOrWhiteSpace(_cron)) RefrescarPreview();
+        }
     }
 
     private bool IsValid => !string.IsNullOrWhiteSpace(_titulo) && (
@@ -261,6 +346,7 @@
 
     private void OnCronInput(ChangeEventArgs e)
     {
+        _cronTocado = true;
         _cron = e.Value?.ToString() ?? string.Empty;
         RefrescarPreview();
     }
@@ -319,7 +405,8 @@
             _tipo,
             _tipo == TipoProgramacion.Cron ? _cron.Trim() : null,
             _zonaHoraria,
-            _notificarCorreo);
+            _notificarCorreo,
+            _horizonteDias);
         Close(req);
     }
 
@@ -381,6 +468,7 @@
 
     .ptm-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #33475B; cursor: pointer; }
     .ptm-check input { width: 15px; height: 15px; accent-color: #6D4FE3; }
+    .ptm-hint { margin-top: 6px; font-size: 11.5px; color: #6B7280; line-height: 1.45; }
     .ptm-warn { margin-top: 6px; font-size: 11.5px; color: #9A6A00; background: #FFF8E6; border: 1px solid #F5E2AE; border-radius: 8px; padding: 7px 10px; }
 
     .ptm-personas { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; border: 1px solid var(--propia-border-card, #E1E8EE); border-radius: 9px; padding: 8px; }

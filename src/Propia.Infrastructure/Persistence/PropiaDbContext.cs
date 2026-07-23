@@ -456,7 +456,11 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
         {
             b.HasOne(x => x.Unidad).WithMany().HasForeignKey(x => x.UnidadId).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(x => x.TenantId);
-            b.HasIndex(x => new { x.TenantId, x.UnidadId, x.PersonaId, x.Rol }).IsUnique();
+            // Antiduplicado por tipo de entidad: se implementan como indices PARCIALES en la migracion
+            // (uno WHERE persona_id IS NOT NULL, otro WHERE empresa_id IS NOT NULL). No se declara
+            // aqui el unique compuesto porque con persona_id/empresa_id nullable Postgres trata los
+            // NULL como distintos y no protegeria las filas de empresa.
+            b.HasIndex(x => new { x.TenantId, x.UnidadId, x.EmpresaId, x.Rol });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
@@ -809,7 +813,10 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.Departamento).HasMaxLength(100);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.EntidadTipo, x.EntidadId });
-            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+            // GLOBAL por decision de producto: los contactos viajan con la identidad (persona/empresa)
+            // y se reutilizan en cualquier copropiedad donde aparezca. Sin HasQueryFilter y sin RLS
+            // (la policy tenant_isolation se elimina en migracion). tenant_id queda solo como registro
+            // de que copropiedad capturo el dato; la lectura/escritura es por (EntidadTipo, EntidadId).
         });
 
         modelBuilder.Entity<DirectorioEtiqueta>(b =>

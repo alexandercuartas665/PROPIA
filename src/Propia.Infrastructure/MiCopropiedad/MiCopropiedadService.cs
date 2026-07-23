@@ -163,11 +163,15 @@ public class MiCopropiedadService : IMiCopropiedadService
                 u.CoeficientePropiedad, u.AreaM2,
                 u.Habitaciones, u.Banos, u.Parqueaderos,
                 u.Estado, u.Observaciones, u.MatriculaInmobiliaria, u.PagaAdministracion, u.CuotaMensual,
+                // Nombre del primer propietario. Contempla dueno persona O empresa (juridico):
+                // el join simple contra Personas dejaria fuera los apartamentos de una empresa.
                 (from up in _db.UnidadPersonas
-                 join p in _db.Personas on up.PersonaId equals p.Id
                  where up.UnidadId == u.Id && up.Rol == RolUnidadPersona.Propietario
-                 orderby p.Apellidos, p.Nombres
-                 select (p.Nombres + " " + p.Apellidos).Trim()).FirstOrDefault(),
+                 orderby up.EntidadTipo, up.Id
+                 select up.EntidadTipo == EntidadDirectorio.Empresa
+                     ? _db.Empresas.Where(e => e.Id == up.EmpresaId).Select(e => e.RazonSocial).FirstOrDefault()
+                     : _db.Personas.Where(p => p.Id == up.PersonaId).Select(p => (p.Nombres + " " + p.Apellidos).Trim()).FirstOrDefault()
+                ).FirstOrDefault(),
                 _db.UnidadPersonas.Count(up => up.UnidadId == u.Id && up.Rol == RolUnidadPersona.Propietario)))
             .ToListAsync(ct);
     }
@@ -305,21 +309,84 @@ public class MiCopropiedadService : IMiCopropiedadService
 
     public async Task<IReadOnlyList<UnidadPersonaDto>> ListPersonasUnidadAsync(Guid unidadId, CancellationToken ct)
     {
-        return await (from up in _db.UnidadPersonas.AsNoTracking()
-                      join p in _db.Personas on up.PersonaId equals p.Id
-                      where up.UnidadId == unidadId
-                      orderby up.Rol, p.Apellidos, p.Nombres
-                      select new UnidadPersonaDto(
-                          up.Id, up.PersonaId,
-                          (p.Nombres + " " + p.Apellidos).Trim(),
-                          p.Documento, p.Email, p.Telefono,
-                          up.Rol, up.Habita, up.Parentesco,
-                          p.Nombres, p.Apellidos))
-                      .ToListAsync(ct);
+        // Ya no es un join contra Personas: un miembro puede ser empresa (dueno/residente juridico),
+        // que vive en otra tabla. Se traen las filas y se resuelven persona/empresa aparte.
+        var rows = await _db.UnidadPersonas.AsNoTracking()
+            .Where(up => up.UnidadId == unidadId)
+            .ToListAsync(ct);
+        if (rows.Count == 0) return Array.Empty<UnidadPersonaDto>();
+
+        var (personas, empresas) = await ResolverEntidadesAsync(rows, ct);
+        return rows.Select(up => ToUnidadPersonaDto(up, personas, empresas))
+            .OrderBy(d => d.Rol).ThenBy(d => d.PersonaNombre)
+            .ToList();
+    }
+
+    private async Task<(Dictionary<Guid, Persona> Personas, Dictionary<Guid, Empresa> Empresas)>
+        ResolverEntidadesAsync(List<UnidadPersona> rows, CancellationToken ct)
+    {
+        var personaIds = rows.Where(r => r.PersonaId != null).Select(r => r.PersonaId!.Value).Distinct().ToList();
+        var empresaIds = rows.Where(r => r.EmpresaId != null).Select(r => r.EmpresaId!.Value).Distinct().ToList();
+        var personas = await _db.Personas.AsNoTracking().Where(p => personaIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, ct);
+        var empresas = await _db.Empresas.AsNoTracking().Where(e => empresaIds.Contains(e.Id)).ToDictionaryAsync(e => e.Id, ct);
+        return (personas, empresas);
+    }
+
+    private static string NitConDv(Empresa e) =>
+        e.Nit + (string.IsNullOrEmpty(e.DigitoVerificacion) ? "" : "-" + e.DigitoVerificacion);
+
+    private static UnidadPersonaDto ToUnidadPersonaDto(
+        UnidadPersona up, Dictionary<Guid, Persona> personas, Dictionary<Guid, Empresa> empresas)
+    {
+        if (up.EntidadTipo == EntidadDirectorio.Empresa && up.EmpresaId is Guid eid && empresas.TryGetValue(eid, out var e))
+        {
+            // Para empresa: la ficha muestra razon social como "nombre" y NIT como "documento".
+            return new UnidadPersonaDto(up.Id, Guid.Empty, e.RazonSocial, NitConDv(e), e.Email, e.Telefono,
+                up.Rol, up.Habita, up.Parentesco, e.RazonSocial, "", EntidadDirectorio.Empresa, e.Id);
+        }
+        if (up.PersonaId is Guid pid && personas.TryGetValue(pid, out var p))
+        {
+            return new UnidadPersonaDto(up.Id, p.Id, ($"{p.Nombres} {p.Apellidos}").Trim(), p.Documento,
+                p.Email, p.Telefono, up.Rol, up.Habita, up.Parentesco, p.Nombres, p.Apellidos, EntidadDirectorio.Persona, null);
+        }
+        return new UnidadPersonaDto(up.Id, up.PersonaId ?? Guid.Empty, "(desconocido)", "", null, null,
+            up.Rol, up.Habita, up.Parentesco, "", "", up.EntidadTipo, up.EmpresaId);
     }
 
     public async Task<UnidadPersonaDto> AgregarPersonaUnidadAsync(Guid unidadId, AgregarPersonaUnidadRequest req, CancellationToken ct)
     {
+        var unidad = await _db.UnidadesPrivadas.FirstOrDefaultAsync(u => u.Id == unidadId, ct)
+            ?? throw new InvalidOperationException("Unidad no encontrada.");
+
+        // ----- Empresa (dueno/residente juridico). La identidad la resuelve el selector. -----
+        if (req.EntidadTipo == EntidadDirectorio.Empresa)
+        {
+            if (req.EmpresaId is not Guid empId || empId == Guid.Empty)
+                throw new InvalidOperationException("Debes elegir la empresa.");
+            var empresa = await _db.Empresas.IgnoreQueryFilters().FirstOrDefaultAsync(e => e.Id == empId, ct)
+                ?? throw new InvalidOperationException("La empresa seleccionada no existe.");
+            await Directorio.VinculoDirectorio.AsegurarEmpresaAsync(_db, _tenant, empId, ct);
+
+            if (await _db.UnidadPersonas.AnyAsync(x => x.UnidadId == unidadId && x.EmpresaId == empId && x.Rol == req.Rol, ct))
+                throw new InvalidOperationException($"Esta empresa ya es {req.Rol} de la unidad {unidad.Numero}.");
+
+            var upE = new UnidadPersona
+            {
+                UnidadId = unidadId,
+                EntidadTipo = EntidadDirectorio.Empresa,
+                EmpresaId = empId,
+                Rol = req.Rol,
+                Habita = req.Habita,
+                Parentesco = string.IsNullOrWhiteSpace(req.Parentesco) ? null : req.Parentesco.Trim()
+            };
+            _db.UnidadPersonas.Add(upE);
+            await _db.SaveChangesAsync(ct);
+            await RegistrarBitacoraAsync("Unidad", $"{req.Rol} '{empresa.RazonSocial}' (empresa) vinculado a unidad '{unidad.Numero}'.", ct);
+            return new UnidadPersonaDto(upE.Id, Guid.Empty, empresa.RazonSocial, NitConDv(empresa), empresa.Email, empresa.Telefono,
+                upE.Rol, upE.Habita, upE.Parentesco, empresa.RazonSocial, "", EntidadDirectorio.Empresa, empresa.Id);
+        }
+
+        // ----- Persona natural -----
         // Con PersonaId la identidad ya viene resuelta por el SelectorPersona; sin el, se
         // exigen los datos para poder buscar o crear la persona por documento.
         if (req.PersonaId is null)
@@ -328,9 +395,6 @@ public class MiCopropiedadService : IMiCopropiedadService
             if (string.IsNullOrWhiteSpace(req.Nombres)) throw new InvalidOperationException("Nombres obligatorios.");
             if (string.IsNullOrWhiteSpace(req.Apellidos)) throw new InvalidOperationException("Apellidos obligatorios.");
         }
-
-        var unidad = await _db.UnidadesPrivadas.FirstOrDefaultAsync(u => u.Id == unidadId, ct)
-            ?? throw new InvalidOperationException("Unidad no encontrada.");
 
         Guid personaId;
         if (req.PersonaId is Guid elegida)
@@ -357,6 +421,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         var up = new UnidadPersona
         {
             UnidadId = unidadId,
+            EntidadTipo = EntidadDirectorio.Persona,
             PersonaId = personaId,
             Rol = req.Rol,
             Habita = req.Habita,
@@ -370,16 +435,34 @@ public class MiCopropiedadService : IMiCopropiedadService
 
         return new UnidadPersonaDto(up.Id, personaId,
             ($"{persona.Nombres} {persona.Apellidos}").Trim(), persona.Documento, persona.Email, persona.Telefono,
-            up.Rol, up.Habita, up.Parentesco, persona.Nombres, persona.Apellidos);
+            up.Rol, up.Habita, up.Parentesco, persona.Nombres, persona.Apellidos, EntidadDirectorio.Persona, null);
     }
 
     public async Task<UnidadPersonaDto?> EditarPersonaUnidadAsync(Guid unidadPersonaId, AgregarPersonaUnidadRequest req, CancellationToken ct)
     {
+        var up = await _db.UnidadPersonas.FirstOrDefaultAsync(x => x.Id == unidadPersonaId, ct);
+        if (up is null) return null;
+
+        // ----- Empresa: solo se edita el vinculo (rol/habita/parentesco); la identidad va por Directorio. -----
+        if (up.EntidadTipo == EntidadDirectorio.Empresa)
+        {
+            var empresa = await _db.Empresas.FirstOrDefaultAsync(e => e.Id == up.EmpresaId, ct);
+            if (empresa is null) return null;
+            if (up.Rol != req.Rol &&
+                await _db.UnidadPersonas.AnyAsync(x => x.Id != up.Id && x.UnidadId == up.UnidadId && x.EmpresaId == up.EmpresaId && x.Rol == req.Rol, ct))
+                throw new InvalidOperationException($"Esta empresa ya tiene el rol {req.Rol} en la unidad.");
+            up.Rol = req.Rol;
+            up.Habita = req.Habita;
+            up.Parentesco = string.IsNullOrWhiteSpace(req.Parentesco) ? null : req.Parentesco.Trim();
+            await _db.SaveChangesAsync(ct);
+            return new UnidadPersonaDto(up.Id, Guid.Empty, empresa.RazonSocial, NitConDv(empresa), empresa.Email, empresa.Telefono,
+                up.Rol, up.Habita, up.Parentesco, empresa.RazonSocial, "", EntidadDirectorio.Empresa, empresa.Id);
+        }
+
+        // ----- Persona natural -----
         if (string.IsNullOrWhiteSpace(req.Nombres)) throw new InvalidOperationException("Nombres obligatorios.");
         if (string.IsNullOrWhiteSpace(req.Apellidos)) throw new InvalidOperationException("Apellidos obligatorios.");
 
-        var up = await _db.UnidadPersonas.FirstOrDefaultAsync(x => x.Id == unidadPersonaId, ct);
-        if (up is null) return null;
         var persona = await _db.Personas.FirstOrDefaultAsync(p => p.Id == up.PersonaId, ct);
         if (persona is null) return null;
 
@@ -414,7 +497,7 @@ public class MiCopropiedadService : IMiCopropiedadService
 
         return new UnidadPersonaDto(up.Id, persona.Id,
             ($"{persona.Nombres} {persona.Apellidos}").Trim(), persona.Documento, persona.Email, persona.Telefono,
-            up.Rol, up.Habita, up.Parentesco, persona.Nombres, persona.Apellidos);
+            up.Rol, up.Habita, up.Parentesco, persona.Nombres, persona.Apellidos, EntidadDirectorio.Persona, null);
     }
 
     public async Task<bool> EliminarPersonaUnidadAsync(Guid unidadPersonaId, CancellationToken ct)
@@ -824,11 +907,15 @@ public class MiCopropiedadService : IMiCopropiedadService
                 u.Habitaciones, u.Banos, u.Parqueaderos,
                 u.Estado, u.Observaciones, u.MatriculaInmobiliaria, u.PagaAdministracion, u.CuotaMensual,
                 // Mismo propietario que en el listado, para que el DTO diga lo mismo venga de donde venga.
+                // Nombre del primer propietario. Contempla dueno persona O empresa (juridico):
+                // el join simple contra Personas dejaria fuera los apartamentos de una empresa.
                 (from up in _db.UnidadPersonas
-                 join p in _db.Personas on up.PersonaId equals p.Id
                  where up.UnidadId == u.Id && up.Rol == RolUnidadPersona.Propietario
-                 orderby p.Apellidos, p.Nombres
-                 select (p.Nombres + " " + p.Apellidos).Trim()).FirstOrDefault(),
+                 orderby up.EntidadTipo, up.Id
+                 select up.EntidadTipo == EntidadDirectorio.Empresa
+                     ? _db.Empresas.Where(e => e.Id == up.EmpresaId).Select(e => e.RazonSocial).FirstOrDefault()
+                     : _db.Personas.Where(p => p.Id == up.PersonaId).Select(p => (p.Nombres + " " + p.Apellidos).Trim()).FirstOrDefault()
+                ).FirstOrDefault(),
                 _db.UnidadPersonas.Count(up => up.UnidadId == u.Id && up.Rol == RolUnidadPersona.Propietario)))
             .FirstOrDefaultAsync(ct);
     }

@@ -45,6 +45,29 @@ public class DirectorioController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    /// <summary>Gemelo del anterior para empresas (dueno/tercero juridico).</summary>
+    [HttpPost("empresas/{id:guid}/vincular")]
+    public async Task<IActionResult> VincularCandidatoEmpresa(Guid id, CancellationToken ct)
+    {
+        try { return Ok(new { vinculada = await _svc.VincularCandidatoEmpresaAsync(id, ct) }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    // ---------- Contactos rapidos (globales) para precargar/guardar desde las fichas ----------
+
+    /// <summary>Correos/telefonos/direcciones de una persona o empresa, para precargar un formulario.</summary>
+    [HttpGet("contactos-rapidos")]
+    public async Task<IActionResult> ObtenerContactosRapidos([FromQuery] EntidadDirectorio tipo, [FromQuery] Guid id, CancellationToken ct)
+        => Ok(await _svc.ObtenerContactosRapidosAsync(tipo, id, ct));
+
+    /// <summary>Reemplaza en bloque los contactos de una entidad (lo que captura la ficha).</summary>
+    [HttpPut("contactos-rapidos")]
+    public async Task<IActionResult> ReemplazarContactos([FromBody] ReemplazarContactosRequest req, CancellationToken ct)
+    {
+        try { await _svc.ReemplazarContactosAsync(req, ct); return Ok(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     [HttpGet("personas/{id:guid}")]
     public async Task<IActionResult> ObtenerPersona(Guid id, CancellationToken ct)
     {

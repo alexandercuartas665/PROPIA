@@ -41,6 +41,20 @@ public interface IDirectorioService
     /// </summary>
     Task<bool> VincularCandidatoAsync(Guid personaId, CancellationToken ct);
 
+    /// <summary>Gemelo del anterior para empresas (dueno/tercero juridico).</summary>
+    Task<bool> VincularCandidatoEmpresaAsync(Guid empresaId, CancellationToken ct);
+
+    // --- Contactos rapidos (globales) para precargar/guardar desde las fichas ---
+
+    /// <summary>Correos/telefonos/direcciones de una persona o empresa, para precargar un formulario.</summary>
+    Task<IReadOnlyList<ContactoRapidoDto>> ObtenerContactosRapidosAsync(EntidadDirectorio tipo, Guid entidadId, CancellationToken ct);
+
+    /// <summary>
+    /// Reemplaza en bloque los contactos de una entidad y sincroniza su Email/Telefono/Direccion
+    /// principal. Es lo que persiste lo que el usuario captura en la ficha de propietario/residente.
+    /// </summary>
+    Task ReemplazarContactosAsync(ReemplazarContactosRequest req, CancellationToken ct);
+
     // --- Vista 360 (incluye vinculos del tenant activo) ---
     Task<Persona360Dto?> GetPersona360Async(Guid personaId, CancellationToken ct);
     Task<Empresa360Dto?> GetEmpresa360Async(Guid empresaId, CancellationToken ct);

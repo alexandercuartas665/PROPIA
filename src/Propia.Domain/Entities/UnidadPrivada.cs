@@ -56,7 +56,17 @@ public class UnidadPersona : TenantEntity
     public Guid UnidadId { get; set; }
     public UnidadPrivada? Unidad { get; set; }
 
-    public Guid PersonaId { get; set; }
+    /// <summary>
+    /// Tipo de la entidad vinculada: persona natural o empresa (dueno/residente juridico).
+    /// Exactamente uno de PersonaId/EmpresaId queda seteado segun este valor.
+    /// </summary>
+    public EntidadDirectorio EntidadTipo { get; set; } = EntidadDirectorio.Persona;
+
+    /// <summary>Set cuando EntidadTipo = Persona. Nullable desde que el vinculo admite empresas.</summary>
+    public Guid? PersonaId { get; set; }
+
+    /// <summary>Set cuando EntidadTipo = Empresa (dueno/residente juridico).</summary>
+    public Guid? EmpresaId { get; set; }
 
     /// <summary>Rol del miembro respecto a la unidad.</summary>
     public RolUnidadPersona Rol { get; set; } = RolUnidadPersona.Propietario;
