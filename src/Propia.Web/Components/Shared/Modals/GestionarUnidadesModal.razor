@@ -35,7 +35,15 @@
 @* ====== 2 PANELES ====== *@
 <div class="gum-body">
 
-    @* ===== Panel IZQ - arbol torres > pisos > unidades ===== *@
+    @* ===== Panel IZQ - arbol torres > pisos > unidades =====
+       Se oculta cuando el modal se abre directamente sobre una unidad (desde la tabla de
+       Unidades Privadas): ahi el arbol de torres es redundante porque ya se eligio la unidad.
+       La condicion depende SOLO de _arbolVisible (que ya viene resuelto antes del primer
+       render): agregarle un "|| _selected is null" hacia que el arbol se pintara durante la
+       carga inicial y desapareciera al seleccionar la unidad, causando un parpadeo. Los casos
+       sin seleccion (unidad no encontrada, unidad eliminada) reponen _arbolVisible por codigo. *@
+    @if (_arbolVisible)
+    {
     <div class="gum-panel-left">
         @if (_genToast > 0)
         {
@@ -271,6 +279,7 @@
             <div class="gum-msg @(_msgError ? "gum-msg--err" : "gum-msg--ok")">@_msg</div>
         }
     </div>
+    }
 
     @* ===== Panel DER - ficha unidad ===== *@
     <div class="gum-panel-right">
@@ -289,6 +298,15 @@
         else
         {
             <div class="gum-unit-head">
+                @* Solo en modo unidad-unica (desde la tabla): permite traer de vuelta el arbol para
+                   saltar a otra unidad sin cerrar el modal. *@
+                @if (OcultarArbol)
+                {
+                    <button class="gum-unit-toggle" type="button" @onclick="() => _arbolVisible = !_arbolVisible"
+                            title="@(_arbolVisible ? "Ocultar lista de unidades" : "Ver todas las unidades")">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+                    </button>
+                }
                 <div class="gum-unit-avatar">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18M5 21V7l7-4 7 4v14M10 21v-4h4v4"/></svg>
                 </div>
@@ -1264,6 +1282,13 @@
         cursor: pointer; flex-shrink: 0;
     }
     .gum-unit-edit:hover { background: #F1ECFD; }
+    .gum-unit-toggle {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 34px; height: 34px; border-radius: 8px; margin-right: 4px;
+        border: 1px solid #E1E8EE; background: #fff; color: #516F90;
+        cursor: pointer; flex-shrink: 0;
+    }
+    .gum-unit-toggle:hover { background: #F1ECFD; color: var(--propia-brand, #6D4FE3); border-color: #DCD2F8; }
     .gum-unit-save {
         display: inline-flex; align-items: center; gap: 6px;
         padding: 8px 14px; border-radius: 8px;
@@ -1589,6 +1614,16 @@
     /// hacer clic en una fila). Sin valor, el modal abre en el estado vacio de siempre.</summary>
     [Parameter] public Guid? UnidadInicialId { get; set; }
 
+    /// <summary>
+    /// Oculta el panel izquierdo (arbol de torres) al abrir, dejando la ficha a todo el ancho.
+    /// Se usa cuando ya se eligio la unidad (clic en una fila de Unidades Privadas): el arbol es
+    /// redundante. El usuario puede traerlo de vuelta con el boton de lista de la cabecera.
+    /// </summary>
+    [Parameter] public bool OcultarArbol { get; set; }
+
+    /// <summary>Estado en vivo del panel izquierdo (el usuario puede alternarlo desde la ficha).</summary>
+    private bool _arbolVisible = true;
+
     private List<TorreDto> _torres = new();
     private List<UnidadDto> _unidades = new();
     private UnidadDto? _selected;
@@ -1775,12 +1810,14 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _arbolVisible = !OcultarArbol;
         await CargarAsync();
         // Entrada desde la tabla de Distribucion: se abre en la ficha de la unidad pedida.
         if (UnidadInicialId is Guid id)
         {
             var u = _unidades.FirstOrDefault(x => x.Id == id);
             if (u is not null) await SeleccionarUnidad(u);
+            else _arbolVisible = true;   // no se encontro: deja el arbol para poder navegar
         }
     }
 
@@ -2662,6 +2699,9 @@
                 _huboCambios = true;
                 _selected = null;
                 _editMode = false;
+                // Sin ficha ya no hay cabecera (ni boton de lista): se repone el arbol para
+                // no dejar el modal sin navegacion cuando se abrio en modo unidad-unica.
+                _arbolVisible = true;
                 ShowMsg("Unidad eliminada.", false);
                 await CargarAsync();
             }
