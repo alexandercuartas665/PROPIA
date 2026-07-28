@@ -130,11 +130,48 @@ else
         @* ---------- TABLERO (Kanban) ---------- *@
         @if (_boardMode == "tablero")
         {
+            <div class="tb-cardbar">
+                <div class="tb-flex"></div>
+                <div class="tb-menuwrap">
+                    <button class="tb-filter-btn @(!string.IsNullOrEmpty(_sortCol) ? "on" : "")" @onclick="() => { _cardSortMenu = !_cardSortMenu; _cardGroupMenu = false; }" title="Ordenar tarjetas">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h13M3 12h9M3 18h5M18 8V4m0 0l-3 3m3-3l3 3"/></svg>@(string.IsNullOrEmpty(_sortCol) ? "Ordenar" : "Ordenar: " + OrdenLabel(_sortCol))
+                    </button>
+                    @if (_cardSortMenu)
+                    {
+                        <div class="tb-menu">
+                            <button class="tb-menu-it @(string.IsNullOrEmpty(_sortCol) ? "on" : "")" @onclick='() => SetCardSort("")'>Sin orden</button>
+                            @foreach (var o in OpcionesOrden())
+                            {
+                                var k = o.Key;
+                                <button class="tb-menu-it @(_sortCol == k ? "on" : "")" @onclick="() => SetCardSort(k)"><span>@o.Label</span>@SortInd(k)</button>
+                            }
+                        </div>
+                    }
+                </div>
+                <div class="tb-menuwrap">
+                    <button class="tb-filter-btn @(!string.IsNullOrEmpty(_cardGroup) ? "on" : "")" @onclick="() => { _cardGroupMenu = !_cardGroupMenu; _cardSortMenu = false; }" title="Agrupar tarjetas">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>@(string.IsNullOrEmpty(_cardGroup) ? "Agrupar por" : "Agrupar: " + GrupoLabel(_cardGroup))
+                    </button>
+                    @if (_cardGroupMenu)
+                    {
+                        <div class="tb-menu">
+                            @foreach (var o in OpcionesGrupo())
+                            {
+                                var k = o.Key;
+                                <button class="tb-menu-it @(_cardGroup == k ? "on" : "")" @onclick="() => SetCardGroup(k)">@o.Label</button>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+
+            @if (string.IsNullOrEmpty(_cardGroup))
+            {
             <div class="tb-kanban" style="grid-template-columns:repeat(@_board.Estados.Count, minmax(260px, 1fr))">
                 @foreach (var est in _board.Estados)
                 {
                     var estado = est;
-                    var cards = RaicesPorEstado(est.Id);
+                    var cards = AplicarSort(RaicesPorEstado(est.Id)).ToList();
                     @* El dragover se cancela con un handler HTML plano (no con @@ondragover:preventDefault):
                        Blazor solo instala el listener de un evento si hay un manejador para el, asi que
                        la marca de preventDefault sola no se aplicaba y el navegador rechazaba el drop. *@
@@ -163,6 +200,7 @@ else
                                     <div class="tb-tcard-foot">
                                         <span class="tb-tcard-resp">@(string.IsNullOrWhiteSpace(t.AsignadoNombre) ? "Sin asignar" : t.AsignadoNombre)</span>
                                         @if (t.CantidadSubtareas > 0) { <span class="tb-chip">@t.CantidadSubtareas sub</span> }
+                                        <span class="tb-tcard-age" title="@TooltipEstado(t)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>@TiempoEnEstado(t)</span>
                                     </div>
                                 </button>
                             }
@@ -259,6 +297,43 @@ else
                     </div>
                 }
             </div>
+            }
+            else
+            {
+                var grupos = AgruparCards();
+                <div class="tb-groups">
+                    @foreach (var gr in grupos)
+                    {
+                        <div class="tb-gsec">
+                            <div class="tb-gsec-head">
+                                <span class="tb-gsec-nom">@gr.Key</span>
+                                <span class="tb-col-count">@gr.Items.Count</span>
+                            </div>
+                            <div class="tb-gsec-grid">
+                                @foreach (var t in gr.Items)
+                                {
+                                    var tarea = t;
+                                    <button class="tb-tcard" style="border-left-color:@(t.Color ?? "#6D4FE3")" @onclick="() => AbrirCardDraft(tarea, null)">
+                                        <span class="tb-tcard-copy" title="Copiar tarea" @onclick:stopPropagation="true" @onclick="() => AbrirCopiaDialog(tarea.Id, tarea.Titulo, tarea.EstadoId)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg></span>
+                                        <div class="tb-tcard-tit">@t.Titulo</div>
+                                        <div class="tb-tcard-meta">
+                                            <span class="tb-etapa-dot" style="background:@(t.EstadoColor ?? "#94a3b8")" title="@t.EstadoNombre"></span>
+                                            <span class="tb-prio" style="color:@PrioFg(t.Prioridad);background:@PrioBg(t.Prioridad)">@t.Prioridad</span>
+                                            @if (t.FechaVencimiento.HasValue) { <span class="tb-due @(t.Vencida ? "venc" : "")">@FechaCorta(t.FechaVencimiento.Value)</span> }
+                                        </div>
+                                        <div class="tb-tcard-foot">
+                                            <span class="tb-tcard-resp">@(string.IsNullOrWhiteSpace(t.AsignadoNombre) ? "Sin asignar" : t.AsignadoNombre)</span>
+                                            @if (t.CantidadSubtareas > 0) { <span class="tb-chip">@t.CantidadSubtareas sub</span> }
+                                            <span class="tb-tcard-age" title="@TooltipEstado(t)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>@TiempoEnEstado(t)</span>
+                                        </div>
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    }
+                    @if (grupos.Count == 0) { <div class="tb-groups-empty">No hay tarjetas en este tablero.</div> }
+                </div>
+            }
         }
 
         @* ---------- LISTA ---------- *@
@@ -294,9 +369,6 @@ else
                 }
                 @if (HayFiltros) { <button class="tb-filter-clear" @onclick="LimpiarFiltros">Limpiar</button> }
                 <div class="tb-flex"></div>
-                <button class="tb-filter-btn @(_sortTitulo ? "on" : "")" @onclick="() => _sortTitulo = !_sortTitulo" title="Ordenar por titulo">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h11M3 12h7M3 18h4M17 5v14M17 19l3-3M17 19l-3-3"/></svg>@(_sortTitulo ? "Titulo A-Z" : "Orden")
-                </button>
                 <button class="tb-filter-btn @(_pinTitulo ? "on" : "")" @onclick='() => ToggleColFijo("pin")' title="Fijar columna Titulo">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4v6l-2 4h10l-2-4V4M12 14v6M8 4h8"/></svg>Fijar titulo
                 </button>
@@ -334,31 +406,33 @@ else
 
             <div class="tb-list">
                 <div class="tb-list-hdr">
-                    <div class="tb-lc tb-lc-tit @(_pinTitulo ? "tb-pin tb-pin-h" : "")">TITULO</div>
+                    <div class="tb-lc tb-lc-tit tb-lc-sort @(_pinTitulo ? "tb-pin tb-pin-h" : "")" @onclick='() => SortBy("titulo")'><span>TITULO</span>@SortInd("titulo")</div>
                     @if (_colDesc) { <div class="tb-lc tb-lc-desc">DESCRIPCION</div> }
                     <div class="tb-lc tb-lc-est">ETAPA</div>
-                    @if (_colResp) { <div class="tb-lc tb-lc-resp">ASIGNADO</div> }
-                    <div class="tb-lc tb-lc-prog">PROGRESO</div>
+                    @if (_colResp) { <div class="tb-lc tb-lc-resp tb-lc-sort" @onclick='() => SortBy("asignado")'><span>ASIGNADO</span>@SortInd("asignado")</div> }
+                    <div class="tb-lc tb-lc-prog tb-lc-sort" @onclick='() => SortBy("progreso")'><span>PROGRESO</span>@SortInd("progreso")</div>
                     @if (_colEtiq) { <div class="tb-lc tb-lc-etiq">ETIQUETAS</div> }
-                    @if (_colPrio) { <div class="tb-lc tb-lc-prio">PRIORIDAD</div> }
-                    @if (_colDue) { <div class="tb-lc tb-lc-due">VENCE</div> }
-                    @if (_colValor) { <div class="tb-lc tb-lc-valor">VALOR</div> }
-                    @if (_colOrigen) { <div class="tb-lc tb-lc-orig">RELACIONADO CON</div> }
-                    @foreach (var c in CamposVisibles) { <div class="tb-lc tb-lc-campo">@c.Label.ToUpperInvariant()</div> }
-                    <div class="tb-lc tb-lc-acc">ACCIONES</div>
+                    @if (_colPrio) { <div class="tb-lc tb-lc-prio tb-lc-sort" @onclick='() => SortBy("prioridad")'><span>PRIORIDAD</span>@SortInd("prioridad")</div> }
+                    @if (_colDue) { <div class="tb-lc tb-lc-due tb-lc-sort" @onclick='() => SortBy("vence")'><span>VENCE</span>@SortInd("vence")</div> }
+                    @if (_colValor) { <div class="tb-lc tb-lc-valor tb-lc-sort" @onclick='() => SortBy("valor")'><span>VALOR</span>@SortInd("valor")</div> }
+                    @if (_colOrigen) { <div class="tb-lc tb-lc-orig tb-lc-sort" @onclick='() => SortBy("origen")'><span>RELACIONADO CON</span>@SortInd("origen")</div> }
+                    @foreach (var c in CamposVisibles) { var cid = c.Id.ToString(); <div class="tb-lc tb-lc-campo tb-lc-sort" @onclick="() => SortBy(cid)"><span>@c.Label.ToUpperInvariant()</span>@SortInd(cid)</div> }
+                    <div class="tb-lc tb-lc-acc"><button type="button" class="tb-hdr-addcampo" @onclick="AbrirEditorCampo" title="Agregar campo (columna)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>Campo</button></div>
                 </div>
                 @foreach (var est in _board.Estados)
                 {
                     var grupo = RaicesPorEstado(est.Id).Where(PasaFiltros).ToList();
-                    if (_sortTitulo) grupo = grupo.OrderBy(t => t.Titulo).ToList();
+                    grupo = AplicarSort(grupo).ToList();
                     if (!string.IsNullOrEmpty(_fEstado) && _fEstado != est.Id.ToString()) { continue; }
                     var estado = est;
                     <div class="tb-list-group">
-                        <span class="tb-col-dot" style="background:@(est.Color ?? "#94a3b8")"></span>
-                        <span class="tb-group-nom">@est.Nombre</span>
-                        <span class="tb-col-count">@grupo.Count</span>
-                        <div class="tb-flex"></div>
+                        <span class="tb-glead @(_pinTitulo ? "tb-pin tb-pin-g" : "")">
+                            <span class="tb-col-dot" style="background:@(est.Color ?? "#94a3b8")"></span>
+                            <span class="tb-group-nom">@est.Nombre</span>
+                            <span class="tb-col-count">@grupo.Count</span>
+                        </span>
                         <button class="tb-group-add" @onclick="() => AbrirCardDraft(null, estado.Id)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Agregar</button>
+                        <div class="tb-flex"></div>
                     </div>
                     @foreach (var t in grupo)
                     {
@@ -370,7 +444,7 @@ else
                        perder pulsaciones (value= se reafirma en cada re-render en Blazor Server). *@
                     var nf = NuevaFilaDe(estado.Id);
                     <div class="tb-newrow" @key="nf">
-                        <div class="tb-row-tit">
+                        <div class="tb-row-tit @(_pinTitulo ? "tb-pin" : "")">
                             <span class="tb-newrow-plus">+</span>
                             <input class="tb-nf-inp tb-nf-tit" data-nf-tit="@estado.Id" placeholder="Nueva tarea..." @oninput="@(e => nf.Titulo = e.Value?.ToString() ?? string.Empty)" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" />
                         </div>
@@ -485,7 +559,7 @@ else
                                     @foreach (var t in cell.Cards.Take(3))
                                     {
                                         var tarea = t;
-                                        <button class="tcal-ev @(t.Vencida ? "venc" : "")" style="border-left-color:@(t.Color ?? t.EstadoColor ?? "#6D4FE3")" title="@t.Titulo - @t.EstadoNombre" @onclick="() => AbrirCardDraft(tarea, null)">@t.Titulo</button>
+                                        <button class="tcal-ev @(t.Vencida ? "venc" : "")" style="border-left-color:@(t.Color ?? t.EstadoColor ?? "#6D4FE3")" title="@t.Titulo - @TooltipEstado(t)" @onclick="() => AbrirCardDraft(tarea, null)">@t.Titulo</button>
                                     }
                                     @if (cell.Cards.Count > 3) { <span class="tcal-more">+@(cell.Cards.Count - 3) mas</span> }
                                 </div>
@@ -507,7 +581,7 @@ else
                                     @foreach (var t in d.Cards)
                                     {
                                         var tarea = t;
-                                        <button class="tcal-wev" style="border-left-color:@(t.Color ?? t.EstadoColor ?? "#6D4FE3")" @onclick="() => AbrirCardDraft(tarea, null)">
+                                        <button class="tcal-wev" style="border-left-color:@(t.Color ?? t.EstadoColor ?? "#6D4FE3")" title="@TooltipEstado(t)" @onclick="() => AbrirCardDraft(tarea, null)">
                                             <div class="tcal-wev-t">@t.Titulo</div>
                                             @if (!string.IsNullOrWhiteSpace(t.AsignadoNombre)) { <div class="tcal-wev-r">@t.AsignadoNombre</div> }
                                         </button>
@@ -571,7 +645,7 @@ else
                                     }
                                     else { <span class="tg-exp-sp"></span> }
                                     <span class="tg-dot" style="background:@(t.EstadoColor ?? "#94a3b8")"></span>
-                                    <button class="tg-task-btn" @onclick="() => AbrirCardDraft(tarea, null)" title="@t.Titulo"><span class="tg-task-t" style="font-weight:@(depth == 0 ? 700 : 500)">@t.Titulo</span></button>
+                                    <button class="tg-task-btn" @onclick="() => AbrirCardDraft(tarea, null)" title="@TooltipEstado(t)"><span class="tg-task-t" style="font-weight:@(depth == 0 ? 700 : 500)">@t.Titulo</span></button>
                                 </div>
                                 <div class="tg-time tg-lane">
                                     @for (int i = 0; i < gDias; i++)
@@ -982,10 +1056,14 @@ else
                         </div>
                     </div>
 
-                    @if (_board.Tablero.Campos is { Count: > 0 })
-                    {
-                        <div class="tbc-fld">
+                    <div class="tbc-fld">
+                        <div class="tbc-campos-h">
                             <label>Campos personalizados</label>
+                            @* Misma potencia de configuracion que "Configurar tablero", pero desde la tarjeta. *@
+                            <button type="button" class="tbc-addcampo" @onclick="AbrirEditorCampo" title="Agregar y configurar un campo del tablero"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Agregar campo</button>
+                        </div>
+                        @if (_board.Tablero.Campos is { Count: > 0 })
+                        {
                             <div class="tbc-campos">
                                 @foreach (var c in _board.Tablero.Campos)
                                 {
@@ -1050,8 +1128,8 @@ else
                                     </div>
                                 }
                             </div>
+                        }
                         </div>
-                    }
                 </div>
 
                 @* ----- Columna 2: estado, prioridad, responsables, fechas, valor, trazabilidad ----- *@
@@ -1263,6 +1341,51 @@ else
     </div>
 }
 
+@* ===================== Editor de campo FLOTANTE (compartido: tarjeta + tabla) ===================== *@
+@if (_showCampoEditor)
+{
+    <div class="tb-modal-bd" @onclick="() => _showCampoEditor = false" style="z-index:1120;">
+        <div class="tbfld-pop" @onclick:stopPropagation="true">
+            <div class="tbfld-pop-h">Nuevo campo</div>
+            <div class="tbcfg-erow">
+                <input class="tbcfg-in" @bind="_campoDraft.Label" @bind:event="oninput" placeholder="Nombre del campo (ej. Costo estimado)" />
+                <select class="tbcfg-in tbcfg-in-sm" @bind="_campoDraft.Tipo">
+                    @foreach (var tp in Enum.GetValues<TipoCampoTablero>()) { <option value="@tp">@TipoCampoLabel(tp)</option> }
+                </select>
+            </div>
+            @if (_campoDraft.Tipo == TipoCampoTablero.Seleccion)
+            {
+                <textarea class="tbcfg-in" rows="3" @bind="_campoDraft.Opciones" @bind:event="oninput" placeholder="Una opcion por linea"></textarea>
+            }
+            @if (_campoDraft.Tipo == TipoCampoTablero.Total)
+            {
+                <div class="tbcfg-suma">
+                    <div class="tbcfg-suma-h">Campos a sumar (Numero / Moneda)</div>
+                    @if (!CamposSumables.Any()) { <div class="tbcfg-suma-empty">Crea antes campos Numero o Moneda.</div> }
+                    @foreach (var s in CamposSumables) { var sid = s.Id; <label class="tbcfg-chkl"><input type="checkbox" checked="@_campoDraft.CamposSuma.Contains(sid)" @onchange="() => ToggleCampoSuma(sid)" /> @s.Label</label> }
+                </div>
+            }
+            <input class="tbcfg-in" @bind="_campoDraft.Descripcion" @bind:event="oninput" placeholder="@(_campoDraft.Tipo == TipoCampoTablero.Separador ? "Titulo de la seccion (divisoria)" : "Descripcion / ayuda (opcional)")" />
+            @if (_campoDraft.Tipo != TipoCampoTablero.Separador && _campoDraft.Tipo != TipoCampoTablero.Total)
+            {
+                <input class="tbcfg-in" @bind="_campoDraft.ValorPorDefecto" @bind:event="oninput" placeholder="Valor por defecto (opcional)" />
+                <div class="tbcfg-erow">
+                    <label class="tbcfg-chkl"><input type="checkbox" @bind="_campoDraft.Requerido" /> Requerido</label>
+                    <label class="tbcfg-chkl"><input type="checkbox" @bind="_campoDraft.PermiteVarios" /> Permitir varios</label>
+                </div>
+            }
+            <div class="tbcfg-erow">
+                <label class="tbcfg-chkl"><input type="checkbox" @bind="_campoDraft.MostrarEnFiltro" /> Mostrar en filtros</label>
+                <select class="tbcfg-in tbcfg-in-sm" @bind="_campoDraft.Columna"><option value="1">Ancho normal</option><option value="2">Ancho completo</option></select>
+            </div>
+            <div class="tbcfg-erow tbcfg-erow-end">
+                <button class="tb-btn tb-btn-ghost" @onclick="() => _showCampoEditor = false">Cancelar</button>
+                <button class="tb-btn tb-btn-primary" @onclick="GuardarCampoFlotante" disabled="@(_busy || string.IsNullOrWhiteSpace(_campoDraft.Label))">Agregar campo</button>
+            </div>
+        </div>
+    </div>
+}
+
 <style>
     .tb-wrap { width: 100%; max-width: 1900px; margin: 0 auto; padding: 6px 28px 60px; font-family: 'Lexend', sans-serif; box-sizing: border-box; }
     .tb-head, .tb-board-head { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 20px; }
@@ -1338,6 +1461,22 @@ else
     .tb-mode { display: flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 7px; font-size: 12px; font-weight: 700; color: #7C98B6; background: transparent; border: 0; cursor: pointer; }
     .tb-mode.on { color: #6D4FE3; background: #fff; box-shadow: 0 1px 2px rgba(45,62,80,.12); }
 
+    /* Barra de acciones de la vista Tablero (ordenar / agrupar) */
+    .tb-cardbar { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+    .tb-menuwrap { position: relative; }
+    .tb-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 60; min-width: 190px; background: #fff; border: 1px solid #E1E8EE; border-radius: 11px; box-shadow: 0 12px 34px rgba(45,62,80,.16); padding: 6px; }
+    .tb-menu-it { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; text-align: left; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; font-size: 12.5px; font-weight: 600; color: #33475B; cursor: pointer; }
+    .tb-menu-it:hover { background: #F5F8FA; }
+    .tb-menu-it.on { background: #F1ECFD; color: #6D4FE3; font-weight: 800; }
+    /* Vista Tablero agrupada por dimension */
+    .tb-groups { display: flex; flex-direction: column; gap: 16px; }
+    .tb-gsec { background: #F8FAFC; border: 1px solid #ECEEF2; border-radius: 14px; padding: 13px 14px; }
+    .tb-gsec-head { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
+    .tb-gsec-nom { font-size: 13px; font-weight: 800; color: #1B2A3A; letter-spacing: -.2px; }
+    .tb-gsec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(255px, 1fr)); gap: 11px; }
+    .tb-gsec-grid .tb-tcard { cursor: pointer; }
+    .tb-etapa-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .tb-groups-empty { padding: 40px; text-align: center; color: #7C98B6; font-size: 13px; font-weight: 600; }
     .tb-kanban { display: grid; gap: 13px; align-items: start; overflow-x: auto; padding-bottom: 8px; }
     .tb-col { background: #F8FAFC; border: 1px solid #ECEEF2; border-radius: 14px; padding: 12px; transition: background .12s, border-color .12s; }
     .tb-col-drop { border-color: #B9AEF3; border-style: dashed; background: #F3F0FE; }
@@ -1360,6 +1499,8 @@ else
     .tb-tcard-foot { display: flex; align-items: center; gap: 8px; margin-top: 9px; padding-top: 9px; border-top: 1px solid #F4F7FA; }
     .tb-tcard-resp { font-size: 11px; color: #7C98B6; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .tb-chip { font-size: 10px; font-weight: 700; color: #6D4FE3; background: #F1ECFD; padding: 2px 7px; border-radius: 6px; }
+    .tb-tcard-age { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 700; color: #8595A6; background: #F4F7FA; padding: 2px 6px; border-radius: 6px; flex-shrink: 0; white-space: nowrap; }
+    .tb-tcard-age svg { opacity: .8; }
     .tb-col-add { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; padding: 9px; border-radius: 9px; border: 1px dashed #D7E0EA; background: transparent; color: #A6B7C8; font-size: 11.5px; font-weight: 700; cursor: pointer; }
     .tb-col-add:hover { border-color: #6D4FE3; color: #6D4FE3; background: #F5F1FE; }
 
@@ -1386,9 +1527,13 @@ else
     .tb-tag { font-size: 10px; font-weight: 700; color: #5838C9; background: #F1ECFD; border: 1px solid #DCD2F8; padding: 2px 8px; border-radius: 6px; }
     .tb-pin { position: sticky; left: 0; z-index: 2; background: #fff; }
     .tb-pin-h { position: sticky; left: 0; z-index: 3; background: #FAFBFC; }
+    .tb-glead { display: inline-flex; align-items: center; gap: 8px; }
+    .tb-pin-g { background: #F8FAFC; padding-right: 10px; }   /* lead del grupo fijado: fondo del grupo, no blanco */
 
     .tb-list { background: #fff; border: 1px solid #E1E8EE; border-radius: 14px; box-shadow: 0 1px 2px rgba(45,62,80,.05); overflow: auto; }
     .tb-list-hdr { display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-bottom: 1px solid #EEF3F8; background: #FAFBFC; min-width: 860px; }
+    .tb-lc-sort { cursor: pointer; user-select: none; }
+    .tb-lc-sort:hover { color: #6D4FE3; }
     .tb-lc { font-size: 10.5px; letter-spacing: .4px; font-weight: 700; color: #A6B7C8; }
     .tb-lc-tit { width: 300px; flex-shrink: 0; } .tb-lc-est { width: 130px; flex-shrink: 0; } .tb-lc-resp { width: 150px; flex-shrink: 0; }
     .tb-lc-prog { width: 140px; flex-shrink: 0; } .tb-lc-prio { width: 90px; flex-shrink: 0; } .tb-lc-due { flex: 1; min-width: 70px; }
@@ -1404,8 +1549,8 @@ else
     .tb-row-titbtn { text-align: left; flex: 1; min-width: 0; background: none; border: 0; cursor: pointer; padding: 0; }
     .tb-row-titbtn:hover .tb-row-t { color: #6D4FE3; }
     .tb-row-t { font-size: 13px; font-weight: 600; color: #33475B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .tb-row-addsub { width: 20px; height: 20px; flex-shrink: 0; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: #6D4FE3; background: transparent; border: 0; cursor: pointer; opacity: 0; transition: opacity .12s; }
-    .tb-row:hover .tb-row-addsub { opacity: 1; }
+    .tb-row-addsub { width: 20px; height: 20px; flex-shrink: 0; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: #B7A6F0; background: transparent; border: 0; cursor: pointer; opacity: .55; transition: opacity .12s; }
+    .tb-row:hover .tb-row-addsub { opacity: 1; color: #6D4FE3; }
     .tb-row-addsub:hover { background: #F1ECFD; }
     .tb-prog-bar { flex: 1; height: 6px; border-radius: 4px; background: #EEF3F8; overflow: hidden; }
     .tb-prog-fill { height: 100%; border-radius: 4px; }
@@ -1439,8 +1584,8 @@ else
     .tb-row-desc-prev { color: #7C98B6; font-size: 12px; }
     .tb-cell-inp, .tb-cell-area { width: 100%; border: 1px solid #6D4FE3; border-radius: 6px; padding: 4px 7px; font-size: 12.5px; color: #33475B; outline: none; box-shadow: 0 0 0 2px rgba(109,79,227,.12); box-sizing: border-box; font-family: inherit; }
     .tb-cell-area { position: absolute; z-index: 30; min-width: 280px; min-height: 74px; background: #fff; box-shadow: 0 12px 32px rgba(45,62,80,.2); resize: vertical; top: 2px; left: 2px; }
-    .tb-row-open { width: 20px; height: 20px; flex-shrink: 0; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: #A6B7C8; background: transparent; border: 0; cursor: pointer; opacity: 0; }
-    .tb-row:hover .tb-row-open { opacity: 1; }
+    .tb-row-open { width: 22px; height: 22px; flex-shrink: 0; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: #90A4B7; background: transparent; border: 0; cursor: pointer; opacity: 1; }
+    .tb-row:hover .tb-row-open { color: #6D4FE3; }
     .tb-row-open:hover { background: #EEF3F8; color: #6D4FE3; }
     .tb-prio-sel { width: 100%; font-size: 11px; font-weight: 700; border: 0; border-radius: 20px; padding: 3px 7px; outline: none; cursor: pointer; }
     .tb-acc-btn { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: #7C98B6; background: transparent; border: 1px solid #E1E8EE; cursor: pointer; }
@@ -1774,6 +1919,10 @@ else
 
     /* ----- Campos personalizados: modal de tarjeta ----- */
     .tbc-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    .tbc-campos-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+    .tbc-addcampo { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: var(--propia-brand, #6D4FE3); border: 1px solid #DCD2F8; background: #F5F1FE; border-radius: 8px; padding: 4px 9px; cursor: pointer; font-family: inherit; }
+    .tbc-addcampo:hover { background: #EDE7FD; }
+    .tbc-campoeditor { margin-bottom: 10px; border: 1px solid #DCD2F8; border-radius: 10px; padding: 10px; background: #FBFAFE; display: flex; flex-direction: column; gap: 8px; }
     .tbc-campo { display: flex; flex-direction: column; gap: 4px; }
     .tbc-campo.full { grid-column: 1 / -1; }
     .tbc-campo-lbl { font-size: 11px; font-weight: 700; color: #516F90; }
@@ -1807,6 +1956,11 @@ else
     .tbcfg-in:focus { border-color: #6D4FE3; }
     .tbcfg-in-sm { flex: 0 0 160px; }
     .tbcfg-chkl { display: flex; align-items: center; gap: 7px; font-size: 12px; color: #516F90; font-weight: 600; flex: 1; }
+    /* Editor de campo flotante + boton "+ Campo" del encabezado de la tabla */
+    .tbfld-pop { width: 380px; max-width: 100%; background: #fff; border-radius: 14px; box-shadow: 0 30px 70px rgba(27,42,58,.4); margin: auto; padding: 16px; display: flex; flex-direction: column; gap: 9px; }
+    .tbfld-pop-h { font-size: 14px; font-weight: 800; color: #1B2A3A; }
+    .tb-hdr-addcampo { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; color: var(--propia-brand, #6D4FE3); border: 1px solid #DCD2F8; background: #F5F1FE; border-radius: 6px; padding: 2px 7px; cursor: pointer; font-family: inherit; }
+    .tb-hdr-addcampo:hover { background: #EDE7FD; }
 </style>
 
 @code {
@@ -1856,7 +2010,107 @@ else
     private List<PersonaMini>? _personas;
     private readonly HashSet<Guid> _expandidas = new();
 
-    private string _fEstado = ""; private string _fResp = ""; private string _fPrio = ""; private string _fEtiqueta = ""; private bool _sortTitulo;
+    private string _fEstado = ""; private string _fResp = ""; private string _fPrio = ""; private string _fEtiqueta = "";
+    // Ordenamiento por columna (vista Lista): clic en el encabezado ordena; reclic invierte.
+    private string _sortCol = ""; private bool _sortAsc = true;
+    private void SortBy(string col) { if (_sortCol == col) _sortAsc = !_sortAsc; else { _sortCol = col; _sortAsc = true; } }
+    private MarkupString SortInd(string col) => _sortCol == col ? (MarkupString)(_sortAsc ? " &#9650;" : " &#9660;") : (MarkupString)"";
+    private IEnumerable<TareaListaDto> AplicarSort(List<TareaListaDto> g)
+    {
+        if (string.IsNullOrEmpty(_sortCol)) return g;
+        Func<TareaListaDto, object?> key = _sortCol switch
+        {
+            "titulo" => t => t.Titulo,
+            "asignado" => t => t.AsignadoNombre ?? "",
+            "progreso" => t => t.Progreso,
+            "prioridad" => t => (int)t.Prioridad,
+            "vence" => t => t.FechaVencimiento ?? DateOnly.MaxValue,
+            "valor" => t => t.Valor ?? 0m,
+            "origen" => t => t.OrigenReferencia ?? "",
+            _ => t => Guid.TryParse(_sortCol, out var cid) ? CampoDeTarea(t, cid) : ""
+        };
+        return _sortAsc ? g.OrderBy(key) : g.OrderByDescending(key);
+    }
+
+    // ---- Vista Tablero (tarjetas): ordenar + agrupar por dimension (incluye ubicacion) ----
+    private bool _cardSortMenu; private bool _cardGroupMenu; private string _cardGroup = "";
+    private void SetCardSort(string k) { if (string.IsNullOrEmpty(k)) _sortCol = ""; else SortBy(k); _cardSortMenu = false; }
+    private void SetCardGroup(string k) { _cardGroup = k; _cardGroupMenu = false; }
+    private IEnumerable<(string Key, string Label)> OpcionesOrden()
+    {
+        yield return ("titulo", "Titulo");
+        yield return ("prioridad", "Prioridad");
+        yield return ("vence", "Vencimiento");
+        yield return ("valor", "Valor");
+        yield return ("asignado", "Responsable");
+        yield return ("progreso", "Progreso");
+        foreach (var c in CamposDelTablero.Where(c => c.Tipo != TipoCampoTablero.Separador))
+            yield return (c.Id.ToString(), c.Label);
+    }
+    private string OrdenLabel(string k) => OpcionesOrden().FirstOrDefault(o => o.Key == k).Label ?? k;
+    private IEnumerable<(string Key, string Label)> OpcionesGrupo()
+    {
+        yield return ("", "Etapa (columnas)");
+        yield return ("prioridad", "Prioridad");
+        yield return ("responsable", "Responsable");
+        yield return ("torre", "Torre");
+        yield return ("unidad", "Unidad privada");
+        yield return ("relacionado", "Relacionado con");
+    }
+    private string GrupoLabel(string k) => OpcionesGrupo().FirstOrDefault(o => o.Key == k).Label ?? k;
+    // Torre derivada de la unidad relacionada: toma el prefijo antes del primer separador (- , / #).
+    private string TorreDeTarea(TareaListaDto t)
+    {
+        if (t.OrigenTipo != "inmueble" || string.IsNullOrWhiteSpace(t.OrigenReferencia)) return "Sin torre";
+        var s = t.OrigenReferencia!.Trim();
+        var idx = s.IndexOfAny(new[] { '-', ',', '/', '#' });
+        var pre = idx > 0 ? s.Substring(0, idx).Trim() : s;
+        return string.IsNullOrWhiteSpace(pre) ? "Sin torre" : pre;
+    }
+    private List<(string Key, List<TareaListaDto> Items)> AgruparCards()
+    {
+        var todas = _tareas.Where(t => t.PadreId == null).ToList();
+        Func<TareaListaDto, string> keyf = _cardGroup switch
+        {
+            "prioridad" => t => t.Prioridad.ToString(),
+            "responsable" => t => string.IsNullOrWhiteSpace(t.AsignadoNombre) ? "Sin responsable" : t.AsignadoNombre!,
+            "torre" => t => TorreDeTarea(t),
+            "unidad" => t => (t.OrigenTipo == "inmueble" && !string.IsNullOrWhiteSpace(t.OrigenReferencia)) ? t.OrigenReferencia! : "Sin unidad",
+            "relacionado" => t => string.IsNullOrWhiteSpace(t.OrigenReferencia) ? "Sin relacion" : t.OrigenReferencia!,
+            _ => t => t.EstadoNombre
+        };
+        return todas.GroupBy(keyf)
+            .Select(g => (Key: g.Key, Items: AplicarSort(g.ToList()).ToList()))
+            .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    // ---- Tiempo en el estado actual (indicador de tarjeta + tooltip en lista/calendario/gantt) ----
+    private static string TiempoRelativo(DateTimeOffset? desde)
+    {
+        if (desde is null) return "";
+        var span = DateTimeOffset.UtcNow - desde.Value;
+        if (span < TimeSpan.Zero) span = TimeSpan.Zero;
+        int dias = (int)span.TotalDays;
+        if (dias >= 365) { int y = dias / 365; return y + (y == 1 ? " ano" : " anos"); }
+        if (dias >= 30) { int m = dias / 30; return m + (m == 1 ? " mes" : " meses"); }
+        if (dias >= 7) { int w = dias / 7; return w + " sem"; }
+        if (dias >= 1) return dias + (dias == 1 ? " dia" : " dias");
+        int horas = (int)span.TotalHours;
+        if (horas >= 1) return horas + " h";
+        int min = (int)span.TotalMinutes;
+        if (min >= 1) return min + " min";
+        return "ahora";
+    }
+    private string TiempoEnEstado(TareaListaDto t) => TiempoRelativo(t.EstadoDesde);
+    private string TooltipEstado(TareaListaDto t)
+    {
+        var rel = TiempoEnEstado(t);
+        if (string.IsNullOrEmpty(rel)) return $"En \"{t.EstadoNombre}\"";
+        var frase = rel == "ahora" ? "hace un momento" : $"hace {rel}";
+        return $"En \"{t.EstadoNombre}\" {frase}";
+    }
+
     private bool _pinTitulo; private bool _colsMenu;
     private bool _colResp = true; private bool _colEtiq = true; private bool _colPrio = true; private bool _colDue = true;
     private bool _colValor = true; private bool _colDesc = true; private bool _colOrigen = true;
@@ -1933,6 +2187,7 @@ else
     private TableroDraft? _tableroDraft;
     private CardDraft? _cardDraft;
     private string? _cardMsg;   // aviso en el pie del modal de tarjeta (ej. campos requeridos)
+    private bool _showCampoEditor; // editor de campo FLOTANTE (compartido: tarjeta + tabla)
     private string _subNew = "";
     private string _subtareaNew = "";
 
@@ -2486,13 +2741,13 @@ else
                 }
                 else
                 {
-                    <div class="tb-row-t tb-editable" title="Click para editar" @onclick='() => IniciarEd(tarea.Id, "titulo", tarea.Titulo)'>@t.Titulo</div>
+                    <div class="tb-row-t tb-editable" title="@TooltipEstado(t) - Click para editar" @onclick='() => IniciarEd(tarea.Id, "titulo", tarea.Titulo)'>@t.Titulo</div>
                 }
                 @if (depth < 3)
                 {
                     <button class="tb-row-addsub" title="Agregar tarea hija" @onclick="() => AbrirSubtareaDraft(tarea)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg></button>
                 }
-                <button class="tb-row-open" title="Abrir detalle" @onclick="() => AbrirCardDraft(tarea, null)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18l6-6-6-6"/></svg></button>
+                <button class="tb-row-open" title="Abrir detalle" @onclick="() => AbrirCardDraft(tarea, null)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button>
             </div>
             @* ---- DESCRIPCION (click -> caja expandible) ---- *@
             @if (_colDesc)
@@ -3094,6 +3349,14 @@ else
         await RecargarBoard();
     }
     private void CfgNuevoCampo() => _campoDraft = new CampoDraft();
+    // "Agregar campo" desde el modal de tarjeta: mismo editor/potencia que Configurar tablero.
+    private void AbrirEditorCampo() { _campoDraft = new CampoDraft(); _showCampoEditor = true; }
+    private async Task GuardarCampoFlotante()
+    {
+        _msg = null;
+        await CfgGuardarCampo();   // crea el campo via API + RecargarBoard (aparece en tarjeta y tabla)
+        if (string.IsNullOrEmpty(_msg)) _showCampoEditor = false;
+    }
     private void CfgEditCampo(TableroCampoDto c) => _campoDraft = new CampoDraft
     {
         Id = c.Id,

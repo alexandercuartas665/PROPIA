@@ -31,7 +31,8 @@ public record TareaListaDto(
     IReadOnlyList<ResponsableMiniDto>? Responsables = null,
     string? Descripcion = null,
     string? OrigenTipo = null,
-    string? OrigenReferencia = null);
+    string? OrigenReferencia = null,
+    DateTimeOffset? EstadoDesde = null);
 
 // Responsable de una tarea (asignado principal + colaboradores) con foto para la vista tabla.
 public record ResponsableMiniDto(Guid PersonaId, string Nombre, string? FotoUrl);

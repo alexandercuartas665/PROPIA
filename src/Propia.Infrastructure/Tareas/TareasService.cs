@@ -230,7 +230,8 @@ public class TareasService : ITareasService
                 t.Valor,
                 t.Descripcion,
                 t.OrigenTipo,
-                t.OrigenReferencia
+                t.OrigenReferencia,
+                t.EstadoDesde
             }
         ).ToListAsync(ct);
 
@@ -278,7 +279,7 @@ public class TareasService : ITareasService
                 etiquetasMap.GetValueOrDefault(r.Id, new List<EtiquetaTareaDto>()),
                 r.Progreso, r.Color, r.EsProyecto, r.Valor, r.FechaInicio,
                 camposMap.GetValueOrDefault(r.Id),
-                resp, r.Descripcion, r.OrigenTipo, r.OrigenReferencia);
+                resp, r.Descripcion, r.OrigenTipo, r.OrigenReferencia, r.EstadoDesde);
         }).ToList();
     }
 
@@ -346,7 +347,7 @@ public class TareasService : ITareasService
                 c.Id, c.NumeroTarea, c.Titulo, c.Prioridad, c.EstadoId, e.Nombre, e.Color, e.EsTerminal,
                 c.AsignadoPersonaId, null, c.FechaVencimiento, false, c.PadreId, 0, 0,
                 new List<EtiquetaTareaDto>(), c.Progreso, c.Color, c.EsProyecto, c.Valor, c.FechaInicio,
-                null, null, null, c.OrigenTipo, c.OrigenReferencia)
+                null, null, null, c.OrigenTipo, c.OrigenReferencia, c.EstadoDesde)
         ).ToListAsync(ct);
 
         var asigNombre = t.AsignadoPersona is null ? null
@@ -783,6 +784,7 @@ public class TareasService : ITareasService
             throw new InvalidOperationException("Se requiere motivo para cancelar la tarea.");
 
         t.EstadoId = nuevo.Id;
+        t.EstadoDesde = DateTimeOffset.UtcNow;   // reinicia el reloj "tiempo en este estado".
         if (nuevo.EsTerminal && nuevo.Nombre == EstadoTareaBase.Completada)
         {
             t.FechaCompletada = DateTimeOffset.UtcNow;
@@ -1083,6 +1085,7 @@ public class TareasService : ITareasService
             if (t.EstadoId == req.NuevoEstadoId) { continue; }
             var estadoAnterior = t.Estado?.Nombre ?? "?";
             t.EstadoId = req.NuevoEstadoId;
+            t.EstadoDesde = DateTimeOffset.UtcNow;   // reinicia el reloj "tiempo en este estado".
             t.UpdatedAt = DateTimeOffset.UtcNow;
             if (nuevoEstado.EsTerminal && t.FechaCompletada is null)
                 t.FechaCompletada = DateTimeOffset.UtcNow;

@@ -21,6 +21,10 @@ public class Tarea : TenantEntity
     public Guid EstadoId { get; set; }
     public TareaEstado? Estado { get; set; }
 
+    /// <summary>Instante (UTC) en que la tarea entro a su estado actual. Se estampa al crear
+    /// y en cada cambio de estado. Alimenta el indicador "tiempo en este estado" de la UI.</summary>
+    public DateTimeOffset EstadoDesde { get; set; } = DateTimeOffset.UtcNow;
+
     public PrioridadTarea Prioridad { get; set; } = PrioridadTarea.Normal;
 
     // ----- Campos de tarjeta del prototipo (2.10) -----
