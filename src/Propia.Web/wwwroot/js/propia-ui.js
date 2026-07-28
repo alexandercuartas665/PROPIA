@@ -405,3 +405,6 @@
     document.addEventListener('click', ocultarTip);
     window.addEventListener('scroll', ocultarTip, true);
 })();
+
+// Alto del viewport, para que los popover anclados decidan si abren hacia abajo o arriba.
+window.propiaViewportH = function () { return window.innerHeight || document.documentElement.clientHeight || 0; };

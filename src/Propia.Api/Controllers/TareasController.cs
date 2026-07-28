@@ -278,6 +278,11 @@ public class TareasController : ControllerBase
     public async Task<IActionResult> EliminarCampo(Guid id, Guid campoId, CancellationToken ct)
         => await _svc.EliminarCampoAsync(id, campoId, ct) ? NoContent() : NotFound();
 
+    // Reordena un campo: direccion < 0 lo sube, direccion >= 0 lo baja (intercambia con el vecino).
+    [HttpPut("tableros/{id:guid}/campos/{campoId:guid}/orden")]
+    public async Task<IActionResult> ReordenarCampo(Guid id, Guid campoId, [FromQuery] int direccion, CancellationToken ct)
+        => await _svc.ReordenarCampoAsync(id, campoId, direccion, ct) ? NoContent() : NotFound();
+
     [HttpPut("{id:guid}/progreso")]
     public async Task<IActionResult> ActualizarProgreso(Guid id, [FromBody] ActualizarProgresoRequest req, CancellationToken ct)
         => await _svc.ActualizarProgresoAsync(id, req.Progreso, ct) ? NoContent() : NotFound();

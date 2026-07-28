@@ -76,4 +76,5 @@ public interface ITareasService
     Task<TableroCampoDto> AgregarCampoAsync(Guid tableroId, GuardarCampoRequest req, CancellationToken ct);
     Task<bool> ActualizarCampoAsync(Guid tableroId, Guid campoId, GuardarCampoRequest req, CancellationToken ct);
     Task<bool> EliminarCampoAsync(Guid tableroId, Guid campoId, CancellationToken ct);
+    Task<bool> ReordenarCampoAsync(Guid tableroId, Guid campoId, int direccion, CancellationToken ct);
 }

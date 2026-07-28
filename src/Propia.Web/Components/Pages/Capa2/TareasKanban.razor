@@ -369,6 +369,21 @@ else
                 }
                 @if (HayFiltros) { <button class="tb-filter-clear" @onclick="LimpiarFiltros">Limpiar</button> }
                 <div class="tb-flex"></div>
+                <div class="tb-menuwrap">
+                    <button class="tb-filter-btn @(!string.IsNullOrEmpty(_cardGroup) ? "on" : "")" @onclick="() => _cardGroupMenu = !_cardGroupMenu" title="Agrupar filas">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>@(string.IsNullOrEmpty(_cardGroup) ? "Agrupar por" : "Agrupar: " + GrupoLabel(_cardGroup))
+                    </button>
+                    @if (_cardGroupMenu)
+                    {
+                        <div class="tb-menu">
+                            @foreach (var o in OpcionesGrupo())
+                            {
+                                var k = o.Key;
+                                <button class="tb-menu-it @(_cardGroup == k ? "on" : "")" @onclick="() => SetCardGroup(k)">@o.Label</button>
+                            }
+                        </div>
+                    }
+                </div>
                 <button class="tb-filter-btn @(_pinTitulo ? "on" : "")" @onclick='() => ToggleColFijo("pin")' title="Fijar columna Titulo">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4v6l-2 4h10l-2-4V4M12 14v6M8 4h8"/></svg>Fijar titulo
                 </button>
@@ -416,9 +431,11 @@ else
                     @if (_colDue) { <div class="tb-lc tb-lc-due tb-lc-sort" @onclick='() => SortBy("vence")'><span>VENCE</span>@SortInd("vence")</div> }
                     @if (_colValor) { <div class="tb-lc tb-lc-valor tb-lc-sort" @onclick='() => SortBy("valor")'><span>VALOR</span>@SortInd("valor")</div> }
                     @if (_colOrigen) { <div class="tb-lc tb-lc-orig tb-lc-sort" @onclick='() => SortBy("origen")'><span>RELACIONADO CON</span>@SortInd("origen")</div> }
-                    @foreach (var c in CamposVisibles) { var cid = c.Id.ToString(); <div class="tb-lc tb-lc-campo tb-lc-sort" @onclick="() => SortBy(cid)"><span>@c.Label.ToUpperInvariant()</span>@SortInd(cid)</div> }
+                    @foreach (var c in CamposVisibles) { var cid = c.Id.ToString(); var campo = c; <div class="tb-lc tb-lc-campo tb-lc-sort" @onclick="() => SortBy(cid)"><span>@c.Label.ToUpperInvariant()</span>@SortInd(cid)<button type="button" class="tb-lc-ed" title="Editar campo" @onclick:stopPropagation="true" @onclick="(e) => EditarCampoPop(e, campo)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div> }
                     <div class="tb-lc tb-lc-acc"><button type="button" class="tb-hdr-addcampo" @onclick="AbrirEditorCampo" title="Agregar campo (columna)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>Campo</button></div>
                 </div>
+                @if (string.IsNullOrEmpty(_cardGroup))
+                {
                 @foreach (var est in _board.Estados)
                 {
                     var grupo = RaicesPorEstado(est.Id).Where(PasaFiltros).ToList();
@@ -526,6 +543,22 @@ else
                             </button>
                         </div>
                     </div>
+                }
+                }
+                else
+                {
+                    @* Agrupada por la dimension elegida (prioridad, responsable, torre, unidad, relacionado). *@
+                    @foreach (var gr in AgruparLista())
+                    {
+                        <div class="tb-list-group">
+                            <span class="tb-glead @(_pinTitulo ? "tb-pin tb-pin-g" : "")">
+                                <span class="tb-group-nom">@gr.Key</span>
+                                <span class="tb-col-count">@gr.Items.Count</span>
+                            </span>
+                            <div class="tb-flex"></div>
+                        </div>
+                        @foreach (var t in gr.Items) { @RenderArbol(t, 0) }
+                    }
                 }
             </div>
         }
@@ -1071,11 +1104,25 @@ else
                                     <div class="tbc-campo @((c.Columna >= 2 || c.Tipo == TipoCampoTablero.Separador) ? "full" : "")">
                                         @if (c.Tipo == TipoCampoTablero.Separador)
                                         {
-                                            <div class="tbc-sep">@(string.IsNullOrWhiteSpace(c.Descripcion) ? c.Label : c.Descripcion)</div>
+                                            <div class="tbc-sep">
+                                                <span>@(string.IsNullOrWhiteSpace(c.Descripcion) ? c.Label : c.Descripcion)</span>
+                                                <div class="tbc-campo-acts">
+                                                    <button type="button" class="tbc-campo-mv" title="Subir" @onclick:stopPropagation="true" @onclick="() => MoverCampo(campo.Id, -1)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 15l-6-6-6 6"/></svg></button>
+                                                    <button type="button" class="tbc-campo-mv" title="Bajar" @onclick:stopPropagation="true" @onclick="() => MoverCampo(campo.Id, 1)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg></button>
+                                                    <button type="button" class="tbc-campo-ed2" title="Editar campo" @onclick:stopPropagation="true" @onclick="(e) => EditarCampoPop(e, campo)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                                                </div>
+                                            </div>
                                         }
                                         else
                                         {
-                                            <label class="tbc-campo-lbl" title="@c.Descripcion">@c.Label@(c.Requerido ? " *" : "")</label>
+                                            <div class="tbc-campo-lblrow">
+                                                <label class="tbc-campo-lbl" title="@c.Descripcion">@c.Label@(c.Requerido ? " *" : "")</label>
+                                                <div class="tbc-campo-acts">
+                                                    <button type="button" class="tbc-campo-mv" title="Subir" @onclick:stopPropagation="true" @onclick="() => MoverCampo(campo.Id, -1)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 15l-6-6-6 6"/></svg></button>
+                                                    <button type="button" class="tbc-campo-mv" title="Bajar" @onclick:stopPropagation="true" @onclick="() => MoverCampo(campo.Id, 1)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg></button>
+                                                    <button type="button" class="tbc-campo-ed2" title="Editar campo" @onclick:stopPropagation="true" @onclick="(e) => EditarCampoPop(e, campo)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                                                </div>
+                                            </div>
                                             @if (c.Tipo == TipoCampoTablero.Total)
                                             {
                                                 <input type="text" class="tbc-total" readonly value="@CalcularTotal(c)" />
@@ -1344,10 +1391,10 @@ else
 @* ===================== Editor de campo FLOTANTE (compartido: tarjeta + tabla) ===================== *@
 @if (_showCampoEditor)
 {
-    <div class="tb-modal-bd" @onclick="() => _showCampoEditor = false" style="z-index:1120;">
-        <div class="tbfld-pop" @onclick:stopPropagation="true">
-            <div class="tbfld-pop-h">
-                <span>@(_campoDraft.Id is null ? "Nuevo campo personalizado" : "Editar campo")</span>
+    <div class="tbfld-bd" @onclick="() => _showCampoEditor = false"></div>
+    <div class="tbfld-pop @(_popUp ? "tbfld-pop-up" : "")" @onclick:stopPropagation="true" style="@PopStyle()">
+        <div class="tbfld-pop-h">
+                <span>@(_campoDraft.Id is null ? "Nuevo campo" : "Editar campo")</span>
                 <button type="button" class="tbfld-x" @onclick="() => _showCampoEditor = false" title="Cerrar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
             </div>
             <div class="tbfld-pop-b">
@@ -1400,7 +1447,6 @@ else
                 <button class="tb-btn tb-btn-ghost" @onclick="() => _showCampoEditor = false">Cancelar</button>
                 <button class="tb-btn tb-btn-primary" @onclick="GuardarCampoFlotante" disabled="@(_busy || string.IsNullOrWhiteSpace(_campoDraft.Label))">@(_campoDraft.Id is null ? "Agregar campo" : "Guardar campo")</button>
             </div>
-        </div>
     </div>
 }
 
@@ -1697,7 +1743,7 @@ else
     @@media (max-width: 620px) { .tb-invite-grid { grid-template-columns: 1fr 1fr; } }
 
     /* ===== Modal de tarjeta rico (3 columnas) ===== */
-    .tbc-modal { width: 980px; max-width: 100%; background: #fff; border-radius: 18px; box-shadow: 0 30px 70px rgba(27,42,58,.4); margin: auto; overflow: hidden; display: flex; flex-direction: column; max-height: 92vh; }
+    .tbc-modal { width: 1200px; max-width: 96vw; background: #fff; border-radius: 18px; box-shadow: 0 30px 70px rgba(27,42,58,.4); margin: auto; overflow: hidden; display: flex; flex-direction: column; max-height: 92vh; }
     .tbc-head { display: flex; align-items: center; gap: 12px; padding: 18px 24px; flex-shrink: 0; }
     .tbc-head-bar { width: 8px; height: 32px; border-radius: 5px; background: rgba(255,255,255,.85); flex-shrink: 0; }
     .tbc-head-id { flex: 1; min-width: 0; }
@@ -1944,8 +1990,18 @@ else
     .tbc-campo { display: flex; flex-direction: column; gap: 4px; }
     .tbc-campo.full { grid-column: 1 / -1; }
     .tbc-campo-lbl { font-size: 11px; font-weight: 700; color: #516F90; }
+    /* Lapiz para editar la DEFINICION del campo (nombre/tipo/opciones), desde la ficha y la parrilla. */
+    .tbc-campo-lblrow { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+    .tbc-campo-ed2 { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 0; background: transparent; color: #A6B7C8; cursor: pointer; border-radius: 5px; opacity: .5; flex-shrink: 0; font-family: inherit; }
+    .tbc-campo-ed2:hover { color: var(--propia-brand, #6D4FE3); background: #F1ECFD; opacity: 1; }
+    .tbc-campo-acts { display: flex; align-items: center; gap: 1px; flex-shrink: 0; }
+    .tbc-campo-mv { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 0; background: transparent; color: #A6B7C8; cursor: pointer; border-radius: 5px; opacity: .5; font-family: inherit; }
+    .tbc-campo-mv:hover { color: var(--propia-brand, #6D4FE3); background: #F1ECFD; opacity: 1; }
+    .tb-lc-ed { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 0; background: transparent; color: #A6B7C8; cursor: pointer; border-radius: 4px; opacity: 0; margin-left: 4px; vertical-align: middle; }
+    .tb-lc-campo:hover .tb-lc-ed { opacity: .7; }
+    .tb-lc-ed:hover { color: var(--propia-brand, #6D4FE3); opacity: 1; }
     .tbc-req { color: #D7263D; font-weight: 800; }
-    .tbc-sep { font-size: 11px; font-weight: 800; letter-spacing: .4px; color: var(--propia-brand, #6D4FE3); text-transform: uppercase; border-top: 1px solid #E1E8EE; padding-top: 9px; margin-top: 4px; }
+    .tbc-sep { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 11px; font-weight: 800; letter-spacing: .4px; color: var(--propia-brand, #6D4FE3); text-transform: uppercase; border-top: 1px solid #E1E8EE; padding-top: 9px; margin-top: 4px; }
     .tbc-total { background: #F3EFFE; font-weight: 700; color: #33475B; }
     .tbc-cardmsg { font-size: 12px; font-weight: 600; color: #D7263D; align-self: center; margin-right: 8px; }
     .tbcfg-suma { border: 1px solid #E1E8EE; border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
@@ -1975,15 +2031,21 @@ else
     .tbcfg-in-sm { flex: 0 0 160px; }
     .tbcfg-chkl { display: flex; align-items: center; gap: 7px; font-size: 12px; color: #516F90; font-weight: 600; flex: 1; }
     /* Editor de campo flotante + boton "+ Campo" del encabezado de la tabla */
-    /* Editor de campo como MODAL completo (no menu): header + cuerpo con scroll + pie. */
-    .tbfld-pop { width: 560px; max-width: 96vw; max-height: 88vh; background: #fff; border-radius: 16px; box-shadow: 0 30px 70px rgba(27,42,58,.4); margin: auto; display: flex; flex-direction: column; overflow: hidden; }
-    .tbfld-pop-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 22px; border-bottom: 1px solid #EEF2F6; font-size: 16px; font-weight: 800; color: #1B2A3A; flex-shrink: 0; }
-    .tbfld-x { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; border: 1px solid #E1E8EE; background: #fff; color: #7C98B6; cursor: pointer; flex-shrink: 0; }
+    /* Editor de campo como POPOVER anclado al boton (nace del boton, con flechita). */
+    .tbfld-bd { position: fixed; inset: 0; z-index: 1118; background: transparent; }
+    .tbfld-pop { position: fixed; z-index: 1120; width: 360px; max-width: calc(100vw - 24px); background: #fff; border: 1px solid #E6ECF1; border-radius: 13px; box-shadow: 0 18px 50px rgba(27,42,58,.28); display: flex; flex-direction: column; overflow: hidden; transform-origin: top right; animation: tbfldIn .12s ease-out; }
+    .tbfld-pop::before { content: ''; position: absolute; top: -7px; right: 18px; width: 13px; height: 13px; background: #fff; border-left: 1px solid #E6ECF1; border-top: 1px solid #E6ECF1; transform: rotate(45deg); }
+    .tbfld-pop-up { transform-origin: bottom right; animation: tbfldInUp .12s ease-out; }
+    .tbfld-pop-up::before { top: auto; bottom: -7px; border-left: none; border-top: none; border-right: 1px solid #E6ECF1; border-bottom: 1px solid #E6ECF1; }
+    @@keyframes tbfldIn { from { opacity: 0; transform: translateY(-6px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    @@keyframes tbfldInUp { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    .tbfld-pop-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid #F1F4F7; font-size: 13.5px; font-weight: 800; color: #1B2A3A; flex-shrink: 0; }
+    .tbfld-x { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; border: 1px solid #E1E8EE; background: #fff; color: #7C98B6; cursor: pointer; flex-shrink: 0; }
     .tbfld-x:hover { border-color: #6D4FE3; color: #6D4FE3; }
-    .tbfld-pop-b { padding: 18px 22px; overflow-y: auto; display: flex; flex-direction: column; gap: 13px; }
-    .tbfld-pop-f { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 16px 22px; border-top: 1px solid #EEF2F6; flex-shrink: 0; }
-    .tbfld-field { display: flex; flex-direction: column; gap: 5px; }
-    .tbfld-lbl { font-size: 11.5px; font-weight: 700; color: #516F90; letter-spacing: .2px; }
+    .tbfld-pop-b { padding: 13px 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 11px; }
+    .tbfld-pop-f { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 11px 14px; border-top: 1px solid #F1F4F7; flex-shrink: 0; }
+    .tbfld-field { display: flex; flex-direction: column; gap: 4px; }
+    .tbfld-lbl { font-size: 11px; font-weight: 700; color: #516F90; letter-spacing: .2px; }
     .tb-hdr-addcampo { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; color: var(--propia-brand, #6D4FE3); border: 1px solid #DCD2F8; background: #F5F1FE; border-radius: 6px; padding: 2px 7px; cursor: pointer; font-family: inherit; }
     .tb-hdr-addcampo:hover { background: #EDE7FD; }
 </style>
@@ -2075,7 +2137,7 @@ else
     private string OrdenLabel(string k) => OpcionesOrden().FirstOrDefault(o => o.Key == k).Label ?? k;
     private IEnumerable<(string Key, string Label)> OpcionesGrupo()
     {
-        yield return ("", "Etapa (columnas)");
+        yield return ("", "Etapa");
         yield return ("prioridad", "Prioridad");
         yield return ("responsable", "Responsable");
         yield return ("torre", "Torre");
@@ -2092,23 +2154,28 @@ else
         var pre = idx > 0 ? s.Substring(0, idx).Trim() : s;
         return string.IsNullOrWhiteSpace(pre) ? "Sin torre" : pre;
     }
-    private List<(string Key, List<TareaListaDto> Items)> AgruparCards()
+    // Funcion de clave de agrupacion segun _cardGroup (compartida por Tablero y Lista).
+    private Func<TareaListaDto, string> ClaveGrupo() => _cardGroup switch
     {
-        var todas = _tareas.Where(t => t.PadreId == null).ToList();
-        Func<TareaListaDto, string> keyf = _cardGroup switch
-        {
-            "prioridad" => t => t.Prioridad.ToString(),
-            "responsable" => t => string.IsNullOrWhiteSpace(t.AsignadoNombre) ? "Sin responsable" : t.AsignadoNombre!,
-            "torre" => t => TorreDeTarea(t),
-            "unidad" => t => (t.OrigenTipo == "inmueble" && !string.IsNullOrWhiteSpace(t.OrigenReferencia)) ? t.OrigenReferencia! : "Sin unidad",
-            "relacionado" => t => string.IsNullOrWhiteSpace(t.OrigenReferencia) ? "Sin relacion" : t.OrigenReferencia!,
-            _ => t => t.EstadoNombre
-        };
-        return todas.GroupBy(keyf)
+        "prioridad" => t => t.Prioridad.ToString(),
+        "responsable" => t => string.IsNullOrWhiteSpace(t.AsignadoNombre) ? "Sin responsable" : t.AsignadoNombre!,
+        "torre" => t => TorreDeTarea(t),
+        "unidad" => t => (t.OrigenTipo == "inmueble" && !string.IsNullOrWhiteSpace(t.OrigenReferencia)) ? t.OrigenReferencia! : "Sin unidad",
+        "relacionado" => t => string.IsNullOrWhiteSpace(t.OrigenReferencia) ? "Sin relacion" : t.OrigenReferencia!,
+        _ => t => t.EstadoNombre
+    };
+    // Tablero (tarjetas): agrupa las raices sin aplicar filtros (la vista tarjetas no tiene filtros).
+    private List<(string Key, List<TareaListaDto> Items)> AgruparCards()
+        => _tareas.Where(t => t.PadreId == null).GroupBy(ClaveGrupo())
             .Select(g => (Key: g.Key, Items: AplicarSort(g.ToList()).ToList()))
             .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
             .ToList();
-    }
+    // Lista: agrupa por la dimension elegida aplicando filtros y orden (para la vista tabla).
+    private List<(string Key, List<TareaListaDto> Items)> AgruparLista()
+        => _tareas.Where(t => t.PadreId == null).Where(PasaFiltros).GroupBy(ClaveGrupo())
+            .Select(g => (Key: g.Key, Items: AplicarSort(g.ToList()).ToList()))
+            .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     // ---- Tiempo en el estado actual (indicador de tarjeta + tooltip en lista/calendario/gantt) ----
     private static string TiempoRelativo(DateTimeOffset? desde)
@@ -3375,7 +3442,24 @@ else
     }
     private void CfgNuevoCampo() => _campoDraft = new CampoDraft();
     // "Agregar campo" desde el modal de tarjeta: mismo editor/potencia que Configurar tablero.
-    private void AbrirEditorCampo() { _campoDraft = new CampoDraft(); _showCampoEditor = true; }
+    // Coordenadas del clic para anclar el popover al boton (aspecto de "nace del boton").
+    // _popUp = true cuando el clic esta en la mitad inferior: el popover abre hacia arriba.
+    private double _popX, _popY; private bool _popUp;
+    // Nuevo campo: abre el popover en blanco anclado al boton.
+    private async Task AbrirEditorCampo(MouseEventArgs e) { _campoDraft = new CampoDraft(); await AbrirPopEn(e); }
+    // Editar campo existente: precarga el draft con el campo y abre el mismo popover anclado.
+    private async Task EditarCampoPop(MouseEventArgs e, TableroCampoDto c) { CfgEditCampo(c); await AbrirPopEn(e); }
+    private async Task AbrirPopEn(MouseEventArgs e)
+    {
+        _popX = e.ClientX; _popY = e.ClientY;
+        try { var vh = await Js.InvokeAsync<double>("propiaViewportH"); _popUp = vh > 0 && e.ClientY > vh * 0.55; }
+        catch { _popUp = false; }
+        _showCampoEditor = true;
+    }
+    // Ancla el popover al punto del clic: cae hacia abajo, o hacia arriba si no hay espacio.
+    private string PopStyle() => _popUp
+        ? $"bottom:calc(100vh - {_popY:0}px + 8px); right:calc(100vw - {_popX:0}px); max-height:calc({_popY:0}px - 24px);"
+        : $"top:calc({_popY:0}px + 8px); right:calc(100vw - {_popX:0}px); max-height:calc(100vh - {_popY:0}px - 24px);";
     private async Task GuardarCampoFlotante()
     {
         _msg = null;
@@ -3427,6 +3511,13 @@ else
         if (_board is null) return;
         var resp = await Auth().DeleteAsync($"/api/tareas/tableros/{_board.Tablero.Id}/campos/{campoId}");
         if (resp.IsSuccessStatusCode) { if (_campoDraft.Id == campoId) _campoDraft = new CampoDraft(); await RecargarBoard(); }
+    }
+    // Sube (direccion -1) o baja (direccion +1) el campo en el orden del tablero.
+    private async Task MoverCampo(Guid campoId, int direccion)
+    {
+        if (_board is null) return;
+        var resp = await Auth().PutAsync($"/api/tareas/tableros/{_board.Tablero.Id}/campos/{campoId}/orden?direccion={direccion}", null);
+        if (resp.IsSuccessStatusCode) await RecargarBoard();
     }
 
     // ----- Helpers de campos personalizados -----

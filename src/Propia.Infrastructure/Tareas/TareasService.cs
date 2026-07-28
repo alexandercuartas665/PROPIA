@@ -1330,6 +1330,23 @@ public class TareasService : ITareasService
         return true;
     }
 
+    /// <summary>Sube (direccion &lt; 0) o baja (direccion &gt;= 0) un campo, intercambiando el
+    /// Orden con el campo vecino. Normaliza los ordenes a 0..n-1 para tolerar huecos/empates.</summary>
+    public async Task<bool> ReordenarCampoAsync(Guid tableroId, Guid campoId, int direccion, CancellationToken ct)
+    {
+        var campos = await _db.TableroCampos.Where(c => c.TableroId == tableroId)
+            .OrderBy(c => c.Orden).ThenBy(c => c.Id).ToListAsync(ct);
+        for (int i = 0; i < campos.Count; i++) campos[i].Orden = i;
+        var idx = campos.FindIndex(c => c.Id == campoId);
+        if (idx < 0) return false;
+        var swap = idx + (direccion < 0 ? -1 : 1);
+        if (swap < 0 || swap >= campos.Count) return false;   // ya esta en el extremo
+        (campos[idx].Orden, campos[swap].Orden) = (campos[swap].Orden, campos[idx].Orden);
+        campos[idx].UpdatedAt = campos[swap].UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
     public async Task<IReadOnlyList<TableroDto>> ListarTablerosAsync(CancellationToken ct)
     {
         await AsegurarEstadosBaseAsync(ct);
