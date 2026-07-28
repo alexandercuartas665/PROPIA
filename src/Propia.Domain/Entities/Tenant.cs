@@ -37,6 +37,7 @@ public class Tenant : BaseEntity
     public string? MatriculaInmobiliaria { get; set; }
     public string? LicenciaConstruccion { get; set; }
     public DateOnly? FechaConstitucion { get; set; }
+    public string? CertificadoMayorExtension { get; set; }   // Numero/referencia del certificado de mayor extension.
 
     // Labels personalizables para estructura fisica (Sector vs Torre, Planta vs Piso, etc.)
     public string? LabelAgrupacion { get; set; }  // Default "Torre"

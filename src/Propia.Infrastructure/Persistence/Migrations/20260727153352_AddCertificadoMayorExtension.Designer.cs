@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Propia.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using Propia.Infrastructure.Persistence;
 namespace Propia.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(PropiaDbContext))]
-    partial class PropiaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260727153352_AddCertificadoMayorExtension")]
+    partial class AddCertificadoMayorExtension
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -12400,10 +12403,6 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<string>("CamposSuma")
-                        .HasColumnType("text")
-                        .HasColumnName("campos_suma");
-
                     b.Property<int>("Columna")
                         .HasColumnType("integer")
                         .HasColumnName("columna");
@@ -12437,14 +12436,6 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("orden");
 
-                    b.Property<bool>("PermiteVarios")
-                        .HasColumnType("boolean")
-                        .HasColumnName("permite_varios");
-
-                    b.Property<bool>("Requerido")
-                        .HasColumnType("boolean")
-                        .HasColumnName("requerido");
-
                     b.Property<Guid>("TableroId")
                         .HasColumnType("uuid")
                         .HasColumnName("tablero_id");
@@ -12464,10 +12455,6 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("UpdatedBy")
                         .HasColumnType("uuid")
                         .HasColumnName("updated_by");
-
-                    b.Property<string>("ValorPorDefecto")
-                        .HasColumnType("text")
-                        .HasColumnName("valor_por_defecto");
 
                     b.HasKey("Id");
 

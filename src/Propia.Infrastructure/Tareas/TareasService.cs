@@ -1230,7 +1230,7 @@ public class TareasService : ITareasService
         var usuarios = personas.Select(p => new TableroUsuarioDto(p.Id, p.Nombre.Trim(), Iniciales(p.Nombre))).ToList();
         var campos = await _db.TableroCampos.AsNoTracking().Where(c => c.TableroId == t.Id)
             .OrderBy(c => c.Orden)
-            .Select(c => new TableroCampoDto(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones, c.MostrarEnFiltro, c.Columna, c.Descripcion))
+            .Select(c => new TableroCampoDto(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones, c.MostrarEnFiltro, c.Columna, c.Descripcion, c.Requerido, c.ValorPorDefecto, c.PermiteVarios, c.CamposSuma))
             .ToListAsync(ct);
         return new TableroDto(t.Id, t.Nombre, t.Descripcion, t.Color, t.Orden, nCards, usuarios, campos);
     }
@@ -1256,11 +1256,15 @@ public class TareasService : ITareasService
             Opciones = string.IsNullOrWhiteSpace(req.Opciones) ? null : req.Opciones.Trim(),
             MostrarEnFiltro = req.MostrarEnFiltro,
             Columna = ClampColumna(req.Columna),
-            Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim()
+            Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim(),
+            Requerido = req.Requerido,
+            ValorPorDefecto = string.IsNullOrWhiteSpace(req.ValorPorDefecto) ? null : req.ValorPorDefecto.Trim(),
+            PermiteVarios = req.PermiteVarios,
+            CamposSuma = string.IsNullOrWhiteSpace(req.CamposSuma) ? null : req.CamposSuma.Trim()
         };
         _db.TableroCampos.Add(c2);
         await _db.SaveChangesAsync(ct);
-        return new TableroCampoDto(c2.Id, c2.Label, c2.Orden, c2.Tipo, c2.Opciones, c2.MostrarEnFiltro, c2.Columna, c2.Descripcion);
+        return new TableroCampoDto(c2.Id, c2.Label, c2.Orden, c2.Tipo, c2.Opciones, c2.MostrarEnFiltro, c2.Columna, c2.Descripcion, c2.Requerido, c2.ValorPorDefecto, c2.PermiteVarios, c2.CamposSuma);
     }
 
     public async Task<bool> ActualizarCampoAsync(Guid tableroId, Guid campoId, GuardarCampoRequest req, CancellationToken ct)
@@ -1278,6 +1282,10 @@ public class TareasService : ITareasService
         c.MostrarEnFiltro = req.MostrarEnFiltro;
         c.Columna = ClampColumna(req.Columna);
         c.Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim();
+        c.Requerido = req.Requerido;
+        c.ValorPorDefecto = string.IsNullOrWhiteSpace(req.ValorPorDefecto) ? null : req.ValorPorDefecto.Trim();
+        c.PermiteVarios = req.PermiteVarios;
+        c.CamposSuma = string.IsNullOrWhiteSpace(req.CamposSuma) ? null : req.CamposSuma.Trim();
         c.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
         return true;

@@ -16,7 +16,9 @@ public record IdentidadDto(
     string? LabelAgrupacion, string? LabelPiso,
     // Contacto (spec v1.0)
     string? TelefonoContacto = null, string? EmailContacto = null,
-    string? Pais = null);
+    string? Pais = null,
+    // Va al ULTIMO: ToIdentidadDto lo construye posicionalmente como (..., Pais, CertificadoMayorExtension).
+    string? CertificadoMayorExtension = null);
 
 public record ActualizarIdentidadRequest(
     string Nombre, string? Nit, string? DigitoVerificacion,
@@ -28,7 +30,8 @@ public record ActualizarIdentidadRequest(
     DateOnly? FechaConstitucion,
     string? LabelAgrupacion, string? LabelPiso,
     string? TelefonoContacto = null, string? EmailContacto = null,
-    string? Pais = null);
+    string? Pais = null,
+    string? CertificadoMayorExtension = null);
 
 // ----- Distribucion: Torres + Unidades (seccion 2) -----
 public record TorreDto(Guid Id, string Nombre, int? CantidadPisos, string? Descripcion, int CantidadUnidades);

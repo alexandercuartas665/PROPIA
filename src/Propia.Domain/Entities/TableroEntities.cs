@@ -50,6 +50,18 @@ public class TableroCampo : TenantEntity
 
     /// <summary>Ayuda/contexto del campo para el usuario (y para agentes IA a futuro).</summary>
     public string? Descripcion { get; set; }
+
+    /// <summary>Si es true, la tarjeta no se puede guardar sin un valor en este campo.</summary>
+    public bool Requerido { get; set; }
+
+    /// <summary>Valor inicial que trae el campo al crear una tarjeta nueva.</summary>
+    public string? ValorPorDefecto { get; set; }
+
+    /// <summary>Si es true, el campo admite varios valores (se capturan/guardan separados por salto de linea).</summary>
+    public bool PermiteVarios { get; set; }
+
+    /// <summary>Para tipo Total: ids (CSV) de los campos Numero/Moneda cuyos valores se suman.</summary>
+    public string? CamposSuma { get; set; }
 }
 
 /// <summary>Valor de un campo personalizado del tablero para una tarea concreta.</summary>

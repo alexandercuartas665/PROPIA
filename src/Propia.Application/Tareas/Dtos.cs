@@ -223,7 +223,11 @@ public record TableroCampoDto(
     string? Opciones = null,
     bool MostrarEnFiltro = false,
     int Columna = 1,
-    string? Descripcion = null);
+    string? Descripcion = null,
+    bool Requerido = false,
+    string? ValorPorDefecto = null,
+    bool PermiteVarios = false,
+    string? CamposSuma = null);
 
 /// <summary>Valor de un campo personalizado para una tarjeta (campoId -> valor).</summary>
 public record TareaCampoValorDto(Guid CampoId, string? Valor);
@@ -239,7 +243,11 @@ public record GuardarCampoRequest(
     string? Opciones = null,
     bool MostrarEnFiltro = false,
     int Columna = 1,
-    string? Descripcion = null);
+    string? Descripcion = null,
+    bool Requerido = false,
+    string? ValorPorDefecto = null,
+    bool PermiteVarios = false,
+    string? CamposSuma = null);
 
 /// <summary>Vista completa de un tablero: el tablero + sus columnas/estados + sus tarjetas.</summary>
 public record TableroBoardDto(

@@ -73,7 +73,8 @@ public class MiCopropiedadService : IMiCopropiedadService
             t.FechaConstitucion,
             t.LabelAgrupacion, t.LabelPiso,
             t.TelefonoContacto, t.EmailContacto,
-            t.Pais);
+            t.Pais,
+            t.CertificadoMayorExtension);
 
     // ----------------------------- Seccion 1: Identidad -----------------------------
 
@@ -102,6 +103,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         t.MatriculaInmobiliaria = req.MatriculaInmobiliaria;
         t.LicenciaConstruccion = req.LicenciaConstruccion;
         t.FechaConstitucion = req.FechaConstitucion;
+        t.CertificadoMayorExtension = string.IsNullOrWhiteSpace(req.CertificadoMayorExtension) ? null : req.CertificadoMayorExtension.Trim();
         // Labels personalizables
         t.LabelAgrupacion = string.IsNullOrWhiteSpace(req.LabelAgrupacion) ? null : req.LabelAgrupacion.Trim();
         t.LabelPiso = string.IsNullOrWhiteSpace(req.LabelPiso) ? null : req.LabelPiso.Trim();

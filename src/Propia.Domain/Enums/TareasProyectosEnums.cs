@@ -86,7 +86,13 @@ public enum TipoCampoTablero
     Hora = 5,
     Telefono = 6,
     Seleccion = 7,
-    Booleano = 8
+    Booleano = 8,
+    Url = 9,
+    Email = 10,
+    /// <summary>Divisoria visual con titulo; NO captura valor.</summary>
+    Separador = 11,
+    /// <summary>Calculado y de solo lectura: suma otros campos Numero/Moneda (ver CamposSuma).</summary>
+    Total = 12
 }
 
 /// <summary>Tipo de dependencia entre dos tareas. Spec 2.10 v1.0 Fase 2.</summary>

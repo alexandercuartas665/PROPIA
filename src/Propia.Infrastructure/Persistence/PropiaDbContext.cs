@@ -401,6 +401,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.NotariaRegistro).HasMaxLength(200);
             b.Property(x => x.MatriculaInmobiliaria).HasMaxLength(50);
             b.Property(x => x.LicenciaConstruccion).HasMaxLength(50);
+            b.Property(x => x.CertificadoMayorExtension).HasMaxLength(100);
             // Labels personalizables (spec v1.0 - "Sector"/"Planta")
             b.Property(x => x.LabelAgrupacion).HasMaxLength(30);
             b.Property(x => x.LabelPiso).HasMaxLength(30);

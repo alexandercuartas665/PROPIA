@@ -1,0 +1,333 @@
+@* IdentidadForm - formulario de Identidad de la copropiedad, reutilizable.
+   Es la unica fuente del formulario: lo usan la edicion inline de Mi Copropiedad y el
+   EditarIdentidadModal. No trae botones ni header: el contenedor pone Guardar/Cancelar y
+   llama a BuildRequest() (via @ref) para obtener el ActualizarIdentidadRequest. *@
+
+@using Propia.Application.MiCopropiedad
+@using Propia.Domain.Enums
+@using Microsoft.AspNetCore.Components.Forms
+@inject IHttpClientFactory HttpFactory
+
+<div class="pmm-body-grid">
+    <div class="pmm-eyebrow">DATOS GENERALES</div>
+
+    <div class="pmm-grid3">
+        <div class="pmm-field pmm-col-span-3">
+            <label class="pmm-label">Nombre <span class="pmm-required">*</span></label>
+            <input class="pmm-input" @bind="_form.Nombre" @bind:event="oninput" placeholder="Nombre de la copropiedad" />
+        </div>
+        <div class="pmm-field pmm-col-span-2">
+            <label class="pmm-label">NIT</label>
+            <input class="pmm-input" @bind="_form.Nit" @bind:event="oninput" placeholder="900.123.456" />
+        </div>
+        <div class="pmm-field">
+            <label class="pmm-label">Digito de verificacion</label>
+            <input class="pmm-input" @bind="_form.DigitoVerificacion" @bind:event="oninput" placeholder="7" maxlength="1" />
+        </div>
+        <div class="pmm-field">
+            <label class="pmm-label">Direccion</label>
+            <input class="pmm-input" @bind="_form.Direccion" @bind:event="oninput" placeholder="Cra. 00 #00-00" />
+        </div>
+        <div class="pmm-field">
+            <label class="pmm-label">Pais</label>
+            <select class="pmm-input" @bind="_form.Pais" @bind:after="OnPaisChange">
+                @foreach (var p in Propia.Web.Services.ColombiaCatalogo.Paises) { <option value="@p">@p</option> }
+            </select>
+        </div>
+        <div class="pmm-field">
+            <label class="pmm-label">Departamento</label>
+            @if (EsColombia)
+            {
+                <select class="pmm-input" @bind="_form.Departamento" @bind:after="OnDeptoChange">
+                    <option value="">- Seleccionar -</option>
+                    @foreach (var d in Propia.Web.Services.ColombiaCatalogo.DepartamentosColombia) { <option value="@d">@d</option> }
+                </select>
+            }
+            else
+            {
+                <input class="pmm-input" @bind="_form.Departamento" @bind:event="oninput" placeholder="Departamento / Provincia" />
+            }
+        </div>
+        <div class="pmm-field">
+            <label class="pmm-label">Ciudad</label>
+            @if (EsColombia && !string.IsNullOrEmpty(_form.Departamento))
+            {
+                <select class="pmm-input" @bind="_form.Ciudad">
+                    <option value="">- Seleccionar -</option>
+                    @foreach (var c in Propia.Web.Services.ColombiaCatalogo.CiudadesDelDepartamento(_form.Departamento)) { <option value="@c">@c</option> }
+                </select>
+            }
+            else
+            {
+                <input class="pmm-input" @bind="_form.Ciudad" @bind:event="oninput" placeholder="Ciudad" />
+            }
+        </div>
+        <div class="pmm-field">
+            <label class="pmm-label">Telefono de contacto</label>
+            <input class="pmm-input" @bind="_form.TelefonoContacto" @bind:event="oninput" placeholder="(602) 555 1234" />
+        </div>
+        <div class="pmm-field">
+            <label class="pmm-label">Email de contacto</label>
+            <input class="pmm-input" type="email" @bind="_form.EmailContacto" @bind:event="oninput" placeholder="admin@copropiedad.co" />
+        </div>
+        <div class="pmm-field">
+            <label class="pmm-label">Tipo</label>
+            <select class="pmm-input" @bind="_form.Tipo">
+                <option value="">- Seleccionar -</option>
+                @foreach (var t in Enum.GetValues<TipoCopropiedad>()) { <option value="@t">@t</option> }
+            </select>
+        </div>
+        <div class="pmm-field">
+            <label class="pmm-label">Estrato</label>
+            <select class="pmm-input" @bind="_form.Estrato">
+                <option value="">- Seleccionar -</option>
+                @foreach (var e in Enum.GetValues<Estrato>()) { <option value="@e">@((int)e)</option> }
+            </select>
+        </div>
+        <div class="pmm-field">
+            <label class="pmm-label">Logo</label>
+            <input class="pmm-input" @bind="_form.LogoUrl" @bind:event="oninput" placeholder="URL del logo" />
+            <label class="pmm-upload">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
+                Subir archivo
+                <InputFile OnChange="SubirLogo" accept="image/jpeg,image/png,image/webp" hidden />
+            </label>
+        </div>
+        <div class="pmm-field">
+            <label class="pmm-label">Foto de fachada</label>
+            <input class="pmm-input" @bind="_form.FotoFachadaUrl" @bind:event="oninput" placeholder="URL de la foto" />
+            <label class="pmm-upload">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
+                Subir archivo
+                <InputFile OnChange="SubirFachada" accept="image/jpeg,image/png,image/webp" hidden />
+            </label>
+            <div class="pmm-help">se muestra como fondo del hero</div>
+        </div>
+        <div class="pmm-field pmm-col-span-3">
+            <label class="pmm-label">Descripcion</label>
+            <textarea class="pmm-input" rows="2" @bind="_form.Descripcion" @bind:event="oninput"></textarea>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_uploadMsg)) { <div class="pmm-help" style="color:#C0383C">@_uploadMsg</div> }
+
+    @* Identidad registral - colapsable *@
+    <div class="pmm-divider"></div>
+    <button class="pmm-toggle" type="button" @onclick="() => _regOpen = !_regOpen">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+             style="@($"transform:rotate({(_regOpen ? 90 : 0)}deg);transition:transform .18s")">
+            <path d="M9 6l6 6-6 6"/>
+        </svg>
+        Identidad registral (Notaria, Reglamento PH, Matricula)
+    </button>
+    @if (_regOpen)
+    {
+        <div class="pmm-grid2">
+            <div class="pmm-field">
+                <label class="pmm-label">Numero de reglamento de PH</label>
+                <input class="pmm-input" @bind="_form.NumeroReglamentoPh" @bind:event="oninput" placeholder="Numero de escritura" />
+            </div>
+            <div class="pmm-field">
+                <label class="pmm-label">Notaria de registro</label>
+                <input class="pmm-input" @bind="_form.NotariaRegistro" @bind:event="oninput" placeholder="Notaria X de Cali" />
+            </div>
+            <div class="pmm-field">
+                <label class="pmm-label">Matricula inmobiliaria del terreno</label>
+                <input class="pmm-input" @bind="_form.MatriculaInmobiliaria" @bind:event="oninput" placeholder="370-..." />
+            </div>
+            <div class="pmm-field">
+                <label class="pmm-label">Certificado de mayor extension</label>
+                <input class="pmm-input" @bind="_form.CertificadoMayorExtension" @bind:event="oninput" placeholder="Numero / referencia del certificado" />
+            </div>
+            <div class="pmm-field">
+                <label class="pmm-label">Licencia de construccion</label>
+                <input class="pmm-input" @bind="_form.LicenciaConstruccion" @bind:event="oninput" />
+            </div>
+            <div class="pmm-field">
+                <label class="pmm-label">Fecha de constitucion</label>
+                <input class="pmm-input" type="date" @bind="_form.FechaConstitucion" />
+            </div>
+        </div>
+    }
+
+    @* Labels personalizables *@
+    <div class="pmm-divider"></div>
+    <button class="pmm-toggle" type="button" @onclick="() => _labelsOpen = !_labelsOpen">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+             style="@($"transform:rotate({(_labelsOpen ? 90 : 0)}deg);transition:transform .18s")">
+            <path d="M9 6l6 6-6 6"/>
+        </svg>
+        Renombrar estructura fisica (avanzado)
+    </button>
+    @if (_labelsOpen)
+    {
+        <div class="pmm-grid2">
+            <div class="pmm-field">
+                <label class="pmm-label">Etiqueta para "Torre"</label>
+                <input class="pmm-input" @bind="_form.LabelAgrupacion" @bind:event="oninput" placeholder="Torre, Bloque, Edificio..." />
+            </div>
+            <div class="pmm-field">
+                <label class="pmm-label">Etiqueta para "Piso"</label>
+                <input class="pmm-input" @bind="_form.LabelPiso" @bind:event="oninput" placeholder="Piso, Nivel..." />
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public IdentidadDto? Inicial { get; set; }
+    [Parameter] public string? Jwt { get; set; }
+    /// <summary>Abre las secciones colapsables al montar (util para la edicion inline en la pagina).</summary>
+    [Parameter] public bool ExpandirTodo { get; set; }
+
+    private FormState _form = new();
+    private bool _regOpen;
+    private bool _labelsOpen;
+    private string? _uploadMsg;
+
+    /// <summary>Solo el nombre es obligatorio. El contenedor consulta esto antes de guardar.</summary>
+    public bool IsValid => !string.IsNullOrWhiteSpace(_form.Nombre);
+
+    /// <summary>Arma el request con el estado actual del formulario. Lo llama el contenedor via @ref.</summary>
+    public ActualizarIdentidadRequest BuildRequest() => new(
+        Nombre: _form.Nombre,
+        Nit: _form.Nit,
+        DigitoVerificacion: _form.DigitoVerificacion,
+        Direccion: _form.Direccion,
+        Ciudad: _form.Ciudad,
+        Departamento: _form.Departamento,
+        Tipo: _form.Tipo,
+        Estrato: _form.Estrato,
+        FotoFachadaUrl: _form.FotoFachadaUrl,
+        LogoUrl: _form.LogoUrl,
+        Descripcion: _form.Descripcion,
+        NumeroReglamentoPh: _form.NumeroReglamentoPh,
+        NotariaRegistro: _form.NotariaRegistro,
+        MatriculaInmobiliaria: _form.MatriculaInmobiliaria,
+        LicenciaConstruccion: _form.LicenciaConstruccion,
+        FechaConstitucion: _form.FechaConstitucion,
+        LabelAgrupacion: _form.LabelAgrupacion,
+        LabelPiso: _form.LabelPiso,
+        TelefonoContacto: _form.TelefonoContacto,
+        EmailContacto: _form.EmailContacto,
+        Pais: _form.Pais,
+        CertificadoMayorExtension: _form.CertificadoMayorExtension);
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    private Task SubirLogo(InputFileChangeEventArgs e) => SubirImagen(e, "logo");
+    private Task SubirFachada(InputFileChangeEventArgs e) => SubirImagen(e, "fachada");
+
+    private async Task SubirImagen(InputFileChangeEventArgs e, string tipo)
+    {
+        if (e.File is null) return;
+        if (e.File.Size > 5_000_000) { _uploadMsg = "Maximo 5 MB."; return; }
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            await using var fs = e.File.OpenReadStream(5_000_000);
+            using var sc = new StreamContent(fs);
+            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(e.File.ContentType);
+            content.Add(sc, "file", e.File.Name);
+
+            var resp = await Auth().PostAsync($"/api/uploads/imagen/{tipo}", content);
+            if (!resp.IsSuccessStatusCode) { _uploadMsg = "Subida fallo."; return; }
+            var body = await resp.Content.ReadFromJsonAsync<UploadResp>();
+            if (body is null) return;
+            if (tipo == "logo") _form.LogoUrl = body.Url;
+            else _form.FotoFachadaUrl = body.Url;
+            _uploadMsg = null;
+        }
+        catch (Exception ex) { _uploadMsg = ex.Message; }
+    }
+    private record UploadResp(string Url);
+
+    protected override void OnInitialized()
+    {
+        _regOpen = ExpandirTodo;
+        _labelsOpen = ExpandirTodo;
+        if (Inicial is not null)
+        {
+            _form.Nombre = Inicial.Nombre;
+            _form.Nit = Inicial.Nit;
+            _form.DigitoVerificacion = Inicial.DigitoVerificacion;
+            _form.Direccion = Inicial.Direccion;
+            _form.Ciudad = Inicial.Ciudad;
+            _form.Departamento = Inicial.Departamento;
+            _form.Tipo = Inicial.Tipo;
+            _form.Estrato = Inicial.Estrato;
+            _form.LogoUrl = Inicial.LogoUrl;
+            _form.FotoFachadaUrl = Inicial.FotoFachadaUrl;
+            _form.Descripcion = Inicial.Descripcion;
+            _form.NumeroReglamentoPh = Inicial.NumeroReglamentoPh;
+            _form.NotariaRegistro = Inicial.NotariaRegistro;
+            _form.MatriculaInmobiliaria = Inicial.MatriculaInmobiliaria;
+            _form.LicenciaConstruccion = Inicial.LicenciaConstruccion;
+            _form.FechaConstitucion = Inicial.FechaConstitucion;
+            _form.LabelAgrupacion = Inicial.LabelAgrupacion;
+            _form.LabelPiso = Inicial.LabelPiso;
+            _form.TelefonoContacto = Inicial.TelefonoContacto;
+            _form.EmailContacto = Inicial.EmailContacto;
+            _form.Pais = string.IsNullOrWhiteSpace(Inicial.Pais) ? "Colombia" : Inicial.Pais;
+            _form.CertificadoMayorExtension = Inicial.CertificadoMayorExtension;
+        }
+        else
+        {
+            _form.Pais = "Colombia";
+        }
+    }
+
+    private bool EsColombia => string.Equals(_form.Pais, "Colombia", StringComparison.OrdinalIgnoreCase);
+
+    private void OnPaisChange()
+    {
+        // Al cambiar de pais limpia depto y ciudad para no dejar valores invalidos.
+        if (!EsColombia) return;
+        if (!string.IsNullOrEmpty(_form.Departamento)
+            && !Propia.Web.Services.ColombiaCatalogo.ColombiaDepartamentosCiudades.ContainsKey(_form.Departamento))
+        {
+            _form.Departamento = null;
+            _form.Ciudad = null;
+        }
+    }
+
+    private void OnDeptoChange()
+    {
+        if (!EsColombia) return;
+        var ciudades = Propia.Web.Services.ColombiaCatalogo.CiudadesDelDepartamento(_form.Departamento);
+        if (!string.IsNullOrEmpty(_form.Ciudad) && !ciudades.Contains(_form.Ciudad))
+            _form.Ciudad = null;
+    }
+
+    private class FormState
+    {
+        public string Nombre { get; set; } = "";
+        public string? Pais { get; set; }
+        public string? Nit { get; set; }
+        public string? DigitoVerificacion { get; set; }
+        public string? Direccion { get; set; }
+        public string? Ciudad { get; set; }
+        public string? Departamento { get; set; }
+        public TipoCopropiedad? Tipo { get; set; }
+        public Estrato? Estrato { get; set; }
+        public string? LogoUrl { get; set; }
+        public string? FotoFachadaUrl { get; set; }
+        public string? Descripcion { get; set; }
+        public string? NumeroReglamentoPh { get; set; }
+        public string? NotariaRegistro { get; set; }
+        public string? MatriculaInmobiliaria { get; set; }
+        public string? LicenciaConstruccion { get; set; }
+        public DateOnly? FechaConstitucion { get; set; }
+        public string? LabelAgrupacion { get; set; }
+        public string? LabelPiso { get; set; }
+        public string? TelefonoContacto { get; set; }
+        public string? EmailContacto { get; set; }
+        public string? CertificadoMayorExtension { get; set; }
+    }
+}

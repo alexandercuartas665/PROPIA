@@ -23,7 +23,9 @@ public record ImportarDistribucionResultado(
     int TorresCreadas,
     int UnidadesCreadas,
     int FilasConError,
-    IReadOnlyList<ImportarErrorFila> Errores);
+    IReadOnlyList<ImportarErrorFila> Errores,
+    int PersonasVinculadas = 0,
+    int VinculosCreados = 0);
 
 /// <summary>Un error puntual en una fila del archivo (para mostrarselo al usuario sin abortar todo).</summary>
 public record ImportarErrorFila(string Hoja, int Fila, string Mensaje);
