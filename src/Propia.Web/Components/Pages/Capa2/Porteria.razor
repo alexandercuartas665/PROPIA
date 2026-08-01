@@ -288,6 +288,72 @@
     @* =================== VEHICULOS =================== *@
     @if (_view == "vehiculos")
     {
+        <div class="po-card" style="margin-bottom:16px">
+            <div class="po-card-h">Registro de ingreso / salida de vehiculos</div>
+            @if (_turno is null)
+            {
+                <div class="po-note">Abre un turno (vista Operacion) para registrar el movimiento de vehiculos.</div>
+            }
+            else
+            {
+                <div class="po-form-body">
+                    <div class="po-form-2">
+                        <div>
+                            <label class="po-lbl">Placa *</label>
+                            <input class="po-input" maxlength="10" placeholder="ABC123" @bind="_rvPlaca" @bind:event="oninput" />
+                        </div>
+                        <div>
+                            <label class="po-lbl">Movimiento</label>
+                            <select class="po-input" @bind="_rvEvento">
+                                <option value="@TipoEventoAccesoPorteria.Ingreso">Ingreso</option>
+                                <option value="@TipoEventoAccesoPorteria.Egreso">Salida</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="po-form-2">
+                        <div>
+                            <label class="po-lbl">Conductor</label>
+                            <input class="po-input" placeholder="Opcional" @bind="_rvConductor" @bind:event="oninput" />
+                        </div>
+                        <div>
+                            <label class="po-lbl">Observacion</label>
+                            <input class="po-input" placeholder="Opcional" @bind="_rvObs" @bind:event="oninput" />
+                        </div>
+                    </div>
+                    <button class="po-btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_rvPlaca))" @onclick="RegistrarMovimientoVehiculo">Registrar movimiento</button>
+                    <div class="po-note">La placa se coteja con los vehiculos autorizados: si coincide se marca como residente y su unidad; si no, queda como visita.</div>
+                </div>
+
+                <div class="po-card-h" style="margin-top:16px">Minuta vehicular (turno actual)</div>
+                @if (_regVehiculos is null)
+                {
+                    <div class="po-empty" style="padding:22px 0">Cargando...</div>
+                }
+                else if (_regVehiculos.Count == 0)
+                {
+                    <div class="po-empty" style="padding:26px 0">Sin movimientos de vehiculos en este turno.</div>
+                }
+                else
+                {
+                    <table class="po-table">
+                        <thead><tr><th>Hora</th><th>Mov.</th><th>Placa</th><th>Tipo</th><th>Unidad</th><th>Conductor</th></tr></thead>
+                        <tbody>
+                            @foreach (var r in _regVehiculos)
+                            {
+                                <tr>
+                                    <td>@r.Timestamp.ToLocalTime().ToString("HH:mm")</td>
+                                    <td>@(r.TipoEvento == TipoEventoAccesoPorteria.Ingreso ? "Ingreso" : "Salida")</td>
+                                    <td><strong>@r.Placa</strong></td>
+                                    <td>@(r.EsVisita ? "Visita" : "Residente")</td>
+                                    <td>@(string.IsNullOrEmpty(r.UnidadNumero) ? "-" : r.UnidadNumero)</td>
+                                    <td>@(string.IsNullOrEmpty(r.Conductor) ? "-" : r.Conductor)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            }
+        </div>
         <div class="po-grid2">
             <div class="po-card">
                 <div class="po-card-h">Vehiculos autorizados</div>
@@ -1158,11 +1224,18 @@
     private DateTime _authFin = DateTime.Now.AddDays(1);
     private string _authNota = "";
 
-    // Vehiculo (form)
+    // Vehiculo (form - catalogo de autorizados)
     private Guid _vUnidad = Guid.Empty;
     private string _vPlaca = "";
     private TipoVehiculo _vTipo = TipoVehiculo.Automovil;
     private string _vMarca = "", _vModelo = "", _vParq = "";
+
+    // Registro ingreso/egreso vehicular (movimiento en el turno) + minuta vehicular
+    private string _rvPlaca = "";
+    private TipoEventoAccesoPorteria _rvEvento = TipoEventoAccesoPorteria.Ingreso;
+    private string _rvConductor = "";
+    private string _rvObs = "";
+    private List<RegistroVehiculoDto>? _regVehiculos;
 
     // Paquete (form)
     private Guid _paqUnidad = Guid.Empty;
@@ -1306,6 +1379,8 @@
         var http = Auth();
         if (v == "paquetes" && _correspondencia is null)
             _correspondencia = await http.GetFromJsonAsync<List<CorrespondenciaDto>>("/api/porteria/correspondencia") ?? new();
+        if (v == "vehiculos" && _turno is not null)
+            await CargarRegistrosVehiculoAsync();
         if (v == "config" && _config is null)
         {
             _config = await http.GetFromJsonAsync<ConfiguracionDto>("/api/porteria/configuracion");
@@ -1569,6 +1644,33 @@
         var resp = await Auth().DeleteAsync($"/api/porteria/vehiculos/{id}");
         if (resp.IsSuccessStatusCode)
             _vehiculos = await Auth().GetFromJsonAsync<List<VehiculoAutorizadoDto>>("/api/porteria/vehiculos") ?? new();
+    }
+
+    // Registra un ingreso/egreso de vehiculo en el turno actual (queda append-only en la minuta vehicular).
+    private async Task RegistrarMovimientoVehiculo()
+    {
+        if (_turno is null) { Flash("Abre un turno (vista Operacion) antes de registrar.", false); return; }
+        if (string.IsNullOrWhiteSpace(_rvPlaca)) return;
+        _busy = true;
+        try
+        {
+            var req = new RegistrarVehiculoRequest(_rvEvento, _rvPlaca.ToUpperInvariant(),
+                string.IsNullOrWhiteSpace(_rvConductor) ? null : _rvConductor.Trim(),
+                string.IsNullOrWhiteSpace(_rvObs) ? null : _rvObs.Trim());
+            var resp = await Auth().PostAsJsonAsync($"/api/porteria/turnos/{_turno.Id}/vehiculos", req);
+            if (!resp.IsSuccessStatusCode) { Flash(await resp.Content.ReadAsStringAsync(), false); return; }
+            _rvPlaca = _rvConductor = _rvObs = ""; _rvEvento = TipoEventoAccesoPorteria.Ingreso;
+            await CargarRegistrosVehiculoAsync();
+            _panel = await Auth().GetFromJsonAsync<PanelMonitoreoDto>("/api/porteria/panel");
+            Flash("Movimiento vehicular registrado.", true);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task CargarRegistrosVehiculoAsync()
+    {
+        if (_turno is null) { _regVehiculos = new(); return; }
+        _regVehiculos = await Auth().GetFromJsonAsync<List<RegistroVehiculoDto>>($"/api/porteria/vehiculos/registros?turnoId={_turno.Id}") ?? new();
     }
 
     // ----- Paquetes -----
