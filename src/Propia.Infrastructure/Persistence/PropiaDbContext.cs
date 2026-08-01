@@ -296,6 +296,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<AiAgentCacheValue> AiAgentCacheValues => Set<AiAgentCacheValue>();
     public DbSet<AiAgentMcpTool> AiAgentMcpTools => Set<AiAgentMcpTool>();
     public DbSet<AiUsageLog> AiUsageLogs => Set<AiUsageLog>();
+    public DbSet<AiAgentRunLog> AiAgentRunLogs => Set<AiAgentRunLog>();
     public DbSet<AiAgentTemplate> AiAgentTemplates => Set<AiAgentTemplate>();
     public DbSet<AiAgentTemplateMcpTool> AiAgentTemplateMcpTools => Set<AiAgentTemplateMcpTool>();
     public DbSet<NumeroEnListaNegra> NumerosEnListaNegra => Set<NumeroEnListaNegra>();
@@ -2781,6 +2782,19 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.EstimatedCostUsd).HasPrecision(12, 6);
             b.Property(x => x.Source).HasMaxLength(30);
             b.HasIndex(x => new { x.TenantId, x.CreatedAt });
+            b.HasIndex(x => new { x.TenantId, x.AgentId });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<AiAgentRunLog>(b =>
+        {
+            b.ToTable("ai_agent_run_logs");
+            b.Property(x => x.Kind).HasConversion<string>().HasMaxLength(20);
+            b.Property(x => x.Title).IsRequired().HasMaxLength(200);
+            b.Property(x => x.Content).HasColumnType("text");
+            b.Property(x => x.Response).HasColumnType("text");
+            // Consulta principal de la bitacora: por conversacion, en orden cronologico.
+            b.HasIndex(x => new { x.TenantId, x.ConversationId, x.OccurredAt });
             b.HasIndex(x => new { x.TenantId, x.AgentId });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });

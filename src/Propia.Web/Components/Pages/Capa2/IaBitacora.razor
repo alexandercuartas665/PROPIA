@@ -1,0 +1,421 @@
+@page "/ia/bitacora"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.InfraestructuraIa
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+
+<PageTitle>Bitacora del agente - PROPIA</PageTitle>
+
+@* Bitacora de atencion del agente IA (Infraestructura & IA). Muestra, por conversacion, como
+   atendio el agente: mensaje recibido, prompts enviados a la IA, herramientas y respuesta.
+   La escribe el AgentDispatcher. Portado de CUBOT.travels, adaptado al diseno de PROPIA. *@
+
+<div class="bi-page">
+    <div class="bi-head">
+        <div>
+            <h1 class="bi-title">Bitacora del agente</h1>
+            <p class="bi-sub">Revisa como atendio el agente cada conversacion: mensaje recibido, prompts enviados a la IA, herramientas usadas y respuesta enviada.</p>
+        </div>
+        <div class="bi-head-actions">
+            <button class="bi-btn-ghost" type="button" @onclick="CargarConversacionesAsync" disabled="@_busy">Actualizar</button>
+            <button class="bi-btn-ghost-danger" type="button" @onclick="LimpiarTodoAsync" disabled="@(_busy || _convs.Count == 0)">Limpiar historia</button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_flash))
+    {
+        <div class="bi-flash @(_flashError ? "bi-flash--err" : "bi-flash--ok")">@_flash</div>
+    }
+
+    @if (!_authChecked)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
+    else if (string.IsNullOrEmpty(_jwt))
+    {
+        <div class="bi-empty">Sesion expirada. <a href="/login?returnUrl=%2Fia%2Fbitacora">Iniciar sesion</a>.</div>
+    }
+    else
+    {
+        <div class="bi-layout">
+            <aside class="bi-list-col">
+                <div class="bi-list-hdr">Conversaciones atendidas <span class="bi-count">@_convs.Count</span></div>
+                <div class="bi-list">
+                    @if (_convs.Count == 0)
+                    {
+                        <div class="bi-list-empty">Aun no hay atenciones registradas. Cuando el agente responda un entrante, aparecera aqui.</div>
+                    }
+                    else
+                    {
+                        @foreach (var c in _convs)
+                        {
+                            var cid = c.ConversationId;
+                            var nombre = string.IsNullOrEmpty(c.ContactName) ? c.ContactPhone : c.ContactName;
+                            <button type="button" class="bi-card @(_selId == c.ConversationId ? "bi-card--on" : "")" @onclick="@(() => SeleccionarAsync(cid))">
+                                <div class="bi-card-avatar">@Iniciales(c.ContactName ?? c.ContactPhone)</div>
+                                <div class="bi-card-body">
+                                    <div class="bi-card-name">@nombre</div>
+                                    <div class="bi-card-meta">
+                                        @if (!string.IsNullOrEmpty(c.LineLabel)) { <span class="bi-card-line">@c.LineLabel</span> }
+                                        <span class="bi-card-when">@Relativo(c.LastActivityAt)</span>
+                                    </div>
+                                </div>
+                                <span class="bi-card-badge" title="Eventos registrados">@c.Events</span>
+                            </button>
+                        }
+                    }
+                </div>
+            </aside>
+
+            <main class="bi-detail">
+                @if (_selId is null)
+                {
+                    <div class="bi-detail-empty">
+                        <strong>Selecciona una conversacion</strong>
+                        <span>Haz click en la izquierda para ver la traza de atencion del agente.</span>
+                    </div>
+                }
+                else
+                {
+                    <header class="bi-detail-head">
+                        <div>
+                            <div class="bi-detail-name">@(_selNombre)</div>
+                            <div class="bi-detail-sub">@_selTelefono</div>
+                        </div>
+                        <button class="bi-btn-ghost-danger" type="button" @onclick="ReiniciarConversacionAsync" disabled="@_busy">Reiniciar conversacion completa</button>
+                    </header>
+
+                    <div class="bi-tabs">
+                        <button class="bi-tab @(_tab == "log" ? "bi-tab--on" : "")" type="button" @onclick="@(() => SetTab("log"))">Bitacora</button>
+                        <button class="bi-tab @(_tab == "cache" ? "bi-tab--on" : "")" type="button" @onclick="@(() => SetTab("cache"))">Datos cache</button>
+                        <button class="bi-tab @(_tab == "chat" ? "bi-tab--on" : "")" type="button" @onclick="@(() => SetTab("chat"))">Historial del chat</button>
+                    </div>
+
+                    <div class="bi-tabbody">
+                        @if (_tab == "log")
+                        {
+                            @if (_log.Count == 0)
+                            {
+                                <div class="bi-tab-empty">Sin eventos.</div>
+                            }
+                            else
+                            {
+                                @foreach (var e in _log)
+                                {
+                                    <div class="bi-entry" style="border-left-color:@ColorKind(e.Kind)">
+                                        <div class="bi-entry-top">
+                                            <span class="bi-kind" style="background:@ColorKind(e.Kind)">@LabelKind(e.Kind)</span>
+                                            <span class="bi-entry-title">@e.Title</span>
+                                            <span class="bi-entry-time">@e.OccurredAt.ToLocalTime().ToString("dd-MM-yyyy HH:mm:ss")</span>
+                                        </div>
+                                        @if (!string.IsNullOrWhiteSpace(e.Content))
+                                        {
+                                            <pre class="bi-entry-content">@e.Content</pre>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(e.Response))
+                                        {
+                                            <details class="bi-entry-resp" open="@(e.Kind == AiAgentRunLogKind.Error)">
+                                                <summary>@(e.Kind == AiAgentRunLogKind.Error ? "Detalle (causa del error)" : "Respuesta / resultado")</summary>
+                                                <pre class="bi-entry-content">@e.Response</pre>
+                                            </details>
+                                        }
+                                    </div>
+                                }
+                            }
+                        }
+                        else if (_tab == "cache")
+                        {
+                            @if (_cache.Count == 0)
+                            {
+                                <div class="bi-tab-empty">El agente no tiene datos cache definidos, o aun no capturo nada en esta conversacion.</div>
+                            }
+                            else
+                            {
+                                <table class="bi-cache">
+                                    <thead><tr><th>Campo</th><th>Valor</th><th>Fuente</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var it in _cache)
+                                        {
+                                            <tr>
+                                                <td>@it.Label</td>
+                                                <td>@(string.IsNullOrWhiteSpace(it.Value) ? "-" : it.Value)</td>
+                                                <td>@if (!string.IsNullOrWhiteSpace(it.Source)) { <span class="bi-src">@it.Source</span> }</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+                        }
+                        else
+                        {
+                            @if (_chat.Count == 0)
+                            {
+                                <div class="bi-tab-empty">Sin mensajes.</div>
+                            }
+                            else
+                            {
+                                @foreach (var m in _chat)
+                                {
+                                    var isOut = string.Equals(m.Direction, "outbound", StringComparison.OrdinalIgnoreCase);
+                                    <div class="bi-msg @(isOut ? "bi-msg--out" : "bi-msg--in")">
+                                        <div class="bi-msg-bubble">
+                                            <div class="bi-msg-text">@m.Body</div>
+                                            <div class="bi-msg-meta">@(isOut ? (m.SentByName ?? "Agente") : "Contacto") - @m.SentAt.ToLocalTime().ToString("dd MMM HH:mm")</div>
+                                        </div>
+                                    </div>
+                                }
+                            }
+                        }
+                    </div>
+                }
+            </main>
+        </div>
+    }
+</div>
+
+<style>
+    .bi-page { padding: 24px 28px; max-width: 1900px; margin: 0 auto; }
+    .bi-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
+    .bi-title { font-size: 1.5rem; font-weight: 700; color: var(--propia-text, #2d3e50); margin: 0; }
+    .bi-sub { color: #64748b; margin: 4px 0 0; font-size: .9rem; max-width: 720px; }
+    .bi-head-actions { display: flex; gap: 8px; flex-shrink: 0; }
+    .bi-btn-ghost, .bi-btn-ghost-danger { border: 1px solid #e2e8f0; background: #fff; border-radius: 8px; padding: 7px 14px; font-size: .85rem; font-weight: 600; cursor: pointer; color: #475569; }
+    .bi-btn-ghost:hover { border-color: var(--propia-primary, #6366f1); color: var(--propia-primary, #6366f1); }
+    .bi-btn-ghost-danger { color: #ef4444; }
+    .bi-btn-ghost-danger:hover { border-color: #ef4444; background: #fef2f2; }
+    .bi-btn-ghost:disabled, .bi-btn-ghost-danger:disabled { opacity: .5; cursor: not-allowed; }
+    .bi-flash { padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; font-size: .88rem; }
+    .bi-flash--ok { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+    .bi-flash--err { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+    .bi-empty { padding: 40px; text-align: center; color: #64748b; }
+
+    .bi-layout { display: grid; grid-template-columns: 340px 1fr; gap: 16px; height: calc(100vh - 200px); min-height: 460px; }
+    .bi-list-col { border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; display: flex; flex-direction: column; overflow: hidden; }
+    .bi-list-hdr { padding: 12px 14px; font-weight: 700; font-size: .8rem; text-transform: uppercase; letter-spacing: .03em; color: #64748b; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; }
+    .bi-count { background: #f1f5f9; color: #475569; border-radius: 999px; padding: 1px 9px; font-size: .78rem; }
+    .bi-list { overflow-y: auto; flex: 1; }
+    .bi-list-empty, .bi-tab-empty { padding: 24px; color: #94a3b8; font-size: .88rem; text-align: center; }
+    .bi-card { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: none; background: none; border-bottom: 1px solid #f1f5f9; padding: 10px 12px; cursor: pointer; }
+    .bi-card:hover { background: #f8fafc; }
+    .bi-card--on { background: #eef2ff; }
+    .bi-card-avatar { width: 38px; height: 38px; border-radius: 50%; background: var(--propia-primary, #6366f1); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+    .bi-card-body { flex: 1; min-width: 0; }
+    .bi-card-name { font-weight: 600; color: #2d3e50; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bi-card-meta { display: flex; gap: 6px; align-items: center; font-size: .76rem; color: #94a3b8; margin-top: 2px; }
+    .bi-card-line { background: #f1f5f9; border-radius: 4px; padding: 0 5px; color: #64748b; }
+    .bi-card-badge { background: #f1f5f9; color: #475569; border-radius: 999px; padding: 1px 8px; font-size: .76rem; font-weight: 700; flex-shrink: 0; }
+
+    .bi-detail { border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; display: flex; flex-direction: column; overflow: hidden; }
+    .bi-detail-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #94a3b8; }
+    .bi-detail-empty strong { color: #64748b; }
+    .bi-detail-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid #f1f5f9; }
+    .bi-detail-name { font-weight: 700; color: #2d3e50; }
+    .bi-detail-sub { color: #94a3b8; font-size: .82rem; }
+    .bi-tabs { display: flex; gap: 4px; padding: 10px 14px 0; border-bottom: 1px solid #f1f5f9; }
+    .bi-tab { border: none; background: none; padding: 8px 14px; font-size: .86rem; font-weight: 600; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent; }
+    .bi-tab--on { color: var(--propia-primary, #6366f1); border-bottom-color: var(--propia-primary, #6366f1); }
+    .bi-tabbody { flex: 1; overflow-y: auto; padding: 14px 16px; }
+
+    .bi-entry { border-left: 3px solid #94a3b8; background: #f8fafc; border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; }
+    .bi-entry-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .bi-kind { color: #fff; border-radius: 5px; padding: 1px 8px; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .02em; }
+    .bi-entry-title { font-weight: 600; color: #2d3e50; font-size: .88rem; }
+    .bi-entry-time { margin-left: auto; color: #94a3b8; font-size: .76rem; }
+    .bi-entry-content { background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; margin: 8px 0 0; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: .78rem; color: #334155; white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; }
+    .bi-entry-resp { margin-top: 8px; }
+    .bi-entry-resp > summary { cursor: pointer; font-size: .8rem; color: #6366f1; font-weight: 600; }
+
+    .bi-cache { width: 100%; border-collapse: collapse; font-size: .86rem; }
+    .bi-cache th { text-align: left; color: #94a3b8; font-size: .74rem; text-transform: uppercase; letter-spacing: .03em; padding: 6px 10px; border-bottom: 1px solid #e2e8f0; }
+    .bi-cache td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; color: #334155; }
+    .bi-src { background: #eef2ff; color: #6366f1; border-radius: 4px; padding: 1px 7px; font-size: .74rem; }
+
+    .bi-msg { display: flex; margin-bottom: 8px; }
+    .bi-msg--in { justify-content: flex-start; }
+    .bi-msg--out { justify-content: flex-end; }
+    .bi-msg-bubble { max-width: 72%; border-radius: 12px; padding: 8px 12px; }
+    .bi-msg--in .bi-msg-bubble { background: #f1f5f9; color: #2d3e50; border-top-left-radius: 3px; }
+    .bi-msg--out .bi-msg-bubble { background: var(--propia-primary, #6366f1); color: #fff; border-top-right-radius: 3px; }
+    .bi-msg-text { font-size: .88rem; white-space: pre-wrap; word-break: break-word; }
+    .bi-msg-meta { font-size: .7rem; opacity: .7; margin-top: 3px; }
+
+    @@media (max-width: 900px) { .bi-layout { grid-template-columns: 1fr; height: auto; } }
+</style>
+
+@code {
+    private string? _jwt;
+    private bool _authChecked;
+    private bool _busy;
+    private string? _flash;
+    private bool _flashError;
+
+    private List<AgentRunLogConversationDto> _convs = new();
+    private Guid? _selId;
+    private string _selNombre = "";
+    private string _selTelefono = "";
+    private string _tab = "log";
+
+    private List<AgentRunLogEntryDto> _log = new();
+    private List<AgentCacheItemDto> _cache = new();
+    private List<AgentRunLogMessageDto> _chat = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            _jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            _authChecked = true;
+        }
+        catch { }
+        if (!string.IsNullOrEmpty(_jwt)) { await CargarConversacionesAsync(); }
+        StateHasChanged();
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(_jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
+        return http;
+    }
+
+    private async Task CargarConversacionesAsync()
+    {
+        _busy = true;
+        try
+        {
+            _convs = await Auth().GetFromJsonAsync<List<AgentRunLogConversationDto>>("/api/ia/bitacora/conversaciones") ?? new();
+            // Si la conversacion seleccionada desaparecio (limpieza), deselecciona.
+            if (_selId is Guid sid && _convs.All(c => c.ConversationId != sid)) { _selId = null; }
+        }
+        catch (Exception ex) { Flash("No se pudo cargar la bitacora: " + ex.Message, true); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private async Task SeleccionarAsync(Guid id)
+    {
+        _selId = id;
+        var c = _convs.FirstOrDefault(x => x.ConversationId == id);
+        _selNombre = string.IsNullOrEmpty(c?.ContactName) ? (c?.ContactPhone ?? "") : c!.ContactName!;
+        _selTelefono = c?.ContactPhone ?? "";
+        _tab = "log";
+        _cache = new(); _chat = new();
+        await CargarLogAsync();
+    }
+
+    private async Task SetTab(string tab)
+    {
+        _tab = tab;
+        if (_selId is not Guid id) return;
+        if (tab == "cache" && _cache.Count == 0) { await CargarCacheAsync(id); }
+        else if (tab == "chat" && _chat.Count == 0) { await CargarChatAsync(id); }
+    }
+
+    private async Task CargarLogAsync()
+    {
+        if (_selId is not Guid id) return;
+        try { _log = await Auth().GetFromJsonAsync<List<AgentRunLogEntryDto>>($"/api/ia/bitacora/conversaciones/{id}/log") ?? new(); }
+        catch (Exception ex) { Flash("No se pudo cargar la traza: " + ex.Message, true); }
+        StateHasChanged();
+    }
+
+    private async Task CargarCacheAsync(Guid id)
+    {
+        try { _cache = await Auth().GetFromJsonAsync<List<AgentCacheItemDto>>($"/api/ia/bitacora/conversaciones/{id}/cache") ?? new(); }
+        catch { _cache = new(); }
+        StateHasChanged();
+    }
+
+    private async Task CargarChatAsync(Guid id)
+    {
+        try { _chat = await Auth().GetFromJsonAsync<List<AgentRunLogMessageDto>>($"/api/ia/bitacora/conversaciones/{id}/mensajes") ?? new(); }
+        catch { _chat = new(); }
+        StateHasChanged();
+    }
+
+    private async Task LimpiarTodoAsync()
+    {
+        var ok = await Js.InvokeAsync<bool>("confirm", "Esto borra TODA la bitacora y los datos cache de los agentes de esta copropiedad. No toca los mensajes del chat. Continuar?");
+        if (!ok) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsync("/api/ia/bitacora/limpiar", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                _selId = null; _log = new(); _cache = new(); _chat = new();
+                await CargarConversacionesAsync();
+                Flash("Bitacora limpiada.", false);
+            }
+            else { Flash("No se pudo limpiar.", true); }
+        }
+        catch (Exception ex) { Flash("Error: " + ex.Message, true); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private async Task ReiniciarConversacionAsync()
+    {
+        if (_selId is not Guid id) return;
+        var ok = await Js.InvokeAsync<bool>("confirm", "Esto borra la bitacora, el cache y los mensajes de esta conversacion para que el agente la 'olvide'. Continuar?");
+        if (!ok) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsync($"/api/ia/bitacora/conversaciones/{id}/reiniciar", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                _selId = null; _log = new(); _cache = new(); _chat = new();
+                await CargarConversacionesAsync();
+                Flash("Conversacion reiniciada.", false);
+            }
+            else { Flash("No se pudo reiniciar.", true); }
+        }
+        catch (Exception ex) { Flash("Error: " + ex.Message, true); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private void Flash(string msg, bool error) { _flash = msg; _flashError = error; }
+
+    private static string Iniciales(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return "?";
+        var parts = s.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1) return parts[0].Length >= 2 ? parts[0][..2].ToUpperInvariant() : parts[0].ToUpperInvariant();
+        return (parts[0][0].ToString() + parts[^1][0]).ToUpperInvariant();
+    }
+
+    private static string Relativo(DateTimeOffset? dt)
+    {
+        if (dt is null) return "";
+        var d = DateTimeOffset.UtcNow - dt.Value;
+        if (d.TotalMinutes < 1) return "hace un momento";
+        if (d.TotalMinutes < 60) return $"hace {(int)d.TotalMinutes} min";
+        if (d.TotalHours < 24) return $"hace {(int)d.TotalHours} h";
+        if (d.TotalDays < 7) return $"hace {(int)d.TotalDays} d";
+        return dt.Value.ToLocalTime().ToString("dd MMM");
+    }
+
+    private static string LabelKind(AiAgentRunLogKind k) => k switch
+    {
+        AiAgentRunLogKind.Inbound => "Recibido",
+        AiAgentRunLogKind.Prompt => "Prompt IA",
+        AiAgentRunLogKind.Tool => "Herramienta",
+        AiAgentRunLogKind.Reply => "Respuesta",
+        AiAgentRunLogKind.Info => "Info",
+        AiAgentRunLogKind.Error => "Error",
+        _ => k.ToString()
+    };
+
+    private static string ColorKind(AiAgentRunLogKind k) => k switch
+    {
+        AiAgentRunLogKind.Inbound => "#0dcaf0",
+        AiAgentRunLogKind.Prompt => "#6366f1",
+        AiAgentRunLogKind.Tool => "#f59e0b",
+        AiAgentRunLogKind.Reply => "#22c55e",
+        AiAgentRunLogKind.Info => "#94a3b8",
+        AiAgentRunLogKind.Error => "#ef4444",
+        _ => "#94a3b8"
+    };
+}

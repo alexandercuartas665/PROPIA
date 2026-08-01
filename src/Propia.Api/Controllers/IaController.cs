@@ -24,6 +24,7 @@ public class IaController : ControllerBase
     private readonly IMcpGateway _mcp;
     private readonly IListaNegraService _listaNegra;
     private readonly IConversacionService _conversaciones;
+    private readonly IAgentRunLogService _bitacora;
 
     public IaController(
         IWhatsAppLineService lines,
@@ -35,7 +36,8 @@ public class IaController : ControllerBase
         IAiUsageService usage,
         IMcpGateway mcp,
         IListaNegraService listaNegra,
-        IConversacionService conversaciones)
+        IConversacionService conversaciones,
+        IAgentRunLogService bitacora)
     {
         _lines = lines;
         _connector = connector;
@@ -47,6 +49,38 @@ public class IaController : ControllerBase
         _mcp = mcp;
         _listaNegra = listaNegra;
         _conversaciones = conversaciones;
+        _bitacora = bitacora;
+    }
+
+    // ---------- Bitacora del agente (Infraestructura IA - auto-atencion) ----------
+    [HttpGet("bitacora/conversaciones")]
+    public async Task<IActionResult> BitacoraConversaciones(CancellationToken ct)
+        => Ok(await _bitacora.ListConversationsAsync(ct));
+
+    [HttpGet("bitacora/conversaciones/{id:guid}/log")]
+    public async Task<IActionResult> BitacoraLog(Guid id, CancellationToken ct)
+        => Ok(await _bitacora.GetConversationLogAsync(id, ct));
+
+    [HttpGet("bitacora/conversaciones/{id:guid}/cache")]
+    public async Task<IActionResult> BitacoraCache(Guid id, CancellationToken ct)
+        => Ok(await _bitacora.GetConversationCacheAsync(id, ct));
+
+    [HttpGet("bitacora/conversaciones/{id:guid}/mensajes")]
+    public async Task<IActionResult> BitacoraMensajes(Guid id, CancellationToken ct)
+        => Ok(await _bitacora.GetConversationMessagesAsync(id, ct));
+
+    [HttpPost("bitacora/limpiar")]
+    public async Task<IActionResult> BitacoraLimpiar(CancellationToken ct)
+    {
+        var (logs, cache) = await _bitacora.ClearAllAsync(ct);
+        return Ok(new { logs, cache });
+    }
+
+    [HttpPost("bitacora/conversaciones/{id:guid}/reiniciar")]
+    public async Task<IActionResult> BitacoraReiniciar(Guid id, CancellationToken ct)
+    {
+        var (logs, cache, messages) = await _bitacora.ResetConversationMemoryAsync(id, ct);
+        return Ok(new { logs, cache, messages });
     }
 
     // ---------- Conversaciones humanas (Oleada IA #3) ----------

@@ -112,6 +112,7 @@ public static class DependencyInjection
         services.AddScoped<Application.InfraestructuraIa.IAiUsageService, InfraestructuraIa.AiUsageService>();
         services.AddScoped<Application.InfraestructuraIa.IAiInferenceService, InfraestructuraIa.AiInferenceService>();
         services.AddScoped<Application.InfraestructuraIa.IAiAgentTemplateService, InfraestructuraIa.AiAgentTemplateService>();
+        services.AddScoped<Application.InfraestructuraIa.IAgentRunLogService, InfraestructuraIa.AgentRunLogService>();
 
         // Gateway MCP: el agente como cliente MCP. HttpClient "Mcp" acepta el cert self-signed
         // SOLO para localhost (dev); contra cualquier host real exige certificado valido.
@@ -122,6 +123,15 @@ public static class DependencyInjection
                 || request.RequestUri?.Host is "localhost" or "127.0.0.1"
         });
         services.AddScoped<Application.InfraestructuraIa.IMcpGateway, InfraestructuraIa.McpGateway>();
+
+        // Despachador del agente (auto-respuesta a entrantes) + su cola en background.
+        // La cola es un Singleton que sirve de dos formas: como IAgentDispatchQueue (para que la
+        // ingesta encole) y como IHostedService (el bucle que despacha). El AddHostedService que la
+        // arranca vive en Program.cs del host (Web/Api), igual que el BackgroundJobScheduler.
+        services.AddScoped<Application.InfraestructuraIa.IAgentDispatcher, InfraestructuraIa.AgentDispatcher>();
+        services.AddSingleton<InfraestructuraIa.AgentDispatchQueue>();
+        services.AddSingleton<Application.InfraestructuraIa.IAgentDispatchQueue>(sp =>
+            sp.GetRequiredService<InfraestructuraIa.AgentDispatchQueue>());
 
         // Modulo 2.3 Mi Copropiedad
         services.AddScoped<Application.MiCopropiedad.IMiCopropiedadService, MiCopropiedad.MiCopropiedadService>();

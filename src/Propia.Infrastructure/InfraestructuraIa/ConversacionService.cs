@@ -117,6 +117,9 @@ public sealed class ConversacionService : IConversacionService
 
         conv.LastMessageAt = now;
         if (conv.ArchivedAt.HasValue) conv.ArchivedAt = null; // si respondemos a una archivada, vuelve a activa
+        // Toma de control humana: al responder manualmente, el agente IA deja de auto-responder esta
+        // conversacion (para no hablar por encima del operador). Se reactiva con "reiniciar contexto".
+        conv.IaPausadaAt = now;
         await _db.SaveChangesAsync(ct);
 
         var dto = new MensajeDto(
@@ -147,6 +150,9 @@ public sealed class ConversacionService : IConversacionService
         var conv = await _db.Conversations.FirstOrDefaultAsync(c => c.Id == id, ct);
         if (conv is null) return false;
         conv.AgentContextResetAt = DateTimeOffset.UtcNow;
+        // Reactiva al agente IA: si un operador habia tomado el control, el bot retoma la atencion
+        // desde cero (sin arrastrar el hilo previo) cuando el contacto vuelva a escribir.
+        conv.IaPausadaAt = null;
         await _db.SaveChangesAsync(ct);
         return true;
     }
@@ -220,6 +226,8 @@ public sealed class ConversacionService : IConversacionService
         _db.Messages.Add(msg);
         conv.LastMessageAt = now;
         if (conv.ArchivedAt.HasValue) conv.ArchivedAt = null;
+        // Toma de control humana (igual que EnviarTextoAsync): el agente IA deja de auto-responder.
+        conv.IaPausadaAt = now;
         await _db.SaveChangesAsync(ct);
 
         var dto = new MensajeDto(

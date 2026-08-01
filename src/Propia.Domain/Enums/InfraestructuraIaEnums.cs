@@ -56,3 +56,23 @@ public enum AgentResourceType
     Location = 4,
     Text = 5
 }
+
+/// <summary>
+/// Tipo de evento en la bitacora de atencion del agente de IA (capa 3). La escribe el
+/// AgentDispatcher a medida que atiende cada conversacion. Portado de CUBOT.travels.
+/// </summary>
+public enum AiAgentRunLogKind
+{
+    /// <summary>Mensaje entrante del cliente recibido por la linea.</summary>
+    Inbound = 0,
+    /// <summary>Prompt enviado al proveedor de IA (principal o extractor de cache).</summary>
+    Prompt = 1,
+    /// <summary>El modelo ejecuto una herramienta MCP (o efecto colateral del turno).</summary>
+    Tool = 2,
+    /// <summary>Respuesta del agente enviada al cliente por la linea.</summary>
+    Reply = 3,
+    /// <summary>Nota informativa del proceso (skip por lista negra, contexto enviado, etc.).</summary>
+    Info = 4,
+    /// <summary>Error durante la atencion.</summary>
+    Error = 5
+}

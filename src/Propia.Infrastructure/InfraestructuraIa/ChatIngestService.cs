@@ -21,13 +21,16 @@ public sealed class ChatIngestService : IChatIngestService
     private readonly ITenantContext _tenant;
     private readonly IListaNegraService _listaNegra;
     private readonly IChatBroadcaster? _broadcaster;
+    private readonly IAgentDispatchQueue? _dispatchQueue;
 
-    public ChatIngestService(PropiaDbContext db, ITenantContext tenant, IListaNegraService listaNegra, IChatBroadcaster? broadcaster = null)
+    public ChatIngestService(PropiaDbContext db, ITenantContext tenant, IListaNegraService listaNegra,
+        IChatBroadcaster? broadcaster = null, IAgentDispatchQueue? dispatchQueue = null)
     {
         _db = db;
         _tenant = tenant;
         _listaNegra = listaNegra;
         _broadcaster = broadcaster;
+        _dispatchQueue = dispatchQueue;
     }
 
     public async Task<ChatIngestResult> IngestTrustedAsync(Guid tenantId, IngestMessageRequest payload, CancellationToken ct = default)
@@ -131,6 +134,14 @@ public sealed class ChatIngestService : IChatIngestService
             }
             catch { /* webhook no debe fallar si SignalR esta caido */ }
         }
+
+        // Encola el despacho del agente: la cola agrupa rafagas y serializa por conversacion, y
+        // corre el AgentDispatcher (auto-respuesta) en un scope propio. Instantaneo: el webhook
+        // responde rapido y no reintenta por timeout. Si no hay cola registrada (o falla), el
+        // entrante queda igual guardado y visible en la bandeja.
+        try { _dispatchQueue?.Enqueue(tenantId, conv.Id, conv.WhatsAppLineId, msg.Body); }
+        catch { /* el despacho es best-effort; no debe romper la ingesta */ }
+
         return ChatIngestResult.Accepted;
     }
 }

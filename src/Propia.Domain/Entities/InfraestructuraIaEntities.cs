@@ -74,6 +74,14 @@ public class Conversation : TenantEntity
     /// <summary>Punto de reinicio del contexto del agente IA: el dispatcher ignora turnos previos a esta fecha.</summary>
     public DateTimeOffset? AgentContextResetAt { get; set; }
 
+    /// <summary>
+    /// Toma de control humana: si tiene valor, el agente IA NO responde automaticamente esta
+    /// conversacion (un operador la esta atendiendo desde la bandeja). Se setea sola cuando un
+    /// humano envia un mensaje manual, y se limpia al "reiniciar contexto" (el bot retoma). Null
+    /// = el agente atiende normalmente.
+    /// </summary>
+    public DateTimeOffset? IaPausadaAt { get; set; }
+
     public ICollection<Message> Messages { get; set; } = new List<Message>();
 }
 
@@ -316,4 +324,29 @@ public class AiUsageLog : TenantEntity
     public string Source { get; set; } = "chat";
 
     public bool Success { get; set; }
+}
+
+/// <summary>
+/// Bitacora de atencion del agente de IA (capa 3). Entidad TENANT-SCOPED (RLS). Persiste, por
+/// conversacion, el rastro del proceso del dispatcher: mensaje recibido, prompts enviados a la IA,
+/// herramientas ejecutadas y respuesta enviada. Equivale al panel "PROMPTS enviados a la IA" del
+/// chat de prueba, pero guardado para revisar la atencion REAL de cada residente. La escribe el
+/// AgentDispatcher (best-effort). Portado de CUBOT.travels.
+/// </summary>
+public class AiAgentRunLog : TenantEntity
+{
+    public Guid ConversationId { get; set; }
+    public Guid AgentId { get; set; }
+
+    public DateTimeOffset OccurredAt { get; set; }
+    public AiAgentRunLogKind Kind { get; set; }
+
+    /// <summary>Titulo corto del evento (ej. "Mensaje recibido", "Respuesta enviada").</summary>
+    public string Title { get; set; } = null!;
+
+    /// <summary>Contenido principal (prompt enviado, texto recibido, etc.).</summary>
+    public string? Content { get; set; }
+
+    /// <summary>Respuesta asociada (texto del LLM, resultado de la herramienta, detalle del error).</summary>
+    public string? Response { get; set; }
 }

@@ -72,6 +72,11 @@ builder.Services.AddSingleton<Propia.Infrastructure.Jobs.BackgroundJobScheduler>
 builder.Services.AddHostedService(sp =>
     sp.GetRequiredService<Propia.Infrastructure.Jobs.BackgroundJobScheduler>());
 
+// Cola de despacho del agente IA (auto-respuesta a entrantes). El Singleton lo registra
+// AddInfrastructure; aqui lo arrancamos como IHostedService (el bucle que agrupa y despacha).
+builder.Services.AddHostedService(sp =>
+    sp.GetRequiredService<Propia.Infrastructure.InfraestructuraIa.AgentDispatchQueue>());
+
 // ---- Forwarded Headers (proxy de Railway o cualquier reverse proxy) ----
 // Necesario para que el HTTPS redirect y los esquemas de URL respeten el origen.
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
