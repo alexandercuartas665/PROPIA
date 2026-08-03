@@ -34,6 +34,12 @@ public interface IWhatsAppConnectorService
     /// <summary>Cierra sesion y elimina la instancia; deja la linea desconectada.</summary>
     Task<bool> DisconnectAsync(Guid lineId, CancellationToken ct = default);
 
+    /// <summary>
+    /// Elimina la linea por completo: borra la instancia en Evolution (best-effort) y la fila local.
+    /// Los vinculos agente-linea se borran en cascada; las conversaciones quedan sin linea. Portado de CUBOT.travels.
+    /// </summary>
+    Task<bool> DeleteLineAsync(Guid lineId, CancellationToken ct = default);
+
     /// <summary>Envia un mensaje de prueba desde la linea a un numero (con codigo de pais).</summary>
     Task<LineSendResult> SendTestAsync(Guid lineId, string phone, string text, CancellationToken ct = default);
 }

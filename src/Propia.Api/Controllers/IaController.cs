@@ -233,6 +233,10 @@ public class IaController : ControllerBase
     public async Task<IActionResult> DesconectarLinea(Guid id, CancellationToken ct)
         => await _connector.DisconnectAsync(id, ct) ? NoContent() : NotFound();
 
+    [HttpDelete("lineas/{id:guid}")]
+    public async Task<IActionResult> EliminarLinea(Guid id, CancellationToken ct)
+        => await _connector.DeleteLineAsync(id, ct) ? NoContent() : NotFound();
+
     [HttpPost("lineas/{id:guid}/probar-envio")]
     public async Task<IActionResult> ProbarEnvio(Guid id, [FromBody] ProbarEnvioRequest req, CancellationToken ct)
         => Ok(await _connector.SendTestAsync(id, req.Phone, req.Text, ct));

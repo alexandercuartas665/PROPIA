@@ -109,16 +109,17 @@
                             <td><span class="lw-badge" style="@StatusBadgeStyle(line.Status)">@StatusLabel(line.Status)</span></td>
                             <td class="lw-td-mut">@(line.LastConnectedAt is null ? "-" : line.LastConnectedAt.Value.ToLocalTime().ToString("dd MMM HH:mm"))</td>
                             <td class="lw-row-actions">
-                                @if (line.Status == WhatsAppLineStatus.Connected)
-                                {
-                                    <button class="lw-btn-sm dark" @onclick="() => AbrirProbar(line.Id)">Probar envio</button>
-                                }
-                                else
+                                @if (line.Status != WhatsAppLineStatus.Connected)
                                 {
                                     <button class="lw-btn-sm dark" @onclick="() => ConectarAsync(line)" disabled="@_busy">@(line.Provider == WhatsAppProvider.Cloud ? "Validar" : "Conectar / QR")</button>
                                 }
+                                <button class="lw-btn-sm @(line.Status == WhatsAppLineStatus.Connected ? "dark" : "")" @onclick="() => AbrirProbar(line.Id)">Probar envio</button>
                                 <button class="lw-btn-sm" @onclick="() => RefrescarAsync(line.Id)" disabled="@_busy">Actualizar</button>
-                                <button class="lw-btn-sm danger" @onclick="() => DesconectarAsync(line.Id)" disabled="@_busy">Desconectar</button>
+                                @if (line.Status == WhatsAppLineStatus.Connected)
+                                {
+                                    <button class="lw-btn-sm" @onclick="() => DesconectarAsync(line.Id)" disabled="@_busy">Desconectar</button>
+                                }
+                                <button class="lw-btn-sm danger" @onclick="() => AbrirEliminar(line)" disabled="@_busy">Eliminar</button>
                             </td>
                         </tr>
                     }
@@ -222,6 +223,26 @@
     </div>
 }
 
+@* ---- Modal eliminar ---- *@
+@if (_showEliminar && _eliminarLine is not null)
+{
+    <div class="lw-ov" @onclick="() => _showEliminar = false">
+        <div class="lw-modal" @onclick:stopPropagation="true">
+            <h5>Eliminar linea</h5>
+            @if (!string.IsNullOrEmpty(_eliminarError)) { <div class="lw-err">@_eliminarError</div> }
+            <p class="lw-sub" style="margin:0 0 6px">
+                Vas a eliminar la linea <b>@_eliminarLine.InstanceName</b> por completo. Esto borra su instancia
+                en el servidor de WhatsApp y su vinculo con el agente. Las conversaciones se conservan (quedan sin linea).
+            </p>
+            <p class="lw-sub" style="margin:0">Esta accion no se puede deshacer.</p>
+            <div class="lw-modal-foot">
+                <button class="lw-btn-ghost" @onclick="() => _showEliminar = false" disabled="@_busy">Cancelar</button>
+                <button class="lw-btn-sm danger" style="padding:9px 16px;font-size:12.5px" @onclick="EliminarAsync" disabled="@_busy">Eliminar linea</button>
+            </div>
+        </div>
+    </div>
+}
+
 <style>
     .lw-wrap { width:100%; max-width:1700px; margin:0 auto; padding:6px 28px 60px; box-sizing:border-box; font-family:'Lexend',-apple-system,sans-serif; animation:fadeUp .2s ease; }
     .lw-head { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; margin-bottom:18px; flex-wrap:wrap; }
@@ -315,6 +336,10 @@
     private string _probarText = "Mensaje de prueba desde PROPIA.";
     private string? _probarMsg;
     private string _probarMsgClass = "alert-info";
+
+    private bool _showEliminar;
+    private WhatsAppLineDto? _eliminarLine;
+    private string? _eliminarError;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -435,6 +460,30 @@
     private void AbrirProbar(Guid id)
     {
         _probarLineId = id; _probarMsg = null; _showProbar = true;
+    }
+
+    private void AbrirEliminar(WhatsAppLineDto line)
+    {
+        _eliminarLine = line; _eliminarError = null; _showEliminar = true;
+    }
+
+    private async Task EliminarAsync()
+    {
+        if (_eliminarLine is null) return;
+        _busy = true; _eliminarError = null;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/ia/lineas/{_eliminarLine.Id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                _showEliminar = false;
+                _eliminarLine = null;
+                await CargarAsync();
+            }
+            else { _eliminarError = await ErrorMsg(resp); }
+        }
+        catch (Exception ex) { _eliminarError = ex.Message; }
+        finally { _busy = false; }
     }
 
     private async Task ProbarEnvioAsync()

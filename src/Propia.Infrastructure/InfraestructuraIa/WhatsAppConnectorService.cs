@@ -159,6 +159,30 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
         return true;
     }
 
+    public async Task<bool> DeleteLineAsync(Guid lineId, CancellationToken ct = default)
+    {
+        var line = await _db.WhatsAppLines.FirstOrDefaultAsync(l => l.Id == lineId, ct);
+        if (line is null) { return false; }
+
+        // Best-effort: elimina la instancia en Evolution. Un servidor caido no debe impedir borrar la linea local.
+        if (line.Provider == WhatsAppProvider.Evolution)
+        {
+            var server = await ResolveServerAsync(ct);
+            if (server is not null)
+            {
+                var (baseUrl, apiKey) = server.Value;
+                try { await _client.DeleteInstanceAsync(baseUrl, apiKey, EvoInstance(line), ct); }
+                catch { /* la instancia puede no existir o el servidor estar caido */ }
+            }
+        }
+
+        // La fila local: los AiAgentLineBinding se borran en cascada (FK ON DELETE CASCADE);
+        // las Conversation quedan con WhatsAppLineId = null (FK SET NULL).
+        _db.WhatsAppLines.Remove(line);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
     public async Task<LineSendResult> SendTestAsync(Guid lineId, string phone, string text, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(phone) || string.IsNullOrWhiteSpace(text))
