@@ -105,6 +105,7 @@ public static class DependencyInjection
         services.AddScoped<Application.InfraestructuraIa.IListaNegraService, InfraestructuraIa.ListaNegraService>();
         services.AddScoped<Application.InfraestructuraIa.IConversacionService, InfraestructuraIa.ConversacionService>();
         services.AddScoped<Application.InfraestructuraIa.IChatIngestService, InfraestructuraIa.ChatIngestService>();
+        services.AddScoped<Application.InfraestructuraIa.IMetaWebhookService, InfraestructuraIa.MetaWebhookService>();
         services.AddScoped<Application.InfraestructuraIa.IWhatsAppConnectorService, InfraestructuraIa.WhatsAppConnectorService>();
         services.AddScoped<Application.InfraestructuraIa.IAiAgentService, InfraestructuraIa.AiAgentService>();
         services.AddScoped<Application.InfraestructuraIa.IAiAgentLineBindingService, InfraestructuraIa.AiAgentLineBindingService>();
@@ -113,6 +114,7 @@ public static class DependencyInjection
         services.AddScoped<Application.InfraestructuraIa.IAiInferenceService, InfraestructuraIa.AiInferenceService>();
         services.AddScoped<Application.InfraestructuraIa.IAiAgentTemplateService, InfraestructuraIa.AiAgentTemplateService>();
         services.AddScoped<Application.InfraestructuraIa.IAgentRunLogService, InfraestructuraIa.AgentRunLogService>();
+        services.AddScoped<Application.InfraestructuraIa.IAutomationService, InfraestructuraIa.AutomationService>();
 
         // Gateway MCP: el agente como cliente MCP. HttpClient "Mcp" acepta el cert self-signed
         // SOLO para localhost (dev); contra cualquier host real exige certificado valido.
@@ -240,6 +242,7 @@ public static class DependencyInjection
         services.AddScoped<Jobs.IBackgroundJob, Jobs.MetricasDiariasJob>();
         services.AddScoped<Jobs.IBackgroundJob, Jobs.CobroRecurrenteJob>();
         services.AddScoped<Jobs.IBackgroundJob, Jobs.ProgramacionTareasJob>();
+        services.AddScoped<Jobs.IBackgroundJob, Jobs.AutomacionesJob>();
 
         // Storage de blobs (logos, fachadas, portadas, futuros adjuntos).
         // Provider seleccionado por config: "R2" en produccion, cualquier otro valor (o ausente)

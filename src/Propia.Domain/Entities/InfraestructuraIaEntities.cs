@@ -350,3 +350,43 @@ public class AiAgentRunLog : TenantEntity
     /// <summary>Respuesta asociada (texto del LLM, resultado de la herramienta, detalle del error).</summary>
     public string? Response { get; set; }
 }
+
+/// <summary>
+/// Regla de automatizacion (Infraestructura IA). Un disparador + una accion, encendible/apagable.
+/// Re-mapeada de CUBOT.travels al dominio de copropiedades (sin Lead/Pipeline/Wompi). Entidad
+/// TENANT-SCOPED (RLS). El motor (AutomationService.RunNowAsync + AutomacionesJob) evalua las
+/// reglas activas. HOY solo la combinacion ChatSinRespuesta -> NotificarAdministracion se ejecuta;
+/// el resto queda como scaffolding (definible en UI pero marcado "proximamente").
+/// </summary>
+public class AutomationRule : TenantEntity
+{
+    public string Name { get; set; } = null!;
+
+    public AutomationTrigger Trigger { get; set; } = AutomationTrigger.ChatSinRespuesta;
+
+    /// <summary>Umbral en minutos (ChatSinRespuesta / PqrsSinRespuesta).</summary>
+    public int ThresholdMinutes { get; set; } = 30;
+
+    /// <summary>Inicio de la franja horaria "HH:mm" (VentanaHoraria).</summary>
+    public string? TimeWindowStart { get; set; }
+    /// <summary>Fin de la franja horaria "HH:mm" (VentanaHoraria).</summary>
+    public string? TimeWindowEnd { get; set; }
+
+    public AutomationAction Action { get; set; } = AutomationAction.NotificarAdministracion;
+
+    /// <summary>Texto del mensaje (NotificarAdministracion / AutoResponderChat).</summary>
+    public string? MensajePlantilla { get; set; }
+
+    /// <summary>Titulo de la tarea a crear (CrearTarea).</summary>
+    public string? TareaTitulo { get; set; }
+
+    public bool IsActive { get; set; }
+
+    public int SortOrder { get; set; }
+
+    /// <summary>Cuantas veces disparo su accion (para KPIs).</summary>
+    public int ExecutionCount { get; set; }
+
+    /// <summary>Ultima vez que el motor evaluo/ejecuto esta regla.</summary>
+    public DateTimeOffset? LastRunAt { get; set; }
+}

@@ -16,12 +16,14 @@ public class WebhooksController : ControllerBase
 {
     private readonly IWompiWebhookService _wompi;
     private readonly IChatIngestService _chatIngest;
+    private readonly IMetaWebhookService _meta;
     private readonly IConfiguration _config;
 
-    public WebhooksController(IWompiWebhookService wompi, IChatIngestService chatIngest, IConfiguration config)
+    public WebhooksController(IWompiWebhookService wompi, IChatIngestService chatIngest, IMetaWebhookService meta, IConfiguration config)
     {
         _wompi = wompi;
         _chatIngest = chatIngest;
+        _meta = meta;
         _config = config;
     }
 
@@ -71,5 +73,46 @@ public class WebhooksController : ControllerBase
             ChatIngestResult.InvalidPayload => BadRequest(new { error = "invalid_payload" }),
             _ => StatusCode(500, new { error = "unknown" })
         };
+    }
+
+    /// <summary>
+    /// Handshake de verificacion del webhook de Meta (WhatsApp Cloud API). Meta llama con
+    /// ?hub.mode=subscribe&amp;hub.verify_token=...&amp;hub.challenge=... al configurar el callback.
+    /// Devolvemos el challenge en texto plano si el verify_token coincide con el de una linea Cloud
+    /// del tenant. El tenant va en la URL (mismo patron que /webhooks/evolution/{tenantId}).
+    /// </summary>
+    [HttpGet("meta/{tenantId:guid}")]
+    public async Task<IActionResult> MetaVerify(Guid tenantId, CancellationToken ct)
+    {
+        var mode = Request.Query["hub.mode"].ToString();
+        var token = Request.Query["hub.verify_token"].ToString();
+        var challenge = Request.Query["hub.challenge"].ToString();
+        if (!string.Equals(mode, "subscribe", StringComparison.Ordinal)) { return BadRequest(); }
+        if (await _meta.VerifyAsync(tenantId, token, ct)) { return Content(challenge, "text/plain"); }
+        return Forbid();
+    }
+
+    /// <summary>
+    /// Ingesta de entrantes de Meta (WhatsApp Cloud API). Resuelve la linea por phone_number_id
+    /// dentro del tenant y persiste. Siempre 200 (Meta reintenta si no recibe 2xx).
+    /// </summary>
+    [HttpPost("meta/{tenantId:guid}")]
+    public async Task<IActionResult> MetaInbound(Guid tenantId, CancellationToken ct)
+    {
+        using var reader = new StreamReader(Request.Body);
+        var rawJson = await reader.ReadToEndAsync(ct);
+        if (string.IsNullOrWhiteSpace(rawJson)) { return Ok(new { status = "empty" }); }
+
+        System.Text.Json.JsonDocument doc;
+        try { doc = System.Text.Json.JsonDocument.Parse(rawJson); }
+        catch { return Ok(new { status = "invalid_json" }); }
+
+        using (doc)
+        {
+            var parsed = MetaWebhookParser.Parse(doc.RootElement);
+            if (parsed is null) { return Ok(new { status = "ignored" }); } // eventos de estado, etc.
+            var result = await _meta.IngestAsync(tenantId, parsed.PhoneNumberId, parsed.Payload, ct);
+            return Ok(new { status = result.ToString().ToLowerInvariant() });
+        }
     }
 }

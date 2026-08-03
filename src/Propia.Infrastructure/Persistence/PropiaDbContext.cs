@@ -297,6 +297,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<AiAgentMcpTool> AiAgentMcpTools => Set<AiAgentMcpTool>();
     public DbSet<AiUsageLog> AiUsageLogs => Set<AiUsageLog>();
     public DbSet<AiAgentRunLog> AiAgentRunLogs => Set<AiAgentRunLog>();
+    public DbSet<AutomationRule> AutomationRules => Set<AutomationRule>();
     public DbSet<AiAgentTemplate> AiAgentTemplates => Set<AiAgentTemplate>();
     public DbSet<AiAgentTemplateMcpTool> AiAgentTemplateMcpTools => Set<AiAgentTemplateMcpTool>();
     public DbSet<NumeroEnListaNegra> NumerosEnListaNegra => Set<NumeroEnListaNegra>();
@@ -2796,6 +2797,20 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             // Consulta principal de la bitacora: por conversacion, en orden cronologico.
             b.HasIndex(x => new { x.TenantId, x.ConversationId, x.OccurredAt });
             b.HasIndex(x => new { x.TenantId, x.AgentId });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<AutomationRule>(b =>
+        {
+            b.ToTable("automation_rules");
+            b.Property(x => x.Name).IsRequired().HasMaxLength(150);
+            b.Property(x => x.Trigger).HasConversion<string>().HasMaxLength(30);
+            b.Property(x => x.Action).HasConversion<string>().HasMaxLength(30);
+            b.Property(x => x.TimeWindowStart).HasMaxLength(5);
+            b.Property(x => x.TimeWindowEnd).HasMaxLength(5);
+            b.Property(x => x.MensajePlantilla).HasColumnType("text");
+            b.Property(x => x.TareaTitulo).HasMaxLength(200);
+            b.HasIndex(x => new { x.TenantId, x.SortOrder });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

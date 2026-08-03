@@ -25,6 +25,7 @@ public class IaController : ControllerBase
     private readonly IListaNegraService _listaNegra;
     private readonly IConversacionService _conversaciones;
     private readonly IAgentRunLogService _bitacora;
+    private readonly IAutomationService _automations;
 
     public IaController(
         IWhatsAppLineService lines,
@@ -37,7 +38,8 @@ public class IaController : ControllerBase
         IMcpGateway mcp,
         IListaNegraService listaNegra,
         IConversacionService conversaciones,
-        IAgentRunLogService bitacora)
+        IAgentRunLogService bitacora,
+        IAutomationService automations)
     {
         _lines = lines;
         _connector = connector;
@@ -50,6 +52,44 @@ public class IaController : ControllerBase
         _listaNegra = listaNegra;
         _conversaciones = conversaciones;
         _bitacora = bitacora;
+        _automations = automations;
+    }
+
+    // ---------- Automatizaciones (Infraestructura IA) ----------
+    [HttpGet("automatizaciones")]
+    public async Task<IActionResult> ListarAutomatizaciones(CancellationToken ct)
+    {
+        await _automations.SeedDefaultsAsync(ct); // siembra ejemplos la primera vez
+        return Ok(await _automations.ListAsync(ct));
+    }
+
+    [HttpPost("automatizaciones")]
+    public async Task<IActionResult> CrearAutomatizacion([FromBody] SaveAutomationRuleRequest req, CancellationToken ct)
+    {
+        var r = await _automations.CreateAsync(req, ct);
+        return r is null ? BadRequest(new { error = "No se pudo crear la regla." }) : Created("", r);
+    }
+
+    [HttpPut("automatizaciones/{id:guid}")]
+    public async Task<IActionResult> ActualizarAutomatizacion(Guid id, [FromBody] SaveAutomationRuleRequest req, CancellationToken ct)
+    {
+        var r = await _automations.UpdateAsync(id, req, ct);
+        return r is null ? NotFound() : Ok(r);
+    }
+
+    [HttpPost("automatizaciones/{id:guid}/activar")]
+    public async Task<IActionResult> ActivarAutomatizacion(Guid id, [FromQuery] bool activo, CancellationToken ct)
+        => await _automations.SetActiveAsync(id, activo, ct) ? Ok() : NotFound();
+
+    [HttpDelete("automatizaciones/{id:guid}")]
+    public async Task<IActionResult> EliminarAutomatizacion(Guid id, CancellationToken ct)
+        => await _automations.DeleteAsync(id, ct) ? NoContent() : NotFound();
+
+    [HttpPost("automatizaciones/ejecutar")]
+    public async Task<IActionResult> EjecutarAutomatizaciones(CancellationToken ct)
+    {
+        var r = await _automations.RunNowAsync(ct);
+        return Ok(new { rulesEvaluated = r.RulesEvaluated, actionsFired = r.ActionsFired });
     }
 
     // ---------- Bitacora del agente (Infraestructura IA - auto-atencion) ----------

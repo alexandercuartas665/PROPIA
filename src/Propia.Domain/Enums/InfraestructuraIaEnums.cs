@@ -58,6 +58,37 @@ public enum AgentResourceType
 }
 
 /// <summary>
+/// Disparador de una regla de automatizacion (Infraestructura IA). Re-mapeado de CUBOT.travels
+/// (que era de ventas: Lead/Pipeline) al dominio de copropiedades. HOY solo ChatSinRespuesta esta
+/// implementado end-to-end; el resto es scaffolding (definido en UI + persistencia, sin ejecucion aun).
+/// </summary>
+public enum AutomationTrigger
+{
+    /// <summary>Un mensaje entrante lleva N minutos sin respuesta (ThresholdMinutes). [IMPLEMENTADO]</summary>
+    ChatSinRespuesta = 0,
+    /// <summary>Un PQRSD abierto lleva N minutos sin gestion. [proximamente]</summary>
+    PqrsSinRespuesta = 1,
+    /// <summary>Una tarea paso su fecha de vencimiento. [proximamente]</summary>
+    TareaVencida = 2,
+    /// <summary>Dentro de una franja horaria (TimeWindowStart/End). [proximamente]</summary>
+    VentanaHoraria = 3
+}
+
+/// <summary>
+/// Accion que dispara una regla de automatizacion. HOY solo NotificarAdministracion esta
+/// implementada (via el motor de notificaciones T.2). El resto es scaffolding.
+/// </summary>
+public enum AutomationAction
+{
+    /// <summary>Notifica a la administracion (usuarios Administrador del tenant) via T.2. [IMPLEMENTADO]</summary>
+    NotificarAdministracion = 0,
+    /// <summary>Crea una tarea en el tablero (usa TareaTitulo). [proximamente]</summary>
+    CrearTarea = 1,
+    /// <summary>Envia un mensaje automatico al chat (usa MensajePlantilla). [proximamente]</summary>
+    AutoResponderChat = 2
+}
+
+/// <summary>
 /// Tipo de evento en la bitacora de atencion del agente de IA (capa 3). La escribe el
 /// AgentDispatcher a medida que atiende cada conversacion. Portado de CUBOT.travels.
 /// </summary>

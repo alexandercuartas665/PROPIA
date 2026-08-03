@@ -1,0 +1,388 @@
+@page "/ia/automatizaciones"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.InfraestructuraIa
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+
+<PageTitle>Automatizaciones - PROPIA</PageTitle>
+
+@* Reglas de automatizacion event-driven de la copropiedad (Infraestructura & IA). Re-mapeadas de
+   CUBOT.travels al dominio de copropiedades. Hoy solo "Chat sin respuesta -> Notificar administracion"
+   se ejecuta de verdad; el resto es scaffolding marcado "proximamente". *@
+
+<div class="au-page">
+    <div class="au-head">
+        <div>
+            <h1 class="au-title">Automatizaciones</h1>
+            <p class="au-sub">Reglas event-driven sobre chats, PQRSD y tareas. Cada copropiedad define sus disparadores y acciones.</p>
+        </div>
+        <div class="au-head-actions">
+            <button class="au-btn-ghost" type="button" @onclick="EjecutarAhoraAsync" disabled="@_busy">Ejecutar ahora</button>
+            <button class="au-btn-primary" type="button" @onclick="NuevaRegla" disabled="@_busy">+ Nueva regla</button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_flash))
+    {
+        <div class="au-flash @(_flashError ? "au-flash--err" : "au-flash--ok")">@_flash</div>
+    }
+
+    @if (!_authChecked)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
+    else if (string.IsNullOrEmpty(_jwt))
+    {
+        <div class="au-empty">Sesion expirada. <a href="/login?returnUrl=%2Fia%2Fautomatizaciones">Iniciar sesion</a>.</div>
+    }
+    else
+    {
+        <div class="au-kpis">
+            <div class="au-kpi"><span class="au-kpi-n">@_reglas.Count(r => r.IsActive)</span><span class="au-kpi-l">Reglas activas</span></div>
+            <div class="au-kpi"><span class="au-kpi-n">@_reglas.Count(r => !r.IsActive)</span><span class="au-kpi-l">Pausadas</span></div>
+            <div class="au-kpi"><span class="au-kpi-n">@_reglas.Sum(r => r.ExecutionCount)</span><span class="au-kpi-l">Ejecuciones</span></div>
+        </div>
+
+        @if (_reglas.Count == 0)
+        {
+            <div class="au-empty">Aun no hay reglas. Crea la primera con "+ Nueva regla".</div>
+        }
+        else
+        {
+            <div class="au-grid">
+                @foreach (var r in _reglas)
+                {
+                    var rr = r;
+                    <div class="au-card @(r.IsActive ? "au-card--on" : "")">
+                        <div class="au-card-top">
+                            <div class="au-card-name">@r.Name</div>
+                            <label class="au-switch" title="@(r.IsActive ? "Activa" : "Pausada")">
+                                <input type="checkbox" checked="@r.IsActive" @onchange="@(e => ToggleAsync(rr, (bool)e.Value!))" disabled="@_busy" />
+                                <span class="au-slider"></span>
+                            </label>
+                        </div>
+                        <div class="au-flow">
+                            <span class="au-chip au-chip-trigger">@LabelTrigger(r.Trigger)</span>
+                            <span class="au-arrow">&rarr;</span>
+                            <span class="au-chip au-chip-action">@LabelAction(r.Action)</span>
+                        </div>
+                        <div class="au-card-foot">
+                            <span class="au-exec">@r.ExecutionCount ejecuciones @(r.IsActive ? "- activa" : "- pausada")</span>
+                            @if (!r.Implemented)
+                            {
+                                <span class="au-soon" title="Esta combinacion aun no se ejecuta; queda definida para una proxima entrega.">proximamente</span>
+                            }
+                            else
+                            {
+                                <span class="au-real" title="Esta regla se ejecuta de verdad.">operativa</span>
+                            }
+                        </div>
+                        <div class="au-card-actions">
+                            <button class="au-link" type="button" @onclick="@(() => Editar(rr))">Editar</button>
+                            <button class="au-link au-link--danger" type="button" @onclick="@(() => EliminarAsync(rr))" disabled="@_busy">Eliminar</button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
+
+@if (_editando is not null)
+{
+    <div class="au-backdrop" @onclick="Cerrar">
+        <div class="au-modal" @onclick:stopPropagation="true">
+            <div class="au-modal-head">
+                <h2>@(_esNueva ? "Nueva regla" : "Editar regla")</h2>
+                <button class="au-x" type="button" @onclick="Cerrar">&times;</button>
+            </div>
+            <div class="au-modal-body">
+                <label class="au-field">
+                    <span>Nombre *</span>
+                    <input class="au-input" @bind="_editando.Name" placeholder="Ej. Aviso de chat sin respuesta" />
+                </label>
+
+                <label class="au-field">
+                    <span>Disparador (cuando)</span>
+                    <select class="au-input" @bind="_editando.Trigger">
+                        <option value="@AutomationTrigger.ChatSinRespuesta">Chat sin respuesta</option>
+                        <option value="@AutomationTrigger.PqrsSinRespuesta">PQRSD sin respuesta</option>
+                        <option value="@AutomationTrigger.TareaVencida">Tarea vencida</option>
+                        <option value="@AutomationTrigger.VentanaHoraria">Ventana horaria</option>
+                    </select>
+                </label>
+
+                @if (_editando.Trigger == AutomationTrigger.ChatSinRespuesta || _editando.Trigger == AutomationTrigger.PqrsSinRespuesta)
+                {
+                    <label class="au-field">
+                        <span>Umbral (minutos sin respuesta)</span>
+                        <input class="au-input" type="number" min="1" @bind="_editando.ThresholdMinutes" />
+                    </label>
+                }
+                else if (_editando.Trigger == AutomationTrigger.VentanaHoraria)
+                {
+                    <div class="au-row">
+                        <label class="au-field"><span>Desde (HH:mm)</span><input class="au-input" @bind="_editando.TimeWindowStart" placeholder="22:00" /></label>
+                        <label class="au-field"><span>Hasta (HH:mm)</span><input class="au-input" @bind="_editando.TimeWindowEnd" placeholder="06:00" /></label>
+                    </div>
+                }
+
+                <label class="au-field">
+                    <span>Accion (que hacer)</span>
+                    <select class="au-input" @bind="_editando.Action">
+                        <option value="@AutomationAction.NotificarAdministracion">Notificar a la administracion</option>
+                        <option value="@AutomationAction.CrearTarea">Crear una tarea</option>
+                        <option value="@AutomationAction.AutoResponderChat">Auto-responder el chat</option>
+                    </select>
+                </label>
+
+                @if (_editando.Action == AutomationAction.CrearTarea)
+                {
+                    <label class="au-field">
+                        <span>Titulo de la tarea</span>
+                        <input class="au-input" @bind="_editando.TareaTitulo" placeholder="Ej. Gestionar solicitud pendiente" />
+                    </label>
+                }
+                else
+                {
+                    <label class="au-field">
+                        <span>Mensaje</span>
+                        <textarea class="au-input" rows="2" @bind="_editando.MensajePlantilla" placeholder="Texto de la notificacion o auto-respuesta"></textarea>
+                    </label>
+                }
+
+                @if (!IAutomationService.IsImplemented(_editando.Trigger, _editando.Action))
+                {
+                    <div class="au-note">Esta combinacion aun no se ejecuta automaticamente (queda guardada para una proxima entrega). Hoy solo "Chat sin respuesta &rarr; Notificar a la administracion" es operativa.</div>
+                }
+            </div>
+            <div class="au-modal-foot">
+                <button class="au-btn-ghost" type="button" @onclick="Cerrar">Cancelar</button>
+                <button class="au-btn-primary" type="button" @onclick="GuardarAsync" disabled="@_busy">@(_esNueva ? "Crear" : "Guardar")</button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .au-page { padding: 24px 28px; max-width: 1900px; margin: 0 auto; }
+    .au-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
+    .au-title { font-size: 1.5rem; font-weight: 700; color: var(--propia-text, #2d3e50); margin: 0; }
+    .au-sub { color: #64748b; margin: 4px 0 0; font-size: .9rem; max-width: 720px; }
+    .au-head-actions { display: flex; gap: 8px; flex-shrink: 0; }
+    .au-btn-ghost { border: 1px solid #e2e8f0; background: #fff; border-radius: 8px; padding: 8px 14px; font-size: .85rem; font-weight: 600; cursor: pointer; color: #475569; }
+    .au-btn-ghost:hover { border-color: var(--propia-primary, #6366f1); color: var(--propia-primary, #6366f1); }
+    .au-btn-primary { border: none; background: var(--propia-primary, #6366f1); color: #fff; border-radius: 8px; padding: 8px 16px; font-size: .85rem; font-weight: 600; cursor: pointer; }
+    .au-btn-primary:hover { filter: brightness(.95); }
+    .au-btn-ghost:disabled, .au-btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+    .au-flash { padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; font-size: .88rem; }
+    .au-flash--ok { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+    .au-flash--err { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+    .au-empty { padding: 40px; text-align: center; color: #64748b; }
+
+    .au-kpis { display: flex; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }
+    .au-kpi { flex: 1; min-width: 150px; border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; padding: 16px 18px; display: flex; flex-direction: column; }
+    .au-kpi-n { font-size: 1.8rem; font-weight: 700; color: var(--propia-text, #2d3e50); }
+    .au-kpi-l { color: #94a3b8; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; }
+
+    .au-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+    .au-card { border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+    .au-card--on { border-color: #c7d2fe; box-shadow: 0 1px 0 #eef2ff inset; }
+    .au-card-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .au-card-name { font-weight: 700; color: #2d3e50; font-size: .95rem; }
+    .au-flow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .au-chip { border-radius: 6px; padding: 3px 9px; font-size: .78rem; font-weight: 600; }
+    .au-chip-trigger { background: #eff6ff; color: #2563eb; }
+    .au-chip-action { background: #ecfdf5; color: #059669; }
+    .au-arrow { color: #94a3b8; }
+    .au-card-foot { display: flex; justify-content: space-between; align-items: center; }
+    .au-exec { color: #94a3b8; font-size: .78rem; }
+    .au-soon { background: #f1f5f9; color: #64748b; border-radius: 5px; padding: 1px 8px; font-size: .72rem; font-weight: 600; }
+    .au-real { background: #dcfce7; color: #16a34a; border-radius: 5px; padding: 1px 8px; font-size: .72rem; font-weight: 600; }
+    .au-card-actions { display: flex; gap: 12px; border-top: 1px solid #f1f5f9; padding-top: 8px; }
+    .au-link { background: none; border: none; color: var(--propia-primary, #6366f1); font-size: .82rem; font-weight: 600; cursor: pointer; padding: 0; }
+    .au-link--danger { color: #ef4444; }
+
+    /* Switch */
+    .au-switch { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; }
+    .au-switch input { opacity: 0; width: 0; height: 0; }
+    .au-slider { position: absolute; inset: 0; background: #cbd5e1; border-radius: 999px; transition: .2s; cursor: pointer; }
+    .au-slider::before { content: ""; position: absolute; height: 16px; width: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+    .au-switch input:checked + .au-slider { background: var(--propia-primary, #6366f1); }
+    .au-switch input:checked + .au-slider::before { transform: translateX(18px); }
+
+    /* Modal */
+    .au-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: center; justify-content: center; z-index: 1050; }
+    .au-modal { background: #fff; border-radius: 14px; width: 520px; max-width: 94vw; max-height: 92vh; overflow: auto; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
+    .au-modal-head { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #f1f5f9; }
+    .au-modal-head h2 { font-size: 1.1rem; font-weight: 700; margin: 0; color: #2d3e50; }
+    .au-x { background: none; border: none; font-size: 1.5rem; line-height: 1; cursor: pointer; color: #94a3b8; }
+    .au-modal-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+    .au-field { display: flex; flex-direction: column; gap: 5px; }
+    .au-field > span { font-size: .82rem; font-weight: 600; color: #475569; }
+    .au-input { border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 11px; font-size: .9rem; width: 100%; font-family: inherit; }
+    .au-input:focus { outline: none; border-color: var(--propia-primary, #6366f1); }
+    .au-row { display: flex; gap: 12px; }
+    .au-row .au-field { flex: 1; }
+    .au-note { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; border-radius: 8px; padding: 10px 12px; font-size: .82rem; }
+    .au-modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px; border-top: 1px solid #f1f5f9; }
+</style>
+
+@code {
+    private string? _jwt;
+    private bool _authChecked;
+    private bool _busy;
+    private string? _flash;
+    private bool _flashError;
+
+    private List<AutomationRuleDto> _reglas = new();
+
+    // Editor (modelo mutable)
+    private sealed class Editor
+    {
+        public Guid Id;
+        public string Name = "";
+        public AutomationTrigger Trigger = AutomationTrigger.ChatSinRespuesta;
+        public int ThresholdMinutes = 30;
+        public string? TimeWindowStart;
+        public string? TimeWindowEnd;
+        public AutomationAction Action = AutomationAction.NotificarAdministracion;
+        public string? MensajePlantilla;
+        public string? TareaTitulo;
+    }
+    private Editor? _editando;
+    private bool _esNueva;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try { _jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt"); _authChecked = true; }
+        catch { }
+        if (!string.IsNullOrEmpty(_jwt)) { await CargarAsync(); }
+        StateHasChanged();
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(_jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
+        return http;
+    }
+
+    private async Task CargarAsync()
+    {
+        _busy = true;
+        try { _reglas = await Auth().GetFromJsonAsync<List<AutomationRuleDto>>("/api/ia/automatizaciones") ?? new(); }
+        catch (Exception ex) { Flash("No se pudo cargar: " + ex.Message, true); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private void NuevaRegla()
+    {
+        _esNueva = true;
+        _editando = new Editor();
+    }
+
+    private void Editar(AutomationRuleDto r)
+    {
+        _esNueva = false;
+        _editando = new Editor
+        {
+            Id = r.Id, Name = r.Name, Trigger = r.Trigger, ThresholdMinutes = r.ThresholdMinutes,
+            TimeWindowStart = r.TimeWindowStart, TimeWindowEnd = r.TimeWindowEnd, Action = r.Action,
+            MensajePlantilla = r.MensajePlantilla, TareaTitulo = r.TareaTitulo
+        };
+    }
+
+    private void Cerrar() => _editando = null;
+
+    private async Task GuardarAsync()
+    {
+        if (_editando is null) return;
+        if (string.IsNullOrWhiteSpace(_editando.Name)) { Flash("El nombre es obligatorio.", true); return; }
+        _busy = true;
+        try
+        {
+            var req = new SaveAutomationRuleRequest(
+                _editando.Name, _editando.Trigger, _editando.ThresholdMinutes,
+                _editando.TimeWindowStart, _editando.TimeWindowEnd, _editando.Action,
+                _editando.MensajePlantilla, _editando.TareaTitulo);
+            HttpResponseMessage resp = _esNueva
+                ? await Auth().PostAsJsonAsync("/api/ia/automatizaciones", req)
+                : await Auth().PutAsJsonAsync($"/api/ia/automatizaciones/{_editando.Id}", req);
+            if (resp.IsSuccessStatusCode) { _editando = null; await CargarAsync(); Flash("Regla guardada.", false); }
+            else { Flash(await resp.Content.ReadAsStringAsync(), true); }
+        }
+        catch (Exception ex) { Flash("Error: " + ex.Message, true); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private async Task ToggleAsync(AutomationRuleDto r, bool activo)
+    {
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsync($"/api/ia/automatizaciones/{r.Id}/activar?activo={activo.ToString().ToLowerInvariant()}", null);
+            if (resp.IsSuccessStatusCode) { await CargarAsync(); }
+            else { Flash("No se pudo cambiar el estado.", true); }
+        }
+        catch (Exception ex) { Flash("Error: " + ex.Message, true); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private async Task EliminarAsync(AutomationRuleDto r)
+    {
+        var ok = await Js.InvokeAsync<bool>("confirm", $"Eliminar la regla \"{r.Name}\"?");
+        if (!ok) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/ia/automatizaciones/{r.Id}");
+            if (resp.IsSuccessStatusCode) { await CargarAsync(); Flash("Regla eliminada.", false); }
+            else { Flash("No se pudo eliminar.", true); }
+        }
+        catch (Exception ex) { Flash("Error: " + ex.Message, true); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private async Task EjecutarAhoraAsync()
+    {
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsync("/api/ia/automatizaciones/ejecutar", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                var body = await resp.Content.ReadFromJsonAsync<RunResp>();
+                await CargarAsync();
+                Flash($"Motor ejecutado: {body?.rulesEvaluated ?? 0} regla(s) evaluada(s), {body?.actionsFired ?? 0} accion(es) disparada(s).", false);
+            }
+            else { Flash("No se pudo ejecutar.", true); }
+        }
+        catch (Exception ex) { Flash("Error: " + ex.Message, true); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private sealed record RunResp(int rulesEvaluated, int actionsFired);
+
+    private void Flash(string msg, bool error) { _flash = msg; _flashError = error; }
+
+    private static string LabelTrigger(AutomationTrigger t) => t switch
+    {
+        AutomationTrigger.ChatSinRespuesta => "Chat sin respuesta",
+        AutomationTrigger.PqrsSinRespuesta => "PQRSD sin respuesta",
+        AutomationTrigger.TareaVencida => "Tarea vencida",
+        AutomationTrigger.VentanaHoraria => "Ventana horaria",
+        _ => t.ToString()
+    };
+
+    private static string LabelAction(AutomationAction a) => a switch
+    {
+        AutomationAction.NotificarAdministracion => "Notificar administracion",
+        AutomationAction.CrearTarea => "Crear tarea",
+        AutomationAction.AutoResponderChat => "Auto-responder chat",
+        _ => a.ToString()
+    };
+}
