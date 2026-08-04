@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Propia.Application.Auth;
 using Propia.Application.Common;
 using Propia.Application.InfraestructuraIa;
 using Propia.Domain.Entities;
@@ -25,10 +26,18 @@ public sealed class AgentDispatcher : IAgentDispatcher
     /// <summary>Maximo de turnos que se pasan a la inferencia (contexto). Igual que CUBOT.</summary>
     private const int MaxTurns = 12;
 
+    /// <summary>
+    /// Usuario de sistema (sintetico) para el token de servicio del dispatcher: es el sub/user_id del
+    /// JWT que habilita el runtime de tools MCP en el chat real. No es una fila real de Identity (la
+    /// validacion del JWT no consulta BD); solo aporta un id estable y el claim tenant_id para la RLS.
+    /// </summary>
+    private static readonly Guid DispatcherServiceUserId = new("00000000-0000-0000-0000-0000a9e17d15");
+
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenant;
     private readonly IAiInferenceService _inference;
     private readonly IWhatsAppConnectorService _connector;
+    private readonly ITokenService _tokens;
     private readonly IChatBroadcaster? _broadcaster;
     private readonly ILogger<AgentDispatcher> _logger;
 
@@ -37,6 +46,7 @@ public sealed class AgentDispatcher : IAgentDispatcher
         ITenantContext tenant,
         IAiInferenceService inference,
         IWhatsAppConnectorService connector,
+        ITokenService tokens,
         ILogger<AgentDispatcher> logger,
         IChatBroadcaster? broadcaster = null)
     {
@@ -44,6 +54,7 @@ public sealed class AgentDispatcher : IAgentDispatcher
         _tenant = tenant;
         _inference = inference;
         _connector = connector;
+        _tokens = tokens;
         _logger = logger;
         _broadcaster = broadcaster;
     }
@@ -143,13 +154,26 @@ public sealed class AgentDispatcher : IAgentDispatcher
             null, ct);
 
         // 5) Inferencia (mismo motor que el chat de prueba de /ia/agentes). sessionId = conversationId
-        // aisla el cache por conversacion. Sin bearerToken el motor corre el camino simple (sin MCP):
-        // el dispatcher corre sin JWT de usuario, asi que por ahora el agente responde de forma
-        // conversacional (prompt + recursos + cache), no ejecuta tools MCP (mejora futura).
+        // aisla el cache por conversacion. Para habilitar el runtime de tools MCP en el chat real
+        // (ej. verificar_residencia), emitimos un token de servicio tenant-scoped: /mcp exige JWT y
+        // fija la RLS desde el claim tenant_id. Best-effort: si no se puede emitir, el motor corre el
+        // camino simple (sin MCP) y el agente responde de forma conversacional (como antes).
+        string? bearerToken = null;
+        try
+        {
+            var (svcToken, _) = _tokens.IssueAccessToken(
+                new ApplicationUser { Id = DispatcherServiceUserId, Email = "agente-ia@dispatcher.propia" }, tenantId);
+            bearerToken = svcToken;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Dispatcher: no se pudo emitir token de servicio para tools MCP conv {ConvId}", conversationId);
+        }
+
         _logger.LogInformation("Dispatcher: inferencia agente {AgentId} conv {ConvId} ({TurnCount} turnos)",
             binding.AgentId, conversationId, turns.Count);
         var result = await _inference.TestChatAsync(binding.AgentId, turns,
-            systemPromptOverride: null, bearerToken: null, contactPhone: conv.ContactPhone,
+            systemPromptOverride: null, bearerToken: bearerToken, contactPhone: conv.ContactPhone,
             conversationId: conversationId, ct: ct);
 
         // Bitacora: prompts que ejecuto la inferencia (prompt principal + extractor de cache).

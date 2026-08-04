@@ -28,6 +28,7 @@ public static class DependencyInjection
             ?? throw new InvalidOperationException("Falta connection string 'Propia' en configuracion.");
 
         services.AddScoped<ITenantContext, TenantContext>();
+        services.AddScoped<IAgentCallContext, Persistence.AgentCallContext>();
         services.AddScoped<Persistence.TenantConnectionInterceptor>();
         // Necesario para EquipoOrgService que lee claims del JWT en runtime.
         services.AddHttpContextAccessor();
@@ -116,6 +117,10 @@ public static class DependencyInjection
         services.AddScoped<Application.InfraestructuraIa.IAgentRunLogService, InfraestructuraIa.AgentRunLogService>();
         services.AddScoped<Application.InfraestructuraIa.IAutomationService, InfraestructuraIa.AutomationService>();
         services.AddScoped<Application.InfraestructuraIa.IAdminAgentService, InfraestructuraIa.AdminAgentService>();
+
+        // Menu de navegacion configurable (global plataforma). Cache en memoria del menu resuelto.
+        services.AddMemoryCache();
+        services.AddScoped<Application.Navegacion.IMenuConfigService, Navegacion.MenuConfigService>();
 
         // Gateway MCP: el agente como cliente MCP. HttpClient "Mcp" acepta el cert self-signed
         // SOLO para localhost (dev); contra cualquier host real exige certificado valido.

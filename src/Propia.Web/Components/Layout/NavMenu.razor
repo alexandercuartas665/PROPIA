@@ -1,82 +1,36 @@
 @* Sidebar de navegacion del Web cliente - estilo NexLink (rail + tab-content).
-   Mapeo de los 25 modulos PROPIA en 6 grupos del rail:
-   - Inicio (Dashboard 2.2)
-   - Mi PH (2.3 + 2.4 + 2.5)
-   - Finanzas (2.6 + 2.7)
-   - Gobierno y convivencia (2.8 + 2.9)
-   - Operacion (2.10 + 2.11 + 2.12 + 2.13)
-   - Comunicacion (2.14 + 2.15 + 2.16)
-   Adicionales: Capa 1 (Organizacion) y Mi cuenta.
+   DATA-DRIVEN: el arbol (secciones + items) sale de IMenuConfigService (menu base en
+   MenuCatalog + overrides globales de nombre/orden/ubicacion editables por el Super Admin
+   en /admin/configuracion-menu). Concepto portado de ECOREX.tareas. Si el servicio falla,
+   cae al menu base para no dejar al usuario sin navegacion.
 
-   BUG FIX (validacion MCP 16/05/2026): al navegar a un modulo el menu volvia
-   siempre a Inicio porque la clase `show active` estaba hardcoded en tabInicio
-   y Blazor re-renderizaba el componente perdiendo el estado JS de Bootstrap.
-   Ahora el tab activo se calcula server-side desde Nav.Uri y se aplica
-   dinamicamente, asi el menu siempre coincide con la ruta. *@
+   BUG FIX (validacion MCP 16/05/2026): el tab activo se calcula server-side desde Nav.Uri
+   (no con clases hardcoded) para que el menu siempre coincida con la ruta. Ahora el mapa
+   ruta->seccion es data-driven, asi el resaltado sigue a los items aunque se muevan de seccion. *@
+@using Propia.Application.Navegacion
 @inject NavigationManager Nav
+@inject IMenuConfigService MenuSvc
 @implements IDisposable
 
 @* === Rail (iconos verticales, 80px ancho) === *@
 <div class="app-navbar-tabs" data-simplebar>
     <ul class="nav" id="appMenubarTabs" role="tablist" aria-orientation="vertical">
-
-        <li class="nav-item">
-            <a class="@RailClass("tabInicio")" href="javascript:void(0)" data-tab-target="tabInicio"
-               data-tip-title="Inicio" data-tip-desc="Tablero de arranque con los indicadores de la copropiedad y los accesos rapidos del dia.">
-                <i class="fi fi-rr-house-blank"></i>
-            </a>
-        </li>
-
-        <li class="nav-item">
-            <a class="@RailClass("tabMiPH")" href="javascript:void(0)" data-tab-target="tabMiPH"
-               data-tip-title="Mi copropiedad" data-tip-desc="La ficha viva de la PH: identidad, distribucion de unidades, directorio y usuarios con sus roles.">
-                <i class="fi fi-rr-building"></i>
-            </a>
-        </li>
-
-        <li class="nav-item">
-            <a class="@RailClass("tabFinanzas")" href="javascript:void(0)" data-tab-target="tabFinanzas"
-               data-tip-title="Finanzas" data-tip-desc="Presupuesto y cuotas, cartera y estado de cuenta, servicios y contratos, y numeracion de documentos.">
-                <i class="fi fi-rr-usd-circle"></i>
-            </a>
-        </li>
-
-        <li class="nav-item">
-            <a class="@RailClass("tabGobierno")" href="javascript:void(0)" data-tab-target="tabGobierno"
-               data-tip-title="Gobierno y convivencia" data-tip-desc="Asambleas y organos de la copropiedad: consejo, comites, convocatorias y decisiones.">
-                <i class="fi fi-rr-podium-star"></i>
-            </a>
-        </li>
-
-        <li class="nav-item">
-            <a class="@RailClass("tabOperacion")" href="javascript:void(0)" data-tab-target="tabOperacion"
-               data-tip-title="Operacion" data-tip-desc="El dia a dia: tareas y proyectos, mantenimiento de activos, porteria y accesos, y reservas de zonas comunes.">
-                <i class="fi fi-rr-list-check"></i>
-            </a>
-        </li>
-
-        <li class="nav-item">
-            <a class="@RailClass("tabComunicacion")" href="javascript:void(0)" data-tab-target="tabComunicacion"
-               data-tip-title="Comunicacion y documentos" data-tip-desc="Comunicados, documentos, reportes e indicadores, y el stack de WhatsApp con los agentes de IA.">
-                <i class="fi fi-rr-megaphone"></i>
-            </a>
-        </li>
-
-        <li class="nav-item-hr"></li>
-
-        <li class="nav-item">
-            <a class="@RailClass("tabOrg")" href="javascript:void(0)" data-tab-target="tabOrg"
-               data-tip-title="Organizacion (Capa 1)" data-tip-desc="Vista de todas tus copropiedades: panel consolidado, calendario multi-PH, equipo de trabajo y reportes cruzados.">
-                <i class="fi fi-rr-network"></i>
-            </a>
-        </li>
-
-        <li class="nav-item">
-            <a class="@RailClass("tabCuenta")" href="javascript:void(0)" data-tab-target="tabCuenta"
-               data-tip-title="Mi cuenta" data-tip-desc="Tu perfil, la sesion activa y las preferencias personales de la plataforma.">
-                <i class="fi fi-rr-user"></i>
-            </a>
-        </li>
+        @if (_menu is not null)
+        {
+            @foreach (var s in _menu.Sections)
+            {
+                @if (s.SeparatorBefore)
+                {
+                    <li class="nav-item-hr"></li>
+                }
+                <li class="nav-item">
+                    <a class="@RailClass(s.Key)" href="javascript:void(0)" data-tab-target="@s.Key"
+                       data-tip-title="@s.Label" data-tip-desc="@s.TooltipDesc">
+                        <i class="fi @s.Icon"></i>
+                    </a>
+                </li>
+            }
+        }
     </ul>
 </div>
 
@@ -92,292 +46,39 @@
     <CopropiedadSwitcher />
     <div class="app-content-inner">
         <div class="tab-content" id="appMenubarTabsContent">
-
-            @* --- TAB INICIO --- *@
-            <div class="@TabClass("tabInicio")" id="tabInicio" role="tabpanel">
-                <nav class="app-navbar" data-simplebar>
-                    <ul class="side-menubar">
-                        <li class="menu-heading"><span class="menu-label">Inicio</span></li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/dashboard-ph">
-                                <i class="fi fi-rr-dashboard"></i>
-                                <span class="menu-label">Dashboard</span>
-                            </NavLink>
-                        </li>
-                    </ul>
-                </nav>
-            </div>
-
-            @* --- TAB MI PH (2.3 / 2.4 / 2.5) --- *@
-            <div class="@TabClass("tabMiPH")" id="tabMiPH" role="tabpanel">
-                <nav class="app-navbar" data-simplebar>
-                    <ul class="side-menubar">
-                        <li class="menu-heading"><span class="menu-label">Mi copropiedad</span></li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/mi-copropiedad">
-                                <i class="fi fi-rr-building"></i>
-                                <span class="menu-label">Mi copropiedad</span>
-                            </NavLink>
-                        </li>
-                        @* Unidades privadas, zonas comunes y equipos son modulos propios:
-                           salieron del acordeon de Mi copropiedad y ya no llevan numeral. *@
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/distribucion">
-                                <i class="fi fi-rr-apps"></i>
-                                <span class="menu-label">Unidades Privadas</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/zonas-comunes">
-                                <i class="fi fi-rr-trees"></i>
-                                <span class="menu-label">Zonas Comunes</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/equipos-activos">
-                                <i class="fi fi-rr-settings"></i>
-                                <span class="menu-label">Equipos y Activos</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/directorio">
-                                <i class="fi fi-rr-address-book"></i>
-                                <span class="menu-label">Directorio</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/usuarios">
-                                <i class="fi fi-rr-users-alt"></i>
-                                <span class="menu-label">Usuarios y roles</span>
-                            </NavLink>
-                        </li>
-                        @* Gobierno sale del menu: consejo, comites y revisor fiscal se gestionan
-                           desde Usuarios y roles. La pagina /gobierno se deja publicada (los
-                           enlaces directos siguen sirviendo), solo se quita de la navegacion. *@
-                    </ul>
-                </nav>
-            </div>
-
-            @* --- TAB FINANZAS (2.6 / 2.7 + Servicios y contratos) --- *@
-            <div class="@TabClass("tabFinanzas")" id="tabFinanzas" role="tabpanel">
-                <nav class="app-navbar" data-simplebar>
-                    <ul class="side-menubar">
-                        <li class="menu-heading"><span class="menu-label">Finanzas</span></li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/presupuesto">
-                                <i class="fi fi-rr-money-bill-wave"></i>
-                                <span class="menu-label">Presupuesto y cuotas</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/cartera">
-                                <i class="fi fi-rr-credit-card"></i>
-                                <span class="menu-label">Cartera y estado de cuenta</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/servicios">
-                                <i class="fi fi-rr-briefcase"></i>
-                                <span class="menu-label">Servicios y contratos</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/finanzas/numeracion">
-                                <i class="fi fi-rr-hashtag"></i>
-                                <span class="menu-label">Numeracion de documentos</span>
-                            </NavLink>
-                        </li>
-                    </ul>
-                </nav>
-            </div>
-
-            @* --- TAB GOBIERNO Y CONVIVENCIA (2.8 / 2.9) --- *@
-            <div class="@TabClass("tabGobierno")" id="tabGobierno" role="tabpanel">
-                <nav class="app-navbar" data-simplebar>
-                    <ul class="side-menubar">
-                        <li class="menu-heading"><span class="menu-label">Gobierno y convivencia</span></li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/asambleas">
-                                <i class="fi fi-rr-podium-star"></i>
-                                <span class="menu-label">Asambleas y organos</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/pqrs">
-                                <i class="fi fi-rr-comments-question"></i>
-                                <span class="menu-label">PQRSD y convivencia</span>
-                            </NavLink>
-                        </li>
-                    </ul>
-                </nav>
-            </div>
-
-            @* --- TAB OPERACION (2.10 / 2.11 / 2.12 / 2.13) --- *@
-            <div class="@TabClass("tabOperacion")" id="tabOperacion" role="tabpanel">
-                <nav class="app-navbar" data-simplebar>
-                    <ul class="side-menubar">
-                        <li class="menu-heading"><span class="menu-label">Operacion</span></li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/tareas">
-                                <i class="fi fi-rr-list-check"></i>
-                                <span class="menu-label">Tareas y proyectos</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/mantenimiento">
-                                <i class="fi fi-rr-screwdriver"></i>
-                                <span class="menu-label">Mantenimiento y activos</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/porteria">
-                                <i class="fi fi-rr-shield-check"></i>
-                                <span class="menu-label">Porteria y accesos</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/reservas">
-                                <i class="fi fi-rr-calendar-check"></i>
-                                <span class="menu-label">Reservas zonas comunes</span>
-                            </NavLink>
-                        </li>
-                    </ul>
-                </nav>
-            </div>
-
-            @* --- TAB COMUNICACION (2.14 / 2.15 / 2.16) --- *@
-            <div class="@TabClass("tabComunicacion")" id="tabComunicacion" role="tabpanel">
-                <nav class="app-navbar" data-simplebar>
-                    <ul class="side-menubar">
-                        <li class="menu-heading"><span class="menu-label">Comunicacion y documentos</span></li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/comunicaciones">
-                                <i class="fi fi-rr-megaphone"></i>
-                                <span class="menu-label">Comunicaciones</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/documentos">
-                                <i class="fi fi-rr-folder-open"></i>
-                                <span class="menu-label">Documentos</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/reportes">
-                                <i class="fi fi-rr-chart-line-up"></i>
-                                <span class="menu-label">Reportes e indicadores</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-heading"><span class="menu-label">Infraestructura &amp; IA</span></li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/ia/lineas">
-                                <i class="fi fi-rr-comment-alt"></i>
-                                <span class="menu-label">Lineas WhatsApp</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/ia/agentes">
-                                <i class="fi fi-rr-robot"></i>
-                                <span class="menu-label">Agentes de IA</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/ia/conversaciones">
-                                <i class="fi fi-rr-comments"></i>
-                                <span class="menu-label">Conversaciones</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/ia/bitacora">
-                                <i class="fi fi-rr-time-past"></i>
-                                <span class="menu-label">Bitacora del agente</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/ia/automatizaciones">
-                                <i class="fi fi-rr-bolt"></i>
-                                <span class="menu-label">Automatizaciones</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/ia/lista-negra">
-                                <i class="fi fi-rr-ban"></i>
-                                <span class="menu-label">Lista negra</span>
-                            </NavLink>
-                        </li>
-                    </ul>
-                </nav>
-            </div>
-
-            @* --- TAB ORGANIZACION (Capa 1) --- *@
-            <div class="@TabClass("tabOrg")" id="tabOrg" role="tabpanel">
-                <nav class="app-navbar" data-simplebar>
-                    <ul class="side-menubar">
-                        <li class="menu-heading"><span class="menu-label">Organizacion (Capa 1)</span></li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/org/panel-consolidado">
-                                <i class="fi fi-rr-dashboard"></i>
-                                <span class="menu-label">Panel consolidado</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/org/calendario">
-                                <i class="fi fi-rr-calendar"></i>
-                                <span class="menu-label">Calendario multi-PH</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/org/equipo">
-                                <i class="fi fi-rr-users-medical"></i>
-                                <span class="menu-label">Equipo de trabajo</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/org/reportes-cruzados">
-                                <i class="fi fi-rr-chart-pie"></i>
-                                <span class="menu-label">Reportes cruzados</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/org/transferencia-custodia">
-                                <i class="fi fi-rr-arrows-repeat"></i>
-                                <span class="menu-label">Transferencia custodia</span>
-                            </NavLink>
-                        </li>
-
-                        <li><div class="menu-divider"></div></li>
-                        <li class="menu-heading"><span class="menu-label">Operador A&D (Capa 0)</span></li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/operador/info">
-                                <i class="fi fi-rr-shield"></i>
-                                <span class="menu-label">Acerca del operador</span>
-                            </NavLink>
-                        </li>
-                    </ul>
-                </nav>
-            </div>
-
-            @* --- TAB MI CUENTA --- *@
-            <div class="@TabClass("tabCuenta")" id="tabCuenta" role="tabpanel">
-                <nav class="app-navbar" data-simplebar>
-                    <ul class="side-menubar">
-                        <li class="menu-heading"><span class="menu-label">Mi cuenta</span></li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/cuenta/perfil">
-                                <i class="fi fi-rr-user"></i>
-                                <span class="menu-label">Perfil</span>
-                            </NavLink>
-                        </li>
-                        <li class="menu-item">
-                            <NavLink class="menu-link" href="/login">
-                                <i class="fi fi-rr-sign-in-alt"></i>
-                                <span class="menu-label">Iniciar sesion</span>
-                            </NavLink>
-                        </li>
-                    </ul>
-                </nav>
-            </div>
-
+            @if (_menu is not null)
+            {
+                @foreach (var s in _menu.Sections)
+                {
+                    <div class="@TabClass(s.Key)" id="@s.Key" role="tabpanel">
+                        <nav class="app-navbar" data-simplebar>
+                            <ul class="side-menubar">
+                                <li class="menu-heading"><span class="menu-label">@s.Label</span></li>
+                                @foreach (var g in s.Groups)
+                                {
+                                    @if (g.Heading is not null)
+                                    {
+                                        @if (g.DividerBefore)
+                                        {
+                                            <li><div class="menu-divider"></div></li>
+                                        }
+                                        <li class="menu-heading"><span class="menu-label">@g.Heading</span></li>
+                                    }
+                                    @foreach (var it in g.Items)
+                                    {
+                                        <li class="menu-item">
+                                            <NavLink class="menu-link" href="@it.Href">
+                                                <i class="fi @it.Icon"></i>
+                                                <span class="menu-label">@it.Label</span>
+                                            </NavLink>
+                                        </li>
+                                    }
+                                }
+                            </ul>
+                        </nav>
+                    </div>
+                }
+            }
         </div>
     </div>
 </div>
@@ -431,10 +132,20 @@
 </style>
 
 @code {
+    private ResolvedMenu? _menu;
+    private Dictionary<string, string> _hrefToSection = new(StringComparer.OrdinalIgnoreCase);
     private string _activeTab = "tabInicio";
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
+        try { _menu = await MenuSvc.GetResolvedMenuAsync(); }
+        catch { _menu = MenuCatalog.Resolve(Array.Empty<MenuOverrideData>()); } // fallback: menu base
+
+        _hrefToSection = _menu.Sections
+            .SelectMany(s => s.Items.Select(i => (i.Href, s.Key)))
+            .GroupBy(x => x.Href, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Key, StringComparer.OrdinalIgnoreCase);
+
         _activeTab = ResolveTab(Nav.Uri);
         Nav.LocationChanged += OnLocationChanged;
     }
@@ -451,36 +162,41 @@
         }
     }
 
-    /// <summary>Mapea la ruta actual al tab del rail que debe quedar activo.</summary>
-    private static string ResolveTab(string uri)
+    /// <summary>
+    /// Mapea la ruta actual al tab del rail que debe quedar activo. Primero data-driven (match exacto
+    /// y por prefijo del href de cada item, asi el resaltado sigue a los items movidos de seccion);
+    /// luego fallbacks por prefijo para rutas que no tienen item propio (subrutas, /gobierno, etc).
+    /// </summary>
+    private string ResolveTab(string uri)
     {
         string path;
         try { path = new Uri(uri).AbsolutePath.ToLowerInvariant(); }
         catch { path = uri.ToLowerInvariant(); }
 
+        if (_hrefToSection.TryGetValue(path, out var exact)) { return exact; }
+
+        string? best = null; var bestLen = 0;
+        foreach (var kv in _hrefToSection)
+        {
+            if (kv.Key.Length > 1 && path.StartsWith(kv.Key + "/", StringComparison.OrdinalIgnoreCase) && kv.Key.Length > bestLen)
+            {
+                best = kv.Value; bestLen = kv.Key.Length;
+            }
+        }
+        if (best is not null) { return best; }
+
+        // Fallbacks para rutas sin item propio (mantienen el comportamiento historico).
         if (path.StartsWith("/org/") || path.StartsWith("/operador/")) return "tabOrg";
-        if (path.StartsWith("/cuenta/") || path == "/login" || path == "/onboarding"
-            || path.StartsWith("/invitacion/")) return "tabCuenta";
-        if (path == "/mi-copropiedad" || path.StartsWith("/mi-copropiedad/")
-            || path == "/distribucion" || path == "/zonas-comunes" || path == "/equipos-activos"
-            || path == "/directorio" || path.StartsWith("/directorio/")
-            || path == "/usuarios" || path.StartsWith("/configuracion/")
-            || path == "/gobierno")   // fuera del menu, pero si se entra por URL el rail no debe saltar
-            return "tabMiPH";
-        if (path == "/presupuesto" || path.StartsWith("/presupuesto/")
-            || path == "/cartera" || path.StartsWith("/cartera/")
-            || path == "/servicios" || path.StartsWith("/servicios/")
-            || path == "/finanzas" || path.StartsWith("/finanzas/"))
-            return "tabFinanzas";
-        if (path == "/asambleas" || path.StartsWith("/asambleas/")
-            || path == "/pqrs" || path == "/pqrsd" || path.StartsWith("/pqrsd/"))
-            return "tabGobierno";
-        if (path == "/tareas" || path.StartsWith("/tareas/")
-            || path == "/mantenimiento" || path == "/porteria" || path == "/reservas")
-            return "tabOperacion";
-        if (path == "/comunicaciones" || path == "/documentos" || path == "/reportes"
-            || path.StartsWith("/ia/"))
-            return "tabComunicacion";
+        if (path.StartsWith("/cuenta/") || path == "/login" || path == "/onboarding" || path.StartsWith("/invitacion/")) return "tabCuenta";
+        if (path.StartsWith("/mi-copropiedad") || path.StartsWith("/directorio")
+            || path.StartsWith("/configuracion/") || path == "/gobierno" || path == "/usuarios"
+            || path == "/distribucion" || path == "/zonas-comunes" || path == "/equipos-activos") return "tabMiPH";
+        if (path.StartsWith("/presupuesto") || path.StartsWith("/cartera")
+            || path.StartsWith("/servicios") || path.StartsWith("/finanzas")) return "tabFinanzas";
+        if (path.StartsWith("/asambleas") || path == "/pqrs" || path == "/pqrsd" || path.StartsWith("/pqrsd/")) return "tabGobierno";
+        if (path == "/tareas" || path.StartsWith("/tareas/") || path == "/mantenimiento"
+            || path == "/porteria" || path == "/reservas") return "tabOperacion";
+        if (path == "/comunicaciones" || path == "/documentos" || path == "/reportes" || path.StartsWith("/ia/")) return "tabComunicacion";
         return "tabInicio"; // /, /dashboard, /dashboard-ph y otros
     }
 

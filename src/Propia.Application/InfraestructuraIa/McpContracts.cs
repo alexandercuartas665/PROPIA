@@ -61,6 +61,12 @@ public interface IMcpGateway
     /// <summary>Descubre en vivo las tools de una conexion MCP (tools/list). Lanza si no se puede contactar.</summary>
     Task<IReadOnlyList<McpToolInfo>> ListToolsAsync(string connectionCode, string bearerToken, CancellationToken ct = default);
 
-    /// <summary>Ejecuta una tool MCP y devuelve el texto del resultado (tools/call). Usado por el runtime del agente (Fase B).</summary>
-    Task<string> CallToolAsync(string connectionCode, string toolName, IReadOnlyDictionary<string, object?> arguments, string bearerToken, CancellationToken ct = default);
+    /// <summary>
+    /// Ejecuta una tool MCP y devuelve el texto del resultado (tools/call). Usado por el runtime del
+    /// agente (Fase B). contactPhone/conversationId viajan como headers server-set (X-Contact-Phone /
+    /// X-Conversation-Id) para que tools como verificar_residencia usen el numero REAL de la
+    /// conversacion sin exponerlo como argumento del LLM.
+    /// </summary>
+    Task<string> CallToolAsync(string connectionCode, string toolName, IReadOnlyDictionary<string, object?> arguments,
+        string bearerToken, string? contactPhone = null, Guid? conversationId = null, CancellationToken ct = default);
 }

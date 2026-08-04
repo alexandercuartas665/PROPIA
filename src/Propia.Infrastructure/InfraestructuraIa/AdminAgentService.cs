@@ -20,14 +20,31 @@ public sealed class AdminAgentService : IAdminAgentService
     private readonly ITenantContext _tenant;
     private readonly IAiAgentService _agents;
     private readonly IAgentRunLogService _logs;
+    private readonly IWhatsAppLineService _lines;
+    private readonly IAiAgentLineBindingService _bindings;
 
-    public AdminAgentService(PropiaDbContext db, ITenantContext tenant, IAiAgentService agents, IAgentRunLogService logs)
+    public AdminAgentService(PropiaDbContext db, ITenantContext tenant, IAiAgentService agents,
+        IAgentRunLogService logs, IWhatsAppLineService lines, IAiAgentLineBindingService bindings)
     {
         _db = db;
         _tenant = tenant;
         _agents = agents;
         _logs = logs;
+        _lines = lines;
+        _bindings = bindings;
     }
+
+    /// <summary>Escribe un log inmutable de Super Admin (accion cross-tenant sobre otra copropiedad).</summary>
+    private void Audit(Guid actorId, string actorEmail, string accion, string entidad, string justificacion, string? ip)
+        => _db.SuperAdminLogs.Add(new SuperAdminLog
+        {
+            ActorId = actorId,
+            ActorEmail = actorEmail,
+            Accion = accion,
+            EntidadAfectada = entidad,
+            Justificacion = justificacion,
+            Ip = ip
+        });
 
     /// <summary>
     /// Fija el tenant recibido por ruta en el query filter de EF (ITenantContext) Y en la RLS de
@@ -52,6 +69,41 @@ public sealed class AdminAgentService : IAdminAgentService
         return await _agents.GetAsync(agentId, ct);
     }
 
+    public async Task<AiAgentDto?> CreateAgentAsync(Guid tenantId, CreateAiAgentRequest request,
+        Guid actorId, string actorEmail, string? ip, CancellationToken ct = default)
+    {
+        await ImpersonarAsync(tenantId);
+
+        // Nucleo reutilizado: crea el agente apagado con Name/Role/Provider/Model/SystemPrompt.
+        var created = await _agents.CreateAsync(request, ct);
+        if (created is null) { return null; }
+
+        // Campos extra que CreateAsync no cubre (reacciones + orden + encendido). Comparten el mismo
+        // DbContext del scope, asi que los cambios trackeados se persisten con el SaveChanges de abajo.
+        if (request.ReactionsEnabled)
+        {
+            await _agents.UpdateAsync(created.Id, new UpdateAiAgentRequest(
+                request.Name, request.Role, request.Provider, request.Model, request.SystemPrompt,
+                request.ReactionsEnabled, request.ReactionRatioN, request.ReactionRatioM, request.ReactionEmojis), ct);
+        }
+        if (request.SortOrder is int sortOrder)
+        {
+            var entity = await _db.AiAgents.FirstOrDefaultAsync(a => a.Id == created.Id, ct);
+            if (entity is not null) { entity.SortOrder = sortOrder; }
+        }
+        if (request.IsActive)
+        {
+            await _agents.SetActiveAsync(created.Id, true, ct);
+        }
+
+        Audit(actorId, actorEmail, "AI_AGENT_ADMIN_CREATE", $"Tenant:{tenantId} Agent:{created.Id}",
+            "Creacion de agente via API admin de agentes (Capa 6)", ip);
+        await _db.SaveChangesAsync(ct);
+
+        var final = await _agents.GetAsync(created.Id, ct);
+        return final?.Agent ?? created;
+    }
+
     public async Task<AiAgentDto?> UpdateAgentAsync(Guid tenantId, Guid agentId, UpdateAiAgentRequest request,
         Guid actorId, string actorEmail, string? ip, CancellationToken ct = default)
     {
@@ -59,18 +111,69 @@ public sealed class AdminAgentService : IAdminAgentService
         var updated = await _agents.UpdateAsync(agentId, request, ct);
         if (updated is null) { return null; }
 
-        // Auditoria: accion cross-tenant del Super Admin sobre datos de otra copropiedad (log inmutable).
-        _db.SuperAdminLogs.Add(new SuperAdminLog
-        {
-            ActorId = actorId,
-            ActorEmail = actorEmail,
-            Accion = "AI_AGENT_ADMIN_UPDATE",
-            EntidadAfectada = $"Tenant:{tenantId} Agent:{agentId}",
-            Justificacion = "Edicion de agente via API admin de agentes (Capa 6)",
-            Ip = ip
-        });
+        Audit(actorId, actorEmail, "AI_AGENT_ADMIN_UPDATE", $"Tenant:{tenantId} Agent:{agentId}",
+            "Edicion de agente via API admin de agentes (Capa 6)", ip);
         await _db.SaveChangesAsync(ct);
         return updated;
+    }
+
+    public async Task<AiAgentDetailDto?> SetAgentToolsAsync(Guid tenantId, Guid agentId, IReadOnlyList<string> toolKeys,
+        Guid actorId, string actorEmail, string? ip, CancellationToken ct = default)
+    {
+        await ImpersonarAsync(tenantId);
+
+        // Una sola conexion MCP hoy ("copropiedades"); cada key es el nombre de una de sus tools.
+        var selections = (toolKeys ?? Array.Empty<string>())
+            .Where(k => !string.IsNullOrWhiteSpace(k))
+            .Select(k => new AgentMcpToolSelection(McpConnectionCatalog.Copropiedades, k.Trim()))
+            .ToList();
+
+        var ok = await _agents.SetMcpToolsAsync(agentId, selections, ct);
+        if (!ok) { return null; }
+
+        Audit(actorId, actorEmail, "AI_AGENT_ADMIN_TOOLS", $"Tenant:{tenantId} Agent:{agentId}",
+            $"Set {selections.Count} tools MCP via API admin de agentes (Capa 6)", ip);
+        await _db.SaveChangesAsync(ct);
+        return await _agents.GetAsync(agentId, ct);
+    }
+
+    public async Task<IReadOnlyList<AdminLineDto>> ListLinesAsync(Guid tenantId, CancellationToken ct = default)
+    {
+        await ImpersonarAsync(tenantId);
+        var lines = await _lines.ListAsync(ct);
+        var activeBindings = await _db.AiAgentLineBindings.AsNoTracking()
+            .Where(b => b.IsConnected)
+            .Select(b => new { b.WhatsAppLineId, b.AgentId })
+            .ToListAsync(ct);
+        return lines.Select(l => new AdminLineDto(
+            l.Id, l.InstanceName, l.Provider, l.PhoneNumber, l.Status,
+            activeBindings.FirstOrDefault(b => b.WhatsAppLineId == l.Id)?.AgentId)).ToList();
+    }
+
+    public async Task<bool> BindLineAsync(Guid tenantId, Guid agentId, Guid whatsAppLineId,
+        Guid actorId, string actorEmail, string? ip, CancellationToken ct = default)
+    {
+        await ImpersonarAsync(tenantId);
+        var ok = await _bindings.SetAsync(agentId, new SetAgentLineBindingRequest(whatsAppLineId, Connected: true), ct);
+        if (!ok) { return false; }
+
+        Audit(actorId, actorEmail, "AI_AGENT_ADMIN_BIND", $"Tenant:{tenantId} Agent:{agentId} Line:{whatsAppLineId}",
+            "Vinculo linea-agente via API admin de agentes (Capa 6)", ip);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> UnbindLineAsync(Guid tenantId, Guid agentId, Guid whatsAppLineId,
+        Guid actorId, string actorEmail, string? ip, CancellationToken ct = default)
+    {
+        await ImpersonarAsync(tenantId);
+        var ok = await _bindings.SetAsync(agentId, new SetAgentLineBindingRequest(whatsAppLineId, Connected: false), ct);
+        if (!ok) { return false; }
+
+        Audit(actorId, actorEmail, "AI_AGENT_ADMIN_UNBIND", $"Tenant:{tenantId} Agent:{agentId} Line:{whatsAppLineId}",
+            "Desvinculo linea-agente via API admin de agentes (Capa 6)", ip);
+        await _db.SaveChangesAsync(ct);
+        return true;
     }
 
     public async Task<IReadOnlyList<AgentRunLogConversationDto>> ListLogConversationsAsync(Guid tenantId, CancellationToken ct = default)

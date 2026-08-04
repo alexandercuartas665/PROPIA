@@ -133,7 +133,7 @@ public sealed class AiInferenceService : IAiInferenceService
                 + "Cuando te pregunten por unidades, torres, contratos, zonas, equipos, finanzas, consejo o cambios, USA las herramientas para responder con datos exactos; nunca inventes cifras. "
                 + "Si una pregunta abarca varios temas, llama a TODAS las herramientas necesarias antes de responder. "
                 + "Las herramientas de creacion son dry-run por defecto: confirma con el usuario antes de ejecutar cambios reales.";
-            result = await RunToolLoopAsync(agent, model, apiKey, providerCfg.BaseUrl, systemPromptConTools, turns, toolSpecs, resources, bearerToken!, ct);
+            result = await RunToolLoopAsync(agent, model, apiKey, providerCfg.BaseUrl, systemPromptConTools, turns, toolSpecs, resources, bearerToken!, contactPhone, conversationId, ct);
             debug = result.DebugPrompts?.ToList() ?? new();
         }
         else
@@ -221,7 +221,8 @@ public sealed class AiInferenceService : IAiInferenceService
     private async Task<AiChatResult> RunToolLoopAsync(
         Domain.Entities.AiAgent agent, string model, string apiKey, string? baseUrl, string systemPrompt,
         IReadOnlyList<AiChatTurn> turns, IReadOnlyList<AiToolSpec> toolSpecs,
-        IReadOnlyList<AiChatAttachment> resources, string bearerToken, CancellationToken ct)
+        IReadOnlyList<AiChatAttachment> resources, string bearerToken,
+        string? contactPhone, Guid? conversationId, CancellationToken ct)
     {
         var msgs = new List<AiToolMessage>(turns.Select(t => new AiToolMessage(t.Role, t.Text)));
         int inTok = 0, outTok = 0;
@@ -264,7 +265,7 @@ public sealed class AiInferenceService : IAiInferenceService
                     }
                     else
                     {
-                        resultado = await _mcp.CallToolAsync(conexion, call.Name, ParseArgs(call.ArgumentsJson), bearerToken, ct);
+                        resultado = await _mcp.CallToolAsync(conexion, call.Name, ParseArgs(call.ArgumentsJson), bearerToken, contactPhone, conversationId, ct);
                     }
                 }
                 catch (Exception ex) { resultado = $"Error ejecutando '{call.Name}': {ex.Message}"; }

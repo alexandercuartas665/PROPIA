@@ -49,6 +49,9 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<PlatformBranding> PlatformBrandings => Set<PlatformBranding>();
     public DbSet<AiProviderConfig> AiProviderConfigs => Set<AiProviderConfig>();
     public DbSet<OcrProviderConfig> OcrProviderConfigs => Set<OcrProviderConfig>();
+
+    // Menu de navegacion configurable (global plataforma): overrides de nombre/orden/ubicacion.
+    public DbSet<MenuOverride> MenuOverrides => Set<MenuOverride>();
     public DbSet<WompiMasterConfig> WompiMasterConfigs => Set<WompiMasterConfig>();
     public DbSet<WompiWebhookEvent> WompiWebhookEvents => Set<WompiWebhookEvent>();
     public DbSet<EvolutionMasterConfig> EvolutionMasterConfigs => Set<EvolutionMasterConfig>();
@@ -2547,6 +2550,15 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.Model).HasMaxLength(120);
             b.Property(x => x.BaseUrl).HasMaxLength(255);
             b.HasIndex(x => x.Provider).IsUnique();
+        });
+
+        // Menu de navegacion configurable (global). Un override por nodo (seccion o item).
+        modelBuilder.Entity<MenuOverride>(b =>
+        {
+            b.Property(x => x.NodeKey).IsRequired().HasMaxLength(80);
+            b.Property(x => x.Label).HasMaxLength(120);
+            b.Property(x => x.ParentKey).HasMaxLength(80);
+            b.HasIndex(x => x.NodeKey).IsUnique();
         });
 
         modelBuilder.Entity<OcrProviderConfig>(b =>

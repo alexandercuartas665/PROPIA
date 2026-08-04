@@ -1,0 +1,212 @@
+@page "/admin/configuracion-menu"
+@layout AdminLayout
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.Navegacion
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<PageTitle>Menu del sistema - Plataforma</PageTitle>
+
+<div class="d-flex align-items-start justify-content-between flex-wrap gap-2 mb-1">
+    <div>
+        <h1 class="h3 mb-1">Menu del sistema</h1>
+        <p class="text-muted mb-0">Organiza el menu lateral del cliente: cambia el nombre visible, el orden y mueve items entre secciones. Es global: aplica a todas las copropiedades.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-secondary" @onclick="ResetAsync" disabled="@(_busy || _sections is null)">Restablecer base</button>
+        <button class="btn btn-dark" @onclick="GuardarAsync" disabled="@(_busy || _sections is null)">@(_busy ? "Guardando..." : "Guardar cambios")</button>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_msg))
+{
+    <div class="alert @_msgCls py-2">@_msg</div>
+}
+
+@if (_jwt is null || _sections is null)
+{
+    <div class="text-center py-5"><div class="spinner-border"></div></div>
+}
+else
+{
+    <div class="row g-3">
+        @for (var si = 0; si < _sections.Count; si++)
+        {
+            var sec = _sections[si];
+            var sIdx = si;
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-white d-flex align-items-center gap-2">
+                        <div class="btn-group btn-group-sm me-1">
+                            <button class="btn btn-outline-secondary" title="Subir seccion" disabled="@(sIdx == 0)" @onclick="() => MoverSeccion(sIdx, -1)"><i class="fi fi-rr-angle-up"></i></button>
+                            <button class="btn btn-outline-secondary" title="Bajar seccion" disabled="@(sIdx == _sections.Count - 1)" @onclick="() => MoverSeccion(sIdx, 1)"><i class="fi fi-rr-angle-down"></i></button>
+                        </div>
+                        <i class="fi @sec.Icon text-muted"></i>
+                        <input class="form-control form-control-sm fw-semibold" style="max-width:340px" @bind="sec.Label" />
+                        <span class="badge bg-light text-muted ms-auto">@sec.Items.Count items</span>
+                    </div>
+                    <div class="card-body p-2">
+                        @if (sec.Items.Count == 0)
+                        {
+                            <div class="text-muted small px-2 py-1">Sin items en esta seccion.</div>
+                        }
+                        <ul class="list-group list-group-flush">
+                            @for (var ii = 0; ii < sec.Items.Count; ii++)
+                            {
+                                var it = sec.Items[ii];
+                                var iIdx = ii;
+                                <li class="list-group-item d-flex align-items-center gap-2 px-2">
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-secondary" title="Subir" disabled="@(iIdx == 0)" @onclick="() => MoverItem(sec, iIdx, -1)"><i class="fi fi-rr-angle-up"></i></button>
+                                        <button class="btn btn-outline-secondary" title="Bajar" disabled="@(iIdx == sec.Items.Count - 1)" @onclick="() => MoverItem(sec, iIdx, 1)"><i class="fi fi-rr-angle-down"></i></button>
+                                    </div>
+                                    <i class="fi @it.Icon text-muted"></i>
+                                    <input class="form-control form-control-sm" style="max-width:320px" @bind="it.Label" />
+                                    <code class="small text-muted d-none d-md-inline">@it.Href</code>
+                                    @if (!string.IsNullOrWhiteSpace(it.Subheading))
+                                    {
+                                        <span class="badge bg-light text-secondary">@it.Subheading</span>
+                                    }
+                                    <div class="ms-auto d-flex align-items-center gap-1">
+                                        <span class="small text-muted">Mover a:</span>
+                                        <select class="form-select form-select-sm" style="max-width:220px"
+                                                @onchange="e => MoverAItem(sec, it, e.Value?.ToString())">
+                                            @foreach (var dest in _sections)
+                                            {
+                                                <option value="@dest.Key" selected="@(dest.Key == sec.Key)">@dest.Label</option>
+                                            }
+                                        </select>
+                                    </div>
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private string? _jwt;
+    private bool _busy;
+    private string? _msg;
+    private string _msgCls = "alert-info";
+    private List<EdSection>? _sections;
+
+    private sealed class EdItem
+    {
+        public string Key { get; set; } = "";
+        public string Label { get; set; } = "";
+        public string Href { get; set; } = "";
+        public string Icon { get; set; } = "";
+        public string? Subheading { get; set; }
+    }
+
+    private sealed class EdSection
+    {
+        public string Key { get; set; } = "";
+        public string Label { get; set; } = "";
+        public string Icon { get; set; } = "";
+        public List<EdItem> Items { get; set; } = new();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) { return; }
+        try
+        {
+            var jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_admin_jwt");
+            if (string.IsNullOrWhiteSpace(jwt)) { Nav.NavigateTo("/login", forceLoad: true); return; }
+            _jwt = jwt;
+            await CargarAsync();
+            StateHasChanged();
+        }
+        catch (Exception ex) { _msg = $"Error cargando el menu: {ex.Message}"; _msgCls = "alert-danger"; StateHasChanged(); }
+    }
+
+    private async Task CargarAsync()
+    {
+        var menu = await Auth().GetFromJsonAsync<ResolvedMenu>("/admin/menu");
+        _sections = (menu?.Sections ?? new List<ResolvedMenuSection>())
+            .Select(s => new EdSection
+            {
+                Key = s.Key,
+                Label = s.Label,
+                Icon = s.Icon,
+                Items = s.Items.Select(i => new EdItem { Key = i.Key, Label = i.Label, Href = i.Href, Icon = i.Icon, Subheading = i.Subheading }).ToList()
+            })
+            .ToList();
+    }
+
+    private void MoverSeccion(int idx, int dir)
+    {
+        if (_sections is null) { return; }
+        var j = idx + dir;
+        if (j < 0 || j >= _sections.Count) { return; }
+        (_sections[idx], _sections[j]) = (_sections[j], _sections[idx]);
+    }
+
+    private void MoverItem(EdSection sec, int idx, int dir)
+    {
+        var j = idx + dir;
+        if (j < 0 || j >= sec.Items.Count) { return; }
+        (sec.Items[idx], sec.Items[j]) = (sec.Items[j], sec.Items[idx]);
+    }
+
+    private void MoverAItem(EdSection from, EdItem it, string? targetKey)
+    {
+        if (_sections is null || string.IsNullOrWhiteSpace(targetKey) || targetKey == from.Key) { return; }
+        var target = _sections.FirstOrDefault(s => s.Key == targetKey);
+        if (target is null) { return; }
+        from.Items.Remove(it);
+        target.Items.Add(it);
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_sections is null) { return; }
+        _busy = true; _msg = null;
+        try
+        {
+            var req = new SaveMenuArrangementRequest(
+                _sections.Select((s, si) => new MenuSectionArrangement(
+                    s.Key, s.Label, si + 1,
+                    s.Items.Select((it, ii) => new MenuItemArrangement(it.Key, it.Label, ii + 1)).ToList())).ToList());
+
+            var resp = await Auth().PutAsJsonAsync("/admin/menu", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                _msg = "Menu guardado. Recarga el sistema del cliente para ver el nuevo orden."; _msgCls = "alert-success";
+            }
+            else { _msg = $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}"; _msgCls = "alert-danger"; }
+        }
+        catch (Exception ex) { _msg = $"Error guardando: {ex.Message}"; _msgCls = "alert-danger"; }
+        finally { _busy = false; }
+    }
+
+    private async Task ResetAsync()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Auth().PostAsync("/admin/menu/reset", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                await CargarAsync();
+                _msg = "Menu restablecido al base."; _msgCls = "alert-success";
+            }
+            else { _msg = $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}"; _msgCls = "alert-danger"; }
+        }
+        catch (Exception ex) { _msg = $"Error: {ex.Message}"; _msgCls = "alert-danger"; }
+        finally { _busy = false; }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}

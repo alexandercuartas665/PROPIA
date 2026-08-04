@@ -13,8 +13,28 @@ public interface IAdminAgentService
     Task<IReadOnlyList<AiAgentDto>> ListAgentsAsync(Guid tenantId, CancellationToken ct = default);
     Task<AiAgentDetailDto?> GetAgentAsync(Guid tenantId, Guid agentId, CancellationToken ct = default);
 
+    /// <summary>Crea un agente en la copropiedad. Aplica IsActive/SortOrder/Reactions. Audita AI_AGENT_ADMIN_CREATE.</summary>
+    Task<AiAgentDto?> CreateAgentAsync(Guid tenantId, CreateAiAgentRequest request,
+        Guid actorId, string actorEmail, string? ip, CancellationToken ct = default);
+
     /// <summary>Edita la config base + reacciones del agente. Escribe un log inmutable de Super Admin.</summary>
     Task<AiAgentDto?> UpdateAgentAsync(Guid tenantId, Guid agentId, UpdateAiAgentRequest request,
+        Guid actorId, string actorEmail, string? ip, CancellationToken ct = default);
+
+    /// <summary>Fija la seleccion de tools MCP del agente (conexion "copropiedades"). Devuelve null si el
+    /// agente no existe. Audita AI_AGENT_ADMIN_TOOLS.</summary>
+    Task<AiAgentDetailDto?> SetAgentToolsAsync(Guid tenantId, Guid agentId, IReadOnlyList<string> toolKeys,
+        Guid actorId, string actorEmail, string? ip, CancellationToken ct = default);
+
+    /// <summary>Lineas WhatsApp de la copropiedad (para descubrir por API el numero/linea disponible).</summary>
+    Task<IReadOnlyList<AdminLineDto>> ListLinesAsync(Guid tenantId, CancellationToken ct = default);
+
+    /// <summary>Vincula una linea al agente (la atiende). false si la linea esta tomada por otro agente o no existe. Audita AI_AGENT_ADMIN_BIND.</summary>
+    Task<bool> BindLineAsync(Guid tenantId, Guid agentId, Guid whatsAppLineId,
+        Guid actorId, string actorEmail, string? ip, CancellationToken ct = default);
+
+    /// <summary>Desvincula una linea del agente. false si ese agente no la atiende. Audita AI_AGENT_ADMIN_UNBIND.</summary>
+    Task<bool> UnbindLineAsync(Guid tenantId, Guid agentId, Guid whatsAppLineId,
         Guid actorId, string actorEmail, string? ip, CancellationToken ct = default);
 
     Task<IReadOnlyList<AgentRunLogConversationDto>> ListLogConversationsAsync(Guid tenantId, CancellationToken ct = default);

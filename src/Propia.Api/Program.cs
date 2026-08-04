@@ -191,7 +191,8 @@ builder.Services.AddMcpServer()
     .WithTools<Propia.Api.Mcp.MiCopropiedadCreacionTools>(mcpJsonOptions)
     .WithTools<Propia.Api.Mcp.MiCopropiedadEdicionTools>(mcpJsonOptions)
     .WithTools<Propia.Api.Mcp.ServiciosConsultaTools>(mcpJsonOptions)
-    .WithTools<Propia.Api.Mcp.ServiciosCreacionTools>(mcpJsonOptions);
+    .WithTools<Propia.Api.Mcp.ServiciosCreacionTools>(mcpJsonOptions)
+    .WithTools<Propia.Api.Mcp.VerificarResidenciaTools>(mcpJsonOptions);
 
 var app = builder.Build();
 
@@ -242,7 +243,12 @@ app.UseAuthorization();
 // UseWhen aplica el middleware solo cuando el path NO empieza por /health.
 app.UseWhen(
     ctx => !ctx.Request.Path.StartsWithSegments("/health"),
-    branch => branch.UseMiddleware<TenantMiddleware>());
+    branch =>
+    {
+        branch.UseMiddleware<TenantMiddleware>();
+        // Lee X-Contact-Phone / X-Conversation-Id (server-set por el McpGateway) para las tools MCP.
+        branch.UseMiddleware<Propia.Api.Middleware.AgentCallContextMiddleware>();
+    });
 
 app.MapControllers();
 app.MapHub<Propia.Api.Hubs.ChatHub>("/hubs/chat");

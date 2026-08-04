@@ -86,9 +86,30 @@ public sealed record AiAgentDetailDto(
     IReadOnlyList<AiAgentResourceDto> Resources,
     IReadOnlyList<AiAgentPromptDto> Prompts);
 
-public sealed record CreateAiAgentRequest(string? Name, string? Role, AiProvider Provider, string? Model, string? SystemPrompt);
+// Los 5 primeros campos los consume IAiAgentService.CreateAsync (crea el agente apagado). Los campos
+// extra (IsActive/SortOrder/Reactions*) solo los honra la API admin (AdminAgentService.CreateAgentAsync),
+// que los aplica tras crear; el alta normal (UI) los ignora. Son opcionales -> compatibles hacia atras.
+public sealed record CreateAiAgentRequest(string? Name, string? Role, AiProvider Provider, string? Model, string? SystemPrompt,
+    bool IsActive = true, int? SortOrder = null,
+    bool ReactionsEnabled = false, int ReactionRatioN = 3, int ReactionRatioM = 4, string? ReactionEmojis = null);
 public sealed record UpdateAiAgentRequest(string? Name, string? Role, AiProvider Provider, string? Model, string? SystemPrompt,
     bool ReactionsEnabled = false, int ReactionRatioN = 3, int ReactionRatioM = 4, string? ReactionEmojis = null);
+
+/// <summary>Body del PUT admin de tools MCP: reemplaza la seleccion completa del agente. Cada key es el
+/// nombre de una tool de la conexion "copropiedades" (descubierta via tools/list).</summary>
+public sealed record SetAgentToolsRequest(IReadOnlyList<string> ToolKeys);
+
+/// <summary>Body del POST admin de vinculo linea-agente.</summary>
+public sealed record BindLineRequest(Guid WhatsAppLineId);
+
+/// <summary>Linea WhatsApp para el descubrimiento cross-tenant por API admin (incluye el agente que la atiende).</summary>
+public sealed record AdminLineDto(
+    Guid Id,
+    string Label,
+    WhatsAppProvider Provider,
+    string? Phone,
+    WhatsAppLineStatus Estado,
+    Guid? BoundAgentId);
 
 /// <summary>Una fila de "lineas WhatsApp atendidas" en el configurador del agente.</summary>
 public sealed record AgentLineBindingRowDto(
