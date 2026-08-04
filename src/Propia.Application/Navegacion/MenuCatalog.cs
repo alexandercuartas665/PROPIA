@@ -90,46 +90,71 @@ public static class MenuCatalog
     /// <summary>Aplica los overrides globales sobre el arbol base y devuelve el menu resuelto (para render + editor).</summary>
     public static ResolvedMenu Resolve(IEnumerable<MenuOverrideData> overrides)
     {
+        var all = overrides.ToList();
         var ov = new Dictionary<string, MenuOverrideData>(StringComparer.Ordinal);
-        foreach (var o in overrides) { ov[o.NodeKey] = o; }
+        foreach (var o in all) { ov[o.NodeKey] = o; }
 
-        var sections = Sections
-            .Select(s =>
-            {
-                ov.TryGetValue(s.Key, out var o);
-                var label = string.IsNullOrWhiteSpace(o?.Label) ? s.Label : o!.Label!;
-                var order = o?.SortOrder ?? s.Order;
-                return (Def: s, Label: label, Order: order);
-            })
-            .OrderBy(x => x.Order).ThenBy(x => x.Def.Order)
+        // Secciones: base (con override de nombre/orden) + custom (nodos nuevos del Super Admin).
+        var baseSections = Sections.Select(s =>
+        {
+            ov.TryGetValue(s.Key, out var o);
+            var label = string.IsNullOrWhiteSpace(o?.Label) ? s.Label : o!.Label!;
+            var order = o?.SortOrder ?? s.Order;
+            return new SectionShape(s.Key, label, s.Icon, s.TooltipDesc, order, s.SeparatorBefore, false);
+        });
+        var customSections = all
+            .Where(o => o.IsCustom && string.Equals(o.NodeType, "section", StringComparison.OrdinalIgnoreCase))
+            .Select(o => new SectionShape(
+                o.NodeKey,
+                string.IsNullOrWhiteSpace(o.Label) ? "Seccion" : o.Label!,
+                string.IsNullOrWhiteSpace(o.Icon) ? "fi-rr-apps" : o.Icon!,
+                string.Empty, o.SortOrder ?? 999, false, true));
+
+        var sections = baseSections.Concat(customSections)
+            .OrderBy(x => x.Order).ThenBy(x => x.Label, StringComparer.Ordinal)
             .ToList();
+        var sectionKeys = sections.Select(x => x.Key).ToHashSet(StringComparer.Ordinal);
 
-        var sectionKeys = sections.Select(x => x.Def.Key).ToHashSet(StringComparer.Ordinal);
-
-        var items = Items
-            .Select(i =>
+        // Items: base (con override de nombre/orden/ubicacion) + custom.
+        var baseItems = Items.Select(i =>
+        {
+            ov.TryGetValue(i.Key, out var o);
+            var section = !string.IsNullOrWhiteSpace(o?.ParentKey) && sectionKeys.Contains(o!.ParentKey!)
+                ? o.ParentKey! : i.SectionKey;
+            var label = string.IsNullOrWhiteSpace(o?.Label) ? i.Label : o!.Label!;
+            var order = o?.SortOrder ?? i.Order;
+            return new ResolvedMenuItem(i.Key, section, label, i.Href, i.Icon, order, i.Subheading, i.DividerBefore, false);
+        });
+        var customItems = all
+            .Where(o => o.IsCustom && string.Equals(o.NodeType, "item", StringComparison.OrdinalIgnoreCase))
+            .Select(o =>
             {
-                ov.TryGetValue(i.Key, out var o);
-                var section = !string.IsNullOrWhiteSpace(o?.ParentKey) && sectionKeys.Contains(o!.ParentKey!)
-                    ? o.ParentKey! : i.SectionKey;
-                var label = string.IsNullOrWhiteSpace(o?.Label) ? i.Label : o!.Label!;
-                var order = o?.SortOrder ?? i.Order;
-                return new ResolvedMenuItem(i.Key, section, label, i.Href, i.Icon, order, i.Subheading, i.DividerBefore);
-            })
-            .ToList();
+                var section = !string.IsNullOrWhiteSpace(o.ParentKey) && sectionKeys.Contains(o.ParentKey!)
+                    ? o.ParentKey! : (sections.Count > 0 ? sections[0].Key : string.Empty);
+                return new ResolvedMenuItem(
+                    o.NodeKey, section,
+                    string.IsNullOrWhiteSpace(o.Label) ? "Item" : o.Label!,
+                    string.IsNullOrWhiteSpace(o.Href) ? "/proximamente" : o.Href!,
+                    string.IsNullOrWhiteSpace(o.Icon) ? "fi-rr-clock-three" : o.Icon!,
+                    o.SortOrder ?? 999, null, false, true);
+            });
+
+        var items = baseItems.Concat(customItems).ToList();
 
         var resolved = new List<ResolvedMenuSection>(sections.Count);
         foreach (var s in sections)
         {
             var secItems = items
-                .Where(i => string.Equals(i.SectionKey, s.Def.Key, StringComparison.Ordinal))
+                .Where(i => string.Equals(i.SectionKey, s.Key, StringComparison.Ordinal))
                 .OrderBy(i => i.Order).ThenBy(i => i.Label, StringComparer.Ordinal)
                 .ToList();
-            resolved.Add(new ResolvedMenuSection(s.Def.Key, s.Label, s.Def.Icon, s.Def.TooltipDesc, s.Order,
-                s.Def.SeparatorBefore, secItems, BuildGroups(secItems)));
+            resolved.Add(new ResolvedMenuSection(s.Key, s.Label, s.Icon, s.TooltipDesc, s.Order,
+                s.SeparatorBefore, secItems, BuildGroups(secItems), s.IsCustom));
         }
         return new ResolvedMenu(resolved);
     }
+
+    private sealed record SectionShape(string Key, string Label, string Icon, string TooltipDesc, int Order, bool SeparatorBefore, bool IsCustom);
 
     /// <summary>Agrupa los items de una seccion por subheading (corridas consecutivas). El primer grupo
     /// sin heading (null) se pinta bajo el titulo de la seccion.</summary>

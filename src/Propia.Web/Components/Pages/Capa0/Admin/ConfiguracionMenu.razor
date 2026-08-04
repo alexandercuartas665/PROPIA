@@ -11,9 +11,10 @@
 <div class="d-flex align-items-start justify-content-between flex-wrap gap-2 mb-1">
     <div>
         <h1 class="h3 mb-1">Menu del sistema</h1>
-        <p class="text-muted mb-0">Organiza el menu lateral del cliente: cambia el nombre visible, el orden y mueve items entre secciones. Es global: aplica a todas las copropiedades.</p>
+        <p class="text-muted mb-0">Organiza el menu lateral del cliente: cambia el nombre visible, el orden y mueve items entre secciones. Puedes agregar secciones e items nuevos; los items sin funcion todavia abren una pagina "Proximamente". Es global: aplica a todas las copropiedades.</p>
     </div>
     <div class="d-flex gap-2">
+        <button class="btn btn-outline-primary" @onclick="AgregarSeccion" disabled="@(_busy || _sections is null)"><i class="fi fi-rr-plus"></i> Agregar seccion</button>
         <button class="btn btn-outline-secondary" @onclick="ResetAsync" disabled="@(_busy || _sections is null)">Restablecer base</button>
         <button class="btn btn-dark" @onclick="GuardarAsync" disabled="@(_busy || _sections is null)">@(_busy ? "Guardando..." : "Guardar cambios")</button>
     </div>
@@ -42,9 +43,24 @@ else
                             <button class="btn btn-outline-secondary" title="Subir seccion" disabled="@(sIdx == 0)" @onclick="() => MoverSeccion(sIdx, -1)"><i class="fi fi-rr-angle-up"></i></button>
                             <button class="btn btn-outline-secondary" title="Bajar seccion" disabled="@(sIdx == _sections.Count - 1)" @onclick="() => MoverSeccion(sIdx, 1)"><i class="fi fi-rr-angle-down"></i></button>
                         </div>
-                        <i class="fi @sec.Icon text-muted"></i>
-                        <input class="form-control form-control-sm fw-semibold" style="max-width:340px" @bind="sec.Label" />
+                        @if (sec.IsCustom)
+                        {
+                            <input class="form-control form-control-sm" style="max-width:120px" @bind="sec.Icon" placeholder="fi-rr-apps" title="Clase de icono (fi-rr-*)" />
+                        }
+                        else
+                        {
+                            <i class="fi @sec.Icon text-muted"></i>
+                        }
+                        <input class="form-control form-control-sm fw-semibold" style="max-width:280px" @bind="sec.Label" />
+                        @if (sec.IsCustom)
+                        {
+                            <span class="badge bg-primary-subtle text-primary-emphasis">nueva</span>
+                        }
                         <span class="badge bg-light text-muted ms-auto">@sec.Items.Count items</span>
+                        @if (sec.IsCustom)
+                        {
+                            <button class="btn btn-sm btn-outline-danger" title="Eliminar seccion" @onclick="() => EliminarSeccion(sec)"><i class="fi fi-rr-trash"></i></button>
+                        }
                     </div>
                     <div class="card-body p-2">
                         @if (sec.Items.Count == 0)
@@ -61,8 +77,15 @@ else
                                         <button class="btn btn-outline-secondary" title="Subir" disabled="@(iIdx == 0)" @onclick="() => MoverItem(sec, iIdx, -1)"><i class="fi fi-rr-angle-up"></i></button>
                                         <button class="btn btn-outline-secondary" title="Bajar" disabled="@(iIdx == sec.Items.Count - 1)" @onclick="() => MoverItem(sec, iIdx, 1)"><i class="fi fi-rr-angle-down"></i></button>
                                     </div>
-                                    <i class="fi @it.Icon text-muted"></i>
-                                    <input class="form-control form-control-sm" style="max-width:320px" @bind="it.Label" />
+                                    @if (it.IsCustom)
+                                    {
+                                        <input class="form-control form-control-sm" style="max-width:110px" @bind="it.Icon" placeholder="fi-rr-*" title="Icono (fi-rr-*)" />
+                                    }
+                                    else
+                                    {
+                                        <i class="fi @it.Icon text-muted"></i>
+                                    }
+                                    <input class="form-control form-control-sm" style="max-width:300px" @bind="it.Label" />
                                     <code class="small text-muted d-none d-md-inline">@it.Href</code>
                                     @if (!string.IsNullOrWhiteSpace(it.Subheading))
                                     {
@@ -70,17 +93,22 @@ else
                                     }
                                     <div class="ms-auto d-flex align-items-center gap-1">
                                         <span class="small text-muted">Mover a:</span>
-                                        <select class="form-select form-select-sm" style="max-width:220px"
+                                        <select class="form-select form-select-sm" style="max-width:200px"
                                                 @onchange="e => MoverAItem(sec, it, e.Value?.ToString())">
                                             @foreach (var dest in _sections)
                                             {
                                                 <option value="@dest.Key" selected="@(dest.Key == sec.Key)">@dest.Label</option>
                                             }
                                         </select>
+                                        @if (it.IsCustom)
+                                        {
+                                            <button class="btn btn-sm btn-outline-danger" title="Eliminar item" @onclick="() => EliminarItem(sec, it)"><i class="fi fi-rr-trash"></i></button>
+                                        }
                                     </div>
                                 </li>
                             }
                         </ul>
+                        <button class="btn btn-sm btn-outline-primary mt-2" @onclick="() => AgregarItem(sec)"><i class="fi fi-rr-plus"></i> Agregar item</button>
                     </div>
                 </div>
             </div>
@@ -102,6 +130,7 @@ else
         public string Href { get; set; } = "";
         public string Icon { get; set; } = "";
         public string? Subheading { get; set; }
+        public bool IsCustom { get; set; }
     }
 
     private sealed class EdSection
@@ -109,6 +138,7 @@ else
         public string Key { get; set; } = "";
         public string Label { get; set; } = "";
         public string Icon { get; set; } = "";
+        public bool IsCustom { get; set; }
         public List<EdItem> Items { get; set; } = new();
     }
 
@@ -135,7 +165,8 @@ else
                 Key = s.Key,
                 Label = s.Label,
                 Icon = s.Icon,
-                Items = s.Items.Select(i => new EdItem { Key = i.Key, Label = i.Label, Href = i.Href, Icon = i.Icon, Subheading = i.Subheading }).ToList()
+                IsCustom = s.IsCustom,
+                Items = s.Items.Select(i => new EdItem { Key = i.Key, Label = i.Label, Href = i.Href, Icon = i.Icon, Subheading = i.Subheading, IsCustom = i.IsCustom }).ToList()
             })
             .ToList();
     }
@@ -164,6 +195,32 @@ else
         target.Items.Add(it);
     }
 
+    // ----- Agregar / eliminar nodos custom -----
+
+    private void AgregarSeccion()
+    {
+        if (_sections is null) { return; }
+        _sections.Add(new EdSection { Key = $"custom-sec-{Guid.NewGuid():N}", Label = "Nueva seccion", Icon = "fi-rr-apps", IsCustom = true, Items = new() });
+    }
+
+    private void AgregarItem(EdSection sec)
+    {
+        // Item nuevo sin funcion todavia: abre la pagina "Proximamente".
+        sec.Items.Add(new EdItem { Key = $"custom-item-{Guid.NewGuid():N}", Label = "Nuevo item", Icon = "fi-rr-clock-three", Href = "/proximamente", IsCustom = true });
+    }
+
+    private void EliminarSeccion(EdSection sec)
+    {
+        if (_sections is null || !sec.IsCustom) { return; }
+        _sections.Remove(sec);
+    }
+
+    private void EliminarItem(EdSection sec, EdItem it)
+    {
+        if (!it.IsCustom) { return; }
+        sec.Items.Remove(it);
+    }
+
     private async Task GuardarAsync()
     {
         if (_sections is null) { return; }
@@ -173,7 +230,8 @@ else
             var req = new SaveMenuArrangementRequest(
                 _sections.Select((s, si) => new MenuSectionArrangement(
                     s.Key, s.Label, si + 1,
-                    s.Items.Select((it, ii) => new MenuItemArrangement(it.Key, it.Label, ii + 1)).ToList())).ToList());
+                    s.Items.Select((it, ii) => new MenuItemArrangement(it.Key, it.Label, ii + 1, it.IsCustom, it.Icon, it.Href)).ToList(),
+                    s.IsCustom, s.Icon)).ToList());
 
             var resp = await Auth().PutAsJsonAsync("/admin/menu", req);
             if (resp.IsSuccessStatusCode)

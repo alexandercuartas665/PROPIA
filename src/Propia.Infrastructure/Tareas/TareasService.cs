@@ -302,11 +302,36 @@ public class TareasService : ITareasService
 
         var subtareas = await ListarTareasAsync(null, null, null, id, null, null, ct);
 
-        var comentarios = await _db.TareaComentarios.AsNoTracking()
+        var comentariosRaw = await _db.TareaComentarios.AsNoTracking()
             .Where(c => c.TareaId == id)
             .OrderByDescending(c => c.CreatedAt)
-            .Select(c => new TareaComentarioDto(c.Id, c.AutorUsuarioId, c.Texto, c.CreatedAt))
+            .Select(c => new { c.Id, c.AutorUsuarioId, c.Texto, c.CreatedAt })
             .ToListAsync(ct);
+
+        // Resolver nombre del autor (best-effort) via usuario -> persona.
+        var autorIds = comentariosRaw.Select(c => c.AutorUsuarioId).Distinct().ToList();
+        var usuariosAutor = await _db.Users.AsNoTracking()
+            .Where(u => autorIds.Contains(u.Id))
+            .Select(u => new { u.Id, u.PersonaId })
+            .ToListAsync(ct);
+        var personaAutorIds = usuariosAutor.Where(u => u.PersonaId.HasValue)
+            .Select(u => u.PersonaId!.Value).Distinct().ToList();
+        var personasAutor = await _db.Personas.AsNoTracking()
+            .Where(p => personaAutorIds.Contains(p.Id))
+            .Select(p => new { p.Id, Nombre = (((p.Nombres ?? "") + " " + (p.Apellidos ?? "")).Trim()) })
+            .ToDictionaryAsync(p => p.Id, p => p.Nombre, ct);
+
+        string? ResolverAutorComentario(Guid uid)
+        {
+            var u = usuariosAutor.FirstOrDefault(x => x.Id == uid);
+            if (u?.PersonaId is Guid pid && personasAutor.TryGetValue(pid, out var n) && !string.IsNullOrWhiteSpace(n))
+                return n;
+            return null;
+        }
+
+        var comentarios = comentariosRaw
+            .Select(c => new TareaComentarioDto(c.Id, c.AutorUsuarioId, c.Texto, c.CreatedAt, ResolverAutorComentario(c.AutorUsuarioId)))
+            .ToList();
 
         var historial = await _db.TareaHistorial.AsNoTracking()
             .Where(h => h.TareaId == id)

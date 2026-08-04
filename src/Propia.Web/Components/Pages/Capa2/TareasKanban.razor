@@ -987,6 +987,18 @@ else
                 <button class="tbc-head-x" @onclick="CerrarCard"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
             </div>
 
+            @* ----- Pestanas: Detalle (incluye actividad) / Archivos ----- *@
+            <div class="tbc-tabs">
+                <button type="button" class="tbc-tab @(_cardTab == "detalle" ? "on" : "")" @onclick='() => _cardTab = "detalle"'>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Detalle
+                </button>
+                <button type="button" class="tbc-tab @(_cardTab == "archivos" ? "on" : "")" @onclick='() => _cardTab = "archivos"'>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15l-5-5L5 21M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="8.5" cy="8.5" r="1.5"/></svg>Archivos @if (d.Adjuntos.Count > 0) { <span class="tbc-tab-badge">@d.Adjuntos.Count</span> }
+                </button>
+            </div>
+
+            @if (_cardTab == "detalle")
+            {
             <div class="tbc-body">
                 @* ----- Columna 1: titulo, descripcion, origen, color, checklist ----- *@
                 <div class="tbc-col">
@@ -1181,24 +1193,24 @@ else
 
                 @* ----- Columna 2: estado, prioridad, responsables, fechas, valor, trazabilidad ----- *@
                 <div class="tbc-col">
-                    <div class="tbc-fld">
-                        <label>Estado</label>
-                        <div class="tbc-estados">
-                            @foreach (var e in _board.Estados)
-                            {
-                                var est = e;
-                                <button class="tbc-est @(d.EstadoId == e.Id ? "on" : "")" @onclick="() => d.EstadoId = est.Id">@e.Nombre</button>
-                            }
+                    <div class="tbc-row2">
+                        <div class="tbc-fld tbc-grow">
+                            <label>Estado</label>
+                            <select class="tbc-estado-sel" @bind="d.EstadoId">
+                                @foreach (var e in _board.Estados)
+                                {
+                                    <option value="@e.Id">@e.Nombre</option>
+                                }
+                            </select>
                         </div>
-                    </div>
-                    <div class="tbc-fld">
-                        <label>Prioridad</label>
-                        <div class="tbc-prios">
-                            @foreach (var p in Enum.GetValues<PrioridadTarea>())
-                            {
-                                var pr = p;
-                                <button class="tbc-prio2 @(d.Prioridad == p ? "on" : "")" @onclick="() => d.Prioridad = pr">@p</button>
-                            }
+                        <div class="tbc-fld tbc-grow">
+                            <label>Prioridad</label>
+                            <select @bind="d.Prioridad">
+                                @foreach (var p in Enum.GetValues<PrioridadTarea>())
+                                {
+                                    <option value="@p">@p</option>
+                                }
+                            </select>
                         </div>
                     </div>
 
@@ -1275,11 +1287,63 @@ else
                         <div class="tbc-fld tbc-w80"><label>Hora</label><input type="time" @bind="d.HoraFin" /></div>
                     </div>
                     <div class="tbc-fld"><label>Valor (COP)</label><input type="number" @bind="d.Valor" placeholder="Ej. 1200000" /></div>
+                </div>
 
-                    @if (d.Historial.Count > 0)
-                    {
-                        <div class="tbc-fld">
-                            <label>Trazabilidad</label>
+                @* ----- Columna 3: actividad (reportar + comentarios + historial) ----- *@
+                <div class="tbc-col tbc-col-act">
+                    <div class="tbc-act-report">
+                        <label class="tbc-lbl">Reportar actividad</label>
+                        @if (d.Id is null)
+                        {
+                            <div class="tbc-files-hint">Guarda la tarjeta para registrar actividad.</div>
+                        }
+                        else
+                        {
+                            <textarea class="tbc-act-input" rows="3" @bind="_nuevoComentario" @bind:event="oninput" placeholder="Describe lo que realizaste en esta tarea..."></textarea>
+                            <div class="tbc-act-actions">
+                                @if (!string.IsNullOrEmpty(_cardMsg)) { <span class="tbc-cardmsg">@_cardMsg</span> }
+                                <div class="tb-flex"></div>
+                                <button class="tb-btn tb-btn-primary" @onclick="AgregarComentarioCard" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoComentario))">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>@(_busy ? "Registrando..." : "Registrar")
+                                </button>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="tbc-fld">
+                        <label class="tbc-lbl">Comentarios @if (d.Comentarios.Count > 0) { <span class="tbc-mut">- @d.Comentarios.Count</span> }</label>
+                        @if (d.Comentarios.Count == 0)
+                        {
+                            <div class="tbc-act-empty">Aun no hay reportes de actividad.</div>
+                        }
+                        else
+                        {
+                            <div class="tbc-cmts">
+                                @foreach (var c in d.Comentarios)
+                                {
+                                    <div class="tbc-cmt">
+                                        <div class="tb-ava tbc-cmt-ava">@Iniciales(c.Autor ?? "?")</div>
+                                        <div class="tbc-cmt-body">
+                                            <div class="tbc-cmt-head">
+                                                <span class="tbc-cmt-au">@(string.IsNullOrWhiteSpace(c.Autor) ? "Usuario" : c.Autor)</span>
+                                                <span class="tbc-cmt-dt">@FechaHora(c.Fecha)</span>
+                                            </div>
+                                            <div class="tbc-cmt-tx">@c.Texto</div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    <div class="tbc-fld">
+                        <label class="tbc-lbl">Historial</label>
+                        @if (d.Historial.Count == 0)
+                        {
+                            <div class="tbc-act-empty">Sin eventos registrados.</div>
+                        }
+                        else
+                        {
                             <div class="tbc-log">
                                 @foreach (var l in d.Historial)
                                 {
@@ -1289,45 +1353,79 @@ else
                                     </div>
                                 }
                             </div>
-                        </div>
-                    }
-                </div>
-
-                @* ----- Columna 3: adjuntos ----- *@
-                <div class="tbc-col">
-                    <label class="tbc-lbl">Archivos @if (d.Adjuntos.Count > 0) { <span class="tbc-mut">- @d.Adjuntos.Count</span> }</label>
-                    <div class="tbc-adjs">
-                        @foreach (var a in d.Adjuntos)
-                        {
-                            var aid = a.Id;
-                            <div class="tbc-adj">
-                                <a class="tbc-adj-th" href="@a.Url" target="_blank">
-                                    @if (EsImg(a.Url)) { <img src="@a.Url" alt="@a.Nombre" /> }
-                                    else { <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h4"/></svg> }
-                                </a>
-                                <div class="tbc-adj-nm">@a.Nombre</div>
-                                <button class="tbc-adj-x" @onclick="() => EliminarAdjunto(aid)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-                            </div>
-                        }
-                        @if (d.Id is not null)
-                        {
-                            <label class="tbc-adj-up">
-                                @if (_subiendo) { <span class="tbc-adj-up-t">Subiendo...</span> }
-                                else
-                                {
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
-                                    <span class="tbc-adj-up-t">Subir</span>
-                                }
-                                <InputFile OnChange="SubirAdjunto" style="display:none" />
-                            </label>
-                        }
-                        else
-                        {
-                            <div class="tbc-adj-hint">Guarda la tarjeta para adjuntar archivos.</div>
                         }
                     </div>
                 </div>
             </div>
+            }
+
+            @* ===== TAB ARCHIVOS: miniaturas a la izquierda + visor grande a la derecha ===== *@
+            @if (_cardTab == "archivos")
+            {
+            <div class="tbc-files">
+                @{ var sel = d.Adjuntos.FirstOrDefault(a => a.Id == _adjSel) ?? d.Adjuntos.FirstOrDefault(); }
+                @if (d.Id is null)
+                {
+                    <div class="tbc-files-hint">Guarda la tarjeta para adjuntar archivos.</div>
+                }
+                else
+                {
+                    @* Columna izquierda: lista vertical de miniaturas *@
+                    <div class="tbc-thumbs">
+                        @foreach (var a in d.Adjuntos)
+                        {
+                            var aid = a.Id;
+                            <div class="tbc-thumb @(sel is not null && sel.Id == a.Id ? "on" : "")" @onclick="() => _adjSel = aid" title="@a.Nombre">
+                                <div class="tbc-thumb-ic">
+                                    @if (EsImg(a.Url)) { <img src="@a.Url" alt="@a.Nombre" /> }
+                                    else { <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h4"/></svg> }
+                                </div>
+                                <span class="tbc-thumb-nm">@a.Nombre</span>
+                                <button class="tbc-thumb-x" @onclick:stopPropagation="true" @onclick="() => EliminarAdjunto(aid)" title="Quitar"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                            </div>
+                        }
+                        <label class="tbc-thumb-up">
+                            @if (_subiendo) { <span class="tbc-thumb-up-t">Subiendo...</span> }
+                            else
+                            {
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
+                                <span class="tbc-thumb-up-t">Subir archivo</span>
+                            }
+                            <InputFile OnChange="SubirAdjunto" style="display:none" />
+                        </label>
+                    </div>
+                    @* Columna derecha: visor grande de la imagen/archivo seleccionado *@
+                    <div class="tbc-viewer">
+                        @if (sel is null)
+                        {
+                            <div class="tbc-viewer-empty">
+                                <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M21 15l-5-5L5 21M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="8.5" cy="8.5" r="1.5"/></svg>
+                                <p>No hay archivos adjuntos.</p>
+                                <span>Sube imagenes o documentos con el boton "Subir archivo".</span>
+                            </div>
+                        }
+                        else if (EsImg(sel.Url))
+                        {
+                            <div class="tbc-viewer-imgwrap">
+                                <img class="tbc-viewer-img" src="@sel.Url" alt="@sel.Nombre" />
+                            </div>
+                            <div class="tbc-viewer-bar">
+                                <span class="tbc-viewer-nm">@sel.Nombre</span>
+                                <a class="tbc-viewer-open" href="@sel.Url" target="_blank">Abrir</a>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="tbc-viewer-file">
+                                <svg width="54" height="54" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h4"/></svg>
+                                <p class="tbc-viewer-nm">@sel.Nombre</p>
+                                <a class="tbc-viewer-open" href="@sel.Url" target="_blank">Abrir / descargar</a>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+            }
 
             <div class="tbc-foot">
                 @if (d.Id is not null)
@@ -1765,8 +1863,9 @@ else
     .tbc-head-x { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; color: #fff; border: 1px solid rgba(255,255,255,.45); background: rgba(255,255,255,.12); cursor: pointer; flex-shrink: 0; }
     .tbc-head-x:hover { background: rgba(255,255,255,.28); }
 
-    .tbc-body { overflow-y: auto; padding: 22px 24px; display: grid; grid-template-columns: 1fr 220px 250px; gap: 22px; }
-    .tbc-col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+    .tbc-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 22px; display: grid; grid-template-columns: minmax(0, 1fr) 220px 250px; gap: 16px 20px; align-content: start; }
+    .tbc-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+    .tbc-col-act { border-left: 1px solid #EEF3F8; padding-left: 20px; gap: 14px; }
     .tbc-fld { display: flex; flex-direction: column; }
     .tbc-fld > label, .tbc-lbl { font-size: 11px; color: #7C98B6; font-weight: 700; margin-bottom: 6px; }
     .tbc-mut { color: #A6B7C8; font-weight: 600; }
@@ -1856,6 +1955,59 @@ else
     .tbc-adj-hint { grid-column: 1 / -1; font-size: 11px; color: #A6B7C8; background: #F8FAFC; border: 1px dashed #D7E0EA; border-radius: 10px; padding: 11px; text-align: center; line-height: 1.4; }
 
     .tbc-foot { display: flex; align-items: center; gap: 9px; padding: 16px 24px; border-top: 1px solid #EEF3F8; flex-shrink: 0; }
+
+    /* ===== Pestanas del modal de tarjeta ===== */
+    .tbc-tabs { display: flex; align-items: center; gap: 2px; padding: 0 22px; border-bottom: 1px solid #EEF3F8; flex-shrink: 0; }
+    .tbc-tab { display: inline-flex; align-items: center; gap: 6px; padding: 12px 14px; border: 0; background: transparent; font-family: inherit; font-size: 12.5px; font-weight: 700; color: #7C98B6; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .tbc-tab:hover { color: #6D4FE3; }
+    .tbc-tab.on { color: #6D4FE3; border-bottom-color: #6D4FE3; }
+    .tbc-tab-badge { font-size: 10px; font-weight: 800; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 9px; background: #F1ECFD; color: #6D4FE3; display: inline-flex; align-items: center; justify-content: center; }
+    .tbc-tab.on .tbc-tab-badge { background: #6D4FE3; color: #fff; }
+
+    /* ===== Pestana Archivos: miniaturas + visor grande ===== */
+    .tbc-files { flex: 1; min-height: 0; padding: 16px 22px; display: flex; gap: 16px; }
+    .tbc-files-hint { flex: 1; align-self: center; text-align: center; font-size: 12.5px; color: #A6B7C8; background: #F8FAFC; border: 1px dashed #D7E0EA; border-radius: 10px; padding: 22px; }
+    .tbc-thumbs { width: 216px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; padding-right: 3px; }
+    .tbc-thumb { position: relative; display: flex; align-items: center; gap: 9px; border: 1px solid #E1E8EE; border-radius: 10px; padding: 7px 9px; background: #fff; cursor: pointer; }
+    .tbc-thumb:hover { border-color: #B9AEF3; background: #FBFAFE; }
+    .tbc-thumb.on { border-color: #6D4FE3; background: #F5F1FE; box-shadow: 0 0 0 1px #6D4FE3; }
+    .tbc-thumb-ic { width: 44px; height: 44px; border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg,#F5F1FE,#E6DEFA); color: #6D4FE3; overflow: hidden; }
+    .tbc-thumb-ic img { width: 100%; height: 100%; object-fit: cover; }
+    .tbc-thumb-nm { flex: 1; min-width: 0; font-size: 11.5px; font-weight: 600; color: #33475B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tbc-thumb-x { width: 24px; height: 24px; flex-shrink: 0; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #C3D0DD; border: 0; background: transparent; cursor: pointer; }
+    .tbc-thumb-x:hover { background: #FDE7E7; color: #D7263D; }
+    .tbc-thumb-up { display: flex; align-items: center; justify-content: center; gap: 7px; border: 1px dashed #D7E0EA; border-radius: 10px; padding: 12px; cursor: pointer; font-size: 11.5px; font-weight: 700; color: #6D4FE3; background: #FBFAFE; flex-shrink: 0; }
+    .tbc-thumb-up:hover { border-color: #6D4FE3; background: #F5F1FE; }
+    .tbc-thumb-up-t { font-size: 11.5px; }
+    .tbc-viewer { flex: 1; min-width: 0; border: 1px solid #E1E8EE; border-radius: 12px; background: #FAFBFD; display: flex; flex-direction: column; overflow: hidden; }
+    .tbc-viewer-imgwrap { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 14px; background: #F1F5F9; overflow: auto; }
+    .tbc-viewer-img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; box-shadow: 0 4px 16px rgba(27,42,58,.15); }
+    .tbc-viewer-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-top: 1px solid #EEF3F8; background: #fff; }
+    .tbc-viewer-nm { font-size: 12px; font-weight: 700; color: #33475B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tbc-viewer-open { font-size: 11.5px; font-weight: 700; color: #6D4FE3; text-decoration: none; border: 1px solid #DCD2F8; border-radius: 8px; padding: 6px 13px; background: #F1ECFD; flex-shrink: 0; }
+    .tbc-viewer-open:hover { background: #E6DEFA; }
+    .tbc-viewer-empty, .tbc-viewer-file { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; color: #A6B7C8; text-align: center; padding: 24px; }
+    .tbc-viewer-empty p, .tbc-viewer-file p { font-size: 13.5px; font-weight: 700; color: #516F90; margin: 0; max-width: 320px; word-break: break-word; }
+    .tbc-viewer-empty span { font-size: 11.5px; color: #A6B7C8; max-width: 300px; }
+    .tbc-viewer-file { color: #6D4FE3; }
+
+    /* ===== Pestana Actividad: reportar + comentarios + historial ===== */
+    .tbc-activity { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 22px; display: flex; flex-direction: column; gap: 16px; }
+    .tbc-act-report { display: flex; flex-direction: column; gap: 8px; background: #FBFAFE; border: 1px solid #DCD2F8; border-radius: 12px; padding: 13px 14px; }
+    .tbc-act-input { width: 100%; box-sizing: border-box; border: 1px solid #E1E8EE; border-radius: 9px; padding: 10px 12px; font-size: 12.5px; color: #33475B; outline: none; resize: vertical; font-family: inherit; line-height: 1.5; }
+    .tbc-act-input:focus { border-color: #6D4FE3; }
+    .tbc-act-actions { display: flex; align-items: center; gap: 9px; }
+    .tbc-act-cols { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px 20px; align-items: start; }
+    .tbc-act-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+    .tbc-act-empty { font-size: 12px; color: #A6B7C8; font-style: italic; background: #F8FAFC; border: 1px dashed #E1E8EE; border-radius: 9px; padding: 12px; text-align: center; }
+    .tbc-cmts { display: flex; flex-direction: column; gap: 10px; }
+    .tbc-cmt { display: flex; gap: 10px; }
+    .tbc-cmt-ava { width: 30px; height: 30px; font-size: 11px; flex-shrink: 0; border: 0; margin-right: 0; }
+    .tbc-cmt-body { flex: 1; min-width: 0; background: #F8FAFC; border: 1px solid #EEF3F8; border-radius: 10px; padding: 9px 12px; }
+    .tbc-cmt-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
+    .tbc-cmt-au { font-size: 12px; font-weight: 700; color: #33475B; }
+    .tbc-cmt-dt { font-size: 10.5px; color: #A6B7C8; font-weight: 600; flex-shrink: 0; }
+    .tbc-cmt-tx { font-size: 12.5px; color: #33475B; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
     /* Traza de copias */
     .tbc-copia-bc { display: inline-flex; align-items: center; gap: 4px; border: 0; background: rgba(255,255,255,.22); color: #fff; font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 20px; cursor: pointer; }
     .tbc-copia-bc:hover { background: rgba(255,255,255,.35); }
@@ -1980,7 +2132,7 @@ else
     .tg-note { font-size: 11.5px; color: #A6B7C8; padding: 11px 18px; border-top: 1px solid #EEF3F8; background: #FBFCFD; }
 
     @@media (max-width: 880px) { .tcal-cell { min-height: 76px; } }
-    @@media (max-width: 880px) { .tbc-body { grid-template-columns: 1fr; } }
+    @@media (max-width: 880px) { .tbc-body { grid-template-columns: 1fr; } .tbc-act-cols { grid-template-columns: 1fr; } .tbc-col-act { border-left: 0; padding-left: 0; border-top: 1px solid #EEF3F8; padding-top: 14px; } .tbc-files { flex-direction: column; } .tbc-thumbs { width: auto; flex-direction: row; flex-wrap: wrap; } .tbc-viewer { min-height: 320px; } }
     /* ----- Campos personalizados: lista (columnas) ----- */
     .tb-lc-due { flex: 0 0 100px; min-width: 100px; }
     .tb-row-due { flex: 0 0 100px; min-width: 100px; }
@@ -2285,6 +2437,9 @@ else
     private TableroDraft? _tableroDraft;
     private CardDraft? _cardDraft;
     private string? _cardMsg;   // aviso en el pie del modal de tarjeta (ej. campos requeridos)
+    private string _cardTab = "detalle";    // pestana activa del modal: detalle | archivos | actividad
+    private Guid? _adjSel;                    // adjunto seleccionado en el visor de la pestana Archivos
+    private string _nuevoComentario = "";     // texto del reporte de actividad (comentario)
     private bool _showCampoEditor; // editor de campo FLOTANTE (compartido: tarjeta + tabla)
     private string _subNew = "";
     private string _subtareaNew = "";
@@ -2373,6 +2528,7 @@ else
         public List<SubChk> Checklist { get; set; } = new();
         public List<AdjuntoVM> Adjuntos { get; set; } = new();
         public List<LogVM> Historial { get; set; } = new();
+        public List<ComentarioVM> Comentarios { get; set; } = new();
         public Dictionary<Guid, string?> Campos { get; set; } = new();
         public HashSet<Guid> EtiquetaIds { get; set; } = new();        // etiquetas asignadas (editable)
         public HashSet<Guid> EtiquetaIdsOrig { get; set; } = new();    // snapshot para diff al guardar
@@ -2403,6 +2559,7 @@ else
     }
     private record AdjuntoVM(Guid Id, string Nombre, string Url);
     private record LogVM(string Texto, DateTimeOffset Fecha);
+    private record ComentarioVM(string? Autor, string Texto, DateTimeOffset Fecha);
     private record OpcionOrigen(Guid Id, string Label);
 
     private record PersonaMini(Guid Id, string Nombre);
@@ -3642,6 +3799,7 @@ else
     private async Task AbrirCardDraft(TareaListaDto? t, Guid? estadoIdDefault)
     {
         _subNew = ""; _respPick = ""; _cardMsg = null;
+        _cardTab = "detalle"; _adjSel = null; _nuevoComentario = "";
         if (t is null)
         {
             _cardDraft = new CardDraft { EstadoId = estadoIdDefault ?? _board?.Estados.FirstOrDefault()?.Id ?? Guid.Empty };
@@ -3682,6 +3840,7 @@ else
                 Checklist = (det.Checklist ?? new List<SubtareaCheckDto>()).Select(s => new SubChk { Titulo = s.Titulo, Hecho = s.Hecho }).ToList(),
                 Adjuntos = (det.Adjuntos ?? new List<TareaAdjuntoDto>()).Select(a => new AdjuntoVM(a.Id, a.Nombre, a.Url)).ToList(),
                 Historial = det.Historial.OrderBy(h => h.OcurridoAt).Select(h => new LogVM(h.Descripcion, h.OcurridoAt)).ToList(),
+                Comentarios = det.Comentarios.Select(c => new ComentarioVM(c.AutorNombre, c.Texto, c.CreatedAt)).ToList(),
                 Campos = (det.CamposValores ?? new List<TareaCampoValorDto>()).GroupBy(v => v.CampoId).ToDictionary(g => g.Key, g => g.First().Valor),
                 EtiquetaIds = t.Etiquetas.Select(e => e.Id).ToHashSet(),
                 EtiquetaIdsOrig = t.Etiquetas.Select(e => e.Id).ToHashSet(),
@@ -3691,6 +3850,7 @@ else
                 CopiadaDeTitulo = det.CopiadaDeTitulo,
                 Copias = (det.Copias ?? new List<TareaListaDto>()).ToList()
             };
+            _adjSel = _cardDraft.Adjuntos.FirstOrDefault()?.Id;
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
     }
@@ -3857,7 +4017,7 @@ else
             if (resp.IsSuccessStatusCode)
             {
                 var dto = await resp.Content.ReadFromJsonAsync<TareaAdjuntoDto>();
-                if (dto is not null) _cardDraft.Adjuntos.Add(new AdjuntoVM(dto.Id, dto.Nombre, dto.Url));
+                if (dto is not null) { _cardDraft.Adjuntos.Add(new AdjuntoVM(dto.Id, dto.Nombre, dto.Url)); _adjSel = dto.Id; }
             }
             else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
         }
@@ -3869,7 +4029,34 @@ else
     {
         if (_cardDraft?.Id is null) return;
         var resp = await Auth().DeleteAsync($"/api/tareas/{_cardDraft.Id}/adjuntos/{adjuntoId}");
-        if (resp.IsSuccessStatusCode) _cardDraft.Adjuntos.RemoveAll(a => a.Id == adjuntoId);
+        if (resp.IsSuccessStatusCode)
+        {
+            _cardDraft.Adjuntos.RemoveAll(a => a.Id == adjuntoId);
+            if (_adjSel == adjuntoId) _adjSel = _cardDraft.Adjuntos.FirstOrDefault()?.Id;
+        }
+    }
+
+    // Reporta la actividad realizada sobre la tarea (comentario). El backend registra autor y fecha.
+    private async Task AgregarComentarioCard()
+    {
+        if (_cardDraft?.Id is null || string.IsNullOrWhiteSpace(_nuevoComentario)) return;
+        _busy = true; _cardMsg = null;
+        try
+        {
+            var texto = _nuevoComentario.Trim();
+            var resp = await Auth().PostAsJsonAsync($"/api/tareas/{_cardDraft.Id}/comentarios", new CrearComentarioRequest(texto));
+            if (resp.IsSuccessStatusCode)
+            {
+                var dto = await resp.Content.ReadFromJsonAsync<TareaComentarioDto>();
+                // El comentario nuevo se antepone (mas reciente primero, igual que el backend).
+                _cardDraft.Comentarios.Insert(0, new ComentarioVM(dto?.AutorNombre, texto, dto?.CreatedAt ?? DateTimeOffset.Now));
+                _cardDraft.Historial.Add(new LogVM("Comentario agregado", dto?.CreatedAt ?? DateTimeOffset.Now));
+                _nuevoComentario = "";
+            }
+            else { _cardMsg = await resp.Content.ReadAsStringAsync(); }
+        }
+        catch (Exception ex) { _cardMsg = ex.Message; }
+        finally { _busy = false; }
     }
 
     private static bool EsImg(string url)

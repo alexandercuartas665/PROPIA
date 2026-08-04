@@ -72,7 +72,7 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
         await _db.SaveChangesAsync(ct);
 
         // Configura el webhook entrante (si el maestro tiene URL publica + token). Habilita la bandeja (Oleada 3).
-        var (webhookUrl, webhookToken) = await EffectiveWebhookAsync(ct);
+        var (webhookUrl, webhookToken) = await EffectiveWebhookAsync(line.TenantId, ct);
         if (webhookUrl is not null && webhookToken is not null)
         {
             await _client.SetWebhookAsync(baseUrl, apiKey, EvoInstance(line), webhookUrl, webhookToken, ct);
@@ -127,6 +127,15 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
                 line.LastStatusAt = now;
                 if (mapped == WhatsAppLineStatus.Connected) { line.LastConnectedAt = now; }
                 await _db.SaveChangesAsync(ct);
+            }
+
+            // Re-aplica el webhook entrante (idempotente): asi una linea YA conectada corrige su
+            // webhook con solo "Refrescar", sin re-escanear el QR. Best-effort.
+            var (whUrl, whToken) = await EffectiveWebhookAsync(line.TenantId, ct);
+            if (whUrl is not null && whToken is not null)
+            {
+                try { await _client.SetWebhookAsync(baseUrl, apiKey, EvoInstance(line), whUrl, whToken, ct); }
+                catch { /* best-effort: no debe romper el refresco de estado */ }
             }
         }
         return Map(line);
@@ -211,15 +220,22 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
         return new LineSendResult(result.Ok, result.Error);
     }
 
-    // URL + token del webhook segun el maestro (modo Production usa la URL publica fija).
-    private async Task<(string? Url, string? Token)> EffectiveWebhookAsync(CancellationToken ct)
+    // URL + token del webhook segun el maestro. La ruta receptora exige el tenant en el path
+    // (/webhooks/evolution/{tenantId}); sin el guid Evolution recibe 404 y los entrantes nunca llegan.
+    private async Task<(string? Url, string? Token)> EffectiveWebhookAsync(Guid tenantId, CancellationToken ct)
     {
         var master = await _db.EvolutionMasterConfigs.AsNoTracking().FirstOrDefaultAsync(ct);
         if (master is null || string.IsNullOrWhiteSpace(master.WebhookToken) || string.IsNullOrWhiteSpace(master.WebhookPublicUrl))
         {
             return (null, null);
         }
-        return ($"{master.WebhookPublicUrl!.TrimEnd('/')}/webhooks/evolution", master.WebhookToken);
+        // El token se guarda cifrado (ISecretProtector); lo desciframos para enviarlo a Evolution en
+        // claro, asi el header x-webhook-token que Evolution reenvia coincide con Propia:WebhookToken
+        // que valida el receptor. Fallback: si venia sin cifrar (legacy), lo usamos tal cual.
+        string token;
+        try { token = _secret.Unprotect(master.WebhookToken!); }
+        catch { token = master.WebhookToken!; }
+        return ($"{master.WebhookPublicUrl!.TrimEnd('/')}/webhooks/evolution/{tenantId:D}", token);
     }
 
     // Servidor maestro efectivo (URL + API key descifrada). Null si no esta configurado.

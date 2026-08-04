@@ -56,13 +56,23 @@ public sealed class ChatIngestService : IChatIngestService
             return ChatIngestResult.Blocked;
         }
 
-        // Resolver linea por InstanceName (opcional). Si no se pasa o no se encuentra, la conversacion
-        // queda sin linea (puede vincularse luego en la UI o cuando se responda).
+        // Resolver la linea. CLAVE para que el agente responda: si la conversacion queda sin linea,
+        // el dispatcher hace skip (whatsAppLineId null). Evolution manda el nombre de instancia
+        // propia_<tenant:N>_<linea:N>, del que extraemos el id de linea; con fallback al label InstanceName.
         Guid? lineId = null;
         if (!string.IsNullOrWhiteSpace(payload.InstanceName))
         {
-            lineId = await _db.WhatsAppLines.AsNoTracking()
-                .Where(l => l.TenantId == tenantId && l.InstanceName == payload.InstanceName)
+            var inst = payload.InstanceName.Trim();
+            var parts = inst.Split('_');
+            if (parts.Length == 3 && parts[0] == "propia" && Guid.TryParseExact(parts[2], "N", out var evoLineId))
+            {
+                lineId = await _db.WhatsAppLines.AsNoTracking()
+                    .Where(l => l.TenantId == tenantId && l.Id == evoLineId)
+                    .Select(l => (Guid?)l.Id)
+                    .FirstOrDefaultAsync(ct);
+            }
+            lineId ??= await _db.WhatsAppLines.AsNoTracking()
+                .Where(l => l.TenantId == tenantId && l.InstanceName == inst)
                 .Select(l => (Guid?)l.Id)
                 .FirstOrDefaultAsync(ct);
         }

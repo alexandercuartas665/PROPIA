@@ -50,7 +50,7 @@ public class WebhooksController : ControllerBase
     /// Portado de CUBOT.travels (ChatIngestService).
     /// </summary>
     [HttpPost("evolution/{tenantId:guid}")]
-    public async Task<IActionResult> EvolutionInbound(Guid tenantId, [FromBody] IngestMessageRequest payload, CancellationToken ct)
+    public async Task<IActionResult> EvolutionInbound(Guid tenantId, CancellationToken ct)
     {
         // Token compartido (config global por ahora; en proxima oleada se hara por-tenant).
         var configured = _config["Propia:WebhookToken"];
@@ -63,16 +63,32 @@ public class WebhooksController : ControllerBase
             }
         }
 
-        var result = await _chatIngest.IngestTrustedAsync(tenantId, payload, ct);
-        return result switch
+        // Evolution envia su envelope NATIVO (messages.upsert), no un IngestMessageRequest plano.
+        // Leemos el body crudo y lo traducimos con EvolutionWebhookParser (mismo patron que Meta).
+        using var reader = new StreamReader(Request.Body);
+        var rawJson = await reader.ReadToEndAsync(ct);
+        if (string.IsNullOrWhiteSpace(rawJson)) { return Ok(new { status = "empty" }); }
+
+        System.Text.Json.JsonDocument doc;
+        try { doc = System.Text.Json.JsonDocument.Parse(rawJson); }
+        catch { return Ok(new { status = "invalid_json" }); }
+
+        using (doc)
         {
-            ChatIngestResult.Accepted => Accepted(new { status = "accepted" }),
-            ChatIngestResult.Duplicate => Ok(new { status = "duplicate" }),
-            ChatIngestResult.Blocked => Ok(new { status = "blocked" }),
-            ChatIngestResult.LineNotFound => NotFound(new { error = "line_not_found" }),
-            ChatIngestResult.InvalidPayload => BadRequest(new { error = "invalid_payload" }),
-            _ => StatusCode(500, new { error = "unknown" })
-        };
+            var payload = EvolutionWebhookParser.Parse(doc.RootElement);
+            if (payload is null) { return Ok(new { status = "ignored" }); } // saliente, grupo, reaccion o evento no-mensaje
+
+            var result = await _chatIngest.IngestTrustedAsync(tenantId, payload, ct);
+            return result switch
+            {
+                ChatIngestResult.Accepted => Accepted(new { status = "accepted" }),
+                ChatIngestResult.Duplicate => Ok(new { status = "duplicate" }),
+                ChatIngestResult.Blocked => Ok(new { status = "blocked" }),
+                ChatIngestResult.LineNotFound => NotFound(new { error = "line_not_found" }),
+                ChatIngestResult.InvalidPayload => BadRequest(new { error = "invalid_payload" }),
+                _ => StatusCode(500, new { error = "unknown" })
+            };
+        }
     }
 
     /// <summary>

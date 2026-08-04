@@ -2558,6 +2558,9 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.NodeKey).IsRequired().HasMaxLength(80);
             b.Property(x => x.Label).HasMaxLength(120);
             b.Property(x => x.ParentKey).HasMaxLength(80);
+            b.Property(x => x.NodeType).HasMaxLength(20);
+            b.Property(x => x.Icon).HasMaxLength(60);
+            b.Property(x => x.Href).HasMaxLength(300);
             b.HasIndex(x => x.NodeKey).IsUnique();
         });
 

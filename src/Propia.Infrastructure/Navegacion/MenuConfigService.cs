@@ -35,7 +35,7 @@ public sealed class MenuConfigService : IMenuConfigService
         }
 
         var overrides = await _db.MenuOverrides.AsNoTracking()
-            .Select(o => new MenuOverrideData(o.NodeKey, o.Label, o.ParentKey, o.SortOrder))
+            .Select(o => new MenuOverrideData(o.NodeKey, o.Label, o.ParentKey, o.SortOrder, o.IsCustom, o.NodeType, o.Icon, o.Href))
             .ToListAsync(ct);
         var resolved = MenuCatalog.Resolve(overrides);
         _cache.Set(CacheKey, resolved, CacheTtl);
@@ -47,38 +47,62 @@ public sealed class MenuConfigService : IMenuConfigService
         var sectionBase = MenuCatalog.Sections.ToDictionary(s => s.Key, StringComparer.Ordinal);
         var itemBase = MenuCatalog.Items.ToDictionary(i => i.Key, StringComparer.Ordinal);
 
-        var deltas = new List<MenuOverride>();
+        var rows = new List<MenuOverride>();
         foreach (var s in request.Sections)
         {
-            if (sectionBase.TryGetValue(s.Key, out var sb))
+            if (s.IsCustom)
+            {
+                // Seccion NUEVA: se guarda completa (no existe en el base).
+                rows.Add(new MenuOverride
+                {
+                    NodeKey = s.Key, IsCustom = true, NodeType = "section",
+                    Label = Clean(s.Label) ?? "Seccion", SortOrder = s.Order,
+                    Icon = Clean(s.Icon) ?? "fi-rr-apps"
+                });
+            }
+            else if (sectionBase.TryGetValue(s.Key, out var sb))
             {
                 var label = Clean(s.Label);
                 var labelDelta = label is not null && label != sb.Label ? label : null;
                 int? orderDelta = s.Order != sb.Order ? s.Order : null;
                 if (labelDelta is not null || orderDelta is not null)
                 {
-                    deltas.Add(new MenuOverride { NodeKey = s.Key, Label = labelDelta, ParentKey = null, SortOrder = orderDelta });
+                    rows.Add(new MenuOverride { NodeKey = s.Key, Label = labelDelta, ParentKey = null, SortOrder = orderDelta });
                 }
             }
+            else { continue; } // seccion base desconocida (stale): se ignora
 
             foreach (var it in s.Items)
             {
-                if (!itemBase.TryGetValue(it.Key, out var ib)) { continue; }
-                var label = Clean(it.Label);
-                var labelDelta = label is not null && label != ib.Label ? label : null;
-                var parentDelta = !string.Equals(s.Key, ib.SectionKey, StringComparison.Ordinal) ? s.Key : null;
-                int? orderDelta = it.Order != ib.Order ? it.Order : null;
-                if (labelDelta is not null || parentDelta is not null || orderDelta is not null)
+                if (it.IsCustom)
                 {
-                    deltas.Add(new MenuOverride { NodeKey = it.Key, Label = labelDelta, ParentKey = parentDelta, SortOrder = orderDelta });
+                    // Item NUEVO: se guarda completo. Sin funcion todavia -> Href /proximamente.
+                    rows.Add(new MenuOverride
+                    {
+                        NodeKey = it.Key, IsCustom = true, NodeType = "item",
+                        Label = Clean(it.Label) ?? "Item", ParentKey = s.Key, SortOrder = it.Order,
+                        Icon = Clean(it.Icon) ?? "fi-rr-clock-three",
+                        Href = Clean(it.Href) ?? "/proximamente"
+                    });
+                }
+                else if (itemBase.TryGetValue(it.Key, out var ib))
+                {
+                    var label = Clean(it.Label);
+                    var labelDelta = label is not null && label != ib.Label ? label : null;
+                    var parentDelta = !string.Equals(s.Key, ib.SectionKey, StringComparison.Ordinal) ? s.Key : null;
+                    int? orderDelta = it.Order != ib.Order ? it.Order : null;
+                    if (labelDelta is not null || parentDelta is not null || orderDelta is not null)
+                    {
+                        rows.Add(new MenuOverride { NodeKey = it.Key, Label = labelDelta, ParentKey = parentDelta, SortOrder = orderDelta });
+                    }
                 }
             }
         }
 
-        // Reemplazo total: borra los overrides actuales e inserta los deltas nuevos.
+        // Reemplazo total: borra los overrides actuales e inserta los nuevos (deltas de base + nodos custom).
         var current = await _db.MenuOverrides.ToListAsync(ct);
         _db.MenuOverrides.RemoveRange(current);
-        if (deltas.Count > 0) { _db.MenuOverrides.AddRange(deltas); }
+        if (rows.Count > 0) { _db.MenuOverrides.AddRange(rows); }
         await _db.SaveChangesAsync(ct);
         _cache.Remove(CacheKey);
     }

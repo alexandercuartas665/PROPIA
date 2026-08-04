@@ -15,26 +15,30 @@ public sealed record MenuSectionDef(string Key, string Label, string Icon, strin
 public sealed record MenuItemDef(string Key, string SectionKey, string Label, string Href, string Icon, int Order,
     string? Subheading = null, bool DividerBefore = false);
 
-/// <summary>Override guardado de un nodo (seccion o item). Null en un campo = usar el valor base.</summary>
-public sealed record MenuOverrideData(string NodeKey, string? Label, string? ParentKey, int? SortOrder);
+/// <summary>Override guardado de un nodo (seccion o item). Null en un campo = usar el valor base.
+/// Si IsCustom=true es un nodo NUEVO (no existe en el base): sus datos viven todos aqui.</summary>
+public sealed record MenuOverrideData(string NodeKey, string? Label, string? ParentKey, int? SortOrder,
+    bool IsCustom = false, string? NodeType = null, string? Icon = null, string? Href = null);
 
 // ---------- Resuelto (base + overrides) para render y editor ----------
 
 public sealed record ResolvedMenuItem(string Key, string SectionKey, string Label, string Href, string Icon, int Order,
-    string? Subheading, bool DividerBefore);
+    string? Subheading, bool DividerBefore, bool IsCustom = false);
 
 /// <summary>Items de una seccion agrupados por subheading (el grupo con Heading=null va bajo el titulo de la seccion).</summary>
 public sealed record ResolvedMenuItemGroup(string? Heading, bool DividerBefore, IReadOnlyList<ResolvedMenuItem> Items);
 
 public sealed record ResolvedMenuSection(string Key, string Label, string Icon, string TooltipDesc, int Order,
-    bool SeparatorBefore, IReadOnlyList<ResolvedMenuItem> Items, IReadOnlyList<ResolvedMenuItemGroup> Groups);
+    bool SeparatorBefore, IReadOnlyList<ResolvedMenuItem> Items, IReadOnlyList<ResolvedMenuItemGroup> Groups, bool IsCustom = false);
 
 public sealed record ResolvedMenu(IReadOnlyList<ResolvedMenuSection> Sections);
 
 // ---------- Guardar arreglo (desde el editor) ----------
 
-public sealed record MenuItemArrangement(string Key, string? Label, int Order);
-public sealed record MenuSectionArrangement(string Key, string? Label, int Order, IReadOnlyList<MenuItemArrangement> Items);
+public sealed record MenuItemArrangement(string Key, string? Label, int Order,
+    bool IsCustom = false, string? Icon = null, string? Href = null);
+public sealed record MenuSectionArrangement(string Key, string? Label, int Order, IReadOnlyList<MenuItemArrangement> Items,
+    bool IsCustom = false, string? Icon = null);
 
 /// <summary>El editor envia el arreglo completo (secciones en orden, cada una con sus items en orden).
 /// El servicio lo compara con el base y persiste solo los deltas.</summary>

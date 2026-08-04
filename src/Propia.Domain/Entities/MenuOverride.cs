@@ -22,4 +22,18 @@ public class MenuOverride : BaseEntity
 
     /// <summary>Orden custom entre hermanos. Null = orden base.</summary>
     public int? SortOrder { get; set; }
+
+    // ----- Nodos CUSTOM (agregados por el Super Admin; NO existen en el base MenuCatalog) -----
+
+    /// <summary>true = este nodo es nuevo (no override de un nodo base). Guarda todos sus datos aqui.</summary>
+    public bool IsCustom { get; set; }
+
+    /// <summary>Solo custom: "section" (agrupador del rail) o "item" (enlace).</summary>
+    public string? NodeType { get; set; }
+
+    /// <summary>Solo custom: clase de icono (fi-rr-*).</summary>
+    public string? Icon { get; set; }
+
+    /// <summary>Solo custom item: ruta destino. Los items sin funcion todavia apuntan a /proximamente.</summary>
+    public string? Href { get; set; }
 }

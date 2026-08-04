@@ -97,7 +97,7 @@ public record CopiarTareaRequest(
     bool ConservarRelacion = true,
     bool ConservarCampos = true);
 
-public record TareaComentarioDto(Guid Id, Guid AutorUsuarioId, string Texto, DateTimeOffset CreatedAt);
+public record TareaComentarioDto(Guid Id, Guid AutorUsuarioId, string Texto, DateTimeOffset CreatedAt, string? AutorNombre = null);
 public record TareaHistorialDto(TipoEventoTarea TipoEvento, string Descripcion, Guid RealizadoPorUsuarioId, DateTimeOffset OcurridoAt);
 public record TareaColaboradorDto(Guid Id, Guid PersonaId, string Nombre);
 
