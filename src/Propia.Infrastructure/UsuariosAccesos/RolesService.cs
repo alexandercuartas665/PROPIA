@@ -15,11 +15,13 @@ public class RolesService : IRolesService
 {
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenantContext;
+    private readonly ISeedUsuarioRolService _seed;
 
-    public RolesService(PropiaDbContext db, ITenantContext tenantContext)
+    public RolesService(PropiaDbContext db, ITenantContext tenantContext, ISeedUsuarioRolService seed)
     {
         _db = db;
         _tenantContext = tenantContext;
+        _seed = seed;
     }
 
     public async Task<IReadOnlyList<RolDto>> ListarRolesAsync(CancellationToken ct)
@@ -43,7 +45,8 @@ public class RolesService : IRolesService
         return roles.Select(r => new RolDto(
             r.Id, r.TenantId, r.Nombre, r.Descripcion,
             r.Tipo, r.EsEliminable, r.Activo,
-            conteos.GetValueOrDefault(r.Id, 0))).ToList();
+            conteos.GetValueOrDefault(r.Id, 0),
+            r.FacetasSemilla, r.SoloDirectorio)).ToList();
     }
 
     public async Task<RolDetalleDto?> GetRolDetalleAsync(Guid rolId, CancellationToken ct)
@@ -72,7 +75,8 @@ public class RolesService : IRolesService
             .CountAsync(u => u.RolId == rolId && u.Estado == EstadoUsuarioTenant.Activo, ct);
 
         return new RolDetalleDto(r.Id, r.TenantId, r.Nombre, r.Descripcion,
-            r.Tipo, r.EsEliminable, r.Activo, cuenta, matriz);
+            r.Tipo, r.EsEliminable, r.Activo, cuenta, matriz,
+            r.FacetasSemilla, r.SoloDirectorio);
     }
 
     public async Task<RolDto> CrearRolAsync(CrearRolRequest req, CancellationToken ct)
@@ -131,8 +135,44 @@ public class RolesService : IRolesService
         rol.Nombre = req.Nombre.Trim();
         rol.Descripcion = req.Descripcion;
         rol.Activo = req.Activo;
+
+        // Config de siembra: SOLO en roles Personalizados (tenant-scoped) para no filtrar
+        // configuracion entre copropiedades (los Base/Extendido son globales).
+        var facetasNuevas = new List<int>();
+        if (rol.Tipo == TipoRol.Personalizado)
+        {
+            rol.SoloDirectorio = req.SoloDirectorio;
+            facetasNuevas = ParseFacetas(req.FacetasSemilla).Distinct().Where(n => n >= 1 && n <= 5).ToList();
+            rol.FacetasSemilla = facetasNuevas.Count == 0 ? null : string.Join(",", facetasNuevas);
+
+            // Exclusividad: una faceta pertenece a un solo rol. Se la quito a los demas del tenant.
+            if (facetasNuevas.Count > 0 && rol.TenantId is not null)
+            {
+                var otros = await _db.RolesCopropiedad
+                    .Where(r => r.TenantId == rol.TenantId && r.Id != rol.Id && r.FacetasSemilla != null)
+                    .ToListAsync(ct);
+                foreach (var o in otros)
+                {
+                    var restantes = ParseFacetas(o.FacetasSemilla).Where(f => !facetasNuevas.Contains(f)).ToList();
+                    o.FacetasSemilla = restantes.Count == 0 ? null : string.Join(",", restantes);
+                }
+            }
+        }
+
         await _db.SaveChangesAsync(ct);
+
+        // Backfill retroactivo inmediato de las facetas sembradas.
+        if (facetasNuevas.Count > 0)
+            await _seed.BackfillFacetasAsync(facetasNuevas, ct);
+
         return true;
+    }
+
+    private static IEnumerable<int> ParseFacetas(string? csv)
+    {
+        if (string.IsNullOrWhiteSpace(csv)) yield break;
+        foreach (var part in csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            if (int.TryParse(part, out var n)) yield return n;
     }
 
     public async Task<bool> EliminarRolAsync(Guid rolId, CancellationToken ct)

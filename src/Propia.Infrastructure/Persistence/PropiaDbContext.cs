@@ -872,6 +872,8 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
         {
             b.Property(x => x.Nombre).IsRequired().HasMaxLength(100);
             b.Property(x => x.Descripcion).HasMaxLength(500);
+            b.Property(x => x.FacetasSemilla).HasMaxLength(40);
+            b.Property(x => x.SoloDirectorio).HasDefaultValue(false);
             b.HasOne(x => x.CopiadoDeRol).WithMany().HasForeignKey(x => x.CopiadoDeRolId).OnDelete(DeleteBehavior.SetNull);
             b.HasIndex(x => new { x.TenantId, x.Nombre }).IsUnique();
             // Query filter: ve sus propios + los globales (tenant_id NULL)

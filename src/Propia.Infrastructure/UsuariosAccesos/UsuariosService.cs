@@ -57,6 +57,10 @@ public class UsuariosService : IUsuariosService
             .Include(u => u.RolNavigation)
             .AsQueryable();
 
+        // Ocultar usuarios cuyo rol es "solo directorio" (propietarios/residentes sembrados):
+        // se gestionan desde el Directorio para no llenar la lista de Usuarios.
+        q = q.Where(u => u.RolNavigation == null || !u.RolNavigation.SoloDirectorio);
+
         if (estado.HasValue) q = q.Where(u => u.Estado == estado.Value);
         if (!string.IsNullOrWhiteSpace(query))
         {

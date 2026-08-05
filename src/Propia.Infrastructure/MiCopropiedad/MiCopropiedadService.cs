@@ -12,11 +12,14 @@ public class MiCopropiedadService : IMiCopropiedadService
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenant;
     private readonly Storage.IBlobStorage _blob;
-    public MiCopropiedadService(PropiaDbContext db, ITenantContext tenant, Storage.IBlobStorage blob)
+    private readonly Application.UsuariosAccesos.ISeedUsuarioRolService _seed;
+    public MiCopropiedadService(PropiaDbContext db, ITenantContext tenant, Storage.IBlobStorage blob,
+        Application.UsuariosAccesos.ISeedUsuarioRolService seed)
     {
         _db = db;
         _tenant = tenant;
         _blob = blob;
+        _seed = seed;
     }
 
     // ----------------------------- Resumen -----------------------------
@@ -432,6 +435,10 @@ public class MiCopropiedadService : IMiCopropiedadService
         _db.UnidadPersonas.Add(up);
         await _db.SaveChangesAsync(ct);
 
+        // Siembra automatica: si un rol Personalizado declara esta faceta como semilla,
+        // crea/asegura usuario+login+directorio con ese rol (best-effort, no rompe el alta).
+        try { await _seed.SembrarPorFacetaAsync(personaId, req.Rol, ct); } catch { /* no bloquear el vinculo */ }
+
         var persona = await _db.Personas.AsNoTracking().FirstAsync(p => p.Id == personaId, ct);
         await RegistrarBitacoraAsync("Unidad", $"{req.Rol} '{persona.Nombres} {persona.Apellidos}' vinculado a unidad '{unidad.Numero}'.", ct);
 
@@ -495,6 +502,8 @@ public class MiCopropiedadService : IMiCopropiedadService
         up.Parentesco = string.IsNullOrWhiteSpace(req.Parentesco) ? null : req.Parentesco.Trim();
 
         await _db.SaveChangesAsync(ct);
+        // Re-siembra por si cambio la faceta o se agrego el email (habilita login).
+        try { await _seed.SembrarPorFacetaAsync(persona.Id, up.Rol, ct); } catch { /* no bloquear */ }
         await RegistrarBitacoraAsync("Unidad", $"Datos de '{persona.Nombres} {persona.Apellidos}' actualizados.", ct);
 
         return new UnidadPersonaDto(up.Id, persona.Id,

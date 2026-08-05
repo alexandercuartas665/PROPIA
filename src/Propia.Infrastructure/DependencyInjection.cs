@@ -169,6 +169,7 @@ public static class DependencyInjection
         // Modulo 2.5 Usuarios, Roles y Accesos
         services.AddScoped<Application.UsuariosAccesos.IUsuariosService, UsuariosAccesos.UsuariosService>();
         services.AddScoped<Application.UsuariosAccesos.IRolesService, UsuariosAccesos.RolesService>();
+        services.AddScoped<Application.UsuariosAccesos.ISeedUsuarioRolService, UsuariosAccesos.SeedUsuarioRolService>();
 
         // Modulo 2.6 Presupuesto, Cuotas y Pagos
         services.AddScoped<Application.Presupuesto.IPresupuestoService, Presupuesto.PresupuestoService>();

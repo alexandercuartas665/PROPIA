@@ -669,6 +669,35 @@
                     }
                     else
                     {
+                        <div class="usr-rolcfg">
+                            <div class="usr-rolcfg-row">
+                                <div style="flex:1;min-width:0">
+                                    <label class="usr-label">Nombre del rol</label>
+                                    <input class="usr-input" @bind="_edNombre" disabled="@(_detalleEdit.Tipo == TipoRol.Base)" />
+                                    @if (_detalleEdit.Tipo == TipoRol.Base) { <div class="usr-hint">Los roles base no se renombran (RN-03).</div> }
+                                </div>
+                                <button class="usr-rowbtn" style="align-self:flex-end" @onclick="GuardarConfigRol" disabled="@_busy">@(_busy ? "Guardando..." : "Guardar")</button>
+                            </div>
+                            @if (_detalleEdit.Tipo == TipoRol.Personalizado)
+                            {
+                                <div class="usr-rolcfg-seed">
+                                    <label class="usr-label">Semilla en la Distribucion . al asignar una persona a estas facetas se crea su usuario con este rol</label>
+                                    <div class="usr-facetas">
+                                        @foreach (var f in _facetasCat)
+                                        {
+                                            var fv = f.Val; var on = _edFacetas.Contains(fv);
+                                            <button type="button" class="usr-faceta @(on ? "on" : "")" @onclick="() => ToggleFaceta(fv)">@f.Label</button>
+                                        }
+                                    </div>
+                                    <label class="usr-seedchk">
+                                        <input type="checkbox" @bind="_edSoloDir" />
+                                        <span>Ocultar y permitir solo en Directorio <em>(no aparecen en la lista de Usuarios)</em></span>
+                                    </label>
+                                    <div class="usr-hint">Recuerda pulsar <b>Guardar</b> para aplicar la siembra (crea/actualiza los usuarios existentes de esas facetas).</div>
+                                </div>
+                            }
+                        </div>
+
                         <div class="usr-matrix">
                             <div class="usr-matrix-head">
                                 <div style="flex:1;font-size:11px;letter-spacing:.4px;font-weight:700;color:#A6B7C8">MODULO</div>
@@ -982,6 +1011,15 @@
     .usr-result:last-child { border-bottom:none; }
     .usr-result:hover { background:#F8FAFC; }
     .usr-hint { font-size:12.5px; color:#A6B7C8; line-height:1.55; margin-top:14px; padding:12px 14px; background:#F8FAFC; border-radius:10px; border:1px dashed #D7E0EA; }
+    .usr-rolcfg { border:1px solid #E1E8EE; border-radius:12px; padding:14px 16px; margin-bottom:16px; background:#FCFDFE; display:flex; flex-direction:column; gap:12px; }
+    .usr-rolcfg-row { display:flex; gap:12px; align-items:flex-end; }
+    .usr-rolcfg-seed { border-top:1px solid #EEF3F8; padding-top:12px; display:flex; flex-direction:column; gap:8px; }
+    .usr-facetas { display:flex; flex-wrap:wrap; gap:7px; }
+    .usr-faceta { border:1px solid #DCD2F8; background:#fff; color:#6D4FE3; border-radius:20px; padding:6px 14px; font-size:12.5px; font-weight:700; cursor:pointer; }
+    .usr-faceta.on { background:#6D4FE3; border-color:#6D4FE3; color:#fff; }
+    .usr-seedchk { display:flex; align-items:center; gap:8px; font-size:12.5px; color:#516F90; font-weight:600; cursor:pointer; margin-top:2px; }
+    .usr-seedchk input { width:16px; height:16px; accent-color:#6D4FE3; }
+    .usr-seedchk em { color:#A6B7C8; font-style:normal; }
     .usr-pick { border:1px solid #DCD2F8; background:#F5F1FE; border-radius:12px; padding:14px 16px; margin-top:14px; }
     .usr-note { font-size:11.5px; color:#7C5CE8; margin-top:11px; display:flex; align-items:center; gap:6px; }
     .usr-link-ok { background:#E6F6EE; border:1px solid #B6E2C9; border-radius:11px; padding:13px 15px; margin-top:16px; font-size:12.5px; }
@@ -1072,6 +1110,15 @@
     private bool _creandoRol;
     private string _nuevoNombre = "";
     private string _copiarDe = "";
+    // Edicion de config del rol (nombre + siembra por faceta + solo directorio)
+    private string _edNombre = "";
+    private HashSet<int> _edFacetas = new();
+    private bool _edSoloDir;
+    // Facetas de la distribucion (RolUnidadPersona): Propietario=1, Residente=2, Familiar=3, Arrendatario=4, Apoderado=5
+    private static readonly (int Val, string Label)[] _facetasCat =
+    {
+        (1, "Propietario"), (2, "Residente"), (4, "Arrendatario"), (3, "Grupo familiar"), (5, "Apoderado")
+    };
 
     // Etiquetas de usuario (2.5). Catalogo del tenant: lo que se crea aqui sirve para todos.
     private List<EtiquetaUsuarioDto> _etiquetas = new();
@@ -1624,6 +1671,30 @@
         _rolEditando = rolId;
         var http = Auth();
         _detalleEdit = await http.GetFromJsonAsync<RolDetalleDto>($"/api/roles/{rolId}");
+        _edNombre = _detalleEdit?.Nombre ?? "";
+        _edSoloDir = _detalleEdit?.SoloDirectorio ?? false;
+        _edFacetas = (_detalleEdit?.FacetasSemilla ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => int.TryParse(s, out var n) ? n : 0).Where(n => n > 0).ToHashSet();
+    }
+
+    private void ToggleFaceta(int v) { if (!_edFacetas.Add(v)) _edFacetas.Remove(v); }
+
+    private async Task GuardarConfigRol()
+    {
+        if (_rolEditando is null || _detalleEdit is null) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var facetasCsv = _edFacetas.Count == 0 ? null : string.Join(",", _edFacetas.OrderBy(x => x));
+            var req = new ActualizarRolRequest(_edNombre.Trim(), _detalleEdit.Descripcion, _detalleEdit.Activo, facetasCsv, _edSoloDir);
+            var resp = await Auth().PutAsJsonAsync($"/api/roles/{_rolEditando}", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _msg = "Rol actualizado. La siembra retroactiva ya corrio."; _msgClass = "alert-success";
+            await CargarRolesAsync();
+            await EditarRol(_rolEditando.Value);
+        }
+        finally { _busy = false; }
     }
 
     private async Task TogglePermiso(string modulo, AccionPermiso accion, bool habilitado)

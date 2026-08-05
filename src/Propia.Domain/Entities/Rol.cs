@@ -26,4 +26,19 @@ public class Rol : BaseEntity
     /// <summary>FK al rol origen si fue copiado (informativo, no propagado).</summary>
     public Guid? CopiadoDeRolId { get; set; }
     public Rol? CopiadoDeRol { get; set; }
+
+    /// <summary>
+    /// Facetas de la distribucion (RolUnidadPersona) para las que este rol es la "semilla":
+    /// al asignar una persona a esa faceta en una unidad, se le crea automaticamente
+    /// usuario+directorio con este rol. CSV de valores int del enum RolUnidadPersona
+    /// (ej. "1,2" = Propietario,Residente). Exclusiva: una faceta pertenece a un solo rol.
+    /// Solo aplica a roles Personalizados (tenant-scoped) para no filtrar config entre tenants.
+    /// </summary>
+    public string? FacetasSemilla { get; set; }
+
+    /// <summary>
+    /// Si es true, los usuarios con este rol se ocultan de la lista de Usuarios y se
+    /// gestionan solo desde el Directorio (para no llenar Usuarios de propietarios/residentes).
+    /// </summary>
+    public bool SoloDirectorio { get; set; }
 }
