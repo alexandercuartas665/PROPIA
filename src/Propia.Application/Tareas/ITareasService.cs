@@ -77,4 +77,8 @@ public interface ITareasService
     Task<bool> ActualizarCampoAsync(Guid tableroId, Guid campoId, GuardarCampoRequest req, CancellationToken ct);
     Task<bool> EliminarCampoAsync(Guid tableroId, Guid campoId, CancellationToken ct);
     Task<bool> ReordenarCampoAsync(Guid tableroId, Guid campoId, int direccion, CancellationToken ct);
+    /// <summary>Archiva (activo=false) o restaura (activo=true) un campo sin borrar sus valores.</summary>
+    Task<bool> SetCampoActivoAsync(Guid tableroId, Guid campoId, bool activo, CancellationToken ct);
+    /// <summary>Campos archivados de un tablero (para restaurar).</summary>
+    Task<IReadOnlyList<TableroCampoDto>> ListarCamposArchivadosAsync(Guid tableroId, CancellationToken ct);
 }

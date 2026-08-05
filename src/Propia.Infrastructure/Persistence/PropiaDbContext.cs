@@ -1207,6 +1207,12 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
+        // Campo personalizado del tablero: Activo por defecto (los existentes quedan activos).
+        modelBuilder.Entity<TableroCampo>(b =>
+        {
+            b.Property(x => x.Activo).HasDefaultValue(true);
+        });
+
         modelBuilder.Entity<Tarea>(b =>
         {
             b.ToTable("tareas");

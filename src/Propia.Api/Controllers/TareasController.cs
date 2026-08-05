@@ -283,6 +283,19 @@ public class TareasController : ControllerBase
     public async Task<IActionResult> ReordenarCampo(Guid id, Guid campoId, [FromQuery] int direccion, CancellationToken ct)
         => await _svc.ReordenarCampoAsync(id, campoId, direccion, ct) ? NoContent() : NotFound();
 
+    // Archiva (archivar=true) o restaura (archivar=false) un campo, conservando sus valores.
+    [HttpPut("tableros/{id:guid}/campos/{campoId:guid}/archivar")]
+    public async Task<IActionResult> ArchivarCampo(Guid id, Guid campoId, [FromQuery] bool archivar, CancellationToken ct)
+    {
+        try { return await _svc.SetCampoActivoAsync(id, campoId, !archivar, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(ex.Message); }
+    }
+
+    // Campos archivados de un tablero (para restaurar).
+    [HttpGet("tableros/{id:guid}/campos-archivados")]
+    public async Task<IActionResult> CamposArchivados(Guid id, CancellationToken ct)
+        => Ok(await _svc.ListarCamposArchivadosAsync(id, ct));
+
     [HttpPut("{id:guid}/progreso")]
     public async Task<IActionResult> ActualizarProgreso(Guid id, [FromBody] ActualizarProgresoRequest req, CancellationToken ct)
         => await _svc.ActualizarProgresoAsync(id, req.Progreso, ct) ? NoContent() : NotFound();

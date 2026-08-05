@@ -62,6 +62,13 @@ public class TableroCampo : TenantEntity
 
     /// <summary>Para tipo Total: ids (CSV) de los campos Numero/Moneda cuyos valores se suman.</summary>
     public string? CamposSuma { get; set; }
+
+    /// <summary>
+    /// Si es false, el campo esta ARCHIVADO: se oculta del modal, columnas y filtros pero se
+    /// conservan los valores capturados (TareaCampoValor). Se puede restaurar (Activo=true).
+    /// Distinto de eliminar, que borra el campo y sus valores.
+    /// </summary>
+    public bool Activo { get; set; } = true;
 }
 
 /// <summary>Valor de un campo personalizado del tablero para una tarea concreta.</summary>

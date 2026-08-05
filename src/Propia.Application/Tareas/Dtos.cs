@@ -228,7 +228,8 @@ public record TableroCampoDto(
     bool Requerido = false,
     string? ValorPorDefecto = null,
     bool PermiteVarios = false,
-    string? CamposSuma = null);
+    string? CamposSuma = null,
+    bool Activo = true);
 
 /// <summary>Valor de un campo personalizado para una tarjeta (campoId -> valor).</summary>
 public record TareaCampoValorDto(Guid CampoId, string? Valor);

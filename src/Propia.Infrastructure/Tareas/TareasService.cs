@@ -1256,9 +1256,10 @@ public class TareasService : ITareasService
         var personas = await _db.Personas.AsNoTracking().Where(p => usuariosIds.Contains(p.Id))
             .Select(p => new { p.Id, Nombre = p.Nombres + " " + p.Apellidos }).ToListAsync(ct);
         var usuarios = personas.Select(p => new TableroUsuarioDto(p.Id, p.Nombre.Trim(), Iniciales(p.Nombre))).ToList();
-        var campos = await _db.TableroCampos.AsNoTracking().Where(c => c.TableroId == t.Id)
+        // Solo campos ACTIVOS: los archivados quedan fuera del modal, columnas y filtros (datos conservados).
+        var campos = await _db.TableroCampos.AsNoTracking().Where(c => c.TableroId == t.Id && c.Activo)
             .OrderBy(c => c.Orden)
-            .Select(c => new TableroCampoDto(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones, c.MostrarEnFiltro, c.Columna, c.Descripcion, c.Requerido, c.ValorPorDefecto, c.PermiteVarios, c.CamposSuma))
+            .Select(c => new TableroCampoDto(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones, c.MostrarEnFiltro, c.Columna, c.Descripcion, c.Requerido, c.ValorPorDefecto, c.PermiteVarios, c.CamposSuma, c.Activo))
             .ToListAsync(ct);
         return new TableroDto(t.Id, t.Nombre, t.Descripcion, t.Color, t.Orden, nCards, usuarios, campos);
     }
@@ -1272,7 +1273,7 @@ public class TareasService : ITareasService
         var lab = req.Label.Trim();
         if (!await _db.Tableros.AnyAsync(t => t.Id == tableroId, ct))
             throw new InvalidOperationException("Tablero no encontrado.");
-        if (await _db.TableroCampos.AnyAsync(c => c.TableroId == tableroId && c.Label == lab, ct))
+        if (await _db.TableroCampos.AnyAsync(c => c.TableroId == tableroId && c.Label == lab && c.Activo, ct))
             throw new InvalidOperationException("Ya existe un campo con esa etiqueta.");
         var orden = (await _db.TableroCampos.Where(c => c.TableroId == tableroId).Select(c => (int?)c.Orden).MaxAsync(ct) ?? 0) + 1;
         var c2 = new TableroCampo
@@ -1292,7 +1293,7 @@ public class TareasService : ITareasService
         };
         _db.TableroCampos.Add(c2);
         await _db.SaveChangesAsync(ct);
-        return new TableroCampoDto(c2.Id, c2.Label, c2.Orden, c2.Tipo, c2.Opciones, c2.MostrarEnFiltro, c2.Columna, c2.Descripcion, c2.Requerido, c2.ValorPorDefecto, c2.PermiteVarios, c2.CamposSuma);
+        return new TableroCampoDto(c2.Id, c2.Label, c2.Orden, c2.Tipo, c2.Opciones, c2.MostrarEnFiltro, c2.Columna, c2.Descripcion, c2.Requerido, c2.ValorPorDefecto, c2.PermiteVarios, c2.CamposSuma, c2.Activo);
     }
 
     public async Task<bool> ActualizarCampoAsync(Guid tableroId, Guid campoId, GuardarCampoRequest req, CancellationToken ct)
@@ -1302,7 +1303,7 @@ public class TareasService : ITareasService
         if (string.IsNullOrWhiteSpace(req.Label) || req.Label.Trim().Length < 2)
             throw new InvalidOperationException("Etiqueta minimo 2 caracteres.");
         var lab = req.Label.Trim();
-        if (await _db.TableroCampos.AnyAsync(x => x.TableroId == tableroId && x.Label == lab && x.Id != campoId, ct))
+        if (await _db.TableroCampos.AnyAsync(x => x.TableroId == tableroId && x.Label == lab && x.Id != campoId && x.Activo, ct))
             throw new InvalidOperationException("Ya existe un campo con esa etiqueta.");
         c.Label = lab;
         c.Tipo = req.Tipo;
@@ -1354,6 +1355,27 @@ public class TareasService : ITareasService
         await _db.SaveChangesAsync(ct);
         return true;
     }
+
+    /// <summary>Archiva (activo=false) o restaura (activo=true) un campo. Los valores capturados se
+    /// conservan; el campo solo desaparece/aparece del modal, columnas y filtros (distinto de eliminar).</summary>
+    public async Task<bool> SetCampoActivoAsync(Guid tableroId, Guid campoId, bool activo, CancellationToken ct)
+    {
+        var c = await _db.TableroCampos.FirstOrDefaultAsync(x => x.Id == campoId && x.TableroId == tableroId, ct);
+        if (c is null) return false;
+        if (activo && await _db.TableroCampos.AnyAsync(x => x.TableroId == tableroId && x.Id != campoId && x.Label == c.Label && x.Activo, ct))
+            throw new InvalidOperationException($"Ya existe un campo activo llamado '{c.Label}'. Renombra uno antes de restaurar.");
+        c.Activo = activo;
+        c.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    /// <summary>Lista los campos ARCHIVADOS (activo=false) de un tablero, para poder restaurarlos.</summary>
+    public async Task<IReadOnlyList<TableroCampoDto>> ListarCamposArchivadosAsync(Guid tableroId, CancellationToken ct) =>
+        await _db.TableroCampos.AsNoTracking().Where(c => c.TableroId == tableroId && !c.Activo)
+            .OrderBy(c => c.Label)
+            .Select(c => new TableroCampoDto(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones, c.MostrarEnFiltro, c.Columna, c.Descripcion, c.Requerido, c.ValorPorDefecto, c.PermiteVarios, c.CamposSuma, c.Activo))
+            .ToListAsync(ct);
 
     /// <summary>Sube (direccion &lt; 0) o baja (direccion &gt;= 0) un campo, intercambiando el
     /// Orden con el campo vecino. Normaliza los ordenes a 0..n-1 para tolerar huecos/empates.</summary>
