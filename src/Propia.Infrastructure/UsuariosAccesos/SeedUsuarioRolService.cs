@@ -35,11 +35,11 @@ public sealed class SeedUsuarioRolService : ISeedUsuarioRolService
         var tenantId = _tenant.CurrentTenantId;
         if (tenantId is null) return;
 
-        var rolesTenant = await RolesSemillaAsync(tenantId.Value, ct);
-        var rol = rolesTenant.FirstOrDefault(r => ParseFacetas(r.FacetasSemilla).Contains((int)faceta));
-        if (rol is null) return;
+        var rolesTenant = await RolesSemillaAsync(ct);
+        var match = rolesTenant.FirstOrDefault(z => ParseFacetas(z.Facetas).Contains((int)faceta));
+        if (match.Rol is null) return;
 
-        await EnsureUsuarioAsync(personaId, rol, tenantId.Value, ct);
+        await EnsureUsuarioAsync(personaId, match.Rol, tenantId.Value, ct);
         await _db.SaveChangesAsync(ct);
     }
 
@@ -50,7 +50,7 @@ public sealed class SeedUsuarioRolService : ISeedUsuarioRolService
         var set = facetasInt.ToHashSet();
         if (set.Count == 0) return 0;
 
-        var rolesTenant = await RolesSemillaAsync(tenantId.Value, ct);
+        var rolesTenant = await RolesSemillaAsync(ct);
         if (rolesTenant.Count == 0) return 0;
 
         // Personas ya vinculadas a alguna unidad con una faceta del conjunto (una vez por persona+faceta).
@@ -64,18 +64,26 @@ public sealed class SeedUsuarioRolService : ISeedUsuarioRolService
         foreach (var l in links)
         {
             if (!set.Contains((int)l.Rol)) continue;
-            var rol = rolesTenant.FirstOrDefault(r => ParseFacetas(r.FacetasSemilla).Contains((int)l.Rol));
-            if (rol is null) continue;
-            if (await EnsureUsuarioAsync(l.PersonaId, rol, tenantId.Value, ct)) sembradas++;
+            var match = rolesTenant.FirstOrDefault(z => ParseFacetas(z.Facetas).Contains((int)l.Rol));
+            if (match.Rol is null) continue;
+            if (await EnsureUsuarioAsync(l.PersonaId, match.Rol, tenantId.Value, ct)) sembradas++;
         }
         await _db.SaveChangesAsync(ct);
         return sembradas;
     }
 
-    private async Task<List<Rol>> RolesSemillaAsync(Guid tenantId, CancellationToken ct) =>
-        await _db.RolesCopropiedad
-            .Where(r => r.TenantId == tenantId && r.FacetasSemilla != null && r.Activo)
+    // Roles semilla del tenant activo, resueltos desde el override RolSemillaTenant (aplica a
+    // cualquier tipo de rol). El query filter de RolSemillaTenant ya limita a la copropiedad activa.
+    private async Task<List<(Rol Rol, string Facetas)>> RolesSemillaAsync(CancellationToken ct)
+    {
+        var rows = await _db.RolesSemillaTenant
+            .Where(x => x.FacetasSemilla != null)
+            .Join(_db.RolesCopropiedad, x => x.RolId, r => r.Id,
+                  (x, r) => new { Rol = r, x.FacetasSemilla })
+            .Where(z => z.Rol.Activo)
             .ToListAsync(ct);
+        return rows.Select(z => (z.Rol, z.FacetasSemilla!)).ToList();
+    }
 
     /// <summary>Asegura UsuarioTenant + ApplicationUser. Devuelve true si creo/cambio algo.</summary>
     private async Task<bool> EnsureUsuarioAsync(Guid personaId, Rol rol, Guid tenantId, CancellationToken ct)

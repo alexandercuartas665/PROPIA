@@ -109,6 +109,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     // (RolesCopropiedad para no colisionar con IdentityDbContext.Roles de IdentityRole)
     public DbSet<Rol> RolesCopropiedad => Set<Rol>();
     public DbSet<RolPermiso> RolPermisos => Set<RolPermiso>();
+    public DbSet<RolSemillaTenant> RolesSemillaTenant => Set<RolSemillaTenant>();
     public DbSet<UsuarioInvitacion> UsuarioInvitaciones => Set<UsuarioInvitacion>();
     public DbSet<UsuarioAuthMetodo> UsuarioAuthMetodos => Set<UsuarioAuthMetodo>();
     public DbSet<UsuarioSesion> UsuarioSesiones => Set<UsuarioSesion>();
@@ -889,6 +890,15 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasIndex(x => new { x.RolId, x.ModuloCodigo, x.Accion }).IsUnique();
             // No tiene tenant_id - se hereda del rol. Sin query filter ya que se accede
             // siempre via rol_id y el rol ya esta filtrado.
+        });
+
+        // Config de siembra por copropiedad (override tenant-scoped, RLS). Aplica a cualquier rol.
+        modelBuilder.Entity<RolSemillaTenant>(b =>
+        {
+            b.Property(x => x.FacetasSemilla).HasMaxLength(40);
+            b.HasOne(x => x.Rol).WithMany().HasForeignKey(x => x.RolId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => new { x.TenantId, x.RolId }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
         modelBuilder.Entity<UsuarioInvitacion>(b =>

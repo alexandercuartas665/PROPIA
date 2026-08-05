@@ -42,11 +42,19 @@ public class RolesService : IRolesService
             .Select(g => new { RolId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.RolId!.Value, x => x.Count, ct);
 
-        return roles.Select(r => new RolDto(
-            r.Id, r.TenantId, r.Nombre, r.Descripcion,
-            r.Tipo, r.EsEliminable, r.Activo,
-            conteos.GetValueOrDefault(r.Id, 0),
-            r.FacetasSemilla, r.SoloDirectorio)).ToList();
+        // Config de siembra: override por copropiedad (aplica a Base/Extendido/Personalizado).
+        var overrides = await _db.RolesSemillaTenant.AsNoTracking()
+            .ToDictionaryAsync(x => x.RolId, x => x, ct);
+
+        return roles.Select(r =>
+        {
+            overrides.TryGetValue(r.Id, out var ov);
+            return new RolDto(
+                r.Id, r.TenantId, r.Nombre, r.Descripcion,
+                r.Tipo, r.EsEliminable, r.Activo,
+                conteos.GetValueOrDefault(r.Id, 0),
+                ov?.FacetasSemilla, ov?.SoloDirectorio ?? false);
+        }).ToList();
     }
 
     public async Task<RolDetalleDto?> GetRolDetalleAsync(Guid rolId, CancellationToken ct)
@@ -74,9 +82,11 @@ public class RolesService : IRolesService
         var cuenta = await _db.UsuariosTenant
             .CountAsync(u => u.RolId == rolId && u.Estado == EstadoUsuarioTenant.Activo, ct);
 
+        var ov = await _db.RolesSemillaTenant.AsNoTracking().FirstOrDefaultAsync(x => x.RolId == rolId, ct);
+
         return new RolDetalleDto(r.Id, r.TenantId, r.Nombre, r.Descripcion,
             r.Tipo, r.EsEliminable, r.Activo, cuenta, matriz,
-            r.FacetasSemilla, r.SoloDirectorio);
+            ov?.FacetasSemilla, ov?.SoloDirectorio ?? false);
     }
 
     public async Task<RolDto> CrearRolAsync(CrearRolRequest req, CancellationToken ct)
@@ -136,26 +146,34 @@ public class RolesService : IRolesService
         rol.Descripcion = req.Descripcion;
         rol.Activo = req.Activo;
 
-        // Config de siembra: SOLO en roles Personalizados (tenant-scoped) para no filtrar
-        // configuracion entre copropiedades (los Base/Extendido son globales).
-        var facetasNuevas = new List<int>();
-        if (rol.Tipo == TipoRol.Personalizado)
-        {
-            rol.SoloDirectorio = req.SoloDirectorio;
-            facetasNuevas = ParseFacetas(req.FacetasSemilla).Distinct().Where(n => n >= 1 && n <= 5).ToList();
-            rol.FacetasSemilla = facetasNuevas.Count == 0 ? null : string.Join(",", facetasNuevas);
+        // Config de siembra: se guarda en el OVERRIDE por copropiedad (RolSemillaTenant), asi
+        // aplica a cualquier tipo de rol (incluidos Base/Extendido globales) sin filtrarse entre
+        // copropiedades. Requiere tenant activo.
+        var tenantId = _tenantContext.CurrentTenantId
+            ?? throw new InvalidOperationException("Sin tenant activo.");
 
-            // Exclusividad: una faceta pertenece a un solo rol. Se la quito a los demas del tenant.
-            if (facetasNuevas.Count > 0 && rol.TenantId is not null)
+        var facetasNuevas = ParseFacetas(req.FacetasSemilla).Distinct().Where(n => n >= 1 && n <= 5).ToList();
+        var facetasCsv = facetasNuevas.Count == 0 ? null : string.Join(",", facetasNuevas);
+
+        var ov = await _db.RolesSemillaTenant.FirstOrDefaultAsync(x => x.RolId == rolId, ct);
+        if (ov is null)
+        {
+            ov = new RolSemillaTenant { TenantId = tenantId, RolId = rolId };
+            _db.RolesSemillaTenant.Add(ov);
+        }
+        ov.FacetasSemilla = facetasCsv;
+        ov.SoloDirectorio = req.SoloDirectorio;
+
+        // Exclusividad: una faceta pertenece a un solo rol. Se la quito a los demas overrides del tenant.
+        if (facetasNuevas.Count > 0)
+        {
+            var otros = await _db.RolesSemillaTenant
+                .Where(x => x.RolId != rolId && x.FacetasSemilla != null)
+                .ToListAsync(ct);
+            foreach (var o in otros)
             {
-                var otros = await _db.RolesCopropiedad
-                    .Where(r => r.TenantId == rol.TenantId && r.Id != rol.Id && r.FacetasSemilla != null)
-                    .ToListAsync(ct);
-                foreach (var o in otros)
-                {
-                    var restantes = ParseFacetas(o.FacetasSemilla).Where(f => !facetasNuevas.Contains(f)).ToList();
-                    o.FacetasSemilla = restantes.Count == 0 ? null : string.Join(",", restantes);
-                }
+                var restantes = ParseFacetas(o.FacetasSemilla).Where(f => !facetasNuevas.Contains(f)).ToList();
+                o.FacetasSemilla = restantes.Count == 0 ? null : string.Join(",", restantes);
             }
         }
 
