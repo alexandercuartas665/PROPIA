@@ -55,7 +55,8 @@ public sealed record AiAgentDto(
     bool ReactionsEnabled = false,
     int ReactionRatioN = 3,
     int ReactionRatioM = 4,
-    string? ReactionEmojis = null);
+    string? ReactionEmojis = null,
+    bool SaludarConLogo = false);
 
 /// <summary>Snapshot de un prompt enrutado en una version historica.</summary>
 public sealed record AgentPromptSnapshotDto(string Name, string? Rule, string Body, int SortOrder);
@@ -91,9 +92,11 @@ public sealed record AiAgentDetailDto(
 // que los aplica tras crear; el alta normal (UI) los ignora. Son opcionales -> compatibles hacia atras.
 public sealed record CreateAiAgentRequest(string? Name, string? Role, AiProvider Provider, string? Model, string? SystemPrompt,
     bool IsActive = true, int? SortOrder = null,
-    bool ReactionsEnabled = false, int ReactionRatioN = 3, int ReactionRatioM = 4, string? ReactionEmojis = null);
+    bool ReactionsEnabled = false, int ReactionRatioN = 3, int ReactionRatioM = 4, string? ReactionEmojis = null,
+    bool SaludarConLogo = false);
 public sealed record UpdateAiAgentRequest(string? Name, string? Role, AiProvider Provider, string? Model, string? SystemPrompt,
-    bool ReactionsEnabled = false, int ReactionRatioN = 3, int ReactionRatioM = 4, string? ReactionEmojis = null);
+    bool ReactionsEnabled = false, int ReactionRatioN = 3, int ReactionRatioM = 4, string? ReactionEmojis = null,
+    bool SaludarConLogo = false);
 
 /// <summary>Body del PUT admin de tools MCP: reemplaza la seleccion completa del agente. Cada key es el
 /// nombre de una tool de la conexion "copropiedades" (descubierta via tools/list).</summary>

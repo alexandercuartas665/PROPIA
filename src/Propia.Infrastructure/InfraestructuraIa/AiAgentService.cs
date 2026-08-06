@@ -59,7 +59,8 @@ public sealed class AiAgentService : IAiAgentService
             Model = string.IsNullOrWhiteSpace(request.Model) ? null : request.Model.Trim(),
             SystemPrompt = request.SystemPrompt ?? "",
             IsActive = false,
-            SortOrder = nextOrder
+            SortOrder = nextOrder,
+            SaludarConLogo = request.SaludarConLogo
         };
         _db.AiAgents.Add(agent);
         await _db.SaveChangesAsync(ct);
@@ -82,6 +83,7 @@ public sealed class AiAgentService : IAiAgentService
         agent.ReactionRatioN = request.ReactionRatioN < 0 ? 0
             : (request.ReactionRatioN > agent.ReactionRatioM ? agent.ReactionRatioM : request.ReactionRatioN);
         agent.ReactionEmojis = string.IsNullOrWhiteSpace(request.ReactionEmojis) ? null : request.ReactionEmojis.Trim();
+        agent.SaludarConLogo = request.SaludarConLogo;
 
         // Snapshot del prompt al guardar (max 5 versiones). Portado de CUBOT.travels.
         var prompts = await _db.AiAgentPrompts.AsNoTracking()
@@ -240,7 +242,7 @@ public sealed class AiAgentService : IAiAgentService
 
     private static AiAgentDto Map(AiAgent a, int resourceCount) =>
         new(a.Id, a.Name, a.Role, a.Provider, a.Model, a.SystemPrompt, a.IsActive, a.SortOrder, resourceCount,
-            a.ReactionsEnabled, a.ReactionRatioN, a.ReactionRatioM, a.ReactionEmojis);
+            a.ReactionsEnabled, a.ReactionRatioN, a.ReactionRatioM, a.ReactionEmojis, a.SaludarConLogo);
 
     private static AiAgentResourceDto MapResource(AiAgentResource r) =>
         new(r.Id, r.AgentId, r.Name, r.ResourceType, r.Detail, r.FileUrl, r.FileName, r.SortOrder);
@@ -272,7 +274,8 @@ public sealed class AiAgentService : IAiAgentService
             ReactionsEnabled = src.ReactionsEnabled,
             ReactionRatioN = src.ReactionRatioN,
             ReactionRatioM = src.ReactionRatioM,
-            ReactionEmojis = src.ReactionEmojis
+            ReactionEmojis = src.ReactionEmojis,
+            SaludarConLogo = src.SaludarConLogo
         };
         _db.AiAgents.Add(copy);
         var newId = copy.Id;

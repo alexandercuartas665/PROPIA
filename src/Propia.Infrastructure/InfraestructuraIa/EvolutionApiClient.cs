@@ -121,6 +121,23 @@ public sealed class EvolutionApiClient : IEvolutionApiClient
         }
     }
 
+    public async Task<EvolutionSendResult> SendMediaAsync(string baseUrl, string apiKey, string instanceName, string phone, string mediaUrl, string? caption, CancellationToken ct = default)
+    {
+        // Evolution v2 acepta 'media' como URL publica o base64. Enviamos la URL publica del logo.
+        var body = new { number = phone, mediatype = "image", media = mediaUrl, caption = caption ?? string.Empty };
+        try
+        {
+            using var resp = await SendAsync(HttpMethod.Post, baseUrl, $"/message/sendMedia/{Uri.EscapeDataString(instanceName)}", apiKey, JsonContent.Create(body), ct);
+            if (resp.IsSuccessStatusCode) { return new EvolutionSendResult(true, null); }
+            var json = await resp.Content.ReadAsStringAsync(ct);
+            return new EvolutionSendResult(false, $"HTTP {(int)resp.StatusCode}: {Trim(json)}");
+        }
+        catch (Exception ex)
+        {
+            return new EvolutionSendResult(false, ex.Message);
+        }
+    }
+
     public async Task<EvolutionSendResult> SetWebhookAsync(string baseUrl, string apiKey, string instanceName, string webhookUrl, string token, CancellationToken ct = default)
     {
         var body = new

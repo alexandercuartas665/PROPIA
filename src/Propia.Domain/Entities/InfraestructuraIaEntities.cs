@@ -165,6 +165,13 @@ public class AiAgent : TenantEntity
     /// <summary>Emojis para reaccionar al azar, separados por coma.</summary>
     public string? ReactionEmojis { get; set; }
 
+    /// <summary>
+    /// Si es true, el PRIMER saliente de cada conversacion se envia como mensaje de IMAGEN
+    /// (logo de la copropiedad, fallback foto de fachada) con el texto del LLM como caption.
+    /// Los demas turnos van como texto normal. Requiere que el tenant tenga LogoUrl/FotoFachadaUrl.
+    /// </summary>
+    public bool SaludarConLogo { get; set; }
+
     public ICollection<AiAgentPrompt> Prompts { get; set; } = new List<AiAgentPrompt>();
     public ICollection<AiAgentResource> Resources { get; set; } = new List<AiAgentResource>();
 }

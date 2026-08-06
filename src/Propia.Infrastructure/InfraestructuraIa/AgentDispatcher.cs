@@ -235,8 +235,37 @@ public sealed class AgentDispatcher : IAgentDispatcher
         }
 
         // 7) Envio real por la linea (router Evolution/Cloud interno del connector).
+        // Saludo con logo: si el agente lo tiene activo y este es el PRIMER saliente de la
+        // conversacion, enviamos el texto del LLM como CAPTION de la imagen (logo de la copropiedad).
+        var saludarConLogo = await _db.AiAgents.AsNoTracking()
+            .Where(a => a.Id == binding.AgentId).Select(a => a.SaludarConLogo).FirstOrDefaultAsync(ct);
+        string? logoUrl = null;
+        if (saludarConLogo)
+        {
+            var yaHayOutbound = await _db.Messages.AsNoTracking()
+                .AnyAsync(m => m.ConversationId == conversationId && m.Direction == MessageDirection.Outbound, ct);
+            if (!yaHayOutbound) { logoUrl = await ResolveLogoPublicUrlAsync(tenantId, ct); }
+        }
+
         LineSendResult send;
-        try { send = await _connector.SendTestAsync(whatsAppLineId.Value, conv.ContactPhone, textToSend, ct); }
+        try
+        {
+            if (logoUrl is not null)
+            {
+                send = await _connector.SendMediaAsync(whatsAppLineId.Value, conv.ContactPhone, logoUrl, textToSend, ct);
+                // Si el envio de media falla, no perdemos la respuesta: caemos a texto plano.
+                if (!send.Ok)
+                {
+                    await LogRunAsync(tenantId, conversationId, binding.AgentId, AiAgentRunLogKind.Info,
+                        "Saludo con logo fallo; fallback a texto", send.Error, null, ct);
+                    send = await _connector.SendTestAsync(whatsAppLineId.Value, conv.ContactPhone, textToSend, ct);
+                }
+            }
+            else
+            {
+                send = await _connector.SendTestAsync(whatsAppLineId.Value, conv.ContactPhone, textToSend, ct);
+            }
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Dispatcher: envio fallo conv {ConvId}", conversationId);
@@ -253,6 +282,25 @@ public sealed class AgentDispatcher : IAgentDispatcher
                 ? (skippedBinary > 0 ? $"OK (se omitieron {skippedBinary} adjunto(s) binario(s) en esta fase)" : "OK")
                 : send.Error,
             ct);
+    }
+
+    /// <summary>
+    /// URL publica absoluta del logo de la copropiedad (fallback foto de fachada) para enviarla como
+    /// imagen por WhatsApp. Absolutiza la ruta relativa contra el origen publico (WebhookPublicUrl del
+    /// servidor Evolution maestro = https://app.propia-ad.com). Null si no hay logo o no hay origen.
+    /// </summary>
+    private async Task<string?> ResolveLogoPublicUrlAsync(Guid tenantId, CancellationToken ct)
+    {
+        var t = await _db.Tenants.AsNoTracking().Where(x => x.Id == tenantId)
+            .Select(x => new { x.LogoUrl, x.FotoFachadaUrl }).FirstOrDefaultAsync(ct);
+        var rel = !string.IsNullOrWhiteSpace(t?.LogoUrl) ? t!.LogoUrl : t?.FotoFachadaUrl;
+        if (string.IsNullOrWhiteSpace(rel)) { return null; }
+        if (rel.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            rel.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) { return rel; }
+        var origin = await _db.EvolutionMasterConfigs.AsNoTracking()
+            .Select(m => m.WebhookPublicUrl).FirstOrDefaultAsync(ct);
+        if (string.IsNullOrWhiteSpace(origin)) { return null; }
+        return $"{origin!.TrimEnd('/')}/{rel!.TrimStart('/')}";
     }
 
     /// <summary>Persiste el saliente del agente y lo difunde a la bandeja en vivo (SignalR).</summary>

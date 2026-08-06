@@ -42,6 +42,12 @@ public interface IWhatsAppConnectorService
 
     /// <summary>Envia un mensaje de prueba desde la linea a un numero (con codigo de pais).</summary>
     Task<LineSendResult> SendTestAsync(Guid lineId, string phone, string text, CancellationToken ct = default);
+
+    /// <summary>
+    /// Envia un mensaje de IMAGEN (por URL publica) con caption desde la linea (router Evolution/Cloud).
+    /// Usado por el saludo del agente (logo de la copropiedad + menu como caption).
+    /// </summary>
+    Task<LineSendResult> SendMediaAsync(Guid lineId, string phone, string imageUrl, string? caption, CancellationToken ct = default);
 }
 
 /// <summary>Gestion de agentes de IA de la copropiedad: proveedor, prompt, encendido, recursos y prompts enrutados.</summary>
@@ -139,6 +145,7 @@ public interface IEvolutionApiClient
     Task<EvolutionInstanceResult> GetStateAsync(string baseUrl, string apiKey, string instanceName, CancellationToken ct = default);
     Task<bool> DeleteInstanceAsync(string baseUrl, string apiKey, string instanceName, CancellationToken ct = default);
     Task<EvolutionSendResult> SendTextAsync(string baseUrl, string apiKey, string instanceName, string phone, string text, CancellationToken ct = default);
+    Task<EvolutionSendResult> SendMediaAsync(string baseUrl, string apiKey, string instanceName, string phone, string mediaUrl, string? caption, CancellationToken ct = default);
     Task<EvolutionSendResult> SetWebhookAsync(string baseUrl, string apiKey, string instanceName, string webhookUrl, string token, CancellationToken ct = default);
 }
 

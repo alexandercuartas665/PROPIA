@@ -84,7 +84,8 @@ public sealed class AdminAgentService : IAdminAgentService
         {
             await _agents.UpdateAsync(created.Id, new UpdateAiAgentRequest(
                 request.Name, request.Role, request.Provider, request.Model, request.SystemPrompt,
-                request.ReactionsEnabled, request.ReactionRatioN, request.ReactionRatioM, request.ReactionEmojis), ct);
+                request.ReactionsEnabled, request.ReactionRatioN, request.ReactionRatioM, request.ReactionEmojis,
+                request.SaludarConLogo), ct);
         }
         if (request.SortOrder is int sortOrder)
         {

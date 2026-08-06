@@ -220,6 +220,34 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
         return new LineSendResult(result.Ok, result.Error);
     }
 
+    public async Task<LineSendResult> SendMediaAsync(Guid lineId, string phone, string imageUrl, string? caption, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(phone) || string.IsNullOrWhiteSpace(imageUrl))
+        {
+            return new LineSendResult(false, "Indica el numero y la imagen.");
+        }
+        var line = await _db.WhatsAppLines.FirstOrDefaultAsync(l => l.Id == lineId, ct);
+        if (line is null) { return new LineSendResult(false, "La linea no existe."); }
+        if (line.Status != WhatsAppLineStatus.Connected) { return new LineSendResult(false, "La linea no esta conectada."); }
+
+        if (line.Provider == WhatsAppProvider.Cloud)
+        {
+            var creds = CloudCreds(line);
+            if (creds is null) { return new LineSendResult(false, "Faltan credenciales Cloud."); }
+            var digitsCloud = new string(phone.Where(char.IsDigit).ToArray());
+            var rc = await _cloud.SendMediaAsync(creds, digitsCloud, WhatsAppCloudMediaKind.Image, imageUrl, caption, null, ct);
+            return new LineSendResult(rc.Ok, rc.Error);
+        }
+
+        var server = await ResolveServerAsync(ct);
+        if (server is null) { return new LineSendResult(false, "No hay servidor Evolution maestro configurado."); }
+
+        var digits = new string(phone.Where(char.IsDigit).ToArray());
+        var (baseUrl, apiKey) = server.Value;
+        var result = await _client.SendMediaAsync(baseUrl, apiKey, EvoInstance(line), digits, imageUrl, caption, ct);
+        return new LineSendResult(result.Ok, result.Error);
+    }
+
     // URL + token del webhook segun el maestro. La ruta receptora exige el tenant en el path
     // (/webhooks/evolution/{tenantId}); sin el guid Evolution recibe 404 y los entrantes nunca llegan.
     private async Task<(string? Url, string? Token)> EffectiveWebhookAsync(Guid tenantId, CancellationToken ct)
