@@ -18,13 +18,15 @@ public class WebhooksController : ControllerBase
     private readonly IChatIngestService _chatIngest;
     private readonly IMetaWebhookService _meta;
     private readonly IConfiguration _config;
+    private readonly ILogger<WebhooksController> _logger;
 
-    public WebhooksController(IWompiWebhookService wompi, IChatIngestService chatIngest, IMetaWebhookService meta, IConfiguration config)
+    public WebhooksController(IWompiWebhookService wompi, IChatIngestService chatIngest, IMetaWebhookService meta, IConfiguration config, ILogger<WebhooksController> logger)
     {
         _wompi = wompi;
         _chatIngest = chatIngest;
         _meta = meta;
         _config = config;
+        _logger = logger;
     }
 
     /// <summary>
@@ -68,6 +70,15 @@ public class WebhooksController : ControllerBase
         using var reader = new StreamReader(Request.Body);
         var rawJson = await reader.ReadToEndAsync(ct);
         if (string.IsNullOrWhiteSpace(rawJson)) { return Ok(new { status = "empty" }); }
+
+        // Diagnostico contactos @lid (WhatsApp privacy): logueamos el body CRUDO (truncado) para
+        // ver que campos trae Evolution (senderPn, remoteJidAlt, ...) y afinar la resolucion del
+        // telefono real. Solo cuando aparece un LID, para no llenar el log de mensajes normales.
+        if (rawJson.Contains("@lid", StringComparison.OrdinalIgnoreCase))
+        {
+            var trunc = rawJson.Length > 2000 ? rawJson[..2000] : rawJson;
+            _logger.LogInformation("Evolution webhook @lid (tenant {Tenant}): {Raw}", tenantId, trunc);
+        }
 
         System.Text.Json.JsonDocument doc;
         try { doc = System.Text.Json.JsonDocument.Parse(rawJson); }

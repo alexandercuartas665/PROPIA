@@ -40,11 +40,25 @@ public static class EvolutionWebhookParser
         // Ignora salientes (eco de lo que envia el propio bot).
         if (key.TryGetProperty("fromMe", out var fromMe) && fromMe.ValueKind == JsonValueKind.True) { return null; }
 
-        // remoteJid = "57300...@s.whatsapp.net" (persona) o "...@g.us" (grupo). Ignoramos grupos.
+        // remoteJid = "57300...@s.whatsapp.net" (persona), "...@g.us" (grupo) o "<lid>@lid".
         if (!key.TryGetProperty("remoteJid", out var jidEl) || jidEl.ValueKind != JsonValueKind.String) { return null; }
         var jid = jidEl.GetString()!;
-        if (jid.EndsWith("@g.us", StringComparison.OrdinalIgnoreCase)) { return null; }
-        var phone = new string(jid.Where(char.IsDigit).ToArray());
+        if (jid.EndsWith("@g.us", StringComparison.OrdinalIgnoreCase)) { return null; } // grupo
+
+        string phone;
+        if (jid.EndsWith("@lid", StringComparison.OrdinalIgnoreCase))
+        {
+            // WhatsApp/Baileys manda algunos contactos como "<lid>@lid" (privacidad): el <lid> NO es
+            // telefono. El telefono real (si viene) esta en otro campo (senderPn, remoteJidAlt, etc.).
+            // Si no se puede resolver, NO ingestamos: evitamos responder a un numero inexistente (400).
+            var resolved = ResolveRealPhoneFromLid(key, data);
+            if (resolved is null) { return null; }
+            phone = resolved;
+        }
+        else
+        {
+            phone = new string(jid.Where(char.IsDigit).ToArray());
+        }
         if (phone.Length < 7) { return null; }
 
         var externalId = key.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.String
@@ -70,6 +84,41 @@ public static class EvolutionWebhookParser
 
         return new IngestMessageRequest(externalId, phone, contactName, body, type, sentAt, instance);
     }
+
+    /// <summary>
+    /// Telefono real de un contacto @lid. Baileys/Evolution suelen traerlo en un campo hermano cuyo
+    /// valor termina en "@s.whatsapp.net" (senderPn, remoteJidAlt, participantPn, ...). Devuelve solo
+    /// digitos o null si no hay ningun JID de telefono resoluble en el payload.
+    /// </summary>
+    private static string? ResolveRealPhoneFromLid(JsonElement key, JsonElement data)
+    {
+        foreach (var candidate in CandidateJids(key, data))
+        {
+            if (string.IsNullOrEmpty(candidate)) { continue; }
+            if (candidate.EndsWith("@s.whatsapp.net", StringComparison.OrdinalIgnoreCase))
+            {
+                var d = new string(candidate.Where(char.IsDigit).ToArray());
+                if (d.Length >= 7) { return d; }
+            }
+        }
+        return null;
+    }
+
+    private static IEnumerable<string?> CandidateJids(JsonElement key, JsonElement data)
+    {
+        foreach (var name in new[] { "senderPn", "remoteJidAlt", "participantPn", "participant", "senderJid" })
+        {
+            yield return GetStr(key, name);
+        }
+        foreach (var name in new[] { "senderPn", "participant" })
+        {
+            yield return GetStr(data, name);
+        }
+    }
+
+    private static string? GetStr(JsonElement el, string name)
+        => el.ValueKind == JsonValueKind.Object && el.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String
+            ? v.GetString() : null;
 
     private static (string? Body, string Type) ExtractBody(JsonElement message)
     {
