@@ -5,6 +5,27 @@ namespace Propia.Application.Pqrsd;
 /// <summary>Modulo 2.9 PQRSD y Convivencia - spec v1.0 MVP.</summary>
 public interface IPqrsdService
 {
+    // Tablero configurable: columnas (estados) editables
+    Task<IReadOnlyList<PqrsdEstadoDto>> ListarEstadosAsync(CancellationToken ct);
+    Task<PqrsdEstadoDto> CrearEstadoAsync(CrearEstadoPqrsdRequest req, CancellationToken ct);
+    Task<bool> ActualizarEstadoAsync(Guid id, ActualizarEstadoPqrsdRequest req, CancellationToken ct);
+    Task<bool> EliminarEstadoAsync(Guid id, CancellationToken ct);
+    Task<bool> ReordenarEstadoAsync(Guid id, string direccion, CancellationToken ct);
+    Task<bool> MoverAEstadoAsync(Guid expedienteId, Guid estadoId, CancellationToken ct);
+
+    // Tablero configurable: campos dinamicos (port de Tareas)
+    Task<IReadOnlyList<PqrsdCampoDto>> ListarCamposAsync(CancellationToken ct);
+    Task<IReadOnlyList<PqrsdCampoDto>> ListarCamposArchivadosAsync(CancellationToken ct);
+    Task<PqrsdCampoDto> CrearCampoAsync(GuardarCampoPqrsdRequest req, CancellationToken ct);
+    Task<bool> ActualizarCampoAsync(Guid id, GuardarCampoPqrsdRequest req, CancellationToken ct);
+    Task<bool> EliminarCampoAsync(Guid id, CancellationToken ct);
+    Task<bool> SetCampoActivoAsync(Guid id, bool activo, CancellationToken ct);
+    Task<bool> ReordenarCampoAsync(Guid id, string direccion, CancellationToken ct);
+
+    // Expediente: archivar, asignar unidad/persona, campos dinamicos
+    Task<bool> ArchivarExpedienteAsync(Guid id, bool archivar, CancellationToken ct);
+    Task<bool> ActualizarExpedienteAsync(Guid id, ActualizarExpedienteRequest req, CancellationToken ct);
+
     // Categorias y plazos
     Task<IReadOnlyList<PqrsdCategoriaDto>> ListarCategoriasAsync(CancellationToken ct);
     Task<PqrsdCategoriaDto> CrearCategoriaAsync(CrearCategoriaRequest req, CancellationToken ct);
@@ -16,7 +37,7 @@ public interface IPqrsdService
     Task<bool> ActualizarPlazoAsync(TipoPqrsd tipo, ActualizarPlazoRequest req, CancellationToken ct);
 
     // Bandeja + ficha
-    Task<PqrsdBandejaDto> GetBandejaAsync(EstadoPqrsd? estado, TipoPqrsd? tipo, Guid? categoriaId, string? query, CancellationToken ct);
+    Task<PqrsdBandejaDto> GetBandejaAsync(EstadoPqrsd? estado, TipoPqrsd? tipo, Guid? categoriaId, string? query, bool incluirArchivados, CancellationToken ct);
     Task<PqrsdExpedienteDetalleDto?> GetExpedienteAsync(Guid id, CancellationToken ct);
 
     // Radicacion (residente o admin)

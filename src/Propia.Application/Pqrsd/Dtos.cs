@@ -40,7 +40,13 @@ public record PqrsdBandejaItemDto(
     int DiasHastaVencimiento,
     NivelUrgenciaPqrsd NivelUrgencia,
     bool TieneComiteActivo,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    /// <summary>Columna del tablero configurable donde se ubica el expediente.</summary>
+    Guid? EstadoId = null,
+    bool Archivado = false,
+    Guid? UnidadPrivadaId = null,
+    Guid? RadicadorPersonaId = null,
+    IReadOnlyList<PqrsdCampoValorDto>? Campos = null);
 
 public record PqrsdKpisDto(
     int Total, int Recibidas, int EnGestion, int Respondidas, int Cerradas,
@@ -92,7 +98,38 @@ public record PqrsdExpedienteDetalleDto(
     DateTimeOffset CreatedAt,
     IReadOnlyList<PqrsdAdjuntoDto> Adjuntos,
     IReadOnlyList<PqrsdHistorialDto> Historial,
-    PqrsdComiteSesionDto? Comite);
+    PqrsdComiteSesionDto? Comite,
+    Guid? EstadoId = null,
+    Guid? UnidadPrivadaId = null,
+    bool Archivado = false,
+    IReadOnlyList<PqrsdCampoValorDto>? Campos = null);
+
+// ===================== Tablero configurable (columnas + campos dinamicos) =====================
+
+/// <summary>Columna/estado configurable del tablero PQRS. Port de Tareas.</summary>
+public record PqrsdEstadoDto(
+    Guid Id, string Nombre, string? Color, int Orden,
+    bool EsTerminal, bool EsBase, bool Activo, EstadoPqrsd? SemanticaLegal);
+
+public record CrearEstadoPqrsdRequest(string Nombre, string? Color);
+public record ActualizarEstadoPqrsdRequest(string Nombre, string? Color, int Orden);
+public record MoverExpedienteEstadoRequest(Guid EstadoId);
+
+/// <summary>Campo personalizado del tablero PQRS. Port de TableroCampo.</summary>
+public record PqrsdCampoDto(
+    Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones,
+    bool MostrarEnFiltro, int Columna, string? Descripcion, bool Requerido,
+    string? ValorPorDefecto, bool PermiteVarios, string? CamposSuma, bool Activo);
+
+public record GuardarCampoPqrsdRequest(
+    string Label, TipoCampoTablero Tipo, string? Opciones, bool MostrarEnFiltro,
+    int Columna, string? Descripcion, bool Requerido, string? ValorPorDefecto,
+    bool PermiteVarios, string? CamposSuma);
+
+public record PqrsdCampoValorDto(Guid CampoId, string? Valor);
+
+/// <summary>Payload para archivar/restaurar un expediente (clic tipo checkbox).</summary>
+public record ArchivarExpedienteRequest(bool Archivar);
 
 // ===================== Requests =====================
 
@@ -101,7 +138,19 @@ public record RadicarPqrsdRequest(
     Guid CategoriaId,
     string Descripcion,
     bool IdentidadReservada,
-    IReadOnlyList<AdjuntoInicialDto>? Adjuntos);
+    IReadOnlyList<AdjuntoInicialDto>? Adjuntos,
+    /// <summary>Unidad privada con la que se relaciona el PQR (opcional).</summary>
+    Guid? UnidadPrivadaId = null,
+    /// <summary>Persona del directorio como radicador (admin radicando en nombre de otro). Null = usuario actual.</summary>
+    Guid? RadicadorPersonaId = null,
+    IReadOnlyList<PqrsdCampoValorDto>? Campos = null);
+
+/// <summary>Actualiza datos editables del expediente desde el modal de detalle (unidad, radicador, campos dinamicos).</summary>
+public record ActualizarExpedienteRequest(
+    Guid? UnidadPrivadaId,
+    Guid? RadicadorPersonaId,
+    string? Descripcion,
+    IReadOnlyList<PqrsdCampoValorDto>? Campos);
 
 public record AdjuntoInicialDto(string NombreArchivo, string TipoMime, long TamanioBytes, string UrlStorage);
 

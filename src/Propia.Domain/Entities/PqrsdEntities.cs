@@ -37,6 +37,25 @@ public class PqrsdExpediente : TenantEntity
     /// <summary>FK a la tarea interna en modulo 2.10 (opcional, invisible para el radicador - RN-10).</summary>
     public Guid? TareaId { get; set; }
 
+    /// <summary>
+    /// Columna del tablero configurable donde se ubica el expediente (port de Tareas).
+    /// Es solo ubicacion visual: la logica legal (plazos/semaforo/tutela) sigue el enum <see cref="Estado"/>.
+    /// Cuando la columna tiene semantica legal, mover el expediente sincroniza tambien el enum.
+    /// </summary>
+    public Guid? EstadoId { get; set; }
+    public PqrsdEstado? EstadoColumna { get; set; }
+
+    /// <summary>Unidad privada con la que se relaciona el PQR (opcional). Sin FK dura para evitar cascadas.</summary>
+    public Guid? UnidadPrivadaId { get; set; }
+
+    /// <summary>
+    /// Si es true, el expediente esta ARCHIVADO: sale del tablero/tabla activa y aparece en el tab
+    /// "Archivados". Reversible; conserva todos los datos. Es distinto de cerrar (que es estado legal).
+    /// </summary>
+    public bool Archivado { get; set; }
+    public DateTimeOffset? ArchivadoAt { get; set; }
+    public Guid? ArchivadoPorUsuarioId { get; set; }
+
     public string? RespuestaAdmin { get; set; }
     public DateTimeOffset? RespuestaAdminAt { get; set; }
     public Guid? RespuestaAdminPorUsuarioId { get; set; }
@@ -53,6 +72,88 @@ public class PqrsdExpediente : TenantEntity
 
     public ICollection<PqrsdAdjunto> Adjuntos { get; set; } = new List<PqrsdAdjunto>();
     public ICollection<PqrsdHistorialEstado> Historial { get; set; } = new List<PqrsdHistorialEstado>();
+    public ICollection<PqrsdCampoValor> CamposValores { get; set; } = new List<PqrsdCampoValor>();
+}
+
+/// <summary>
+/// Columna/estado configurable del tablero PQRS (port de <see cref="TareaEstado"/>).
+/// A diferencia de Tareas, PQRS tiene un unico tablero por copropiedad (sin TableroId).
+/// Las columnas son totalmente editables (agregar/renombrar/reordenar/quitar). Las 5 columnas
+/// legales se siembran con <see cref="SemanticaLegal"/> mapeada al enum <see cref="EstadoPqrsd"/>,
+/// que sigue gobernando plazos/semaforo/tutela; las columnas custom (SemanticaLegal null) son
+/// carriles de triage que no alteran la logica legal.
+/// </summary>
+public class PqrsdEstado : TenantEntity
+{
+    public string Nombre { get; set; } = string.Empty;
+
+    /// <summary>Color hexadecimal para chips en UI. Opcional.</summary>
+    public string? Color { get; set; }
+
+    public int Orden { get; set; }
+
+    /// <summary>True = columna terminal (Cerrada / Via interna agotada). No eliminable.</summary>
+    public bool EsTerminal { get; set; }
+
+    /// <summary>True = columna base sembrada por plataforma (las 5 legales).</summary>
+    public bool EsBase { get; set; }
+
+    public bool Activo { get; set; } = true;
+
+    /// <summary>
+    /// Semantica legal de la columna. Si tiene valor, mover un expediente a esta columna
+    /// sincroniza el enum Estado del expediente (y por ende los plazos). null = columna custom.
+    /// </summary>
+    public EstadoPqrsd? SemanticaLegal { get; set; }
+}
+
+/// <summary>
+/// Campo personalizado del tablero PQRS (port de <see cref="TableroCampo"/>, sin TableroId).
+/// Se rellena por expediente en <see cref="PqrsdCampoValor"/>.
+/// </summary>
+public class PqrsdCampo : TenantEntity
+{
+    public string Label { get; set; } = string.Empty;
+    public int Orden { get; set; }
+
+    /// <summary>Tipo de captura/render del campo (se reusa el enum de Tareas).</summary>
+    public TipoCampoTablero Tipo { get; set; } = TipoCampoTablero.Texto;
+
+    /// <summary>Opciones para tipo Seleccion, separadas por salto de linea.</summary>
+    public string? Opciones { get; set; }
+
+    /// <summary>Si es true, el campo aparece como filtro (chips por valor) en la vista del tablero.</summary>
+    public bool MostrarEnFiltro { get; set; }
+
+    /// <summary>Ancho en el modal: 1 = normal (media columna), 2 = ancho completo.</summary>
+    public int Columna { get; set; } = 1;
+
+    /// <summary>Ayuda/contexto del campo para el usuario.</summary>
+    public string? Descripcion { get; set; }
+
+    /// <summary>Si es true, el expediente no se puede guardar sin un valor en este campo.</summary>
+    public bool Requerido { get; set; }
+
+    /// <summary>Valor inicial al radicar un PQR nuevo.</summary>
+    public string? ValorPorDefecto { get; set; }
+
+    /// <summary>Si es true, admite varios valores (separados por salto de linea).</summary>
+    public bool PermiteVarios { get; set; }
+
+    /// <summary>Para tipo Total: ids (CSV) de los campos Numero/Moneda cuyos valores se suman.</summary>
+    public string? CamposSuma { get; set; }
+
+    /// <summary>Si es false, el campo esta ARCHIVADO: se oculta pero conserva los valores. Restaurable.</summary>
+    public bool Activo { get; set; } = true;
+}
+
+/// <summary>Valor de un campo personalizado PQRS para un expediente concreto.</summary>
+public class PqrsdCampoValor : TenantEntity
+{
+    public Guid ExpedienteId { get; set; }
+    public PqrsdExpediente? Expediente { get; set; }
+    public Guid PqrsdCampoId { get; set; }
+    public string? Valor { get; set; }
 }
 
 /// <summary>Catalogo de categorias configurables por copropiedad. Spec 2.9 v1.0 seccion 4.</summary>

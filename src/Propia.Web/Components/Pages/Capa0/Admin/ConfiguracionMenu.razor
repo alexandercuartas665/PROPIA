@@ -2,6 +2,9 @@
 @layout AdminLayout
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.Navegacion
+@using System.Text
+@using System.Text.Json
+@using Microsoft.AspNetCore.Components.Forms
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
 @inject NavigationManager Nav
@@ -13,7 +16,12 @@
         <h1 class="h3 mb-1">Menu del sistema</h1>
         <p class="text-muted mb-0">Organiza el menu lateral del cliente: cambia el nombre visible, el orden y mueve items entre secciones. Puedes agregar secciones e items nuevos; los items sin funcion todavia abren una pagina "Proximamente". Es global: aplica a todas las copropiedades.</p>
     </div>
-    <div class="d-flex gap-2">
+    <div class="d-flex gap-2 flex-wrap">
+        <button class="btn btn-outline-secondary" @onclick="ExportarJson" disabled="@(_busy || _sections is null)" title="Descargar la configuracion actual como JSON"><i class="fi fi-rr-download"></i> Exportar JSON</button>
+        <label class="btn btn-outline-secondary mb-0" title="Cargar un JSON exportado (revisa y luego Guarda)">
+            <i class="fi fi-rr-upload"></i> Importar JSON
+            <InputFile OnChange="ImportarJson" accept=".json" style="display:none" />
+        </label>
         <button class="btn btn-outline-primary" @onclick="AgregarSeccion" disabled="@(_busy || _sections is null)"><i class="fi fi-rr-plus"></i> Agregar seccion</button>
         <button class="btn btn-outline-secondary" @onclick="ResetAsync" disabled="@(_busy || _sections is null)">Restablecer base</button>
         <button class="btn btn-dark" @onclick="GuardarAsync" disabled="@(_busy || _sections is null)">@(_busy ? "Guardando..." : "Guardar cambios")</button>
@@ -169,6 +177,31 @@ else
                 Items = s.Items.Select(i => new EdItem { Key = i.Key, Label = i.Label, Href = i.Href, Icon = i.Icon, Subheading = i.Subheading, IsCustom = i.IsCustom }).ToList()
             })
             .ToList();
+    }
+
+    // ----- Exportar / importar la configuracion como JSON -----
+    private async Task ExportarJson()
+    {
+        if (_sections is null) { return; }
+        var json = JsonSerializer.Serialize(_sections, new JsonSerializerOptions { WriteIndented = true });
+        var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
+        await Js.InvokeVoidAsync("propiaUI.downloadBase64", "menu-propia.json", "application/json", b64);
+    }
+
+    private async Task ImportarJson(InputFileChangeEventArgs e)
+    {
+        _msg = null;
+        try
+        {
+            using var reader = new StreamReader(e.File.OpenReadStream(4 * 1024 * 1024));
+            var json = await reader.ReadToEndAsync();
+            var secs = JsonSerializer.Deserialize<List<EdSection>>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (secs is null || secs.Count == 0) { _msg = "El archivo no tiene secciones validas."; _msgCls = "alert-danger"; return; }
+            foreach (var s in secs) { s.Items ??= new(); }
+            _sections = secs;
+            _msg = "JSON importado. Revisa y pulsa \"Guardar cambios\" para aplicarlo."; _msgCls = "alert-info";
+        }
+        catch (Exception ex) { _msg = $"No se pudo importar: {ex.Message}"; _msgCls = "alert-danger"; }
     }
 
     private void MoverSeccion(int idx, int dir)

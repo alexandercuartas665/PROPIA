@@ -4,7 +4,10 @@
 @inherits ModalBase<bool>
 @using Propia.Web.Components.Shared.Modals
 @using Propia.Application.Pqrsd
+@using Propia.Application.MiCopropiedad
+@using Propia.Application.Directorio
 @using Propia.Domain.Enums
+@using Microsoft.AspNetCore.Components.Forms
 
 @inject IHttpClientFactory HttpFactory
 
@@ -162,6 +165,53 @@
             <div class="gpq-card">
                 <div class="gpq-card-eyebrow">DESCRIPCION</div>
                 <div class="gpq-desc">@_detalle.Descripcion</div>
+            </div>
+
+            @* Propiedad + solicitante (editable) + campos dinamicos *@
+            <div class="gpq-card">
+                <div class="gpq-card-eyebrow">PROPIEDAD Y SOLICITANTE</div>
+                <label class="gpq-mini-lbl">Propiedad relacionada</label>
+                <select class="gpq-input" @bind="_unidadIdStr">
+                    <option value="">- sin propiedad -</option>
+                    @foreach (var u in _unidades.OrderBy(u => u.TorreNombre).ThenBy(u => u.Numero))
+                    {
+                        <option value="@u.Id">@(string.IsNullOrEmpty(u.TorreNombre) ? "" : u.TorreNombre + " - ")@u.Numero</option>
+                    }
+                </select>
+                <label class="gpq-mini-lbl">Cambiar solicitante (directorio - se puede crear)</label>
+                <SelectorPersona Jwt="@Jwt" @bind-Seleccionada="_personaSel" Placeholder="Buscar o crear persona..." />
+
+                @if (_campos.Count > 0)
+                {
+                    <div style="height:8px;"></div>
+                    <div class="gpq-card-eyebrow">CAMPOS</div>
+                    @foreach (var c in _campos.OrderBy(c => c.Orden))
+                    {
+                        <label class="gpq-mini-lbl">@c.Label</label>
+                        @if (c.Tipo == TipoCampoTablero.Seleccion)
+                        {
+                            <select class="gpq-input" value="@_campoValores.GetValueOrDefault(c.Id, "")" @onchange="(e) => SetCampo(c.Id, e.Value?.ToString())">
+                                <option value="">- elegir -</option>
+                                @foreach (var op in (c.Opciones ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                                {
+                                    <option value="@op">@op</option>
+                                }
+                            </select>
+                        }
+                        else if (c.Tipo == TipoCampoTablero.AreaTexto)
+                        {
+                            <textarea class="gpq-input" rows="2" value="@_campoValores.GetValueOrDefault(c.Id, "")" @onchange="(e) => SetCampo(c.Id, e.Value?.ToString())"></textarea>
+                        }
+                        else
+                        {
+                            <input class="gpq-input" type="@CampoInputType(c.Tipo)" value="@_campoValores.GetValueOrDefault(c.Id, "")" @onchange="(e) => SetCampo(c.Id, e.Value?.ToString())" />
+                        }
+                    }
+                }
+
+                <button class="gpq-btn-brand" style="margin-top:6px;" type="button" @onclick="GuardarDatos" disabled="@_guardandoRel">
+                    @(_guardandoRel ? "Guardando..." : "Guardar cambios")
+                </button>
             </div>
 
             @* Respuesta admin si existe *@
@@ -701,6 +751,7 @@
         width: 100%; box-sizing: border-box; margin-bottom: 10px;
     }
     .gpq-input:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .gpq-mini-lbl { font-size: 11px; color: #7C98B6; font-weight: 700; display: block; margin: 6px 0 4px; }
     .gpq-form-foot { display: flex; justify-content: flex-end; gap: 8px; }
 
     .gpq-msg { padding: 9px 12px; border-radius: 9px; border: 1px solid; font-size: 12.5px; margin-top: 12px; }
@@ -756,6 +807,14 @@
     private bool _msgError;
     private bool _huboCambios;
 
+    // Edicion de propiedad + solicitante + campos dinamicos
+    private List<UnidadDto> _unidades = new();
+    private List<PqrsdCampoDto> _campos = new();
+    private string _unidadIdStr = "";
+    private PersonaCandidatoDto? _personaSel;
+    private readonly Dictionary<Guid, string> _campoValores = new();
+    private bool _guardandoRel;
+
     // Form adjunto
     private string _nuevoAdjNombre = "";
     private string _nuevoAdjUrl = "";
@@ -785,6 +844,22 @@
             _contexto = await Auth().GetFromJsonAsync<PqrsdContextoDto>($"/api/pqrsd/{ExpedienteId}/contexto");
         }
         catch { _contexto = null; }
+
+        try
+        {
+            var http = Auth();
+            _unidades = (await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades")) ?? new();
+            _campos = (await http.GetFromJsonAsync<List<PqrsdCampoDto>>("/api/pqrsd/campos")) ?? new();
+        }
+        catch { }
+
+        if (_detalle is not null)
+        {
+            _unidadIdStr = _detalle.UnidadPrivadaId?.ToString() ?? "";
+            _campoValores.Clear();
+            if (_detalle.Campos is not null)
+                foreach (var v in _detalle.Campos) _campoValores[v.CampoId] = v.Valor ?? "";
+        }
     }
 
     private async Task AgregarAdjunto()
@@ -817,46 +892,73 @@
         }
     }
 
-    // Drag&drop / seleccion multiple: registra metadata por cada archivo (sin upload binario al storage
-    // todavia; eso lo conectaremos al modulo de Storage R2 en una oleada posterior). Por ahora marca el
-    // path como /pendiente-upload para que el operador sepa que hay un archivo asociado al expediente.
+    private void SetCampo(Guid id, string? valor) => _campoValores[id] = valor ?? "";
+
+    private static string CampoInputType(TipoCampoTablero t) => t switch
+    {
+        TipoCampoTablero.Numero or TipoCampoTablero.Moneda => "number",
+        TipoCampoTablero.Fecha => "date",
+        TipoCampoTablero.Hora => "time",
+        TipoCampoTablero.Email => "email",
+        TipoCampoTablero.Url => "url",
+        TipoCampoTablero.Telefono => "tel",
+        _ => "text"
+    };
+
+    private async Task GuardarDatos()
+    {
+        _guardandoRel = true;
+        Guid? unidadId = Guid.TryParse(_unidadIdStr, out var uid) ? uid : null;
+        Guid? radId = _personaSel?.PersonaId;
+        var campos = _campoValores.Select(kv => new PqrsdCampoValorDto(kv.Key, kv.Value)).ToList();
+        var req = new ActualizarExpedienteRequest(unidadId, radId, null, campos);
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{ExpedienteId}/actualizar", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                _huboCambios = true;
+                _personaSel = null;
+                await CargarAsync();
+                ShowMsg("Cambios guardados.", false);
+            }
+            else { ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true); }
+        }
+        catch (Exception ex) { ShowMsg(ex.Message, true); }
+        _guardandoRel = false;
+    }
+
+    // Sube el binario real de cada archivo al storage (endpoint multipart) y registra el adjunto.
     private async Task OnArchivosSeleccionados(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs e)
     {
         _subiendo = true;
-        var registrados = 0;
+        var subidos = 0;
         foreach (var archivo in e.GetMultipleFiles(maximumFileCount: 10))
         {
             _subiendoNombre = archivo.Name;
             StateHasChanged();
-            var ext = System.IO.Path.GetExtension(archivo.Name).ToLowerInvariant();
-            var mime = !string.IsNullOrEmpty(archivo.ContentType)
-                ? archivo.ContentType
-                : ext switch
-                {
-                    ".pdf" => "application/pdf",
-                    ".jpg" or ".jpeg" => "image/jpeg",
-                    ".png" => "image/png",
-                    ".doc" or ".docx" => "application/msword",
-                    ".xls" or ".xlsx" => "application/vnd.ms-excel",
-                    _ => "application/octet-stream"
-                };
-            var req = new AgregarAdjuntoPqrsdRequest(archivo.Name, mime, archivo.Size, "/pendiente-upload");
             try
             {
-                var resp = await Auth().PostAsJsonAsync($"/api/pqrsd/{ExpedienteId}/adjuntos", req);
-                if (resp.IsSuccessStatusCode) registrados++;
+                using var content = new MultipartFormDataContent();
+                var stream = archivo.OpenReadStream(10_000_000);
+                var sc = new StreamContent(stream);
+                sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                    string.IsNullOrEmpty(archivo.ContentType) ? "application/octet-stream" : archivo.ContentType);
+                content.Add(sc, "file", archivo.Name);
+                var resp = await Auth().PostAsync($"/api/pqrsd/{ExpedienteId}/adjuntos/upload", content);
+                if (resp.IsSuccessStatusCode) subidos++;
             }
             catch { }
         }
         _subiendo = false;
         _subiendoNombre = "";
-        if (registrados > 0)
+        if (subidos > 0)
         {
             _huboCambios = true;
             await CargarAsync();
-            ShowMsg($"{registrados} archivo(s) registrado(s).", false);
+            ShowMsg($"{subidos} archivo(s) subido(s).", false);
         }
-        else { ShowMsg("No se registro ningun archivo.", true); }
+        else { ShowMsg("No se pudo subir ningun archivo.", true); }
     }
 
     private static string PersonaAvatar(string rol) => rol switch

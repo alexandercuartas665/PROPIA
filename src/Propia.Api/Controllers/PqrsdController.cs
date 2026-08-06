@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -5,6 +6,7 @@ using Propia.Application.Pqrsd;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
 using Propia.Infrastructure.Persistence;
+using Propia.Infrastructure.Storage;
 
 namespace Propia.Api.Controllers;
 
@@ -16,7 +18,14 @@ public class PqrsdController : ControllerBase
 {
     private readonly IPqrsdService _svc;
     private readonly PropiaDbContext _db;
-    public PqrsdController(IPqrsdService svc, PropiaDbContext db) { _svc = svc; _db = db; }
+    private readonly IBlobStorage _storage;
+    public PqrsdController(IPqrsdService svc, PropiaDbContext db, IBlobStorage storage) { _svc = svc; _db = db; _storage = storage; }
+
+    private Guid? GetTenantId()
+    {
+        var raw = User.FindFirstValue("tenant_id");
+        return Guid.TryParse(raw, out var g) ? g : null;
+    }
 
     // --- Catalogo ---
     [HttpGet("categorias")]
@@ -52,8 +61,81 @@ public class PqrsdController : ControllerBase
     [HttpGet("bandeja")]
     public async Task<IActionResult> Bandeja(
         [FromQuery] EstadoPqrsd? estado, [FromQuery] TipoPqrsd? tipo,
-        [FromQuery] Guid? categoriaId, [FromQuery] string? q, CancellationToken ct)
-        => Ok(await _svc.GetBandejaAsync(estado, tipo, categoriaId, q, ct));
+        [FromQuery] Guid? categoriaId, [FromQuery] string? q,
+        [FromQuery] bool archivados, CancellationToken ct)
+        => Ok(await _svc.GetBandejaAsync(estado, tipo, categoriaId, q, archivados, ct));
+
+    // --- Tablero: columnas (estados) configurables ---
+    [HttpGet("estados")]
+    public async Task<IActionResult> ListarEstados(CancellationToken ct) => Ok(await _svc.ListarEstadosAsync(ct));
+
+    [HttpPost("estados")]
+    public async Task<IActionResult> CrearEstado([FromBody] CrearEstadoPqrsdRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.CrearEstadoAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpPut("estados/{id:guid}")]
+    public async Task<IActionResult> ActualizarEstado(Guid id, [FromBody] ActualizarEstadoPqrsdRequest req, CancellationToken ct)
+    {
+        try { return await _svc.ActualizarEstadoAsync(id, req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpDelete("estados/{id:guid}")]
+    public async Task<IActionResult> EliminarEstado(Guid id, CancellationToken ct)
+    {
+        try { return await _svc.EliminarEstadoAsync(id, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpPut("estados/{id:guid}/orden")]
+    public async Task<IActionResult> ReordenarEstado(Guid id, [FromQuery] string direccion, CancellationToken ct)
+        => await _svc.ReordenarEstadoAsync(id, direccion, ct) ? NoContent() : NotFound();
+
+    [HttpPut("{id:guid}/mover")]
+    public async Task<IActionResult> MoverAEstado(Guid id, [FromBody] MoverExpedienteEstadoRequest req, CancellationToken ct)
+    {
+        try { return await _svc.MoverAEstadoAsync(id, req.EstadoId, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    // --- Tablero: campos dinamicos ---
+    [HttpGet("campos")]
+    public async Task<IActionResult> ListarCampos(CancellationToken ct) => Ok(await _svc.ListarCamposAsync(ct));
+
+    [HttpGet("campos-archivados")]
+    public async Task<IActionResult> ListarCamposArchivados(CancellationToken ct) => Ok(await _svc.ListarCamposArchivadosAsync(ct));
+
+    [HttpPost("campos")]
+    public async Task<IActionResult> CrearCampo([FromBody] GuardarCampoPqrsdRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.CrearCampoAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpPut("campos/{id:guid}")]
+    public async Task<IActionResult> ActualizarCampo(Guid id, [FromBody] GuardarCampoPqrsdRequest req, CancellationToken ct)
+    {
+        try { return await _svc.ActualizarCampoAsync(id, req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpDelete("campos/{id:guid}")]
+    public async Task<IActionResult> EliminarCampo(Guid id, CancellationToken ct)
+        => await _svc.EliminarCampoAsync(id, ct) ? NoContent() : NotFound();
+
+    [HttpPut("campos/{id:guid}/archivar")]
+    public async Task<IActionResult> ArchivarCampo(Guid id, [FromQuery] bool archivar, CancellationToken ct)
+    {
+        try { return await _svc.SetCampoActivoAsync(id, !archivar, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpPut("campos/{id:guid}/orden")]
+    public async Task<IActionResult> ReordenarCampo(Guid id, [FromQuery] string direccion, CancellationToken ct)
+        => await _svc.ReordenarCampoAsync(id, direccion, ct) ? NoContent() : NotFound();
 
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetExpediente(Guid id, CancellationToken ct)
@@ -105,6 +187,18 @@ public class PqrsdController : ControllerBase
     public async Task<IActionResult> ActivarTutela(Guid id, [FromBody] ActivarTutelaRequest req, CancellationToken ct)
     {
         try { return await _svc.ActivarTutelaAsync(id, req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    // --- Archivar / actualizar expediente ---
+    [HttpPut("{id:guid}/archivar")]
+    public async Task<IActionResult> Archivar(Guid id, [FromQuery] bool archivar, CancellationToken ct)
+        => await _svc.ArchivarExpedienteAsync(id, archivar, ct) ? NoContent() : NotFound();
+
+    [HttpPut("{id:guid}/actualizar")]
+    public async Task<IActionResult> Actualizar(Guid id, [FromBody] ActualizarExpedienteRequest req, CancellationToken ct)
+    {
+        try { return await _svc.ActualizarExpedienteAsync(id, req, ct) ? NoContent() : NotFound(); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
@@ -197,5 +291,48 @@ public class PqrsdController : ControllerBase
         _db.PqrsdAdjuntos.Add(adj);
         await _db.SaveChangesAsync(ct);
         return Created("", new PqrsdAdjuntoDto(adj.Id, adj.NombreArchivo, adj.TipoMime, adj.TamanioBytes, adj.UrlStorage, adj.CreatedAt));
+    }
+
+    // --- Subir el binario de un adjunto (documentos e imagenes) y registrarlo ---
+    [HttpPost("{id:guid}/adjuntos/upload")]
+    [RequestSizeLimit(11_000_000)]
+    public async Task<IActionResult> SubirAdjuntoBinario(Guid id, IFormFile file, CancellationToken ct)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
+        var exp = await _db.PqrsdExpedientes.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (exp is null) return NotFound();
+        if (file is null || file.Length == 0) return BadRequest(new { error = "Archivo vacio." });
+        if (file.Length > 10_000_000) return BadRequest(new { error = "Maximo 10 MB." });
+
+        var ext = System.IO.Path.GetExtension(file.FileName);
+        var key = $"tenants/{tenantId:N}/pqrsd/{id:N}/{Guid.NewGuid():N}{ext}";
+        await using var stream = file.OpenReadStream();
+        // URL relativa al mismo origen (convencion host unificado: nunca absolutizar).
+        var url = await _storage.UploadAsync(key, stream, file.ContentType ?? "application/octet-stream", ct);
+
+        var adj = new PqrsdAdjunto
+        {
+            ExpedienteId = id,
+            NombreArchivo = file.FileName,
+            TipoMime = file.ContentType ?? "application/octet-stream",
+            TamanioBytes = file.Length,
+            UrlStorage = url,
+            SubidoPorUsuarioId = Guid.TryParse(User.FindFirstValue("user_id"), out var uid) ? uid : Guid.Empty
+        };
+        _db.PqrsdAdjuntos.Add(adj);
+        await _db.SaveChangesAsync(ct);
+        return Created("", new PqrsdAdjuntoDto(adj.Id, adj.NombreArchivo, adj.TipoMime, adj.TamanioBytes, adj.UrlStorage, adj.CreatedAt));
+    }
+
+    // --- Eliminar un adjunto ---
+    [HttpDelete("{id:guid}/adjuntos/{adjuntoId:guid}")]
+    public async Task<IActionResult> EliminarAdjunto(Guid id, Guid adjuntoId, CancellationToken ct)
+    {
+        var adj = await _db.PqrsdAdjuntos.FirstOrDefaultAsync(a => a.Id == adjuntoId && a.ExpedienteId == id, ct);
+        if (adj is null) return NotFound();
+        _db.PqrsdAdjuntos.Remove(adj);
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
     }
 }

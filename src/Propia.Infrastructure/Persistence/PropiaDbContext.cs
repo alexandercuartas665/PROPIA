@@ -181,6 +181,9 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<PqrsdConfiguracionPlazo> PqrsdConfiguracionPlazos => Set<PqrsdConfiguracionPlazo>();
     public DbSet<PqrsdComiteSesion> PqrsdComiteSesiones => Set<PqrsdComiteSesion>();
     public DbSet<PqrsdComiteMiembroSesion> PqrsdComiteMiembros => Set<PqrsdComiteMiembroSesion>();
+    public DbSet<PqrsdEstado> PqrsdEstados => Set<PqrsdEstado>();
+    public DbSet<PqrsdCampo> PqrsdCampos => Set<PqrsdCampo>();
+    public DbSet<PqrsdCampoValor> PqrsdCampoValores => Set<PqrsdCampoValor>();
 
     // Modulo 2.8 Asambleas y Organos de Gobierno (TenantEntity con RLS)
     public DbSet<Sesion> Sesiones => Set<Sesion>();
@@ -1428,11 +1431,44 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.RespuestaDefinitiva).HasMaxLength(4000);
             b.HasOne(x => x.Categoria).WithMany().HasForeignKey(x => x.CategoriaId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(x => x.RadicadorPersona).WithMany().HasForeignKey(x => x.RadicadorPersonaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(x => x.EstadoColumna).WithMany().HasForeignKey(x => x.EstadoId).OnDelete(DeleteBehavior.SetNull);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.TenantId, x.NumeroRadicado }).IsUnique();
             b.HasIndex(x => new { x.TenantId, x.Estado });
             b.HasIndex(x => new { x.TenantId, x.Tipo });
+            b.HasIndex(x => new { x.TenantId, x.EstadoId });
+            b.HasIndex(x => new { x.TenantId, x.Archivado });
             b.HasIndex(x => x.RadicadorPersonaId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PqrsdEstado>(b =>
+        {
+            b.ToTable("pqrsd_estados");
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(80);
+            b.Property(x => x.Color).HasMaxLength(20);
+            b.Property(x => x.Activo).HasDefaultValue(true);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Nombre }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PqrsdCampo>(b =>
+        {
+            b.ToTable("pqrsd_campos");
+            b.Property(x => x.Label).IsRequired().HasMaxLength(120);
+            b.Property(x => x.Activo).HasDefaultValue(true);
+            b.HasIndex(x => x.TenantId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PqrsdCampoValor>(b =>
+        {
+            b.ToTable("pqrsd_campo_valores");
+            b.Property(x => x.Valor).HasColumnType("text");
+            b.HasOne(x => x.Expediente).WithMany(e => e.CamposValores).HasForeignKey(x => x.ExpedienteId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.ExpedienteId, x.PqrsdCampoId }).IsUnique();
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

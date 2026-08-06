@@ -1,10 +1,11 @@
-@* Modal "Radicar PQR" alineado al prototipo PROPIA.dc.html:
-   un solo formulario (no wizard) con grid 2-cols, campos Tipo+Prioridad / Unidad+Solicitante /
-   Asunto / Descripcion. Categoria queda como dropdown adicional porque la spec del modulo 2.9
-   la requiere (legal). *@
+@* Modal "Radicar PQR" (Fase 2 del overhaul): mas grande, con selector de persona del directorio
+   (crear al vuelo), selector de propiedad, plazo editable por tipo, adjuntos reales y campos dinamicos. *@
 
 @using Propia.Application.Pqrsd
+@using Propia.Application.MiCopropiedad
+@using Propia.Application.Directorio
 @using Propia.Domain.Enums
+@using Microsoft.AspNetCore.Components.Forms
 @inherits ModalBase<bool>
 @inject IHttpClientFactory HttpFactory
 
@@ -39,8 +40,15 @@
                 </select>
                 @if (_plazoCalculado.HasValue)
                 {
-                    <span class="npq-helper">@_plazoCalculado.Value dias habiles - vence aprox. @_fechaVencimiento.ToString("dd MMM")</span>
+                    <span class="npq-helper">Vence aprox. @_fechaVencimiento.ToString("dd MMM") (@_plazoCalculado.Value dias habiles)</span>
                 }
+            </div>
+
+            <div class="npq-field">
+                <label class="npq-lbl">Dias habiles de respuesta <span class="npq-tag-edit">editable por tipo</span></label>
+                <input class="npq-input" type="number" min="1" max="90" @bind="_plazoEditable" @bind:event="oninput"
+                       @bind:after="RecalcularVencimiento" disabled="@string.IsNullOrEmpty(_tipoStr)" />
+                <span class="npq-helper-muted">Cambia el SLA para este tipo de PQR (se guarda al radicar).</span>
             </div>
 
             <div class="npq-field">
@@ -55,13 +63,21 @@
             </div>
 
             <div class="npq-field">
-                <label class="npq-lbl">Unidad / apartamento</label>
-                <input class="npq-input" @bind="_unidadTexto" @bind:event="oninput" placeholder="Ej. Apto 802 (opcional)" />
+                <label class="npq-lbl">Propiedad relacionada</label>
+                <select class="npq-input" @bind="_unidadIdStr">
+                    <option value="">- sin propiedad -</option>
+                    @foreach (var u in _unidades.OrderBy(u => u.TorreNombre).ThenBy(u => u.Numero))
+                    {
+                        <option value="@u.Id">@(string.IsNullOrEmpty(u.TorreNombre) ? "" : u.TorreNombre + " - ")@u.Numero</option>
+                    }
+                </select>
             </div>
 
-            <div class="npq-field">
-                <label class="npq-lbl">Solicitante</label>
-                <input class="npq-input" @bind="_solicitanteTexto" @bind:event="oninput" placeholder="Nombre de quien solicita (opcional)" />
+            <div class="npq-field npq-field--full">
+                <label class="npq-lbl">Solicitante (persona del directorio)</label>
+                <SelectorPersona Jwt="@Jwt" @bind-Seleccionada="_personaSel"
+                                 Placeholder="Buscar por nombre o documento (o crear nueva)..." />
+                <span class="npq-helper-muted">Si no la encuentras, puedes crearla desde el buscador. Si lo dejas vacio, el radicador seras tu.</span>
             </div>
 
             <div class="npq-field npq-field--full">
@@ -75,10 +91,39 @@
                     placeholder="Detalle de la peticion, queja o reclamo..."></textarea>
             </div>
 
+            @* Campos dinamicos del tablero *@
+            @foreach (var c in _campos.OrderBy(c => c.Orden))
+            {
+                <div class="npq-field @(c.Columna == 2 ? "npq-field--full" : "")">
+                    <label class="npq-lbl">@c.Label @if (c.Requerido) { <span class="npq-req">*</span> }</label>
+                    @RenderCampo(c)
+                    @if (!string.IsNullOrWhiteSpace(c.Descripcion)) { <span class="npq-helper-muted">@c.Descripcion</span> }
+                </div>
+            }
+
+            @* Adjuntos *@
+            <div class="npq-field npq-field--full">
+                <label class="npq-lbl">Adjuntos (documentos o imagenes)</label>
+                <label class="npq-drop">
+                    <InputFile OnChange="OnArchivos" multiple />
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                    <span>Arrastra o haz clic para subir archivos (max 10 MB c/u)</span>
+                </label>
+                @if (_archivos.Count > 0)
+                {
+                    <div class="npq-files">
+                        @foreach (var f in _archivos)
+                        {
+                            <span class="npq-file-chip">@f.Name <button type="button" @onclick="() => QuitarArchivo(f)">&times;</button></span>
+                        }
+                    </div>
+                }
+            </div>
+
             <div class="npq-field npq-field--full">
                 <label class="npq-check">
-                    <input type="checkbox" @bind="_identidadReservada" />
-                    <span><strong>Reservar mi identidad.</strong> El admin no vera mi nombre.</span>
+                    <input type="checkbox" @bind="_identidadReservada" disabled="@(_tipoStr != TipoPqrsd.Denuncia.ToString())" />
+                    <span><strong>Reservar identidad.</strong> Solo aplica a Denuncias (Ley 675 Art. 58).</span>
                 </label>
             </div>
         </div>
@@ -92,7 +137,7 @@
     <div class="npq-foot">
         <button type="button" class="npq-btn-ghost" @onclick="Cerrar" disabled="@_busy">Cancelar</button>
         <button type="button" class="npq-btn-brand" @onclick="Radicar" disabled="@(!PuedeRadicar || _busy)">
-            @if (_busy) { <span>Radicando...</span> }
+            @if (_busy) { <span>@_busyMsg</span> }
             else
             {
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
@@ -103,8 +148,8 @@
 </div>
 
 <style>
-    .npq { display: flex; flex-direction: column; max-height: 90vh; font-family: var(--propia-font-base, 'Lexend', sans-serif); background: #fff; }
-    .npq-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 24px; border-bottom: 1px solid #EEF3F8; }
+    .npq { display: flex; flex-direction: column; max-height: 92vh; font-family: var(--propia-font-base, 'Lexend', sans-serif); background: #fff; }
+    .npq-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 26px; border-bottom: 1px solid #EEF3F8; }
     .npq-head-l { display: flex; align-items: center; gap: 12px; }
     .npq-icon-bx { width: 38px; height: 38px; border-radius: 10px; background: var(--propia-brand-soft, #F1ECFD); color: var(--propia-brand, #6D4FE3); display: inline-flex; align-items: center; justify-content: center; }
     .npq-title { font-size: 17px; font-weight: 800; color: #1B2A3A; letter-spacing: -0.3px; margin: 0; }
@@ -112,27 +157,39 @@
     .npq-close { width: 34px; height: 34px; border: 0; border-radius: 8px; background: transparent; color: #7C98B6; cursor: pointer; }
     .npq-close:hover { background: #F1F5F9; }
 
-    .npq-body { overflow-y: auto; padding: 20px 24px; }
-    .npq-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
+    .npq-body { overflow-y: auto; padding: 22px 26px; }
+    .npq-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
     .npq-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
     .npq-field--full { grid-column: 1 / -1; }
-    .npq-lbl { font-size: 11px; color: #7C98B6; font-weight: 700; }
+    .npq-lbl { font-size: 11px; color: #7C98B6; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+    .npq-req { color: #DC2626; }
+    .npq-tag-edit { font-size: 9.5px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: #F1ECFD; padding: 1px 6px; border-radius: 20px; }
     .npq-input {
         width: 100%; border: 1.5px solid #E1E8EE; border-radius: 9px;
         padding: 10px 12px; font-size: 13.5px; color: #33475B;
         font-family: inherit; outline: none; background: #fff;
     }
     .npq-input:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .npq-input:disabled { background: #F6F8FB; color: #9FB2C4; }
     .npq-textarea { resize: vertical; min-height: 100px; }
     .npq-helper { font-size: 11px; color: var(--propia-brand, #6D4FE3); font-weight: 600; margin-top: 2px; }
-    .npq-charcount { font-size: 10px; font-weight: 600; color: #A6B7C8; float: right; }
+    .npq-helper-muted { font-size: 10.5px; color: #9FB2C4; margin-top: 1px; }
+    .npq-charcount { font-size: 10px; font-weight: 600; color: #A6B7C8; margin-left: auto; }
     .npq-check { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; background: #FAFBFD; border: 1px solid #EEF3F8; border-radius: 10px; font-size: 12.5px; color: #516F90; cursor: pointer; }
     .npq-check input { margin-top: 2px; }
+
+    .npq-drop { display: flex; align-items: center; gap: 10px; padding: 14px; border: 1.5px dashed #D3DEE9; border-radius: 10px; color: #7C98B6; font-size: 12.5px; cursor: pointer; background: #FAFBFD; }
+    .npq-drop:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
+    .npq-drop input[type=file] { display: none; }
+    .npq-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .npq-file-chip { display: inline-flex; align-items: center; gap: 6px; background: #EEF3F8; border-radius: 20px; padding: 4px 6px 4px 11px; font-size: 11.5px; color: #33475B; }
+    .npq-file-chip button { border: 0; background: #D3DEE9; color: #516F90; width: 16px; height: 16px; border-radius: 50%; cursor: pointer; line-height: 1; }
+
     .npq-msg { margin-top: 14px; padding: 10px 14px; border-radius: 9px; font-size: 12.5px; font-weight: 600; }
     .npq-msg--ok { background: #E6F6EE; color: #15703F; }
     .npq-msg--err { background: #FEE2E2; color: #B91C1C; }
 
-    .npq-foot { display: flex; align-items: center; justify-content: flex-end; gap: 9px; padding: 14px 24px; border-top: 1px solid #EEF3F8; background: #FAFBFD; }
+    .npq-foot { display: flex; align-items: center; justify-content: flex-end; gap: 9px; padding: 14px 26px; border-top: 1px solid #EEF3F8; background: #FAFBFD; }
     .npq-btn-ghost { padding: 9px 16px; border-radius: 9px; border: 1px solid #E1E8EE; background: #fff; font-size: 13px; font-weight: 600; color: #516F90; cursor: pointer; font-family: inherit; }
     .npq-btn-ghost:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
     .npq-btn-brand {
@@ -151,18 +208,24 @@
 
     private string _tipoStr = "";
     private string _categoriaIdStr = "";
-    private string _unidadTexto = "";
-    private string _solicitanteTexto = "";
+    private string _unidadIdStr = "";
+    private PersonaCandidatoDto? _personaSel;
     private string _asunto = "";
     private string _descripcion = "";
     private bool _identidadReservada = false;
     private bool _busy;
+    private string _busyMsg = "Radicando...";
     private string? _msg;
     private bool _msgError;
     private int? _plazoCalculado;
+    private int _plazoEditable = 15;
     private DateTime _fechaVencimiento;
     private List<PqrsdCategoriaDto> _categorias = new();
     private List<PqrsdPlazoDto> _plazos = new();
+    private List<UnidadDto> _unidades = new();
+    private List<PqrsdCampoDto> _campos = new();
+    private readonly Dictionary<Guid, string> _campoValores = new();
+    private readonly List<IBrowserFile> _archivos = new();
 
     private bool PuedeRadicar =>
         !string.IsNullOrEmpty(_tipoStr) &&
@@ -177,6 +240,10 @@
             var http = Auth();
             _categorias = (await http.GetFromJsonAsync<List<PqrsdCategoriaDto>>("/api/pqrsd/categorias")) ?? new();
             _plazos = (await http.GetFromJsonAsync<List<PqrsdPlazoDto>>("/api/pqrsd/plazos")) ?? new();
+            _campos = (await http.GetFromJsonAsync<List<PqrsdCampoDto>>("/api/pqrsd/campos")) ?? new();
+            _unidades = (await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades")) ?? new();
+            foreach (var c in _campos.Where(c => !string.IsNullOrEmpty(c.ValorPorDefecto)))
+                _campoValores[c.Id] = c.ValorPorDefecto!;
         }
         catch (Exception ex) { _msg = "No se pudo cargar el catalogo: " + ex.Message; _msgError = true; }
     }
@@ -186,47 +253,135 @@
         if (Enum.TryParse<TipoPqrsd>(_tipoStr, out var t))
         {
             var p = _plazos.FirstOrDefault(p => p.Tipo == t);
-            _plazoCalculado = p?.DiasHabiles ?? PlazoDefault(t);
-            _fechaVencimiento = DateTime.Today.AddDays((int)Math.Ceiling(_plazoCalculado.Value * 1.4));
+            _plazoEditable = p?.DiasHabiles ?? PlazoDefault(t);
+            _plazoCalculado = _plazoEditable;
+            RecalcularVencimiento();
+            if (t != TipoPqrsd.Denuncia) _identidadReservada = false;
         }
-        else
-        {
-            _plazoCalculado = null;
-        }
+        else { _plazoCalculado = null; }
     }
+
+    private void RecalcularVencimiento()
+    {
+        if (_plazoEditable < 1) _plazoEditable = 1;
+        _plazoCalculado = _plazoEditable;
+        _fechaVencimiento = DateTime.Today.AddDays((int)Math.Ceiling(_plazoEditable * 1.4));
+    }
+
+    private RenderFragment RenderCampo(PqrsdCampoDto c) => builder =>
+    {
+        var val = _campoValores.GetValueOrDefault(c.Id, "");
+        switch (c.Tipo)
+        {
+            case TipoCampoTablero.AreaTexto:
+                builder.OpenElement(0, "textarea");
+                builder.AddAttribute(1, "class", "npq-input npq-textarea");
+                builder.AddAttribute(2, "rows", "2");
+                builder.AddAttribute(3, "value", val);
+                builder.AddAttribute(4, "oninput", EventCallback.Factory.Create<ChangeEventArgs>(this, e => SetCampo(c.Id, e.Value?.ToString())));
+                builder.CloseElement();
+                break;
+            case TipoCampoTablero.Booleano:
+                builder.OpenElement(10, "label");
+                builder.AddAttribute(11, "class", "npq-check");
+                builder.OpenElement(12, "input");
+                builder.AddAttribute(13, "type", "checkbox");
+                builder.AddAttribute(14, "checked", val == "true");
+                builder.AddAttribute(15, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e => SetCampo(c.Id, (e.Value is true) ? "true" : "false")));
+                builder.CloseElement();
+                builder.OpenElement(16, "span");
+                builder.AddContent(17, "Si");
+                builder.CloseElement();
+                builder.CloseElement();
+                break;
+            case TipoCampoTablero.Seleccion:
+                builder.OpenElement(20, "select");
+                builder.AddAttribute(21, "class", "npq-input");
+                builder.AddAttribute(22, "value", val);
+                builder.AddAttribute(23, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e => SetCampo(c.Id, e.Value?.ToString())));
+                builder.OpenElement(24, "option"); builder.AddAttribute(25, "value", ""); builder.AddContent(26, "- elegir -"); builder.CloseElement();
+                foreach (var op in (c.Opciones ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    builder.OpenElement(27, "option"); builder.AddAttribute(28, "value", op); builder.AddContent(29, op); builder.CloseElement();
+                }
+                builder.CloseElement();
+                break;
+            default:
+                builder.OpenElement(30, "input");
+                builder.AddAttribute(31, "class", "npq-input");
+                builder.AddAttribute(32, "type", c.Tipo switch { TipoCampoTablero.Numero or TipoCampoTablero.Moneda => "number", TipoCampoTablero.Fecha => "date", TipoCampoTablero.Hora => "time", TipoCampoTablero.Email => "email", TipoCampoTablero.Url => "url", TipoCampoTablero.Telefono => "tel", _ => "text" });
+                builder.AddAttribute(33, "value", val);
+                builder.AddAttribute(34, "oninput", EventCallback.Factory.Create<ChangeEventArgs>(this, e => SetCampo(c.Id, e.Value?.ToString())));
+                builder.CloseElement();
+                break;
+        }
+    };
+
+    private void SetCampo(Guid id, string? valor) => _campoValores[id] = valor ?? "";
+
+    private void OnArchivos(InputFileChangeEventArgs e)
+    {
+        foreach (var f in e.GetMultipleFiles(20))
+            if (_archivos.All(a => a.Name != f.Name)) _archivos.Add(f);
+    }
+    private void QuitarArchivo(IBrowserFile f) => _archivos.Remove(f);
 
     private async Task Radicar()
     {
         if (!PuedeRadicar) return;
-        _busy = true;
+        _busy = true; _busyMsg = "Radicando..."; _msg = null;
         try
         {
             var tipo = Enum.Parse<TipoPqrsd>(_tipoStr);
             var catId = Guid.Parse(_categoriaIdStr);
-            // Compone descripcion enriquecida: asunto + unidad/solicitante + texto libre
-            // (sin tocar el schema del backend; cuando el backend acepte asignacion explicita los campos
-            // pasaran directos).
-            var sb = new System.Text.StringBuilder();
-            if (!string.IsNullOrWhiteSpace(_asunto)) sb.AppendLine("Asunto: " + _asunto.Trim()).AppendLine();
-            if (!string.IsNullOrWhiteSpace(_unidadTexto)) sb.AppendLine("Unidad: " + _unidadTexto.Trim());
-            if (!string.IsNullOrWhiteSpace(_solicitanteTexto)) sb.AppendLine("Solicitante: " + _solicitanteTexto.Trim());
-            if (sb.Length > 0) sb.AppendLine();
-            sb.Append(_descripcion.Trim());
 
-            var req = new RadicarPqrsdRequest(tipo, catId, sb.ToString(), _identidadReservada, null);
-            var resp = await Auth().PostAsJsonAsync("/api/pqrsd", req);
-            if (resp.IsSuccessStatusCode)
+            // Guardar el plazo editado para este tipo (SLA por tipo).
+            var plazoActual = _plazos.FirstOrDefault(p => p.Tipo == tipo);
+            if (plazoActual is not null && plazoActual.DiasHabiles != _plazoEditable)
             {
-                Close(true);
+                await Auth().PutAsJsonAsync($"/api/pqrsd/plazos/{tipo}",
+                    new ActualizarPlazoRequest(_plazoEditable, plazoActual.DiasInconformidad, plazoActual.NivelUrgencia));
             }
-            else
+
+            var desc = string.IsNullOrWhiteSpace(_asunto)
+                ? _descripcion.Trim()
+                : $"Asunto: {_asunto.Trim()}\n\n{_descripcion.Trim()}";
+
+            Guid? unidadId = Guid.TryParse(_unidadIdStr, out var uid) ? uid : null;
+            Guid? radId = _personaSel?.PersonaId;
+            var campos = _campoValores.Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+                .Select(kv => new PqrsdCampoValorDto(kv.Key, kv.Value)).ToList();
+
+            var req = new RadicarPqrsdRequest(tipo, catId, desc, _identidadReservada, null, unidadId, radId, campos);
+            var resp = await Auth().PostAsJsonAsync("/api/pqrsd", req);
+            if (!resp.IsSuccessStatusCode)
             {
                 _msg = "No se pudo radicar: " + await resp.Content.ReadAsStringAsync();
-                _msgError = true;
+                _msgError = true; _busy = false; return;
             }
+
+            var creado = await resp.Content.ReadFromJsonAsync<PqrsdExpedienteDetalleDto>();
+            if (creado is not null && _archivos.Count > 0)
+            {
+                _busyMsg = "Subiendo adjuntos...";
+                StateHasChanged();
+                foreach (var f in _archivos)
+                {
+                    try
+                    {
+                        using var content = new MultipartFormDataContent();
+                        var stream = f.OpenReadStream(10_000_000);
+                        var sc = new StreamContent(stream);
+                        sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(string.IsNullOrEmpty(f.ContentType) ? "application/octet-stream" : f.ContentType);
+                        content.Add(sc, "file", f.Name);
+                        await Auth().PostAsync($"/api/pqrsd/{creado.Id}/adjuntos/upload", content);
+                    }
+                    catch { /* continuar con el resto */ }
+                }
+            }
+            Close(true);
         }
-        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
-        _busy = false;
+        catch (Exception ex) { _msg = ex.Message; _msgError = true; _busy = false; }
     }
 
     private void Cerrar() => Cancel();

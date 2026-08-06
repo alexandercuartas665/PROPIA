@@ -74,10 +74,55 @@ public class PqrsdService : IPqrsdService
 
     // ===================== Seed lazy =====================
 
+    /// <summary>Columnas base del tablero PQRS: (Nombre, Color, Orden, EsTerminal, SemanticaLegal).</summary>
+    private static readonly (string Nombre, string Color, int Orden, bool Terminal, EstadoPqrsd Semantica)[] EstadosBase = new[]
+    {
+        ("Recibida", "#94A3B8", 1, false, EstadoPqrsd.Recibida),
+        ("En gestion", "#6D4FE3", 2, false, EstadoPqrsd.EnGestion),
+        ("Respondida", "#0EA5E9", 3, false, EstadoPqrsd.Respondida),
+        ("Cerrada", "#16A34A", 4, true, EstadoPqrsd.Cerrada),
+        ("Via interna agotada", "#DC2626", 5, true, EstadoPqrsd.ViaInternaAgotada),
+    };
+
+    /// <summary>Siembra las 5 columnas legales y backfilea EstadoId de los expedientes existentes (una vez).</summary>
+    private async Task AsegurarTableroBaseAsync(CancellationToken ct)
+    {
+        var tenantId = _tenantContext.CurrentTenantId
+            ?? throw new InvalidOperationException("No hay copropiedad activa.");
+
+        if (await _db.PqrsdEstados.AnyAsync(ct)) return;
+
+        foreach (var (nombre, color, orden, terminal, semantica) in EstadosBase)
+        {
+            _db.PqrsdEstados.Add(new PqrsdEstado
+            {
+                TenantId = tenantId,
+                Nombre = nombre,
+                Color = color,
+                Orden = orden,
+                EsTerminal = terminal,
+                EsBase = true,
+                Activo = true,
+                SemanticaLegal = semantica
+            });
+        }
+        await _db.SaveChangesAsync(ct);
+
+        // Backfill EstadoId por semantica legal para expedientes ya existentes.
+        var mapa = await _db.PqrsdEstados.Where(e => e.SemanticaLegal != null)
+            .ToDictionaryAsync(e => e.SemanticaLegal!.Value, e => e.Id, ct);
+        var pendientes = await _db.PqrsdExpedientes.Where(x => x.EstadoId == null).ToListAsync(ct);
+        foreach (var x in pendientes)
+            if (mapa.TryGetValue(x.Estado, out var eid)) x.EstadoId = eid;
+        if (pendientes.Count > 0) await _db.SaveChangesAsync(ct);
+    }
+
     private async Task AsegurarCatalogoBaseAsync(CancellationToken ct)
     {
         var tenantId = _tenantContext.CurrentTenantId
             ?? throw new InvalidOperationException("No hay copropiedad activa.");
+
+        await AsegurarTableroBaseAsync(ct);
 
         var hayCats = await _db.PqrsdCategorias.AnyAsync(ct);
         if (!hayCats)
@@ -160,6 +205,14 @@ public class PqrsdService : IPqrsdService
         if (pct >= 0.8) return SemaforoPqrsd.Rojo;
         if (pct >= 0.5) return SemaforoPqrsd.Amarillo;
         return SemaforoPqrsd.Verde;
+    }
+
+    /// <summary>Mueve el expediente a la columna del tablero cuya semantica legal coincide con el nuevo estado.</summary>
+    private async Task SincronizarColumnaLegalAsync(PqrsdExpediente x, EstadoPqrsd nuevoEstado, CancellationToken ct)
+    {
+        var col = await _db.PqrsdEstados.Where(e => e.SemanticaLegal == nuevoEstado)
+            .Select(e => (Guid?)e.Id).FirstOrDefaultAsync(ct);
+        if (col.HasValue) x.EstadoId = col.Value;
     }
 
     // ===================== Categorias =====================
@@ -272,10 +325,12 @@ public class PqrsdService : IPqrsdService
 
     // ===================== Bandeja + ficha =====================
 
-    public async Task<PqrsdBandejaDto> GetBandejaAsync(EstadoPqrsd? estado, TipoPqrsd? tipo, Guid? categoriaId, string? query, CancellationToken ct)
+    public async Task<PqrsdBandejaDto> GetBandejaAsync(EstadoPqrsd? estado, TipoPqrsd? tipo, Guid? categoriaId, string? query, bool incluirArchivados, CancellationToken ct)
     {
         await AsegurarCatalogoBaseAsync(ct);
         IQueryable<PqrsdExpediente> q = _db.PqrsdExpedientes.AsNoTracking().Include(x => x.Categoria);
+        // incluirArchivados=false => solo activos (tablero/tabla); true => solo archivados (tab Archivados).
+        q = q.Where(x => x.Archivado == incluirArchivados);
         if (estado.HasValue) q = q.Where(x => x.Estado == estado.Value);
         if (tipo.HasValue) q = q.Where(x => x.Tipo == tipo.Value);
         if (categoriaId.HasValue) q = q.Where(x => x.CategoriaId == categoriaId.Value);
@@ -291,11 +346,29 @@ public class PqrsdService : IPqrsdService
             from p in pj.DefaultIfEmpty()
             orderby x.CreatedAt descending
             select new { x, RadicadorNombre = p == null ? null : (p.Nombres + " " + p.Apellidos).Trim() }
-        ).Take(200).ToListAsync(ct);
+        ).Take(500).ToListAsync(ct);
+
+        var ids = rows.Select(r => r.x.Id).ToList();
 
         var sesionesActivas = await _db.PqrsdComiteSesiones.AsNoTracking()
             .Where(s => s.Resultado == null)
             .Select(s => s.ExpedienteId).ToHashSetAsync(ct);
+
+        // Valores de campos dinamicos por expediente (para la vista tabla).
+        var valores = await _db.PqrsdCampoValores.AsNoTracking()
+            .Where(v => ids.Contains(v.ExpedienteId))
+            .Select(v => new { v.ExpedienteId, v.PqrsdCampoId, v.Valor })
+            .ToListAsync(ct);
+        var valoresPorExp = valores.GroupBy(v => v.ExpedienteId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<PqrsdCampoValorDto>)g
+                .Select(v => new PqrsdCampoValorDto(v.PqrsdCampoId, v.Valor)).ToList());
+
+        // Numero de unidad relacionada (si el expediente la tiene fijada).
+        var unidadIds = rows.Where(r => r.x.UnidadPrivadaId.HasValue).Select(r => r.x.UnidadPrivadaId!.Value).Distinct().ToList();
+        var unidadNumeros = unidadIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await _db.UnidadesPrivadas.AsNoTracking().Where(u => unidadIds.Contains(u.Id))
+                .ToDictionaryAsync(u => u.Id, u => u.Numero, ct);
 
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
         var plazos = await _db.PqrsdConfiguracionPlazos.AsNoTracking().ToDictionaryAsync(p => p.Tipo, ct);
@@ -308,11 +381,15 @@ public class PqrsdService : IPqrsdService
             var urgencia = plazos.TryGetValue(r.x.Tipo, out var pl) ? pl.NivelUrgencia : NivelUrgenciaPqrsd.Media;
             var nombre = r.x.IdentidadReservada ? null : r.RadicadorNombre;
             var resumen = r.x.Descripcion.Length > 100 ? r.x.Descripcion[..100] + "..." : r.x.Descripcion;
+            var unidadNumero = r.x.UnidadPrivadaId.HasValue ? unidadNumeros.GetValueOrDefault(r.x.UnidadPrivadaId.Value) : null;
+            var radId = r.x.IdentidadReservada ? (Guid?)null : r.x.RadicadorPersonaId;
             return new PqrsdBandejaItemDto(
                 r.x.Id, r.x.NumeroRadicado, r.x.Tipo, r.x.Categoria!.Nombre, resumen, r.x.Estado,
-                semaforo, nombre, null, r.x.IdentidadReservada, r.x.TutelaActiva,
+                semaforo, nombre, unidadNumero, r.x.IdentidadReservada, r.x.TutelaActiva,
                 r.x.FechaVencimiento, diasHasta, urgencia,
-                sesionesActivas.Contains(r.x.Id), r.x.CreatedAt);
+                sesionesActivas.Contains(r.x.Id), r.x.CreatedAt,
+                r.x.EstadoId, r.x.Archivado, r.x.UnidadPrivadaId, radId,
+                valoresPorExp.GetValueOrDefault(r.x.Id));
         }).ToList();
 
         var kpis = new PqrsdKpisDto(
@@ -336,8 +413,15 @@ public class PqrsdService : IPqrsdService
             .Include(e => e.Categoria)
             .Include(e => e.Adjuntos)
             .Include(e => e.Historial)
+            .Include(e => e.CamposValores)
             .FirstOrDefaultAsync(e => e.Id == id, ct);
         if (x is null) return null;
+
+        string? unidadNumero = x.UnidadPrivadaId.HasValue
+            ? await _db.UnidadesPrivadas.AsNoTracking().Where(u => u.Id == x.UnidadPrivadaId).Select(u => u.Numero).FirstOrDefaultAsync(ct)
+            : null;
+        var camposValores = x.CamposValores
+            .Select(v => new PqrsdCampoValorDto(v.PqrsdCampoId, v.Valor)).ToList();
 
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
         var fechaCreacion = DateOnly.FromDateTime(x.CreatedAt.UtcDateTime);
@@ -383,11 +467,12 @@ public class PqrsdService : IPqrsdService
 
         return new PqrsdExpedienteDetalleDto(
             x.Id, x.NumeroRadicado, x.Tipo, x.CategoriaId, x.Categoria!.Nombre, x.Descripcion,
-            x.Estado, semaforo, radNombre, radId, null, x.IdentidadReservada, x.TutelaActiva,
+            x.Estado, semaforo, radNombre, radId, unidadNumero, x.IdentidadReservada, x.TutelaActiva,
             x.TutelaActivadaAt, x.FechaVencimiento, diasHasta, urgencia,
             x.RespuestaAdmin, x.RespuestaAdminAt, x.InconformidadTexto, x.InconformidadAt,
             x.RespuestaDefinitiva, x.RespuestaDefinitivaAt, x.FechaCierre, x.TareaId,
-            x.CreatedAt, adjuntos, historial, comiteDto);
+            x.CreatedAt, adjuntos, historial, comiteDto,
+            x.EstadoId, x.UnidadPrivadaId, x.Archivado, camposValores);
     }
 
     // ===================== Radicacion =====================
@@ -406,8 +491,19 @@ public class PqrsdService : IPqrsdService
             ?? throw new InvalidOperationException("Categoria invalida.");
         if (!categoria.Activa) throw new InvalidOperationException("La categoria no esta activa.");
 
-        var personaId = await GetPersonaActualIdAsync(ct)
-            ?? throw new InvalidOperationException("No se pudo resolver el radicador (persona del usuario autenticado).");
+        // Radicador: si el admin selecciona una persona del directorio, se usa esa; si no, la del usuario actual.
+        Guid personaId;
+        if (req.RadicadorPersonaId is { } radPid)
+        {
+            var existe = await _db.Personas.AsNoTracking().AnyAsync(p => p.Id == radPid, ct);
+            if (!existe) throw new InvalidOperationException("La persona seleccionada como radicador no existe.");
+            personaId = radPid;
+        }
+        else
+        {
+            personaId = await GetPersonaActualIdAsync(ct)
+                ?? throw new InvalidOperationException("No se pudo resolver el radicador (persona del usuario autenticado).");
+        }
 
         var plazo = await _db.PqrsdConfiguracionPlazos.AsNoTracking().FirstOrDefaultAsync(p => p.Tipo == req.Tipo, ct)
             ?? throw new InvalidOperationException("No hay plazo configurado para este tipo.");
@@ -416,6 +512,9 @@ public class PqrsdService : IPqrsdService
         var fechaVencimiento = SumarDiasHabiles(hoy, plazo.DiasHabiles);
         var numero = await GenerarNumeroRadicadoAsync(ct);
 
+        var columnaRecibida = await _db.PqrsdEstados.AsNoTracking()
+            .Where(e => e.SemanticaLegal == EstadoPqrsd.Recibida).Select(e => (Guid?)e.Id).FirstOrDefaultAsync(ct);
+
         var exp = new PqrsdExpediente
         {
             NumeroRadicado = numero,
@@ -423,11 +522,25 @@ public class PqrsdService : IPqrsdService
             CategoriaId = req.CategoriaId,
             Descripcion = req.Descripcion.Trim(),
             Estado = EstadoPqrsd.Recibida,
+            EstadoId = columnaRecibida,
             RadicadorPersonaId = personaId,
+            UnidadPrivadaId = req.UnidadPrivadaId,
             IdentidadReservada = req.IdentidadReservada,
             FechaVencimiento = fechaVencimiento
         };
         _db.PqrsdExpedientes.Add(exp);
+
+        // Valores de campos dinamicos capturados al radicar.
+        if (req.Campos is { Count: > 0 })
+        {
+            var camposActivos = await _db.PqrsdCampos.AsNoTracking().Where(c => c.Activo).Select(c => c.Id).ToHashSetAsync(ct);
+            foreach (var cv in req.Campos)
+            {
+                if (!camposActivos.Contains(cv.CampoId)) continue;
+                if (string.IsNullOrWhiteSpace(cv.Valor)) continue;
+                _db.PqrsdCampoValores.Add(new PqrsdCampoValor { Expediente = exp, PqrsdCampoId = cv.CampoId, Valor = cv.Valor });
+            }
+        }
 
         // Adjuntos iniciales
         if (req.Adjuntos is { Count: > 0 })
@@ -528,6 +641,7 @@ public class PqrsdService : IPqrsdService
         if (x.Estado != EstadoPqrsd.Recibida) return true;
         var anterior = x.Estado;
         x.Estado = EstadoPqrsd.EnGestion;
+        await SincronizarColumnaLegalAsync(x, EstadoPqrsd.EnGestion, ct);
         x.UpdatedAt = DateTimeOffset.UtcNow;
         _db.PqrsdHistorialEstados.Add(new PqrsdHistorialEstado
         {
@@ -570,6 +684,7 @@ public class PqrsdService : IPqrsdService
             x.RespuestaAdminPorUsuarioId = GetUsuarioActualId();
             x.Estado = EstadoPqrsd.Respondida;
         }
+        await SincronizarColumnaLegalAsync(x, x.Estado, ct);
         x.UpdatedAt = DateTimeOffset.UtcNow;
 
         _db.PqrsdHistorialEstados.Add(new PqrsdHistorialEstado
@@ -610,6 +725,7 @@ public class PqrsdService : IPqrsdService
         x.InconformidadTexto = req.Texto.Trim();
         x.InconformidadAt = DateTimeOffset.UtcNow;
         x.Estado = EstadoPqrsd.EnGestion;
+        await SincronizarColumnaLegalAsync(x, EstadoPqrsd.EnGestion, ct);
         x.UpdatedAt = DateTimeOffset.UtcNow;
         _db.PqrsdHistorialEstados.Add(new PqrsdHistorialEstado
         {
@@ -636,6 +752,7 @@ public class PqrsdService : IPqrsdService
         x.RespuestaDefinitiva = req.RespuestaDefinitiva.Trim();
         x.RespuestaDefinitivaAt = DateTimeOffset.UtcNow;
         x.Estado = EstadoPqrsd.Cerrada;
+        await SincronizarColumnaLegalAsync(x, EstadoPqrsd.Cerrada, ct);
         x.FechaCierre = DateTimeOffset.UtcNow;
         x.CerradoPorUsuarioId = GetUsuarioActualId();
         x.UpdatedAt = DateTimeOffset.UtcNow;
@@ -762,6 +879,7 @@ public class PqrsdService : IPqrsdService
             var x = s.Expediente!;
             var anterior = x.Estado;
             x.Estado = EstadoPqrsd.ViaInternaAgotada;
+            await SincronizarColumnaLegalAsync(x, EstadoPqrsd.ViaInternaAgotada, ct);
             x.FechaCierre = DateTimeOffset.UtcNow;
             x.CerradoPorUsuarioId = GetUsuarioActualId();
             x.UpdatedAt = DateTimeOffset.UtcNow;
@@ -788,6 +906,301 @@ public class PqrsdService : IPqrsdService
                 Nota = "Comite: acuerdo alcanzado - admin debe cerrar con respuesta definitiva"
             });
         }
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    // ===================== Tablero: columnas (estados) configurables =====================
+
+    private static PqrsdEstadoDto MapEstado(PqrsdEstado e) => new(
+        e.Id, e.Nombre, e.Color, e.Orden, e.EsTerminal, e.EsBase, e.Activo, e.SemanticaLegal);
+
+    public async Task<IReadOnlyList<PqrsdEstadoDto>> ListarEstadosAsync(CancellationToken ct)
+    {
+        await AsegurarTableroBaseAsync(ct);
+        return await _db.PqrsdEstados.AsNoTracking()
+            .OrderBy(e => e.Orden).ThenBy(e => e.Nombre)
+            .Select(e => new PqrsdEstadoDto(e.Id, e.Nombre, e.Color, e.Orden, e.EsTerminal, e.EsBase, e.Activo, e.SemanticaLegal))
+            .ToListAsync(ct);
+    }
+
+    public async Task<PqrsdEstadoDto> CrearEstadoAsync(CrearEstadoPqrsdRequest req, CancellationToken ct)
+    {
+        await AsegurarTableroBaseAsync(ct);
+        if (string.IsNullOrWhiteSpace(req.Nombre)) throw new InvalidOperationException("Nombre obligatorio.");
+        var nom = req.Nombre.Trim();
+        if (await _db.PqrsdEstados.AnyAsync(e => e.Nombre == nom, ct))
+            throw new InvalidOperationException("Ya existe una columna con este nombre.");
+        var maxOrden = await _db.PqrsdEstados.AnyAsync(ct) ? await _db.PqrsdEstados.MaxAsync(e => e.Orden, ct) : 0;
+        var estado = new PqrsdEstado
+        {
+            Nombre = nom,
+            Color = string.IsNullOrWhiteSpace(req.Color) ? "#6D4FE3" : req.Color!.Trim(),
+            Orden = maxOrden + 1,
+            EsTerminal = false,
+            EsBase = false,
+            Activo = true,
+            SemanticaLegal = null
+        };
+        _db.PqrsdEstados.Add(estado);
+        await _db.SaveChangesAsync(ct);
+        return MapEstado(estado);
+    }
+
+    public async Task<bool> ActualizarEstadoAsync(Guid id, ActualizarEstadoPqrsdRequest req, CancellationToken ct)
+    {
+        var e = await _db.PqrsdEstados.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (e is null) return false;
+        if (string.IsNullOrWhiteSpace(req.Nombre)) throw new InvalidOperationException("Nombre obligatorio.");
+        var nom = req.Nombre.Trim();
+        if (await _db.PqrsdEstados.AnyAsync(x => x.Id != id && x.Nombre == nom, ct))
+            throw new InvalidOperationException("Ya existe una columna con este nombre.");
+        e.Nombre = nom;
+        if (!string.IsNullOrWhiteSpace(req.Color)) e.Color = req.Color!.Trim();
+        e.Orden = req.Orden;
+        e.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> EliminarEstadoAsync(Guid id, CancellationToken ct)
+    {
+        var e = await _db.PqrsdEstados.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (e is null) return false;
+        var total = await _db.PqrsdEstados.CountAsync(ct);
+        if (total <= 1) throw new InvalidOperationException("El tablero debe tener al menos una columna.");
+        var enUso = await _db.PqrsdExpedientes.AnyAsync(x => x.EstadoId == id, ct);
+        if (enUso) throw new InvalidOperationException("Hay PQR en esta columna. Muevelos a otra columna antes de eliminarla.");
+        _db.PqrsdEstados.Remove(e);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> ReordenarEstadoAsync(Guid id, string direccion, CancellationToken ct)
+    {
+        var lista = await _db.PqrsdEstados.OrderBy(e => e.Orden).ThenBy(e => e.Nombre).ToListAsync(ct);
+        var idx = lista.FindIndex(e => e.Id == id);
+        if (idx < 0) return false;
+        var dir = (direccion ?? "").ToLowerInvariant();
+        var j = dir is "arriba" or "up" or "-1" ? idx - 1 : idx + 1;
+        if (j < 0 || j >= lista.Count) return true;
+        (lista[idx].Orden, lista[j].Orden) = (lista[j].Orden, lista[idx].Orden);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> MoverAEstadoAsync(Guid expedienteId, Guid estadoId, CancellationToken ct)
+    {
+        await AsegurarTableroBaseAsync(ct);
+        var x = await _db.PqrsdExpedientes.FirstOrDefaultAsync(e => e.Id == expedienteId, ct);
+        if (x is null) return false;
+        var col = await _db.PqrsdEstados.FirstOrDefaultAsync(e => e.Id == estadoId, ct)
+            ?? throw new InvalidOperationException("Columna no encontrada.");
+        x.EstadoId = col.Id;
+        // Si la columna arrastrada tiene semantica legal, sincronizar el enum legal (plazos/semaforo).
+        if (col.SemanticaLegal is { } sem && sem != x.Estado)
+        {
+            var anterior = x.Estado;
+            x.Estado = sem;
+            if (sem == EstadoPqrsd.Cerrada || sem == EstadoPqrsd.ViaInternaAgotada)
+            {
+                x.FechaCierre ??= DateTimeOffset.UtcNow;
+                x.CerradoPorUsuarioId ??= GetUsuarioActualId();
+            }
+            _db.PqrsdHistorialEstados.Add(new PqrsdHistorialEstado
+            {
+                ExpedienteId = x.Id,
+                EstadoAnterior = anterior,
+                EstadoNuevo = sem,
+                ActorUsuarioId = GetUsuarioActualId(),
+                Origen = OrigenCambioEstado.Manual,
+                Nota = $"Movido a columna '{col.Nombre}'"
+            });
+        }
+        x.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    // ===================== Tablero: campos dinamicos =====================
+
+    private static PqrsdCampoDto MapCampo(PqrsdCampo c) => new(
+        c.Id, c.Label, c.Orden, c.Tipo, c.Opciones, c.MostrarEnFiltro, c.Columna,
+        c.Descripcion, c.Requerido, c.ValorPorDefecto, c.PermiteVarios, c.CamposSuma, c.Activo);
+
+    public async Task<IReadOnlyList<PqrsdCampoDto>> ListarCamposAsync(CancellationToken ct)
+    {
+        return await _db.PqrsdCampos.AsNoTracking().Where(c => c.Activo)
+            .OrderBy(c => c.Orden).ThenBy(c => c.Label)
+            .Select(c => new PqrsdCampoDto(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones, c.MostrarEnFiltro, c.Columna,
+                c.Descripcion, c.Requerido, c.ValorPorDefecto, c.PermiteVarios, c.CamposSuma, c.Activo))
+            .ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<PqrsdCampoDto>> ListarCamposArchivadosAsync(CancellationToken ct)
+    {
+        return await _db.PqrsdCampos.AsNoTracking().Where(c => !c.Activo)
+            .OrderBy(c => c.Orden).ThenBy(c => c.Label)
+            .Select(c => new PqrsdCampoDto(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones, c.MostrarEnFiltro, c.Columna,
+                c.Descripcion, c.Requerido, c.ValorPorDefecto, c.PermiteVarios, c.CamposSuma, c.Activo))
+            .ToListAsync(ct);
+    }
+
+    public async Task<PqrsdCampoDto> CrearCampoAsync(GuardarCampoPqrsdRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Label)) throw new InvalidOperationException("La etiqueta del campo es obligatoria.");
+        var label = req.Label.Trim();
+        if (await _db.PqrsdCampos.AnyAsync(c => c.Activo && c.Label == label, ct))
+            throw new InvalidOperationException("Ya existe un campo activo con esta etiqueta.");
+        var maxOrden = await _db.PqrsdCampos.AnyAsync(ct) ? await _db.PqrsdCampos.MaxAsync(c => c.Orden, ct) : 0;
+        var c = new PqrsdCampo
+        {
+            Label = label,
+            Orden = maxOrden + 1,
+            Tipo = req.Tipo,
+            Opciones = req.Opciones,
+            MostrarEnFiltro = req.MostrarEnFiltro,
+            Columna = Math.Clamp(req.Columna, 1, 2),
+            Descripcion = req.Descripcion,
+            Requerido = req.Requerido,
+            ValorPorDefecto = req.ValorPorDefecto,
+            PermiteVarios = req.PermiteVarios,
+            CamposSuma = req.CamposSuma,
+            Activo = true
+        };
+        _db.PqrsdCampos.Add(c);
+        await _db.SaveChangesAsync(ct);
+        return MapCampo(c);
+    }
+
+    public async Task<bool> ActualizarCampoAsync(Guid id, GuardarCampoPqrsdRequest req, CancellationToken ct)
+    {
+        var c = await _db.PqrsdCampos.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (c is null) return false;
+        if (string.IsNullOrWhiteSpace(req.Label)) throw new InvalidOperationException("La etiqueta del campo es obligatoria.");
+        var label = req.Label.Trim();
+        if (await _db.PqrsdCampos.AnyAsync(x => x.Id != id && x.Activo && x.Label == label, ct))
+            throw new InvalidOperationException("Ya existe un campo activo con esta etiqueta.");
+        c.Label = label;
+        c.Tipo = req.Tipo;
+        c.Opciones = req.Opciones;
+        c.MostrarEnFiltro = req.MostrarEnFiltro;
+        c.Columna = Math.Clamp(req.Columna, 1, 2);
+        c.Descripcion = req.Descripcion;
+        c.Requerido = req.Requerido;
+        c.ValorPorDefecto = req.ValorPorDefecto;
+        c.PermiteVarios = req.PermiteVarios;
+        c.CamposSuma = req.CamposSuma;
+        c.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> EliminarCampoAsync(Guid id, CancellationToken ct)
+    {
+        var c = await _db.PqrsdCampos.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (c is null) return false;
+        await _db.PqrsdCampoValores.Where(v => v.PqrsdCampoId == id).ExecuteDeleteAsync(ct);
+        _db.PqrsdCampos.Remove(c);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> SetCampoActivoAsync(Guid id, bool activo, CancellationToken ct)
+    {
+        var c = await _db.PqrsdCampos.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (c is null) return false;
+        if (activo && await _db.PqrsdCampos.AnyAsync(x => x.Id != id && x.Activo && x.Label == c.Label, ct))
+            throw new InvalidOperationException("Ya existe un campo activo con esta etiqueta. Renombra antes de restaurar.");
+        c.Activo = activo;
+        c.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> ReordenarCampoAsync(Guid id, string direccion, CancellationToken ct)
+    {
+        var lista = await _db.PqrsdCampos.Where(c => c.Activo).OrderBy(c => c.Orden).ThenBy(c => c.Label).ToListAsync(ct);
+        var idx = lista.FindIndex(c => c.Id == id);
+        if (idx < 0) return false;
+        var dir = (direccion ?? "").ToLowerInvariant();
+        var j = dir is "arriba" or "up" or "-1" ? idx - 1 : idx + 1;
+        if (j < 0 || j >= lista.Count) return true;
+        (lista[idx].Orden, lista[j].Orden) = (lista[j].Orden, lista[idx].Orden);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    // ===================== Expediente: archivar + actualizar =====================
+
+    public async Task<bool> ArchivarExpedienteAsync(Guid id, bool archivar, CancellationToken ct)
+    {
+        var x = await _db.PqrsdExpedientes.FirstOrDefaultAsync(e => e.Id == id, ct);
+        if (x is null) return false;
+        x.Archivado = archivar;
+        x.ArchivadoAt = archivar ? DateTimeOffset.UtcNow : null;
+        x.ArchivadoPorUsuarioId = archivar ? GetUsuarioActualId() : null;
+        x.UpdatedAt = DateTimeOffset.UtcNow;
+        _db.PqrsdHistorialEstados.Add(new PqrsdHistorialEstado
+        {
+            ExpedienteId = id,
+            EstadoAnterior = x.Estado,
+            EstadoNuevo = x.Estado,
+            ActorUsuarioId = GetUsuarioActualId(),
+            Origen = OrigenCambioEstado.Manual,
+            Nota = archivar ? "Expediente archivado" : "Expediente restaurado desde archivados"
+        });
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> ActualizarExpedienteAsync(Guid id, ActualizarExpedienteRequest req, CancellationToken ct)
+    {
+        var x = await _db.PqrsdExpedientes.FirstOrDefaultAsync(e => e.Id == id, ct);
+        if (x is null) return false;
+
+        x.UnidadPrivadaId = req.UnidadPrivadaId;
+
+        if (req.RadicadorPersonaId is { } radPid && radPid != x.RadicadorPersonaId)
+        {
+            if (!await _db.Personas.AsNoTracking().AnyAsync(p => p.Id == radPid, ct))
+                throw new InvalidOperationException("La persona seleccionada no existe.");
+            x.RadicadorPersonaId = radPid;
+        }
+
+        if (!string.IsNullOrWhiteSpace(req.Descripcion))
+        {
+            var desc = req.Descripcion.Trim();
+            if (desc.Length > 2000) throw new InvalidOperationException("Descripcion maxima 2000 caracteres.");
+            x.Descripcion = desc;
+        }
+
+        // Upsert de campos dinamicos.
+        if (req.Campos is not null)
+        {
+            var existentes = await _db.PqrsdCampoValores.Where(v => v.ExpedienteId == id).ToListAsync(ct);
+            var camposActivos = await _db.PqrsdCampos.AsNoTracking().Where(c => c.Activo).Select(c => c.Id).ToHashSetAsync(ct);
+            foreach (var cv in req.Campos)
+            {
+                if (!camposActivos.Contains(cv.CampoId)) continue;
+                var actual = existentes.FirstOrDefault(v => v.PqrsdCampoId == cv.CampoId);
+                if (string.IsNullOrWhiteSpace(cv.Valor))
+                {
+                    if (actual is not null) _db.PqrsdCampoValores.Remove(actual);
+                }
+                else if (actual is null)
+                {
+                    _db.PqrsdCampoValores.Add(new PqrsdCampoValor { ExpedienteId = id, PqrsdCampoId = cv.CampoId, Valor = cv.Valor });
+                }
+                else
+                {
+                    actual.Valor = cv.Valor;
+                    actual.UpdatedAt = DateTimeOffset.UtcNow;
+                }
+            }
+        }
+
+        x.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
         return true;
     }
