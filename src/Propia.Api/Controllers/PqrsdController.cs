@@ -57,6 +57,32 @@ public class PqrsdController : ControllerBase
     public async Task<IActionResult> ActualizarPlazo(TipoPqrsd tipo, [FromBody] ActualizarPlazoRequest req, CancellationToken ct)
         => await _svc.ActualizarPlazoAsync(tipo, req, ct) ? NoContent() : NotFound();
 
+    // --- Tipos configurables (catalogo editable por copropiedad) ---
+    [HttpGet("tipos")]
+    public async Task<IActionResult> ListarTipos([FromQuery] bool incluirInactivos, CancellationToken ct)
+        => Ok(await _svc.ListarTiposAsync(incluirInactivos, ct));
+
+    [HttpPost("tipos")]
+    public async Task<IActionResult> CrearTipo([FromBody] GuardarTipoPqrsdRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.CrearTipoAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpPut("tipos/{id:guid}")]
+    public async Task<IActionResult> ActualizarTipo(Guid id, [FromBody] GuardarTipoPqrsdRequest req, CancellationToken ct)
+    {
+        try { return await _svc.ActualizarTipoAsync(id, req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpDelete("tipos/{id:guid}")]
+    public async Task<IActionResult> EliminarTipo(Guid id, CancellationToken ct)
+    {
+        try { return await _svc.EliminarTipoAsync(id, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     // --- Bandeja + ficha ---
     [HttpGet("bandeja")]
     public async Task<IActionResult> Bandeja(

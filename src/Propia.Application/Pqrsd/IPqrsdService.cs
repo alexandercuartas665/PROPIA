@@ -36,6 +36,12 @@ public interface IPqrsdService
     Task<IReadOnlyList<PqrsdPlazoDto>> ListarPlazosAsync(CancellationToken ct);
     Task<bool> ActualizarPlazoAsync(TipoPqrsd tipo, ActualizarPlazoRequest req, CancellationToken ct);
 
+    // Tipos configurables (catalogo editable por copropiedad)
+    Task<IReadOnlyList<PqrsdTipoDto>> ListarTiposAsync(bool incluirInactivos, CancellationToken ct);
+    Task<PqrsdTipoDto> CrearTipoAsync(GuardarTipoPqrsdRequest req, CancellationToken ct);
+    Task<bool> ActualizarTipoAsync(Guid id, GuardarTipoPqrsdRequest req, CancellationToken ct);
+    Task<bool> EliminarTipoAsync(Guid id, CancellationToken ct);
+
     // Bandeja + ficha
     Task<PqrsdBandejaDto> GetBandejaAsync(EstadoPqrsd? estado, TipoPqrsd? tipo, Guid? categoriaId, string? query, bool incluirArchivados, CancellationToken ct);
     Task<PqrsdExpedienteDetalleDto?> GetExpedienteAsync(Guid id, CancellationToken ct);

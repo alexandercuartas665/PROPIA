@@ -46,7 +46,9 @@ public record PqrsdBandejaItemDto(
     bool Archivado = false,
     Guid? UnidadPrivadaId = null,
     Guid? RadicadorPersonaId = null,
-    IReadOnlyList<PqrsdCampoValorDto>? Campos = null);
+    IReadOnlyList<PqrsdCampoValorDto>? Campos = null,
+    /// <summary>Nombre del tipo configurable elegido (fallback al label del enum).</summary>
+    string? TipoNombre = null);
 
 public record PqrsdKpisDto(
     int Total, int Recibidas, int EnGestion, int Respondidas, int Cerradas,
@@ -102,7 +104,9 @@ public record PqrsdExpedienteDetalleDto(
     Guid? EstadoId = null,
     Guid? UnidadPrivadaId = null,
     bool Archivado = false,
-    IReadOnlyList<PqrsdCampoValorDto>? Campos = null);
+    IReadOnlyList<PqrsdCampoValorDto>? Campos = null,
+    Guid? TipoId = null,
+    string? TipoNombre = null);
 
 // ===================== Tablero configurable (columnas + campos dinamicos) =====================
 
@@ -131,6 +135,16 @@ public record PqrsdCampoValorDto(Guid CampoId, string? Valor);
 /// <summary>Payload para archivar/restaurar un expediente (clic tipo checkbox).</summary>
 public record ArchivarExpedienteRequest(bool Archivar);
 
+// ===================== Tipos configurables =====================
+
+/// <summary>Tipo de PQRS configurable por copropiedad (catalogo editable).</summary>
+public record PqrsdTipoDto(
+    Guid Id, string Nombre, int DiasHabiles, int DiasInconformidad,
+    NivelUrgenciaPqrsd NivelUrgencia, TipoPqrsd Legal, bool EsBase, bool Activo, int Orden);
+
+public record GuardarTipoPqrsdRequest(
+    string Nombre, int DiasHabiles, int DiasInconformidad, NivelUrgenciaPqrsd NivelUrgencia, TipoPqrsd Legal);
+
 // ===================== Requests =====================
 
 public record RadicarPqrsdRequest(
@@ -143,7 +157,9 @@ public record RadicarPqrsdRequest(
     Guid? UnidadPrivadaId = null,
     /// <summary>Persona del directorio como radicador (admin radicando en nombre de otro). Null = usuario actual.</summary>
     Guid? RadicadorPersonaId = null,
-    IReadOnlyList<PqrsdCampoValorDto>? Campos = null);
+    IReadOnlyList<PqrsdCampoValorDto>? Campos = null,
+    /// <summary>Tipo configurable elegido. Si viene, define el nombre + plazo (y su Legal fija el enum Tipo).</summary>
+    Guid? TipoId = null);
 
 /// <summary>Actualiza datos editables del expediente desde el modal de detalle (unidad, radicador, campos dinamicos).</summary>
 public record ActualizarExpedienteRequest(

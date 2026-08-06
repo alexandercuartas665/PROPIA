@@ -12,7 +12,12 @@ public class PqrsdExpediente : TenantEntity
 {
     public string NumeroRadicado { get; set; } = string.Empty;
 
+    /// <summary>Comportamiento legal del expediente (enum fijo). Deriva del tipo configurable elegido.</summary>
     public TipoPqrsd Tipo { get; set; }
+
+    /// <summary>Tipo configurable elegido (catalogo PqrsdTipo por copropiedad). Determina nombre + plazo.</summary>
+    public Guid? TipoId { get; set; }
+    public PqrsdTipo? TipoConfig { get; set; }
 
     public Guid CategoriaId { get; set; }
     public PqrsdCategoria? Categoria { get; set; }
@@ -105,6 +110,39 @@ public class PqrsdEstado : TenantEntity
     /// sincroniza el enum Estado del expediente (y por ende los plazos). null = columna custom.
     /// </summary>
     public EstadoPqrsd? SemanticaLegal { get; set; }
+}
+
+/// <summary>
+/// Tipo de PQRS configurable por copropiedad (catalogo editable). Los 8 tipos legales se siembran
+/// como base (EsBase=true) con <see cref="Legal"/> mapeado al enum; el usuario puede crear tipos
+/// propios y editar sus tiempos de respuesta. El expediente conserva el enum <see cref="PqrsdExpediente.Tipo"/>
+/// (= Legal del tipo elegido) para toda la logica legal; el nombre y el plazo salen de este catalogo.
+/// </summary>
+public class PqrsdTipo : TenantEntity
+{
+    public string Nombre { get; set; } = string.Empty;
+
+    /// <summary>Plazo de respuesta en dias habiles.</summary>
+    public int DiasHabiles { get; set; } = 15;
+
+    /// <summary>Dias habiles para manifestar inconformidad (RN-06).</summary>
+    public int DiasInconformidad { get; set; } = 3;
+
+    public NivelUrgenciaPqrsd NivelUrgencia { get; set; } = NivelUrgenciaPqrsd.Media;
+
+    /// <summary>
+    /// Conducta legal a aplicar. Para los 8 tipos base es su enum; para tipos custom es la conducta
+    /// que se hereda (por defecto Peticion): asi la reserva de identidad (Denuncia), el comite, etc.
+    /// siguen funcionando sobre el enum del expediente.
+    /// </summary>
+    public TipoPqrsd Legal { get; set; } = TipoPqrsd.Peticion;
+
+    /// <summary>True = uno de los 8 tipos legales sembrados por plataforma.</summary>
+    public bool EsBase { get; set; }
+
+    public bool Activo { get; set; } = true;
+
+    public int Orden { get; set; }
 }
 
 /// <summary>

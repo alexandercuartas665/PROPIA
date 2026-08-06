@@ -30,12 +30,14 @@
     <div class="npq-body">
         <div class="npq-grid">
             <div class="npq-field">
-                <label class="npq-lbl">Tipo</label>
-                <select class="npq-input" @bind="_tipoStr" @bind:after="OnTipoChange">
+                <label class="npq-lbl">Tipo de PQR
+                    <button type="button" class="npq-tipo-new" @onclick="() => _nuevoTipoOpen = !_nuevoTipoOpen">+ nuevo tipo</button>
+                </label>
+                <select class="npq-input" @bind="_tipoIdSel" @bind:after="OnTipoChange">
                     <option value="">- elegir -</option>
-                    @foreach (var t in Enum.GetValues<TipoPqrsd>())
+                    @foreach (var t in _tipos)
                     {
-                        <option value="@t">@TipoLabel(t)</option>
+                        <option value="@t.Id">@t.Nombre (@t.DiasHabiles d)</option>
                     }
                 </select>
                 @if (_plazoCalculado.HasValue)
@@ -45,11 +47,27 @@
             </div>
 
             <div class="npq-field">
-                <label class="npq-lbl">Dias habiles de respuesta <span class="npq-tag-edit">editable por tipo</span></label>
+                <label class="npq-lbl">Tiempo de respuesta (dias habiles) <span class="npq-tag-edit">editable por tipo</span></label>
                 <input class="npq-input" type="number" min="1" max="90" @bind="_plazoEditable" @bind:event="oninput"
-                       @bind:after="RecalcularVencimiento" disabled="@string.IsNullOrEmpty(_tipoStr)" />
-                <span class="npq-helper-muted">Cambia el SLA para este tipo de PQR (se guarda al radicar).</span>
+                       @bind:after="RecalcularVencimiento" disabled="@string.IsNullOrEmpty(_tipoIdSel)" />
+                <span class="npq-helper-muted">Cambia el tiempo de respuesta de este tipo (se guarda al radicar).</span>
             </div>
+
+            @if (_nuevoTipoOpen)
+            {
+                <div class="npq-field npq-field--full npq-newtipo">
+                    <label class="npq-lbl">Nuevo tipo de PQR</label>
+                    <div class="npq-newtipo-row">
+                        <input class="npq-input" placeholder="Nombre del tipo" @bind="_ntNombre" @bind:event="oninput" />
+                        <input class="npq-input" type="number" min="1" max="90" placeholder="Dias" @bind="_ntDias" />
+                        <select class="npq-input" @bind="_ntLegalStr" title="Conducta legal que hereda">
+                            @foreach (var t in Enum.GetValues<TipoPqrsd>()) { <option value="@t">como @TipoLabel(t)</option> }
+                        </select>
+                        <button type="button" class="npq-btn-brand" @onclick="CrearTipo" disabled="@(_creandoTipo || string.IsNullOrWhiteSpace(_ntNombre) || _ntDias < 1)">Crear</button>
+                    </div>
+                    <span class="npq-helper-muted">La "conducta legal" define el comportamiento: ej. "como Denuncia" habilita reserva de identidad y comite.</span>
+                </div>
+            }
 
             <div class="npq-field">
                 <label class="npq-lbl">Categoria</label>
@@ -122,7 +140,7 @@
 
             <div class="npq-field npq-field--full">
                 <label class="npq-check">
-                    <input type="checkbox" @bind="_identidadReservada" disabled="@(_tipoStr != TipoPqrsd.Denuncia.ToString())" />
+                    <input type="checkbox" @bind="_identidadReservada" disabled="@(!EsDenuncia)" />
                     <span><strong>Reservar identidad.</strong> Solo aplica a Denuncias (Ley 675 Art. 58).</span>
                 </label>
             </div>
@@ -164,6 +182,12 @@
     .npq-lbl { font-size: 11px; color: #7C98B6; font-weight: 700; display: flex; align-items: center; gap: 6px; }
     .npq-req { color: #DC2626; }
     .npq-tag-edit { font-size: 9.5px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: #F1ECFD; padding: 1px 6px; border-radius: 20px; }
+    .npq-tipo-new { margin-left: auto; border: 0; background: transparent; color: var(--propia-brand, #6D4FE3); font-size: 10.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .npq-tipo-new:hover { text-decoration: underline; }
+    .npq-newtipo { background: #FAFBFD; border: 1px dashed #D3DEE9; border-radius: 10px; padding: 12px; }
+    .npq-newtipo-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .npq-newtipo-row .npq-input { flex: 1; min-width: 110px; margin-bottom: 0; }
+    .npq-newtipo-row .npq-btn-brand { white-space: nowrap; }
     .npq-input {
         width: 100%; border: 1.5px solid #E1E8EE; border-radius: 9px;
         padding: 10px 12px; font-size: 13.5px; color: #33475B;
@@ -206,7 +230,13 @@
 @code {
     [Parameter] public string? Jwt { get; set; }
 
-    private string _tipoStr = "";
+    private string _tipoIdSel = "";
+    private List<PqrsdTipoDto> _tipos = new();
+    private bool _nuevoTipoOpen;
+    private string _ntNombre = "";
+    private int _ntDias = 15;
+    private string _ntLegalStr = TipoPqrsd.Peticion.ToString();
+    private bool _creandoTipo;
     private string _categoriaIdStr = "";
     private string _unidadIdStr = "";
     private PersonaCandidatoDto? _personaSel;
@@ -227,8 +257,11 @@
     private readonly Dictionary<Guid, string> _campoValores = new();
     private readonly List<IBrowserFile> _archivos = new();
 
+    private PqrsdTipoDto? TipoSel() => Guid.TryParse(_tipoIdSel, out var id) ? _tipos.FirstOrDefault(t => t.Id == id) : null;
+    private bool EsDenuncia => TipoSel()?.Legal == TipoPqrsd.Denuncia;
+
     private bool PuedeRadicar =>
-        !string.IsNullOrEmpty(_tipoStr) &&
+        !string.IsNullOrEmpty(_tipoIdSel) &&
         !string.IsNullOrEmpty(_categoriaIdStr) &&
         !string.IsNullOrWhiteSpace(_descripcion) &&
         _descripcion.Length >= 10;
@@ -239,7 +272,7 @@
         {
             var http = Auth();
             _categorias = (await http.GetFromJsonAsync<List<PqrsdCategoriaDto>>("/api/pqrsd/categorias")) ?? new();
-            _plazos = (await http.GetFromJsonAsync<List<PqrsdPlazoDto>>("/api/pqrsd/plazos")) ?? new();
+            _tipos = (await http.GetFromJsonAsync<List<PqrsdTipoDto>>("/api/pqrsd/tipos")) ?? new();
             _campos = (await http.GetFromJsonAsync<List<PqrsdCampoDto>>("/api/pqrsd/campos")) ?? new();
             _unidades = (await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades")) ?? new();
             foreach (var c in _campos.Where(c => !string.IsNullOrEmpty(c.ValorPorDefecto)))
@@ -250,15 +283,37 @@
 
     private void OnTipoChange()
     {
-        if (Enum.TryParse<TipoPqrsd>(_tipoStr, out var t))
+        var t = TipoSel();
+        if (t is not null)
         {
-            var p = _plazos.FirstOrDefault(p => p.Tipo == t);
-            _plazoEditable = p?.DiasHabiles ?? PlazoDefault(t);
+            _plazoEditable = t.DiasHabiles;
             _plazoCalculado = _plazoEditable;
             RecalcularVencimiento();
-            if (t != TipoPqrsd.Denuncia) _identidadReservada = false;
+            if (t.Legal != TipoPqrsd.Denuncia) _identidadReservada = false;
         }
         else { _plazoCalculado = null; }
+    }
+
+    private async Task CrearTipo()
+    {
+        if (string.IsNullOrWhiteSpace(_ntNombre) || _ntDias < 1) return;
+        _creandoTipo = true; _msg = null;
+        try
+        {
+            var legal = Enum.TryParse<TipoPqrsd>(_ntLegalStr, out var l) ? l : TipoPqrsd.Peticion;
+            var resp = await Auth().PostAsJsonAsync("/api/pqrsd/tipos",
+                new GuardarTipoPqrsdRequest(_ntNombre.Trim(), _ntDias, 3, NivelUrgenciaPqrsd.Media, legal));
+            if (resp.IsSuccessStatusCode)
+            {
+                var creado = await resp.Content.ReadFromJsonAsync<PqrsdTipoDto>();
+                _tipos = (await Auth().GetFromJsonAsync<List<PqrsdTipoDto>>("/api/pqrsd/tipos")) ?? _tipos;
+                if (creado is not null) { _tipoIdSel = creado.Id.ToString(); OnTipoChange(); }
+                _nuevoTipoOpen = false; _ntNombre = ""; _ntDias = 15;
+            }
+            else { _msg = "No se pudo crear el tipo: " + await resp.Content.ReadAsStringAsync(); _msgError = true; }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
+        _creandoTipo = false;
     }
 
     private void RecalcularVencimiento()
@@ -332,15 +387,15 @@
         _busy = true; _busyMsg = "Radicando..."; _msg = null;
         try
         {
-            var tipo = Enum.Parse<TipoPqrsd>(_tipoStr);
+            var tipoSel = TipoSel();
+            if (tipoSel is null) { _msg = "Elige un tipo de PQR."; _msgError = true; _busy = false; return; }
             var catId = Guid.Parse(_categoriaIdStr);
 
-            // Guardar el plazo editado para este tipo (SLA por tipo).
-            var plazoActual = _plazos.FirstOrDefault(p => p.Tipo == tipo);
-            if (plazoActual is not null && plazoActual.DiasHabiles != _plazoEditable)
+            // Guardar el tiempo de respuesta editado para este tipo.
+            if (_plazoEditable != tipoSel.DiasHabiles)
             {
-                await Auth().PutAsJsonAsync($"/api/pqrsd/plazos/{tipo}",
-                    new ActualizarPlazoRequest(_plazoEditable, plazoActual.DiasInconformidad, plazoActual.NivelUrgencia));
+                await Auth().PutAsJsonAsync($"/api/pqrsd/tipos/{tipoSel.Id}",
+                    new GuardarTipoPqrsdRequest(tipoSel.Nombre, _plazoEditable, tipoSel.DiasInconformidad, tipoSel.NivelUrgencia, tipoSel.Legal));
             }
 
             var desc = string.IsNullOrWhiteSpace(_asunto)
@@ -352,7 +407,7 @@
             var campos = _campoValores.Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
                 .Select(kv => new PqrsdCampoValorDto(kv.Key, kv.Value)).ToList();
 
-            var req = new RadicarPqrsdRequest(tipo, catId, desc, _identidadReservada, null, unidadId, radId, campos);
+            var req = new RadicarPqrsdRequest(tipoSel.Legal, catId, desc, _identidadReservada, null, unidadId, radId, campos, tipoSel.Id);
             var resp = await Auth().PostAsJsonAsync("/api/pqrsd", req);
             if (!resp.IsSuccessStatusCode)
             {

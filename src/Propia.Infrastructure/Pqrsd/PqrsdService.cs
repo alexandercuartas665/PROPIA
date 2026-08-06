@@ -157,7 +157,50 @@ public class PqrsdService : IPqrsdService
         }
 
         if (!hayCats || !hayPlazos) await _db.SaveChangesAsync(ct);
+
+        // Tipos configurables: siembra los 8 tipos legales como base (con Legal mapeado al enum) y
+        // backfilea TipoId de los expedientes existentes. El usuario puede crear tipos propios encima.
+        var hayTipos = await _db.PqrsdTipos.AnyAsync(ct);
+        if (!hayTipos)
+        {
+            foreach (var (tipo, dias, diasInc, urgencia) in PqrsdCatalogo.PlazosBase)
+            {
+                _db.PqrsdTipos.Add(new PqrsdTipo
+                {
+                    TenantId = tenantId,
+                    Nombre = TipoNombreBase(tipo),
+                    DiasHabiles = dias,
+                    DiasInconformidad = diasInc,
+                    NivelUrgencia = urgencia,
+                    Legal = tipo,
+                    EsBase = true,
+                    Activo = true,
+                    Orden = (int)tipo
+                });
+            }
+            await _db.SaveChangesAsync(ct);
+
+            var mapaTipo = await _db.PqrsdTipos.Where(t => t.EsBase)
+                .ToDictionaryAsync(t => t.Legal, t => t.Id, ct);
+            var expSinTipo = await _db.PqrsdExpedientes.Where(x => x.TipoId == null).ToListAsync(ct);
+            foreach (var x in expSinTipo)
+                if (mapaTipo.TryGetValue(x.Tipo, out var tid)) x.TipoId = tid;
+            if (expSinTipo.Count > 0) await _db.SaveChangesAsync(ct);
+        }
     }
+
+    private static string TipoNombreBase(TipoPqrsd t) => t switch
+    {
+        TipoPqrsd.Peticion => "Peticion",
+        TipoPqrsd.SolicitudDocumentos => "Solicitud de documentos",
+        TipoPqrsd.Consulta => "Consulta",
+        TipoPqrsd.Queja => "Queja",
+        TipoPqrsd.Reclamo => "Reclamo",
+        TipoPqrsd.Sugerencia => "Sugerencia",
+        TipoPqrsd.Denuncia => "Denuncia",
+        TipoPqrsd.Felicitacion => "Felicitacion",
+        _ => t.ToString()
+    };
 
     // ===================== Calculo de plazo en dias habiles =====================
 
@@ -319,6 +362,102 @@ public class PqrsdService : IPqrsdService
         p.DiasInconformidad = req.DiasInconformidad;
         p.NivelUrgencia = req.NivelUrgencia;
         p.UpdatedAt = DateTimeOffset.UtcNow;
+        // Sincroniza el tipo base espejo (fuente de verdad de la UI nueva).
+        var tb = await _db.PqrsdTipos.FirstOrDefaultAsync(t => t.EsBase && t.Legal == tipo, ct);
+        if (tb is not null)
+        {
+            tb.DiasHabiles = req.DiasHabiles;
+            tb.DiasInconformidad = req.DiasInconformidad;
+            tb.NivelUrgencia = req.NivelUrgencia;
+        }
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    // ===================== Tipos configurables =====================
+
+    private static PqrsdTipoDto MapTipo(PqrsdTipo t) => new(
+        t.Id, t.Nombre, t.DiasHabiles, t.DiasInconformidad, t.NivelUrgencia, t.Legal, t.EsBase, t.Activo, t.Orden);
+
+    public async Task<IReadOnlyList<PqrsdTipoDto>> ListarTiposAsync(bool incluirInactivos, CancellationToken ct)
+    {
+        await AsegurarCatalogoBaseAsync(ct);
+        var q = _db.PqrsdTipos.AsNoTracking().AsQueryable();
+        if (!incluirInactivos) q = q.Where(t => t.Activo);
+        return await q.OrderBy(t => t.Orden).ThenBy(t => t.Nombre)
+            .Select(t => new PqrsdTipoDto(t.Id, t.Nombre, t.DiasHabiles, t.DiasInconformidad, t.NivelUrgencia, t.Legal, t.EsBase, t.Activo, t.Orden))
+            .ToListAsync(ct);
+    }
+
+    public async Task<PqrsdTipoDto> CrearTipoAsync(GuardarTipoPqrsdRequest req, CancellationToken ct)
+    {
+        await AsegurarCatalogoBaseAsync(ct);
+        if (string.IsNullOrWhiteSpace(req.Nombre)) throw new InvalidOperationException("El nombre del tipo es obligatorio.");
+        var nom = req.Nombre.Trim();
+        if (await _db.PqrsdTipos.AnyAsync(t => t.Nombre == nom, ct))
+            throw new InvalidOperationException("Ya existe un tipo con este nombre.");
+        var maxOrden = await _db.PqrsdTipos.AnyAsync(ct) ? await _db.PqrsdTipos.MaxAsync(t => t.Orden, ct) : 0;
+        var t = new PqrsdTipo
+        {
+            Nombre = nom,
+            DiasHabiles = req.DiasHabiles < 1 ? 1 : req.DiasHabiles,
+            DiasInconformidad = req.DiasInconformidad < 0 ? 0 : req.DiasInconformidad,
+            NivelUrgencia = req.NivelUrgencia,
+            Legal = req.Legal,
+            EsBase = false,
+            Activo = true,
+            Orden = maxOrden + 1
+        };
+        _db.PqrsdTipos.Add(t);
+        await _db.SaveChangesAsync(ct);
+        return MapTipo(t);
+    }
+
+    public async Task<bool> ActualizarTipoAsync(Guid id, GuardarTipoPqrsdRequest req, CancellationToken ct)
+    {
+        var t = await _db.PqrsdTipos.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (t is null) return false;
+        if (string.IsNullOrWhiteSpace(req.Nombre)) throw new InvalidOperationException("El nombre del tipo es obligatorio.");
+        var nom = req.Nombre.Trim();
+        if (await _db.PqrsdTipos.AnyAsync(x => x.Id != id && x.Nombre == nom, ct))
+            throw new InvalidOperationException("Ya existe un tipo con este nombre.");
+        t.Nombre = nom;
+        t.DiasHabiles = req.DiasHabiles < 1 ? 1 : req.DiasHabiles;
+        t.DiasInconformidad = req.DiasInconformidad < 0 ? 0 : req.DiasInconformidad;
+        t.NivelUrgencia = req.NivelUrgencia;
+        // La conducta legal de los tipos base NO se cambia (protege reserva/comite); los custom si.
+        if (!t.EsBase) t.Legal = req.Legal;
+        t.UpdatedAt = DateTimeOffset.UtcNow;
+        // Mantener el plazo legacy en sync para los tipos base (misma fuente que el semaforo/urgencia).
+        if (t.EsBase)
+        {
+            var plazo = await _db.PqrsdConfiguracionPlazos.FirstOrDefaultAsync(p => p.Tipo == t.Legal, ct);
+            if (plazo is not null)
+            {
+                plazo.DiasHabiles = t.DiasHabiles;
+                plazo.DiasInconformidad = t.DiasInconformidad;
+                plazo.NivelUrgencia = t.NivelUrgencia;
+            }
+        }
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> EliminarTipoAsync(Guid id, CancellationToken ct)
+    {
+        var t = await _db.PqrsdTipos.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (t is null) return false;
+        if (t.EsBase) throw new InvalidOperationException("Los tipos legales base no se pueden eliminar; puedes editarlos o desactivarlos.");
+        var enUso = await _db.PqrsdExpedientes.AnyAsync(e => e.TipoId == id, ct);
+        if (enUso)
+        {
+            t.Activo = false; // conserva historia
+            t.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+        else
+        {
+            _db.PqrsdTipos.Remove(t);
+        }
         await _db.SaveChangesAsync(ct);
         return true;
     }
@@ -372,6 +511,7 @@ public class PqrsdService : IPqrsdService
 
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
         var plazos = await _db.PqrsdConfiguracionPlazos.AsNoTracking().ToDictionaryAsync(p => p.Tipo, ct);
+        var tiposNombres = await _db.PqrsdTipos.AsNoTracking().ToDictionaryAsync(t => t.Id, t => t.Nombre, ct);
 
         var items = rows.Select(r =>
         {
@@ -383,13 +523,14 @@ public class PqrsdService : IPqrsdService
             var resumen = r.x.Descripcion.Length > 100 ? r.x.Descripcion[..100] + "..." : r.x.Descripcion;
             var unidadNumero = r.x.UnidadPrivadaId.HasValue ? unidadNumeros.GetValueOrDefault(r.x.UnidadPrivadaId.Value) : null;
             var radId = r.x.IdentidadReservada ? (Guid?)null : r.x.RadicadorPersonaId;
+            var tipoNombre = (r.x.TipoId.HasValue && tiposNombres.TryGetValue(r.x.TipoId.Value, out var tn)) ? tn : TipoNombreBase(r.x.Tipo);
             return new PqrsdBandejaItemDto(
                 r.x.Id, r.x.NumeroRadicado, r.x.Tipo, r.x.Categoria!.Nombre, resumen, r.x.Estado,
                 semaforo, nombre, unidadNumero, r.x.IdentidadReservada, r.x.TutelaActiva,
                 r.x.FechaVencimiento, diasHasta, urgencia,
                 sesionesActivas.Contains(r.x.Id), r.x.CreatedAt,
                 r.x.EstadoId, r.x.Archivado, r.x.UnidadPrivadaId, radId,
-                valoresPorExp.GetValueOrDefault(r.x.Id));
+                valoresPorExp.GetValueOrDefault(r.x.Id), tipoNombre);
         }).ToList();
 
         var kpis = new PqrsdKpisDto(
@@ -432,6 +573,11 @@ public class PqrsdService : IPqrsdService
             .FirstOrDefaultAsync(p => p.Tipo == x.Tipo, ct);
         var urgencia = plazo?.NivelUrgencia ?? NivelUrgenciaPqrsd.Media;
 
+        string? tipoNombre = x.TipoId.HasValue
+            ? await _db.PqrsdTipos.AsNoTracking().Where(t => t.Id == x.TipoId).Select(t => t.Nombre).FirstOrDefaultAsync(ct)
+            : null;
+        tipoNombre ??= TipoNombreBase(x.Tipo);
+
         // Radicador (filtrar nombre si hay reserva)
         var rad = await _db.Personas.AsNoTracking().FirstOrDefaultAsync(p => p.Id == x.RadicadorPersonaId, ct);
         string? radNombre = x.IdentidadReservada ? null : (rad is null ? null : $"{rad.Nombres} {rad.Apellidos}".Trim());
@@ -472,7 +618,7 @@ public class PqrsdService : IPqrsdService
             x.RespuestaAdmin, x.RespuestaAdminAt, x.InconformidadTexto, x.InconformidadAt,
             x.RespuestaDefinitiva, x.RespuestaDefinitivaAt, x.FechaCierre, x.TareaId,
             x.CreatedAt, adjuntos, historial, comiteDto,
-            x.EstadoId, x.UnidadPrivadaId, x.Archivado, camposValores);
+            x.EstadoId, x.UnidadPrivadaId, x.Archivado, camposValores, x.TipoId, tipoNombre);
     }
 
     // ===================== Radicacion =====================
@@ -484,12 +630,21 @@ public class PqrsdService : IPqrsdService
             throw new InvalidOperationException("Descripcion obligatoria, minimo 20 caracteres.");
         if (req.Descripcion.Length > 2000)
             throw new InvalidOperationException("Descripcion maxima 2000 caracteres.");
-        if (req.IdentidadReservada && req.Tipo != TipoPqrsd.Denuncia)
-            throw new InvalidOperationException("La reserva de identidad solo aplica al tipo Denuncia (RN-02).");
 
         var categoria = await _db.PqrsdCategorias.AsNoTracking().FirstOrDefaultAsync(c => c.Id == req.CategoriaId, ct)
             ?? throw new InvalidOperationException("Categoria invalida.");
         if (!categoria.Activa) throw new InvalidOperationException("La categoria no esta activa.");
+
+        // Tipo: si viene TipoId se usa el tipo configurable (nombre + plazo + conducta legal Legal);
+        // si no, se resuelve el tipo base del enum recibido (compatibilidad con el flujo viejo).
+        PqrsdTipo? tipoConfig = req.TipoId is { } tid
+            ? (await _db.PqrsdTipos.AsNoTracking().FirstOrDefaultAsync(t => t.Id == tid && t.Activo, ct)
+                ?? throw new InvalidOperationException("El tipo seleccionado no existe o esta inactivo."))
+            : await _db.PqrsdTipos.AsNoTracking().FirstOrDefaultAsync(t => t.EsBase && t.Legal == req.Tipo, ct);
+        var tipoLegal = tipoConfig?.Legal ?? req.Tipo;
+
+        if (req.IdentidadReservada && tipoLegal != TipoPqrsd.Denuncia)
+            throw new InvalidOperationException("La reserva de identidad solo aplica al tipo Denuncia (RN-02).");
 
         // Radicador: si el admin selecciona una persona del directorio, se usa esa; si no, la del usuario actual.
         Guid personaId;
@@ -505,11 +660,18 @@ public class PqrsdService : IPqrsdService
                 ?? throw new InvalidOperationException("No se pudo resolver el radicador (persona del usuario autenticado).");
         }
 
-        var plazo = await _db.PqrsdConfiguracionPlazos.AsNoTracking().FirstOrDefaultAsync(p => p.Tipo == req.Tipo, ct)
-            ?? throw new InvalidOperationException("No hay plazo configurado para este tipo.");
+        // Plazo: del tipo configurable si existe; si no, del plazo legacy por enum legal.
+        int diasHabiles;
+        if (tipoConfig is not null) { diasHabiles = tipoConfig.DiasHabiles; }
+        else
+        {
+            var plazo = await _db.PqrsdConfiguracionPlazos.AsNoTracking().FirstOrDefaultAsync(p => p.Tipo == tipoLegal, ct)
+                ?? throw new InvalidOperationException("No hay plazo configurado para este tipo.");
+            diasHabiles = plazo.DiasHabiles;
+        }
 
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
-        var fechaVencimiento = SumarDiasHabiles(hoy, plazo.DiasHabiles);
+        var fechaVencimiento = SumarDiasHabiles(hoy, diasHabiles);
         var numero = await GenerarNumeroRadicadoAsync(ct);
 
         var columnaRecibida = await _db.PqrsdEstados.AsNoTracking()
@@ -518,7 +680,8 @@ public class PqrsdService : IPqrsdService
         var exp = new PqrsdExpediente
         {
             NumeroRadicado = numero,
-            Tipo = req.Tipo,
+            Tipo = tipoLegal,
+            TipoId = tipoConfig?.Id,
             CategoriaId = req.CategoriaId,
             Descripcion = req.Descripcion.Trim(),
             Estado = EstadoPqrsd.Recibida,

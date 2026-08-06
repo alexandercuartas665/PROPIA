@@ -184,6 +184,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<PqrsdEstado> PqrsdEstados => Set<PqrsdEstado>();
     public DbSet<PqrsdCampo> PqrsdCampos => Set<PqrsdCampo>();
     public DbSet<PqrsdCampoValor> PqrsdCampoValores => Set<PqrsdCampoValor>();
+    public DbSet<PqrsdTipo> PqrsdTipos => Set<PqrsdTipo>();
 
     // Modulo 2.8 Asambleas y Organos de Gobierno (TenantEntity con RLS)
     public DbSet<Sesion> Sesiones => Set<Sesion>();
@@ -1432,6 +1433,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasOne(x => x.Categoria).WithMany().HasForeignKey(x => x.CategoriaId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(x => x.RadicadorPersona).WithMany().HasForeignKey(x => x.RadicadorPersonaId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(x => x.EstadoColumna).WithMany().HasForeignKey(x => x.EstadoId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(x => x.TipoConfig).WithMany().HasForeignKey(x => x.TipoId).OnDelete(DeleteBehavior.SetNull);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.TenantId, x.NumeroRadicado }).IsUnique();
             b.HasIndex(x => new { x.TenantId, x.Estado });
@@ -1447,6 +1449,16 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.ToTable("pqrsd_estados");
             b.Property(x => x.Nombre).IsRequired().HasMaxLength(80);
             b.Property(x => x.Color).HasMaxLength(20);
+            b.Property(x => x.Activo).HasDefaultValue(true);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Nombre }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PqrsdTipo>(b =>
+        {
+            b.ToTable("pqrsd_tipos");
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(100);
             b.Property(x => x.Activo).HasDefaultValue(true);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.TenantId, x.Nombre }).IsUnique();
