@@ -48,8 +48,9 @@ public static class MenuCatalog
         // Finanzas
         new MenuItemDef("fin-presupuesto", "tabFinanzas", "Presupuesto y cuotas", "/presupuesto", "fi-rr-money-bill-wave", 1),
         new MenuItemDef("fin-cartera", "tabFinanzas", "Cartera y estado de cuenta", "/cartera", "fi-rr-credit-card", 2),
-        new MenuItemDef("fin-servicios", "tabFinanzas", "Servicios y contratos", "/servicios", "fi-rr-briefcase", 3),
-        new MenuItemDef("fin-numeracion", "tabFinanzas", "Numeracion de documentos", "/finanzas/numeracion", "fi-rr-hashtag", 4),
+        new MenuItemDef("fin-servicios", "tabFinanzas", "Servicios", "/servicios", "fi-rr-briefcase", 3),
+        new MenuItemDef("fin-contratos", "tabFinanzas", "Contratos", "/contratos", "fi-rr-file-signature", 4),
+        new MenuItemDef("fin-numeracion", "tabFinanzas", "Numeracion de documentos", "/finanzas/numeracion", "fi-rr-hashtag", 5),
 
         // Gobierno y convivencia
         new MenuItemDef("gob-asambleas", "tabGobierno", "Asambleas y organos", "/asambleas", "fi-rr-podium-star", 1),

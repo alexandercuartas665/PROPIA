@@ -24,15 +24,19 @@ public class MiCopropiedadController : ControllerBase
     private readonly ICarteraService _cartera;
     private readonly IBlobStorage _storage;
     private readonly IDistribucionImportService _import;
+    private readonly IPlantillasService _plantillas;
 
-    public MiCopropiedadController(IMiCopropiedadService svc, IPresupuestoService presupuesto, ICarteraService cartera, IBlobStorage storage, IDistribucionImportService import)
+    public MiCopropiedadController(IMiCopropiedadService svc, IPresupuestoService presupuesto, ICarteraService cartera, IBlobStorage storage, IDistribucionImportService import, IPlantillasService plantillas)
     {
         _svc = svc;
         _presupuesto = presupuesto;
         _cartera = cartera;
         _storage = storage;
         _import = import;
+        _plantillas = plantillas;
     }
+
+    private const string XlsxMime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
     // ---------- Resumen ----------
     [HttpGet("resumen")]
@@ -95,6 +99,34 @@ public class MiCopropiedadController : ControllerBase
             var res = await _import.ImportarAsync(s, ct);
             return Ok(res);
         }
+        catch (Exception ex) { return BadRequest(new { error = "archivo_invalido", detalle = ex.Message }); }
+    }
+
+    // ---------- Zonas Comunes - Carga masiva por plantilla ----------
+    [HttpGet("zonas/plantilla")]
+    public async Task<IActionResult> DescargarPlantillaZonas(CancellationToken ct)
+        => File(await _plantillas.GenerarPlantillaZonasAsync(ct), XlsxMime, "plantilla-zonas-propia.xlsx");
+
+    [HttpPost("zonas/importar")]
+    [RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<IActionResult> ImportarZonas([FromForm] IFormFile? file, CancellationToken ct)
+    {
+        if (file is null || file.Length == 0) return BadRequest(new { error = "archivo_vacio" });
+        try { await using var s = file.OpenReadStream(); return Ok(await _plantillas.ImportarZonasAsync(s, ct)); }
+        catch (Exception ex) { return BadRequest(new { error = "archivo_invalido", detalle = ex.Message }); }
+    }
+
+    // ---------- Equipos y Activos - Carga masiva por plantilla ----------
+    [HttpGet("equipos/plantilla")]
+    public async Task<IActionResult> DescargarPlantillaEquipos(CancellationToken ct)
+        => File(await _plantillas.GenerarPlantillaEquiposAsync(ct), XlsxMime, "plantilla-equipos-propia.xlsx");
+
+    [HttpPost("equipos/importar")]
+    [RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<IActionResult> ImportarEquipos([FromForm] IFormFile? file, CancellationToken ct)
+    {
+        if (file is null || file.Length == 0) return BadRequest(new { error = "archivo_vacio" });
+        try { await using var s = file.OpenReadStream(); return Ok(await _plantillas.ImportarEquiposAsync(s, ct)); }
         catch (Exception ex) { return BadRequest(new { error = "archivo_invalido", detalle = ex.Message }); }
     }
 

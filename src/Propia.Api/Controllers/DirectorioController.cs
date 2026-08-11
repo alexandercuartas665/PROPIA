@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Propia.Application.Directorio;
+using Propia.Application.MiCopropiedad;
 using Propia.Domain.Enums;
 
 namespace Propia.Api.Controllers;
@@ -17,8 +18,29 @@ namespace Propia.Api.Controllers;
 public class DirectorioController : ControllerBase
 {
     private readonly IDirectorioService _svc;
+    private readonly IPlantillasService _plantillas;
 
-    public DirectorioController(IDirectorioService svc) => _svc = svc;
+    public DirectorioController(IDirectorioService svc, IPlantillasService plantillas)
+    {
+        _svc = svc;
+        _plantillas = plantillas;
+    }
+
+    private const string XlsxMime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+    // ---------- Carga masiva por plantilla ----------
+    [HttpGet("plantilla")]
+    public async Task<IActionResult> DescargarPlantilla(CancellationToken ct)
+        => File(await _plantillas.GenerarPlantillaDirectorioAsync(ct), XlsxMime, "plantilla-directorio-propia.xlsx");
+
+    [HttpPost("importar")]
+    [RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<IActionResult> Importar([FromForm] IFormFile? file, CancellationToken ct)
+    {
+        if (file is null || file.Length == 0) return BadRequest(new { error = "archivo_vacio" });
+        try { await using var s = file.OpenReadStream(); return Ok(await _plantillas.ImportarDirectorioAsync(s, ct)); }
+        catch (Exception ex) { return BadRequest(new { error = "archivo_invalido", detalle = ex.Message }); }
+    }
 
     // ---------- Personas ----------
     [HttpGet("personas")]

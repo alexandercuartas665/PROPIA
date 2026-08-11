@@ -4,6 +4,7 @@
 @using Propia.Domain.Enums
 @using Propia.Web.Components.Shared.Modals
 @using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Forms
 @inject IHttpClientFactory HttpFactory
 @inject NavigationManager Nav
 @inject IJSRuntime Js
@@ -26,12 +27,31 @@
     </div>
     @if (_authChecked && _jwt is not null)
     {
-        <button class="propia-btn-brand" @onclick="AbrirGestionarEquiposAsync">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 7h6M9 11h6M10 16h4"/></svg>
-            Gestionar equipos
-        </button>
+        <div class="ea-plantilla">
+            <button type="button" class="ea-btn-ghost" @onclick="DescargarPlantillaAsync" disabled="@_impBusy" title="Descargar plantilla Excel">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>
+                Descargar plantilla
+            </button>
+            <label class="propia-btn-brand @(_impBusy ? "is-busy" : "")" style="cursor:pointer;" title="Cargar plantilla Excel (crea o actualiza)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21V9m0 0l-4 4m4-4l4 4M4 3h16"/></svg>
+                @(_impBusy ? "Cargando..." : "Cargar plantilla")
+                <InputFile OnChange="OnPlantillaImport" accept=".xlsx" style="display:none" disabled="@_impBusy" />
+            </label>
+        </div>
     }
 </div>
+
+@if (_impResult is not null)
+{
+    <div class="ea-impres">
+        <b>Carga completa:</b> @_impResult.Creados creados, @_impResult.Actualizados actualizados, @_impResult.CamposCargados campos.
+        @if (_impResult.FilasConError > 0)
+        {
+            <span class="ea-impres-err"> · @_impResult.FilasConError con error</span>
+            <ul class="ea-impres-list">@foreach (var er in _impResult.Errores.Take(10)) { <li>Fila @er.Fila: @er.Mensaje</li> }</ul>
+        }
+    </div>
+}
 
 @if (!_authChecked)
 {
@@ -130,10 +150,20 @@ else
             @if (_composerOpen)
             {
                 <div class="ea-composer">
-                    @* SIN value=: en Blazor Server se reafirma en cada re-render y se come pulsaciones. *@
-                    <input class="ea-composer-inp" placeholder="Nombre del equipo o activo..." autofocus
-                           @oninput="@(e => { _draft.Nombre = e.Value?.ToString() ?? string.Empty; Reveal(0); })"
-                           @onkeydown="Keydown" />
+                    @* SIN value=: en Blazor Server se reafirma en cada re-render y se come pulsaciones.
+                       El ojito crea el equipo/activo y abre su ficha de una vez. *@
+                    <div class="ea-inp-wrap">
+                        <input class="ea-composer-inp" placeholder="Nombre del equipo o activo..." autofocus
+                               @oninput="@(e => { _draft.Nombre = e.Value?.ToString() ?? string.Empty; Reveal(0); })"
+                               @onkeydown="Keydown" />
+                        @if (!string.IsNullOrWhiteSpace(_draft.Nombre))
+                        {
+                            <button type="button" class="ea-inp-eye" title="Crear y abrir ficha"
+                                    @onclick="CrearYAbrirFichaAsync" disabled="@_busy">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                            </button>
+                        }
+                    </div>
                     @if (_reveal >= 1)
                     {
                         <select class="ea-composer-sel" @bind="_draft.Categoria" @onfocus="@(() => Reveal(1))">
@@ -199,8 +229,17 @@ else
             }
             @* @@key limpia la fila al crear; @@oninput SIN value= evita perder pulsaciones. *@
             <div class="ea-list-newrow ea-listgrid" @key="_nonce">
-                <input class="ea-row-inp" @ref="_nombreRef" placeholder="Nuevo equipo o activo..."
-                       @oninput="@(e => _draft.Nombre = e.Value?.ToString() ?? string.Empty)" @onkeydown="Keydown" />
+                <div class="ea-inp-wrap">
+                    <input class="ea-row-inp" @ref="_nombreRef" placeholder="Nuevo equipo o activo..."
+                           @oninput="@(e => _draft.Nombre = e.Value?.ToString() ?? string.Empty)" @onkeydown="Keydown" />
+                    @if (!string.IsNullOrWhiteSpace(_draft.Nombre))
+                    {
+                        <button type="button" class="ea-inp-eye" title="Crear y abrir ficha"
+                                @onclick="CrearYAbrirFichaAsync" disabled="@_busy">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    }
+                </div>
                 <select class="ea-row-inp" @bind="_draft.Categoria">
                     @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c">@c</option> }
                 </select>
@@ -241,6 +280,8 @@ else
     private bool _composerOpen;
     private int _reveal;
     private bool _busy;
+    private bool _impBusy;
+    private ImportarPlantillaResultado? _impResult;
     private readonly EquipoDraft _draft = new();
     private int _nonce;
     private bool _focusPending;
@@ -354,6 +395,41 @@ else
         catch (Exception ex) { _loadError = ex.Message; }
     }
 
+    // ---- Plantilla Excel (descargar / cargar con upsert + campos dinamicos) ----
+    private async Task DescargarPlantillaAsync()
+    {
+        _impBusy = true;
+        try
+        {
+            var bytes = await Auth().GetByteArrayAsync("/api/mi-copropiedad/equipos/plantilla");
+            await Js.InvokeVoidAsync("propiaUI.downloadBase64", "plantilla-equipos-propia.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex) { Msg("No se pudo descargar la plantilla: " + ex.Message, false); }
+        finally { _impBusy = false; }
+    }
+
+    private async Task OnPlantillaImport(InputFileChangeEventArgs e)
+    {
+        if (e.File is null) return;
+        _impBusy = true; _impResult = null; StateHasChanged();
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            content.Add(new StreamContent(e.File.OpenReadStream(10 * 1024 * 1024)), "file", e.File.Name);
+            var resp = await Auth().PostAsync("/api/mi-copropiedad/equipos/importar", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                _impResult = await resp.Content.ReadFromJsonAsync<ImportarPlantillaResultado>();
+                await CargarAsync();
+                Msg("Plantilla cargada.", true);
+            }
+            else Msg("Error al cargar: " + await resp.Content.ReadAsStringAsync(), false);
+        }
+        catch (Exception ex) { Msg("Error al cargar: " + ex.Message, false); }
+        finally { _impBusy = false; StateHasChanged(); }
+    }
+
     private async Task AbrirGestionarEquiposAsync()
     {
         var parameters = new ModalParameters().Set("Jwt", _jwt);
@@ -367,9 +443,9 @@ else
         }
     }
 
-    private async Task AbrirFichaEquipoAsync(EquipoActivoDto equipo)
+    private async Task AbrirFichaEquipoAsync(EquipoActivoDto equipo, bool abrirEnEdicion = false)
     {
-        var parameters = new ModalParameters().Set("Jwt", _jwt).Set("Equipo", equipo);
+        var parameters = new ModalParameters().Set("Jwt", _jwt).Set("Equipo", equipo).Set("AbrirEnEdicion", abrirEnEdicion);
         var options = new ModalOptions { Width = "1280px", Height = "88vh" };
         var hubo = await Modals.OpenAsync<FichaEquipoModal, bool>(parameters, options);
         if (hubo == true) { await CargarAsync(); Msg("Ficha actualizada.", true); }
@@ -405,6 +481,31 @@ else
         }
         catch (Exception ex) { Msg(ex.Message, false); }
         _busy = false;
+    }
+
+    // El ojito del composer: crea el equipo/activo, lee el DTO devuelto y abre su ficha para
+    // seguir completando (ficha tecnica, fotos, ventanas, etc.) sin buscarlo en la lista.
+    private async Task CrearYAbrirFichaAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_draft.Nombre)) return;
+        _busy = true;
+        EquipoActivoDto? creado = null;
+        try
+        {
+            var cant = _draft.Tipo == TipoElemento.Equipo ? 1 : Math.Max(1, _draft.Cantidad);
+            var req = new CrearEquipoActivoRequest(_draft.Nombre.Trim(), _draft.Categoria, _draft.Tipo, cant, _draft.EsReservable);
+            var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/equipos", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                creado = await resp.Content.ReadFromJsonAsync<EquipoActivoDto>();
+                _draft.Reset(); _reveal = 0; _composerOpen = false; _nonce++;
+                await CargarAsync();
+            }
+            else Msg(await MensajeDeError(resp, "No se pudo crear el equipo."), false);
+        }
+        catch (Exception ex) { Msg(ex.Message, false); }
+        _busy = false;
+        if (creado is not null) await AbrirFichaEquipoAsync(creado, abrirEnEdicion: true);
     }
 
     private async Task EliminarEquipoAsync(Guid id, string nombre)
@@ -499,6 +600,23 @@ else
     .ea-composer { display: flex; flex-direction: column; gap: 7px; padding: 12px; border: 1.5px solid var(--propia-brand, #6D4FE3); border-radius: 12px; background: #fff; box-shadow: 0 6px 18px rgba(109,79,227,.12); }
     .ea-composer-inp, .ea-composer-sel { border: 1px solid #E1E8EE; border-radius: 8px; padding: 9px 11px; font-size: 13px; color: #33475B; outline: none; font-family: inherit; width: 100%; box-sizing: border-box; }
     .ea-composer-inp:focus, .ea-composer-sel:focus { border-color: var(--propia-brand, #6D4FE3); }
+
+    /* Ojito dentro del input de creacion: crea y abre la ficha. Wrapper relative + boton absoluto. */
+    .ea-inp-wrap { position: relative; width: 100%; }
+    .ea-inp-wrap > input { padding-right: 38px; }
+    .ea-inp-eye { position: absolute; top: 50%; right: 6px; transform: translateY(-50%); background: none; border: 0; padding: 4px; margin: 0; cursor: pointer; color: var(--propia-brand, #6D4FE3); display: flex; align-items: center; justify-content: center; border-radius: 6px; }
+    .ea-inp-eye:hover { background: #F1ECFD; }
+    .ea-inp-eye:disabled { opacity: .35; cursor: default; }
+
+    /* Botones de plantilla (descargar / cargar) */
+    .ea-plantilla { display: flex; align-items: center; gap: 8px; }
+    .ea-btn-ghost { display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border: 1px solid #DCD2F8; border-radius: 9px; background: #F1ECFD; color: var(--propia-brand, #6D4FE3); font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .ea-btn-ghost:hover { background: #E5DEFB; }
+    .ea-btn-ghost:disabled { opacity: .5; cursor: default; }
+    .propia-btn-brand.is-busy { opacity: .6; pointer-events: none; }
+    .ea-impres { margin: 10px 0 0; font-size: 12.5px; color: #33475B; background: #F1F8F4; border: 1px solid #CDE9D8; border-radius: 10px; padding: 10px 14px; }
+    .ea-impres-err { color: #C0383C; font-weight: 700; }
+    .ea-impres-list { margin: 6px 0 0; padding-left: 18px; color: #C0383C; font-size: 12px; }
     .ea-composer-foot { display: flex; justify-content: flex-end; gap: 7px; margin-top: 3px; }
     .ea-composer-cancel { font-size: 12px; font-weight: 600; color: #7C98B6; background: transparent; border: 0; cursor: pointer; padding: 7px 12px; font-family: inherit; }
     .ea-composer-ok { font-size: 12.5px; font-weight: 700; color: #fff; background: var(--propia-brand, #6D4FE3); border: 0; border-radius: 8px; padding: 8px 16px; cursor: pointer; font-family: inherit; }

@@ -4,6 +4,7 @@
 @using Propia.Domain.Enums
 @using Propia.Web.Components.Shared.Modals
 @using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Forms
 @inject IHttpClientFactory HttpFactory
 @inject NavigationManager Nav
 @inject IJSRuntime Js
@@ -26,12 +27,31 @@
     </div>
     @if (_authChecked && _jwt is not null)
     {
-        <button class="propia-btn-brand" @onclick="AbrirGestionarZonasAsync">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V8h14v13M9 12h.01M15 12h.01"/></svg>
-            Gestionar zonas
-        </button>
+        <div class="zc-plantilla">
+            <button type="button" class="zc-btn-ghost" @onclick="DescargarPlantillaAsync" disabled="@_impBusy" title="Descargar plantilla Excel">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>
+                Descargar plantilla
+            </button>
+            <label class="propia-btn-brand @(_impBusy ? "is-busy" : "")" style="cursor:pointer;" title="Cargar plantilla Excel (crea o actualiza)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21V9m0 0l-4 4m4-4l4 4M4 3h16"/></svg>
+                @(_impBusy ? "Cargando..." : "Cargar plantilla")
+                <InputFile OnChange="OnPlantillaImport" accept=".xlsx" style="display:none" disabled="@_impBusy" />
+            </label>
+        </div>
     }
 </div>
+
+@if (_impResult is not null)
+{
+    <div class="zc-impres">
+        <b>Carga completa:</b> @_impResult.Creados creadas, @_impResult.Actualizados actualizadas, @_impResult.CamposCargados campos.
+        @if (_impResult.FilasConError > 0)
+        {
+            <span class="zc-impres-err"> · @_impResult.FilasConError con error</span>
+            <ul class="zc-impres-list">@foreach (var er in _impResult.Errores.Take(10)) { <li>Fila @er.Fila: @er.Mensaje</li> }</ul>
+        }
+    </div>
+}
 
 @if (!_authChecked)
 {
@@ -125,10 +145,20 @@ else
             {
                 <div class="zc-composer">
                     @* SIN value=: en Blazor Server se reafirma en cada re-render y se come
-                       pulsaciones mientras el round-trip esta en vuelo. *@
-                    <input class="zc-composer-inp" placeholder="Nombre de la zona..." autofocus
-                           @oninput="@(e => { _draft.Nombre = e.Value?.ToString() ?? string.Empty; Reveal(0); })"
-                           @onkeydown="Keydown" />
+                       pulsaciones mientras el round-trip esta en vuelo. El ojito crea la zona y
+                       abre su ficha de una vez (mismo patron pedido en Directorio). *@
+                    <div class="zc-inp-wrap">
+                        <input class="zc-composer-inp" placeholder="Nombre de la zona..." autofocus
+                               @oninput="@(e => { _draft.Nombre = e.Value?.ToString() ?? string.Empty; Reveal(0); })"
+                               @onkeydown="Keydown" />
+                        @if (!string.IsNullOrWhiteSpace(_draft.Nombre))
+                        {
+                            <button type="button" class="zc-inp-eye" title="Crear y abrir ficha"
+                                    @onclick="CrearYAbrirFichaAsync" disabled="@_busy">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                            </button>
+                        }
+                    </div>
                     @if (_reveal >= 1)
                     {
                         <select class="zc-composer-sel" @bind="_draft.Categoria" @onfocus="@(() => Reveal(1))">
@@ -187,8 +217,17 @@ else
             }
             @* Alta inline. @@key limpia la fila al crear; @@oninput SIN value= evita perder pulsaciones. *@
             <div class="zc-list-newrow zc-grid" @key="_nonce">
-                <input class="zc-row-inp" @ref="_nombreRef" placeholder="Nueva zona comun..."
-                       @oninput="@(e => _draft.Nombre = e.Value?.ToString() ?? string.Empty)" @onkeydown="Keydown" />
+                <div class="zc-inp-wrap">
+                    <input class="zc-row-inp" @ref="_nombreRef" placeholder="Nueva zona comun..."
+                           @oninput="@(e => _draft.Nombre = e.Value?.ToString() ?? string.Empty)" @onkeydown="Keydown" />
+                    @if (!string.IsNullOrWhiteSpace(_draft.Nombre))
+                    {
+                        <button type="button" class="zc-inp-eye" title="Crear y abrir ficha"
+                                @onclick="CrearYAbrirFichaAsync" disabled="@_busy">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    }
+                </div>
                 <select class="zc-row-inp" @bind="_draft.Categoria">
                     @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c">@c</option> }
                 </select>
@@ -230,6 +269,8 @@ else
     private bool _composerOpen;
     private int _reveal;
     private bool _busy;
+    private bool _impBusy;
+    private ImportarPlantillaResultado? _impResult;
     private readonly ZonaDraft _draft = new();
     private int _nonce;
     private bool _focusPending;
@@ -345,6 +386,41 @@ else
         catch (Exception ex) { _loadError = ex.Message; }
     }
 
+    // ---- Plantilla Excel (descargar / cargar con upsert + campos dinamicos) ----
+    private async Task DescargarPlantillaAsync()
+    {
+        _impBusy = true;
+        try
+        {
+            var bytes = await Auth().GetByteArrayAsync("/api/mi-copropiedad/zonas/plantilla");
+            await Js.InvokeVoidAsync("propiaUI.downloadBase64", "plantilla-zonas-propia.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex) { Msg("No se pudo descargar la plantilla: " + ex.Message, false); }
+        finally { _impBusy = false; }
+    }
+
+    private async Task OnPlantillaImport(InputFileChangeEventArgs e)
+    {
+        if (e.File is null) return;
+        _impBusy = true; _impResult = null; StateHasChanged();
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            content.Add(new StreamContent(e.File.OpenReadStream(10 * 1024 * 1024)), "file", e.File.Name);
+            var resp = await Auth().PostAsync("/api/mi-copropiedad/zonas/importar", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                _impResult = await resp.Content.ReadFromJsonAsync<ImportarPlantillaResultado>();
+                await CargarAsync();
+                Msg("Plantilla cargada.", true);
+            }
+            else Msg("Error al cargar: " + await resp.Content.ReadAsStringAsync(), false);
+        }
+        catch (Exception ex) { Msg("Error al cargar: " + ex.Message, false); }
+        finally { _impBusy = false; StateHasChanged(); }
+    }
+
     private async Task AbrirGestionarZonasAsync()
     {
         var parameters = new ModalParameters().Set("Jwt", _jwt);
@@ -358,9 +434,9 @@ else
         }
     }
 
-    private async Task AbrirFichaZonaAsync(ZonaComunDto zona)
+    private async Task AbrirFichaZonaAsync(ZonaComunDto zona, bool abrirEnEdicion = false)
     {
-        var parameters = new ModalParameters().Set("Jwt", _jwt).Set("Zona", zona);
+        var parameters = new ModalParameters().Set("Jwt", _jwt).Set("Zona", zona).Set("AbrirEnEdicion", abrirEnEdicion);
         var options = new ModalOptions { Width = "1280px", Height = "88vh" };
         var hubo = await Modals.OpenAsync<FichaZonaModal, bool>(parameters, options);
         if (hubo == true) { await CargarAsync(); Msg("Ficha de zona actualizada.", true); }
@@ -395,6 +471,31 @@ else
         }
         catch (Exception ex) { Msg(ex.Message, false); }
         _busy = false;
+    }
+
+    // El ojito del composer: crea la zona, lee el DTO devuelto y abre su ficha para seguir
+    // completando (imagen, horarios, etc.) sin tener que buscarla en la lista.
+    private async Task CrearYAbrirFichaAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_draft.Nombre)) return;
+        _busy = true;
+        ZonaComunDto? creada = null;
+        try
+        {
+            var req = new CrearZonaComunRequest(_draft.Nombre.Trim(), _draft.Categoria, null,
+                _draft.EsReservable, null, _draft.Aforo, null, null);
+            var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/zonas", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                creada = await resp.Content.ReadFromJsonAsync<ZonaComunDto>();
+                _draft.Reset(); _reveal = 0; _composerOpen = false; _nonce++;
+                await CargarAsync();
+            }
+            else Msg(await MensajeDeError(resp, "No se pudo crear la zona."), false);
+        }
+        catch (Exception ex) { Msg(ex.Message, false); }
+        _busy = false;
+        if (creada is not null) await AbrirFichaZonaAsync(creada, abrirEnEdicion: true);
     }
 
     private async Task EliminarZonaAsync(Guid id, string nombre)
@@ -466,6 +567,23 @@ else
     .zc-composer { display: flex; flex-direction: column; gap: 7px; padding: 12px; border: 1.5px solid var(--propia-brand, #6D4FE3); border-radius: 12px; background: #fff; box-shadow: 0 6px 18px rgba(109,79,227,.12); }
     .zc-composer-inp, .zc-composer-sel { border: 1px solid #E1E8EE; border-radius: 8px; padding: 9px 11px; font-size: 13px; color: #33475B; outline: none; font-family: inherit; width: 100%; box-sizing: border-box; }
     .zc-composer-inp:focus, .zc-composer-sel:focus { border-color: var(--propia-brand, #6D4FE3); }
+
+    /* Ojito dentro del input de creacion: crea y abre la ficha. Tecnica wrapper relative + boton absoluto. */
+    .zc-inp-wrap { position: relative; width: 100%; }
+    .zc-inp-wrap > input { padding-right: 38px; }
+    .zc-inp-eye { position: absolute; top: 50%; right: 6px; transform: translateY(-50%); background: none; border: 0; padding: 4px; margin: 0; cursor: pointer; color: var(--propia-brand, #6D4FE3); display: flex; align-items: center; justify-content: center; border-radius: 6px; }
+    .zc-inp-eye:hover { background: #F1ECFD; }
+    .zc-inp-eye:disabled { opacity: .35; cursor: default; }
+
+    /* Botones de plantilla (descargar / cargar) */
+    .zc-plantilla { display: flex; align-items: center; gap: 8px; }
+    .zc-btn-ghost { display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border: 1px solid #DCD2F8; border-radius: 9px; background: #F1ECFD; color: var(--propia-brand, #6D4FE3); font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .zc-btn-ghost:hover { background: #E5DEFB; }
+    .zc-btn-ghost:disabled { opacity: .5; cursor: default; }
+    .propia-btn-brand.is-busy { opacity: .6; pointer-events: none; }
+    .zc-impres { margin: 10px 0 0; font-size: 12.5px; color: #33475B; background: #F1F8F4; border: 1px solid #CDE9D8; border-radius: 10px; padding: 10px 14px; }
+    .zc-impres-err { color: #C0383C; font-weight: 700; }
+    .zc-impres-list { margin: 6px 0 0; padding-left: 18px; color: #C0383C; font-size: 12px; }
     .zc-composer-foot { display: flex; justify-content: flex-end; gap: 7px; margin-top: 3px; }
     .zc-composer-cancel { font-size: 12px; font-weight: 600; color: #7C98B6; background: transparent; border: 0; cursor: pointer; padding: 7px 12px; font-family: inherit; }
     .zc-composer-ok { font-size: 12.5px; font-weight: 700; color: #fff; background: var(--propia-brand, #6D4FE3); border: 0; border-radius: 8px; padding: 8px 16px; cursor: pointer; font-family: inherit; }

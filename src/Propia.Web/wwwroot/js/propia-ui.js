@@ -348,6 +348,39 @@
     };
 
     // -------------------------------------------------------------------------
+    // Scroll horizontal superior espejo (vista Lista de Tareas): una barra arriba
+    // sincronizada con el scroll real de la tabla, para no tener que bajar hasta
+    // el pie para desplazarse cuando hay muchas columnas.
+    // -------------------------------------------------------------------------
+    window.propiaUI.syncTopScroll = function (topId, innerId, listId) {
+        var top = document.getElementById(topId);
+        var inner = document.getElementById(innerId);
+        var list = document.getElementById(listId);
+        if (!top || !inner || !list) return;
+
+        function syncWidth() { inner.style.width = list.scrollWidth + 'px'; }
+
+        if (top.__ptSynced) { syncWidth(); return; }
+        top.__ptSynced = true;
+
+        var lock = false;
+        top.addEventListener('scroll', function () {
+            if (lock) return; lock = true; list.scrollLeft = top.scrollLeft; lock = false;
+        });
+        list.addEventListener('scroll', function () {
+            if (lock) return; lock = true; top.scrollLeft = list.scrollLeft; lock = false;
+        });
+
+        syncWidth();
+        if (window.ResizeObserver) {
+            var ro = new ResizeObserver(function () { syncWidth(); });
+            ro.observe(list);
+            if (list.firstElementChild) ro.observe(list.firstElementChild);
+        }
+        window.addEventListener('resize', syncWidth);
+    };
+
+    // -------------------------------------------------------------------------
     // Tooltip del rail de iconos (titulo + descripcion de lo que hace el modulo).
     //
     // No se usa el de Bootstrap: su init vive en assets/js/main.js, que esta app no

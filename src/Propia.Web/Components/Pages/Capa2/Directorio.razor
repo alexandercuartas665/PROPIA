@@ -1,7 +1,9 @@
 @page "/directorio"
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.Directorio
+@using Propia.Application.MiCopropiedad
 @using Propia.Domain.Enums
+@using Microsoft.AspNetCore.Components.Forms
 @inject IHttpClientFactory HttpFactory
 @inject NavigationManager Nav
 @inject IJSRuntime Js
@@ -18,16 +20,36 @@
             <p class="mod-pagesub">Personas y empresas vinculadas a @CopropiedadNombre - la fuente unica de identidad.</p>
         </div>
         <div class="dir-actions">
-            <button class="dir-btn-ghost" type="button" title="Importar (proximamente)">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
-                Importar
-            </button>
+            @if (_authChecked && !string.IsNullOrEmpty(_jwt))
+            {
+                <button class="dir-btn-ghost" type="button" @onclick="DescargarPlantillaAsync" disabled="@_impBusy" title="Descargar plantilla Excel de personas">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>
+                    Descargar plantilla
+                </button>
+                <label class="dir-btn-ghost" style="cursor:pointer;" title="Cargar plantilla Excel (crea o actualiza personas)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
+                    @(_impBusy ? "Cargando..." : "Cargar plantilla")
+                    <InputFile OnChange="OnPlantillaImport" accept=".xlsx" style="display:none" disabled="@_impBusy" />
+                </label>
+            }
             <button class="dir-btn-brand" type="button" @onclick="AbrirCrear">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
                 Agregar
             </button>
         </div>
     </div>
+
+    @if (_impResult is not null)
+    {
+        <div class="dir-impres">
+            <b>Carga completa:</b> @_impResult.Creados creadas, @_impResult.Actualizados actualizadas.
+            @if (_impResult.FilasConError > 0)
+            {
+                <span class="dir-impres-err"> · @_impResult.FilasConError con error</span>
+                <ul class="dir-impres-list">@foreach (var er in _impResult.Errores.Take(10)) { <li>Fila @er.Fila: @er.Mensaje</li> }</ul>
+            }
+        </div>
+    }
 
     @if (!_authChecked)
     {
@@ -631,6 +653,9 @@
     .dtab-add { width: 26px; height: 26px; padding: 0; line-height: 1; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 7px; background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 17px; font-weight: 700; cursor: pointer; font-family: inherit; }
     .dtab-add:hover:not(:disabled) { filter: brightness(1.08); }
     .dtab-add:disabled { background: transparent; color: #D9E0E8; cursor: default; }
+    .dir-impres { margin: 0 0 14px; font-size: 12.5px; color: #33475B; background: #F1F8F4; border: 1px solid #CDE9D8; border-radius: 10px; padding: 10px 14px; }
+    .dir-impres-err { color: #C0383C; font-weight: 700; }
+    .dir-impres-list { margin: 6px 0 0; padding-left: 18px; color: #C0383C; font-size: 12px; }
 </style>
 
 @code {
@@ -641,6 +666,8 @@
     private const string VistaKey = "propia_view_directorio";
     private string _query = "";
     private bool _busy;
+    private bool _impBusy;
+    private ImportarPlantillaResultado? _impResult;
     private string? _loadError;
 
     private List<PersonaResumenDto>? _personas;
@@ -1022,6 +1049,40 @@
         var http = HttpFactory.CreateClient("PropiaApi");
         http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
         return http;
+    }
+
+    // ---- Plantilla Excel de personas (descargar / cargar con upsert por documento) ----
+    private async Task DescargarPlantillaAsync()
+    {
+        _impBusy = true;
+        try
+        {
+            var bytes = await Auth().GetByteArrayAsync("/api/directorio/plantilla");
+            await Js.InvokeVoidAsync("propiaUI.downloadBase64", "plantilla-directorio-propia.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex) { await Js.InvokeVoidAsync("alert", "No se pudo descargar la plantilla: " + ex.Message); }
+        finally { _impBusy = false; }
+    }
+
+    private async Task OnPlantillaImport(InputFileChangeEventArgs e)
+    {
+        if (e.File is null) return;
+        _impBusy = true; _impResult = null; StateHasChanged();
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            content.Add(new StreamContent(e.File.OpenReadStream(10 * 1024 * 1024)), "file", e.File.Name);
+            var resp = await Auth().PostAsync("/api/directorio/importar", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                _impResult = await resp.Content.ReadFromJsonAsync<ImportarPlantillaResultado>();
+                await CargarAsync();
+            }
+            else await Js.InvokeVoidAsync("alert", "Error al cargar: " + await resp.Content.ReadAsStringAsync());
+        }
+        catch (Exception ex) { await Js.InvokeVoidAsync("alert", "Error al cargar: " + ex.Message); }
+        finally { _impBusy = false; StateHasChanged(); }
     }
 
     private static string Iniciales(string nombres, string apellidos)

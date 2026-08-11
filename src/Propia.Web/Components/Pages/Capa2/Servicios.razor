@@ -1,4 +1,5 @@
 @page "/servicios"
+@page "/contratos"
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.MiCopropiedad
 @using Propia.Application.ServiciosPublicos
@@ -12,7 +13,7 @@
 @inject NavigationManager Nav
 @inject IModalService Modals
 
-<PageTitle>Servicios y contratos - PROPIA</PageTitle>
+<PageTitle>@(EsContratos ? "Contratos" : "Servicios") - PROPIA</PageTitle>
 
 @* Modulo 2.5 (Finanzas) "Servicios y contratos". Estilo prototipo PROPIA.dc.html:
    3 KPIs + proximos a vencer + lista de contratos + modal crear/detalle. API /api/mi-copropiedad/contratos. *@
@@ -32,24 +33,26 @@ else
 <div class="srv-wrap">
     <div class="srv-head">
         <div>
-            <h1 class="srv-title">Servicios y contratos</h1>
-            <p class="srv-sub">Contratos estrategicos y servicios publicos de la copropiedad.</p>
+            <h1 class="srv-title">@(EsContratos ? "Contratos" : "Servicios")</h1>
+            <p class="srv-sub">@(EsContratos ? "Contratos estrategicos con proveedores de la copropiedad." : "Servicios contratados y servicios publicos de la copropiedad.")</p>
         </div>
     </div>
 
+    @* En /contratos no hay pestanas (es su propio modulo). En /servicios: Servicios + Servicios publicos.
+       Contratos se separo a su propia pagina (/contratos) con su item de menu. *@
+    @if (!EsContratos)
+    {
     <div class="srv-tabs">
         <button class="srv-tab @(_srvTab == "servicios" ? "on" : "")" @onclick='() => _srvTab = "servicios"'>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18M3 12h18M3 17h18"/></svg>Servicios
-        </button>
-        <button class="srv-tab @(_srvTab == "contratos" ? "on" : "")" @onclick='() => _srvTab = "contratos"'>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6l8-4z"/></svg>Contratos
         </button>
         <button class="srv-tab @(_srvTab == "publicos" ? "on" : "")" @onclick="IrPublicos">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L4.5 13H11l-1 9 8.5-11H12l1-9z"/></svg>Servicios publicos
         </button>
     </div>
+    }
 
-    @if (_srvTab == "servicios")
+    @if (!EsContratos && _srvTab == "servicios")
     {
         var costoMes = _servicios.Sum(s => s.CostoMensual ?? 0);
         <div class="srv-kpis srv-kpis-4">
@@ -106,7 +109,7 @@ else
             }
         </div>
     }
-    else if (_srvTab == "contratos")
+    else if (EsContratos)
     {
         var porVencer = _contratos.Where(c => c.AlertaVencimiento).OrderBy(c => c.DiasParaVencer).ToList();
 
@@ -899,7 +902,12 @@ else
     private string? _jwt;
     private bool _authChecked;
     private bool _busy;
-    private string _srvTab = "servicios";   // "servicios" | "contratos" | "publicos" (2.17)
+    private string _srvTab = "servicios";   // "servicios" | "publicos" (2.17). Contratos vive en /contratos.
+
+    // Modo por ruta: /contratos = modulo Contratos (su propia pagina + item de menu); /servicios =
+    // modulo Servicios (pestanas Servicios + Servicios publicos). Misma componente, dos rutas.
+    private bool EsContratos =>
+        Nav.ToBaseRelativePath(Nav.Uri).TrimEnd('/').Split('?')[0].Equals("contratos", StringComparison.OrdinalIgnoreCase);
     private List<ContratoServicioDto> _contratos = new();
 
     private bool _showModal;

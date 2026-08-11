@@ -144,6 +144,7 @@ public static class DependencyInjection
         // Modulo 2.3 Mi Copropiedad
         services.AddScoped<Application.MiCopropiedad.IMiCopropiedadService, MiCopropiedad.MiCopropiedadService>();
         services.AddScoped<Application.MiCopropiedad.IDistribucionImportService, MiCopropiedad.DistribucionImportService>();
+        services.AddScoped<Application.MiCopropiedad.IPlantillasService, MiCopropiedad.PlantillasService>();
 
         // Alta de copropiedades desde el selector (cliente autenticado)
         services.AddScoped<Application.MisCopropiedades.IMisCopropiedadesService, MisCopropiedades.MisCopropiedadesService>();

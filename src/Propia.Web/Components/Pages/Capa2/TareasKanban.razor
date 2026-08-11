@@ -165,9 +165,15 @@ else
                         </div>
                     }
                 </div>
+                @if (!string.IsNullOrEmpty(_cardGroup))
+                {
+                    <button class="tb-filter-btn tb-group-clear" @onclick="ClearCardGroup" title="Quitar agrupacion">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>Quitar
+                    </button>
+                }
             </div>
 
-            @if (string.IsNullOrEmpty(_cardGroup))
+            @if (string.IsNullOrEmpty(_cardGroup) || _cardGroup == "none")
             {
             <div class="tb-kanban" style="grid-template-columns:repeat(@_board.Estados.Count, minmax(260px, 1fr))">
                 @foreach (var est in _board.Estados)
@@ -310,6 +316,15 @@ else
                             <div class="tb-gsec-head">
                                 <span class="tb-gsec-nom">@gr.Key</span>
                                 <span class="tb-col-count">@gr.Items.Count</span>
+                                @{ var camposNumK = (_board?.Tablero.Campos ?? new List<TableroCampoDto>()).Where(CampoEsNumerico).ToList(); var svK = SumaCampoGrupo("valor", gr.Items); }
+                                <span class="tb-gsec-tot">
+                                    @if (svK != 0) { <span class="tb-gsec-chip">Valor <b>$ @Math.Round(svK).ToString("N0", Es)</b></span> }
+                                    @foreach (var cnk in camposNumK)
+                                    {
+                                        var scK = SumaCampoGrupo(cnk.Id.ToString(), gr.Items);
+                                        if (scK != 0) { <span class="tb-gsec-chip">@cnk.Label <b>@(cnk.Tipo == TipoCampoTablero.Moneda ? "$ " : "")@Math.Round(scK).ToString("N0", Es)</b></span> }
+                                    }
+                                </span>
                             </div>
                             <div class="tb-gsec-grid">
                                 @foreach (var t in gr.Items)
@@ -342,34 +357,66 @@ else
         else if (_boardMode == "lista")
         {
             <div class="tb-filters">
-                <select class="tb-filter" @bind="_fEstado">
-                    <option value="">Todas las etapas</option>
-                    @foreach (var e in _board.Estados) { <option value="@e.Id">@e.Nombre</option> }
-                </select>
-                <select class="tb-filter" @bind="_fResp">
-                    <option value="">Todos los responsables</option>
-                    @foreach (var r in RespOptions()) { <option value="@r">@r</option> }
-                </select>
-                <select class="tb-filter" @bind="_fPrio">
-                    <option value="">Toda prioridad</option>
-                    @foreach (var p in Enum.GetValues<PrioridadTarea>()) { <option value="@p">@p</option> }
-                </select>
-                @if (_etiquetasCat.Count > 0)
-                {
-                    <select class="tb-filter" @bind="_fEtiqueta">
-                        <option value="">Toda etiqueta</option>
-                        @foreach (var et in _etiquetasCat) { <option value="@et.Id">@et.Nombre</option> }
-                    </select>
-                }
-                @foreach (var cf in CamposFiltrables())
-                {
-                    var campo = cf;
-                    <select class="tb-filter" value="@FCampoVal(campo.Id)" @onchange="(e) => SetFCampo(campo.Id, e)">
-                        <option value="">@cf.Label (todos)</option>
-                        @foreach (var v in CampoValoresDistintos(campo.Id)) { <option value="@v">@v</option> }
-                    </select>
-                }
-                @if (HayFiltros) { <button class="tb-filter-clear" @onclick="LimpiarFiltros">Limpiar</button> }
+                @* Constructor de filtros: boton compacto con contador -> panel donde se agregan varias
+                   reglas (campo + condicion + valor), combinables con Y/O. Reemplaza la fila fija de menus. *@
+                <div class="tb-menuwrap">
+                    <button class="tb-filter-btn @(HayFiltros ? "on" : "")" @onclick="ToggleFiltros" title="Filtrar tareas">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18M6 12h12M10 19h4"/></svg><span>Filtros</span>@if (CuentaFiltros > 0) { <span class="tb-filter-badge">@CuentaFiltros</span> }
+                    </button>
+                    @if (_filtrosMenu)
+                    {
+                        <div class="tb-filterpop-bd" @onclick="() => _filtrosMenu = false"></div>
+                        <div class="tb-filterpop" @onclick:stopPropagation="true">
+                            @if (_reglas.Count == 0)
+                            {
+                                <div class="tb-filterpop-empty">Sin filtros aplicados.<br />Agrega una condicion para acotar las tareas.</div>
+                            }
+                            else
+                            {
+                                @for (int i = 0; i < _reglas.Count; i++)
+                                {
+                                    var idx = i; var r = _reglas[idx];
+                                    <div class="tb-frule">
+                                        @if (idx == 0)
+                                        {
+                                            <span class="tb-frule-lead">Donde</span>
+                                        }
+                                        else if (idx == 1)
+                                        {
+                                            <select class="tb-frule-lead tb-frule-logic" @onchange="SetFiltroLogica">
+                                                <option value="and" selected="@(_filtroLogica == "and")">Y</option>
+                                                <option value="or" selected="@(_filtroLogica == "or")">O</option>
+                                            </select>
+                                        }
+                                        else
+                                        {
+                                            <span class="tb-frule-lead">@(_filtroLogica == "or" ? "O" : "Y")</span>
+                                        }
+                                        <select class="tb-frule-f" @onchange="(e) => SetReglaCampo(idx, e)">
+                                            @foreach (var opt in CamposFiltro()) { <option value="@opt.Key" selected="@(r.Campo == opt.Key)">@opt.Label</option> }
+                                        </select>
+                                        <select class="tb-frule-op" @onchange="(e) => SetReglaOp(idx, e)">
+                                            @foreach (var op in OperadoresDe(r.Campo)) { <option value="@op.Key" selected="@(r.Op == op.Key)">@op.Label</option> }
+                                        </select>
+                                        @if (r.Op is not "vacio" and not "no_vacio")
+                                        {
+                                            @RenderValorFiltro(idx)
+                                        }
+                                        <button class="tb-frule-del" title="Quitar condicion" @onclick="() => QuitarRegla(idx)">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                        </button>
+                                    </div>
+                                }
+                            }
+                            <div class="tb-filterpop-foot">
+                                <button class="tb-filter-add" @onclick="AgregarRegla">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>Agregar filtro
+                                </button>
+                                @if (_reglas.Count > 0) { <button class="tb-filter-clear2" @onclick="LimpiarFiltros">Limpiar todo</button> }
+                            </div>
+                        </div>
+                    }
+                </div>
                 <div class="tb-flex"></div>
                 <div class="tb-menuwrap">
                     <button class="tb-filter-btn @(!string.IsNullOrEmpty(_cardGroup) ? "on" : "")" @onclick="() => _cardGroupMenu = !_cardGroupMenu" title="Agrupar filas">
@@ -386,6 +433,12 @@ else
                         </div>
                     }
                 </div>
+                @if (!string.IsNullOrEmpty(_cardGroup))
+                {
+                    <button class="tb-filter-btn tb-group-clear" @onclick="ClearCardGroup" title="Quitar agrupacion">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>Quitar
+                    </button>
+                }
                 <button class="tb-filter-btn @(_pinTitulo ? "on" : "")" @onclick='() => ToggleColFijo("pin")' title="Congelar la columna Titulo al desplazar la tabla de lado (los encabezados ya quedan fijos al bajar)">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4v6l-2 4h10l-2-4V4M12 14v6M8 4h8"/></svg>Fijar columna
                 </button>
@@ -395,64 +448,74 @@ else
                 @if (_colsMenu)
                 {
                     <div class="tb-colsmenu">
-                        <div class="tb-colsmenu-h">COLUMNAS VISIBLES</div>
-                        <button class="tb-colsmenu-i" @onclick='() => ToggleColFijo("resp")'><span class="tb-chk @(_colResp ? "on" : "")">@if (_colResp){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span>Asignado</button>
-                        <button class="tb-colsmenu-i" @onclick='() => ToggleColFijo("etiq")'><span class="tb-chk @(_colEtiq ? "on" : "")">@if (_colEtiq){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span>Etiquetas</button>
-                        <button class="tb-colsmenu-i" @onclick='() => ToggleColFijo("prio")'><span class="tb-chk @(_colPrio ? "on" : "")">@if (_colPrio){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span>Prioridad</button>
-                        <button class="tb-colsmenu-i" @onclick='() => ToggleColFijo("due")'><span class="tb-chk @(_colDue ? "on" : "")">@if (_colDue){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span>Vence</button>
-                        <button class="tb-colsmenu-i" @onclick='() => ToggleColFijo("desc")'><span class="tb-chk @(_colDesc ? "on" : "")">@if (_colDesc){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span>Descripcion</button>
-                        <button class="tb-colsmenu-i" @onclick='() => ToggleColFijo("valor")'><span class="tb-chk @(_colValor ? "on" : "")">@if (_colValor){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span>Valor</button>
-                        <button class="tb-colsmenu-i" @onclick='() => ToggleColFijo("orig")'><span class="tb-chk @(_colOrigen ? "on" : "")">@if (_colOrigen){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span>Relacionado con</button>
-                        @* Campos dinamicos del tablero: se listan aqui para poder mostrarlos/ocultarlos igual que los fijos. *@
-                        @if (CamposDelTablero.Any())
+                        <div class="tb-colsmenu-h">COLUMNAS (orden y visibilidad)</div>
+                        @* Cada fila: flechas para reordenar + casilla para mostrar/ocultar + nombre. El orden real
+                           de la tabla se aplica por CSS (order) segun _colOrden, sin tocar el markup de las filas. *@
+                        @for (int i = 0; i < _colOrden.Count; i++)
                         {
-                            <div class="tb-colsmenu-sep">CAMPOS DEL TABLERO</div>
-                            @foreach (var c in CamposDelTablero)
-                            {
-                                var campo = c;
-                                <button class="tb-colsmenu-i" @onclick="() => ToggleCampoCol(campo.Id)"><span class="tb-chk @(CampoColVisible(campo.Id) ? "on" : "")">@if (CampoColVisible(campo.Id)){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span>@campo.Label</button>
-                            }
+                            var idx = i; var key = _colOrden[idx];
+                            <div class="tb-colsmenu-i @(ColKeyVisible(key) ? "" : "tb-colsmenu-off")">
+                                <span class="tb-colord">
+                                    <button type="button" class="tb-colord-b" title="Subir" disabled="@(idx == 0)" @onclick="() => MoverColumna(idx, -1)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 15l6-6 6 6"/></svg></button>
+                                    <button type="button" class="tb-colord-b" title="Bajar" disabled="@(idx == _colOrden.Count - 1)" @onclick="() => MoverColumna(idx, 1)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg></button>
+                                </span>
+                                @if (ColKeyBloqueada(key))
+                                {
+                                    <span class="tb-chk tb-chk-lock" title="Columna fija (no se puede ocultar)"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#90A4B7" stroke-width="2.4"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
+                                }
+                                else
+                                {
+                                    <button type="button" class="tb-chk-btn" @onclick="() => ToggleColKey(key)"><span class="tb-chk @(ColKeyVisible(key) ? "on" : "")">@if (ColKeyVisible(key)){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span></button>
+                                }
+                                <span class="tb-colsmenu-lbl">@ColKeyLabel(key)</span>
+                            </div>
                         }
                         <div class="tb-colsmenu-acts">
-                            <button class="tb-colsmenu-act" @onclick="ColsTodos">Todos</button>
-                            <button class="tb-colsmenu-act" @onclick="ColsNinguno">Ninguno</button>
+                            <button class="tb-colsmenu-act" @onclick="ColsTodos">Mostrar todas</button>
+                            <button class="tb-colsmenu-act" @onclick="ColsNinguno">Ocultar todas</button>
                         </div>
                     </div>
                 }
             </div>
 
-            <div class="tb-list">
+            @ColumnColorCss
+            @ColumnOrderCss
+            @* Scroll horizontal SUPERIOR (espejo del de abajo), sincronizado por JS con la tabla. *@
+            <div class="tb-topscroll" id="tbTopScroll"><div id="tbTopScrollInner"></div></div>
+
+            <div class="tb-list" id="tbList">
                 <div class="tb-list-hdr">
                     <div class="tb-lc tb-lc-tit tb-lc-sort @(_pinTitulo ? "tb-pin tb-pin-h" : "")" @onclick='() => SortBy("titulo")'><span>TITULO</span>@SortInd("titulo")</div>
-                    @if (_colDesc) { <div class="tb-lc tb-lc-desc">DESCRIPCION</div> }
-                    <div class="tb-lc tb-lc-est">ETAPA</div>
-                    @if (_colResp) { <div class="tb-lc tb-lc-resp tb-lc-sort" @onclick='() => SortBy("asignado")'><span>ASIGNADO</span>@SortInd("asignado")</div> }
-                    <div class="tb-lc tb-lc-prog tb-lc-sort" @onclick='() => SortBy("progreso")'><span>PROGRESO</span>@SortInd("progreso")</div>
-                    @if (_colEtiq) { <div class="tb-lc tb-lc-etiq">ETIQUETAS</div> }
-                    @if (_colPrio) { <div class="tb-lc tb-lc-prio tb-lc-sort" @onclick='() => SortBy("prioridad")'><span>PRIORIDAD</span>@SortInd("prioridad")</div> }
-                    @if (_colDue) { <div class="tb-lc tb-lc-due tb-lc-sort" @onclick='() => SortBy("vence")'><span>VENCE</span>@SortInd("vence")</div> }
-                    @if (_colValor) { <div class="tb-lc tb-lc-valor tb-lc-sort" @onclick='() => SortBy("valor")'><span>VALOR</span>@SortInd("valor")</div> }
-                    @if (_colOrigen) { <div class="tb-lc tb-lc-orig tb-lc-sort" @onclick='() => SortBy("origen")'><span>RELACIONADO CON</span>@SortInd("origen")</div> }
-                    @foreach (var c in CamposVisibles) { var cid = c.Id.ToString(); var campo = c; <div class="tb-lc tb-lc-campo tb-lc-sort" @onclick="() => SortBy(cid)"><span>@c.Label.ToUpperInvariant()</span>@SortInd(cid)<button type="button" class="tb-lc-ed" title="Editar campo" @onclick:stopPropagation="true" @onclick="(e) => EditarCampoPop(e, campo)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div> }
+                    @if (_colDesc) { <div class="tb-lc tb-lc-desc tb-lc-sort" @onclick='() => SortBy("descripcion")'><span>DESCRIPCION</span>@ColorDot("desc")</div> }
+                    <div class="tb-lc tb-lc-est"><span>ETAPA</span>@ColorDot("est")</div>
+                    @if (_colResp) { <div class="tb-lc tb-lc-resp tb-lc-sort" @onclick='() => SortBy("asignado")'><span>ASIGNADO</span>@SortInd("asignado")@ColorDot("resp")</div> }
+                    <div class="tb-lc tb-lc-prog tb-lc-sort" @onclick='() => SortBy("progreso")'><span>PROGRESO</span>@SortInd("progreso")@ColorDot("prog")</div>
+                    @if (_colEtiq) { <div class="tb-lc tb-lc-etiq"><span>ETIQUETAS</span>@ColorDot("etiq")</div> }
+                    @if (_colPrio) { <div class="tb-lc tb-lc-prio tb-lc-sort" @onclick='() => SortBy("prioridad")'><span>PRIORIDAD</span>@SortInd("prioridad")@ColorDot("prio")</div> }
+                    @if (_colDue) { <div class="tb-lc tb-lc-due tb-lc-sort" @onclick='() => SortBy("vence")'><span>VENCE</span>@SortInd("vence")@ColorDot("due")</div> }
+                    @if (_colValor) { <div class="tb-lc tb-lc-valor tb-lc-sort tb-num" @onclick='() => SortBy("valor")'><span>VALOR</span>@SortInd("valor")@ColorDot("valor")</div> }
+                    @if (_colOrigen) { <div class="tb-lc tb-lc-orig tb-lc-sort" @onclick='() => SortBy("origen")'><span>RELACIONADO CON</span>@SortInd("origen")@ColorDot("orig")</div> }
+                    @foreach (var c in CamposVisibles) { var cid = c.Id.ToString(); var campo = c; <div class="tb-lc tb-lc-campo tb-cc-@c.Id tb-lc-sort @(CampoEsNumerico(c) ? "tb-num" : "")" @onclick="() => SortBy(cid)"><span>@c.Label.ToUpperInvariant()</span>@SortInd(cid)<button type="button" class="tb-lc-ed" title="Editar campo" @onclick:stopPropagation="true" @onclick="(e) => EditarCampoPop(e, campo)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>@ColorDot(cid)</div> }
                     <div class="tb-lc tb-lc-acc"><button type="button" class="tb-hdr-addcampo" @onclick="AbrirEditorCampo" title="Agregar campo (columna)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>Campo</button></div>
                 </div>
-                @if (string.IsNullOrEmpty(_cardGroup))
+                @if (_cardGroup == "none")
+                {
+                    @* Sin agrupar: lista plana, sin encabezados de grupo. *@
+                    @foreach (var t in AplicarSort(_tareas.Where(x => x.PadreId == null).Where(PasaFiltros).ToList()))
+                    {
+                        @RenderArbol(t, 0)
+                    }
+                }
+                else if (string.IsNullOrEmpty(_cardGroup))
                 {
                 @foreach (var est in _board.Estados)
                 {
                     var grupo = RaicesPorEstado(est.Id).Where(PasaFiltros).ToList();
                     grupo = AplicarSort(grupo).ToList();
-                    if (!string.IsNullOrEmpty(_fEstado) && _fEstado != est.Id.ToString()) { continue; }
+                    @* Con filtros activos se ocultan las etapas que quedan sin tareas (no se muestran encabezados vacios). *@
+                    if (HayFiltros && grupo.Count == 0) { continue; }
                     var estado = est;
-                    <div class="tb-list-group">
-                        <span class="tb-glead @(_pinTitulo ? "tb-pin tb-pin-g" : "")">
-                            <span class="tb-col-dot" style="background:@(est.Color ?? "#94a3b8")"></span>
-                            <span class="tb-group-nom">@est.Nombre</span>
-                            <span class="tb-col-count">@grupo.Count</span>
-                        </span>
-                        <button class="tb-group-add" @onclick="() => AbrirCardDraft(null, estado.Id)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Agregar</button>
-                        <div class="tb-flex"></div>
-                    </div>
+                    @EncabezadoGrupoLista(estado.Nombre, estado.Color ?? "#94a3b8", grupo.Count, estado.Id, grupo)
                     @foreach (var t in grupo)
                     {
                         @RenderArbol(t, 0)
@@ -501,7 +564,7 @@ else
                         }
                         @if (_colValor)
                         {
-                            <div class="tb-row-valor"><input type="number" step="1000" class="tb-nf-inp" placeholder="$" @bind="nf.Valor" @bind:event="oninput" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" /></div>
+                            <div class="tb-row-valor tb-num"><input type="number" step="1000" class="tb-nf-inp" placeholder="$" @bind="nf.Valor" @bind:event="oninput" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" /></div>
                         }
                         @if (_colOrigen)
                         {
@@ -524,7 +587,7 @@ else
                         @foreach (var c in CamposVisibles)
                         {
                             var campo = c;
-                            <div class="tb-row-campo">
+                            <div class="tb-row-campo tb-cc-@campo.Id @(CampoEsNumerico(campo) ? "tb-num" : "")">
                                 @if (campo.Tipo == TipoCampoTablero.Numero || campo.Tipo == TipoCampoTablero.Moneda)
                                 {
                                     <input type="number" class="tb-nf-inp" placeholder="@campo.Label" value="@(nf.Campos.GetValueOrDefault(campo.Id))" @oninput="@(e => nf.Campos[campo.Id] = e.Value?.ToString())" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" />
@@ -552,15 +615,13 @@ else
                     @* Agrupada por la dimension elegida (prioridad, responsable, torre, unidad, relacionado). *@
                     @foreach (var gr in AgruparLista())
                     {
-                        <div class="tb-list-group">
-                            <span class="tb-glead @(_pinTitulo ? "tb-pin tb-pin-g" : "")">
-                                <span class="tb-group-nom">@gr.Key</span>
-                                <span class="tb-col-count">@gr.Items.Count</span>
-                            </span>
-                            <div class="tb-flex"></div>
-                        </div>
+                        @EncabezadoGrupoLista(gr.Key, null, gr.Items.Count, null, gr.Items)
                         @foreach (var t in gr.Items) { @RenderArbol(t, 0) }
                     }
+                }
+                @if (HayColumnasNumericas)
+                {
+                    @FilaResumen("TOTAL", true, _tareas.Where(x => x.PadreId == null).Where(PasaFiltros).ToList())
                 }
             </div>
         }
@@ -1712,10 +1773,45 @@ else
     .tb-filter-btn { display: flex; align-items: center; gap: 6px; padding: 7px 11px; border-radius: 9px; border: 1px solid #E1E8EE; background: #fff; font-size: 12px; font-weight: 700; color: #516F90; cursor: pointer; }
     .tb-filter-btn.on { border-color: #6D4FE3; background: #F1ECFD; color: #6D4FE3; }
     .tb-filters { position: relative; }
-    .tb-colsmenu { position: absolute; top: 44px; right: 0; z-index: 20; width: 210px; max-height: 360px; overflow-y: auto; background: #fff; border: 1px solid #E1E8EE; border-radius: 12px; box-shadow: 0 12px 30px rgba(27,42,58,.16); padding: 8px; }
+
+    /* ===== Constructor de filtros (boton compacto + panel de reglas) ===== */
+    .tb-filter-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px; padding: 0 5px; margin-left: 2px; border-radius: 9px; background: #6D4FE3; color: #fff; font-size: 10.5px; font-weight: 800; }
+    .tb-filterpop-bd { position: fixed; inset: 0; z-index: 44; }
+    .tb-filterpop { position: absolute; top: 44px; left: 0; z-index: 45; width: min(680px, 92vw); background: #fff; border: 1px solid #E1E8EE; border-radius: 12px; box-shadow: 0 16px 40px rgba(27,42,58,.2); padding: 12px; }
+    .tb-filterpop-empty { font-size: 12.5px; color: #7C98B6; text-align: center; padding: 14px 8px 16px; line-height: 1.5; }
+    .tb-frule { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; }
+    .tb-frule-lead { flex: 0 0 60px; font-size: 12px; font-weight: 700; color: #7C98B6; text-align: right; }
+    select.tb-frule-lead.tb-frule-logic { flex: 0 0 60px; text-align: left; border: 1px solid #E1E8EE; border-radius: 8px; padding: 5px 6px; background: #FAFBFC; color: #6D4FE3; font-weight: 800; cursor: pointer; outline: none; }
+    .tb-frule-f, .tb-frule-op, .tb-frule-v { font-size: 12.5px; font-weight: 600; color: #33475B; border: 1px solid #E1E8EE; border-radius: 8px; padding: 6px 8px; background: #fff; outline: none; min-width: 0; }
+    .tb-frule-f { flex: 0 0 150px; }
+    .tb-frule-op { flex: 0 0 130px; color: #516F90; }
+    .tb-frule-v { flex: 1 1 auto; min-width: 90px; }
+    .tb-frule-f:focus, .tb-frule-op:focus, .tb-frule-v:focus, select.tb-frule-logic:focus { border-color: #6D4FE3; }
+    .tb-frule-del { flex: 0 0 auto; width: 28px; height: 28px; border-radius: 7px; border: 1px solid #E1E8EE; background: #fff; color: #90A4B7; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+    .tb-frule-del:hover { background: #FDE7E7; color: #D7263D; border-color: #F2CFC9; }
+    .tb-filterpop-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; padding-top: 10px; border-top: 1px solid #EEF3F8; }
+    .tb-filter-add { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: #6D4FE3; background: #F1ECFD; border: 0; border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+    .tb-filter-add:hover { background: #E5DEFB; }
+    .tb-filter-clear2 { font-size: 12px; font-weight: 700; color: #C0383C; background: transparent; border: 0; border-radius: 8px; padding: 7px 10px; cursor: pointer; }
+    .tb-filter-clear2:hover { background: #FDE7E7; }
+    [data-bs-theme="dark"] .tb-filterpop { background: #232342; border-color: #3a3a5a; }
+    [data-bs-theme="dark"] .tb-frule-f, [data-bs-theme="dark"] .tb-frule-op, [data-bs-theme="dark"] .tb-frule-v,
+    [data-bs-theme="dark"] select.tb-frule-logic { background: #1c1c34; border-color: #3a3a5a; color: #C7C7D6; }
+    [data-bs-theme="dark"] .tb-frule-del { background: #1c1c34; border-color: #3a3a5a; }
+    [data-bs-theme="dark"] .tb-filter-add { background: #2f2a52; }
+    .tb-colsmenu { position: absolute; top: 44px; right: 0; z-index: 20; width: 256px; max-height: 380px; overflow-y: auto; background: #fff; border: 1px solid #E1E8EE; border-radius: 12px; box-shadow: 0 12px 30px rgba(27,42,58,.16); padding: 8px; }
     .tb-colsmenu-h { font-size: 10px; letter-spacing: .4px; color: #A6B7C8; font-weight: 700; padding: 5px 8px; }
-    .tb-colsmenu-i { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; padding: 8px; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: #33475B; background: none; border: 0; cursor: pointer; }
+    .tb-colsmenu-i { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 5px 8px; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: #33475B; }
     .tb-colsmenu-i:hover { background: #F5F8FA; }
+    .tb-colsmenu-off { opacity: .5; }
+    /* Reordenar columnas: mini flechas arriba/abajo por fila. */
+    .tb-colord { display: inline-flex; flex-direction: column; gap: 2px; flex-shrink: 0; }
+    .tb-colord-b { width: 19px; height: 13px; display: flex; align-items: center; justify-content: center; border: 1px solid #E1E8EE; background: #fff; color: #7C98B6; border-radius: 4px; cursor: pointer; padding: 0; }
+    .tb-colord-b:hover:not(:disabled) { background: #F1ECFD; color: #6D4FE3; border-color: #B9AEF3; }
+    .tb-colord-b:disabled { opacity: .3; cursor: default; }
+    .tb-chk-btn { background: none; border: 0; padding: 0; cursor: pointer; display: flex; flex-shrink: 0; }
+    .tb-chk-lock { border-style: dashed; background: #F5F8FA; cursor: default; }
+    .tb-colsmenu-lbl { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .tb-colsmenu-sep { font-size: 10px; letter-spacing: .4px; color: #A6B7C8; font-weight: 700; padding: 8px 8px 4px; border-top: 1px solid #EEF2F6; margin-top: 4px; }
     .tb-colsmenu-acts { display: flex; gap: 6px; padding: 8px 4px 2px; border-top: 1px solid #EEF2F6; margin-top: 6px; }
     .tb-colsmenu-act { flex: 1; padding: 6px 8px; border: 1px solid #E1E8EE; border-radius: 8px; background: #fff; font-size: 11.5px; font-weight: 700; color: #516F90; cursor: pointer; font-family: inherit; }
@@ -1726,10 +1822,12 @@ else
     /* La celda de etiquetas nunca debe desbordarse sobre columnas vecinas: ancho fijo,
        chips que hacen wrap dentro de la celda (crecen hacia abajo, no hacia los lados). */
     .tb-row-etiq { flex: 0 0 160px; width: 160px; display: flex; gap: 4px; flex-wrap: wrap; align-content: flex-start; align-items: center; }
-    .tb-tag { position: relative; display: inline-flex; align-items: center; gap: 4px; max-width: 100%; font-size: 10px; font-weight: 700; color: #5838C9; background: #fff; border: 1px solid #DCD2F8; padding: 2px 3px 2px 7px; border-radius: 20px; box-sizing: border-box; }
+    /* Etiqueta rellena con su color (fondo completo), texto en contraste (blanco/oscuro segun luminancia). */
+    .tb-tag { position: relative; display: inline-flex; align-items: center; gap: 4px; max-width: 100%; font-size: 10px; font-weight: 700; color: #fff; background: #6D4FE3; border: 1px solid transparent; padding: 2px 4px 2px 8px; border-radius: 20px; box-sizing: border-box; }
     .tb-tag-tx { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
-    .tb-tag-inp { width: 82px; max-width: 82px; border: 1px solid currentColor; border-radius: 5px; padding: 0 4px; font-size: 10px; font-weight: 700; color: inherit; outline: none; background: #fff; font-family: inherit; box-sizing: border-box; }
-    .tb-tag-sw { width: 13px; height: 13px; flex-shrink: 0; border-radius: 4px; border: 1px solid rgba(0,0,0,.15); cursor: pointer; padding: 0; box-shadow: inset 0 0 0 1px rgba(255,255,255,.5); }
+    .tb-tag-inp { width: 82px; max-width: 82px; border: 0; border-radius: 5px; padding: 0 4px; font-size: 10px; font-weight: 700; color: #1B2A3A; outline: none; background: #fff; font-family: inherit; box-sizing: border-box; }
+    /* Botita para abrir el selector de color: circulo blanco translucido, visible sobre cualquier color. */
+    .tb-tag-sw { width: 12px; height: 12px; flex-shrink: 0; border-radius: 50%; border: 1px solid rgba(255,255,255,.85); cursor: pointer; padding: 0; background: rgba(255,255,255,.35); }
     .tb-tag-sw:hover { transform: scale(1.12); }
     .tb-tagpop-bd { position: fixed; inset: 0; z-index: 1118; background: transparent; }
     .tb-tag-colors { position: absolute; top: calc(100% + 5px); right: 0; z-index: 1120; display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; padding: 7px; background: #fff; border: 1px solid #E1E8EE; border-radius: 10px; box-shadow: 0 12px 30px rgba(45,62,80,.2); }
@@ -1738,8 +1836,12 @@ else
     .tb-tag-copt:hover { transform: scale(1.08); }
     /* Columna Titulo fijada: el left debe igualar el padding-left de las filas (18px) para que
        NO salte al hacer scroll horizontal; la sombra derecha marca la columna congelada. */
-    .tb-pin { position: sticky; left: 18px; z-index: 2; background: #fff; box-shadow: 9px 0 10px -8px rgba(45,62,80,.16); }
-    .tb-pin-h { position: sticky; left: 18px; z-index: 3; background: #FAFBFC; box-shadow: 9px 0 10px -8px rgba(45,62,80,.16); }
+    /* Columna Titulo fijada: se ancla en left:0 con padding-left:18px (no en left:18px) para que su
+       fondo OPACO cubra tambien la franja izquierda; si no, al hacer scroll se veian los datos/colores
+       de las celdas que pasan por detras. box-sizing preserva el ancho de columna. z-index alto para
+       quedar por encima de toda la fila. */
+    .tb-pin { position: sticky; left: 0; padding-left: 18px; box-sizing: border-box; z-index: 5; background: #fff; box-shadow: 9px 0 10px -8px rgba(45,62,80,.16); }
+    .tb-pin-h { position: sticky; left: 0; padding-left: 18px; box-sizing: border-box; z-index: 9; background: #FAFBFC; box-shadow: 9px 0 10px -8px rgba(45,62,80,.16); }
     .tb-glead { display: inline-flex; align-items: center; gap: 8px; }
     /* lead del grupo fijado: ancla en 0 con padding-left 18px para que su fondo cubra el borde
        izquierdo (si no, el boton "Agregar" del grupo asoma bajo el titulo al hacer scroll). */
@@ -1754,9 +1856,12 @@ else
     .tb-lc { font-size: 10.5px; letter-spacing: .4px; font-weight: 700; color: #A6B7C8; }
     .tb-lc-tit { width: 300px; flex-shrink: 0; } .tb-lc-est { width: 130px; flex-shrink: 0; } .tb-lc-resp { width: 150px; flex-shrink: 0; }
     .tb-lc-prog { width: 140px; flex-shrink: 0; } .tb-lc-prio { width: 90px; flex-shrink: 0; } .tb-lc-due { flex: 1; min-width: 70px; }
-    .tb-list-group { display: flex; align-items: center; gap: 8px; padding: 9px 18px; background: #F8FAFC; border-bottom: 1px solid #EEF3F8; min-width: 860px; }
+    .tb-list-group { display: flex; align-items: center; gap: 12px; padding: 9px 18px; background: #F8FAFC; border-bottom: 1px solid #EEF3F8; min-width: 860px; }
     .tb-group-nom { font-size: 12px; font-weight: 800; color: #33475B; letter-spacing: .2px; }
     .tb-group-add { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: #6D4FE3; border: 0; background: transparent; cursor: pointer; }
+    /* Encabezado de grupo alineado a columnas: la celda-titulo lleva punto+nombre+conteo+Agregar; las celdas numericas llevan el total bajo su columna. */
+    .tb-grp-lead { display: flex; align-items: center; gap: 8px; }
+    .tb-grp-tot { color: #33475B !important; font-weight: 800 !important; font-size: 12px !important; letter-spacing: 0 !important; }
     .tb-row { display: flex; align-items: center; gap: 12px; padding: 9px 18px; border-bottom: 1px solid #F4F7FA; min-width: 860px; border-left: 3px solid transparent; }
     .tb-row:hover { background: #FBFAFE; }
     .tb-row-tit { width: 300px; flex-shrink: 0; min-width: 0; display: flex; align-items: center; gap: 5px; }
@@ -1782,10 +1887,59 @@ else
 
     /* ===== Tabla editable inline (vista Lista tipo Excel) ===== */
     .tb-list { overflow-x: auto; }
-    .tb-list-hdr, .tb-row, .tb-list-group, .tb-newrow { min-width: 1660px; }
+    @* max-content (en vez de un ancho fijo) para que la fila crezca hasta abarcar TODAS las columnas,
+       incluidas las dinamicas; asi el fondo del encabezado/grupo/total cubre tambien esas columnas. *@
+    .tb-list-hdr, .tb-row, .tb-list-group, .tb-newrow, .tb-list-sum { min-width: max-content; }
+
+    /* Fila-resumen de totales por grupo (estilo Airtable): alineada a las columnas de la Lista. */
+    .tb-list-sum { display: flex; align-items: center; gap: 12px; padding: 7px 18px; background: #F6F3FE; border-bottom: 1px solid #EEF3F8; }
+    .tb-list-sum .tb-lc { color: #33475B; font-weight: 700; letter-spacing: 0; }
+    .tb-sum-lead { color: #6D4FE3 !important; font-size: 10.5px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; }
+    .tb-sum-total { background: #EEE9FC; border-top: 1px solid #DCD2F8; }
+    .tb-sum-total .tb-sum-lead { font-size: 11px; }
+    .tb-agg { position: relative; }
+    .tb-agg-fn { font-size: 9px; font-weight: 800; color: #A78BFA; text-transform: uppercase; letter-spacing: .3px; margin-right: 4px; }
+    .tb-agg-val { font-size: 12px; font-weight: 700; color: #33475B; }
+    .tb-agg-btn { display: inline-flex; align-items: baseline; gap: 4px; background: none; border: 0; cursor: pointer; padding: 2px 5px; border-radius: 6px; font-family: inherit; }
+    .tb-agg-btn:hover { background: #E5DEFB; }
+    .tb-agg-menu { position: absolute; top: 100%; left: 0; margin-top: 4px; z-index: 30; background: #fff; border: 1px solid #E1E8EE; border-radius: 8px; box-shadow: 0 8px 24px rgba(16,24,40,.14); padding: 4px; min-width: 132px; }
+    .tb-agg-it { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 6px 10px; font-size: 12px; color: #33475B; cursor: pointer; border-radius: 6px; font-family: inherit; }
+    .tb-agg-it:hover { background: #F1ECFD; }
+    .tb-agg-it.on { color: #6D4FE3; font-weight: 700; }
+    .tb-group-clear { display: inline-flex; align-items: center; gap: 5px; }
+
+    /* Scroll horizontal superior (espejo del de abajo), justo debajo del titulo. */
+    .tb-topscroll { overflow-x: auto; overflow-y: hidden; margin-bottom: 7px; height: 14px; border-radius: 8px; }
+    .tb-topscroll > div { height: 1px; }
+    .tb-topscroll::-webkit-scrollbar { height: 10px; }
+    .tb-topscroll::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 8px; }
+    .tb-topscroll::-webkit-scrollbar-thumb:hover { background: #A6B7C8; }
+    .tb-topscroll::-webkit-scrollbar-track { background: #F1F5F9; border-radius: 8px; }
+
+    /* Color por columna: boton en el encabezado + paleta pastel. */
+    .tb-lc-colorwrap { position: relative; display: inline-flex; align-items: center; margin-left: 5px; }
+    .tb-lc-color { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid #CBD5E1; background: transparent; cursor: pointer; padding: 0; opacity: 0; transition: opacity .12s; }
+    .tb-lc:hover .tb-lc-color, .tb-lc-color:focus, .tb-lc-colorwrap:hover .tb-lc-color { opacity: 1; }
+    .tb-lc-color[style*="transparent"] { border-style: dashed; }
+    .tb-colorpop-bd { position: fixed; inset: 0; z-index: 45; }
+    .tb-colorpop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 46; display: grid; grid-template-columns: repeat(5, 20px); gap: 6px; padding: 9px; background: #fff; border: 1px solid #E1E8EE; border-radius: 10px; box-shadow: 0 12px 32px rgba(45,62,80,.2); }
+    .tb-coloropt { width: 20px; height: 20px; border-radius: 6px; border: 1px solid rgba(0,0,0,.08); cursor: pointer; padding: 0; transition: transform .1s; }
+    .tb-coloropt:hover { transform: scale(1.14); }
+    .tb-coloropt.on { box-shadow: 0 0 0 2px #6D4FE3; }
+    .tb-coloropt-none { background: #fff !important; position: relative; }
+    .tb-coloropt-none::after { content: ""; position: absolute; left: 2px; right: 2px; top: 9px; height: 2px; background: #E5484D; transform: rotate(-45deg); }
+
+    /* Totales por grupo en la vista Tablero (Kanban agrupado). */
+    .tb-gsec-tot { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: 10px; }
+    .tb-gsec-chip { font-size: 10.5px; color: #6E7A8A; background: #EEF3F8; border-radius: 6px; padding: 2px 8px; }
+    .tb-gsec-chip b { color: #33475B; }
+
+    /* Totales en el titulo del grupo (vista Lista): chips compactos junto al nombre del grupo. */
+    .tb-glt { display: inline-flex; align-items: baseline; gap: 4px; flex-shrink: 0; margin-left: 8px; font-size: 10.5px; font-weight: 600; color: #6E7A8A; background: #EEF3F8; border-radius: 6px; padding: 2px 9px; white-space: nowrap; }
+    .tb-glt b { color: #33475B; font-weight: 800; }
     .tb-lc-desc { width: 200px; flex-shrink: 0; } .tb-row-desc { width: 200px; flex-shrink: 0; position: relative; }
     .tb-lc-etiq { width: 160px; flex: 0 0 160px; padding-left: 14px; box-sizing: border-box; } .tb-row-etiq { width: 160px; flex: 0 0 160px; padding-left: 14px; box-sizing: border-box; display: flex; gap: 4px; flex-wrap: wrap; align-content: flex-start; }
-    .tb-lc-valor { width: 110px; flex-shrink: 0; } .tb-row-valor { width: 110px; flex-shrink: 0; position: relative; font-size: 12px; color: #1E7A50; font-weight: 700; }
+    .tb-lc-valor { width: 132px; flex-shrink: 0; } .tb-row-valor { width: 132px; flex-shrink: 0; position: relative; font-size: 12px; color: #1E7A50; font-weight: 700; }
     .tb-lc-orig { width: 210px; flex-shrink: 0; } .tb-row-orig { width: 210px; flex-shrink: 0; display: flex; gap: 4px; align-items: center; }
     .tb-orig-tsel { flex: 0 0 84px; font-size: 11px; font-weight: 600; color: #516F90; border: 1px solid #E1E8EE; border-radius: 6px; padding: 4px 5px; outline: none; background: #FAFBFC; cursor: pointer; }
     .tb-orig-rsel { flex: 1; min-width: 0; font-size: 11px; font-weight: 600; color: #33475B; border: 1px solid #E1E8EE; border-radius: 6px; padding: 4px 5px; outline: none; background: #fff; cursor: pointer; }
@@ -2196,6 +2350,12 @@ else
     .tb-row-due { flex: 0 0 100px; min-width: 100px; }
     .tb-lc-campo { width: 120px; flex-shrink: 0; }
     .tb-row-campo { width: 120px; flex-shrink: 0; font-size: 12px; color: #516F90; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* Columnas numericas (Valor + campos Numero/Moneda): alineadas a la derecha, digitos tabulares y un poco mas anchas. */
+    .tb-lc-campo.tb-num, .tb-row-campo.tb-num { width: 132px; }
+    .tb-num { text-align: right; font-variant-numeric: tabular-nums; }
+    .tb-num .tb-editable { text-align: right; }
+    .tb-num .tb-cell-inp, .tb-num .tb-nf-inp { text-align: right; }
+    .tb-lc.tb-num { justify-content: flex-end; }
 
     /* ----- Campos personalizados: modal de tarjeta ----- */
     .tbc-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
@@ -2306,6 +2466,20 @@ else
     [data-bs-theme="dark"] .tb-cosel-menu { background: #232342; border-color: #3a3a5a; }
     [data-bs-theme="dark"] .tb-cosel-item { color: var(--propia-text-body, #D5D5E0); }
     [data-bs-theme="dark"] .tb-cosel-item:hover:not(:disabled) { background: #2a2a4a; }
+
+    /* ---- Fila-resumen de totales (tema oscuro) ---- */
+    [data-bs-theme="dark"] .tb-list-sum { background: #241f3a; border-bottom-color: #2c2c50; }
+    [data-bs-theme="dark"] .tb-sum-total { background: #2a244a; border-top-color: #3a3a5a; }
+    [data-bs-theme="dark"] .tb-list-sum .tb-lc { color: #D5D5E0; }
+    [data-bs-theme="dark"] .tb-agg-val { color: #D5D5E0; }
+    [data-bs-theme="dark"] .tb-agg-btn:hover { background: #34305a; }
+    [data-bs-theme="dark"] .tb-agg-menu { background: #232342; border-color: #3a3a5a; }
+    [data-bs-theme="dark"] .tb-agg-it { color: #C7C7D6; }
+    [data-bs-theme="dark"] .tb-agg-it:hover { background: #2a2a4a; }
+    [data-bs-theme="dark"] .tb-gsec-chip { background: #2a2a4a; color: #A8A8BC; }
+    [data-bs-theme="dark"] .tb-gsec-chip b { color: #D5D5E0; }
+    [data-bs-theme="dark"] .tb-glt { background: #2a2a4a; color: #A8A8BC; }
+    [data-bs-theme="dark"] .tb-glt b { color: #D5D5E0; }
 
     /* ---- Conmutador de vistas ---- */
     [data-bs-theme="dark"] .tb-modeswitch { background: #1f1f3a; border-color: #3a3a5a; }
@@ -2496,7 +2670,16 @@ else
     private List<PersonaMini>? _personas;
     private readonly HashSet<Guid> _expandidas = new();
 
-    private string _fEstado = ""; private string _fResp = ""; private string _fPrio = ""; private string _fEtiqueta = "";
+    // ---- Constructor de filtros (vista Lista): varias reglas Campo/Condicion/Valor, combinadas Y u O ----
+    private sealed class FiltroRegla
+    {
+        public string Campo { get; set; } = "estado"; // "estado","resp","prio","etiqueta","titulo","descripcion","vence","valor" o el guid de un campo dinamico
+        public string Op { get; set; } = "es";        // operador (depende del tipo de campo)
+        public string Valor { get; set; } = "";       // valor/comparando (id de estado, texto, numero, fecha, etc.)
+    }
+    private readonly List<FiltroRegla> _reglas = new();
+    private string _filtroLogica = "and"; // "and" = todas las reglas, "or" = cualquiera
+    private bool _filtrosMenu;
     // Ordenamiento por columna (vista Lista): clic en el encabezado ordena; reclic invierte.
     private string _sortCol = ""; private bool _sortAsc = true;
     private void SortBy(string col) { if (_sortCol == col) _sortAsc = !_sortAsc; else { _sortCol = col; _sortAsc = true; } }
@@ -2521,7 +2704,8 @@ else
     // ---- Vista Tablero (tarjetas): ordenar + agrupar por dimension (incluye ubicacion) ----
     private bool _cardSortMenu; private bool _cardGroupMenu; private string _cardGroup = "";
     private void SetCardSort(string k) { if (string.IsNullOrEmpty(k)) _sortCol = ""; else SortBy(k); _cardSortMenu = false; }
-    private void SetCardGroup(string k) { _cardGroup = k; _cardGroupMenu = false; }
+    private async Task SetCardGroup(string k) { _cardGroup = k; _cardGroupMenu = false; await PersistGroupAsync(); }
+    private async Task ClearCardGroup() { _cardGroup = ""; _cardGroupMenu = false; await PersistGroupAsync(); }
     private IEnumerable<(string Key, string Label)> OpcionesOrden()
     {
         yield return ("titulo", "Titulo");
@@ -2537,6 +2721,7 @@ else
     private IEnumerable<(string Key, string Label)> OpcionesGrupo()
     {
         yield return ("", "Etapa");
+        yield return ("none", "Sin agrupar");
         yield return ("prioridad", "Prioridad");
         yield return ("responsable", "Responsable");
         yield return ("torre", "Torre");
@@ -2544,6 +2729,224 @@ else
         yield return ("relacionado", "Relacionado con");
     }
     private string GrupoLabel(string k) => OpcionesGrupo().FirstOrDefault(o => o.Key == k).Label ?? k;
+
+    // ===== Totales por grupo (estilo Airtable) =====
+    // Funcion de agregacion por columna numerica. Clave: "valor" (columna fija) o el Id (string) del
+    // campo dinamico Numero/Moneda. Valor: sum|avg|min|max|count|none. Se guarda por tablero.
+    private Dictionary<string, string> _agg = new();
+    private string? _aggMenuCol;   // columna cuyo menu de funcion esta abierto (solo en la fila TOTAL)
+    private static readonly (string Key, string Label)[] AggOpciones =
+        new[] { ("sum", "Suma"), ("avg", "Promedio"), ("min", "Minimo"), ("max", "Maximo"), ("count", "Conteo"), ("none", "Ninguno") };
+    private void ToggleAggMenu(string col) { _aggMenuCol = _aggMenuCol == col ? null : col; }
+    private string AggFn(string col) => _agg.TryGetValue(col, out var f) && !string.IsNullOrEmpty(f) ? f : "sum";
+    private async Task SetAgg(string col, string fn) { _agg[col] = fn; _aggMenuCol = null; await PersistAggAsync(); }
+    private static string AggLabel(string fn) => fn switch { "avg" => "Prom", "min" => "Min", "max" => "Max", "count" => "Cont", "none" => "-", _ => "Suma" };
+    private bool CampoEsNumerico(TableroCampoDto c) => c.Tipo == TipoCampoTablero.Numero || c.Tipo == TipoCampoTablero.Moneda;
+    private bool HayColumnasNumericas => _colValor || CamposVisibles.Any(CampoEsNumerico);
+    private decimal? ValorNumColumna(TareaListaDto t, string col)
+    {
+        if (col == "valor") return t.Valor;
+        if (Guid.TryParse(col, out var cid) && decimal.TryParse(CampoDeTarea(t, cid), NumberStyles.Any, CultureInfo.InvariantCulture, out var d)) return d;
+        return null;
+    }
+    private decimal SumaCampoGrupo(string col, IEnumerable<TareaListaDto> items)
+        => items.Select(t => ValorNumColumna(t, col)).Where(v => v.HasValue).Sum(v => v!.Value);
+    private string AgregadoColumna(string col, bool esMoneda, IEnumerable<TareaListaDto> items)
+    {
+        var fn = AggFn(col);
+        if (fn == "none") return "";
+        var vals = items.Select(t => ValorNumColumna(t, col)).Where(v => v.HasValue).Select(v => v!.Value).ToList();
+        if (fn == "count") return vals.Count.ToString("N0", Es);
+        if (vals.Count == 0) return "-";
+        decimal r = fn switch { "avg" => vals.Average(), "min" => vals.Min(), "max" => vals.Max(), _ => vals.Sum() };
+        var num = Math.Round(r).ToString("N0", Es);
+        return esMoneda ? "$ " + num : num;
+    }
+
+    // Totales compactos para el TITULO del grupo (chips "Columna valor"). Solo columnas numericas
+    // visibles con agregado no vacio. La funcion (suma/prom/min/max/conteo) se cambia en la fila TOTAL.
+    private RenderFragment TotalesGrupoTitulo(IReadOnlyList<TareaListaDto> items)
+    {
+        return
+    @<text>
+        @if (HayColumnasNumericas)
+        {
+            @if (_colValor)
+            {
+                var v = AgregadoColumna("valor", true, items);
+                if (!string.IsNullOrEmpty(v) && v != "-") { <span class="tb-glt">Valor <b>@v</b></span> }
+            }
+            @foreach (var c in CamposVisibles.Where(CampoEsNumerico))
+            {
+                var cv = AgregadoColumna(c.Id.ToString(), c.Tipo == TipoCampoTablero.Moneda, items);
+                if (!string.IsNullOrEmpty(cv) && cv != "-") { <span class="tb-glt">@c.Label <b>@cv</b></span> }
+            }
+        }
+    </text>;
+    }
+
+    // Encabezado de grupo ALINEADO A COLUMNAS: nombre + conteo + boton Agregar en la celda Titulo,
+    // y el total de cada columna numerica (Valor + campos Numero/Moneda) bajo SU columna.
+    private RenderFragment EncabezadoGrupoLista(string nombre, string? colorDot, int count, Guid? estadoId, IReadOnlyList<TareaListaDto> items)
+    {
+        return
+    @<div class="tb-list-group">
+        <div class="tb-lc tb-lc-tit tb-grp-lead @(_pinTitulo ? "tb-pin tb-pin-g" : "")">
+            @if (colorDot is not null) { <span class="tb-col-dot" style="background:@colorDot"></span> }
+            <span class="tb-group-nom">@nombre</span>
+            <span class="tb-col-count">@count</span>
+            @if (estadoId is not null)
+            {
+                <button class="tb-group-add" @onclick="() => AbrirCardDraft(null, estadoId.Value)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Agregar</button>
+            }
+        </div>
+        @if (_colDesc) { <div class="tb-lc tb-lc-desc"></div> }
+        <div class="tb-lc tb-lc-est"></div>
+        @if (_colResp) { <div class="tb-lc tb-lc-resp"></div> }
+        <div class="tb-lc tb-lc-prog"></div>
+        @if (_colEtiq) { <div class="tb-lc tb-lc-etiq"></div> }
+        @if (_colPrio) { <div class="tb-lc tb-lc-prio"></div> }
+        @if (_colDue) { <div class="tb-lc tb-lc-due"></div> }
+        @if (_colValor) { <div class="tb-lc tb-lc-valor tb-grp-tot tb-num">@AgregadoColumna("valor", true, items)</div> }
+        @if (_colOrigen) { <div class="tb-lc tb-lc-orig"></div> }
+        @foreach (var c in CamposVisibles)
+        {
+            <div class="tb-lc tb-lc-campo tb-cc-@c.Id tb-grp-tot @(CampoEsNumerico(c) ? "tb-num" : "")">@(CampoEsNumerico(c) ? AgregadoColumna(c.Id.ToString(), c.Tipo == TipoCampoTablero.Moneda, items) : "")</div>
+        }
+        <div class="tb-lc tb-lc-acc"></div>
+    </div>;
+    }
+
+    // ---- Color por columna (tonos pastel), persistido por tablero ----
+    private Dictionary<string, string> _colColor = new();
+    private string? _colColorMenu;
+    private static readonly string[] PastelCols =
+        { "#FDE2E4", "#FCE8D5", "#FFF3C4", "#E4F4D4", "#D4F0EC", "#D6E6FB", "#E7DFFB", "#FBE0F0", "#ECEFF3" };
+    private string? ColBg(string key) => _colColor.TryGetValue(key, out var c) && !string.IsNullOrEmpty(c) ? c : null;
+    private void ToggleColColorMenu(string key) { _colColorMenu = _colColorMenu == key ? null : key; }
+    private async Task SetColColor(string key, string? color)
+    {
+        if (string.IsNullOrEmpty(color)) _colColor.Remove(key); else _colColor[key] = color;
+        _colColorMenu = null;
+        await PersistColColorAsync();
+    }
+    private static string? ColSelectores(string key) => key switch
+    {
+        "desc" => ".tb-list .tb-lc-desc,.tb-list .tb-row-desc",
+        "est" => ".tb-list .tb-lc-est,.tb-list .tb-row-cell-est",
+        "resp" => ".tb-list .tb-lc-resp,.tb-list .tb-row-resp",
+        "prog" => ".tb-list .tb-lc-prog,.tb-list .tb-row-prog",
+        "etiq" => ".tb-list .tb-lc-etiq,.tb-list .tb-row-etiq",
+        "prio" => ".tb-list .tb-lc-prio,.tb-list .tb-row-prio",
+        "due" => ".tb-list .tb-lc-due,.tb-list .tb-row-due",
+        "valor" => ".tb-list .tb-lc-valor,.tb-list .tb-row-valor",
+        "orig" => ".tb-list .tb-lc-orig,.tb-list .tb-row-orig",
+        _ => Guid.TryParse(key, out _) ? $".tb-list .tb-cc-{key}" : null
+    };
+    // Emite un <style> con el fondo de cada columna coloreada (celdas de encabezado + filas).
+    private MarkupString ColumnColorCss
+    {
+        get
+        {
+            if (_colColor.Count == 0) return (MarkupString)"";
+            var sb = new System.Text.StringBuilder("<style>");
+            foreach (var kv in _colColor)
+            {
+                if (string.IsNullOrEmpty(kv.Value)) continue;
+                var sel = ColSelectores(kv.Key);
+                if (sel is null) continue;
+                sb.Append(sel).Append("{background:").Append(kv.Value).Append(" !important;}");
+            }
+            sb.Append("</style>");
+            return (MarkupString)sb.ToString();
+        }
+    }
+    // Boton de color + paleta pastel para el encabezado de una columna.
+    private RenderFragment ColorDot(string key)
+    {
+        return
+    @<span class="tb-lc-colorwrap" @onclick:stopPropagation="true">
+        <button type="button" class="tb-lc-color" style="background:@(ColBg(key) ?? "transparent")" title="Color de columna" @onclick="() => ToggleColColorMenu(key)"></button>
+        @if (_colColorMenu == key)
+        {
+            <div class="tb-colorpop-bd" @onclick="() => _colColorMenu = null"></div>
+            <div class="tb-colorpop" @onclick:stopPropagation="true">
+                @foreach (var c in PastelCols)
+                {
+                    var cc = c;
+                    <button type="button" class="tb-coloropt @(string.Equals(ColBg(key), cc, StringComparison.OrdinalIgnoreCase) ? "on" : "")" style="background:@cc" @onclick="() => SetColColor(key, cc)"></button>
+                }
+                <button type="button" class="tb-coloropt tb-coloropt-none" title="Sin color" @onclick="() => SetColColor(key, null)"></button>
+            </div>
+        }
+    </span>;
+    }
+
+    // Color de texto (blanco / oscuro) para una etiqueta segun la luminancia de su color de fondo,
+    // para que el texto quede legible sobre el chip relleno.
+    private static string TagTextColor(string hex)
+    {
+        var h = (hex ?? "").TrimStart('#');
+        if (h.Length == 3) { h = string.Concat(h[0], h[0], h[1], h[1], h[2], h[2]); }
+        if (h.Length < 6
+            || !int.TryParse(h.Substring(0, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var r)
+            || !int.TryParse(h.Substring(2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var g)
+            || !int.TryParse(h.Substring(4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var b))
+        { return "#ffffff"; }
+        var lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
+        return lum > 0.62 ? "#1B2A3A" : "#ffffff";
+    }
+
+    // Fila-resumen alineada a columnas (misma estructura condicional que el encabezado de la Lista).
+    // interactivo=true (fila TOTAL): el valor es un boton que abre el menu de funcion por columna.
+    private RenderFragment FilaResumen(string lead, bool interactivo, IReadOnlyList<TareaListaDto> items)
+    {
+        return
+    @<div class="tb-list-sum @(interactivo ? "tb-sum-total" : "")">
+        <div class="tb-lc tb-lc-tit tb-sum-lead @(_pinTitulo ? "tb-pin tb-pin-g" : "")">@lead</div>
+        @if (_colDesc) { <div class="tb-lc tb-lc-desc"></div> }
+        <div class="tb-lc tb-lc-est"></div>
+        @if (_colResp) { <div class="tb-lc tb-lc-resp"></div> }
+        <div class="tb-lc tb-lc-prog"></div>
+        @if (_colEtiq) { <div class="tb-lc tb-lc-etiq"></div> }
+        @if (_colPrio) { <div class="tb-lc tb-lc-prio"></div> }
+        @if (_colDue) { <div class="tb-lc tb-lc-due"></div> }
+        @if (_colValor) { <div class="tb-lc tb-lc-valor tb-num">@CeldaAgg("valor", true, interactivo, items)</div> }
+        @if (_colOrigen) { <div class="tb-lc tb-lc-orig"></div> }
+        @foreach (var c in CamposVisibles)
+        {
+            <div class="tb-lc tb-lc-campo tb-cc-@c.Id @(CampoEsNumerico(c) ? "tb-num" : "")">@(CampoEsNumerico(c) ? CeldaAgg(c.Id.ToString(), c.Tipo == TipoCampoTablero.Moneda, interactivo, items) : null)</div>
+        }
+        <div class="tb-lc tb-lc-acc"></div>
+    </div>;
+    }
+
+    private RenderFragment CeldaAgg(string col, bool esMoneda, bool interactivo, IReadOnlyList<TareaListaDto> items)
+    {
+        return
+    @<div class="tb-agg">
+        @if (interactivo)
+        {
+            <button type="button" class="tb-agg-btn" @onclick="() => ToggleAggMenu(col)" title="Cambiar funcion de resumen">
+                <span class="tb-agg-fn">@AggLabel(AggFn(col))</span><span class="tb-agg-val">@AgregadoColumna(col, esMoneda, items)</span>
+            </button>
+            @if (_aggMenuCol == col)
+            {
+                <div class="tb-agg-menu">
+                    @foreach (var f in AggOpciones)
+                    {
+                        var fn = f.Key;
+                        <button type="button" class="tb-agg-it @(AggFn(col) == fn ? "on" : "")" @onclick="() => SetAgg(col, fn)">@f.Label</button>
+                    }
+                </div>
+            }
+        }
+        else
+        {
+            <span class="tb-agg-fn">@AggLabel(AggFn(col))</span><span class="tb-agg-val">@AgregadoColumna(col, esMoneda, items)</span>
+        }
+    </div>;
+    }
     // Torre derivada de la unidad relacionada: toma el prefijo antes del primer separador (- , / #).
     private string TorreDeTarea(TareaListaDto t)
     {
@@ -2644,18 +3047,19 @@ else
     // Persistencia de la config de columnas POR TABLERO en localStorage. Cada tablero tiene sus
     // propios campos dinamicos, asi que la config va llaveada por su Id (propia_tb_cols_<id>).
     // Sobrevive recarga y cierre de sesion (el logout solo borra llaves puntuales).
-    private sealed record ColsCfg(bool Resp, bool Etiq, bool Prio, bool Due, bool Desc, bool Valor, bool Orig, bool Pin, List<Guid> Ocultos);
+    private sealed record ColsCfg(bool Resp, bool Etiq, bool Prio, bool Due, bool Desc, bool Valor, bool Orig, bool Pin, List<Guid> Ocultos, List<string>? Orden = null);
     private static string ColsKey(Guid tableroId) => $"propia_tb_cols_{tableroId}";
     private void ColsReset()   // defaults: todo visible, titulo sin fijar
     {
         _colResp = _colEtiq = _colPrio = _colDue = _colDesc = _colValor = _colOrigen = true;
         _pinTitulo = false;
         _colsCampoOcultos = new();
+        _colOrden = new();
     }
     private async Task PersistColsAsync()
     {
         if (_board is null) return;
-        var cfg = new ColsCfg(_colResp, _colEtiq, _colPrio, _colDue, _colDesc, _colValor, _colOrigen, _pinTitulo, _colsCampoOcultos.ToList());
+        var cfg = new ColsCfg(_colResp, _colEtiq, _colPrio, _colDue, _colDesc, _colValor, _colOrigen, _pinTitulo, _colsCampoOcultos.ToList(), _colOrden.ToList());
         try { await Js.InvokeVoidAsync("localStorage.setItem", ColsKey(_board.Tablero.Id), System.Text.Json.JsonSerializer.Serialize(cfg)); } catch { }
     }
     private async Task RestaurarColsAsync()
@@ -2669,8 +3073,120 @@ else
             _colResp = cfg.Resp; _colEtiq = cfg.Etiq; _colPrio = cfg.Prio; _colDue = cfg.Due;
             _colDesc = cfg.Desc; _colValor = cfg.Valor; _colOrigen = cfg.Orig; _pinTitulo = cfg.Pin;
             _colsCampoOcultos = cfg.Ocultos?.ToHashSet() ?? new();
+            _colOrden = cfg.Orden?.ToList() ?? new();
         }
         catch { ColsReset(); }
+    }
+
+    // ---- Orden de columnas (vista Lista): reordenable via flechas; se aplica por CSS `order`, sin tocar el markup ----
+    private List<string> _colOrden = new();
+    private static readonly string[] ClavesBaseOrden = { "desc", "est", "resp", "prog", "etiq", "prio", "due", "valor", "orig" };
+    private List<string> ClavesReordenables()
+    {
+        var claves = ClavesBaseOrden.ToList();
+        claves.AddRange(CamposDelTablero
+            .Where(c => c.Tipo != TipoCampoTablero.Separador && c.Tipo != TipoCampoTablero.Total)
+            .Select(c => c.Id.ToString()));
+        return claves;
+    }
+    // Deja _colOrden con exactamente las claves validas actuales: conserva el orden guardado y anexa las nuevas.
+    private void ReconciliarOrden()
+    {
+        var validas = ClavesReordenables();
+        var nuevo = _colOrden.Where(validas.Contains).ToList();
+        nuevo.AddRange(validas.Where(k => !nuevo.Contains(k)));
+        _colOrden = nuevo;
+    }
+    private void MoverColumna(int idx, int dir)
+    {
+        int j = idx + dir;
+        if (idx < 0 || idx >= _colOrden.Count || j < 0 || j >= _colOrden.Count) return;
+        (_colOrden[idx], _colOrden[j]) = (_colOrden[j], _colOrden[idx]);
+        _ = PersistColsAsync();
+    }
+    private static bool ColKeyBloqueada(string key) => key is "est" or "prog";  // Etapa y Progreso no se pueden ocultar
+    private bool ColKeyVisible(string key) => key switch
+    {
+        "desc" => _colDesc, "est" => true, "resp" => _colResp, "prog" => true,
+        "etiq" => _colEtiq, "prio" => _colPrio, "due" => _colDue, "valor" => _colValor, "orig" => _colOrigen,
+        _ => Guid.TryParse(key, out var g) && CampoColVisible(g)
+    };
+    private async Task ToggleColKey(string key)
+    {
+        if (Guid.TryParse(key, out var g)) await ToggleCampoCol(g);
+        else await ToggleColFijo(key);
+    }
+    private string ColKeyLabel(string key) => key switch
+    {
+        "desc" => "Descripcion", "est" => "Etapa", "resp" => "Asignado", "prog" => "Progreso",
+        "etiq" => "Etiquetas", "prio" => "Prioridad", "due" => "Vence", "valor" => "Valor", "orig" => "Relacionado con",
+        _ => (Guid.TryParse(key, out var g) ? CamposDelTablero.FirstOrDefault(c => c.Id == g)?.Label : null) ?? key
+    };
+    // <style> con el `order` de flexbox de cada columna (encabezado + filas + totales) segun _colOrden.
+    private MarkupString ColumnOrderCss
+    {
+        get
+        {
+            var sb = new System.Text.StringBuilder("<style>");
+            sb.Append(".tb-list .tb-lc-tit,.tb-list .tb-row-tit{order:0 !important;}");
+            int i = 1;
+            foreach (var key in _colOrden)
+            {
+                var sel = ColSelectores(key);
+                if (sel is null) continue;
+                sb.Append(sel).Append("{order:").Append(i).Append(" !important;}");
+                i++;
+            }
+            sb.Append(".tb-list .tb-lc-acc,.tb-list .tb-row-acc{order:9999 !important;}");
+            sb.Append("</style>");
+            return (MarkupString)sb.ToString();
+        }
+    }
+
+    // Agrupacion elegida + funciones de agregacion (totales) POR TABLERO. Sobreviven recarga igual
+    // que la config de columnas.
+    private static string GroupKey(Guid id) => $"propia_tb_group_{id}";
+    private static string AggKey(Guid id) => $"propia_tb_agg_{id}";
+    private static string ColColorKey(Guid id) => $"propia_tb_colcolor_{id}";
+    private static string FiltrosKey(Guid id) => $"propia_tb_filtros_{id}";
+    private sealed class FiltrosGuardados { public string Logica { get; set; } = "and"; public List<FiltroRegla> Reglas { get; set; } = new(); }
+    private async Task PersistFiltrosAsync()
+    {
+        if (_board is null) return;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", FiltrosKey(_board.Tablero.Id), System.Text.Json.JsonSerializer.Serialize(new FiltrosGuardados { Logica = _filtroLogica, Reglas = _reglas })); } catch { }
+    }
+    private async Task PersistColColorAsync()
+    {
+        if (_board is null) return;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", ColColorKey(_board.Tablero.Id), System.Text.Json.JsonSerializer.Serialize(_colColor)); } catch { }
+    }
+    private async Task PersistGroupAsync()
+    {
+        if (_board is null) return;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", GroupKey(_board.Tablero.Id), _cardGroup ?? ""); } catch { }
+    }
+    private async Task PersistAggAsync()
+    {
+        if (_board is null) return;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", AggKey(_board.Tablero.Id), System.Text.Json.JsonSerializer.Serialize(_agg)); } catch { }
+    }
+    private async Task RestaurarAggGroupAsync()
+    {
+        if (_board is null) { _cardGroup = ""; _agg = new(); return; }
+        try { var g = await Js.InvokeAsync<string?>("localStorage.getItem", GroupKey(_board.Tablero.Id)); _cardGroup = g ?? ""; } catch { _cardGroup = ""; }
+        try { var raw = await Js.InvokeAsync<string?>("localStorage.getItem", AggKey(_board.Tablero.Id)); _agg = string.IsNullOrEmpty(raw) ? new() : (System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(raw) ?? new()); } catch { _agg = new(); }
+        try { var raw = await Js.InvokeAsync<string?>("localStorage.getItem", ColColorKey(_board.Tablero.Id)); _colColor = string.IsNullOrEmpty(raw) ? new() : (System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(raw) ?? new()); } catch { _colColor = new(); }
+        try
+        {
+            var raw = await Js.InvokeAsync<string?>("localStorage.getItem", FiltrosKey(_board.Tablero.Id));
+            _reglas.Clear(); _filtroLogica = "and";
+            if (!string.IsNullOrEmpty(raw))
+            {
+                var g = System.Text.Json.JsonSerializer.Deserialize<FiltrosGuardados>(raw);
+                if (g is not null) { _filtroLogica = g.Logica == "or" ? "or" : "and"; _reglas.AddRange(g.Reglas); }
+            }
+        }
+        catch { _reglas.Clear(); _filtroLogica = "and"; }
     }
     private List<EtiquetaTareaDto> _etiquetasCat = new();   // catalogo de etiquetas (tags) del tenant
     private string _nuevaEtiqueta = "";
@@ -2721,7 +3237,6 @@ else
     private string _cfgEstadoNew = "";
     private string _cfgCampoNew = "";
     private CampoDraft _campoDraft = new();
-    private readonly Dictionary<Guid, string> _fCampo = new();
 
     // Contexto para la tarjeta rica (copropiedad + origen)
     private string _coNombre = "";
@@ -2830,6 +3345,11 @@ else
         {
             _nfFocusEstado = null;
             try { await Js.InvokeVoidAsync("propiaUI.focusBySelector", $"[data-nf-tit='{nfe}']"); } catch { }
+        }
+        // Barra de scroll superior espejo (vista Lista): enlazarla con el scroll real de la tabla.
+        if (_boardMode == "lista")
+        {
+            try { await Js.InvokeVoidAsync("propiaUI.syncTopScroll", "tbTopScroll", "tbTopScrollInner", "tbList"); } catch { }
         }
 
         if (!firstRender || _jwt is not null) return;
@@ -2994,6 +3514,8 @@ else
         _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tareas/tableros/{id}/board");
         SyncTareas();
         await RestaurarColsAsync();   // config de columnas guardada para ESTE tablero (por usuario)
+        ReconciliarOrden();           // deja _colOrden alineado con los campos actuales del tablero
+        await RestaurarAggGroupAsync();   // agrupacion + funciones de totales guardadas para ESTE tablero
         _boardMode = await LeerVistaGuardadaAsync();   // abre en el ultimo modo de vista del usuario
         try { await Js.InvokeVoidAsync("localStorage.setItem", TbLastKey, id.ToString()); } catch { }
         _expandidas.Clear();
@@ -3030,31 +3552,232 @@ else
         await Auth().PatchAsJsonAsync($"/api/tareas/{tareaId}/inline", new InlineUpdateTareaRequest("origen", tipo, null, null, null, refv));
     }
     private void CerrarBoard() { _board = null; _tareas = new(); }
-    private async Task RecargarBoard() { if (_board is not null) { _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tareas/tableros/{_board.Tablero.Id}/board"); SyncTareas(); } }
+    private async Task RecargarBoard() { if (_board is not null) { _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tareas/tableros/{_board.Tablero.Id}/board"); SyncTareas(); ReconciliarOrden(); } }
 
     private List<TareaListaDto> RaicesPorEstado(Guid estadoId) =>
         _tareas.Where(t => t.PadreId == null && t.EstadoId == estadoId).ToList();
     private List<TareaListaDto> Hijos(Guid padreId) =>
         _tareas.Where(t => t.PadreId == padreId).ToList();
 
-    private bool HayFiltros => !string.IsNullOrEmpty(_fEstado) || !string.IsNullOrEmpty(_fResp) || !string.IsNullOrEmpty(_fPrio) || !string.IsNullOrEmpty(_fEtiqueta) || _fCampo.Count > 0;
-    private void LimpiarFiltros() { _fEstado = ""; _fResp = ""; _fPrio = ""; _fEtiqueta = ""; _fCampo.Clear(); }
     private IEnumerable<string> RespOptions() =>
         _tareas.AsEnumerable().Where(t => !string.IsNullOrWhiteSpace(t.AsignadoNombre))
             .Select(t => t.AsignadoNombre!).Distinct().OrderBy(x => x);
+
+    // ---- Constructor de filtros: reglas, operadores, edicion desde la UI y evaluacion ----
+    private int CuentaFiltros => _reglas.Count(ReglaActiva);
+    private bool HayFiltros => _reglas.Any(ReglaActiva);
+    private void LimpiarFiltros() { _reglas.Clear(); _filtroLogica = "and"; _ = PersistFiltrosAsync(); }
+    // Abrir el panel de filtros: si aun no hay reglas, nace con una lista para editar de una vez.
+    private void ToggleFiltros()
+    {
+        _filtrosMenu = !_filtrosMenu;
+        _cardGroupMenu = false; _colsMenu = false;
+        if (_filtrosMenu && _reglas.Count == 0) AgregarRegla();
+    }
+    private void AgregarRegla() { _reglas.Add(new FiltroRegla { Campo = "estado", Op = "es", Valor = "" }); }
+    private void QuitarRegla(int idx) { if (idx >= 0 && idx < _reglas.Count) { _reglas.RemoveAt(idx); _ = PersistFiltrosAsync(); } }
+    private void SetFiltroLogica(ChangeEventArgs e) { _filtroLogica = e.Value?.ToString() == "or" ? "or" : "and"; _ = PersistFiltrosAsync(); }
+    private void SetReglaCampo(int idx, ChangeEventArgs e)
+    {
+        if (idx < 0 || idx >= _reglas.Count) return;
+        _reglas[idx].Campo = e.Value?.ToString() ?? "estado";
+        // Al cambiar de campo, el operador anterior puede no aplicar: se ajusta al primero valido.
+        var ops = OperadoresDe(_reglas[idx].Campo);
+        if (!ops.Any(o => o.Key == _reglas[idx].Op)) _reglas[idx].Op = ops.First().Key;
+        _reglas[idx].Valor = "";
+        _ = PersistFiltrosAsync();
+    }
+    private void SetReglaOp(int idx, ChangeEventArgs e) { if (idx >= 0 && idx < _reglas.Count) { _reglas[idx].Op = e.Value?.ToString() ?? "es"; _ = PersistFiltrosAsync(); } }
+    private void SetReglaValor(int idx, ChangeEventArgs e) { if (idx >= 0 && idx < _reglas.Count) { _reglas[idx].Valor = e.Value?.ToString() ?? ""; _ = PersistFiltrosAsync(); } }
+
+    // Catalogo de campos disponibles para filtrar (fijos + campos dinamicos del tablero).
+    private IEnumerable<(string Key, string Label)> CamposFiltro()
+    {
+        yield return ("estado", "Etapa");
+        yield return ("resp", "Asignado");
+        yield return ("prio", "Prioridad");
+        if (_etiquetasCat.Count > 0) yield return ("etiqueta", "Etiqueta");
+        yield return ("titulo", "Titulo");
+        yield return ("descripcion", "Descripcion");
+        yield return ("vence", "Vence");
+        yield return ("valor", "Valor");
+        foreach (var c in CamposDelTablero.Where(c => c.Tipo != TipoCampoTablero.Separador && c.Tipo != TipoCampoTablero.Total))
+            yield return (c.Id.ToString(), c.Label);
+    }
+    private string CampoFiltroLabel(string key) => CamposFiltro().FirstOrDefault(o => o.Key == key).Label ?? key;
+    private TableroCampoDto? CampoDinamico(string campo) => Guid.TryParse(campo, out var g) ? CamposDelTablero.FirstOrDefault(c => c.Id == g) : null;
+
+    // Clase de un campo, que determina operadores y editor de valor.
+    private string FiltroKind(string campo) => campo switch
+    {
+        "estado" => "sel-estado",
+        "prio" => "sel-prio",
+        "resp" => "resp",
+        "etiqueta" => "etiqueta",
+        "titulo" or "descripcion" => "texto",
+        "vence" => "fecha",
+        "valor" => "num",
+        _ => CampoDinamico(campo)?.Tipo switch
+        {
+            TipoCampoTablero.Numero or TipoCampoTablero.Moneda => "num",
+            TipoCampoTablero.Fecha => "fecha",
+            TipoCampoTablero.Seleccion => "sel-din",
+            _ => "texto"
+        }
+    };
+    private IEnumerable<(string Key, string Label)> OperadoresDe(string campo)
+    {
+        var kind = FiltroKind(campo);
+        switch (kind)
+        {
+            case "num":
+                return new[] { ("=", "es igual a"), ("!=", "es distinto de"), (">", "mayor que"), (">=", "mayor o igual"),
+                               ("<", "menor que"), ("<=", "menor o igual"), ("vacio", "esta vacio"), ("no_vacio", "no esta vacio") };
+            case "fecha":
+                return new[] { ("es", "es"), ("antes", "antes de"), ("despues", "despues de"), ("vacio", "esta vacio"), ("no_vacio", "no esta vacio") };
+            case "etiqueta":
+                return new[] { ("tiene", "tiene"), ("no_tiene", "no tiene") };
+            case "sel-estado":
+            case "sel-prio":
+            case "sel-din":
+            case "resp":
+                return new[] { ("es", "es"), ("no_es", "no es"), ("vacio", "esta vacio"), ("no_vacio", "no esta vacio") };
+            default: // texto
+                return new[] { ("contiene", "contiene"), ("no_contiene", "no contiene"), ("es", "es"), ("no_es", "no es"),
+                               ("vacio", "esta vacio"), ("no_vacio", "no esta vacio") };
+        }
+    }
+    // Una regla influye en el resultado solo si aporta condicion (operador de vacio, o valor elegido).
+    private bool ReglaActiva(FiltroRegla r) => r.Op is "vacio" or "no_vacio" || !string.IsNullOrWhiteSpace(r.Valor);
+
     private bool PasaFiltros(TareaListaDto t)
     {
-        if (!string.IsNullOrEmpty(_fEstado) && t.EstadoId.ToString() != _fEstado) return false;
-        if (!string.IsNullOrEmpty(_fResp) && t.AsignadoNombre != _fResp) return false;
-        if (!string.IsNullOrEmpty(_fPrio) && t.Prioridad.ToString() != _fPrio) return false;
-        if (!string.IsNullOrEmpty(_fEtiqueta) && !t.Etiquetas.Any(et => et.Id.ToString() == _fEtiqueta)) return false;
-        foreach (var kv in _fCampo)
-        {
-            if (string.IsNullOrEmpty(kv.Value)) continue;
-            if (!string.Equals(CampoDeTarea(t, kv.Key), kv.Value, StringComparison.OrdinalIgnoreCase)) return false;
-        }
-        return true;
+        var activas = _reglas.Where(ReglaActiva).ToList();
+        if (activas.Count == 0) return true;
+        return _filtroLogica == "or" ? activas.Any(r => EvalRegla(t, r)) : activas.All(r => EvalRegla(t, r));
     }
+    // Texto comparable de un campo (para operadores de texto/seleccion/asignado).
+    private string ValorTextoFiltro(TareaListaDto t, string campo) => campo switch
+    {
+        "estado" => t.EstadoId.ToString(),
+        "resp" => t.AsignadoNombre ?? "",
+        "prio" => t.Prioridad.ToString(),
+        "titulo" => t.Titulo ?? "",
+        "descripcion" => t.Descripcion ?? "",
+        "valor" => t.Valor?.ToString(CultureInfo.InvariantCulture) ?? "",
+        "vence" => t.FechaVencimiento?.ToString("yyyy-MM-dd") ?? "",
+        _ => CampoDeTarea(t, Guid.TryParse(campo, out var g) ? g : Guid.Empty)
+    };
+    private DateOnly? FechaFiltro(TareaListaDto t, string campo)
+    {
+        if (campo == "vence") return t.FechaVencimiento;
+        return DateOnly.TryParse(CampoDeTarea(t, Guid.TryParse(campo, out var g) ? g : Guid.Empty), out var d) ? d : null;
+    }
+    private bool EvalRegla(TareaListaDto t, FiltroRegla r)
+    {
+        var kind = FiltroKind(r.Campo);
+        if (kind == "etiqueta")
+        {
+            var has = !string.IsNullOrEmpty(r.Valor) && t.Etiquetas.Any(e => e.Id.ToString() == r.Valor);
+            return r.Op == "no_tiene" ? !has : has;
+        }
+        if (kind == "num")
+        {
+            var nv = ValorNumColumna(t, r.Campo);
+            if (r.Op == "vacio") return nv is null;
+            if (r.Op == "no_vacio") return nv is not null;
+            if (!decimal.TryParse(r.Valor, NumberStyles.Any, CultureInfo.InvariantCulture, out var rv)) return true;
+            if (nv is null) return false;
+            return r.Op switch { "=" => nv == rv, "!=" => nv != rv, ">" => nv > rv, ">=" => nv >= rv, "<" => nv < rv, "<=" => nv <= rv, _ => true };
+        }
+        if (kind == "fecha")
+        {
+            var dv = FechaFiltro(t, r.Campo);
+            if (r.Op == "vacio") return dv is null;
+            if (r.Op == "no_vacio") return dv is not null;
+            if (!DateOnly.TryParse(r.Valor, out var rd)) return true;
+            if (dv is null) return false;
+            return r.Op switch { "es" => dv == rd, "antes" => dv < rd, "despues" => dv > rd, _ => true };
+        }
+        // texto / seleccion / asignado
+        var sv = ValorTextoFiltro(t, r.Campo);
+        if (r.Op == "vacio") return string.IsNullOrWhiteSpace(sv);
+        if (r.Op == "no_vacio") return !string.IsNullOrWhiteSpace(sv);
+        if (string.IsNullOrEmpty(r.Valor)) return true;
+        return r.Op switch
+        {
+            "es" => string.Equals(sv, r.Valor, StringComparison.OrdinalIgnoreCase),
+            "no_es" => !string.Equals(sv, r.Valor, StringComparison.OrdinalIgnoreCase),
+            "contiene" => sv.Contains(r.Valor, StringComparison.OrdinalIgnoreCase),
+            "no_contiene" => !sv.Contains(r.Valor, StringComparison.OrdinalIgnoreCase),
+            _ => true
+        };
+    }
+    // Editor de valor de una regla (segun el tipo de campo). Se oculta para vacio/no_vacio.
+    private RenderFragment RenderValorFiltro(int idx) => builder =>
+    {
+        if (idx < 0 || idx >= _reglas.Count) return;
+        var r = _reglas[idx];
+        var kind = FiltroKind(r.Campo);
+        void Select(IEnumerable<(string Val, string Txt)> opts, string ph)
+        {
+            builder.OpenElement(0, "select");
+            builder.AddAttribute(1, "class", "tb-frule-v");
+            builder.AddAttribute(2, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e => SetReglaValor(idx, e)));
+            builder.OpenElement(3, "option");
+            builder.AddAttribute(4, "value", "");
+            builder.AddAttribute(5, "selected", string.IsNullOrEmpty(r.Valor));
+            builder.AddContent(6, ph);
+            builder.CloseElement();
+            var k = 7;
+            foreach (var (val, txt) in opts)
+            {
+                builder.OpenElement(k++, "option");
+                builder.AddAttribute(k++, "value", val);
+                builder.AddAttribute(k++, "selected", r.Valor == val);
+                builder.AddContent(k++, txt);
+                builder.CloseElement();
+            }
+            builder.CloseElement();
+        }
+        void Input(string type)
+        {
+            builder.OpenElement(20, "input");
+            builder.AddAttribute(21, "class", "tb-frule-v");
+            builder.AddAttribute(22, "type", type);
+            builder.AddAttribute(23, "value", r.Valor);
+            builder.AddAttribute(24, "placeholder", "Valor");
+            builder.AddAttribute(25, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e => SetReglaValor(idx, e)));
+            builder.CloseElement();
+        }
+        switch (kind)
+        {
+            case "sel-estado":
+                Select((_board?.Estados ?? new List<EstadoTareaDto>()).Select(es => (es.Id.ToString(), es.Nombre)), "Elegir etapa...");
+                break;
+            case "sel-prio":
+                Select(Enum.GetValues<PrioridadTarea>().Select(p => (p.ToString(), p.ToString())), "Elegir prioridad...");
+                break;
+            case "resp":
+                Select(RespOptions().Select(x => (x, x)), "Elegir responsable...");
+                break;
+            case "etiqueta":
+                Select(_etiquetasCat.Select(et => (et.Id.ToString(), et.Nombre)), "Elegir etiqueta...");
+                break;
+            case "sel-din":
+                Select(CampoOpciones(CampoDinamico(r.Campo)!).Select(o => (o, o)), "Elegir opcion...");
+                break;
+            case "num":
+                Input("number");
+                break;
+            case "fecha":
+                Input("date");
+                break;
+            default:
+                Input("text");
+                break;
+        }
+    };
 
     // ----- Vista Calendario (mensual por fecha de vencimiento) -----
     private static readonly string[] _diasSemana = { "LUN", "MAR", "MIE", "JUE", "VIE", "SAB", "DOM" };
@@ -3322,7 +4045,7 @@ else
                     {
                         var et = tag;
                         var etCol = string.IsNullOrWhiteSpace(et.Color) ? "#6D4FE3" : et.Color!;
-                        <span class="tb-tag" style="border-color:@etCol;color:@etCol">
+                        <span class="tb-tag" style="background:@etCol;border-color:@etCol;color:@TagTextColor(etCol)">
                             @if (_tagEditId == et.Id)
                             {
                                 <input class="tb-tag-inp" @bind="_tagEditVal" @bind:event="oninput" autofocus
@@ -3332,7 +4055,7 @@ else
                             {
                                 <span class="tb-tag-tx" title="Click para renombrar la etiqueta" @onclick="() => IniciarTagEdit(et)">@et.Nombre</span>
                             }
-                            <button type="button" class="tb-tag-sw" style="background:@etCol" title="Cambiar color de la etiqueta" @onclick:stopPropagation="true" @onclick="() => ToggleTagColor(et.Id)"></button>
+                            <button type="button" class="tb-tag-sw" title="Cambiar color de la etiqueta" @onclick:stopPropagation="true" @onclick="() => ToggleTagColor(et.Id)"></button>
                             @if (_tagColorId == et.Id)
                             {
                                 <div class="tb-tagpop-bd" @onclick="() => _tagColorId = null"></div>
@@ -3375,7 +4098,7 @@ else
             @* ---- VALOR (inline number) ---- *@
             @if (_colValor)
             {
-                <div class="tb-row-valor">
+                <div class="tb-row-valor tb-num">
                     @if (EnEd(t.Id, "valor"))
                     {
                         <input type="number" step="1000" class="tb-cell-inp" @bind="_editVal" @bind:event="oninput" autofocus
@@ -3410,7 +4133,7 @@ else
             @foreach (var c in CamposVisibles)
             {
                 var campo = c;
-                <div class="tb-row-campo">
+                <div class="tb-row-campo tb-cc-@campo.Id @(CampoEsNumerico(campo) ? "tb-num" : "")">
                     @if (EnEd(t.Id, "campo:" + campo.Id))
                     {
                         @if (campo.Tipo == TipoCampoTablero.AreaTexto || campo.Tipo == TipoCampoTablero.Texto || campo.Tipo == TipoCampoTablero.Telefono)
@@ -4036,12 +4759,6 @@ else
         };
     }
 
-    private List<TableroCampoDto> CamposFiltrables() => (_board?.Tablero.Campos ?? new List<TableroCampoDto>()).Where(c => c.MostrarEnFiltro).ToList();
-    private List<string> CampoValoresDistintos(Guid campoId) => _tareas.AsEnumerable()
-        .Select(t => CampoDeTarea(t, campoId)).Where(v => !string.IsNullOrWhiteSpace(v))
-        .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(v => v).ToList();
-    private string FCampoVal(Guid id) => _fCampo.GetValueOrDefault(id, "");
-    private void SetFCampo(Guid id, ChangeEventArgs e) { var v = e.Value?.ToString() ?? ""; if (string.IsNullOrEmpty(v)) _fCampo.Remove(id); else _fCampo[id] = v; }
 
     private void CerrarCard() { _cardDraft = null; _subNew = ""; _respPick = ""; }
 
