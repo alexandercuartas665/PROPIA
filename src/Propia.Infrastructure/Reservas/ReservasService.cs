@@ -178,6 +178,7 @@ public class ReservasService : IReservasService
                 z.Id,
                 z.Nombre,
                 z.Descripcion,
+                z.ImagenUrl,
                 z.CapacidadPersonas,
                 z.EsReservable,
                 Estado = z.Estado.ToString(),
@@ -193,7 +194,7 @@ public class ReservasService : IReservasService
 
         var list = zonas.Where(z => !soloVisibles || z.Cfg is null || z.Cfg.VisibleParaResidentes);
         return list.Select(z => new ZonaGaleriaDto(
-            z.Id, z.Nombre, z.Descripcion, null, z.CapacidadPersonas, z.EsReservable, z.Estado,
+            z.Id, z.Nombre, z.Descripcion, z.ImagenUrl, z.CapacidadPersonas, z.EsReservable, z.Estado,
             z.Cfg?.TieneTarifa ?? false,
             z.Cfg?.TieneTarifa == true ? z.Cfg.ValorTarifa : null,
             z.Cfg?.TieneTarifa == true ? z.Cfg.ModalidadCobro : null)).ToList();
@@ -507,6 +508,68 @@ public class ReservasService : IReservasService
         await NotificarResidenteAsync(r.PersonaId, r.Id,
             $"Reserva confirmada: {r.Codigo}",
             $"Tu reserva del {r.Fecha:yyyy-MM-dd} de {r.HoraInicio:HH\\:mm} a {r.HoraFin:HH\\:mm} fue aprobada por la administracion.",
+            Domain.Enums.PrioridadNotificacion.Normal, ct);
+
+        return true;
+    }
+
+    // Reprogramar: cambia fecha/hora de una reserva activa reusando las mismas validaciones que crear
+    // (duracion, anticipacion en hora local, franja, solape excluyendo la propia, bloqueo).
+    public async Task<bool> ReprogramarAsync(Guid id, ReprogramarReservaRequest req, CancellationToken ct)
+    {
+        var r = await _db.Reservas.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (r is null) return false;
+        if (r.Estado != EstadoReserva.Confirmada && r.Estado != EstadoReserva.PendienteAprobacion && r.Estado != EstadoReserva.PendientePago)
+            throw new InvalidOperationException("La reserva ya no esta activa.");
+        if (req.HoraFin <= req.HoraInicio) throw new InvalidOperationException("HoraFin debe ser posterior a HoraInicio.");
+
+        var cfg = await _db.ZonaConfigReservas.AsNoTracking().Include(c => c.Franjas)
+            .FirstOrDefaultAsync(c => c.ZonaComunId == r.ZonaComunId, ct)
+            ?? throw new InvalidOperationException("La zona no tiene configuracion de reservas.");
+
+        var minutos = (req.HoraFin - req.HoraInicio).TotalMinutes;
+        if (minutos < cfg.DuracionMinimaMinutos) throw new InvalidOperationException($"Duracion minima: {cfg.DuracionMinimaMinutos} min.");
+        if (minutos > cfg.DuracionMaximaMinutos) throw new InvalidOperationException($"Duracion maxima: {cfg.DuracionMaximaMinutos} min.");
+
+        var zonaLocal = Propia.Infrastructure.Programaciones.CronHelper.Zona(null);
+        var ahoraLocal = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zonaLocal);
+        var inicioReserva = req.Fecha.ToDateTime(req.HoraInicio);
+        if (inicioReserva < ahoraLocal.AddHours(cfg.AnticipacionMinimaHoras))
+            throw new InvalidOperationException($"RN-07: anticipacion minima {cfg.AnticipacionMinimaHoras}h.");
+        if (inicioReserva > ahoraLocal.AddDays(cfg.AnticipacionMaximaDias))
+            throw new InvalidOperationException($"RN-07: anticipacion maxima {cfg.AnticipacionMaximaDias}d.");
+
+        var dia = ConvertirDiaSemana(req.Fecha.DayOfWeek);
+        var franja = cfg.Franjas.FirstOrDefault(f => f.DiaSemana == dia && f.Activa
+            && f.HoraApertura <= req.HoraInicio && f.HoraCierre >= req.HoraFin);
+        if (franja is null) throw new InvalidOperationException("La zona no acepta reservas en ese horario.");
+
+        var solape = await _db.Reservas.AnyAsync(x =>
+            x.Id != r.Id
+            && x.ZonaComunId == r.ZonaComunId
+            && x.Fecha == req.Fecha
+            && x.Estado != EstadoReserva.CanceladaResidente
+            && x.Estado != EstadoReserva.CanceladaAdmin
+            && x.Estado != EstadoReserva.CanceladaSistema
+            && x.Estado != EstadoReserva.Expirada
+            && x.HoraInicio < req.HoraFin && x.HoraFin > req.HoraInicio, ct);
+        if (solape) throw new InvalidOperationException("RN-05: existe otra reserva activa en esa franja.");
+
+        var bloq = await _db.ZonaBloqueos.AnyAsync(b =>
+            b.ZonaComunId == r.ZonaComunId
+            && b.FechaInicio <= req.Fecha && b.FechaFin >= req.Fecha
+            && (b.HoraInicio == null || (b.HoraInicio <= req.HoraInicio && b.HoraFin >= req.HoraFin)), ct);
+        if (bloq) throw new InvalidOperationException("Existe un bloqueo activo en esa franja.");
+
+        r.Fecha = req.Fecha;
+        r.HoraInicio = req.HoraInicio;
+        r.HoraFin = req.HoraFin;
+        r.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        await NotificarResidenteAsync(r.PersonaId, r.Id,
+            $"Reserva reprogramada: {r.Codigo}",
+            $"Tu reserva fue reprogramada para el {r.Fecha:yyyy-MM-dd} de {r.HoraInicio:HH\\:mm} a {r.HoraFin:HH\\:mm}.",
             Domain.Enums.PrioridadNotificacion.Normal, ct);
 
         return true;

@@ -89,6 +89,13 @@ public class ReservasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [HttpPost("{id:guid}/reprogramar")]
+    public async Task<IActionResult> Reprogramar(Guid id, [FromBody] ReprogramarReservaRequest req, CancellationToken ct)
+    {
+        try { return await _svc.ReprogramarAsync(id, req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     [HttpPost("{id:guid}/aprobar")]
     public async Task<IActionResult> Aprobar(Guid id, CancellationToken ct)
     {

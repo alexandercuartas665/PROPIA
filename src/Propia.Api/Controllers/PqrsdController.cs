@@ -228,6 +228,20 @@ public class PqrsdController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [HttpPost("{id:guid}/actividad")]
+    public async Task<IActionResult> ReportarActividad(Guid id, [FromBody] ReportarActividadPqrsdRequest req, CancellationToken ct)
+    {
+        try { return await _svc.ReportarActividadAsync(id, req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpPost("{id:guid}/generar-tarea")]
+    public async Task<IActionResult> GenerarTarea(Guid id, CancellationToken ct)
+    {
+        try { var tid = await _svc.GenerarTareaAsync(id, ct); return tid is null ? NotFound() : Ok(new { tareaId = tid }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     // --- Comite ---
     [HttpPost("{id:guid}/comite")]
     public async Task<IActionResult> EscalarAComite(Guid id, [FromBody] EscalarAComiteRequest req, CancellationToken ct)

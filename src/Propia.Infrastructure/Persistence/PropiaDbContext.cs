@@ -184,6 +184,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<PqrsdEstado> PqrsdEstados => Set<PqrsdEstado>();
     public DbSet<PqrsdCampo> PqrsdCampos => Set<PqrsdCampo>();
     public DbSet<PqrsdCampoValor> PqrsdCampoValores => Set<PqrsdCampoValor>();
+    public DbSet<PqrsdComentario> PqrsdComentarios => Set<PqrsdComentario>();
     public DbSet<PqrsdTipo> PqrsdTipos => Set<PqrsdTipo>();
 
     // Modulo 2.8 Asambleas y Organos de Gobierno (TenantEntity con RLS)
@@ -1481,6 +1482,17 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasOne(x => x.Expediente).WithMany(e => e.CamposValores).HasForeignKey(x => x.ExpedienteId).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.ExpedienteId, x.PqrsdCampoId }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PqrsdComentario>(b =>
+        {
+            b.ToTable("pqrsd_comentarios");
+            b.Property(x => x.Texto).IsRequired().HasColumnType("text");
+            b.Property(x => x.AutorNombre).HasMaxLength(200);
+            b.HasOne(x => x.Expediente).WithMany(e => e.Comentarios).HasForeignKey(x => x.PqrsdExpedienteId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.PqrsdExpedienteId);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

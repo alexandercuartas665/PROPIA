@@ -124,6 +124,8 @@ public record CrearReservaRequest(
 
 public record CancelarReservaRequest(string Motivo);
 
+public record ReprogramarReservaRequest(DateOnly Fecha, TimeOnly HoraInicio, TimeOnly HoraFin);
+
 public record ResumenReservasDto(
     int Confirmadas,
     int Pendientes,

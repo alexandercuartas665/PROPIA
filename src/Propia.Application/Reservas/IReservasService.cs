@@ -48,6 +48,9 @@ public interface IReservasService
     Task<bool> CancelarComoResidenteAsync(Guid id, CancelarReservaRequest req, CancellationToken ct);
     Task<bool> CancelarComoAdminAsync(Guid id, CancelarReservaRequest req, CancellationToken ct);
 
+    /// <summary>Reprograma fecha/hora de una reserva activa (mismas validaciones que crear, excluyendo la propia).</summary>
+    Task<bool> ReprogramarAsync(Guid id, ReprogramarReservaRequest req, CancellationToken ct);
+
     /// <summary>Aprueba una reserva en PendienteAprobacion (la pasa a Confirmada). RN-04.</summary>
     Task<bool> AprobarAsync(Guid id, CancellationToken ct);
 

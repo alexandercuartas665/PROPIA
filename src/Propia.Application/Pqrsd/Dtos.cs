@@ -106,7 +106,13 @@ public record PqrsdExpedienteDetalleDto(
     bool Archivado = false,
     IReadOnlyList<PqrsdCampoValorDto>? Campos = null,
     Guid? TipoId = null,
-    string? TipoNombre = null);
+    string? TipoNombre = null,
+    Guid? AsignadoPersonaId = null,
+    string? AsignadoNombre = null,
+    int Progreso = 0,
+    IReadOnlyList<PqrsdComentarioDto>? Comentarios = null);
+
+public record PqrsdComentarioDto(Guid Id, string Texto, string? AutorNombre, DateTimeOffset CreatedAt);
 
 // ===================== Tablero configurable (columnas + campos dinamicos) =====================
 
@@ -166,7 +172,11 @@ public record ActualizarExpedienteRequest(
     Guid? UnidadPrivadaId,
     Guid? RadicadorPersonaId,
     string? Descripcion,
-    IReadOnlyList<PqrsdCampoValorDto>? Campos);
+    IReadOnlyList<PqrsdCampoValorDto>? Campos,
+    Guid? AsignadoPersonaId = null,
+    int? Progreso = null);
+
+public record ReportarActividadPqrsdRequest(string Texto);
 
 public record AdjuntoInicialDto(string NombreArchivo, string TipoMime, long TamanioBytes, string UrlStorage);
 

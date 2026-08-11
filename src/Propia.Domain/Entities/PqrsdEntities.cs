@@ -53,6 +53,13 @@ public class PqrsdExpediente : TenantEntity
     /// <summary>Unidad privada con la que se relaciona el PQR (opcional). Sin FK dura para evitar cascadas.</summary>
     public Guid? UnidadPrivadaId { get; set; }
 
+    /// <summary>Persona del directorio responsable de gestionar el PQR (opcional). Port del "responsable" de Tareas.
+    /// Sin FK dura (se resuelve el nombre por join) para evitar cascadas, igual que UnidadPrivadaId.</summary>
+    public Guid? AsignadoPersonaId { get; set; }
+
+    /// <summary>Progreso de gestion 0-100 (port de Tareas). No altera la logica legal (plazos/semaforo).</summary>
+    public int Progreso { get; set; }
+
     /// <summary>
     /// Si es true, el expediente esta ARCHIVADO: sale del tablero/tabla activa y aparece en el tab
     /// "Archivados". Reversible; conserva todos los datos. Es distinto de cerrar (que es estado legal).
@@ -78,6 +85,17 @@ public class PqrsdExpediente : TenantEntity
     public ICollection<PqrsdAdjunto> Adjuntos { get; set; } = new List<PqrsdAdjunto>();
     public ICollection<PqrsdHistorialEstado> Historial { get; set; } = new List<PqrsdHistorialEstado>();
     public ICollection<PqrsdCampoValor> CamposValores { get; set; } = new List<PqrsdCampoValor>();
+    public ICollection<PqrsdComentario> Comentarios { get; set; } = new List<PqrsdComentario>();
+}
+
+/// <summary>Reporte de actividad / comentario libre sobre un expediente PQRS (port del feed de Tareas).</summary>
+public class PqrsdComentario : TenantEntity
+{
+    public Guid PqrsdExpedienteId { get; set; }
+    public PqrsdExpediente? Expediente { get; set; }
+    public string Texto { get; set; } = string.Empty;
+    public Guid? AutorUsuarioId { get; set; }
+    public string? AutorNombre { get; set; }
 }
 
 /// <summary>

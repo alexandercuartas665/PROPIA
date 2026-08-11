@@ -55,7 +55,7 @@
 <div class="gpq-body">
 
     @* ===== Tab Detalle ===== *@
-    <div class="gpq-pane" style="@(_detalle is null || _tab == "detalle" ? "" : "display:none")">
+    <div class="gpq-pane gpq-pane-detalle" style="@(_detalle is null || _tab == "detalle" ? "" : "display:none")">
         @if (_detalle is null)
         {
             <div class="gpq-loading">Cargando...</div>
@@ -186,6 +186,23 @@
                 <label class="gpq-mini-lbl">Cambiar solicitante (directorio - se puede crear)</label>
                 <SelectorPersona Jwt="@Jwt" @bind-Seleccionada="_personaSel" Placeholder="Buscar o crear persona..." />
 
+                @* Progreso de gestion (slider, estilo Tareas) *@
+                <label class="gpq-mini-lbl" style="margin-top:10px;">Progreso: <strong>@_progreso%</strong></label>
+                <input type="range" min="0" max="100" step="5" class="gpq-range" @bind="_progreso" @bind:event="oninput" />
+                <div class="gpq-progbar"><div class="gpq-progfill" style="width:@_progreso%"></div></div>
+
+                @* Responsable / persona asignada *@
+                <label class="gpq-mini-lbl" style="margin-top:10px;">Responsable asignado</label>
+                <div class="gpq-asig-cur">
+                    Actual: <strong>@(_detalle.AsignadoNombre ?? "sin asignar")</strong>
+                    @if (!string.IsNullOrEmpty(_detalle.AsignadoNombre))
+                    {
+                        <button type="button" class="gpq-asig-quitar" @onclick="@(() => { _quitarAsignado = true; _asignadoSel = null; })">quitar</button>
+                    }
+                    @if (_quitarAsignado) { <span class="gpq-asig-quitando">(se quitara al guardar)</span> }
+                </div>
+                <SelectorPersona Jwt="@Jwt" @bind-Seleccionada="_asignadoSel" Placeholder="Asignar responsable..." />
+
                 @if (_campos.Count > 0)
                 {
                     <div style="height:8px;"></div>
@@ -239,6 +256,46 @@
                 <button class="gpq-btn-brand" style="margin-top:10px;" type="button" @onclick="GuardarDatos" disabled="@_guardandoRel">
                     @(_guardandoRel ? "Guardando..." : "Guardar cambios")
                 </button>
+            </div>
+
+            @* Crear tarea interna (2.10) desde el PQR *@
+            <div class="gpq-card">
+                <div class="gpq-card-eyebrow">TAREA INTERNA</div>
+                @if (_detalle.TareaId is not null)
+                {
+                    <div class="gpq-plazo-row"><span>Este PQR ya tiene una tarea vinculada.</span><strong>Vinculada</strong></div>
+                }
+                else
+                {
+                    <button class="gpq-btn-brand" type="button" @onclick="CrearTareaDesdePqr" disabled="@_generandoTarea">
+                        @(_generandoTarea ? "Creando..." : "Crear tarea desde este PQR")
+                    </button>
+                }
+            </div>
+
+            @* Reportar actividad + feed (estilo Tareas) *@
+            <div class="gpq-card">
+                <div class="gpq-card-eyebrow">REPORTAR ACTIVIDAD</div>
+                <textarea class="gpq-input" rows="2" placeholder="Describe lo que realizaste en este PQR..." @bind="_nuevaActividad" @bind:event="oninput"></textarea>
+                <button class="gpq-btn-brand" style="margin-top:6px;" type="button" @onclick="ReportarActividad" disabled="@(_reportando || string.IsNullOrWhiteSpace(_nuevaActividad))">
+                    @(_reportando ? "Registrando..." : "Registrar")
+                </button>
+                @if (_detalle.Comentarios is { Count: > 0 })
+                {
+                    <div class="gpq-actividad-feed">
+                        @foreach (var c in _detalle.Comentarios)
+                        {
+                            <div class="gpq-actividad-item">
+                                <div class="gpq-actividad-txt">@c.Texto</div>
+                                <div class="gpq-actividad-meta">@(string.IsNullOrEmpty(c.AutorNombre) ? "" : c.AutorNombre + " · ")@c.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, HH:mm")</div>
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="gpq-actividad-empty">Aun no hay reportes de actividad.</div>
+                }
             </div>
 
             @* Respuesta admin si existe *@
@@ -845,6 +902,29 @@
     [data-bs-theme="dark"] .gpq-title,
     [data-bs-theme="dark"] .gpq-tl-title { color: #E5E7EB; }
     [data-bs-theme="dark"] .gpq-card { background: #232B40; border-color: #2D3650; }
+
+    /* Gestion: progreso + responsable + actividad (aportes estilo Tareas) */
+    .gpq-range { width: 100%; accent-color: var(--propia-brand, #6D4FE3); margin: 4px 0; cursor: pointer; }
+    .gpq-progbar { height: 8px; border-radius: 6px; background: #EEF3F8; overflow: hidden; }
+    .gpq-progfill { height: 100%; border-radius: 6px; background: var(--propia-brand, #6D4FE3); transition: width .2s; }
+    .gpq-asig-cur { font-size: 12.5px; color: #516F90; margin: 4px 0 6px; }
+    .gpq-asig-quitar { border: 0; background: transparent; color: #D7263D; font-size: 11.5px; font-weight: 700; cursor: pointer; margin-left: 6px; text-decoration: underline; }
+    .gpq-asig-quitando { color: #B7791F; font-size: 11px; margin-left: 6px; }
+    .gpq-actividad-feed { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+    .gpq-actividad-item { background: #F8FAFC; border: 1px solid #EEF3F8; border-radius: 9px; padding: 9px 11px; }
+    .gpq-actividad-txt { font-size: 13px; color: #33475B; white-space: pre-wrap; }
+    .gpq-actividad-meta { font-size: 10.5px; color: #A6B7C8; margin-top: 4px; font-weight: 600; }
+    .gpq-actividad-empty { color: #A6B7C8; font-size: 12px; margin-top: 8px; }
+    [data-bs-theme="dark"] .gpq-actividad-item { background: #1B2233; border-color: #2D3650; }
+    [data-bs-theme="dark"] .gpq-progbar { background: #2D3650; }
+
+    /* Layout multi-columna (estilo Tareas): las tarjetas fluyen en 2 columnas en pantallas anchas;
+       pills y flags ocupan todo el ancho. Se desactiva en angosto para no apretar los selectores. */
+    @@media (min-width: 820px) {
+        .gpq-pane-detalle { column-count: 2; column-gap: 16px; }
+        .gpq-pane-detalle > .gpq-pills, .gpq-pane-detalle > .gpq-flags { column-span: all; }
+        .gpq-pane-detalle > .gpq-card { break-inside: avoid; margin-bottom: 16px; }
+    }
     [data-bs-theme="dark"] .gpq-panel-right { background: #161B2D; }
 </style>
 
@@ -868,6 +948,12 @@
     private string _unidadIdStr = "";
     private PersonaCandidatoDto? _personaSel;
     private readonly Dictionary<Guid, string> _campoValores = new();
+    private PersonaCandidatoDto? _asignadoSel;
+    private bool _quitarAsignado;
+    private int _progreso;
+    private string _nuevaActividad = "";
+    private bool _reportando;
+    private bool _generandoTarea;
     private bool _guardandoRel;
 
     // Form adjunto
@@ -934,6 +1020,9 @@
         if (_detalle is not null)
         {
             _unidadIdStr = _detalle.UnidadPrivadaId?.ToString() ?? "";
+            _progreso = _detalle.Progreso;
+            _asignadoSel = null;
+            _quitarAsignado = false;
             _campoValores.Clear();
             if (_detalle.Campos is not null)
                 foreach (var v in _detalle.Campos) _campoValores[v.CampoId] = v.Valor ?? "";
@@ -988,8 +1077,9 @@
         _guardandoRel = true;
         Guid? unidadId = Guid.TryParse(_unidadIdStr, out var uid) ? uid : null;
         Guid? radId = _personaSel?.PersonaId;
+        Guid? asigId = _quitarAsignado ? Guid.Empty : _asignadoSel?.PersonaId;
         var campos = _campoValores.Select(kv => new PqrsdCampoValorDto(kv.Key, kv.Value)).ToList();
-        var req = new ActualizarExpedienteRequest(unidadId, radId, null, campos);
+        var req = new ActualizarExpedienteRequest(unidadId, radId, null, campos, asigId, _progreso);
         try
         {
             var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{ExpedienteId}/actualizar", req);
@@ -1004,6 +1094,35 @@
         }
         catch (Exception ex) { ShowMsg(ex.Message, true); }
         _guardandoRel = false;
+    }
+
+    // Reportar actividad (comentario libre) -> feed
+    private async Task ReportarActividad()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevaActividad)) return;
+        _reportando = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/pqrsd/{ExpedienteId}/actividad", new ReportarActividadPqrsdRequest(_nuevaActividad.Trim()));
+            if (resp.IsSuccessStatusCode) { _nuevaActividad = ""; await CargarAsync(); }
+            else { ShowMsg("No se pudo registrar la actividad.", true); }
+        }
+        catch (Exception ex) { ShowMsg(ex.Message, true); }
+        _reportando = false;
+    }
+
+    // Crear tarea interna (2.10) desde el PQR y vincularla
+    private async Task CrearTareaDesdePqr()
+    {
+        _generandoTarea = true;
+        try
+        {
+            var resp = await Auth().PostAsync($"/api/pqrsd/{ExpedienteId}/generar-tarea", null);
+            if (resp.IsSuccessStatusCode) { _huboCambios = true; await CargarAsync(); ShowMsg("Tarea creada y vinculada al PQR.", false); }
+            else { ShowMsg("No se pudo crear la tarea.", true); }
+        }
+        catch (Exception ex) { ShowMsg(ex.Message, true); }
+        _generandoTarea = false;
     }
 
     // Sube el binario real de cada archivo al storage (endpoint multipart) y registra el adjunto.

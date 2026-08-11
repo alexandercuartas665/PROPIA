@@ -20,17 +20,28 @@ public class PqrsdService : IPqrsdService
     private readonly ITenantContext _tenantContext;
     private readonly IHttpContextAccessor _http;
     private readonly Propia.Application.Notificaciones.INotificacionDispatcher _noti;
+    private readonly Propia.Application.Tareas.ITareasService _tareas;
 
     public PqrsdService(
         PropiaDbContext db,
         ITenantContext tenantContext,
         IHttpContextAccessor http,
-        Propia.Application.Notificaciones.INotificacionDispatcher noti)
+        Propia.Application.Notificaciones.INotificacionDispatcher noti,
+        Propia.Application.Tareas.ITareasService tareas)
     {
         _db = db;
         _tenantContext = tenantContext;
         _http = http;
         _noti = noti;
+        _tareas = tareas;
+    }
+
+    private (Guid? UsuarioId, string? Nombre) ActorActual()
+    {
+        var u = _http.HttpContext?.User;
+        Guid? uid = Guid.TryParse(u?.FindFirst("user_id")?.Value, out var g) ? g : null;
+        var nombre = u?.FindFirst("name")?.Value ?? u?.FindFirst(ClaimTypes.Name)?.Value ?? u?.FindFirst("email")?.Value;
+        return (uid, nombre);
     }
 
     private async Task NotificarAdminsTenantAsync(
@@ -611,6 +622,21 @@ public class PqrsdService : IPqrsdService
                 sesion.ActivadaPorUsuarioId, sesion.CreatedAt, miembros);
         }
 
+        // Asignado (persona responsable) - nombre por join (sin FK dura)
+        string? asignadoNombre = null;
+        if (x.AsignadoPersonaId is { } apid)
+        {
+            var asig = await _db.Personas.AsNoTracking().FirstOrDefaultAsync(p => p.Id == apid, ct);
+            asignadoNombre = asig is null ? null : $"{asig.Nombres} {asig.Apellidos}".Trim();
+        }
+
+        // Reportes de actividad (comentarios libres), mas recientes primero
+        var comentarios = await _db.PqrsdComentarios.AsNoTracking()
+            .Where(c => c.PqrsdExpedienteId == id)
+            .OrderByDescending(c => c.CreatedAt)
+            .Select(c => new PqrsdComentarioDto(c.Id, c.Texto, c.AutorNombre, c.CreatedAt))
+            .ToListAsync(ct);
+
         return new PqrsdExpedienteDetalleDto(
             x.Id, x.NumeroRadicado, x.Tipo, x.CategoriaId, x.Categoria!.Nombre, x.Descripcion,
             x.Estado, semaforo, radNombre, radId, unidadNumero, x.IdentidadReservada, x.TutelaActiva,
@@ -618,7 +644,8 @@ public class PqrsdService : IPqrsdService
             x.RespuestaAdmin, x.RespuestaAdminAt, x.InconformidadTexto, x.InconformidadAt,
             x.RespuestaDefinitiva, x.RespuestaDefinitivaAt, x.FechaCierre, x.TareaId,
             x.CreatedAt, adjuntos, historial, comiteDto,
-            x.EstadoId, x.UnidadPrivadaId, x.Archivado, camposValores, x.TipoId, tipoNombre);
+            x.EstadoId, x.UnidadPrivadaId, x.Archivado, camposValores, x.TipoId, tipoNombre,
+            x.AsignadoPersonaId, asignadoNombre, x.Progreso, comentarios);
     }
 
     // ===================== Radicacion =====================
@@ -1317,12 +1344,63 @@ public class PqrsdService : IPqrsdService
         return true;
     }
 
+    // Reportar actividad: agrega un comentario libre al expediente (feed estilo Tareas).
+    public async Task<bool> ReportarActividadAsync(Guid id, ReportarActividadPqrsdRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Texto)) throw new InvalidOperationException("El texto de la actividad es obligatorio.");
+        if (!await _db.PqrsdExpedientes.AnyAsync(e => e.Id == id, ct)) return false;
+        var (uid, nombre) = ActorActual();
+        _db.PqrsdComentarios.Add(new PqrsdComentario
+        {
+            PqrsdExpedienteId = id,
+            Texto = req.Texto.Trim(),
+            AutorUsuarioId = uid,
+            AutorNombre = nombre
+        });
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    // Genera una tarea interna (modulo 2.10) a partir del PQR y la vincula (TareaId). Idempotente.
+    public async Task<Guid?> GenerarTareaAsync(Guid id, CancellationToken ct)
+    {
+        var x = await _db.PqrsdExpedientes.FirstOrDefaultAsync(e => e.Id == id, ct);
+        if (x is null) return null;
+        if (x.TareaId is { } yaExiste) return yaExiste;
+
+        var resumen = x.Descripcion.Length > 60 ? x.Descripcion[..60] + "..." : x.Descripcion;
+        var tarea = await _tareas.CrearTareaAsync(new Propia.Application.Tareas.CrearTareaRequest(
+            Titulo: $"PQR {x.NumeroRadicado}: {resumen}",
+            Descripcion: x.Descripcion,
+            Prioridad: PrioridadTarea.Alta,
+            EstadoId: null,
+            AsignadoPersonaId: x.AsignadoPersonaId,
+            FechaInicio: null,
+            FechaVencimiento: x.FechaVencimiento,
+            PadreId: null,
+            EtiquetaIds: null), ct);
+
+        x.TareaId = tarea.Id;
+        x.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return tarea.Id;
+    }
+
     public async Task<bool> ActualizarExpedienteAsync(Guid id, ActualizarExpedienteRequest req, CancellationToken ct)
     {
         var x = await _db.PqrsdExpedientes.FirstOrDefaultAsync(e => e.Id == id, ct);
         if (x is null) return false;
 
         x.UnidadPrivadaId = req.UnidadPrivadaId;
+
+        // Persona asignada (Guid.Empty = quitar; null = no tocar; otro = asignar validando)
+        if (req.AsignadoPersonaId is { } aPid)
+        {
+            if (aPid == Guid.Empty) x.AsignadoPersonaId = null;
+            else if (await _db.Personas.AsNoTracking().AnyAsync(p => p.Id == aPid, ct)) x.AsignadoPersonaId = aPid;
+            else throw new InvalidOperationException("La persona asignada no existe.");
+        }
+        if (req.Progreso is { } prog) x.Progreso = Math.Clamp(prog, 0, 100);
 
         if (req.RadicadorPersonaId is { } radPid && radPid != x.RadicadorPersonaId)
         {
