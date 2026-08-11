@@ -50,7 +50,7 @@ public class TareasController : ControllerBase
 
     // --- Etiquetas ---
     [HttpGet("etiquetas")]
-    public async Task<IActionResult> ListarEtiquetas(CancellationToken ct) => Ok(await _svc.ListarEtiquetasAsync(ct));
+    public async Task<IActionResult> ListarEtiquetas([FromQuery] Guid? tableroId, CancellationToken ct) => Ok(await _svc.ListarEtiquetasAsync(tableroId, ct));
 
     [HttpPost("etiquetas")]
     public async Task<IActionResult> CrearEtiqueta([FromBody] CrearEtiquetaRequest req, CancellationToken ct)

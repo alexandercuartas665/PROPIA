@@ -11,6 +11,10 @@ public class TareaEtiqueta : TenantEntity
     public string Nombre { get; set; } = string.Empty;
     public string? Color { get; set; }
     public bool Activo { get; set; } = true;
+
+    /// <summary>Tablero al que pertenece la etiqueta. Null = etiqueta global (visible en todos los
+    /// tableros; asi quedaron las etiquetas creadas antes del scoping por tablero).</summary>
+    public Guid? TableroId { get; set; }
 }
 
 /// <summary>Tabla puente N:N entre Tarea y TareaEtiqueta.</summary>

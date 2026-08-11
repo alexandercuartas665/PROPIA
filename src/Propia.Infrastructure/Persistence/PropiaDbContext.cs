@@ -1199,7 +1199,8 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.Nombre).IsRequired().HasMaxLength(80);
             b.Property(x => x.Color).HasMaxLength(20);
             b.HasIndex(x => x.TenantId);
-            b.HasIndex(x => new { x.TenantId, x.Nombre }).IsUnique();
+            // Unicidad por (tenant, tablero, nombre): permite el mismo nombre en tableros distintos.
+            b.HasIndex(x => new { x.TenantId, x.TableroId, x.Nombre }).IsUnique();
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

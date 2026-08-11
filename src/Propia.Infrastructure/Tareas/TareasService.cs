@@ -140,26 +140,30 @@ public class TareasService : ITareasService
 
     // ===================== Etiquetas =====================
 
-    public async Task<IReadOnlyList<EtiquetaTareaDto>> ListarEtiquetasAsync(CancellationToken ct)
+    public async Task<IReadOnlyList<EtiquetaTareaDto>> ListarEtiquetasAsync(Guid? tableroId, CancellationToken ct)
     {
-        var rows = await _db.TareaEtiquetas.AsNoTracking().OrderBy(e => e.Nombre).ToListAsync(ct);
+        var q = _db.TareaEtiquetas.AsNoTracking().AsQueryable();
+        // Con tablero: sus etiquetas + las globales (TableroId == null). Sin tablero: todas (admin/legacy).
+        if (tableroId.HasValue) q = q.Where(e => e.TableroId == tableroId.Value || e.TableroId == null);
+        var rows = await q.OrderBy(e => e.Nombre).ToListAsync(ct);
         var counts = await _db.TareaEtiquetaAsignaciones.AsNoTracking()
             .GroupBy(a => a.EtiquetaId)
             .Select(g => new { g.Key, Cant = g.Count() })
             .ToDictionaryAsync(x => x.Key, x => x.Cant, ct);
-        return rows.Select(e => new EtiquetaTareaDto(e.Id, e.Nombre, e.Color, e.Activo, counts.GetValueOrDefault(e.Id, 0))).ToList();
+        return rows.Select(e => new EtiquetaTareaDto(e.Id, e.Nombre, e.Color, e.Activo, counts.GetValueOrDefault(e.Id, 0), e.TableroId)).ToList();
     }
 
     public async Task<EtiquetaTareaDto> CrearEtiquetaAsync(CrearEtiquetaRequest req, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.Nombre)) throw new InvalidOperationException("Nombre obligatorio.");
         var nom = req.Nombre.Trim();
-        if (await _db.TareaEtiquetas.AnyAsync(e => e.Nombre == nom, ct))
-            throw new InvalidOperationException("Ya existe una etiqueta con este nombre.");
-        var e = new TareaEtiqueta { Nombre = nom, Color = req.Color, Activo = true };
+        // Unicidad dentro del mismo alcance (mismo tablero, o entre las globales).
+        if (await _db.TareaEtiquetas.AnyAsync(e => e.Nombre == nom && e.TableroId == req.TableroId, ct))
+            throw new InvalidOperationException("Ya existe una etiqueta con este nombre en este tablero.");
+        var e = new TareaEtiqueta { Nombre = nom, Color = req.Color, Activo = true, TableroId = req.TableroId };
         _db.TareaEtiquetas.Add(e);
         await _db.SaveChangesAsync(ct);
-        return new EtiquetaTareaDto(e.Id, e.Nombre, e.Color, true, 0);
+        return new EtiquetaTareaDto(e.Id, e.Nombre, e.Color, true, 0, e.TableroId);
     }
 
     public async Task<bool> ActualizarEtiquetaAsync(Guid id, ActualizarEtiquetaRequest req, CancellationToken ct)
@@ -245,7 +249,7 @@ public class TareasService : ITareasService
         var etiquetas = await (
             from a in _db.TareaEtiquetaAsignaciones.AsNoTracking().Where(x => ids.Contains(x.TareaId))
             join e in _db.TareaEtiquetas.AsNoTracking() on a.EtiquetaId equals e.Id
-            select new { a.TareaId, Dto = new EtiquetaTareaDto(e.Id, e.Nombre, e.Color, e.Activo, 0) }
+            select new { a.TareaId, Dto = new EtiquetaTareaDto(e.Id, e.Nombre, e.Color, e.Activo, 0, e.TableroId) }
         ).ToListAsync(ct);
         var etiquetasMap = etiquetas.GroupBy(x => x.TareaId).ToDictionary(g => g.Key, g => (IReadOnlyList<EtiquetaTareaDto>)g.Select(x => x.Dto).ToList());
 
@@ -297,7 +301,7 @@ public class TareasService : ITareasService
             .Where(a => a.TareaId == id).Select(a => a.EtiquetaId).ToListAsync(ct);
         var etiquetas = await _db.TareaEtiquetas.AsNoTracking()
             .Where(e => etiquetasIds.Contains(e.Id))
-            .Select(e => new EtiquetaTareaDto(e.Id, e.Nombre, e.Color, e.Activo, 0))
+            .Select(e => new EtiquetaTareaDto(e.Id, e.Nombre, e.Color, e.Activo, 0, e.TableroId))
             .ToListAsync(ct);
 
         var subtareas = await ListarTareasAsync(null, null, null, id, null, null, ct);

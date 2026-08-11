@@ -943,6 +943,49 @@ else
                     </div>
                 </div>
                 <div>
+                    <div class="tbcfg-h">ETIQUETAS</div>
+                    <div class="tbcfg-help">Se crean y colorean aqui, por tablero. En las tarjetas solo se asignan. Las marcadas "global" se comparten con todos los tableros.</div>
+                    <div class="tbcfg-tags">
+                        @foreach (var et in _etiquetasCat)
+                        {
+                            var tag = et;
+                            var col = string.IsNullOrWhiteSpace(et.Color) ? "#6D4FE3" : et.Color!;
+                            <div class="tbcfg-tag">
+                                <span class="tb-tag" style="background:@col;border-color:@col;color:@TagTextColor(col)">
+                                    @if (_tagEditId == et.Id)
+                                    {
+                                        <input class="tb-tag-inp" @bind="_tagEditVal" @bind:event="oninput" @onblur="() => GuardarTagNombre(tag)" @onkeydown="(e) => TagKeydown(e, tag)" />
+                                    }
+                                    else
+                                    {
+                                        <span class="tb-tag-tx" title="Click para renombrar" @onclick="() => IniciarTagEdit(tag)">@et.Nombre</span>
+                                    }
+                                    <button type="button" class="tb-tag-sw" title="Cambiar color" @onclick:stopPropagation="true" @onclick="() => ToggleTagColor(et.Id)"></button>
+                                    @if (_tagColorId == et.Id)
+                                    {
+                                        <div class="tb-tagpop-bd" @onclick="() => _tagColorId = null"></div>
+                                        <div class="tb-tag-colors" @onclick:stopPropagation="true">
+                                            @foreach (var c in _colores)
+                                            {
+                                                var cc = c;
+                                                <button type="button" class="tb-tag-copt @(string.Equals(et.Color, cc, StringComparison.OrdinalIgnoreCase) ? "on" : "")" style="background:@cc" @onclick="() => GuardarTagColor(tag, cc)"></button>
+                                            }
+                                        </div>
+                                    }
+                                </span>
+                                @if (et.TableroId is null) { <span class="tbcfg-tag-glob" title="Visible en todos los tableros">global</span> }
+                                <span class="tbcfg-tag-cnt" title="Tareas que la usan">@et.CantidadTareas</span>
+                                <button class="tbcfg-del" title="Eliminar etiqueta" @onclick="() => EliminarEtiquetaCfg(tag.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
+                            </div>
+                        }
+                        @if (_etiquetasCat.Count == 0) { <div class="tbcfg-help">Aun no hay etiquetas en este tablero.</div> }
+                    </div>
+                    <div class="tbcfg-add">
+                        <input @bind="_nuevaEtiqueta" @bind:event="oninput" placeholder="Nueva etiqueta de este tablero" @onkeydown="EtiquetaKeyDown" />
+                        <button class="tb-btn tb-btn-primary" @onclick="CrearEtiquetaCfg" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevaEtiqueta))">Agregar</button>
+                    </div>
+                </div>
+                <div>
                     <div class="tbcfg-h">CAMPOS PERSONALIZADOS</div>
                     <div class="tbcfg-help">Define campos tipados que apareceran en cada tarjeta, en los filtros y como columnas de la lista.</div>
                     @if (_board.Tablero.Campos is { Count: > 0 })
@@ -1333,12 +1376,9 @@ else
                                 var eid = et.Id; var on = d.EtiquetaIds.Contains(et.Id);
                                 <button class="tbc-tag @(on ? "on" : "")" style="@(on ? $"background:{et.Color ?? "#6D4FE3"};border-color:{et.Color ?? "#6D4FE3"};color:#fff" : "")" @onclick="() => ToggleEtiquetaDraft(eid)">@et.Nombre</button>
                             }
-                            @if (_etiquetasCat.Count == 0) { <span class="tbc-mut">Aun no hay etiquetas. Crea la primera abajo.</span> }
+                            @if (_etiquetasCat.Count == 0) { <span class="tbc-mut">Aun no hay etiquetas. Se crean en "Configurar tablero".</span> }
                         </div>
-                        <div class="tbc-tag-add">
-                            <input @bind="_nuevaEtiqueta" @bind:event="oninput" placeholder="Nueva etiqueta..." @onkeydown="EtiquetaKeyDown" />
-                            <button class="tbc-add-btn" @onclick="CrearEtiquetaInline" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevaEtiqueta))"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Crear</button>
-                        </div>
+                        <div class="tbc-tag-hint">Las etiquetas se crean y colorean en <button type="button" class="tbc-linkbtn" @onclick="AbrirConfigBoard">Configurar tablero</button>.</div>
                     </div>
 
                     <div class="tbc-fld">
@@ -2284,6 +2324,16 @@ else
     .tbcfg-add input { flex: 1; min-width: 0; border: 1px solid #E1E8EE; border-radius: 8px; padding: 9px 11px; font-size: 13px; color: #33475B; outline: none; background: #fff; box-sizing: border-box; }
     .tbcfg-add input:focus { border-color: #6D4FE3; }
     .tbcfg-add .tb-btn { flex-shrink: 0; }
+    /* Etiquetas en Configurar tablero */
+    .tbcfg-tags { display: flex; flex-direction: column; gap: 7px; margin-bottom: 10px; }
+    .tbcfg-tag { display: flex; align-items: center; gap: 8px; }
+    .tbcfg-tag .tb-tag { position: relative; }
+    .tbcfg-tag-glob { font-size: 9px; font-weight: 800; color: #516F90; background: #EEF3F8; border-radius: 5px; padding: 2px 6px; text-transform: uppercase; }
+    .tbcfg-tag-cnt { margin-left: auto; font-size: 11px; font-weight: 700; color: #A6B7C8; }
+    /* Hint en el modal de tarjeta (las etiquetas ya no se crean ahi) */
+    .tbc-tag-hint { margin-top: 8px; font-size: 11.5px; color: #7C98B6; }
+    .tbc-linkbtn { border: 0; background: transparent; color: #6D4FE3; font-weight: 700; cursor: pointer; padding: 0; font: inherit; text-decoration: underline; }
+    [data-bs-theme="dark"] .tbcfg-tag-glob { background: #232342; color: #C7C7D6; }
     .tbcfg-help { font-size: 11.5px; color: #7C98B6; margin-bottom: 10px; line-height: 1.45; }
     .tbcfg-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }
     .tbcfg-chip { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; color: #516F90; background: #F5F8FA; border: 1px solid #E1E8EE; padding: 6px 11px; border-radius: 8px; }
@@ -3582,6 +3632,8 @@ else
     private async Task AbrirBoardAsync(Guid id)
     {
         _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tareas/tableros/{id}/board");
+        // Etiquetas de ESTE tablero (+ las globales). Se gestionan en "Configurar tablero".
+        try { _etiquetasCat = await Auth().GetFromJsonAsync<List<EtiquetaTareaDto>>($"/api/tareas/etiquetas?tableroId={id}") ?? _etiquetasCat; } catch { }
         SyncTareas();
         await RestaurarColsAsync();   // config de columnas guardada para ESTE tablero (por usuario)
         ReconciliarOrden();           // deja _colOrden alineado con los campos actuales del tablero
@@ -5090,7 +5142,35 @@ else
 
     private async Task EtiquetaKeyDown(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter") await CrearEtiquetaInline();
+        if (e.Key == "Enter") await CrearEtiquetaCfg();
+    }
+
+    // ----- Etiquetas gestionadas desde "Configurar tablero" (crear por tablero + eliminar) -----
+    private async Task CrearEtiquetaCfg()
+    {
+        if (_board is null || string.IsNullOrWhiteSpace(_nuevaEtiqueta)) return;
+        var nombre = _nuevaEtiqueta.Trim();
+        if (_etiquetasCat.Any(x => string.Equals(x.Nombre, nombre, StringComparison.OrdinalIgnoreCase) && x.TableroId == _board.Tablero.Id)) { _nuevaEtiqueta = ""; return; }
+        _busy = true;
+        try
+        {
+            var color = _colores[Math.Abs(nombre.GetHashCode()) % _colores.Length];
+            var resp = await Auth().PostAsJsonAsync("/api/tareas/etiquetas", new CrearEtiquetaRequest(nombre, color, _board.Tablero.Id));
+            if (resp.IsSuccessStatusCode)
+            {
+                var nueva = await resp.Content.ReadFromJsonAsync<EtiquetaTareaDto>();
+                if (nueva is not null) { _etiquetasCat.Add(nueva); _nuevaEtiqueta = ""; }
+            }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task EliminarEtiquetaCfg(Guid id)
+    {
+        var resp = await Auth().DeleteAsync($"/api/tareas/etiquetas/{id}");
+        if (resp.IsSuccessStatusCode) { _etiquetasCat.RemoveAll(x => x.Id == id); await RecargarBoard(); }
+        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
     }
 
     // ----- Edicion inline de etiquetas desde la vista tabla (chips) -----

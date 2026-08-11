@@ -3,7 +3,7 @@ using Propia.Domain.Enums;
 namespace Propia.Application.Tareas;
 
 public record EstadoTareaDto(Guid Id, string Nombre, string? Color, int Orden, bool EsTerminal, bool EsBase, bool Activo);
-public record EtiquetaTareaDto(Guid Id, string Nombre, string? Color, bool Activo, int CantidadTareas);
+public record EtiquetaTareaDto(Guid Id, string Nombre, string? Color, bool Activo, int CantidadTareas, Guid? TableroId = null);
 
 public record TareaListaDto(
     Guid Id,
@@ -156,7 +156,7 @@ public record AgregarColaboradorRequest(Guid PersonaId);
 public record CrearEstadoRequest(string Nombre, string? Color, int Orden, Guid? TableroId = null);
 public record ActualizarEstadoRequest(string Nombre, string? Color, int Orden, bool Activo);
 
-public record CrearEtiquetaRequest(string Nombre, string? Color);
+public record CrearEtiquetaRequest(string Nombre, string? Color, Guid? TableroId = null);
 public record ActualizarEtiquetaRequest(string Nombre, string? Color, bool Activo);
 
 public record ResumenTareasDto(

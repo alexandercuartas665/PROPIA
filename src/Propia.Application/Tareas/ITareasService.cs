@@ -12,7 +12,7 @@ public interface ITareasService
     Task<bool> EliminarEstadoAsync(Guid id, CancellationToken ct);
 
     // Etiquetas
-    Task<IReadOnlyList<EtiquetaTareaDto>> ListarEtiquetasAsync(CancellationToken ct);
+    Task<IReadOnlyList<EtiquetaTareaDto>> ListarEtiquetasAsync(Guid? tableroId, CancellationToken ct);
     Task<EtiquetaTareaDto> CrearEtiquetaAsync(CrearEtiquetaRequest req, CancellationToken ct);
     Task<bool> ActualizarEtiquetaAsync(Guid id, ActualizarEtiquetaRequest req, CancellationToken ct);
     Task<bool> EliminarEtiquetaAsync(Guid id, CancellationToken ct);
