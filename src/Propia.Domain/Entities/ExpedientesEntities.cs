@@ -70,14 +70,38 @@ public class ExpedienteTipologia : TenantEntity
     public bool Obligatoria { get; set; }
     public int Orden { get; set; }
 
-    /// <summary>Archivo cargado (blob via IBlobStorage). Null = sin cargar.</summary>
+    /// <summary>Archivo cargado (blob via IBlobStorage) = version ACTUAL. Null = sin cargar.</summary>
     public string? ArchivoUrl { get; set; }
     public string? ArchivoNombre { get; set; }
     public string? ArchivoMime { get; set; }
     public long ArchivoTamano { get; set; }
 
+    /// <summary>Numero de versiones cargadas (contador denormalizado, estilo Documento). 0 = sin cargar.</summary>
+    public int NumeroVersiones { get; set; }
+
     /// <summary>Metadatos capturados al cargar: JSON dict claveCampo -> valor.</summary>
     public string? MetaJson { get; set; }
+
+    /// <summary>Historial de versiones (inmutable): cada "reemplazar" agrega una version nueva.</summary>
+    public ICollection<ExpedienteTipologiaVersion> Versiones { get; set; } = new List<ExpedienteTipologiaVersion>();
+}
+
+/// <summary>
+/// Version inmutable del archivo de una tipologia (RN-13, mismo patron que Archivo central):
+/// al "reemplazar" no se borra el blob anterior, se conserva como version consultable.
+/// </summary>
+public class ExpedienteTipologiaVersion : TenantEntity
+{
+    public Guid ExpedienteTipologiaId { get; set; }
+    public ExpedienteTipologia? Tipologia { get; set; }
+    public int Numero { get; set; }
+    /// <summary>Key del blob en IBlobStorage.</summary>
+    public string ArchivoUrl { get; set; } = null!;
+    public string ArchivoNombre { get; set; } = null!;
+    public string ArchivoMime { get; set; } = null!;
+    public long ArchivoTamano { get; set; }
+    public string? NotasCambio { get; set; }
+    public Guid? SubidoPorUsuarioId { get; set; }
 }
 
 /// <summary>Campo de metadato del expediente (copiado de la subserie, editable por expediente).</summary>

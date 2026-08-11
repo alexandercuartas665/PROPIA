@@ -223,7 +223,10 @@ public class ExpedientesService : IExpedientesService
     {
         var t = await _db.ExpedienteTipologias.FirstOrDefaultAsync(x => x.Id == tipologiaId, ct);
         if (t is null) return false;
-        if (!string.IsNullOrEmpty(t.ArchivoUrl)) { try { await _storage.DeleteAsync(t.ArchivoUrl, ct); } catch { } }
+        // Borra los blobs de todas las versiones (las filas caen por FK cascade al remover la tipologia).
+        var versiones = await _db.ExpedienteTipologiaVersiones.AsNoTracking().Where(v => v.ExpedienteTipologiaId == tipologiaId).ToListAsync(ct);
+        foreach (var v in versiones) { if (!string.IsNullOrEmpty(v.ArchivoUrl)) { try { await _storage.DeleteAsync(v.ArchivoUrl, ct); } catch { } } }
+        if (!string.IsNullOrEmpty(t.ArchivoUrl) && versiones.All(v => v.ArchivoUrl != t.ArchivoUrl)) { try { await _storage.DeleteAsync(t.ArchivoUrl, ct); } catch { } }
         _db.ExpedienteTipologias.Remove(t);
         await _db.SaveChangesAsync(ct);
         return true;
@@ -259,13 +262,32 @@ public class ExpedientesService : IExpedientesService
 
         var contenido = Convert.FromBase64String(req.ContenidoBase64);
         var nombre = string.IsNullOrWhiteSpace(req.NombreArchivo) ? (t.Nombre.Replace(' ', '_') + ".pdf") : req.NombreArchivo.Trim();
-        var key = $"tenants/{tenantId}/expedientes/{t.ExpedienteId}/tipologias/{t.Id}/{Sanitize(nombre)}";
-        using (var ms = new MemoryStream(contenido)) { await _storage.UploadAsync(key, ms, req.TipoMime, ct); }
+        var mime = string.IsNullOrWhiteSpace(req.TipoMime) ? "application/octet-stream" : req.TipoMime;
+        var tamano = req.TamanoBytes > 0 ? req.TamanoBytes : contenido.Length;
 
+        // Versionado (RN-13): cada carga -> nueva version en carpeta v{N}; NO se borra el blob anterior.
+        var nuevoNumero = t.NumeroVersiones + 1;
+        var key = $"tenants/{tenantId}/expedientes/{t.ExpedienteId}/tipologias/{t.Id}/v{nuevoNumero}/{Sanitize(nombre)}";
+        using (var ms = new MemoryStream(contenido)) { await _storage.UploadAsync(key, ms, mime, ct); }
+
+        _db.ExpedienteTipologiaVersiones.Add(new ExpedienteTipologiaVersion
+        {
+            TenantId = tenantId,
+            ExpedienteTipologiaId = t.Id,
+            Numero = nuevoNumero,
+            ArchivoUrl = key,
+            ArchivoNombre = nombre,
+            ArchivoMime = mime,
+            ArchivoTamano = tamano,
+            NotasCambio = string.IsNullOrWhiteSpace(req.NotasCambio) ? null : req.NotasCambio!.Trim()
+        });
+
+        // La tipologia apunta a la version ACTUAL (la recien cargada).
         t.ArchivoUrl = key;
         t.ArchivoNombre = nombre;
-        t.ArchivoMime = string.IsNullOrWhiteSpace(req.TipoMime) ? "application/octet-stream" : req.TipoMime;
-        t.ArchivoTamano = req.TamanoBytes > 0 ? req.TamanoBytes : contenido.Length;
+        t.ArchivoMime = mime;
+        t.ArchivoTamano = tamano;
+        t.NumeroVersiones = nuevoNumero;
 
         var meta = (req.Meta ?? new List<ExpedienteMetaValorDto>())
             .Where(m => !string.IsNullOrWhiteSpace(m.Valor))
@@ -276,12 +298,35 @@ public class ExpedientesService : IExpedientesService
         return true;
     }
 
+    public async Task<IReadOnlyList<TipologiaVersionDto>> ListarVersionesTipologiaAsync(Guid tipologiaId, CancellationToken ct)
+    {
+        return await _db.ExpedienteTipologiaVersiones.AsNoTracking()
+            .Where(v => v.ExpedienteTipologiaId == tipologiaId)
+            .OrderByDescending(v => v.Numero)
+            .Select(v => new TipologiaVersionDto(v.Id, v.Numero, v.ArchivoNombre, v.ArchivoMime, v.ArchivoTamano, v.NotasCambio, v.CreatedAt))
+            .ToListAsync(ct);
+    }
+
+    public async Task<DescargaDocumentoDto?> DescargarVersionTipologiaAsync(Guid tipologiaId, Guid versionId, CancellationToken ct)
+    {
+        var v = await _db.ExpedienteTipologiaVersiones.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == versionId && x.ExpedienteTipologiaId == tipologiaId, ct);
+        if (v is null || string.IsNullOrEmpty(v.ArchivoUrl)) return null;
+        var bytes = await _storage.DownloadAsync(v.ArchivoUrl, ct);
+        if (bytes is null) return null;
+        return new DescargaDocumentoDto(v.ArchivoNombre, v.ArchivoMime, bytes.LongLength, Convert.ToBase64String(bytes));
+    }
+
     public async Task<bool> QuitarArchivoAsync(Guid tipologiaId, CancellationToken ct)
     {
         var t = await _db.ExpedienteTipologias.FirstOrDefaultAsync(x => x.Id == tipologiaId, ct);
         if (t is null) return false;
-        if (!string.IsNullOrEmpty(t.ArchivoUrl)) { try { await _storage.DeleteAsync(t.ArchivoUrl, ct); } catch { } }
-        t.ArchivoUrl = null; t.ArchivoNombre = null; t.ArchivoMime = null; t.ArchivoTamano = 0; t.MetaJson = null;
+        // Quitar = vaciar la casilla por completo: borra todas las versiones (blobs + filas) y su historial.
+        var versiones = await _db.ExpedienteTipologiaVersiones.Where(v => v.ExpedienteTipologiaId == tipologiaId).ToListAsync(ct);
+        foreach (var v in versiones) { if (!string.IsNullOrEmpty(v.ArchivoUrl)) { try { await _storage.DeleteAsync(v.ArchivoUrl, ct); } catch { } } }
+        _db.ExpedienteTipologiaVersiones.RemoveRange(versiones);
+        if (!string.IsNullOrEmpty(t.ArchivoUrl) && versiones.All(v => v.ArchivoUrl != t.ArchivoUrl)) { try { await _storage.DeleteAsync(t.ArchivoUrl, ct); } catch { } }
+        t.ArchivoUrl = null; t.ArchivoNombre = null; t.ArchivoMime = null; t.ArchivoTamano = 0; t.MetaJson = null; t.NumeroVersiones = 0;
         await _db.SaveChangesAsync(ct);
         return true;
     }
@@ -309,7 +354,7 @@ public class ExpedientesService : IExpedientesService
                 .Select(c => new ExpedienteMetaPairDto(c.Clave, c.Label, meta[c.Clave]))
                 .ToList();
             return new ExpedienteTipologiaDto(t.Id, t.Nombre, t.Obligatoria, !string.IsNullOrEmpty(t.ArchivoUrl),
-                t.ArchivoNombre, t.ArchivoMime, t.ArchivoTamano, pairs);
+                t.ArchivoNombre, t.ArchivoMime, t.ArchivoTamano, pairs, t.NumeroVersiones);
         }).ToList();
         return new ExpedienteDetalleDto(e.Id, e.Codigo, e.Nombre, e.Serie, e.Subserie, tips.Count, cargadas, camposDto, tipsDto);
     }

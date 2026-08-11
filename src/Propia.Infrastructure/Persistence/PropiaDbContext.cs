@@ -234,6 +234,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<SubserieCampo> SubserieCampos => Set<SubserieCampo>();
     public DbSet<Expediente> Expedientes => Set<Expediente>();
     public DbSet<ExpedienteTipologia> ExpedienteTipologias => Set<ExpedienteTipologia>();
+    public DbSet<ExpedienteTipologiaVersion> ExpedienteTipologiaVersiones => Set<ExpedienteTipologiaVersion>();
     public DbSet<ExpedienteCampo> ExpedienteCampos => Set<ExpedienteCampo>();
 
     // Modulo 2.16 Reportes e Indicadores
@@ -1902,6 +1903,19 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.MetaJson).HasColumnType("text");
             b.HasOne(x => x.Expediente).WithMany(e => e.Tipologias).HasForeignKey(x => x.ExpedienteId).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(x => new { x.TenantId, x.ExpedienteId, x.Orden });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<ExpedienteTipologiaVersion>(b =>
+        {
+            b.ToTable("expediente_tipologia_versiones");
+            b.Property(x => x.ArchivoUrl).IsRequired().HasMaxLength(1024);
+            b.Property(x => x.ArchivoNombre).IsRequired().HasMaxLength(255);
+            b.Property(x => x.ArchivoMime).IsRequired().HasMaxLength(150);
+            b.Property(x => x.NotasCambio).HasColumnType("text");
+            b.HasOne(x => x.Tipologia).WithMany(t => t.Versiones).HasForeignKey(x => x.ExpedienteTipologiaId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => new { x.ExpedienteTipologiaId, x.Numero }).IsUnique();
+            b.HasIndex(x => x.TenantId);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

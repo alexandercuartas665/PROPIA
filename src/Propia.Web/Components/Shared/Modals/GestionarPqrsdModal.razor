@@ -47,7 +47,6 @@
     <div class="gpq-tabs">
         <button type="button" class="gpq-tab @(_tab == "detalle" ? "active" : "")" @onclick='@(() => _tab = "detalle")'>Detalle</button>
         <button type="button" class="gpq-tab @(_tab == "adjuntos" ? "active" : "")" @onclick='@(() => _tab = "adjuntos")'>Adjuntos@(_detalle.Adjuntos.Count > 0 ? $" ({_detalle.Adjuntos.Count})" : "")</button>
-        <button type="button" class="gpq-tab @(_tab == "historial" ? "active" : "")" @onclick='@(() => _tab = "historial")'>Historial@(_detalle.Historial.Count > 0 ? $" ({_detalle.Historial.Count})" : "")</button>
     </div>
 }
 
@@ -87,6 +86,16 @@
                     }
                 </div>
             }
+
+            @* ===== Layout 3 columnas (estilo Tareas) ===== *@
+            <div class="gpq-cols">
+            <div class="gpq-col">
+
+            @* Descripcion del caso (arriba, antes de Unidad afectada) *@
+            <div class="gpq-card">
+                <div class="gpq-card-eyebrow">DESCRIPCION DEL CASO</div>
+                <div class="gpq-desc">@_detalle.Descripcion</div>
+            </div>
 
             @* Contexto unidad *@
             @if (_contexto?.Unidad.UnidadId.HasValue == true)
@@ -153,6 +162,9 @@
                 </div>
             }
 
+            </div>@* fin col 1 *@
+            <div class="gpq-col">
+
             @* Plazo (SLA visual, estilo Tareas): barra de tiempo transcurrido + cuanto queda para responder *@
             <div class="gpq-card">
                 <div class="gpq-card-eyebrow">PLAZO LEGAL (SLA)</div>
@@ -166,10 +178,64 @@
                 <div class="gpq-plazo-row" style="margin-top:9px;"><span>Urgencia</span><strong>@_detalle.NivelUrgencia</strong></div>
             </div>
 
-            @* Descripcion *@
+            @* Campos dinamicos (donde estaba la DESCRIPCION) *@
             <div class="gpq-card">
-                <div class="gpq-card-eyebrow">DESCRIPCION</div>
-                <div class="gpq-desc">@_detalle.Descripcion</div>
+                <div class="gpq-card-eyebrow">CAMPOS DINAMICOS</div>
+                @if (_campos.Count > 0)
+                {
+                    @foreach (var c in _campos.OrderBy(c => c.Orden))
+                    {
+                        <label class="gpq-mini-lbl">@c.Label</label>
+                        @if (c.Tipo == TipoCampoTablero.Seleccion)
+                        {
+                            <select class="gpq-input" value="@_campoValores.GetValueOrDefault(c.Id, "")" @onchange="(e) => SetCampo(c.Id, e.Value?.ToString())">
+                                <option value="">- elegir -</option>
+                                @foreach (var op in (c.Opciones ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                                {
+                                    <option value="@op">@op</option>
+                                }
+                            </select>
+                        }
+                        else if (c.Tipo == TipoCampoTablero.AreaTexto)
+                        {
+                            <textarea class="gpq-input" rows="2" value="@_campoValores.GetValueOrDefault(c.Id, "")" @onchange="(e) => SetCampo(c.Id, e.Value?.ToString())"></textarea>
+                        }
+                        else
+                        {
+                            <input class="gpq-input" type="@CampoInputType(c.Tipo)" value="@_campoValores.GetValueOrDefault(c.Id, "")" @onchange="(e) => SetCampo(c.Id, e.Value?.ToString())" />
+                        }
+                    }
+                }
+                else
+                {
+                    <div class="gpq-actividad-empty">Sin campos aun. Crea el primero abajo.</div>
+                }
+
+                @* Crear campo dinamico (tarjeta rica con opciones, como Tareas) *@
+                <div style="height:10px;"></div>
+                @if (!_nuevoCampoOpen)
+                {
+                    <button type="button" class="gpq-addcampo" @onclick="() => _nuevoCampoOpen = true">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>Crear campo
+                    </button>
+                }
+                else
+                {
+                    <div class="gpq-newcampo">
+                        <input class="gpq-input" placeholder="Nombre del campo" @bind="_nuevoCampoLabel" />
+                        <select class="gpq-input" @bind="_nuevoCampoTipo">
+                            @foreach (var t in Enum.GetValues<TipoCampoTablero>()) { <option value="@t">@t</option> }
+                        </select>
+                        @if (_nuevoCampoTipo == TipoCampoTablero.Seleccion)
+                        {
+                            <textarea class="gpq-input" rows="3" placeholder="Opciones (una por linea)" @bind="_nuevoCampoOpciones"></textarea>
+                        }
+                        <div class="gpq-newcampo-acts">
+                            <button type="button" class="gpq-btn-brand" @onclick="CrearCampo" disabled="@(_creandoCampo || string.IsNullOrWhiteSpace(_nuevoCampoLabel))">@(_creandoCampo ? "..." : "Crear")</button>
+                            <button type="button" class="gpq-addcampo" @onclick="@(() => { _nuevoCampoOpen = false; _nuevoCampoLabel = string.Empty; _nuevoCampoOpciones = string.Empty; })">Cancelar</button>
+                        </div>
+                    </div>
+                }
             </div>
 
             @* Propiedad + solicitante (editable) + campos dinamicos *@
@@ -203,56 +269,6 @@
                 </div>
                 <SelectorPersona Jwt="@Jwt" @bind-Seleccionada="_asignadoSel" Placeholder="Asignar responsable..." />
 
-                @if (_campos.Count > 0)
-                {
-                    <div style="height:8px;"></div>
-                    <div class="gpq-card-eyebrow">CAMPOS</div>
-                    @foreach (var c in _campos.OrderBy(c => c.Orden))
-                    {
-                        <label class="gpq-mini-lbl">@c.Label</label>
-                        @if (c.Tipo == TipoCampoTablero.Seleccion)
-                        {
-                            <select class="gpq-input" value="@_campoValores.GetValueOrDefault(c.Id, "")" @onchange="(e) => SetCampo(c.Id, e.Value?.ToString())">
-                                <option value="">- elegir -</option>
-                                @foreach (var op in (c.Opciones ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                                {
-                                    <option value="@op">@op</option>
-                                }
-                            </select>
-                        }
-                        else if (c.Tipo == TipoCampoTablero.AreaTexto)
-                        {
-                            <textarea class="gpq-input" rows="2" value="@_campoValores.GetValueOrDefault(c.Id, "")" @onchange="(e) => SetCampo(c.Id, e.Value?.ToString())"></textarea>
-                        }
-                        else
-                        {
-                            <input class="gpq-input" type="@CampoInputType(c.Tipo)" value="@_campoValores.GetValueOrDefault(c.Id, "")" @onchange="(e) => SetCampo(c.Id, e.Value?.ToString())" />
-                        }
-                    }
-                }
-
-                @* Crear campo dinamico (como Tareas) *@
-                <div style="height:10px;"></div>
-                @if (!_nuevoCampoOpen)
-                {
-                    <button type="button" class="gpq-addcampo" @onclick="() => _nuevoCampoOpen = true">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>Crear campo
-                    </button>
-                }
-                else
-                {
-                    <div class="gpq-newcampo">
-                        <input class="gpq-input" placeholder="Nombre del campo" @bind="_nuevoCampoLabel" />
-                        <select class="gpq-input" @bind="_nuevoCampoTipo">
-                            @foreach (var t in Enum.GetValues<TipoCampoTablero>()) { <option value="@t">@t</option> }
-                        </select>
-                        <div class="gpq-newcampo-acts">
-                            <button type="button" class="gpq-btn-brand" @onclick="CrearCampo" disabled="@(_creandoCampo || string.IsNullOrWhiteSpace(_nuevoCampoLabel))">@(_creandoCampo ? "..." : "Crear")</button>
-                            <button type="button" class="gpq-addcampo" @onclick="@(() => { _nuevoCampoOpen = false; _nuevoCampoLabel = string.Empty; })">Cancelar</button>
-                        </div>
-                    </div>
-                }
-
                 <button class="gpq-btn-brand" style="margin-top:10px;" type="button" @onclick="GuardarDatos" disabled="@_guardandoRel">
                     @(_guardandoRel ? "Guardando..." : "Guardar cambios")
                 </button>
@@ -272,6 +288,9 @@
                     </button>
                 }
             </div>
+
+            </div>@* fin col 2 *@
+            <div class="gpq-col">
 
             @* Reportar actividad + feed (estilo Tareas) *@
             <div class="gpq-card">
@@ -336,6 +355,49 @@
                     }
                 </div>
             }
+
+            @* Historial de gestion (movido del tab, ahora visible en col 3) *@
+            <div class="gpq-card">
+                <div class="gpq-card-eyebrow">HISTORIAL @(_detalle.Historial.Count > 0 ? $"({_detalle.Historial.Count})" : "")</div>
+                @if (_detalle.Historial.Count == 0)
+                {
+                    <div class="gpq-empty">Sin eventos aun.</div>
+                }
+                else
+                {
+                    <div class="gpq-timeline">
+                        @foreach (var h in _detalle.Historial.OrderByDescending(x => x.CreatedAt))
+                        {
+                            <div class="gpq-tl-item">
+                                <div class="gpq-tl-dot @EstadoClass(h.EstadoNuevo)"></div>
+                                <div class="gpq-tl-content">
+                                    <div class="gpq-tl-title">
+                                        @if (h.EstadoAnterior.HasValue)
+                                        {
+                                            <span>@EstadoLabel(h.EstadoAnterior.Value) → @EstadoLabel(h.EstadoNuevo)</span>
+                                        }
+                                        else
+                                        {
+                                            <span>@EstadoLabel(h.EstadoNuevo)</span>
+                                        }
+                                    </div>
+                                    <div class="gpq-tl-meta">
+                                        @h.CreatedAt.ToString("dd MMM yyyy HH:mm")
+                                        <span> · @h.Origen</span>
+                                    </div>
+                                    @if (!string.IsNullOrEmpty(h.Nota))
+                                    {
+                                        <div class="gpq-tl-nota">@h.Nota</div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            </div>@* fin col 3 *@
+            </div>@* fin gpq-cols *@
 
             @* === ACCIONES segun estado === *@
             <div class="gpq-acciones">
@@ -567,7 +629,7 @@
 
 <style>
     .gpq-modal {
-        display: flex; flex-direction: column; max-height: 92vh; overflow: hidden;
+        display: flex; flex-direction: column; height: 92vh; max-height: 92vh; overflow: hidden;
         background: #fff; font-family: var(--propia-font-base, 'Lexend', sans-serif);
     }
     .gpq-header {
@@ -588,7 +650,7 @@
     .gpq-tabs { display: flex; gap: 2px; padding: 0 24px; border-bottom: 1px solid #EEF3F8; flex-shrink: 0; background: #fff; }
     .gpq-tab { border: 0; background: transparent; padding: 11px 16px; font-size: 13px; font-weight: 700; color: #7C98B6; cursor: pointer; border-bottom: 2px solid transparent; font-family: inherit; }
     .gpq-tab.active { color: var(--propia-brand, #6D4FE3); border-bottom-color: var(--propia-brand, #6D4FE3); }
-    .gpq-pane { width: 100%; padding: 20px 24px; overflow-y: auto; }
+    .gpq-pane { width: 100%; padding: 20px 24px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
     .gpq-close {
         width: 34px; height: 34px; border-radius: 9px;
         display: flex; align-items: center; justify-content: center;
@@ -918,13 +980,13 @@
     [data-bs-theme="dark"] .gpq-actividad-item { background: #1B2233; border-color: #2D3650; }
     [data-bs-theme="dark"] .gpq-progbar { background: #2D3650; }
 
-    /* Layout multi-columna (estilo Tareas): las tarjetas fluyen en 2 columnas en pantallas anchas;
-       pills y flags ocupan todo el ancho. Se desactiva en angosto para no apretar los selectores. */
-    @@media (min-width: 820px) {
-        .gpq-pane-detalle { column-count: 2; column-gap: 16px; }
-        .gpq-pane-detalle > .gpq-pills, .gpq-pane-detalle > .gpq-flags { column-span: all; }
-        .gpq-pane-detalle > .gpq-card { break-inside: avoid; margin-bottom: 16px; }
-    }
+    /* Layout 3 columnas explicitas (estilo Tareas): pills y flags full-width arriba,
+       luego la grilla .gpq-cols con 3 columnas independientes. Colapsa en angosto. */
+    .gpq-cols { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: start; }
+    .gpq-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+    .gpq-col > .gpq-card { margin-bottom: 0; }
+    @@media (min-width: 760px) { .gpq-cols { grid-template-columns: 1fr 1fr; } }
+    @@media (min-width: 1100px) { .gpq-cols { grid-template-columns: 1fr 1fr 1fr; } }
     [data-bs-theme="dark"] .gpq-panel-right { background: #161B2D; }
 </style>
 
@@ -977,6 +1039,7 @@
     private bool _nuevoCampoOpen;
     private string _nuevoCampoLabel = "";
     private TipoCampoTablero _nuevoCampoTipo = TipoCampoTablero.Texto;
+    private string _nuevoCampoOpciones = "";
     private bool _creandoCampo;
     private async Task CrearCampo()
     {
@@ -984,12 +1047,13 @@
         _creandoCampo = true;
         try
         {
-            var req = new GuardarCampoPqrsdRequest(_nuevoCampoLabel.Trim(), _nuevoCampoTipo, null, false, _campos.Count, null, false, null, false, null);
+            var opciones = _nuevoCampoTipo == TipoCampoTablero.Seleccion ? _nuevoCampoOpciones?.Trim() : null;
+            var req = new GuardarCampoPqrsdRequest(_nuevoCampoLabel.Trim(), _nuevoCampoTipo, string.IsNullOrWhiteSpace(opciones) ? null : opciones, false, _campos.Count, null, false, null, false, null);
             var resp = await Auth().PostAsJsonAsync("/api/pqrsd/campos", req);
             if (resp.IsSuccessStatusCode)
             {
                 _campos = (await Auth().GetFromJsonAsync<List<PqrsdCampoDto>>("/api/pqrsd/campos")) ?? _campos;
-                _nuevoCampoOpen = false; _nuevoCampoLabel = "";
+                _nuevoCampoOpen = false; _nuevoCampoLabel = ""; _nuevoCampoOpciones = "";
             }
         }
         catch { }

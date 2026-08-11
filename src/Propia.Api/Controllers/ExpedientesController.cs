@@ -127,4 +127,15 @@ public class ExpedientesController : ControllerBase
         var dto = await _svc.DescargarTipologiaAsync(tipologiaId, ct);
         return dto is null ? NotFound() : Ok(dto);
     }
+
+    [HttpGet("tipologias/{tipologiaId:guid}/versiones")]
+    public async Task<IActionResult> ListarVersiones(Guid tipologiaId, CancellationToken ct)
+        => Ok(await _svc.ListarVersionesTipologiaAsync(tipologiaId, ct));
+
+    [HttpGet("tipologias/{tipologiaId:guid}/versiones/{versionId:guid}/descargar")]
+    public async Task<IActionResult> DescargarVersion(Guid tipologiaId, Guid versionId, CancellationToken ct)
+    {
+        var dto = await _svc.DescargarVersionTipologiaAsync(tipologiaId, versionId, ct);
+        return dto is null ? NotFound() : Ok(dto);
+    }
 }

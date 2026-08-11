@@ -25,7 +25,13 @@ public record ExpedienteCampoDto(Guid Id, string Clave, string Label);
 public record ExpedienteTipologiaDto(
     Guid Id, string Nombre, bool Obligatoria, bool Cargado,
     string? ArchivoNombre, string? ArchivoMime, long ArchivoTamano,
-    IReadOnlyList<ExpedienteMetaPairDto> Meta);
+    IReadOnlyList<ExpedienteMetaPairDto> Meta,
+    int NumeroVersiones = 0);
+
+/// <summary>Version historica del archivo de una tipologia (para consultar versiones viejas).</summary>
+public record TipologiaVersionDto(
+    Guid Id, int Numero, string ArchivoNombre, string ArchivoMime, long ArchivoTamano,
+    string? NotasCambio, DateTimeOffset CreadoAt);
 
 public record ExpedienteMetaPairDto(string Clave, string Label, string Valor);
 
@@ -40,5 +46,5 @@ public record AgregarTipologiaExpRequest(string Nombre, bool Obligatoria);
 public record AgregarCampoExpRequest(string Label);
 public record CargarTipologiaRequest(
     string NombreArchivo, string TipoMime, long TamanoBytes, string ContenidoBase64,
-    IReadOnlyList<ExpedienteMetaValorDto>? Meta);
+    IReadOnlyList<ExpedienteMetaValorDto>? Meta, string? NotasCambio = null);
 public record ExpedienteMetaValorDto(string Clave, string? Valor);

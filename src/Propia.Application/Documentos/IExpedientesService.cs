@@ -35,6 +35,12 @@ public interface IExpedientesService
     Task<bool> CargarTipologiaAsync(Guid tipologiaId, CargarTipologiaRequest req, CancellationToken ct);
     /// <summary>Quita el archivo y los metadatos de una tipologia (la deja vacia).</summary>
     Task<bool> QuitarArchivoAsync(Guid tipologiaId, CancellationToken ct);
-    /// <summary>Descarga el archivo de una tipologia (base64).</summary>
+    /// <summary>Descarga el archivo (version actual) de una tipologia (base64).</summary>
     Task<DescargaDocumentoDto?> DescargarTipologiaAsync(Guid tipologiaId, CancellationToken ct);
+
+    /// <summary>Lista el historial de versiones cargadas de una tipologia (mas reciente primero).</summary>
+    Task<IReadOnlyList<TipologiaVersionDto>> ListarVersionesTipologiaAsync(Guid tipologiaId, CancellationToken ct);
+
+    /// <summary>Descarga una version historica especifica del archivo de una tipologia (base64).</summary>
+    Task<DescargaDocumentoDto?> DescargarVersionTipologiaAsync(Guid tipologiaId, Guid versionId, CancellationToken ct);
 }

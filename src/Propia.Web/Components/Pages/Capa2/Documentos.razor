@@ -263,20 +263,45 @@ else
                 {
                     <div class="exp-viewer-bar">
                         <div class="doc-ficon sm"><i class="fi fi-rr-document"></i></div>
-                        <div style="flex:1;min-width:0;"><div class="doc-row-name">@selTip.ArchivoNombre</div></div>
+                        <div style="flex:1;min-width:0;">
+                            <div class="doc-row-name">@(_visorNombre ?? selTip.ArchivoNombre)</div>
+                            @if (_visorVersionId != Guid.Empty)
+                            {
+                                <div class="doc-sub" style="margin:0;">Version anterior · <button class="exp-ver-link" @onclick="() => CargarVisorActual(selTip.Id)">volver a la actual</button></div>
+                            }
+                            else if (selTip.NumeroVersiones > 1)
+                            {
+                                <div class="doc-sub" style="margin:0;">Version actual (v@(selTip.NumeroVersiones))</div>
+                            }
+                        </div>
                         <button class="doc-btn-soft sm" @onclick="() => AbrirCargar(ed.Id, selTip.Id)">Reemplazar</button>
                         <button class="doc-btn-primary sm" @onclick="() => DescargarTip(selTip.Id)"><i class="fi fi-rr-download"></i> Descargar</button>
                     </div>
                     <div class="exp-viewer-body">
-                        <div class="exp-page">
-                            <div class="exp-page-head"><span class="exp-page-co">@ed.Nombre</span><span class="exp-page-ext">@(Ext(selTip.ArchivoNombre))</span></div>
-                            <div class="exp-page-title">@selTip.Nombre</div>
-                            <div class="exp-page-sub">@ed.Codigo &middot; @ed.Subserie</div>
-                            <div class="exp-page-lines">
-                                <div style="width:100%"></div><div style="width:92%"></div><div style="width:97%"></div><div style="width:74%"></div>
-                                <div style="width:88%;margin-top:14px"></div><div style="width:95%"></div><div style="width:60%"></div>
+                        @if (_visorCargando)
+                        {
+                            <div class="exp-viewer-empty"><i class="fi fi-rr-spinner"></i><div>Cargando documento...</div></div>
+                        }
+                        else if (!string.IsNullOrEmpty(_visorDataUri) && EsImagenMime(_visorMime))
+                        {
+                            <img class="exp-viewer-img" src="@_visorDataUri" alt="@_visorNombre" />
+                        }
+                        else if (!string.IsNullOrEmpty(_visorDataUri) && EsPdfMime(_visorMime, _visorNombre))
+                        {
+                            <iframe class="exp-viewer-frame" src="@_visorDataUri" title="@_visorNombre"></iframe>
+                        }
+                        else if (!string.IsNullOrEmpty(_visorDataUri))
+                        {
+                            <div class="exp-viewer-empty">
+                                <i class="fi fi-rr-file"></i>
+                                <div>Vista previa no disponible para @(Ext(_visorNombre)). Descarga el archivo para verlo.</div>
+                                <button class="doc-btn-primary sm" @onclick="() => DescargarTip(selTip.Id)"><i class="fi fi-rr-download"></i> Descargar</button>
                             </div>
-                        </div>
+                        }
+                        else
+                        {
+                            <div class="exp-viewer-empty"><i class="fi fi-rr-document"></i><div>@selTip.ArchivoNombre</div></div>
+                        }
                     </div>
                 }
                 else
@@ -305,6 +330,7 @@ else
                                 @if (t.Cargado)
                                 {
                                     <button class="doc-btn-soft sm" @onclick="() => AbrirCargar(ed.Id, tt.Id)">Reemplazar</button>
+                                    <button class="doc-btn-soft sm @(_versionesTipId == t.Id ? "on" : "")" @onclick="() => ToggleVersiones(tt.Id)"><i class="fi fi-rr-time-past"></i> Versiones@(tt.NumeroVersiones > 0 ? $" ({tt.NumeroVersiones})" : "")</button>
                                     <button class="doc-btn-danger sm" @onclick="() => QuitarArchivoTip(tt.Id)">Quitar</button>
                                 }
                                 else
@@ -312,6 +338,29 @@ else
                                     <button class="doc-btn-primary sm full" @onclick="() => AbrirCargar(ed.Id, tt.Id)">Cargar documento</button>
                                 }
                             </div>
+                            @if (_versionesTipId == t.Id)
+                            {
+                                <div class="exp-tip-vers">
+                                    @if (_versionesCargando) { <div class="doc-sub" style="margin:0;">Cargando versiones...</div> }
+                                    else if (_versionesLista.Count == 0) { <div class="doc-sub" style="margin:0;">Sin versiones registradas.</div> }
+                                    else
+                                    {
+                                        @foreach (var v in _versionesLista)
+                                        {
+                                            var vv = v;
+                                            <div class="exp-ver-row @(_visorVersionId == v.Id ? "sel" : "")">
+                                                <span class="exp-ver-badge">v@(v.Numero)</span>
+                                                <div style="flex:1;min-width:0;">
+                                                    <div class="exp-ver-name">@v.ArchivoNombre</div>
+                                                    <div class="exp-ver-meta">@v.CreadoAt.ToLocalTime().ToString("dd MMM yyyy, HH:mm")@(string.IsNullOrEmpty(v.NotasCambio) ? "" : " · " + v.NotasCambio)</div>
+                                                </div>
+                                                <button class="exp-ver-btn" title="Ver esta version" @onclick="() => VerVersion(tt.Id, vv.Id)"><i class="fi fi-rr-eye"></i></button>
+                                                <button class="exp-ver-btn" title="Descargar" @onclick="() => DescargarVersionTip(tt.Id, vv.Id)"><i class="fi fi-rr-download"></i></button>
+                                            </div>
+                                        }
+                                    }
+                                </div>
+                            }
                         </div>
                     }
                 </div>
@@ -463,6 +512,11 @@ else
                     </div>
                 }
             }
+            <div class="mb-2 mt-2">
+                <label class="doc-lbl">Notas del cambio (opcional)</label>
+                <input class="doc-input" placeholder="Ej. version firmada, correccion de anexo..." @bind="_cargarNotas" @bind:event="oninput" />
+            </div>
+            <div class="doc-sub" style="margin-top:4px;"><i class="fi fi-rr-info"></i> Si la tipologia ya tenia un archivo, el nuevo se guarda como una <strong>version nueva</strong> y la anterior queda consultable.</div>
             @if (_cargarError is not null) { <div class="text-danger small mt-1">@_cargarError</div> }
             <div class="d-flex gap-2 justify-content-end mt-3">
                 <button class="doc-btn-ghost" @onclick="() => _showCargar = false">Cancelar</button>
@@ -704,6 +758,10 @@ else
     .exp-viewer-body { flex: 1; overflow-y: auto; padding: 24px; display: flex; justify-content: center; }
     .exp-viewer-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #A6B7C8; font-size: 12.5px; text-align: center; padding: 20px; }
     .exp-viewer-empty i { font-size: 26px; color: #C3D0DD; }
+    /* Visor inline real (imagen / PDF via data URI) */
+    .exp-viewer-img { max-width: 100%; max-height: 100%; object-fit: contain; margin: auto; border-radius: 6px; box-shadow: 0 8px 30px rgba(27,42,58,.15); background: #fff; }
+    .exp-viewer-frame { flex: 1 1 auto; width: 100%; align-self: stretch; min-height: 560px; border: 0; border-radius: 6px; background: #fff; box-shadow: 0 8px 30px rgba(27,42,58,.15); }
+    .exp-ver-link { border: 0; background: transparent; color: #6D4FE3; font-weight: 700; cursor: pointer; padding: 0; font-size: inherit; text-decoration: underline; }
     .exp-page { width: 100%; max-width: 520px; background: #fff; border-radius: 6px; box-shadow: 0 8px 30px rgba(27,42,58,.15); padding: 44px 48px; min-height: 560px; }
     .exp-page-head { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #1B2A3A; padding-bottom: 12px; margin-bottom: 22px; }
     .exp-page-co { font-size: 13px; font-weight: 800; color: #1B2A3A; }
@@ -724,6 +782,16 @@ else
     .exp-tip-del { border: 0; background: transparent; color: #C3D0DD; cursor: pointer; display: flex; font-size: 14px; flex-shrink: 0; }
     .exp-tip-del:hover { color: #D7263D; }
     .exp-tip-acts { display: flex; gap: 6px; margin-top: 9px; }
+    .doc-btn-soft.on { background: #F1ECFD; border-color: #6D4FE3; color: #6D4FE3; }
+    /* Panel de versiones de una tipologia */
+    .exp-tip-vers { margin-top: 9px; border-top: 1px dashed #E1E8EE; padding-top: 9px; display: flex; flex-direction: column; gap: 6px; }
+    .exp-ver-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; background: #F7F9FB; }
+    .exp-ver-row.sel { background: #F1ECFD; }
+    .exp-ver-badge { font-size: 10px; font-weight: 800; color: #6D4FE3; background: #F1ECFD; border: 1px solid #DCD2F8; border-radius: 6px; padding: 2px 6px; flex-shrink: 0; }
+    .exp-ver-name { font-size: 11.5px; font-weight: 700; color: #33475B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .exp-ver-meta { font-size: 10px; color: #94A7BA; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .exp-ver-btn { border: 1px solid #E1E8EE; background: #fff; border-radius: 6px; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; color: #516F90; cursor: pointer; flex-shrink: 0; }
+    .exp-ver-btn:hover { border-color: #6D4FE3; color: #6D4FE3; }
 
     /* Config (3 cols) */
     .cfg-cols { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); min-height: 0; overflow: hidden; }
@@ -827,10 +895,18 @@ else
     private bool _showCargar;
     private Guid _cargarTipId;
     private string? _cargarTipNombre;
-    private string? _cargarNombre, _cargarMime, _cargarB64, _cargarError;
+    private string? _cargarNombre, _cargarMime, _cargarB64, _cargarError, _cargarNotas;
     private long _cargarTamano;
     private List<ExpedienteCampoDto> _cargarCampos = new();
     private readonly Dictionary<string, string> _cargarMeta = new();
+
+    // Visor central inline (data URI) + panel de versiones
+    private string? _visorDataUri, _visorMime, _visorNombre;
+    private bool _visorCargando;
+    private Guid _visorVersionId; // Guid.Empty = version actual
+    private Guid _versionesTipId;
+    private List<TipologiaVersionDto> _versionesLista = new();
+    private bool _versionesCargando;
 
     // ---- Archivo central ----
     private List<CategoriaDto>? _categorias;
@@ -890,16 +966,82 @@ else
     {
         _expDetalle = await Auth().GetFromJsonAsync<ExpedienteDetalleDto>($"/api/expedientes/{id}");
         _expSelTip = _expDetalle?.Tipologias.FirstOrDefault(t => t.Cargado)?.Id ?? Guid.Empty;
+        _versionesTipId = Guid.Empty; _visorDataUri = null; _visorVersionId = Guid.Empty;
+        if (_expSelTip != Guid.Empty) await CargarVisorActual(_expSelTip);
     }
 
-    private void CerrarExpediente() { _expDetalle = null; _expSelTip = Guid.Empty; }
-    private void SelTip(ExpedienteTipologiaDto t) { if (t.Cargado) _expSelTip = t.Id; }
+    private void CerrarExpediente() { _expDetalle = null; _expSelTip = Guid.Empty; _visorDataUri = null; _versionesTipId = Guid.Empty; }
+
+    private async Task SelTip(ExpedienteTipologiaDto t)
+    {
+        if (!t.Cargado) return;
+        _expSelTip = t.Id;
+        await CargarVisorActual(t.Id);
+    }
 
     private async Task RecargarDetalleAsync()
     {
         if (_expDetalle is null) return;
         _expDetalle = await Auth().GetFromJsonAsync<ExpedienteDetalleDto>($"/api/expedientes/{_expDetalle.Id}");
         await CargarExpedientesAsync();
+    }
+
+    // ---- Visor central inline (renderiza el documento via data URI) ----
+    private static bool EsImagenMime(string? mime) => !string.IsNullOrEmpty(mime) && mime.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+    private static bool EsPdfMime(string? mime, string? nombre) =>
+        (mime?.Contains("pdf", StringComparison.OrdinalIgnoreCase) ?? false) || (nombre?.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) ?? false);
+
+    private Task CargarVisorActual(Guid tipId)
+    {
+        _visorVersionId = Guid.Empty;
+        return CargarVisorDesde($"/api/expedientes/tipologias/{tipId}/descargar");
+    }
+
+    private async Task VerVersion(Guid tipId, Guid versionId)
+    {
+        _expSelTip = tipId;
+        _visorVersionId = versionId;
+        await CargarVisorDesde($"/api/expedientes/tipologias/{tipId}/versiones/{versionId}/descargar");
+    }
+
+    private async Task CargarVisorDesde(string url)
+    {
+        _visorCargando = true; _visorDataUri = null; _visorNombre = null; _visorMime = null;
+        StateHasChanged();
+        try
+        {
+            var dto = await Auth().GetFromJsonAsync<DescargaDocumentoDto>(url);
+            if (dto is not null)
+            {
+                _visorNombre = dto.NombreArchivo;
+                _visorMime = dto.TipoMime;
+                _visorDataUri = $"data:{dto.TipoMime};base64,{dto.ContenidoBase64}";
+            }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _visorCargando = false; }
+    }
+
+    // ---- Panel de versiones de una tipologia ----
+    private async Task ToggleVersiones(Guid tipId)
+    {
+        if (_versionesTipId == tipId) { _versionesTipId = Guid.Empty; return; }
+        _versionesTipId = tipId;
+        _versionesCargando = true; _versionesLista = new();
+        StateHasChanged();
+        try { _versionesLista = await Auth().GetFromJsonAsync<List<TipologiaVersionDto>>($"/api/expedientes/tipologias/{tipId}/versiones") ?? new(); }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _versionesCargando = false; }
+    }
+
+    private async Task DescargarVersionTip(Guid tipId, Guid versionId)
+    {
+        try
+        {
+            var dto = await Auth().GetFromJsonAsync<DescargaDocumentoDto>($"/api/expedientes/tipologias/{tipId}/versiones/{versionId}/descargar");
+            if (dto is not null) await Js.InvokeVoidAsync("propiaUI.downloadBase64", dto.NombreArchivo, dto.TipoMime, dto.ContenidoBase64);
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
     }
 
     private async Task AbrirNuevoExp()
@@ -965,7 +1107,7 @@ else
         var tip = _expDetalle?.Tipologias.FirstOrDefault(t => t.Id == tipId);
         _cargarTipId = tipId;
         _cargarTipNombre = (_expDetalle?.Nombre ?? "") + " - " + (tip?.Nombre ?? "");
-        _cargarNombre = _cargarMime = _cargarB64 = _cargarError = null;
+        _cargarNombre = _cargarMime = _cargarB64 = _cargarError = _cargarNotas = null;
         _cargarTamano = 0;
         _cargarCampos = _expDetalle?.Campos.ToList() ?? new();
         _cargarMeta.Clear();
@@ -992,12 +1134,16 @@ else
         try
         {
             var meta = _cargarMeta.Where(kv => !string.IsNullOrWhiteSpace(kv.Value)).Select(kv => new ExpedienteMetaValorDto(kv.Key, kv.Value)).ToList();
-            var req = new CargarTipologiaRequest(_cargarNombre!, _cargarMime!, _cargarTamano, _cargarB64!, meta);
+            var req = new CargarTipologiaRequest(_cargarNombre!, _cargarMime!, _cargarTamano, _cargarB64!, meta, _cargarNotas);
             var resp = await Auth().PostAsJsonAsync($"/api/expedientes/tipologias/{_cargarTipId}/cargar", req);
             if (!resp.IsSuccessStatusCode) { _cargarError = await resp.Content.ReadAsStringAsync(); return; }
             _showCargar = false;
-            _expSelTip = _cargarTipId;
+            var tipId = _cargarTipId;
             await RecargarDetalleAsync();
+            _expSelTip = tipId;
+            // si el panel de versiones estaba abierto para esta tipologia, refrescalo
+            if (_versionesTipId == tipId) { _versionesTipId = Guid.Empty; await ToggleVersiones(tipId); }
+            await CargarVisorActual(tipId);
         }
         catch (Exception ex) { _cargarError = ex.Message; }
         finally { _busy = false; }

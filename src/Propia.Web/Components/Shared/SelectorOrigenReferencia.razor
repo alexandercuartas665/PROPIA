@@ -1,0 +1,104 @@
+@* Selector buscable de referencia de origen (reemplaza el datalist que "parecia tooltip").
+   Filtra por texto: numero de unidad Y personas relacionadas (propietario). Muestra 20 y "ver mas".
+   Value = etiqueta guardada (p.ej. numero de unidad); ValueChanged vive; OnCommit al elegir/blur. *@
+<div class="sor-wrap">
+    <input class="@InputClass sor-input" value="@Value" placeholder="@Placeholder" autocomplete="off"
+           @oninput="OnInput" @onfocus="Abrir" @onblur="Cerrar" @onkeydown="OnKeyDown" />
+    @if (_open)
+    {
+        var vis = Filtradas();
+        <div class="sor-list">
+            @if (vis.Count == 0)
+            {
+                <div class="sor-empty">Sin coincidencias</div>
+            }
+            else
+            {
+                @foreach (var o in vis.Take(_max))
+                {
+                    var oo = o;
+                    <button type="button" class="sor-item" @onmousedown:preventDefault @onmousedown="() => Elegir(oo)">
+                        <span class="sor-item-main">@o.Display</span>
+                        @if (!string.IsNullOrEmpty(o.Sub)) { <span class="sor-item-sub">@o.Sub</span> }
+                    </button>
+                }
+                @if (vis.Count > _max)
+                {
+                    <button type="button" class="sor-more" @onmousedown:preventDefault @onmousedown="MostrarMas">
+                        Ver mas (@(vis.Count - _max) restantes)
+                    </button>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    [Parameter] public EventCallback<string?> OnCommit { get; set; }
+    [Parameter] public EventCallback<KeyboardEventArgs> OnKeyDown { get; set; }
+    [Parameter] public IReadOnlyList<OpcionBusqueda> Opciones { get; set; } = Array.Empty<OpcionBusqueda>();
+    [Parameter] public string Placeholder { get; set; } = "Buscar...";
+    [Parameter] public string InputClass { get; set; } = "";
+
+    private bool _open;
+    private string _q = "";
+    private int _max = 20;
+    private string _valueAtFocus = "";
+
+    private List<OpcionBusqueda> Filtradas()
+    {
+        var q = Norm(_q);
+        if (string.IsNullOrEmpty(q)) return Opciones.ToList();
+        return Opciones.Where(o => Norm(o.Search).Contains(q)).ToList();
+    }
+
+    private void Abrir()
+    {
+        _open = true; _max = 20; _q = "";
+        _valueAtFocus = Value ?? "";
+    }
+
+    private async Task Cerrar()
+    {
+        // pequenio delay para que el mousedown de una opcion se procese antes de cerrar
+        await Task.Delay(160);
+        _open = false;
+        if ((Value ?? "") != _valueAtFocus) await OnCommit.InvokeAsync(Value);
+        StateHasChanged();
+    }
+
+    private async Task OnInput(ChangeEventArgs e)
+    {
+        _q = e.Value?.ToString() ?? "";
+        _open = true; _max = 20;
+        Value = string.IsNullOrEmpty(_q) ? null : _q;
+        await ValueChanged.InvokeAsync(Value);
+    }
+
+    private async Task Elegir(OpcionBusqueda o)
+    {
+        Value = o.Value; _q = o.Value; _open = false;
+        _valueAtFocus = o.Value; // ya comiteado, evita doble commit en el blur
+        await ValueChanged.InvokeAsync(o.Value);
+        await OnCommit.InvokeAsync(o.Value);
+    }
+
+    private void MostrarMas() => _max += 20;
+
+    /// <summary>lowercase + sin tildes para comparar de forma tolerante.</summary>
+    private static string Norm(string? s)
+    {
+        s = (s ?? "").Trim().ToLowerInvariant();
+        if (s.Length == 0) return s;
+        var sb = new System.Text.StringBuilder(s.Length);
+        foreach (var ch in s.Normalize(System.Text.NormalizationForm.FormD))
+            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(ch) != System.Globalization.UnicodeCategory.NonSpacingMark)
+                sb.Append(ch);
+        return sb.ToString();
+    }
+
+    /// <summary>Value = lo que se guarda; Display/Sub = como se ve; Search = texto sobre el que se filtra.</summary>
+    public record OpcionBusqueda(string Value, string Display, string? Sub, string Search);
+}

@@ -129,15 +129,6 @@ else
             </div>
         </div>
 
-        @* Datalists compartidos para el typeahead del campo Origen: se renderizan UNA vez y los inputs
-           los referencian por tipo (list="tb-orig-dl-<tipo>"). El navegador filtra al escribir, asi no se
-           muestran todas las unidades de golpe. *@
-        @if (_unidades is not null)
-        {
-            <datalist id="tb-orig-dl-inmueble">@foreach (var o in OrigenOpcionesDe("inmueble")) { <option value="@o.Label"></option> }</datalist>
-            <datalist id="tb-orig-dl-zona">@foreach (var o in OrigenOpcionesDe("zona")) { <option value="@o.Label"></option> }</datalist>
-            <datalist id="tb-orig-dl-equipo">@foreach (var o in OrigenOpcionesDe("equipo")) { <option value="@o.Label"></option> }</datalist>
-        }
 
         @* ---------- TABLERO (Kanban) ---------- *@
         @if (_boardMode == "tablero")
@@ -280,9 +271,12 @@ else
                                             </select>
                                             @if (!string.IsNullOrEmpty(_composerDraft.OrigenTipo))
                                             {
-                                                <input class="tb-composer-sel" list="tb-orig-dl-@_composerDraft.OrigenTipo" value="@(_composerDraft.OrigenReferencia ?? "")" placeholder="Buscar / elegir..."
-                                                       @onchange="@(e => _composerDraft.OrigenReferencia = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString())"
-                                                       @onkeydown="@(e => ComposerKeydown(e, estado.Id, 6))" />
+                                                <SelectorOrigenReferencia InputClass="tb-composer-sel"
+                                                                          Placeholder="@OrigenPlaceholder(_composerDraft.OrigenTipo)"
+                                                                          Opciones="@OrigenBusquedaDe(_composerDraft.OrigenTipo)"
+                                                                          Value="@_composerDraft.OrigenReferencia"
+                                                                          ValueChanged="@(v => _composerDraft.OrigenReferencia = string.IsNullOrEmpty(v) ? null : v)"
+                                                                          OnKeyDown="@(e => ComposerKeydown(e, estado.Id, 6))" />
                                             }
                                         </div>
                                     }
@@ -585,7 +579,11 @@ else
                                 </select>
                                 @if (!string.IsNullOrEmpty(nf.OrigenTipo))
                                 {
-                                    <input class="tb-orig-rsel" list="tb-orig-dl-@nf.OrigenTipo" value="@(nf.OrigenReferencia ?? "")" placeholder="Buscar / elegir..." @onchange="@(e => nf.OrigenReferencia = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString())" />
+                                    <SelectorOrigenReferencia InputClass="tb-orig-rsel"
+                                                              Placeholder="@OrigenPlaceholder(nf.OrigenTipo)"
+                                                              Opciones="@OrigenBusquedaDe(nf.OrigenTipo)"
+                                                              Value="@nf.OrigenReferencia"
+                                                              ValueChanged="@(v => nf.OrigenReferencia = string.IsNullOrEmpty(v) ? null : v)" />
                                 }
                             </div>
                         }
@@ -1129,7 +1127,11 @@ else
                             {
                                 <div class="tbc-fld tbc-grow">
                                     <label>Origen</label>
-                                    <input class="tbc-origen-sel" list="tb-orig-dl-@d.OrigenTipo" @bind="d.OrigenReferencia" @bind:event="onchange" placeholder="Buscar / elegir..." />
+                                    <SelectorOrigenReferencia InputClass="tbc-origen-sel"
+                                                              Placeholder="@OrigenPlaceholder(d.OrigenTipo)"
+                                                              Opciones="@OrigenBusquedaDe(d.OrigenTipo)"
+                                                              Value="@d.OrigenReferencia"
+                                                              ValueChanged="@(v => d.OrigenReferencia = string.IsNullOrEmpty(v) ? null : v)" />
                                 </div>
                             }
                         </div>
@@ -1948,6 +1950,28 @@ else
     .tb-orig-tsel { flex: 0 0 84px; font-size: 11px; font-weight: 600; color: #516F90; border: 1px solid #E1E8EE; border-radius: 6px; padding: 4px 5px; outline: none; background: #FAFBFC; cursor: pointer; }
     .tb-orig-rsel { flex: 1; min-width: 0; font-size: 11px; font-weight: 600; color: #33475B; border: 1px solid #E1E8EE; border-radius: 6px; padding: 4px 5px; outline: none; background: #fff; cursor: pointer; }
     .tb-orig-tsel:focus, .tb-orig-rsel:focus { border-color: #6D4FE3; }
+    /* Selector buscable de origen (reemplaza el datalist tipo tooltip) */
+    .sor-wrap { position: relative; flex: 1 1 auto; min-width: 0; }
+    .sor-input { width: 100%; box-sizing: border-box; }
+    .sor-list { position: absolute; z-index: 60; top: calc(100% + 3px); left: 0; right: 0;
+                max-height: 260px; overflow-y: auto; background: #fff; border: 1px solid #D7E0EA;
+                border-radius: 8px; box-shadow: 0 10px 28px rgba(20,40,70,.16); padding: 4px; }
+    .sor-item { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%;
+                text-align: left; border: 0; background: transparent; cursor: pointer;
+                padding: 6px 9px; border-radius: 6px; font-family: inherit; }
+    .sor-item:hover { background: #F1ECFD; }
+    .sor-item-main { font-size: 12px; font-weight: 700; color: #29384A; }
+    .sor-item-sub { font-size: 11px; font-weight: 500; color: #7C98B6; }
+    .sor-more { width: 100%; text-align: center; border: 0; background: #F5F7FA; cursor: pointer;
+                padding: 6px; border-radius: 6px; font-size: 11px; font-weight: 700; color: #6D4FE3;
+                margin-top: 2px; font-family: inherit; }
+    .sor-more:hover { background: #ECE7FB; }
+    .sor-empty { padding: 8px 10px; font-size: 12px; color: #94A7BA; }
+    [data-bs-theme="dark"] .sor-list { background: #1B2233; border-color: #2D3650; box-shadow: 0 10px 28px rgba(0,0,0,.5); }
+    [data-bs-theme="dark"] .sor-item:hover { background: #2A2350; }
+    [data-bs-theme="dark"] .sor-item-main { color: #E5E9F0; }
+    [data-bs-theme="dark"] .sor-item-sub { color: #94A7BA; }
+    [data-bs-theme="dark"] .sor-more { background: #232342; color: #B9A9F0; }
     .tb-composer-orig { display: flex; flex-direction: column; gap: 6px; }
     .tb-lc-acc { width: 74px; flex-shrink: 0; text-align: right; } .tb-row-acc { width: 74px; flex-shrink: 0; display: flex; gap: 4px; justify-content: flex-end; opacity: 0; transition: opacity .12s; }
     .tb-row:hover .tb-row-acc { opacity: 1; }
@@ -3263,6 +3287,10 @@ else
     private List<OpcionOrigen>? _unidades;
     private List<OpcionOrigen>? _zonas;
     private List<OpcionOrigen>? _equipos;
+    // Opciones enriquecidas para el selector buscable (numero de unidad + propietario, etc.)
+    private List<SelectorOrigenReferencia.OpcionBusqueda> _busqUnidades = new();
+    private List<SelectorOrigenReferencia.OpcionBusqueda> _busqZonas = new();
+    private List<SelectorOrigenReferencia.OpcionBusqueda> _busqEquipos = new();
 
     private static readonly string[] _colores = { "#6D4FE3", "#2563EB", "#1A8754", "#F59E0B", "#EF4444", "#7C3AED", "#0EA5E9", "#EC4899" };
     private static readonly string[] _avaColors = { "#6D4FE3", "#2563EB", "#1A8754", "#B45309", "#C0383C", "#0EA5E9", "#EC4899", "#7C3AED" };
@@ -3346,7 +3374,7 @@ else
     private record PersonaRaw(Guid Id, string Nombres, string Apellidos);
     private record CoResumenMini(CoIdentidadMini? Identidad);
     private record CoIdentidadMini(string? Nombre);
-    private record UnidadMini(Guid Id, string Numero);
+    private record UnidadMini(Guid Id, string Numero, string? PropietarioNombre = null, string? TorreNombre = null);
     private record ZonaMini(Guid Id, string Nombre);
     private record EquipoMini(Guid Id, string Nombre);
 
@@ -3430,9 +3458,31 @@ else
     private async Task CargarContextoAsync()
     {
         try { var r = await Auth().GetFromJsonAsync<CoResumenMini>("/api/mi-copropiedad/resumen"); if (!string.IsNullOrWhiteSpace(r?.Identidad?.Nombre)) _coNombre = r!.Identidad!.Nombre!; } catch { }
-        try { var u = await Auth().GetFromJsonAsync<List<UnidadMini>>("/api/mi-copropiedad/unidades"); _unidades = u?.Select(x => new OpcionOrigen(x.Id, x.Numero)).ToList() ?? new(); } catch { _unidades = new(); }
-        try { var z = await Auth().GetFromJsonAsync<List<ZonaMini>>("/api/mi-copropiedad/zonas"); _zonas = z?.Select(x => new OpcionOrigen(x.Id, x.Nombre)).ToList() ?? new(); } catch { _zonas = new(); }
-        try { var e = await Auth().GetFromJsonAsync<List<EquipoMini>>("/api/mi-copropiedad/equipos"); _equipos = e?.Select(x => new OpcionOrigen(x.Id, x.Nombre)).ToList() ?? new(); } catch { _equipos = new(); }
+        try
+        {
+            var u = await Auth().GetFromJsonAsync<List<UnidadMini>>("/api/mi-copropiedad/unidades");
+            _unidades = u?.Select(x => new OpcionOrigen(x.Id, x.Numero)).ToList() ?? new();
+            _busqUnidades = (u ?? new()).Select(x => new SelectorOrigenReferencia.OpcionBusqueda(
+                x.Numero,
+                string.IsNullOrEmpty(x.TorreNombre) ? x.Numero : $"{x.TorreNombre} - {x.Numero}",
+                string.IsNullOrEmpty(x.PropietarioNombre) ? null : x.PropietarioNombre,
+                $"{x.Numero} {x.TorreNombre} {x.PropietarioNombre}".Trim())).ToList();
+        }
+        catch { _unidades = new(); _busqUnidades = new(); }
+        try
+        {
+            var z = await Auth().GetFromJsonAsync<List<ZonaMini>>("/api/mi-copropiedad/zonas");
+            _zonas = z?.Select(x => new OpcionOrigen(x.Id, x.Nombre)).ToList() ?? new();
+            _busqZonas = (z ?? new()).Select(x => new SelectorOrigenReferencia.OpcionBusqueda(x.Nombre, x.Nombre, null, x.Nombre)).ToList();
+        }
+        catch { _zonas = new(); _busqZonas = new(); }
+        try
+        {
+            var e = await Auth().GetFromJsonAsync<List<EquipoMini>>("/api/mi-copropiedad/equipos");
+            _equipos = e?.Select(x => new OpcionOrigen(x.Id, x.Nombre)).ToList() ?? new();
+            _busqEquipos = (e ?? new()).Select(x => new SelectorOrigenReferencia.OpcionBusqueda(x.Nombre, x.Nombre, null, x.Nombre)).ToList();
+        }
+        catch { _equipos = new(); _busqEquipos = new(); }
     }
 
     // Indicadores del modulo (prototipo v2): 4 tarjetas con gradiente sobre todos los tableros.
@@ -3557,6 +3607,31 @@ else
         "equipo" => _equipos ?? new(),
         _ => new List<OpcionOrigen>()
     };
+
+    // Opciones enriquecidas para el selector buscable (numero de unidad + propietario, zona, equipo).
+    private IReadOnlyList<SelectorOrigenReferencia.OpcionBusqueda> OrigenBusquedaDe(string? tipo) => tipo switch
+    {
+        "inmueble" => _busqUnidades,
+        "zona" => _busqZonas,
+        "equipo" => _busqEquipos,
+        _ => Array.Empty<SelectorOrigenReferencia.OpcionBusqueda>()
+    };
+
+    private static string OrigenPlaceholder(string? tipo) => tipo switch
+    {
+        "inmueble" => "Buscar apartamento o personas relacionadas",
+        "zona" => "Buscar zona comun...",
+        "equipo" => "Buscar equipo o activo...",
+        _ => "Buscar / elegir..."
+    };
+
+    // Igual que CambiarOrigenRefFila pero recibe el valor directo (desde el selector buscable).
+    private async Task CambiarOrigenRefFilaVal(Guid tareaId, string? tipo, string? refv)
+    {
+        var v = string.IsNullOrWhiteSpace(refv) ? null : refv;
+        PatchLocal(tareaId, t => t with { OrigenReferencia = v });
+        await Auth().PatchAsJsonAsync($"/api/tareas/{tareaId}/inline", new InlineUpdateTareaRequest("origen", tipo, null, null, null, v));
+    }
 
     // Edicion inline de la relacion (origen) de una tarea existente en la Lista.
     private async Task CambiarOrigenTipoFila(Guid tareaId, ChangeEventArgs e)
@@ -4142,7 +4217,12 @@ else
                     </select>
                     @if (!string.IsNullOrEmpty(t.OrigenTipo))
                     {
-                        <input class="tb-orig-rsel" list="tb-orig-dl-@t.OrigenTipo" value="@(t.OrigenReferencia ?? "")" placeholder="Buscar / elegir..." @onchange="(e) => CambiarOrigenRefFila(tarea.Id, tarea.OrigenTipo, e)" />
+                        <SelectorOrigenReferencia InputClass="tb-orig-rsel"
+                                                  Placeholder="@OrigenPlaceholder(t.OrigenTipo)"
+                                                  Opciones="@OrigenBusquedaDe(t.OrigenTipo)"
+                                                  Value="@t.OrigenReferencia"
+                                                  ValueChanged="@(v => PatchLocal(tarea.Id, x => x with { OrigenReferencia = string.IsNullOrEmpty(v) ? null : v }))"
+                                                  OnCommit="@(v => CambiarOrigenRefFilaVal(tarea.Id, tarea.OrigenTipo, v))" />
                     }
                 </div>
             }
