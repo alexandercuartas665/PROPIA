@@ -1928,6 +1928,8 @@ else
     .tb-coloropt.on { box-shadow: 0 0 0 2px #6D4FE3; }
     .tb-coloropt-none { background: #fff !important; position: relative; }
     .tb-coloropt-none::after { content: ""; position: absolute; left: 2px; right: 2px; top: 9px; height: 2px; background: #E5484D; transform: rotate(-45deg); }
+    .tb-coloropt-custom { overflow: hidden; padding: 0; display: inline-flex; background: conic-gradient(from 0deg, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); }
+    .tb-coloropt-custom input[type=color] { opacity: 0; width: 100%; height: 100%; border: 0; padding: 0; margin: 0; cursor: pointer; }
 
     /* Totales por grupo en la vista Tablero (Kanban agrupado). */
     .tb-gsec-tot { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: 10px; }
@@ -2051,7 +2053,7 @@ else
 
     /* ===== Modal de tarjeta rico (3 columnas) ===== */
     /* Alto FIJO para que el modal no cambie de tamano al alternar entre las pestanas Detalle y Archivos. */
-    .tbc-modal { width: 1200px; max-width: 96vw; height: 88vh; background: #fff; border-radius: 18px; box-shadow: 0 30px 70px rgba(27,42,58,.4); margin: auto; overflow: hidden; display: flex; flex-direction: column; max-height: 92vh; }
+    .tbc-modal { width: 1380px; max-width: 96vw; height: 88vh; background: #fff; border-radius: 18px; box-shadow: 0 30px 70px rgba(27,42,58,.4); margin: auto; overflow: hidden; display: flex; flex-direction: column; max-height: 92vh; }
     .tbc-head { display: flex; align-items: center; gap: 12px; padding: 18px 24px; flex-shrink: 0; }
     .tbc-head-bar { width: 8px; height: 32px; border-radius: 5px; background: rgba(255,255,255,.85); flex-shrink: 0; }
     .tbc-head-id { flex: 1; min-width: 0; }
@@ -2069,7 +2071,7 @@ else
 
     /* El cuerpo ya no scrollea como un todo: cada columna hace su propio scroll (independiente),
        asi el contenido largo de la izquierda no arrastra ni rompe el layout de las demas. */
-    .tbc-body { flex: 1; min-height: 0; overflow: hidden; padding: 16px 22px; display: grid; grid-template-columns: minmax(0, 1fr) 220px 250px; grid-template-rows: minmax(0, 1fr); gap: 16px 20px; }
+    .tbc-body { flex: 1; min-height: 0; overflow: hidden; padding: 16px 22px; display: grid; grid-template-columns: minmax(0, 1fr) 300px 290px; grid-template-rows: minmax(0, 1fr); gap: 16px 20px; }
     .tbc-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; box-sizing: border-box; overflow-y: auto; overflow-x: hidden; scroll-behavior: smooth; padding-right: 6px; scrollbar-width: thin; scrollbar-color: #C3D0DD transparent; }
     .tbc-col::-webkit-scrollbar { width: 7px; }
     .tbc-col::-webkit-scrollbar-track { background: transparent; }
@@ -2830,6 +2832,12 @@ else
         _colColorMenu = null;
         await PersistColColorAsync();
     }
+    // Color personalizado elegido por el usuario (input type=color). No cierra el popup (permite ajustar).
+    private async Task SetColColorInput(string key, ChangeEventArgs e)
+    {
+        var color = e.Value?.ToString();
+        if (!string.IsNullOrEmpty(color)) { _colColor[key] = color; await PersistColColorAsync(); }
+    }
     private static string? ColSelectores(string key) => key switch
     {
         "desc" => ".tb-list .tb-lc-desc,.tb-list .tb-row-desc",
@@ -2855,7 +2863,11 @@ else
                 if (string.IsNullOrEmpty(kv.Value)) continue;
                 var sel = ColSelectores(kv.Key);
                 if (sel is null) continue;
-                sb.Append(sel).Append("{background:").Append(kv.Value).Append(" !important;}");
+                // El color rellena TODA la altura de la celda (no solo la caja de texto): la celda es un flex-item
+                // centrado dentro de una fila mas alta (padding 9px), asi que se estira con align-self:stretch y
+                // se "come" el padding vertical de la fila con margenes negativos + padding propio.
+                sb.Append(sel).Append("{background:").Append(kv.Value)
+                  .Append(" !important;align-self:stretch;box-sizing:border-box;margin-top:-9px;margin-bottom:-9px;padding-top:9px;padding-bottom:9px;}");
             }
             sb.Append("</style>");
             return (MarkupString)sb.ToString();
@@ -2876,6 +2888,9 @@ else
                     var cc = c;
                     <button type="button" class="tb-coloropt @(string.Equals(ColBg(key), cc, StringComparison.OrdinalIgnoreCase) ? "on" : "")" style="background:@cc" @onclick="() => SetColColor(key, cc)"></button>
                 }
+                <label class="tb-coloropt tb-coloropt-custom" title="Elegir color personalizado">
+                    <input type="color" value="@(ColBg(key) ?? "#6D4FE3")" @onchange="(e) => SetColColorInput(key, e)" />
+                </label>
                 <button type="button" class="tb-coloropt tb-coloropt-none" title="Sin color" @onclick="() => SetColColor(key, null)"></button>
             </div>
         }

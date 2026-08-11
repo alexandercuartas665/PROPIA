@@ -323,12 +323,16 @@ public class ReservasService : IReservasService
         if (minutos < cfg.DuracionMinimaMinutos) throw new InvalidOperationException($"Duracion minima: {cfg.DuracionMinimaMinutos} min.");
         if (minutos > cfg.DuracionMaximaMinutos) throw new InvalidOperationException($"Duracion maxima: {cfg.DuracionMaximaMinutos} min.");
 
-        // Validar anticipacion
-        var ahora = DateTimeOffset.UtcNow;
-        var inicioReserva = new DateTimeOffset(DateTime.SpecifyKind(req.Fecha.ToDateTime(req.HoraInicio), DateTimeKind.Utc));
-        if (inicioReserva < ahora.AddHours(cfg.AnticipacionMinimaHoras))
+        // Validar anticipacion. req.Fecha/HoraInicio vienen en hora LOCAL de la copropiedad
+        // (el residente elige un dia+hora local), asi que "ahora" debe convertirse a esa misma
+        // zona antes de comparar. Antes se etiquetaba la reserva como UTC y se comparaba contra
+        // UtcNow: en Colombia (UTC-5) eso adelantaba "ahora" 5h y disparaba RN-07 aun con minima 0h.
+        var zonaLocal = Propia.Infrastructure.Programaciones.CronHelper.Zona(null);
+        var ahoraLocal = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zonaLocal);
+        var inicioReserva = req.Fecha.ToDateTime(req.HoraInicio);
+        if (inicioReserva < ahoraLocal.AddHours(cfg.AnticipacionMinimaHoras))
             throw new InvalidOperationException($"RN-07: anticipacion minima {cfg.AnticipacionMinimaHoras}h.");
-        if (inicioReserva > ahora.AddDays(cfg.AnticipacionMaximaDias))
+        if (inicioReserva > ahoraLocal.AddDays(cfg.AnticipacionMaximaDias))
             throw new InvalidOperationException($"RN-07: anticipacion maxima {cfg.AnticipacionMaximaDias}d.");
 
         // Validar franja activa

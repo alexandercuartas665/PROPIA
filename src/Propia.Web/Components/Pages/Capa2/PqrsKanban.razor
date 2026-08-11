@@ -21,10 +21,33 @@
             <h1 class="pk-title">PQRS y convivencia</h1>
             <p class="pk-sub">Peticiones, quejas, reclamos y sugerencias con plazos legales (Ley 1755).</p>
         </div>
-        <button class="pk-cta-brand" type="button" @onclick="IrNueva">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-            Radicar nueva PQR
-        </button>
+        <div class="pk-head-actions">
+            @if (!(_authChecked && string.IsNullOrEmpty(_jwt)))
+            {
+                <div class="pk-seg">
+                    <button class="pk-seg-btn @(_boardMode == "tablero" ? "pk-seg-btn--on" : "")" @onclick="@(() => SetVista("tablero"))">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="11" rx="1"/></svg>
+                        Kanban
+                    </button>
+                    <button class="pk-seg-btn @(_boardMode == "tabla" ? "pk-seg-btn--on" : "")" @onclick="@(() => SetVista("tabla"))">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18"/></svg>
+                        Tabla
+                    </button>
+                    <button class="pk-seg-btn @(_boardMode == "calendario" ? "pk-seg-btn--on" : "")" @onclick="@(() => SetVista("calendario"))">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                        Calendario
+                    </button>
+                </div>
+                <button class="pk-input-btn" @onclick="AbrirConfigColumnas" title="Configurar columnas del tablero">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                    Configurar
+                </button>
+            }
+            <button class="pk-cta-brand" type="button" @onclick="IrNueva">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+                Radicar nueva PQR
+            </button>
+        </div>
     </div>
 
     @if (_authChecked && string.IsNullOrEmpty(_jwt))
@@ -57,22 +80,68 @@
 
         @* === Toolbar: vista, agrupar, columnas, config === *@
         <div class="pk-toolbar">
-            <div class="pk-seg">
-                <button class="pk-seg-btn @(_boardMode == "tablero" ? "pk-seg-btn--on" : "")" @onclick="@(() => SetVista("tablero"))">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="11" rx="1"/></svg>
-                    Kanban
+            @* Barra de filtros al estilo Tareas: Filtros + buscador a la izquierda, controles a la derecha. *@
+            <div class="pk-menu-wrap">
+                <button class="pk-input-btn @(HayFiltros ? "pk-input-btn--on" : "")" @onclick="ToggleFiltros" title="Filtrar PQR">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18M6 12h12M10 19h4"/></svg>
+                    <span>Filtros</span>@if (CuentaFiltros > 0) { <span class="pk-filter-badge">@CuentaFiltros</span> }
                 </button>
-                <button class="pk-seg-btn @(_boardMode == "tabla" ? "pk-seg-btn--on" : "")" @onclick="@(() => SetVista("tabla"))">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18"/></svg>
-                    Tabla
-                </button>
+                @if (_filtrosMenu)
+                {
+                    <div class="pk-filterpop-bd" @onclick="() => _filtrosMenu = false"></div>
+                    <div class="pk-filterpop" @onclick:stopPropagation="true">
+                        @if (_reglas.Count == 0)
+                        {
+                            <div class="pk-filterpop-empty">Sin filtros aplicados.<br />Agrega una condicion para acotar las PQR.</div>
+                        }
+                        else
+                        {
+                            @for (int i = 0; i < _reglas.Count; i++)
+                            {
+                                var idx = i; var r = _reglas[idx];
+                                <div class="pk-frule">
+                                    @if (idx == 0)
+                                    {
+                                        <span class="pk-frule-lead">Donde</span>
+                                    }
+                                    else if (idx == 1)
+                                    {
+                                        <select class="pk-frule-lead pk-frule-logic" @onchange="SetFiltroLogica">
+                                            <option value="and" selected="@(_filtroLogica == "and")">Y</option>
+                                            <option value="or" selected="@(_filtroLogica == "or")">O</option>
+                                        </select>
+                                    }
+                                    else
+                                    {
+                                        <span class="pk-frule-lead">@(_filtroLogica == "or" ? "O" : "Y")</span>
+                                    }
+                                    <select class="pk-frule-f" @onchange="(e) => SetReglaCampo(idx, e)">
+                                        @foreach (var opt in CamposFiltro()) { <option value="@opt.Key" selected="@(r.Campo == opt.Key)">@opt.Label</option> }
+                                    </select>
+                                    <select class="pk-frule-op" @onchange="(e) => SetReglaOp(idx, e)">
+                                        @foreach (var op in OperadoresDe(r.Campo)) { <option value="@op.Key" selected="@(r.Op == op.Key)">@op.Label</option> }
+                                    </select>
+                                    @if (r.Op is not "vacio" and not "no_vacio")
+                                    {
+                                        @RenderValorFiltro(idx)
+                                    }
+                                    <button type="button" class="pk-frule-del" title="Quitar condicion" @onclick="() => QuitarRegla(idx)">&times;</button>
+                                </div>
+                            }
+                        }
+                        <div class="pk-filterpop-foot">
+                            <button type="button" class="pk-filter-add" @onclick="AgregarRegla">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>Agregar filtro
+                            </button>
+                            @if (_reglas.Count > 0) { <button type="button" class="pk-filter-clear" @onclick="LimpiarFiltros">Limpiar todo</button> }
+                        </div>
+                    </div>
+                }
             </div>
 
             <input class="pk-input" @bind="_buscar" @bind:event="oninput" placeholder="Buscar por radicado o resumen..." />
-            <select class="pk-input pk-input--sm" @bind="_filtroTipo">
-                <option value="">Todos los tipos</option>
-                @foreach (var t in Enum.GetValues<TipoPqrsd>()) { <option value="@t">@TipoLabel(t)</option> }
-            </select>
+
+            <div class="pk-filters-spacer"></div>
 
             <div class="pk-menu-wrap">
                 <button class="pk-input-btn" @onclick='() => TogglePop("group")'>
@@ -92,6 +161,10 @@
 
             @if (_boardMode == "tabla")
             {
+                <button class="pk-input-btn @(_pin ? "pk-input-btn--on" : "")" @onclick="TogglePin" title="Congelar la primera columna al desplazar la tabla">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4v6l-2 4h10l-2-4V4M12 14v6M8 4h8"/></svg>
+                    Fijar columna
+                </button>
                 <div class="pk-menu-wrap">
                     <button class="pk-input-btn" @onclick='() => TogglePop("cols")'>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
@@ -119,19 +192,10 @@
                                     </label>
                                 }
                             }
-                            <label class="pk-pop-chk pk-pop-chk--sep">
-                                <input type="checkbox" checked="@_pin" @onchange="TogglePin" />
-                                <span>Fijar primera columna</span>
-                            </label>
                         </div>
                     }
                 </div>
             }
-
-            <button class="pk-input-btn" @onclick="AbrirConfigColumnas">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-                Configurar columnas
-            </button>
 
             <button class="pk-input-btn" @onclick="CargarAsync" disabled="@_busy">
                 @if (_busy) { <span>Cargando...</span> }
@@ -256,20 +320,61 @@
                 }
             </div>
         }
+        else if (_boardMode == "calendario")
+        {
+            @* ===================== VISTA CALENDARIO (por fecha de vencimiento legal) ===================== *@
+            <div class="pk-cal">
+                <div class="pk-cal-bar">
+                    <button class="pk-icon-btn pk-cal-nav" @onclick="() => CalMover(-1)">&#8249;</button>
+                    <span class="pk-cal-title">@CalTitulo</span>
+                    <button class="pk-icon-btn pk-cal-nav" @onclick="() => CalMover(1)">&#8250;</button>
+                    <button class="pk-input-btn pk-cal-hoy" @onclick="CalHoy">Hoy</button>
+                    <span class="pk-cal-hint">Las PQR se ubican por su fecha de vencimiento legal.</span>
+                </div>
+                <div class="pk-cal-head">
+                    @foreach (var dw in new[] { "LUN", "MAR", "MIE", "JUE", "VIE", "SAB", "DOM" }) { <div class="pk-cal-dow">@dw</div> }
+                </div>
+                <div class="pk-cal-grid">
+                    @foreach (var celda in CalCeldas())
+                    {
+                        <div class="pk-cal-cell @(celda.EsHoy ? "pk-cal-cell--hoy" : "") @(celda.EsMes ? "" : "pk-cal-cell--off")">
+                            <div class="pk-cal-daynum">@celda.Dia</div>
+                            @foreach (var it in celda.Items.Take(3))
+                            {
+                                <div class="pk-cal-ev @(it.DiasHastaVencimiento < 0 ? "pk-cal-ev--err" : it.DiasHastaVencimiento <= 3 ? "pk-cal-ev--warn" : "")"
+                                     title="@it.NumeroRadicado - @it.DescripcionResumen" @onclick="() => IrA(it.Id)">
+                                    <span class="pk-cal-ev-num">@it.NumeroRadicado</span>
+                                </div>
+                            }
+                            @if (celda.Items.Count > 3) { <div class="pk-cal-more">+@(celda.Items.Count - 3) mas</div> }
+                        </div>
+                    }
+                </div>
+            </div>
+        }
         else
         {
             @* ===================== VISTA TABLA ===================== *@
-            <div class="pk-table-wrap">
+            @ColumnColorCss
+            @* Doble scroll horizontal: barra superior espejo, sincronizada por JS con la tabla (igual que Tareas). *@
+            <div class="pk-topscroll" id="pkTopScroll"><div id="pkTopScrollInner"></div></div>
+            <div class="pk-table-wrap" id="pkTableWrap">
                 <table class="pk-table @(_pin ? "pk-table--pin" : "")">
                     <thead>
                         <tr>
                             @foreach (var col in _colsFijas.Where(c => !_colsOcultas.Contains(c.Key)))
                             {
-                                <th class="@(col.Key == "radicado" ? "pk-th-pin" : "")">@col.Label</th>
+                                var ck = col.Key;
+                                <th class="pk-th-sort pk-col-@ck @(ck == "radicado" ? "pk-th-pin" : "")" @onclick="() => SortByPqr(ck)">
+                                    <span class="pk-th-lbl">@col.Label@SortIndPqr(ck)</span>@ColorDot(ck)
+                                </th>
                             }
                             @foreach (var c in _campos.Where(c => !_camposOcultos.Contains(c.Id)).OrderBy(c => c.Orden))
                             {
-                                <th>@c.Label</th>
+                                var cid = c.Id.ToString();
+                                <th class="pk-th-sort pk-col-c@(c.Id)" @onclick="() => SortByPqr(cid)">
+                                    <span class="pk-th-lbl">@c.Label@SortIndPqr(cid)</span>@ColorDot(cid)
+                                </th>
                             }
                             <th class="pk-th-actions"></th>
                         </tr>
@@ -281,12 +386,12 @@
                             {
                                 <tr class="pk-grp-row"><td colspan="99"><span class="pk-grp-lead">@grp.Key <span class="pk-grp-num">@grp.Count()</span></span></td></tr>
                             }
-                            @foreach (var it in grp)
+                            @foreach (var it in AplicarSortPqr(grp))
                             {
                                 <tr class="pk-tr" @onclick="() => IrA(it.Id)">
                                     @foreach (var col in _colsFijas.Where(c => !_colsOcultas.Contains(c.Key)))
                                     {
-                                        <td class="@(col.Key == "radicado" ? "pk-td-pin" : "")">
+                                        <td class="pk-col-@col.Key @(col.Key == "radicado" ? "pk-td-pin" : "")">
                                             @switch (col.Key)
                                             {
                                                 case "radicado":
@@ -311,7 +416,7 @@
                                     }
                                     @foreach (var c in _campos.Where(c => !_camposOcultos.Contains(c.Id)).OrderBy(c => c.Orden))
                                     {
-                                        <td class="pk-td-muted">@(it.Campos?.FirstOrDefault(v => v.CampoId == c.Id)?.Valor)</td>
+                                        <td class="pk-td-muted pk-col-c@(c.Id)">@(it.Campos?.FirstOrDefault(v => v.CampoId == c.Id)?.Valor)</td>
                                     }
                                     <td class="pk-td-actions" @onclick:stopPropagation="true">
                                         @if (_verArchivados)
@@ -400,6 +505,7 @@
 <style>
     .pk-page { padding: 22px 28px; font-family: var(--propia-font-base, 'Lexend', sans-serif); }
     .pk-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 16px; }
+    .pk-head-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
     .pk-title { font-size: 27px; font-weight: 800; letter-spacing: -0.6px; color: #1B2A3A; margin: 0; }
     .pk-sub { font-size: 14px; color: #7C98B6; margin: 4px 0 0; }
     .pk-cta-brand { display: inline-flex; align-items: center; gap: 8px; padding: 11px 17px; border-radius: 10px; background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 13.5px; font-weight: 700; border: 0; cursor: pointer; box-shadow: 0 6px 16px rgba(109,79,227,.32); }
@@ -420,6 +526,7 @@
     .pk-kpi--alert { background: #FEF2F2; border-color: #FECACA; }
 
     .pk-toolbar { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 14px; }
+    .pk-filters-spacer { flex: 1 1 auto; min-width: 8px; }
     .pk-seg { display: inline-flex; background: #F1F5F9; border-radius: 9px; padding: 3px; }
     .pk-seg-btn { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; padding: 7px 12px; border-radius: 7px; font-size: 12.5px; font-weight: 700; color: #7C98B6; cursor: pointer; font-family: inherit; }
     .pk-seg-btn--on { background: #fff; color: var(--propia-brand, #6D4FE3); box-shadow: 0 1px 3px rgba(45,62,80,.1); }
@@ -440,6 +547,57 @@
     .pk-pop-chk { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 12.5px; color: #33475B; cursor: pointer; }
     .pk-pop-chk:hover { background: #F6F8FB; border-radius: 6px; }
     .pk-pop-chk--sep { border-top: 1px solid #EEF3F8; margin-top: 4px; padding-top: 9px; }
+
+    /* ===== Constructor de filtros (boton compacto + panel de reglas) ===== */
+    .pk-input-btn--on { border-color: var(--propia-brand, #6D4FE3); background: var(--propia-brand-soft, #F1ECFD); color: var(--propia-brand, #6D4FE3); }
+    .pk-filter-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px; padding: 0 5px; margin-left: 2px; border-radius: 9px; background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 10.5px; font-weight: 800; }
+    .pk-filterpop-bd { position: fixed; inset: 0; z-index: 58; }
+    .pk-filterpop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 60; width: min(680px, 92vw); background: #fff; border: 1px solid #E1E8EE; border-radius: 12px; box-shadow: 0 16px 40px rgba(27,42,58,.2); padding: 12px; }
+    .pk-filterpop-empty { font-size: 12.5px; color: #7C98B6; text-align: center; padding: 14px 8px 16px; line-height: 1.5; }
+    .pk-frule { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; }
+    .pk-frule-lead { flex: 0 0 58px; font-size: 12px; font-weight: 700; color: #7C98B6; text-align: right; }
+    select.pk-frule-lead.pk-frule-logic { flex: 0 0 58px; text-align: left; border: 1px solid #E1E8EE; border-radius: 8px; padding: 5px 6px; background: #FAFBFC; color: var(--propia-brand, #6D4FE3); font-weight: 800; cursor: pointer; outline: none; }
+    .pk-frule-f, .pk-frule-op, .pk-frule-v { font-size: 12.5px; font-weight: 600; color: #33475B; border: 1px solid #E1E8EE; border-radius: 8px; padding: 6px 8px; background: #fff; outline: none; min-width: 0; font-family: inherit; }
+    .pk-frule-f { flex: 0 0 150px; }
+    .pk-frule-op { flex: 0 0 130px; color: #516F90; }
+    .pk-frule-v { flex: 1 1 auto; min-width: 90px; }
+    .pk-frule-f:focus, .pk-frule-op:focus, .pk-frule-v:focus, select.pk-frule-logic:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .pk-frule-del { flex: 0 0 auto; width: 28px; height: 28px; border-radius: 7px; border: 1px solid #E1E8EE; background: #fff; color: #90A4B7; cursor: pointer; font-size: 17px; line-height: 1; }
+    .pk-frule-del:hover { background: #FDE7E7; color: #D7263D; border-color: #F2CFC9; }
+    .pk-filterpop-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; padding-top: 10px; border-top: 1px solid #EEF3F8; }
+    .pk-filter-add { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: var(--propia-brand-soft, #F1ECFD); border: 0; border-radius: 8px; padding: 7px 12px; cursor: pointer; font-family: inherit; }
+    .pk-filter-clear { font-size: 12px; font-weight: 700; color: #C0383C; background: transparent; border: 0; border-radius: 8px; padding: 7px 10px; cursor: pointer; font-family: inherit; }
+    .pk-filter-clear:hover { background: #FDE7E7; }
+    [data-bs-theme="dark"] .pk-filterpop { background: #232B40; border-color: #2D3650; }
+    [data-bs-theme="dark"] .pk-frule-f, [data-bs-theme="dark"] .pk-frule-op, [data-bs-theme="dark"] .pk-frule-v,
+    [data-bs-theme="dark"] select.pk-frule-logic, [data-bs-theme="dark"] .pk-frule-del { background: #1B2233; border-color: #2D3650; color: #C7CEDB; }
+
+    /* ===== Vista Calendario ===== */
+    .pk-cal { border: 1px solid #E1E8EE; border-radius: 14px; overflow: hidden; background: #fff; margin-bottom: 30px; }
+    .pk-cal-bar { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #EEF3F8; }
+    .pk-cal-nav { font-size: 18px; border: 1px solid #E1E8EE; border-radius: 8px; width: 30px; height: 30px; }
+    .pk-cal-title { font-size: 15px; font-weight: 800; color: #1B2A3A; min-width: 150px; }
+    .pk-cal-hoy { padding: 6px 12px; }
+    .pk-cal-hint { margin-left: auto; font-size: 11.5px; color: #A6B7C8; }
+    .pk-cal-head { display: grid; grid-template-columns: repeat(7, 1fr); background: #FAFBFC; border-bottom: 1px solid #EEF3F8; }
+    .pk-cal-dow { padding: 8px 10px; font-size: 10px; font-weight: 800; letter-spacing: .4px; color: #A6B7C8; text-align: left; }
+    .pk-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: #EEF3F8; }
+    .pk-cal-cell { background: #fff; min-height: 92px; padding: 6px 7px; display: flex; flex-direction: column; gap: 3px; }
+    .pk-cal-cell--off { background: #FBFCFE; }
+    .pk-cal-cell--off .pk-cal-daynum { color: #C3D0DD; }
+    .pk-cal-cell--hoy { background: #F6F3FE; }
+    .pk-cal-daynum { font-size: 11.5px; font-weight: 700; color: #516F90; }
+    .pk-cal-cell--hoy .pk-cal-daynum { color: var(--propia-brand, #6D4FE3); }
+    .pk-cal-ev { font-size: 10.5px; font-weight: 700; color: #15703F; background: #E6F6EE; border-radius: 5px; padding: 2px 6px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pk-cal-ev:hover { filter: brightness(.96); }
+    .pk-cal-ev--warn { color: #B45309; background: #FEF3C7; }
+    .pk-cal-ev--err { color: #B91C1C; background: #FEE2E2; }
+    .pk-cal-more { font-size: 10px; font-weight: 700; color: #7C98B6; padding: 1px 4px; }
+    [data-bs-theme="dark"] .pk-cal { background: #232B40; border-color: #2D3650; }
+    [data-bs-theme="dark"] .pk-cal-cell { background: #232B40; }
+    [data-bs-theme="dark"] .pk-cal-cell--off { background: #1B2233; }
+    [data-bs-theme="dark"] .pk-cal-grid { background: #2D3650; }
+    [data-bs-theme="dark"] .pk-cal-head { background: #1B2233; }
 
     .pk-chip-section { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
     .pk-chip-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
@@ -502,6 +660,34 @@
 
     /* Tabla */
     .pk-table-wrap { overflow-x: auto; border: 1px solid #E1E8EE; border-radius: 12px; margin-bottom: 30px; background: #fff; }
+
+    /* Doble scroll horizontal: barra superior espejo (sincronizada por JS con la tabla). */
+    .pk-topscroll { overflow-x: auto; overflow-y: hidden; height: 14px; margin-bottom: 7px; border-radius: 8px; }
+    .pk-topscroll > div { height: 1px; }
+    .pk-topscroll::-webkit-scrollbar { height: 10px; }
+    .pk-topscroll::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 8px; }
+    .pk-topscroll::-webkit-scrollbar-thumb:hover { background: #A6B7C8; }
+    .pk-topscroll::-webkit-scrollbar-track { background: #F1F5F9; border-radius: 8px; }
+
+    /* Encabezado ordenable (clic ordena; reclic invierte). */
+    .pk-table th.pk-th-sort { cursor: pointer; user-select: none; }
+    .pk-table th.pk-th-sort:hover { color: #6D4FE3; }
+    .pk-th-lbl { display: inline-flex; align-items: center; }
+
+    /* Color por columna: boton en el encabezado + paleta + color personalizado. */
+    .pk-colcolor-wrap { position: relative; display: inline-flex; align-items: center; margin-left: 6px; vertical-align: middle; }
+    .pk-colcolor-btn { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid #CBD5E1; background: transparent; cursor: pointer; padding: 0; opacity: 0; transition: opacity .12s; }
+    .pk-table th:hover .pk-colcolor-btn, .pk-colcolor-btn:focus { opacity: 1; }
+    .pk-colcolor-btn[style*="transparent"] { border-style: dashed; }
+    .pk-colorpop-bd { position: fixed; inset: 0; z-index: 45; }
+    .pk-colorpop { position: absolute; top: 20px; right: 0; z-index: 46; display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; background: #fff; border: 1px solid #E1E8EE; border-radius: 10px; box-shadow: 0 10px 30px rgba(16,24,40,.16); padding: 9px; width: 170px; }
+    .pk-coloropt { width: 22px; height: 22px; border-radius: 6px; border: 1.5px solid rgba(0,0,0,.06); cursor: pointer; padding: 0; position: relative; }
+    .pk-coloropt.on { outline: 2px solid #6D4FE3; outline-offset: 1px; }
+    .pk-coloropt-none { background: #fff; }
+    .pk-coloropt-none::after { content: ""; position: absolute; left: 3px; right: 3px; top: 50%; height: 2px; background: #E4506D; transform: rotate(-45deg); }
+    .pk-coloropt-custom { overflow: hidden; padding: 0; background: conic-gradient(from 0deg, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); display: inline-flex; }
+    .pk-coloropt-custom input[type=color] { opacity: 0; width: 100%; height: 100%; border: 0; padding: 0; margin: 0; cursor: pointer; }
+    [data-bs-theme="dark"] .pk-colorpop { background: #232B40; border-color: #2D3650; }
     .pk-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
     .pk-table th { text-align: left; padding: 11px 12px; font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; color: #A6B7C8; border-bottom: 1px solid #EEF3F8; background: #FBFCFE; white-space: nowrap; }
     .pk-table td { padding: 10px 12px; border-bottom: 1px solid #F4F7FA; color: #33475B; vertical-align: middle; }
@@ -609,9 +795,9 @@
             .Where(x => string.IsNullOrEmpty(_buscar)
                 || x.NumeroRadicado.Contains(_buscar, StringComparison.OrdinalIgnoreCase)
                 || x.DescripcionResumen.Contains(_buscar, StringComparison.OrdinalIgnoreCase))
-            .Where(x => string.IsNullOrEmpty(_filtroTipo) || x.Tipo == Enum.Parse<TipoPqrsd>(_filtroTipo))
             .Where(x => string.IsNullOrEmpty(_filtroCategoria) || x.CategoriaNombre == _filtroCategoria)
-            .Where(x => string.IsNullOrEmpty(_filtroUnidad) || x.UnidadNumero == _filtroUnidad);
+            .Where(x => string.IsNullOrEmpty(_filtroUnidad) || x.UnidadNumero == _filtroUnidad)
+            .Where(PasaReglas);
 
     private IEnumerable<IGrouping<string, PqrsdBandejaItemDto>> ItemsAgrupados
     {
@@ -629,6 +815,323 @@
         }
     }
 
+    // ===================== Ordenamiento por columna (vista Tabla): clic en el encabezado ordena; reclic invierte =====================
+    private string _sortCol = ""; private bool _sortAsc = true;
+    private void SortByPqr(string col) { if (_sortCol == col) _sortAsc = !_sortAsc; else { _sortCol = col; _sortAsc = true; } }
+    private MarkupString SortIndPqr(string col) => _sortCol == col ? (MarkupString)(_sortAsc ? " ▲" : " ▼") : (MarkupString)"";
+    private IEnumerable<PqrsdBandejaItemDto> AplicarSortPqr(IEnumerable<PqrsdBandejaItemDto> items)
+    {
+        if (string.IsNullOrEmpty(_sortCol)) return items;
+        Func<PqrsdBandejaItemDto, IComparable> key = _sortCol switch
+        {
+            "radicado" => x => x.NumeroRadicado,
+            "tipo" => x => TipoLabel(x.Tipo),
+            "categoria" => x => x.CategoriaNombre ?? "",
+            "estado" => x => _estados.FirstOrDefault(e => e.Id == x.EstadoId)?.Orden ?? 0,
+            "semaforo" => x => (int)x.Semaforo,
+            "radicador" => x => x.RadicadorNombre ?? "",
+            "unidad" => x => x.UnidadNumero ?? "",
+            "vence" => x => x.DiasHastaVencimiento,
+            _ => x => Guid.TryParse(_sortCol, out var cid) ? (x.Campos?.FirstOrDefault(v => v.CampoId == cid)?.Valor ?? "") : ""
+        };
+        return _sortAsc ? items.OrderBy(key) : items.OrderByDescending(key);
+    }
+
+    // ===================== Color por columna (vista Tabla), persistido en localStorage =====================
+    // Como la vista Tabla es un <table> real, colorear el <th>/<td> llena la celda completa (no solo la caja interna).
+    private Dictionary<string, string> _colColor = new();
+    private string? _colColorMenu;
+    private static readonly string[] PastelCols = { "#FDE2E4", "#FCE8D5", "#FFF3C4", "#E4F4D4", "#D4F0EC", "#D6E6FB", "#E7DFFB", "#FBE0F0", "#ECEFF3" };
+    private string? ColBg(string key) => _colColor.TryGetValue(key, out var c) && !string.IsNullOrEmpty(c) ? c : null;
+    private void ToggleColColorMenu(string key) { _colColorMenu = _colColorMenu == key ? null : key; }
+    private async Task SetColColor(string key, string? color)
+    {
+        if (string.IsNullOrEmpty(color)) _colColor.Remove(key); else _colColor[key] = color;
+        _colColorMenu = null;
+        await PersistColColorAsync();
+    }
+    private async Task SetColColorInput(string key, ChangeEventArgs e)
+    {
+        var color = e.Value?.ToString();
+        if (!string.IsNullOrEmpty(color)) { _colColor[key] = color; await PersistColColorAsync(); }
+    }
+    private async Task PersistColColorAsync()
+    {
+        try { await Js.InvokeVoidAsync("localStorage.setItem", "propia_pqrs_colcolor", System.Text.Json.JsonSerializer.Serialize(_colColor)); } catch { }
+    }
+    private static string CssKey(string key) => Guid.TryParse(key, out _) ? "c" + key : key;
+    private MarkupString ColumnColorCss
+    {
+        get
+        {
+            if (_colColor.Count == 0) return (MarkupString)"";
+            var sb = new System.Text.StringBuilder("<style>");
+            foreach (var kv in _colColor)
+            {
+                if (string.IsNullOrEmpty(kv.Value)) continue;
+                sb.Append(".pk-table .pk-col-").Append(CssKey(kv.Key))
+                  .Append("{background:").Append(kv.Value).Append(" !important;}");
+            }
+            sb.Append("</style>");
+            return (MarkupString)sb.ToString();
+        }
+    }
+    private RenderFragment ColorDot(string key)
+    {
+        return
+    @<span class="pk-colcolor-wrap" @onclick:stopPropagation="true">
+        <button type="button" class="pk-colcolor-btn" style="background:@(ColBg(key) ?? "transparent")" title="Color de columna" @onclick="() => ToggleColColorMenu(key)"></button>
+        @if (_colColorMenu == key)
+        {
+            <div class="pk-colorpop-bd" @onclick="() => _colColorMenu = null"></div>
+            <div class="pk-colorpop" @onclick:stopPropagation="true">
+                @foreach (var c in PastelCols)
+                {
+                    var cc = c;
+                    <button type="button" class="pk-coloropt @(string.Equals(ColBg(key), cc, StringComparison.OrdinalIgnoreCase) ? "on" : "")" style="background:@cc" @onclick="() => SetColColor(key, cc)"></button>
+                }
+                <label class="pk-coloropt pk-coloropt-custom" title="Elegir color personalizado">
+                    <input type="color" value="@(ColBg(key) ?? "#6D4FE3")" @onchange="(e) => SetColColorInput(key, e)" />
+                </label>
+                <button type="button" class="pk-coloropt pk-coloropt-none" title="Sin color" @onclick="() => SetColColor(key, null)"></button>
+            </div>
+        }
+    </span>;
+    }
+
+    // ===================== Constructor de filtros (multi-regla Y/O, estilo Tareas) =====================
+    private sealed class PqrRegla { public string Campo { get; set; } = "tipo"; public string Op { get; set; } = "es"; public string Valor { get; set; } = ""; }
+    private readonly List<PqrRegla> _reglas = new();
+    private string _filtroLogica = "and";
+    private bool _filtrosMenu;
+
+    private int CuentaFiltros => _reglas.Count(ReglaActiva);
+    private bool HayFiltros => _reglas.Any(ReglaActiva);
+    private bool ReglaActiva(PqrRegla r) => r.Op is "vacio" or "no_vacio" || !string.IsNullOrWhiteSpace(r.Valor);
+    private void ToggleFiltros() { _filtrosMenu = !_filtrosMenu; _pop = null; if (_filtrosMenu && _reglas.Count == 0) AgregarRegla(); }
+    private void AgregarRegla() { _reglas.Add(new PqrRegla { Campo = "tipo", Op = "es", Valor = "" }); }
+    private void QuitarRegla(int idx) { if (idx >= 0 && idx < _reglas.Count) { _reglas.RemoveAt(idx); _ = PersistFiltrosAsync(); } }
+    private void LimpiarFiltros() { _reglas.Clear(); _filtroLogica = "and"; _ = PersistFiltrosAsync(); }
+    private void SetFiltroLogica(ChangeEventArgs e) { _filtroLogica = e.Value?.ToString() == "or" ? "or" : "and"; _ = PersistFiltrosAsync(); }
+    private void SetReglaCampo(int idx, ChangeEventArgs e)
+    {
+        if (idx < 0 || idx >= _reglas.Count) return;
+        _reglas[idx].Campo = e.Value?.ToString() ?? "tipo";
+        var ops = OperadoresDe(_reglas[idx].Campo);
+        if (!ops.Any(o => o.Key == _reglas[idx].Op)) _reglas[idx].Op = ops.First().Key;
+        _reglas[idx].Valor = "";
+        _ = PersistFiltrosAsync();
+    }
+    private void SetReglaOp(int idx, ChangeEventArgs e) { if (idx >= 0 && idx < _reglas.Count) { _reglas[idx].Op = e.Value?.ToString() ?? "es"; _ = PersistFiltrosAsync(); } }
+    private void SetReglaValor(int idx, ChangeEventArgs e) { if (idx >= 0 && idx < _reglas.Count) { _reglas[idx].Valor = e.Value?.ToString() ?? ""; _ = PersistFiltrosAsync(); } }
+
+    private IEnumerable<(string Key, string Label)> CamposFiltro()
+    {
+        yield return ("tipo", "Tipo");
+        yield return ("estado", "Columna");
+        yield return ("categoria", "Categoria");
+        yield return ("semaforo", "Semaforo");
+        yield return ("radicador", "Solicitante");
+        yield return ("unidad", "Unidad");
+        yield return ("resumen", "Resumen");
+        yield return ("radicado", "Radicado");
+        yield return ("vence", "Dias para vencer");
+        foreach (var c in _campos.OrderBy(c => c.Orden)) yield return (c.Id.ToString(), c.Label);
+    }
+    private PqrsdCampoDto? CampoDin(string k) => Guid.TryParse(k, out var g) ? _campos.FirstOrDefault(c => c.Id == g) : null;
+    private string FiltroKind(string campo) => campo switch
+    {
+        "tipo" => "sel-tipo",
+        "estado" => "sel-estado",
+        "categoria" => "sel-cat",
+        "semaforo" => "sel-sem",
+        "unidad" => "sel-unidad",
+        "radicador" or "resumen" or "radicado" => "texto",
+        "vence" => "num",
+        _ => CampoDin(campo)?.Tipo switch
+        {
+            TipoCampoTablero.Numero or TipoCampoTablero.Moneda => "num",
+            TipoCampoTablero.Fecha => "fecha",
+            TipoCampoTablero.Seleccion => "sel-din",
+            _ => "texto"
+        }
+    };
+    private (string Key, string Label)[] OperadoresDe(string campo)
+    {
+        var k = FiltroKind(campo);
+        return k switch
+        {
+            "num" => new[] { ("=", "es igual a"), ("!=", "es distinto de"), (">", "mayor que"), (">=", "mayor o igual"), ("<", "menor que"), ("<=", "menor o igual"), ("vacio", "esta vacio"), ("no_vacio", "no esta vacio") },
+            "fecha" => new[] { ("es", "es"), ("antes", "antes de"), ("despues", "despues de"), ("vacio", "esta vacio"), ("no_vacio", "no esta vacio") },
+            "texto" => new[] { ("contiene", "contiene"), ("no_contiene", "no contiene"), ("es", "es"), ("no_es", "no es"), ("vacio", "esta vacio"), ("no_vacio", "no esta vacio") },
+            _ => new[] { ("es", "es"), ("no_es", "no es"), ("vacio", "esta vacio"), ("no_vacio", "no esta vacio") }
+        };
+    }
+    private static Guid GuidDe(string k) => Guid.TryParse(k, out var g) ? g : Guid.Empty;
+    private string ValorTexto(PqrsdBandejaItemDto it, string campo) => campo switch
+    {
+        "tipo" => it.Tipo.ToString(),
+        "estado" => it.EstadoId?.ToString() ?? "",
+        "categoria" => it.CategoriaNombre ?? "",
+        "semaforo" => it.Semaforo.ToString(),
+        "unidad" => it.UnidadNumero ?? "",
+        "radicador" => it.RadicadorNombre ?? "",
+        "resumen" => it.DescripcionResumen ?? "",
+        "radicado" => it.NumeroRadicado ?? "",
+        _ => it.Campos?.FirstOrDefault(v => v.CampoId == GuidDe(campo))?.Valor ?? ""
+    };
+    private decimal? ValorNum(PqrsdBandejaItemDto it, string campo)
+    {
+        if (campo == "vence") return it.DiasHastaVencimiento;
+        var s = it.Campos?.FirstOrDefault(v => v.CampoId == GuidDe(campo))?.Valor;
+        return decimal.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : null;
+    }
+    private DateOnly? ValorFecha(PqrsdBandejaItemDto it, string campo)
+    {
+        var s = it.Campos?.FirstOrDefault(v => v.CampoId == GuidDe(campo))?.Valor;
+        return DateOnly.TryParse(s, out var d) ? d : (DateOnly?)null;
+    }
+    private bool PasaReglas(PqrsdBandejaItemDto it)
+    {
+        var activas = _reglas.Where(ReglaActiva).ToList();
+        if (activas.Count == 0) return true;
+        return _filtroLogica == "or" ? activas.Any(r => EvalRegla(it, r)) : activas.All(r => EvalRegla(it, r));
+    }
+    private bool EvalRegla(PqrsdBandejaItemDto it, PqrRegla r)
+    {
+        var kind = FiltroKind(r.Campo);
+        if (kind == "num")
+        {
+            var nv = ValorNum(it, r.Campo);
+            if (r.Op == "vacio") return nv is null;
+            if (r.Op == "no_vacio") return nv is not null;
+            if (!decimal.TryParse(r.Valor, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var rv)) return true;
+            if (nv is null) return false;
+            return r.Op switch { "=" => nv == rv, "!=" => nv != rv, ">" => nv > rv, ">=" => nv >= rv, "<" => nv < rv, "<=" => nv <= rv, _ => true };
+        }
+        if (kind == "fecha")
+        {
+            var dv = ValorFecha(it, r.Campo);
+            if (r.Op == "vacio") return dv is null;
+            if (r.Op == "no_vacio") return dv is not null;
+            if (!DateOnly.TryParse(r.Valor, out var rd)) return true;
+            if (dv is null) return false;
+            return r.Op switch { "es" => dv == rd, "antes" => dv < rd, "despues" => dv > rd, _ => true };
+        }
+        var sv = ValorTexto(it, r.Campo);
+        if (r.Op == "vacio") return string.IsNullOrWhiteSpace(sv);
+        if (r.Op == "no_vacio") return !string.IsNullOrWhiteSpace(sv);
+        if (string.IsNullOrEmpty(r.Valor)) return true;
+        return r.Op switch
+        {
+            "es" => string.Equals(sv, r.Valor, StringComparison.OrdinalIgnoreCase),
+            "no_es" => !string.Equals(sv, r.Valor, StringComparison.OrdinalIgnoreCase),
+            "contiene" => sv.Contains(r.Valor, StringComparison.OrdinalIgnoreCase),
+            "no_contiene" => !sv.Contains(r.Valor, StringComparison.OrdinalIgnoreCase),
+            _ => true
+        };
+    }
+    // Editor de valor de una regla (segun el tipo de campo). Se oculta para vacio/no_vacio.
+    private RenderFragment RenderValorFiltro(int idx) => builder =>
+    {
+        if (idx < 0 || idx >= _reglas.Count) return;
+        var r = _reglas[idx];
+        var kind = FiltroKind(r.Campo);
+        void Select(IEnumerable<(string Val, string Txt)> opts, string ph)
+        {
+            builder.OpenElement(0, "select");
+            builder.AddAttribute(1, "class", "pk-frule-v");
+            builder.AddAttribute(2, "onchange", Microsoft.AspNetCore.Components.EventCallback.Factory.Create<ChangeEventArgs>(this, e => SetReglaValor(idx, e)));
+            builder.OpenElement(3, "option"); builder.AddAttribute(4, "value", ""); builder.AddAttribute(5, "selected", string.IsNullOrEmpty(r.Valor)); builder.AddContent(6, ph); builder.CloseElement();
+            var k = 7;
+            foreach (var (val, txt) in opts)
+            {
+                builder.OpenElement(k++, "option");
+                builder.AddAttribute(k++, "value", val);
+                builder.AddAttribute(k++, "selected", r.Valor == val);
+                builder.AddContent(k++, txt);
+                builder.CloseElement();
+            }
+            builder.CloseElement();
+        }
+        void Input(string type)
+        {
+            builder.OpenElement(20, "input");
+            builder.AddAttribute(21, "class", "pk-frule-v");
+            builder.AddAttribute(22, "type", type);
+            builder.AddAttribute(23, "value", r.Valor);
+            builder.AddAttribute(24, "placeholder", "Valor");
+            builder.AddAttribute(25, "onchange", Microsoft.AspNetCore.Components.EventCallback.Factory.Create<ChangeEventArgs>(this, e => SetReglaValor(idx, e)));
+            builder.CloseElement();
+        }
+        switch (kind)
+        {
+            case "sel-tipo": Select(Enum.GetValues<TipoPqrsd>().Select(t => (t.ToString(), TipoLabel(t))), "Elegir tipo..."); break;
+            case "sel-estado": Select(_estados.OrderBy(e => e.Orden).Select(e => (e.Id.ToString(), e.Nombre)), "Elegir columna..."); break;
+            case "sel-cat": Select(_categorias.Select(c => (c.Nombre, c.Nombre)), "Elegir categoria..."); break;
+            case "sel-sem": Select(Enum.GetValues<SemaforoPqrsd>().Select(s => (s.ToString(), SemaforoLabel(s))), "Elegir semaforo..."); break;
+            case "sel-unidad": Select(UnidadesDistintas().Select(u => (u, u)), "Elegir unidad..."); break;
+            case "sel-din": Select(CampoOpciones(CampoDin(r.Campo)!).Select(o => (o, o)), "Elegir opcion..."); break;
+            case "num": Input("number"); break;
+            case "fecha": Input("date"); break;
+            default: Input("text"); break;
+        }
+    };
+    private IEnumerable<string> UnidadesDistintas() =>
+        (_bandeja?.Items ?? new List<PqrsdBandejaItemDto>()).Where(x => !string.IsNullOrEmpty(x.UnidadNumero)).Select(x => x.UnidadNumero!).Distinct().OrderBy(x => x);
+    private static string[] CampoOpciones(PqrsdCampoDto c) => string.IsNullOrWhiteSpace(c.Opciones)
+        ? Array.Empty<string>()
+        : c.Opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private const string FiltrosKey = "propia_pqrs_filtros";
+    private sealed class FiltrosGuardados { public string Logica { get; set; } = "and"; public List<PqrRegla> Reglas { get; set; } = new(); }
+    private async Task PersistFiltrosAsync()
+    {
+        try { await Js.InvokeVoidAsync("localStorage.setItem", FiltrosKey, System.Text.Json.JsonSerializer.Serialize(new FiltrosGuardados { Logica = _filtroLogica, Reglas = _reglas })); } catch { }
+    }
+    private async Task RestaurarFiltrosAsync()
+    {
+        try
+        {
+            var raw = await Js.InvokeAsync<string?>("localStorage.getItem", FiltrosKey);
+            _reglas.Clear(); _filtroLogica = "and";
+            if (!string.IsNullOrEmpty(raw))
+            {
+                var g = System.Text.Json.JsonSerializer.Deserialize<FiltrosGuardados>(raw);
+                if (g is not null) { _filtroLogica = g.Logica == "or" ? "or" : "and"; _reglas.AddRange(g.Reglas); }
+            }
+        }
+        catch { _reglas.Clear(); _filtroLogica = "and"; }
+    }
+
+    // ===================== Vista Calendario (mensual, por fecha de vencimiento) =====================
+    private int _calYear;
+    private int _calMonth;
+    private bool _calInit;
+    private void CalEnsure() { if (!_calInit) { var t = DateTime.Today; _calYear = t.Year; _calMonth = t.Month; _calInit = true; } }
+    private string CalTitulo { get { CalEnsure(); var s = new DateTime(_calYear, _calMonth, 1).ToString("MMMM yyyy", new System.Globalization.CultureInfo("es-CO")); return char.ToUpper(s[0]) + s.Substring(1); } }
+    private void CalMover(int d) { CalEnsure(); var nf = new DateTime(_calYear, _calMonth, 1).AddMonths(d); _calYear = nf.Year; _calMonth = nf.Month; }
+    private void CalHoy() { var t = DateTime.Today; _calYear = t.Year; _calMonth = t.Month; _calInit = true; }
+    private sealed record CalCelda(int Dia, bool EsMes, bool EsHoy, List<PqrsdBandejaItemDto> Items);
+    private List<CalCelda> CalCeldas()
+    {
+        CalEnsure();
+        var primero = new DateTime(_calYear, _calMonth, 1);
+        int offset = ((int)primero.DayOfWeek + 6) % 7; // la semana inicia el lunes
+        var inicio = primero.AddDays(-offset);
+        var hoy = DateTime.Today;
+        var porDia = ItemsFiltrados.GroupBy(x => x.FechaVencimiento)
+            .ToDictionary(g => g.Key, g => g.OrderBy(x => x.DiasHastaVencimiento).ToList());
+        var res = new List<CalCelda>(42);
+        for (int i = 0; i < 42; i++)
+        {
+            var f = inicio.AddDays(i);
+            res.Add(new CalCelda(f.Day, f.Month == _calMonth, f.Date == hoy.Date,
+                porDia.GetValueOrDefault(DateOnly.FromDateTime(f), new List<PqrsdBandejaItemDto>())));
+        }
+        return res;
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
@@ -639,6 +1142,11 @@
             if (!string.IsNullOrEmpty(_jwt)) { await CargarAsync(); }
             StateHasChanged();
         }
+        // Doble scroll horizontal (barra superior espejo) para la vista Tabla, igual que en Tareas.
+        if (_boardMode == "tabla")
+        {
+            try { await Js.InvokeVoidAsync("propiaUI.syncTopScroll", "pkTopScroll", "pkTopScrollInner", "pkTableWrap"); } catch { }
+        }
     }
 
     private async Task RestaurarPrefsAsync()
@@ -648,6 +1156,8 @@
             _boardMode = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_pqrs_view") ?? "tablero";
             _group = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_pqrs_group") ?? "ninguno";
             _pin = (await Js.InvokeAsync<string?>("localStorage.getItem", "propia_pqrs_pin")) == "1";
+            try { var raw = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_pqrs_colcolor"); _colColor = string.IsNullOrEmpty(raw) ? new() : (System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(raw) ?? new()); } catch { _colColor = new(); }
+            await RestaurarFiltrosAsync();
         }
         catch { }
     }
