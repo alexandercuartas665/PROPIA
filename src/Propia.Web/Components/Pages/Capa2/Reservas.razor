@@ -100,7 +100,7 @@ else
                 <div class="rs-grid-corner"></div>
                 @foreach (var d in DiasSemana)
                 {
-                    var hoy = d == DateOnly.FromDateTime(DateTime.Today);
+                    var hoy = d == DateOnly.FromDateTime(AhoraColombia().Date);
                     <div class="rs-day-h @(hoy ? "is-today" : "")">
                         <div class="rs-day-name">@Cap(d.ToString("ddd", Es))</div>
                         <div class="rs-day-num">@d.Day</div>
@@ -112,7 +112,7 @@ else
                     <div class="rs-row-label">@z.Nombre</div>
                     @foreach (var d in DiasSemana)
                     {
-                        var hoy = d == DateOnly.FromDateTime(DateTime.Today);
+                        var hoy = d == DateOnly.FromDateTime(AhoraColombia().Date);
                         var celdas = ReservasDe(z.ZonaComunId, d);
                         var zid = z.ZonaComunId;
                         var dd = d;
@@ -641,7 +641,7 @@ else
     {
         get
         {
-            var today = DateOnly.FromDateTime(DateTime.Today);
+            var today = DateOnly.FromDateTime(AhoraColombia().Date);
             int diff = ((int)today.DayOfWeek + 6) % 7; // lunes = 0
             return today.AddDays(-diff + _rsWeek * 7);
         }
@@ -659,7 +659,7 @@ else
     }
 
     private List<ReservaDto> Proximas =>
-        _reservas.Where(r => EsActiva(r.Estado) && r.Fecha >= DateOnly.FromDateTime(DateTime.Today))
+        _reservas.Where(r => EsActiva(r.Estado) && r.Fecha >= DateOnly.FromDateTime(AhoraColombia().Date))
                  .OrderBy(r => r.Fecha).ThenBy(r => r.HoraInicio).Take(8).ToList();
 
     private class ConfigEdit
@@ -734,11 +734,37 @@ else
         var zonas = ZonasReservables;
         _resZona = zonaId ?? (zonas.FirstOrDefault()?.ZonaComunId ?? Guid.Empty);
         _resUnidad = Guid.Empty; _resPersona = Guid.Empty;
-        _resFecha = fecha?.ToDateTime(TimeOnly.MinValue) ?? DateTime.Today.AddDays(1);
-        _resHoraIni = DateTime.Today.Date.AddHours(10);
-        _resHoraFin = DateTime.Today.Date.AddHours(12);
+
+        // Hora por defecto: si la fecha elegida es HOY, arranca en la proxima hora valida
+        // (>= ahora + anticipacion minima) para no chocar con RN-07 al confirmar el default.
+        // Si ya no cabe una franja util hoy, pasa a manana 10:00. "Hoy" se calcula en hora de
+        // Colombia (no la del servidor, que en prod es UTC).
+        var ahora = AhoraColombia();
+        var hoy = DateOnly.FromDateTime(ahora.Date);
+        var fechaSel = fecha ?? hoy.AddDays(1);
+        int hIni = 10, hFin = 12;
+        if (fechaSel == hoy)
+        {
+            var minStart = ahora.AddHours(1).AddMinutes(15);
+            var h = (minStart.Minute > 0 || minStart.Second > 0) ? minStart.Hour + 1 : minStart.Hour;
+            if (h < 8) h = 8;
+            if (h > 21) { fechaSel = hoy.AddDays(1); hIni = 10; hFin = 12; }
+            else { hIni = h; hFin = Math.Min(h + 2, 22); }
+        }
+
+        _resFecha = fechaSel.ToDateTime(TimeOnly.MinValue);
+        _resHoraIni = DateTime.Today.Date.AddHours(hIni);
+        _resHoraFin = DateTime.Today.Date.AddHours(hFin);
         _resReglamento = true;
         _showReservar = true;
+    }
+
+    /// <summary>Ahora en hora de Colombia (America/Bogota). En prod el servidor corre en UTC,
+    /// asi que DateTime.Now/Today no sirven para decidir "hoy" ni la hora minima de reserva.</summary>
+    private static DateTime AhoraColombia()
+    {
+        try { return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("America/Bogota")); }
+        catch { return DateTime.UtcNow.AddHours(-5); }
     }
 
     private void CerrarReservar() => _showReservar = false;
