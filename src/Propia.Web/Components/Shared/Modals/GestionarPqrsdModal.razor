@@ -62,6 +62,14 @@
         }
         else
         {
+            @* Pills de caracterizacion (estilo Tareas): tipo, categoria, edad y SLA *@
+            <div class="gpq-pills">
+                <span class="gpq-pill gpq-pill-tipo">@(_detalle.TipoNombre ?? TipoLabel(_detalle.Tipo))</span>
+                <span class="gpq-pill gpq-pill-cat">@_detalle.CategoriaNombre</span>
+                <span class="gpq-pill gpq-pill-age">Radicada hace @DiasDesde(_detalle.CreatedAt)</span>
+                <span class="gpq-pill @PlazoPillClass()">@PlazoTexto()</span>
+            </div>
+
             @* Flags arriba *@
             @if (_detalle.TutelaActiva || _detalle.Comite is not null)
             {
@@ -145,32 +153,17 @@
                 </div>
             }
 
-            @* Plazo *@
+            @* Plazo (SLA visual, estilo Tareas): barra de tiempo transcurrido + cuanto queda para responder *@
             <div class="gpq-card">
-                <div class="gpq-card-eyebrow">PLAZO</div>
-                <div class="gpq-plazo">
-                    <div class="gpq-plazo-row">
-                        <span>Fecha vencimiento</span>
-                        <strong>@_detalle.FechaVencimiento.ToString("dd MMM yyyy")</strong>
-                    </div>
-                    <div class="gpq-plazo-row">
-                        <span>Dias restantes</span>
-                        <strong class="@(_detalle.DiasHastaVencimiento < 0 ? "gpq-err" : _detalle.DiasHastaVencimiento <= 3 ? "gpq-warn" : "")">
-                            @if (_detalle.DiasHastaVencimiento < 0)
-                            {
-                                <span>Vencida hace @Math.Abs(_detalle.DiasHastaVencimiento)d</span>
-                            }
-                            else
-                            {
-                                <span>@_detalle.DiasHastaVencimiento dias habiles</span>
-                            }
-                        </strong>
-                    </div>
-                    <div class="gpq-plazo-row">
-                        <span>Urgencia</span>
-                        <strong>@_detalle.NivelUrgencia</strong>
-                    </div>
+                <div class="gpq-card-eyebrow">PLAZO LEGAL (SLA)</div>
+                <div class="gpq-sla-big @PlazoPillClass()">@PlazoTexto()</div>
+                <div class="gpq-sla-bar"><div class="gpq-sla-fill @PlazoPillClass()" style="width:@SlaPct()%"></div></div>
+                <div class="gpq-sla-ends">
+                    <span>Radicada @_detalle.CreatedAt.ToString("dd MMM")</span>
+                    <span>Transcurrido @DiasDesde(_detalle.CreatedAt)</span>
+                    <span>Vence @_detalle.FechaVencimiento.ToString("dd MMM yyyy")</span>
                 </div>
+                <div class="gpq-plazo-row" style="margin-top:9px;"><span>Urgencia</span><strong>@_detalle.NivelUrgencia</strong></div>
             </div>
 
             @* Descripcion *@
@@ -221,7 +214,29 @@
                     }
                 }
 
-                <button class="gpq-btn-brand" style="margin-top:6px;" type="button" @onclick="GuardarDatos" disabled="@_guardandoRel">
+                @* Crear campo dinamico (como Tareas) *@
+                <div style="height:10px;"></div>
+                @if (!_nuevoCampoOpen)
+                {
+                    <button type="button" class="gpq-addcampo" @onclick="() => _nuevoCampoOpen = true">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>Crear campo
+                    </button>
+                }
+                else
+                {
+                    <div class="gpq-newcampo">
+                        <input class="gpq-input" placeholder="Nombre del campo" @bind="_nuevoCampoLabel" />
+                        <select class="gpq-input" @bind="_nuevoCampoTipo">
+                            @foreach (var t in Enum.GetValues<TipoCampoTablero>()) { <option value="@t">@t</option> }
+                        </select>
+                        <div class="gpq-newcampo-acts">
+                            <button type="button" class="gpq-btn-brand" @onclick="CrearCampo" disabled="@(_creandoCampo || string.IsNullOrWhiteSpace(_nuevoCampoLabel))">@(_creandoCampo ? "..." : "Crear")</button>
+                            <button type="button" class="gpq-addcampo" @onclick="@(() => { _nuevoCampoOpen = false; _nuevoCampoLabel = string.Empty; })">Cancelar</button>
+                        </div>
+                    </div>
+                }
+
+                <button class="gpq-btn-brand" style="margin-top:10px;" type="button" @onclick="GuardarDatos" disabled="@_guardandoRel">
                     @(_guardandoRel ? "Guardando..." : "Guardar cambios")
                 </button>
             </div>
@@ -717,6 +732,35 @@
     .gpq-plazo-row span { color: #7C98B6; }
     .gpq-plazo-row strong { color: #33475B; }
     .gpq-warn { color: #B45309 !important; }
+
+    /* Pills de caracterizacion (estilo Tareas) */
+    .gpq-pills { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; }
+    .gpq-pill { font-size: 11px; font-weight: 700; padding: 4px 11px; border-radius: 20px; letter-spacing: .2px; }
+    .gpq-pill-tipo { background: #EEF2FF; color: #4F46E5; }
+    .gpq-pill-cat { background: #F1F5F9; color: #516F90; }
+    .gpq-pill-age { background: #F5F3FF; color: #7C3AED; }
+    .gpq-pill-ok { background: #E7F6EC; color: #1A8754; }
+    .gpq-pill-warn { background: #FEF3E2; color: #B7791F; }
+    .gpq-pill-venc { background: #FDE7E7; color: #D7263D; }
+    /* SLA visual: numero grande + barra de progreso + extremos */
+    .gpq-sla-big { font-size: 17px; font-weight: 800; margin-bottom: 9px; color: #33475B; }
+    .gpq-sla-big.gpq-pill-ok { color: #1A8754; }
+    .gpq-sla-big.gpq-pill-warn { color: #B7791F; }
+    .gpq-sla-big.gpq-pill-venc { color: #D7263D; }
+    .gpq-sla-bar { height: 9px; border-radius: 6px; background: #EEF3F8; overflow: hidden; }
+    .gpq-sla-fill { height: 100%; border-radius: 6px; background: #6D4FE3; transition: width .3s; }
+    .gpq-sla-fill.gpq-pill-ok { background: #34C759; }
+    .gpq-sla-fill.gpq-pill-warn { background: #F0A020; }
+    .gpq-sla-fill.gpq-pill-venc { background: #E5484D; }
+    .gpq-sla-ends { display: flex; justify-content: space-between; gap: 8px; margin-top: 7px; font-size: 10.5px; font-weight: 600; color: #7C98B6; flex-wrap: wrap; }
+    [data-bs-theme="dark"] .gpq-pill-cat { background: #2D3650; color: #C7CEDB; }
+    [data-bs-theme="dark"] .gpq-sla-bar { background: #2D3650; }
+    /* Crear campo dinamico */
+    .gpq-addcampo { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 8px; border: 1px dashed #D7E0EA; background: #FBFCFD; color: #6D4FE3; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .gpq-addcampo:hover { border-color: #6D4FE3; background: #F5F1FE; }
+    .gpq-newcampo { display: flex; flex-direction: column; gap: 7px; border: 1px solid #E1E8EE; border-radius: 9px; padding: 10px; background: #FBFCFE; }
+    .gpq-newcampo-acts { display: flex; gap: 8px; }
+    [data-bs-theme="dark"] .gpq-newcampo { background: #1B2233; border-color: #2D3650; }
     .gpq-err { color: #DC2626 !important; }
 
     .gpq-desc {
@@ -841,6 +885,29 @@
         if (!string.IsNullOrEmpty(Jwt))
             http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
         return http;
+    }
+
+    // ---- Crear campo dinamico desde el modal (como Tareas): POST /api/pqrsd/campos y recarga ----
+    private bool _nuevoCampoOpen;
+    private string _nuevoCampoLabel = "";
+    private TipoCampoTablero _nuevoCampoTipo = TipoCampoTablero.Texto;
+    private bool _creandoCampo;
+    private async Task CrearCampo()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevoCampoLabel)) return;
+        _creandoCampo = true;
+        try
+        {
+            var req = new GuardarCampoPqrsdRequest(_nuevoCampoLabel.Trim(), _nuevoCampoTipo, null, false, _campos.Count, null, false, null, false, null);
+            var resp = await Auth().PostAsJsonAsync("/api/pqrsd/campos", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                _campos = (await Auth().GetFromJsonAsync<List<PqrsdCampoDto>>("/api/pqrsd/campos")) ?? _campos;
+                _nuevoCampoOpen = false; _nuevoCampoLabel = "";
+            }
+        }
+        catch { }
+        _creandoCampo = false;
     }
 
     private async Task CargarAsync()
@@ -1113,6 +1180,33 @@
         EstadoPqrsd.ViaInternaAgotada => "Via interna agotada",
         _ => e.ToString()
     };
+
+    // ---- SLA visual: edad de la PQR, % de plazo consumido y clase de color por dias restantes ----
+    private string DiasDesde(DateTimeOffset dt)
+    {
+        var d = (int)Math.Floor((DateTimeOffset.UtcNow - dt).TotalDays);
+        return d <= 0 ? "hoy" : d == 1 ? "1 dia" : d + " dias";
+    }
+    private string PlazoTexto()
+    {
+        var r = _detalle?.DiasHastaVencimiento ?? 0;
+        return r < 0 ? $"Vencida hace {Math.Abs(r)} dias" : r == 0 ? "Vence hoy" : $"Quedan {r} dias habiles";
+    }
+    private string PlazoPillClass()
+    {
+        var r = _detalle?.DiasHastaVencimiento ?? 0;
+        return r < 0 ? "gpq-pill-venc" : r <= 3 ? "gpq-pill-warn" : "gpq-pill-ok";
+    }
+    private int SlaPct()
+    {
+        if (_detalle is null) return 0;
+        var created = _detalle.CreatedAt.UtcDateTime.Date;
+        var venc = _detalle.FechaVencimiento.ToDateTime(TimeOnly.MinValue).Date;
+        var total = (venc - created).Days;
+        if (total <= 0) return 100;
+        var elapsed = (DateTime.UtcNow.Date - created).Days;
+        return Math.Clamp((int)Math.Round(100.0 * elapsed / total), 0, 100);
+    }
 
     private static string EstadoClass(EstadoPqrsd e) => e switch
     {

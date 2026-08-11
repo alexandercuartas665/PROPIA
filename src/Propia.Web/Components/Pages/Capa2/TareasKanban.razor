@@ -129,6 +129,16 @@ else
             </div>
         </div>
 
+        @* Datalists compartidos para el typeahead del campo Origen: se renderizan UNA vez y los inputs
+           los referencian por tipo (list="tb-orig-dl-<tipo>"). El navegador filtra al escribir, asi no se
+           muestran todas las unidades de golpe. *@
+        @if (_unidades is not null)
+        {
+            <datalist id="tb-orig-dl-inmueble">@foreach (var o in OrigenOpcionesDe("inmueble")) { <option value="@o.Label"></option> }</datalist>
+            <datalist id="tb-orig-dl-zona">@foreach (var o in OrigenOpcionesDe("zona")) { <option value="@o.Label"></option> }</datalist>
+            <datalist id="tb-orig-dl-equipo">@foreach (var o in OrigenOpcionesDe("equipo")) { <option value="@o.Label"></option> }</datalist>
+        }
+
         @* ---------- TABLERO (Kanban) ---------- *@
         @if (_boardMode == "tablero")
         {
@@ -270,11 +280,9 @@ else
                                             </select>
                                             @if (!string.IsNullOrEmpty(_composerDraft.OrigenTipo))
                                             {
-                                                <select class="tb-composer-sel" @onchange="@(e => _composerDraft.OrigenReferencia = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString())"
-                                                        @onkeydown="@(e => ComposerKeydown(e, estado.Id, 6))">
-                                                    <option value="">(elegir)</option>
-                                                    @foreach (var o in OrigenOpcionesDe(_composerDraft.OrigenTipo)) { <option value="@o.Label" selected="@(_composerDraft.OrigenReferencia == o.Label)">@o.Label</option> }
-                                                </select>
+                                                <input class="tb-composer-sel" list="tb-orig-dl-@_composerDraft.OrigenTipo" value="@(_composerDraft.OrigenReferencia ?? "")" placeholder="Buscar / elegir..."
+                                                       @onchange="@(e => _composerDraft.OrigenReferencia = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString())"
+                                                       @onkeydown="@(e => ComposerKeydown(e, estado.Id, 6))" />
                                             }
                                         </div>
                                     }
@@ -577,10 +585,7 @@ else
                                 </select>
                                 @if (!string.IsNullOrEmpty(nf.OrigenTipo))
                                 {
-                                    <select class="tb-orig-rsel" @onchange="@(e => nf.OrigenReferencia = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString())">
-                                        <option value="">(elegir)</option>
-                                        @foreach (var o in OrigenOpcionesDe(nf.OrigenTipo)) { <option value="@o.Label" selected="@(nf.OrigenReferencia == o.Label)">@o.Label</option> }
-                                    </select>
+                                    <input class="tb-orig-rsel" list="tb-orig-dl-@nf.OrigenTipo" value="@(nf.OrigenReferencia ?? "")" placeholder="Buscar / elegir..." @onchange="@(e => nf.OrigenReferencia = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString())" />
                                 }
                             </div>
                         }
@@ -1124,10 +1129,7 @@ else
                             {
                                 <div class="tbc-fld tbc-grow">
                                     <label>Origen</label>
-                                    <select class="tbc-origen-sel" @bind="d.OrigenReferencia">
-                                        <option value="">Seleccionar...</option>
-                                        @foreach (var o in OrigenOpts()) { <option value="@o">@o</option> }
-                                    </select>
+                                    <input class="tbc-origen-sel" list="tb-orig-dl-@d.OrigenTipo" @bind="d.OrigenReferencia" @bind:event="onchange" placeholder="Buscar / elegir..." />
                                 </div>
                             }
                         </div>
@@ -2838,18 +2840,21 @@ else
         var color = e.Value?.ToString();
         if (!string.IsNullOrEmpty(color)) { _colColor[key] = color; await PersistColColorAsync(); }
     }
+    // Solo las celdas de DATOS (.tb-row-*) se colorean. Los encabezados de columna, los agrupadores
+    // (.tb-list-group) y la fila-resumen usan clases .tb-lc-* y quedan con su color natural: asi el
+    // color no "invade" los titulos/agrupadores (donde ademas se veia desalineado por el relleno vertical).
     private static string? ColSelectores(string key) => key switch
     {
-        "desc" => ".tb-list .tb-lc-desc,.tb-list .tb-row-desc",
-        "est" => ".tb-list .tb-lc-est,.tb-list .tb-row-cell-est",
-        "resp" => ".tb-list .tb-lc-resp,.tb-list .tb-row-resp",
-        "prog" => ".tb-list .tb-lc-prog,.tb-list .tb-row-prog",
-        "etiq" => ".tb-list .tb-lc-etiq,.tb-list .tb-row-etiq",
-        "prio" => ".tb-list .tb-lc-prio,.tb-list .tb-row-prio",
-        "due" => ".tb-list .tb-lc-due,.tb-list .tb-row-due",
-        "valor" => ".tb-list .tb-lc-valor,.tb-list .tb-row-valor",
-        "orig" => ".tb-list .tb-lc-orig,.tb-list .tb-row-orig",
-        _ => Guid.TryParse(key, out _) ? $".tb-list .tb-cc-{key}" : null
+        "desc" => ".tb-list .tb-row-desc",
+        "est" => ".tb-list .tb-row-cell-est",
+        "resp" => ".tb-list .tb-row-resp",
+        "prog" => ".tb-list .tb-row-prog",
+        "etiq" => ".tb-list .tb-row-etiq",
+        "prio" => ".tb-list .tb-row-prio",
+        "due" => ".tb-list .tb-row-due",
+        "valor" => ".tb-list .tb-row-valor",
+        "orig" => ".tb-list .tb-row-orig",
+        _ => Guid.TryParse(key, out _) ? $".tb-list .tb-row-campo.tb-cc-{key}" : null
     };
     // Emite un <style> con el fondo de cada columna coloreada (celdas de encabezado + filas).
     private MarkupString ColumnColorCss
@@ -4137,10 +4142,7 @@ else
                     </select>
                     @if (!string.IsNullOrEmpty(t.OrigenTipo))
                     {
-                        <select class="tb-orig-rsel" value="@(t.OrigenReferencia ?? "")" @onchange="(e) => CambiarOrigenRefFila(tarea.Id, tarea.OrigenTipo, e)">
-                            <option value="">(elegir)</option>
-                            @foreach (var o in OrigenOpcionesDe(t.OrigenTipo)) { <option value="@o.Label">@o.Label</option> }
-                        </select>
+                        <input class="tb-orig-rsel" list="tb-orig-dl-@t.OrigenTipo" value="@(t.OrigenReferencia ?? "")" placeholder="Buscar / elegir..." @onchange="(e) => CambiarOrigenRefFila(tarea.Id, tarea.OrigenTipo, e)" />
                     }
                 </div>
             }
