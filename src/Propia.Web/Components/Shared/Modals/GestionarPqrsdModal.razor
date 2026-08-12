@@ -444,11 +444,20 @@
                             break;
                         case "cerrar":
                             <div class="gpq-form-title">Cerrar definitivamente</div>
+                            <label class="gpq-form-lbl">Motivo de cierre *</label>
+                            <select class="gpq-input" @bind="_motivoCierreId">
+                                <option value="">Elige un motivo...</option>
+                                @foreach (var m in _motivos)
+                                {
+                                    <option value="@m.Id">@m.Nombre (@ClasifTexto(m.Clasificacion))</option>
+                                }
+                            </select>
                             <textarea class="gpq-input" rows="4" @bind="_textoAccion" @bind:event="oninput" placeholder="Respuesta definitiva *"></textarea>
                             <div class="gpq-form-foot">
                                 <button class="gpq-btn-ghost" type="button" @onclick="CancelarAccion">Cancelar</button>
-                                <button class="gpq-btn-brand" type="button" @onclick="EjecutarCerrar" disabled="@(_busy || string.IsNullOrWhiteSpace(_textoAccion))">Cerrar expediente</button>
+                                <button class="gpq-btn-brand" type="button" @onclick="EjecutarCerrar" disabled="@(_busy || string.IsNullOrWhiteSpace(_textoAccion) || string.IsNullOrEmpty(_motivoCierreId))">Cerrar expediente</button>
                             </div>
+                            <p class="gpq-form-hint">Al cerrar, el expediente pasa a la pestana "Cerrados" y desaparece del tablero activo.</p>
                             break;
                         case "inconformidad":
                             <div class="gpq-form-title">Registrar inconformidad</div>
@@ -917,6 +926,8 @@
         margin: 14px 0;
     }
     .gpq-form-title { font-size: 13px; font-weight: 700; color: #1B2A3A; margin-bottom: 10px; }
+    .gpq-form-lbl { display: block; font-size: 11px; font-weight: 700; color: #7C98B6; margin: 4px 0 5px; }
+    .gpq-form-hint { font-size: 11px; color: #A6B7C8; margin: 8px 0 0; }
     .gpq-input {
         border: 1px solid #E1E8EE; border-radius: 9px;
         padding: 9px 12px; font-size: 13px; color: #33475B;
@@ -998,6 +1009,14 @@
     private PqrsdContextoDto? _contexto;
     private string? _accion;
     private string _textoAccion = "";
+    private string _motivoCierreId = "";
+    private List<Propia.Application.Cierre.MotivoCierreDto> _motivos = new();
+    private static string ClasifTexto(Propia.Domain.Enums.ClasificacionCierre c) => c switch
+    {
+        Propia.Domain.Enums.ClasificacionCierre.ViaInternaAgotada => "via interna agotada",
+        Propia.Domain.Enums.ClasificacionCierre.Perdida => "perdida",
+        _ => "cierre correcto"
+    };
     private bool _busy;
     private string _msg = "";
     private bool _msgError;
@@ -1078,6 +1097,7 @@
             var http = Auth();
             _unidades = (await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades")) ?? new();
             _campos = (await http.GetFromJsonAsync<List<PqrsdCampoDto>>("/api/pqrsd/campos")) ?? new();
+            _motivos = (await http.GetFromJsonAsync<List<Propia.Application.Cierre.MotivoCierreDto>>("/api/cierre/motivos?modulo=pqrsd")) ?? new();
         }
         catch { }
 
@@ -1259,9 +1279,10 @@
 
     private async Task EjecutarCerrar()
     {
+        if (!Guid.TryParse(_motivoCierreId, out var motivoId)) { _msg = "Elige un motivo de cierre."; return; }
         _busy = true;
         var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{ExpedienteId}/cerrar",
-            new CerrarDefinitivoRequest(_textoAccion.Trim()));
+            new CerrarDefinitivoRequest(_textoAccion.Trim(), motivoId));
         await TrasAccion(resp, "Expediente cerrado.");
     }
 

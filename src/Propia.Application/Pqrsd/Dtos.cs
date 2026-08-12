@@ -186,7 +186,7 @@ public record ResponderExpedienteRequest(string Texto);
 
 public record ManifestarInconformidadRequest(string Texto);
 
-public record CerrarDefinitivoRequest(string RespuestaDefinitiva);
+public record CerrarDefinitivoRequest(string RespuestaDefinitiva, Guid? MotivoCierreId = null);
 
 /// <summary>Contexto humano del expediente: personas asociadas a la unidad del radicador.</summary>
 public record PqrsdContextoPersonaDto(

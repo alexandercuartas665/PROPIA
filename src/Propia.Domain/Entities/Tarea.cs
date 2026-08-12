@@ -87,6 +87,13 @@ public class Tarea : TenantEntity
 
     public string? MotivoCancelacion { get; set; }
 
+    /// <summary>Cerrada: al llevar la tarea a un estado terminal se cierra y se archiva (desaparece
+    /// del tablero activo, queda en la pestana "Cerrados"). Se pide motivo de cierre.</summary>
+    public bool Cerrada { get; set; }
+    public DateTimeOffset? CerradaAt { get; set; }
+    /// <summary>Motivo de cierre elegido (catalogo configurable MotivoCierre, modulo "tareas").</summary>
+    public Guid? MotivoCierreId { get; set; }
+
     public ICollection<Tarea> Subtareas { get; set; } = new List<Tarea>();
     public ICollection<TareaComentario> Comentarios { get; set; } = new List<TareaComentario>();
     public ICollection<TareaHistorial> Historial { get; set; } = new List<TareaHistorial>();

@@ -862,12 +862,15 @@ public class PqrsdService : IPqrsdService
 
         if (esRespuestaDefinitiva)
         {
-            // Segunda respuesta tras inconformidad -> cierra definitivamente
+            // Segunda respuesta tras inconformidad -> cierra definitivamente (y archiva: desaparece del tablero)
             x.RespuestaDefinitiva = req.Texto.Trim();
             x.RespuestaDefinitivaAt = DateTimeOffset.UtcNow;
             x.Estado = EstadoPqrsd.Cerrada;
             x.FechaCierre = DateTimeOffset.UtcNow;
             x.CerradoPorUsuarioId = GetUsuarioActualId();
+            x.Archivado = true;
+            x.ArchivadoAt = DateTimeOffset.UtcNow;
+            x.ArchivadoPorUsuarioId = GetUsuarioActualId();
         }
         else
         {
@@ -939,23 +942,37 @@ public class PqrsdService : IPqrsdService
         if (x.Estado == EstadoPqrsd.Cerrada || x.Estado == EstadoPqrsd.ViaInternaAgotada) return true;
         if (string.IsNullOrWhiteSpace(req.RespuestaDefinitiva))
             throw new InvalidOperationException("Respuesta definitiva obligatoria al cerrar.");
+        if (req.MotivoCierreId is not Guid motivoId)
+            throw new InvalidOperationException("Debes elegir un motivo de cierre.");
+        var motivo = await _db.MotivosCierre.AsNoTracking()
+            .FirstOrDefaultAsync(m => m.Id == motivoId && m.Modulo == "pqrsd", ct)
+            ?? throw new InvalidOperationException("Motivo de cierre invalido.");
+
+        // La clasificacion del motivo define el estado legal terminal.
+        var estadoDestino = motivo.Clasificacion == ClasificacionCierre.ViaInternaAgotada
+            ? EstadoPqrsd.ViaInternaAgotada : EstadoPqrsd.Cerrada;
 
         var anterior = x.Estado;
         x.RespuestaDefinitiva = req.RespuestaDefinitiva.Trim();
         x.RespuestaDefinitivaAt = DateTimeOffset.UtcNow;
-        x.Estado = EstadoPqrsd.Cerrada;
-        await SincronizarColumnaLegalAsync(x, EstadoPqrsd.Cerrada, ct);
+        x.Estado = estadoDestino;
+        x.MotivoCierreId = motivoId;
+        await SincronizarColumnaLegalAsync(x, estadoDestino, ct);
         x.FechaCierre = DateTimeOffset.UtcNow;
         x.CerradoPorUsuarioId = GetUsuarioActualId();
+        // Cerrar = archivar: la tarjeta desaparece del tablero activo y queda en "Cerrados".
+        x.Archivado = true;
+        x.ArchivadoAt = DateTimeOffset.UtcNow;
+        x.ArchivadoPorUsuarioId = GetUsuarioActualId();
         x.UpdatedAt = DateTimeOffset.UtcNow;
         _db.PqrsdHistorialEstados.Add(new PqrsdHistorialEstado
         {
             ExpedienteId = id,
             EstadoAnterior = anterior,
-            EstadoNuevo = EstadoPqrsd.Cerrada,
+            EstadoNuevo = estadoDestino,
             ActorUsuarioId = GetUsuarioActualId(),
             Origen = OrigenCambioEstado.Manual,
-            Nota = "Cierre definitivo por admin"
+            Nota = $"Cierre por admin - motivo: {motivo.Nombre}"
         });
         await _db.SaveChangesAsync(ct);
         return true;

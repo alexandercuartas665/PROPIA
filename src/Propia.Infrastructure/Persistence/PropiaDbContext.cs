@@ -187,6 +187,9 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<PqrsdComentario> PqrsdComentarios => Set<PqrsdComentario>();
     public DbSet<PqrsdTipo> PqrsdTipos => Set<PqrsdTipo>();
 
+    // Motivos de cierre configurables (compartido Tareas/PQRSD via discriminador Modulo)
+    public DbSet<MotivoCierre> MotivosCierre => Set<MotivoCierre>();
+
     // Modulo 2.8 Asambleas y Organos de Gobierno (TenantEntity con RLS)
     public DbSet<Sesion> Sesiones => Set<Sesion>();
     public DbSet<SesionPunto> SesionPuntos => Set<SesionPunto>();
@@ -1469,6 +1472,17 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.Activo).HasDefaultValue(true);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.TenantId, x.Nombre }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<MotivoCierre>(b =>
+        {
+            b.ToTable("motivos_cierre");
+            b.Property(x => x.Modulo).IsRequired().HasMaxLength(20);
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(120);
+            b.Property(x => x.Activo).HasDefaultValue(true);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Modulo, x.Nombre }).IsUnique();
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

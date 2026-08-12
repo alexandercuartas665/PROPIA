@@ -2,6 +2,7 @@
 @page "/pqrsd"
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.Pqrsd
+@using Propia.Application.Cierre
 @using Propia.Domain.Enums
 @inject IHttpClientFactory HttpFactory
 @inject NavigationManager Nav
@@ -56,10 +57,10 @@
     }
     else
     {
-        @* === Tabs Activos / Archivados === *@
+        @* === Tabs Activos / Cerrados === *@
         <div class="pk-tabs">
             <button class="pk-tab @(!_verArchivados ? "pk-tab--on" : "")" @onclick="() => CambiarTab(false)">Activos</button>
-            <button class="pk-tab @(_verArchivados ? "pk-tab--on" : "")" @onclick="() => CambiarTab(true)">Archivados</button>
+            <button class="pk-tab @(_verArchivados ? "pk-tab--on" : "")" @onclick="() => CambiarTab(true)">Cerrados</button>
         </div>
 
         @* === KPIs === *@
@@ -203,41 +204,6 @@
             </button>
         </div>
 
-        @* === Chips por categoria/unidad === *@
-        @if (_bandeja?.Items.Count > 0)
-        {
-            var porCategoria = _bandeja.Items.GroupBy(x => x.CategoriaNombre).OrderByDescending(g => g.Count()).ToList();
-            var porUnidad = _bandeja.Items.Where(x => !string.IsNullOrEmpty(x.UnidadNumero))
-                              .GroupBy(x => x.UnidadNumero!).OrderByDescending(g => g.Count()).ToList();
-            <div class="pk-chip-section">
-                <div class="pk-chip-row">
-                    <span class="pk-chip-lbl">Categoria</span>
-                    <button type="button" class="pk-chip @(string.IsNullOrEmpty(_filtroCategoria) ? "pk-chip--on" : "")" @onclick="@(() => SetCategoria(""))">
-                        Todas <span class="pk-chip-num">@_bandeja.Items.Count</span>
-                    </button>
-                    @foreach (var g in porCategoria)
-                    {
-                        var nombre = g.Key;
-                        <button type="button" class="pk-chip @(_filtroCategoria == nombre ? "pk-chip--on" : "")" @onclick="@(() => SetCategoria(nombre))">
-                            @nombre <span class="pk-chip-num">@g.Count()</span>
-                        </button>
-                    }
-                </div>
-                @if (porUnidad.Count > 0)
-                {
-                    <div class="pk-chip-row">
-                        <span class="pk-chip-lbl">Unidad</span>
-                        <button type="button" class="pk-chip @(string.IsNullOrEmpty(_filtroUnidad) ? "pk-chip--on" : "")" @onclick="@(() => SetUnidad(""))">Todas</button>
-                        @foreach (var g in porUnidad)
-                        {
-                            var u = g.Key;
-                            <button type="button" class="pk-chip @(_filtroUnidad == u ? "pk-chip--on" : "")" @onclick="@(() => SetUnidad(u))">@u <span class="pk-chip-num">@g.Count()</span></button>
-                        }
-                    </div>
-                }
-            </div>
-        }
-
         @* ===================== VISTA KANBAN ===================== *@
         @if (_boardMode == "tablero")
         {
@@ -256,8 +222,10 @@
                             {
                                 <div class="pk-card @(it.TutelaActiva ? "pk-card--tutela" : "")" draggable="true"
                                      @ondragstart="() => OnDragStart(it.Id)" @onclick="() => IrA(it.Id)">
-                                    <button class="pk-icon-btn pk-card-arch" title="@(_verArchivados ? "Restaurar" : "Archivar")"
-                                            @onclick:stopPropagation="true" @onclick="() => Archivar(it.Id, !_verArchivados)">@(_verArchivados ? "↻" : "🗃")</button>
+                                    @if (_verArchivados)
+                                    {
+                                        <button class="pk-icon-btn pk-card-arch" title="Reabrir" @onclick:stopPropagation="true" @onclick="() => Archivar(it.Id, false)">↻</button>
+                                    }
                                     <div class="pk-card-head">
                                         <span class="pk-card-num">@it.NumeroRadicado</span>
                                         <span class="pk-sem @SemaforoClass(it.Semaforo)" title="@SemaforoLabel(it.Semaforo)"><span class="pk-sem-dot"></span>@SemaforoLabel(it.Semaforo)</span>
@@ -421,11 +389,7 @@
                                     <td class="pk-td-actions" @onclick:stopPropagation="true">
                                         @if (_verArchivados)
                                         {
-                                            <button class="pk-icon-btn" title="Restaurar" @onclick="() => Archivar(it.Id, false)">&#8635;</button>
-                                        }
-                                        else
-                                        {
-                                            <button class="pk-icon-btn" title="Archivar" @onclick="() => Archivar(it.Id, true)">&#128451;</button>
+                                            <button class="pk-icon-btn" title="Reabrir" @onclick="() => Archivar(it.Id, false)">&#8635;</button>
                                         }
                                     </td>
                                 </tr>
@@ -493,6 +457,32 @@
                         <input type="color" class="pk-cfg-color" @bind="_nuevaColColor" />
                         <button class="pk-comp-ok" @onclick="AgregarColumna" disabled="@string.IsNullOrWhiteSpace(_nuevaColNombre)">Agregar columna</button>
                     </div>
+
+                    @* Motivos de cierre configurables (se piden al cerrar una PQRSD). *@
+                    <div class="pk-cfg-sec-t">Motivos de cierre</div>
+                    <div class="pk-cfg-sec-hint">Al cerrar una PQRSD se elige uno de estos motivos; cada uno trae su clasificacion.</div>
+                    @foreach (var m in _motivos.OrderBy(x => x.Orden))
+                    {
+                        var mm = m;
+                        <div class="pk-cfg-row">
+                            <input class="pk-cfg-name" value="@m.Nombre" @onchange="(ev) => RenombrarMotivo(mm, ev)" />
+                            <select class="pk-cfg-clasif" @onchange="(ev) => CambiarClasifMotivo(mm, ev)">
+                                <option value="1" selected="@(m.Clasificacion == ClasificacionCierre.CierreCorrecto)">Cierre correcto</option>
+                                <option value="2" selected="@(m.Clasificacion == ClasificacionCierre.ViaInternaAgotada)">Via interna agotada</option>
+                                <option value="3" selected="@(m.Clasificacion == ClasificacionCierre.Perdida)">Perdida</option>
+                            </select>
+                            <button class="pk-cfg-del" @onclick="() => EliminarMotivo(mm.Id)">@(m.EsBase ? "Desactivar" : "Eliminar")</button>
+                        </div>
+                    }
+                    <div class="pk-cfg-add">
+                        <input class="pk-cfg-name" placeholder="Nuevo motivo de cierre..." @bind="_nuevoMotivoNombre" />
+                        <select class="pk-cfg-clasif" @bind="_nuevoMotivoClasif">
+                            <option value="1">Cierre correcto</option>
+                            <option value="2">Via interna agotada</option>
+                            <option value="3">Perdida</option>
+                        </select>
+                        <button class="pk-comp-ok" @onclick="AgregarMotivo" disabled="@string.IsNullOrWhiteSpace(_nuevoMotivoNombre)">Agregar motivo</button>
+                    </div>
                     @if (!string.IsNullOrEmpty(_cfgMsg)) { <div class="pk-cfg-msg">@_cfgMsg</div> }
                 </div>
             </div>
@@ -531,7 +521,7 @@
     .pk-seg-btn { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; padding: 7px 12px; border-radius: 7px; font-size: 12.5px; font-weight: 700; color: #7C98B6; cursor: pointer; font-family: inherit; }
     .pk-seg-btn--on { background: #fff; color: var(--propia-brand, #6D4FE3); box-shadow: 0 1px 3px rgba(45,62,80,.1); }
 
-    .pk-input { border: 1px solid #E1E8EE; border-radius: 9px; padding: 9px 11px; font-size: 13px; color: #33475B; background: #fff; outline: none; font-family: inherit; min-width: 210px; }
+    .pk-input { border: 1px solid #E1E8EE; border-radius: 9px; padding: 9px 11px; font-size: 13px; color: #33475B; background: #fff; outline: none; font-family: inherit; min-width: 231px; }
     .pk-input--sm { min-width: 150px; }
     .pk-input:focus { border-color: var(--propia-brand, #6D4FE3); }
     .pk-input-btn { display: inline-flex; align-items: center; gap: 7px; padding: 9px 13px; border-radius: 9px; border: 1px solid #E1E8EE; background: #fff; font-size: 12.5px; font-weight: 600; color: #516F90; cursor: pointer; font-family: inherit; }
@@ -725,6 +715,9 @@
     .pk-cfg-del:hover { background: #FEE2E2; }
     .pk-cfg-add { display: flex; align-items: center; gap: 9px; border-top: 1px dashed #E1E8EE; padding-top: 14px; margin-top: 4px; }
     .pk-cfg-msg { font-size: 12px; color: #B91C1C; font-weight: 600; }
+    .pk-cfg-sec-t { font-size: 13px; font-weight: 800; color: #33475B; margin-top: 16px; border-top: 1px solid #EEF3F8; padding-top: 14px; }
+    .pk-cfg-sec-hint { font-size: 11.5px; color: #A6B7C8; margin-bottom: 6px; }
+    .pk-cfg-clasif { border: 1px solid #E1E8EE; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; font-family: inherit; color: #33475B; outline: none; background: #fff; }
 
     [data-bs-theme="dark"] .pk-title { color: #E5E7EB; }
     [data-bs-theme="dark"] .pk-kpi, [data-bs-theme="dark"] .pk-card, [data-bs-theme="dark"] .pk-table-wrap { background: #232B40; border-color: #2D3650; }
@@ -744,9 +737,6 @@
     private List<PqrsdCategoriaDto> _categorias = new();
 
     private string _buscar = "";
-    private string _filtroTipo = "";
-    private string _filtroCategoria = "";
-    private string _filtroUnidad = "";
     private bool _busy;
     private string _msg = "";
     private bool _msgError;
@@ -786,8 +776,6 @@
         new ColFija("vence", "Vence"),
     };
 
-    private void SetCategoria(string nombre) { _filtroCategoria = nombre; }
-    private void SetUnidad(string numero) { _filtroUnidad = numero; }
     private void TogglePop(string p) { _pop = _pop == p ? null : p; }
 
     private IEnumerable<PqrsdBandejaItemDto> ItemsFiltrados =>
@@ -795,8 +783,6 @@
             .Where(x => string.IsNullOrEmpty(_buscar)
                 || x.NumeroRadicado.Contains(_buscar, StringComparison.OrdinalIgnoreCase)
                 || x.DescripcionResumen.Contains(_buscar, StringComparison.OrdinalIgnoreCase))
-            .Where(x => string.IsNullOrEmpty(_filtroCategoria) || x.CategoriaNombre == _filtroCategoria)
-            .Where(x => string.IsNullOrEmpty(_filtroUnidad) || x.UnidadNumero == _filtroUnidad)
             .Where(PasaReglas);
 
     private IEnumerable<IGrouping<string, PqrsdBandejaItemDto>> ItemsAgrupados
@@ -1299,12 +1285,48 @@
     }
 
     // ---------- Config columnas ----------
-    private void AbrirConfigColumnas() { _cfgOpen = true; _cfgMsg = ""; }
+    private async Task AbrirConfigColumnas() { _cfgOpen = true; _cfgMsg = ""; await CargarMotivosAsync(); }
     private async Task AgregarColumna()
     {
         var resp = await Auth().PostAsJsonAsync("/api/pqrsd/estados", new CrearEstadoPqrsdRequest(_nuevaColNombre.Trim(), _nuevaColColor));
         if (resp.IsSuccessStatusCode) { _nuevaColNombre = ""; _cfgMsg = ""; await CargarAsync(); }
         else { _cfgMsg = await LeerError(resp); }
+    }
+
+    // ---------- Config motivos de cierre ----------
+    private List<MotivoCierreDto> _motivos = new();
+    private string _nuevoMotivoNombre = "";
+    private string _nuevoMotivoClasif = "1";
+    private async Task CargarMotivosAsync()
+    {
+        try { _motivos = (await Auth().GetFromJsonAsync<List<MotivoCierreDto>>("/api/cierre/motivos?modulo=pqrsd&incluirInactivos=true")) ?? new(); }
+        catch { _motivos = new(); }
+    }
+    private async Task AgregarMotivo()
+    {
+        if (!int.TryParse(_nuevoMotivoClasif, out var c)) c = 1;
+        var resp = await Auth().PostAsJsonAsync("/api/cierre/motivos?modulo=pqrsd",
+            new GuardarMotivoCierreRequest(_nuevoMotivoNombre.Trim(), (ClasificacionCierre)c));
+        if (resp.IsSuccessStatusCode) { _nuevoMotivoNombre = ""; _cfgMsg = ""; await CargarMotivosAsync(); }
+        else { _cfgMsg = await LeerError(resp); }
+    }
+    private async Task RenombrarMotivo(MotivoCierreDto m, ChangeEventArgs e)
+    {
+        var nombre = e.Value?.ToString() ?? m.Nombre;
+        if (string.IsNullOrWhiteSpace(nombre)) return;
+        await Auth().PutAsJsonAsync($"/api/cierre/motivos/{m.Id}", new GuardarMotivoCierreRequest(nombre.Trim(), m.Clasificacion));
+        await CargarMotivosAsync();
+    }
+    private async Task CambiarClasifMotivo(MotivoCierreDto m, ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var c)) return;
+        await Auth().PutAsJsonAsync($"/api/cierre/motivos/{m.Id}", new GuardarMotivoCierreRequest(m.Nombre, (ClasificacionCierre)c));
+        await CargarMotivosAsync();
+    }
+    private async Task EliminarMotivo(Guid id)
+    {
+        await Auth().DeleteAsync($"/api/cierre/motivos/{id}");
+        await CargarMotivosAsync();
     }
     private async Task RenombrarEstado(PqrsdEstadoDto e, ChangeEventArgs ev)
     {

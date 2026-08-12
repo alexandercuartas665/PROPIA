@@ -82,6 +82,9 @@ public class PqrsdExpediente : TenantEntity
     public DateTimeOffset? FechaCierre { get; set; }
     public Guid? CerradoPorUsuarioId { get; set; }
 
+    /// <summary>Motivo de cierre elegido al cerrar (catalogo configurable MotivoCierre, modulo "pqrsd").</summary>
+    public Guid? MotivoCierreId { get; set; }
+
     public ICollection<PqrsdAdjunto> Adjuntos { get; set; } = new List<PqrsdAdjunto>();
     public ICollection<PqrsdHistorialEstado> Historial { get; set; } = new List<PqrsdHistorialEstado>();
     public ICollection<PqrsdCampoValor> CamposValores { get; set; } = new List<PqrsdCampoValor>();
