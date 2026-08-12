@@ -108,6 +108,24 @@ else
                     <PrestamosEquipoPanel Jwt="@Jwt" EquipoId="@EqId" />
                 }
 
+                @* Condiciones de uso: aparece cuando el activo es reservable, igual que en zonas
+                   comunes. Redaccion a mano o generada con el Auxiliar Administrativo (IA). *@
+                @if (eq.EsReservable)
+                {
+                    <div class="fem-sectlbl fem-sectlbl--sep">CONDICIONES DE USO</div>
+                    <textarea class="fem-input fem-cond-ta" rows="4" @bind="_condiciones"
+                              placeholder="Ej: El activo se presta por 24 horas. Prohibido sacarlo de la copropiedad. El usuario responde por danos o perdida."></textarea>
+                    <input class="fem-input fem-cond-hint" @bind="_iaHint" @bind:event="oninput"
+                           placeholder="Puntos clave para la IA (ej: deposito, 24h, no sacar del conjunto)" />
+                    @if (_iaError is not null) { <div class="fem-cond-err">@_iaError</div> }
+                    <div class="fem-cond-acts">
+                        <button class="fem-ia-btn" type="button" @onclick="GenerarCondicionesAsync" disabled="@_iaBusy">
+                            <i class="fi fi-rr-sparkles"></i> @(_iaBusy ? "Generando..." : "Generar con IA")
+                        </button>
+                        <button class="fem-btn-brand" type="button" @onclick="GuardarCondicionesAsync" disabled="@_busy">Guardar condiciones</button>
+                    </div>
+                }
+
                 @if (eq.EsReservable)
                 {
                     <div class="fem-sectlbl fem-sectlbl--sep">HORARIOS DE SERVICIO</div>
@@ -553,6 +571,14 @@ else
     .fem-btn-ghost { padding: 9px 16px; border-radius: 8px; border: 1px solid #E1E8EE; background: #fff; font-size: 13px; font-weight: 700; color: #516F90; cursor: pointer; font-family: inherit; }
     .fem-btn-brand { padding: 9px 16px; border-radius: 8px; border: 0; background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 4px 12px rgba(109,79,227,.25); }
     .fem-btn-brand:disabled { opacity: .55; cursor: not-allowed; }
+    .fem-cond-ta { resize: vertical; margin-bottom: 8px; }
+    .fem-cond-hint { font-size: 12px; }
+    .fem-cond-err { color: #D7263D; font-size: 12px; margin-top: 6px; }
+    .fem-cond-acts { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
+    .fem-cond-acts .fem-btn-brand { margin-left: auto; }
+    .fem-ia-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #DCD2F8; background: #F1ECFD; color: #6D4FE3; border-radius: 8px; padding: 8px 13px; font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .fem-ia-btn:hover:not(:disabled) { background: #E8E0FC; }
+    .fem-ia-btn:disabled { opacity: .6; cursor: default; }
 
     .fem-toast { position: fixed; bottom: 24px; right: 28px; padding: 11px 16px; border-radius: 9px; font-size: 12.5px; font-weight: 700; box-shadow: 0 8px 24px rgba(45,62,80,.18); z-index: 1500; }
     .fem-toast--ok { background: #1A8754; color: #fff; }
@@ -598,6 +624,12 @@ else
 
     private FormState _form = new();
 
+    // Condiciones de uso (solo activos reservables): texto + generacion con IA.
+    private string? _condiciones;
+    private string _iaHint = "";
+    private bool _iaBusy;
+    private string? _iaError;
+
     private Guid EqId => Equipo?.Id ?? Guid.Empty;
 
     // Cuando se abre recien creado (ojito), arranca en "Editar datos" para completar y guardar.
@@ -622,6 +654,7 @@ else
         try
         {
             _ficha = await Auth().GetFromJsonAsync<EquipoFichaDto>($"/api/mi-copropiedad/equipos/{EqId}/ficha");
+            if (_ficha is not null) _condiciones = _ficha.Equipo.CondicionesUso;
             if (_ficha is not null && _ficha.Equipo.EsReservable && _ventanasIniciales is null)
             {
                 try { _ventanasIniciales = await Auth().GetFromJsonAsync<List<VentanaDisponibilidadDto>>($"/api/mi-copropiedad/disponibilidad?tipo=EquipoActivo&entidadId={EqId}"); }
@@ -651,6 +684,56 @@ else
         _busy = false;
     }
 
+    // Guarda las condiciones de uso reenviando la ficha completa del activo (mismo patron que el
+    // toggle de reservable): se conservan todos los campos y solo cambia CondicionesUso.
+    private async Task GuardarCondicionesAsync()
+    {
+        if (_ficha is null) return;
+        _busy = true;
+        try
+        {
+            var e = _ficha.Equipo;
+            var req = new ActualizarEquipoActivoRequest(e.Nombre, e.Categoria, e.Tipo, e.Cantidad, e.EsReservable,
+                e.Modelo, e.NumeroSerie, e.FechaInstalacion, e.GarantiaHasta, e.Ubicacion, e.Observaciones,
+                _ficha.Depreciacion.VidaUtilAnios, e.FechaAdquisicion, e.ValorAdquisicion, e.Proveedor, e.NumeroFactura, e.CodigoBarra,
+                string.IsNullOrWhiteSpace(_condiciones) ? null : _condiciones.Trim());
+            var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos/{EqId}", req);
+            if (r.IsSuccessStatusCode) { _dirty = true; await CargarAsync(); Toast("Condiciones guardadas.", false); }
+            else Toast("No se pudieron guardar las condiciones.", true);
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+        _busy = false;
+    }
+
+    // Genera las condiciones de uso con el Auxiliar Administrativo (IA) a partir de puntos clave + contexto.
+    private async Task GenerarCondicionesAsync()
+    {
+        if (_ficha is null) return;
+        _iaBusy = true; _iaError = null;
+        try
+        {
+            var eq = _ficha.Equipo;
+            var ctx = $"Activo: {eq.Nombre}. Categoria: {eq.Categoria}. Tipo: {eq.Tipo}."
+                    + (string.IsNullOrWhiteSpace(eq.Ubicacion) ? "" : $" Ubicacion: {eq.Ubicacion}.");
+            var body = new
+            {
+                proposito = "Condiciones de uso de un activo/equipo de una copropiedad que se presta a los residentes: reglas sobre horario de prestamo, cuidado, prohibiciones y responsabilidad por danos o perdida.",
+                contexto = ctx,
+                puntosClave = string.IsNullOrWhiteSpace(_iaHint) ? null : _iaHint.Trim(),
+                maxPalabras = 120
+            };
+            var resp = await Auth().PostAsJsonAsync("/api/ia/completar-campo", body);
+            if (!resp.IsSuccessStatusCode) { _iaError = "No se pudo generar (" + (int)resp.StatusCode + ")."; return; }
+            var r = await resp.Content.ReadFromJsonAsync<AsistenteCampoResp>();
+            if (r is { Ok: true } && !string.IsNullOrWhiteSpace(r.Texto)) _condiciones = r.Texto;
+            else _iaError = r?.Error ?? "El asistente de IA no esta disponible.";
+        }
+        catch (Exception ex) { _iaError = ex.Message; }
+        finally { _iaBusy = false; }
+    }
+
+    private sealed record AsistenteCampoResp(bool Ok, string? Texto, string? Error);
+
     private async Task AjustarVidaAsync(int delta)
     {
         if (_ficha is null) return;
@@ -661,7 +744,7 @@ else
             var e = _ficha.Equipo;
             var req = new ActualizarEquipoActivoRequest(e.Nombre, e.Categoria, e.Tipo, e.Cantidad, e.EsReservable,
                 e.Modelo, e.NumeroSerie, e.FechaInstalacion, e.GarantiaHasta, e.Ubicacion, e.Observaciones,
-                nueva, e.FechaAdquisicion, e.ValorAdquisicion, e.Proveedor, e.NumeroFactura, e.CodigoBarra);
+                nueva, e.FechaAdquisicion, e.ValorAdquisicion, e.Proveedor, e.NumeroFactura, e.CodigoBarra, e.CondicionesUso);
             var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos/{EqId}", req);
             if (r.IsSuccessStatusCode) { _dirty = true; await CargarAsync(); }
         }
@@ -680,7 +763,7 @@ else
             var e = _ficha.Equipo;
             var req = new ActualizarEquipoActivoRequest(e.Nombre, e.Categoria, e.Tipo, e.Cantidad, !e.EsReservable,
                 e.Modelo, e.NumeroSerie, e.FechaInstalacion, e.GarantiaHasta, e.Ubicacion, e.Observaciones,
-                _ficha.Depreciacion.VidaUtilAnios, e.FechaAdquisicion, e.ValorAdquisicion, e.Proveedor, e.NumeroFactura, e.CodigoBarra);
+                _ficha.Depreciacion.VidaUtilAnios, e.FechaAdquisicion, e.ValorAdquisicion, e.Proveedor, e.NumeroFactura, e.CodigoBarra, e.CondicionesUso);
             var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos/{EqId}", req);
             if (r.IsSuccessStatusCode) { _dirty = true; await CargarAsync(); }
             else Toast("No se pudo cambiar la disponibilidad.", true);
@@ -823,6 +906,7 @@ else
         public string? Modelo { get; set; }
         public string? NumeroSerie { get; set; }
         public string? CodigoBarra { get; set; }
+        public string? CondicionesUso { get; set; }
         public DateOnly? FechaInstalacion { get; set; }
         public DateOnly? GarantiaHasta { get; set; }
         public string? Ubicacion { get; set; }
@@ -836,7 +920,7 @@ else
         public static FormState From(EquipoActivoDto e) => new()
         {
             Nombre = e.Nombre, Categoria = e.Categoria, Tipo = e.Tipo, Cantidad = e.Cantidad, EsReservable = e.EsReservable,
-            Marca = e.Marca, Modelo = e.Modelo, NumeroSerie = e.NumeroSerie, CodigoBarra = e.CodigoBarra, FechaInstalacion = e.FechaInstalacion, GarantiaHasta = e.GarantiaHasta,
+            Marca = e.Marca, Modelo = e.Modelo, NumeroSerie = e.NumeroSerie, CodigoBarra = e.CodigoBarra, CondicionesUso = e.CondicionesUso, FechaInstalacion = e.FechaInstalacion, GarantiaHasta = e.GarantiaHasta,
             Ubicacion = e.Ubicacion, Observaciones = e.Observaciones,
             VidaUtilAnios = e.VidaUtilAnios, FechaAdquisicion = e.FechaAdquisicion, ValorAdquisicion = e.ValorAdquisicion,
             Proveedor = e.Proveedor, NumeroFactura = e.NumeroFactura
@@ -845,6 +929,6 @@ else
         public ActualizarEquipoActivoRequest ToRequest() => new(
             Nombre, Categoria, Tipo, Tipo == TipoElemento.Activo ? Math.Max(1, Cantidad) : 1, EsReservable,
             Modelo, NumeroSerie, FechaInstalacion, GarantiaHasta, Ubicacion, Observaciones,
-            VidaUtilAnios, FechaAdquisicion, ValorAdquisicion, Proveedor, NumeroFactura, CodigoBarra);
+            VidaUtilAnios, FechaAdquisicion, ValorAdquisicion, Proveedor, NumeroFactura, CodigoBarra, CondicionesUso);
     }
 }

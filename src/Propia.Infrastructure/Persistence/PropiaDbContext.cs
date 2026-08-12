@@ -588,6 +588,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.Modelo).HasMaxLength(100);
             b.Property(x => x.NumeroSerie).HasMaxLength(100);
             b.Property(x => x.CodigoBarra).HasMaxLength(100);
+            b.Property(x => x.CondicionesUso).HasMaxLength(2000);
             b.Property(x => x.Ubicacion).HasMaxLength(200);
             b.Property(x => x.Observaciones).HasMaxLength(1000);
             b.HasIndex(x => x.TenantId);

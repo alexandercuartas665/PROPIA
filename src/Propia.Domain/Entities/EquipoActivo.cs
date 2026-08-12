@@ -21,6 +21,9 @@ public class EquipoActivo : TenantEntity
     /// <summary>Si es true se puede reservar (zonas comunes, gimnasios). Ascensores y bombas NO.</summary>
     public bool EsReservable { get; set; }
 
+    /// <summary>Condiciones de uso del activo cuando es reservable (reglas para el usuario que lo toma en prestamo).</summary>
+    public string? CondicionesUso { get; set; }
+
     public string? Marca { get; set; }
     public string? Modelo { get; set; }
     public string? NumeroSerie { get; set; }

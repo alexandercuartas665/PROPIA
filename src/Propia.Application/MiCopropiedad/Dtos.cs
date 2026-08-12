@@ -313,7 +313,7 @@ public record EquipoActivoDto(
     string? Ubicacion, string? Observaciones,
     int? VidaUtilAnios, DateOnly? FechaAdquisicion, decimal? ValorAdquisicion,
     string? Proveedor, string? NumeroFactura,
-    EstadoEquipoActivo Estado);
+    EstadoEquipoActivo Estado, string? CondicionesUso = null);
 
 /// <summary>Creacion basica (lo minimo): nombre + cantidad + tipo + reservable + categoria.</summary>
 public record CrearEquipoActivoRequest(
@@ -329,7 +329,7 @@ public record ActualizarEquipoActivoRequest(
     string? Ubicacion, string? Observaciones,
     int? VidaUtilAnios, DateOnly? FechaAdquisicion, decimal? ValorAdquisicion,
     string? Proveedor, string? NumeroFactura,
-    string? CodigoBarra = null);
+    string? CodigoBarra = null, string? CondicionesUso = null);
 
 // ----- Ventanas de disponibilidad (reservas: zonas comunes y equipos reservables) -----
 public record VentanaDisponibilidadDto(

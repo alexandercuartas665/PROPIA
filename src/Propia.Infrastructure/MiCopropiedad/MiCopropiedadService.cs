@@ -1553,7 +1553,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         e.Marca, e.Modelo, e.NumeroSerie, e.CodigoBarra, e.FechaInstalacion, e.GarantiaHasta,
         e.Ubicacion, e.Observaciones,
         e.VidaUtilAnios, e.FechaAdquisicion, e.ValorAdquisicion,
-        e.Proveedor, e.NumeroFactura, e.Estado);
+        e.Proveedor, e.NumeroFactura, e.Estado, e.CondicionesUso);
 
     public async Task<EquipoActivoDto> CrearEquipoAsync(CrearEquipoActivoRequest req, CancellationToken ct)
     {
@@ -1589,6 +1589,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         e.Modelo = req.Modelo;
         e.NumeroSerie = req.NumeroSerie;
         e.CodigoBarra = string.IsNullOrWhiteSpace(req.CodigoBarra) ? null : req.CodigoBarra.Trim();
+        e.CondicionesUso = string.IsNullOrWhiteSpace(req.CondicionesUso) ? null : req.CondicionesUso.Trim();
         e.FechaInstalacion = req.FechaInstalacion;
         e.GarantiaHasta = req.GarantiaHasta;
         e.Ubicacion = req.Ubicacion;
