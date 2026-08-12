@@ -351,11 +351,32 @@ public class TareasService : ITareasService
             select new TareaColaboradorDto(c.Id, p.Id, ((p.Nombres ?? "") + " " + (p.Apellidos ?? "")).Trim())
         ).ToListAsync(ct);
 
-        var adjuntos = await _db.TareaAdjuntos.AsNoTracking()
+        var adjuntosRaw = await _db.TareaAdjuntos.AsNoTracking()
             .Where(a => a.TareaId == id)
             .OrderBy(a => a.CreatedAt)
-            .Select(a => new TareaAdjuntoDto(a.Id, a.Nombre, a.Url))
+            .Select(a => new { a.Id, a.Nombre, a.Url, a.CreatedBy, a.CreatedAt })
             .ToListAsync(ct);
+        // Resolver "subido por" (best-effort) via usuario -> persona, igual que los comentarios.
+        var adjUserIds = adjuntosRaw.Where(a => a.CreatedBy.HasValue).Select(a => a.CreatedBy!.Value).Distinct().ToList();
+        var adjUsuarios = await _db.Users.AsNoTracking()
+            .Where(u => adjUserIds.Contains(u.Id))
+            .Select(u => new { u.Id, u.PersonaId })
+            .ToListAsync(ct);
+        var adjPersonaIds = adjUsuarios.Where(u => u.PersonaId.HasValue).Select(u => u.PersonaId!.Value).Distinct().ToList();
+        var adjPersonas = await _db.Personas.AsNoTracking()
+            .Where(p => adjPersonaIds.Contains(p.Id))
+            .Select(p => new { p.Id, Nombre = (((p.Nombres ?? "") + " " + (p.Apellidos ?? "")).Trim()) })
+            .ToDictionaryAsync(p => p.Id, p => p.Nombre, ct);
+        string? ResolverSubidoPor(Guid? uid)
+        {
+            if (uid is not Guid u) return null;
+            var usr = adjUsuarios.FirstOrDefault(x => x.Id == u);
+            if (usr?.PersonaId is Guid pid && adjPersonas.TryGetValue(pid, out var n) && !string.IsNullOrWhiteSpace(n)) return n;
+            return null;
+        }
+        var adjuntos = adjuntosRaw
+            .Select(a => new TareaAdjuntoDto(a.Id, a.Nombre, a.Url, ResolverSubidoPor(a.CreatedBy), a.CreatedAt))
+            .ToList();
 
         var checklist = await _db.TareaSubtareas.AsNoTracking()
             .Where(s => s.TareaId == id)
@@ -786,11 +807,18 @@ public class TareasService : ITareasService
     public async Task<TareaAdjuntoDto?> AgregarAdjuntoAsync(Guid tareaId, string nombre, string url, CancellationToken ct)
     {
         if (!await _db.Tareas.AnyAsync(x => x.Id == tareaId && !x.Eliminada, ct)) return null;
-        var a = new TareaAdjunto { TareaId = tareaId, Nombre = nombre, Url = url };
+        var uid = GetUsuarioActualId();
+        var a = new TareaAdjunto { TareaId = tareaId, Nombre = nombre, Url = url, CreatedBy = uid };
         _db.TareaAdjuntos.Add(a);
         await RegistrarHistorial(tareaId, TipoEventoTarea.AdjuntoAgregado, $"Adjunto agregado: {nombre}", null, null, ct);
         await _db.SaveChangesAsync(ct);
-        return new TareaAdjuntoDto(a.Id, a.Nombre, a.Url);
+        // Nombre de quien subio (best-effort) para etiquetar el archivo en el chat/lista.
+        var personaId = await _db.Users.AsNoTracking().Where(u => u.Id == uid).Select(u => u.PersonaId).FirstOrDefaultAsync(ct);
+        string? subidoPor = personaId is Guid pid
+            ? await _db.Personas.AsNoTracking().Where(p => p.Id == pid)
+                .Select(p => (((p.Nombres ?? "") + " " + (p.Apellidos ?? "")).Trim())).FirstOrDefaultAsync(ct)
+            : null;
+        return new TareaAdjuntoDto(a.Id, a.Nombre, a.Url, string.IsNullOrWhiteSpace(subidoPor) ? null : subidoPor, a.CreatedAt);
     }
 
     public async Task<bool> EliminarAdjuntoAsync(Guid tareaId, Guid adjuntoId, CancellationToken ct)

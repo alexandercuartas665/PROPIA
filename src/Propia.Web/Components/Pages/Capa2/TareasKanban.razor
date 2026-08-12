@@ -1447,17 +1447,19 @@ else
                         }
                         else
                         {
-                            <div class="tbc-cmts">
-                                @foreach (var c in d.Comentarios)
+                            @* Chat: mensajes en orden cronologico (mas antiguo arriba); los mios a la derecha. *@
+                            <div class="tbc-chat">
+                                @foreach (var c in Enumerable.Reverse(d.Comentarios))
                                 {
-                                    <div class="tbc-cmt">
-                                        <div class="tb-ava tbc-cmt-ava">@Iniciales(c.Autor ?? "?")</div>
-                                        <div class="tbc-cmt-body">
-                                            <div class="tbc-cmt-head">
-                                                <span class="tbc-cmt-au">@(string.IsNullOrWhiteSpace(c.Autor) ? "Usuario" : c.Autor)</span>
-                                                <span class="tbc-cmt-dt">@FechaHora(c.Fecha)</span>
+                                    var mio = c.AutorId != Guid.Empty && c.AutorId == _miUsuarioId;
+                                    <div class="tbc-msg @(mio ? "mine" : "")">
+                                        @if (!mio) { <div class="tb-ava tbc-msg-ava">@Iniciales(c.Autor ?? "?")</div> }
+                                        <div class="tbc-bubble">
+                                            <div class="tbc-bubble-head">
+                                                <span class="tbc-bubble-au">@(mio ? "Tu" : (string.IsNullOrWhiteSpace(c.Autor) ? "Usuario" : c.Autor))</span>
+                                                <span class="tbc-bubble-dt">@FechaHora(c.Fecha)</span>
                                             </div>
-                                            <div class="tbc-cmt-tx">@c.Texto</div>
+                                            <div class="tbc-bubble-tx">@c.Texto</div>
                                         </div>
                                     </div>
                                 }
@@ -1504,12 +1506,19 @@ else
                         @foreach (var a in d.Adjuntos)
                         {
                             var aid = a.Id;
-                            <div class="tbc-thumb @(sel is not null && sel.Id == a.Id ? "on" : "")" @onclick="() => _adjSel = aid" title="@a.Nombre">
+                            var tituloAdj = string.IsNullOrWhiteSpace(a.SubidoPor) ? a.Nombre : $"{a.Nombre} - subido por {a.SubidoPor}";
+                            <div class="tbc-thumb @(sel is not null && sel.Id == a.Id ? "on" : "")" @onclick="() => _adjSel = aid" title="@tituloAdj">
                                 <div class="tbc-thumb-ic">
                                     @if (EsImg(a.Url)) { <img src="@a.Url" alt="@a.Nombre" /> }
                                     else { <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h4"/></svg> }
                                 </div>
-                                <span class="tbc-thumb-nm">@a.Nombre</span>
+                                <div class="tbc-thumb-meta">
+                                    <span class="tbc-thumb-nm">@a.Nombre</span>
+                                    @if (!string.IsNullOrWhiteSpace(a.SubidoPor))
+                                    {
+                                        <span class="tbc-thumb-by"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>@a.SubidoPor</span>
+                                    }
+                                </div>
                                 <button class="tbc-thumb-x" @onclick:stopPropagation="true" @onclick="() => EliminarAdjunto(aid)" title="Quitar"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
                             </div>
                         }
@@ -1535,11 +1544,15 @@ else
                         }
                         else if (EsImg(sel.Url))
                         {
-                            <div class="tbc-viewer-imgwrap">
+                            <div class="tbc-viewer-imgwrap tbc-viewer-imgwrap--zoom" @onclick="() => _lightbox = sel.Url" title="Clic para ampliar">
                                 <img class="tbc-viewer-img" src="@sel.Url" alt="@sel.Nombre" />
+                                <span class="tbc-viewer-zoom"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg> Ampliar</span>
                             </div>
                             <div class="tbc-viewer-bar">
-                                <span class="tbc-viewer-nm">@sel.Nombre</span>
+                                <div class="tbc-viewer-meta">
+                                    <span class="tbc-viewer-nm">@sel.Nombre</span>
+                                    @if (!string.IsNullOrWhiteSpace(sel.SubidoPor)) { <span class="tbc-viewer-by">Subido por @sel.SubidoPor@(sel.SubidoAt is DateTimeOffset t ? " - " + FechaHora(t) : "")</span> }
+                                </div>
                                 <a class="tbc-viewer-open" href="@sel.Url" target="_blank">Abrir</a>
                             </div>
                         }
@@ -1549,7 +1562,10 @@ else
                                 <iframe class="tbc-viewer-pdf" src="@sel.Url" title="@sel.Nombre"></iframe>
                             </div>
                             <div class="tbc-viewer-bar">
-                                <span class="tbc-viewer-nm">@sel.Nombre</span>
+                                <div class="tbc-viewer-meta">
+                                    <span class="tbc-viewer-nm">@sel.Nombre</span>
+                                    @if (!string.IsNullOrWhiteSpace(sel.SubidoPor)) { <span class="tbc-viewer-by">Subido por @sel.SubidoPor</span> }
+                                </div>
                                 <a class="tbc-viewer-open" href="@sel.Url" target="_blank">Abrir en pestana</a>
                             </div>
                         }
@@ -1558,12 +1574,22 @@ else
                             <div class="tbc-viewer-file">
                                 <svg width="54" height="54" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h4"/></svg>
                                 <p class="tbc-viewer-nm">@sel.Nombre</p>
+                                @if (!string.IsNullOrWhiteSpace(sel.SubidoPor)) { <p class="tbc-viewer-by">Subido por @sel.SubidoPor</p> }
                                 <a class="tbc-viewer-open" href="@sel.Url" target="_blank">Abrir / descargar</a>
                             </div>
                         }
                     </div>
                 }
             </div>
+            }
+
+            @* Lightbox: visor de imagen a pantalla completa (clic en la imagen del visor de Archivos). *@
+            @if (_lightbox is not null)
+            {
+                <div class="tbc-lightbox" @onclick="() => _lightbox = null">
+                    <img class="tbc-lightbox-img" src="@_lightbox" @onclick:stopPropagation="true" />
+                    <button class="tbc-lightbox-x" @onclick="() => _lightbox = null" title="Cerrar"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                </div>
             }
 
             <div class="tbc-foot">
@@ -2136,7 +2162,7 @@ else
 
     /* El cuerpo ya no scrollea como un todo: cada columna hace su propio scroll (independiente),
        asi el contenido largo de la izquierda no arrastra ni rompe el layout de las demas. */
-    .tbc-body { flex: 1; min-height: 0; overflow: hidden; padding: 16px 22px; display: grid; grid-template-columns: minmax(0, 1fr) 300px 290px; grid-template-rows: minmax(0, 1fr); gap: 16px 20px; }
+    .tbc-body { flex: 1; min-height: 0; overflow: hidden; padding: 16px 22px; display: grid; grid-template-columns: minmax(0, 1fr) 300px 360px; grid-template-rows: minmax(0, 1fr); gap: 16px 20px; }
     .tbc-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; box-sizing: border-box; overflow-y: auto; overflow-x: hidden; scroll-behavior: smooth; padding-right: 6px; scrollbar-width: thin; scrollbar-color: #C3D0DD transparent; }
     .tbc-col::-webkit-scrollbar { width: 7px; }
     .tbc-col::-webkit-scrollbar-track { background: transparent; }
@@ -2287,6 +2313,35 @@ else
     .tbc-cmt-au { font-size: 12px; font-weight: 700; color: #33475B; }
     .tbc-cmt-dt { font-size: 10.5px; color: #A6B7C8; font-weight: 600; flex-shrink: 0; }
     .tbc-cmt-tx { font-size: 12.5px; color: #33475B; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+
+    /* ===== Registro de actividad estilo CHAT (burbujas) ===== */
+    .tbc-chat { display: flex; flex-direction: column; gap: 10px; padding: 2px; }
+    .tbc-msg { display: flex; gap: 8px; align-items: flex-end; max-width: 92%; }
+    .tbc-msg.mine { align-self: flex-end; flex-direction: row-reverse; }
+    .tbc-msg-ava { width: 28px; height: 28px; font-size: 10.5px; flex-shrink: 0; border: 0; margin: 0; }
+    .tbc-bubble { min-width: 0; background: #F1F4F8; border: 1px solid #E7EDF3; border-radius: 12px 12px 12px 3px; padding: 8px 11px; }
+    .tbc-msg.mine .tbc-bubble { background: #EEE9FD; border-color: #DED4FB; border-radius: 12px 12px 3px 12px; }
+    .tbc-bubble-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
+    .tbc-msg.mine .tbc-bubble-head { flex-direction: row-reverse; }
+    .tbc-bubble-au { font-size: 11.5px; font-weight: 800; color: #33475B; }
+    .tbc-msg.mine .tbc-bubble-au { color: #5B3FD1; }
+    .tbc-bubble-dt { font-size: 10px; color: #A6B7C8; font-weight: 600; }
+    .tbc-bubble-tx { font-size: 12.5px; color: #33475B; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+
+    /* ===== Etiqueta "subido por" en adjuntos ===== */
+    .tbc-thumb-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .tbc-thumb-by { display: inline-flex; align-items: center; gap: 3px; font-size: 9.5px; font-weight: 700; color: #7C98B6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tbc-viewer-meta { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .tbc-viewer-by { font-size: 10.5px; font-weight: 700; color: #7C98B6; }
+
+    /* ===== Visor de imagen ampliable + lightbox a pantalla completa ===== */
+    .tbc-viewer-imgwrap--zoom { position: relative; cursor: zoom-in; }
+    .tbc-viewer-zoom { position: absolute; right: 12px; bottom: 12px; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 800; color: #fff; background: rgba(27,42,58,.72); border-radius: 20px; padding: 5px 11px; pointer-events: none; }
+    .tbc-lightbox { position: fixed; inset: 0; z-index: 3200; background: rgba(8,12,20,.9); display: flex; align-items: center; justify-content: center; padding: 30px; cursor: zoom-out; }
+    .tbc-lightbox-img { max-width: 94vw; max-height: 94vh; object-fit: contain; border-radius: 8px; box-shadow: 0 12px 60px rgba(0,0,0,.5); cursor: default; }
+    .tbc-lightbox-x { position: fixed; top: 18px; right: 22px; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255,255,255,.14); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+    .tbc-lightbox-x:hover { background: rgba(255,255,255,.28); }
+
     /* Traza de copias */
     .tbc-copia-bc { display: inline-flex; align-items: center; gap: 4px; border: 0; background: rgba(255,255,255,.22); color: #fff; font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 20px; cursor: pointer; }
     .tbc-copia-bc:hover { background: rgba(255,255,255,.35); }
@@ -2679,6 +2734,11 @@ else
     [data-bs-theme="dark"] .tbc-sub,
     [data-bs-theme="dark"] .tbc-resp,
     [data-bs-theme="dark"] .tbc-cmt-body { background: #1f1f3a; border-color: #3a3a5a; }
+    [data-bs-theme="dark"] .tbc-bubble-au,
+    [data-bs-theme="dark"] .tbc-bubble-tx { color: #D5D5E0; }
+    [data-bs-theme="dark"] .tbc-bubble { background: #1f1f3a; border-color: #3a3a5a; }
+    [data-bs-theme="dark"] .tbc-msg.mine .tbc-bubble { background: #2c2352; border-color: #4a3f7a; }
+    [data-bs-theme="dark"] .tbc-msg.mine .tbc-bubble-au { color: #b7a6f5; }
     [data-bs-theme="dark"] .tb-fld input,
     [data-bs-theme="dark"] .tb-fld select,
     [data-bs-theme="dark"] .tb-fld textarea,
@@ -2703,6 +2763,7 @@ else
 @code {
     private static readonly CultureInfo Es = CultureInfo.GetCultureInfo("es-CO");
     private string? _jwt;
+    private Guid _miUsuarioId;   // usuario actual (del JWT) para alinear "mis" mensajes a la derecha en el chat
     private bool _authChecked;
     private bool _busy;
     private string? _msg;
@@ -3293,6 +3354,7 @@ else
     private string? _cardMsg;   // aviso en el pie del modal de tarjeta (ej. campos requeridos)
     private string _cardTab = "detalle";    // pestana activa del modal: detalle | archivos | actividad
     private Guid? _adjSel;                    // adjunto seleccionado en el visor de la pestana Archivos
+    private string? _lightbox;                // url de imagen abierta a pantalla completa (visor Archivos)
     private string _nuevoComentario = "";     // texto del reporte de actividad (comentario)
     private bool _showCampoEditor; // editor de campo FLOTANTE (compartido: tarjeta + tabla)
     private string _subNew = "";
@@ -3414,9 +3476,9 @@ else
         public bool PermiteVarios { get; set; }
         public HashSet<Guid> CamposSuma { get; set; } = new();   // ids a sumar (tipo Total)
     }
-    private record AdjuntoVM(Guid Id, string Nombre, string Url);
+    private record AdjuntoVM(Guid Id, string Nombre, string Url, string? SubidoPor = null, DateTimeOffset? SubidoAt = null);
     private record LogVM(string Texto, DateTimeOffset Fecha);
-    private record ComentarioVM(string? Autor, string Texto, DateTimeOffset Fecha);
+    private record ComentarioVM(string? Autor, string Texto, DateTimeOffset Fecha, Guid AutorId = default);
     private record OpcionOrigen(Guid Id, string Label);
 
     private record PersonaMini(Guid Id, string Nombre);
@@ -3457,6 +3519,7 @@ else
             if (!string.IsNullOrWhiteSpace(stored))
             {
                 _jwt = stored;
+                _miUsuarioId = LeerUsuarioIdDeJwt(stored);
                 await CargarAsync();
                 await AbrirUltimoTableroAsync();   // por usuario: reabrir el ultimo tablero en su ultimo modo
                 StateHasChanged();
@@ -3470,6 +3533,25 @@ else
         var http = HttpFactory.CreateClient("PropiaApi");
         http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
         return http;
+    }
+
+    // Lee el claim user_id (o sub) del payload del JWT sin dependencias externas.
+    private static Guid LeerUsuarioIdDeJwt(string jwt)
+    {
+        try
+        {
+            var partes = jwt.Split('.');
+            if (partes.Length < 2) return Guid.Empty;
+            var payload = partes[1].Replace('-', '+').Replace('_', '/');
+            switch (payload.Length % 4) { case 2: payload += "=="; break; case 3: payload += "="; break; }
+            var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(payload));
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("user_id", out var uid) && Guid.TryParse(uid.GetString(), out var g)) return g;
+            if (root.TryGetProperty("sub", out var sub) && Guid.TryParse(sub.GetString(), out var gs)) return gs;
+        }
+        catch { }
+        return Guid.Empty;
     }
 
     private async Task CargarAsync()
@@ -5004,9 +5086,9 @@ else
                 OrigenReferencia = det.OrigenReferencia,
                 Responsables = responsables,
                 Checklist = (det.Checklist ?? new List<SubtareaCheckDto>()).Select(s => new SubChk { Titulo = s.Titulo, Hecho = s.Hecho }).ToList(),
-                Adjuntos = (det.Adjuntos ?? new List<TareaAdjuntoDto>()).Select(a => new AdjuntoVM(a.Id, a.Nombre, a.Url)).ToList(),
+                Adjuntos = (det.Adjuntos ?? new List<TareaAdjuntoDto>()).Select(a => new AdjuntoVM(a.Id, a.Nombre, a.Url, a.SubidoPorNombre, a.SubidoAt)).ToList(),
                 Historial = det.Historial.OrderBy(h => h.OcurridoAt).Select(h => new LogVM(h.Descripcion, h.OcurridoAt)).ToList(),
-                Comentarios = det.Comentarios.Select(c => new ComentarioVM(c.AutorNombre, c.Texto, c.CreatedAt)).ToList(),
+                Comentarios = det.Comentarios.Select(c => new ComentarioVM(c.AutorNombre, c.Texto, c.CreatedAt, c.AutorUsuarioId)).ToList(),
                 Campos = (det.CamposValores ?? new List<TareaCampoValorDto>()).GroupBy(v => v.CampoId).ToDictionary(g => g.Key, g => g.First().Valor),
                 EtiquetaIds = t.Etiquetas.Select(e => e.Id).ToHashSet(),
                 EtiquetaIdsOrig = t.Etiquetas.Select(e => e.Id).ToHashSet(),
@@ -5250,7 +5332,7 @@ else
             if (resp.IsSuccessStatusCode)
             {
                 var dto = await resp.Content.ReadFromJsonAsync<TareaAdjuntoDto>();
-                if (dto is not null) { _cardDraft.Adjuntos.Add(new AdjuntoVM(dto.Id, dto.Nombre, dto.Url)); _adjSel = dto.Id; }
+                if (dto is not null) { _cardDraft.Adjuntos.Add(new AdjuntoVM(dto.Id, dto.Nombre, dto.Url, dto.SubidoPorNombre, dto.SubidoAt)); _adjSel = dto.Id; }
             }
             else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
         }
@@ -5282,7 +5364,7 @@ else
             {
                 var dto = await resp.Content.ReadFromJsonAsync<TareaComentarioDto>();
                 // El comentario nuevo se antepone (mas reciente primero, igual que el backend).
-                _cardDraft.Comentarios.Insert(0, new ComentarioVM(dto?.AutorNombre, texto, dto?.CreatedAt ?? DateTimeOffset.Now));
+                _cardDraft.Comentarios.Insert(0, new ComentarioVM(dto?.AutorNombre, texto, dto?.CreatedAt ?? DateTimeOffset.Now, dto?.AutorUsuarioId ?? _miUsuarioId));
                 _cardDraft.Historial.Add(new LogVM("Comentario agregado", dto?.CreatedAt ?? DateTimeOffset.Now));
                 _nuevoComentario = "";
             }

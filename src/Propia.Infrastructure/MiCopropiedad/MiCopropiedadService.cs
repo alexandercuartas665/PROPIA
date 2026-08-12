@@ -1311,7 +1311,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         catch (DbUpdateException)
         {
             throw new InvalidOperationException(
-                "No se puede eliminar: la unidad tiene registros asociados (cartera, PQRS, reservas, etc.). Desvinculalos primero.");
+                "No se puede eliminar: la unidad tiene registros asociados (cartera, PQRSD, reservas, etc.). Desvinculalos primero.");
         }
         return true;
     }

@@ -774,15 +774,17 @@ public class PqrsdService : IPqrsdService
     private async Task<string> GenerarNumeroRadicadoAsync(CancellationToken ct)
     {
         var year = DateTime.UtcNow.Year;
-        var prefijo = $"PQRS-{year}-";
+        var prefijo = $"PQRSD-{year}-";
+        var prefijoLegacy = $"PQRS-{year}-";   // radicados emitidos antes del cambio de sigla; no se reescriben
         var ultimos = await _db.PqrsdExpedientes.AsNoTracking()
-            .Where(x => x.NumeroRadicado.StartsWith(prefijo))
+            .Where(x => x.NumeroRadicado.StartsWith(prefijo) || x.NumeroRadicado.StartsWith(prefijoLegacy))
             .Select(x => x.NumeroRadicado)
             .ToListAsync(ct);
         int max = 0;
         foreach (var n in ultimos)
         {
-            if (int.TryParse(n.Substring(prefijo.Length), out var s) && s > max) max = s;
+            // El consecutivo son los digitos tras el ultimo guion, valga cual valga el prefijo.
+            if (int.TryParse(n[(n.LastIndexOf('-') + 1)..], out var s) && s > max) max = s;
         }
         return $"{prefijo}{(max + 1):D4}";
     }
