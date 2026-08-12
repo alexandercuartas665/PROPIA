@@ -89,3 +89,19 @@ public enum OrigenBloqueoZona
     ManualAdmin = 1,
     AutomaticoSistema = 2
 }
+
+/// <summary>Momento en que se toma una foto de trazabilidad de un prestamo/reserva.</summary>
+public enum MomentoEntrega
+{
+    Entrega = 1,
+    Devolucion = 2
+}
+
+/// <summary>Estado del prestamo de un equipo/activo reservable.</summary>
+public enum EstadoPrestamoEquipo
+{
+    Reservado = 1,
+    Entregado = 2,
+    Devuelto = 3,
+    Cancelado = 4
+}

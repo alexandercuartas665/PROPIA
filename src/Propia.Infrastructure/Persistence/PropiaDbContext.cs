@@ -263,6 +263,8 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<ZonaConfigReserva> ZonaConfigReservas => Set<ZonaConfigReserva>();
     public DbSet<ZonaFranja> ZonaFranjas => Set<ZonaFranja>();
     public DbSet<Reserva> Reservas => Set<Reserva>();
+    public DbSet<PrestamoEquipo> PrestamosEquipo => Set<PrestamoEquipo>();
+    public DbSet<EntregaFoto> EntregaFotos => Set<EntregaFoto>();
     public DbSet<ReservaRecurrente> ReservasRecurrentes => Set<ReservaRecurrente>();
     public DbSet<ReservaPago> ReservaPagos => Set<ReservaPago>();
     public DbSet<ZonaBloqueo> ZonaBloqueos => Set<ZonaBloqueo>();
@@ -2351,6 +2353,35 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.WompiTransactionId).HasMaxLength(100);
             b.Property(x => x.WompiReference).HasMaxLength(100);
             b.HasIndex(x => x.TenantId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PrestamoEquipo>(b =>
+        {
+            b.ToTable("prestamos_equipo");
+            b.Property(x => x.Codigo).IsRequired().HasMaxLength(30);
+            b.Property(x => x.Estado).HasConversion<int>();
+            b.Property(x => x.Observaciones).HasColumnType("text");
+            b.Property(x => x.EntregaObservacion).HasColumnType("text");
+            b.Property(x => x.DevolucionObservacion).HasColumnType("text");
+            b.Property(x => x.MotivoCancelacion).HasColumnType("text");
+            b.HasOne(x => x.EquipoActivo).WithMany().HasForeignKey(x => x.EquipoActivoId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Persona).WithMany().HasForeignKey(x => x.PersonaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(x => x.UnidadPrivada).WithMany().HasForeignKey(x => x.UnidadPrivadaId).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Codigo }).IsUnique();
+            b.HasIndex(x => new { x.TenantId, x.EquipoActivoId, x.Fecha });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<EntregaFoto>(b =>
+        {
+            b.ToTable("entrega_fotos");
+            b.Property(x => x.OrigenTipo).IsRequired().HasMaxLength(20);
+            b.Property(x => x.Url).IsRequired().HasMaxLength(1024);
+            b.Property(x => x.Momento).HasConversion<int>();
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.OrigenTipo, x.OrigenId });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

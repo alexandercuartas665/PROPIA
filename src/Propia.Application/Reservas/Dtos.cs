@@ -111,7 +111,11 @@ public record ReservaDto(
     DateTimeOffset? CanceladaAt,
     decimal? MontoPago,
     EstadoPagoReserva? EstadoPago,
-    DateTimeOffset CreadoAt);
+    DateTimeOffset CreadoAt,
+    DateTimeOffset? EntregadaAt = null,
+    string? EntregaObservacion = null,
+    DateTimeOffset? DevueltaAt = null,
+    string? DevolucionObservacion = null);
 
 public record CrearReservaRequest(
     Guid ZonaComunId,

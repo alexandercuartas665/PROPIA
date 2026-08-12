@@ -216,6 +216,7 @@ public static class DependencyInjection
 
         // Modulo 2.13 Reservas de Zonas Comunes
         services.AddScoped<Application.Reservas.IReservasService, Reservas.ReservasService>();
+        services.AddScoped<Application.Prestamos.IPrestamosService, Prestamos.PrestamosService>();
 
         // Modulo 1.2 Calendario Multi-Copropiedad (agregador cross-modulo)
         services.AddScoped<Application.Calendario.ICalendarioService, Calendario.CalendarioService>();

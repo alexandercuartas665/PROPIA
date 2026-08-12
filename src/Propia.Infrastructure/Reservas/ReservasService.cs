@@ -308,7 +308,8 @@ public class ReservasService : IReservasService
         return new ReservaDto(r.Id, r.Codigo, r.ZonaComunId, zona, r.PersonaId, per, r.UnidadPrivadaId, unid,
             r.Fecha, r.HoraInicio, r.HoraFin, r.Estado, r.EsRecurrente, r.ReservaRecurrenteId,
             r.ReglamentoAceptado, r.MotivoCancelacion, r.CanceladaAt,
-            pago?.Monto, pago?.EstadoPago, r.CreatedAt);
+            pago?.Monto, pago?.EstadoPago, r.CreatedAt,
+            r.EntregadaAt, r.EntregaObservacion, r.DevueltaAt, r.DevolucionObservacion);
     }
 
     public async Task<ReservaDto> CrearReservaAsync(CrearReservaRequest req, CancellationToken ct)

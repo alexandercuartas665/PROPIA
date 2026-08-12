@@ -1,0 +1,165 @@
+@* Prestamos de un equipo/activo reservable: registrar + listar, cada uno con trazabilidad de
+   entrega/devolucion con foto. Se embebe en la ficha del equipo (solo si es reservable). *@
+@using Propia.Application.Directorio
+@inject IHttpClientFactory HttpFactory
+
+<div class="pep-wrap">
+    @if (_prestamos.Count == 0 && !_nuevoOpen)
+    {
+        <div class="pep-empty">Aun no hay prestamos de este equipo.</div>
+    }
+    @foreach (var p in _prestamos)
+    {
+        var pp = p;
+        <div class="pep-item">
+            <div class="pep-head">
+                <span class="pep-cod">@p.Codigo</span>
+                <span class="pep-badge pep-e@(p.Estado)">@EstadoLabel(p.Estado)</span>
+                <div class="pep-who">@p.PersonaNombre@(string.IsNullOrEmpty(p.UnidadNumero) ? "" : " · " + p.UnidadNumero)</div>
+                <div class="pep-fecha">@p.Fecha.ToString("dd MMM yyyy")@(p.HoraInicio.HasValue ? $" · {p.HoraInicio:HH\\:mm}" : "")</div>
+                @if (p.Estado != Propia.Domain.Enums.EstadoPrestamoEquipo.Cancelado && p.Estado != Propia.Domain.Enums.EstadoPrestamoEquipo.Devuelto)
+                {
+                    <button class="pep-x" title="Cancelar prestamo" @onclick="() => Cancelar(pp.Id)">&times;</button>
+                }
+            </div>
+            @if (!string.IsNullOrEmpty(p.Observaciones)) { <div class="pep-obs">@p.Observaciones</div> }
+            @if (p.Estado != Propia.Domain.Enums.EstadoPrestamoEquipo.Cancelado)
+            {
+                <TrazabilidadEntrega Jwt="@Jwt" BasePath="/api/prestamos-equipo" Id="@p.Id"
+                                     EntregadoAt="@p.EntregadoAt" DevueltoAt="@p.DevueltoAt"
+                                     EntregaObs="@p.EntregaObservacion" DevolucionObs="@p.DevolucionObservacion"
+                                     OnCambio="Recargar" />
+            }
+        </div>
+    }
+
+    @if (_nuevoOpen)
+    {
+        <div class="pep-nuevo">
+            <label class="pep-lbl">Quien lo lleva</label>
+            <SelectorPersona Jwt="@Jwt" @bind-Seleccionada="_persona" Placeholder="Buscar o crear persona..." />
+            <div class="pep-row">
+                <div><label class="pep-lbl">Fecha</label><input type="date" class="pep-inp" @bind="_fecha" /></div>
+                <div><label class="pep-lbl">Desde</label><input type="time" class="pep-inp" @bind="_hIni" /></div>
+                <div><label class="pep-lbl">Hasta</label><input type="time" class="pep-inp" @bind="_hFin" /></div>
+            </div>
+            <input class="pep-inp" placeholder="Observacion (opcional)" @bind="_obs" @bind:event="oninput" />
+            @if (_error != null) { <div class="pep-err">@_error</div> }
+            <div class="pep-acts">
+                <button class="pep-btn" @onclick="() => _nuevoOpen = false">Cancelar</button>
+                <button class="pep-btn pep-btn-primary" @onclick="Crear" disabled="@(_busy || _persona is null)">Registrar prestamo</button>
+            </div>
+        </div>
+    }
+    else
+    {
+        <button class="pep-add" @onclick="AbrirNuevo"><i class="fi fi-rr-plus"></i> Nuevo prestamo</button>
+    }
+</div>
+
+@code {
+    [Parameter] public string Jwt { get; set; } = "";
+    [Parameter] public Guid EquipoId { get; set; }
+
+    private List<PrestamoDto> _prestamos = new();
+    private bool _nuevoOpen, _busy;
+    private PersonaCandidatoDto? _persona;
+    private DateTime _fecha = DateTime.Today;
+    private DateTime? _hIni, _hFin;
+    private string? _obs, _error;
+
+    private HttpClient Auth()
+    {
+        var c = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt)) c.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return c;
+    }
+
+    protected override async Task OnParametersSetAsync() => await Recargar();
+
+    private async Task Recargar()
+    {
+        if (EquipoId == Guid.Empty) return;
+        try { _prestamos = await Auth().GetFromJsonAsync<List<PrestamoDto>>($"/api/prestamos-equipo?equipoId={EquipoId}") ?? new(); }
+        catch { _prestamos = new(); }
+    }
+
+    private void AbrirNuevo() { _persona = null; _fecha = DateTime.Today; _hIni = _hFin = null; _obs = _error = null; _nuevoOpen = true; }
+
+    private async Task Crear()
+    {
+        if (_persona is null) return;
+        _busy = true; _error = null;
+        try
+        {
+            var body = new
+            {
+                equipoActivoId = EquipoId,
+                personaId = _persona.PersonaId,
+                unidadPrivadaId = (Guid?)null,
+                fecha = DateOnly.FromDateTime(_fecha).ToString("yyyy-MM-dd"),
+                horaInicio = _hIni.HasValue ? _hIni.Value.ToString("HH:mm:ss") : null,
+                horaFin = _hFin.HasValue ? _hFin.Value.ToString("HH:mm:ss") : null,
+                observaciones = _obs
+            };
+            var resp = await Auth().PostAsJsonAsync("/api/prestamos-equipo", body);
+            if (!resp.IsSuccessStatusCode) { _error = await resp.Content.ReadAsStringAsync(); return; }
+            _nuevoOpen = false;
+            await Recargar();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task Cancelar(Guid id)
+    {
+        try { await Auth().PostAsJsonAsync($"/api/prestamos-equipo/{id}/cancelar", new { motivo = "Cancelado desde la ficha" }); await Recargar(); }
+        catch { }
+    }
+
+    private static string EstadoLabel(Propia.Domain.Enums.EstadoPrestamoEquipo e) => e switch
+    {
+        Propia.Domain.Enums.EstadoPrestamoEquipo.Reservado => "Reservado",
+        Propia.Domain.Enums.EstadoPrestamoEquipo.Entregado => "Entregado",
+        Propia.Domain.Enums.EstadoPrestamoEquipo.Devuelto => "Devuelto",
+        _ => "Cancelado"
+    };
+
+    private record PrestamoDto(
+        Guid Id, string Codigo, Guid EquipoActivoId, string EquipoNombre,
+        Guid PersonaId, string PersonaNombre, Guid? UnidadPrivadaId, string? UnidadNumero,
+        DateOnly Fecha, TimeOnly? HoraInicio, TimeOnly? HoraFin,
+        Propia.Domain.Enums.EstadoPrestamoEquipo Estado, string? Observaciones,
+        DateTimeOffset? EntregadoAt, string? EntregaObservacion,
+        DateTimeOffset? DevueltoAt, string? DevolucionObservacion,
+        int FotosEntrega, int FotosDevolucion);
+}
+
+<style>
+    .pep-wrap { display: flex; flex-direction: column; gap: 10px; }
+    .pep-empty { font-size: 12.5px; color: #A6B7C8; padding: 4px 0; }
+    .pep-item { border: 1px solid #E1E8EE; border-radius: 12px; padding: 12px; background: #fff; display: flex; flex-direction: column; gap: 9px; }
+    .pep-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .pep-cod { font-size: 11px; font-weight: 800; color: #6D4FE3; background: #F1ECFD; border-radius: 6px; padding: 2px 7px; }
+    .pep-badge { font-size: 9.5px; font-weight: 800; text-transform: uppercase; border-radius: 6px; padding: 2px 7px; color: #fff; }
+    .pep-eReservado { background: #516F90; } .pep-eEntregado { background: #6D4FE3; } .pep-eDevuelto { background: #1A8754; } .pep-eCancelado { background: #94A7BA; }
+    .pep-who { font-size: 12.5px; font-weight: 700; color: #33475B; }
+    .pep-fecha { font-size: 11px; color: #7C98B6; margin-left: auto; }
+    .pep-x { border: 0; background: transparent; color: #C3D0DD; font-size: 18px; line-height: 1; cursor: pointer; }
+    .pep-x:hover { color: #D7263D; }
+    .pep-obs { font-size: 11.5px; color: #516F90; }
+    .pep-add { border: 1px dashed #DCD2F8; background: #F1ECFD; color: #6D4FE3; border-radius: 9px; padding: 9px; font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .pep-nuevo { border: 1px solid #DCD2F8; border-radius: 12px; padding: 12px; background: #FAF8FF; display: flex; flex-direction: column; gap: 8px; }
+    .pep-lbl { font-size: 10.5px; font-weight: 700; color: #7C98B6; }
+    .pep-row { display: flex; gap: 8px; }
+    .pep-row > div { flex: 1; }
+    .pep-inp { width: 100%; box-sizing: border-box; border: 1px solid #E1E8EE; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; color: #33475B; outline: none; font-family: inherit; }
+    .pep-inp:focus { border-color: #6D4FE3; }
+    .pep-err { color: #D7263D; font-size: 12px; }
+    .pep-acts { display: flex; justify-content: flex-end; gap: 8px; }
+    .pep-btn { border: 1px solid #E1E8EE; background: #fff; border-radius: 8px; padding: 7px 13px; font-size: 12.5px; font-weight: 700; color: #516F90; cursor: pointer; font-family: inherit; }
+    .pep-btn-primary { background: var(--propia-brand,#6D4FE3); border-color: var(--propia-brand,#6D4FE3); color: #fff; }
+    [data-bs-theme="dark"] .pep-item { background: #1B2233; border-color: #2D3650; }
+    [data-bs-theme="dark"] .pep-nuevo { background: #191933; border-color: #3a3a5a; }
+    [data-bs-theme="dark"] .pep-inp, [data-bs-theme="dark"] .pep-btn { background: #232342; border-color: #3a3a5a; color: #C7C7D6; }
+</style>

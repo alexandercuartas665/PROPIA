@@ -110,6 +110,15 @@ public class Reserva : TenantEntity
     /// <summary>FK 1:1 al cobro si la zona tiene tarifa.</summary>
     public Guid? ReservaPagoId { get; set; }
     public ReservaPago? ReservaPago { get; set; }
+
+    // Trazabilidad de entrega/devolucion del prestamo de la zona. Las fotos van en EntregaFoto
+    // (OrigenTipo = "reserva", OrigenId = Reserva.Id), con foto de como se entrega y como se devuelve.
+    public DateTimeOffset? EntregadaAt { get; set; }
+    public Guid? EntregadaPorPersonaId { get; set; }
+    public string? EntregaObservacion { get; set; }
+    public DateTimeOffset? DevueltaAt { get; set; }
+    public Guid? DevueltaPorPersonaId { get; set; }
+    public string? DevolucionObservacion { get; set; }
 }
 
 /// <summary>

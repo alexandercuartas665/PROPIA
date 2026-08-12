@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Propia.Application.Reservas;
+using Propia.Application.Prestamos;
 using Propia.Domain.Enums;
 
 namespace Propia.Api.Controllers;
@@ -14,8 +15,33 @@ namespace Propia.Api.Controllers;
 public class ReservasController : ControllerBase
 {
     private readonly IReservasService _svc;
+    private readonly IPrestamosService _prestamos;
 
-    public ReservasController(IReservasService svc) => _svc = svc;
+    public ReservasController(IReservasService svc, IPrestamosService prestamos)
+    {
+        _svc = svc;
+        _prestamos = prestamos;
+    }
+
+    // ----- Entrega / devolucion del prestamo de la zona (trazabilidad con foto) -----
+
+    [HttpPost("{id:guid}/entregar")]
+    public async Task<IActionResult> Entregar(Guid id, [FromBody] RegistrarEntregaRequest req, CancellationToken ct)
+    {
+        try { return await _prestamos.RegistrarEntregaReservaAsync(id, req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpPost("{id:guid}/devolver")]
+    public async Task<IActionResult> Devolver(Guid id, [FromBody] RegistrarEntregaRequest req, CancellationToken ct)
+    {
+        try { return await _prestamos.RegistrarDevolucionReservaAsync(id, req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpGet("{id:guid}/fotos")]
+    public async Task<IActionResult> Fotos(Guid id, CancellationToken ct)
+        => Ok(await _prestamos.ListarFotosAsync("reserva", id, ct));
 
     // ----- Configuracion de zona -----
 
