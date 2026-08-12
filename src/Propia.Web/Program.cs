@@ -61,6 +61,20 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents(o =>
     {
         if (builder.Environment.IsDevelopment()) o.DetailedErrors = true;
+        // Retener el circuito desconectado varios minutos: si el usuario deja la pestana quieta
+        // o hay un microcorte de red, al volver se reengancha al MISMO circuito (conserva estado)
+        // en vez de fallar y mostrar "Recargar pagina".
+        o.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(5);
+        o.DisconnectedCircuitMaxRetained = 200;
+    })
+    .AddHubOptions(o =>
+    {
+        // Tolerar pestanas en segundo plano (timers throttled por el navegador) sin cortar el
+        // circuito tan rapido: es la causa mas comun del "Reconectando..." al dejar quieta la app.
+        o.ClientTimeoutInterval = TimeSpan.FromSeconds(60);
+        o.KeepAliveInterval = TimeSpan.FromSeconds(15);
+        o.HandshakeTimeout = TimeSpan.FromSeconds(30);
+        o.MaximumReceiveMessageSize = 10 * 1024 * 1024;
     })
     .AddInteractiveWebAssemblyComponents();
 

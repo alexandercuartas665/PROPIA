@@ -83,6 +83,13 @@
             display: flex; position: fixed; inset: 0; z-index: 20000;
             align-items: center; justify-content: center; background: rgba(20,18,40,.45);
         }
+        /* En "reconnecting" el overlay NO aparece de inmediato: se hace visible a los ~2.5s, de modo
+           que los microcortes de red se reconectan sin que el usuario vea nada. Los estados
+           failed/rejected (ya no reintenta) si se muestran al instante. */
+        #components-reconnect-modal.components-reconnect-show { opacity: 0; animation: reconnect-fadein 0s linear 2.5s forwards; }
+        #components-reconnect-modal.components-reconnect-failed,
+        #components-reconnect-modal.components-reconnect-rejected { opacity: 1; }
+        @@keyframes reconnect-fadein { to { opacity: 1; } }
         .reconnect-card { background:#fff; border-radius:14px; padding:24px 28px; text-align:center; box-shadow:0 10px 40px rgba(0,0,0,.2); max-width:340px; font-family:'Lexend',-apple-system,BlinkMacSystemFont,sans-serif; }
         .reconnect-spinner { width:34px; height:34px; border:3px solid #E1E8EE; border-top-color:#6D4FE3; border-radius:50%; margin:0 auto 12px; animation:reconnect-spin .8s linear infinite; }
         @@keyframes reconnect-spin { to { transform: rotate(360deg); } }
@@ -147,8 +154,34 @@
     <script src="https://unpkg.com/@@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
     <script src="js/propia-chat-hub.js?v=1"></script>
 
-    @* Blazor framework SIEMPRE despues de los scripts JS de UI *@
-    <script src="_framework/blazor.web.js"></script>
+    @* Blazor framework SIEMPRE despues de los scripts JS de UI. autostart=false para configurar
+       la reconexion (mas reintentos) y auto-recargar si definitivamente no recupera. *@
+    <script src="_framework/blazor.web.js" autostart="false"></script>
+    <script>
+        (function () {
+            // Reconexion tolerante: ~30 intentos cada 3s (~90s) antes de rendirse. Con el circuito
+            // retenido en el servidor, al volver de una pestana quieta se reengancha sin recargar.
+            Blazor.start({
+                circuit: {
+                    reconnectionOptions: { maxRetries: 30, retryIntervalMilliseconds: 3000 }
+                }
+            });
+            // Si el overlay llega a failed/rejected (ya no reintenta), recarga sola tras 4s para no
+            // dejar al usuario con el boton "Recargar pagina" (que igual se conserva como respaldo).
+            var m = document.getElementById('components-reconnect-modal');
+            if (m && window.MutationObserver) {
+                new MutationObserver(function () {
+                    if (m.classList.contains('components-reconnect-failed') || m.classList.contains('components-reconnect-rejected')) {
+                        setTimeout(function () {
+                            if (m.classList.contains('components-reconnect-failed') || m.classList.contains('components-reconnect-rejected')) {
+                                location.reload();
+                            }
+                        }, 4000);
+                    }
+                }).observe(m, { attributes: true, attributeFilter: ['class'] });
+            }
+        })();
+    </script>
 
     @* Tras cada navegacion "enhanced" de Blazor (SPA, sin recargar) el <body> se reemplaza y el
        <head>/atributos de <html> pueden reajustarse: re-aplicamos tema y re-sincronizamos el

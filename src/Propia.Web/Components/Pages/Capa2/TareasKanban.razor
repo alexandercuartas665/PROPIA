@@ -1194,7 +1194,7 @@ else
                     <div class="tbc-row2">
                         <div class="tbc-fld tbc-grow">
                             <label>Estado</label>
-                            <select class="tbc-estado-sel" @bind="d.EstadoId">
+                            <select class="tbc-estado-sel" value="@d.EstadoId" @onchange="OnCardEstadoChange">
                                 @foreach (var e in _board.Estados)
                                 {
                                     <option value="@e.Id">@e.Nombre</option>
@@ -4801,6 +4801,19 @@ else
         ClasificacionCierre.Perdida => "perdida",
         _ => "cierre correcto"
     };
+    // Cambio de estado DESDE el modal de tarjeta: si el destino es terminal y la tarea ya existe,
+    // se cierra pidiendo motivo (cierra el modal y abre el de cierre). Si no, solo cambia el estado.
+    private async Task OnCardEstadoChange(ChangeEventArgs e)
+    {
+        if (_cardDraft is null || !Guid.TryParse(e.Value?.ToString(), out var estadoId)) return;
+        if (_cardDraft.Id is Guid tid && EstadoEsTerminal(estadoId))
+        {
+            _cardDraft = null;   // cierra el modal de la tarjeta; el modal de cierre pide el motivo
+            await CambiarEstadoOCerrar(tid, estadoId);
+            return;
+        }
+        _cardDraft.EstadoId = estadoId;
+    }
     private async Task CambiarProgresoFila(Guid tareaId, ChangeEventArgs e)
     {
         if (!int.TryParse(e.Value?.ToString(), out var p)) return;
