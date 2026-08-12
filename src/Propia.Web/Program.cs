@@ -208,6 +208,7 @@ if (app.Environment.IsDevelopment())
     await SuperAdminSeeder.EnsureDevFounderAsync(app.Services);
     await DemoSeeder.EnsureDemoDataAsync(app.Services);
     await AgenteDocumentalSeeder.EnsureAsync(app.Services);
+    await AuxiliarAdministrativoSeeder.EnsureAsync(app.Services);
     app.UseWebAssemblyDebugging();
     app.MapOpenApi();
     app.UseHttpsRedirection();  // dev usa cert self-signed

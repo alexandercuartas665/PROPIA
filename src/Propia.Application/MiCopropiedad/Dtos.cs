@@ -309,7 +309,7 @@ public record EquipoActivoDto(
     Guid Id, string Nombre, CategoriaEquipo Categoria,
     TipoElemento Tipo, int Cantidad, bool EsReservable,
     string? Marca, string? Modelo,
-    string? NumeroSerie, DateOnly? FechaInstalacion, DateOnly? GarantiaHasta,
+    string? NumeroSerie, string? CodigoBarra, DateOnly? FechaInstalacion, DateOnly? GarantiaHasta,
     string? Ubicacion, string? Observaciones,
     int? VidaUtilAnios, DateOnly? FechaAdquisicion, decimal? ValorAdquisicion,
     string? Proveedor, string? NumeroFactura,
@@ -328,7 +328,8 @@ public record ActualizarEquipoActivoRequest(
     DateOnly? FechaInstalacion, DateOnly? GarantiaHasta,
     string? Ubicacion, string? Observaciones,
     int? VidaUtilAnios, DateOnly? FechaAdquisicion, decimal? ValorAdquisicion,
-    string? Proveedor, string? NumeroFactura);
+    string? Proveedor, string? NumeroFactura,
+    string? CodigoBarra = null);
 
 // ----- Ventanas de disponibilidad (reservas: zonas comunes y equipos reservables) -----
 public record VentanaDisponibilidadDto(
@@ -530,7 +531,8 @@ public record GuardarZonaFichaRequest(
     string MantenimientoFrecuencia,
     int? MantenimientoDiaMes,
     bool EsReservable,
-    int? CapacidadPersonas);
+    int? CapacidadPersonas,
+    string? ReglasUso = null);
 
 public record AgregarZonaFacturaRequest(string Concepto, decimal? Valor, DateOnly? Fecha);
 public record AgregarZonaCampoRequest(string Label, string? Valor);

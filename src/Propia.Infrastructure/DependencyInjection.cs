@@ -113,6 +113,7 @@ public static class DependencyInjection
         services.AddScoped<Application.InfraestructuraIa.IAiAgentCacheService, InfraestructuraIa.AiAgentCacheService>();
         services.AddScoped<Application.InfraestructuraIa.IAiUsageService, InfraestructuraIa.AiUsageService>();
         services.AddScoped<Application.InfraestructuraIa.IAiInferenceService, InfraestructuraIa.AiInferenceService>();
+        services.AddScoped<Application.InfraestructuraIa.IAsistenteCamposService, InfraestructuraIa.AsistenteCamposService>();
         services.AddScoped<Application.InfraestructuraIa.IAiAgentTemplateService, InfraestructuraIa.AiAgentTemplateService>();
         services.AddScoped<Application.InfraestructuraIa.IAgentRunLogService, InfraestructuraIa.AgentRunLogService>();
         services.AddScoped<Application.InfraestructuraIa.IAutomationService, InfraestructuraIa.AutomationService>();

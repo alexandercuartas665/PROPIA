@@ -80,6 +80,23 @@ else
                                  Titulo="PROGRAMA DE MANTENIMIENTO" />
         </div>
 
+        @* Condiciones de uso: reglas para los residentes (consumo de licor, ruido, mascotas,
+           horarios, aseo, responsabilidad por danos). Se redacta a mano o se genera con el
+           Auxiliar Administrativo (IA), que expande unos puntos clave a un texto formal. *@
+        <div class="fz-block">
+            <div class="fz-disp-head">
+                <div class="fz-block-t" style="margin:0">CONDICIONES DE USO</div>
+                <button type="button" class="fz-ia-btn" @onclick="GenerarCondicionesAsync" disabled="@_iaBusy">
+                    <i class="fi fi-rr-sparkles"></i> @(_iaBusy ? "Generando..." : "Generar con IA")
+                </button>
+            </div>
+            <textarea class="fz-in fz-ta" rows="4" @bind="_condiciones"
+                      placeholder="Ej: Prohibido el consumo de licor. Uso permitido hasta las 10 p.m. No se admiten mascotas. El usuario responde por los danos."></textarea>
+            <input class="fz-in fz-cond-hint" @bind="_iaHint" @bind:event="oninput"
+                   placeholder="Puntos clave para la IA (ej: prohibido licor, no mascotas, aseo)" />
+            @if (_iaError is not null) { <div class="fz-ia-err">@_iaError</div> }
+        </div>
+
         @* Facturas, documentos y campos dinamicos viven ahora en la pestana "Editar datos":
            la ficha se queda con lo que se consulta (imagen, mantenimiento, disponibilidad
            y el muro de novedades), no con la captura de datos. *@
@@ -130,7 +147,7 @@ else if (_tab == "editar")
         </div>
         <div><label class="fz-lbl">Tarifa de reserva</label><input class="fz-in" type="number" min="0" step="any" @bind="_form.TarifaReserva" placeholder="$ 0" /></div>
         <div class="fz-col-2"><label class="fz-lbl">Descripcion</label><textarea class="fz-in fz-ta" rows="2" @bind="_form.Descripcion"></textarea></div>
-        <div class="fz-col-2"><label class="fz-lbl">Reglas de uso</label><textarea class="fz-in fz-ta" rows="3" @bind="_form.ReglasUso"></textarea></div>
+        <div class="fz-col-2"><label class="fz-lbl">Condiciones de uso</label><textarea class="fz-in fz-ta" rows="3" @bind="_form.ReglasUso"></textarea></div>
     </div>
 
     @* Facturas de compra, con el mismo tratamiento visual del modal de equipos (fila con
@@ -288,6 +305,11 @@ else if (_tab == "editar")
     .fz-toggle-knob { position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; transition: left .15s; }
     .fz-toggle.on .fz-toggle-knob { left: 17px; }
     .fz-aforo { display: flex; align-items: center; font-size: 11.5px; color: #516F90; font-weight: 600; }
+    .fz-ia-btn { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #DCD2F8; background: #F1ECFD; color: #6D4FE3; border-radius: 8px; padding: 5px 10px; font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .fz-ia-btn:hover:not(:disabled) { background: #E8E0FC; }
+    .fz-ia-btn:disabled { opacity: .6; cursor: default; }
+    .fz-cond-hint { margin-top: 7px; font-size: 11.5px; }
+    .fz-ia-err { color: #D7263D; font-size: 11.5px; margin-top: 6px; }
 
     .fz-right-t { padding: 16px 20px 10px; flex-shrink: 0; font-size: 11px; letter-spacing: .5px; color: #A6B7C8; font-weight: 700; }
     .fz-publish { margin: 0 20px 12px; background: #fff; border: 1px solid #E1E8EE; border-radius: 13px; padding: 12px 13px; box-shadow: 0 1px 2px rgba(45,62,80,.05); flex-shrink: 0; }
@@ -357,6 +379,10 @@ else if (_tab == "editar")
     private int? _mantDia;
     private bool _reservable;
     private int? _aforo;
+    private string? _condiciones;   // condiciones de uso de la zona (reutiliza ReglasUso)
+    private string _iaHint = "";
+    private bool _iaBusy;
+    private string? _iaError;
 
     // forms
     private string _facConcepto = "";
@@ -401,6 +427,7 @@ else if (_tab == "editar")
                 _mantDia = _ficha.MantenimientoDiaMes;
                 _reservable = _ficha.Zona.EsReservable;
                 _aforo = _ficha.Zona.CapacidadPersonas;
+                _condiciones = _ficha.Zona.ReglasUso;
             }
         }
         catch (Exception ex) { _msg = ex.Message; }
@@ -485,7 +512,7 @@ else if (_tab == "editar")
         _busy = true; _msg = "";
         try
         {
-            var req = new GuardarZonaFichaRequest(_imagenUrl, _mantTipo, _mantContrato, _mantFrec, _mantDia, _reservable, _aforo);
+            var req = new GuardarZonaFichaRequest(_imagenUrl, _mantTipo, _mantContrato, _mantFrec, _mantDia, _reservable, _aforo, _condiciones);
             var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/zonas/{Zona.Id}/ficha", req);
             if (!resp.IsSuccessStatusCode) { _msg = "Error: " + await resp.Content.ReadAsStringAsync(); return; }
 
@@ -503,6 +530,36 @@ else if (_tab == "editar")
         catch (Exception ex) { _msg = ex.Message; }
         finally { _busy = false; }
     }
+
+    // Genera las condiciones de uso con el Auxiliar Administrativo (IA). Toma el nombre/categoria/aforo
+    // de la zona como contexto y los "puntos clave" que el usuario escriba, y expande a un texto formal.
+    private async Task GenerarCondicionesAsync()
+    {
+        if (_ficha is null) return;
+        _iaBusy = true; _iaError = null;
+        try
+        {
+            var ctx = $"Zona: {_ficha.Zona.Nombre}. Categoria: {_ficha.Zona.Categoria}."
+                    + (_aforo is int a ? $" Aforo maximo: {a} personas." : "")
+                    + (_reservable ? " Es reservable." : " No es reservable.");
+            var body = new
+            {
+                proposito = "Condiciones de uso de una zona comun de una copropiedad: reglas para los residentes sobre horarios, consumo de licor, ruido, mascotas, aseo y responsabilidad por danos.",
+                contexto = ctx,
+                puntosClave = string.IsNullOrWhiteSpace(_iaHint) ? null : _iaHint.Trim(),
+                maxPalabras = 120
+            };
+            var resp = await Auth().PostAsJsonAsync("/api/ia/completar-campo", body);
+            if (!resp.IsSuccessStatusCode) { _iaError = "No se pudo generar (" + (int)resp.StatusCode + ")."; return; }
+            var r = await resp.Content.ReadFromJsonAsync<AsistenteCampoResp>();
+            if (r is { Ok: true } && !string.IsNullOrWhiteSpace(r.Texto)) _condiciones = r.Texto;
+            else _iaError = r?.Error ?? "El asistente de IA no esta disponible.";
+        }
+        catch (Exception ex) { _iaError = ex.Message; }
+        finally { _iaBusy = false; }
+    }
+
+    private sealed record AsistenteCampoResp(bool Ok, string? Texto, string? Error);
 
     private void IniciarEdicion()
     {

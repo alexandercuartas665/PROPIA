@@ -24,6 +24,9 @@ public class EquipoActivo : TenantEntity
     public string? Marca { get; set; }
     public string? Modelo { get; set; }
     public string? NumeroSerie { get; set; }
+
+    /// <summary>Codigo de barras / etiqueta de inventario para identificar el activo fijo.</summary>
+    public string? CodigoBarra { get; set; }
     public DateOnly? FechaInstalacion { get; set; }
     public DateOnly? GarantiaHasta { get; set; }
     public string? Ubicacion { get; set; }

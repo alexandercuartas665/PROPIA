@@ -1550,7 +1550,7 @@ public class MiCopropiedadService : IMiCopropiedadService
     private static EquipoActivoDto ToEquipoActivoDto(EquipoActivo e) => new(
         e.Id, e.Nombre, e.Categoria,
         e.Tipo, e.Cantidad, e.EsReservable,
-        e.Marca, e.Modelo, e.NumeroSerie, e.FechaInstalacion, e.GarantiaHasta,
+        e.Marca, e.Modelo, e.NumeroSerie, e.CodigoBarra, e.FechaInstalacion, e.GarantiaHasta,
         e.Ubicacion, e.Observaciones,
         e.VidaUtilAnios, e.FechaAdquisicion, e.ValorAdquisicion,
         e.Proveedor, e.NumeroFactura, e.Estado);
@@ -1588,6 +1588,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         e.EsReservable = req.EsReservable;
         e.Modelo = req.Modelo;
         e.NumeroSerie = req.NumeroSerie;
+        e.CodigoBarra = string.IsNullOrWhiteSpace(req.CodigoBarra) ? null : req.CodigoBarra.Trim();
         e.FechaInstalacion = req.FechaInstalacion;
         e.GarantiaHasta = req.GarantiaHasta;
         e.Ubicacion = req.Ubicacion;
@@ -2347,6 +2348,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         z.MantenimientoDiaMes = req.MantenimientoDiaMes;
         z.EsReservable = req.EsReservable;
         z.CapacidadPersonas = req.CapacidadPersonas;
+        z.ReglasUso = string.IsNullOrWhiteSpace(req.ReglasUso) ? null : req.ReglasUso.Trim();
         await _db.SaveChangesAsync(ct);
         return true;
     }

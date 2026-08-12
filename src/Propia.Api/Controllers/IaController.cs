@@ -26,6 +26,7 @@ public class IaController : ControllerBase
     private readonly IConversacionService _conversaciones;
     private readonly IAgentRunLogService _bitacora;
     private readonly IAutomationService _automations;
+    private readonly IAsistenteCamposService _asistente;
 
     public IaController(
         IWhatsAppLineService lines,
@@ -39,7 +40,8 @@ public class IaController : ControllerBase
         IListaNegraService listaNegra,
         IConversacionService conversaciones,
         IAgentRunLogService bitacora,
-        IAutomationService automations)
+        IAutomationService automations,
+        IAsistenteCamposService asistente)
     {
         _lines = lines;
         _connector = connector;
@@ -53,6 +55,7 @@ public class IaController : ControllerBase
         _conversaciones = conversaciones;
         _bitacora = bitacora;
         _automations = automations;
+        _asistente = asistente;
     }
 
     // ---------- Automatizaciones (Infraestructura IA) ----------
@@ -431,6 +434,13 @@ public class IaController : ControllerBase
     [HttpPost("agentes/{id:guid}/probar")]
     public async Task<IActionResult> ProbarAgente(Guid id, [FromBody] ProbarAgenteRequest req, CancellationToken ct)
         => Ok(await _inference.TestChatAsync(id, req.Turns, req.SystemPromptOverride, BearerToken(), req.ContactPhone, req.ConversationId, ct));
+
+    // ---------- Auxiliar Administrativo: rellenar/completar campos con IA ----------
+    /// <summary>Genera el contenido de un campo (condiciones de uso, descripciones, etc.) con el
+    /// agente Auxiliar Administrativo de la copropiedad activa. Reutilizable en todo el sistema.</summary>
+    [HttpPost("completar-campo")]
+    public async Task<IActionResult> CompletarCampo([FromBody] AsistenteCampoRequest req, CancellationToken ct)
+        => Ok(await _asistente.CompletarAsync(req, ct));
 
     [HttpGet("consumo")]
     public async Task<IActionResult> Consumo(CancellationToken ct) => Ok(await _usage.GetSummaryAsync(ct));
