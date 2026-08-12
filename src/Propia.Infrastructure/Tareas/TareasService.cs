@@ -143,8 +143,8 @@ public class TareasService : ITareasService
     public async Task<IReadOnlyList<EtiquetaTareaDto>> ListarEtiquetasAsync(Guid? tableroId, CancellationToken ct)
     {
         var q = _db.TareaEtiquetas.AsNoTracking().AsQueryable();
-        // Con tablero: sus etiquetas + las globales (TableroId == null). Sin tablero: todas (admin/legacy).
-        if (tableroId.HasValue) q = q.Where(e => e.TableroId == tableroId.Value || e.TableroId == null);
+        // Etiquetas EXCLUSIVAS del tablero (no hay globales). Sin tablero: todas (admin/legacy).
+        if (tableroId.HasValue) q = q.Where(e => e.TableroId == tableroId.Value);
         var rows = await q.OrderBy(e => e.Nombre).ToListAsync(ct);
         var counts = await _db.TareaEtiquetaAsignaciones.AsNoTracking()
             .GroupBy(a => a.EtiquetaId)
@@ -156,8 +156,9 @@ public class TareasService : ITareasService
     public async Task<EtiquetaTareaDto> CrearEtiquetaAsync(CrearEtiquetaRequest req, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.Nombre)) throw new InvalidOperationException("Nombre obligatorio.");
+        if (req.TableroId is null) throw new InvalidOperationException("La etiqueta debe pertenecer a un tablero.");
         var nom = req.Nombre.Trim();
-        // Unicidad dentro del mismo alcance (mismo tablero, o entre las globales).
+        // Unicidad dentro del mismo tablero.
         if (await _db.TareaEtiquetas.AnyAsync(e => e.Nombre == nom && e.TableroId == req.TableroId, ct))
             throw new InvalidOperationException("Ya existe una etiqueta con este nombre en este tablero.");
         var e = new TareaEtiqueta { Nombre = nom, Color = req.Color, Activo = true, TableroId = req.TableroId };
