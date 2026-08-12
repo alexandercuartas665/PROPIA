@@ -192,10 +192,11 @@ public class TareasService : ITareasService
 
     public async Task<IReadOnlyList<TareaListaDto>> ListarTareasAsync(
         Guid? estadoId, PrioridadTarea? prioridad, Guid? asignadoPersonaId, Guid? padreId, bool? soloRaiz, string? query,
-        CancellationToken ct, Guid? tableroId = null)
+        CancellationToken ct, Guid? tableroId = null, bool verCerradas = false)
     {
         await AsegurarEstadosBaseAsync(ct);
-        IQueryable<Tarea> q = _db.Tareas.AsNoTracking().Where(t => !t.Eliminada);
+        // Las tareas CERRADAS desaparecen del tablero activo; solo se ven en la pestana "Cerrados".
+        IQueryable<Tarea> q = _db.Tareas.AsNoTracking().Where(t => !t.Eliminada && t.Cerrada == verCerradas);
         if (tableroId.HasValue) q = q.Where(t => t.TableroId == tableroId.Value);
         if (estadoId.HasValue) q = q.Where(t => t.EstadoId == estadoId.Value);
         if (prioridad.HasValue) q = q.Where(t => t.Prioridad == prioridad.Value);
@@ -837,9 +838,29 @@ public class TareasService : ITareasService
 
         var anterior = await _db.TareasEstados.AsNoTracking().FirstOrDefaultAsync(e => e.Id == t.EstadoId, ct);
 
-        // Si va a Cancelada, requiere motivo
-        if (nuevo.Nombre == EstadoTareaBase.Cancelada && string.IsNullOrWhiteSpace(req.MotivoCancelacion))
-            throw new InvalidOperationException("Se requiere motivo para cancelar la tarea.");
+        // Cierre: al mover a un estado TERMINAL se pide un motivo de cierre y la tarea se CIERRA
+        // (se archiva y desaparece del tablero activo, queda en la pestana "Cerrados").
+        string? motivoNombre = null;
+        if (nuevo.EsTerminal)
+        {
+            if (req.MotivoCierreId is not Guid mcid)
+                throw new InvalidOperationException("Debes elegir un motivo de cierre.");
+            var motivo = await _db.MotivosCierre.AsNoTracking()
+                .FirstOrDefaultAsync(m => m.Id == mcid && m.Modulo == "tareas", ct)
+                ?? throw new InvalidOperationException("Motivo de cierre invalido.");
+            motivoNombre = motivo.Nombre;
+            t.Cerrada = true;
+            t.CerradaAt = DateTimeOffset.UtcNow;
+            t.MotivoCierreId = mcid;
+            t.MotivoCancelacion = motivo.Nombre;   // compat: la ficha muestra el motivo
+        }
+        else if (t.Cerrada)
+        {
+            // Reabrir: vuelve de un estado terminal a uno activo -> reaparece en el tablero.
+            t.Cerrada = false;
+            t.CerradaAt = null;
+            t.MotivoCierreId = null;
+        }
 
         t.EstadoId = nuevo.Id;
         t.EstadoDesde = DateTimeOffset.UtcNow;   // reinicia el reloj "tiempo en este estado".
@@ -848,15 +869,13 @@ public class TareasService : ITareasService
             t.FechaCompletada = DateTimeOffset.UtcNow;
             t.Progreso = 100;   // cerrar una tarea la deja al 100% (alimenta el progreso del padre).
         }
-        if (nuevo.Nombre == EstadoTareaBase.Cancelada)
-            t.MotivoCancelacion = req.MotivoCancelacion;
         t.UpdatedAt = DateTimeOffset.UtcNow;
 
         await RegistrarHistorial(t.Id,
             nuevo.Nombre == EstadoTareaBase.Cancelada ? TipoEventoTarea.Cancelada : TipoEventoTarea.EstadoCambiado,
-            $"Estado cambiado de {anterior?.Nombre ?? "?"} a {nuevo.Nombre}",
+            nuevo.EsTerminal ? $"Cerrada ({nuevo.Nombre}) - motivo: {motivoNombre}" : $"Estado cambiado de {anterior?.Nombre ?? "?"} a {nuevo.Nombre}",
             new { prev = anterior?.Nombre },
-            new { nuevo = nuevo.Nombre, motivo = req.MotivoCancelacion },
+            new { nuevo = nuevo.Nombre, motivo = motivoNombre },
             ct);
         await _db.SaveChangesAsync(ct);
         await RecomputarProgresoAncestrosAsync(t.PadreId, ct);
@@ -1515,7 +1534,7 @@ public class TareasService : ITareasService
         return true;
     }
 
-    public async Task<TableroBoardDto?> GetTableroBoardAsync(Guid tableroId, CancellationToken ct)
+    public async Task<TableroBoardDto?> GetTableroBoardAsync(Guid tableroId, CancellationToken ct, bool verCerradas = false)
     {
         await AsegurarTableroDefaultAsync(ct);
         var t = await _db.Tableros.AsNoTracking().FirstOrDefaultAsync(x => x.Id == tableroId && x.Activo, ct);
@@ -1525,7 +1544,7 @@ public class TareasService : ITareasService
             .OrderBy(e => e.Orden).ThenBy(e => e.Nombre)
             .Select(e => new EstadoTareaDto(e.Id, e.Nombre, e.Color, e.Orden, e.EsTerminal, e.EsBase, e.Activo))
             .ToListAsync(ct);
-        var tareas = await ListarTareasAsync(null, null, null, null, null, null, ct, tableroId);
+        var tareas = await ListarTareasAsync(null, null, null, null, null, null, ct, tableroId, verCerradas);
         return new TableroBoardDto(dto, estados, tareas);
     }
 

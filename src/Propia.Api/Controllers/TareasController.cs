@@ -72,8 +72,8 @@ public class TareasController : ControllerBase
     public async Task<IActionResult> Listar(
         [FromQuery] Guid? estadoId, [FromQuery] PrioridadTarea? prioridad,
         [FromQuery] Guid? asignadoPersonaId, [FromQuery] Guid? padreId,
-        [FromQuery] bool? soloRaiz, [FromQuery] string? q, CancellationToken ct)
-        => Ok(await _svc.ListarTareasAsync(estadoId, prioridad, asignadoPersonaId, padreId, soloRaiz, q, ct));
+        [FromQuery] bool? soloRaiz, [FromQuery] string? q, [FromQuery] bool verCerradas, CancellationToken ct)
+        => Ok(await _svc.ListarTareasAsync(estadoId, prioridad, asignadoPersonaId, padreId, soloRaiz, q, ct, verCerradas: verCerradas));
 
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> Get(Guid id, CancellationToken ct)
@@ -254,9 +254,9 @@ public class TareasController : ControllerBase
     public record InvitarExternoTableroBody(string Email, string Nombre, Guid RolId);
 
     [HttpGet("tableros/{id:guid}/board")]
-    public async Task<IActionResult> GetTableroBoard(Guid id, CancellationToken ct)
+    public async Task<IActionResult> GetTableroBoard(Guid id, [FromQuery] bool verCerradas, CancellationToken ct)
     {
-        var b = await _svc.GetTableroBoardAsync(id, ct);
+        var b = await _svc.GetTableroBoardAsync(id, ct, verCerradas);
         return b is null ? NotFound() : Ok(b);
     }
 

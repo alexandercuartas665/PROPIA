@@ -148,7 +148,7 @@ public record ActualizarTareaRequest(
     IReadOnlyList<SubtareaCheckItem>? Checklist = null,
     IReadOnlyList<TareaCampoValorDto>? CamposValores = null);
 
-public record CambiarEstadoRequest(Guid EstadoId, string? MotivoCancelacion);
+public record CambiarEstadoRequest(Guid EstadoId, string? MotivoCancelacion, Guid? MotivoCierreId = null);
 public record CrearComentarioRequest(string Texto);
 public record AsignarEtiquetaRequest(Guid EtiquetaId);
 public record AgregarColaboradorRequest(Guid PersonaId);

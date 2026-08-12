@@ -3,6 +3,7 @@
 @using System.Globalization
 @using Propia.Application.Tareas
 @using Propia.Application.Directorio
+@using Propia.Application.Cierre
 @using Propia.Domain.Enums
 @using Propia.Shared.Auth
 @inject IHttpClientFactory HttpFactory
@@ -127,6 +128,14 @@ else
                 <button class="tb-btn tb-btn-soft" @onclick="AbrirConfigBoard"><i class="fi fi-rr-settings"></i>Configurar</button>
                 <button class="tb-btn tb-btn-primary" @onclick="() => AbrirCardDraft(null, _board.Estados.FirstOrDefault()?.Id)"><i class="fi fi-rr-plus"></i>Nueva tarea</button>
             </div>
+        </div>
+
+        @* Pestanas Activos / Cerrados + buscador (las tareas cerradas desaparecen del tablero activo). *@
+        <div class="tb-board-tabs">
+            <button class="tb-btab @(!_verCerradas ? "on" : "")" @onclick="() => CambiarTabCerradas(false)">Activos</button>
+            <button class="tb-btab @(_verCerradas ? "on" : "")" @onclick="() => CambiarTabCerradas(true)">Cerrados</button>
+            <div class="tb-flex"></div>
+            <input class="tb-search" @bind="_buscarTarea" @bind:event="oninput" placeholder="Buscar por titulo o numero..." />
         </div>
 
 
@@ -907,6 +916,30 @@ else
     </div>
 }
 
+@* ===================== Modal Cerrar tarea (motivo de cierre) ===================== *@
+@if (_cierreTarget is not null)
+{
+    <div class="tb-modal-bd" @onclick="() => _cierreTarget = null">
+        <div class="tb-cierre" @onclick:stopPropagation="true">
+            <div class="tb-cierre-h">Cerrar tarea</div>
+            @if (!string.IsNullOrEmpty(_cierreTareaTitulo)) { <div class="tb-cierre-sub">@_cierreTareaTitulo</div> }
+            <label class="tb-cierre-lbl">Motivo de cierre *</label>
+            <select class="tb-cierre-sel" @bind="_cierreMotivoId">
+                <option value="">Elige un motivo...</option>
+                @foreach (var m in _motivosTareas.Where(x => x.Activo))
+                {
+                    <option value="@m.Id">@m.Nombre (@ClasifTareaTexto(m.Clasificacion))</option>
+                }
+            </select>
+            <p class="tb-cierre-hint">Al cerrar, la tarea desaparece del tablero activo y queda en la pestana "Cerrados".</p>
+            <div class="tb-cierre-foot">
+                <button class="tb-btn tb-btn-ghost" @onclick="async () => { _cierreTarget = null; await RecargarBoard(); }">Cancelar</button>
+                <button class="tb-btn tb-btn-primary" @onclick="ConfirmarCierreTarea" disabled="@string.IsNullOrEmpty(_cierreMotivoId)">Cerrar tarea</button>
+            </div>
+        </div>
+    </div>
+}
+
 @* ===================== Modal Configurar tablero (estados + campos) ===================== *@
 @if (_cfgOpen && _board is not null)
 {
@@ -1071,6 +1104,32 @@ else
                             @if (_campoDraft.Id is not null) { <button class="tb-btn tb-btn-ghost" @onclick="CfgNuevoCampo">Cancelar</button> }
                             <button class="tb-btn tb-btn-primary" @onclick="CfgGuardarCampo" disabled="@(_busy || string.IsNullOrWhiteSpace(_campoDraft.Label))">@(_campoDraft.Id is null ? "Agregar campo" : "Guardar campo")</button>
                         </div>
+                    </div>
+                </div>
+                <div class="tbcfg-sec">
+                    <div class="tbcfg-h">MOTIVOS DE CIERRE</div>
+                    <p class="tbcfg-hint">Al cerrar una tarea se elige uno de estos motivos; cada uno trae su clasificacion.</p>
+                    @foreach (var m in _motivosTareas.OrderBy(x => x.Orden))
+                    {
+                        var mm = m;
+                        <div class="tbcfg-erow">
+                            <input class="tbcfg-in" value="@m.Nombre" @onchange="(ev) => RenombrarMotivoTarea(mm, ev)" />
+                            <select class="tbcfg-in tbcfg-in-sm" @onchange="(ev) => ClasifMotivoTarea(mm, ev)">
+                                <option value="1" selected="@(m.Clasificacion == ClasificacionCierre.CierreCorrecto)">Cierre correcto</option>
+                                <option value="2" selected="@(m.Clasificacion == ClasificacionCierre.ViaInternaAgotada)">Via interna agotada</option>
+                                <option value="3" selected="@(m.Clasificacion == ClasificacionCierre.Perdida)">Perdida</option>
+                            </select>
+                            <button class="tb-btn tb-btn-ghost" @onclick="() => EliminarMotivoTarea(mm.Id)">@(m.EsBase ? "Desactivar" : "Eliminar")</button>
+                        </div>
+                    }
+                    <div class="tbcfg-erow tbcfg-erow-end">
+                        <input class="tbcfg-in" placeholder="Nuevo motivo de cierre..." @bind="_nuevoMotivoTareaNombre" />
+                        <select class="tbcfg-in tbcfg-in-sm" @bind="_nuevoMotivoTareaClasif">
+                            <option value="1">Cierre correcto</option>
+                            <option value="2">Via interna agotada</option>
+                            <option value="3">Perdida</option>
+                        </select>
+                        <button class="tb-btn tb-btn-primary" @onclick="AgregarMotivoTarea" disabled="@string.IsNullOrWhiteSpace(_nuevoMotivoTareaNombre)">Agregar motivo</button>
                     </div>
                 </div>
             </div>
@@ -1720,6 +1779,21 @@ else
     /* El header del tablero envuelve: si no cabe, las acciones bajan a otra linea en vez de machucar el titulo. */
     .tb-board-head { flex-wrap: wrap; align-items: center; row-gap: 10px; }
     .tb-board-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-left: auto; }
+    /* Pestanas Activos/Cerrados + buscador */
+    .tb-board-tabs { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid #EEF3F8; margin-bottom: 14px; }
+    .tb-btab { border: 0; background: transparent; padding: 8px 16px; font-size: 13px; font-weight: 700; color: #7C98B6; cursor: pointer; border-bottom: 2px solid transparent; font-family: inherit; }
+    .tb-btab.on { color: var(--propia-brand, #6D4FE3); border-bottom-color: var(--propia-brand, #6D4FE3); }
+    .tb-search { border: 1px solid #E1E8EE; border-radius: 9px; padding: 8px 12px; font-size: 13px; color: #33475B; background: #fff; outline: none; font-family: inherit; min-width: 231px; }
+    .tb-search:focus { border-color: #6D4FE3; }
+    /* Modal cerrar tarea */
+    .tb-cierre { background: #fff; border-radius: 14px; width: min(440px, 94vw); padding: 20px; box-shadow: 0 20px 60px rgba(20,40,70,.3); align-self: center; }
+    .tb-cierre-h { font-size: 16px; font-weight: 800; color: #1B2A3A; }
+    .tb-cierre-sub { font-size: 12.5px; color: #7C98B6; margin-top: 2px; }
+    .tb-cierre-lbl { display: block; font-size: 11px; font-weight: 700; color: #7C98B6; margin: 14px 0 5px; }
+    .tb-cierre-sel { width: 100%; box-sizing: border-box; border: 1px solid #E1E8EE; border-radius: 9px; padding: 9px 11px; font-size: 13px; color: #33475B; outline: none; font-family: inherit; background: #fff; }
+    .tb-cierre-hint { font-size: 11.5px; color: #A6B7C8; margin: 8px 0 0; }
+    .tb-cierre-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+    .tbcfg-hint { font-size: 11.5px; color: #A6B7C8; margin: -4px 0 8px; }
     .tb-head-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 
     /* Selector de copropiedad (prototipo v2) */
@@ -3710,9 +3784,18 @@ else
     private List<TareaListaDto> _tareas = new();
     private void SyncTareas() => _tareas = _board?.Tareas.ToList() ?? new();
 
+    // Pestana Activos / Cerrados: las cerradas desaparecen del tablero activo y se ven aparte.
+    private bool _verCerradas;
+    private async Task CambiarTabCerradas(bool ver)
+    {
+        if (_verCerradas == ver || _board is null) return;
+        _verCerradas = ver;
+        await RecargarBoard();
+    }
+
     private async Task AbrirBoardAsync(Guid id)
     {
-        _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tareas/tableros/{id}/board");
+        _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tareas/tableros/{id}/board?verCerradas={(_verCerradas ? "true" : "false")}");
         // Etiquetas de ESTE tablero (+ las globales). Se gestionan en "Configurar tablero".
         try { _etiquetasCat = await Auth().GetFromJsonAsync<List<EtiquetaTareaDto>>($"/api/tareas/etiquetas?tableroId={id}") ?? _etiquetasCat; } catch { }
         SyncTareas();
@@ -3780,7 +3863,7 @@ else
         await Auth().PatchAsJsonAsync($"/api/tareas/{tareaId}/inline", new InlineUpdateTareaRequest("origen", tipo, null, null, null, refv));
     }
     private void CerrarBoard() { _board = null; _tareas = new(); }
-    private async Task RecargarBoard() { if (_board is not null) { _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tareas/tableros/{_board.Tablero.Id}/board"); SyncTareas(); ReconciliarOrden(); } }
+    private async Task RecargarBoard() { if (_board is not null) { _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tareas/tableros/{_board.Tablero.Id}/board?verCerradas={(_verCerradas ? "true" : "false")}"); SyncTareas(); ReconciliarOrden(); } }
 
     private List<TareaListaDto> RaicesPorEstado(Guid estadoId) =>
         _tareas.Where(t => t.PadreId == null && t.EstadoId == estadoId).ToList();
@@ -3880,10 +3963,19 @@ else
 
     private bool PasaFiltros(TareaListaDto t)
     {
+        // Buscador (por titulo / numero de tarea), como en PQRSD.
+        if (!string.IsNullOrWhiteSpace(_buscarTarea))
+        {
+            var qn = _buscarTarea.Trim();
+            var ok = (t.Titulo ?? "").Contains(qn, StringComparison.OrdinalIgnoreCase)
+                  || (t.NumeroTarea ?? "").Contains(qn, StringComparison.OrdinalIgnoreCase);
+            if (!ok) return false;
+        }
         var activas = _reglas.Where(ReglaActiva).ToList();
         if (activas.Count == 0) return true;
         return _filtroLogica == "or" ? activas.Any(r => EvalRegla(t, r)) : activas.All(r => EvalRegla(t, r));
     }
+    private string _buscarTarea = "";
     // Texto comparable de un campo (para operadores de texto/seleccion/asignado).
     private string ValorTextoFiltro(TareaListaDto t, string campo) => campo switch
     {
@@ -4418,6 +4510,12 @@ else
     private async Task CambiarEstadoFila(Guid tareaId, ChangeEventArgs e)
     {
         if (!Guid.TryParse(e.Value?.ToString(), out var estadoId)) return;
+        if (EstadoEsTerminal(estadoId))
+        {
+            // Cerrar pide motivo; no parcheamos local (si confirma, la tarea desaparece del activo).
+            await CambiarEstadoOCerrar(tareaId, estadoId);
+            return;
+        }
         PatchLocal(tareaId, t => t with { EstadoId = estadoId, EstadoNombre = _board?.Estados.FirstOrDefault(x => x.Id == estadoId)?.Nombre ?? t.EstadoNombre, EstadoColor = _board?.Estados.FirstOrDefault(x => x.Id == estadoId)?.Color ?? t.EstadoColor });
         var resp = await Auth().PutAsJsonAsync($"/api/tareas/{tareaId}/estado", new CambiarEstadoRequest(estadoId, null));
         if (resp.IsSuccessStatusCode) await RecargarBoard();
@@ -4653,10 +4751,56 @@ else
         if (tareaId is null || _board is null) return;
         var tarea = _tareas.FirstOrDefault(t => t.Id == tareaId.Value);
         if (tarea is null || tarea.EstadoId == estadoId) return;  // misma columna: nada que hacer
-        var resp = await Auth().PutAsJsonAsync($"/api/tareas/{tareaId}/estado", new CambiarEstadoRequest(estadoId, null));
+        await CambiarEstadoOCerrar(tareaId.Value, estadoId);
+    }
+
+    // ---- Cambio de estado con cierre (motivo) al llegar a una columna terminal ----
+    private (Guid TareaId, Guid EstadoId)? _cierreTarget;
+    private string _cierreTareaTitulo = "";
+    private string _cierreMotivoId = "";
+    private List<MotivoCierreDto> _motivosTareas = new();
+
+    private bool EstadoEsTerminal(Guid estadoId) => _board?.Estados.FirstOrDefault(e => e.Id == estadoId)?.EsTerminal ?? false;
+
+    // Si la columna destino es terminal, se pide motivo de cierre (la tarea se cierra y desaparece).
+    private async Task CambiarEstadoOCerrar(Guid tareaId, Guid estadoId)
+    {
+        if (EstadoEsTerminal(estadoId))
+        {
+            if (_motivosTareas.Count == 0) await CargarMotivosTareasAsync();
+            _cierreTareaTitulo = _tareas.FirstOrDefault(t => t.Id == tareaId)?.Titulo ?? "";
+            _cierreMotivoId = "";
+            _cierreTarget = (tareaId, estadoId);
+        }
+        else
+        {
+            await EjecutarCambioEstado(tareaId, estadoId, null);
+        }
+    }
+    private async Task EjecutarCambioEstado(Guid tareaId, Guid estadoId, Guid? motivoId)
+    {
+        var resp = await Auth().PutAsJsonAsync($"/api/tareas/{tareaId}/estado", new CambiarEstadoRequest(estadoId, null, motivoId));
         if (resp.IsSuccessStatusCode) await RecargarBoard();
         else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
     }
+    private async Task ConfirmarCierreTarea()
+    {
+        if (_cierreTarget is not { } tgt) return;
+        if (!Guid.TryParse(_cierreMotivoId, out var mid)) { _msg = "Elige un motivo de cierre."; _msgClass = "alert-danger"; return; }
+        _cierreTarget = null;
+        await EjecutarCambioEstado(tgt.TareaId, tgt.EstadoId, mid);
+    }
+    private async Task CargarMotivosTareasAsync()
+    {
+        try { _motivosTareas = (await Auth().GetFromJsonAsync<List<MotivoCierreDto>>("/api/cierre/motivos?modulo=tareas&incluirInactivos=true")) ?? new(); }
+        catch { _motivosTareas = new(); }
+    }
+    private static string ClasifTareaTexto(ClasificacionCierre c) => c switch
+    {
+        ClasificacionCierre.ViaInternaAgotada => "via interna agotada",
+        ClasificacionCierre.Perdida => "perdida",
+        _ => "cierre correcto"
+    };
     private async Task CambiarProgresoFila(Guid tareaId, ChangeEventArgs e)
     {
         if (!int.TryParse(e.Value?.ToString(), out var p)) return;
@@ -4804,8 +4948,37 @@ else
     }
 
     // ----- Configurar tablero (estados + campos) -----
-    private async Task AbrirConfigBoard() { _cfgOpen = true; _cfgEstadoNew = ""; _cfgCampoNew = ""; await CargarCamposArchivados(); }
+    private async Task AbrirConfigBoard() { _cfgOpen = true; _cfgEstadoNew = ""; _cfgCampoNew = ""; await CargarCamposArchivados(); await CargarMotivosTareasAsync(); }
     private void CerrarConfigBoard() { _cfgOpen = false; }
+
+    // ---- Config de motivos de cierre (modulo tareas) ----
+    private string _nuevoMotivoTareaNombre = "";
+    private string _nuevoMotivoTareaClasif = "1";
+    private async Task AgregarMotivoTarea()
+    {
+        if (!int.TryParse(_nuevoMotivoTareaClasif, out var c)) c = 1;
+        var resp = await Auth().PostAsJsonAsync("/api/cierre/motivos?modulo=tareas",
+            new GuardarMotivoCierreRequest(_nuevoMotivoTareaNombre.Trim(), (ClasificacionCierre)c));
+        if (resp.IsSuccessStatusCode) { _nuevoMotivoTareaNombre = ""; await CargarMotivosTareasAsync(); }
+    }
+    private async Task RenombrarMotivoTarea(MotivoCierreDto m, ChangeEventArgs e)
+    {
+        var nombre = e.Value?.ToString() ?? m.Nombre;
+        if (string.IsNullOrWhiteSpace(nombre)) return;
+        await Auth().PutAsJsonAsync($"/api/cierre/motivos/{m.Id}", new GuardarMotivoCierreRequest(nombre.Trim(), m.Clasificacion));
+        await CargarMotivosTareasAsync();
+    }
+    private async Task ClasifMotivoTarea(MotivoCierreDto m, ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var c)) return;
+        await Auth().PutAsJsonAsync($"/api/cierre/motivos/{m.Id}", new GuardarMotivoCierreRequest(m.Nombre, (ClasificacionCierre)c));
+        await CargarMotivosTareasAsync();
+    }
+    private async Task EliminarMotivoTarea(Guid id)
+    {
+        await Auth().DeleteAsync($"/api/cierre/motivos/{id}");
+        await CargarMotivosTareasAsync();
+    }
     private int CountEstado(Guid estadoId) => _tareas.Count(t => t.EstadoId == estadoId && t.PadreId == null);
 
     private async Task CfgAddEstado()

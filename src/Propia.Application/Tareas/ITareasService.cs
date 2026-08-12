@@ -18,7 +18,7 @@ public interface ITareasService
     Task<bool> EliminarEtiquetaAsync(Guid id, CancellationToken ct);
 
     // Tareas
-    Task<IReadOnlyList<TareaListaDto>> ListarTareasAsync(Guid? estadoId, PrioridadTarea? prioridad, Guid? asignadoPersonaId, Guid? padreId, bool? soloRaiz, string? query, CancellationToken ct, Guid? tableroId = null);
+    Task<IReadOnlyList<TareaListaDto>> ListarTareasAsync(Guid? estadoId, PrioridadTarea? prioridad, Guid? asignadoPersonaId, Guid? padreId, bool? soloRaiz, string? query, CancellationToken ct, Guid? tableroId = null, bool verCerradas = false);
     Task<TareaDetalleDto?> GetTareaAsync(Guid id, CancellationToken ct);
     Task<TareaDetalleDto> CrearTareaAsync(CrearTareaRequest req, CancellationToken ct);
     Task<bool> ActualizarTareaAsync(Guid id, ActualizarTareaRequest req, CancellationToken ct);
@@ -69,7 +69,7 @@ public interface ITareasService
     Task<bool> QuitarUsuarioTableroAsync(Guid tableroId, Guid personaId, CancellationToken ct);
 
     /// <summary>Vista completa de un tablero (tablero + estados + tarjetas).</summary>
-    Task<TableroBoardDto?> GetTableroBoardAsync(Guid tableroId, CancellationToken ct);
+    Task<TableroBoardDto?> GetTableroBoardAsync(Guid tableroId, CancellationToken ct, bool verCerradas = false);
     Task<bool> ActualizarProgresoAsync(Guid tareaId, int progreso, CancellationToken ct);
 
     // Campos personalizados del tablero (tipados)
