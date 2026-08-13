@@ -55,6 +55,12 @@ public interface IPqrsdService
     // Radicacion (residente o admin)
     Task<PqrsdExpedienteDetalleDto> RadicarAsync(RadicarPqrsdRequest req, CancellationToken ct);
 
+    // Formulario publico (sin login): branding + catalogos, y radicacion externa
+    /// <summary>Config del formulario publico (nombre + logo de la copropiedad + tipos/categorias activos). Null si el tenant no existe o no esta activo.</summary>
+    Task<PqrsdPublicoConfigDto?> GetConfigPublicoAsync(Guid tenantId, CancellationToken ct);
+    /// <summary>Radica un PQRSD desde el formulario publico. Resuelve/crea la persona por documento y matchea la unidad por numero exacto.</summary>
+    Task<RadicarPublicoResultDto> RadicarPublicoAsync(Guid tenantId, RadicarPublicoRequest req, string? ipOrigen, CancellationToken ct);
+
     // Vista del residente
     Task<IReadOnlyList<PqrsdBandejaItemDto>> ListarMisPqrsdAsync(CancellationToken ct);
 

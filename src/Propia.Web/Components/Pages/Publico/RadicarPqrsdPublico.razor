@@ -1,0 +1,302 @@
+@page "/pqr/{TenantId:guid}"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.Pqrsd
+@using Propia.Domain.Enums
+@layout Propia.Web.Components.Layout.PublicLayout
+@inject IHttpClientFactory HttpFactory
+
+<PageTitle>Radicar PQRSD - PROPIA</PageTitle>
+
+<div class="pqrpub-wrap">
+@if (_cargando)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border" style="color: var(--propia-primary, #5955D1);"></div>
+        <p class="text-muted mt-3 small">Cargando formulario...</p>
+    </div>
+}
+else if (_configError is not null)
+{
+    <div class="pqrpub-card text-center">
+        <h4 class="mb-2">Formulario no disponible</h4>
+        <p class="text-muted mb-0">@_configError</p>
+    </div>
+}
+else if (_radicado is not null)
+{
+    <div class="pqrpub-card text-center">
+        <div class="pqrpub-ok">&#10003;</div>
+        <h3 class="mb-1">Tu solicitud fue radicada</h3>
+        <p class="text-muted">Guarda este numero para hacer seguimiento con la administracion.</p>
+        <div class="pqrpub-radicado">@_radicado</div>
+        <button class="btn btn-outline-secondary btn-sm mt-3" @onclick="Reiniciar">Radicar otra solicitud</button>
+    </div>
+}
+else if (_cfg is not null)
+{
+    <div class="pqrpub-hero">
+        @if (!string.IsNullOrWhiteSpace(_cfg.LogoUrl))
+        {
+            <img src="@_cfg.LogoUrl" alt="@_cfg.CopropiedadNombre" class="pqrpub-logo" />
+        }
+        else
+        {
+            <div class="pqrpub-logo pqrpub-logo-ph">@Iniciales(_cfg.CopropiedadNombre)</div>
+        }
+        <h1 class="pqrpub-title">@_cfg.CopropiedadNombre</h1>
+        <p class="pqrpub-subtitle">Peticiones, Quejas, Reclamos, Sugerencias y Denuncias</p>
+    </div>
+
+    <div class="pqrpub-card">
+        @if (_formError is not null)
+        {
+            <div class="pqrpub-alert">@_formError</div>
+        }
+
+        <div class="pqrpub-grid">
+            <div class="pqrpub-field">
+                <label>Tipo de solicitud <span class="req">*</span></label>
+                <select class="pqrpub-input" @bind="_tipoId">
+                    <option value="@Guid.Empty" disabled>Selecciona...</option>
+                    @foreach (var t in _cfg.Tipos)
+                    {
+                        <option value="@t.Id">@t.Nombre (@t.DiasHabiles dias habiles)</option>
+                    }
+                </select>
+            </div>
+            <div class="pqrpub-field">
+                <label>Categoria <span class="req">*</span></label>
+                <select class="pqrpub-input" @bind="_categoriaId">
+                    <option value="@Guid.Empty" disabled>Selecciona...</option>
+                    @foreach (var c in _cfg.Categorias)
+                    {
+                        <option value="@c.Id">@c.Nombre</option>
+                    }
+                </select>
+            </div>
+
+            <div class="pqrpub-field">
+                <label>Torre / Bloque</label>
+                <input class="pqrpub-input" @bind="_torreTexto" placeholder="Opcional (ej. Torre 1)" maxlength="60" />
+            </div>
+            <div class="pqrpub-field">
+                <label>Unidad <span class="req">*</span></label>
+                <input class="pqrpub-input" @bind="_unidadTexto" placeholder="Tu unidad exacta (ej. 101, A-203)" maxlength="60" />
+            </div>
+
+            <div class="pqrpub-field">
+                <label>Tipo de documento <span class="req">*</span></label>
+                <select class="pqrpub-input" @bind="_tipoDoc">
+                    <option value="@TipoDocumento.CC">Cedula de ciudadania</option>
+                    <option value="@TipoDocumento.CE">Cedula de extranjeria</option>
+                    <option value="@TipoDocumento.PA">Pasaporte</option>
+                    <option value="@TipoDocumento.TI">Tarjeta de identidad</option>
+                    <option value="@TipoDocumento.NIT">NIT</option>
+                </select>
+            </div>
+            <div class="pqrpub-field">
+                <label>Numero de identificacion <span class="req">*</span></label>
+                <input class="pqrpub-input" @bind="_documento" placeholder="Sin puntos ni comas" maxlength="30" />
+            </div>
+
+            <div class="pqrpub-field">
+                <label>Nombres <span class="req">*</span></label>
+                <input class="pqrpub-input" @bind="_nombres" maxlength="80" />
+            </div>
+            <div class="pqrpub-field">
+                <label>Apellidos</label>
+                <input class="pqrpub-input" @bind="_apellidos" maxlength="80" />
+            </div>
+
+            <div class="pqrpub-field">
+                <label>Correo electronico</label>
+                <input class="pqrpub-input" type="email" @bind="_email" placeholder="Para recibir respuesta" maxlength="120" />
+            </div>
+            <div class="pqrpub-field">
+                <label>Telefono</label>
+                <input class="pqrpub-input" @bind="_telefono" maxlength="30" />
+            </div>
+
+            <div class="pqrpub-field pqrpub-full">
+                <label>Descripcion de la solicitud <span class="req">*</span></label>
+                <textarea class="pqrpub-input" rows="5" @bind="_descripcion"
+                          placeholder="Describe tu peticion, queja o reclamo con el mayor detalle posible (minimo 20 caracteres)."
+                          maxlength="2000"></textarea>
+                <div class="pqrpub-count">@(_descripcion?.Length ?? 0) / 2000</div>
+            </div>
+
+            @* Honeypot anti-bot: invisible para humanos, los bots suelen llenarlo. *@
+            <input type="text" class="pqrpub-hp" tabindex="-1" autocomplete="off" aria-hidden="true"
+                   @bind="_website" name="website" />
+
+            <div class="pqrpub-field pqrpub-full">
+                <label class="pqrpub-check">
+                    <input type="checkbox" @bind="_acepta" />
+                    <span>Autorizo el tratamiento de mis datos personales conforme a la politica de la copropiedad para atender esta solicitud.</span>
+                </label>
+            </div>
+        </div>
+
+        <button class="pqrpub-submit" @onclick="Enviar" disabled="@_enviando">
+            @if (_enviando) { <span class="spinner-border spinner-border-sm me-2"></span> }
+            Radicar solicitud
+        </button>
+        <p class="pqrpub-legal">Solo la administracion de la copropiedad podra ver tu solicitud.</p>
+    </div>
+}
+</div>
+
+<style>
+    .pqrpub-wrap { max-width: 720px; margin: 0 auto; padding: 0 16px; }
+    .pqrpub-hero { text-align: center; margin-bottom: 18px; }
+    .pqrpub-logo { width: 84px; height: 84px; object-fit: contain; border-radius: 18px; background: #fff;
+                   box-shadow: 0 6px 22px rgba(89,85,209,.16); padding: 8px; }
+    .pqrpub-logo-ph { display: inline-flex; align-items: center; justify-content: center; font-weight: 700;
+                      font-size: 30px; color: #5955D1; background: #ECEBFB; }
+    .pqrpub-title { font-size: 1.55rem; font-weight: 700; margin: 12px 0 2px; color: #1f2430; }
+    .pqrpub-subtitle { color: #6b7280; font-size: .9rem; margin: 0; }
+    .pqrpub-card { background: #fff; border: 1px solid #ececf4; border-radius: 16px; padding: 24px;
+                   box-shadow: 0 10px 30px rgba(20,20,45,.06); }
+    .pqrpub-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .pqrpub-field { display: flex; flex-direction: column; }
+    .pqrpub-full { grid-column: 1 / -1; }
+    .pqrpub-field label { font-size: .82rem; font-weight: 600; color: #374151; margin-bottom: 5px; }
+    .req { color: #e0492f; }
+    .pqrpub-input { width: 100%; border: 1px solid #d9dae3; border-radius: 10px; padding: 10px 12px;
+                    font-size: .92rem; color: #1f2430; background: #fff; transition: border-color .15s, box-shadow .15s; }
+    .pqrpub-input:focus { outline: none; border-color: #5955D1; box-shadow: 0 0 0 3px rgba(89,85,209,.15); }
+    textarea.pqrpub-input { resize: vertical; }
+    .pqrpub-count { text-align: right; font-size: .72rem; color: #9ca3af; margin-top: 3px; }
+    .pqrpub-check { flex-direction: row; align-items: flex-start; gap: 9px; font-weight: 500; font-size: .84rem;
+                    color: #4b5563; cursor: pointer; }
+    .pqrpub-check input { margin-top: 3px; width: 16px; height: 16px; flex: 0 0 auto; }
+    .pqrpub-hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+    .pqrpub-submit { width: 100%; margin-top: 20px; border: none; border-radius: 12px; padding: 13px;
+                     background: #5955D1; color: #fff; font-weight: 700; font-size: .98rem; cursor: pointer;
+                     transition: background .15s, transform .05s; }
+    .pqrpub-submit:hover { background: #4a46c4; }
+    .pqrpub-submit:active { transform: translateY(1px); }
+    .pqrpub-submit:disabled { opacity: .7; cursor: default; }
+    .pqrpub-legal { text-align: center; color: #9ca3af; font-size: .76rem; margin: 12px 0 0; }
+    .pqrpub-alert { background: #fdecec; border: 1px solid #f5c2c0; color: #b3261e; border-radius: 10px;
+                    padding: 10px 14px; font-size: .86rem; margin-bottom: 16px; }
+    .pqrpub-ok { width: 62px; height: 62px; border-radius: 50%; background: #e7f7ec; color: #16a34a;
+                 font-size: 34px; line-height: 62px; margin: 0 auto 10px; }
+    .pqrpub-radicado { display: inline-block; margin-top: 6px; background: #f3f2fd; border: 1px dashed #b9b6ef;
+                       color: #4a46c4; font-weight: 700; font-size: 1.15rem; letter-spacing: .5px;
+                       padding: 8px 18px; border-radius: 10px; }
+</style>
+
+@code {
+    [Parameter] public Guid TenantId { get; set; }
+
+    private bool _cargando = true;
+    private bool _enviando;
+    private string? _configError;
+    private string? _formError;
+    private string? _radicado;
+    private PqrsdPublicoConfigDto? _cfg;
+
+    // Modelo del formulario
+    private Guid _tipoId = Guid.Empty;
+    private Guid _categoriaId = Guid.Empty;
+    private string? _torreTexto;
+    private string _unidadTexto = "";
+    private TipoDocumento _tipoDoc = TipoDocumento.CC;
+    private string _documento = "";
+    private string _nombres = "";
+    private string _apellidos = "";
+    private string? _email;
+    private string? _telefono;
+    private string _descripcion = "";
+    private bool _acepta;
+    private string? _website;   // honeypot
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var http = HttpFactory.CreateClient("PropiaApi");
+            var resp = await http.GetAsync($"/api/publico/pqrsd/{TenantId}/config");
+            if (!resp.IsSuccessStatusCode)
+            {
+                _configError = "Este enlace no es valido o la copropiedad no esta disponible.";
+            }
+            else
+            {
+                _cfg = await resp.Content.ReadFromJsonAsync<PqrsdPublicoConfigDto>();
+                if (_cfg is not null)
+                {
+                    if (_cfg.Tipos.Count > 0) _tipoId = _cfg.Tipos[0].Id;
+                    if (_cfg.Categorias.Count > 0) _categoriaId = _cfg.Categorias[0].Id;
+                }
+            }
+        }
+        catch (Exception ex) { _configError = ex.Message; }
+        finally { _cargando = false; }
+    }
+
+    private async Task Enviar()
+    {
+        _formError = null;
+        if (_tipoId == Guid.Empty || _categoriaId == Guid.Empty) { _formError = "Selecciona el tipo y la categoria."; return; }
+        if (string.IsNullOrWhiteSpace(_unidadTexto)) { _formError = "Indica tu unidad."; return; }
+        if (string.IsNullOrWhiteSpace(_documento)) { _formError = "El numero de identificacion es obligatorio."; return; }
+        if (string.IsNullOrWhiteSpace(_nombres)) { _formError = "El nombre es obligatorio."; return; }
+        if ((_descripcion?.Trim().Length ?? 0) < 20) { _formError = "La descripcion debe tener al menos 20 caracteres."; return; }
+        if (!_acepta) { _formError = "Debes autorizar el tratamiento de tus datos para radicar."; return; }
+
+        _enviando = true;
+        try
+        {
+            var http = HttpFactory.CreateClient("PropiaApi");
+            var req = new RadicarPublicoRequest(
+                _tipoId, _categoriaId, _unidadTexto.Trim(),
+                string.IsNullOrWhiteSpace(_torreTexto) ? null : _torreTexto.Trim(),
+                _tipoDoc, _documento.Trim(), _nombres.Trim(), (_apellidos ?? "").Trim(),
+                string.IsNullOrWhiteSpace(_email) ? null : _email.Trim(),
+                string.IsNullOrWhiteSpace(_telefono) ? null : _telefono.Trim(),
+                _descripcion.Trim(), _acepta, _website);
+            var resp = await http.PostAsJsonAsync($"/api/publico/pqrsd/{TenantId}/radicar", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                var res = await resp.Content.ReadFromJsonAsync<RadicarPublicoResultDto>();
+                _radicado = res?.NumeroRadicado;
+            }
+            else
+            {
+                try
+                {
+                    var err = await resp.Content.ReadFromJsonAsync<ErrorResp>();
+                    _formError = err?.error ?? "No se pudo radicar la solicitud. Intenta de nuevo.";
+                }
+                catch { _formError = "No se pudo radicar la solicitud. Intenta de nuevo."; }
+            }
+        }
+        catch (Exception ex) { _formError = ex.Message; }
+        finally { _enviando = false; }
+    }
+
+    private void Reiniciar()
+    {
+        _radicado = null; _formError = null;
+        _torreTexto = null; _unidadTexto = ""; _documento = ""; _nombres = ""; _apellidos = "";
+        _email = null; _telefono = null; _descripcion = ""; _acepta = false; _website = null;
+        _tipoDoc = TipoDocumento.CC;
+        if (_cfg is not null)
+        {
+            _tipoId = _cfg.Tipos.Count > 0 ? _cfg.Tipos[0].Id : Guid.Empty;
+            _categoriaId = _cfg.Categorias.Count > 0 ? _cfg.Categorias[0].Id : Guid.Empty;
+        }
+    }
+
+    private static string Iniciales(string nombre)
+    {
+        if (string.IsNullOrWhiteSpace(nombre)) return "PH";
+        var partes = nombre.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var s = partes.Length >= 2 ? $"{partes[0][0]}{partes[1][0]}" : nombre.Trim()[..Math.Min(2, nombre.Trim().Length)];
+        return s.ToUpper();
+    }
+
+    private sealed class ErrorResp { public string? error { get; set; } }
+}

@@ -151,6 +151,40 @@ public record PqrsdTipoDto(
 public record GuardarTipoPqrsdRequest(
     string Nombre, int DiasHabiles, int DiasInconformidad, NivelUrgenciaPqrsd NivelUrgencia, TipoPqrsd Legal);
 
+// ===================== Formulario publico (radicacion externa, sin login) =====================
+
+/// <summary>Config publica del formulario de radicacion: solo branding + catalogos, sin datos sensibles.</summary>
+public record PqrsdPublicoConfigDto(
+    string CopropiedadNombre,
+    string? LogoUrl,
+    IReadOnlyList<PqrsdTipoPublicoDto> Tipos,
+    IReadOnlyList<PqrsdCategoriaPublicaDto> Categorias);
+
+public record PqrsdTipoPublicoDto(Guid Id, string Nombre, int DiasHabiles);
+public record PqrsdCategoriaPublicaDto(Guid Id, string Nombre);
+
+/// <summary>
+/// Radicacion desde el formulario publico (sin login). El radicador se resuelve/crea por documento;
+/// la unidad se escribe EXACTA (no hay busqueda que exponga el directorio). RN seguridad: solo registra.
+/// </summary>
+public record RadicarPublicoRequest(
+    Guid TipoId,
+    Guid CategoriaId,
+    string UnidadTexto,
+    string? TorreTexto,
+    TipoDocumento TipoDocumento,
+    string Documento,
+    string Nombres,
+    string Apellidos,
+    string? Email,
+    string? Telefono,
+    string Descripcion,
+    bool AceptaTratamiento,
+    /// <summary>Honeypot anti-bot: los humanos nunca lo llenan (va oculto). Si trae valor, se descarta.</summary>
+    string? Website = null);
+
+public record RadicarPublicoResultDto(string NumeroRadicado);
+
 // ===================== Requests =====================
 
 public record RadicarPqrsdRequest(

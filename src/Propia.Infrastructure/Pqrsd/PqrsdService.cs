@@ -771,6 +771,148 @@ public class PqrsdService : IPqrsdService
         return (await GetExpedienteAsync(exp.Id, ct))!;
     }
 
+    // ===================== Formulario publico (sin login) =====================
+
+    /// <summary>Fija el tenant en el contexto y reabre la conexion para que el interceptor aplique app.tenant_id (patron de escrituras publicas).</summary>
+    private async Task ActivarTenantPublicoAsync(Guid tenantId)
+    {
+        _tenantContext.SetTenant(tenantId);
+        await _db.Database.CloseConnectionAsync();
+    }
+
+    public async Task<PqrsdPublicoConfigDto?> GetConfigPublicoAsync(Guid tenantId, CancellationToken ct)
+    {
+        // Tenants es entidad global: se puede leer el branding sin tenant en sesion.
+        var tenant = await _db.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == tenantId, ct);
+        if (tenant is null || tenant.Estado != EstadoCopropiedad.Activa) return null;
+
+        await ActivarTenantPublicoAsync(tenantId);
+        await AsegurarCatalogoBaseAsync(ct);   // siembra tipos/categorias si el modulo nunca se abrio en esta copropiedad
+
+        var tipos = await _db.PqrsdTipos.AsNoTracking()
+            .Where(t => t.Activo)
+            .OrderBy(t => t.Orden).ThenBy(t => t.Nombre)
+            .Select(t => new PqrsdTipoPublicoDto(t.Id, t.Nombre, t.DiasHabiles))
+            .ToListAsync(ct);
+
+        var cats = await _db.PqrsdCategorias.AsNoTracking()
+            .Where(c => c.Activa)
+            .OrderBy(c => c.Orden).ThenBy(c => c.Nombre)
+            .Select(c => new PqrsdCategoriaPublicaDto(c.Id, c.Nombre))
+            .ToListAsync(ct);
+
+        // LogoUrl se guarda RELATIVA al mismo origen (convencion host unificado): la pagina publica la usa tal cual.
+        return new PqrsdPublicoConfigDto(tenant.Nombre, tenant.LogoUrl, tipos, cats);
+    }
+
+    public async Task<RadicarPublicoResultDto> RadicarPublicoAsync(Guid tenantId, RadicarPublicoRequest req, string? ipOrigen, CancellationToken ct)
+    {
+        // Honeypot: bots que llenan el campo oculto se descartan silenciosamente (no es error visible).
+        if (!string.IsNullOrWhiteSpace(req.Website))
+            throw new InvalidOperationException("No se pudo procesar la solicitud.");
+
+        var tenant = await _db.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == tenantId, ct);
+        if (tenant is null || tenant.Estado != EstadoCopropiedad.Activa)
+            throw new InvalidOperationException("La copropiedad no esta disponible para radicar.");
+
+        if (!req.AceptaTratamiento)
+            throw new InvalidOperationException("Debes autorizar el tratamiento de tus datos personales para radicar.");
+        if (string.IsNullOrWhiteSpace(req.Documento))
+            throw new InvalidOperationException("El numero de identificacion es obligatorio.");
+        if (string.IsNullOrWhiteSpace(req.Nombres))
+            throw new InvalidOperationException("El nombre es obligatorio.");
+        if (string.IsNullOrWhiteSpace(req.UnidadTexto))
+            throw new InvalidOperationException("Debes indicar tu unidad (ej. 101, A-203).");
+        var descr = (req.Descripcion ?? "").Trim();
+        if (descr.Length < 20)
+            throw new InvalidOperationException("La descripcion es obligatoria (minimo 20 caracteres).");
+
+        await ActivarTenantPublicoAsync(tenantId);
+        await AsegurarCatalogoBaseAsync(ct);
+
+        var tipo = await _db.PqrsdTipos.AsNoTracking().FirstOrDefaultAsync(t => t.Id == req.TipoId && t.Activo, ct)
+            ?? throw new InvalidOperationException("El tipo de solicitud seleccionado no es valido.");
+        var categoria = await _db.PqrsdCategorias.AsNoTracking().FirstOrDefaultAsync(c => c.Id == req.CategoriaId && c.Activa, ct)
+            ?? throw new InvalidOperationException("La categoria seleccionada no es valida.");
+
+        // --- Radicador: resolver/crear la Persona GLOBAL por (tipoDocumento, documento) ---
+        var doc = req.Documento.Trim();
+        var persona = await _db.Personas.FirstOrDefaultAsync(p => p.TipoDocumento == req.TipoDocumento && p.Documento == doc, ct);
+        var email = string.IsNullOrWhiteSpace(req.Email) ? null : req.Email.Trim();
+        var telefono = string.IsNullOrWhiteSpace(req.Telefono) ? null : req.Telefono.Trim();
+        if (persona is null)
+        {
+            // Email es unico global (citext): si ya lo usa otra persona, no lo asignamos para no romper el indice.
+            if (email is not null && await _db.Personas.AnyAsync(p => p.Email == email, ct)) email = null;
+            persona = new Persona
+            {
+                TipoDocumento = req.TipoDocumento,
+                Documento = doc,
+                Nombres = req.Nombres.Trim(),
+                Apellidos = (req.Apellidos ?? "").Trim(),
+                Email = email,
+                Telefono = telefono,
+                PerfilIncompleto = true,
+                EstadoDirectorio = EstadoDirectorio.Activo,
+                AceptoTratamientoDatos = true,
+                FechaAceptacionDatos = DateTimeOffset.UtcNow,
+                CanalAceptacion = CanalAceptacionDatos.FormularioWeb,
+                IpAceptacion = ipOrigen
+            };
+            _db.Personas.Add(persona);
+            await _db.SaveChangesAsync(ct);
+        }
+        else
+        {
+            // No sobreescribir datos existentes: solo completar contacto vacio.
+            var cambio = false;
+            if (string.IsNullOrWhiteSpace(persona.Email) && email is not null
+                && !await _db.Personas.AnyAsync(p => p.Id != persona.Id && p.Email == email, ct))
+            { persona.Email = email; cambio = true; }
+            if (string.IsNullOrWhiteSpace(persona.Telefono) && telefono is not null)
+            { persona.Telefono = telefono; cambio = true; }
+            if (cambio) await _db.SaveChangesAsync(ct);
+        }
+
+        // --- Unidad: match EXACTO por numero (+ torre opcional). Sin busqueda: el residente conoce su unidad. ---
+        var unidadTxt = req.UnidadTexto.Trim();
+        var torreTxt = req.TorreTexto?.Trim();
+        var unidadTxtLower = unidadTxt.ToLower();
+        var qUnidad = _db.UnidadesPrivadas.AsNoTracking().Where(u => u.Numero.ToLower() == unidadTxtLower);
+        if (!string.IsNullOrWhiteSpace(torreTxt))
+        {
+            var torreTxtLower = torreTxt.ToLower();
+            var torreId = await _db.Torres.AsNoTracking()
+                .Where(t => t.Nombre.ToLower() == torreTxtLower).Select(t => (Guid?)t.Id).FirstOrDefaultAsync(ct);
+            if (torreId is not null) qUnidad = qUnidad.Where(u => u.TorreId == torreId);
+        }
+        var unidadId = await qUnidad.Select(u => (Guid?)u.Id).FirstOrDefaultAsync(ct);
+
+        // Si no se pudo enlazar la unidad, conservamos el dato escrito al inicio de la descripcion (no se pierde).
+        if (unidadId is null)
+        {
+            var encab = string.IsNullOrWhiteSpace(torreTxt)
+                ? $"[Radicado externo] Unidad indicada por el solicitante: {unidadTxt}"
+                : $"[Radicado externo] Unidad indicada por el solicitante: {torreTxt} - {unidadTxt}";
+            descr = (encab + "\n\n" + descr);
+            if (descr.Length > 2000) descr = descr[..2000];
+        }
+
+        var radReq = new RadicarPqrsdRequest(
+            Tipo: tipo.Legal,
+            CategoriaId: categoria.Id,
+            Descripcion: descr,
+            IdentidadReservada: false,
+            Adjuntos: null,
+            UnidadPrivadaId: unidadId,
+            RadicadorPersonaId: persona.Id,
+            Campos: null,
+            TipoId: tipo.Id);
+
+        var detalle = await RadicarAsync(radReq, ct);
+        return new RadicarPublicoResultDto(detalle.NumeroRadicado);
+    }
+
     private async Task<string> GenerarNumeroRadicadoAsync(CancellationToken ct)
     {
         var year = DateTime.UtcNow.Year;
