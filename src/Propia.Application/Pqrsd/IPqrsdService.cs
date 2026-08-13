@@ -73,6 +73,9 @@ public interface IPqrsdService
     // Tutela
     Task<bool> ActivarTutelaAsync(Guid id, ActivarTutelaRequest req, CancellationToken ct);
 
+    /// <summary>Prorroga: amplia el plazo en N dias habiles, pide motivo y lo deja en la traza (historial).</summary>
+    Task<bool> AmpliarPlazoAsync(Guid id, AmpliarPlazoRequest req, CancellationToken ct);
+
     // Comite de Convivencia (solo Denuncia)
     Task<PqrsdComiteSesionDto> EscalarAComiteAsync(Guid expedienteId, EscalarAComiteRequest req, CancellationToken ct);
     Task<bool> RegistrarSesionComiteAsync(Guid sesionId, RegistrarSesionComiteRequest req, CancellationToken ct);

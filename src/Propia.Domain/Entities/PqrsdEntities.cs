@@ -39,6 +39,9 @@ public class PqrsdExpediente : TenantEntity
     /// <summary>Fecha de vencimiento del plazo legal, calculada en backend en dias habiles.</summary>
     public DateOnly FechaVencimiento { get; set; }
 
+    /// <summary>Dias habiles de prorroga acumulados (Ley 1755): ya sumados a FechaVencimiento. Solo informativo/traza.</summary>
+    public int ProrrogaDias { get; set; }
+
     /// <summary>FK a la tarea interna en modulo 2.10 (opcional, invisible para el radicador - RN-10).</summary>
     public Guid? TareaId { get; set; }
 

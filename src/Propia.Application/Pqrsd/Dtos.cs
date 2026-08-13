@@ -110,7 +110,9 @@ public record PqrsdExpedienteDetalleDto(
     Guid? AsignadoPersonaId = null,
     string? AsignadoNombre = null,
     int Progreso = 0,
-    IReadOnlyList<PqrsdComentarioDto>? Comentarios = null);
+    IReadOnlyList<PqrsdComentarioDto>? Comentarios = null,
+    /// <summary>Dias habiles de prorroga acumulados (ya sumados a FechaVencimiento).</summary>
+    int ProrrogaDias = 0);
 
 public record PqrsdComentarioDto(Guid Id, string Texto, string? AutorNombre, DateTimeOffset CreatedAt);
 
@@ -241,6 +243,9 @@ public record AgregarAdjuntoPqrsdRequest(
     string NombreArchivo, string TipoMime, long TamanioBytes, string UrlStorage);
 
 public record ActivarTutelaRequest(string Justificacion);
+
+/// <summary>Prorroga (ampliacion de plazo, Ley 1755): dias habiles a sumar + motivo obligatorio (queda en la traza).</summary>
+public record AmpliarPlazoRequest(int Dias, string Motivo);
 
 public record EscalarAComiteRequest(
     DateTimeOffset? FechaPropuestaSesion,

@@ -645,7 +645,7 @@ public class PqrsdService : IPqrsdService
             x.RespuestaDefinitiva, x.RespuestaDefinitivaAt, x.FechaCierre, x.TareaId,
             x.CreatedAt, adjuntos, historial, comiteDto,
             x.EstadoId, x.UnidadPrivadaId, x.Archivado, camposValores, x.TipoId, tipoNombre,
-            x.AsignadoPersonaId, asignadoNombre, x.Progreso, comentarios);
+            x.AsignadoPersonaId, asignadoNombre, x.Progreso, comentarios, x.ProrrogaDias);
     }
 
     // ===================== Radicacion =====================
@@ -1148,6 +1148,46 @@ public class PqrsdService : IPqrsdService
             $"TUTELA marcada: {x.NumeroRadicado}",
             $"Se marco tutela activa sobre el expediente. Atender con prioridad maxima. Justificacion: {req.Justificacion}",
             Domain.Enums.PrioridadNotificacion.Critica, ct);
+
+        return true;
+    }
+
+    // ===================== Prorroga (ampliacion de plazo) =====================
+
+    public async Task<bool> AmpliarPlazoAsync(Guid id, AmpliarPlazoRequest req, CancellationToken ct)
+    {
+        if (req.Dias < 1) throw new InvalidOperationException("La prorroga debe ser de al menos 1 dia habil.");
+        if (req.Dias > 60) throw new InvalidOperationException("La prorroga no puede superar 60 dias habiles.");
+        if (string.IsNullOrWhiteSpace(req.Motivo))
+            throw new InvalidOperationException("Debes indicar el motivo de la prorroga (queda registrado en la traza).");
+
+        var x = await _db.PqrsdExpedientes.FirstOrDefaultAsync(e => e.Id == id, ct);
+        if (x is null) return false;
+        if (x.Estado is EstadoPqrsd.Cerrada or EstadoPqrsd.ViaInternaAgotada)
+            throw new InvalidOperationException("No se puede prorrogar un expediente cerrado.");
+
+        var anterior = x.FechaVencimiento;
+        // La prorroga se suma en dias habiles a la fecha de vencimiento vigente (aumenta el tiempo de entrega).
+        x.FechaVencimiento = SumarDiasHabiles(x.FechaVencimiento, req.Dias);
+        x.ProrrogaDias += req.Dias;
+        x.UpdatedAt = DateTimeOffset.UtcNow;
+
+        var motivo = req.Motivo.Trim();
+        _db.PqrsdHistorialEstados.Add(new PqrsdHistorialEstado
+        {
+            ExpedienteId = id,
+            EstadoAnterior = x.Estado,
+            EstadoNuevo = x.Estado,
+            ActorUsuarioId = GetUsuarioActualId(),
+            Origen = OrigenCambioEstado.Prorroga,
+            Nota = $"Prorroga de {req.Dias} dia(s) habil(es). Vencimiento {anterior:yyyy-MM-dd} -> {x.FechaVencimiento:yyyy-MM-dd}. Motivo: {motivo}"
+        });
+        await _db.SaveChangesAsync(ct);
+
+        await NotificarAdminsTenantAsync("2.9", id,
+            $"Prorroga PQRSD: {x.NumeroRadicado}",
+            $"Se amplio el plazo en {req.Dias} dia(s) habil(es). Nueva fecha de vencimiento: {x.FechaVencimiento:yyyy-MM-dd}. Motivo: {motivo}",
+            Domain.Enums.PrioridadNotificacion.Normal, ct);
 
         return true;
     }

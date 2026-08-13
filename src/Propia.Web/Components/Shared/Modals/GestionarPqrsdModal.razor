@@ -175,6 +175,10 @@
                     <span>Transcurrido @DiasDesde(_detalle.CreatedAt)</span>
                     <span>Vence @_detalle.FechaVencimiento.ToString("dd MMM yyyy")</span>
                 </div>
+                @if (_detalle.ProrrogaDias > 0)
+                {
+                    <div class="gpq-plazo-row" style="margin-top:9px;"><span>Prorroga aplicada</span><strong style="color:#B45309;">+@_detalle.ProrrogaDias dias habiles</strong></div>
+                }
                 <div class="gpq-plazo-row" style="margin-top:9px;"><span>Urgencia</span><strong>@_detalle.NivelUrgencia</strong></div>
             </div>
 
@@ -418,6 +422,10 @@
                 {
                     <button class="gpq-btn-warn" type="button" @onclick="@(() => SetAccion("tutela"))">Activar tutela</button>
                 }
+                @if (_detalle.Estado != EstadoPqrsd.Cerrada && _detalle.Estado != EstadoPqrsd.ViaInternaAgotada)
+                {
+                    <button class="gpq-btn-ghost" type="button" @onclick="@(() => SetAccion("prorroga"))">Agregar prorroga</button>
+                }
             </div>
 
             @* === FORM accion seleccionada === *@
@@ -474,6 +482,18 @@
                                 <button class="gpq-btn-ghost" type="button" @onclick="CancelarAccion">Cancelar</button>
                                 <button class="gpq-btn-warn" type="button" @onclick="EjecutarTutela" disabled="@(_busy || string.IsNullOrWhiteSpace(_textoAccion))">Activar tutela</button>
                             </div>
+                            break;
+                        case "prorroga":
+                            <div class="gpq-form-title">Agregar prorroga (ampliar el plazo)</div>
+                            <label class="gpq-form-lbl">Dias habiles a agregar *</label>
+                            <input class="gpq-input" type="number" min="1" max="60" @bind="_prorrogaDias" @bind:event="oninput" placeholder="Ej. 5" />
+                            <label class="gpq-form-lbl">Motivo de la prorroga *</label>
+                            <textarea class="gpq-input" rows="3" @bind="_textoAccion" @bind:event="oninput" placeholder="Ej. Se requiere practicar prueba tecnica antes de responder."></textarea>
+                            <div class="gpq-form-foot">
+                                <button class="gpq-btn-ghost" type="button" @onclick="CancelarAccion">Cancelar</button>
+                                <button class="gpq-btn-brand" type="button" @onclick="EjecutarProrroga" disabled="@(_busy || _prorrogaDias < 1 || string.IsNullOrWhiteSpace(_textoAccion))">Aplicar prorroga</button>
+                            </div>
+                            <p class="gpq-form-hint">Suma @(_prorrogaDias < 1 ? "N" : _prorrogaDias.ToString()) dia(s) habil(es) a la fecha de vencimiento. El motivo queda en el historial (traza).</p>
                             break;
                     }
                 </div>
@@ -1010,6 +1030,7 @@
     private string? _accion;
     private string _textoAccion = "";
     private string _motivoCierreId = "";
+    private int _prorrogaDias = 0;
     private List<Propia.Application.Cierre.MotivoCierreDto> _motivos = new();
     private static string ClasifTexto(Propia.Domain.Enums.ClasificacionCierre c) => c switch
     {
@@ -1300,6 +1321,17 @@
         var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{ExpedienteId}/tutela",
             new ActivarTutelaRequest(_textoAccion.Trim()));
         await TrasAccion(resp, "Tutela activada.");
+    }
+
+    private async Task EjecutarProrroga()
+    {
+        if (_prorrogaDias < 1 || string.IsNullOrWhiteSpace(_textoAccion)) return;
+        _busy = true;
+        var dias = _prorrogaDias;
+        var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{ExpedienteId}/prorroga",
+            new AmpliarPlazoRequest(dias, _textoAccion.Trim()));
+        _prorrogaDias = 0;
+        await TrasAccion(resp, $"Prorroga aplicada (+{dias} dias habiles).");
     }
 
     private async Task TrasAccion(HttpResponseMessage resp, string okMsg)

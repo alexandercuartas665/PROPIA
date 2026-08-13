@@ -61,7 +61,9 @@ public enum OrigenCambioEstado
 {
     Manual = 1,
     Automatico = 2,
-    Sistema = 3
+    Sistema = 3,
+    /// <summary>Ampliacion de plazo (prorroga legal, Ley 1755). Queda en la traza con su motivo.</summary>
+    Prorroga = 4
 }
 
 /// <summary>Catalogo base de categorias y plazos por defecto. Spec 2.9 v1.0 seccion 3 y 4.</summary>

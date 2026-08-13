@@ -216,6 +216,14 @@ public class PqrsdController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    // --- Prorroga (ampliacion de plazo con motivo, queda en la traza) ---
+    [HttpPut("{id:guid}/prorroga")]
+    public async Task<IActionResult> Prorrogar(Guid id, [FromBody] AmpliarPlazoRequest req, CancellationToken ct)
+    {
+        try { return await _svc.AmpliarPlazoAsync(id, req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     // --- Archivar / actualizar expediente ---
     [HttpPut("{id:guid}/archivar")]
     public async Task<IActionResult> Archivar(Guid id, [FromQuery] bool archivar, CancellationToken ct)
