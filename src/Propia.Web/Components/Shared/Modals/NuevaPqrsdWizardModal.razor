@@ -30,9 +30,7 @@
     <div class="npq-body">
         <div class="npq-grid">
             <div class="npq-field">
-                <label class="npq-lbl">Tipo de PQR
-                    <button type="button" class="npq-tipo-new" @onclick="() => _nuevoTipoOpen = !_nuevoTipoOpen">+ nuevo tipo</button>
-                </label>
+                <label class="npq-lbl">Tipo de PQR</label>
                 <select class="npq-input" @bind="_tipoIdSel" @bind:after="OnTipoChange">
                     <option value="">- elegir -</option>
                     @foreach (var t in _tipos)
@@ -47,27 +45,10 @@
             </div>
 
             <div class="npq-field">
-                <label class="npq-lbl">Tiempo de respuesta (dias habiles) <span class="npq-tag-edit">editable por tipo</span></label>
-                <input class="npq-input" type="number" min="1" max="90" @bind="_plazoEditable" @bind:event="oninput"
-                       @bind:after="RecalcularVencimiento" disabled="@string.IsNullOrEmpty(_tipoIdSel)" />
-                <span class="npq-helper-muted">Cambia el tiempo de respuesta de este tipo (se guarda al radicar).</span>
+                <label class="npq-lbl">Tiempo de respuesta (dias habiles) <span class="npq-tag-edit">segun el tipo</span></label>
+                <input class="npq-input" type="number" value="@_plazoEditable" readonly disabled />
+                <span class="npq-helper-muted">El plazo lo define el tipo. Los tipos y categorias se administran en "Configurar PQRSD".</span>
             </div>
-
-            @if (_nuevoTipoOpen)
-            {
-                <div class="npq-field npq-field--full npq-newtipo">
-                    <label class="npq-lbl">Nuevo tipo de PQR</label>
-                    <div class="npq-newtipo-row">
-                        <input class="npq-input" placeholder="Nombre del tipo" @bind="_ntNombre" @bind:event="oninput" />
-                        <input class="npq-input" type="number" min="1" max="90" placeholder="Dias" @bind="_ntDias" />
-                        <select class="npq-input" @bind="_ntLegalStr" title="Conducta legal que hereda">
-                            @foreach (var t in Enum.GetValues<TipoPqrsd>()) { <option value="@t">como @TipoLabel(t)</option> }
-                        </select>
-                        <button type="button" class="npq-btn-brand" @onclick="CrearTipo" disabled="@(_creandoTipo || string.IsNullOrWhiteSpace(_ntNombre) || _ntDias < 1)">Crear</button>
-                    </div>
-                    <span class="npq-helper-muted">La "conducta legal" define el comportamiento: ej. "como Denuncia" habilita reserva de identidad y comite.</span>
-                </div>
-            }
 
             <div class="npq-field">
                 <label class="npq-lbl">Categoria</label>
@@ -232,11 +213,6 @@
 
     private string _tipoIdSel = "";
     private List<PqrsdTipoDto> _tipos = new();
-    private bool _nuevoTipoOpen;
-    private string _ntNombre = "";
-    private int _ntDias = 15;
-    private string _ntLegalStr = TipoPqrsd.Peticion.ToString();
-    private bool _creandoTipo;
     private string _categoriaIdStr = "";
     private string _unidadIdStr = "";
     private PersonaCandidatoDto? _personaSel;
@@ -292,28 +268,6 @@
             if (t.Legal != TipoPqrsd.Denuncia) _identidadReservada = false;
         }
         else { _plazoCalculado = null; }
-    }
-
-    private async Task CrearTipo()
-    {
-        if (string.IsNullOrWhiteSpace(_ntNombre) || _ntDias < 1) return;
-        _creandoTipo = true; _msg = null;
-        try
-        {
-            var legal = Enum.TryParse<TipoPqrsd>(_ntLegalStr, out var l) ? l : TipoPqrsd.Peticion;
-            var resp = await Auth().PostAsJsonAsync("/api/pqrsd/tipos",
-                new GuardarTipoPqrsdRequest(_ntNombre.Trim(), _ntDias, 3, NivelUrgenciaPqrsd.Media, legal));
-            if (resp.IsSuccessStatusCode)
-            {
-                var creado = await resp.Content.ReadFromJsonAsync<PqrsdTipoDto>();
-                _tipos = (await Auth().GetFromJsonAsync<List<PqrsdTipoDto>>("/api/pqrsd/tipos")) ?? _tipos;
-                if (creado is not null) { _tipoIdSel = creado.Id.ToString(); OnTipoChange(); }
-                _nuevoTipoOpen = false; _ntNombre = ""; _ntDias = 15;
-            }
-            else { _msg = "No se pudo crear el tipo: " + await resp.Content.ReadAsStringAsync(); _msgError = true; }
-        }
-        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
-        _creandoTipo = false;
     }
 
     private void RecalcularVencimiento()
@@ -390,13 +344,6 @@
             var tipoSel = TipoSel();
             if (tipoSel is null) { _msg = "Elige un tipo de PQR."; _msgError = true; _busy = false; return; }
             var catId = Guid.Parse(_categoriaIdStr);
-
-            // Guardar el tiempo de respuesta editado para este tipo.
-            if (_plazoEditable != tipoSel.DiasHabiles)
-            {
-                await Auth().PutAsJsonAsync($"/api/pqrsd/tipos/{tipoSel.Id}",
-                    new GuardarTipoPqrsdRequest(tipoSel.Nombre, _plazoEditable, tipoSel.DiasInconformidad, tipoSel.NivelUrgencia, tipoSel.Legal));
-            }
 
             var desc = string.IsNullOrWhiteSpace(_asunto)
                 ? _descripcion.Trim()

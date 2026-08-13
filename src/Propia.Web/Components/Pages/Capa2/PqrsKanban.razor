@@ -434,7 +434,7 @@
         <div class="pk-cfg-backdrop" @onclick="() => _cfgOpen = false">
             <div class="pk-cfg" @onclick:stopPropagation="true">
                 <div class="pk-cfg-head">
-                    <h3>Configurar columnas del tablero</h3>
+                    <h3>Configurar PQRSD</h3>
                     <button class="npq-close" @onclick="() => _cfgOpen = false">&times;</button>
                 </div>
                 <div class="pk-cfg-body">
@@ -481,6 +481,49 @@
                             <option value="3">Perdida</option>
                         </select>
                         <button class="pk-comp-ok" @onclick="AgregarMotivo" disabled="@string.IsNullOrWhiteSpace(_nuevoMotivoNombre)">Agregar motivo</button>
+                    </div>
+
+                    @* Tipos de PQR configurables (catalogo por copropiedad). Antes se creaban dentro del modal de radicar. *@
+                    <div class="pk-cfg-sec-t">Tipos de PQR</div>
+                    <div class="pk-cfg-sec-hint">Cada tipo define su plazo (dias habiles) y hereda una conducta legal (Ley 1755).</div>
+                    @foreach (var t in _tipos.OrderBy(x => x.Orden).ThenBy(x => x.Nombre))
+                    {
+                        var tt = t;
+                        <div class="pk-cfg-row">
+                            <input class="pk-cfg-name" value="@t.Nombre" @onchange="(ev) => RenombrarTipo(tt, ev)" />
+                            <input class="pk-cfg-dias" type="number" min="1" max="90" value="@t.DiasHabiles" title="Dias habiles de plazo" @onchange="(ev) => CambiarDiasTipo(tt, ev)" />
+                            <select class="pk-cfg-clasif" @onchange="(ev) => CambiarLegalTipo(tt, ev)" disabled="@t.EsBase" title="@(t.EsBase ? "Los tipos base conservan su conducta legal" : "Conducta legal que hereda")">
+                                @foreach (var lg in Enum.GetValues<TipoPqrsd>()) { <option value="@lg" selected="@(t.Legal == lg)">como @TipoLabel(lg)</option> }
+                            </select>
+                            @if (t.EsBase) { <span class="pk-cfg-badge" title="Tipo base del sistema">base</span> }
+                            <button class="pk-cfg-del" @onclick="() => EliminarTipo(tt.Id)">@(t.EsBase ? "Desactivar" : "Eliminar")</button>
+                        </div>
+                    }
+                    <div class="pk-cfg-add">
+                        <input class="pk-cfg-name" placeholder="Nombre del nuevo tipo..." @bind="_nuevoTipoNombre" />
+                        <input class="pk-cfg-dias" type="number" min="1" max="90" @bind="_nuevoTipoDias" title="Dias habiles" />
+                        <select class="pk-cfg-clasif" @bind="_nuevoTipoLegal">
+                            @foreach (var lg in Enum.GetValues<TipoPqrsd>()) { <option value="@lg">como @TipoLabel(lg)</option> }
+                        </select>
+                        <button class="pk-comp-ok" @onclick="AgregarTipo" disabled="@string.IsNullOrWhiteSpace(_nuevoTipoNombre)">Agregar tipo</button>
+                    </div>
+
+                    @* Categorias configurables. *@
+                    <div class="pk-cfg-sec-t">Categorias</div>
+                    <div class="pk-cfg-sec-hint">Para clasificar las PQR (Administracion, Convivencia, ...).</div>
+                    @foreach (var c in _categorias.OrderBy(x => x.Orden).ThenBy(x => x.Nombre))
+                    {
+                        var cc = c;
+                        <div class="pk-cfg-row">
+                            <input class="pk-cfg-name" value="@c.Nombre" @onchange="(ev) => RenombrarCategoria(cc, ev)" />
+                            @if (c.EsPredeterminada) { <span class="pk-cfg-badge" title="Categoria predeterminada">predet.</span> }
+                            <label class="pk-cfg-chk"><input type="checkbox" checked="@c.Activa" @onchange="(ev) => ActivarCategoria(cc, ev)" />Activa</label>
+                            <button class="pk-cfg-del" @onclick="() => EliminarCategoria(cc.Id)">Eliminar</button>
+                        </div>
+                    }
+                    <div class="pk-cfg-add">
+                        <input class="pk-cfg-name" placeholder="Nueva categoria..." @bind="_nuevaCatNombre" />
+                        <button class="pk-comp-ok" @onclick="AgregarCategoria" disabled="@string.IsNullOrWhiteSpace(_nuevaCatNombre)">Agregar categoria</button>
                     </div>
                     @if (!string.IsNullOrEmpty(_cfgMsg)) { <div class="pk-cfg-msg">@_cfgMsg</div> }
                 </div>
@@ -722,6 +765,8 @@
     .pk-cfg-sec-t { font-size: 13px; font-weight: 800; color: #33475B; margin-top: 16px; border-top: 1px solid #EEF3F8; padding-top: 14px; }
     .pk-cfg-sec-hint { font-size: 11.5px; color: #A6B7C8; margin-bottom: 6px; }
     .pk-cfg-clasif { border: 1px solid #E1E8EE; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; font-family: inherit; color: #33475B; outline: none; background: #fff; }
+    .pk-cfg-dias { width: 62px; border: 1px solid #E1E8EE; border-radius: 8px; padding: 8px 8px; font-size: 12.5px; font-family: inherit; color: #33475B; outline: none; text-align: center; }
+    .pk-cfg-chk { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: #516F90; white-space: nowrap; }
 
     [data-bs-theme="dark"] .pk-title { color: #E5E7EB; }
     [data-bs-theme="dark"] .pk-kpi, [data-bs-theme="dark"] .pk-card, [data-bs-theme="dark"] .pk-table-wrap { background: #232B40; border-color: #2D3650; }
@@ -1289,7 +1334,7 @@
     }
 
     // ---------- Config columnas ----------
-    private async Task AbrirConfigColumnas() { _cfgOpen = true; _cfgMsg = ""; await CargarMotivosAsync(); }
+    private async Task AbrirConfigColumnas() { _cfgOpen = true; _cfgMsg = ""; await CargarMotivosAsync(); await CargarTiposCatAsync(); }
     private async Task AgregarColumna()
     {
         var resp = await Auth().PostAsJsonAsync("/api/pqrsd/estados", new CrearEstadoPqrsdRequest(_nuevaColNombre.Trim(), _nuevaColColor));
@@ -1332,6 +1377,64 @@
         await Auth().DeleteAsync($"/api/cierre/motivos/{id}");
         await CargarMotivosAsync();
     }
+
+    // ---------- Config tipos de PQR + categorias (antes se creaban dentro del modal de radicar) ----------
+    private List<PqrsdTipoDto> _tipos = new();
+    private string _nuevoTipoNombre = "";
+    private int _nuevoTipoDias = 15;
+    private string _nuevoTipoLegal = TipoPqrsd.Peticion.ToString();
+    private string _nuevaCatNombre = "";
+    private async Task CargarTiposCatAsync()
+    {
+        try { _tipos = (await Auth().GetFromJsonAsync<List<PqrsdTipoDto>>("/api/pqrsd/tipos?incluirInactivos=true")) ?? new(); } catch { _tipos = new(); }
+        try { _categorias = (await Auth().GetFromJsonAsync<List<PqrsdCategoriaDto>>("/api/pqrsd/categorias")) ?? _categorias; } catch { }
+    }
+    private async Task AgregarTipo()
+    {
+        var legal = Enum.TryParse<TipoPqrsd>(_nuevoTipoLegal, out var l) ? l : TipoPqrsd.Peticion;
+        var dias = Math.Clamp(_nuevoTipoDias, 1, 90);
+        var resp = await Auth().PostAsJsonAsync("/api/pqrsd/tipos", new GuardarTipoPqrsdRequest(_nuevoTipoNombre.Trim(), dias, 3, NivelUrgenciaPqrsd.Media, legal));
+        if (resp.IsSuccessStatusCode) { _nuevoTipoNombre = ""; _nuevoTipoDias = 15; _cfgMsg = ""; await CargarTiposCatAsync(); }
+        else { _cfgMsg = await LeerError(resp); }
+    }
+    private async Task RenombrarTipo(PqrsdTipoDto t, ChangeEventArgs e)
+    {
+        var nombre = e.Value?.ToString() ?? t.Nombre; if (string.IsNullOrWhiteSpace(nombre)) return;
+        await Auth().PutAsJsonAsync($"/api/pqrsd/tipos/{t.Id}", new GuardarTipoPqrsdRequest(nombre.Trim(), t.DiasHabiles, t.DiasInconformidad, t.NivelUrgencia, t.Legal));
+        await CargarTiposCatAsync();
+    }
+    private async Task CambiarDiasTipo(PqrsdTipoDto t, ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var d)) return; d = Math.Clamp(d, 1, 90);
+        await Auth().PutAsJsonAsync($"/api/pqrsd/tipos/{t.Id}", new GuardarTipoPqrsdRequest(t.Nombre, d, t.DiasInconformidad, t.NivelUrgencia, t.Legal));
+        await CargarTiposCatAsync();
+    }
+    private async Task CambiarLegalTipo(PqrsdTipoDto t, ChangeEventArgs e)
+    {
+        if (!Enum.TryParse<TipoPqrsd>(e.Value?.ToString(), out var lg)) return;
+        await Auth().PutAsJsonAsync($"/api/pqrsd/tipos/{t.Id}", new GuardarTipoPqrsdRequest(t.Nombre, t.DiasHabiles, t.DiasInconformidad, t.NivelUrgencia, lg));
+        await CargarTiposCatAsync();
+    }
+    private async Task EliminarTipo(Guid id) { await Auth().DeleteAsync($"/api/pqrsd/tipos/{id}"); await CargarTiposCatAsync(); }
+    private async Task AgregarCategoria()
+    {
+        var resp = await Auth().PostAsJsonAsync("/api/pqrsd/categorias", new CrearCategoriaRequest(_nuevaCatNombre.Trim(), _categorias.Count));
+        if (resp.IsSuccessStatusCode) { _nuevaCatNombre = ""; _cfgMsg = ""; await CargarTiposCatAsync(); }
+        else { _cfgMsg = await LeerError(resp); }
+    }
+    private async Task RenombrarCategoria(PqrsdCategoriaDto c, ChangeEventArgs e)
+    {
+        var nombre = e.Value?.ToString() ?? c.Nombre; if (string.IsNullOrWhiteSpace(nombre)) return;
+        await Auth().PutAsJsonAsync($"/api/pqrsd/categorias/{c.Id}", new ActualizarCategoriaRequest(nombre.Trim(), c.Activa, c.Orden));
+        await CargarTiposCatAsync();
+    }
+    private async Task ActivarCategoria(PqrsdCategoriaDto c, ChangeEventArgs e)
+    {
+        var activa = e.Value is bool b ? b : c.Activa;
+        await Auth().PutAsJsonAsync($"/api/pqrsd/categorias/{c.Id}", new ActualizarCategoriaRequest(c.Nombre, activa, c.Orden));
+        await CargarTiposCatAsync();
+    }
+    private async Task EliminarCategoria(Guid id) { await Auth().DeleteAsync($"/api/pqrsd/categorias/{id}"); await CargarTiposCatAsync(); }
     private async Task RenombrarEstado(PqrsdEstadoDto e, ChangeEventArgs ev)
     {
         var nombre = ev.Value?.ToString() ?? e.Nombre;
