@@ -335,7 +335,7 @@ public class PqrsdController : ControllerBase
 
     // --- Subir el binario de un adjunto (documentos e imagenes) y registrarlo ---
     [HttpPost("{id:guid}/adjuntos/upload")]
-    [RequestSizeLimit(11_000_000)]
+    [RequestSizeLimit(52_500_000)]
     public async Task<IActionResult> SubirAdjuntoBinario(Guid id, IFormFile file, CancellationToken ct)
     {
         var tenantId = GetTenantId();
@@ -343,7 +343,7 @@ public class PqrsdController : ControllerBase
         var exp = await _db.PqrsdExpedientes.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (exp is null) return NotFound();
         if (file is null || file.Length == 0) return BadRequest(new { error = "Archivo vacio." });
-        if (file.Length > 10_000_000) return BadRequest(new { error = "Maximo 10 MB." });
+        if (file.Length > 52_428_800) return BadRequest(new { error = "Maximo 50 MB." });
 
         var ext = System.IO.Path.GetExtension(file.FileName);
         var key = $"tenants/{tenantId:N}/pqrsd/{id:N}/{Guid.NewGuid():N}{ext}";
