@@ -365,7 +365,10 @@
                                                 case "tipo": <span class="pk-tipo-pill">@TipoLabel(it.Tipo)</span> break;
                                                 case "categoria": <span>@it.CategoriaNombre</span> break;
                                                 case "estado": <span>@(_estados.FirstOrDefault(e => e.Id == it.EstadoId)?.Nombre ?? "-")</span> break;
-                                                case "semaforo": <span class="pk-sem @SemaforoClass(it.Semaforo)"><span class="pk-sem-dot"></span>@SemaforoLabel(it.Semaforo)</span> break;
+                                                case "semaforo":
+                                                    <span class="pk-sem @SemaforoClass(it.Semaforo)"><span class="pk-sem-dot"></span>@SemaforoLabel(it.Semaforo)</span>
+                                                    <span class="pk-sem-dias @(it.DiasHastaVencimiento < 0 ? "pk-sem-dias--err" : it.DiasHastaVencimiento <= 3 ? "pk-sem-dias--warn" : "")">@DiasSlaTexto(it)</span>
+                                                    break;
                                                 case "radicador":
                                                     @if (it.IdentidadReservada) { <span class="pk-rsv">[Reservada]</span> } else { <span>@it.RadicadorNombre</span> }
                                                     break;
@@ -627,6 +630,11 @@
     .pk-sem--rojo { color: #B91C1C; background: #FEE2E2; }
     .pk-sem--negro { color: #fff; background: #111827; }
     .pk-sem--tutela { color: #fff; background: #DC2626; }
+    /* Dias al lado del estado SLA (en la columna Estado de la tabla) */
+    .pk-sem-dias { margin-left: 7px; font-size: 11px; font-weight: 700; color: #7C98B6; white-space: nowrap; }
+    .pk-sem-dias:empty { display: none; }
+    .pk-sem-dias--warn { color: #B45309; }
+    .pk-sem-dias--err { color: #B91C1C; }
     .pk-card-tipo { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
     .pk-tipo-pill { font-size: 10px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: var(--propia-brand-soft, #F1ECFD); padding: 2px 8px; border-radius: 5px; }
     .pk-cat { font-size: 10.5px; color: #7C98B6; font-weight: 600; }
@@ -765,8 +773,8 @@
         new ColFija("radicado", "Radicado"),
         new ColFija("tipo", "Tipo"),
         new ColFija("categoria", "Categoria"),
-        new ColFija("estado", "Columna"),
-        new ColFija("semaforo", "Semaforo"),
+        new ColFija("estado", "Etapa"),
+        new ColFija("semaforo", "Estado"),
         new ColFija("radicador", "Solicitante"),
         new ColFija("unidad", "Unidad"),
         new ColFija("vence", "Vence"),
@@ -910,9 +918,9 @@
     private IEnumerable<(string Key, string Label)> CamposFiltro()
     {
         yield return ("tipo", "Tipo");
-        yield return ("estado", "Columna");
+        yield return ("estado", "Etapa");
         yield return ("categoria", "Categoria");
-        yield return ("semaforo", "Semaforo");
+        yield return ("semaforo", "Estado");
         yield return ("radicador", "Solicitante");
         yield return ("unidad", "Unidad");
         yield return ("resumen", "Resumen");
@@ -1372,7 +1380,7 @@
 
     private static string GroupLabel(string g) => g switch
     {
-        "ninguno" => "Ninguno", "estado" => "Columna", "tipo" => "Tipo",
+        "ninguno" => "Ninguno", "estado" => "Etapa", "tipo" => "Tipo",
         "categoria" => "Categoria", "unidad" => "Unidad", _ => g
     };
 
@@ -1389,15 +1397,32 @@
         _ => t.ToString()
     };
 
+    // Estado SLA en 3 categorias legibles: A tiempo (verde) / Por vencer (amarillo) / Vencida (rojo).
+    // Amarillo (50-80%) y Rojo (80%+) se agrupan como "Por vencer"; Negro (paso el plazo) es "Vencida".
     private static string SemaforoLabel(SemaforoPqrsd s) => s switch
     {
-        SemaforoPqrsd.Verde => "Verde", SemaforoPqrsd.Amarillo => "Amarillo", SemaforoPqrsd.Rojo => "Rojo",
-        SemaforoPqrsd.Negro => "Vencida", SemaforoPqrsd.TutelaActiva => "Tutela", _ => s.ToString()
+        SemaforoPqrsd.Verde => "A tiempo",
+        SemaforoPqrsd.Amarillo => "Por vencer",
+        SemaforoPqrsd.Rojo => "Por vencer",
+        SemaforoPqrsd.Negro => "Vencida",
+        SemaforoPqrsd.TutelaActiva => "Tutela",
+        _ => s.ToString()
     };
 
     private static string SemaforoClass(SemaforoPqrsd s) => s switch
     {
-        SemaforoPqrsd.Verde => "pk-sem--verde", SemaforoPqrsd.Amarillo => "pk-sem--amarillo", SemaforoPqrsd.Rojo => "pk-sem--rojo",
-        SemaforoPqrsd.Negro => "pk-sem--negro", SemaforoPqrsd.TutelaActiva => "pk-sem--tutela", _ => ""
+        SemaforoPqrsd.Verde => "pk-sem--verde",
+        SemaforoPqrsd.Amarillo => "pk-sem--amarillo",
+        SemaforoPqrsd.Rojo => "pk-sem--amarillo",
+        SemaforoPqrsd.Negro => "pk-sem--rojo",
+        SemaforoPqrsd.TutelaActiva => "pk-sem--tutela",
+        _ => ""
     };
+
+    // Dias al lado del estado: "hace Nd" si esta vencida, "N d" si aun no. Vacio para PQR cerradas (sin SLA activo).
+    private static string DiasSlaTexto(PqrsdBandejaItemDto it)
+    {
+        if (it.Semaforo == SemaforoPqrsd.Verde && it.DiasHastaVencimiento < 0) return "";
+        return it.DiasHastaVencimiento < 0 ? $"hace {Math.Abs(it.DiasHastaVencimiento)} d" : $"{it.DiasHastaVencimiento} d";
+    }
 }
