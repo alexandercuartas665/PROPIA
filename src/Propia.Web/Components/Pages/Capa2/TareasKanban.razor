@@ -1560,39 +1560,46 @@ else
                                     @* Orden cronologico (mas antiguo arriba); los mios a la derecha. *@
                                     @foreach (var it in timeline)
                                     {
-                                        <div class="tbc-msg @(it.EsMio ? "mine" : "")">
-                                            @if (!it.EsMio) { <div class="tb-ava tbc-msg-ava">@Iniciales(it.Autor ?? "?")</div> }
-                                            <div class="tbc-bubble @(it.Adj is not null ? "has-file" : "")">
-                                                <div class="tbc-bubble-head">
-                                                    <span class="tbc-bubble-au">@(string.IsNullOrWhiteSpace(it.Autor) ? (it.EsMio ? "Tu" : "Usuario") : it.Autor)</span>
-                                                    <span class="tbc-bubble-dt">@FechaHora(it.Fecha)</span>
+                                        @if (it.EsSepDia)
+                                        {
+                                            <div class="tbc-daysep"><span>@it.SepTexto</span></div>
+                                        }
+                                        else
+                                        {
+                                            var nombre = string.IsNullOrWhiteSpace(it.Autor) ? (it.EsMio ? "Tu" : "Usuario") : it.Autor;
+                                            <div class="tbc-msg @(it.EsMio ? "mine" : "")">
+                                                <div class="tb-ava tbc-msg-ava">@Iniciales(nombre)</div>
+                                                <div class="tbc-msg-col">
+                                                    <div class="tbc-msg-meta"><span class="tbc-msg-au">@nombre</span><span class="tbc-msg-dt">@FechaSoloHora(it.Fecha)</span></div>
+                                                    <div class="tbc-bubble @(it.Adj is not null ? "has-file" : "")">
+                                                        @if (it.Adj is AdjuntoVM adj)
+                                                        {
+                                                            @if (EsImg(adj.Url))
+                                                            {
+                                                                <div class="tbc-bubble-img" @onclick="() => _lightbox = adj.Url" title="Clic para ampliar">
+                                                                    <img src="@adj.Url" alt="@adj.Nombre" />
+                                                                </div>
+                                                            }
+                                                            else if (EsPdf(adj.Url))
+                                                            {
+                                                                <a class="tbc-bubble-pdf" href="@adj.Url" target="_blank" title="Abrir @adj.Nombre">
+                                                                    <iframe class="tbc-bubble-pdf-fr" src="@(adj.Url + "#toolbar=0&navpanes=0&view=FitH")" tabindex="-1" loading="lazy"></iframe>
+                                                                    <span class="tbc-bubble-pdf-hint">Abrir</span>
+                                                                </a>
+                                                            }
+                                                            <a class="tbc-bubble-file" href="@adj.Url" target="_blank" title="@adj.Nombre">
+                                                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg>
+                                                                <span class="tbc-bubble-fnm">@adj.Nombre</span>
+                                                            </a>
+                                                        }
+                                                        else
+                                                        {
+                                                            <div class="tbc-bubble-tx">@it.Texto</div>
+                                                        }
+                                                    </div>
                                                 </div>
-                                                @if (it.Adj is AdjuntoVM adj)
-                                                {
-                                                    @if (EsImg(adj.Url))
-                                                    {
-                                                        <div class="tbc-bubble-img" @onclick="() => _lightbox = adj.Url" title="Clic para ampliar">
-                                                            <img src="@adj.Url" alt="@adj.Nombre" />
-                                                        </div>
-                                                    }
-                                                    else if (EsPdf(adj.Url))
-                                                    {
-                                                        <a class="tbc-bubble-pdf" href="@adj.Url" target="_blank" title="Abrir @adj.Nombre">
-                                                            <iframe class="tbc-bubble-pdf-fr" src="@(adj.Url + "#toolbar=0&navpanes=0&view=FitH")" tabindex="-1" loading="lazy"></iframe>
-                                                            <span class="tbc-bubble-pdf-hint">Abrir</span>
-                                                        </a>
-                                                    }
-                                                    <a class="tbc-bubble-file" href="@adj.Url" target="_blank" title="@adj.Nombre">
-                                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg>
-                                                        <span class="tbc-bubble-fnm">@adj.Nombre</span>
-                                                    </a>
-                                                }
-                                                else
-                                                {
-                                                    <div class="tbc-bubble-tx">@it.Texto</div>
-                                                }
                                             </div>
-                                        </div>
+                                        }
                                     }
                                 }
                             </div>
@@ -2483,21 +2490,26 @@ else
     .tbc-cmt-dt { font-size: 10.5px; color: #A6B7C8; font-weight: 600; flex-shrink: 0; }
     .tbc-cmt-tx { font-size: 12.5px; color: #33475B; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
 
-    /* ===== Registro de actividad estilo CHAT (burbujas) ===== */
-    .tbc-chat { display: flex; flex-direction: column; gap: 10px; padding: 2px; }
-    /* Filas de actividad a TODO el ancho de la columna (estilo Airtable): la burbuja crece; solo cambia color/lado. */
-    .tbc-msg { display: flex; gap: 8px; align-items: flex-end; max-width: 100%; width: 100%; }
-    .tbc-msg.mine { align-self: stretch; flex-direction: row-reverse; }
-    .tbc-bubble { flex: 1 1 auto; }
+    /* ===== Registro de actividad estilo CHAT (dos tonos, avatar a ambos lados, nombre+hora arriba, separador de dia) ===== */
+    .tbc-chat { display: flex; flex-direction: column; gap: 12px; padding: 2px; }
+    /* Separador de dia centrado (Hoy / Ayer / fecha) */
+    .tbc-daysep { display: flex; align-items: center; justify-content: center; margin: 2px 0; }
+    .tbc-daysep span { font-size: 10.5px; font-weight: 800; color: #8598AE; background: #EEF2F7; border-radius: 20px; padding: 3px 12px; }
+    /* Cada mensaje: avatar + (nombre/hora arriba, burbuja abajo). Entrante a la izquierda, propio a la derecha. */
+    .tbc-msg { display: flex; gap: 8px; align-items: flex-end; max-width: 90%; align-self: flex-start; }
+    .tbc-msg.mine { align-self: flex-end; flex-direction: row-reverse; }
     .tbc-msg-ava { width: 28px; height: 28px; font-size: 10.5px; flex-shrink: 0; border: 0; margin: 0; }
-    .tbc-bubble { min-width: 0; background: #F1F4F8; border: 1px solid #E7EDF3; border-radius: 12px 12px 12px 3px; padding: 8px 11px; }
-    .tbc-msg.mine .tbc-bubble { background: #EEE9FD; border-color: #DED4FB; border-radius: 12px 12px 3px 12px; }
-    .tbc-bubble-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
-    .tbc-msg.mine .tbc-bubble-head { flex-direction: row-reverse; }
-    .tbc-bubble-au { font-size: 11.5px; font-weight: 800; color: #33475B; }
-    .tbc-msg.mine .tbc-bubble-au { color: #5B3FD1; }
-    .tbc-bubble-dt { font-size: 10px; color: #A6B7C8; font-weight: 600; }
-    .tbc-bubble-tx { font-size: 12.5px; color: #33475B; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+    .tbc-msg-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    .tbc-msg.mine .tbc-msg-col { align-items: flex-end; }
+    .tbc-msg-meta { display: flex; align-items: baseline; gap: 7px; padding: 0 4px; }
+    .tbc-msg-au { font-size: 11.5px; font-weight: 800; color: #33475B; }
+    .tbc-msg.mine .tbc-msg-au { color: #4B6FD1; }
+    .tbc-msg-dt { font-size: 10.5px; color: #A6B7C8; font-weight: 600; }
+    /* Burbuja: entrante = crema, propia = azul; esquina "cola" hacia su avatar */
+    .tbc-bubble { min-width: 0; max-width: 100%; background: #FEF8E6; border: 1px solid #F5EBC7; border-radius: 14px 14px 14px 4px; padding: 9px 12px; }
+    .tbc-msg.mine .tbc-bubble { background: #E9F1FD; border-color: #D2E1F7; border-radius: 14px 14px 4px 14px; }
+    .tbc-bubble.has-file { max-width: 260px; }
+    .tbc-bubble-tx { font-size: 13px; color: #2B3B4E; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
 
     /* ===== Actividad como CHAT (columna 3 del tab Detalle): timeline arriba + compositor abajo ===== */
     .tbc-actchat { display: flex; flex-direction: column; min-height: 0; height: 100%; gap: 8px; }
@@ -2505,13 +2517,13 @@ else
     .tbc-chat-scroll { flex: 1 1 auto; min-height: 120px; overflow-y: auto; overflow-x: hidden; padding: 10px; background: #FBFCFE; border: 1px solid #E7EDF3; border-radius: 12px; box-shadow: 0 1px 4px rgba(27,42,58,.06); }
     .tbc-chat-scroll::-webkit-scrollbar { width: 6px; }
     .tbc-chat-scroll::-webkit-scrollbar-thumb { background: #CBD6E2; border-radius: 4px; }
-    .tbc-chat-composer { display: flex; align-items: flex-end; gap: 6px; border: 1px solid #E1E8EE; border-radius: 12px; padding: 6px; background: #fff; }
-    .tbc-chat-composer:focus-within { border-color: #6D4FE3; }
-    .tbc-chat-clip { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; color: #6D4FE3; background: #F3F0FE; cursor: pointer; flex-shrink: 0; }
+    .tbc-chat-composer { display: flex; align-items: flex-end; gap: 6px; border: 1px solid #E1E8EE; border-radius: 24px; padding: 5px 6px; background: #fff; box-shadow: 0 1px 3px rgba(27,42,58,.05); }
+    .tbc-chat-composer:focus-within { border-color: #6D4FE3; box-shadow: 0 0 0 3px rgba(109,79,227,.12); }
+    .tbc-chat-clip { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; color: #6D4FE3; background: #F3F0FE; cursor: pointer; flex-shrink: 0; }
     .tbc-chat-clip:hover { background: #E7E0FC; }
     .tbc-chat-clip-load { font-size: 15px; font-weight: 800; color: #6D4FE3; }
-    .tbc-chat-input { flex: 1 1 auto; border: 0; outline: none; resize: none; font-family: inherit; font-size: 12.5px; color: #33475B; line-height: 1.5; padding: 8px 4px; max-height: 96px; background: transparent; }
-    .tbc-chat-send { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; border: 0; background: #6D4FE3; color: #fff; cursor: pointer; flex-shrink: 0; }
+    .tbc-chat-input { flex: 1 1 auto; border: 0; outline: none; resize: none; font-family: inherit; font-size: 13px; color: #33475B; line-height: 1.5; padding: 8px 6px; max-height: 96px; background: transparent; }
+    .tbc-chat-send { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; border: 0; background: #6D4FE3; color: #fff; cursor: pointer; flex-shrink: 0; }
     .tbc-chat-send:disabled { background: #C7CEDA; cursor: not-allowed; }
     /* Burbuja con archivo adjunto dentro del chat: previsualizacion (imagen o PDF) + chip con el nombre */
     .tbc-bubble-img { margin: 2px 0 5px; border-radius: 8px; overflow: hidden; cursor: zoom-in; max-width: 100%; }
@@ -2961,11 +2973,14 @@ else
     [data-bs-theme="dark"] .tbc-sub,
     [data-bs-theme="dark"] .tbc-resp,
     [data-bs-theme="dark"] .tbc-cmt-body { background: #1f1f3a; border-color: #3a3a5a; }
-    [data-bs-theme="dark"] .tbc-bubble-au,
+    [data-bs-theme="dark"] .tbc-msg-au,
     [data-bs-theme="dark"] .tbc-bubble-tx { color: #D5D5E0; }
-    [data-bs-theme="dark"] .tbc-bubble { background: #1f1f3a; border-color: #3a3a5a; }
-    [data-bs-theme="dark"] .tbc-msg.mine .tbc-bubble { background: #2c2352; border-color: #4a3f7a; }
-    [data-bs-theme="dark"] .tbc-msg.mine .tbc-bubble-au { color: #b7a6f5; }
+    [data-bs-theme="dark"] .tbc-bubble { background: #33301f; border-color: #524b2e; }
+    [data-bs-theme="dark"] .tbc-bubble-tx { color: #E6E1CE; }
+    [data-bs-theme="dark"] .tbc-msg.mine .tbc-bubble { background: #1f2a44; border-color: #33456e; }
+    [data-bs-theme="dark"] .tbc-msg.mine .tbc-bubble .tbc-bubble-tx { color: #DCE6F5; }
+    [data-bs-theme="dark"] .tbc-msg.mine .tbc-msg-au { color: #9db8f0; }
+    [data-bs-theme="dark"] .tbc-daysep span { background: #24243f; color: #9aa8bd; }
     [data-bs-theme="dark"] .tb-fld input,
     [data-bs-theme="dark"] .tb-fld select,
     [data-bs-theme="dark"] .tb-fld textarea,
@@ -3707,9 +3722,9 @@ else
     private record LogVM(string Texto, DateTimeOffset Fecha);
     private record ComentarioVM(string? Autor, string Texto, DateTimeOffset Fecha, Guid AutorId = default);
 
-    // Item unificado del chat de actividad: un comentario (Texto) o un adjunto (Adj). Fecha/EsMio ordenan y alinean.
-    private record ActItem(DateTimeOffset Fecha, bool EsMio, string? Autor, string? Texto, AdjuntoVM? Adj);
-    // Fusiona comentarios + adjuntos en una sola linea de tiempo cronologica (mas antiguo arriba).
+    // Item unificado del chat de actividad: comentario (Texto), adjunto (Adj), o separador de dia (EsSepDia).
+    private record ActItem(DateTimeOffset Fecha, bool EsMio, string? Autor, string? Texto, AdjuntoVM? Adj, bool EsSepDia = false, string? SepTexto = null);
+    // Fusiona comentarios + adjuntos en una sola linea de tiempo cronologica (mas antiguo arriba) e inserta separadores por dia.
     private List<ActItem> ActTimeline(CardDraft d)
     {
         var items = new List<ActItem>();
@@ -3717,8 +3732,26 @@ else
             items.Add(new ActItem(c.Fecha, c.AutorId != Guid.Empty && c.AutorId == _miUsuarioId, c.Autor, c.Texto, null));
         foreach (var a in d.Adjuntos)
             items.Add(new ActItem(a.SubidoAt ?? DateTimeOffset.MinValue, a.SubidoPorId is Guid g && g == _miUsuarioId, a.SubidoPor, null, a));
-        return items.OrderBy(i => i.Fecha).ToList();
+        var ordenados = items.OrderBy(i => i.Fecha).ToList();
+        var res = new List<ActItem>();
+        DateTime? dia = null;
+        foreach (var it in ordenados)
+        {
+            var d0 = it.Fecha.ToLocalTime().Date;
+            if (dia != d0) { res.Add(new ActItem(it.Fecha, false, null, null, null, true, SepDia(it.Fecha))); dia = d0; }
+            res.Add(it);
+        }
+        return res;
     }
+    // Rotulo del separador de dia: "Hoy" / "Ayer" / fecha larga.
+    private static string SepDia(DateTimeOffset f)
+    {
+        var d = f.ToLocalTime().Date; var hoy = DateTime.Now.Date;
+        if (d == hoy) return "Hoy";
+        if (d == hoy.AddDays(-1)) return "Ayer";
+        return f.ToLocalTime().ToString("dddd, d 'de' MMMM yyyy", Es);
+    }
+    private static string FechaSoloHora(DateTimeOffset f) => f.ToLocalTime().ToString("HH:mm");
     private record OpcionOrigen(Guid Id, string Label);
 
     private record PersonaMini(Guid Id, string Nombre);
