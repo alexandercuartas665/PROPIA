@@ -1499,6 +1499,18 @@ else
                         <div class="tbc-tag-hint">Las etiquetas se crean y colorean en <button type="button" class="tbc-linkbtn" @onclick="AbrirConfigBoard">Configurar tablero</button>.</div>
                     </div>
 
+                    @* Solicitante: quien pide la tarea (registro del directorio). Por defecto el usuario actual; editable con el selector que busca/crea terceros. *@
+                    <div class="tbc-fld">
+                        <label>Solicitante</label>
+                        <div class="tbc-solic">
+                            <div class="tb-ava tbc-solic-ava">@Iniciales(d.SolicitanteNombre ?? "?")</div>
+                            <span class="tbc-solic-nm">@(string.IsNullOrWhiteSpace(d.SolicitanteNombre) ? "Tu (usuario actual)" : d.SolicitanteNombre)</span>
+                        </div>
+                        <div class="tbc-solic-sel">
+                            <SelectorPersona Jwt="@_jwt" Seleccionada="_solicitanteSel" SeleccionadaChanged="OnSolicitanteSel" Placeholder="Cambiar solicitante (buscar o crear)..." />
+                        </div>
+                    </div>
+
                     <div class="tbc-fld">
                         <label>Responsables</label>
                         @if (d.Responsables.Count > 0)
@@ -2437,6 +2449,11 @@ else
     .tbc-resp-x { display: flex; color: #C3D0DD; border: 0; background: transparent; cursor: pointer; padding: 0; }
     .tbc-resp-x:hover { color: #D7263D; }
     .tbc-resp-add { display: flex; gap: 6px; }
+    /* Solicitante (persona del directorio) */
+    .tbc-solic { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+    .tbc-solic .tb-ava, .tbc-solic-ava { width: 26px; height: 26px; font-size: 10px; border: 0; margin: 0; }
+    .tbc-solic-nm { font-size: 12.5px; font-weight: 700; color: #33475B; }
+    .tbc-solic-sel { display: block; }
     .tbc-resp-add select { flex: 1; min-width: 0; border: 1px solid #E1E8EE; border-radius: 9px; padding: 8px 11px; font-size: 12.5px; color: #33475B; outline: none; background: #fff; box-sizing: border-box; }
     .tbc-resp-add select:focus { border-color: #6D4FE3; }
     .tbc-add-sq { width: 34px; flex-shrink: 0; border-radius: 9px; background: #6D4FE3; color: #fff; display: flex; align-items: center; justify-content: center; border: 0; cursor: pointer; }
@@ -3652,6 +3669,17 @@ else
     private string? _mencionQuery;            // texto tras "@" que se esta escribiendo (null = sin mencion activa)
     private List<PersonaMini> _mencionMatches = new();
     private bool _scrollChatPend;             // pedir scroll del chat al fondo tras el proximo render
+    private PersonaCandidatoDto? _solicitanteSel;  // seleccion del selector de directorio para el solicitante
+    // El selector de directorio (SelectorPersona) eligio/creo un solicitante: reflejarlo en el borrador.
+    private void OnSolicitanteSel(PersonaCandidatoDto? p)
+    {
+        _solicitanteSel = p;
+        if (p is not null && _cardDraft is not null)
+        {
+            _cardDraft.SolicitantePersonaId = p.PersonaId;
+            _cardDraft.SolicitanteNombre = p.NombreCompleto;
+        }
+    }
     private bool _showCampoEditor; // editor de campo FLOTANTE (compartido: tarjeta + tabla)
     private string _subNew = "";
     private string _subtareaNew = "";
@@ -3740,6 +3768,8 @@ else
         public string? OrigenTipo { get; set; }
         public string? OrigenReferencia { get; set; }
         public List<Guid> Responsables { get; set; } = new();
+        public Guid? SolicitantePersonaId { get; set; }   // solicitante (persona del directorio); default = usuario actual
+        public string? SolicitanteNombre { get; set; }
         public List<SubChk> Checklist { get; set; } = new();
         public List<AdjuntoVM> Adjuntos { get; set; } = new();
         public List<LogVM> Historial { get; set; } = new();
@@ -5500,7 +5530,7 @@ else
     private async Task AbrirCardDraft(TareaListaDto? t, Guid? estadoIdDefault)
     {
         _subNew = ""; _respPick = ""; _cardMsg = null;
-        _cardTab = "detalle"; _adjSel = null; _nuevoComentario = "";
+        _cardTab = "detalle"; _adjSel = null; _nuevoComentario = ""; _solicitanteSel = null;
         if (t is null)
         {
             _cardDraft = new CardDraft { EstadoId = estadoIdDefault ?? _board?.Estados.FirstOrDefault()?.Id ?? Guid.Empty };
@@ -5538,6 +5568,8 @@ else
                 OrigenTipo = det.OrigenTipo,
                 OrigenReferencia = det.OrigenReferencia,
                 Responsables = responsables,
+                SolicitantePersonaId = det.SolicitantePersonaId,
+                SolicitanteNombre = det.SolicitanteNombre,
                 Checklist = (det.Checklist ?? new List<SubtareaCheckDto>()).Select(s => new SubChk { Titulo = s.Titulo, Hecho = s.Hecho }).ToList(),
                 Adjuntos = (det.Adjuntos ?? new List<TareaAdjuntoDto>()).Select(a => new AdjuntoVM(a.Id, a.Nombre, a.Url, a.SubidoPorNombre, a.SubidoAt, a.SubidoPorUsuarioId, a.Texto)).ToList(),
                 Historial = det.Historial.OrderBy(h => h.OcurridoAt).Select(h => new LogVM(h.Descripcion, h.OcurridoAt)).ToList(),
@@ -5589,7 +5621,7 @@ else
                     d.Titulo.Trim(), d.Descripcion, d.Prioridad, d.EstadoId,
                     null, ini, venc, d.PadreId, d.EtiquetaIds.ToList(), _board.Tablero.Id,
                     d.Color, d.EsProyecto, d.Valor, d.HoraInicio, d.HoraFin,
-                    origenTipo, origenRef, responsables, checklist, camposValores);
+                    origenTipo, origenRef, responsables, checklist, camposValores, d.SolicitantePersonaId);
                 resp = await Auth().PostAsJsonAsync("/api/tareas", req);
             }
             else
@@ -5597,7 +5629,7 @@ else
                 var req = new ActualizarTareaRequest(
                     d.Titulo.Trim(), d.Descripcion, d.Prioridad, null, ini, venc,
                     d.EstadoId, d.Color, d.EsProyecto, d.Valor, d.Progreso, d.HoraInicio, d.HoraFin,
-                    origenTipo, origenRef, responsables, checklist, camposValores);
+                    origenTipo, origenRef, responsables, checklist, camposValores, d.SolicitantePersonaId);
                 resp = await Auth().PutAsJsonAsync($"/api/tareas/{d.Id}", req);
             }
             if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }

@@ -88,7 +88,9 @@ public record TareaDetalleDto(
     Guid? CopiadaDeTareaId = null,
     string? CopiadaDeNumero = null,
     string? CopiadaDeTitulo = null,
-    IReadOnlyList<TareaListaDto>? Copias = null);
+    IReadOnlyList<TareaListaDto>? Copias = null,
+    Guid? SolicitantePersonaId = null,
+    string? SolicitanteNombre = null);
 
 /// <summary>Opciones para copiar una tarea (mini-modal). La copia es independiente, no subtarea.</summary>
 public record CopiarTareaRequest(
@@ -129,7 +131,8 @@ public record CrearTareaRequest(
     string? OrigenReferencia = null,
     IReadOnlyList<Guid>? ResponsablePersonaIds = null,
     IReadOnlyList<SubtareaCheckItem>? Checklist = null,
-    IReadOnlyList<TareaCampoValorDto>? CamposValores = null);
+    IReadOnlyList<TareaCampoValorDto>? CamposValores = null,
+    Guid? SolicitantePersonaId = null);
 
 public record ActualizarTareaRequest(
     string Titulo,
@@ -149,7 +152,8 @@ public record ActualizarTareaRequest(
     string? OrigenReferencia = null,
     IReadOnlyList<Guid>? ResponsablePersonaIds = null,
     IReadOnlyList<SubtareaCheckItem>? Checklist = null,
-    IReadOnlyList<TareaCampoValorDto>? CamposValores = null);
+    IReadOnlyList<TareaCampoValorDto>? CamposValores = null,
+    Guid? SolicitantePersonaId = null);
 
 public record CambiarEstadoRequest(Guid EstadoId, string? MotivoCancelacion, Guid? MotivoCierreId = null);
 public record CrearComentarioRequest(string Texto);

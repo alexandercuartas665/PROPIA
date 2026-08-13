@@ -43,6 +43,11 @@ public class Tarea : TenantEntity
     public Guid? AsignadoPersonaId { get; set; }
     public Persona? AsignadoPersona { get; set; }
 
+    /// <summary>Solicitante: quien pide la tarea (FK Persona del Directorio global). Por defecto el usuario
+    /// que la crea; editable con el selector de directorio (busca/crea terceros). Opcional.</summary>
+    public Guid? SolicitantePersonaId { get; set; }
+    public Persona? SolicitantePersona { get; set; }
+
     public DateOnly? FechaInicio { get; set; }
     public DateOnly? FechaVencimiento { get; set; }
     public DateTimeOffset? FechaCompletada { get; set; }

@@ -297,6 +297,7 @@ public class TareasService : ITareasService
         var t = await _db.Tareas.AsNoTracking()
             .Include(x => x.Estado)
             .Include(x => x.AsignadoPersona)
+            .Include(x => x.SolicitantePersona)
             .Include(x => x.Padre)
             .Include(x => x.CopiaDe)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
@@ -407,6 +408,8 @@ public class TareasService : ITareasService
 
         var asigNombre = t.AsignadoPersona is null ? null
             : ((t.AsignadoPersona.Nombres ?? "") + " " + (t.AsignadoPersona.Apellidos ?? "")).Trim();
+        var solNombre = t.SolicitantePersona is null ? null
+            : ((t.SolicitantePersona.Nombres ?? "") + " " + (t.SolicitantePersona.Apellidos ?? "")).Trim();
         var estadoDto = new EstadoTareaDto(t.Estado!.Id, t.Estado.Nombre, t.Estado.Color, t.Estado.Orden, t.Estado.EsTerminal, t.Estado.EsBase, t.Estado.Activo);
 
         return new TareaDetalleDto(
@@ -418,7 +421,8 @@ public class TareasService : ITareasService
             etiquetas, subtareas, comentarios, historial, colabs,
             t.Color, t.EsProyecto, t.Valor, t.Progreso, t.HoraInicio, t.HoraFin,
             t.OrigenTipo, t.OrigenReferencia, t.TableroId, adjuntos, checklist, camposValores,
-            t.CopiaDeTareaId, t.CopiaDe?.NumeroTarea, t.CopiaDe?.Titulo, copias);
+            t.CopiaDeTareaId, t.CopiaDe?.NumeroTarea, t.CopiaDe?.Titulo, copias,
+            t.SolicitantePersonaId, string.IsNullOrWhiteSpace(solNombre) ? null : solNombre);
     }
 
     private async Task<string> GenerarNumeroAsync(CancellationToken ct)
@@ -473,6 +477,12 @@ public class TareasService : ITareasService
         var responsables = req.ResponsablePersonaIds?.Where(x => x != Guid.Empty).Distinct().ToList();
         var asignado = responsables is { Count: > 0 } ? responsables[0] : req.AsignadoPersonaId;
 
+        // Solicitante: por defecto el usuario que crea (su persona del directorio); editable con el selector.
+        var uidActual = GetUsuarioActualId();
+        var solicitante = req.SolicitantePersonaId;
+        if (solicitante is null && uidActual != Guid.Empty)
+            solicitante = await _db.Users.AsNoTracking().Where(u => u.Id == uidActual).Select(u => u.PersonaId).FirstOrDefaultAsync(ct);
+
         var numero = await GenerarNumeroAsync(ct);
         var t = new Tarea
         {
@@ -483,6 +493,7 @@ public class TareasService : ITareasService
             Prioridad = req.Prioridad,
             EstadoId = estadoId,
             AsignadoPersonaId = asignado,
+            SolicitantePersonaId = solicitante,
             FechaInicio = req.FechaInicio,
             FechaVencimiento = req.FechaVencimiento,
             PadreId = req.PadreId,
@@ -559,6 +570,13 @@ public class TareasService : ITareasService
         t.HoraFin = req.HoraFin;
         t.OrigenTipo = string.IsNullOrWhiteSpace(req.OrigenTipo) ? null : req.OrigenTipo;
         t.OrigenReferencia = string.IsNullOrWhiteSpace(req.OrigenReferencia) ? null : req.OrigenReferencia;
+        // Solicitante (opcional): solo se cambia si viene en el request y es distinto; valida que la persona exista.
+        if (req.SolicitantePersonaId is { } spid && spid != t.SolicitantePersonaId)
+        {
+            if (!await _db.Personas.AsNoTracking().AnyAsync(p => p.Id == spid, ct))
+                throw new InvalidOperationException("La persona solicitante no existe.");
+            t.SolicitantePersonaId = spid;
+        }
         t.UpdatedAt = DateTimeOffset.UtcNow;
 
         if (prevPri != req.Prioridad)
