@@ -237,7 +237,9 @@ public class TareasService : ITareasService
                 t.Descripcion,
                 t.OrigenTipo,
                 t.OrigenReferencia,
-                t.EstadoDesde
+                t.EstadoDesde,
+                t.MotivoCancelacion,
+                t.CerradaAt
             }
         ).ToListAsync(ct);
 
@@ -285,7 +287,8 @@ public class TareasService : ITareasService
                 etiquetasMap.GetValueOrDefault(r.Id, new List<EtiquetaTareaDto>()),
                 r.Progreso, r.Color, r.EsProyecto, r.Valor, r.FechaInicio,
                 camposMap.GetValueOrDefault(r.Id),
-                resp, r.Descripcion, r.OrigenTipo, r.OrigenReferencia, r.EstadoDesde);
+                resp, r.Descripcion, r.OrigenTipo, r.OrigenReferencia, r.EstadoDesde,
+                r.MotivoCancelacion, r.CerradaAt);
         }).ToList();
     }
 
@@ -376,7 +379,7 @@ public class TareasService : ITareasService
             return null;
         }
         var adjuntos = adjuntosRaw
-            .Select(a => new TareaAdjuntoDto(a.Id, a.Nombre, a.Url, ResolverSubidoPor(a.CreatedBy), a.CreatedAt))
+            .Select(a => new TareaAdjuntoDto(a.Id, a.Nombre, a.Url, ResolverSubidoPor(a.CreatedBy), a.CreatedAt, a.CreatedBy))
             .ToList();
 
         var checklist = await _db.TareaSubtareas.AsNoTracking()
@@ -399,7 +402,7 @@ public class TareasService : ITareasService
                 c.Id, c.NumeroTarea, c.Titulo, c.Prioridad, c.EstadoId, e.Nombre, e.Color, e.EsTerminal,
                 c.AsignadoPersonaId, null, c.FechaVencimiento, false, c.PadreId, 0, 0,
                 new List<EtiquetaTareaDto>(), c.Progreso, c.Color, c.EsProyecto, c.Valor, c.FechaInicio,
-                null, null, null, c.OrigenTipo, c.OrigenReferencia, c.EstadoDesde)
+                null, null, null, c.OrigenTipo, c.OrigenReferencia, c.EstadoDesde, c.MotivoCancelacion, c.CerradaAt)
         ).ToListAsync(ct);
 
         var asigNombre = t.AsignadoPersona is null ? null
@@ -819,7 +822,7 @@ public class TareasService : ITareasService
             ? await _db.Personas.AsNoTracking().Where(p => p.Id == pid)
                 .Select(p => (((p.Nombres ?? "") + " " + (p.Apellidos ?? "")).Trim())).FirstOrDefaultAsync(ct)
             : null;
-        return new TareaAdjuntoDto(a.Id, a.Nombre, a.Url, string.IsNullOrWhiteSpace(subidoPor) ? null : subidoPor, a.CreatedAt);
+        return new TareaAdjuntoDto(a.Id, a.Nombre, a.Url, string.IsNullOrWhiteSpace(subidoPor) ? null : subidoPor, a.CreatedAt, uid);
     }
 
     public async Task<bool> EliminarAdjuntoAsync(Guid tareaId, Guid adjuntoId, CancellationToken ct)

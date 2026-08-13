@@ -32,7 +32,10 @@ public record TareaListaDto(
     string? Descripcion = null,
     string? OrigenTipo = null,
     string? OrigenReferencia = null,
-    DateTimeOffset? EstadoDesde = null);
+    DateTimeOffset? EstadoDesde = null,
+    // ----- Cierre (para la bandeja "Cerrados") -----
+    string? MotivoCierre = null,
+    DateTimeOffset? CerradaAt = null);
 
 // Responsable de una tarea (asignado principal + colaboradores) con foto para la vista tabla.
 public record ResponsableMiniDto(Guid PersonaId, string Nombre, string? FotoUrl);
@@ -102,7 +105,7 @@ public record TareaHistorialDto(TipoEventoTarea TipoEvento, string Descripcion, 
 public record TareaColaboradorDto(Guid Id, Guid PersonaId, string Nombre);
 
 // ----- Adjuntos y checklist de la tarjeta -----
-public record TareaAdjuntoDto(Guid Id, string Nombre, string Url, string? SubidoPorNombre = null, DateTimeOffset? SubidoAt = null);
+public record TareaAdjuntoDto(Guid Id, string Nombre, string Url, string? SubidoPorNombre = null, DateTimeOffset? SubidoAt = null, Guid? SubidoPorUsuarioId = null);
 public record SubtareaCheckDto(Guid Id, string Titulo, bool Hecho, int Orden);
 public record SubtareaCheckItem(string Titulo, bool Hecho);
 

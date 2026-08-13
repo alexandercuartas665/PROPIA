@@ -115,18 +115,25 @@ else
                 <div class="tb-avatars tb-avatars-lg">
                     @foreach (var u in _board.Tablero.Usuarios.Take(4)) { <div class="tb-ava" title="@u.Nombre">@u.Iniciales</div> }
                 </div>
-                <div class="tb-modeswitch">
-                    @foreach (var m in _modes)
-                    {
-                        var mode = m.Key;
-                        <button class="tb-mode @(_boardMode == mode ? "on" : "")" @onclick="() => SetBoardMode(mode)" title="@m.Label">
-                            @((MarkupString)m.Icon)<span>@m.Label</span>
-                        </button>
-                    }
-                </div>
+                @* En "Cerrados" no hay diseno de tablero: solo una tabla de consulta. *@
+                @if (!_verCerradas)
+                {
+                    <div class="tb-modeswitch">
+                        @foreach (var m in _modes)
+                        {
+                            var mode = m.Key;
+                            <button class="tb-mode @(_boardMode == mode ? "on" : "")" @onclick="() => SetBoardMode(mode)" title="@m.Label">
+                                @((MarkupString)m.Icon)<span>@m.Label</span>
+                            </button>
+                        }
+                    </div>
+                }
                 @SelectorCopropiedad
-                <button class="tb-btn tb-btn-soft" @onclick="AbrirConfigBoard"><i class="fi fi-rr-settings"></i>Configurar</button>
-                <button class="tb-btn tb-btn-primary" @onclick="() => AbrirCardDraft(null, _board.Estados.FirstOrDefault()?.Id)"><i class="fi fi-rr-plus"></i>Nueva tarea</button>
+                @if (!_verCerradas)
+                {
+                    <button class="tb-btn tb-btn-soft" @onclick="AbrirConfigBoard"><i class="fi fi-rr-settings"></i>Configurar</button>
+                    <button class="tb-btn tb-btn-primary" @onclick="() => AbrirCardDraft(null, _board.Estados.FirstOrDefault()?.Id)"><i class="fi fi-rr-plus"></i>Nueva tarea</button>
+                }
             </div>
         </div>
 
@@ -139,6 +146,52 @@ else
         </div>
 
 
+        @* ========== CERRADOS: una sola tabla de consulta (sin diseno de tablero) ========== *@
+        @if (_verCerradas)
+        {
+            var qCerr = (_buscarTarea ?? "").Trim().ToLowerInvariant();
+            var cerradas = _board.Tareas
+                .Where(x => string.IsNullOrEmpty(qCerr) || x.Titulo.ToLowerInvariant().Contains(qCerr) || x.NumeroTarea.ToLowerInvariant().Contains(qCerr))
+                .OrderByDescending(x => x.CerradaAt)
+                .ToList();
+            <div class="tb-cerr">
+                @if (cerradas.Count == 0)
+                {
+                    <div class="tb-cerr-empty">No hay tareas cerradas@(string.IsNullOrWhiteSpace(_buscarTarea) ? "" : " para esa busqueda").</div>
+                }
+                else
+                {
+                    <table class="tb-cerr-tbl">
+                        <thead>
+                            <tr>
+                                <th>Numero</th><th>Tarea</th><th>Prioridad</th><th>Estado final</th><th>Motivo de cierre</th><th>Cerrada</th><th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var t in cerradas)
+                            {
+                                var tarea = t;
+                                <tr class="tb-cerr-row" @onclick="() => AbrirCardDraft(tarea, null)" title="Abrir">
+                                    <td class="tb-cerr-num">@t.NumeroTarea</td>
+                                    <td class="tb-cerr-tit">@t.Titulo</td>
+                                    <td><span class="tb-cerr-prio tb-cerr-prio-@t.Prioridad">@t.Prioridad</span></td>
+                                    <td><span class="tb-cerr-est" style="background:@(t.EstadoColor ?? "#64748b")">@t.EstadoNombre</span></td>
+                                    <td class="tb-cerr-mot">@(string.IsNullOrWhiteSpace(t.MotivoCierre) ? "—" : t.MotivoCierre)</td>
+                                    <td class="tb-cerr-dt">@(t.CerradaAt is DateTimeOffset ca ? FechaHora(ca) : "—")</td>
+                                    <td class="tb-cerr-act">
+                                        <button class="tb-cerr-reab" @onclick:stopPropagation="true" @onclick="() => ReabrirTareaCerrada(tarea.Id)" title="Reabrir: vuelve al tablero activo">
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Reabrir
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        }
+        else
+        {
         @* ---------- TABLERO (Kanban) ---------- *@
         @if (_boardMode == "tablero")
         {
@@ -791,6 +844,7 @@ else
                 }
             </div>
         }
+        }
     }
 </div>
 
@@ -1173,13 +1227,16 @@ else
                 <button class="tbc-head-x" @onclick="CerrarCard"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
             </div>
 
-            @* ----- Pestanas: Detalle (incluye actividad) / Archivos ----- *@
+            @* ----- Pestanas: Detalle (incluye actividad tipo chat) / Archivos / Historial ----- *@
             <div class="tbc-tabs">
                 <button type="button" class="tbc-tab @(_cardTab == "detalle" ? "on" : "")" @onclick='() => _cardTab = "detalle"'>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Detalle
                 </button>
                 <button type="button" class="tbc-tab @(_cardTab == "archivos" ? "on" : "")" @onclick='() => _cardTab = "archivos"'>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15l-5-5L5 21M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="8.5" cy="8.5" r="1.5"/></svg>Archivos @if (d.Adjuntos.Count > 0) { <span class="tbc-tab-badge">@d.Adjuntos.Count</span> }
+                </button>
+                <button type="button" class="tbc-tab @(_cardTab == "historial" ? "on" : "")" @onclick='() => _cardTab = "historial"'>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Historial @if (d.Historial.Count > 0) { <span class="tbc-tab-badge">@d.Historial.Count</span> }
                 </button>
             </div>
 
@@ -1477,72 +1534,72 @@ else
                     <div class="tbc-fld"><label>Valor (COP)</label><input type="number" @bind="d.Valor" placeholder="Ej. 1200000" /></div>
                 </div>
 
-                @* ----- Columna 3: actividad (reportar + comentarios + historial) ----- *@
+                @* ----- Columna 3: actividad como CHAT (comentarios + adjuntos inline, estilo Airtable) ----- *@
                 <div class="tbc-col tbc-col-act">
-                    <div class="tbc-act-report">
-                        <label class="tbc-lbl">Reportar actividad</label>
+                    <div class="tbc-actchat">
+                        <div class="tbc-actchat-h">
+                            <label class="tbc-lbl">Actividad</label>
+                            <span class="tbc-mut">Comentarios y archivos</span>
+                        </div>
                         @if (d.Id is null)
                         {
-                            <div class="tbc-files-hint">Guarda la tarjeta para registrar actividad.</div>
+                            <div class="tbc-act-empty">Guarda la tarjeta para registrar actividad y adjuntar archivos.</div>
                         }
                         else
                         {
-                            <textarea class="tbc-act-input" rows="3" @bind="_nuevoComentario" @bind:event="oninput" placeholder="Describe lo que realizaste en esta tarea..."></textarea>
-                            <div class="tbc-act-actions">
-                                @if (!string.IsNullOrEmpty(_cardMsg)) { <span class="tbc-cardmsg">@_cardMsg</span> }
-                                <div class="tb-flex"></div>
-                                <button class="tb-btn tb-btn-primary" @onclick="AgregarComentarioCard" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoComentario))">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>@(_busy ? "Registrando..." : "Registrar")
+                            var timeline = ActTimeline(d);
+                            <div class="tbc-chat tbc-chat-scroll">
+                                @if (timeline.Count == 0)
+                                {
+                                    <div class="tbc-act-empty">Aun no hay actividad. Escribe un comentario o adjunta un archivo.</div>
+                                }
+                                else
+                                {
+                                    @* Orden cronologico (mas antiguo arriba); los mios a la derecha. *@
+                                    @foreach (var it in timeline)
+                                    {
+                                        <div class="tbc-msg @(it.EsMio ? "mine" : "")">
+                                            @if (!it.EsMio) { <div class="tb-ava tbc-msg-ava">@Iniciales(it.Autor ?? "?")</div> }
+                                            <div class="tbc-bubble @(it.Adj is not null ? "has-file" : "")">
+                                                <div class="tbc-bubble-head">
+                                                    <span class="tbc-bubble-au">@(it.EsMio ? "Tu" : (string.IsNullOrWhiteSpace(it.Autor) ? "Usuario" : it.Autor))</span>
+                                                    <span class="tbc-bubble-dt">@FechaHora(it.Fecha)</span>
+                                                </div>
+                                                @if (it.Adj is AdjuntoVM adj)
+                                                {
+                                                    @if (EsImg(adj.Url))
+                                                    {
+                                                        <div class="tbc-bubble-img" @onclick="() => _lightbox = adj.Url" title="Clic para ampliar">
+                                                            <img src="@adj.Url" alt="@adj.Nombre" />
+                                                        </div>
+                                                    }
+                                                    <a class="tbc-bubble-file" href="@adj.Url" target="_blank" title="@adj.Nombre">
+                                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg>
+                                                        <span class="tbc-bubble-fnm">@adj.Nombre</span>
+                                                    </a>
+                                                }
+                                                else
+                                                {
+                                                    <div class="tbc-bubble-tx">@it.Texto</div>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                }
+                            </div>
+                            @* Compositor tipo chat: adjuntar (clip) + texto + enviar. El archivo va tambien a la pestana Archivos. *@
+                            <div class="tbc-chat-composer">
+                                <label class="tbc-chat-clip" title="Adjuntar archivo (tambien aparece en Archivos)">
+                                    @if (_subiendo) { <span class="tbc-chat-clip-load">...</span> }
+                                    else { <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.49"/></svg> }
+                                    <InputFile OnChange="SubirAdjunto" style="display:none" />
+                                </label>
+                                <textarea class="tbc-chat-input" rows="1" @bind="_nuevoComentario" @bind:event="oninput" placeholder="Escribe un comentario..."></textarea>
+                                <button class="tbc-chat-send" @onclick="AgregarComentarioCard" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoComentario))" title="Enviar comentario">
+                                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
                                 </button>
                             </div>
-                        }
-                    </div>
-
-                    <div class="tbc-fld">
-                        <label class="tbc-lbl">Comentarios @if (d.Comentarios.Count > 0) { <span class="tbc-mut">- @d.Comentarios.Count</span> }</label>
-                        @if (d.Comentarios.Count == 0)
-                        {
-                            <div class="tbc-act-empty">Aun no hay reportes de actividad.</div>
-                        }
-                        else
-                        {
-                            @* Chat: mensajes en orden cronologico (mas antiguo arriba); los mios a la derecha. *@
-                            <div class="tbc-chat">
-                                @foreach (var c in Enumerable.Reverse(d.Comentarios))
-                                {
-                                    var mio = c.AutorId != Guid.Empty && c.AutorId == _miUsuarioId;
-                                    <div class="tbc-msg @(mio ? "mine" : "")">
-                                        @if (!mio) { <div class="tb-ava tbc-msg-ava">@Iniciales(c.Autor ?? "?")</div> }
-                                        <div class="tbc-bubble">
-                                            <div class="tbc-bubble-head">
-                                                <span class="tbc-bubble-au">@(mio ? "Tu" : (string.IsNullOrWhiteSpace(c.Autor) ? "Usuario" : c.Autor))</span>
-                                                <span class="tbc-bubble-dt">@FechaHora(c.Fecha)</span>
-                                            </div>
-                                            <div class="tbc-bubble-tx">@c.Texto</div>
-                                        </div>
-                                    </div>
-                                }
-                            </div>
-                        }
-                    </div>
-
-                    <div class="tbc-fld">
-                        <label class="tbc-lbl">Historial</label>
-                        @if (d.Historial.Count == 0)
-                        {
-                            <div class="tbc-act-empty">Sin eventos registrados.</div>
-                        }
-                        else
-                        {
-                            <div class="tbc-log">
-                                @foreach (var l in d.Historial)
-                                {
-                                    <div class="tbc-log-i">
-                                        <div class="tbc-log-rail"><span class="tbc-log-dot"></span><span class="tbc-log-line"></span></div>
-                                        <div><div class="tbc-log-t">@l.Texto</div><div class="tbc-log-d">@FechaHora(l.Fecha)</div></div>
-                                    </div>
-                                }
-                            </div>
+                            @if (!string.IsNullOrEmpty(_cardMsg)) { <div class="tbc-cardmsg">@_cardMsg</div> }
                         }
                     </div>
                 </div>
@@ -1635,6 +1692,33 @@ else
                                 <p class="tbc-viewer-nm">@sel.Nombre</p>
                                 @if (!string.IsNullOrWhiteSpace(sel.SubidoPor)) { <p class="tbc-viewer-by">Subido por @sel.SubidoPor</p> }
                                 <a class="tbc-viewer-open" href="@sel.Url" target="_blank">Abrir / descargar</a>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+            }
+
+            @* ===== TAB HISTORIAL: bitacora de eventos del sistema (creacion, cambios de estado, adjuntos...) ===== *@
+            @if (_cardTab == "historial")
+            {
+            <div class="tbc-histtab">
+                @if (d.Id is null)
+                {
+                    <div class="tbc-act-empty">Guarda la tarjeta para ver su historial.</div>
+                }
+                else if (d.Historial.Count == 0)
+                {
+                    <div class="tbc-act-empty">Sin eventos registrados.</div>
+                }
+                else
+                {
+                    <div class="tbc-log">
+                        @foreach (var l in Enumerable.Reverse(d.Historial))
+                        {
+                            <div class="tbc-log-i">
+                                <div class="tbc-log-rail"><span class="tbc-log-dot"></span><span class="tbc-log-line"></span></div>
+                                <div><div class="tbc-log-t">@l.Texto</div><div class="tbc-log-d">@FechaHora(l.Fecha)</div></div>
                             </div>
                         }
                     </div>
@@ -2401,6 +2485,57 @@ else
     .tbc-msg.mine .tbc-bubble-au { color: #5B3FD1; }
     .tbc-bubble-dt { font-size: 10px; color: #A6B7C8; font-weight: 600; }
     .tbc-bubble-tx { font-size: 12.5px; color: #33475B; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+
+    /* ===== Actividad como CHAT (columna 3 del tab Detalle): timeline arriba + compositor abajo ===== */
+    .tbc-actchat { display: flex; flex-direction: column; min-height: 0; height: 100%; gap: 8px; }
+    .tbc-actchat-h { display: flex; align-items: baseline; gap: 8px; }
+    .tbc-chat-scroll { flex: 1 1 auto; min-height: 120px; overflow-y: auto; padding: 4px 2px; background: #FBFCFE; border: 1px solid #EEF3F8; border-radius: 10px; }
+    .tbc-chat-composer { display: flex; align-items: flex-end; gap: 6px; border: 1px solid #E1E8EE; border-radius: 12px; padding: 6px; background: #fff; }
+    .tbc-chat-composer:focus-within { border-color: #6D4FE3; }
+    .tbc-chat-clip { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; color: #6D4FE3; background: #F3F0FE; cursor: pointer; flex-shrink: 0; }
+    .tbc-chat-clip:hover { background: #E7E0FC; }
+    .tbc-chat-clip-load { font-size: 15px; font-weight: 800; color: #6D4FE3; }
+    .tbc-chat-input { flex: 1 1 auto; border: 0; outline: none; resize: none; font-family: inherit; font-size: 12.5px; color: #33475B; line-height: 1.5; padding: 8px 4px; max-height: 96px; background: transparent; }
+    .tbc-chat-send { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; border: 0; background: #6D4FE3; color: #fff; cursor: pointer; flex-shrink: 0; }
+    .tbc-chat-send:disabled { background: #C7CEDA; cursor: not-allowed; }
+    /* Burbuja con archivo adjunto dentro del chat */
+    .tbc-bubble-img { margin: 2px 0 4px; border-radius: 8px; overflow: hidden; cursor: zoom-in; max-width: 200px; }
+    .tbc-bubble-img img { display: block; width: 100%; max-height: 180px; object-fit: cover; }
+    .tbc-bubble-file { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; color: #4B3AA6; background: rgba(109,79,227,.08); border: 1px solid rgba(109,79,227,.18); border-radius: 8px; padding: 5px 9px; font-size: 12px; font-weight: 700; max-width: 220px; }
+    .tbc-bubble-file:hover { background: rgba(109,79,227,.15); }
+    .tbc-bubble-fnm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ===== Tab Historial ===== */
+    .tbc-histtab { padding: 6px 2px; overflow-y: auto; }
+
+    /* ===== Bandeja CERRADOS: tabla de consulta plana (sin diseno de tablero) ===== */
+    .tb-cerr { overflow-x: auto; }
+    .tb-cerr-empty { font-size: 13px; color: #90A4BC; background: #F8FAFC; border: 1px dashed #DCE6EF; border-radius: 12px; padding: 34px; text-align: center; }
+    .tb-cerr-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .tb-cerr-tbl thead th { text-align: left; font-size: 10.5px; letter-spacing: .4px; text-transform: uppercase; color: #90A4BC; font-weight: 800; padding: 8px 12px; border-bottom: 2px solid #EEF3F8; white-space: nowrap; }
+    .tb-cerr-row { cursor: pointer; border-bottom: 1px solid #F1F5F9; }
+    .tb-cerr-row:hover { background: #F8FAFC; }
+    .tb-cerr-tbl td { padding: 10px 12px; color: #33475B; vertical-align: middle; }
+    .tb-cerr-num { font-weight: 800; color: #6D4FE3; white-space: nowrap; }
+    .tb-cerr-tit { font-weight: 700; }
+    .tb-cerr-prio { font-size: 10.5px; font-weight: 800; padding: 2px 8px; border-radius: 20px; background: #EEF3F8; color: #64748B; }
+    .tb-cerr-prio-Urgente { background: #FDE7E7; color: #D8443C; }
+    .tb-cerr-prio-Alta { background: #FEF0E1; color: #C77B18; }
+    .tb-cerr-prio-Normal { background: #E7EEFB; color: #3B62C0; }
+    .tb-cerr-prio-Baja { background: #EAF5EE; color: #2F8B54; }
+    .tb-cerr-est { display: inline-block; font-size: 10.5px; font-weight: 800; color: #fff; padding: 2px 9px; border-radius: 20px; white-space: nowrap; }
+    .tb-cerr-mot { color: #5A6B7E; }
+    .tb-cerr-dt { color: #90A4BC; white-space: nowrap; }
+    .tb-cerr-act { text-align: right; white-space: nowrap; }
+    .tb-cerr-reab { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #E1E8EE; background: #fff; color: #4B3AA6; font-size: 11.5px; font-weight: 800; padding: 5px 10px; border-radius: 8px; cursor: pointer; }
+    .tb-cerr-reab:hover { background: #F3F0FE; border-color: #C9BCF7; }
+    [data-bs-theme="dark"] .tbc-chat-scroll { background: #14142a; border-color: #2c2c50; }
+    [data-bs-theme="dark"] .tbc-chat-composer { background: #1a1a35; border-color: #3a3a5a; }
+    [data-bs-theme="dark"] .tbc-chat-input { color: #d5d9f0; }
+    [data-bs-theme="dark"] .tb-cerr-tbl td { color: #c5cae0; }
+    [data-bs-theme="dark"] .tb-cerr-row { border-bottom-color: #24243f; }
+    [data-bs-theme="dark"] .tb-cerr-row:hover { background: #1c1c38; }
+    [data-bs-theme="dark"] .tb-cerr-reab { background: #1a1a35; border-color: #3a3a5a; color: #b9a8f5; }
 
     /* ===== Etiqueta "subido por" en adjuntos ===== */
     .tbc-thumb-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
@@ -3550,9 +3685,22 @@ else
         public bool PermiteVarios { get; set; }
         public HashSet<Guid> CamposSuma { get; set; } = new();   // ids a sumar (tipo Total)
     }
-    private record AdjuntoVM(Guid Id, string Nombre, string Url, string? SubidoPor = null, DateTimeOffset? SubidoAt = null);
+    private record AdjuntoVM(Guid Id, string Nombre, string Url, string? SubidoPor = null, DateTimeOffset? SubidoAt = null, Guid? SubidoPorId = null);
     private record LogVM(string Texto, DateTimeOffset Fecha);
     private record ComentarioVM(string? Autor, string Texto, DateTimeOffset Fecha, Guid AutorId = default);
+
+    // Item unificado del chat de actividad: un comentario (Texto) o un adjunto (Adj). Fecha/EsMio ordenan y alinean.
+    private record ActItem(DateTimeOffset Fecha, bool EsMio, string? Autor, string? Texto, AdjuntoVM? Adj);
+    // Fusiona comentarios + adjuntos en una sola linea de tiempo cronologica (mas antiguo arriba).
+    private List<ActItem> ActTimeline(CardDraft d)
+    {
+        var items = new List<ActItem>();
+        foreach (var c in d.Comentarios)
+            items.Add(new ActItem(c.Fecha, c.AutorId != Guid.Empty && c.AutorId == _miUsuarioId, c.Autor, c.Texto, null));
+        foreach (var a in d.Adjuntos)
+            items.Add(new ActItem(a.SubidoAt ?? DateTimeOffset.MinValue, a.SubidoPorId is Guid g && g == _miUsuarioId, a.SubidoPor, null, a));
+        return items.OrderBy(i => i.Fecha).ToList();
+    }
     private record OpcionOrigen(Guid Id, string Label);
 
     private record PersonaMini(Guid Id, string Nombre);
@@ -4783,6 +4931,14 @@ else
         if (resp.IsSuccessStatusCode) await RecargarBoard();
         else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
     }
+    // Reabre una tarea cerrada moviendola al primer estado NO terminal (vuelve al tablero activo y sale de "Cerrados").
+    private async Task ReabrirTareaCerrada(Guid tareaId)
+    {
+        var destino = _board?.Estados.FirstOrDefault(e => !e.EsTerminal && e.Activo)
+                   ?? _board?.Estados.FirstOrDefault(e => !e.EsTerminal);
+        if (destino is null) { _msg = "No hay un estado activo al cual reabrir."; _msgClass = "alert-danger"; return; }
+        await EjecutarCambioEstado(tareaId, destino.Id, null);
+    }
     private async Task ConfirmarCierreTarea()
     {
         if (_cierreTarget is not { } tgt) return;
@@ -5272,7 +5428,7 @@ else
                 OrigenReferencia = det.OrigenReferencia,
                 Responsables = responsables,
                 Checklist = (det.Checklist ?? new List<SubtareaCheckDto>()).Select(s => new SubChk { Titulo = s.Titulo, Hecho = s.Hecho }).ToList(),
-                Adjuntos = (det.Adjuntos ?? new List<TareaAdjuntoDto>()).Select(a => new AdjuntoVM(a.Id, a.Nombre, a.Url, a.SubidoPorNombre, a.SubidoAt)).ToList(),
+                Adjuntos = (det.Adjuntos ?? new List<TareaAdjuntoDto>()).Select(a => new AdjuntoVM(a.Id, a.Nombre, a.Url, a.SubidoPorNombre, a.SubidoAt, a.SubidoPorUsuarioId)).ToList(),
                 Historial = det.Historial.OrderBy(h => h.OcurridoAt).Select(h => new LogVM(h.Descripcion, h.OcurridoAt)).ToList(),
                 Comentarios = det.Comentarios.Select(c => new ComentarioVM(c.AutorNombre, c.Texto, c.CreatedAt, c.AutorUsuarioId)).ToList(),
                 Campos = (det.CamposValores ?? new List<TareaCampoValorDto>()).GroupBy(v => v.CampoId).ToDictionary(g => g.Key, g => g.First().Valor),
@@ -5518,7 +5674,7 @@ else
             if (resp.IsSuccessStatusCode)
             {
                 var dto = await resp.Content.ReadFromJsonAsync<TareaAdjuntoDto>();
-                if (dto is not null) { _cardDraft.Adjuntos.Add(new AdjuntoVM(dto.Id, dto.Nombre, dto.Url, dto.SubidoPorNombre, dto.SubidoAt)); _adjSel = dto.Id; }
+                if (dto is not null) { _cardDraft.Adjuntos.Add(new AdjuntoVM(dto.Id, dto.Nombre, dto.Url, dto.SubidoPorNombre, dto.SubidoAt ?? DateTimeOffset.Now, dto.SubidoPorUsuarioId ?? _miUsuarioId)); _adjSel = dto.Id; _cardTab = _cardTab == "archivos" ? "archivos" : "detalle"; }
             }
             else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
         }
