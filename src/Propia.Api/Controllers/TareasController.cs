@@ -308,7 +308,7 @@ public class TareasController : ControllerBase
     // --- Adjuntos de la tarjeta ---
     [HttpPost("{id:guid}/adjuntos")]
     [RequestSizeLimit(11_000_000)]
-    public async Task<IActionResult> SubirAdjunto(Guid id, IFormFile file, CancellationToken ct)
+    public async Task<IActionResult> SubirAdjunto(Guid id, IFormFile file, [FromForm] string? texto, CancellationToken ct)
     {
         var tenantId = GetTenantId();
         if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
@@ -318,7 +318,7 @@ public class TareasController : ControllerBase
         var key = $"tenants/{tenantId:N}/tareas/{id:N}/{Guid.NewGuid():N}{ext}";
         await using var stream = file.OpenReadStream();
         var url = Absolutizar(await _storage.UploadAsync(key, stream, file.ContentType ?? "application/octet-stream", ct));
-        var dto = await _svc.AgregarAdjuntoAsync(id, file.FileName, url, ct);
+        var dto = await _svc.AgregarAdjuntoAsync(id, file.FileName, url, texto, ct);
         return dto is null ? NotFound() : Ok(dto);
     }
 

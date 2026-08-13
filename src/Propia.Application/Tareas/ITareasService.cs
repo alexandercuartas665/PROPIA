@@ -36,7 +36,7 @@ public interface ITareasService
     Task<bool> EliminarTareaAsync(Guid id, CancellationToken ct);
 
     // Adjuntos de la tarjeta
-    Task<TareaAdjuntoDto?> AgregarAdjuntoAsync(Guid tareaId, string nombre, string url, CancellationToken ct);
+    Task<TareaAdjuntoDto?> AgregarAdjuntoAsync(Guid tareaId, string nombre, string url, string? texto, CancellationToken ct);
     Task<bool> EliminarAdjuntoAsync(Guid tareaId, Guid adjuntoId, CancellationToken ct);
 
     // Comentarios + Etiquetas + Colaboradores

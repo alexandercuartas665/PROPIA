@@ -105,7 +105,7 @@ public record TareaHistorialDto(TipoEventoTarea TipoEvento, string Descripcion, 
 public record TareaColaboradorDto(Guid Id, Guid PersonaId, string Nombre);
 
 // ----- Adjuntos y checklist de la tarjeta -----
-public record TareaAdjuntoDto(Guid Id, string Nombre, string Url, string? SubidoPorNombre = null, DateTimeOffset? SubidoAt = null, Guid? SubidoPorUsuarioId = null);
+public record TareaAdjuntoDto(Guid Id, string Nombre, string Url, string? SubidoPorNombre = null, DateTimeOffset? SubidoAt = null, Guid? SubidoPorUsuarioId = null, string? Texto = null);
 public record SubtareaCheckDto(Guid Id, string Titulo, bool Hecho, int Orden);
 public record SubtareaCheckItem(string Titulo, bool Hecho);
 

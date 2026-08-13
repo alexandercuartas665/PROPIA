@@ -358,7 +358,7 @@ public class TareasService : ITareasService
         var adjuntosRaw = await _db.TareaAdjuntos.AsNoTracking()
             .Where(a => a.TareaId == id)
             .OrderBy(a => a.CreatedAt)
-            .Select(a => new { a.Id, a.Nombre, a.Url, a.CreatedBy, a.CreatedAt })
+            .Select(a => new { a.Id, a.Nombre, a.Url, a.CreatedBy, a.CreatedAt, a.Texto })
             .ToListAsync(ct);
         // Resolver "subido por" (best-effort) via usuario -> persona, igual que los comentarios.
         var adjUserIds = adjuntosRaw.Where(a => a.CreatedBy.HasValue).Select(a => a.CreatedBy!.Value).Distinct().ToList();
@@ -379,7 +379,7 @@ public class TareasService : ITareasService
             return null;
         }
         var adjuntos = adjuntosRaw
-            .Select(a => new TareaAdjuntoDto(a.Id, a.Nombre, a.Url, ResolverSubidoPor(a.CreatedBy), a.CreatedAt, a.CreatedBy))
+            .Select(a => new TareaAdjuntoDto(a.Id, a.Nombre, a.Url, ResolverSubidoPor(a.CreatedBy), a.CreatedAt, a.CreatedBy, a.Texto))
             .ToList();
 
         var checklist = await _db.TareaSubtareas.AsNoTracking()
@@ -808,21 +808,25 @@ public class TareasService : ITareasService
         return true;
     }
 
-    public async Task<TareaAdjuntoDto?> AgregarAdjuntoAsync(Guid tareaId, string nombre, string url, CancellationToken ct)
+    public async Task<TareaAdjuntoDto?> AgregarAdjuntoAsync(Guid tareaId, string nombre, string url, string? texto, CancellationToken ct)
     {
-        if (!await _db.Tareas.AnyAsync(x => x.Id == tareaId && !x.Eliminada, ct)) return null;
+        var tarea = await _db.Tareas.AsNoTracking().FirstOrDefaultAsync(x => x.Id == tareaId && !x.Eliminada, ct);
+        if (tarea is null) return null;
         var uid = GetUsuarioActualId();
-        var a = new TareaAdjunto { TareaId = tareaId, Nombre = nombre, Url = url, CreatedBy = uid };
+        var cap = string.IsNullOrWhiteSpace(texto) ? null : texto.Trim();
+        var a = new TareaAdjunto { TareaId = tareaId, Nombre = nombre, Url = url, Texto = cap, CreatedBy = uid };
         _db.TareaAdjuntos.Add(a);
         await RegistrarHistorial(tareaId, TipoEventoTarea.AdjuntoAgregado, $"Adjunto agregado: {nombre}", null, null, ct);
         await _db.SaveChangesAsync(ct);
+        // El caption puede traer menciones @persona; notificar igual que un comentario.
+        if (cap is not null) await NotificarMencionesAsync(tarea, cap, ct);
         // Nombre de quien subio (best-effort) para etiquetar el archivo en el chat/lista.
         var personaId = await _db.Users.AsNoTracking().Where(u => u.Id == uid).Select(u => u.PersonaId).FirstOrDefaultAsync(ct);
         string? subidoPor = personaId is Guid pid
             ? await _db.Personas.AsNoTracking().Where(p => p.Id == pid)
                 .Select(p => (((p.Nombres ?? "") + " " + (p.Apellidos ?? "")).Trim())).FirstOrDefaultAsync(ct)
             : null;
-        return new TareaAdjuntoDto(a.Id, a.Nombre, a.Url, string.IsNullOrWhiteSpace(subidoPor) ? null : subidoPor, a.CreatedAt, uid);
+        return new TareaAdjuntoDto(a.Id, a.Nombre, a.Url, string.IsNullOrWhiteSpace(subidoPor) ? null : subidoPor, a.CreatedAt, uid, a.Texto);
     }
 
     public async Task<bool> EliminarAdjuntoAsync(Guid tareaId, Guid adjuntoId, CancellationToken ct)

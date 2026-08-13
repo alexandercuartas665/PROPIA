@@ -1591,6 +1591,10 @@ else
                                                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg>
                                                                 <span class="tbc-bubble-fnm">@adj.Nombre</span>
                                                             </a>
+                                                            @if (!string.IsNullOrWhiteSpace(adj.Texto))
+                                                            {
+                                                                <div class="tbc-bubble-tx tbc-bubble-cap">@adj.Texto</div>
+                                                            }
                                                         }
                                                         else
                                                         {
@@ -1603,17 +1607,42 @@ else
                                     }
                                 }
                             </div>
-                            @* Compositor tipo chat: adjuntar (clip) + texto + enviar. El archivo va tambien a la pestana Archivos. *@
-                            <div class="tbc-chat-composer">
-                                <label class="tbc-chat-clip" title="Adjuntar archivo (tambien aparece en Archivos)">
-                                    @if (_subiendo) { <span class="tbc-chat-clip-load">...</span> }
-                                    else { <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.49"/></svg> }
-                                    <InputFile OnChange="SubirAdjunto" style="display:none" />
-                                </label>
-                                <textarea class="tbc-chat-input" rows="1" @bind="_nuevoComentario" @bind:event="oninput" placeholder="Escribe un comentario..."></textarea>
-                                <button class="tbc-chat-send" @onclick="AgregarComentarioCard" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoComentario))" title="Enviar comentario">
-                                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-                                </button>
+                            @* Compositor tipo chat: adjuntar (clip) + texto + enviar. Permite archivo con caption y @menciones a usuarios. *@
+                            <div class="tbc-composerwrap">
+                                @* Sugerencias de mencion @usuario (aparece al escribir "@") *@
+                                @if (_mencionQuery is not null && _mencionMatches.Count > 0)
+                                {
+                                    <div class="tbc-mencion-pop">
+                                        @foreach (var p in _mencionMatches)
+                                        {
+                                            var per = p;
+                                            <button type="button" class="tbc-mencion-it" @onclick="() => InsertarMencion(per)">
+                                                <span class="tb-ava tbc-mencion-ava">@Iniciales(per.Nombre)</span>
+                                                <span class="tbc-mencion-nm">@per.Nombre</span>
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                                @* Archivo pendiente: se sube junto con el mensaje (archivo + comentario) *@
+                                @if (_pendingFileName is not null)
+                                {
+                                    <div class="tbc-pendfile">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg>
+                                        <span class="tbc-pendfile-nm">@_pendingFileName</span>
+                                        <button type="button" class="tbc-pendfile-x" @onclick="QuitarArchivoPendiente" title="Quitar archivo"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                                    </div>
+                                }
+                                <div class="tbc-chat-composer">
+                                    <label class="tbc-chat-clip" title="Adjuntar archivo">
+                                        @if (_subiendo) { <span class="tbc-chat-clip-load">...</span> }
+                                        else { <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.49"/></svg> }
+                                        <InputFile OnChange="SeleccionarArchivo" style="display:none" />
+                                    </label>
+                                    <textarea class="tbc-chat-input" rows="1" @bind="_nuevoComentario" @bind:event="oninput" @bind:after="DetectarMencion" placeholder="@(_pendingFileName is null ? "Escribe un comentario o @menciona..." : "Anade un comentario (opcional)...")"></textarea>
+                                    <button class="tbc-chat-send" @onclick="EnviarMensaje" disabled="@(_busy || _subiendo || (_pendingFile is null && string.IsNullOrWhiteSpace(_nuevoComentario)))" title="Enviar">
+                                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                                    </button>
+                                </div>
                             </div>
                             @if (!string.IsNullOrEmpty(_cardMsg)) { <div class="tbc-cardmsg">@_cardMsg</div> }
                         }
@@ -1661,7 +1690,7 @@ else
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
                                 <span class="tbc-thumb-up-t">Subir archivo</span>
                             }
-                            <InputFile OnChange="SubirAdjunto" style="display:none" />
+                            <InputFile OnChange="SubirDesdeArchivos" style="display:none" />
                         </label>
                     </div>
                     @* Columna derecha: visor grande de la imagen/archivo seleccionado *@
@@ -2514,7 +2543,8 @@ else
     /* ===== Actividad como CHAT (columna 3 del tab Detalle): timeline arriba + compositor abajo ===== */
     .tbc-actchat { display: flex; flex-direction: column; min-height: 0; height: 100%; gap: 8px; }
     .tbc-actchat-h { display: flex; align-items: baseline; gap: 8px; }
-    .tbc-chat-scroll { flex: 1 1 auto; min-height: 120px; overflow-y: auto; overflow-x: hidden; padding: 10px; background: #FBFCFE; border: 1px solid #E7EDF3; border-radius: 12px; box-shadow: 0 1px 4px rgba(27,42,58,.06); }
+    /* Sin caja: el chat es solo el area con las burbujas (sin borde/fondo/sombra). */
+    .tbc-chat-scroll { flex: 1 1 auto; min-height: 120px; overflow-y: auto; overflow-x: hidden; padding: 2px 2px 6px; background: transparent; border: 0; }
     .tbc-chat-scroll::-webkit-scrollbar { width: 6px; }
     .tbc-chat-scroll::-webkit-scrollbar-thumb { background: #CBD6E2; border-radius: 4px; }
     .tbc-chat-composer { display: flex; align-items: flex-end; gap: 6px; border: 1px solid #E1E8EE; border-radius: 24px; padding: 5px 6px; background: #fff; box-shadow: 0 1px 3px rgba(27,42,58,.05); }
@@ -2525,6 +2555,25 @@ else
     .tbc-chat-input { flex: 1 1 auto; border: 0; outline: none; resize: none; font-family: inherit; font-size: 13px; color: #33475B; line-height: 1.5; padding: 8px 6px; max-height: 96px; background: transparent; }
     .tbc-chat-send { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; border: 0; background: #6D4FE3; color: #fff; cursor: pointer; flex-shrink: 0; }
     .tbc-chat-send:disabled { background: #C7CEDA; cursor: not-allowed; }
+    /* Compositor: contenedor relativo para anclar el popover de menciones y el chip de archivo. */
+    .tbc-composerwrap { position: relative; display: flex; flex-direction: column; gap: 6px; }
+    /* Chip del archivo pendiente (se sube junto con el comentario) */
+    .tbc-pendfile { display: inline-flex; align-items: center; gap: 7px; align-self: flex-start; max-width: 100%; background: #F3F0FE; border: 1px solid #DED4FB; color: #4B3AA6; border-radius: 10px; padding: 6px 10px; font-size: 12px; font-weight: 700; }
+    .tbc-pendfile-nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+    .tbc-pendfile-x { display: inline-flex; border: 0; background: transparent; color: #7C6BC7; cursor: pointer; padding: 0; }
+    .tbc-pendfile-x:hover { color: #4B3AA6; }
+    /* Caption de un archivo (texto que acompana al adjunto dentro de la burbuja) */
+    .tbc-bubble-cap { margin-top: 4px; }
+    /* Popover de menciones (arroba usuario) */
+    .tbc-mencion-pop { position: absolute; bottom: calc(100% + 6px); left: 0; right: 0; max-height: 210px; overflow-y: auto; background: #fff; border: 1px solid #E1E8EE; border-radius: 12px; box-shadow: 0 10px 30px rgba(27,42,58,.16); padding: 5px; z-index: 40; }
+    .tbc-mencion-it { display: flex; align-items: center; gap: 9px; width: 100%; border: 0; background: transparent; padding: 7px 9px; border-radius: 8px; cursor: pointer; text-align: left; font-family: inherit; }
+    .tbc-mencion-it:hover { background: #F3F0FE; }
+    .tbc-mencion-ava { width: 26px; height: 26px; font-size: 10px; flex-shrink: 0; border: 0; margin: 0; }
+    .tbc-mencion-nm { font-size: 12.5px; font-weight: 700; color: #33475B; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    [data-bs-theme="dark"] .tbc-mencion-pop { background: #1a1a35; border-color: #3a3a5a; }
+    [data-bs-theme="dark"] .tbc-mencion-it:hover { background: #262647; }
+    [data-bs-theme="dark"] .tbc-mencion-nm { color: #d5d9f0; }
+    [data-bs-theme="dark"] .tbc-pendfile { background: #262647; border-color: #3a3a5a; color: #b9a8f5; }
     /* Burbuja con archivo adjunto dentro del chat: previsualizacion (imagen o PDF) + chip con el nombre */
     .tbc-bubble-img { margin: 2px 0 5px; border-radius: 8px; overflow: hidden; cursor: zoom-in; max-width: 100%; }
     .tbc-bubble-img img { display: block; width: 100%; max-height: 220px; object-fit: cover; }
@@ -2559,7 +2608,7 @@ else
     .tb-cerr-act { text-align: right; white-space: nowrap; }
     .tb-cerr-reab { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #E1E8EE; background: #fff; color: #4B3AA6; font-size: 11.5px; font-weight: 800; padding: 5px 10px; border-radius: 8px; cursor: pointer; }
     .tb-cerr-reab:hover { background: #F3F0FE; border-color: #C9BCF7; }
-    [data-bs-theme="dark"] .tbc-chat-scroll { background: #14142a; border-color: #2c2c50; }
+    [data-bs-theme="dark"] .tbc-chat-scroll { background: transparent; border: 0; }
     [data-bs-theme="dark"] .tbc-chat-composer { background: #1a1a35; border-color: #3a3a5a; }
     [data-bs-theme="dark"] .tbc-chat-input { color: #d5d9f0; }
     [data-bs-theme="dark"] .tb-cerr-tbl td { color: #c5cae0; }
@@ -3598,6 +3647,11 @@ else
     private Guid? _adjSel;                    // adjunto seleccionado en el visor de la pestana Archivos
     private string? _lightbox;                // url de imagen abierta a pantalla completa (visor Archivos)
     private string _nuevoComentario = "";     // texto del reporte de actividad (comentario)
+    private Microsoft.AspNetCore.Components.Forms.IBrowserFile? _pendingFile; // archivo seleccionado en el compositor; se sube al enviar (archivo + caption)
+    private string? _pendingFileName;
+    private string? _mencionQuery;            // texto tras "@" que se esta escribiendo (null = sin mencion activa)
+    private List<PersonaMini> _mencionMatches = new();
+    private bool _scrollChatPend;             // pedir scroll del chat al fondo tras el proximo render
     private bool _showCampoEditor; // editor de campo FLOTANTE (compartido: tarjeta + tabla)
     private string _subNew = "";
     private string _subtareaNew = "";
@@ -3718,7 +3772,7 @@ else
         public bool PermiteVarios { get; set; }
         public HashSet<Guid> CamposSuma { get; set; } = new();   // ids a sumar (tipo Total)
     }
-    private record AdjuntoVM(Guid Id, string Nombre, string Url, string? SubidoPor = null, DateTimeOffset? SubidoAt = null, Guid? SubidoPorId = null);
+    private record AdjuntoVM(Guid Id, string Nombre, string Url, string? SubidoPor = null, DateTimeOffset? SubidoAt = null, Guid? SubidoPorId = null, string? Texto = null);
     private record LogVM(string Texto, DateTimeOffset Fecha);
     private record ComentarioVM(string? Autor, string Texto, DateTimeOffset Fecha, Guid AutorId = default);
 
@@ -3782,6 +3836,12 @@ else
         if (_boardMode == "lista")
         {
             try { await Js.InvokeVoidAsync("propiaUI.syncTopScroll", "tbTopScroll", "tbTopScrollInner", "tbList"); } catch { }
+        }
+        // Chat de actividad: al abrir la tarjeta o tras enviar un mensaje, dejarlo scrolleado abajo (ultimo mensaje visible).
+        if (_scrollChatPend)
+        {
+            _scrollChatPend = false;
+            try { await Js.InvokeVoidAsync("propiaUI.scrollBottom", ".tbc-chat-scroll"); } catch { }
         }
 
         if (!firstRender || _jwt is not null) return;
@@ -5479,7 +5539,7 @@ else
                 OrigenReferencia = det.OrigenReferencia,
                 Responsables = responsables,
                 Checklist = (det.Checklist ?? new List<SubtareaCheckDto>()).Select(s => new SubChk { Titulo = s.Titulo, Hecho = s.Hecho }).ToList(),
-                Adjuntos = (det.Adjuntos ?? new List<TareaAdjuntoDto>()).Select(a => new AdjuntoVM(a.Id, a.Nombre, a.Url, a.SubidoPorNombre, a.SubidoAt, a.SubidoPorUsuarioId)).ToList(),
+                Adjuntos = (det.Adjuntos ?? new List<TareaAdjuntoDto>()).Select(a => new AdjuntoVM(a.Id, a.Nombre, a.Url, a.SubidoPorNombre, a.SubidoAt, a.SubidoPorUsuarioId, a.Texto)).ToList(),
                 Historial = det.Historial.OrderBy(h => h.OcurridoAt).Select(h => new LogVM(h.Descripcion, h.OcurridoAt)).ToList(),
                 Comentarios = det.Comentarios.Select(c => new ComentarioVM(c.AutorNombre, c.Texto, c.CreatedAt, c.AutorUsuarioId)).ToList(),
                 Campos = (det.CamposValores ?? new List<TareaCampoValorDto>()).GroupBy(v => v.CampoId).ToDictionary(g => g.Key, g => g.First().Valor),
@@ -5492,6 +5552,8 @@ else
                 Copias = (det.Copias ?? new List<TareaListaDto>()).ToList()
             };
             _adjSel = _cardDraft.Adjuntos.FirstOrDefault()?.Id;
+            _pendingFile = null; _pendingFileName = null; _mencionQuery = null; _mencionMatches.Clear();
+            _scrollChatPend = true;   // al abrir, el chat arranca abajo (ultimo mensaje visible)
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
     }
@@ -5711,27 +5773,84 @@ else
     private string PersonaNombre(Guid id) => _personas?.FirstOrDefault(p => p.Id == id)?.Nombre ?? "Persona";
     private static string RespColor(int idx) => _avaColors[idx % _avaColors.Length];
 
-    private async Task SubirAdjunto(InputFileChangeEventArgs e)
+    // El clip solo SELECCIONA el archivo; se sube al enviar el mensaje (archivo + caption juntos).
+    private void SeleccionarArchivo(InputFileChangeEventArgs e)
     {
-        if (_cardDraft?.Id is null || e.File is null) return;
-        _subiendo = true; _msg = null;
+        if (e.File is null) return;
+        _pendingFile = e.File; _pendingFileName = e.File.Name; _cardMsg = null;
+    }
+    private void QuitarArchivoPendiente() { _pendingFile = null; _pendingFileName = null; }
+
+    // Subida directa desde la pestana Archivos (sin caption).
+    private async Task SubirDesdeArchivos(InputFileChangeEventArgs e)
+    {
+        if (e.File is null) return;
+        await SubirArchivoConCaption(e.File, null);
+    }
+
+    // Enviar: si hay archivo pendiente lo sube (con el texto como caption); si no, publica un comentario.
+    private async Task EnviarMensaje()
+    {
+        if (_cardDraft?.Id is null) return;
+        _mencionQuery = null; _mencionMatches.Clear();
+        if (_pendingFile is not null) await SubirArchivoConCaption(_pendingFile, _nuevoComentario);
+        else if (!string.IsNullOrWhiteSpace(_nuevoComentario)) await AgregarComentarioCard();
+    }
+
+    private async Task SubirArchivoConCaption(Microsoft.AspNetCore.Components.Forms.IBrowserFile file, string? caption)
+    {
+        if (_cardDraft?.Id is null) return;
+        _subiendo = true; _cardMsg = null;
         try
         {
             using var content = new MultipartFormDataContent();
-            var sc = new StreamContent(e.File.OpenReadStream(10_000_000));
-            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(string.IsNullOrEmpty(e.File.ContentType) ? "application/octet-stream" : e.File.ContentType);
-            content.Add(sc, "file", e.File.Name);
+            var sc = new StreamContent(file.OpenReadStream(10_000_000));
+            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType);
+            content.Add(sc, "file", file.Name);
+            var cap = string.IsNullOrWhiteSpace(caption) ? null : caption.Trim();
+            if (cap is not null) content.Add(new StringContent(cap), "texto");
             var resp = await Auth().PostAsync($"/api/tareas/{_cardDraft.Id}/adjuntos", content);
             if (resp.IsSuccessStatusCode)
             {
                 var dto = await resp.Content.ReadFromJsonAsync<TareaAdjuntoDto>();
-                if (dto is not null) { _cardDraft.Adjuntos.Add(new AdjuntoVM(dto.Id, dto.Nombre, dto.Url, dto.SubidoPorNombre, dto.SubidoAt ?? DateTimeOffset.Now, dto.SubidoPorUsuarioId ?? _miUsuarioId)); _adjSel = dto.Id; _cardTab = _cardTab == "archivos" ? "archivos" : "detalle"; }
+                if (dto is not null)
+                {
+                    _cardDraft.Adjuntos.Add(new AdjuntoVM(dto.Id, dto.Nombre, dto.Url, dto.SubidoPorNombre, dto.SubidoAt ?? DateTimeOffset.Now, dto.SubidoPorUsuarioId ?? _miUsuarioId, dto.Texto));
+                    _cardDraft.Historial.Add(new LogVM($"Adjunto agregado: {dto.Nombre}", dto.SubidoAt ?? DateTimeOffset.Now));
+                    _adjSel = dto.Id;
+                }
+                _pendingFile = null; _pendingFileName = null; _nuevoComentario = ""; _scrollChatPend = true;
             }
-            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+            else { _cardMsg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
         }
-        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        catch (Exception ex) { _cardMsg = ex.Message; }
         finally { _subiendo = false; }
     }
+
+    // Detecta si se esta escribiendo una @mencion al final del texto y filtra el directorio (_personas).
+    private void DetectarMencion()
+    {
+        var t = _nuevoComentario ?? "";
+        var m = System.Text.RegularExpressions.Regex.Match(t, @"(?:^|\s)@([\p{L}0-9._-]*)$");
+        if (!m.Success) { _mencionQuery = null; _mencionMatches.Clear(); return; }
+        _mencionQuery = m.Groups[1].Value;
+        var q = _mencionQuery.ToLowerInvariant().Replace(".", "");
+        var fuente = _personas ?? new List<PersonaMini>();
+        _mencionMatches = fuente
+            .Where(p => string.IsNullOrEmpty(q)
+                     || p.Nombre.ToLowerInvariant().Replace(" ", "").Contains(q)
+                     || MencionToken(p.Nombre).Replace(".", "").Contains(q))
+            .Take(6).ToList();
+    }
+    private void InsertarMencion(PersonaMini p)
+    {
+        var t = _nuevoComentario ?? "";
+        t = System.Text.RegularExpressions.Regex.Replace(t, @"(^|\s)@([\p{L}0-9._-]*)$", $"$1@{MencionToken(p.Nombre)} ");
+        _nuevoComentario = t;
+        _mencionQuery = null; _mencionMatches.Clear();
+    }
+    // Formato que resuelve el backend (NotificarMencionesAsync): nombre en minusculas con espacios -> puntos.
+    private static string MencionToken(string nombre) => nombre.Trim().ToLowerInvariant().Replace(" ", ".");
 
     private async Task EliminarAdjunto(Guid adjuntoId)
     {
@@ -5759,7 +5878,7 @@ else
                 // El comentario nuevo se antepone (mas reciente primero, igual que el backend).
                 _cardDraft.Comentarios.Insert(0, new ComentarioVM(dto?.AutorNombre, texto, dto?.CreatedAt ?? DateTimeOffset.Now, dto?.AutorUsuarioId ?? _miUsuarioId));
                 _cardDraft.Historial.Add(new LogVM("Comentario agregado", dto?.CreatedAt ?? DateTimeOffset.Now));
-                _nuevoComentario = "";
+                _nuevoComentario = ""; _mencionQuery = null; _mencionMatches.Clear(); _scrollChatPend = true;
             }
             else { _cardMsg = await resp.Content.ReadAsStringAsync(); }
         }
@@ -5769,8 +5888,9 @@ else
 
     private static bool EsImg(string url)
     {
-        var u = url.ToLowerInvariant();
-        return u.EndsWith(".jpg") || u.EndsWith(".jpeg") || u.EndsWith(".png") || u.EndsWith(".webp") || u.EndsWith(".gif");
+        // Quitar el ?query (ej. ?v=...) antes de mirar la extension, si no las imagenes con querystring no previsualizan.
+        var u = url.ToLowerInvariant().Split('?')[0].TrimEnd();
+        return u.EndsWith(".jpg") || u.EndsWith(".jpeg") || u.EndsWith(".png") || u.EndsWith(".webp") || u.EndsWith(".gif") || u.EndsWith(".bmp") || u.EndsWith(".svg");
     }
     private static bool EsPdf(string url) => url.ToLowerInvariant().Split('?')[0].TrimEnd().EndsWith(".pdf");
     private static string FechaHora(DateTimeOffset f)

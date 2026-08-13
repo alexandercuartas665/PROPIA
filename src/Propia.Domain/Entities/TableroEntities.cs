@@ -85,6 +85,8 @@ public class TareaAdjunto : TenantEntity
     public Guid TareaId { get; set; }
     public string Nombre { get; set; } = string.Empty;
     public string Url { get; set; } = string.Empty;
+    /// <summary>Comentario/caption opcional que acompana al archivo (mensaje con archivo + texto, estilo chat).</summary>
+    public string? Texto { get; set; }
 }
 
 /// <summary>

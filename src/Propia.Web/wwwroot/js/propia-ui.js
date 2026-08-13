@@ -329,6 +329,19 @@
         try { var el = document.querySelector(selector); if (el) el.focus(); } catch (e) { }
     };
 
+    // Scrollea un contenedor (por selector) hasta el fondo. Lo usa el chat de actividad de Tareas
+    // para dejar visible el ultimo mensaje al abrir la tarjeta o tras enviar/adjuntar.
+    // Reintenta unas veces porque el contenido (imagenes/PDF embebidos) cambia de alto al cargar
+    // asincronicamente, y un unico scroll quedaria a mitad.
+    window.propiaUI.scrollBottom = function (selector) {
+        var delays = [0, 60, 180, 400, 800];
+        delays.forEach(function (d) {
+            setTimeout(function () {
+                try { var el = document.querySelector(selector); if (el) el.scrollTop = el.scrollHeight; } catch (e) { }
+            }, d);
+        });
+    };
+
     // Helper para descargar bytes desde base64 (modulo 2.15 Documentos).
     window.propiaUI.downloadBase64 = function (filename, mime, base64) {
         var byteCharacters = atob(base64);
