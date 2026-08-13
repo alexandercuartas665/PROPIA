@@ -902,7 +902,13 @@ public class TareasService : ITareasService
         // Resolucion: matchear PersonaDirectorio por (Nombres+Apellidos sin espacios lower).
         await NotificarMencionesAsync(tarea, c.Texto, ct);
 
-        return new TareaComentarioDto(c.Id, c.AutorUsuarioId, c.Texto, c.CreatedAt);
+        // Resolver el nombre completo del autor (usuario->persona) para mostrarlo de una en el chat sin recargar.
+        var personaId = await _db.Users.AsNoTracking().Where(u => u.Id == c.AutorUsuarioId).Select(u => u.PersonaId).FirstOrDefaultAsync(ct);
+        string? autorNombre = personaId is Guid pid
+            ? await _db.Personas.AsNoTracking().Where(p => p.Id == pid)
+                .Select(p => (((p.Nombres ?? "") + " " + (p.Apellidos ?? "")).Trim())).FirstOrDefaultAsync(ct)
+            : null;
+        return new TareaComentarioDto(c.Id, c.AutorUsuarioId, c.Texto, c.CreatedAt, string.IsNullOrWhiteSpace(autorNombre) ? null : autorNombre);
     }
 
     private async Task NotificarMencionesAsync(Tarea tarea, string texto, CancellationToken ct)
