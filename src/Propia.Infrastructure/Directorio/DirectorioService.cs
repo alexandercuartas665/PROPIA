@@ -422,22 +422,29 @@ public class DirectorioService : IDirectorioService
 
     // ============================ Catalogo de etiquetas ============================
 
-    /// <summary>Etiquetas base predefinidas: (Codigo, Nombre, Grupo, AplicaA, Icono, Color, Orden). Se siembran una vez (globales).</summary>
+    /// <summary>Etiquetas base predefinidas: (Codigo, Nombre, Grupo, AplicaA, IconoKey, Color, Orden). El icono es una CLAVE del set SVG (no emoji).</summary>
     private static readonly (string Codigo, string Nombre, GrupoEtiqueta Grupo, AplicaEtiqueta Aplica, string Icono, string Color, int Orden)[] EtiquetasBase = new[]
     {
-        ("BASE_PROPIETARIO",   "Propietario",       GrupoEtiqueta.Identidad, AplicaEtiqueta.Ambos,   "\U0001F511", "#6D4FE3", 1),  // llave
-        ("BASE_RESIDENTE",     "Residente",         GrupoEtiqueta.Identidad, AplicaEtiqueta.Persona, "\U0001F3E0", "#0EA5E9", 2),  // casa
-        ("BASE_ARRENDATARIO",  "Arrendatario",      GrupoEtiqueta.Identidad, AplicaEtiqueta.Persona, "\U0001F4C4", "#F59E0B", 3),  // documento
-        ("BASE_FAMILIAR",      "Familiar",          GrupoEtiqueta.Identidad, AplicaEtiqueta.Persona, "\U0001F465", "#EC4899", 4),  // personas
-        ("BASE_PERSONAL",      "Personal de apoyo", GrupoEtiqueta.Cargo,     AplicaEtiqueta.Persona, "\U0001F9F9", "#14B8A6", 5),  // escoba
-        ("BASE_CONTRATISTA",   "Contratista",       GrupoEtiqueta.Cargo,     AplicaEtiqueta.Ambos,   "\U0001F527", "#F97316", 6),  // llave inglesa
-        ("BASE_PROVEEDOR",     "Proveedor",         GrupoEtiqueta.Cargo,     AplicaEtiqueta.Ambos,   "\U0001F4E6", "#8B5CF6", 7),  // caja
+        ("BASE_PROPIETARIO",   "Propietario",       GrupoEtiqueta.Identidad, AplicaEtiqueta.Ambos,   "key",        "#6D4FE3", 1),
+        ("BASE_RESIDENTE",     "Residente",         GrupoEtiqueta.Identidad, AplicaEtiqueta.Persona, "home",       "#0EA5E9", 2),
+        ("BASE_ARRENDATARIO",  "Arrendatario",      GrupoEtiqueta.Identidad, AplicaEtiqueta.Persona, "file-text",  "#F59E0B", 3),
+        ("BASE_FAMILIAR",      "Familiar",          GrupoEtiqueta.Identidad, AplicaEtiqueta.Persona, "users",      "#EC4899", 4),
+        ("BASE_PERSONAL",      "Personal de apoyo", GrupoEtiqueta.Cargo,     AplicaEtiqueta.Persona, "paintbrush", "#14B8A6", 5),
+        ("BASE_CONTRATISTA",   "Contratista",       GrupoEtiqueta.Cargo,     AplicaEtiqueta.Ambos,   "hard-hat",   "#F97316", 6),
+        ("BASE_PROVEEDOR",     "Proveedor",         GrupoEtiqueta.Cargo,     AplicaEtiqueta.Ambos,   "package",    "#8B5CF6", 7),
+    };
+
+    /// <summary>Claves de icono validas (set SVG). Sirve para migrar valores viejos (emojis) a un icono generico.</summary>
+    private static readonly HashSet<string> IconoKeysValidas = new()
+    {
+        "tag","home","key","user","users","briefcase","hard-hat","wrench","paintbrush","package",
+        "file-text","shield","truck","building","car","award","phone","bell","star","heart"
     };
 
     /// <summary>
-    /// Idempotente: para cada etiqueta base deseada, si ya existe una base con ese NOMBRE le pone
-    /// icono/color (si le faltan) en vez de duplicarla; si no existe, la crea. Evita gemelas del
-    /// catalogo previo (Propietario/Residente/Contratista/... que ya venian sin icono).
+    /// Idempotente: para cada etiqueta base deseada, si ya existe una base con ese NOMBRE le fija su
+    /// icono (clave SVG) y color; si no existe, la crea. Ademas, cualquier icono viejo que no sea una
+    /// clave valida (ej. emojis previos) se normaliza a "tag" para que el render SVG no falle.
     /// </summary>
     private async Task AsegurarEtiquetasBaseAsync(CancellationToken ct)
     {
@@ -449,7 +456,8 @@ public class DirectorioService : IDirectorioService
             var existente = bases.FirstOrDefault(x => x.Nombre.ToLower() == b.Nombre.ToLower());
             if (existente is not null)
             {
-                if (string.IsNullOrEmpty(existente.Icono)) { existente.Icono = b.Icono; cambios = true; }
+                // Fija la clave de icono correcta (sobreescribe emojis o iconos vacios).
+                if (existente.Icono != b.Icono) { existente.Icono = b.Icono; cambios = true; }
                 if (string.IsNullOrEmpty(existente.Color)) { existente.Color = b.Color; cambios = true; }
             }
             else
@@ -462,6 +470,13 @@ public class DirectorioService : IDirectorioService
                 });
                 cambios = true;
             }
+        }
+        // Normaliza cualquier etiqueta (base o custom) cuyo icono ya no sea una clave valida (ej. emojis previos).
+        var conIconoInvalido = await _db.EtiquetasCatalogo.IgnoreQueryFilters()
+            .Where(e => e.Icono != null && e.Icono != "").ToListAsync(ct);
+        foreach (var e in conIconoInvalido.Where(e => !IconoKeysValidas.Contains(e.Icono!)))
+        {
+            e.Icono = "tag"; cambios = true;
         }
         if (cambios) await _db.SaveChangesAsync(ct);
     }

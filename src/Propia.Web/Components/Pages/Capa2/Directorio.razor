@@ -4,6 +4,7 @@
 @using Propia.Application.MiCopropiedad
 @using Propia.Domain.Enums
 @using Microsoft.AspNetCore.Components.Forms
+@using Propia.Web.Components.Shared
 @inject IHttpClientFactory HttpFactory
 @inject NavigationManager Nav
 @inject IJSRuntime Js
@@ -82,6 +83,35 @@
         </div>
 
         <div class="mod-filtros">
+            <div class="dir-filtrowrap">
+                <button type="button" class="dir-filtrobtn @(_filtroEtq.Count > 0 ? "on" : "")" @onclick="() => _filtroOpen = !_filtroOpen">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                    Filtro
+                    @if (_filtroEtq.Count > 0) { <span class="dir-filtrobadge">@_filtroEtq.Count</span> }
+                </button>
+                @if (_filtroOpen)
+                {
+                    <div class="dir-filtroback" @onclick="() => _filtroOpen = false"></div>
+                    <div class="dir-filtropop" @onclick:stopPropagation="true">
+                        <div class="dir-filtropop-head">
+                            <span>Filtrar por etiqueta</span>
+                            @if (_filtroEtq.Count > 0)
+                            {
+                                <button type="button" class="dir-etqclear" @onclick="() => _filtroEtq.Clear()">Limpiar</button>
+                            }
+                        </div>
+                        <div class="dir-filtropop-body">
+                            @foreach (var et in _etiquetasTodas)
+                            {
+                                var on = _filtroEtq.Contains(et.Id);
+                                <button type="button" class="dir-etqchip @(on ? "on" : "")" style="@(on ? ChipStyle(et.Color) : "")" @onclick="() => ToggleFiltroEtq(et.Id)">
+                                    @EtiquetaIconos.Svg(et.Icono)<span>@et.Nombre</span>
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
             <div class="mod-search">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
                 <input class="mod-search-inp" style="width:280px;" value="@_query" @oninput="OnQueryInput" placeholder="Buscar por nombre, documento, email, etiqueta..." />
@@ -102,23 +132,6 @@
             </div>
         </div>
 
-        @if (_etiquetasTodas.Count > 0)
-        {
-            <div class="dir-etqfilter">
-                <span class="dir-etqfilter-lbl">Filtrar por etiqueta:</span>
-                @foreach (var et in _etiquetasTodas)
-                {
-                    var on = _filtroEtq.Contains(et.Id);
-                    <button type="button" class="dir-etqchip @(on ? "on" : "")" style="@(on ? ChipStyle(et.Color) : "")" @onclick="() => ToggleFiltroEtq(et.Id)">
-                        @(string.IsNullOrEmpty(et.Icono) ? "" : et.Icono + " ")@et.Nombre
-                    </button>
-                }
-                @if (_filtroEtq.Count > 0)
-                {
-                    <button type="button" class="dir-etqclear" @onclick="() => { _filtroEtq.Clear(); }">Limpiar</button>
-                }
-            </div>
-        }
 
         @if (!string.IsNullOrEmpty(_loadError))
         {
@@ -180,7 +193,7 @@
                                 @foreach (var et in vincs.SelectMany(v => v.Etiquetas).GroupBy(e => e.EtiquetaId).Select(g => g.First()))
                                 {
                                     <span class="dir-tag dir-tag--et" style="@ChipStyle(et.Color)">
-                                        @(string.IsNullOrEmpty(et.Icono) ? "" : et.Icono + " ")@et.Nombre
+                                        @EtiquetaIconos.Svg(et.Icono)<span>@et.Nombre</span>
                                         <button type="button" class="dir-tag-x" title="Quitar" @onclick="() => QuitarEtiquetaContacto(et.Id)">&times;</button>
                                     </span>
                                 }
@@ -189,7 +202,7 @@
                                     @foreach (var op in _etiquetasTodas.Where(c => (esEmpresa ? c.AplicaA != AplicaEtiqueta.Persona : c.AplicaA != AplicaEtiqueta.Empresa)
                                                                                     && !vincs.SelectMany(v => v.Etiquetas).Any(a => a.EtiquetaId == c.Id)))
                                     {
-                                        <option value="@op.Id">@(string.IsNullOrEmpty(op.Icono) ? "" : op.Icono + " ")@op.Nombre</option>
+                                        <option value="@op.Id">@op.Nombre</option>
                                     }
                                 </select>
                             </div>
@@ -515,16 +528,18 @@
                 <div class="dir-cfg-form">
                     <div class="dir-cfg-formtitle">@(_cfgEditId is null ? "Nueva etiqueta" : "Editar etiqueta")</div>
                     <div class="dir-cfg-row">
-                        <div class="dir-cfg-emoji">@(string.IsNullOrEmpty(_cfgIcono) ? "\U0001F3F7️" : _cfgIcono)</div>
+                        <div class="dir-cfg-emoji" style="color:@_cfgColor;">@EtiquetaIconos.Svg(string.IsNullOrEmpty(_cfgIcono) ? "tag" : _cfgIcono, 22)</div>
                         <input class="dir-cfg-inp" @bind="_cfgNombre" @bind:event="oninput" placeholder="Nombre (ej. Contratista)" maxlength="40" />
                         <input class="dir-cfg-color" type="color" @bind="_cfgColor" title="Color" />
                     </div>
-                    <div class="dir-cfg-emojis">
-                        @foreach (var em in EmojiSugeridos)
+                    <label class="gpq-mini-lbl" style="font-size:10px;color:#90A4B7;">Icono</label>
+                    <div class="dir-cfg-iconos">
+                        @foreach (var ic in EtiquetaIconos.Catalogo)
                         {
-                            <button type="button" class="dir-cfg-emojibtn @(_cfgIcono == em ? "on" : "")" @onclick="() => _cfgIcono = em">@em</button>
+                            <button type="button" class="dir-cfg-iconbtn @(_cfgIcono == ic.Key ? "on" : "")" title="@ic.Label" @onclick="() => _cfgIcono = ic.Key">
+                                @EtiquetaIconos.Svg(ic.Key, 17)
+                            </button>
                         }
-                        <input class="dir-cfg-emojiinp" @bind="_cfgIcono" @bind:event="oninput" placeholder="otro" maxlength="4" />
                     </div>
                     @if (_cfgEditId is null)
                     {
@@ -557,7 +572,7 @@
                     @foreach (var et in _etiquetasTodas)
                     {
                         <div class="dir-cfg-item">
-                            <span class="dir-cfg-itemchip" style="@ChipStyle(et.Color)">@(string.IsNullOrEmpty(et.Icono) ? "\U0001F3F7️" : et.Icono) @et.Nombre</span>
+                            <span class="dir-cfg-itemchip" style="@ChipStyle(et.Color)">@EtiquetaIconos.Svg(et.Icono)<span>@et.Nombre</span></span>
                             <span class="dir-cfg-itemmeta">@GrupoLabel(et.Grupo) · @AplicaLabel(et.AplicaA)</span>
                             @if (et.EsBase)
                             {
@@ -578,9 +593,17 @@
 
 <style>
     /* Filtro por etiqueta (fila de chips bajo la barra de busqueda) */
-    .dir-etqfilter { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin: 2px 0 14px; }
-    .dir-etqfilter-lbl { font-size: 11.5px; font-weight: 700; color: #7C98B6; }
-    .dir-etqchip { border: 1px solid #E1E8EE; background: #fff; color: #516F90; border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    /* Boton Filtro + popover con las etiquetas */
+    .dir-filtrowrap { position: relative; }
+    .dir-filtroback { position: fixed; inset: 0; z-index: 55; }
+    .dir-filtrobtn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid #E1E8EE; background: #fff; color: #516F90; border-radius: 9px; padding: 8px 13px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .dir-filtrobtn:hover { border-color: #C9BCF6; color: var(--propia-brand, #6D4FE3); }
+    .dir-filtrobtn.on { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); background: #F5F2FE; }
+    .dir-filtrobadge { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 20px; background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 10.5px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+    .dir-filtropop { position: absolute; z-index: 60; top: calc(100% + 6px); left: 0; width: 340px; max-height: 360px; display: flex; flex-direction: column; background: #fff; border: 1px solid #E6E9F0; border-radius: 12px; box-shadow: 0 14px 40px rgba(20,20,45,.14); }
+    .dir-filtropop-head { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; border-bottom: 1px solid #EEF3F8; font-size: 11px; font-weight: 800; color: #7C98B6; text-transform: uppercase; letter-spacing: .3px; }
+    .dir-filtropop-body { padding: 12px 14px; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 6px; }
+    .dir-etqchip { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #E1E8EE; background: #fff; color: #516F90; border-radius: 20px; padding: 4px 11px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
     .dir-etqchip:hover { border-color: #C9BCF6; }
     .dir-etqchip.on { font-weight: 800; }
     .dir-etqclear { border: 0; background: transparent; color: #DC2626; font-size: 11.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
@@ -594,14 +617,14 @@
     .dir-cfg-form { background: #FAFBFD; border: 1px solid #EEF3F8; border-radius: 12px; padding: 14px; }
     .dir-cfg-formtitle { font-size: 12px; font-weight: 800; color: #516F90; text-transform: uppercase; letter-spacing: .3px; margin-bottom: 10px; }
     .dir-cfg-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
-    .dir-cfg-emoji { width: 42px; height: 42px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; font-size: 22px; background: #fff; border: 1px solid #E1E8EE; border-radius: 10px; }
+    .dir-cfg-emoji { width: 42px; height: 42px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; background: #fff; border: 1px solid #E1E8EE; border-radius: 10px; }
+    .dir-cfg-iconos { display: flex; flex-wrap: wrap; gap: 5px; margin: 2px 0 8px; }
+    .dir-cfg-iconbtn { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #E1E8EE; background: #fff; border-radius: 8px; color: #516F90; cursor: pointer; }
+    .dir-cfg-iconbtn:hover { border-color: #C9BCF6; color: var(--propia-brand, #6D4FE3); }
+    .dir-cfg-iconbtn.on { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); box-shadow: 0 0 0 2px rgba(109,79,227,.15); }
     .dir-cfg-inp { flex: 1; border: 1px solid #E1E8EE; border-radius: 9px; padding: 9px 11px; font-size: 13px; font-family: inherit; outline: none; background: #fff; color: #33475B; }
     .dir-cfg-inp:focus { border-color: var(--propia-brand, #6D4FE3); }
     .dir-cfg-color { width: 42px; height: 42px; flex: 0 0 auto; border: 1px solid #E1E8EE; border-radius: 10px; padding: 3px; cursor: pointer; background: #fff; }
-    .dir-cfg-emojis { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
-    .dir-cfg-emojibtn { width: 32px; height: 32px; border: 1px solid #E1E8EE; background: #fff; border-radius: 8px; font-size: 16px; cursor: pointer; }
-    .dir-cfg-emojibtn.on { border-color: var(--propia-brand, #6D4FE3); box-shadow: 0 0 0 2px rgba(109,79,227,.15); }
-    .dir-cfg-emojiinp { width: 54px; border: 1px dashed #D3DEE9; border-radius: 8px; text-align: center; font-size: 13px; }
     .dir-cfg-formfoot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
     .dir-cfg-msg { margin-top: 8px; font-size: 12px; border-radius: 8px; padding: 7px 10px; }
     .dir-cfg-msg.ok { background: #E6F6EE; color: #15703F; }
@@ -850,6 +873,7 @@
     // ----- Etiquetas: catalogo completo, filtro y panel de configuracion -----
     private List<EtiquetaCatalogoDto> _etiquetasTodas = new();
     private readonly HashSet<Guid> _filtroEtq = new();
+    private bool _filtroOpen;
     private bool _cfgOpen;
     private Guid? _cfgEditId;
     private string _cfgNombre = "";
@@ -858,7 +882,6 @@
     private GrupoEtiqueta _cfgGrupo = GrupoEtiqueta.Identidad;
     private AplicaEtiqueta _cfgAplica = AplicaEtiqueta.Persona;
     private string? _cfgMsg; private bool _cfgErr; private bool _cfgBusy;
-    private static readonly string[] EmojiSugeridos = { "\U0001F511","\U0001F3E0","\U0001F4C4","\U0001F465","\U0001F9F9","\U0001F527","\U0001F4E6","\U0001F454","\U0001F464","\U0001F91D","\U0001F4BC","\U0001F6E0️","\U0001F697","\U0001F415","⭐","\U0001F6A8" };
 
     private List<PersonaResumenDto>? PersonasFiltradas =>
         (_filtroEtq.Count == 0 || _personas is null)
