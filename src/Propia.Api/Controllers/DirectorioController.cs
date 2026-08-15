@@ -213,6 +213,13 @@ public class DirectorioController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [HttpPut("etiquetas/{id:guid}")]
+    public async Task<IActionResult> ActualizarEtiqueta(Guid id, [FromBody] EditarEtiquetaRequest req, CancellationToken ct)
+    {
+        try { return await _svc.ActualizarEtiquetaAsync(id, req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     [HttpDelete("etiquetas/{id:guid}")]
     public async Task<IActionResult> EliminarEtiquetaCustom(Guid id, CancellationToken ct)
     {

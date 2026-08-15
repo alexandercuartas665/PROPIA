@@ -72,6 +72,7 @@ public interface IDirectorioService
     // --- Catalogo de etiquetas (base + custom) ---
     Task<IReadOnlyList<EtiquetaCatalogoDto>> ListarEtiquetasAsync(AplicaEtiqueta? aplicaA, GrupoEtiqueta? grupo, CancellationToken ct);
     Task<EtiquetaCatalogoDto> CrearEtiquetaCustomAsync(CrearEtiquetaCustomRequest req, CancellationToken ct);
+    Task<bool> ActualizarEtiquetaAsync(Guid etiquetaId, EditarEtiquetaRequest req, CancellationToken ct);
     Task<bool> EliminarEtiquetaCustomAsync(Guid etiquetaId, CancellationToken ct);
 
     // --- Helper de validacion NIT (digito DIAN) ---

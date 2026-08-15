@@ -124,9 +124,28 @@ public class DirectorioService : IDirectorioService
             .Select(p => new { p.Id, p.TipoDocumento, p.Documento, p.Nombres, p.Apellidos, p.Email, p.Telefono, p.FotoUrl, p.PerfilIncompleto, p.EstadoDirectorio })
             .Take(200)
             .ToListAsync(ct);
+        var chips = await CargarChipsPorEntidadAsync(EntidadDirectorio.Persona, rows.Select(r => r.Id).ToList(), ct);
         return rows.Select(p => new PersonaResumenDto(
             p.Id, p.TipoDocumento, p.Documento, p.Nombres, p.Apellidos, p.Email, p.Telefono,
-            _blob.ResolveUrl(p.FotoUrl), p.PerfilIncompleto, p.EstadoDirectorio)).ToList();
+            _blob.ResolveUrl(p.FotoUrl), p.PerfilIncompleto, p.EstadoDirectorio,
+            chips.GetValueOrDefault(p.Id))).ToList();
+    }
+
+    /// <summary>Etiquetas asignadas (chips con icono/color) por entidad, para pintarlas en el listado y filtrar.</summary>
+    private async Task<Dictionary<Guid, List<EtiquetaChipDto>>> CargarChipsPorEntidadAsync(
+        EntidadDirectorio tipo, List<Guid> entidadIds, CancellationToken ct)
+    {
+        if (entidadIds.Count == 0) return new();
+        var rows = await (from de in _db.DirectorioEtiquetas
+                          join v in _db.DirectorioVinculos on de.VinculoId equals v.Id
+                          join et in _db.EtiquetasCatalogo.IgnoreQueryFilters() on de.EtiquetaId equals et.Id
+                          where v.EntidadTipo == tipo && entidadIds.Contains(v.EntidadId)
+                          select new { v.EntidadId, et.Id, et.Nombre, et.Grupo, et.Icono, et.Color })
+                         .ToListAsync(ct);
+        return rows.GroupBy(r => r.EntidadId).ToDictionary(
+            g => g.Key,
+            g => g.GroupBy(x => x.Id).Select(gg => gg.First())
+                  .Select(x => new EtiquetaChipDto(x.Id, x.Nombre, x.Grupo, x.Icono, x.Color)).ToList());
     }
 
     public async Task<Persona360Dto?> GetPersona360Async(Guid personaId, CancellationToken ct)
@@ -262,9 +281,11 @@ public class DirectorioService : IDirectorioService
             .Select(e => new { e.Id, e.Nit, e.DigitoVerificacion, e.RazonSocial, e.NombreComercial, e.Email, e.Telefono, e.LogoUrl, e.PerfilIncompleto, e.EstadoDirectorio })
             .Take(200)
             .ToListAsync(ct);
+        var chips = await CargarChipsPorEntidadAsync(EntidadDirectorio.Empresa, rows.Select(r => r.Id).ToList(), ct);
         return rows.Select(e => new EmpresaResumenDto(
             e.Id, e.Nit, e.DigitoVerificacion, e.RazonSocial, e.NombreComercial, e.Email, e.Telefono,
-            _blob.ResolveUrl(e.LogoUrl), e.PerfilIncompleto, e.EstadoDirectorio)).ToList();
+            _blob.ResolveUrl(e.LogoUrl), e.PerfilIncompleto, e.EstadoDirectorio,
+            chips.GetValueOrDefault(e.Id))).ToList();
     }
 
     public async Task<Empresa360Dto?> GetEmpresa360Async(Guid empresaId, CancellationToken ct)
@@ -401,16 +422,61 @@ public class DirectorioService : IDirectorioService
 
     // ============================ Catalogo de etiquetas ============================
 
+    /// <summary>Etiquetas base predefinidas: (Codigo, Nombre, Grupo, AplicaA, Icono, Color, Orden). Se siembran una vez (globales).</summary>
+    private static readonly (string Codigo, string Nombre, GrupoEtiqueta Grupo, AplicaEtiqueta Aplica, string Icono, string Color, int Orden)[] EtiquetasBase = new[]
+    {
+        ("BASE_PROPIETARIO",   "Propietario",       GrupoEtiqueta.Identidad, AplicaEtiqueta.Ambos,   "\U0001F511", "#6D4FE3", 1),  // llave
+        ("BASE_RESIDENTE",     "Residente",         GrupoEtiqueta.Identidad, AplicaEtiqueta.Persona, "\U0001F3E0", "#0EA5E9", 2),  // casa
+        ("BASE_ARRENDATARIO",  "Arrendatario",      GrupoEtiqueta.Identidad, AplicaEtiqueta.Persona, "\U0001F4C4", "#F59E0B", 3),  // documento
+        ("BASE_FAMILIAR",      "Familiar",          GrupoEtiqueta.Identidad, AplicaEtiqueta.Persona, "\U0001F465", "#EC4899", 4),  // personas
+        ("BASE_PERSONAL",      "Personal de apoyo", GrupoEtiqueta.Cargo,     AplicaEtiqueta.Persona, "\U0001F9F9", "#14B8A6", 5),  // escoba
+        ("BASE_CONTRATISTA",   "Contratista",       GrupoEtiqueta.Cargo,     AplicaEtiqueta.Ambos,   "\U0001F527", "#F97316", 6),  // llave inglesa
+        ("BASE_PROVEEDOR",     "Proveedor",         GrupoEtiqueta.Cargo,     AplicaEtiqueta.Ambos,   "\U0001F4E6", "#8B5CF6", 7),  // caja
+    };
+
+    /// <summary>
+    /// Idempotente: para cada etiqueta base deseada, si ya existe una base con ese NOMBRE le pone
+    /// icono/color (si le faltan) en vez de duplicarla; si no existe, la crea. Evita gemelas del
+    /// catalogo previo (Propietario/Residente/Contratista/... que ya venian sin icono).
+    /// </summary>
+    private async Task AsegurarEtiquetasBaseAsync(CancellationToken ct)
+    {
+        var bases = await _db.EtiquetasCatalogo.IgnoreQueryFilters()
+            .Where(e => e.EsBase).ToListAsync(ct);
+        var cambios = false;
+        foreach (var b in EtiquetasBase)
+        {
+            var existente = bases.FirstOrDefault(x => x.Nombre.ToLower() == b.Nombre.ToLower());
+            if (existente is not null)
+            {
+                if (string.IsNullOrEmpty(existente.Icono)) { existente.Icono = b.Icono; cambios = true; }
+                if (string.IsNullOrEmpty(existente.Color)) { existente.Color = b.Color; cambios = true; }
+            }
+            else
+            {
+                _db.EtiquetasCatalogo.Add(new EtiquetaCatalogo
+                {
+                    Codigo = b.Codigo, Nombre = b.Nombre, Grupo = b.Grupo, AplicaA = b.Aplica,
+                    EsBase = true, TieneLogicaEspecial = false, Icono = b.Icono, Color = b.Color,
+                    Orden = b.Orden, TenantId = null, Activo = true
+                });
+                cambios = true;
+            }
+        }
+        if (cambios) await _db.SaveChangesAsync(ct);
+    }
+
     public async Task<IReadOnlyList<EtiquetaCatalogoDto>> ListarEtiquetasAsync(AplicaEtiqueta? aplicaA, GrupoEtiqueta? grupo, CancellationToken ct)
     {
+        await AsegurarEtiquetasBaseAsync(ct);
         var q = _db.EtiquetasCatalogo.AsNoTracking().Where(e => e.Activo);
         if (aplicaA.HasValue)
             q = q.Where(e => e.AplicaA == aplicaA.Value || e.AplicaA == AplicaEtiqueta.Ambos);
         if (grupo.HasValue) q = q.Where(e => e.Grupo == grupo.Value);
         return await q
-            .OrderByDescending(e => e.EsBase).ThenBy(e => e.Nombre)
+            .OrderByDescending(e => e.EsBase).ThenBy(e => e.Orden).ThenBy(e => e.Nombre)
             .Select(e => new EtiquetaCatalogoDto(e.Id, e.Codigo, e.Nombre, e.Grupo, e.AplicaA,
-                e.EsBase, e.TieneLogicaEspecial, e.Activo))
+                e.EsBase, e.TieneLogicaEspecial, e.Activo, e.Icono, e.Color, e.Orden))
             .ToListAsync(ct);
     }
 
@@ -425,6 +491,8 @@ public class DirectorioService : IDirectorioService
         if (await _db.EtiquetasCatalogo.AnyAsync(e => e.Nombre == nombre, ct))
             throw new InvalidOperationException($"Ya existe etiqueta '{nombre}'.");
 
+        var maxOrden = await _db.EtiquetasCatalogo.AnyAsync(e => e.TenantId == tenantId, ct)
+            ? await _db.EtiquetasCatalogo.Where(e => e.TenantId == tenantId).MaxAsync(e => e.Orden, ct) : 100;
         var e = new EtiquetaCatalogo
         {
             Codigo = codigo,
@@ -433,12 +501,32 @@ public class DirectorioService : IDirectorioService
             AplicaA = req.AplicaA,
             EsBase = false,
             TieneLogicaEspecial = false,
+            Icono = string.IsNullOrWhiteSpace(req.Icono) ? null : req.Icono.Trim(),
+            Color = string.IsNullOrWhiteSpace(req.Color) ? null : req.Color.Trim(),
+            Orden = maxOrden + 1,
             TenantId = tenantId,
             Activo = true
         };
         _db.EtiquetasCatalogo.Add(e);
         await _db.SaveChangesAsync(ct);
-        return new EtiquetaCatalogoDto(e.Id, e.Codigo, e.Nombre, e.Grupo, e.AplicaA, e.EsBase, e.TieneLogicaEspecial, e.Activo);
+        return new EtiquetaCatalogoDto(e.Id, e.Codigo, e.Nombre, e.Grupo, e.AplicaA, e.EsBase, e.TieneLogicaEspecial, e.Activo, e.Icono, e.Color, e.Orden);
+    }
+
+    public async Task<bool> ActualizarEtiquetaAsync(Guid etiquetaId, EditarEtiquetaRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Nombre)) throw new InvalidOperationException("Nombre obligatorio.");
+        var e = await _db.EtiquetasCatalogo.FirstOrDefaultAsync(x => x.Id == etiquetaId, ct);
+        if (e is null) return false;
+        if (e.EsBase) throw new InvalidOperationException("Las etiquetas base no se editan (solo las personalizadas).");
+        var nombre = req.Nombre.Trim();
+        if (await _db.EtiquetasCatalogo.AnyAsync(x => x.Id != etiquetaId && x.Nombre == nombre, ct))
+            throw new InvalidOperationException($"Ya existe etiqueta '{nombre}'.");
+        e.Nombre = nombre;
+        e.Icono = string.IsNullOrWhiteSpace(req.Icono) ? null : req.Icono.Trim();
+        e.Color = string.IsNullOrWhiteSpace(req.Color) ? null : req.Color.Trim();
+        e.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return true;
     }
 
     public async Task<bool> EliminarEtiquetaCustomAsync(Guid etiquetaId, CancellationToken ct)
@@ -511,7 +599,7 @@ public class DirectorioService : IDirectorioService
             .Include(de => de.Etiqueta)
             .Where(de => de.VinculoId == vinculoId)
             .Select(de => new EtiquetaAsignadaDto(de.Id, de.EtiquetaId,
-                de.Etiqueta!.Codigo, de.Etiqueta.Nombre, de.Etiqueta.Grupo))
+                de.Etiqueta!.Codigo, de.Etiqueta.Nombre, de.Etiqueta.Grupo, de.Etiqueta.Icono, de.Etiqueta.Color))
             .ToListAsync(ct);
 
         string nombre = "(desconocido)";

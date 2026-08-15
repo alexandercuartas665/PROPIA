@@ -2,11 +2,15 @@ using Propia.Domain.Enums;
 
 namespace Propia.Application.Directorio;
 
+// ----- Etiqueta (chip liviano para tarjetas + filtro en el listado) -----
+public record EtiquetaChipDto(Guid EtiquetaId, string Nombre, GrupoEtiqueta Grupo, string? Icono, string? Color);
+
 // ----- Persona -----
 public record PersonaResumenDto(
     Guid Id, TipoDocumento TipoDocumento, string Documento,
     string Nombres, string Apellidos, string? Email, string? Telefono,
-    string? FotoUrl, bool PerfilIncompleto, EstadoDirectorio Estado);
+    string? FotoUrl, bool PerfilIncompleto, EstadoDirectorio Estado,
+    IReadOnlyList<EtiquetaChipDto>? Etiquetas = null);
 
 public record PersonaDetalleDto(
     Guid Id, TipoDocumento TipoDocumento, string Documento,
@@ -36,7 +40,8 @@ public record EmpresaResumenDto(
     Guid Id, string Nit, string? DigitoVerificacion,
     string RazonSocial, string? NombreComercial,
     string? Email, string? Telefono, string? LogoUrl,
-    bool PerfilIncompleto, EstadoDirectorio Estado);
+    bool PerfilIncompleto, EstadoDirectorio Estado,
+    IReadOnlyList<EtiquetaChipDto>? Etiquetas = null);
 
 public record EmpresaDetalleDto(
     Guid Id, string Nit, string? DigitoVerificacion,
@@ -69,7 +74,7 @@ public record VinculoDto(
     DateOnly FechaDesde, DateOnly? FechaHasta,
     EstadoVinculo Estado, IReadOnlyList<EtiquetaAsignadaDto> Etiquetas);
 
-public record EtiquetaAsignadaDto(Guid Id, Guid EtiquetaId, string Codigo, string Nombre, GrupoEtiqueta Grupo);
+public record EtiquetaAsignadaDto(Guid Id, Guid EtiquetaId, string Codigo, string Nombre, GrupoEtiqueta Grupo, string? Icono = null, string? Color = null);
 
 public record CrearVinculoRequest(
     EntidadDirectorio EntidadTipo, Guid EntidadId,
@@ -81,9 +86,15 @@ public record AsignarEtiquetaRequest(Guid VinculoId, Guid EtiquetaId);
 public record EtiquetaCatalogoDto(
     Guid Id, string Codigo, string Nombre,
     GrupoEtiqueta Grupo, AplicaEtiqueta AplicaA,
-    bool EsBase, bool TieneLogicaEspecial, bool Activo);
+    bool EsBase, bool TieneLogicaEspecial, bool Activo,
+    string? Icono = null, string? Color = null, int Orden = 0);
 
-public record CrearEtiquetaCustomRequest(string Nombre, GrupoEtiqueta Grupo, AplicaEtiqueta AplicaA);
+public record CrearEtiquetaCustomRequest(
+    string Nombre, GrupoEtiqueta Grupo, AplicaEtiqueta AplicaA,
+    string? Icono = null, string? Color = null);
+
+/// <summary>Edita una etiqueta custom (nombre, icono, color). Las base no se editan.</summary>
+public record EditarEtiquetaRequest(string Nombre, string? Icono, string? Color);
 
 // ----- Contactos -----
 public record ContactoDto(

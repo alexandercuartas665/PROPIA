@@ -32,6 +32,13 @@
                     <InputFile OnChange="OnPlantillaImport" accept=".xlsx" style="display:none" disabled="@_impBusy" />
                 </label>
             }
+            @if (_authChecked && !string.IsNullOrEmpty(_jwt))
+            {
+                <button class="dir-btn-ghost" type="button" @onclick="AbrirCfgEtiquetas" title="Configurar etiquetas del directorio">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                    Etiquetas
+                </button>
+            }
             <button class="dir-btn-brand" type="button" @onclick="AbrirCrear">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
                 Agregar
@@ -95,6 +102,24 @@
             </div>
         </div>
 
+        @if (_etiquetasTodas.Count > 0)
+        {
+            <div class="dir-etqfilter">
+                <span class="dir-etqfilter-lbl">Filtrar por etiqueta:</span>
+                @foreach (var et in _etiquetasTodas)
+                {
+                    var on = _filtroEtq.Contains(et.Id);
+                    <button type="button" class="dir-etqchip @(on ? "on" : "")" style="@(on ? ChipStyle(et.Color) : "")" @onclick="() => ToggleFiltroEtq(et.Id)">
+                        @(string.IsNullOrEmpty(et.Icono) ? "" : et.Icono + " ")@et.Nombre
+                    </button>
+                }
+                @if (_filtroEtq.Count > 0)
+                {
+                    <button type="button" class="dir-etqclear" @onclick="() => { _filtroEtq.Clear(); }">Limpiar</button>
+                }
+            </div>
+        }
+
         @if (!string.IsNullOrEmpty(_loadError))
         {
             <div class="alert alert-danger">@_loadError <button class="btn btn-sm btn-outline-danger ms-2" @onclick="CargarAsync">Reintentar</button></div>
@@ -104,11 +129,11 @@
            extraidos para no engrosar esta pagina. *@
         @if (_tab == "personas")
         {
-            <DirectorioPersonasVista Personas="_personas" Vista="_view" OnAbrir="AbrirPersona" OnCrear="CrearPersonaTabla" />
+            <DirectorioPersonasVista Personas="PersonasFiltradas" Vista="_view" OnAbrir="AbrirPersona" OnCrear="CrearPersonaTabla" />
         }
         else
         {
-            <DirectorioEmpresasVista Empresas="_empresas" Vista="_view" OnAbrir="AbrirEmpresa" OnCrear="CrearEmpresaTabla" />
+            <DirectorioEmpresasVista Empresas="EmpresasFiltradas" Vista="_view" OnAbrir="AbrirEmpresa" OnCrear="CrearEmpresaTabla" />
         }
     }
 </div>
@@ -148,13 +173,25 @@
                             </div>
                         }
                         <div class="dir-dt-sub">@docNit@(string.IsNullOrEmpty(email) ? "" : $" - {email}")@(string.IsNullOrEmpty(tel) ? "" : $" - {tel}")</div>
-                        @if (vincs is not null)
+                        @if (vincs is not null && vincs.Count > 0)
                         {
+                            var vinc0 = vincs[0];
                             <div class="dir-dt-tags">
                                 @foreach (var et in vincs.SelectMany(v => v.Etiquetas).GroupBy(e => e.EtiquetaId).Select(g => g.First()))
                                 {
-                                    <span class="dir-tag @(et.Grupo == GrupoEtiqueta.Identidad ? "dir-tag--brand" : "dir-tag--mute")">@et.Nombre</span>
+                                    <span class="dir-tag dir-tag--et" style="@ChipStyle(et.Color)">
+                                        @(string.IsNullOrEmpty(et.Icono) ? "" : et.Icono + " ")@et.Nombre
+                                        <button type="button" class="dir-tag-x" title="Quitar" @onclick="() => QuitarEtiquetaContacto(et.Id)">&times;</button>
+                                    </span>
                                 }
+                                <select class="dir-tag-add" @onchange="@(e => AsignarEtiquetaContacto(vinc0.Id, e.Value?.ToString()))" disabled="@_detalleBusy">
+                                    <option value="">+ etiqueta</option>
+                                    @foreach (var op in _etiquetasTodas.Where(c => (esEmpresa ? c.AplicaA != AplicaEtiqueta.Persona : c.AplicaA != AplicaEtiqueta.Empresa)
+                                                                                    && !vincs.SelectMany(v => v.Etiquetas).Any(a => a.EtiquetaId == c.Id)))
+                                    {
+                                        <option value="@op.Id">@(string.IsNullOrEmpty(op.Icono) ? "" : op.Icono + " ")@op.Nombre</option>
+                                    }
+                                </select>
                             </div>
                         }
                     </div>
@@ -461,7 +498,129 @@
     </div>
 }
 
+@* ===================== CONFIGURAR ETIQUETAS ===================== *@
+@if (_cfgOpen)
+{
+    <div class="dir-modal-backdrop" @onclick="() => _cfgOpen = false">
+        <div class="dir-cfg" @onclick:stopPropagation="true">
+            <div class="dir-cfg-head">
+                <div>
+                    <div class="dir-cfg-title">Configurar etiquetas</div>
+                    <div class="dir-cfg-sub">Crea etiquetas con icono para marcar y filtrar contactos del directorio.</div>
+                </div>
+                <button class="dir-x" @onclick="() => _cfgOpen = false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+            </div>
+            <div class="dir-cfg-body">
+                @* Crear / editar *@
+                <div class="dir-cfg-form">
+                    <div class="dir-cfg-formtitle">@(_cfgEditId is null ? "Nueva etiqueta" : "Editar etiqueta")</div>
+                    <div class="dir-cfg-row">
+                        <div class="dir-cfg-emoji">@(string.IsNullOrEmpty(_cfgIcono) ? "\U0001F3F7️" : _cfgIcono)</div>
+                        <input class="dir-cfg-inp" @bind="_cfgNombre" @bind:event="oninput" placeholder="Nombre (ej. Contratista)" maxlength="40" />
+                        <input class="dir-cfg-color" type="color" @bind="_cfgColor" title="Color" />
+                    </div>
+                    <div class="dir-cfg-emojis">
+                        @foreach (var em in EmojiSugeridos)
+                        {
+                            <button type="button" class="dir-cfg-emojibtn @(_cfgIcono == em ? "on" : "")" @onclick="() => _cfgIcono = em">@em</button>
+                        }
+                        <input class="dir-cfg-emojiinp" @bind="_cfgIcono" @bind:event="oninput" placeholder="otro" maxlength="4" />
+                    </div>
+                    @if (_cfgEditId is null)
+                    {
+                        <div class="dir-cfg-row">
+                            <select class="dir-cfg-inp" @bind="_cfgGrupo">
+                                <option value="@GrupoEtiqueta.Identidad">Grupo: Identidad</option>
+                                <option value="@GrupoEtiqueta.Cargo">Grupo: Cargo / rol</option>
+                            </select>
+                            <select class="dir-cfg-inp" @bind="_cfgAplica">
+                                <option value="@AplicaEtiqueta.Persona">Aplica a: Personas</option>
+                                <option value="@AplicaEtiqueta.Empresa">Aplica a: Empresas</option>
+                                <option value="@AplicaEtiqueta.Ambos">Aplica a: Ambos</option>
+                            </select>
+                        </div>
+                    }
+                    <div class="dir-cfg-formfoot">
+                        @if (_cfgEditId is not null)
+                        {
+                            <button class="dir-btn-ghost" type="button" @onclick="ResetCfgForm">Cancelar</button>
+                        }
+                        <button class="dir-btn-brand" type="button" @onclick="GuardarEtiqueta" disabled="@(_cfgBusy || string.IsNullOrWhiteSpace(_cfgNombre))">
+                            @(_cfgEditId is null ? "Crear etiqueta" : "Guardar")
+                        </button>
+                    </div>
+                    @if (_cfgMsg is not null) { <div class="dir-cfg-msg @(_cfgErr ? "err" : "ok")">@_cfgMsg</div> }
+                </div>
+
+                @* Listado del catalogo *@
+                <div class="dir-cfg-list">
+                    @foreach (var et in _etiquetasTodas)
+                    {
+                        <div class="dir-cfg-item">
+                            <span class="dir-cfg-itemchip" style="@ChipStyle(et.Color)">@(string.IsNullOrEmpty(et.Icono) ? "\U0001F3F7️" : et.Icono) @et.Nombre</span>
+                            <span class="dir-cfg-itemmeta">@GrupoLabel(et.Grupo) · @AplicaLabel(et.AplicaA)</span>
+                            @if (et.EsBase)
+                            {
+                                <span class="dir-cfg-basebadge">predefinida</span>
+                            }
+                            else
+                            {
+                                <button class="dir-cfg-mini" title="Editar" @onclick="() => EditarEtiqueta(et)">Editar</button>
+                                <button class="dir-cfg-mini dir-cfg-mini--del" title="Eliminar" @onclick="() => EliminarEtiqueta(et.Id)">Eliminar</button>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 <style>
+    /* Filtro por etiqueta (fila de chips bajo la barra de busqueda) */
+    .dir-etqfilter { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin: 2px 0 14px; }
+    .dir-etqfilter-lbl { font-size: 11.5px; font-weight: 700; color: #7C98B6; }
+    .dir-etqchip { border: 1px solid #E1E8EE; background: #fff; color: #516F90; border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .dir-etqchip:hover { border-color: #C9BCF6; }
+    .dir-etqchip.on { font-weight: 800; }
+    .dir-etqclear { border: 0; background: transparent; color: #DC2626; font-size: 11.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
+
+    /* Modal Configurar etiquetas */
+    .dir-cfg { background: #fff; border-radius: 16px; width: 620px; max-width: 94vw; max-height: 88vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 60px rgba(20,20,45,.22); }
+    .dir-cfg-head { display: flex; align-items: flex-start; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid #EEF3F8; }
+    .dir-cfg-title { font-size: 16px; font-weight: 800; color: #1B2A3A; }
+    .dir-cfg-sub { font-size: 12px; color: #7C98B6; margin-top: 2px; }
+    .dir-cfg-body { padding: 18px 22px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+    .dir-cfg-form { background: #FAFBFD; border: 1px solid #EEF3F8; border-radius: 12px; padding: 14px; }
+    .dir-cfg-formtitle { font-size: 12px; font-weight: 800; color: #516F90; text-transform: uppercase; letter-spacing: .3px; margin-bottom: 10px; }
+    .dir-cfg-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .dir-cfg-emoji { width: 42px; height: 42px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; font-size: 22px; background: #fff; border: 1px solid #E1E8EE; border-radius: 10px; }
+    .dir-cfg-inp { flex: 1; border: 1px solid #E1E8EE; border-radius: 9px; padding: 9px 11px; font-size: 13px; font-family: inherit; outline: none; background: #fff; color: #33475B; }
+    .dir-cfg-inp:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .dir-cfg-color { width: 42px; height: 42px; flex: 0 0 auto; border: 1px solid #E1E8EE; border-radius: 10px; padding: 3px; cursor: pointer; background: #fff; }
+    .dir-cfg-emojis { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+    .dir-cfg-emojibtn { width: 32px; height: 32px; border: 1px solid #E1E8EE; background: #fff; border-radius: 8px; font-size: 16px; cursor: pointer; }
+    .dir-cfg-emojibtn.on { border-color: var(--propia-brand, #6D4FE3); box-shadow: 0 0 0 2px rgba(109,79,227,.15); }
+    .dir-cfg-emojiinp { width: 54px; border: 1px dashed #D3DEE9; border-radius: 8px; text-align: center; font-size: 13px; }
+    .dir-cfg-formfoot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+    .dir-cfg-msg { margin-top: 8px; font-size: 12px; border-radius: 8px; padding: 7px 10px; }
+    .dir-cfg-msg.ok { background: #E6F6EE; color: #15703F; }
+    .dir-cfg-msg.err { background: #FEE2E2; color: #B91C1C; }
+    .dir-cfg-list { display: flex; flex-direction: column; gap: 6px; }
+    .dir-cfg-item { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid #EEF3F8; border-radius: 10px; }
+    .dir-cfg-itemchip { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #E1D9FA; background: #F5F2FE; color: #6D4FE3; font-weight: 700; font-size: 12.5px; border-radius: 20px; padding: 4px 12px; }
+    .dir-cfg-itemmeta { font-size: 11px; color: #90A4B7; }
+    .dir-cfg-basebadge { margin-left: auto; font-size: 10px; font-weight: 700; color: #B45309; background: #FEF3C7; padding: 2px 9px; border-radius: 20px; }
+    .dir-cfg-mini { border: 1px solid #E1E8EE; background: #fff; color: #516F90; border-radius: 7px; padding: 4px 10px; font-size: 11.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .dir-cfg-mini:first-of-type { margin-left: auto; }
+    .dir-cfg-mini--del { color: #DC2626; border-color: #FECACA; }
+
+    /* Chips de etiqueta en tarjetas + ficha 360 */
+    .dir-tag--et { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #E1D9FA; background: #F5F2FE; color: #6D4FE3; font-weight: 700; }
+    .dir-tag-x { border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; opacity: .6; padding: 0 0 0 2px; }
+    .dir-tag-x:hover { opacity: 1; }
+    .dir-tag-add { border: 1px dashed #C9BCF6; background: #fff; color: #6D4FE3; border-radius: 20px; padding: 3px 10px; font-size: 11.5px; font-weight: 700; cursor: pointer; font-family: inherit; outline: none; }
+
     /* === Directorio: layout fiel al prototipo PROPIA v2 === */
     .dir-page { width: 100%; max-width: 1900px; margin: 0 auto; padding: 30px 34px 70px; font-family: var(--propia-font-base, 'Lexend', sans-serif); box-sizing: border-box; }
     .dir-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 20px; }
@@ -688,6 +847,29 @@
     private List<EtiquetaCatalogoDto> _etiquetasIdentidadPersona = new();
     private List<EtiquetaCatalogoDto> _etiquetasIdentidadEmpresa = new();
 
+    // ----- Etiquetas: catalogo completo, filtro y panel de configuracion -----
+    private List<EtiquetaCatalogoDto> _etiquetasTodas = new();
+    private readonly HashSet<Guid> _filtroEtq = new();
+    private bool _cfgOpen;
+    private Guid? _cfgEditId;
+    private string _cfgNombre = "";
+    private string _cfgIcono = "";
+    private string _cfgColor = "#6D4FE3";
+    private GrupoEtiqueta _cfgGrupo = GrupoEtiqueta.Identidad;
+    private AplicaEtiqueta _cfgAplica = AplicaEtiqueta.Persona;
+    private string? _cfgMsg; private bool _cfgErr; private bool _cfgBusy;
+    private static readonly string[] EmojiSugeridos = { "\U0001F511","\U0001F3E0","\U0001F4C4","\U0001F465","\U0001F9F9","\U0001F527","\U0001F4E6","\U0001F454","\U0001F464","\U0001F91D","\U0001F4BC","\U0001F6E0️","\U0001F697","\U0001F415","⭐","\U0001F6A8" };
+
+    private List<PersonaResumenDto>? PersonasFiltradas =>
+        (_filtroEtq.Count == 0 || _personas is null)
+            ? _personas
+            : _personas.Where(p => p.Etiquetas is not null && p.Etiquetas.Any(e => _filtroEtq.Contains(e.EtiquetaId))).ToList();
+
+    private List<EmpresaResumenDto>? EmpresasFiltradas =>
+        (_filtroEtq.Count == 0 || _empresas is null)
+            ? _empresas
+            : _empresas.Where(e => e.Etiquetas is not null && e.Etiquetas.Any(x => _filtroEtq.Contains(x.EtiquetaId))).ToList();
+
     // ----- Detalle 360 -----
     private bool _detalleAbierto;
     private string _detalleTipo = "persona";   // "persona" | "empresa"
@@ -794,7 +976,127 @@
         var http = Auth();
         _etiquetasIdentidadPersona = await http.GetFromJsonAsync<List<EtiquetaCatalogoDto>>("/api/directorio/etiquetas?aplicaA=Persona&grupo=Identidad") ?? new();
         _etiquetasIdentidadEmpresa = await http.GetFromJsonAsync<List<EtiquetaCatalogoDto>>("/api/directorio/etiquetas?aplicaA=Empresa&grupo=Identidad") ?? new();
+        _etiquetasTodas = await http.GetFromJsonAsync<List<EtiquetaCatalogoDto>>("/api/directorio/etiquetas") ?? new();
     }
+
+    // ===================== Etiquetas: filtro + configuracion =====================
+    private void ToggleFiltroEtq(Guid id)
+    {
+        if (!_filtroEtq.Remove(id)) _filtroEtq.Add(id);
+    }
+
+    private void AbrirCfgEtiquetas() { _cfgOpen = true; ResetCfgForm(); }
+
+    private void ResetCfgForm()
+    {
+        _cfgEditId = null; _cfgNombre = ""; _cfgIcono = ""; _cfgColor = "#6D4FE3";
+        _cfgGrupo = GrupoEtiqueta.Identidad; _cfgAplica = AplicaEtiqueta.Persona; _cfgMsg = null;
+    }
+
+    private void EditarEtiqueta(EtiquetaCatalogoDto et)
+    {
+        _cfgEditId = et.Id; _cfgNombre = et.Nombre; _cfgIcono = et.Icono ?? "";
+        _cfgColor = string.IsNullOrEmpty(et.Color) ? "#6D4FE3" : et.Color!;
+        _cfgGrupo = et.Grupo; _cfgAplica = et.AplicaA; _cfgMsg = null;
+    }
+
+    private async Task GuardarEtiqueta()
+    {
+        if (string.IsNullOrWhiteSpace(_cfgNombre)) return;
+        _cfgBusy = true; _cfgMsg = null;
+        try
+        {
+            var http = Auth();
+            HttpResponseMessage resp;
+            if (_cfgEditId is null)
+            {
+                resp = await http.PostAsJsonAsync("/api/directorio/etiquetas",
+                    new CrearEtiquetaCustomRequest(_cfgNombre.Trim(), _cfgGrupo, _cfgAplica,
+                        string.IsNullOrWhiteSpace(_cfgIcono) ? null : _cfgIcono, _cfgColor));
+            }
+            else
+            {
+                resp = await http.PutAsJsonAsync($"/api/directorio/etiquetas/{_cfgEditId}",
+                    new EditarEtiquetaRequest(_cfgNombre.Trim(),
+                        string.IsNullOrWhiteSpace(_cfgIcono) ? null : _cfgIcono, _cfgColor));
+            }
+            if (resp.IsSuccessStatusCode)
+            {
+                await CargarEtiquetasAsync();
+                await CargarAsync();          // refresca chips en las tarjetas
+                ResetCfgForm();
+                _cfgMsg = "Etiqueta guardada."; _cfgErr = false;
+            }
+            else { _cfgMsg = await ErrTxt(resp); _cfgErr = true; }
+        }
+        catch (Exception ex) { _cfgMsg = ex.Message; _cfgErr = true; }
+        finally { _cfgBusy = false; }
+    }
+
+    private async Task EliminarEtiqueta(Guid id)
+    {
+        _cfgBusy = true; _cfgMsg = null;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/directorio/etiquetas/{id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                _filtroEtq.Remove(id);
+                if (_cfgEditId == id) ResetCfgForm();
+                await CargarEtiquetasAsync();
+                await CargarAsync();
+                _cfgMsg = "Etiqueta eliminada."; _cfgErr = false;
+            }
+            else { _cfgMsg = await ErrTxt(resp); _cfgErr = true; }
+        }
+        catch (Exception ex) { _cfgMsg = ex.Message; _cfgErr = true; }
+        finally { _cfgBusy = false; }
+    }
+
+    private static async Task<string> ErrTxt(HttpResponseMessage resp)
+    {
+        try { var e = await resp.Content.ReadFromJsonAsync<ErrResp>(); return e?.error ?? "No se pudo completar la accion."; }
+        catch { return "No se pudo completar la accion."; }
+    }
+    private sealed class ErrResp { public string? error { get; set; } }
+
+    // Marcar / desmarcar etiquetas de un contacto (ficha 360) via su vinculo con la copropiedad.
+    private async Task AsignarEtiquetaContacto(Guid vinculoId, string? etiquetaIdStr)
+    {
+        if (!Guid.TryParse(etiquetaIdStr, out var etiquetaId)) return;
+        _detalleBusy = true;
+        try
+        {
+            await Auth().PostAsJsonAsync("/api/directorio/vinculos/etiquetas", new AsignarEtiquetaRequest(vinculoId, etiquetaId));
+            await RecargarDetalleYLista();
+        }
+        catch (Exception ex) { _detalleError = ex.Message; }
+        finally { _detalleBusy = false; }
+    }
+
+    private async Task QuitarEtiquetaContacto(Guid asignacionId)
+    {
+        _detalleBusy = true;
+        try
+        {
+            await Auth().DeleteAsync($"/api/directorio/vinculos/etiquetas/{asignacionId}");
+            await RecargarDetalleYLista();
+        }
+        catch (Exception ex) { _detalleError = ex.Message; }
+        finally { _detalleBusy = false; }
+    }
+
+    private async Task RecargarDetalleYLista()
+    {
+        if (_detalleTipo == "empresa") await AbrirEmpresa(_detalleId);
+        else await AbrirPersona(_detalleId);
+        await CargarAsync();   // refresca chips en el listado
+    }
+
+    private static string ChipStyle(string? color)
+        => string.IsNullOrWhiteSpace(color) ? "" : $"background:{color}1A;color:{color};border-color:{color}55;";
+    private static string GrupoLabel(GrupoEtiqueta g) => g == GrupoEtiqueta.Identidad ? "Identidad" : "Cargo";
+    private static string AplicaLabel(AplicaEtiqueta a) => a switch { AplicaEtiqueta.Persona => "Personas", AplicaEtiqueta.Empresa => "Empresas", _ => "Ambos" };
 
     // ===================== Detalle 360 =====================
     private async Task AbrirPersona(Guid id)

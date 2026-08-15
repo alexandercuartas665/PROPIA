@@ -17,6 +17,13 @@ public class EtiquetaCatalogo : BaseEntity
     public bool EsBase { get; set; }
     public bool TieneLogicaEspecial { get; set; }
 
+    /// <summary>Icono de la etiqueta (emoji, ej. "🏠"). Opcional.</summary>
+    public string? Icono { get; set; }
+    /// <summary>Color de acento (hex, ej. "#6D4FE3"). Opcional.</summary>
+    public string? Color { get; set; }
+    /// <summary>Orden de presentacion en el catalogo.</summary>
+    public int Orden { get; set; }
+
     /// <summary>Null = etiqueta base global. NOT NULL = etiqueta personalizada por copropiedad.</summary>
     public Guid? TenantId { get; set; }
 
