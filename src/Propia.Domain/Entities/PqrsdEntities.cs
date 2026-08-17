@@ -238,6 +238,9 @@ public class PqrsdAdjunto : TenantEntity
     public long TamanioBytes { get; set; }
     public string UrlStorage { get; set; } = string.Empty;
     public Guid SubidoPorUsuarioId { get; set; }
+
+    /// <summary>Comentario/caption opcional que acompana el adjunto cuando se sube desde el chat de actividad.</summary>
+    public string? Texto { get; set; }
 }
 
 /// <summary>Historial append-only de estados. Spec 2.9 v1.0 tabla pqrsd_historial_estado + trigger SQL.</summary>

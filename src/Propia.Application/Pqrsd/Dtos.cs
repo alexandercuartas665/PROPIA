@@ -13,7 +13,8 @@ public record ActualizarPlazoRequest(int DiasHabiles, int DiasInconformidad, Niv
 
 // ===================== Expediente =====================
 
-public record PqrsdAdjuntoDto(Guid Id, string NombreArchivo, string TipoMime, long TamanioBytes, string UrlStorage, DateTimeOffset CreatedAt);
+public record PqrsdAdjuntoDto(Guid Id, string NombreArchivo, string TipoMime, long TamanioBytes, string UrlStorage, DateTimeOffset CreatedAt,
+    string? SubidoPorNombre = null, Guid? SubidoPorUsuarioId = null, string? Texto = null);
 
 public record PqrsdHistorialDto(
     EstadoPqrsd? EstadoAnterior,
@@ -114,7 +115,7 @@ public record PqrsdExpedienteDetalleDto(
     /// <summary>Dias habiles de prorroga acumulados (ya sumados a FechaVencimiento).</summary>
     int ProrrogaDias = 0);
 
-public record PqrsdComentarioDto(Guid Id, string Texto, string? AutorNombre, DateTimeOffset CreatedAt);
+public record PqrsdComentarioDto(Guid Id, string Texto, string? AutorNombre, DateTimeOffset CreatedAt, Guid? AutorUsuarioId = null);
 
 // ===================== Tablero configurable (columnas + campos dinamicos) =====================
 

@@ -239,7 +239,7 @@ public class PqrsdController : ControllerBase
     [HttpPost("{id:guid}/actividad")]
     public async Task<IActionResult> ReportarActividad(Guid id, [FromBody] ReportarActividadPqrsdRequest req, CancellationToken ct)
     {
-        try { return await _svc.ReportarActividadAsync(id, req, ct) ? NoContent() : NotFound(); }
+        try { var dto = await _svc.ReportarActividadAsync(id, req, ct); return dto is null ? NotFound() : Created("", dto); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
@@ -328,23 +328,28 @@ public class PqrsdController : ControllerBase
         var exp = await _db.PqrsdExpedientes.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (exp is null) return NotFound();
         if (string.IsNullOrWhiteSpace(req.NombreArchivo)) return BadRequest(new { error = "NombreArchivo requerido." });
+        var uid2 = Guid.TryParse(User.FindFirstValue("user_id"), out var u2) ? u2 : Guid.Empty;
         var adj = new PqrsdAdjunto
         {
             ExpedienteId = id,
             NombreArchivo = req.NombreArchivo.Trim(),
             TipoMime = req.TipoMime,
             TamanioBytes = req.TamanioBytes,
-            UrlStorage = req.UrlStorage
+            UrlStorage = req.UrlStorage,
+            SubidoPorUsuarioId = uid2
         };
         _db.PqrsdAdjuntos.Add(adj);
         await _db.SaveChangesAsync(ct);
-        return Created("", new PqrsdAdjuntoDto(adj.Id, adj.NombreArchivo, adj.TipoMime, adj.TamanioBytes, adj.UrlStorage, adj.CreatedAt));
+        var nombre2 = User.FindFirstValue("name") ?? User.FindFirstValue(System.Security.Claims.ClaimTypes.Name) ?? User.FindFirstValue("email");
+        return Created("", new PqrsdAdjuntoDto(adj.Id, adj.NombreArchivo, adj.TipoMime, adj.TamanioBytes, adj.UrlStorage, adj.CreatedAt,
+            nombre2, uid2 == Guid.Empty ? null : uid2, adj.Texto));
     }
 
     // --- Subir el binario de un adjunto (documentos e imagenes) y registrarlo ---
+    // Acepta un caption opcional 'texto' para el chat de actividad (burbuja con imagen/archivo + texto).
     [HttpPost("{id:guid}/adjuntos/upload")]
     [RequestSizeLimit(52_500_000)]
-    public async Task<IActionResult> SubirAdjuntoBinario(Guid id, IFormFile file, CancellationToken ct)
+    public async Task<IActionResult> SubirAdjuntoBinario(Guid id, IFormFile file, [FromForm] string? texto, CancellationToken ct)
     {
         var tenantId = GetTenantId();
         if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
@@ -359,6 +364,7 @@ public class PqrsdController : ControllerBase
         // URL relativa al mismo origen (convencion host unificado: nunca absolutizar).
         var url = await _storage.UploadAsync(key, stream, file.ContentType ?? "application/octet-stream", ct);
 
+        var uid = Guid.TryParse(User.FindFirstValue("user_id"), out var u) ? u : Guid.Empty;
         var adj = new PqrsdAdjunto
         {
             ExpedienteId = id,
@@ -366,11 +372,16 @@ public class PqrsdController : ControllerBase
             TipoMime = file.ContentType ?? "application/octet-stream",
             TamanioBytes = file.Length,
             UrlStorage = url,
-            SubidoPorUsuarioId = Guid.TryParse(User.FindFirstValue("user_id"), out var uid) ? uid : Guid.Empty
+            SubidoPorUsuarioId = uid,
+            Texto = string.IsNullOrWhiteSpace(texto) ? null : texto.Trim()
         };
         _db.PqrsdAdjuntos.Add(adj);
         await _db.SaveChangesAsync(ct);
-        return Created("", new PqrsdAdjuntoDto(adj.Id, adj.NombreArchivo, adj.TipoMime, adj.TamanioBytes, adj.UrlStorage, adj.CreatedAt));
+        await _svc.NotificarMencionComentarioAsync(id, texto, ct);
+
+        var nombre = User.FindFirstValue("name") ?? User.FindFirstValue(System.Security.Claims.ClaimTypes.Name) ?? User.FindFirstValue("email");
+        return Created("", new PqrsdAdjuntoDto(adj.Id, adj.NombreArchivo, adj.TipoMime, adj.TamanioBytes, adj.UrlStorage, adj.CreatedAt,
+            nombre, uid == Guid.Empty ? null : uid, adj.Texto));
     }
 
     // --- Eliminar un adjunto ---

@@ -26,8 +26,11 @@ public interface IPqrsdService
     Task<bool> ArchivarExpedienteAsync(Guid id, bool archivar, CancellationToken ct);
     Task<bool> ActualizarExpedienteAsync(Guid id, ActualizarExpedienteRequest req, CancellationToken ct);
 
-    /// <summary>Agrega un reporte de actividad (comentario libre) al expediente.</summary>
-    Task<bool> ReportarActividadAsync(Guid id, ReportarActividadPqrsdRequest req, CancellationToken ct);
+    /// <summary>Agrega un reporte de actividad (comentario libre) al expediente. Devuelve el comentario creado o null si el expediente no existe.</summary>
+    Task<PqrsdComentarioDto?> ReportarActividadAsync(Guid id, ReportarActividadPqrsdRequest req, CancellationToken ct);
+
+    /// <summary>Notifica las @menciones escritas en un comentario/caption de adjunto (canal InApp).</summary>
+    Task NotificarMencionComentarioAsync(Guid expedienteId, string? texto, CancellationToken ct);
 
     /// <summary>Crea una tarea interna (2.10) a partir del PQR y la vincula. Idempotente (devuelve la existente).</summary>
     Task<Guid?> GenerarTareaAsync(Guid id, CancellationToken ct);

@@ -594,8 +594,26 @@ public class PqrsdService : IPqrsdService
         string? radNombre = x.IdentidadReservada ? null : (rad is null ? null : $"{rad.Nombres} {rad.Apellidos}".Trim());
         Guid? radId = x.IdentidadReservada ? null : x.RadicadorPersonaId;
 
+        // Nombre de quien subio cada adjunto (Users -> PersonaId -> Personas), para pintar la burbuja.
+        var subidoIds = x.Adjuntos.Select(a => a.SubidoPorUsuarioId).Where(g => g != Guid.Empty).Distinct().ToList();
+        var nombresSubido = new Dictionary<Guid, string>();
+        if (subidoIds.Count > 0)
+        {
+            var users = await _db.Users.AsNoTracking().Where(u => subidoIds.Contains(u.Id))
+                .Select(u => new { u.Id, u.PersonaId }).ToListAsync(ct);
+            var personaIds = users.Where(u => u.PersonaId != null).Select(u => u.PersonaId!.Value).Distinct().ToList();
+            var personasN = personaIds.Count == 0 ? new() : await _db.Personas.AsNoTracking()
+                .Where(p => personaIds.Contains(p.Id))
+                .ToDictionaryAsync(p => p.Id, p => $"{p.Nombres} {p.Apellidos}".Trim(), ct);
+            foreach (var u in users)
+                if (u.PersonaId is { } pid && personasN.TryGetValue(pid, out var nm)) nombresSubido[u.Id] = nm;
+        }
+
         var adjuntos = x.Adjuntos.OrderBy(a => a.CreatedAt)
-            .Select(a => new PqrsdAdjuntoDto(a.Id, a.NombreArchivo, a.TipoMime, a.TamanioBytes, a.UrlStorage, a.CreatedAt))
+            .Select(a => new PqrsdAdjuntoDto(a.Id, a.NombreArchivo, a.TipoMime, a.TamanioBytes, a.UrlStorage, a.CreatedAt,
+                a.SubidoPorUsuarioId != Guid.Empty && nombresSubido.TryGetValue(a.SubidoPorUsuarioId, out var sn) ? sn : null,
+                a.SubidoPorUsuarioId == Guid.Empty ? null : a.SubidoPorUsuarioId,
+                a.Texto))
             .ToList();
 
         var historial = x.Historial.OrderByDescending(h => h.CreatedAt)
@@ -634,7 +652,7 @@ public class PqrsdService : IPqrsdService
         var comentarios = await _db.PqrsdComentarios.AsNoTracking()
             .Where(c => c.PqrsdExpedienteId == id)
             .OrderByDescending(c => c.CreatedAt)
-            .Select(c => new PqrsdComentarioDto(c.Id, c.Texto, c.AutorNombre, c.CreatedAt))
+            .Select(c => new PqrsdComentarioDto(c.Id, c.Texto, c.AutorNombre, c.CreatedAt, c.AutorUsuarioId))
             .ToListAsync(ct);
 
         return new PqrsdExpedienteDetalleDto(
@@ -1545,21 +1563,64 @@ public class PqrsdService : IPqrsdService
         return true;
     }
 
-    // Reportar actividad: agrega un comentario libre al expediente (feed estilo Tareas).
-    public async Task<bool> ReportarActividadAsync(Guid id, ReportarActividadPqrsdRequest req, CancellationToken ct)
+    // Reportar actividad: agrega un comentario libre al expediente (chat estilo Tareas).
+    // Devuelve el comentario creado para que la UI lo agregue sin recargar, y notifica @menciones.
+    public async Task<PqrsdComentarioDto?> ReportarActividadAsync(Guid id, ReportarActividadPqrsdRequest req, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.Texto)) throw new InvalidOperationException("El texto de la actividad es obligatorio.");
-        if (!await _db.PqrsdExpedientes.AnyAsync(e => e.Id == id, ct)) return false;
+        var exp = await _db.PqrsdExpedientes.FirstOrDefaultAsync(e => e.Id == id, ct);
+        if (exp is null) return null;
         var (uid, nombre) = ActorActual();
-        _db.PqrsdComentarios.Add(new PqrsdComentario
+        var c = new PqrsdComentario
         {
             PqrsdExpedienteId = id,
             Texto = req.Texto.Trim(),
             AutorUsuarioId = uid,
             AutorNombre = nombre
-        });
+        };
+        _db.PqrsdComentarios.Add(c);
         await _db.SaveChangesAsync(ct);
-        return true;
+        await NotificarMencionesAsync(exp, c.Texto, ct);
+        return new PqrsdComentarioDto(c.Id, c.Texto, c.AutorNombre, c.CreatedAt, c.AutorUsuarioId);
+    }
+
+    // Notifica @menciones escritas en un comentario/caption (canal InApp). Port del feed de Tareas.
+    public async Task NotificarMencionComentarioAsync(Guid expedienteId, string? texto, CancellationToken ct)
+    {
+        var exp = await _db.PqrsdExpedientes.AsNoTracking().FirstOrDefaultAsync(e => e.Id == expedienteId, ct);
+        if (exp is not null) await NotificarMencionesAsync(exp, texto, ct);
+    }
+
+    // Detecta tokens @nombre.apellido y avisa a las personas del directorio que coincidan.
+    private async Task NotificarMencionesAsync(PqrsdExpediente exp, string? texto, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(texto)) return;
+        var tenantId = _tenantContext.CurrentTenantId;
+        if (tenantId is null) return;
+        var matches = System.Text.RegularExpressions.Regex.Matches(texto, @"@([A-Za-z0-9._-]{2,40})");
+        if (matches.Count == 0) return;
+        var tokens = matches.Select(m => m.Groups[1].Value.ToLowerInvariant()).Distinct().ToHashSet();
+
+        var personas = await _db.Personas.AsNoTracking()
+            .Select(p => new { p.Id, Nombre = (p.Nombres + " " + p.Apellidos).Trim() })
+            .ToListAsync(ct);
+        var destinatarios = personas
+            .Where(p => tokens.Contains(p.Nombre.ToLowerInvariant().Replace(" ", ".")))
+            .Select(p => p.Id).Distinct().Take(20).ToList();
+        if (destinatarios.Count == 0) return;
+
+        var resumen = texto.Length > 120 ? texto[..120] + "..." : texto;
+        var lote = destinatarios.Select(pid =>
+            new Propia.Application.Notificaciones.EnviarNotificacionRequest(
+                Canal: Domain.Enums.CanalNotificacion.InApp,
+                Cuerpo: $"Te mencionaron en el PQR {exp.NumeroRadicado}: {resumen}",
+                TenantId: tenantId,
+                PersonaDestinatariaId: pid,
+                Asunto: $"Mencion en PQR {exp.NumeroRadicado}",
+                Prioridad: Domain.Enums.PrioridadNotificacion.Normal,
+                ModuloOrigenCodigo: "2.9",
+                EntidadOrigenId: exp.Id));
+        await _noti.EnviarLoteAsync(lote, ct);
     }
 
     // Genera una tarea interna (modulo 2.10) a partir del PQR y la vincula (TareaId). Idempotente.

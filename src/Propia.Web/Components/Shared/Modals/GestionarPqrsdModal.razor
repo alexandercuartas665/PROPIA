@@ -46,6 +46,7 @@
 {
     <div class="gpq-tabs">
         <button type="button" class="gpq-tab @(_tab == "detalle" ? "active" : "")" @onclick='@(() => _tab = "detalle")'>Detalle</button>
+        <button type="button" class="gpq-tab @(_tab == "historial" ? "active" : "")" @onclick='@(() => _tab = "historial")'>Historial@(_detalle.Historial.Count > 0 ? $" ({_detalle.Historial.Count})" : "")</button>
         <button type="button" class="gpq-tab @(_tab == "adjuntos" ? "active" : "")" @onclick='@(() => _tab = "adjuntos")'>Adjuntos@(_detalle.Adjuntos.Count > 0 ? $" ({_detalle.Adjuntos.Count})" : "")</button>
     </div>
 }
@@ -320,29 +321,102 @@
             </div>@* fin col 2 *@
             <div class="gpq-col">
 
-            @* Reportar actividad + feed (estilo Tareas) *@
-            <div class="gpq-card">
-                <div class="gpq-card-eyebrow">REPORTAR ACTIVIDAD</div>
-                <textarea class="gpq-input" rows="2" placeholder="Describe lo que realizaste en este PQR..." @bind="_nuevaActividad" @bind:event="oninput"></textarea>
-                <button class="gpq-btn-brand" style="margin-top:6px;" type="button" @onclick="ReportarActividad" disabled="@(_reportando || string.IsNullOrWhiteSpace(_nuevaActividad))">
-                    @(_reportando ? "Registrando..." : "Registrar")
-                </button>
-                @if (_detalle.Comentarios is { Count: > 0 })
-                {
-                    <div class="gpq-actividad-feed">
-                        @foreach (var c in _detalle.Comentarios)
+            @* Actividad como CHAT: comentarios + adjuntos inline (burbujas dos tonos), @menciones y adjuntar con caption. *@
+            <div class="gpq-card gpq-card--chat">
+                <div class="gpq-card-eyebrow">ACTIVIDAD</div>
+                <div class="gpqc-wrap">
+                    @{ var timeline = ActTimeline(); }
+                    <div class="gpqc-scroll">
+                        @if (timeline.Count == 0)
                         {
-                            <div class="gpq-actividad-item">
-                                <div class="gpq-actividad-txt">@c.Texto</div>
-                                <div class="gpq-actividad-meta">@(string.IsNullOrEmpty(c.AutorNombre) ? "" : c.AutorNombre + " · ")@c.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, HH:mm")</div>
-                            </div>
+                            <div class="gpqc-empty">Aun no hay actividad. Escribe un comentario o adjunta un archivo.</div>
+                        }
+                        else
+                        {
+                            @foreach (var it in timeline)
+                            {
+                                @if (it.EsSepDia)
+                                {
+                                    <div class="gpqc-daysep"><span>@it.SepTexto</span></div>
+                                }
+                                else
+                                {
+                                    var nombre = string.IsNullOrWhiteSpace(it.Autor) ? (it.EsMio ? "Tu" : "Usuario") : it.Autor;
+                                    <div class="gpqc-msg @(it.EsMio ? "mine" : "")">
+                                        <div class="gpqc-ava">@Iniciales(nombre)</div>
+                                        <div class="gpqc-col">
+                                            <div class="gpqc-meta"><span class="gpqc-au">@nombre</span><span class="gpqc-dt">@FechaSoloHora(it.Fecha)</span></div>
+                                            <div class="gpqc-bubble @(it.Adj is not null ? "has-file" : "")">
+                                                @if (it.Adj is PqrsdAdjuntoDto adj)
+                                                {
+                                                    @if (EsImg(adj.UrlStorage))
+                                                    {
+                                                        <div class="gpqc-img" @onclick="() => _lightbox = adj.UrlStorage" title="Clic para ampliar">
+                                                            <img src="@adj.UrlStorage" alt="@adj.NombreArchivo" />
+                                                        </div>
+                                                    }
+                                                    else if (EsPdf(adj.UrlStorage))
+                                                    {
+                                                        <a class="gpqc-pdf" href="@adj.UrlStorage" target="_blank" title="Abrir @adj.NombreArchivo">
+                                                            <iframe class="gpqc-pdf-fr" src="@(adj.UrlStorage + "#toolbar=0&navpanes=0&view=FitH")" tabindex="-1" loading="lazy"></iframe>
+                                                            <span class="gpqc-pdf-hint">Abrir</span>
+                                                        </a>
+                                                    }
+                                                    <a class="gpqc-file" href="@adj.UrlStorage" target="_blank" title="@adj.NombreArchivo">
+                                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg>
+                                                        <span class="gpqc-fnm">@adj.NombreArchivo</span>
+                                                    </a>
+                                                    @if (!string.IsNullOrWhiteSpace(adj.Texto))
+                                                    {
+                                                        <div class="gpqc-tx gpqc-cap">@adj.Texto</div>
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    <div class="gpqc-tx">@it.Texto</div>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            }
                         }
                     </div>
-                }
-                else
-                {
-                    <div class="gpq-actividad-empty">Aun no hay reportes de actividad.</div>
-                }
+                    <div class="gpqc-composerwrap">
+                        @if (_mencionQuery is not null && _mencionMatches.Count > 0)
+                        {
+                            <div class="gpqc-menc-pop">
+                                @foreach (var p in _mencionMatches)
+                                {
+                                    var per = p;
+                                    <button type="button" class="gpqc-menc-it" @onclick="() => InsertarMencion(per)">
+                                        <span class="gpqc-menc-ava">@Iniciales(per.Nombre)</span>
+                                        <span class="gpqc-menc-nm">@per.Nombre</span>
+                                    </button>
+                                }
+                            </div>
+                        }
+                        @if (_pendingFileName is not null)
+                        {
+                            <div class="gpqc-pend">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg>
+                                <span class="gpqc-pend-nm">@_pendingFileName</span>
+                                <button type="button" class="gpqc-pend-x" @onclick="QuitarArchivoPendiente" title="Quitar archivo"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                            </div>
+                        }
+                        <div class="gpqc-composer">
+                            <label class="gpqc-clip" title="Adjuntar archivo">
+                                @if (_subiendo) { <span class="gpqc-clip-load">...</span> }
+                                else { <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.49"/></svg> }
+                                <InputFile OnChange="SeleccionarArchivo" style="display:none" />
+                            </label>
+                            <textarea class="gpqc-input2" rows="1" @bind="_nuevoComentario" @bind:event="oninput" @bind:after="DetectarMencion" placeholder="@(_pendingFileName is null ? "Escribe un comentario o @menciona..." : "Anade un comentario (opcional)...")"></textarea>
+                            <button class="gpqc-send" @onclick="EnviarMensaje" disabled="@(_reportando || _subiendo || (_pendingFile is null && string.IsNullOrWhiteSpace(_nuevoComentario)))" title="Enviar">
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             @* Respuesta admin si existe *@
@@ -383,46 +457,6 @@
                     }
                 </div>
             }
-
-            @* Historial de gestion (movido del tab, ahora visible en col 3) *@
-            <div class="gpq-card">
-                <div class="gpq-card-eyebrow">HISTORIAL @(_detalle.Historial.Count > 0 ? $"({_detalle.Historial.Count})" : "")</div>
-                @if (_detalle.Historial.Count == 0)
-                {
-                    <div class="gpq-empty">Sin eventos aun.</div>
-                }
-                else
-                {
-                    <div class="gpq-timeline">
-                        @foreach (var h in _detalle.Historial.OrderByDescending(x => x.CreatedAt))
-                        {
-                            <div class="gpq-tl-item">
-                                <div class="gpq-tl-dot @EstadoClass(h.EstadoNuevo)"></div>
-                                <div class="gpq-tl-content">
-                                    <div class="gpq-tl-title">
-                                        @if (h.EstadoAnterior.HasValue)
-                                        {
-                                            <span>@EstadoLabel(h.EstadoAnterior.Value) → @EstadoLabel(h.EstadoNuevo)</span>
-                                        }
-                                        else
-                                        {
-                                            <span>@EstadoLabel(h.EstadoNuevo)</span>
-                                        }
-                                    </div>
-                                    <div class="gpq-tl-meta">
-                                        @h.CreatedAt.ToString("dd MMM yyyy HH:mm")
-                                        <span> · @h.Origen</span>
-                                    </div>
-                                    @if (!string.IsNullOrEmpty(h.Nota))
-                                    {
-                                        <div class="gpq-tl-nota">@h.Nota</div>
-                                    }
-                                </div>
-                            </div>
-                        }
-                    </div>
-                }
-            </div>
 
             </div>@* fin col 3 *@
             </div>@* fin gpq-cols *@
@@ -621,6 +655,17 @@
     </div>
 </div>
 </div>
+
+@* Lightbox de imagen del chat (clic en una imagen del feed la abre a pantalla completa) *@
+@if (_lightbox is not null)
+{
+    <div class="gpqc-lb" @onclick="() => _lightbox = null">
+        <img class="gpqc-lb-img" src="@_lightbox" @onclick:stopPropagation="true" alt="Adjunto" />
+        <button type="button" class="gpqc-lb-x" @onclick="() => _lightbox = null" aria-label="Cerrar">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+    </div>
+}
 
 @* Lightbox visor de archivo *@
 @if (_visorAdj is not null)
@@ -1031,6 +1076,66 @@
     [data-bs-theme="dark"] .gpq-actividad-item { background: #1B2233; border-color: #2D3650; }
     [data-bs-theme="dark"] .gpq-progbar { background: #2D3650; }
 
+    /* ===== Chat de actividad (burbujas dos tonos, mios a la derecha, adjuntos inline, menciones, lightbox) ===== */
+    .gpqc-wrap { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+    .gpqc-scroll { display: flex; flex-direction: column; gap: 12px; min-height: 130px; max-height: 360px; overflow-y: auto; overflow-x: hidden; padding: 4px 2px 6px; }
+    .gpqc-scroll::-webkit-scrollbar { width: 6px; }
+    .gpqc-scroll::-webkit-scrollbar-thumb { background: #CBD6E2; border-radius: 4px; }
+    .gpqc-empty { color: #A6B7C8; font-size: 12px; padding: 8px 2px; }
+    .gpqc-daysep { display: flex; align-items: center; justify-content: center; margin: 2px 0; }
+    .gpqc-daysep span { font-size: 10.5px; font-weight: 800; color: #8598AE; background: #EEF2F7; border-radius: 20px; padding: 3px 12px; }
+    .gpqc-msg { display: flex; gap: 8px; align-items: flex-end; max-width: 92%; align-self: flex-start; }
+    .gpqc-msg.mine { align-self: flex-end; flex-direction: row-reverse; }
+    .gpqc-ava { width: 28px; height: 28px; flex-shrink: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 800; color: #6D4FE3; background: #F1ECFD; }
+    .gpqc-msg.mine .gpqc-ava { color: #3B62C0; background: #E6EFFC; }
+    .gpqc-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    .gpqc-msg.mine .gpqc-col { align-items: flex-end; }
+    .gpqc-meta { display: flex; align-items: baseline; gap: 7px; padding: 0 4px; }
+    .gpqc-au { font-size: 11.5px; font-weight: 800; color: #33475B; }
+    .gpqc-msg.mine .gpqc-au { color: #4B6FD1; }
+    .gpqc-dt { font-size: 10.5px; color: #A6B7C8; font-weight: 600; }
+    .gpqc-bubble { min-width: 0; max-width: 100%; background: #FEF8E6; border: 1px solid #F5EBC7; border-radius: 14px 14px 14px 4px; padding: 9px 12px; }
+    .gpqc-msg.mine .gpqc-bubble { background: #E9F1FD; border-color: #D2E1F7; border-radius: 14px 14px 4px 14px; }
+    .gpqc-bubble.has-file { max-width: 260px; }
+    .gpqc-tx { font-size: 13px; color: #2B3B4E; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+    .gpqc-cap { margin-top: 4px; }
+    .gpqc-img { margin: 2px 0 5px; border-radius: 8px; overflow: hidden; cursor: zoom-in; max-width: 100%; }
+    .gpqc-img img { display: block; width: 100%; max-height: 220px; object-fit: cover; }
+    .gpqc-pdf { position: relative; display: block; margin: 2px 0 5px; border: 1px solid #E7EDF3; border-radius: 8px; overflow: hidden; height: 160px; background: #fff; cursor: pointer; }
+    .gpqc-pdf-fr { width: 100%; height: 100%; border: 0; pointer-events: none; background: #fff; }
+    .gpqc-pdf-hint { position: absolute; right: 6px; bottom: 6px; font-size: 10px; font-weight: 800; color: #fff; background: rgba(27,42,58,.72); border-radius: 12px; padding: 2px 9px; }
+    .gpqc-file { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; color: #4B3AA6; background: rgba(109,79,227,.08); border: 1px solid rgba(109,79,227,.18); border-radius: 8px; padding: 5px 9px; font-size: 12px; font-weight: 700; max-width: 100%; }
+    .gpqc-file:hover { background: rgba(109,79,227,.15); }
+    .gpqc-fnm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .gpqc-composerwrap { position: relative; display: flex; flex-direction: column; gap: 6px; }
+    .gpqc-composer { display: flex; align-items: flex-end; gap: 6px; border: 1px solid #E1E8EE; border-radius: 24px; padding: 5px 6px; background: #fff; box-shadow: 0 1px 3px rgba(27,42,58,.05); }
+    .gpqc-composer:focus-within { border-color: #6D4FE3; box-shadow: 0 0 0 3px rgba(109,79,227,.12); }
+    .gpqc-clip { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; color: #6D4FE3; background: #F3F0FE; cursor: pointer; flex-shrink: 0; }
+    .gpqc-clip:hover { background: #E7E0FC; }
+    .gpqc-clip-load { font-size: 15px; font-weight: 800; color: #6D4FE3; }
+    .gpqc-input2 { flex: 1 1 auto; border: 0; outline: none; resize: none; font-family: inherit; font-size: 13px; color: #33475B; line-height: 1.5; padding: 8px 6px; max-height: 96px; background: transparent; }
+    .gpqc-send { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; border: 0; background: #6D4FE3; color: #fff; cursor: pointer; flex-shrink: 0; }
+    .gpqc-send:disabled { background: #C7CEDA; cursor: not-allowed; }
+    .gpqc-pend { display: inline-flex; align-items: center; gap: 7px; align-self: flex-start; max-width: 100%; background: #F3F0FE; border: 1px solid #DED4FB; color: #4B3AA6; border-radius: 10px; padding: 6px 10px; font-size: 12px; font-weight: 700; }
+    .gpqc-pend-nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+    .gpqc-pend-x { display: inline-flex; border: 0; background: transparent; color: #7C6BC7; cursor: pointer; padding: 0; }
+    .gpqc-pend-x:hover { color: #4B3AA6; }
+    .gpqc-menc-pop { position: absolute; bottom: calc(100% + 6px); left: 0; right: 0; max-height: 210px; overflow-y: auto; background: #fff; border: 1px solid #E1E8EE; border-radius: 12px; box-shadow: 0 10px 30px rgba(27,42,58,.16); padding: 5px; z-index: 40; }
+    .gpqc-menc-it { display: flex; align-items: center; gap: 9px; width: 100%; border: 0; background: transparent; padding: 7px 9px; border-radius: 8px; cursor: pointer; text-align: left; font-family: inherit; }
+    .gpqc-menc-it:hover { background: #F3F0FE; }
+    .gpqc-menc-ava { width: 26px; height: 26px; flex-shrink: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; color: #6D4FE3; background: #F1ECFD; }
+    .gpqc-menc-nm { font-size: 12.5px; font-weight: 700; color: #33475B; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .gpqc-lb { position: fixed; inset: 0; z-index: 3200; background: rgba(8,12,20,.9); display: flex; align-items: center; justify-content: center; padding: 30px; cursor: zoom-out; }
+    .gpqc-lb-img { max-width: 94vw; max-height: 94vh; object-fit: contain; border-radius: 8px; box-shadow: 0 12px 60px rgba(0,0,0,.5); cursor: default; }
+    .gpqc-lb-x { position: fixed; top: 18px; right: 22px; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255,255,255,.14); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+    .gpqc-lb-x:hover { background: rgba(255,255,255,.28); }
+    [data-bs-theme="dark"] .gpqc-composer { background: #1a1a35; border-color: #3a3a5a; }
+    [data-bs-theme="dark"] .gpqc-input2 { color: #d5d9f0; }
+    [data-bs-theme="dark"] .gpqc-menc-pop { background: #1a1a35; border-color: #3a3a5a; }
+    [data-bs-theme="dark"] .gpqc-menc-it:hover { background: #262647; }
+    [data-bs-theme="dark"] .gpqc-menc-nm { color: #d5d9f0; }
+    [data-bs-theme="dark"] .gpqc-pend { background: #262647; border-color: #3a3a5a; color: #b9a8f5; }
+
     /* Layout 3 columnas explicitas (estilo Tareas): pills y flags full-width arriba,
        luego la grilla .gpq-cols con 3 columnas independientes. Colapsa en angosto. */
     .gpq-cols { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: start; }
@@ -1075,10 +1180,22 @@
     private PersonaCandidatoDto? _asignadoSel;
     private bool _quitarAsignado;
     private int _progreso;
-    private string _nuevaActividad = "";
     private bool _reportando;
     private bool _generandoTarea;
     private bool _guardandoRel;
+
+    // ---- Chat de actividad (comentarios + adjuntos inline, @menciones, lightbox) estilo Tareas ----
+    private static readonly System.Globalization.CultureInfo Es = new("es-CO");
+    private Guid _miUsuarioId;                       // para pintar "los mios a la derecha"
+    private string _nuevoComentario = "";
+    private Microsoft.AspNetCore.Components.Forms.IBrowserFile? _pendingFile;
+    private string? _pendingFileName;               // archivo elegido que se sube al enviar (con caption)
+    private string? _lightbox;                       // url de imagen ampliada
+    private List<PersonaMini> _personas = new();     // fuente de @menciones (directorio)
+    private string? _mencionQuery;
+    private List<PersonaMini> _mencionMatches = new();
+    private record PersonaMini(Guid Id, string Nombre);
+    private record PqrActItem(DateTimeOffset Fecha, bool EsMio, string? Autor, string? Texto, PqrsdAdjuntoDto? Adj, bool EsSepDia = false, string? SepTexto = null);
 
     // Form adjunto
     private string _nuevoAdjNombre = "";
@@ -1087,7 +1204,30 @@
     private PqrsdAdjuntoDto? _visorAdj;
     private string _subiendoNombre = "";
 
-    protected override async Task OnInitializedAsync() => await CargarAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrEmpty(Jwt)) _miUsuarioId = LeerUsuarioIdDeJwt(Jwt);
+        await CargarAsync();
+    }
+
+    // Lee el claim user_id (o sub) del payload del JWT sin dependencias externas (para "los mios a la derecha").
+    private static Guid LeerUsuarioIdDeJwt(string jwt)
+    {
+        try
+        {
+            var partes = jwt.Split('.');
+            if (partes.Length < 2) return Guid.Empty;
+            var payload = partes[1].Replace('-', '+').Replace('_', '/');
+            switch (payload.Length % 4) { case 2: payload += "=="; break; case 3: payload += "="; break; }
+            var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(payload));
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("user_id", out var uid) && Guid.TryParse(uid.GetString(), out var g)) return g;
+            if (root.TryGetProperty("sub", out var sub) && Guid.TryParse(sub.GetString(), out var gs)) return gs;
+        }
+        catch { }
+        return Guid.Empty;
+    }
 
     private HttpClient Auth()
     {
@@ -1141,6 +1281,9 @@
             _unidades = (await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades")) ?? new();
             _campos = (await http.GetFromJsonAsync<List<PqrsdCampoDto>>("/api/pqrsd/campos")) ?? new();
             _motivos = (await http.GetFromJsonAsync<List<Propia.Application.Cierre.MotivoCierreDto>>("/api/cierre/motivos?modulo=pqrsd")) ?? new();
+            var personas = await http.GetFromJsonAsync<List<PersonaResumenDto>>("/api/directorio/personas");
+            if (personas is not null)
+                _personas = personas.Select(p => new PersonaMini(p.Id, $"{p.Nombres} {p.Apellidos}".Trim())).ToList();
         }
         catch { }
 
@@ -1224,19 +1367,130 @@
     }
 
     // Reportar actividad (comentario libre) -> feed
-    private async Task ReportarActividad()
+    // ===== Chat de actividad =====
+
+    // Fusiona comentarios + adjuntos en una linea de tiempo cronologica (mas antiguo arriba) con separadores por dia.
+    private List<PqrActItem> ActTimeline()
     {
-        if (string.IsNullOrWhiteSpace(_nuevaActividad)) return;
+        var items = new List<PqrActItem>();
+        if (_detalle?.Comentarios is not null)
+            foreach (var c in _detalle.Comentarios)
+                items.Add(new PqrActItem(c.CreatedAt, c.AutorUsuarioId is Guid g && g != Guid.Empty && g == _miUsuarioId, c.AutorNombre, c.Texto, null));
+        if (_detalle?.Adjuntos is not null)
+            foreach (var a in _detalle.Adjuntos)
+                items.Add(new PqrActItem(a.CreatedAt, a.SubidoPorUsuarioId is Guid ag && ag != Guid.Empty && ag == _miUsuarioId, a.SubidoPorNombre, null, a));
+
+        var ordenados = items.OrderBy(i => i.Fecha).ToList();
+        var res = new List<PqrActItem>();
+        DateTime? dia = null;
+        foreach (var it in ordenados)
+        {
+            var d0 = it.Fecha.ToLocalTime().Date;
+            if (dia != d0) { res.Add(new PqrActItem(it.Fecha, false, null, null, null, true, SepDia(it.Fecha))); dia = d0; }
+            res.Add(it);
+        }
+        return res;
+    }
+
+    private static string SepDia(DateTimeOffset f)
+    {
+        var d = f.ToLocalTime().Date; var hoy = DateTime.Now.Date;
+        if (d == hoy) return "Hoy";
+        if (d == hoy.AddDays(-1)) return "Ayer";
+        return f.ToLocalTime().ToString("dddd, d 'de' MMMM yyyy", Es);
+    }
+    private static string FechaSoloHora(DateTimeOffset f) => f.ToLocalTime().ToString("HH:mm");
+
+    private static bool EsImg(string? url)
+    {
+        if (string.IsNullOrEmpty(url)) return false;
+        var u = url.ToLowerInvariant().Split('?')[0].TrimEnd();
+        return u.EndsWith(".jpg") || u.EndsWith(".jpeg") || u.EndsWith(".png") || u.EndsWith(".webp") || u.EndsWith(".gif") || u.EndsWith(".bmp") || u.EndsWith(".svg");
+    }
+    private static bool EsPdf(string? url) => !string.IsNullOrEmpty(url) && url.ToLowerInvariant().Split('?')[0].TrimEnd().EndsWith(".pdf");
+
+    // El clip solo SELECCIONA el archivo; se sube al enviar (archivo + caption juntos).
+    private void SeleccionarArchivo(InputFileChangeEventArgs e)
+    {
+        if (e.File is null) return;
+        _pendingFile = e.File; _pendingFileName = e.File.Name;
+    }
+    private void QuitarArchivoPendiente() { _pendingFile = null; _pendingFileName = null; }
+
+    // Enviar: si hay archivo pendiente lo sube (con el texto como caption); si no, publica un comentario.
+    private async Task EnviarMensaje()
+    {
+        _mencionQuery = null; _mencionMatches.Clear();
+        if (_pendingFile is not null) await SubirArchivoConCaption(_pendingFile, _nuevoComentario);
+        else if (!string.IsNullOrWhiteSpace(_nuevoComentario)) await AgregarComentario();
+    }
+
+    private async Task SubirArchivoConCaption(Microsoft.AspNetCore.Components.Forms.IBrowserFile file, string? caption)
+    {
+        _subiendo = true;
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var sc = new StreamContent(file.OpenReadStream(52_428_800));
+            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType);
+            content.Add(sc, "file", file.Name);
+            var cap = string.IsNullOrWhiteSpace(caption) ? null : caption.Trim();
+            if (cap is not null) content.Add(new StringContent(cap), "texto");
+            var resp = await Auth().PostAsync($"/api/pqrsd/{ExpedienteId}/adjuntos/upload", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                _pendingFile = null; _pendingFileName = null; _nuevoComentario = ""; _huboCambios = true;
+                await CargarAsync();   // recarga el detalle (Adjuntos/Comentarios son inmutables en el DTO)
+            }
+            else { ShowMsg("No se pudo subir el archivo.", true); }
+        }
+        catch (Exception ex) { ShowMsg(ex.Message, true); }
+        finally { _subiendo = false; }
+    }
+
+    private async Task AgregarComentario()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevoComentario)) return;
         _reportando = true;
         try
         {
-            var resp = await Auth().PostAsJsonAsync($"/api/pqrsd/{ExpedienteId}/actividad", new ReportarActividadPqrsdRequest(_nuevaActividad.Trim()));
-            if (resp.IsSuccessStatusCode) { _nuevaActividad = ""; await CargarAsync(); }
+            var texto = _nuevoComentario.Trim();
+            var resp = await Auth().PostAsJsonAsync($"/api/pqrsd/{ExpedienteId}/actividad", new ReportarActividadPqrsdRequest(texto));
+            if (resp.IsSuccessStatusCode)
+            {
+                _nuevoComentario = ""; _mencionQuery = null; _mencionMatches.Clear();
+                await CargarAsync();   // recarga el detalle (Comentarios es inmutable en el DTO)
+            }
             else { ShowMsg("No se pudo registrar la actividad.", true); }
         }
         catch (Exception ex) { ShowMsg(ex.Message, true); }
         _reportando = false;
     }
+
+    // Detecta si se esta escribiendo una @mencion al final del texto y filtra el directorio (_personas).
+    private void DetectarMencion()
+    {
+        var t = _nuevoComentario ?? "";
+        var m = System.Text.RegularExpressions.Regex.Match(t, @"(?:^|\s)@([\p{L}0-9._-]*)$");
+        if (!m.Success) { _mencionQuery = null; _mencionMatches.Clear(); return; }
+        _mencionQuery = m.Groups[1].Value;
+        var q = _mencionQuery.ToLowerInvariant().Replace(".", "");
+        _mencionMatches = _personas
+            .Where(p => string.IsNullOrEmpty(q)
+                     || p.Nombre.ToLowerInvariant().Replace(" ", "").Contains(q)
+                     || MencionToken(p.Nombre).Replace(".", "").Contains(q))
+            .Take(6).ToList();
+    }
+    private void InsertarMencion(PersonaMini p)
+    {
+        var t = _nuevoComentario ?? "";
+        t = System.Text.RegularExpressions.Regex.Replace(t, @"(^|\s)@([\p{L}0-9._-]*)$", $"$1@{MencionToken(p.Nombre)} ");
+        _nuevoComentario = t;
+        _mencionQuery = null; _mencionMatches.Clear();
+    }
+    // Formato que resuelve el backend (NotificarMencionesAsync): nombre en minusculas con espacios -> puntos.
+    private static string MencionToken(string nombre) => nombre.Trim().ToLowerInvariant().Replace(" ", ".");
 
     // Crear tarea interna (2.10) desde el PQR y vincularla
     private async Task CrearTareaDesdePqr()
