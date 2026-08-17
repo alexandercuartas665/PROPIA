@@ -126,11 +126,11 @@
                 </div>
             }
 
-            @* Personas asociadas (contexto humano) *@
-            @if (_contexto is not null && _contexto.Personas.Count > 0)
-            {
-                <div class="gpq-card">
-                    <div class="gpq-card-eyebrow">CONTACTO HUMANO (@_contexto.Personas.Count)</div>
+            @* Contacto humano + cambiar solicitante (unificado: antes eran 2 cajas separadas) *@
+            <div class="gpq-card">
+                <div class="gpq-card-eyebrow">CONTACTO HUMANO@(_contexto is not null && _contexto.Personas.Count > 0 ? $" ({_contexto.Personas.Count})" : "")</div>
+                @if (_contexto is not null && _contexto.Personas.Count > 0)
+                {
                     <div class="gpq-people">
                         @foreach (var p in _contexto.Personas)
                         {
@@ -160,54 +160,17 @@
                             </div>
                         }
                     </div>
-                </div>
-            }
-
-            </div>@* fin col 1 *@
-            <div class="gpq-col">
-
-            @* Plazo (SLA visual, estilo Tareas): barra de tiempo transcurrido + cuanto queda para responder *@
-            <div class="gpq-card">
-                <div class="gpq-sla-head">
-                    <div class="gpq-card-eyebrow" style="margin:0;">PLAZO LEGAL (SLA)</div>
-                    @if (_detalle.Estado != EstadoPqrsd.Cerrada && _detalle.Estado != EstadoPqrsd.ViaInternaAgotada)
-                    {
-                        <button class="gpq-sla-add @(_prorrogaAbierta ? "gpq-sla-add--on" : "")" type="button" title="Agregar prorroga (ampliar el plazo)" @onclick="ToggleProrroga">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>
-                            Prorroga
-                        </button>
-                    }
-                </div>
-                <div class="gpq-sla-big @PlazoPillClass()">@PlazoTexto()</div>
-                <div class="gpq-sla-bar"><div class="gpq-sla-fill @PlazoPillClass()" style="width:@SlaPct()%"></div></div>
-                <div class="gpq-sla-ends">
-                    <span>Radicada @_detalle.CreatedAt.ToString("dd MMM")</span>
-                    <span>Transcurrido @DiasDesde(_detalle.CreatedAt)</span>
-                    <span>Vence @_detalle.FechaVencimiento.ToString("dd MMM yyyy")</span>
-                </div>
-                @if (_detalle.ProrrogaDias > 0)
-                {
-                    <div class="gpq-plazo-row" style="margin-top:9px;"><span>Prorroga aplicada</span><strong style="color:#B45309;">+@_detalle.ProrrogaDias dias habiles</strong></div>
                 }
-                <div class="gpq-plazo-row" style="margin-top:9px;"><span>Urgencia</span><strong>@_detalle.NivelUrgencia</strong></div>
-
-                @* Mini-menu de prorroga que se despliega (slot) sobre la tarjeta al pulsar "+ Prorroga" *@
-                <div class="gpq-prorroga-pop @(_prorrogaAbierta ? "open" : "")">
-                    <div class="gpq-prorroga-inner">
-                        <label class="gpq-mini-lbl">Dias habiles a agregar</label>
-                        <input class="gpq-input" type="number" min="1" max="60" @bind="_prorrogaDias" @bind:event="oninput" placeholder="Ej. 5" />
-                        <label class="gpq-mini-lbl" style="margin-top:8px;">Motivo de la prorroga *</label>
-                        <textarea class="gpq-input" rows="2" @bind="_prorrogaMotivo" @bind:event="oninput" placeholder="Ej. Se requiere practicar prueba tecnica antes de responder."></textarea>
-                        <div class="gpq-prorroga-hint">Suma @(_prorrogaDias < 1 ? "N" : _prorrogaDias.ToString()) dia(s) habil(es) al vencimiento. El motivo queda en el historial.</div>
-                        <div class="gpq-prorroga-foot">
-                            <button class="gpq-btn-ghost gpq-btn-sm" type="button" @onclick="ToggleProrroga">Cancelar</button>
-                            <button class="gpq-btn-brand gpq-btn-sm" type="button" @onclick="EjecutarProrroga" disabled="@(_busy || _prorrogaDias < 1 || string.IsNullOrWhiteSpace(_prorrogaMotivo))">Aplicar</button>
-                        </div>
-                    </div>
-                </div>
+                else
+                {
+                    <div class="gpq-noref" style="margin-bottom:8px;">Sin personas asociadas todavia.</div>
+                }
+                <label class="gpq-mini-lbl" style="margin-top:8px;">Cambiar solicitante (directorio - se puede crear)</label>
+                <SelectorPersona Jwt="@Jwt" @bind-Seleccionada="_personaSel" Placeholder="Buscar o crear persona..." />
+                <div class="gpq-mini-hint">Se guarda con "Guardar cambios" en Propiedad y gestion.</div>
             </div>
 
-            @* Campos dinamicos (donde estaba la DESCRIPCION) *@
+            @* CAMPOS DINAMICOS (movido a la col 1, debajo de Contacto humano) *@
             <div class="gpq-card">
                 <div class="gpq-card-eyebrow">CAMPOS DINAMICOS</div>
                 @if (_campos.Count > 0)
@@ -267,9 +230,79 @@
                 }
             </div>
 
-            @* Propiedad + solicitante (editable) + campos dinamicos *@
+            </div>@* fin col 1 *@
+            <div class="gpq-col">
+
+            @* Plazo (SLA visual, estilo Tareas): barra de tiempo transcurrido + cuanto queda para responder *@
             <div class="gpq-card">
-                <div class="gpq-card-eyebrow">PROPIEDAD Y SOLICITANTE</div>
+                <div class="gpq-sla-head">
+                    <div class="gpq-card-eyebrow" style="margin:0;">PLAZO LEGAL (SLA)</div>
+                    <div class="gpq-sla-actions">
+                        @if (_detalle.Estado != EstadoPqrsd.Cerrada && _detalle.Estado != EstadoPqrsd.ViaInternaAgotada)
+                        {
+                            <button class="gpq-sla-add @(_prorrogaAbierta ? "gpq-sla-add--on" : "")" type="button" title="Agregar prorroga (ampliar el plazo)" @onclick="ToggleProrroga">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>
+                                Prorroga
+                            </button>
+                        }
+                        @if (!_detalle.TutelaActiva && _detalle.Estado != EstadoPqrsd.Cerrada)
+                        {
+                            <button class="gpq-sla-add gpq-sla-add--tutela @(_tutelaAbierta ? "gpq-sla-add--on" : "")" type="button" title="Pasar a tutela (accion de tutela)" @onclick="ToggleTutela">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                                Tutela
+                            </button>
+                        }
+                    </div>
+                </div>
+                <div class="gpq-sla-big @PlazoPillClass()">@PlazoTexto()</div>
+                <div class="gpq-sla-bar"><div class="gpq-sla-fill @PlazoPillClass()" style="width:@SlaPct()%"></div></div>
+                <div class="gpq-sla-ends">
+                    <span>Radicada @_detalle.CreatedAt.ToString("dd MMM")</span>
+                    <span>Transcurrido @DiasDesde(_detalle.CreatedAt)</span>
+                    <span>Vence @_detalle.FechaVencimiento.ToString("dd MMM yyyy")</span>
+                </div>
+                @if (_detalle.ProrrogaDias > 0)
+                {
+                    <div class="gpq-plazo-row" style="margin-top:9px;"><span>Prorroga aplicada</span><strong style="color:#B45309;">+@_detalle.ProrrogaDias dias habiles</strong></div>
+                }
+                <div class="gpq-plazo-row" style="margin-top:9px;"><span>Urgencia</span><strong>@_detalle.NivelUrgencia</strong></div>
+                @if (_detalle.TutelaActiva)
+                {
+                    <div class="gpq-plazo-row" style="margin-top:9px;"><span>Estado legal</span><strong style="color:#DC2626;">EN TUTELA</strong></div>
+                }
+
+                @* Mini-menu de prorroga que se despliega (slot) sobre la tarjeta al pulsar "+ Prorroga" *@
+                <div class="gpq-prorroga-pop @(_prorrogaAbierta ? "open" : "")">
+                    <div class="gpq-prorroga-inner">
+                        <label class="gpq-mini-lbl">Dias habiles a agregar</label>
+                        <input class="gpq-input" type="number" min="1" max="60" @bind="_prorrogaDias" @bind:event="oninput" placeholder="Ej. 5" />
+                        <label class="gpq-mini-lbl" style="margin-top:8px;">Motivo de la prorroga *</label>
+                        <textarea class="gpq-input" rows="2" @bind="_prorrogaMotivo" @bind:event="oninput" placeholder="Ej. Se requiere practicar prueba tecnica antes de responder."></textarea>
+                        <div class="gpq-prorroga-hint">Suma @(_prorrogaDias < 1 ? "N" : _prorrogaDias.ToString()) dia(s) habil(es) al vencimiento. El motivo queda en el historial.</div>
+                        <div class="gpq-prorroga-foot">
+                            <button class="gpq-btn-ghost gpq-btn-sm" type="button" @onclick="ToggleProrroga">Cancelar</button>
+                            <button class="gpq-btn-brand gpq-btn-sm" type="button" @onclick="EjecutarProrroga" disabled="@(_busy || _prorrogaDias < 1 || string.IsNullOrWhiteSpace(_prorrogaMotivo))">Aplicar</button>
+                        </div>
+                    </div>
+                </div>
+
+                @* Mini-menu de tutela (slot) sobre la tarjeta al pulsar "Tutela" *@
+                <div class="gpq-prorroga-pop @(_tutelaAbierta ? "open" : "")">
+                    <div class="gpq-prorroga-inner">
+                        <label class="gpq-mini-lbl">Justificacion de la tutela *</label>
+                        <textarea class="gpq-input" rows="3" @bind="_tutelaMotivo" @bind:event="oninput" placeholder="Ej. Se recibio notificacion de accion de tutela."></textarea>
+                        <div class="gpq-prorroga-hint">Marca el expediente EN TUTELA (prioridad critica). Queda en el historial.</div>
+                        <div class="gpq-prorroga-foot">
+                            <button class="gpq-btn-ghost gpq-btn-sm" type="button" @onclick="ToggleTutela">Cancelar</button>
+                            <button class="gpq-btn-warn gpq-btn-sm" type="button" @onclick="EjecutarTutelaSlot" disabled="@(_busy || string.IsNullOrWhiteSpace(_tutelaMotivo))">Activar tutela</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @* Propiedad + gestion (editable). El solicitante se cambia en la caja Contacto humano. *@
+            <div class="gpq-card">
+                <div class="gpq-card-eyebrow">PROPIEDAD Y GESTION</div>
                 <label class="gpq-mini-lbl">Propiedad relacionada</label>
                 <select class="gpq-input" @bind="_unidadIdStr">
                     <option value="">- sin propiedad -</option>
@@ -278,8 +311,6 @@
                         <option value="@u.Id">@(string.IsNullOrEmpty(u.TorreNombre) ? "" : u.TorreNombre + " - ")@u.Numero</option>
                     }
                 </select>
-                <label class="gpq-mini-lbl">Cambiar solicitante (directorio - se puede crear)</label>
-                <SelectorPersona Jwt="@Jwt" @bind-Seleccionada="_personaSel" Placeholder="Buscar o crear persona..." />
 
                 @* Progreso de gestion (slider, estilo Tareas) *@
                 <label class="gpq-mini-lbl" style="margin-top:10px;">Progreso: <strong>@_progreso%</strong></label>
@@ -319,7 +350,7 @@
             </div>
 
             </div>@* fin col 2 *@
-            <div class="gpq-col">
+            <div class="gpq-col gpq-col--act">
 
             @* Actividad como CHAT: comentarios + adjuntos inline (burbujas dos tonos), @menciones y adjuntar con caption. *@
             <div class="gpq-card gpq-card--chat">
@@ -476,10 +507,6 @@
                     <button class="gpq-btn-brand" type="button" @onclick="@(() => SetAccion("cerrar"))">Cerrar definitivamente</button>
                     <button class="gpq-btn-ghost" type="button" @onclick="@(() => SetAccion("inconformidad"))">Registrar inconformidad</button>
                 }
-                @if (!_detalle.TutelaActiva && _detalle.Estado != EstadoPqrsd.Cerrada)
-                {
-                    <button class="gpq-btn-warn" type="button" @onclick="@(() => SetAccion("tutela"))">Activar tutela</button>
-                }
             </div>
 
             @* === FORM accion seleccionada === *@
@@ -527,14 +554,6 @@
                             <div class="gpq-form-foot">
                                 <button class="gpq-btn-ghost" type="button" @onclick="CancelarAccion">Cancelar</button>
                                 <button class="gpq-btn-brand" type="button" @onclick="EjecutarInconformidad" disabled="@(_busy || string.IsNullOrWhiteSpace(_textoAccion))">Registrar</button>
-                            </div>
-                            break;
-                        case "tutela":
-                            <div class="gpq-form-title">Activar tutela</div>
-                            <textarea class="gpq-input" rows="3" @bind="_textoAccion" @bind:event="oninput" placeholder="Justificacion *"></textarea>
-                            <div class="gpq-form-foot">
-                                <button class="gpq-btn-ghost" type="button" @onclick="CancelarAccion">Cancelar</button>
-                                <button class="gpq-btn-warn" type="button" @onclick="EjecutarTutela" disabled="@(_busy || string.IsNullOrWhiteSpace(_textoAccion))">Activar tutela</button>
                             </div>
                             break;
                     }
@@ -949,6 +968,12 @@
     .gpq-sla-add:hover { background: #ECE6FD; border-color: #C9BCF6; }
     .gpq-sla-add--on { background: var(--propia-brand, #6D4FE3); color: #fff; border-color: var(--propia-brand, #6D4FE3); }
     .gpq-sla-add--on svg { transform: rotate(45deg); transition: transform .18s; }
+    .gpq-sla-actions { display: inline-flex; align-items: center; gap: 6px; }
+    .gpq-sla-add--tutela { border-color: #F5C6C6; background: #FDECEC; color: #DC2626; }
+    .gpq-sla-add--tutela:hover { background: #FBDCDC; border-color: #F0B4B4; }
+    .gpq-sla-add--tutela.gpq-sla-add--on { background: #DC2626; color: #fff; border-color: #DC2626; }
+    .gpq-sla-add--tutela.gpq-sla-add--on svg { transform: none; }
+    .gpq-mini-hint { font-size: 11px; color: #94A3B8; margin-top: 5px; }
     /* Mini-menu que "slota" (transicion de max-height, sin keyframes) */
     .gpq-prorroga-pop { max-height: 0; opacity: 0; overflow: hidden; margin-top: 0; transition: max-height .22s ease, opacity .16s ease, margin-top .22s ease; }
     .gpq-prorroga-pop.open { max-height: 340px; opacity: 1; margin-top: 12px; }
@@ -1142,7 +1167,14 @@
     .gpq-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
     .gpq-col > .gpq-card { margin-bottom: 0; }
     @@media (min-width: 760px) { .gpq-cols { grid-template-columns: 1fr 1fr; } }
-    @@media (min-width: 1100px) { .gpq-cols { grid-template-columns: 1fr 1fr 1fr; } }
+    @@media (min-width: 1100px) {
+        .gpq-cols { grid-template-columns: 1fr 1fr 1fr; }
+        /* La columna de Actividad ocupa la altura del modal: se fija arriba y su chat rellena. */
+        .gpq-col--act { position: sticky; top: 0; align-self: stretch; height: calc(92vh - 185px); }
+        .gpq-col--act > .gpq-card--chat { height: 100%; display: flex; flex-direction: column; margin-bottom: 0; }
+        .gpq-col--act .gpqc-wrap { flex: 1 1 auto; min-height: 0; }
+        .gpq-col--act .gpqc-scroll { flex: 1 1 auto; max-height: none; min-height: 0; }
+    }
     [data-bs-theme="dark"] .gpq-panel-right { background: #161B2D; }
 </style>
 
@@ -1158,6 +1190,8 @@
     private int _prorrogaDias = 0;
     private string _prorrogaMotivo = "";
     private bool _prorrogaAbierta = false;
+    private bool _tutelaAbierta = false;
+    private string _tutelaMotivo = "";
     private List<Propia.Application.Cierre.MotivoCierreDto> _motivos = new();
     private static string ClasifTexto(Propia.Domain.Enums.ClasificacionCierre c) => c switch
     {
@@ -1591,18 +1625,28 @@
         await TrasAccion(resp, "Inconformidad registrada.");
     }
 
-    private async Task EjecutarTutela()
+    // Tutela como slot dentro de la tarjeta PLAZO LEGAL (antes era un boton en la barra de acciones).
+    private void ToggleTutela()
     {
+        _tutelaAbierta = !_tutelaAbierta;
+        if (_tutelaAbierta) { _prorrogaAbierta = false; _accion = null; }
+        else { _tutelaMotivo = ""; }
+    }
+
+    private async Task EjecutarTutelaSlot()
+    {
+        if (string.IsNullOrWhiteSpace(_tutelaMotivo)) return;
         _busy = true;
         var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{ExpedienteId}/tutela",
-            new ActivarTutelaRequest(_textoAccion.Trim()));
+            new ActivarTutelaRequest(_tutelaMotivo.Trim()));
+        _tutelaAbierta = false; _tutelaMotivo = "";
         await TrasAccion(resp, "Tutela activada.");
     }
 
     private void ToggleProrroga()
     {
         _prorrogaAbierta = !_prorrogaAbierta;
-        if (_prorrogaAbierta) { _accion = null; }   // cierra cualquier form de accion abierto abajo
+        if (_prorrogaAbierta) { _tutelaAbierta = false; _accion = null; }   // cierra tutela y cualquier form de accion abierto abajo
         else { _prorrogaDias = 0; _prorrogaMotivo = ""; }
     }
 
