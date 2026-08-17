@@ -101,11 +101,18 @@
                             }
                         </div>
                         <div class="dir-filtropop-body">
-                            @foreach (var et in _etiquetasTodas)
+                            @{ var _conteos = ConteoEtiquetasActivas();
+                               var _etsConDatos = _etiquetasTodas.Where(e => _conteos.ContainsKey(e.Id)).ToList(); }
+                            @if (_etsConDatos.Count == 0)
+                            {
+                                <div class="dir-filtro-empty">Ningun contacto tiene etiquetas todavia.</div>
+                            }
+                            @foreach (var et in _etsConDatos)
                             {
                                 var on = _filtroEtq.Contains(et.Id);
                                 <button type="button" class="dir-etqchip @(on ? "on" : "")" style="@(on ? ChipStyle(et.Color) : "")" @onclick="() => ToggleFiltroEtq(et.Id)">
                                     @EtiquetaIconos.Svg(et.Icono)<span>@et.Nombre</span>
+                                    <span class="dir-etqcount">@_conteos[et.Id]</span>
                                 </button>
                             }
                         </div>
@@ -606,6 +613,9 @@
     .dir-etqchip { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #E1E8EE; background: #fff; color: #516F90; border-radius: 20px; padding: 4px 11px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
     .dir-etqchip:hover { border-color: #C9BCF6; }
     .dir-etqchip.on { font-weight: 800; }
+    .dir-etqcount { min-width: 17px; height: 17px; padding: 0 5px; border-radius: 20px; background: #EEF1F6; color: #64748B; font-size: 10.5px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+    .dir-etqchip.on .dir-etqcount { background: rgba(255,255,255,.55); color: inherit; }
+    .dir-filtro-empty { font-size: 12.5px; color: #94A3B8; padding: 4px 2px; }
     .dir-etqclear { border: 0; background: transparent; color: #DC2626; font-size: 11.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
 
     /* Modal Configurar etiquetas */
@@ -892,6 +902,30 @@
         (_filtroEtq.Count == 0 || _empresas is null)
             ? _empresas
             : _empresas.Where(e => e.Etiquetas is not null && e.Etiquetas.Any(x => _filtroEtq.Contains(x.EtiquetaId))).ToList();
+
+    // Conteo de terceros por etiqueta, calculado sobre la vista activa (personas o empresas):
+    // solo aparecen en el filtro las etiquetas que tienen al menos un contacto, con su cantidad.
+    private Dictionary<Guid, int> ConteoEtiquetasActivas()
+    {
+        var dict = new Dictionary<Guid, int>();
+        if (_tab == "personas")
+        {
+            if (_personas is not null)
+                foreach (var p in _personas)
+                    if (p.Etiquetas is not null)
+                        foreach (var e in p.Etiquetas)
+                            dict[e.EtiquetaId] = dict.GetValueOrDefault(e.EtiquetaId) + 1;
+        }
+        else
+        {
+            if (_empresas is not null)
+                foreach (var em in _empresas)
+                    if (em.Etiquetas is not null)
+                        foreach (var e in em.Etiquetas)
+                            dict[e.EtiquetaId] = dict.GetValueOrDefault(e.EtiquetaId) + 1;
+        }
+        return dict;
+    }
 
     // ----- Detalle 360 -----
     private bool _detalleAbierto;
