@@ -267,6 +267,14 @@ public class PqrsdConfiguracionPlazo : TenantEntity
     public NivelUrgenciaPqrsd NivelUrgencia { get; set; }
 }
 
+/// <summary>Config del formulario publico de radicacion (que campos opcionales se muestran). Una fila por copropiedad.</summary>
+public class PqrsdFormularioPublicoConfig : TenantEntity
+{
+    public bool MostrarTorre { get; set; } = true;
+    public bool MostrarCorreo { get; set; } = true;
+    public bool MostrarTelefono { get; set; } = true;
+}
+
 /// <summary>Sesion del Comite de Convivencia (Art. 58 Ley 675/2001). Spec 2.9 v1.0 seccion 6.</summary>
 public class PqrsdComiteSesion : TenantEntity
 {

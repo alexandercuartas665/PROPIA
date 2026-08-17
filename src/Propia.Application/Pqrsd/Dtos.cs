@@ -161,7 +161,13 @@ public record PqrsdPublicoConfigDto(
     string CopropiedadNombre,
     string? LogoUrl,
     IReadOnlyList<PqrsdTipoPublicoDto> Tipos,
-    IReadOnlyList<PqrsdCategoriaPublicaDto> Categorias);
+    IReadOnlyList<PqrsdCategoriaPublicaDto> Categorias,
+    bool MostrarTorre = true,
+    bool MostrarCorreo = true,
+    bool MostrarTelefono = true);
+
+/// <summary>Config editable (admin) del formulario publico: que campos opcionales se muestran.</summary>
+public record PqrsdFormularioPublicoConfigDto(bool MostrarTorre, bool MostrarCorreo, bool MostrarTelefono);
 
 public record PqrsdTipoPublicoDto(Guid Id, string Nombre, int DiasHabiles);
 public record PqrsdCategoriaPublicaDto(Guid Id, string Nombre);

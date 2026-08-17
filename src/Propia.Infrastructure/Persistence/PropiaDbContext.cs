@@ -179,6 +179,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<PqrsdAdjunto> PqrsdAdjuntos => Set<PqrsdAdjunto>();
     public DbSet<PqrsdHistorialEstado> PqrsdHistorialEstados => Set<PqrsdHistorialEstado>();
     public DbSet<PqrsdConfiguracionPlazo> PqrsdConfiguracionPlazos => Set<PqrsdConfiguracionPlazo>();
+    public DbSet<PqrsdFormularioPublicoConfig> PqrsdFormularioPublicoConfigs => Set<PqrsdFormularioPublicoConfig>();
     public DbSet<PqrsdComiteSesion> PqrsdComiteSesiones => Set<PqrsdComiteSesion>();
     public DbSet<PqrsdComiteMiembroSesion> PqrsdComiteMiembros => Set<PqrsdComiteMiembroSesion>();
     public DbSet<PqrsdEstado> PqrsdEstados => Set<PqrsdEstado>();

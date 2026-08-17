@@ -64,6 +64,11 @@ public interface IPqrsdService
     /// <summary>Radica un PQRSD desde el formulario publico. Resuelve/crea la persona por documento y matchea la unidad por numero exacto.</summary>
     Task<RadicarPublicoResultDto> RadicarPublicoAsync(Guid tenantId, RadicarPublicoRequest req, string? ipOrigen, CancellationToken ct);
 
+    /// <summary>Config editable (admin) del formulario publico: que campos opcionales se muestran.</summary>
+    Task<PqrsdFormularioPublicoConfigDto> GetFormularioPublicoConfigAsync(CancellationToken ct);
+    /// <summary>Guarda (upsert) la config del formulario publico para la copropiedad activa.</summary>
+    Task<bool> GuardarFormularioPublicoConfigAsync(PqrsdFormularioPublicoConfigDto req, CancellationToken ct);
+
     // Vista del residente
     Task<IReadOnlyList<PqrsdBandejaItemDto>> ListarMisPqrsdAsync(CancellationToken ct);
 

@@ -819,8 +819,35 @@ public class PqrsdService : IPqrsdService
             .Select(c => new PqrsdCategoriaPublicaDto(c.Id, c.Nombre))
             .ToListAsync(ct);
 
+        // Toggles de campos opcionales del formulario (default: todo visible si nunca se configuro).
+        var fcfg = await _db.PqrsdFormularioPublicoConfigs.AsNoTracking().FirstOrDefaultAsync(ct);
+
         // LogoUrl se guarda RELATIVA al mismo origen (convencion host unificado): la pagina publica la usa tal cual.
-        return new PqrsdPublicoConfigDto(tenant.Nombre, tenant.LogoUrl, tipos, cats);
+        return new PqrsdPublicoConfigDto(tenant.Nombre, tenant.LogoUrl, tipos, cats,
+            fcfg?.MostrarTorre ?? true, fcfg?.MostrarCorreo ?? true, fcfg?.MostrarTelefono ?? true);
+    }
+
+    // ---- Config del formulario publico (admin): que campos opcionales se muestran ----
+    public async Task<PqrsdFormularioPublicoConfigDto> GetFormularioPublicoConfigAsync(CancellationToken ct)
+    {
+        var c = await _db.PqrsdFormularioPublicoConfigs.AsNoTracking().FirstOrDefaultAsync(ct);
+        return new PqrsdFormularioPublicoConfigDto(c?.MostrarTorre ?? true, c?.MostrarCorreo ?? true, c?.MostrarTelefono ?? true);
+    }
+
+    public async Task<bool> GuardarFormularioPublicoConfigAsync(PqrsdFormularioPublicoConfigDto req, CancellationToken ct)
+    {
+        var tenantId = _tenantContext.CurrentTenantId ?? throw new InvalidOperationException("No hay copropiedad activa.");
+        var c = await _db.PqrsdFormularioPublicoConfigs.FirstOrDefaultAsync(ct);
+        if (c is null)
+        {
+            c = new PqrsdFormularioPublicoConfig { TenantId = tenantId };
+            _db.PqrsdFormularioPublicoConfigs.Add(c);
+        }
+        c.MostrarTorre = req.MostrarTorre;
+        c.MostrarCorreo = req.MostrarCorreo;
+        c.MostrarTelefono = req.MostrarTelefono;
+        await _db.SaveChangesAsync(ct);
+        return true;
     }
 
     public async Task<RadicarPublicoResultDto> RadicarPublicoAsync(Guid tenantId, RadicarPublicoRequest req, string? ipOrigen, CancellationToken ct)
