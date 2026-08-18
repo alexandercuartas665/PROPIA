@@ -68,6 +68,8 @@ public interface IPqrsdService
     Task<PqrsdFormularioPublicoConfigDto> GetFormularioPublicoConfigAsync(CancellationToken ct);
     /// <summary>Guarda (upsert) la config del formulario publico para la copropiedad activa.</summary>
     Task<bool> GuardarFormularioPublicoConfigAsync(PqrsdFormularioPublicoConfigDto req, CancellationToken ct);
+    /// <summary>Marca/desmarca un campo dinamico para que se pida en el formulario publico.</summary>
+    Task<bool> SetCampoPublicoAsync(Guid campoId, bool mostrar, CancellationToken ct);
 
     // Vista del residente
     Task<IReadOnlyList<PqrsdBandejaItemDto>> ListarMisPqrsdAsync(CancellationToken ct);

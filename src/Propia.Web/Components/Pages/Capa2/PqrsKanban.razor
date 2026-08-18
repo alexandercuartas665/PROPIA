@@ -609,6 +609,7 @@
                             <input class="pk-cfg-name" value="@c.Label" @onchange="(ev) => RenombrarCampoCfg(cc, ev)" />
                             <span class="pk-cfg-badge" title="Tipo del campo">@c.Tipo</span>
                             <label class="pk-cfg-chk"><input type="checkbox" checked="@c.Requerido" @onchange="(ev) => ToggleReqCampoCfg(cc, ev)" />Requerido</label>
+                            <label class="pk-cfg-chk" title="Pedir tambien en el formulario publico"><input type="checkbox" checked="@c.MostrarEnPublico" @onchange="(ev) => ToggleCampoPublicoCfg(cc, ev)" />Publico</label>
                             <div class="pk-cfg-ord">
                                 <button class="pk-icon-btn" @onclick='() => ReordenarCampoCfg(cc.Id, "arriba")'>&#8593;</button>
                                 <button class="pk-icon-btn" @onclick='() => ReordenarCampoCfg(cc.Id, "abajo")'>&#8595;</button>
@@ -632,11 +633,18 @@
 
                   @if (_cfgTab == "formulario")
                   {
-                    <div class="pk-cfg-sec-hint">Elige que campos opcionales se muestran en el formulario publico de radicacion (enlace /pqr).</div>
+                    <div class="pk-cfg-sec-hint">Personaliza el formulario publico de radicacion (enlace /pqr).</div>
+
+                    <label class="pk-cfg-formlbl">Encabezado (instrucciones que ve el solicitante arriba del formulario)</label>
+                    <textarea class="pk-cfg-name" style="width:100%;min-height:52px;" placeholder="Ej. Radica aqui tu PQRSD. La administracion respondera dentro del plazo de ley." @bind="_formEncabezado" @bind:after="GuardarFormCfg"></textarea>
+                    <label class="pk-cfg-formlbl" style="margin-top:10px;">Pie de pagina (texto al final del formulario)</label>
+                    <textarea class="pk-cfg-name" style="width:100%;min-height:44px;" placeholder="Ej. Tratamiento de datos conforme a la politica de privacidad de la copropiedad." @bind="_formPie" @bind:after="GuardarFormCfg"></textarea>
+
+                    <div class="pk-cfg-sec-t" style="margin-top:14px;">Campos opcionales</div>
                     <label class="pk-cfg-chk pk-cfg-chk--row"><input type="checkbox" @bind="_formTorre" @bind:after="GuardarFormCfg" />Mostrar campo "Torre / Bloque"</label>
                     <label class="pk-cfg-chk pk-cfg-chk--row"><input type="checkbox" @bind="_formCorreo" @bind:after="GuardarFormCfg" />Mostrar campo "Correo electronico"</label>
                     <label class="pk-cfg-chk pk-cfg-chk--row"><input type="checkbox" @bind="_formTelefono" @bind:after="GuardarFormCfg" />Mostrar campo "Telefono"</label>
-                    <div class="pk-cfg-sec-hint" style="margin-top:10px;">Tipo, Categoria, Unidad, Documento, Nombres y Descripcion siempre se piden. Los tipos y categorias disponibles se administran en sus pestanas.</div>
+                    <div class="pk-cfg-sec-hint" style="margin-top:10px;">Tipo, Categoria, Unidad, Documento, Nombres y Descripcion siempre se piden. Para agregar campos propios, marca "Publico" en la pestana Campos dinamicos.</div>
                     @if (_formGuardado) { <div class="pk-cfg-msg">Cambios guardados.</div> }
                   }
 
@@ -948,8 +956,9 @@
     private string _nuevoCampoLabel = "";
     private TipoCampoTablero _nuevoCampoTipo = TipoCampoTablero.Texto;
     private string _nuevoCampoOpciones = "";
-    // Tab Formulario publico (toggles de campos opcionales)
+    // Tab Formulario publico (toggles de campos opcionales + textos)
     private bool _formTorre = true, _formCorreo = true, _formTelefono = true;
+    private string _formEncabezado = "", _formPie = "";
     private bool _formCargado, _formGuardado;
     private string _nuevaColNombre = "";
     private string _nuevaColColor = "#6D4FE3";
@@ -1687,7 +1696,11 @@
             try
             {
                 var cfg = await Auth().GetFromJsonAsync<PqrsdFormularioPublicoConfigDto>("/api/pqrsd/formulario-config");
-                if (cfg is not null) { _formTorre = cfg.MostrarTorre; _formCorreo = cfg.MostrarCorreo; _formTelefono = cfg.MostrarTelefono; }
+                if (cfg is not null)
+                {
+                    _formTorre = cfg.MostrarTorre; _formCorreo = cfg.MostrarCorreo; _formTelefono = cfg.MostrarTelefono;
+                    _formEncabezado = cfg.EncabezadoTexto ?? ""; _formPie = cfg.PieTexto ?? "";
+                }
                 _formCargado = true;
             }
             catch { }
@@ -1697,9 +1710,19 @@
     private async Task GuardarFormCfg()
     {
         _formGuardado = false;
-        var resp = await Auth().PutAsJsonAsync("/api/pqrsd/formulario-config", new PqrsdFormularioPublicoConfigDto(_formTorre, _formCorreo, _formTelefono));
+        var req = new PqrsdFormularioPublicoConfigDto(_formTorre, _formCorreo, _formTelefono,
+            string.IsNullOrWhiteSpace(_formEncabezado) ? null : _formEncabezado.Trim(),
+            string.IsNullOrWhiteSpace(_formPie) ? null : _formPie.Trim());
+        var resp = await Auth().PutAsJsonAsync("/api/pqrsd/formulario-config", req);
         if (resp.IsSuccessStatusCode) _formGuardado = true;
         else _cfgMsg = await LeerError(resp);
+    }
+
+    private async Task ToggleCampoPublicoCfg(PqrsdCampoDto c, ChangeEventArgs e)
+    {
+        var mostrar = e.Value is bool b ? b : c.MostrarEnPublico;
+        await Auth().PutAsync($"/api/pqrsd/campos/{c.Id}/publico?mostrar={mostrar.ToString().ToLowerInvariant()}", null);
+        await RecargarCamposAsync();
     }
     private async Task EliminarCategoria(Guid id) { await Auth().DeleteAsync($"/api/pqrsd/categorias/{id}"); await CargarTiposCatAsync(); }
     private async Task RenombrarEstado(PqrsdEstadoDto e, ChangeEventArgs ev)

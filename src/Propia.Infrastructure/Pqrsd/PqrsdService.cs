@@ -819,19 +819,29 @@ public class PqrsdService : IPqrsdService
             .Select(c => new PqrsdCategoriaPublicaDto(c.Id, c.Nombre))
             .ToListAsync(ct);
 
-        // Toggles de campos opcionales del formulario (default: todo visible si nunca se configuro).
+        // Toggles de campos opcionales del formulario + textos de encabezado/pie (default: todo visible).
         var fcfg = await _db.PqrsdFormularioPublicoConfigs.AsNoTracking().FirstOrDefaultAsync(ct);
+
+        // Campos dinamicos marcados para pedirse en el formulario publico (en su orden).
+        var camposPub = await _db.PqrsdCampos.AsNoTracking()
+            .Where(c => c.Activo && c.MostrarEnPublico)
+            .OrderBy(c => c.Orden).ThenBy(c => c.Label)
+            .Select(c => new PqrsdCampoPublicoDto(c.Id, c.Label, c.Tipo, c.Opciones, c.Requerido, c.Descripcion))
+            .ToListAsync(ct);
 
         // LogoUrl se guarda RELATIVA al mismo origen (convencion host unificado): la pagina publica la usa tal cual.
         return new PqrsdPublicoConfigDto(tenant.Nombre, tenant.LogoUrl, tipos, cats,
-            fcfg?.MostrarTorre ?? true, fcfg?.MostrarCorreo ?? true, fcfg?.MostrarTelefono ?? true);
+            fcfg?.MostrarTorre ?? true, fcfg?.MostrarCorreo ?? true, fcfg?.MostrarTelefono ?? true,
+            fcfg?.EncabezadoTexto, fcfg?.PieTexto, camposPub);
     }
 
-    // ---- Config del formulario publico (admin): que campos opcionales se muestran ----
+    // ---- Config del formulario publico (admin): campos opcionales + textos ----
     public async Task<PqrsdFormularioPublicoConfigDto> GetFormularioPublicoConfigAsync(CancellationToken ct)
     {
         var c = await _db.PqrsdFormularioPublicoConfigs.AsNoTracking().FirstOrDefaultAsync(ct);
-        return new PqrsdFormularioPublicoConfigDto(c?.MostrarTorre ?? true, c?.MostrarCorreo ?? true, c?.MostrarTelefono ?? true);
+        return new PqrsdFormularioPublicoConfigDto(
+            c?.MostrarTorre ?? true, c?.MostrarCorreo ?? true, c?.MostrarTelefono ?? true,
+            c?.EncabezadoTexto, c?.PieTexto);
     }
 
     public async Task<bool> GuardarFormularioPublicoConfigAsync(PqrsdFormularioPublicoConfigDto req, CancellationToken ct)
@@ -846,6 +856,18 @@ public class PqrsdService : IPqrsdService
         c.MostrarTorre = req.MostrarTorre;
         c.MostrarCorreo = req.MostrarCorreo;
         c.MostrarTelefono = req.MostrarTelefono;
+        c.EncabezadoTexto = string.IsNullOrWhiteSpace(req.EncabezadoTexto) ? null : req.EncabezadoTexto.Trim();
+        c.PieTexto = string.IsNullOrWhiteSpace(req.PieTexto) ? null : req.PieTexto.Trim();
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    // Marca/desmarca un campo dinamico para que se pida (o no) en el formulario publico.
+    public async Task<bool> SetCampoPublicoAsync(Guid campoId, bool mostrar, CancellationToken ct)
+    {
+        var c = await _db.PqrsdCampos.FirstOrDefaultAsync(x => x.Id == campoId, ct);
+        if (c is null) return false;
+        c.MostrarEnPublico = mostrar;
         await _db.SaveChangesAsync(ct);
         return true;
     }
@@ -943,6 +965,19 @@ public class PqrsdService : IPqrsdService
             if (descr.Length > 2000) descr = descr[..2000];
         }
 
+        // Campos dinamicos del formulario publico: solo se aceptan los que realmente estan marcados
+        // para el publico (seguridad: un submit externo no puede setear cualquier campo interno).
+        List<PqrsdCampoValorDto>? camposVals = null;
+        if (req.CamposDinamicos is { Count: > 0 })
+        {
+            var permitidos = (await _db.PqrsdCampos.AsNoTracking()
+                .Where(c => c.Activo && c.MostrarEnPublico).Select(c => c.Id).ToListAsync(ct)).ToHashSet();
+            camposVals = req.CamposDinamicos
+                .Where(kv => permitidos.Contains(kv.Key) && !string.IsNullOrWhiteSpace(kv.Value))
+                .Select(kv => new PqrsdCampoValorDto(kv.Key, kv.Value)).ToList();
+            if (camposVals.Count == 0) camposVals = null;
+        }
+
         var radReq = new RadicarPqrsdRequest(
             Tipo: tipo.Legal,
             CategoriaId: categoria.Id,
@@ -951,7 +986,7 @@ public class PqrsdService : IPqrsdService
             Adjuntos: null,
             UnidadPrivadaId: unidadId,
             RadicadorPersonaId: persona.Id,
-            Campos: null,
+            Campos: camposVals,
             TipoId: tipo.Id);
 
         var detalle = await RadicarAsync(radReq, ct);
@@ -1469,7 +1504,7 @@ public class PqrsdService : IPqrsdService
         return await _db.PqrsdCampos.AsNoTracking().Where(c => c.Activo)
             .OrderBy(c => c.Orden).ThenBy(c => c.Label)
             .Select(c => new PqrsdCampoDto(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones, c.MostrarEnFiltro, c.Columna,
-                c.Descripcion, c.Requerido, c.ValorPorDefecto, c.PermiteVarios, c.CamposSuma, c.Activo))
+                c.Descripcion, c.Requerido, c.ValorPorDefecto, c.PermiteVarios, c.CamposSuma, c.Activo, c.MostrarEnPublico))
             .ToListAsync(ct);
     }
 
@@ -1478,7 +1513,7 @@ public class PqrsdService : IPqrsdService
         return await _db.PqrsdCampos.AsNoTracking().Where(c => !c.Activo)
             .OrderBy(c => c.Orden).ThenBy(c => c.Label)
             .Select(c => new PqrsdCampoDto(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones, c.MostrarEnFiltro, c.Columna,
-                c.Descripcion, c.Requerido, c.ValorPorDefecto, c.PermiteVarios, c.CamposSuma, c.Activo))
+                c.Descripcion, c.Requerido, c.ValorPorDefecto, c.PermiteVarios, c.CamposSuma, c.Activo, c.MostrarEnPublico))
             .ToListAsync(ct);
     }
 

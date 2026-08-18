@@ -187,6 +187,9 @@ public class PqrsdCampo : TenantEntity
     /// <summary>Si es true, el campo aparece como filtro (chips por valor) en la vista del tablero.</summary>
     public bool MostrarEnFiltro { get; set; }
 
+    /// <summary>Si es true, el campo tambien se pide en el formulario publico de radicacion (/pqr).</summary>
+    public bool MostrarEnPublico { get; set; }
+
     /// <summary>Ancho en el modal: 1 = normal (media columna), 2 = ancho completo.</summary>
     public int Columna { get; set; } = 1;
 
@@ -267,12 +270,17 @@ public class PqrsdConfiguracionPlazo : TenantEntity
     public NivelUrgenciaPqrsd NivelUrgencia { get; set; }
 }
 
-/// <summary>Config del formulario publico de radicacion (que campos opcionales se muestran). Una fila por copropiedad.</summary>
+/// <summary>Config del formulario publico de radicacion (que campos opcionales se muestran + textos). Una fila por copropiedad.</summary>
 public class PqrsdFormularioPublicoConfig : TenantEntity
 {
     public bool MostrarTorre { get; set; } = true;
     public bool MostrarCorreo { get; set; } = true;
     public bool MostrarTelefono { get; set; } = true;
+
+    /// <summary>Texto de encabezado (instrucciones/bienvenida) que se muestra arriba del formulario. Opcional.</summary>
+    public string? EncabezadoTexto { get; set; }
+    /// <summary>Texto de pie de pagina que se muestra debajo del formulario. Opcional.</summary>
+    public string? PieTexto { get; set; }
 }
 
 /// <summary>Sesion del Comite de Convivencia (Art. 58 Ley 675/2001). Spec 2.9 v1.0 seccion 6.</summary>

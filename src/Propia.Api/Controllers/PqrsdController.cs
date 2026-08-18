@@ -163,6 +163,10 @@ public class PqrsdController : ControllerBase
     public async Task<IActionResult> ReordenarCampo(Guid id, [FromQuery] string direccion, CancellationToken ct)
         => await _svc.ReordenarCampoAsync(id, direccion, ct) ? NoContent() : NotFound();
 
+    [HttpPut("campos/{id:guid}/publico")]
+    public async Task<IActionResult> SetCampoPublico(Guid id, [FromQuery] bool mostrar, CancellationToken ct)
+        => await _svc.SetCampoPublicoAsync(id, mostrar, ct) ? NoContent() : NotFound();
+
     // --- Config del formulario publico (campos opcionales visibles) ---
     [HttpGet("formulario-config")]
     public async Task<IActionResult> GetFormularioConfig(CancellationToken ct) => Ok(await _svc.GetFormularioPublicoConfigAsync(ct));

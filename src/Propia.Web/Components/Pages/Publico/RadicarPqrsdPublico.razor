@@ -45,6 +45,10 @@ else if (_cfg is not null)
         }
         <h1 class="pqrpub-title">@_cfg.CopropiedadNombre</h1>
         <p class="pqrpub-subtitle">Peticiones, Quejas, Reclamos, Sugerencias y Denuncias</p>
+        @if (!string.IsNullOrWhiteSpace(_cfg.EncabezadoTexto))
+        {
+            <div class="pqrpub-encab">@_cfg.EncabezadoTexto</div>
+        }
     </div>
 
     <div class="pqrpub-card">
@@ -134,6 +138,36 @@ else if (_cfg is not null)
                 <div class="pqrpub-count">@(_descripcion?.Length ?? 0) / 2000</div>
             </div>
 
+            @* Campos personalizados que la copropiedad decidio pedir en el formulario publico *@
+            @if (_cfg.Campos is { Count: > 0 })
+            {
+                @foreach (var cp in _cfg.Campos)
+                {
+                    <div class="pqrpub-field @(cp.Tipo == TipoCampoTablero.AreaTexto ? "pqrpub-full" : "")">
+                        <label>@cp.Label @if (cp.Requerido) { <span class="req">*</span> }</label>
+                        @if (cp.Tipo == TipoCampoTablero.Seleccion)
+                        {
+                            <select class="pqrpub-input" value="@_camposDin.GetValueOrDefault(cp.Id, "")" @onchange="(e) => SetCampoDin(cp.Id, e.Value?.ToString())">
+                                <option value="">Selecciona...</option>
+                                @foreach (var op in (cp.Opciones ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                                {
+                                    <option value="@op">@op</option>
+                                }
+                            </select>
+                        }
+                        else if (cp.Tipo == TipoCampoTablero.AreaTexto)
+                        {
+                            <textarea class="pqrpub-input" rows="2" value="@_camposDin.GetValueOrDefault(cp.Id, "")" @onchange="(e) => SetCampoDin(cp.Id, e.Value?.ToString())"></textarea>
+                        }
+                        else
+                        {
+                            <input class="pqrpub-input" type="@PubCampoType(cp.Tipo)" value="@_camposDin.GetValueOrDefault(cp.Id, "")" @onchange="(e) => SetCampoDin(cp.Id, e.Value?.ToString())" />
+                        }
+                        @if (!string.IsNullOrWhiteSpace(cp.Descripcion)) { <span class="pqrpub-help">@cp.Descripcion</span> }
+                    </div>
+                }
+            }
+
             @* Honeypot anti-bot: invisible para humanos, los bots suelen llenarlo. *@
             <input type="text" class="pqrpub-hp" tabindex="-1" autocomplete="off" aria-hidden="true"
                    @bind="_website" name="website" />
@@ -151,6 +185,10 @@ else if (_cfg is not null)
             Radicar solicitud
         </button>
         <p class="pqrpub-legal">Solo la administracion de la copropiedad podra ver tu solicitud.</p>
+        @if (!string.IsNullOrWhiteSpace(_cfg.PieTexto))
+        {
+            <div class="pqrpub-pie">@_cfg.PieTexto</div>
+        }
     </div>
 }
 </div>
@@ -164,6 +202,9 @@ else if (_cfg is not null)
                       font-size: 30px; color: #5955D1; background: #ECEBFB; }
     .pqrpub-title { font-size: 1.55rem; font-weight: 700; margin: 12px 0 2px; color: #1f2430; }
     .pqrpub-subtitle { color: #6b7280; font-size: .9rem; margin: 0; }
+    .pqrpub-encab { margin: 12px auto 0; max-width: 620px; color: #4b5563; font-size: .9rem; line-height: 1.5; white-space: pre-wrap; }
+    .pqrpub-pie { margin: 14px auto 0; max-width: 620px; text-align: center; color: #6b7280; font-size: .82rem; line-height: 1.5; white-space: pre-wrap; }
+    .pqrpub-help { font-size: .75rem; color: #9ca3af; margin-top: 3px; }
     .pqrpub-card { background: #fff; border: 1px solid #ececf4; border-radius: 16px; padding: 24px;
                    box-shadow: 0 10px 30px rgba(20,20,45,.06); }
     .pqrpub-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -220,6 +261,19 @@ else if (_cfg is not null)
     private string _descripcion = "";
     private bool _acepta;
     private string? _website;   // honeypot
+    private readonly Dictionary<Guid, string> _camposDin = new();   // valores de campos dinamicos del form publico
+
+    private void SetCampoDin(Guid id, string? v) => _camposDin[id] = v ?? "";
+    private static string PubCampoType(TipoCampoTablero t) => t switch
+    {
+        TipoCampoTablero.Numero or TipoCampoTablero.Moneda => "number",
+        TipoCampoTablero.Fecha => "date",
+        TipoCampoTablero.Hora => "time",
+        TipoCampoTablero.Email => "email",
+        TipoCampoTablero.Url => "url",
+        TipoCampoTablero.Telefono => "tel",
+        _ => "text"
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -254,18 +308,31 @@ else if (_cfg is not null)
         if (string.IsNullOrWhiteSpace(_nombres)) { _formError = "El nombre es obligatorio."; return; }
         if ((_descripcion?.Trim().Length ?? 0) < 20) { _formError = "La descripcion debe tener al menos 20 caracteres."; return; }
         if (!_acepta) { _formError = "Debes autorizar el tratamiento de tus datos para radicar."; return; }
+        // Campos personalizados obligatorios
+        if (_cfg?.Campos is not null)
+        {
+            foreach (var cp in _cfg.Campos)
+            {
+                if (cp.Requerido && string.IsNullOrWhiteSpace(_camposDin.GetValueOrDefault(cp.Id)))
+                { _formError = $"El campo \"{cp.Label}\" es obligatorio."; return; }
+            }
+        }
 
         _enviando = true;
         try
         {
             var http = HttpFactory.CreateClient("PropiaApi");
+            var camposDin = _camposDin
+                .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+                .ToDictionary(kv => kv.Key, kv => (string?)kv.Value);
             var req = new RadicarPublicoRequest(
                 _tipoId, _categoriaId, _unidadTexto.Trim(),
                 string.IsNullOrWhiteSpace(_torreTexto) ? null : _torreTexto.Trim(),
                 _tipoDoc, _documento.Trim(), _nombres.Trim(), (_apellidos ?? "").Trim(),
                 string.IsNullOrWhiteSpace(_email) ? null : _email.Trim(),
                 string.IsNullOrWhiteSpace(_telefono) ? null : _telefono.Trim(),
-                _descripcion.Trim(), _acepta, _website);
+                _descripcion.Trim(), _acepta, _website,
+                camposDin.Count > 0 ? camposDin : null);
             var resp = await http.PostAsJsonAsync($"/api/publico/pqrsd/{TenantId}/radicar", req);
             if (resp.IsSuccessStatusCode)
             {

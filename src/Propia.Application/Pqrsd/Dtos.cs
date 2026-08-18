@@ -132,7 +132,8 @@ public record MoverExpedienteEstadoRequest(Guid EstadoId);
 public record PqrsdCampoDto(
     Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones,
     bool MostrarEnFiltro, int Columna, string? Descripcion, bool Requerido,
-    string? ValorPorDefecto, bool PermiteVarios, string? CamposSuma, bool Activo);
+    string? ValorPorDefecto, bool PermiteVarios, string? CamposSuma, bool Activo,
+    bool MostrarEnPublico = false);
 
 public record GuardarCampoPqrsdRequest(
     string Label, TipoCampoTablero Tipo, string? Opciones, bool MostrarEnFiltro,
@@ -164,10 +165,18 @@ public record PqrsdPublicoConfigDto(
     IReadOnlyList<PqrsdCategoriaPublicaDto> Categorias,
     bool MostrarTorre = true,
     bool MostrarCorreo = true,
-    bool MostrarTelefono = true);
+    bool MostrarTelefono = true,
+    string? EncabezadoTexto = null,
+    string? PieTexto = null,
+    IReadOnlyList<PqrsdCampoPublicoDto>? Campos = null);
 
-/// <summary>Config editable (admin) del formulario publico: que campos opcionales se muestran.</summary>
-public record PqrsdFormularioPublicoConfigDto(bool MostrarTorre, bool MostrarCorreo, bool MostrarTelefono);
+/// <summary>Campo dinamico que se pide en el formulario publico (subconjunto de PqrsdCampo, sin datos internos).</summary>
+public record PqrsdCampoPublicoDto(Guid Id, string Label, TipoCampoTablero Tipo, string? Opciones, bool Requerido, string? Descripcion);
+
+/// <summary>Config editable (admin) del formulario publico: campos opcionales + textos de encabezado/pie.</summary>
+public record PqrsdFormularioPublicoConfigDto(
+    bool MostrarTorre, bool MostrarCorreo, bool MostrarTelefono,
+    string? EncabezadoTexto = null, string? PieTexto = null);
 
 public record PqrsdTipoPublicoDto(Guid Id, string Nombre, int DiasHabiles);
 public record PqrsdCategoriaPublicaDto(Guid Id, string Nombre);
@@ -190,7 +199,9 @@ public record RadicarPublicoRequest(
     string Descripcion,
     bool AceptaTratamiento,
     /// <summary>Honeypot anti-bot: los humanos nunca lo llenan (va oculto). Si trae valor, se descarta.</summary>
-    string? Website = null);
+    string? Website = null,
+    /// <summary>Valores de los campos dinamicos que se muestran en el formulario publico (campoId -> valor).</summary>
+    IReadOnlyDictionary<Guid, string?>? CamposDinamicos = null);
 
 public record RadicarPublicoResultDto(string NumeroRadicado);
 
