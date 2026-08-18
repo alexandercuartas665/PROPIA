@@ -41,6 +41,14 @@ public record ExpedienteDetalleDto(
     IReadOnlyList<ExpedienteCampoDto> Campos,
     IReadOnlyList<ExpedienteTipologiaDto> Tipologias);
 
+/// <summary>
+/// Vista previa renderizable de una tipologia. Kind indica como pintarla en el visor:
+/// "image"/"pdf" -> DataUri (data:mime;base64); "text" -> Texto plano; "html" -> Html (excel/word rendereados); "none" -> sin preview (solo descarga).
+/// </summary>
+public record TipologiaPreviewDto(
+    string Kind, string Nombre, string Mime,
+    string? DataUri = null, string? Html = null, string? Texto = null);
+
 public record CrearExpedienteRequest(Guid SubserieId, string Nombre);
 public record AgregarTipologiaExpRequest(string Nombre, bool Obligatoria);
 public record AgregarCampoExpRequest(string Label);

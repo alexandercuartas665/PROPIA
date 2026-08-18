@@ -832,16 +832,35 @@ public class PqrsdService : IPqrsdService
         // LogoUrl se guarda RELATIVA al mismo origen (convencion host unificado): la pagina publica la usa tal cual.
         return new PqrsdPublicoConfigDto(tenant.Nombre, tenant.LogoUrl, tipos, cats,
             fcfg?.MostrarTorre ?? true, fcfg?.MostrarCorreo ?? true, fcfg?.MostrarTelefono ?? true,
-            fcfg?.EncabezadoTexto, fcfg?.PieTexto, camposPub);
+            fcfg?.EncabezadoTexto, fcfg?.PieTexto, camposPub,
+            ParseOrdenCamposFijos(fcfg?.OrdenCamposFijosJson));
     }
 
-    // ---- Config del formulario publico (admin): campos opcionales + textos ----
+    // ---- Config del formulario publico (admin): campos opcionales + textos + orden de campos fijos ----
+    // Claves canonicas de los campos FIJOS del formulario publico, en su orden por defecto.
+    private static readonly string[] CamposFijosDefault =
+        { "tipo", "categoria", "torre", "unidad", "tipoDoc", "documento", "nombres", "apellidos", "correo", "telefono", "descripcion" };
+
+    private static IReadOnlyList<string> ParseOrdenCamposFijos(string? json)
+    {
+        List<string>? guardado = null;
+        if (!string.IsNullOrWhiteSpace(json))
+        {
+            try { guardado = System.Text.Json.JsonSerializer.Deserialize<List<string>>(json!); } catch { }
+        }
+        if (guardado is null || guardado.Count == 0) return CamposFijosDefault;
+        // Solo claves conocidas, en el orden guardado; anexar las que falten (robustez ante nuevas claves).
+        var res = guardado.Where(CamposFijosDefault.Contains).Distinct().ToList();
+        foreach (var k in CamposFijosDefault) if (!res.Contains(k)) res.Add(k);
+        return res;
+    }
+
     public async Task<PqrsdFormularioPublicoConfigDto> GetFormularioPublicoConfigAsync(CancellationToken ct)
     {
         var c = await _db.PqrsdFormularioPublicoConfigs.AsNoTracking().FirstOrDefaultAsync(ct);
         return new PqrsdFormularioPublicoConfigDto(
             c?.MostrarTorre ?? true, c?.MostrarCorreo ?? true, c?.MostrarTelefono ?? true,
-            c?.EncabezadoTexto, c?.PieTexto);
+            c?.EncabezadoTexto, c?.PieTexto, ParseOrdenCamposFijos(c?.OrdenCamposFijosJson));
     }
 
     public async Task<bool> GuardarFormularioPublicoConfigAsync(PqrsdFormularioPublicoConfigDto req, CancellationToken ct)
@@ -858,6 +877,10 @@ public class PqrsdService : IPqrsdService
         c.MostrarTelefono = req.MostrarTelefono;
         c.EncabezadoTexto = string.IsNullOrWhiteSpace(req.EncabezadoTexto) ? null : req.EncabezadoTexto.Trim();
         c.PieTexto = string.IsNullOrWhiteSpace(req.PieTexto) ? null : req.PieTexto.Trim();
+        // Orden de campos fijos: guardar solo claves conocidas; null si es el orden por defecto.
+        var orden = (req.OrdenCamposFijos ?? new List<string>()).Where(CamposFijosDefault.Contains).Distinct().ToList();
+        c.OrdenCamposFijosJson = (orden.Count > 0 && !orden.SequenceEqual(CamposFijosDefault))
+            ? System.Text.Json.JsonSerializer.Serialize(orden) : null;
         await _db.SaveChangesAsync(ct);
         return true;
     }
@@ -1123,6 +1146,26 @@ public class PqrsdService : IPqrsdService
                 ? "El expediente quedo cerrado tras la respuesta definitiva."
                 : "El admin respondio el expediente. Si el ciudadano queda inconforme tiene una oportunidad de inconformidad (RN-06).",
             Domain.Enums.PrioridadNotificacion.Normal, ct);
+
+        // Enviar la respuesta al radicador por los canales elegidos (correo / celular).
+        var canales = new List<Domain.Enums.CanalNotificacion>();
+        if (req.Correo) canales.Add(Domain.Enums.CanalNotificacion.Email);
+        if (req.Celular) canales.Add(Domain.Enums.CanalNotificacion.WhatsApp);
+        var tenantIdResp = _tenantContext.CurrentTenantId;
+        if (canales.Count > 0 && tenantIdResp is not null && x.RadicadorPersonaId != Guid.Empty)
+        {
+            var cuerpo = $"Respuesta a tu PQR {x.NumeroRadicado}:\n\n{req.Texto.Trim()}";
+            var lote = canales.Select(canal => new Propia.Application.Notificaciones.EnviarNotificacionRequest(
+                Canal: canal,
+                Cuerpo: cuerpo,
+                TenantId: tenantIdResp,
+                PersonaDestinatariaId: x.RadicadorPersonaId,
+                Asunto: $"Respuesta a tu PQR {x.NumeroRadicado}",
+                Prioridad: Domain.Enums.PrioridadNotificacion.Normal,
+                ModuloOrigenCodigo: "2.9",
+                EntidadOrigenId: x.Id));
+            await _noti.EnviarLoteAsync(lote, ct);
+        }
 
         return true;
     }

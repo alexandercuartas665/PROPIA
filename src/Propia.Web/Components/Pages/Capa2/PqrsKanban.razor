@@ -644,6 +644,24 @@
                     <label class="pk-cfg-chk pk-cfg-chk--row"><input type="checkbox" @bind="_formTorre" @bind:after="GuardarFormCfg" />Mostrar campo "Torre / Bloque"</label>
                     <label class="pk-cfg-chk pk-cfg-chk--row"><input type="checkbox" @bind="_formCorreo" @bind:after="GuardarFormCfg" />Mostrar campo "Correo electronico"</label>
                     <label class="pk-cfg-chk pk-cfg-chk--row"><input type="checkbox" @bind="_formTelefono" @bind:after="GuardarFormCfg" />Mostrar campo "Telefono"</label>
+
+                    <div class="pk-cfg-sec-t" style="margin-top:16px;">Orden de los campos</div>
+                    <div class="pk-cfg-sec-hint">Reordena como aparecen los campos fijos en el formulario publico. Los campos propios (marcados "Publico") van despues.</div>
+                    <div class="pk-fld-order">
+                        @for (var i = 0; i < _formOrden.Count; i++)
+                        {
+                            var k = _formOrden[i];
+                            var idx = i;
+                            <div class="pk-fld-row">
+                                <span class="pk-fld-idx">@(idx + 1)</span>
+                                <span class="pk-fld-name">@LabelCampoFijo(k)@if (CampoFijoOpcional(k)) { <span class="pk-fld-opt">opcional</span> }</span>
+                                <div class="pk-fld-arrows">
+                                    <button type="button" class="pk-fld-arrow" disabled="@(idx == 0)" title="Subir" @onclick="() => MoverCampoFijo(k, -1)"><i class="fi fi-rr-angle-small-up"></i></button>
+                                    <button type="button" class="pk-fld-arrow" disabled="@(idx == _formOrden.Count - 1)" title="Bajar" @onclick="() => MoverCampoFijo(k, 1)"><i class="fi fi-rr-angle-small-down"></i></button>
+                                </div>
+                            </div>
+                        }
+                    </div>
                     <div class="pk-cfg-sec-hint" style="margin-top:10px;">Tipo, Categoria, Unidad, Documento, Nombres y Descripcion siempre se piden. Para agregar campos propios, marca "Publico" en la pestana Campos dinamicos.</div>
                     @if (_formGuardado) { <div class="pk-cfg-msg">Cambios guardados.</div> }
                   }
@@ -910,6 +928,17 @@
     .pk-cfg-dias { width: 62px; border: 1px solid #E1E8EE; border-radius: 8px; padding: 8px 8px; font-size: 12.5px; font-family: inherit; color: #33475B; outline: none; text-align: center; }
     .pk-cfg-chk { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: #516F90; white-space: nowrap; }
 
+    /* Reorden de campos fijos del formulario publico */
+    .pk-fld-order { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
+    .pk-fld-row { display: flex; align-items: center; gap: 10px; border: 1px solid #E1E8EE; border-radius: 9px; padding: 7px 10px; background: #fff; }
+    .pk-fld-idx { width: 20px; height: 20px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; color: #6D4FE3; background: #F1ECFD; border-radius: 6px; }
+    .pk-fld-name { flex: 1; font-size: 12.5px; font-weight: 600; color: #33475B; }
+    .pk-fld-opt { font-size: 9.5px; font-weight: 800; color: #7C98B6; background: #F1F5F9; padding: 2px 6px; border-radius: 5px; margin-left: 7px; text-transform: uppercase; }
+    .pk-fld-arrows { display: flex; gap: 3px; flex-shrink: 0; }
+    .pk-fld-arrow { width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border: 1px solid #E1E8EE; background: #fff; border-radius: 6px; color: #516F90; cursor: pointer; }
+    .pk-fld-arrow:hover:not(:disabled) { border-color: #6D4FE3; color: #6D4FE3; }
+    .pk-fld-arrow:disabled { opacity: .35; cursor: not-allowed; }
+
     [data-bs-theme="dark"] .pk-title { color: #E5E7EB; }
     [data-bs-theme="dark"] .pk-kpi, [data-bs-theme="dark"] .pk-card, [data-bs-theme="dark"] .pk-table-wrap { background: #232B40; border-color: #2D3650; }
     [data-bs-theme="dark"] .pk-kpi-val { color: #E5E7EB; }
@@ -956,10 +985,21 @@
     private string _nuevoCampoLabel = "";
     private TipoCampoTablero _nuevoCampoTipo = TipoCampoTablero.Texto;
     private string _nuevoCampoOpciones = "";
-    // Tab Formulario publico (toggles de campos opcionales + textos)
+    // Tab Formulario publico (toggles de campos opcionales + textos + orden de campos fijos)
     private bool _formTorre = true, _formCorreo = true, _formTelefono = true;
     private string _formEncabezado = "", _formPie = "";
     private bool _formCargado, _formGuardado;
+    private static readonly string[] OrdenFijosDefault =
+        { "tipo", "categoria", "torre", "unidad", "tipoDoc", "documento", "nombres", "apellidos", "correo", "telefono", "descripcion" };
+    private List<string> _formOrden = new(OrdenFijosDefault);
+    private static string LabelCampoFijo(string k) => k switch
+    {
+        "tipo" => "Tipo de solicitud", "categoria" => "Categoria", "torre" => "Torre / Bloque",
+        "unidad" => "Unidad", "tipoDoc" => "Tipo de documento", "documento" => "Numero de identificacion",
+        "nombres" => "Nombres", "apellidos" => "Apellidos", "correo" => "Correo electronico",
+        "telefono" => "Telefono", "descripcion" => "Descripcion", _ => k
+    };
+    private static bool CampoFijoOpcional(string k) => k is "torre" or "correo" or "telefono";
     private string _nuevaColNombre = "";
     private string _nuevaColColor = "#6D4FE3";
 
@@ -1700,6 +1740,10 @@
                 {
                     _formTorre = cfg.MostrarTorre; _formCorreo = cfg.MostrarCorreo; _formTelefono = cfg.MostrarTelefono;
                     _formEncabezado = cfg.EncabezadoTexto ?? ""; _formPie = cfg.PieTexto ?? "";
+                    _formOrden = (cfg.OrdenCamposFijos is { Count: > 0 })
+                        ? cfg.OrdenCamposFijos.Where(OrdenFijosDefault.Contains).Distinct()
+                            .Concat(OrdenFijosDefault.Where(k => !cfg.OrdenCamposFijos.Contains(k))).ToList()
+                        : new List<string>(OrdenFijosDefault);
                 }
                 _formCargado = true;
             }
@@ -1712,10 +1756,21 @@
         _formGuardado = false;
         var req = new PqrsdFormularioPublicoConfigDto(_formTorre, _formCorreo, _formTelefono,
             string.IsNullOrWhiteSpace(_formEncabezado) ? null : _formEncabezado.Trim(),
-            string.IsNullOrWhiteSpace(_formPie) ? null : _formPie.Trim());
+            string.IsNullOrWhiteSpace(_formPie) ? null : _formPie.Trim(),
+            _formOrden);
         var resp = await Auth().PutAsJsonAsync("/api/pqrsd/formulario-config", req);
         if (resp.IsSuccessStatusCode) _formGuardado = true;
         else _cfgMsg = await LeerError(resp);
+    }
+
+    // Reordenar un campo fijo del formulario publico (sube/baja) y guardar.
+    private async Task MoverCampoFijo(string key, int dir)
+    {
+        var i = _formOrden.IndexOf(key);
+        var j = i + dir;
+        if (i < 0 || j < 0 || j >= _formOrden.Count) return;
+        (_formOrden[i], _formOrden[j]) = (_formOrden[j], _formOrden[i]);
+        await GuardarFormCfg();
     }
 
     private async Task ToggleCampoPublicoCfg(PqrsdCampoDto c, ChangeEventArgs e)

@@ -281,6 +281,9 @@ public class PqrsdFormularioPublicoConfig : TenantEntity
     public string? EncabezadoTexto { get; set; }
     /// <summary>Texto de pie de pagina que se muestra debajo del formulario. Opcional.</summary>
     public string? PieTexto { get; set; }
+
+    /// <summary>Orden de los campos FIJOS del formulario, como JSON de claves (ej. ["tipo","categoria",...]). Null = orden por defecto.</summary>
+    public string? OrdenCamposFijosJson { get; set; }
 }
 
 /// <summary>Sesion del Comite de Convivencia (Art. 58 Ley 675/2001). Spec 2.9 v1.0 seccion 6.</summary>

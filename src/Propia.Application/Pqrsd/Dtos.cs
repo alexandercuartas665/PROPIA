@@ -168,7 +168,8 @@ public record PqrsdPublicoConfigDto(
     bool MostrarTelefono = true,
     string? EncabezadoTexto = null,
     string? PieTexto = null,
-    IReadOnlyList<PqrsdCampoPublicoDto>? Campos = null);
+    IReadOnlyList<PqrsdCampoPublicoDto>? Campos = null,
+    IReadOnlyList<string>? OrdenCamposFijos = null);
 
 /// <summary>Campo dinamico que se pide en el formulario publico (subconjunto de PqrsdCampo, sin datos internos).</summary>
 public record PqrsdCampoPublicoDto(Guid Id, string Label, TipoCampoTablero Tipo, string? Opciones, bool Requerido, string? Descripcion);
@@ -176,7 +177,8 @@ public record PqrsdCampoPublicoDto(Guid Id, string Label, TipoCampoTablero Tipo,
 /// <summary>Config editable (admin) del formulario publico: campos opcionales + textos de encabezado/pie.</summary>
 public record PqrsdFormularioPublicoConfigDto(
     bool MostrarTorre, bool MostrarCorreo, bool MostrarTelefono,
-    string? EncabezadoTexto = null, string? PieTexto = null);
+    string? EncabezadoTexto = null, string? PieTexto = null,
+    IReadOnlyList<string>? OrdenCamposFijos = null);
 
 public record PqrsdTipoPublicoDto(Guid Id, string Nombre, int DiasHabiles);
 public record PqrsdCategoriaPublicaDto(Guid Id, string Nombre);
@@ -236,7 +238,7 @@ public record AdjuntoInicialDto(string NombreArchivo, string TipoMime, long Tama
 
 public record TomarExpedienteRequest(string? Nota);
 
-public record ResponderExpedienteRequest(string Texto);
+public record ResponderExpedienteRequest(string Texto, bool Correo = false, bool Celular = false);
 
 public record ManifestarInconformidadRequest(string Texto);
 

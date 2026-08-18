@@ -43,4 +43,12 @@ public interface IExpedientesService
 
     /// <summary>Descarga una version historica especifica del archivo de una tipologia (base64).</summary>
     Task<DescargaDocumentoDto?> DescargarVersionTipologiaAsync(Guid tipologiaId, Guid versionId, CancellationToken ct);
+
+    /// <summary>Vista previa renderizable (version actual): imagen/pdf/texto/html segun el tipo de archivo.</summary>
+    Task<TipologiaPreviewDto?> PreviewTipologiaAsync(Guid tipologiaId, CancellationToken ct);
+    /// <summary>Vista previa renderizable de una version historica.</summary>
+    Task<TipologiaPreviewDto?> PreviewVersionTipologiaAsync(Guid tipologiaId, Guid versionId, CancellationToken ct);
+
+    /// <summary>Duplica una tipologia del expediente (misma etiqueta, casilla vacia) para permitir varios documentos del mismo tipo.</summary>
+    Task<bool> DuplicarTipologiaAsync(Guid tipologiaId, CancellationToken ct);
 }

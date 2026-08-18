@@ -138,4 +138,22 @@ public class ExpedientesController : ControllerBase
         var dto = await _svc.DescargarVersionTipologiaAsync(tipologiaId, versionId, ct);
         return dto is null ? NotFound() : Ok(dto);
     }
+
+    [HttpGet("tipologias/{tipologiaId:guid}/preview")]
+    public async Task<IActionResult> Preview(Guid tipologiaId, CancellationToken ct)
+    {
+        var dto = await _svc.PreviewTipologiaAsync(tipologiaId, ct);
+        return dto is null ? NotFound() : Ok(dto);
+    }
+
+    [HttpGet("tipologias/{tipologiaId:guid}/versiones/{versionId:guid}/preview")]
+    public async Task<IActionResult> PreviewVersion(Guid tipologiaId, Guid versionId, CancellationToken ct)
+    {
+        var dto = await _svc.PreviewVersionTipologiaAsync(tipologiaId, versionId, ct);
+        return dto is null ? NotFound() : Ok(dto);
+    }
+
+    [HttpPost("tipologias/{tipologiaId:guid}/duplicar")]
+    public async Task<IActionResult> Duplicar(Guid tipologiaId, CancellationToken ct)
+        => await _svc.DuplicarTipologiaAsync(tipologiaId, ct) ? NoContent() : NotFound();
 }
