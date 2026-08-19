@@ -1298,6 +1298,90 @@ else
                         </div>
                     </div>
 
+                    <div class="tbc-row2">
+                        @if (d.Id is not null)
+                        {
+                            <div class="tbc-fld tbc-grow">
+                                <label>Progreso @if (d.TieneHijos) { <span class="tbc-mut">- se calcula desde las subtareas</span> }</label>
+                                @if (d.TieneHijos)
+                                {
+                                    <div class="tbc-prog-ro">
+                                        <div class="tb-prog-bar"><div class="tb-prog-fill" style="width:@(d.Progreso)%;background:@(d.Progreso >= 100 ? "#1A8754" : "#6D4FE3")"></div></div>
+                                        <span class="tbc-prog-v" style="color:@(d.Progreso >= 100 ? "#1A8754" : "#516F90")">@d.Progreso%</span>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="tbc-prog-edit">
+                                        <input type="range" min="0" max="100" step="5" @bind="d.Progreso" @bind:event="oninput" style="accent-color:@(d.Progreso >= 100 ? "#1A8754" : "#6D4FE3")" />
+                                        <span class="tbc-prog-v" style="color:@(d.Progreso >= 100 ? "#1A8754" : "#516F90")">@d.Progreso%</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        <div class="tbc-fld tbc-grow"><label>Valor (COP)</label><input type="number" @bind="d.Valor" placeholder="Ej. 1200000" /></div>
+                    </div>
+
+                    <div class="tbc-fld">
+                        <label>Etiquetas</label>
+                        <div class="tbc-tags">
+                            @foreach (var et in _etiquetasCat)
+                            {
+                                var eid = et.Id; var on = d.EtiquetaIds.Contains(et.Id);
+                                <button class="tbc-tag @(on ? "on" : "")" style="@(on ? $"background:{et.Color ?? "#6D4FE3"};border-color:{et.Color ?? "#6D4FE3"};color:#fff" : "")" @onclick="() => ToggleEtiquetaDraft(eid)">@et.Nombre</button>
+                            }
+                            @if (_etiquetasCat.Count == 0) { <span class="tbc-mut">Aun no hay etiquetas. Se crean en "Configurar tablero".</span> }
+                        </div>
+                        <div class="tbc-tag-hint">Las etiquetas se crean y colorean en <button type="button" class="tbc-linkbtn" @onclick="AbrirConfigBoard">Configurar tablero</button>.</div>
+                    </div>
+
+                    @* Solicitante: quien pide la tarea (registro del directorio). Por defecto el usuario actual; editable con el selector que busca/crea terceros. *@
+                    <div class="tbc-fld">
+                        <label>Solicitante</label>
+                        <div class="tbc-solic">
+                            <div class="tb-ava tbc-solic-ava">@Iniciales(d.SolicitanteNombre ?? "?")</div>
+                            <span class="tbc-solic-nm">@(string.IsNullOrWhiteSpace(d.SolicitanteNombre) ? "Tu (usuario actual)" : d.SolicitanteNombre)</span>
+                        </div>
+                        <div class="tbc-solic-sel">
+                            <SelectorPersona Jwt="@_jwt" Seleccionada="_solicitanteSel" SeleccionadaChanged="OnSolicitanteSel" Placeholder="Cambiar solicitante (buscar o crear)..." />
+                        </div>
+                    </div>
+
+                    <div class="tbc-fld">
+                        <label>Responsables</label>
+                        @if (d.Responsables.Count > 0)
+                        {
+                            <div class="tbc-resps">
+                                @for (int i = 0; i < d.Responsables.Count; i++)
+                                {
+                                    var rid = d.Responsables[i]; var ci = i;
+                                    <div class="tbc-resp">
+                                        <div class="tb-ava" style="background:@RespColor(ci);margin-right:0">@Iniciales(PersonaNombre(rid))</div>
+                                        <span class="tbc-resp-nm">@PersonaNombre(rid)</span>
+                                        <button class="tbc-resp-x" @onclick="() => CardRemoveResp(rid)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        <div class="tbc-resp-add">
+                            <select @bind="_respPick">
+                                <option value="">Agregar responsable...</option>
+                                @if (_personas is not null)
+                                {
+                                    @foreach (var p in _personas.Where(x => !d.Responsables.Contains(x.Id))) { <option value="@p.Id">@p.Nombre</option> }
+                                }
+                            </select>
+                            <button class="tbc-add-sq" @onclick="CardAddResp"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></button>
+                        </div>
+                    </div>
+                    <div class="tbc-row2">
+                        <div class="tbc-fld tbc-grow"><label>Inicio</label><input type="date" @bind="d.FechaInicio" /></div>
+                        <div class="tbc-fld tbc-w80"><label>Hora</label><input type="time" @bind="d.HoraInicio" /></div>
+                        <div class="tbc-fld tbc-grow"><label>Fin</label><input type="date" @bind="d.FechaVencimiento" /></div>
+                        <div class="tbc-fld tbc-w80"><label>Hora</label><input type="time" @bind="d.HoraFin" /></div>
+                    </div>
+                
+
                     <div class="tbc-fld">
                         <label>Color de la tarjeta</label>
                         <div class="tb-colors">
@@ -1461,92 +1545,6 @@ else
                             </div>
                         }
                         </div>
-                </div>
-
-                @* ----- Columna 2: progreso, etiquetas, responsables, fechas, valor ----- *@
-                <div class="tbc-col">
-                    @if (d.Id is not null)
-                    {
-                        <div class="tbc-fld">
-                            <label>Progreso @if (d.TieneHijos) { <span class="tbc-mut">- se calcula desde las subtareas</span> }</label>
-                            @if (d.TieneHijos)
-                            {
-                                <div class="tbc-prog-ro">
-                                    <div class="tb-prog-bar"><div class="tb-prog-fill" style="width:@(d.Progreso)%;background:@(d.Progreso >= 100 ? "#1A8754" : "#6D4FE3")"></div></div>
-                                    <span class="tbc-prog-v" style="color:@(d.Progreso >= 100 ? "#1A8754" : "#516F90")">@d.Progreso%</span>
-                                </div>
-                            }
-                            else
-                            {
-                                <div class="tbc-prog-edit">
-                                    <input type="range" min="0" max="100" step="5" @bind="d.Progreso" @bind:event="oninput" style="accent-color:@(d.Progreso >= 100 ? "#1A8754" : "#6D4FE3")" />
-                                    <span class="tbc-prog-v" style="color:@(d.Progreso >= 100 ? "#1A8754" : "#516F90")">@d.Progreso%</span>
-                                </div>
-                            }
-                        </div>
-                    }
-
-                    <div class="tbc-fld">
-                        <label>Etiquetas</label>
-                        <div class="tbc-tags">
-                            @foreach (var et in _etiquetasCat)
-                            {
-                                var eid = et.Id; var on = d.EtiquetaIds.Contains(et.Id);
-                                <button class="tbc-tag @(on ? "on" : "")" style="@(on ? $"background:{et.Color ?? "#6D4FE3"};border-color:{et.Color ?? "#6D4FE3"};color:#fff" : "")" @onclick="() => ToggleEtiquetaDraft(eid)">@et.Nombre</button>
-                            }
-                            @if (_etiquetasCat.Count == 0) { <span class="tbc-mut">Aun no hay etiquetas. Se crean en "Configurar tablero".</span> }
-                        </div>
-                        <div class="tbc-tag-hint">Las etiquetas se crean y colorean en <button type="button" class="tbc-linkbtn" @onclick="AbrirConfigBoard">Configurar tablero</button>.</div>
-                    </div>
-
-                    @* Solicitante: quien pide la tarea (registro del directorio). Por defecto el usuario actual; editable con el selector que busca/crea terceros. *@
-                    <div class="tbc-fld">
-                        <label>Solicitante</label>
-                        <div class="tbc-solic">
-                            <div class="tb-ava tbc-solic-ava">@Iniciales(d.SolicitanteNombre ?? "?")</div>
-                            <span class="tbc-solic-nm">@(string.IsNullOrWhiteSpace(d.SolicitanteNombre) ? "Tu (usuario actual)" : d.SolicitanteNombre)</span>
-                        </div>
-                        <div class="tbc-solic-sel">
-                            <SelectorPersona Jwt="@_jwt" Seleccionada="_solicitanteSel" SeleccionadaChanged="OnSolicitanteSel" Placeholder="Cambiar solicitante (buscar o crear)..." />
-                        </div>
-                    </div>
-
-                    <div class="tbc-fld">
-                        <label>Responsables</label>
-                        @if (d.Responsables.Count > 0)
-                        {
-                            <div class="tbc-resps">
-                                @for (int i = 0; i < d.Responsables.Count; i++)
-                                {
-                                    var rid = d.Responsables[i]; var ci = i;
-                                    <div class="tbc-resp">
-                                        <div class="tb-ava" style="background:@RespColor(ci);margin-right:0">@Iniciales(PersonaNombre(rid))</div>
-                                        <span class="tbc-resp-nm">@PersonaNombre(rid)</span>
-                                        <button class="tbc-resp-x" @onclick="() => CardRemoveResp(rid)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-                                    </div>
-                                }
-                            </div>
-                        }
-                        <div class="tbc-resp-add">
-                            <select @bind="_respPick">
-                                <option value="">Agregar responsable...</option>
-                                @if (_personas is not null)
-                                {
-                                    @foreach (var p in _personas.Where(x => !d.Responsables.Contains(x.Id))) { <option value="@p.Id">@p.Nombre</option> }
-                                }
-                            </select>
-                            <button class="tbc-add-sq" @onclick="CardAddResp"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></button>
-                        </div>
-                    </div>
-                    <div class="tbc-row2">
-                        <div class="tbc-fld tbc-grow"><label>Inicio</label><input type="date" @bind="d.FechaInicio" /></div>
-                        <div class="tbc-fld tbc-w80"><label>Hora</label><input type="time" @bind="d.HoraInicio" /></div>
-                    </div>
-                    <div class="tbc-row2">
-                        <div class="tbc-fld tbc-grow"><label>Fin</label><input type="date" @bind="d.FechaVencimiento" /></div>
-                        <div class="tbc-fld tbc-w80"><label>Hora</label><input type="time" @bind="d.HoraFin" /></div>
-                    </div>
-                    <div class="tbc-fld"><label>Valor (COP)</label><input type="number" @bind="d.Valor" placeholder="Ej. 1200000" /></div>
                 </div>
 
                 @* ----- Columna 3: actividad como CHAT (comentarios + adjuntos inline, estilo Airtable) ----- *@
@@ -2365,7 +2363,7 @@ else
 
     /* ===== Modal de tarjeta rico (3 columnas) ===== */
     /* Alto FIJO para que el modal no cambie de tamano al alternar entre las pestanas Detalle y Archivos. */
-    .tbc-modal { width: 1380px; max-width: 96vw; height: 88vh; background: #fff; border-radius: 18px; box-shadow: 0 30px 70px rgba(27,42,58,.4); margin: auto; overflow: hidden; display: flex; flex-direction: column; max-height: 92vh; }
+    .tbc-modal { width: 1242px; max-width: 96vw; height: 88vh; background: #fff; border-radius: 18px; box-shadow: 0 30px 70px rgba(27,42,58,.4); margin: auto; overflow: hidden; display: flex; flex-direction: column; max-height: 92vh; }
     .tbc-head { display: flex; align-items: center; gap: 12px; padding: 18px 24px; flex-shrink: 0; }
     .tbc-head-bar { width: 8px; height: 32px; border-radius: 5px; background: rgba(255,255,255,.85); flex-shrink: 0; }
     .tbc-head-id { flex: 1; min-width: 0; }
@@ -2383,7 +2381,7 @@ else
 
     /* El cuerpo ya no scrollea como un todo: cada columna hace su propio scroll (independiente),
        asi el contenido largo de la izquierda no arrastra ni rompe el layout de las demas. */
-    .tbc-body { flex: 1; min-height: 0; overflow: hidden; padding: 16px 22px; display: grid; grid-template-columns: minmax(0, 1fr) 290px 400px; grid-template-rows: minmax(0, 1fr); gap: 16px 16px; }
+    .tbc-body { flex: 1; min-height: 0; overflow: hidden; padding: 16px 22px; display: grid; grid-template-columns: minmax(0, 1fr) 400px; grid-template-rows: minmax(0, 1fr); gap: 16px 16px; }
     .tbc-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; box-sizing: border-box; overflow-y: auto; overflow-x: hidden; scroll-behavior: smooth; padding-right: 6px; scrollbar-width: thin; scrollbar-color: #C3D0DD transparent; }
     .tbc-col::-webkit-scrollbar { width: 7px; }
     .tbc-col::-webkit-scrollbar-track { background: transparent; }
@@ -2785,7 +2783,18 @@ else
     .tg-note { font-size: 11.5px; color: #A6B7C8; padding: 11px 18px; border-top: 1px solid #EEF3F8; background: #FBFCFD; }
 
     @@media (max-width: 880px) { .tcal-cell { min-height: 76px; } }
-    @@media (max-width: 880px) { .tbc-body { grid-template-columns: 1fr; grid-template-rows: none; overflow-y: auto; } .tbc-col { overflow: visible; min-height: auto; padding-right: 0; } .tbc-act-cols { grid-template-columns: 1fr; } .tbc-col-act { border-left: 0; padding-left: 0; border-top: 1px solid #EEF3F8; padding-top: 14px; } .tbc-files { flex-direction: column; } .tbc-thumbs { width: auto; flex-direction: row; flex-wrap: wrap; } .tbc-viewer { min-height: 320px; } }
+    @@media (max-width: 880px) { .tbc-body { grid-template-columns: 1fr; grid-template-rows: none; overflow-y: auto; } .tbc-col { overflow: visible; min-height: auto; padding-right: 0; } .tbc-act-cols { grid-template-columns: 1fr; } .tbc-col-act { border-left: 0; padding-left: 0; border-top: 1px solid #EEF3F8; padding-top: 14px; } .tbc-files { flex-direction: column; } .tbc-thumbs { width: auto; flex-direction: row; flex-wrap: wrap; } .tbc-viewer { min-height: 320px; } .tbc-row2 { flex-wrap: wrap; } .tbc-row2 .tbc-grow { min-width: 120px; } }
+    /* Movil (hasta 640px): el editor de tarea a pantalla completa, header/tabs/footer adaptados */
+    @@media (max-width: 640px) {
+        .tb-modal-bd { padding: 0; }
+        .tbc-modal { width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; border-radius: 0; }
+        .tbc-head { flex-wrap: wrap; padding: 12px 14px; }
+        .tbc-tabs { overflow-x: auto; padding: 0 10px; }
+        .tbc-tab { flex: 0 0 auto; }
+        .tbc-body { padding: 14px; }
+        .tbc-foot { flex-wrap: wrap; padding: 12px 14px; }
+        .tbc-foot .tb-flex { display: none; }
+    }
     /* ----- Campos personalizados: lista (columnas) ----- */
     .tb-lc-due { flex: 0 0 100px; min-width: 100px; }
     .tb-row-due { flex: 0 0 100px; min-width: 100px; }
