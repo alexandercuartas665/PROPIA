@@ -2,6 +2,7 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using System.Globalization
 @using Propia.Application.Reservas
+@using Propia.Application.MiCopropiedad
 @using Propia.Domain.Enums
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
@@ -248,27 +249,25 @@ else
                         <input type="time" @bind="_resHoraFin" />
                     </div>
                 </div>
-                <div class="rs-grid2">
-                    <div class="rs-fld">
-                        <label>Unidad *</label>
-                        <select @bind="_resUnidad">
-                            <option value="">Seleccionar...</option>
-                            @if (_unidades is not null)
-                            {
-                                @foreach (var u in _unidades) { <option value="@u.Id">@u.Numero</option> }
-                            }
-                        </select>
-                    </div>
-                    <div class="rs-fld">
-                        <label>Responsable *</label>
-                        <select @bind="_resPersona">
-                            <option value="">Seleccionar...</option>
-                            @if (_personas is not null)
-                            {
-                                @foreach (var p in _personas) { <option value="@p.Id">@p.Nombres @p.Apellidos</option> }
-                            }
-                        </select>
-                    </div>
+                <div class="rs-fld">
+                    <SelectorUnidadCascada Unidades="_unidades"
+                                           UnidadId="@(_resUnidad == Guid.Empty ? (Guid?)null : _resUnidad)"
+                                           UnidadIdChanged="OnUnidadReservaChanged"
+                                           MostrarLabels="true" Requerido="true" />
+                </div>
+                <div class="rs-fld">
+                    <label>Responsable *</label>
+                    <select @bind="_resPersona" disabled="@(_resUnidad == Guid.Empty)">
+                        <option value="">@(_resUnidad == Guid.Empty ? "Elige una unidad primero" : "Seleccionar...")</option>
+                        @if (_responsables is not null)
+                        {
+                            @foreach (var p in _responsables) { <option value="@p.PersonaId">@p.PersonaNombre - @RolTexto(p.Rol)</option> }
+                        }
+                    </select>
+                    @if (_resUnidad != Guid.Empty && _responsables is not null && _responsables.Count == 0)
+                    {
+                        <span style="font-size:11.5px;color:#EF4444;font-weight:600;">Sin personas asociadas a esta unidad. Vinculalas en Unidades privadas.</span>
+                    }
                 </div>
                 <label class="rs-check">
                     <input type="checkbox" @bind="_resReglamento" />
@@ -278,6 +277,13 @@ else
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5M12 16h.01"></path></svg>
                     Si la zona requiere aprobacion, la reserva queda <b>Pendiente</b> hasta que el administrador la apruebe.
                 </div>
+                @if (!string.IsNullOrWhiteSpace(_resError))
+                {
+                    <div class="rs-modal-err">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5M12 16h.01"></path></svg>
+                        <span>@_resError</span>
+                    </div>
+                }
             </div>
             <div class="rs-modal-foot">
                 <button class="rs-btn rs-btn-ghost" @onclick="CerrarReservar">Cancelar</button>
@@ -559,6 +565,8 @@ else
     .rs-check input { width: 16px; height: 16px; accent-color: #6D4FE3; }
     .rs-check-inline { white-space: nowrap; }
     .rs-note { display: flex; align-items: center; gap: 9px; padding: 11px 13px; background: #FBFAFE; border: 1px dashed #DCD2F8; border-radius: 10px; font-size: 12px; color: #7C5CE8; }
+    .rs-modal-err { display: flex; align-items: center; gap: 9px; margin-top: 10px; padding: 11px 13px; background: #FEF2F2; border: 1px solid #FCA5A5; border-radius: 10px; font-size: 12.5px; font-weight: 600; color: #B91C1C; }
+    .rs-modal-err svg { flex-shrink: 0; }
     .rs-franjas { border-top: 1px solid #EEF3F8; padding-top: 12px; }
     .rs-franja-row { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; }
     .rs-franja-row .rs-check { min-width: 120px; }
@@ -583,8 +591,8 @@ else
     private List<ZonaGaleriaDto>? _galeria;
     private List<ReservaDto> _reservas = new();
     private List<BloqueoDto>? _bloqueos;
-    private List<UnidadMini>? _unidades;
-    private List<PersonaMini>? _personas;
+    private List<UnidadDto>? _unidades;
+    private List<UnidadPersonaDto>? _responsables;   // terceros de la unidad elegida (no servicios generales)
     private int _rsWeek;
 
     // Nueva reserva
@@ -596,6 +604,7 @@ else
     private DateTime _resHoraIni = DateTime.Today.Date.AddHours(10);
     private DateTime _resHoraFin = DateTime.Today.Date.AddHours(12);
     private bool _resReglamento = true;
+    private string? _resError;   // error de negocio mostrado DENTRO del modal (no en el banner de la pagina)
 
     // Config
     private bool _showConfig;
@@ -717,8 +726,6 @@ else
         public TimeOnly HoraCierre { get; set; }
     }
 
-    private record UnidadMini(Guid Id, string Numero);
-    private record PersonaMini(Guid Id, string Nombres, string Apellidos);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -745,8 +752,7 @@ else
             _galeria = await http.GetFromJsonAsync<List<ZonaGaleriaDto>>("/api/reservas/galeria") ?? new();
             _reservas = await http.GetFromJsonAsync<List<ReservaDto>>("/api/reservas") ?? new();
             _bloqueos = await http.GetFromJsonAsync<List<BloqueoDto>>("/api/reservas/bloqueos") ?? new();
-            try { _unidades = await http.GetFromJsonAsync<List<UnidadMini>>("/api/mi-copropiedad/unidades") ?? new(); } catch { _unidades = new(); }
-            try { _personas = await http.GetFromJsonAsync<List<PersonaMini>>("/api/directorio/personas") ?? new(); } catch { _personas = new(); }
+            try { _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new(); } catch { _unidades = new(); }
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
     }
@@ -767,7 +773,7 @@ else
     {
         var zonas = ZonasReservables;
         _resZona = zonaId ?? (zonas.FirstOrDefault()?.ZonaComunId ?? Guid.Empty);
-        _resUnidad = Guid.Empty; _resPersona = Guid.Empty;
+        _resUnidad = Guid.Empty; _resPersona = Guid.Empty; _responsables = null; _resError = null;
 
         // Hora por defecto: si la fecha elegida es HOY, arranca en la proxima hora valida
         // (>= ahora + anticipacion minima) para no chocar con RN-07 al confirmar el default.
@@ -803,10 +809,41 @@ else
 
     private void CerrarReservar() => _showReservar = false;
 
+    /// <summary>Al elegir la unidad (cascada Torre->Unidad), carga como responsables solo los
+    /// terceros vinculados a esa unidad (propietarios/residentes/familiares/...). Excluye por
+    /// diseno a servicios generales / empleadas de servicio (entidad aparte) y a empresas.</summary>
+    private async Task OnUnidadReservaChanged(Guid? unidadId)
+    {
+        _resUnidad = unidadId ?? Guid.Empty;
+        _resPersona = Guid.Empty;
+        _responsables = null;
+        if (_resUnidad == Guid.Empty) return;
+        try
+        {
+            var lista = await Auth().GetFromJsonAsync<List<UnidadPersonaDto>>($"/api/mi-copropiedad/unidades/{_resUnidad}/personas") ?? new();
+            _responsables = lista
+                .Where(p => p.EntidadTipo == EntidadDirectorio.Persona && p.PersonaId != Guid.Empty)
+                .GroupBy(p => p.PersonaId).Select(g => g.First())
+                .ToList();
+        }
+        catch { _responsables = new(); }
+    }
+
+    private static string RolTexto(RolUnidadPersona rol) => rol switch
+    {
+        RolUnidadPersona.Propietario => "Propietario",
+        RolUnidadPersona.Residente => "Residente",
+        RolUnidadPersona.Familiar => "Familiar",
+        RolUnidadPersona.Arrendatario => "Arrendatario",
+        RolUnidadPersona.Apoderado => "Apoderado",
+        _ => rol.ToString()
+    };
+
     private async Task ConfirmarReservar()
     {
-        if (_resZona == Guid.Empty) { _msg = "Selecciona una zona."; _msgClass = "alert-warning"; return; }
-        _busy = true; _msg = null;
+        _resError = null;
+        if (_resZona == Guid.Empty) { _resError = "Selecciona una zona."; return; }
+        _busy = true;
         try
         {
             var req = new CrearReservaRequest(_resZona, _resPersona, _resUnidad,
@@ -814,12 +851,30 @@ else
                 TimeOnly.FromDateTime(_resHoraIni), TimeOnly.FromDateTime(_resHoraFin),
                 _resReglamento);
             var resp = await Auth().PostAsJsonAsync("/api/reservas", req);
-            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            if (!resp.IsSuccessStatusCode) { _resError = ExtraerError(await resp.Content.ReadAsStringAsync()); return; }
             _msg = "Reserva creada."; _msgClass = "alert-success";
             _showReservar = false;
             await RecargarReservasAsync();
         }
+        catch (Exception ex) { _resError = ex.Message; }
         finally { _busy = false; }
+    }
+
+    /// <summary>La API devuelve los errores de negocio como {"error":"..."}. Extrae ese texto para
+    /// mostrarlo limpio dentro del modal; si no es ese formato, devuelve el texto tal cual.</summary>
+    private static string ExtraerError(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return "No se pudo crear la reserva.";
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("error", out var e)
+                && e.ValueKind == System.Text.Json.JsonValueKind.String)
+                return e.GetString() ?? body;
+        }
+        catch { /* no era JSON */ }
+        return body.Length > 300 ? body[..300] : body;
     }
 
     private async Task AprobarReserva(Guid id)

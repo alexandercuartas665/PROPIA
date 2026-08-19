@@ -1,0 +1,114 @@
+@* ============================================================================
+   SelectorUnidadCascada - selector de unidad en CASCADA: primero Torre, luego Unidad.
+   Reutilizable en todo el sistema (Reservas, Porteria, PQRSD, ...). Deriva la lista de
+   torres de las propias unidades (UnidadDto ya trae TorreId + TorreNombre), asi que no
+   requiere cargar torres aparte. Two-way binding con UnidadId (Guid?).
+   ============================================================================ *@
+@using Propia.Application.MiCopropiedad
+
+<div class="suc @(Inline ? "suc--inline" : "")">
+    <div class="suc-fld">
+        @if (MostrarLabels) { <label class="suc-lbl">Torre@(Requerido ? " *" : "")</label> }
+        <select class="@SelClass" value="@_torreSel" @onchange="OnTorreChanged" disabled="@Disabled">
+            <option value="">@PlaceholderTorre</option>
+            @foreach (var t in _torres) { <option value="@t.Key">@t.Nombre</option> }
+        </select>
+    </div>
+    <div class="suc-fld">
+        @if (MostrarLabels) { <label class="suc-lbl">Unidad@(Requerido ? " *" : "")</label> }
+        <select class="@SelClass" value="@(UnidadId?.ToString() ?? "")" @onchange="OnUnidadChanged"
+                disabled="@(Disabled || string.IsNullOrEmpty(_torreSel))">
+            <option value="">@(string.IsNullOrEmpty(_torreSel) ? "Elige torre primero" : PlaceholderUnidad)</option>
+            @foreach (var u in UnidadesDeTorre) { <option value="@u.Id">@u.Numero</option> }
+        </select>
+    </div>
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<UnidadDto>? Unidades { get; set; }
+    [Parameter] public Guid? UnidadId { get; set; }
+    [Parameter] public EventCallback<Guid?> UnidadIdChanged { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public bool MostrarLabels { get; set; } = true;
+    [Parameter] public bool Requerido { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool Inline { get; set; } = true;
+    [Parameter] public string PlaceholderTorre { get; set; } = "Torre...";
+    [Parameter] public string PlaceholderUnidad { get; set; } = "Unidad...";
+
+    private const string SinTorre = "__sin__";
+    private string _torreSel = "";
+
+    // Si el host pasa una Class (ej. "po-input"), usa esa (calza con el estilo de la pagina);
+    // si no, usa el estilo propio del componente.
+    private string SelClass => string.IsNullOrWhiteSpace(Class) ? "suc-select" : Class!;
+
+    private record TorreOpt(string Key, string Nombre);
+
+    private List<TorreOpt> _torres = new();
+
+    private List<UnidadDto> UnidadesDeTorre =>
+        (Unidades ?? new List<UnidadDto>())
+            .Where(u => TorreKey(u) == _torreSel)
+            .OrderBy(u => u.Numero, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private static string TorreKey(UnidadDto u) => u.TorreId?.ToString() ?? SinTorre;
+
+    protected override void OnParametersSet()
+    {
+        // Torres distintas derivadas de las unidades (por si la lista cambio).
+        _torres = (Unidades ?? new List<UnidadDto>())
+            .GroupBy(TorreKey)
+            .Select(g => new TorreOpt(g.Key,
+                g.Key == SinTorre ? "(Sin torre)" : (g.First().TorreNombre ?? "Torre")))
+            .OrderBy(t => t.Nombre, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // Si viene una unidad ya elegida (modo edicion), sincroniza la torre.
+        if (UnidadId is Guid uid && uid != Guid.Empty)
+        {
+            var u = (Unidades ?? new List<UnidadDto>()).FirstOrDefault(x => x.Id == uid);
+            if (u is not null) _torreSel = TorreKey(u);
+        }
+        // Comodidad: si solo hay una torre, preseleccionala.
+        else if (string.IsNullOrEmpty(_torreSel) && _torres.Count == 1)
+        {
+            _torreSel = _torres[0].Key;
+        }
+    }
+
+    private async Task OnTorreChanged(ChangeEventArgs e)
+    {
+        _torreSel = e.Value?.ToString() ?? "";
+        // Al cambiar de torre, la unidad elegida deja de ser valida.
+        if (UnidadId is not null)
+        {
+            UnidadId = null;
+            await UnidadIdChanged.InvokeAsync(null);
+        }
+    }
+
+    private async Task OnUnidadChanged(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString();
+        Guid? val = Guid.TryParse(raw, out var g) ? g : null;
+        UnidadId = val;
+        await UnidadIdChanged.InvokeAsync(val);
+    }
+}
+
+<style>
+    .suc { display: grid; gap: 10px; }
+    .suc--inline { grid-template-columns: 1fr 1fr; }
+    .suc-fld { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    .suc-lbl { font-size: 12px; font-weight: 600; color: #516F90; }
+    .suc-select {
+        width: 100%; padding: 9px 11px; border: 1px solid #D7E0EA; border-radius: 9px;
+        background: #fff; font-family: inherit; font-size: 13.5px; color: #1B2A3A;
+        box-sizing: border-box; cursor: pointer;
+    }
+    .suc-select:focus { outline: none; border-color: var(--propia-brand, #6D4FE3); box-shadow: 0 0 0 3px rgba(109,79,227,.12); }
+    .suc-select:disabled { background: #F1F5F9; color: #94A3B8; cursor: not-allowed; }
+    @@media (max-width: 560px) { .suc--inline { grid-template-columns: 1fr; } }
+</style>

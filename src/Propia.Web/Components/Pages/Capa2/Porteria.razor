@@ -1,6 +1,7 @@
 @page "/porteria"
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.Porteria
+@using Propia.Application.MiCopropiedad
 @using Propia.Domain.Enums
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
@@ -390,13 +391,10 @@
                 <div class="po-card-h">Autorizar vehiculo</div>
                 <div class="po-form-body">
                     <label class="po-lbl">Unidad *</label>
-                    <select class="po-input" @bind="_vUnidad">
-                        <option value="@Guid.Empty">Seleccionar...</option>
-                        @if (_unidades is not null)
-                        {
-                            @foreach (var u in _unidades) { <option value="@u.Id">@u.Numero</option> }
-                        }
-                    </select>
+                    <SelectorUnidadCascada Unidades="_unidades"
+                                           UnidadId="@(_vUnidad == Guid.Empty ? (Guid?)null : _vUnidad)"
+                                           UnidadIdChanged="@(v => _vUnidad = v ?? Guid.Empty)"
+                                           Class="po-input" MostrarLabels="false" />
                     <label class="po-lbl">Placa *</label>
                     <input class="po-input" maxlength="10" placeholder="ABC123" @bind="_vPlaca" @bind:event="oninput" />
                     <div class="po-form-2">
@@ -472,13 +470,10 @@
                 <div class="po-card-h">Registrar paquete</div>
                 <div class="po-form-body">
                     <label class="po-lbl">Unidad destinataria *</label>
-                    <select class="po-input" @bind="_paqUnidad">
-                        <option value="@Guid.Empty">Seleccionar...</option>
-                        @if (_unidades is not null)
-                        {
-                            @foreach (var u in _unidades) { <option value="@u.Id">@u.Numero</option> }
-                        }
-                    </select>
+                    <SelectorUnidadCascada Unidades="_unidades"
+                                           UnidadId="@(_paqUnidad == Guid.Empty ? (Guid?)null : _paqUnidad)"
+                                           UnidadIdChanged="@(v => _paqUnidad = v ?? Guid.Empty)"
+                                           Class="po-input" MostrarLabels="false" />
                     <div class="po-form-2">
                         <div>
                             <label class="po-lbl">Tipo</label>
@@ -660,13 +655,10 @@
                     </div>
                     <div>
                         <label class="po-lbl">Unidad destino *</label>
-                        <select class="po-input" @bind="_viDestino">
-                            <option value="@Guid.Empty">Seleccionar...</option>
-                            @if (_unidades is not null)
-                            {
-                                @foreach (var u in _unidades) { <option value="@u.Id">@u.Numero</option> }
-                            }
-                        </select>
+                        <SelectorUnidadCascada Unidades="_unidades"
+                                               UnidadId="@(_viDestino == Guid.Empty ? (Guid?)null : _viDestino)"
+                                               UnidadIdChanged="@(v => _viDestino = v ?? Guid.Empty)"
+                                               Class="po-input" MostrarLabels="false" />
                     </div>
                     <div>
                         <label class="po-lbl">Motivo <span style="font-weight:600;color:#A6B7C8">(opcional)</span></label>
@@ -863,13 +855,10 @@
             </div>
             <div class="po-form-body" style="padding:20px 22px">
                 <label class="po-lbl">Unidad *</label>
-                <select class="po-input" @bind="_authUnidad">
-                    <option value="@Guid.Empty">Seleccionar...</option>
-                    @if (_unidades is not null)
-                    {
-                        @foreach (var u in _unidades) { <option value="@u.Id">@u.Numero</option> }
-                    }
-                </select>
+                <SelectorUnidadCascada Unidades="_unidades"
+                                       UnidadId="@(_authUnidad == Guid.Empty ? (Guid?)null : _authUnidad)"
+                                       UnidadIdChanged="@(v => _authUnidad = v ?? Guid.Empty)"
+                                       Class="po-input" MostrarLabels="false" />
                 <label class="po-lbl">Nombre del visitante *</label>
                 <input class="po-input" @bind="_authNombre" @bind:event="oninput" />
                 <div class="po-form-2">
@@ -936,10 +925,10 @@
                 {
                     <div>
                         <label class="po-lbl">Inmueble</label>
-                        <select class="po-input" @bind="_nvDestinoId">
-                            <option value="@Guid.Empty">Seleccionar...</option>
-                            @if (_unidades is not null) { @foreach (var u in _unidades) { <option value="@u.Id">@u.Numero</option> } }
-                        </select>
+                        <SelectorUnidadCascada Unidades="_unidades"
+                                               UnidadId="@(_nvDestinoId == Guid.Empty ? (Guid?)null : _nvDestinoId)"
+                                               UnidadIdChanged="@(v => _nvDestinoId = v ?? Guid.Empty)"
+                                               Class="po-input" MostrarLabels="false" />
                     </div>
                 }
                 else if (_nvDestinoTipo == "zona")
@@ -1196,7 +1185,7 @@
     private List<CorrespondenciaDto>? _correspondencia;
     private ConfiguracionDto? _config;
     private List<PersonaMini>? _personas;
-    private List<UnidadMini>? _unidades;
+    private List<UnidadDto>? _unidades;
 
     // Abrir turno
     private Guid _abrirGuardaId = Guid.Empty;
@@ -1284,7 +1273,6 @@
     private record EquipoMini(Guid Id, string Nombre);
 
     private record PersonaMini(Guid Id, string Nombres, string Apellidos);
-    private record UnidadMini(Guid Id, string Numero);
     private record ChatMsg(string Kind, string Txt, string Hora);
 
     private sealed class AdentroItem
@@ -1325,7 +1313,7 @@
             _visitasHoy = await http.GetFromJsonAsync<List<RegistroVisitaDto>>($"/api/porteria/visitas?fecha={today:yyyy-MM-dd}") ?? new();
             _autorizaciones = await http.GetFromJsonAsync<List<AutorizacionPreviaDto>>("/api/porteria/autorizaciones?estado=1") ?? new();
             _vehiculos = await http.GetFromJsonAsync<List<VehiculoAutorizadoDto>>("/api/porteria/vehiculos") ?? new();
-            _unidades = await http.GetFromJsonAsync<List<UnidadMini>>("/api/mi-copropiedad/unidades") ?? new();
+            _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
             _personas = await http.GetFromJsonAsync<List<PersonaMini>>("/api/directorio/personas") ?? new();
             _campos = await http.GetFromJsonAsync<List<PorteriaCampoDto>>("/api/porteria/campos") ?? new();
             _novedades = await http.GetFromJsonAsync<List<NovedadDto>>($"/api/porteria/novedades?fecha={today:yyyy-MM-dd}") ?? new();
