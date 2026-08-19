@@ -85,7 +85,11 @@ public sealed record AiAgentPromptDto(
 public sealed record AiAgentDetailDto(
     AiAgentDto Agent,
     IReadOnlyList<AiAgentResourceDto> Resources,
-    IReadOnlyList<AiAgentPromptDto> Prompts);
+    IReadOnlyList<AiAgentPromptDto> Prompts,
+    // Tools MCP seleccionadas por el agente (nombres de la conexion "copropiedades"). Lo puebla la API
+    // admin (AdminAgentService) para que un cliente de maquina confirme la seleccion por API. Null en la
+    // ruta UI normal -> compatible hacia atras.
+    IReadOnlyList<string>? ToolKeys = null);
 
 // Los 5 primeros campos los consume IAiAgentService.CreateAsync (crea el agente apagado). Los campos
 // extra (IsActive/SortOrder/Reactions*) solo los honra la API admin (AdminAgentService.CreateAgentAsync),
@@ -102,8 +106,16 @@ public sealed record UpdateAiAgentRequest(string? Name, string? Role, AiProvider
 /// nombre de una tool de la conexion "copropiedades" (descubierta via tools/list).</summary>
 public sealed record SetAgentToolsRequest(IReadOnlyList<string> ToolKeys);
 
-/// <summary>Body del POST admin de vinculo linea-agente.</summary>
-public sealed record BindLineRequest(Guid WhatsAppLineId);
+/// <summary>Body del POST admin de vinculo linea-agente. Reassign=true desvincula primero a cualquier
+/// otro agente que ya atienda la linea (evita el 409 y reasigna en un solo llamado).</summary>
+public sealed record BindLineRequest(Guid WhatsAppLineId, bool Reassign = false);
+
+/// <summary>Item del catalogo de tools MCP (GET admin .../mcp-tools): nombre + descripcion en vivo.</summary>
+public sealed record AdminMcpToolCatalogDto(string Name, string? Description);
+
+/// <summary>Conexion MCP con sus tools EN VIVO, para descubrir/validar toolKeys por la API admin de agentes.</summary>
+public sealed record AdminMcpConnectionCatalogDto(string Code, string DisplayName, string? Description,
+    bool Reachable, string? Error, IReadOnlyList<AdminMcpToolCatalogDto> Tools);
 
 /// <summary>Linea WhatsApp para el descubrimiento cross-tenant por API admin (incluye el agente que la atiende).</summary>
 public sealed record AdminLineDto(

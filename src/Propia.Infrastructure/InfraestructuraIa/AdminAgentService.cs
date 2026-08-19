@@ -57,6 +57,15 @@ public sealed class AdminAgentService : IAdminAgentService
         await _db.Database.ExecuteSqlRawAsync("SELECT set_config('app.tenant_id', {0}, false)", tenantId.ToString());
     }
 
+    /// <summary>Enriquece el detalle con las tools MCP seleccionadas (nombres), para que la API admin las
+    /// exponga y un cliente de maquina pueda CONFIRMAR la seleccion (gap: el detalle no las mostraba).</summary>
+    private async Task<AiAgentDetailDto?> ConToolKeysAsync(AiAgentDetailDto? detail, Guid agentId, CancellationToken ct)
+    {
+        if (detail is null) { return null; }
+        var keys = (await _agents.GetMcpToolsAsync(agentId, ct)).Select(s => s.ToolName).ToList();
+        return detail with { ToolKeys = keys };
+    }
+
     public async Task<IReadOnlyList<AiAgentDto>> ListAgentsAsync(Guid tenantId, CancellationToken ct = default)
     {
         await ImpersonarAsync(tenantId);
@@ -66,7 +75,7 @@ public sealed class AdminAgentService : IAdminAgentService
     public async Task<AiAgentDetailDto?> GetAgentAsync(Guid tenantId, Guid agentId, CancellationToken ct = default)
     {
         await ImpersonarAsync(tenantId);
-        return await _agents.GetAsync(agentId, ct);
+        return await ConToolKeysAsync(await _agents.GetAsync(agentId, ct), agentId, ct);
     }
 
     public async Task<AiAgentDto?> CreateAgentAsync(Guid tenantId, CreateAiAgentRequest request,
@@ -135,7 +144,7 @@ public sealed class AdminAgentService : IAdminAgentService
         Audit(actorId, actorEmail, "AI_AGENT_ADMIN_TOOLS", $"Tenant:{tenantId} Agent:{agentId}",
             $"Set {selections.Count} tools MCP via API admin de agentes (Capa 6)", ip);
         await _db.SaveChangesAsync(ct);
-        return await _agents.GetAsync(agentId, ct);
+        return await ConToolKeysAsync(await _agents.GetAsync(agentId, ct), agentId, ct);
     }
 
     public async Task<IReadOnlyList<AdminLineDto>> ListLinesAsync(Guid tenantId, CancellationToken ct = default)
@@ -151,10 +160,30 @@ public sealed class AdminAgentService : IAdminAgentService
             activeBindings.FirstOrDefault(b => b.WhatsAppLineId == l.Id)?.AgentId)).ToList();
     }
 
-    public async Task<bool> BindLineAsync(Guid tenantId, Guid agentId, Guid whatsAppLineId,
+    public async Task<bool> BindLineAsync(Guid tenantId, Guid agentId, Guid whatsAppLineId, bool reassign,
         Guid actorId, string actorEmail, string? ip, CancellationToken ct = default)
     {
         await ImpersonarAsync(tenantId);
+
+        // Reasignar: desvincular primero a cualquier OTRO agente que ya atienda esta linea, y commitear
+        // ese cambio antes de re-vincular (si no, SetAsync veria la linea aun ocupada y devolveria false).
+        if (reassign)
+        {
+            var otros = await _db.AiAgentLineBindings.AsNoTracking()
+                .Where(b => b.WhatsAppLineId == whatsAppLineId && b.IsConnected && b.AgentId != agentId)
+                .Select(b => b.AgentId).Distinct().ToListAsync(ct);
+            if (otros.Count > 0)
+            {
+                foreach (var otro in otros)
+                {
+                    await _bindings.SetAsync(otro, new SetAgentLineBindingRequest(whatsAppLineId, Connected: false), ct);
+                    Audit(actorId, actorEmail, "AI_AGENT_ADMIN_UNBIND", $"Tenant:{tenantId} Agent:{otro} Line:{whatsAppLineId}",
+                        "Desvinculo previo para reasignar linea via API admin de agentes (Capa 6)", ip);
+                }
+                await _db.SaveChangesAsync(ct);
+            }
+        }
+
         var ok = await _bindings.SetAsync(agentId, new SetAgentLineBindingRequest(whatsAppLineId, Connected: true), ct);
         if (!ok) { return false; }
 

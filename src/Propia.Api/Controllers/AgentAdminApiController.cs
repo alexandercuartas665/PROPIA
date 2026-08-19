@@ -19,8 +19,13 @@ namespace Propia.Api.Controllers;
 public class AgentAdminApiController : ControllerBase
 {
     private readonly IAdminAgentService _svc;
+    private readonly IMcpGateway _mcp;
 
-    public AgentAdminApiController(IAdminAgentService svc) => _svc = svc;
+    public AgentAdminApiController(IAdminAgentService svc, IMcpGateway mcp)
+    {
+        _svc = svc;
+        _mcp = mcp;
+    }
 
     [HttpGet("agents")]
     public async Task<IActionResult> ListAgents(Guid tenantId, CancellationToken ct)
@@ -54,9 +59,65 @@ public class AgentAdminApiController : ControllerBase
     [HttpPut("agents/{agentId:guid}/tools")]
     public async Task<IActionResult> SetTools(Guid tenantId, Guid agentId, [FromBody] SetAgentToolsRequest req, CancellationToken ct)
     {
+        var toolKeys = (req.ToolKeys ?? Array.Empty<string>())
+            .Where(k => !string.IsNullOrWhiteSpace(k)).Select(k => k.Trim()).ToList();
+
+        // Gap cerrado: validar las keys contra el catalogo EN VIVO de la conexion "copropiedades" (antes
+        // aceptaba cualquier string). Lista vacia = limpiar seleccion, no requiere catalogo.
+        if (toolKeys.Count > 0)
+        {
+            var bearer = BearerToken();
+            if (string.IsNullOrEmpty(bearer)) { return Unauthorized(); }
+
+            // Intenta validar contra el catalogo en vivo. Si el servidor MCP no responde, NO se bloquea
+            // (se acepta como antes de este gap): no atamos el set de tools a la disponibilidad del MCP.
+            IReadOnlyList<McpToolInfo>? validas = null;
+            try { validas = await _mcp.ListToolsAsync(McpConnectionCatalog.Copropiedades, bearer, ct); }
+            catch { /* catalogo MCP no disponible: se omite la validacion */ }
+
+            if (validas is not null)
+            {
+                var validNames = validas.Select(t => t.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var invalidas = toolKeys.Where(k => !validNames.Contains(k)).Distinct().ToList();
+                if (invalidas.Count > 0)
+                    return BadRequest(new
+                    {
+                        error = "Hay toolKeys que no existen en la conexion 'copropiedades'.",
+                        invalidKeys = invalidas,
+                        validKeys = validNames.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray()
+                    });
+            }
+        }
+
         var (actorId, actorEmail, ip) = Actor();
-        var detail = await _svc.SetAgentToolsAsync(tenantId, agentId, req.ToolKeys ?? Array.Empty<string>(), actorId, actorEmail, ip, ct);
+        var detail = await _svc.SetAgentToolsAsync(tenantId, agentId, toolKeys, actorId, actorEmail, ip, ct);
         return detail is null ? NotFound() : Ok(detail);
+    }
+
+    /// <summary>Gap cerrado: catalogo de tools MCP EN VIVO (conexion "copropiedades" y futuras). Permite
+    /// descubrir por API que toolKeys son validas antes de PUT tools. Reachable=false si no responde.</summary>
+    [HttpGet("mcp-tools")]
+    public async Task<IActionResult> ListMcpTools(Guid tenantId, CancellationToken ct)
+    {
+        var bearer = BearerToken();
+        if (string.IsNullOrEmpty(bearer)) { return Unauthorized(); }
+
+        var resultado = new List<AdminMcpConnectionCatalogDto>();
+        foreach (var con in McpConnectionCatalog.All)
+        {
+            try
+            {
+                var tools = await _mcp.ListToolsAsync(con.Code, bearer, ct);
+                resultado.Add(new AdminMcpConnectionCatalogDto(con.Code, con.DisplayName, con.Description, true, null,
+                    tools.Select(t => new AdminMcpToolCatalogDto(t.Name, t.Description)).ToList()));
+            }
+            catch (Exception ex)
+            {
+                resultado.Add(new AdminMcpConnectionCatalogDto(con.Code, con.DisplayName, con.Description, false, ex.Message,
+                    Array.Empty<AdminMcpToolCatalogDto>()));
+            }
+        }
+        return Ok(resultado);
     }
 
     [HttpGet("lines")]
@@ -67,10 +128,10 @@ public class AgentAdminApiController : ControllerBase
     public async Task<IActionResult> BindLine(Guid tenantId, Guid agentId, [FromBody] BindLineRequest req, CancellationToken ct)
     {
         var (actorId, actorEmail, ip) = Actor();
-        var ok = await _svc.BindLineAsync(tenantId, agentId, req.WhatsAppLineId, actorId, actorEmail, ip, ct);
+        var ok = await _svc.BindLineAsync(tenantId, agentId, req.WhatsAppLineId, req.Reassign, actorId, actorEmail, ip, ct);
         return ok
             ? Ok(new { ok = true })
-            : Conflict(new { ok = false, error = "La linea no existe o ya esta atendida por otro agente." });
+            : Conflict(new { ok = false, error = "La linea no existe o ya esta atendida por otro agente (usa reassign:true para reasignar)." });
     }
 
     [HttpDelete("agents/{agentId:guid}/line-binding/{whatsAppLineId:guid}")]
@@ -96,5 +157,13 @@ public class AgentAdminApiController : ControllerBase
         var actorEmail = User.FindFirst(ClaimTypes.Email)?.Value ?? User.FindFirst("email")?.Value ?? "superadmin";
         var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
         return (actorId, actorEmail, ip);
+    }
+
+    /// <summary>El bearer del propio request, que el gateway MCP presenta a /mcp para listar las tools.</summary>
+    private string? BearerToken()
+    {
+        var raw = Request.Headers.Authorization.ToString();
+        const string prefix = "Bearer ";
+        return raw.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? raw[prefix.Length..].Trim() : null;
     }
 }

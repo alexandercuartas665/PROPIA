@@ -29,8 +29,10 @@ public interface IAdminAgentService
     /// <summary>Lineas WhatsApp de la copropiedad (para descubrir por API el numero/linea disponible).</summary>
     Task<IReadOnlyList<AdminLineDto>> ListLinesAsync(Guid tenantId, CancellationToken ct = default);
 
-    /// <summary>Vincula una linea al agente (la atiende). false si la linea esta tomada por otro agente o no existe. Audita AI_AGENT_ADMIN_BIND.</summary>
-    Task<bool> BindLineAsync(Guid tenantId, Guid agentId, Guid whatsAppLineId,
+    /// <summary>Vincula una linea al agente (la atiende). false si la linea no existe, o esta tomada por
+    /// otro agente y reassign=false. Con reassign=true desvincula primero al agente que la atiende (audita
+    /// ese UNBIND) y luego vincula. Audita AI_AGENT_ADMIN_BIND.</summary>
+    Task<bool> BindLineAsync(Guid tenantId, Guid agentId, Guid whatsAppLineId, bool reassign,
         Guid actorId, string actorEmail, string? ip, CancellationToken ct = default);
 
     /// <summary>Desvincula una linea del agente. false si ese agente no la atiende. Audita AI_AGENT_ADMIN_UNBIND.</summary>
