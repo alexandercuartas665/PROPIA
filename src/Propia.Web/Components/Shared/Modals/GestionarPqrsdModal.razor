@@ -623,53 +623,97 @@
 
             <div class="gpq-card" style="@(_tab == "adjuntos" ? "" : "display:none")">
                 <div class="gpq-card-eyebrow">ADJUNTOS (@_detalle.Adjuntos.Count)</div>
-                @if (_detalle.Adjuntos.Count == 0)
-                {
-                    <div class="gpq-empty">Sin archivos adjuntos.</div>
-                }
-                else
-                {
-                    <div class="gpq-adj-grid">
+                @{ var selAdj = _detalle.Adjuntos.FirstOrDefault(x => x.Id == _adjSel) ?? _detalle.Adjuntos.FirstOrDefault(); }
+                <div class="gpq-files">
+                    @* Columna izquierda: lista de miniaturas + boton "Subir archivo" (estilo Tareas) *@
+                    <div class="gpq-thumbs">
                         @foreach (var a in _detalle.Adjuntos)
                         {
                             var aa = a;
-                            <button type="button" class="gpq-adj-card" @onclick="@(() => AbrirVisor(aa))" title="@a.NombreArchivo">
-                                <div class="gpq-adj-thumb @ThumbClass(a.TipoMime, a.NombreArchivo)">
-                                    @if (EsImagen(a.TipoMime, a.NombreArchivo) && !string.IsNullOrEmpty(a.UrlStorage) && !a.UrlStorage.StartsWith("/pendiente"))
-                                    {
-                                        <img src="@a.UrlStorage" alt="@a.NombreArchivo" />
-                                    }
-                                    else
-                                    {
-                                        <span class="gpq-adj-ext">@Extension(a.NombreArchivo)</span>
-                                    }
+                            var hayImg = EsImagen(a.TipoMime, a.NombreArchivo) && !string.IsNullOrEmpty(a.UrlStorage) && !a.UrlStorage.StartsWith("/pendiente");
+                            var titAdj = string.IsNullOrWhiteSpace(a.SubidoPorNombre) ? a.NombreArchivo : $"{a.NombreArchivo} - subido por {a.SubidoPorNombre}";
+                            <div class="gpq-thumb @(selAdj is not null && selAdj.Id == a.Id ? "on" : "")" @onclick="@(() => _adjSel = aa.Id)" title="@titAdj">
+                                <div class="gpq-thumb-ic @ThumbClass(a.TipoMime, a.NombreArchivo)">
+                                    @if (hayImg) { <img src="@a.UrlStorage" alt="@a.NombreArchivo" /> }
+                                    else { <span class="gpq-thumb-ext">@Extension(a.NombreArchivo)</span> }
                                 </div>
-                                <div class="gpq-adj-name">@a.NombreArchivo</div>
-                                <div class="gpq-adj-meta">@FormatSize(a.TamanioBytes)</div>
-                            </button>
+                                <div class="gpq-thumb-meta">
+                                    <span class="gpq-thumb-nm">@a.NombreArchivo</span>
+                                    <span class="gpq-thumb-sz">@FormatSize(a.TamanioBytes)@(string.IsNullOrWhiteSpace(a.SubidoPorNombre) ? "" : " - " + a.SubidoPorNombre)</span>
+                                </div>
+                            </div>
                         }
+                        <label class="gpq-thumb-up @(_subiendo ? "gpq-thumb-up--busy" : "")">
+                            @if (_subiendo)
+                            {
+                                <span class="gpq-thumb-up-t">Subiendo @_subiendoNombre...</span>
+                            }
+                            else
+                            {
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
+                                <span class="gpq-thumb-up-t">Subir archivo</span>
+                            }
+                            <InputFile OnChange="OnArchivosSeleccionados" multiple style="display:none" />
+                        </label>
                     </div>
-                }
-
-                @* Drag&drop con InputFile + fallback de URL para registrar metadata. *@
-                <label class="gpq-dropzone @(_subiendo ? "gpq-dropzone--busy" : "")">
-                    <InputFile OnChange="OnArchivosSeleccionados" multiple class="gpq-dropzone-input" />
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
-                    </svg>
-                    <div class="gpq-dropzone-text">
-                        @if (_subiendo)
+                    @* Columna derecha: visor grande del adjunto seleccionado *@
+                    <div class="gpq-viewer">
+                        @if (selAdj is null)
                         {
-                            <strong>Subiendo @_subiendoNombre...</strong>
+                            <div class="gpq-viewer-empty">
+                                <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M21 15l-5-5L5 21M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="8.5" cy="8.5" r="1.5"/></svg>
+                                <p>Sin archivos adjuntos.</p>
+                                <span>Sube imagenes o documentos con el boton "Subir archivo".</span>
+                            </div>
+                        }
+                        else if (string.IsNullOrEmpty(selAdj.UrlStorage) || selAdj.UrlStorage.StartsWith("/pendiente"))
+                        {
+                            <div class="gpq-viewer-file">
+                                <svg width="54" height="54" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h4"/></svg>
+                                <p class="gpq-viewer-nm">@selAdj.NombreArchivo</p>
+                                <p class="gpq-viewer-by">Archivo registrado sin contenido subido todavia.</p>
+                            </div>
+                        }
+                        else if (EsImagen(selAdj.TipoMime, selAdj.NombreArchivo))
+                        {
+                            <div class="gpq-viewer-imgwrap" @onclick="@(() => _lightbox = selAdj.UrlStorage)" title="Clic para ampliar">
+                                <img class="gpq-viewer-img" src="@selAdj.UrlStorage" alt="@selAdj.NombreArchivo" />
+                                <span class="gpq-viewer-zoom"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg> Ampliar</span>
+                            </div>
+                            <div class="gpq-viewer-bar">
+                                <div class="gpq-viewer-meta">
+                                    <span class="gpq-viewer-nm">@selAdj.NombreArchivo</span>
+                                    <span class="gpq-viewer-by">@FormatSize(selAdj.TamanioBytes)@(string.IsNullOrWhiteSpace(selAdj.SubidoPorNombre) ? "" : " - subido por " + selAdj.SubidoPorNombre)</span>
+                                </div>
+                                <a class="gpq-viewer-open" href="@selAdj.UrlStorage" target="_blank" rel="noopener">Abrir</a>
+                            </div>
+                        }
+                        else if (EsPdf(selAdj.TipoMime, selAdj.NombreArchivo))
+                        {
+                            <div class="gpq-viewer-pdfwrap">
+                                <iframe class="gpq-viewer-pdf" src="@selAdj.UrlStorage" title="@selAdj.NombreArchivo"></iframe>
+                            </div>
+                            <div class="gpq-viewer-bar">
+                                <div class="gpq-viewer-meta">
+                                    <span class="gpq-viewer-nm">@selAdj.NombreArchivo</span>
+                                    <span class="gpq-viewer-by">@FormatSize(selAdj.TamanioBytes)</span>
+                                </div>
+                                <a class="gpq-viewer-open" href="@selAdj.UrlStorage" target="_blank" rel="noopener">Abrir en pestana</a>
+                            </div>
                         }
                         else
                         {
-                            <strong>Arrastra archivos aqui</strong>
-                            <span> o haz clic para seleccionar. Cualquier tipo, multiple.</span>
+                            <div class="gpq-viewer-file">
+                                <svg width="54" height="54" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h4"/></svg>
+                                <p class="gpq-viewer-nm">@selAdj.NombreArchivo</p>
+                                <p class="gpq-viewer-by">@FormatSize(selAdj.TamanioBytes) - @selAdj.TipoMime</p>
+                                <a class="gpq-viewer-open" href="@selAdj.UrlStorage" target="_blank" rel="noopener">Abrir / descargar</a>
+                            </div>
                         }
                     </div>
-                </label>
+                </div>
 
+                @* Fallback: registrar metadata de un archivo por URL (link a Drive, R2, etc.). *@
                 <details class="gpq-adj-url">
                     <summary>Agregar por URL (link a Drive, R2, etc.)</summary>
                     <div class="gpq-adj-add">
@@ -694,48 +738,6 @@
         <button type="button" class="gpqc-lb-x" @onclick="() => _lightbox = null" aria-label="Cerrar">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
-    </div>
-}
-
-@* Lightbox visor de archivo *@
-@if (_visorAdj is not null)
-{
-    <div class="gpq-visor" @onclick="CerrarVisor">
-        <div class="gpq-visor-box" @onclick:stopPropagation="true">
-            <div class="gpq-visor-head">
-                <div>
-                    <div class="gpq-visor-name">@_visorAdj.NombreArchivo</div>
-                    <div class="gpq-visor-meta">@FormatSize(_visorAdj.TamanioBytes) - @_visorAdj.TipoMime</div>
-                </div>
-                <button type="button" class="gpq-visor-close" @onclick="CerrarVisor" aria-label="Cerrar">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                </button>
-            </div>
-            <div class="gpq-visor-body">
-                @if (string.IsNullOrEmpty(_visorAdj.UrlStorage) || _visorAdj.UrlStorage.StartsWith("/pendiente"))
-                {
-                    <div class="gpq-visor-empty">
-                        <strong>Archivo registrado sin contenido subido</strong>
-                        <span>El binario se sube al storage R2 cuando el modulo de Storage este conectado. La metadata ya queda guardada.</span>
-                    </div>
-                }
-                else if (EsImagen(_visorAdj.TipoMime, _visorAdj.NombreArchivo))
-                {
-                    <img src="@_visorAdj.UrlStorage" alt="@_visorAdj.NombreArchivo" />
-                }
-                else if (EsPdf(_visorAdj.TipoMime, _visorAdj.NombreArchivo))
-                {
-                    <iframe src="@_visorAdj.UrlStorage" title="@_visorAdj.NombreArchivo"></iframe>
-                }
-                else
-                {
-                    <div class="gpq-visor-empty">
-                        <strong>Vista previa no disponible</strong>
-                        <a class="gpq-btn-brand" href="@_visorAdj.UrlStorage" target="_blank" rel="noopener">Descargar archivo</a>
-                    </div>
-                }
-            </div>
-        </div>
     </div>
 }
 
@@ -876,70 +878,53 @@
 
     /* Form agregar adjunto */
     /* Grid de adjuntos (miniaturas) - prototipo: 2 columnas con thumb arriba + nombre/size */
-    .gpq-adj-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
-    .gpq-adj-card {
-        display: flex; flex-direction: column; gap: 4px;
-        background: #fff; border: 1px solid #EEF3F8; border-radius: 10px;
-        padding: 9px 10px; cursor: pointer; text-align: left;
-        font-family: inherit; transition: border-color .15s, box-shadow .15s, transform .1s;
+    /* ===== Visor de adjuntos estilo Tareas: lista de miniaturas (izq) + panel de vista previa (der) ===== */
+    .gpq-files { display: flex; gap: 14px; margin-top: 4px; min-height: 340px; }
+    .gpq-thumbs { width: 210px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; max-height: 470px; padding-right: 3px; }
+    .gpq-thumb { position: relative; display: flex; align-items: center; gap: 9px; border: 1px solid #E1E8EE; border-radius: 10px; padding: 7px 9px; background: #fff; cursor: pointer; }
+    .gpq-thumb:hover { border-color: #B9AEF3; background: #FBFAFE; }
+    .gpq-thumb.on { border-color: #6D4FE3; background: #F5F1FE; box-shadow: 0 0 0 1px #6D4FE3; }
+    .gpq-thumb-ic { width: 44px; height: 44px; border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; background: linear-gradient(135deg,#F5F1FE,#E6DEFA); }
+    .gpq-thumb-ic img { width: 100%; height: 100%; object-fit: cover; }
+    .gpq-thumb-ext { font-size: 12px; font-weight: 800; letter-spacing: .5px; color: #fff; }
+    .gpq-thumb-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .gpq-thumb-nm { font-size: 11.5px; font-weight: 700; color: #33475B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .gpq-thumb-sz { font-size: 10px; font-weight: 600; color: #A6B7C8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .gpq-viewer { flex: 1; min-width: 0; min-height: 340px; max-height: 60vh; border: 1px solid #E1E8EE; border-radius: 12px; background: #FAFBFD; display: flex; flex-direction: column; overflow: hidden; }
+    .gpq-viewer-imgwrap { flex: 1; min-height: 0; position: relative; display: flex; align-items: center; justify-content: center; padding: 14px; background: #F1F5F9; overflow: auto; cursor: zoom-in; }
+    .gpq-viewer-img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; box-shadow: 0 4px 16px rgba(27,42,58,.15); }
+    .gpq-viewer-zoom { position: absolute; right: 12px; bottom: 12px; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 800; color: #fff; background: rgba(27,42,58,.72); border-radius: 20px; padding: 5px 11px; pointer-events: none; }
+    .gpq-viewer-pdfwrap { flex: 1; min-height: 440px; display: flex; background: #525659; }
+    .gpq-viewer-pdf { flex: 1; width: 100%; height: 100%; min-height: 440px; border: 0; }
+    .gpq-viewer-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-top: 1px solid #EEF3F8; background: #fff; }
+    .gpq-viewer-meta { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .gpq-viewer-nm { font-size: 12px; font-weight: 700; color: #33475B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .gpq-viewer-by { font-size: 10.5px; font-weight: 700; color: #7C98B6; }
+    .gpq-viewer-open { font-size: 11.5px; font-weight: 700; color: #6D4FE3; text-decoration: none; border: 1px solid #DCD2F8; border-radius: 8px; padding: 6px 13px; background: #F1ECFD; flex-shrink: 0; }
+    .gpq-viewer-open:hover { background: #E6DEFA; }
+    .gpq-viewer-empty, .gpq-viewer-file { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; color: #A6B7C8; text-align: center; padding: 24px; }
+    .gpq-viewer-empty p, .gpq-viewer-file p { font-size: 13.5px; font-weight: 700; color: #516F90; margin: 0; max-width: 320px; word-break: break-word; }
+    .gpq-viewer-empty span { font-size: 11.5px; color: #A6B7C8; max-width: 300px; }
+    .gpq-viewer-file { color: #6D4FE3; }
+    .gpq-viewer-file .gpq-viewer-open { margin-top: 6px; }
+    /* gradientes por tipo del icono de miniatura (ThumbClass) */
+    .gpq-adj-thumb--img { background: linear-gradient(135deg, #60A5FA, #3B82F6); }
+    .gpq-adj-thumb--pdf { background: linear-gradient(135deg, #F87171, #EF4444); }
+    .gpq-adj-thumb--doc { background: linear-gradient(135deg, #60A5FA, #2563EB); }
+    .gpq-adj-thumb--xls { background: linear-gradient(135deg, #34D399, #10B981); }
+    .gpq-adj-thumb--generic { background: linear-gradient(135deg, #94A3B8, #64748B); }
+    @@media (max-width: 760px) {
+        .gpq-files { flex-direction: column; min-height: 0; }
+        .gpq-thumbs { width: auto; flex-direction: row; flex-wrap: wrap; max-height: none; }
+        .gpq-thumb { flex: 1 1 160px; }
+        .gpq-viewer { min-height: 300px; }
     }
-    .gpq-adj-card:hover { border-color: var(--propia-brand, #6D4FE3); box-shadow: 0 4px 12px rgba(109,79,227,.10); transform: translateY(-1px); }
-    .gpq-adj-thumb {
-        position: relative; width: 100%; aspect-ratio: 4/3;
-        border-radius: 7px; overflow: hidden;
-        display: flex; align-items: center; justify-content: center;
-        background: #F8FAFC;
-    }
-    .gpq-adj-thumb img { width: 100%; height: 100%; object-fit: cover; }
-    .gpq-adj-ext { font-size: 13px; font-weight: 800; letter-spacing: .5px; color: #fff; }
-    .gpq-adj-thumb--img { background: linear-gradient(135deg, #DBEAFE, #BFDBFE); }
-    .gpq-adj-thumb--pdf { background: linear-gradient(135deg, #FECACA, #FCA5A5); }
-    .gpq-adj-thumb--doc { background: linear-gradient(135deg, #BFDBFE, #93C5FD); }
-    .gpq-adj-thumb--xls { background: linear-gradient(135deg, #BBF7D0, #86EFAC); }
-    .gpq-adj-thumb--generic { background: linear-gradient(135deg, #E5E7EB, #D1D5DB); }
-    .gpq-adj-card .gpq-adj-name { font-size: 11.5px; font-weight: 700; color: #33475B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 4px; }
-    .gpq-adj-card .gpq-adj-meta { font-size: 10px; color: #A6B7C8; font-weight: 600; }
 
-    /* Lightbox visor */
-    .gpq-visor {
-        position: fixed; inset: 0; z-index: 9500;
-        background: rgba(10, 14, 25, .85);
-        display: flex; align-items: center; justify-content: center;
-        padding: 24px; animation: gpqVisorIn .15s ease;
-    }
-    @@keyframes gpqVisorIn { from { opacity: 0; } to { opacity: 1; } }
-    .gpq-visor-box {
-        width: 100%; max-width: 880px; max-height: 92vh;
-        background: #fff; border-radius: 14px; overflow: hidden;
-        display: flex; flex-direction: column;
-        font-family: var(--propia-font-base, 'Lexend', sans-serif);
-    }
-    .gpq-visor-head {
-        display: flex; align-items: center; justify-content: space-between;
-        gap: 12px; padding: 14px 18px; border-bottom: 1px solid #EEF3F8;
-    }
-    .gpq-visor-name { font-size: 14px; font-weight: 800; color: #1B2A3A; word-break: break-all; }
-    .gpq-visor-meta { font-size: 11px; color: #7C98B6; font-weight: 600; margin-top: 1px; }
-    .gpq-visor-close { width: 34px; height: 34px; border: 0; border-radius: 8px; background: transparent; color: #7C98B6; cursor: pointer; flex-shrink: 0; }
-    .gpq-visor-close:hover { background: #F1F5F9; }
-    .gpq-visor-body { flex: 1; overflow: auto; background: #F8FAFC; display: flex; align-items: center; justify-content: center; min-height: 320px; }
-    .gpq-visor-body img { max-width: 100%; max-height: 78vh; object-fit: contain; }
-    .gpq-visor-body iframe { width: 100%; height: 78vh; border: 0; background: #fff; }
-    .gpq-visor-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 40px; text-align: center; }
-    .gpq-visor-empty strong { font-size: 14px; color: #1B2A3A; }
-    .gpq-visor-empty span { font-size: 12.5px; color: #7C98B6; max-width: 340px; line-height: 1.5; }
-
-    .gpq-dropzone {
-        position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
-        gap: 6px; padding: 18px 14px; margin-top: 8px;
-        border: 2px dashed #D7DFEA; border-radius: 12px; background: #FAFBFD;
-        color: #7C98B6; text-align: center; cursor: pointer; transition: border-color .15s, background .15s;
-    }
-    .gpq-dropzone:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); background: var(--propia-brand-soft, #F1ECFD); }
-    .gpq-dropzone--busy { opacity: .7; pointer-events: none; }
-    .gpq-dropzone-input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-    .gpq-dropzone-text { font-size: 12.5px; }
-    .gpq-dropzone-text strong { color: #1B2A3A; font-weight: 700; }
+    /* Boton "Subir archivo" al final de la lista de miniaturas (estilo Tareas .tbc-thumb-up) */
+    .gpq-thumb-up { display: flex; align-items: center; justify-content: center; gap: 7px; border: 1px dashed #D7E0EA; border-radius: 10px; padding: 12px; cursor: pointer; font-size: 11.5px; font-weight: 700; color: #6D4FE3; background: #FBFAFE; flex-shrink: 0; }
+    .gpq-thumb-up:hover { border-color: #6D4FE3; background: #F5F1FE; }
+    .gpq-thumb-up--busy { opacity: .7; pointer-events: none; }
+    .gpq-thumb-up-t { font-size: 11.5px; }
 
     .gpq-adj-url { margin-top: 10px; }
     .gpq-adj-url summary { font-size: 11.5px; color: #7C98B6; cursor: pointer; font-weight: 600; padding: 4px 0; }
@@ -1185,6 +1170,11 @@
     @@media (min-width: 760px) { .gpq-cols { grid-template-columns: 1fr 1fr; } }
     @@media (min-width: 1100px) {
         .gpq-cols { grid-template-columns: 1.6fr 1fr; }
+        /* La columna de contenido (col 1 + col 2 unidas) distribuye sus cards en 2 sub-columnas
+           (masonry), con la Descripcion a lo ancho arriba. Evita que los campos se estiren. */
+        .gpq-col:not(.gpq-col--act) { display: block; columns: 2; column-gap: 14px; }
+        .gpq-col:not(.gpq-col--act) > .gpq-card { break-inside: avoid; margin: 0 0 14px; }
+        .gpq-col:not(.gpq-col--act) > .gpq-card:first-child { column-span: all; }
         /* La columna de Actividad ocupa la altura del modal: se fija arriba y su chat rellena. */
         .gpq-col--act { position: sticky; top: 0; align-self: stretch; height: calc(92vh - 185px); }
         .gpq-col--act > .gpq-card--chat { height: 100%; display: flex; flex-direction: column; margin-bottom: 0; }
@@ -1273,7 +1263,7 @@
     private string _nuevoAdjNombre = "";
     private string _nuevoAdjUrl = "";
     private bool _subiendo;
-    private PqrsdAdjuntoDto? _visorAdj;
+    private Guid? _adjSel;                            // adjunto seleccionado en el visor inline (tab Adjuntos)
     private string _subiendoNombre = "";
 
     protected override async Task OnInitializedAsync()
@@ -1766,9 +1756,6 @@
         if (bytes < 1024 * 1024) return $"{bytes / 1024} KB";
         return $"{bytes / 1024 / 1024:0.#} MB";
     }
-
-    private void AbrirVisor(PqrsdAdjuntoDto a) => _visorAdj = a;
-    private void CerrarVisor() => _visorAdj = null;
 
     private static string Extension(string nombre)
     {
