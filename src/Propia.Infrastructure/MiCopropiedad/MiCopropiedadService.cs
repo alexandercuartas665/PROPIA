@@ -13,13 +13,16 @@ public class MiCopropiedadService : IMiCopropiedadService
     private readonly ITenantContext _tenant;
     private readonly Storage.IBlobStorage _blob;
     private readonly Application.UsuariosAccesos.ISeedUsuarioRolService _seed;
+    private readonly Application.Directorio.IDirectorioService _dir;
     public MiCopropiedadService(PropiaDbContext db, ITenantContext tenant, Storage.IBlobStorage blob,
-        Application.UsuariosAccesos.ISeedUsuarioRolService seed)
+        Application.UsuariosAccesos.ISeedUsuarioRolService seed,
+        Application.Directorio.IDirectorioService dir)
     {
         _db = db;
         _tenant = tenant;
         _blob = blob;
         _seed = seed;
+        _dir = dir;
     }
 
     // ----------------------------- Resumen -----------------------------
@@ -386,6 +389,8 @@ public class MiCopropiedadService : IMiCopropiedadService
             };
             _db.UnidadPersonas.Add(upE);
             await _db.SaveChangesAsync(ct);
+            // Etiqueta automatica en el Directorio segun el rol (best-effort, no rompe el alta).
+            try { await _dir.AsegurarEtiquetaPorRolAsync(EntidadDirectorio.Empresa, empId, req.Rol, ct); } catch { /* no bloquear el vinculo */ }
             await RegistrarBitacoraAsync("Unidad", $"{req.Rol} '{empresa.RazonSocial}' (empresa) vinculado a unidad '{unidad.Numero}'.", ct);
             return new UnidadPersonaDto(upE.Id, Guid.Empty, empresa.RazonSocial, NitConDv(empresa), empresa.Email, empresa.Telefono,
                 upE.Rol, upE.Habita, upE.Parentesco, empresa.RazonSocial, "", EntidadDirectorio.Empresa, empresa.Id);
@@ -438,6 +443,8 @@ public class MiCopropiedadService : IMiCopropiedadService
         // Siembra automatica: si un rol Personalizado declara esta faceta como semilla,
         // crea/asegura usuario+login+directorio con ese rol (best-effort, no rompe el alta).
         try { await _seed.SembrarPorFacetaAsync(personaId, req.Rol, ct); } catch { /* no bloquear el vinculo */ }
+        // Etiqueta automatica en el Directorio segun el rol (Propietario/Residente/...).
+        try { await _dir.AsegurarEtiquetaPorRolAsync(EntidadDirectorio.Persona, personaId, req.Rol, ct); } catch { /* no bloquear el vinculo */ }
 
         var persona = await _db.Personas.AsNoTracking().FirstAsync(p => p.Id == personaId, ct);
         await RegistrarBitacoraAsync("Unidad", $"{req.Rol} '{persona.Nombres} {persona.Apellidos}' vinculado a unidad '{unidad.Numero}'.", ct);
@@ -464,6 +471,7 @@ public class MiCopropiedadService : IMiCopropiedadService
             up.Habita = req.Habita;
             up.Parentesco = string.IsNullOrWhiteSpace(req.Parentesco) ? null : req.Parentesco.Trim();
             await _db.SaveChangesAsync(ct);
+            try { await _dir.AsegurarEtiquetaPorRolAsync(EntidadDirectorio.Empresa, up.EmpresaId ?? Guid.Empty, up.Rol, ct); } catch { /* no bloquear */ }
             return new UnidadPersonaDto(up.Id, Guid.Empty, empresa.RazonSocial, NitConDv(empresa), empresa.Email, empresa.Telefono,
                 up.Rol, up.Habita, up.Parentesco, empresa.RazonSocial, "", EntidadDirectorio.Empresa, empresa.Id);
         }
@@ -504,6 +512,8 @@ public class MiCopropiedadService : IMiCopropiedadService
         await _db.SaveChangesAsync(ct);
         // Re-siembra por si cambio la faceta o se agrego el email (habilita login).
         try { await _seed.SembrarPorFacetaAsync(persona.Id, up.Rol, ct); } catch { /* no bloquear */ }
+        // Asegura la etiqueta del rol actual (aditivo: no quita la del rol anterior).
+        try { await _dir.AsegurarEtiquetaPorRolAsync(EntidadDirectorio.Persona, persona.Id, up.Rol, ct); } catch { /* no bloquear */ }
         await RegistrarBitacoraAsync("Unidad", $"Datos de '{persona.Nombres} {persona.Apellidos}' actualizados.", ct);
 
         return new UnidadPersonaDto(up.Id, persona.Id,

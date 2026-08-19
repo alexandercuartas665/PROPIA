@@ -387,6 +387,58 @@ public class DirectorioService : IDirectorioService
         return true;
     }
 
+    /// <summary>Mapa rol de unidad -> NOMBRE de la etiqueta base del Directorio. Se casa por nombre
+    /// (no por codigo) porque el codigo puede variar entre semillas; el nombre es la llave de dedupe.</summary>
+    private static readonly IReadOnlyDictionary<RolUnidadPersona, string> RolEtiquetaNombre =
+        new Dictionary<RolUnidadPersona, string>
+        {
+            [RolUnidadPersona.Propietario]  = "Propietario",
+            [RolUnidadPersona.Residente]    = "Residente",
+            [RolUnidadPersona.Familiar]     = "Familiar",
+            [RolUnidadPersona.Arrendatario] = "Arrendatario",
+            [RolUnidadPersona.Apoderado]    = "Apoderado",
+        };
+
+    /// <summary>
+    /// Idempotente: asegura que la persona/empresa vinculada a la copropiedad quede con la etiqueta
+    /// base que corresponde a su rol en la unidad (Propietario -> "Propietario", etc.). Solo AGREGA la
+    /// etiqueta del rol si falta; nunca quita otras. Respeta AplicaA (no pone una etiqueta de solo-persona
+    /// a una empresa, ni viceversa). Pensado para llamarse al vincular una persona a una unidad
+    /// (best-effort: quien la invoca la envuelve en try/catch para no romper el alta).
+    /// </summary>
+    public async Task AsegurarEtiquetaPorRolAsync(EntidadDirectorio tipo, Guid entidadId, RolUnidadPersona rol, CancellationToken ct)
+    {
+        if (entidadId == Guid.Empty) return;
+        if (!RolEtiquetaNombre.TryGetValue(rol, out var nombre)) return;
+
+        // Garantiza que existan las etiquetas base globales (incluida la del rol).
+        await AsegurarEtiquetasBaseAsync(ct);
+
+        // Vinculo persona/empresa <-> copropiedad actual: es la fila que alimenta el Directorio.
+        var vinculo = await _db.DirectorioVinculos.FirstOrDefaultAsync(v =>
+            v.EntidadTipo == tipo && v.EntidadId == entidadId && v.Estado == EstadoVinculo.Activo, ct);
+        if (vinculo is null) return;
+
+        // Casa por nombre (no por codigo): puede haber bases pre-sembradas con codigos legacy distintos.
+        var nombreLower = nombre.ToLower();
+        var etiqueta = await _db.EtiquetasCatalogo.IgnoreQueryFilters()
+            .Where(e => e.EsBase && e.Nombre.ToLower() == nombreLower)
+            .OrderBy(e => e.Orden).FirstOrDefaultAsync(ct);
+        if (etiqueta is null) return;
+
+        // Respeta AplicaA: no asignes una etiqueta de solo-persona a una empresa (o viceversa).
+        var esPersona = tipo == EntidadDirectorio.Persona;
+        if (etiqueta.AplicaA == AplicaEtiqueta.Persona && !esPersona) return;
+        if (etiqueta.AplicaA == AplicaEtiqueta.Empresa && esPersona) return;
+
+        var ya = await _db.DirectorioEtiquetas.AnyAsync(de =>
+            de.VinculoId == vinculo.Id && de.EtiquetaId == etiqueta.Id, ct);
+        if (ya) return;
+
+        _db.DirectorioEtiquetas.Add(new DirectorioEtiqueta { VinculoId = vinculo.Id, EtiquetaId = etiqueta.Id });
+        await _db.SaveChangesAsync(ct);
+    }
+
     // ============================ Contactos ============================
 
     public async Task<ContactoDto> AgregarContactoAsync(AgregarContactoRequest req, CancellationToken ct)
@@ -429,9 +481,10 @@ public class DirectorioService : IDirectorioService
         ("BASE_RESIDENTE",     "Residente",         GrupoEtiqueta.Identidad, AplicaEtiqueta.Persona, "home",       "#0EA5E9", 2),
         ("BASE_ARRENDATARIO",  "Arrendatario",      GrupoEtiqueta.Identidad, AplicaEtiqueta.Persona, "file-text",  "#F59E0B", 3),
         ("BASE_FAMILIAR",      "Familiar",          GrupoEtiqueta.Identidad, AplicaEtiqueta.Persona, "users",      "#EC4899", 4),
-        ("BASE_PERSONAL",      "Personal de apoyo", GrupoEtiqueta.Cargo,     AplicaEtiqueta.Persona, "paintbrush", "#14B8A6", 5),
-        ("BASE_CONTRATISTA",   "Contratista",       GrupoEtiqueta.Cargo,     AplicaEtiqueta.Ambos,   "hard-hat",   "#F97316", 6),
-        ("BASE_PROVEEDOR",     "Proveedor",         GrupoEtiqueta.Cargo,     AplicaEtiqueta.Ambos,   "package",    "#8B5CF6", 7),
+        ("BASE_APODERADO",     "Apoderado",         GrupoEtiqueta.Identidad, AplicaEtiqueta.Persona, "briefcase",  "#475569", 5),
+        ("BASE_PERSONAL",      "Personal de apoyo", GrupoEtiqueta.Cargo,     AplicaEtiqueta.Persona, "paintbrush", "#14B8A6", 6),
+        ("BASE_CONTRATISTA",   "Contratista",       GrupoEtiqueta.Cargo,     AplicaEtiqueta.Ambos,   "hard-hat",   "#F97316", 7),
+        ("BASE_PROVEEDOR",     "Proveedor",         GrupoEtiqueta.Cargo,     AplicaEtiqueta.Ambos,   "package",    "#8B5CF6", 8),
     };
 
     /// <summary>Claves de icono validas (set SVG). Sirve para migrar valores viejos (emojis) a un icono generico.</summary>

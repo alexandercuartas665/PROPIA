@@ -64,6 +64,8 @@ public interface IDirectorioService
     Task<bool> InactivarVinculoAsync(Guid vinculoId, string? motivo, CancellationToken ct);
     Task<VinculoDto> AsignarEtiquetaAsync(AsignarEtiquetaRequest req, CancellationToken ct);
     Task<bool> QuitarEtiquetaAsync(Guid asignacionId, CancellationToken ct);
+    /// <summary>Asegura (idempotente, solo agrega) la etiqueta base del Directorio que corresponde al rol con que se vinculo la persona/empresa a una unidad. Respeta AplicaA. Best-effort.</summary>
+    Task AsegurarEtiquetaPorRolAsync(EntidadDirectorio tipo, Guid entidadId, RolUnidadPersona rol, CancellationToken ct);
 
     // --- Contactos ---
     Task<ContactoDto> AgregarContactoAsync(AgregarContactoRequest req, CancellationToken ct);
