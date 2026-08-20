@@ -204,29 +204,97 @@ else
                             <thead>
                                 <tr>
                                     <th>Tercero</th><th>Tipo</th><th>Inicio</th><th>Vencimiento</th>
-                                    <th class="ctr-r">$/mes</th><th>Estado</th><th class="ctr-w"></th>
+                                    <th class="ctr-r">$/mes</th><th>Estado</th><th class="ctr-w2"></th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @foreach (var c in grupo)
                                 {
                                     var cc = c;
-                                    <tr class="ctr-row" @onclick="() => AbrirModal(cc)">
-                                        <td>
-                                            <div class="ctr-terc">@c.Proveedor</div>
-                                            @if (!string.IsNullOrWhiteSpace(c.NitProveedor)) { <div class="ctr-terc-sub">NIT @c.NitProveedor</div> }
+                                    <tr class="ctr-row">
+                                        @* Tercero: proveedor + NIT, ambos editables inline (click) *@
+                                        <td class="ctr-ct">
+                                            @if (CEnEd(c.Id, "prov"))
+                                            {
+                                                <input class="ctr-inp" @bind="_cEditVal" @bind:event="oninput" autofocus
+                                                       @onblur='() => GuardarCEd(cc, "prov")' @onkeydown='(e) => CEdKeydown(e, cc, "prov")' />
+                                            }
+                                            else
+                                            {
+                                                <div class="ctr-terc ctr-ed" @onclick='() => IniciarCEd(cc.Id, "prov", cc.Proveedor)' title="Editar proveedor">@c.Proveedor</div>
+                                            }
+                                            @if (CEnEd(c.Id, "nit"))
+                                            {
+                                                <input class="ctr-inp ctr-inp-sub" @bind="_cEditVal" @bind:event="oninput" autofocus placeholder="NIT"
+                                                       @onblur='() => GuardarCEd(cc, "nit")' @onkeydown='(e) => CEdKeydown(e, cc, "nit")' />
+                                            }
+                                            else
+                                            {
+                                                <div class="ctr-terc-sub ctr-ed" @onclick='() => IniciarCEd(cc.Id, "nit", cc.NitProveedor)' title="Editar NIT">@(string.IsNullOrWhiteSpace(c.NitProveedor) ? "+ NIT" : "NIT " + c.NitProveedor)</div>
+                                            }
                                         </td>
-                                        <td>@TipoLabel(c.Tipo)</td>
-                                        <td>@c.FechaInicio.ToString("dd MMM yyyy")</td>
-                                        <td>@(c.FechaFin is { } ff ? ff.ToString("dd MMM yyyy") : "-")</td>
-                                        <td class="ctr-r">@(c.ValorMensual is { } v ? "$" + v.ToString("N0") : "-")</td>
+                                        @* Tipo: select inline *@
                                         <td>
-                                            @if (c.Estado == EstadoContrato.Vencido) { <span class="srv-badge vencido">Vencido</span> }
-                                            else if (c.AlertaVencimiento) { <span class="srv-badge danger">Vence en @c.DiasParaVencer dias</span> }
-                                            else if (c.Estado == EstadoContrato.EnRenovacion) { <span class="srv-badge warn">En renovacion</span> }
-                                            else { <span class="srv-badge ok">Vigente</span> }
+                                            @if (CEnEd(c.Id, "tipo"))
+                                            {
+                                                <select class="ctr-inp" value="@_cEditVal" @onchange='(e) => CSelChange(cc, "tipo", e)' @onblur="CancelarCEd">
+                                                    @foreach (var t in Enum.GetValues<TipoServicio>()) { <option value="@((int)t)">@TipoLabel(t)</option> }
+                                                </select>
+                                            }
+                                            else { <span class="ctr-ed" @onclick='() => IniciarCEd(cc.Id, "tipo", ((int)cc.Tipo).ToString())'>@TipoLabel(c.Tipo)</span> }
                                         </td>
-                                        <td class="ctr-w"><span class="srv-del" @onclick:stopPropagation="true" @onclick="() => EliminarAsync(cc.Id)" title="Eliminar"><i class="fi fi-rr-trash"></i></span></td>
+                                        @* Inicio: fecha *@
+                                        <td>
+                                            @if (CEnEd(c.Id, "inicio"))
+                                            {
+                                                <input type="date" class="ctr-inp" value="@_cEditVal" @oninput='(e) => _cEditVal = e.Value?.ToString() ?? ""' autofocus
+                                                       @onblur='() => GuardarCEd(cc, "inicio")' @onkeydown='(e) => CEdKeydown(e, cc, "inicio")' />
+                                            }
+                                            else { <span class="ctr-ed" @onclick='() => IniciarCEd(cc.Id, "inicio", cc.FechaInicio.ToString("yyyy-MM-dd"))'>@c.FechaInicio.ToString("dd MMM yyyy")</span> }
+                                        </td>
+                                        @* Vencimiento: fecha *@
+                                        <td>
+                                            @if (CEnEd(c.Id, "fin"))
+                                            {
+                                                <input type="date" class="ctr-inp" value="@_cEditVal" @oninput='(e) => _cEditVal = e.Value?.ToString() ?? ""' autofocus
+                                                       @onblur='() => GuardarCEd(cc, "fin")' @onkeydown='(e) => CEdKeydown(e, cc, "fin")' />
+                                            }
+                                            else { <span class="ctr-ed" @onclick='() => IniciarCEd(cc.Id, "fin", cc.FechaFin?.ToString("yyyy-MM-dd"))'>@(c.FechaFin is { } ff ? ff.ToString("dd MMM yyyy") : "+ fecha")</span> }
+                                        </td>
+                                        @* Valor mensual: numero *@
+                                        <td class="ctr-r">
+                                            @if (CEnEd(c.Id, "valor"))
+                                            {
+                                                <input type="number" step="1000" class="ctr-inp ctr-inp-r" @bind="_cEditVal" @bind:event="oninput" autofocus
+                                                       @onblur='() => GuardarCEd(cc, "valor")' @onkeydown='(e) => CEdKeydown(e, cc, "valor")' />
+                                            }
+                                            else { <span class="ctr-ed" @onclick='() => IniciarCEd(cc.Id, "valor", cc.ValorMensual?.ToString("0", System.Globalization.CultureInfo.InvariantCulture))'>@(c.ValorMensual is { } v ? "$" + v.ToString("N0") : "+ valor")</span> }
+                                        </td>
+                                        @* Estado: badge derivado; click -> select Vigente/En renovacion *@
+                                        <td>
+                                            @if (CEnEd(c.Id, "estado"))
+                                            {
+                                                <select class="ctr-inp" value="@_cEditVal" @onchange='(e) => CSelChange(cc, "estado", e)' @onblur="CancelarCEd">
+                                                    <option value="@((int)EstadoContrato.Vigente)">Vigente</option>
+                                                    <option value="@((int)EstadoContrato.EnRenovacion)">En renovacion</option>
+                                                </select>
+                                            }
+                                            else
+                                            {
+                                                <span class="ctr-ed" @onclick='() => IniciarCEd(cc.Id, "estado", ((int)(cc.Estado == EstadoContrato.Vencido ? EstadoContrato.Vigente : cc.Estado)).ToString())' title="Cambiar estado">
+                                                    @if (c.Estado == EstadoContrato.Vencido) { <span class="srv-badge vencido">Vencido</span> }
+                                                    else if (c.AlertaVencimiento) { <span class="srv-badge danger">Vence en @c.DiasParaVencer dias</span> }
+                                                    else if (c.Estado == EstadoContrato.EnRenovacion) { <span class="srv-badge warn">En renovacion</span> }
+                                                    else { <span class="srv-badge ok">Vigente</span> }
+                                                </span>
+                                            }
+                                        </td>
+                                        <td class="ctr-w2">
+                                            <span class="ctr-open" @onclick="() => AbrirModal(cc)" title="Abrir ficha completa">
+                                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
+                                            </span>
+                                            <span class="srv-del" @onclick="() => EliminarAsync(cc.Id)" title="Eliminar"><i class="fi fi-rr-trash"></i></span>
+                                        </td>
                                     </tr>
                                 }
                             </tbody>
@@ -909,12 +977,25 @@ else
     .ctr-table { width: 100%; border-collapse: collapse; }
     .ctr-table thead th { text-align: left; font-size: 10.5px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; color: #8593A5; padding: 8px 10px; border-bottom: 1px solid #EEF3F8; white-space: nowrap; }
     .ctr-table th.ctr-r, .ctr-table td.ctr-r { text-align: right; }
-    .ctr-table th.ctr-w, .ctr-table td.ctr-w { width: 38px; }
-    .ctr-row { cursor: pointer; border-bottom: 1px solid #F3F6FA; }
-    .ctr-row:hover { background: #F8F6FE; }
-    .ctr-table td { padding: 11px 10px; font-size: 13px; color: #33414F; vertical-align: middle; }
+    .ctr-table th.ctr-w2, .ctr-table td.ctr-w2 { width: 74px; text-align: right; white-space: nowrap; }
+    .ctr-row { border-bottom: 1px solid #F3F6FA; }
+    .ctr-row:hover { background: #FCFBFF; }
+    .ctr-table td { padding: 9px 10px; font-size: 13px; color: #33414F; vertical-align: middle; }
+    .ctr-ct { min-width: 190px; }
     .ctr-terc { font-weight: 700; color: #1f2430; }
     .ctr-terc-sub { font-size: 11px; color: #9AA7B8; margin-top: 1px; }
+    /* Celda editable inline (click) */
+    .ctr-ed { cursor: pointer; display: inline-block; border-radius: 5px; padding: 2px 5px; margin: -2px -5px; transition: background .1s; }
+    .ctr-ed:hover { background: #EFEAFC; box-shadow: inset 0 0 0 1px #DACFFA; }
+    /* En la celda Tercero, proveedor y NIT van apilados (no lado a lado) */
+    .ctr-ct .ctr-terc, .ctr-ct .ctr-terc-sub { display: block; width: fit-content; max-width: 100%; }
+    .ctr-ct .ctr-terc-sub { margin-top: 3px; }
+    .ctr-inp { width: 100%; box-sizing: border-box; border: 1px solid #7C5CFA; border-radius: 6px; padding: 5px 7px; font-size: 13px; font-family: inherit; color: #1f2430; background: #fff; outline: none; }
+    .ctr-inp:focus { box-shadow: 0 0 0 3px rgba(124,92,250,.16); }
+    .ctr-inp-sub { font-size: 11px; margin-top: 3px; }
+    .ctr-inp-r { text-align: right; }
+    .ctr-open { cursor: pointer; color: #B6C1CF; display: inline-flex; vertical-align: middle; padding: 3px; border-radius: 6px; }
+    .ctr-open:hover { color: #7C5CFA; background: #F1ECFD; }
 
     .srv-ov { position: fixed; inset: 0; background: rgba(27,42,58,.55); z-index: 1200; }
     .srv-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 1210; background: #fff; border-radius: 16px; box-shadow: 0 30px 70px rgba(27,42,58,.4); width: min(720px, 96vw); max-height: 92vh; display: flex; flex-direction: column; }
@@ -1542,6 +1623,79 @@ else
         _busy = true;
         try { await Auth().DeleteAsync($"/api/mi-copropiedad/contratos/{id}"); await CargarAsync(); }
         finally { _busy = false; }
+    }
+
+    // ---- Edicion inline de la tabla de contratos (Fase B, estilo Directorio/Excel) ----
+    // La celda muestra el valor; al hacer click se vuelve input/select y guarda en @onblur/Enter.
+    private string? _cEditKey;      // "{id}:{campo}" de la celda en edicion
+    private string _cEditVal = "";  // valor temporal
+    private bool _cEditBusy;
+
+    private bool CEnEd(Guid id, string campo) => _cEditKey == id + ":" + campo;
+    private void IniciarCEd(Guid id, string campo, string? actual) { _cEditKey = id + ":" + campo; _cEditVal = actual ?? ""; }
+    private void CancelarCEd() { _cEditKey = null; _cEditVal = ""; }
+
+    // Un <select> guarda apenas cambia (no espera al blur).
+    private Task CSelChange(ContratoServicioDto c, string campo, ChangeEventArgs e)
+    {
+        _cEditVal = e.Value?.ToString() ?? "";
+        return GuardarCEd(c, campo);
+    }
+
+    private async Task CEdKeydown(KeyboardEventArgs e, ContratoServicioDto c, string campo)
+    {
+        if (e.Key == "Enter") await GuardarCEd(c, campo);
+        else if (e.Key == "Escape") { CancelarCEd(); StateHasChanged(); }
+    }
+
+    // Construye el PUT preservando TODOS los valores actuales (MERGE) y cambiando solo 'campo'.
+    // ActualizarVinculos queda false: la edicion inline nunca toca servicio/expediente/proyecto.
+    private async Task GuardarCEd(ContratoServicioDto c, string campo)
+    {
+        if (_cEditKey != c.Id + ":" + campo || _cEditBusy) return;
+        _cEditBusy = true;
+        try
+        {
+            var tipo = c.Tipo;
+            var prov = c.Proveedor;
+            string? nit = c.NitProveedor;   // null => MERGE lo conserva
+            var ini = c.FechaInicio;
+            var fin = c.FechaFin;
+            var valor = c.ValorMensual;
+            var estado = c.Estado == EstadoContrato.Vencido ? EstadoContrato.Vigente : c.Estado;
+            var val = _cEditVal.Trim();
+
+            switch (campo)
+            {
+                case "prov":
+                    if (string.IsNullOrWhiteSpace(val)) { CancelarCEd(); return; }
+                    prov = val; break;
+                case "nit":
+                    nit = string.IsNullOrWhiteSpace(val) ? "" : val;   // "" limpia el NIT
+                    break;
+                case "tipo":
+                    if (Enum.TryParse<TipoServicio>(val, out var tp)) tipo = tp; break;
+                case "inicio":
+                    if (DateOnly.TryParse(val, out var di)) ini = di; break;
+                case "fin":
+                    if (DateOnly.TryParse(val, out var dfn)) fin = dfn; break;   // vaciar no borra (limitacion MERGE)
+                case "valor":
+                    if (decimal.TryParse(val, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var dv)) valor = dv;
+                    break;
+                case "estado":
+                    if (Enum.TryParse<EstadoContrato>(val, out var es)) estado = es; break;
+            }
+            CancelarCEd();
+            var req = new ActualizarContratoRequest(
+                estado, c.DiasAnticipacionAlerta <= 0 ? 30 : c.DiasAnticipacionAlerta,
+                Tipo: tipo, Proveedor: prov, NitProveedor: nit,
+                Contacto: c.Contacto, FechaInicio: ini, FechaFin: fin,
+                ValorMensual: valor, Observaciones: null);
+            await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/{c.Id}", req);
+            await CargarAsync();   // estado/alerta se derivan de FechaFin -> recargar
+            StateHasChanged();
+        }
+        finally { _cEditBusy = false; }
     }
 
     private static string? Limpio(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
