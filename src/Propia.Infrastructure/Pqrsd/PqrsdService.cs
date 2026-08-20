@@ -198,18 +198,30 @@ public class PqrsdService : IPqrsdService
                 if (mapaTipo.TryGetValue(x.Tipo, out var tid)) x.TipoId = tid;
             if (expSinTipo.Count > 0) await _db.SaveChangesAsync(ct);
         }
+
+        // Backfill de tildes en los nombres BASE sembrados antes con ASCII (convencion nueva: el texto
+        // de cara al usuario lleva acentos). Idempotente y tenant-scoped: tras el rename el WHERE deja de
+        // matchear, asi que en llamadas siguientes es un UPDATE de 0 filas.
+        await _db.PqrsdCategorias.Where(c => c.EsPredeterminada && c.Nombre == "Administracion")
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.Nombre, "Administración"), ct);
+        await _db.PqrsdCategorias.Where(c => c.EsPredeterminada && c.Nombre == "Consejo de Administracion")
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.Nombre, "Consejo de Administración"), ct);
+        await _db.PqrsdTipos.Where(t => t.EsBase && t.Nombre == "Peticion")
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.Nombre, "Petición"), ct);
+        await _db.PqrsdTipos.Where(t => t.EsBase && t.Nombre == "Felicitacion")
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.Nombre, "Felicitación"), ct);
     }
 
     private static string TipoNombreBase(TipoPqrsd t) => t switch
     {
-        TipoPqrsd.Peticion => "Peticion",
+        TipoPqrsd.Peticion => "Petición",
         TipoPqrsd.SolicitudDocumentos => "Solicitud de documentos",
         TipoPqrsd.Consulta => "Consulta",
         TipoPqrsd.Queja => "Queja",
         TipoPqrsd.Reclamo => "Reclamo",
         TipoPqrsd.Sugerencia => "Sugerencia",
         TipoPqrsd.Denuncia => "Denuncia",
-        TipoPqrsd.Felicitacion => "Felicitacion",
+        TipoPqrsd.Felicitacion => "Felicitación",
         _ => t.ToString()
     };
 

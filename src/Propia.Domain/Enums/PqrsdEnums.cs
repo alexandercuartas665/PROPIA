@@ -72,14 +72,14 @@ public static class PqrsdCatalogo
     /// <summary>Categorias base sembradas lazy: (Nombre, Orden).</summary>
     public static readonly (string Nombre, int Orden)[] CategoriasBase = new[]
     {
-        ("Administracion", 1),
+        ("Administración", 1),
         ("Financiero", 2),
         ("Convivencia", 3),
         ("Zonas Comunes", 4),
         ("Mantenimiento", 5),
         ("Seguridad", 6),
         ("Personal", 7),
-        ("Consejo de Administracion", 8),
+        ("Consejo de Administración", 8),
         ("Otro", 9)
     };
 
