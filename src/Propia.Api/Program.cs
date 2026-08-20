@@ -192,7 +192,9 @@ builder.Services.AddMcpServer()
     .WithTools<Propia.Api.Mcp.MiCopropiedadEdicionTools>(mcpJsonOptions)
     .WithTools<Propia.Api.Mcp.ServiciosConsultaTools>(mcpJsonOptions)
     .WithTools<Propia.Api.Mcp.ServiciosCreacionTools>(mcpJsonOptions)
-    .WithTools<Propia.Api.Mcp.VerificarResidenciaTools>(mcpJsonOptions);
+    .WithTools<Propia.Api.Mcp.VerificarResidenciaTools>(mcpJsonOptions)
+    .WithTools<Propia.Api.Mcp.PqrsdAgenteTools>(mcpJsonOptions)
+    .WithTools<Propia.Api.Mcp.TareasAgenteTools>(mcpJsonOptions);
 
 var app = builder.Build();
 
