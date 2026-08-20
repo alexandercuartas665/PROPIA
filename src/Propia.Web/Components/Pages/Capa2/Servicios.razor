@@ -12,6 +12,7 @@
 @inject IJSRuntime Js
 @inject NavigationManager Nav
 @inject IModalService Modals
+@implements IDisposable
 
 <PageTitle>@(EsContratos ? "Contratos" : "Servicios") - PROPIA</PageTitle>
 
@@ -994,6 +995,26 @@ else
         public string? ExpedienteId { get; set; }
         public string? ProyectoId { get; set; }
     }
+
+    protected override void OnInitialized()
+    {
+        // /servicios y /contratos son EL MISMO componente: al navegar entre ellos Blazor reusa la
+        // instancia y OnAfterRender(firstRender) NO vuelve a correr, por lo que los datos no se
+        // recargaban (a veces se quedaban los de la vista anterior). Recargamos en cada cambio de ruta.
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        if (_jwt is null) return;
+        var rel = Nav.ToBaseRelativePath(e.Location).TrimEnd('/').Split('?')[0].ToLowerInvariant();
+        if (rel is "servicios" or "contratos")
+        {
+            _ = InvokeAsync(async () => { await CargarAsync(); StateHasChanged(); });
+        }
+    }
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
