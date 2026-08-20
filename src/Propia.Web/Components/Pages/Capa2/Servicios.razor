@@ -145,31 +145,96 @@ else
             <span class="srv-card-title">Todos los contratos</span>
             <button class="srv-btn-primary" @onclick="() => AbrirModal(null)"><i class="fi fi-rr-plus"></i> Nuevo contrato</button>
         </div>
-        <div class="srv-list">
-            @if (_contratos.Count == 0)
+
+        @* ---- Barra de filtros + agrupar ---- *@
+        <div class="ctr-filtros">
+            <div class="ctr-search"><i class="fi fi-rr-search"></i><input placeholder="Buscar proveedor, NIT, tipo..." value="@_cFiltroTexto" @oninput="e => { _cFiltroTexto = e.Value?.ToString() ?? string.Empty; }" /></div>
+            <select class="ctr-fsel" @bind="_cFiltroTercero">
+                <option value="">Todos los terceros</option>
+                @foreach (var p in TercerosDistintos()) { <option value="@p">@p</option> }
+            </select>
+            <select class="ctr-fsel" @bind="_cFiltroTipoStr">
+                <option value="">Todos los tipos</option>
+                @foreach (var t in TiposDistintos()) { <option value="@((int)t)">@TipoLabel(t)</option> }
+            </select>
+            <select class="ctr-fsel" @bind="_cFiltroEstado">
+                <option value="">Todos los estados</option>
+                <option value="vigente">Vigentes</option>
+                <option value="por-vencer">Por vencer</option>
+                <option value="vencido">Vencidos</option>
+                <option value="renovacion">En renovacion</option>
+            </select>
+            <div class="ctr-range">
+                <span class="ctr-range-lbl">Vence</span>
+                <input type="date" @bind="_cVenceDesde" title="Desde" />
+                <span class="ctr-range-sep">a</span>
+                <input type="date" @bind="_cVenceHasta" title="Hasta" />
+            </div>
+            <select class="ctr-fsel" @bind="_cAgrupar">
+                <option value="">Sin agrupar</option>
+                <option value="tipo">Agrupar por tipo</option>
+                <option value="tercero">Agrupar por tercero</option>
+                <option value="estado">Agrupar por estado</option>
+            </select>
+            @if (HayFiltrosContrato()) { <button class="ctr-clear" @onclick="LimpiarFiltrosContrato">Limpiar</button> }
+        </div>
+
+        @if (_contratos.Count == 0)
+        {
+            <div class="srv-empty"><i class="fi fi-rr-shield"></i><div>Aun no hay contratos. Crea el primero con "Nuevo contrato".</div></div>
+        }
+        else
+        {
+            var filtrados = ContratosFiltrados().ToList();
+            if (filtrados.Count == 0)
             {
-                <div class="srv-empty"><i class="fi fi-rr-shield"></i><div>Aun no hay contratos. Crea el primero con "Nuevo contrato".</div></div>
+                <div class="srv-empty"><i class="fi fi-rr-search"></i><div>Ningun contrato coincide con los filtros.</div></div>
             }
             else
             {
-                @foreach (var c in _contratos.OrderBy(x => x.Tipo).ThenBy(x => x.FechaFin))
+                <div class="ctr-count">@filtrados.Count de @_contratos.Count contratos</div>
+                @foreach (var grupo in AgruparContratos(filtrados))
                 {
-                    var cc = c;
-                    <button class="srv-row" @onclick="() => AbrirModal(cc)">
-                        <div class="srv-row-ic">@TipoIcon(c.Tipo)</div>
-                        <div class="srv-row-body">
-                            <div class="srv-row-name">@c.Proveedor</div>
-                            <div class="srv-row-meta">@TipoLabel(c.Tipo)@(c.FechaInicio is var fi ? " - desde " + fi.ToString("dd MMM yyyy") : "")@(c.FechaFin is { } ff ? " - hasta " + ff.ToString("dd MMM yyyy") : "")@(c.ValorMensual is { } v ? " - $" + v.ToString("N0") + "/mes" : "")</div>
-                        </div>
-                        @if (c.Estado == EstadoContrato.Vencido) { <span class="srv-badge vencido">Vencido</span> }
-                        else if (c.AlertaVencimiento) { <span class="srv-badge danger">Vence en @c.DiasParaVencer dias</span> }
-                        else if (c.Estado == EstadoContrato.EnRenovacion) { <span class="srv-badge warn">En renovacion</span> }
-                        else { <span class="srv-badge ok">Vigente</span> }
-                        <span class="srv-del" @onclick:stopPropagation="true" @onclick="() => EliminarAsync(cc.Id)" title="Eliminar"><i class="fi fi-rr-trash"></i></span>
-                    </button>
+                    @if (_cAgrupar != "")
+                    {
+                        <div class="ctr-group-h">@grupo.Key <span class="ctr-group-n">@grupo.Count()</span></div>
+                    }
+                    <div class="ctr-table-wrap">
+                        <table class="ctr-table">
+                            <thead>
+                                <tr>
+                                    <th>Tercero</th><th>Tipo</th><th>Inicio</th><th>Vencimiento</th>
+                                    <th class="ctr-r">$/mes</th><th>Estado</th><th class="ctr-w"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var c in grupo)
+                                {
+                                    var cc = c;
+                                    <tr class="ctr-row" @onclick="() => AbrirModal(cc)">
+                                        <td>
+                                            <div class="ctr-terc">@c.Proveedor</div>
+                                            @if (!string.IsNullOrWhiteSpace(c.NitProveedor)) { <div class="ctr-terc-sub">NIT @c.NitProveedor</div> }
+                                        </td>
+                                        <td>@TipoLabel(c.Tipo)</td>
+                                        <td>@c.FechaInicio.ToString("dd MMM yyyy")</td>
+                                        <td>@(c.FechaFin is { } ff ? ff.ToString("dd MMM yyyy") : "-")</td>
+                                        <td class="ctr-r">@(c.ValorMensual is { } v ? "$" + v.ToString("N0") : "-")</td>
+                                        <td>
+                                            @if (c.Estado == EstadoContrato.Vencido) { <span class="srv-badge vencido">Vencido</span> }
+                                            else if (c.AlertaVencimiento) { <span class="srv-badge danger">Vence en @c.DiasParaVencer dias</span> }
+                                            else if (c.Estado == EstadoContrato.EnRenovacion) { <span class="srv-badge warn">En renovacion</span> }
+                                            else { <span class="srv-badge ok">Vigente</span> }
+                                        </td>
+                                        <td class="ctr-w"><span class="srv-del" @onclick:stopPropagation="true" @onclick="() => EliminarAsync(cc.Id)" title="Eliminar"><i class="fi fi-rr-trash"></i></span></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
                 }
             }
-        </div>
+        }
     </div>
     }
     else
@@ -825,6 +890,32 @@ else
     .srv-empty { padding: 36px 20px; text-align: center; color: #A6B7C8; font-size: 13.5px; }
     .srv-empty i { display: block; font-size: 28px; color: #C3D0DD; margin-bottom: 10px; }
 
+    /* ---- Contratos: barra de filtros + tabla (Fase A) ---- */
+    .ctr-filtros { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; padding: 14px 20px; border-bottom: 1px solid #EEF3F8; }
+    .ctr-search { display: flex; align-items: center; gap: 7px; border: 1px solid #D9DEE7; border-radius: 9px; padding: 7px 11px; background: #fff; flex: 1 1 220px; min-width: 180px; }
+    .ctr-search i { color: #9AA7B8; font-size: 13px; }
+    .ctr-search input { border: 0; outline: none; font-size: 13px; width: 100%; background: transparent; color: #1f2430; }
+    .ctr-fsel { border: 1px solid #D9DEE7; border-radius: 9px; padding: 7px 10px; font-size: 12.5px; color: #33414F; background: #fff; cursor: pointer; }
+    .ctr-range { display: flex; align-items: center; gap: 6px; border: 1px solid #D9DEE7; border-radius: 9px; padding: 5px 9px; background: #fff; }
+    .ctr-range-lbl { font-size: 12px; color: #8593A5; font-weight: 600; }
+    .ctr-range-sep { font-size: 12px; color: #A6B7C8; }
+    .ctr-range input { border: 0; outline: none; font-size: 12.5px; color: #33414F; background: transparent; }
+    .ctr-clear { border: 0; background: #F1ECFD; color: #5838C9; font-weight: 700; font-size: 12px; border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+    .ctr-clear:hover { background: #E6DEFB; }
+    .ctr-count { padding: 10px 20px 0; font-size: 12px; color: #8593A5; font-weight: 600; }
+    .ctr-group-h { display: flex; align-items: center; gap: 8px; padding: 14px 20px 6px; font-size: 12px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; color: #5838C9; }
+    .ctr-group-n { background: #F1ECFD; color: #5838C9; font-size: 11px; font-weight: 800; border-radius: 20px; padding: 1px 8px; }
+    .ctr-table-wrap { overflow-x: auto; padding: 4px 12px 6px; }
+    .ctr-table { width: 100%; border-collapse: collapse; }
+    .ctr-table thead th { text-align: left; font-size: 10.5px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; color: #8593A5; padding: 8px 10px; border-bottom: 1px solid #EEF3F8; white-space: nowrap; }
+    .ctr-table th.ctr-r, .ctr-table td.ctr-r { text-align: right; }
+    .ctr-table th.ctr-w, .ctr-table td.ctr-w { width: 38px; }
+    .ctr-row { cursor: pointer; border-bottom: 1px solid #F3F6FA; }
+    .ctr-row:hover { background: #F8F6FE; }
+    .ctr-table td { padding: 11px 10px; font-size: 13px; color: #33414F; vertical-align: middle; }
+    .ctr-terc { font-weight: 700; color: #1f2430; }
+    .ctr-terc-sub { font-size: 11px; color: #9AA7B8; margin-top: 1px; }
+
     .srv-ov { position: fixed; inset: 0; background: rgba(27,42,58,.55); z-index: 1200; }
     .srv-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 1210; background: #fff; border-radius: 16px; box-shadow: 0 30px 70px rgba(27,42,58,.4); width: min(720px, 96vw); max-height: 92vh; display: flex; flex-direction: column; }
     .srv-modal-head { display: flex; align-items: center; gap: 13px; padding: 18px 22px; border-bottom: 1px solid #EEF3F8; flex-shrink: 0; }
@@ -916,6 +1007,72 @@ else
     private bool EsContratos =>
         Nav.ToBaseRelativePath(Nav.Uri).TrimEnd('/').Split('?')[0].Equals("contratos", StringComparison.OrdinalIgnoreCase);
     private List<ContratoServicioDto> _contratos = new();
+
+    // ---- Filtros / agrupar de la tabla de contratos (Fase A) ----
+    private string _cFiltroTexto = "";
+    private string _cFiltroTercero = "";
+    private string _cFiltroTipoStr = "";
+    private string _cFiltroEstado = "";
+    private DateOnly? _cVenceDesde;
+    private DateOnly? _cVenceHasta;
+    private string _cAgrupar = "";
+
+    private IEnumerable<string> TercerosDistintos() =>
+        _contratos.Select(c => c.Proveedor).Where(p => !string.IsNullOrWhiteSpace(p)).Distinct().OrderBy(p => p);
+    private IEnumerable<TipoServicio> TiposDistintos() =>
+        _contratos.Select(c => c.Tipo).Distinct().OrderBy(t => TipoLabel(t));
+
+    private bool HayFiltrosContrato() =>
+        !string.IsNullOrWhiteSpace(_cFiltroTexto) || !string.IsNullOrEmpty(_cFiltroTercero)
+        || !string.IsNullOrEmpty(_cFiltroTipoStr) || !string.IsNullOrEmpty(_cFiltroEstado)
+        || _cVenceDesde is not null || _cVenceHasta is not null;
+
+    private void LimpiarFiltrosContrato()
+    {
+        _cFiltroTexto = ""; _cFiltroTercero = ""; _cFiltroTipoStr = "";
+        _cFiltroEstado = ""; _cVenceDesde = null; _cVenceHasta = null;
+    }
+
+    private IEnumerable<ContratoServicioDto> ContratosFiltrados()
+    {
+        var q = _contratos.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(_cFiltroTexto))
+        {
+            var t = _cFiltroTexto.Trim().ToLowerInvariant();
+            q = q.Where(c => (c.Proveedor ?? "").ToLowerInvariant().Contains(t)
+                          || (c.Contacto ?? "").ToLowerInvariant().Contains(t)
+                          || (c.NitProveedor ?? "").ToLowerInvariant().Contains(t)
+                          || TipoLabel(c.Tipo).ToLowerInvariant().Contains(t));
+        }
+        if (!string.IsNullOrEmpty(_cFiltroTercero)) q = q.Where(c => c.Proveedor == _cFiltroTercero);
+        if (int.TryParse(_cFiltroTipoStr, out var ti)) q = q.Where(c => (int)c.Tipo == ti);
+        q = _cFiltroEstado switch
+        {
+            "vigente"    => q.Where(c => c.Estado == EstadoContrato.Vigente && !c.AlertaVencimiento),
+            "por-vencer" => q.Where(c => c.AlertaVencimiento && c.Estado != EstadoContrato.Vencido),
+            "vencido"    => q.Where(c => c.Estado == EstadoContrato.Vencido),
+            "renovacion" => q.Where(c => c.Estado == EstadoContrato.EnRenovacion),
+            _ => q
+        };
+        if (_cVenceDesde is { } d) q = q.Where(c => c.FechaFin is { } f && f >= d);
+        if (_cVenceHasta is { } h) q = q.Where(c => c.FechaFin is { } f && f <= h);
+        return q.OrderBy(c => c.Tipo).ThenBy(c => c.FechaFin);
+    }
+
+    private IEnumerable<IGrouping<string, ContratoServicioDto>> AgruparContratos(IEnumerable<ContratoServicioDto> lst) =>
+        _cAgrupar switch
+        {
+            "tipo"    => lst.GroupBy(c => TipoLabel(c.Tipo)).OrderBy(g => g.Key),
+            "tercero" => lst.GroupBy(c => string.IsNullOrWhiteSpace(c.Proveedor) ? "(sin proveedor)" : c.Proveedor).OrderBy(g => g.Key),
+            "estado"  => lst.GroupBy(c => EstadoTextoContrato(c)).OrderBy(g => g.Key),
+            _ => lst.GroupBy(_ => "")
+        };
+
+    private static string EstadoTextoContrato(ContratoServicioDto c) =>
+        c.Estado == EstadoContrato.Vencido ? "Vencido"
+        : c.AlertaVencimiento ? "Por vencer"
+        : c.Estado == EstadoContrato.EnRenovacion ? "En renovacion"
+        : "Vigente";
 
     private bool _showModal;
     private Guid? _editId;
