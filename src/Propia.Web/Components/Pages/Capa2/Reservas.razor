@@ -674,7 +674,7 @@ else
             TimeOnly.FromDateTime(_editHoraIni),
             TimeOnly.FromDateTime(_editHoraFin));
         var resp = await Auth().PostAsJsonAsync($"/api/reservas/{_editId}/reprogramar", req);
-        if (resp.IsSuccessStatusCode) { _editOpen = false; _msg = "Reserva reprogramada."; _msgClass = "alert-success"; await RecargarReservasAsync(); }
+        if (resp.IsSuccessStatusCode) { _editOpen = false; _msg = "Reserva reprogramada."; _msgClass = "alert-success"; _rsWeek = SemanaOffset(DateOnly.FromDateTime(_editFecha)); await RecargarReservasAsync(); }
         else { try { var e = await resp.Content.ReadFromJsonAsync<ErrResp>(); _editMsg = e?.error ?? "No se pudo reprogramar."; } catch { _editMsg = "No se pudo reprogramar."; } }
         _editBusy = false;
     }
@@ -691,6 +691,16 @@ else
     }
 
     private List<DateOnly> DiasSemana => Enumerable.Range(0, 7).Select(i => WeekStart.AddDays(i)).ToList();
+
+    // Cuantas semanas enteras separan una fecha de la semana actual, para que la agenda salte a la
+    // semana de la reserva recien creada/reprogramada y esta se vea en la grilla (no solo en "Proximas").
+    private int SemanaOffset(DateOnly fecha)
+    {
+        var hoy = DateOnly.FromDateTime(AhoraColombia().Date);
+        var lunesHoy = hoy.AddDays(-(((int)hoy.DayOfWeek + 6) % 7));
+        var lunesFecha = fecha.AddDays(-(((int)fecha.DayOfWeek + 6) % 7));
+        return (lunesFecha.DayNumber - lunesHoy.DayNumber) / 7;
+    }
 
     private string SemanaLabel
     {
@@ -854,6 +864,7 @@ else
             if (!resp.IsSuccessStatusCode) { _resError = ExtraerError(await resp.Content.ReadAsStringAsync()); return; }
             _msg = "Reserva creada."; _msgClass = "alert-success";
             _showReservar = false;
+            _rsWeek = SemanaOffset(DateOnly.FromDateTime(_resFecha)); // saltar la agenda a la semana de la reserva recien creada
             await RecargarReservasAsync();
         }
         catch (Exception ex) { _resError = ex.Message; }
