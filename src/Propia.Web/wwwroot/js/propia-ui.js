@@ -97,6 +97,23 @@
 
     // ---------- Sidebar toggle (mobile/responsive) ----------
 
+    // Aplica el "hueco" que el contenido y el header dejan para el sidebar de columna unica.
+    // Se hace con estilos INLINE !important porque la plantilla NexLink trae reglas :has()
+    // por-breakpoint (80px entre 1200-1480, etc.) que, en este motor, le ganan de forma anomala
+    // a nuestras reglas :has()/planas del <style> del layout. El inline !important gana a todo.
+    var SIDEBAR_W = 276; // debe coincidir con --app-menubar-tabs del MainLayout
+    function syncSidebarLayout() {
+        try {
+            var mode = docEl.getAttribute('data-app-sidebar');
+            var mobile = window.innerWidth < 1200;
+            var off = (mobile || mode === 'mini') ? '0px' : (SIDEBAR_W + 'px');
+            var w = document.querySelector('.app-wrapper');
+            var h = document.querySelector('.app-header');
+            if (w) w.style.setProperty('margin-left', off, 'important');
+            if (h) h.style.setProperty('padding-left', off, 'important');
+        } catch (e) { }
+    }
+
     // Re-aplica el estado guardado del sidebar (mini/full) al <html>. Idempotente: se llama en
     // cada rebind (incluido tras navegacion enhanced de Blazor) para no quedar desincronizado.
     function restoreSidebar() {
@@ -111,6 +128,7 @@
                 if (toggler) toggler.classList.remove('active');
             }
         } catch (e) { }
+        syncSidebarLayout();
     }
 
     var _sidebarDelegated = false;
@@ -126,18 +144,21 @@
             e.preventDefault();
             var menubar = document.querySelector('.app-menubar-tabs');
             if (window.innerWidth >= 1200) {
-                // Desktop: colapsa/expande el panel textual (modo "mini")
+                // Desktop: oculta/muestra todo el sidebar (modo "mini" = fuera de pantalla)
                 var current = docEl.getAttribute('data-app-sidebar');
                 var next = current === 'mini' ? 'full' : 'mini';
                 docEl.setAttribute('data-app-sidebar', next);
                 toggler.classList.toggle('active', next === 'mini');
                 try { localStorage.setItem('propia_sidebar_mode', next); } catch (e2) { }
+                syncSidebarLayout();
             } else {
                 // Mobile/tablet: muestra/oculta el cajon
                 if (menubar) menubar.classList.toggle('open');
                 toggler.classList.toggle('active');
             }
         });
+        // Reajustar el hueco del contenido cuando cambia el ancho de ventana (cruces de breakpoint).
+        window.addEventListener('resize', function () { syncSidebarLayout(); });
     }
 
     var _searchHotkeyBound = false;

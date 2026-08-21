@@ -1,183 +1,253 @@
-@* Sidebar de navegacion del Web cliente - estilo NexLink (rail + tab-content).
-   DATA-DRIVEN: el arbol (secciones + items) sale de IMenuConfigService (menu base en
-   MenuCatalog + overrides globales de nombre/orden/ubicacion editables por el Super Admin
-   en /admin/configuracion-menu). Concepto portado de ECOREX.tareas. Si el servicio falla,
-   cae al menu base para no dejar al usuario sin navegacion.
-
-   BUG FIX (validacion MCP 16/05/2026): el tab activo se calcula server-side desde Nav.Uri
-   (no con clases hardcoded) para que el menu siempre coincida con la ruta. Ahora el mapa
-   ruta->seccion es data-driven, asi el resaltado sigue a los items aunque se muevan de seccion. *@
+@* Sidebar de navegacion del Web cliente - MENU VERTICAL AGRUPADO (estilo "grupos expandibles").
+   Reemplaza el rail-de-iconos + panel de tabs anterior (que dependia de JS del template para
+   cambiar de grupo y confundia). Ahora es UNA sola columna:
+     - Grupos colapsables con <details>/<summary> NATIVOS (0 JS, funciona en SSR, accesible).
+     - Linea guia punteada (color PROPIA) que ata los items a su grupo.
+     - Selector de copropiedad activa al pie (CopropiedadSwitcher, tarjeta tipo "cuenta").
+   DATA-DRIVEN: el arbol sale de IMenuConfigService (MenuCatalog + overrides del Super Admin).
+   El grupo de la ruta activa arranca expandido; el item activo se resalta con NavLink. *@
 @using Propia.Application.Navegacion
 @inject NavigationManager Nav
 @inject IMenuConfigService MenuSvc
 @implements IDisposable
 
-@* === Rail (iconos verticales, 80px ancho) === *@
-<div class="app-navbar-tabs" data-simplebar>
-    <ul class="nav" id="appMenubarTabs" role="tablist" aria-orientation="vertical">
+<div class="pnav">
+
+    @* Marca *@
+    <div class="pnav-brand">
+        <a href="/mi-copropiedad" aria-label="PropIA">
+            <img src="img/brand/logo-normal.png" alt="PropIA" class="pnav-logo" data-brand-logo />
+        </a>
+    </div>
+
+    @* Cuerpo scrolleable con los grupos *@
+    <nav class="pnav-body">
         @if (_menu is not null)
         {
             @foreach (var s in _menu.Sections)
             {
                 @if (s.SeparatorBefore)
                 {
-                    <li class="nav-item-hr"></li>
+                    <div class="pnav-sep"></div>
                 }
-                <li class="nav-item">
-                    <a class="@RailClass(s.Key)" href="javascript:void(0)" data-tab-target="@s.Key"
-                       data-tip-title="@s.Label" data-tip-desc="@s.TooltipDesc">
-                        <i class="fi @s.Icon"></i>
-                    </a>
-                </li>
+
+                @if (EsPlano(s))
+                {
+                    @* Seccion de un solo item: enlace directo (sin acordeon) *@
+                    var it0 = s.Items[0];
+                    <NavLink class="pnav-flat" href="@it0.Href" Match="NavLinkMatch.Prefix">
+                        <span class="pnav-ico"><i class="fi @s.Icon"></i></span>
+                        <span class="pnav-lbl">@s.Label</span>
+                    </NavLink>
+                }
+                else
+                {
+                    <details class="pnav-group" open="@EstaActiva(s.Key)">
+                        <summary class="pnav-head">
+                            <span class="pnav-ico"><i class="fi @s.Icon"></i></span>
+                            <span class="pnav-lbl">@s.Label</span>
+                            <i class="fi fi-rr-angle-small-down pnav-chev"></i>
+                        </summary>
+                        <div class="pnav-sub">
+                            @foreach (var g in s.Groups)
+                            {
+                                @if (g.Heading is not null)
+                                {
+                                    @if (g.DividerBefore)
+                                    {
+                                        <div class="pnav-subdiv"></div>
+                                    }
+                                    <div class="pnav-subhead">@g.Heading</div>
+                                }
+                                @foreach (var it in g.Items)
+                                {
+                                    <NavLink class="pnav-item" href="@it.Href" Match="NavLinkMatch.Prefix">
+                                        <span class="pnav-item-ico"><i class="fi @it.Icon"></i></span>
+                                        <span class="pnav-item-lbl">@it.Label</span>
+                                    </NavLink>
+                                }
+                            }
+                        </div>
+                    </details>
+                }
             }
         }
-    </ul>
-</div>
+    </nav>
 
-@* === Panel textual (200px ancho) - tabs con submenu === *@
-<div class="app-tab-content">
-    <div class="app-side-brands">
-        <a class="navbar-brand-text" href="/mi-copropiedad" aria-label="PropIA">
-            <img src="img/brand/logo-normal.png" alt="PropIA" class="propia-side-logo" data-brand-logo />
-        </a>
-    </div>
-    @* Selector de copropiedad activa (isla interactiva): el admin multi-PH ve aqui sobre
-       que propiedad trabaja y la cambia con un clic (modal). Pendiente #9 convalidacion 2.3. *@
-    <CopropiedadSwitcher />
-    <div class="app-content-inner">
-        <div class="tab-content" id="appMenubarTabsContent">
-            @if (_menu is not null)
-            {
-                @foreach (var s in _menu.Sections)
-                {
-                    <div class="@TabClass(s.Key)" id="@s.Key" role="tabpanel">
-                        <nav class="app-navbar" data-simplebar>
-                            <ul class="side-menubar">
-                                <li class="menu-heading"><span class="menu-label">@s.Label</span></li>
-                                @foreach (var g in s.Groups)
-                                {
-                                    @if (g.Heading is not null)
-                                    {
-                                        @if (g.DividerBefore)
-                                        {
-                                            <li><div class="menu-divider"></div></li>
-                                        }
-                                        <li class="menu-heading"><span class="menu-label">@g.Heading</span></li>
-                                    }
-                                    @foreach (var it in g.Items)
-                                    {
-                                        <li class="menu-item">
-                                            <NavLink class="menu-link" href="@it.Href">
-                                                <i class="fi @it.Icon"></i>
-                                                <span class="menu-label">@it.Label</span>
-                                            </NavLink>
-                                        </li>
-                                    }
-                                }
-                            </ul>
-                        </nav>
-                    </div>
-                }
-            }
-        </div>
+    @* Pie: selector de copropiedad activa + version *@
+    <div class="pnav-foot">
+        <CopropiedadSwitcher />
+        <div class="pnav-ver" title="Version @Propia.Web.PlatformVersion.Label (build @Propia.Web.PlatformVersion.Build)">@Propia.Web.PlatformVersion.Label</div>
     </div>
 </div>
-@* Version desplegada. Va como HERMANA del rail y del panel (hija directa del aside
-   .app-menubar-tabs), no dentro del panel, para que abarque el ANCHO COMPLETO del sidebar
-   (rail + panel) y el borde superior no arranque a mitad. El aside es position:fixed, asi que
-   absolute se ancla a el. En modo "mini" (solo iconos) se oculta. *@
-<div class="app-side-version" title="Version @Propia.Web.PlatformVersion.Label (build @Propia.Web.PlatformVersion.Build)">@Propia.Web.PlatformVersion.Label</div>
 
 <style>
-    /* Version al pie del sidebar: SOLO texto centrado y discreto (sin barra ni linea divisoria,
-       que se veia pesada y "separaba" el rail del fondo). Anclada al pie del aside (rail + panel),
-       fondo igual al del sidebar para que no se encime con el contenido si llegara a hacer scroll. */
-    .app-side-version {
-        position: absolute;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        padding: 10px 16px 12px;
-        font-size: 10.5px;
-        letter-spacing: .3px;
-        text-align: center;
-        color: var(--bs-secondary-color, #9aa4b2);
-        background: var(--bs-body-bg, #fff);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        opacity: .85;
-        z-index: 2;
+    /* ===== Menu vertical agrupado de PROPIA ===== */
+    .pnav {
+        --pnav-guide: rgba(89, 85, 209, .32);      /* linea guia: morado PROPIA suave */
+        --pnav-guide-on: var(--propia-primary, #5955D1);
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 100%;
     }
-    /* En modo mini (rail iconico de 80px) se oculta para no encimarse. */
-    html[data-app-sidebar=mini] .app-side-version { display: none; }
 
-    /* El rail (barra rapida de iconos) del template no llegaba al fondo (terminaba a la altura de
-       sus iconos) y traia una sombra inferior (box-shadow 0 10px 10px) que dibujaba una linea a la
-       mitad -> se veia como si la barra "no tocara" el borde de abajo. Lo estiramos a toda la altura
-       del sidebar y le quitamos esa sombra para que el fondo sea continuo hasta el pie. */
-    .app-navbar-tabs {
-        min-height: 100vh;
-        box-shadow: none !important;
+    /* Marca */
+    .pnav-brand {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 74px;
+        flex: 0 0 auto;
+        border-bottom: 1px solid var(--bs-border-color);
     }
-    /* Dejar aire al final del menu para que el ultimo item no quede tapado por el pie. */
-    .app-tab-content .app-content-inner {
-        padding-bottom: 44px;
-    }
-</style>
+    .pnav-logo { height: 46px; width: auto; max-width: 170px; object-fit: contain; display: block; }
 
-<style>
-    /* Tooltip del rail. El elemento lo crea propia-ui.js colgado del documento (el rail
-       tiene scroll y lo recortaria), por eso estas reglas son globales y no descendientes
-       del nav. Los data-tip-title/-desc de cada icono son los que lo alimentan. */
-    .propia-railtip {
-        position: fixed;
-        z-index: 1080;
-        width: 268px;
-        padding: 12px 14px;
-        border-radius: 12px;
-        background: var(--bs-body-bg, #fff);
-        border: 1px solid var(--bs-border-color, #E1E8EE);
-        box-shadow: 0 12px 32px rgba(27, 42, 58, .16);
-        opacity: 0;
-        pointer-events: none;               /* no debe robarle el hover al icono */
-        transform: translateX(-6px);
-        transition: opacity .14s ease, transform .14s ease;
+    /* Cuerpo scrolleable */
+    .pnav-body {
+        flex: 1 1 auto;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 10px 10px 16px;
+        min-height: 0;
     }
-    .propia-railtip.is-on { opacity: 1; transform: translateX(0); }
-    /* Flechita hacia el icono */
-    .propia-railtip::before {
-        content: "";
-        position: absolute;
-        left: -5px; top: 50%; margin-top: -5px;
-        width: 10px; height: 10px;
-        background: inherit;
-        border-left: 1px solid var(--bs-border-color, #E1E8EE);
-        border-bottom: 1px solid var(--bs-border-color, #E1E8EE);
-        transform: rotate(45deg);
-    }
-    .propia-railtip-t {
-        font-size: 13px; font-weight: 700; line-height: 1.25;
-        color: var(--bs-heading-color, #1B2A3A);
-    }
-    .propia-railtip-d {
-        margin-top: 4px;
-        font-size: 11.5px; line-height: 1.5;
+    .pnav-body::-webkit-scrollbar { width: 7px; }
+    .pnav-body::-webkit-scrollbar-thumb { background: var(--bs-border-color); border-radius: 6px; }
+
+    .pnav-sep { height: 1px; background: var(--bs-border-color); margin: 10px 8px; }
+
+    /* Icono cuadrado (grupo e item plano) */
+    .pnav-ico {
+        width: 30px; height: 30px; flex: 0 0 30px;
+        display: inline-flex; align-items: center; justify-content: center;
         color: var(--bs-secondary-color, #7C98B6);
     }
+    .pnav-ico i, .pnav-ico i::before { font-size: 17px; line-height: 1; }
 
-    .propia-side-logo { height: 58px; width: auto; max-width: 150px; object-fit: contain; display: block; }
-    /* Logo unico del panel: centrado en su header (80px de alto). */
-    .app-side-brands { display: flex; align-items: center; justify-content: center; }
-    /* Bajar el riel de iconos ~la altura del header del logo, para que el primer icono
-       arranque alineado con el contenido del panel (antes lo empujaba el logo del rail). */
-    .app-navbar-tabs { padding-top: 68px; }
+    /* Enlace plano (seccion de un item, ej. Inicio) */
+    .pnav-flat {
+        display: flex; align-items: center; gap: 11px;
+        padding: 9px 12px; margin: 2px 0;
+        border-radius: 11px;
+        color: var(--bs-heading-color, #1B2A3A);
+        text-decoration: none;
+        font-weight: 500; font-size: .92rem;
+        transition: background .14s, color .14s;
+    }
+    .pnav-flat:hover { background: rgba(89, 85, 209, .07); }
+    .pnav-flat.active { background: rgba(89, 85, 209, .10); color: var(--propia-primary); font-weight: 600; }
+    .pnav-flat.active .pnav-ico { color: var(--propia-primary); }
+
+    /* ===== Grupo colapsable (details/summary) ===== */
+    .pnav-group { margin: 2px 0; }
+    .pnav-group > summary { list-style: none; }
+    .pnav-group > summary::-webkit-details-marker { display: none; }   /* quita el triangulo nativo */
+
+    .pnav-head {
+        display: flex; align-items: center; gap: 11px;
+        padding: 9px 12px;
+        border-radius: 11px;
+        cursor: pointer;
+        color: var(--bs-heading-color, #1B2A3A);
+        font-weight: 600; font-size: .92rem;
+        user-select: none;
+        transition: background .14s;
+    }
+    .pnav-head:hover { background: rgba(89, 85, 209, .07); }
+    .pnav-lbl { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pnav-chev {
+        font-size: 15px; color: var(--bs-secondary-color, #9aa4b2);
+        transition: transform .18s ease; flex: 0 0 auto;
+    }
+    .pnav-group[open] > .pnav-head .pnav-chev { transform: rotate(180deg); }
+    /* Grupo con la ruta activa dentro: icono en morado para ubicarse rapido */
+    .pnav-group[open] > .pnav-head .pnav-ico { color: var(--propia-primary); }
+
+    /* ===== Sub-items con linea guia punteada ===== */
+    .pnav-sub {
+        position: relative;
+        margin: 2px 0 6px;
+        padding: 2px 0 2px 0;
+    }
+    /* Linea vertical punteada, alineada bajo el centro del icono del grupo (12px pad + 15 medio icono = 27px) */
+    .pnav-sub::before {
+        content: "";
+        position: absolute;
+        left: 27px; top: 0; bottom: 14px;
+        border-left: 1.5px dashed var(--pnav-guide);
+    }
+
+    .pnav-subhead {
+        padding: 8px 12px 4px 44px;
+        font-size: .68rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+        color: var(--bs-secondary-color, #9aa4b2);
+    }
+    .pnav-subdiv { height: 1px; background: var(--bs-border-color); margin: 6px 12px 6px 44px; }
+
+    .pnav-item {
+        position: relative;
+        display: flex; align-items: center; gap: 9px;
+        margin: 1px 0 1px 27px;
+        padding: 7px 10px 7px 17px;
+        border-radius: 9px;
+        color: var(--bs-body-color, #55677D);
+        text-decoration: none;
+        font-size: .875rem; font-weight: 500;
+        transition: background .14s, color .14s;
+    }
+    /* Conector horizontal punteado desde la linea vertical hasta el item */
+    .pnav-item::before {
+        content: "";
+        position: absolute;
+        left: 0; top: 50%;
+        width: 15px;
+        border-top: 1.5px dashed var(--pnav-guide);
+    }
+    .pnav-item-ico {
+        width: 20px; height: 20px; flex: 0 0 20px;
+        display: inline-flex; align-items: center; justify-content: center;
+        color: var(--bs-secondary-color, #7C98B6);
+    }
+    .pnav-item-ico i, .pnav-item-ico i::before { font-size: 14px; line-height: 1; }
+    .pnav-item-lbl { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .pnav-item:hover { background: rgba(89, 85, 209, .07); color: var(--propia-primary); }
+    .pnav-item:hover .pnav-item-ico { color: var(--propia-primary); }
+
+    /* Item activo: pastilla morada + conector e icono solidos */
+    .pnav-item.active {
+        background: rgba(89, 85, 209, .12);
+        color: var(--propia-primary);
+        font-weight: 600;
+    }
+    .pnav-item.active .pnav-item-ico { color: var(--propia-primary); }
+    .pnav-item.active::before {
+        border-top-style: solid;
+        border-top-color: var(--pnav-guide-on);
+        width: 17px;
+    }
+
+    /* ===== Pie: selector de copropiedad + version ===== */
+    .pnav-foot {
+        flex: 0 0 auto;
+        border-top: 1px solid var(--bs-border-color);
+        background: var(--app-sidebar-bg, var(--bs-body-bg));
+    }
+    /* El CopropiedadSwitcher trae su propio .cs-wrap con padding; solo ajustamos el pie. */
+    .pnav-foot .cs-wrap { padding: 12px 12px 4px; }
+    .pnav-ver {
+        padding: 2px 14px 10px;
+        font-size: 10.5px; letter-spacing: .3px; text-align: center;
+        color: var(--bs-secondary-color, #9aa4b2);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        opacity: .85;
+    }
 </style>
 
 @code {
     private ResolvedMenu? _menu;
-    private Dictionary<string, string> _hrefToSection = new(StringComparer.OrdinalIgnoreCase);
     private string _activeTab = "tabInicio";
+    private Dictionary<string, string> _hrefToSection = new(StringComparer.OrdinalIgnoreCase);
 
     protected override async Task OnInitializedAsync()
     {
@@ -205,10 +275,15 @@
         }
     }
 
+    /// <summary>Una seccion es "plana" (enlace directo, sin acordeon) si tiene exactamente un item.</summary>
+    private static bool EsPlano(ResolvedMenuSection s) => s.Items.Count == 1;
+
+    /// <summary>La seccion cuya ruta esta activa arranca expandida.</summary>
+    private bool EstaActiva(string key) => string.Equals(key, _activeTab, StringComparison.Ordinal);
+
     /// <summary>
-    /// Mapea la ruta actual al tab del rail que debe quedar activo. Primero data-driven (match exacto
-    /// y por prefijo del href de cada item, asi el resaltado sigue a los items movidos de seccion);
-    /// luego fallbacks por prefijo para rutas que no tienen item propio (subrutas, /gobierno, etc).
+    /// Mapea la ruta actual a la seccion que debe quedar activa/expandida. Data-driven (match exacto
+    /// y por prefijo del href de cada item) + fallbacks por prefijo para subrutas sin item propio.
     /// </summary>
     private string ResolveTab(string uri)
     {
@@ -228,24 +303,18 @@
         }
         if (best is not null) { return best; }
 
-        // Fallbacks para rutas sin item propio (mantienen el comportamiento historico).
         if (path.StartsWith("/org/") || path.StartsWith("/operador/")) return "tabOrg";
         if (path.StartsWith("/cuenta/") || path == "/login" || path == "/onboarding" || path.StartsWith("/invitacion/")) return "tabCuenta";
         if (path.StartsWith("/mi-copropiedad") || path.StartsWith("/directorio")
             || path.StartsWith("/configuracion/") || path == "/gobierno" || path == "/usuarios"
             || path == "/distribucion" || path == "/zonas-comunes" || path == "/equipos-activos") return "tabMiPH";
         if (path.StartsWith("/presupuesto") || path.StartsWith("/cartera")
-            || path.StartsWith("/servicios") || path.StartsWith("/finanzas")) return "tabFinanzas";
+            || path.StartsWith("/servicios") || path.StartsWith("/finanzas") || path.StartsWith("/contratos")) return "tabFinanzas";
         if (path.StartsWith("/asambleas") || path == "/pqrs" || path == "/pqrsd" || path.StartsWith("/pqrsd/")) return "tabGobierno";
         if (path == "/tareas" || path.StartsWith("/tareas/") || path == "/mantenimiento"
             || path == "/porteria" || path == "/reservas") return "tabOperacion";
-        if (path == "/comunicaciones" || path == "/documentos" || path == "/reportes" || path.StartsWith("/ia/")) return "tabComunicacion";
-        return "tabInicio"; // /, /dashboard, /dashboard-ph y otros
+        if (path == "/comunicaciones" || path == "/documentos" || path == "/reportes"
+            || path == "/informes" || path.StartsWith("/ia/")) return "tabComunicacion";
+        return "tabInicio";
     }
-
-    private string TabClass(string id) =>
-        _activeTab == id ? "tab-pane fade show active" : "tab-pane fade";
-
-    private string RailClass(string id) =>
-        _activeTab == id ? "menu-link active" : "menu-link";
 }
