@@ -114,10 +114,18 @@ else
     {
         var porVencer = _contratos.Where(c => c.AlertaVencimiento).OrderBy(c => c.DiasParaVencer).ToList();
 
-    <div class="srv-kpis">
-        <div class="srv-kpi"><div class="srv-kpi-lbl">Total de contratos</div><div class="srv-kpi-val">@_contratos.Count</div></div>
-        <div class="srv-kpi"><div class="srv-kpi-lbl">Vigentes</div><div class="srv-kpi-val ok">@_contratos.Count(c => c.Estado == EstadoContrato.Vigente)</div></div>
-        <div class="srv-kpi danger"><div class="srv-kpi-lbl danger">Por vencer</div><div class="srv-kpi-val danger">@porVencer.Count</div></div>
+    <div class="ctr-kpis">
+        @foreach (var k in ContratoKpis())
+        {
+            <div class="ctr-kpi" style="background:@k.Grad">
+                <svg class="ctr-kpi-wm" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6"><path d="@k.Icon" /></svg>
+                <div class="ctr-kpi-body">
+                    <div class="ctr-kpi-label">@k.Label</div>
+                    <div class="ctr-kpi-n">@k.Valor</div>
+                    <div class="ctr-kpi-sub">@k.Sub</div>
+                </div>
+            </div>
+        }
     </div>
 
     @if (porVencer.Count > 0)
@@ -149,29 +157,68 @@ else
             </div>
         </div>
 
-        @* ---- Barra de filtros + agrupar ---- *@
+        @* ---- Buscador + Filtros (un solo boton, constructor de reglas estilo Tareas) + Agrupar ---- *@
         <div class="ctr-filtros">
             <div class="ctr-search"><i class="fi fi-rr-search"></i><input placeholder="Buscar proveedor, NIT, tipo..." value="@_cFiltroTexto" @oninput="e => { _cFiltroTexto = e.Value?.ToString() ?? string.Empty; }" /></div>
-            <select class="ctr-fsel" @bind="_cFiltroTercero">
-                <option value="">Todos los terceros</option>
-                @foreach (var p in TercerosDistintos()) { <option value="@p">@p</option> }
-            </select>
-            <select class="ctr-fsel" @bind="_cFiltroTipoStr">
-                <option value="">Todos los tipos</option>
-                @foreach (var t in TiposDistintos()) { <option value="@((int)t)">@TipoLabel(t)</option> }
-            </select>
-            <select class="ctr-fsel" @bind="_cFiltroEstado">
-                <option value="">Todos los estados</option>
-                <option value="vigente">Vigentes</option>
-                <option value="por-vencer">Por vencer</option>
-                <option value="vencido">Vencidos</option>
-                <option value="renovacion">En renovacion</option>
-            </select>
-            <div class="ctr-range">
-                <span class="ctr-range-lbl">Vence</span>
-                <input type="date" @bind="_cVenceDesde" title="Desde" />
-                <span class="ctr-range-sep">a</span>
-                <input type="date" @bind="_cVenceHasta" title="Hasta" />
+            <div class="ctr-filtro-wrap">
+                <button class="ctr-fbtn @(HayReglasActivas ? "on" : "")" @onclick="ToggleFiltrosC" title="Filtrar contratos">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18M6 12h12M10 19h4" /></svg>
+                    <span>Filtros</span>
+                    @if (CuentaReglasC > 0) { <span class="ctr-fbadge">@CuentaReglasC</span> }
+                </button>
+                @if (_filtrosMenuC)
+                {
+                    <div class="ctr-fpop-bd" @onclick="() => _filtrosMenuC = false"></div>
+                    <div class="ctr-fpop" @onclick:stopPropagation="true">
+                        @if (_reglasC.Count == 0)
+                        {
+                            <div class="ctr-fpop-empty">Sin filtros aplicados.<br />Agrega una condicion para acotar los contratos.</div>
+                        }
+                        else
+                        {
+                            @for (int i = 0; i < _reglasC.Count; i++)
+                            {
+                                var idx = i; var r = _reglasC[idx];
+                                <div class="ctr-frule">
+                                    @if (idx == 0)
+                                    {
+                                        <span class="ctr-frule-lead">Donde</span>
+                                    }
+                                    else if (idx == 1)
+                                    {
+                                        <select class="ctr-frule-lead ctr-frule-logic" @onchange="SetLogicaC">
+                                            <option value="and" selected="@(_logicaC == "and")">Y</option>
+                                            <option value="or" selected="@(_logicaC == "or")">O</option>
+                                        </select>
+                                    }
+                                    else
+                                    {
+                                        <span class="ctr-frule-lead">@(_logicaC == "or" ? "O" : "Y")</span>
+                                    }
+                                    <select class="ctr-frule-f" @onchange="(e) => SetReglaCampoC(idx, e)">
+                                        @foreach (var opt in CamposFiltroC()) { <option value="@opt.Key" selected="@(r.Campo == opt.Key)">@opt.Label</option> }
+                                    </select>
+                                    <select class="ctr-frule-op" @onchange="(e) => SetReglaOpC(idx, e)">
+                                        @foreach (var op in OperadoresC(r.Campo)) { <option value="@op.Key" selected="@(r.Op == op.Key)">@op.Label</option> }
+                                    </select>
+                                    @if (r.Op is not "vacio" and not "no_vacio")
+                                    {
+                                        @RenderValorC(idx)
+                                    }
+                                    <button class="ctr-frule-del" title="Quitar condicion" @onclick="() => QuitarReglaC(idx)">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                                    </button>
+                                </div>
+                            }
+                        }
+                        <div class="ctr-fpop-foot">
+                            <button class="ctr-fadd" @onclick="AgregarReglaC">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14" /></svg>Agregar filtro
+                            </button>
+                            @if (_reglasC.Count > 0) { <button class="ctr-fclear2" @onclick="LimpiarReglasC">Limpiar todo</button> }
+                        </div>
+                    </div>
+                }
             </div>
             <select class="ctr-fsel" @bind="_cAgrupar">
                 <option value="">Sin agrupar</option>
@@ -179,7 +226,6 @@ else
                 <option value="tercero">Agrupar por tercero</option>
                 <option value="estado">Agrupar por estado</option>
             </select>
-            @if (HayFiltrosContrato()) { <button class="ctr-clear" @onclick="LimpiarFiltrosContrato">Limpiar</button> }
         </div>
 
         @if (_contratos.Count == 0)
@@ -1076,6 +1122,38 @@ else
     .ctr-clear { border: 0; background: #F1ECFD; color: #5838C9; font-weight: 700; font-size: 12px; border-radius: 8px; padding: 7px 12px; cursor: pointer; }
     .ctr-clear:hover { background: #E6DEFB; }
     .ctr-count { padding: 10px 20px 0; font-size: 12px; color: #8593A5; font-weight: 600; }
+    /* KPIs tipo tarjeta con degradado (estilo Tareas) */
+    .ctr-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 13px; margin-bottom: 18px; }
+    .ctr-kpi { position: relative; border-radius: 16px; padding: 17px 18px; overflow: hidden; box-shadow: 0 8px 22px rgba(45,62,80,.16); }
+    .ctr-kpi-wm { position: absolute; right: -14px; bottom: -14px; width: 86px; height: 86px; opacity: .16; }
+    .ctr-kpi-body { position: relative; }
+    .ctr-kpi-label { font-size: 11px; font-weight: 700; letter-spacing: .3px; color: rgba(255,255,255,.85); }
+    .ctr-kpi-n { font-size: 32px; font-weight: 800; letter-spacing: -1px; color: #fff; margin-top: 6px; line-height: 1; }
+    .ctr-kpi-sub { font-size: 11.5px; font-weight: 600; color: rgba(255,255,255,.82); margin-top: 6px; }
+    @@media (max-width: 1100px) { .ctr-kpis { grid-template-columns: repeat(2, 1fr); } }
+    /* Boton "Filtros" + popover constructor de reglas */
+    .ctr-filtro-wrap { position: relative; }
+    .ctr-fbtn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #D9DEE7; background: #fff; color: #46586B; border-radius: 9px; padding: 8px 13px; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+    .ctr-fbtn:hover { border-color: #C9B8F6; color: #5838C9; }
+    .ctr-fbtn.on { background: #F4F1FE; border-color: #C9B8F6; color: #5838C9; }
+    .ctr-fbadge { background: #7C5CFA; color: #fff; font-size: 10.5px; font-weight: 800; border-radius: 20px; padding: 0 6px; min-width: 17px; height: 17px; display: inline-flex; align-items: center; justify-content: center; }
+    .ctr-fpop-bd { position: fixed; inset: 0; z-index: 40; }
+    .ctr-fpop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 41; width: 540px; max-width: 88vw; background: #fff; border: 1px solid #E6ECF2; border-radius: 13px; box-shadow: 0 18px 44px rgba(30,40,60,.22); padding: 12px; }
+    .ctr-fpop-empty { padding: 14px; text-align: center; color: #94A3B8; font-size: 12.5px; line-height: 1.5; }
+    .ctr-frule { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
+    .ctr-frule-lead { font-size: 11.5px; font-weight: 700; color: #8593A5; min-width: 42px; }
+    .ctr-frule-logic { min-width: 52px; }
+    .ctr-frule select, .ctr-frule input { border: 1px solid #DCE3EC; border-radius: 7px; padding: 5px 7px; font-size: 12px; color: #33414F; background: #fff; font-family: inherit; }
+    .ctr-frule-f { flex: 1 1 120px; min-width: 90px; }
+    .ctr-frule-op { flex: 0 1 120px; }
+    .ctr-frule-v { flex: 1 1 120px; min-width: 90px; }
+    .ctr-frule-del { border: 0; background: #F3F6FA; color: #97A6B6; border-radius: 6px; width: 24px; height: 24px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+    .ctr-frule-del:hover { background: #FDECEC; color: #E14B4B; }
+    .ctr-fpop-foot { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding-top: 9px; border-top: 1px dashed #E4EAF0; }
+    .ctr-fadd { display: inline-flex; align-items: center; gap: 5px; border: 0; background: #F4F1FE; color: #5838C9; font-weight: 700; font-size: 12px; border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+    .ctr-fadd:hover { background: #E6DEFB; }
+    .ctr-fclear2 { border: 0; background: transparent; color: #8593A5; font-weight: 600; font-size: 12px; cursor: pointer; }
+    .ctr-fclear2:hover { color: #E14B4B; }
     .ctr-group-h { display: flex; align-items: center; gap: 8px; padding: 14px 20px 6px; font-size: 12px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; color: #5838C9; }
     .ctr-group-n { background: #F1ECFD; color: #5838C9; font-size: 11px; font-weight: 800; border-radius: 20px; padding: 1px 8px; }
     .ctr-table-wrap { overflow-x: auto; padding: 4px 12px 6px; }
@@ -1220,56 +1298,239 @@ else
         Nav.ToBaseRelativePath(Nav.Uri).TrimEnd('/').Split('?')[0].Equals("contratos", StringComparison.OrdinalIgnoreCase);
     private List<ContratoServicioDto> _contratos = new();
 
-    // ---- Filtros / agrupar de la tabla de contratos (Fase A) ----
+    // ---- Filtros de la tabla de contratos: buscador + constructor de reglas (estilo Tareas) ----
     private string _cFiltroTexto = "";
-    private string _cFiltroTercero = "";
-    private string _cFiltroTipoStr = "";
-    private string _cFiltroEstado = "";
-    private DateOnly? _cVenceDesde;
-    private DateOnly? _cVenceHasta;
     private string _cAgrupar = "";
 
-    private IEnumerable<string> TercerosDistintos() =>
-        _contratos.Select(c => c.Proveedor).Where(p => !string.IsNullOrWhiteSpace(p)).Distinct().OrderBy(p => p);
-    private IEnumerable<TipoServicio> TiposDistintos() =>
-        _contratos.Select(c => c.Tipo).Distinct().OrderBy(t => TipoLabel(t));
-
-    private bool HayFiltrosContrato() =>
-        !string.IsNullOrWhiteSpace(_cFiltroTexto) || !string.IsNullOrEmpty(_cFiltroTercero)
-        || !string.IsNullOrEmpty(_cFiltroTipoStr) || !string.IsNullOrEmpty(_cFiltroEstado)
-        || _cVenceDesde is not null || _cVenceHasta is not null;
-
-    private void LimpiarFiltrosContrato()
+    // Indicadores tipo tarjeta (KPIs con degradado, estilo Tareas)
+    private record CtrKpi(string Label, string Valor, string Sub, string Grad, string Icon);
+    private List<CtrKpi> ContratoKpis()
     {
-        _cFiltroTexto = ""; _cFiltroTercero = ""; _cFiltroTipoStr = "";
-        _cFiltroEstado = ""; _cVenceDesde = null; _cVenceHasta = null;
+        int total = _contratos.Count;
+        int vencidos = _contratos.Count(c => c.Estado == EstadoContrato.Vencido);
+        int porVencer = _contratos.Count(c => c.AlertaVencimiento && c.Estado != EstadoContrato.Vencido);
+        int vigentes = _contratos.Count(c => c.Estado == EstadoContrato.Vigente && !c.AlertaVencimiento);
+        decimal valorMes = _contratos.Where(c => c.Estado != EstadoContrato.Vencido).Sum(c => c.ValorMensual ?? 0);
+        var vencGrad = vencidos > 0 ? "linear-gradient(135deg,#E0556B,#B3243C)" : "linear-gradient(135deg,#34C77B,#1A8754)";
+        return new()
+        {
+            new("Total de contratos", total.ToString(), $"${valorMes.ToString("N0")}/mes vigente",
+                "linear-gradient(135deg,#6D4FE3,#4B2BB0)",
+                "M8 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-3M9 7h6M9 11h6M9 15h4"),
+            new("Vigentes", vigentes.ToString(), "al dia",
+                "linear-gradient(135deg,#34C77B,#1A8754)",
+                "M20 6 9 17l-5-5"),
+            new("Por vencer", porVencer.ToString(), porVencer > 0 ? "requieren renovacion" : "ninguno cerca",
+                "linear-gradient(135deg,#F0A23C,#C5781A)",
+                "M12 8v4l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"),
+            new("Vencidos", vencidos.ToString(), vencidos > 0 ? "requieren atencion" : "ninguno",
+                vencGrad,
+                "M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"),
+        };
+    }
+
+    // -- Constructor de reglas de filtro (Donde / Y-O / campo + operador + valor) --
+    private sealed class ReglaC { public string Campo = "estado"; public string Op = "es"; public string Valor = ""; }
+    private readonly List<ReglaC> _reglasC = new();
+    private string _logicaC = "and";
+    private bool _filtrosMenuC;
+    private bool ReglaActivaC(ReglaC r) => r.Op is "vacio" or "no_vacio" || !string.IsNullOrWhiteSpace(r.Valor);
+    private int CuentaReglasC => _reglasC.Count(ReglaActivaC);
+    private bool HayReglasActivas => _reglasC.Any(ReglaActivaC);
+    private void ToggleFiltrosC() { _filtrosMenuC = !_filtrosMenuC; if (_filtrosMenuC && _reglasC.Count == 0) AgregarReglaC(); }
+    private void AgregarReglaC() => _reglasC.Add(new ReglaC { Campo = "estado", Op = "es", Valor = "" });
+    private void QuitarReglaC(int idx) { if (idx >= 0 && idx < _reglasC.Count) _reglasC.RemoveAt(idx); }
+    private void LimpiarReglasC() { _reglasC.Clear(); _logicaC = "and"; }
+    private void SetLogicaC(ChangeEventArgs e) => _logicaC = e.Value?.ToString() == "or" ? "or" : "and";
+    private void SetReglaCampoC(int idx, ChangeEventArgs e)
+    {
+        if (idx < 0 || idx >= _reglasC.Count) return;
+        _reglasC[idx].Campo = e.Value?.ToString() ?? "estado";
+        var ops = OperadoresC(_reglasC[idx].Campo);
+        if (!ops.Any(o => o.Key == _reglasC[idx].Op)) _reglasC[idx].Op = ops.First().Key;
+        _reglasC[idx].Valor = "";
+    }
+    private void SetReglaOpC(int idx, ChangeEventArgs e) { if (idx >= 0 && idx < _reglasC.Count) _reglasC[idx].Op = e.Value?.ToString() ?? "es"; }
+    private void SetReglaValorC(int idx, ChangeEventArgs e) { if (idx >= 0 && idx < _reglasC.Count) _reglasC[idx].Valor = e.Value?.ToString() ?? ""; }
+
+    // Campos filtrables: fijos del contrato + campos personalizados activos
+    private IEnumerable<(string Key, string Label)> CamposFiltroC()
+    {
+        yield return ("tercero", "Proveedor");
+        yield return ("nit", "NIT");
+        yield return ("tipo", "Tipo");
+        yield return ("estado", "Estado");
+        yield return ("inicio", "Inicio");
+        yield return ("vence", "Vencimiento");
+        yield return ("valor", "$/mes");
+        foreach (var c in CamposActivos) yield return (c.Id.ToString(), c.Label);
+    }
+    private ContratoCampoDto? CampoDinC(string campo) => Guid.TryParse(campo, out var g) ? _cCampos.FirstOrDefault(c => c.Id == g) : null;
+    private string FiltroKindC(string campo) => campo switch
+    {
+        "tipo" => "sel-tipo",
+        "estado" => "sel-estado",
+        "inicio" or "vence" => "fecha",
+        "valor" => "num",
+        "tercero" or "nit" => "texto",
+        _ => CampoDinC(campo)?.Tipo switch
+        {
+            TipoCampoTablero.Numero or TipoCampoTablero.Moneda => "num",
+            TipoCampoTablero.Fecha => "fecha",
+            TipoCampoTablero.Seleccion => "sel-din",
+            TipoCampoTablero.Booleano => "sel-bool",
+            _ => "texto"
+        }
+    };
+    private IEnumerable<(string Key, string Label)> OperadoresC(string campo)
+    {
+        switch (FiltroKindC(campo))
+        {
+            case "num":
+                return new[] { ("=", "es igual a"), ("!=", "es distinto de"), (">", "mayor que"), (">=", "mayor o igual"),
+                               ("<", "menor que"), ("<=", "menor o igual"), ("vacio", "esta vacio"), ("no_vacio", "no esta vacio") };
+            case "fecha":
+                return new[] { ("es", "es"), ("antes", "antes de"), ("despues", "despues de"), ("vacio", "esta vacio"), ("no_vacio", "no esta vacio") };
+            case "sel-tipo":
+            case "sel-estado":
+            case "sel-din":
+            case "sel-bool":
+                return new[] { ("es", "es"), ("no_es", "no es"), ("vacio", "esta vacio"), ("no_vacio", "no esta vacio") };
+            default:
+                return new[] { ("contiene", "contiene"), ("no_contiene", "no contiene"), ("es", "es"), ("no_es", "no es"),
+                               ("vacio", "esta vacio"), ("no_vacio", "no esta vacio") };
+        }
+    }
+
+    private static string EstadoSemantic(ContratoServicioDto c) =>
+        c.Estado == EstadoContrato.Vencido ? "vencido"
+        : c.AlertaVencimiento ? "por-vencer"
+        : c.Estado == EstadoContrato.EnRenovacion ? "renovacion"
+        : "vigente";
+
+    private string ValorTextoC(ContratoServicioDto c, string campo) => campo switch
+    {
+        "tercero" => c.Proveedor ?? "",
+        "nit" => c.NitProveedor ?? "",
+        "tipo" => ((int)c.Tipo).ToString(),
+        "estado" => EstadoSemantic(c),
+        "valor" => c.ValorMensual?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "",
+        "inicio" => c.FechaInicio.ToString("yyyy-MM-dd"),
+        "vence" => c.FechaFin?.ToString("yyyy-MM-dd") ?? "",
+        _ => ValorCampo(c, Guid.TryParse(campo, out var g) ? g : Guid.Empty) ?? ""
+    };
+    private decimal? ValorNumC(ContratoServicioDto c, string campo)
+    {
+        if (campo == "valor") return c.ValorMensual;
+        return decimal.TryParse(ValorCampo(c, Guid.TryParse(campo, out var g) ? g : Guid.Empty), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
+    }
+    private DateOnly? FechaC(ContratoServicioDto c, string campo)
+    {
+        if (campo == "inicio") return c.FechaInicio;
+        if (campo == "vence") return c.FechaFin;
+        return DateOnly.TryParse(ValorCampo(c, Guid.TryParse(campo, out var g) ? g : Guid.Empty), out var d) ? d : null;
+    }
+    private bool EvalReglaC(ContratoServicioDto c, ReglaC r)
+    {
+        var kind = FiltroKindC(r.Campo);
+        if (kind == "num")
+        {
+            var nv = ValorNumC(c, r.Campo);
+            if (r.Op == "vacio") return nv is null;
+            if (r.Op == "no_vacio") return nv is not null;
+            if (!decimal.TryParse(r.Valor, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var rv)) return true;
+            if (nv is null) return false;
+            return r.Op switch { "=" => nv == rv, "!=" => nv != rv, ">" => nv > rv, ">=" => nv >= rv, "<" => nv < rv, "<=" => nv <= rv, _ => true };
+        }
+        if (kind == "fecha")
+        {
+            var dv = FechaC(c, r.Campo);
+            if (r.Op == "vacio") return dv is null;
+            if (r.Op == "no_vacio") return dv is not null;
+            if (!DateOnly.TryParse(r.Valor, out var rd)) return true;
+            if (dv is null) return false;
+            return r.Op switch { "es" => dv == rd, "antes" => dv < rd, "despues" => dv > rd, _ => true };
+        }
+        var sv = ValorTextoC(c, r.Campo);
+        if (r.Op == "vacio") return string.IsNullOrWhiteSpace(sv);
+        if (r.Op == "no_vacio") return !string.IsNullOrWhiteSpace(sv);
+        if (string.IsNullOrEmpty(r.Valor)) return true;
+        return r.Op switch
+        {
+            "es" => string.Equals(sv, r.Valor, StringComparison.OrdinalIgnoreCase),
+            "no_es" => !string.Equals(sv, r.Valor, StringComparison.OrdinalIgnoreCase),
+            "contiene" => sv.Contains(r.Valor, StringComparison.OrdinalIgnoreCase),
+            "no_contiene" => !sv.Contains(r.Valor, StringComparison.OrdinalIgnoreCase),
+            _ => true
+        };
+    }
+    // Editor de valor de una regla (segun tipo). Se oculta para vacio/no_vacio.
+    private RenderFragment RenderValorC(int idx) => builder =>
+    {
+        if (idx < 0 || idx >= _reglasC.Count) return;
+        var r = _reglasC[idx];
+        var kind = FiltroKindC(r.Campo);
+        void Sel(IEnumerable<(string Val, string Txt)> opts, string ph)
+        {
+            builder.OpenElement(0, "select");
+            builder.AddAttribute(1, "class", "ctr-frule-v");
+            builder.AddAttribute(2, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e => SetReglaValorC(idx, e)));
+            builder.OpenElement(3, "option");
+            builder.AddAttribute(4, "value", "");
+            builder.AddAttribute(5, "selected", string.IsNullOrEmpty(r.Valor));
+            builder.AddContent(6, ph);
+            builder.CloseElement();
+            var k = 7;
+            foreach (var (val, txt) in opts)
+            {
+                builder.OpenElement(k++, "option");
+                builder.AddAttribute(k++, "value", val);
+                builder.AddAttribute(k++, "selected", r.Valor == val);
+                builder.AddContent(k++, txt);
+                builder.CloseElement();
+            }
+            builder.CloseElement();
+        }
+        void Inp(string type)
+        {
+            builder.OpenElement(20, "input");
+            builder.AddAttribute(21, "class", "ctr-frule-v");
+            builder.AddAttribute(22, "type", type);
+            builder.AddAttribute(23, "value", r.Valor);
+            builder.AddAttribute(24, "placeholder", "Valor");
+            builder.AddAttribute(25, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e => SetReglaValorC(idx, e)));
+            builder.CloseElement();
+        }
+        switch (kind)
+        {
+            case "sel-tipo": Sel(Enum.GetValues<TipoServicio>().Select(t => (((int)t).ToString(), TipoLabel(t))), "Elegir tipo..."); break;
+            case "sel-estado": Sel(new[] { ("vigente", "Vigente"), ("por-vencer", "Por vencer"), ("vencido", "Vencido"), ("renovacion", "En renovacion") }, "Elegir estado..."); break;
+            case "sel-din": Sel(OpcionesDe(CampoDinC(r.Campo)!).Select(o => (o, o)), "Elegir opcion..."); break;
+            case "sel-bool": Sel(new[] { ("Si", "Si"), ("No", "No") }, "Elegir..."); break;
+            case "num": Inp("number"); break;
+            case "fecha": Inp("date"); break;
+            default: Inp("text"); break;
+        }
+    };
+
+    private bool PasaFiltrosC(ContratoServicioDto c)
+    {
+        if (!string.IsNullOrWhiteSpace(_cFiltroTexto))
+        {
+            var t = _cFiltroTexto.Trim();
+            var ok = (c.Proveedor ?? "").Contains(t, StringComparison.OrdinalIgnoreCase)
+                  || (c.NitProveedor ?? "").Contains(t, StringComparison.OrdinalIgnoreCase)
+                  || (c.Contacto ?? "").Contains(t, StringComparison.OrdinalIgnoreCase)
+                  || TipoLabel(c.Tipo).Contains(t, StringComparison.OrdinalIgnoreCase);
+            if (!ok) return false;
+        }
+        var activas = _reglasC.Where(ReglaActivaC).ToList();
+        if (activas.Count == 0) return true;
+        return _logicaC == "or" ? activas.Any(r => EvalReglaC(c, r)) : activas.All(r => EvalReglaC(c, r));
     }
 
     private IEnumerable<ContratoServicioDto> ContratosFiltrados()
-    {
-        var q = _contratos.AsEnumerable();
-        if (!string.IsNullOrWhiteSpace(_cFiltroTexto))
-        {
-            var t = _cFiltroTexto.Trim().ToLowerInvariant();
-            q = q.Where(c => (c.Proveedor ?? "").ToLowerInvariant().Contains(t)
-                          || (c.Contacto ?? "").ToLowerInvariant().Contains(t)
-                          || (c.NitProveedor ?? "").ToLowerInvariant().Contains(t)
-                          || TipoLabel(c.Tipo).ToLowerInvariant().Contains(t));
-        }
-        if (!string.IsNullOrEmpty(_cFiltroTercero)) q = q.Where(c => c.Proveedor == _cFiltroTercero);
-        if (int.TryParse(_cFiltroTipoStr, out var ti)) q = q.Where(c => (int)c.Tipo == ti);
-        q = _cFiltroEstado switch
-        {
-            "vigente"    => q.Where(c => c.Estado == EstadoContrato.Vigente && !c.AlertaVencimiento),
-            "por-vencer" => q.Where(c => c.AlertaVencimiento && c.Estado != EstadoContrato.Vencido),
-            "vencido"    => q.Where(c => c.Estado == EstadoContrato.Vencido),
-            "renovacion" => q.Where(c => c.Estado == EstadoContrato.EnRenovacion),
-            _ => q
-        };
-        if (_cVenceDesde is { } d) q = q.Where(c => c.FechaFin is { } f && f >= d);
-        if (_cVenceHasta is { } h) q = q.Where(c => c.FechaFin is { } f && f <= h);
-        return q.OrderBy(c => c.Tipo).ThenBy(c => c.FechaFin);
-    }
+        => _contratos.Where(PasaFiltrosC).OrderBy(c => c.Tipo).ThenBy(c => c.FechaFin);
 
     private IEnumerable<IGrouping<string, ContratoServicioDto>> AgruparContratos(IEnumerable<ContratoServicioDto> lst) =>
         _cAgrupar switch
