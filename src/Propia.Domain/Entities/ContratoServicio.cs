@@ -51,6 +51,10 @@ public class ContratoServicio : TenantEntity
     /// <summary>FK logico a Tarea con EsProyecto=true (modulo 2.10): un contrato puede atarse a un proyecto.</summary>
     public Guid? ProyectoTareaId { get; set; }
 
+    /// <summary>Etapa de flujo/pipeline configurable (En tramite, Pendiente asamblea, Activo, Terminado...).
+    /// Distinto de Estado (vigencia derivada por fecha); esto es el ciclo de vida operativo.</summary>
+    public Guid? EtapaId { get; set; }
+
     /// <summary>Archivos del contrato (PDF firmado, anexos, otrosi).</summary>
     public ICollection<ContratoAdjunto> Adjuntos { get; set; } = new List<ContratoAdjunto>();
 }
@@ -84,4 +88,16 @@ public class ContratoCampoValor : TenantEntity
     public Guid ContratoId { get; set; }
     public Guid ContratoCampoId { get; set; }
     public string? Valor { get; set; }
+}
+
+/// <summary>
+/// Etapa de flujo (columna del Kanban) de los contratos de la copropiedad. Configurable por tenant,
+/// sembrada con 4 etapas base. Mismo espiritu que los estados de un tablero de Tareas.
+/// </summary>
+public class ContratoEtapa : TenantEntity
+{
+    public string Nombre { get; set; } = string.Empty;
+    public int Orden { get; set; }
+    /// <summary>Color hex para la columna/pill (ej. "#22C55E").</summary>
+    public string? Color { get; set; }
 }

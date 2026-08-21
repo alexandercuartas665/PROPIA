@@ -205,7 +205,14 @@ public record ContratoServicioDto(
     int? DiasParaVencer, bool AlertaVencimiento,
     bool RenovacionAutomatica = false, Guid? ServicioId = null, Guid? ExpedienteId = null,
     Guid? ProyectoTareaId = null, int CantidadAdjuntos = 0,
-    IReadOnlyList<ContratoCampoValorDto>? CamposValores = null);
+    IReadOnlyList<ContratoCampoValorDto>? CamposValores = null, Guid? EtapaId = null);
+
+// ----- Etapas de flujo (Kanban) de contratos -----
+public record ContratoEtapaDto(Guid Id, string Nombre, int Orden, string? Color);
+public record CrearContratoEtapaRequest(string Nombre, string? Color);
+public record ActualizarContratoEtapaRequest(string Nombre, string? Color);
+public record ReordenarContratoEtapasRequest(List<Guid> Orden);
+public record CambiarEtapaContratoRequest(Guid? EtapaId);
 
 // ----- Campos personalizados (EAV) de contratos -----
 public record ContratoCampoDto(

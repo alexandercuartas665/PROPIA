@@ -1382,6 +1382,7 @@ public class MiCopropiedadService : IMiCopropiedadService
 
     public async Task<IReadOnlyList<ContratoServicioDto>> ListContratosAsync(CancellationToken ct)
     {
+        await AsegurarEtapasBaseAsync(ct);
         var contratos = await _db.ContratosServicio
             .AsNoTracking()
             .Include(x => x.Adjuntos)
@@ -1463,7 +1464,7 @@ public class MiCopropiedadService : IMiCopropiedadService
             c.FechaInicio, c.FechaFin, c.ValorMensual, c.Observaciones,
             estado, c.DiasAnticipacionAlerta, dias, alerta,
             c.RenovacionAutomatica, c.ServicioId, c.ExpedienteId, c.ProyectoTareaId,
-            c.Adjuntos?.Count ?? 0, valores);
+            c.Adjuntos?.Count ?? 0, valores, c.EtapaId);
     }
 
     public async Task<bool> EliminarContratoAsync(Guid contratoId, CancellationToken ct)
@@ -1553,6 +1554,100 @@ public class MiCopropiedadService : IMiCopropiedadService
         {
             existente.Valor = val;
         }
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    // ---- Etapas de flujo (Kanban) de contratos ----
+    // Siembra las 4 etapas base por copropiedad si no existen y ancla los contratos sin etapa a "Activo".
+    private async Task AsegurarEtapasBaseAsync(CancellationToken ct)
+    {
+        if (await _db.ContratoEtapas.AnyAsync(ct)) return;
+        var baseEtapas = new (string Nombre, string Color)[]
+        {
+            ("En tramite", "#3B82F6"),
+            ("Pendiente aprobacion asamblea", "#F59E0B"),
+            ("Activo", "#22C55E"),
+            ("Terminado", "#6B7280"),
+        };
+        var creadas = new List<ContratoEtapa>();
+        for (int i = 0; i < baseEtapas.Length; i++)
+        {
+            var e = new ContratoEtapa { Nombre = baseEtapas[i].Nombre, Color = baseEtapas[i].Color, Orden = i + 1 };
+            _db.ContratoEtapas.Add(e);
+            creadas.Add(e);
+        }
+        await _db.SaveChangesAsync(ct);
+        // Contratos existentes sin etapa -> "Activo" (la tercera).
+        var activo = creadas[2];
+        await _db.ContratosServicio.Where(c => c.EtapaId == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.EtapaId, activo.Id), ct);
+    }
+
+    public async Task<IReadOnlyList<ContratoEtapaDto>> ListContratoEtapasAsync(CancellationToken ct)
+    {
+        await AsegurarEtapasBaseAsync(ct);
+        return await _db.ContratoEtapas.AsNoTracking()
+            .OrderBy(e => e.Orden).ThenBy(e => e.Nombre)
+            .Select(e => new ContratoEtapaDto(e.Id, e.Nombre, e.Orden, e.Color))
+            .ToListAsync(ct);
+    }
+
+    public async Task<ContratoEtapaDto> CrearContratoEtapaAsync(CrearContratoEtapaRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Nombre))
+            throw new InvalidOperationException("El nombre de la etapa es obligatorio.");
+        await AsegurarEtapasBaseAsync(ct);
+        var maxOrden = await _db.ContratoEtapas.AnyAsync(ct) ? await _db.ContratoEtapas.MaxAsync(e => (int?)e.Orden, ct) ?? 0 : 0;
+        var etapa = new ContratoEtapa { Nombre = req.Nombre.Trim(), Color = string.IsNullOrWhiteSpace(req.Color) ? null : req.Color.Trim(), Orden = maxOrden + 1 };
+        _db.ContratoEtapas.Add(etapa);
+        await _db.SaveChangesAsync(ct);
+        return new ContratoEtapaDto(etapa.Id, etapa.Nombre, etapa.Orden, etapa.Color);
+    }
+
+    public async Task<bool> ActualizarContratoEtapaAsync(Guid etapaId, ActualizarContratoEtapaRequest req, CancellationToken ct)
+    {
+        var etapa = await _db.ContratoEtapas.FirstOrDefaultAsync(e => e.Id == etapaId, ct);
+        if (etapa is null) return false;
+        if (!string.IsNullOrWhiteSpace(req.Nombre)) etapa.Nombre = req.Nombre.Trim();
+        etapa.Color = string.IsNullOrWhiteSpace(req.Color) ? null : req.Color.Trim();
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> EliminarContratoEtapaAsync(Guid etapaId, CancellationToken ct)
+    {
+        var etapa = await _db.ContratoEtapas.FirstOrDefaultAsync(e => e.Id == etapaId, ct);
+        if (etapa is null) return false;
+        // No permitir borrar la ultima etapa; reasignar los contratos a otra etapa antes de borrar.
+        var otras = await _db.ContratoEtapas.Where(e => e.Id != etapaId).OrderBy(e => e.Orden).ToListAsync(ct);
+        if (otras.Count == 0) return false;
+        var destino = otras.First().Id;
+        await _db.ContratosServicio.Where(c => c.EtapaId == etapaId)
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.EtapaId, destino), ct);
+        _db.ContratoEtapas.Remove(etapa);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task ReordenarContratoEtapasAsync(ReordenarContratoEtapasRequest req, CancellationToken ct)
+    {
+        if (req.Orden is null || req.Orden.Count == 0) return;
+        var etapas = await _db.ContratoEtapas.ToListAsync(ct);
+        for (int i = 0; i < req.Orden.Count; i++)
+        {
+            var e = etapas.FirstOrDefault(x => x.Id == req.Orden[i]);
+            if (e is not null) e.Orden = i + 1;
+        }
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task<bool> CambiarEtapaContratoAsync(Guid contratoId, CambiarEtapaContratoRequest req, CancellationToken ct)
+    {
+        var c = await _db.ContratosServicio.FirstOrDefaultAsync(x => x.Id == contratoId, ct);
+        if (c is null) return false;
+        if (req.EtapaId is { } eid && !await _db.ContratoEtapas.AnyAsync(e => e.Id == eid, ct)) return false;
+        c.EtapaId = req.EtapaId;
         await _db.SaveChangesAsync(ct);
         return true;
     }

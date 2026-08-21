@@ -507,6 +507,27 @@ public class MiCopropiedadController : ControllerBase
     public async Task<IActionResult> GuardarContratoCampoValor(Guid id, Guid campoId, [FromBody] GuardarContratoCampoValorRequest req, CancellationToken ct)
         => await _svc.GuardarContratoCampoValorAsync(id, campoId, req, ct) ? NoContent() : NotFound();
 
+    // Etapas de flujo (Kanban) de contratos
+    [HttpGet("contratos/etapas")] public async Task<IActionResult> ListContratoEtapas(CancellationToken ct) => Ok(await _svc.ListContratoEtapasAsync(ct));
+    [HttpPost("contratos/etapas")]
+    public async Task<IActionResult> CrearContratoEtapa([FromBody] CrearContratoEtapaRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.CrearContratoEtapaAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+    [HttpPut("contratos/etapas/reordenar")]
+    public async Task<IActionResult> ReordenarContratoEtapas([FromBody] ReordenarContratoEtapasRequest req, CancellationToken ct)
+    { await _svc.ReordenarContratoEtapasAsync(req, ct); return NoContent(); }
+    [HttpPut("contratos/etapas/{etapaId:guid}")]
+    public async Task<IActionResult> ActualizarContratoEtapa(Guid etapaId, [FromBody] ActualizarContratoEtapaRequest req, CancellationToken ct)
+        => await _svc.ActualizarContratoEtapaAsync(etapaId, req, ct) ? NoContent() : NotFound();
+    [HttpDelete("contratos/etapas/{etapaId:guid}")]
+    public async Task<IActionResult> EliminarContratoEtapa(Guid etapaId, CancellationToken ct)
+        => await _svc.EliminarContratoEtapaAsync(etapaId, ct) ? NoContent() : NotFound();
+    [HttpPut("contratos/{id:guid}/etapa")]
+    public async Task<IActionResult> CambiarEtapaContrato(Guid id, [FromBody] CambiarEtapaContratoRequest req, CancellationToken ct)
+        => await _svc.CambiarEtapaContratoAsync(id, req, ct) ? NoContent() : NotFound();
+
     // ---------- Seccion 6: Zonas Comunes ----------
     [HttpGet("zonas")] public async Task<IActionResult> ListZonas(CancellationToken ct) => Ok(await _svc.ListZonasComunesAsync(ct));
     [HttpPost("zonas")]

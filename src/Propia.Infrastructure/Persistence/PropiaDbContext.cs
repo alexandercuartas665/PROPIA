@@ -79,6 +79,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<ContratoServicio> ContratosServicio => Set<ContratoServicio>();
     public DbSet<ContratoCampo> ContratoCampos => Set<ContratoCampo>();
     public DbSet<ContratoCampoValor> ContratoCampoValores => Set<ContratoCampoValor>();
+    public DbSet<ContratoEtapa> ContratoEtapas => Set<ContratoEtapa>();
     // Servicios y contratos (Finanzas)
     public DbSet<Servicio> Servicios => Set<Servicio>();
     public DbSet<ServicioContacto> ServicioContactos => Set<ServicioContacto>();
@@ -632,6 +633,13 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.Valor).HasMaxLength(4000);
             b.HasIndex(x => new { x.TenantId, x.ContratoId });
             b.HasIndex(x => new { x.ContratoId, x.ContratoCampoId }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<ContratoEtapa>(b =>
+        {
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(80);
+            b.Property(x => x.Color).HasMaxLength(9);
+            b.HasIndex(x => x.TenantId);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

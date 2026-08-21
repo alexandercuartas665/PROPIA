@@ -142,6 +142,13 @@ public interface IMiCopropiedadService
     Task<bool> ActualizarContratoCampoAsync(Guid campoId, ActualizarContratoCampoRequest req, CancellationToken ct);
     Task<bool> EliminarContratoCampoAsync(Guid campoId, CancellationToken ct);
     Task<bool> GuardarContratoCampoValorAsync(Guid contratoId, Guid campoId, GuardarContratoCampoValorRequest req, CancellationToken ct);
+    // Etapas de flujo (Kanban) de contratos
+    Task<IReadOnlyList<ContratoEtapaDto>> ListContratoEtapasAsync(CancellationToken ct);
+    Task<ContratoEtapaDto> CrearContratoEtapaAsync(CrearContratoEtapaRequest req, CancellationToken ct);
+    Task<bool> ActualizarContratoEtapaAsync(Guid etapaId, ActualizarContratoEtapaRequest req, CancellationToken ct);
+    Task<bool> EliminarContratoEtapaAsync(Guid etapaId, CancellationToken ct);
+    Task ReordenarContratoEtapasAsync(ReordenarContratoEtapasRequest req, CancellationToken ct);
+    Task<bool> CambiarEtapaContratoAsync(Guid contratoId, CambiarEtapaContratoRequest req, CancellationToken ct);
 
     // Seccion 6 - Zonas Comunes
     Task<IReadOnlyList<ZonaComunDto>> ListZonasComunesAsync(CancellationToken ct);
