@@ -161,9 +161,9 @@ else
             </div>
         </div>
 
-        @* ---- Buscador + Filtros (un solo boton, constructor de reglas estilo Tareas) + Agrupar ---- *@
+        @* ---- Barra de filtros estilo Tareas: [Filtros] [Buscar] a la izquierda, [Columnas] [Agrupar] a la derecha ---- *@
         <div class="ctr-filtros">
-            <div class="ctr-search"><i class="fi fi-rr-search"></i><input placeholder="Buscar proveedor, NIT, tipo..." value="@_cFiltroTexto" @oninput="e => { _cFiltroTexto = e.Value?.ToString() ?? string.Empty; _cPage = 0; }" /></div>
+            <div class="ctr-filtros-l">
             <div class="ctr-filtro-wrap">
                 <button class="ctr-fbtn @(HayReglasActivas ? "on" : "")" @onclick="ToggleFiltrosC" title="Filtrar contratos">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18M6 12h12M10 19h4" /></svg>
@@ -224,15 +224,47 @@ else
                     </div>
                 }
             </div>
+            <div class="ctr-search"><i class="fi fi-rr-search"></i><input placeholder="Buscar proveedor, NIT, tipo..." value="@_cFiltroTexto" @oninput="e => { _cFiltroTexto = e.Value?.ToString() ?? string.Empty; _cPage = 0; }" /></div>
+            </div>
             @if (_vistaC != "tarjetas")
             {
-                <select class="ctr-fsel" @bind="_cAgrupar">
-                    <option value="etapa">Agrupar por etapa</option>
-                    <option value="">Sin agrupar</option>
-                    <option value="tipo">Agrupar por tipo</option>
-                    <option value="tercero">Agrupar por tercero</option>
-                    <option value="estado">Agrupar por estado</option>
-                </select>
+                <div class="ctr-filtros-r">
+                    <div class="ctr-cols-wrap">
+                        <button class="ctr-fbtn @(_showColsMenu ? "on" : "")" @onclick="() => _showColsMenu = !_showColsMenu" title="Elegir y ordenar columnas">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
+                            <span>Columnas</span>
+                        </button>
+                        @if (_showColsMenu)
+                        {
+                            <div class="ctr-fpop-bd" @onclick="() => _showColsMenu = false"></div>
+                            <div class="ctr-colspop" @onclick:stopPropagation="true">
+                                <div class="ctr-cm-sec">Columnas de la lista</div>
+                                @{ var ord = ColsOrdenadas(); }
+                                @for (int i = 0; i < ord.Count; i++)
+                                {
+                                    var cidx = i; var ck = ord[cidx];
+                                    <div class="ctr-colrow">
+                                        <div class="ctr-et-ord">
+                                            <button class="ctr-et-mv" disabled="@(cidx == 0)" @onclick="() => MoverColAsync(cidx, -1)" title="Subir">&#9650;</button>
+                                            <button class="ctr-et-mv" disabled="@(cidx == ord.Count - 1)" @onclick="() => MoverColAsync(cidx, 1)" title="Bajar">&#9660;</button>
+                                        </div>
+                                        <label class="ctr-colchk">
+                                            <input type="checkbox" checked="@ColVisible(ck)" disabled="@(ck == "tercero")" @onchange="() => ToggleColVisible(ck)" />
+                                            <span>@ColLabel(ck)</span>
+                                        </label>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                    <select class="ctr-fsel" @bind="_cAgrupar">
+                        <option value="etapa">Agrupar por etapa</option>
+                        <option value="">Sin agrupar</option>
+                        <option value="tipo">Agrupar por tipo</option>
+                        <option value="tercero">Agrupar por tercero</option>
+                        <option value="estado">Agrupar por estado</option>
+                    </select>
+                </div>
             }
         </div>
 
@@ -290,13 +322,12 @@ else
                 var pag = Math.Min(Math.Max(0, _cPage), totalPag - 1);
                 var pageItems = filtrados.Skip(pag * _cPageSize).Take(_cPageSize).ToList();
                 <div class="ctr-count">@filtrados.Count de @_contratos.Count contratos@(totalPag > 1 ? $" · pagina {pag + 1} de {totalPag}" : "")</div>
-                <div class="ctr-table-wrap ctr-scroll">
+                <div class="ctr-topscroll" id="ctrTopScroll"><div class="ctr-topscroll-in"></div></div>
+                <div class="ctr-table-wrap ctr-scroll" id="ctrTableWrap">
                     <table class="ctr-table">
                         <thead>
                             <tr>
-                                <th>Tercero</th><th>Tipo</th><th>Inicio</th><th>Vencimiento</th>
-                                <th class="ctr-r">$/mes</th><th>Estado</th><th>Etapa</th><th>Contacto</th><th>Renov.</th><th class="ctr-r">Dias alerta</th><th>Observaciones</th>
-                                @foreach (var campo in CamposActivos) { <th title="@campo.Descripcion">@campo.Label</th> }
+                                @foreach (var k in ColsVisibles()) { <th class="@ColThClass(k)" title="@ColDesc(k)">@ColLabel(k)</th> }
                                 <th class="ctr-w2"></th>
                             </tr>
                         </thead>
@@ -308,7 +339,7 @@ else
                                 {
                                     var gcolor = _cAgrupar == "etapa" ? (_etapas.FirstOrDefault(e => e.Nombre == grupo.Key)?.Color ?? "#94A3B8") : null;
                                     <tr class="ctr-grow">
-                                        <td colspan="@(12 + CamposActivos.Count())">
+                                        <td colspan="@(ColsVisibles().Count() + 1)">
                                             @if (gcolor is not null) { <span class="ctr-kdot" style="background:@gcolor"></span> }
                                             <span class="ctr-grow-t">@grupo.Key</span> <span class="ctr-group-n">@grupo.Count()</span>
                                         </td>
@@ -318,156 +349,155 @@ else
                                 {
                                     var cc = c;
                                     <tr class="ctr-row">
-                                        @* Tercero: proveedor + ojo para abrir la ficha (estilo Tareas) + NIT *@
-                                        <td class="ctr-ct">
-                                            <div class="ctr-terc-line">
-                                                @if (CEnEd(c.Id, "prov"))
-                                                {
-                                                    <input class="ctr-inp" @bind="_cEditVal" @bind:event="oninput" autofocus
-                                                           @onblur='() => GuardarCEd(cc, "prov")' @onkeydown='(e) => CEdKeydown(e, cc, "prov")' />
-                                                }
-                                                else
-                                                {
-                                                    <div class="ctr-terc ctr-ed" @onclick='() => IniciarCEd(cc.Id, "prov", cc.Proveedor)' title="Editar proveedor">@c.Proveedor</div>
-                                                }
-                                                <span class="ctr-eye" @onclick="() => AbrirModal(cc)" title="Ver ficha completa">
-                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
-                                                </span>
-                                            </div>
-                                            @if (CEnEd(c.Id, "nit"))
-                                            {
-                                                <input class="ctr-inp ctr-inp-sub" @bind="_cEditVal" @bind:event="oninput" autofocus placeholder="NIT"
-                                                       @onblur='() => GuardarCEd(cc, "nit")' @onkeydown='(e) => CEdKeydown(e, cc, "nit")' />
-                                            }
-                                            else
-                                            {
-                                                <div class="ctr-terc-sub ctr-ed" @onclick='() => IniciarCEd(cc.Id, "nit", cc.NitProveedor)' title="Editar NIT">@(string.IsNullOrWhiteSpace(c.NitProveedor) ? "+ NIT" : "NIT " + c.NitProveedor)</div>
-                                            }
-                                        </td>
-                                        @* Tipo: select inline *@
-                                        <td>
-                                            @if (CEnEd(c.Id, "tipo"))
-                                            {
-                                                <select class="ctr-inp" value="@_cEditVal" @onchange='(e) => CSelChange(cc, "tipo", e)' @onblur="CancelarCEd">
-                                                    @foreach (var t in Enum.GetValues<TipoServicio>()) { <option value="@((int)t)">@TipoLabel(t)</option> }
-                                                </select>
-                                            }
-                                            else { <span class="ctr-ed" @onclick='() => IniciarCEd(cc.Id, "tipo", ((int)cc.Tipo).ToString())'>@TipoLabel(c.Tipo)</span> }
-                                        </td>
-                                        @* Inicio: fecha *@
-                                        <td>
-                                            @if (CEnEd(c.Id, "inicio"))
-                                            {
-                                                <input type="date" class="ctr-inp" value="@_cEditVal" @oninput='(e) => _cEditVal = e.Value?.ToString() ?? ""' autofocus
-                                                       @onblur='() => GuardarCEd(cc, "inicio")' @onkeydown='(e) => CEdKeydown(e, cc, "inicio")' />
-                                            }
-                                            else { <span class="ctr-ed" @onclick='() => IniciarCEd(cc.Id, "inicio", cc.FechaInicio.ToString("yyyy-MM-dd"))'>@c.FechaInicio.ToString("dd MMM yyyy")</span> }
-                                        </td>
-                                        @* Vencimiento: fecha *@
-                                        <td>
-                                            @if (CEnEd(c.Id, "fin"))
-                                            {
-                                                <input type="date" class="ctr-inp" value="@_cEditVal" @oninput='(e) => _cEditVal = e.Value?.ToString() ?? ""' autofocus
-                                                       @onblur='() => GuardarCEd(cc, "fin")' @onkeydown='(e) => CEdKeydown(e, cc, "fin")' />
-                                            }
-                                            else { <span class="ctr-ed" @onclick='() => IniciarCEd(cc.Id, "fin", cc.FechaFin?.ToString("yyyy-MM-dd"))'>@(c.FechaFin is { } ff ? ff.ToString("dd MMM yyyy") : "+ fecha")</span> }
-                                        </td>
-                                        @* Valor mensual: numero *@
-                                        <td class="ctr-r">
-                                            @if (CEnEd(c.Id, "valor"))
-                                            {
-                                                <input type="number" step="1000" class="ctr-inp ctr-inp-r" @bind="_cEditVal" @bind:event="oninput" autofocus
-                                                       @onblur='() => GuardarCEd(cc, "valor")' @onkeydown='(e) => CEdKeydown(e, cc, "valor")' />
-                                            }
-                                            else { <span class="ctr-ed" @onclick='() => IniciarCEd(cc.Id, "valor", cc.ValorMensual?.ToString("0", System.Globalization.CultureInfo.InvariantCulture))'>@(c.ValorMensual is { } v ? "$" + v.ToString("N0") : "+ valor")</span> }
-                                        </td>
-                                        @* Estado: badge derivado; click -> select Vigente/En renovacion *@
-                                        <td>
-                                            @if (CEnEd(c.Id, "estado"))
-                                            {
-                                                <select class="ctr-inp" value="@_cEditVal" @onchange='(e) => CSelChange(cc, "estado", e)' @onblur="CancelarCEd">
-                                                    <option value="@((int)EstadoContrato.Vigente)">Vigente</option>
-                                                    <option value="@((int)EstadoContrato.EnRenovacion)">En renovacion</option>
-                                                </select>
-                                            }
-                                            else
-                                            {
-                                                <span class="ctr-ed" @onclick='() => IniciarCEd(cc.Id, "estado", ((int)(cc.Estado == EstadoContrato.Vencido ? EstadoContrato.Vigente : cc.Estado)).ToString())' title="Cambiar estado">
-                                                    @if (c.Estado == EstadoContrato.Vencido) { <span class="srv-badge vencido">Vencido</span> }
-                                                    else if (c.AlertaVencimiento) { <span class="srv-badge danger">Vence en @c.DiasParaVencer dias</span> }
-                                                    else if (c.Estado == EstadoContrato.EnRenovacion) { <span class="srv-badge warn">En renovacion</span> }
-                                                    else { <span class="srv-badge ok">Vigente</span> }
-                                                </span>
-                                            }
-                                        </td>
-                                        @* Etapa: select siempre visible con el color de la etapa (estilo Lista de Tareas) *@
-                                        <td>
-                                            @{ var etp = _etapas.FirstOrDefault(x => x.Id == c.EtapaId); }
-                                            <select class="ctr-etsel" style="background:@(etp?.Color ?? "#94A3B8")" @onchange="(e) => CEtapaSelChange(cc, e)">
-                                                @if (c.EtapaId is null) { <option value="" selected>-</option> }
-                                                @foreach (var et in _etapas) { <option value="@et.Id" selected="@(et.Id == c.EtapaId)">@et.Nombre</option> }
-                                            </select>
-                                        </td>
-                                        @* Contacto: texto inline *@
-                                        <td>
-                                            @if (CEnEd(c.Id, "contacto"))
-                                            {
-                                                <input class="ctr-inp" @bind="_cEditVal" @bind:event="oninput" autofocus @onblur='() => GuardarCEd(cc, "contacto")' @onkeydown='(e) => CEdKeydown(e, cc, "contacto")' />
-                                            }
-                                            else { <span class="ctr-ed ctr-cval" @onclick='() => IniciarCEd(cc.Id, "contacto", cc.Contacto)'>@(string.IsNullOrWhiteSpace(c.Contacto) ? "-" : c.Contacto)</span> }
-                                        </td>
-                                        @* Renovacion automatica: solo lectura (se edita en la ficha) *@
-                                        <td><span class="ctr-cval">@(c.RenovacionAutomatica ? "Si" : "No")</span></td>
-                                        @* Dias de anticipacion de alerta: numero inline *@
-                                        <td class="ctr-r">
-                                            @if (CEnEd(c.Id, "dias"))
-                                            {
-                                                <input type="number" class="ctr-inp ctr-inp-r" @bind="_cEditVal" @bind:event="oninput" autofocus @onblur='() => GuardarCEd(cc, "dias")' @onkeydown='(e) => CEdKeydown(e, cc, "dias")' />
-                                            }
-                                            else { <span class="ctr-ed" @onclick='() => IniciarCEd(cc.Id, "dias", cc.DiasAnticipacionAlerta.ToString())'>@c.DiasAnticipacionAlerta</span> }
-                                        </td>
-                                        @* Observaciones: solo lectura truncada (se edita en la ficha) *@
-                                        <td><span class="ctr-obs" title="@c.Observaciones">@(string.IsNullOrWhiteSpace(c.Observaciones) ? "-" : c.Observaciones)</span></td>
-                                        @* Columnas de campos dinamicos (EAV), editables inline *@
-                                        @foreach (var campo in CamposActivos)
+                                        @foreach (var k in ColsVisibles())
                                         {
-                                            var cpo = campo;
-                                            <td>
-                                                @if (CEnEd(c.Id, "campo:" + cpo.Id))
+                                            var col = k;
+                                            <td class="@ColTdClass(col)">
+                                                @switch (col)
                                                 {
-                                                    @switch (cpo.Tipo)
-                                                    {
-                                                        case TipoCampoTablero.Seleccion:
-                                                            <select class="ctr-inp" value="@_cEditVal" @onchange='(e) => CCampoSelChange(cc, cpo, e)' @onblur="CancelarCEd">
-                                                                <option value="">-</option>
-                                                                @foreach (var op in OpcionesDe(cpo)) { <option value="@op">@op</option> }
+                                                    case "tercero":
+                                                        <div class="ctr-terc-line">
+                                                            @if (CEnEd(c.Id, "prov"))
+                                                            {
+                                                                <input class="ctr-inp" @bind="_cEditVal" @bind:event="oninput" autofocus
+                                                                       @onblur='() => GuardarCEd(cc, "prov")' @onkeydown='(e) => CEdKeydown(e, cc, "prov")' />
+                                                            }
+                                                            else
+                                                            {
+                                                                <div class="ctr-terc ctr-ed" @onclick='() => IniciarCEd(cc.Id, "prov", cc.Proveedor)' title="Editar proveedor">@c.Proveedor</div>
+                                                            }
+                                                            <span class="ctr-eye" @onclick="() => AbrirModal(cc)" title="Ver ficha completa">
+                                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                                                            </span>
+                                                        </div>
+                                                        @if (CEnEd(c.Id, "nit"))
+                                                        {
+                                                            <input class="ctr-inp ctr-inp-sub" @bind="_cEditVal" @bind:event="oninput" autofocus placeholder="NIT"
+                                                                   @onblur='() => GuardarCEd(cc, "nit")' @onkeydown='(e) => CEdKeydown(e, cc, "nit")' />
+                                                        }
+                                                        else
+                                                        {
+                                                            <div class="ctr-terc-sub ctr-ed" @onclick='() => IniciarCEd(cc.Id, "nit", cc.NitProveedor)' title="Editar NIT">@(string.IsNullOrWhiteSpace(c.NitProveedor) ? "+ NIT" : "NIT " + c.NitProveedor)</div>
+                                                        }
+                                                        break;
+                                                    case "tipo":
+                                                        @if (CEnEd(c.Id, "tipo"))
+                                                        {
+                                                            <select class="ctr-inp" value="@_cEditVal" @onchange='(e) => CSelChange(cc, "tipo", e)' @onblur="CancelarCEd">
+                                                                @foreach (var t in Enum.GetValues<TipoServicio>()) { <option value="@((int)t)">@TipoLabel(t)</option> }
                                                             </select>
-                                                            break;
-                                                        case TipoCampoTablero.Booleano:
-                                                            <select class="ctr-inp" value="@_cEditVal" @onchange='(e) => CCampoSelChange(cc, cpo, e)' @onblur="CancelarCEd">
-                                                                <option value="">-</option>
-                                                                <option value="Si">Si</option>
-                                                                <option value="No">No</option>
-                                                            </select>
-                                                            break;
-                                                        case TipoCampoTablero.Fecha:
+                                                        }
+                                                        else { <span class="ctr-ed" @onclick='() => IniciarCEd(cc.Id, "tipo", ((int)cc.Tipo).ToString())'>@TipoLabel(c.Tipo)</span> }
+                                                        break;
+                                                    case "inicio":
+                                                        @if (CEnEd(c.Id, "inicio"))
+                                                        {
                                                             <input type="date" class="ctr-inp" value="@_cEditVal" @oninput='(e) => _cEditVal = e.Value?.ToString() ?? ""' autofocus
-                                                                   @onblur='() => GuardarCVal(cc, cpo)' @onkeydown='(e) => CValKeydown(e, cc, cpo)' />
-                                                            break;
-                                                        case TipoCampoTablero.Numero:
-                                                        case TipoCampoTablero.Moneda:
-                                                            <input type="number" class="ctr-inp" @bind="_cEditVal" @bind:event="oninput" autofocus
-                                                                   @onblur='() => GuardarCVal(cc, cpo)' @onkeydown='(e) => CValKeydown(e, cc, cpo)' />
-                                                            break;
-                                                        default:
-                                                            <input class="ctr-inp" @bind="_cEditVal" @bind:event="oninput" autofocus
-                                                                   @onblur='() => GuardarCVal(cc, cpo)' @onkeydown='(e) => CValKeydown(e, cc, cpo)' />
-                                                            break;
-                                                    }
-                                                }
-                                                else
-                                                {
-                                                    <span class="ctr-ed ctr-cval" @onclick='() => IniciarCEd(cc.Id, "campo:" + cpo.Id, ValorCampo(cc, cpo.Id))' title="@cpo.Label">@(ValorCampo(c, cpo.Id) is { Length: > 0 } vv ? vv : "-")</span>
+                                                                   @onblur='() => GuardarCEd(cc, "inicio")' @onkeydown='(e) => CEdKeydown(e, cc, "inicio")' />
+                                                        }
+                                                        else { <span class="ctr-ed" @onclick='() => IniciarCEd(cc.Id, "inicio", cc.FechaInicio.ToString("yyyy-MM-dd"))'>@c.FechaInicio.ToString("dd MMM yyyy")</span> }
+                                                        break;
+                                                    case "fin":
+                                                        @if (CEnEd(c.Id, "fin"))
+                                                        {
+                                                            <input type="date" class="ctr-inp" value="@_cEditVal" @oninput='(e) => _cEditVal = e.Value?.ToString() ?? ""' autofocus
+                                                                   @onblur='() => GuardarCEd(cc, "fin")' @onkeydown='(e) => CEdKeydown(e, cc, "fin")' />
+                                                        }
+                                                        else { <span class="ctr-ed" @onclick='() => IniciarCEd(cc.Id, "fin", cc.FechaFin?.ToString("yyyy-MM-dd"))'>@(c.FechaFin is { } ff ? ff.ToString("dd MMM yyyy") : "+ fecha")</span> }
+                                                        break;
+                                                    case "valor":
+                                                        @if (CEnEd(c.Id, "valor"))
+                                                        {
+                                                            <input type="number" step="1000" class="ctr-inp ctr-inp-r" @bind="_cEditVal" @bind:event="oninput" autofocus
+                                                                   @onblur='() => GuardarCEd(cc, "valor")' @onkeydown='(e) => CEdKeydown(e, cc, "valor")' />
+                                                        }
+                                                        else { <span class="ctr-ed" @onclick='() => IniciarCEd(cc.Id, "valor", cc.ValorMensual?.ToString("0", System.Globalization.CultureInfo.InvariantCulture))'>@(c.ValorMensual is { } v ? "$" + v.ToString("N0") : "+ valor")</span> }
+                                                        break;
+                                                    case "estado":
+                                                        @if (CEnEd(c.Id, "estado"))
+                                                        {
+                                                            <select class="ctr-inp" value="@_cEditVal" @onchange='(e) => CSelChange(cc, "estado", e)' @onblur="CancelarCEd">
+                                                                <option value="@((int)EstadoContrato.Vigente)">Vigente</option>
+                                                                <option value="@((int)EstadoContrato.EnRenovacion)">En renovacion</option>
+                                                            </select>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="ctr-ed" @onclick='() => IniciarCEd(cc.Id, "estado", ((int)(cc.Estado == EstadoContrato.Vencido ? EstadoContrato.Vigente : cc.Estado)).ToString())' title="Cambiar estado">
+                                                                @if (c.Estado == EstadoContrato.Vencido) { <span class="srv-badge vencido">Vencido</span> }
+                                                                else if (c.AlertaVencimiento) { <span class="srv-badge danger">Vence en @c.DiasParaVencer dias</span> }
+                                                                else if (c.Estado == EstadoContrato.EnRenovacion) { <span class="srv-badge warn">En renovacion</span> }
+                                                                else { <span class="srv-badge ok">Vigente</span> }
+                                                            </span>
+                                                        }
+                                                        break;
+                                                    case "etapa":
+                                                        <select class="ctr-etsel" style="background:@(_etapas.FirstOrDefault(x => x.Id == c.EtapaId)?.Color ?? "#94A3B8")" @onchange="(e) => CEtapaSelChange(cc, e)">
+                                                            @if (c.EtapaId is null) { <option value="" selected>-</option> }
+                                                            @foreach (var et in _etapas) { <option value="@et.Id" selected="@(et.Id == c.EtapaId)">@et.Nombre</option> }
+                                                        </select>
+                                                        break;
+                                                    case "contacto":
+                                                        @if (CEnEd(c.Id, "contacto"))
+                                                        {
+                                                            <input class="ctr-inp" @bind="_cEditVal" @bind:event="oninput" autofocus @onblur='() => GuardarCEd(cc, "contacto")' @onkeydown='(e) => CEdKeydown(e, cc, "contacto")' />
+                                                        }
+                                                        else { <span class="ctr-ed ctr-cval" @onclick='() => IniciarCEd(cc.Id, "contacto", cc.Contacto)'>@(string.IsNullOrWhiteSpace(c.Contacto) ? "-" : c.Contacto)</span> }
+                                                        break;
+                                                    case "renov":
+                                                        <span class="ctr-cval">@(c.RenovacionAutomatica ? "Si" : "No")</span>
+                                                        break;
+                                                    case "dias":
+                                                        @if (CEnEd(c.Id, "dias"))
+                                                        {
+                                                            <input type="number" class="ctr-inp ctr-inp-r" @bind="_cEditVal" @bind:event="oninput" autofocus @onblur='() => GuardarCEd(cc, "dias")' @onkeydown='(e) => CEdKeydown(e, cc, "dias")' />
+                                                        }
+                                                        else { <span class="ctr-ed" @onclick='() => IniciarCEd(cc.Id, "dias", cc.DiasAnticipacionAlerta.ToString())'>@c.DiasAnticipacionAlerta</span> }
+                                                        break;
+                                                    case "obs":
+                                                        <span class="ctr-obs" title="@c.Observaciones">@(string.IsNullOrWhiteSpace(c.Observaciones) ? "-" : c.Observaciones)</span>
+                                                        break;
+                                                    default:
+                                                        @if (_cCampos.FirstOrDefault(x => x.Id.ToString() == col) is { } cpo)
+                                                        {
+                                                            if (CEnEd(c.Id, "campo:" + cpo.Id))
+                                                            {
+                                                                switch (cpo.Tipo)
+                                                                {
+                                                                    case TipoCampoTablero.Seleccion:
+                                                                        <select class="ctr-inp" value="@_cEditVal" @onchange='(e) => CCampoSelChange(cc, cpo, e)' @onblur="CancelarCEd">
+                                                                            <option value="">-</option>
+                                                                            @foreach (var op in OpcionesDe(cpo)) { <option value="@op">@op</option> }
+                                                                        </select>
+                                                                        break;
+                                                                    case TipoCampoTablero.Booleano:
+                                                                        <select class="ctr-inp" value="@_cEditVal" @onchange='(e) => CCampoSelChange(cc, cpo, e)' @onblur="CancelarCEd">
+                                                                            <option value="">-</option>
+                                                                            <option value="Si">Si</option>
+                                                                            <option value="No">No</option>
+                                                                        </select>
+                                                                        break;
+                                                                    case TipoCampoTablero.Fecha:
+                                                                        <input type="date" class="ctr-inp" value="@_cEditVal" @oninput='(e) => _cEditVal = e.Value?.ToString() ?? ""' autofocus
+                                                                               @onblur='() => GuardarCVal(cc, cpo)' @onkeydown='(e) => CValKeydown(e, cc, cpo)' />
+                                                                        break;
+                                                                    case TipoCampoTablero.Numero:
+                                                                    case TipoCampoTablero.Moneda:
+                                                                        <input type="number" class="ctr-inp" @bind="_cEditVal" @bind:event="oninput" autofocus
+                                                                               @onblur='() => GuardarCVal(cc, cpo)' @onkeydown='(e) => CValKeydown(e, cc, cpo)' />
+                                                                        break;
+                                                                    default:
+                                                                        <input class="ctr-inp" @bind="_cEditVal" @bind:event="oninput" autofocus
+                                                                               @onblur='() => GuardarCVal(cc, cpo)' @onkeydown='(e) => CValKeydown(e, cc, cpo)' />
+                                                                        break;
+                                                                }
+                                                            }
+                                                            else
+                                                            {
+                                                                <span class="ctr-ed ctr-cval" @onclick='() => IniciarCEd(cc.Id, "campo:" + cpo.Id, ValorCampo(cc, cpo.Id))' title="@cpo.Label">@(ValorCampo(c, cpo.Id) is { Length: > 0 } vv ? vv : "-")</span>
+                                                            }
+                                                        }
+                                                        break;
                                                 }
                                             </td>
                                         }
@@ -707,6 +737,15 @@ else
             <button class="srv-x" @onclick="() => _showModal = false"><i class="fi fi-rr-cross-small"></i></button>
         </div>
         <div class="srv-modal-body">
+            @if (_editId is not null)
+            {
+                <div class="srv-modal-tabs">
+                    <button class="@(_modalTab == "detalle" ? "on" : "")" @onclick='() => _modalTab = "detalle"'><i class="fi fi-rr-document"></i> Detalle</button>
+                    <button class="@(_modalTab == "archivos" ? "on" : "")" @onclick='() => _modalTab = "archivos"'><i class="fi fi-rr-clip"></i> Archivos <span class="srv-tab-n">@_contratoAdjuntos.Count</span></button>
+                </div>
+            }
+            @if (_editId is null || _modalTab == "detalle")
+            {
             <div class="srv-grid">
                 <div class="srv-col-full">
                     <label class="srv-lbl">Nombre del contrato / servicio *</label>
@@ -781,8 +820,9 @@ else
                     <textarea class="srv-input" rows="2" @bind="_f.Observaciones" @bind:event="oninput" placeholder="Ej. Renovacion automatica con 30 dias de aviso."></textarea>
                 </div>
             </div>
+            }
 
-            @if (_editId is not null)
+            @if (_editId is not null && _modalTab == "archivos")
             {
                 <div class="srv-attach">
                     <div class="srv-attach-h"><i class="fi fi-rr-clip"></i> Archivos del contrato (@_contratoAdjuntos.Count)</div>
@@ -1233,7 +1273,20 @@ else
     .srv-empty i { display: block; font-size: 28px; color: #C3D0DD; margin-bottom: 10px; }
 
     /* ---- Contratos: barra de filtros + tabla (Fase A) ---- */
-    .ctr-filtros { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; padding: 14px 20px; border-bottom: 1px solid #EEF3F8; }
+    .ctr-filtros { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 9px; padding: 14px 20px; border-bottom: 1px solid #EEF3F8; }
+    .ctr-filtros-l { display: flex; align-items: center; gap: 9px; flex: 1 1 320px; min-width: 0; }
+    .ctr-filtros-r { display: flex; align-items: center; gap: 9px; }
+    .ctr-filtros-l .ctr-search { flex: 1 1 auto; }
+    /* Popover de columnas (seleccionar + ordenar) */
+    .ctr-cols-wrap { position: relative; }
+    .ctr-colspop { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; width: 260px; max-height: 60vh; overflow: auto; background: #fff; border: 1px solid #E6ECF2; border-radius: 12px; box-shadow: 0 18px 44px rgba(30,40,60,.22); padding: 12px; }
+    .ctr-colrow { display: grid; grid-template-columns: 26px 1fr; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 8px; }
+    .ctr-colrow:hover { background: #F8FAFC; }
+    .ctr-colchk { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #33414F; cursor: pointer; }
+    .ctr-colchk input { cursor: pointer; }
+    /* Doble scroll horizontal sincronizado (barra arriba) */
+    .ctr-topscroll { overflow-x: auto; overflow-y: hidden; padding: 0 12px; }
+    .ctr-topscroll-in { height: 1px; }
     .ctr-search { display: flex; align-items: center; gap: 7px; border: 1px solid #D9DEE7; border-radius: 9px; padding: 7px 11px; background: #fff; flex: 1 1 220px; min-width: 180px; }
     .ctr-search i { color: #9AA7B8; font-size: 13px; }
     .ctr-search input { border: 0; outline: none; font-size: 13px; width: 100%; background: transparent; color: #1f2430; }
@@ -1394,6 +1447,12 @@ else
     .srv-modal-head { display: flex; align-items: center; gap: 13px; padding: 18px 22px; border-bottom: 1px solid #EEF3F8; flex-shrink: 0; }
     .srv-modal-ic { width: 38px; height: 38px; border-radius: 10px; background: #F1ECFD; color: #6D4FE3; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .srv-modal-title { font-size: 16px; font-weight: 800; letter-spacing: -.3px; color: #1B2A3A; }
+    /* Tabs del modal de contrato (Detalle / Archivos), estilo Tareas */
+    .srv-modal-tabs { display: flex; gap: 4px; border-bottom: 1px solid #EEF3F8; margin: -4px 0 16px; }
+    .srv-modal-tabs button { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: #7C8A9C; font-size: 13px; font-weight: 700; padding: 9px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .srv-modal-tabs button:hover { color: #5838C9; }
+    .srv-modal-tabs button.on { color: #5838C9; border-bottom-color: #7C5CFA; }
+    .srv-tab-n { font-size: 11px; font-weight: 800; background: #F1ECFD; color: #5838C9; border-radius: 20px; padding: 1px 7px; }
     .srv-modal-body { padding: 20px 22px; overflow-y: auto; }
     .srv-x { width: 34px; height: 34px; border-radius: 9px; border: 1px solid #E1E8EE; background: #fff; color: #7C98B6; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; font-size: 17px; }
     .srv-x:hover { background: #F5F8FA; color: #33475B; }
@@ -1757,6 +1816,7 @@ else
     // Adjuntos (servicio + contrato comparten el flag de subida)
     private bool _attachBusy;
     private List<AdjuntoDto> _contratoAdjuntos = new();
+    private string _modalTab = "detalle";   // "detalle" | "archivos" (tabs del modal de contrato, estilo Tareas)
 
     // Picker de tercero del Directorio (compartido ejecutor/contacto)
     private string _tTarget = "";   // "", "ejecutor", "contacto"
@@ -1835,15 +1895,23 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || _jwt is not null) return;
-        try
+        if (firstRender && _jwt is null)
         {
-            try { var v = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_view_contratos"); if (v == "tarjetas" || v == "tabla") _vistaC = v; } catch { }
-            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
-            _authChecked = true;
-            if (!string.IsNullOrWhiteSpace(stored)) { _jwt = stored; await CargarAsync(); StateHasChanged(); }
+            try
+            {
+                try { var v = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_view_contratos"); if (v == "tarjetas" || v == "tabla") _vistaC = v; } catch { }
+                await CargarColsAsync();
+                var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+                _authChecked = true;
+                if (!string.IsNullOrWhiteSpace(stored)) { _jwt = stored; await CargarAsync(); StateHasChanged(); }
+            }
+            catch { }
         }
-        catch { }
+        // Barra de scroll horizontal superior sincronizada con la tabla (solo en la lista de contratos).
+        if (EsContratos && _vistaC != "tarjetas" && _jwt is not null && _contratos.Count > 0)
+        {
+            try { await Js.InvokeVoidAsync("propiaSyncScroll", "#ctrTopScroll", "#ctrTableWrap"); } catch { }
+        }
     }
 
     private async Task CargarAsync()
@@ -2074,6 +2142,77 @@ else
     // ---- Paginacion de la tabla ----
     private int _cPage = 0;
     private int _cPageSize = 25;
+
+    // ---- Columnas de la lista: seleccionar (mostrar/ocultar) y ordenar (persistido en localStorage) ----
+    private static readonly (string Key, string Label)[] _colsFijas = new[]
+    {
+        ("tercero", "Tercero"), ("tipo", "Tipo"), ("inicio", "Inicio"), ("fin", "Vencimiento"),
+        ("valor", "$/mes"), ("estado", "Estado"), ("etapa", "Etapa"), ("contacto", "Contacto"),
+        ("renov", "Renov."), ("dias", "Dias alerta"), ("obs", "Observaciones")
+    };
+    private HashSet<string> _colsOcultas = new();
+    private List<string> _colsOrden = new();
+    private bool _showColsMenu;
+
+    private IEnumerable<(string Key, string Label)> ColsCatalogo()
+        => _colsFijas.Concat(CamposActivos.Select(c => (c.Id.ToString(), c.Label)));
+    private List<string> ColsOrdenadas()
+    {
+        var todas = ColsCatalogo().Select(c => c.Key).ToList();
+        var ord = _colsOrden.Where(todas.Contains).ToList();
+        ord.AddRange(todas.Where(k => !ord.Contains(k)));
+        return ord;
+    }
+    private bool ColVisible(string k) => k == "tercero" || !_colsOcultas.Contains(k);
+    private IEnumerable<string> ColsVisibles() => ColsOrdenadas().Where(ColVisible);
+    private string ColLabel(string k)
+    {
+        var f = _colsFijas.FirstOrDefault(c => c.Key == k);
+        if (f.Key is not null) return f.Label;
+        return _cCampos.FirstOrDefault(c => c.Id.ToString() == k)?.Label ?? k;
+    }
+    private string ColDesc(string k) => _cCampos.FirstOrDefault(c => c.Id.ToString() == k)?.Descripcion ?? "";
+    private string ColThClass(string k) => (k == "valor" || k == "dias") ? "ctr-r" : "";
+    private string ColTdClass(string k) => k == "tercero" ? "ctr-ct" : ((k == "valor" || k == "dias") ? "ctr-r" : "");
+
+    private async Task ToggleColVisible(string k)
+    {
+        if (k == "tercero") return;   // la columna principal (con el ojo) no se oculta
+        if (!_colsOcultas.Remove(k)) _colsOcultas.Add(k);
+        await PersistColsAsync();
+    }
+    private async Task MoverColAsync(int idx, int dir)
+    {
+        var vis = ColsOrdenadas();
+        var j = idx + dir;
+        if (idx < 0 || idx >= vis.Count || j < 0 || j >= vis.Count) return;
+        (vis[idx], vis[j]) = (vis[j], vis[idx]);
+        _colsOrden = vis;
+        await PersistColsAsync();
+    }
+    private async Task PersistColsAsync()
+    {
+        try
+        {
+            var payload = System.Text.Json.JsonSerializer.Serialize(new { orden = ColsOrdenadas(), ocultas = _colsOcultas.ToList() });
+            await Js.InvokeVoidAsync("localStorage.setItem", "propia_contratos_cols", payload);
+        }
+        catch { }
+    }
+    private async Task CargarColsAsync()
+    {
+        try
+        {
+            var raw = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_contratos_cols");
+            if (string.IsNullOrWhiteSpace(raw)) return;
+            using var doc = System.Text.Json.JsonDocument.Parse(raw);
+            if (doc.RootElement.TryGetProperty("orden", out var o) && o.ValueKind == System.Text.Json.JsonValueKind.Array)
+                _colsOrden = o.EnumerateArray().Select(x => x.GetString()).Where(x => x is not null).Select(x => x!).ToList();
+            if (doc.RootElement.TryGetProperty("ocultas", out var h) && h.ValueKind == System.Text.Json.JsonValueKind.Array)
+                _colsOcultas = h.EnumerateArray().Select(x => x.GetString()).Where(x => x is not null).Select(x => x!).ToHashSet();
+        }
+        catch { }
+    }
 
     // Carga perezosa de expedientes + proyectos para los desplegables del contrato.
     private async Task CargarDropdownsAsync()
@@ -2345,6 +2484,7 @@ else
     {
         _modalError = null;
         _contratoAdjuntos = new();
+        _modalTab = "detalle";
         await CargarDropdownsAsync();
         if (c is null)
         {

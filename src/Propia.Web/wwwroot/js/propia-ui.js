@@ -454,3 +454,20 @@
 
 // Alto del viewport, para que los popover anclados decidan si abren hacia abajo o arriba.
 window.propiaViewportH = function () { return window.innerHeight || document.documentElement.clientHeight || 0; };
+
+// Sincroniza una barra de scroll horizontal "fantasma" (arriba) con el contenedor real de la
+// tabla (abajo). Idempotente: se puede llamar en cada render sin duplicar listeners.
+window.propiaSyncScroll = function (topSel, bodySel) {
+    try {
+        var top = document.querySelector(topSel);
+        var body = document.querySelector(bodySel);
+        if (!top || !body) return;
+        var inner = top.firstElementChild;
+        var tabla = body.querySelector('table');
+        var w = (tabla ? tabla.scrollWidth : body.scrollWidth);
+        if (inner) inner.style.width = w + 'px';
+        var syncing = false;
+        top.onscroll = function () { if (syncing) return; syncing = true; body.scrollLeft = top.scrollLeft; syncing = false; };
+        body.onscroll = function () { if (syncing) return; syncing = true; top.scrollLeft = body.scrollLeft; syncing = false; };
+    } catch (e) { /* no-op */ }
+};
