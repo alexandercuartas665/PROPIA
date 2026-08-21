@@ -153,11 +153,10 @@ else
             <span class="srv-card-title">Todos los contratos</span>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                 <div class="ctr-vtoggle">
-                    <button class="@(_vistaC != "tarjetas" ? "on" : "")" @onclick='() => CambiarVistaC("tabla")' title="Vista tabla"><i class="fi fi-rr-list"></i> Tabla</button>
-                    <button class="@(_vistaC == "tarjetas" ? "on" : "")" @onclick='() => CambiarVistaC("tarjetas")' title="Vista tarjetas (Kanban)"><i class="fi fi-rr-apps"></i> Tarjetas</button>
+                    <button class="@(_vistaC == "tarjetas" ? "on" : "")" @onclick='() => CambiarVistaC("tarjetas")' title="Vista tablero (Kanban)"><i class="fi fi-rr-apps"></i> Tablero</button>
+                    <button class="@(_vistaC != "tarjetas" ? "on" : "")" @onclick='() => CambiarVistaC("tabla")' title="Vista lista"><i class="fi fi-rr-list"></i> Lista</button>
                 </div>
-                <button class="ctr-cfg-btn" @onclick="() => _showEtapasModal = true" title="Configurar las etapas del flujo (columnas del Kanban)"><i class="fi fi-rr-diagram-project"></i> Etapas</button>
-                <button class="ctr-cfg-btn" @onclick="() => _showCamposModal = true" title="Crear y administrar columnas personalizadas"><i class="fi fi-rr-settings-sliders"></i> Campos</button>
+                <button class="ctr-cfg-btn" @onclick="() => _showConfigModal = true" title="Configurar estados y campos"><i class="fi fi-rr-settings"></i> Configurar</button>
                 <button class="srv-btn-primary" @onclick="() => AbrirModal(null)"><i class="fi fi-rr-plus"></i> Nuevo contrato</button>
             </div>
         </div>
@@ -228,6 +227,7 @@ else
             @if (_vistaC != "tarjetas")
             {
                 <select class="ctr-fsel" @bind="_cAgrupar">
+                    <option value="etapa">Agrupar por etapa</option>
                     <option value="">Sin agrupar</option>
                     <option value="tipo">Agrupar por tipo</option>
                     <option value="tercero">Agrupar por tercero</option>
@@ -290,43 +290,50 @@ else
                 var pag = Math.Min(Math.Max(0, _cPage), totalPag - 1);
                 var pageItems = filtrados.Skip(pag * _cPageSize).Take(_cPageSize).ToList();
                 <div class="ctr-count">@filtrados.Count de @_contratos.Count contratos@(totalPag > 1 ? $" · pagina {pag + 1} de {totalPag}" : "")</div>
-                @foreach (var grupo in AgruparContratos(pageItems))
-                {
-                    @if (_cAgrupar != "")
-                    {
-                        <div class="ctr-group-h">@grupo.Key <span class="ctr-group-n">@grupo.Count()</span></div>
-                    }
-                    <div class="ctr-table-wrap @(_cAgrupar == "" ? "ctr-scroll" : "")">
-                        <table class="ctr-table">
-                            <thead>
-                                <tr>
-                                    <th class="ctr-w-eye"></th><th>Tercero</th><th>Tipo</th><th>Inicio</th><th>Vencimiento</th>
-                                    <th class="ctr-r">$/mes</th><th>Estado</th><th>Etapa</th><th>Contacto</th><th>Renov.</th><th class="ctr-r">Dias alerta</th><th>Observaciones</th>
-                                    @foreach (var campo in CamposActivos) { <th title="@campo.Descripcion">@campo.Label</th> }
-                                    <th class="ctr-w2"></th>
-                                </tr>
-                            </thead>
-                            <tbody>
+                <div class="ctr-table-wrap ctr-scroll">
+                    <table class="ctr-table">
+                        <thead>
+                            <tr>
+                                <th>Tercero</th><th>Tipo</th><th>Inicio</th><th>Vencimiento</th>
+                                <th class="ctr-r">$/mes</th><th>Estado</th><th>Etapa</th><th>Contacto</th><th>Renov.</th><th class="ctr-r">Dias alerta</th><th>Observaciones</th>
+                                @foreach (var campo in CamposActivos) { <th title="@campo.Descripcion">@campo.Label</th> }
+                                <th class="ctr-w2"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var grupo in AgruparContratos(pageItems))
+                            {
+                                @* Fila-agrupador dentro de la misma tabla (estilo Lista de Tareas), con punto de color si agrupa por etapa *@
+                                @if (_cAgrupar != "")
+                                {
+                                    var gcolor = _cAgrupar == "etapa" ? (_etapas.FirstOrDefault(e => e.Nombre == grupo.Key)?.Color ?? "#94A3B8") : null;
+                                    <tr class="ctr-grow">
+                                        <td colspan="@(12 + CamposActivos.Count())">
+                                            @if (gcolor is not null) { <span class="ctr-kdot" style="background:@gcolor"></span> }
+                                            <span class="ctr-grow-t">@grupo.Key</span> <span class="ctr-group-n">@grupo.Count()</span>
+                                        </td>
+                                    </tr>
+                                }
                                 @foreach (var c in grupo)
                                 {
                                     var cc = c;
                                     <tr class="ctr-row">
-                                        <td class="ctr-w-eye">
-                                            <span class="ctr-eye" @onclick="() => AbrirModal(cc)" title="Ver ficha completa">
-                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
-                                            </span>
-                                        </td>
-                                        @* Tercero: proveedor + NIT, ambos editables inline (click) *@
+                                        @* Tercero: proveedor + ojo para abrir la ficha (estilo Tareas) + NIT *@
                                         <td class="ctr-ct">
-                                            @if (CEnEd(c.Id, "prov"))
-                                            {
-                                                <input class="ctr-inp" @bind="_cEditVal" @bind:event="oninput" autofocus
-                                                       @onblur='() => GuardarCEd(cc, "prov")' @onkeydown='(e) => CEdKeydown(e, cc, "prov")' />
-                                            }
-                                            else
-                                            {
-                                                <div class="ctr-terc ctr-ed" @onclick='() => IniciarCEd(cc.Id, "prov", cc.Proveedor)' title="Editar proveedor">@c.Proveedor</div>
-                                            }
+                                            <div class="ctr-terc-line">
+                                                @if (CEnEd(c.Id, "prov"))
+                                                {
+                                                    <input class="ctr-inp" @bind="_cEditVal" @bind:event="oninput" autofocus
+                                                           @onblur='() => GuardarCEd(cc, "prov")' @onkeydown='(e) => CEdKeydown(e, cc, "prov")' />
+                                                }
+                                                else
+                                                {
+                                                    <div class="ctr-terc ctr-ed" @onclick='() => IniciarCEd(cc.Id, "prov", cc.Proveedor)' title="Editar proveedor">@c.Proveedor</div>
+                                                }
+                                                <span class="ctr-eye" @onclick="() => AbrirModal(cc)" title="Ver ficha completa">
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                                                </span>
+                                            </div>
                                             @if (CEnEd(c.Id, "nit"))
                                             {
                                                 <input class="ctr-inp ctr-inp-sub" @bind="_cEditVal" @bind:event="oninput" autofocus placeholder="NIT"
@@ -393,22 +400,13 @@ else
                                                 </span>
                                             }
                                         </td>
-                                        @* Etapa: click -> select de etapas configurables *@
+                                        @* Etapa: select siempre visible con el color de la etapa (estilo Lista de Tareas) *@
                                         <td>
-                                            @if (CEnEd(c.Id, "etapa"))
-                                            {
-                                                <select class="ctr-inp" value="@_cEditVal" @onchange='(e) => CEtapaSelChange(cc, e)' @onblur="CancelarCEd">
-                                                    @foreach (var et in _etapas) { <option value="@et.Id">@et.Nombre</option> }
-                                                </select>
-                                            }
-                                            else
-                                            {
-                                                var etp = _etapas.FirstOrDefault(x => x.Id == c.EtapaId);
-                                                <span class="ctr-ed" @onclick='() => IniciarCEd(cc.Id, "etapa", cc.EtapaId?.ToString())' title="Cambiar etapa">
-                                                    @if (etp is not null) { <span class="ctr-etpill" style="background:@((etp.Color ?? "#94A3B8"))22;color:@(etp.Color ?? "#64748B");">@etp.Nombre</span> }
-                                                    else { <span class="ctr-cval">-</span> }
-                                                </span>
-                                            }
+                                            @{ var etp = _etapas.FirstOrDefault(x => x.Id == c.EtapaId); }
+                                            <select class="ctr-etsel" style="background:@(etp?.Color ?? "#94A3B8")" @onchange="(e) => CEtapaSelChange(cc, e)">
+                                                @if (c.EtapaId is null) { <option value="" selected>-</option> }
+                                                @foreach (var et in _etapas) { <option value="@et.Id" selected="@(et.Id == c.EtapaId)">@et.Nombre</option> }
+                                            </select>
                                         </td>
                                         @* Contacto: texto inline *@
                                         <td>
@@ -478,10 +476,10 @@ else
                                         </td>
                                     </tr>
                                 }
-                            </tbody>
-                        </table>
-                    </div>
-                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
                 @if (totalPag > 1)
                 {
                     <div class="ctr-pager">
@@ -494,19 +492,43 @@ else
         }
     </div>
 
-    @* ---- Modal: configurar campos personalizados (Fase C) ---- *@
-    @if (_showCamposModal)
+    @* ---- Modal: Configurar (estados + campos en un solo modal, estilo "Configurar tablero" de Tareas) ---- *@
+    @if (_showConfigModal)
     {
-        <div class="ctr-cm-back" @onclick="() => _showCamposModal = false">
+        <div class="ctr-cm-back" @onclick="() => _showConfigModal = false">
             <div class="ctr-cm" @onclick:stopPropagation="true">
                 <div class="ctr-cm-head">
                     <div>
-                        <div class="ctr-cm-title">Campos personalizados</div>
-                        <div class="ctr-cm-sub">Columnas a medida que aparecen en la tabla de contratos.</div>
+                        <div class="ctr-cm-title">Configurar contratos</div>
+                        <div class="ctr-cm-sub">Estados del flujo y campos personalizados.</div>
                     </div>
-                    <button class="ctr-cm-x" @onclick="() => _showCamposModal = false" title="Cerrar"><i class="fi fi-rr-cross-small"></i></button>
+                    <button class="ctr-cm-x" @onclick="() => _showConfigModal = false" title="Cerrar"><i class="fi fi-rr-cross-small"></i></button>
                 </div>
                 <div class="ctr-cm-body">
+                    <div class="ctr-cm-sec">Estados (columnas)</div>
+                    <div class="ctr-cm-list">
+                        @for (int i = 0; i < _etapas.Count; i++)
+                        {
+                            var eidx = i; var et = _etapas[eidx];
+                            <div class="ctr-et-row">
+                                <div class="ctr-et-ord">
+                                    <button class="ctr-et-mv" disabled="@(eidx == 0)" @onclick="() => MoverEtapaAsync(eidx, -1)" title="Subir">&#9650;</button>
+                                    <button class="ctr-et-mv" disabled="@(eidx == _etapas.Count - 1)" @onclick="() => MoverEtapaAsync(eidx, 1)" title="Bajar">&#9660;</button>
+                                </div>
+                                <input type="color" class="ctr-et-color" value="@(et.Color ?? "#94A3B8")" @onchange="(e) => CambiarColorEtapaAsync(et, e)" title="Color" />
+                                <input class="ctr-et-nom" value="@et.Nombre" @onchange="(e) => RenombrarEtapaAsync(et, e)" />
+                                <span class="ctr-cm-count">@(_contratos.Count(x => x.EtapaId == et.Id)) contratos</span>
+                                <button class="ctr-cm-del" @onclick="() => EliminarEtapaAsync(et.Id)" title="Eliminar estado" disabled="@(_etapas.Count <= 1)"><i class="fi fi-rr-trash"></i></button>
+                            </div>
+                        }
+                    </div>
+                    <div class="ctr-cm-newgrid">
+                        <input class="srv-input" placeholder="Nuevo estado (ej. En revision)" @bind="_nuevaEtapaNombre" @bind:event="oninput" @onkeydown='(e) => { if (e.Key == "Enter") return CrearEtapaAsync(); return Task.CompletedTask; }' />
+                        <button class="srv-btn-primary sm" @onclick="CrearEtapaAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevaEtapaNombre))">Agregar</button>
+                    </div>
+
+                    <div class="ctr-cm-sec">Campos personalizados</div>
+                    <div class="ctr-cm-help">Define campos tipados que apareceran como columnas de la lista, en los filtros y en las tarjetas.</div>
                     @if (_cCampos.Count == 0)
                     {
                         <div class="ctr-cm-empty">Aun no hay campos. Crea el primero abajo (ej. "Numero de poliza", "Responsable", "Renovado el").</div>
@@ -523,7 +545,7 @@ else
                                         <button class="ctr-et-mv" disabled="@(idx == 0)" @onclick="() => MoverCampoAsync(ordenados, idx, -1)" title="Subir">&#9650;</button>
                                         <button class="ctr-et-mv" disabled="@(idx == ordenados.Count - 1)" @onclick="() => MoverCampoAsync(ordenados, idx, 1)" title="Bajar">&#9660;</button>
                                     </div>
-                                    <div class="ctr-cm-rn">@cm.Label</div>
+                                    <input class="ctr-et-nom" value="@cm.Label" @onchange="(e) => RenombrarCampoAsync(cm, e)" />
                                     <span class="ctr-cm-tipo">@TipoCampoLabel(cm.Tipo)</span>
                                     <label class="ctr-cm-sw" title="Mostrar como columna">
                                         <input type="checkbox" checked="@cm.Activo" @onchange="() => ToggleCampoActivoAsync(cm)" />
@@ -556,45 +578,6 @@ else
         </div>
     }
 
-    @* ---- Modal: configurar etapas del flujo (Kanban) ---- *@
-    @if (_showEtapasModal)
-    {
-        <div class="ctr-cm-back" @onclick="() => _showEtapasModal = false">
-            <div class="ctr-cm" @onclick:stopPropagation="true">
-                <div class="ctr-cm-head">
-                    <div>
-                        <div class="ctr-cm-title">Etapas del flujo</div>
-                        <div class="ctr-cm-sub">Columnas del Kanban por las que pasa un contrato.</div>
-                    </div>
-                    <button class="ctr-cm-x" @onclick="() => _showEtapasModal = false" title="Cerrar"><i class="fi fi-rr-cross-small"></i></button>
-                </div>
-                <div class="ctr-cm-body">
-                    <div class="ctr-cm-list">
-                        @for (int i = 0; i < _etapas.Count; i++)
-                        {
-                            var idx = i; var et = _etapas[idx];
-                            <div class="ctr-et-row">
-                                <div class="ctr-et-ord">
-                                    <button class="ctr-et-mv" disabled="@(idx == 0)" @onclick="() => MoverEtapaAsync(idx, -1)" title="Subir">&#9650;</button>
-                                    <button class="ctr-et-mv" disabled="@(idx == _etapas.Count - 1)" @onclick="() => MoverEtapaAsync(idx, 1)" title="Bajar">&#9660;</button>
-                                </div>
-                                <input type="color" class="ctr-et-color" value="@(et.Color ?? "#94A3B8")" @onchange="(e) => CambiarColorEtapaAsync(et, e)" title="Color" />
-                                <input class="ctr-et-nom" value="@et.Nombre" @onchange="(e) => RenombrarEtapaAsync(et, e)" />
-                                <button class="ctr-cm-del" @onclick="() => EliminarEtapaAsync(et.Id)" title="Eliminar etapa" disabled="@(_etapas.Count <= 1)"><i class="fi fi-rr-trash"></i></button>
-                            </div>
-                        }
-                    </div>
-                    <div class="ctr-cm-new">
-                        <div class="ctr-cm-new-t">Nueva etapa</div>
-                        <div style="display:flex;gap:8px;">
-                            <input class="srv-input" placeholder="Nombre de la etapa" @bind="_nuevaEtapaNombre" @bind:event="oninput" @onkeydown='(e) => { if (e.Key == "Enter") return CrearEtapaAsync(); return Task.CompletedTask; }' />
-                            <button class="srv-btn-primary sm" @onclick="CrearEtapaAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevaEtapaNombre))"><i class="fi fi-rr-plus"></i> Agregar</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    }
     }
     else
     {
@@ -1315,14 +1298,29 @@ else
     .ctr-kcard-val { font-size: 12px; font-weight: 700; color: #46586B; margin-top: 5px; }
     .ctr-kempty { text-align: center; color: #B6C1CF; font-size: 11.5px; padding: 14px 6px; border: 1px dashed #DCE4EC; border-radius: 9px; }
     /* Filas del modal de etapas */
-    .ctr-et-row { display: grid; grid-template-columns: 34px 34px 1fr 34px; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid #EDF1F6; border-radius: 11px; }
+    .ctr-et-row { display: grid; grid-template-columns: 26px 34px 1fr auto 34px; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid #EDF1F6; border-radius: 11px; }
     .ctr-et-ord { display: flex; flex-direction: column; gap: 1px; }
     .ctr-et-mv { border: 0; background: #F3F6FA; color: #7C8A9C; font-size: 9px; line-height: 1; border-radius: 4px; height: 15px; cursor: pointer; }
     .ctr-et-mv:hover:not(:disabled) { background: #E6DEFB; color: #5838C9; }
     .ctr-et-mv:disabled { opacity: .3; cursor: default; }
     .ctr-et-color { width: 30px; height: 30px; border: 1px solid #DCE3EC; border-radius: 8px; padding: 2px; cursor: pointer; background: #fff; }
-    .ctr-et-nom { border: 1px solid #E3E9F0; border-radius: 8px; padding: 7px 9px; font-size: 13px; color: #1f2430; font-family: inherit; }
+    .ctr-et-nom { border: 1px solid #E3E9F0; border-radius: 8px; padding: 7px 9px; font-size: 13px; color: #1f2430; font-family: inherit; min-width: 0; }
     .ctr-et-nom:focus { outline: none; border-color: #7C5CFA; box-shadow: 0 0 0 3px rgba(124,92,250,.14); }
+    /* Secciones del modal Configurar (estilo "Configurar tablero" de Tareas) */
+    .ctr-cm-sec { font-size: 11px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; color: #7C8A9C; margin: 4px 0 10px; }
+    .ctr-cm-sec:not(:first-child) { margin-top: 22px; }
+    .ctr-cm-help { font-size: 12px; color: #94A3B8; margin-bottom: 10px; line-height: 1.45; }
+    .ctr-cm-count { font-size: 11px; color: #A6B2C1; font-weight: 600; white-space: nowrap; }
+    .ctr-cm-newgrid { display: flex; gap: 8px; }
+    /* Proveedor + ojo en la misma linea (estilo titulo de Tareas) */
+    .ctr-terc-line { display: flex; align-items: center; gap: 6px; }
+    /* Select de etapa con el color de la etapa (estilo Lista de Tareas) */
+    .ctr-etsel { border: 0; color: #fff; font-weight: 700; font-size: 11.5px; border-radius: 8px; padding: 5px 9px; cursor: pointer; max-width: 175px; font-family: inherit; }
+    .ctr-etsel option { color: #33414F; background: #fff; font-weight: 600; }
+    /* Fila-agrupador dentro de la tabla */
+    .ctr-grow td { background: #F8FAFC; border-bottom: 1px solid #EEF3F8; padding: 9px 12px; white-space: nowrap; }
+    .ctr-grow .ctr-kdot { display: inline-block; vertical-align: middle; }
+    .ctr-grow-t { font-size: 12px; font-weight: 800; color: #33414F; margin: 0 6px 0 7px; vertical-align: middle; }
     .ctr-group-h { display: flex; align-items: center; gap: 8px; padding: 14px 20px 6px; font-size: 12px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; color: #5838C9; }
     .ctr-group-n { background: #F1ECFD; color: #5838C9; font-size: 11px; font-weight: 800; border-radius: 20px; padding: 1px 8px; }
     .ctr-table-wrap { overflow-x: auto; padding: 4px 12px 6px; }
@@ -1485,7 +1483,7 @@ else
 
     // ---- Filtros de la tabla de contratos: buscador + constructor de reglas (estilo Tareas) ----
     private string _cFiltroTexto = "";
-    private string _cAgrupar = "";
+    private string _cAgrupar = "etapa";   // default: agrupado por etapa, como la Lista de Tareas
 
     // Indicadores tipo tarjeta (KPIs con degradado, estilo Tareas)
     private record CtrKpi(string Label, string Valor, string Sub, string Grad, string Icon);
@@ -1720,11 +1718,15 @@ else
     private IEnumerable<IGrouping<string, ContratoServicioDto>> AgruparContratos(IEnumerable<ContratoServicioDto> lst) =>
         _cAgrupar switch
         {
+            "etapa"   => lst.GroupBy(c => EtapaNombreDe(c.EtapaId)).OrderBy(g => EtapaOrdenDe(g.Key)),
             "tipo"    => lst.GroupBy(c => TipoLabel(c.Tipo)).OrderBy(g => g.Key),
             "tercero" => lst.GroupBy(c => string.IsNullOrWhiteSpace(c.Proveedor) ? "(sin proveedor)" : c.Proveedor).OrderBy(g => g.Key),
             "estado"  => lst.GroupBy(c => EstadoTextoContrato(c)).OrderBy(g => g.Key),
             _ => lst.GroupBy(_ => "")
         };
+
+    private string EtapaNombreDe(Guid? id) => _etapas.FirstOrDefault(e => e.Id == id)?.Nombre ?? "(sin etapa)";
+    private int EtapaOrdenDe(string nombre) => _etapas.FirstOrDefault(e => e.Nombre == nombre)?.Orden ?? 999;
 
     private static string EstadoTextoContrato(ContratoServicioDto c) =>
         c.Estado == EstadoContrato.Vencido ? "Vencido"
@@ -1863,7 +1865,7 @@ else
     // ---- Campos personalizados (EAV) de contratos (Fase C) ----
     private List<ContratoCampoDto> _cCampos = new();
     private IEnumerable<ContratoCampoDto> CamposActivos => _cCampos.Where(c => c.Activo);
-    private bool _showCamposModal;
+    private bool _showConfigModal;   // modal unificado "Configurar" (estados + campos, estilo Tareas)
     private string _nuevoCampoLabel = "";
     private TipoCampoTablero _nuevoCampoTipo = TipoCampoTablero.Texto;
     private string _nuevoCampoOpciones = "";
@@ -1906,6 +1908,16 @@ else
         await RecargarCamposAsync();
         await CargarAsync();
         StateHasChanged();
+    }
+
+    // Renombrar un campo desde el modal Configurar (input inline, estilo Tareas).
+    private async Task RenombrarCampoAsync(ContratoCampoDto cm, ChangeEventArgs e)
+    {
+        var nombre = e.Value?.ToString()?.Trim();
+        if (string.IsNullOrWhiteSpace(nombre) || nombre == cm.Label) return;
+        await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/campos/{cm.Id}",
+            new ActualizarContratoCampoRequest(nombre, cm.Tipo, cm.Opciones, cm.Descripcion, cm.Orden, cm.Activo));
+        await RecargarCamposAsync();
     }
 
     // Reordenar columnas personalizadas: intercambia el Orden de dos campos y persiste ambos.
@@ -1968,7 +1980,6 @@ else
     // ---- Vista Tabla/Tarjetas (Kanban) + etapas de flujo ----
     private string _vistaC = "tabla";              // "tabla" | "tarjetas"
     private List<ContratoEtapaDto> _etapas = new();
-    private bool _showEtapasModal;
     private string _nuevaEtapaNombre = "";
     private Guid? _dragContratoId;                 // contrato que se esta arrastrando
     private Guid? _dragOverEtapa;                  // columna resaltada al arrastrar encima
