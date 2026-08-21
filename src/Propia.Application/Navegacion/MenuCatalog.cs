@@ -66,13 +66,14 @@ public static class MenuCatalog
         new MenuItemDef("com-comunicaciones", "tabComunicacion", "Comunicaciones", "/comunicaciones", "fi-rr-megaphone", 1),
         new MenuItemDef("com-documentos", "tabComunicacion", "Documentos", "/documentos", "fi-rr-folder-open", 2),
         new MenuItemDef("com-reportes", "tabComunicacion", "Reportes e indicadores", "/reportes", "fi-rr-chart-line-up", 3),
+        new MenuItemDef("com-informes", "tabComunicacion", "Informes de gestion", "/informes", "fi-rr-document", 4),
         // Subgrupo "Infraestructura & IA"
-        new MenuItemDef("ia-lineas", "tabComunicacion", "Lineas WhatsApp", "/ia/lineas", "fi-rr-comment-alt", 4, Subheading: "Infraestructura & IA"),
-        new MenuItemDef("ia-agentes", "tabComunicacion", "Agentes de IA", "/ia/agentes", "fi-rr-robot", 5, Subheading: "Infraestructura & IA"),
-        new MenuItemDef("ia-conversaciones", "tabComunicacion", "Conversaciones", "/ia/conversaciones", "fi-rr-comments", 6, Subheading: "Infraestructura & IA"),
-        new MenuItemDef("ia-bitacora", "tabComunicacion", "Bitacora del agente", "/ia/bitacora", "fi-rr-time-past", 7, Subheading: "Infraestructura & IA"),
-        new MenuItemDef("ia-automatizaciones", "tabComunicacion", "Automatizaciones", "/ia/automatizaciones", "fi-rr-bolt", 8, Subheading: "Infraestructura & IA"),
-        new MenuItemDef("ia-lista-negra", "tabComunicacion", "Lista negra", "/ia/lista-negra", "fi-rr-ban", 9, Subheading: "Infraestructura & IA"),
+        new MenuItemDef("ia-lineas", "tabComunicacion", "Lineas WhatsApp", "/ia/lineas", "fi-rr-comment-alt", 5, Subheading: "Infraestructura & IA"),
+        new MenuItemDef("ia-agentes", "tabComunicacion", "Agentes de IA", "/ia/agentes", "fi-rr-robot", 6, Subheading: "Infraestructura & IA"),
+        new MenuItemDef("ia-conversaciones", "tabComunicacion", "Conversaciones", "/ia/conversaciones", "fi-rr-comments", 7, Subheading: "Infraestructura & IA"),
+        new MenuItemDef("ia-bitacora", "tabComunicacion", "Bitacora del agente", "/ia/bitacora", "fi-rr-time-past", 8, Subheading: "Infraestructura & IA"),
+        new MenuItemDef("ia-automatizaciones", "tabComunicacion", "Automatizaciones", "/ia/automatizaciones", "fi-rr-bolt", 9, Subheading: "Infraestructura & IA"),
+        new MenuItemDef("ia-lista-negra", "tabComunicacion", "Lista negra", "/ia/lista-negra", "fi-rr-ban", 10, Subheading: "Infraestructura & IA"),
 
         // Organizacion (Capa 1)
         new MenuItemDef("org-panel", "tabOrg", "Panel consolidado", "/org/panel-consolidado", "fi-rr-dashboard", 1),

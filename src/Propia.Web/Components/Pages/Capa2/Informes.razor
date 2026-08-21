@@ -1,0 +1,667 @@
+@page "/informes"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.Informes
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<PageTitle>Informes de gestion - PROPIA</PageTitle>
+
+@* Modulo Informes de gestion (Capa 2). Plantillas inteligentes: cada seccion trae su prompt y el
+   sistema genera el contenido con los agentes de IA. MVP: generar + editar en pantalla. *@
+
+<div class="inf-page">
+    <div class="inf-head">
+        <div>
+            <h1 class="inf-title">Informes de gestion</h1>
+            <p class="inf-sub">Plantillas inteligentes con un prompt por seccion. El sistema redacta cada seccion con los agentes de IA y tu la ajustas en pantalla.</p>
+        </div>
+        <div class="inf-tabs">
+            <button class="inf-tab @(_tab == "informes" ? "inf-tab--on" : "")" @onclick='() => _tab = "informes"'>Informes</button>
+            <button class="inf-tab @(_tab == "plantillas" ? "inf-tab--on" : "")" @onclick='() => _tab = "plantillas"'>Plantillas</button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_flash))
+    {
+        <div class="inf-flash @(_flashError ? "inf-flash--err" : "inf-flash--ok")">@_flash</div>
+    }
+
+    @if (!_authChecked)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
+    else if (string.IsNullOrEmpty(_jwt))
+    {
+        <div class="inf-empty">Sesion expirada. <a href="/login?returnUrl=%2Finformes">Iniciar sesion</a>.</div>
+    }
+    else if (_tab == "informes")
+    {
+        @if (_informeAbierto is null)
+        {
+            <div class="inf-toolbar">
+                <button class="inf-btn-primary" @onclick="AbrirNuevoInforme" disabled="@_busy">+ Nuevo informe</button>
+            </div>
+
+            @if (_informes.Count == 0)
+            {
+                <div class="inf-empty">Aun no hay informes. Crea el primero con "+ Nuevo informe".</div>
+            }
+            else
+            {
+                <div class="inf-tablewrap">
+                    <table class="inf-table">
+                        <thead>
+                            <tr>
+                                <th>Informe</th><th>Periodo</th><th>Estado</th>
+                                <th class="inf-c">Secciones</th><th>Generado</th><th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var i in _informes)
+                            {
+                                var ii = i;
+                                <tr class="inf-row" @onclick="() => AbrirInformeAsync(ii.Id)">
+                                    <td class="inf-strong">@i.Titulo</td>
+                                    <td>@(string.IsNullOrWhiteSpace(i.Periodo) ? "-" : i.Periodo)</td>
+                                    <td><span class="inf-pill @EstadoClass(i.Estado)">@EstadoLabel(i.Estado)</span></td>
+                                    <td class="inf-c">@i.NumSecciones</td>
+                                    <td>@(i.GeneradoEn is null ? "-" : i.GeneradoEn.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm"))</td>
+                                    <td class="inf-actions" @onclick:stopPropagation="true">
+                                        <button class="inf-ico" title="Abrir" @onclick="() => AbrirInformeAsync(ii.Id)">Abrir</button>
+                                        <button class="inf-ico inf-ico--del" title="Eliminar" @onclick="() => EliminarInformeAsync(ii.Id)">Eliminar</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        }
+        else
+        {
+            @* ---- Editor de un informe (generar + editar en pantalla) ---- *@
+            <div class="inf-editor">
+                <div class="inf-editor-top">
+                    <button class="inf-btn-back" @onclick="CerrarInforme">&larr; Volver</button>
+                    <div class="inf-editor-titles">
+                        <h2 class="inf-editor-title">@_informeAbierto.Titulo</h2>
+                        <span class="inf-editor-meta">
+                            @(string.IsNullOrWhiteSpace(_informeAbierto.Periodo) ? "" : _informeAbierto.Periodo)
+                            <span class="inf-pill @EstadoClass(_informeAbierto.Estado)">@EstadoLabel(_informeAbierto.Estado)</span>
+                        </span>
+                    </div>
+                    <button class="inf-btn-primary" @onclick="GenerarTodoAsync" disabled="@_busy">
+                        @(_busy ? "Generando..." : "Generar todo con IA")
+                    </button>
+                </div>
+
+                @if (_informeAbierto.Secciones.Count == 0)
+                {
+                    <div class="inf-empty">Este informe no tiene secciones. Crea una plantilla con secciones y vuelve a generar el informe.</div>
+                }
+                else
+                {
+                    @foreach (var s in _seccionesEd)
+                    {
+                        var ss = s;
+                        <div class="inf-sec">
+                            <div class="inf-sec-head">
+                                <span class="inf-sec-titulo">@s.Titulo</span>
+                                <div class="inf-sec-actions">
+                                    <button class="inf-btn-ghost" @onclick="() => VerPrompt(ss)" title="Ver / editar el prompt de esta seccion">Prompt</button>
+                                    <button class="inf-btn-ai" @onclick="() => GenerarSeccionAsync(ss)" disabled="@(_genId == ss.Id || _busy)">
+                                        @(_genId == ss.Id ? "Generando..." : "Generar")
+                                    </button>
+                                    <button class="inf-btn-save" @onclick="() => GuardarSeccionAsync(ss)" disabled="@(!ss.Sucio || _busy)">Guardar</button>
+                                </div>
+                            </div>
+                            @if (ss.MostrarPrompt)
+                            {
+                                <div class="inf-sec-prompt">
+                                    <label class="inf-lbl">Prompt de generacion</label>
+                                    <textarea class="inf-ta inf-ta--prompt" rows="3"
+                                              @bind="ss.Prompt" @bind:event="oninput" @bind:after="() => ss.Sucio = true"
+                                              placeholder="Instruccion para que la IA redacte esta seccion..."></textarea>
+                                </div>
+                            }
+                            <textarea class="inf-ta" rows="7"
+                                      @bind="ss.Contenido" @bind:event="oninput" @bind:after="() => ss.Sucio = true"
+                                      placeholder="Contenido de la seccion. Genera con IA o escribe aqui..."></textarea>
+                        </div>
+                    }
+                }
+            </div>
+        }
+    }
+    else
+    {
+        @* ============ Pestana Plantillas ============ *@
+        @if (_plantillaEd is null)
+        {
+            <div class="inf-toolbar">
+                <button class="inf-btn-primary" @onclick="NuevaPlantilla" disabled="@_busy">+ Nueva plantilla</button>
+            </div>
+
+            @if (_plantillas.Count == 0)
+            {
+                <div class="inf-empty">Aun no hay plantillas.</div>
+            }
+            else
+            {
+                <div class="inf-plgrid">
+                    @foreach (var p in _plantillas)
+                    {
+                        var pp = p;
+                        <div class="inf-plcard">
+                            <div class="inf-plcard-body" @onclick="() => EditarPlantillaAsync(pp.Id)">
+                                <div class="inf-plcard-name">@p.Nombre</div>
+                                @if (!string.IsNullOrWhiteSpace(p.Descripcion))
+                                {
+                                    <div class="inf-plcard-desc">@p.Descripcion</div>
+                                }
+                                <div class="inf-plcard-meta">@p.NumSecciones seccion@(p.NumSecciones == 1 ? "" : "es")</div>
+                            </div>
+                            <div class="inf-plcard-actions">
+                                <button class="inf-btn-ghost" @onclick="() => EditarPlantillaAsync(pp.Id)">Editar</button>
+                                <button class="inf-btn-ghost" @onclick="() => UsarPlantilla(pp)">Usar</button>
+                                <button class="inf-ico inf-ico--del" @onclick="() => EliminarPlantillaAsync(pp.Id)">Eliminar</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        }
+        else
+        {
+            @* ---- Editor de plantilla ---- *@
+            <div class="inf-editor">
+                <div class="inf-editor-top">
+                    <button class="inf-btn-back" @onclick="() => _plantillaEd = null">&larr; Volver</button>
+                    <div class="inf-editor-titles"><h2 class="inf-editor-title">@(_plantillaEsNueva ? "Nueva plantilla" : "Editar plantilla")</h2></div>
+                    <button class="inf-btn-primary" @onclick="GuardarPlantillaAsync" disabled="@_busy">Guardar plantilla</button>
+                </div>
+
+                <div class="inf-form">
+                    <div class="inf-field">
+                        <label class="inf-lbl">Nombre</label>
+                        <input class="inf-inp" @bind="_plantillaEd.Nombre" placeholder="Informe de gestion mensual" />
+                    </div>
+                    <div class="inf-field">
+                        <label class="inf-lbl">Descripcion</label>
+                        <input class="inf-inp" @bind="_plantillaEd.Descripcion" placeholder="Para que sirve esta plantilla" />
+                    </div>
+                </div>
+
+                <div class="inf-secciones-head">
+                    <h3 class="inf-h3">Secciones</h3>
+                    <button class="inf-btn-ghost" @onclick="AgregarSeccionPlantilla">+ Agregar seccion</button>
+                </div>
+
+                @if (_plantillaEd.Secciones.Count == 0)
+                {
+                    <div class="inf-empty">Agrega la primera seccion con "+ Agregar seccion".</div>
+                }
+                else
+                {
+                    @for (var idx = 0; idx < _plantillaEd.Secciones.Count; idx++)
+                    {
+                        var i = idx;
+                        var sec = _plantillaEd.Secciones[i];
+                        <div class="inf-plsec">
+                            <div class="inf-plsec-top">
+                                <span class="inf-plsec-n">@(i + 1)</span>
+                                <input class="inf-inp inf-plsec-titulo" @bind="sec.Titulo" placeholder="Titulo de la seccion" />
+                                <div class="inf-plsec-move">
+                                    <button class="inf-ico" title="Subir" disabled="@(i == 0)" @onclick="() => MoverSeccion(i, -1)">&uarr;</button>
+                                    <button class="inf-ico" title="Bajar" disabled="@(i == _plantillaEd.Secciones.Count - 1)" @onclick="() => MoverSeccion(i, 1)">&darr;</button>
+                                    <button class="inf-ico inf-ico--del" title="Quitar" @onclick="() => QuitarSeccion(i)">&times;</button>
+                                </div>
+                            </div>
+                            <label class="inf-lbl">Prompt de la seccion</label>
+                            <textarea class="inf-ta inf-ta--prompt" rows="3" @bind="sec.Prompt"
+                                      placeholder="Que debe redactar la IA en esta seccion (datos a resumir, tono, extension...)"></textarea>
+                        </div>
+                    }
+                }
+            </div>
+        }
+    }
+</div>
+
+@* ---- Modal: Nuevo informe ---- *@
+@if (_nuevoInforme is not null)
+{
+    <div class="inf-modal-back" @onclick="() => _nuevoInforme = null">
+        <div class="inf-modal" @onclick:stopPropagation="true">
+            <div class="inf-modal-head"><h3>Nuevo informe</h3><button class="inf-x" @onclick="() => _nuevoInforme = null">&times;</button></div>
+            <div class="inf-modal-body">
+                <div class="inf-field">
+                    <label class="inf-lbl">Plantilla</label>
+                    <select class="inf-inp" @bind="_nuevoInforme.PlantillaId">
+                        <option value="">Sin plantilla (informe en blanco)</option>
+                        @foreach (var p in _plantillas)
+                        {
+                            <option value="@p.Id">@p.Nombre (@p.NumSecciones)</option>
+                        }
+                    </select>
+                </div>
+                <div class="inf-field">
+                    <label class="inf-lbl">Titulo</label>
+                    <input class="inf-inp" @bind="_nuevoInforme.Titulo" placeholder="Informe de gestion" />
+                </div>
+                <div class="inf-field">
+                    <label class="inf-lbl">Periodo</label>
+                    <input class="inf-inp" @bind="_nuevoInforme.Periodo" placeholder="Agosto 2026" />
+                </div>
+            </div>
+            <div class="inf-modal-foot">
+                <button class="inf-btn-ghost" @onclick="() => _nuevoInforme = null">Cancelar</button>
+                <button class="inf-btn-primary" @onclick="CrearInformeAsync" disabled="@_busy">Crear</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string? _jwt;
+    private bool _authChecked;
+    private bool _busy;
+    private string _tab = "informes";
+    private string? _flash;
+    private bool _flashError;
+    private Guid? _genId; // seccion generandose ahora
+
+    private List<InformeListItemDto> _informes = new();
+    private List<InformePlantillaDto> _plantillas = new();
+
+    private InformeDetalleDto? _informeAbierto;
+    private List<SeccionEd> _seccionesEd = new();
+
+    private sealed class SeccionEd
+    {
+        public Guid Id;
+        public string Titulo = "";
+        public int Orden;
+        public string? Prompt;
+        public string? Contenido;
+        public bool Sucio;
+        public bool MostrarPrompt;
+    }
+
+    private sealed class NuevoInformeModel
+    {
+        public Guid? PlantillaId { get; set; }
+        public string Titulo { get; set; } = "";
+        public string Periodo { get; set; } = "";
+    }
+    private NuevoInformeModel? _nuevoInforme;
+
+    private sealed class PlantillaEd
+    {
+        public Guid Id;
+        public string Nombre = "";
+        public string? Descripcion;
+        public List<SeccionPlEd> Secciones = new();
+    }
+    private sealed class SeccionPlEd
+    {
+        public Guid? Id;
+        public string Titulo = "";
+        public string? Prompt;
+    }
+    private PlantillaEd? _plantillaEd;
+    private bool _plantillaEsNueva;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try { _jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt"); }
+        catch { }
+        _authChecked = true;
+        if (!string.IsNullOrEmpty(_jwt)) { await CargarAsync(); }
+        StateHasChanged();
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(_jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
+        return http;
+    }
+
+    private async Task CargarAsync()
+    {
+        _busy = true;
+        try
+        {
+            _informes = await Auth().GetFromJsonAsync<List<InformeListItemDto>>("/api/informes") ?? new();
+            _plantillas = await Auth().GetFromJsonAsync<List<InformePlantillaDto>>("/api/informes/plantillas") ?? new();
+        }
+        catch (Exception ex) { Flash("No se pudo cargar: " + ex.Message, true); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    // ---------- Informes ----------
+    private void AbrirNuevoInforme() => _nuevoInforme = new NuevoInformeModel();
+
+    private void UsarPlantilla(InformePlantillaDto p)
+    {
+        _tab = "informes";
+        _nuevoInforme = new NuevoInformeModel { PlantillaId = p.Id, Titulo = p.Nombre };
+    }
+
+    private async Task CrearInformeAsync()
+    {
+        if (_nuevoInforme is null) return;
+        _busy = true;
+        try
+        {
+            var req = new CrearInformeRequest(
+                _nuevoInforme.PlantillaId,
+                string.IsNullOrWhiteSpace(_nuevoInforme.Titulo) ? "Informe de gestion" : _nuevoInforme.Titulo.Trim(),
+                string.IsNullOrWhiteSpace(_nuevoInforme.Periodo) ? null : _nuevoInforme.Periodo.Trim());
+            var resp = await Auth().PostAsJsonAsync("/api/informes", req);
+            resp.EnsureSuccessStatusCode();
+            var det = await resp.Content.ReadFromJsonAsync<InformeDetalleDto>();
+            _nuevoInforme = null;
+            await CargarAsync();
+            if (det is not null) AbrirInforme(det);
+        }
+        catch (Exception ex) { Flash("No se pudo crear: " + ex.Message, true); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private async Task AbrirInformeAsync(Guid id)
+    {
+        _busy = true;
+        try
+        {
+            var det = await Auth().GetFromJsonAsync<InformeDetalleDto>($"/api/informes/{id}");
+            if (det is not null) AbrirInforme(det);
+        }
+        catch (Exception ex) { Flash("No se pudo abrir: " + ex.Message, true); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private void AbrirInforme(InformeDetalleDto det)
+    {
+        _informeAbierto = det;
+        _seccionesEd = det.Secciones
+            .OrderBy(s => s.Orden)
+            .Select(s => new SeccionEd { Id = s.Id, Titulo = s.Titulo, Orden = s.Orden, Prompt = s.Prompt, Contenido = s.Contenido })
+            .ToList();
+    }
+
+    private void CerrarInforme() { _informeAbierto = null; _seccionesEd = new(); }
+
+    private void VerPrompt(SeccionEd s) => s.MostrarPrompt = !s.MostrarPrompt;
+
+    private async Task GuardarSeccionAsync(SeccionEd s)
+    {
+        if (_informeAbierto is null) return;
+        _busy = true;
+        try
+        {
+            var req = new GuardarInformeSeccionRequest(s.Contenido, s.Prompt);
+            var resp = await Auth().PutAsJsonAsync($"/api/informes/{_informeAbierto.Id}/secciones/{s.Id}", req);
+            resp.EnsureSuccessStatusCode();
+            s.Sucio = false;
+            Flash("Seccion guardada.", false);
+        }
+        catch (Exception ex) { Flash("No se pudo guardar: " + ex.Message, true); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private async Task GenerarSeccionAsync(SeccionEd s)
+    {
+        if (_informeAbierto is null) return;
+        _genId = s.Id;
+        StateHasChanged();
+        try
+        {
+            var resp = await Auth().PostAsync($"/api/informes/{_informeAbierto.Id}/secciones/{s.Id}/generar", null);
+            resp.EnsureSuccessStatusCode();
+            var dto = await resp.Content.ReadFromJsonAsync<InformeSeccionDto>();
+            if (dto is not null)
+            {
+                s.Contenido = dto.Contenido;
+                s.Sucio = false;
+                if (string.IsNullOrWhiteSpace(dto.Contenido))
+                    Flash("La IA no devolvio contenido. Revisa que haya un proveedor de IA configurado.", true);
+            }
+        }
+        catch (Exception ex) { Flash("No se pudo generar: " + ex.Message, true); }
+        finally { _genId = null; StateHasChanged(); }
+    }
+
+    private async Task GenerarTodoAsync()
+    {
+        if (_informeAbierto is null) return;
+        _busy = true;
+        StateHasChanged();
+        try
+        {
+            var resp = await Auth().PostAsync($"/api/informes/{_informeAbierto.Id}/generar", null);
+            resp.EnsureSuccessStatusCode();
+            var det = await resp.Content.ReadFromJsonAsync<InformeDetalleDto>();
+            if (det is not null) { AbrirInforme(det); Flash("Informe generado.", false); }
+            await CargarAsync();
+        }
+        catch (Exception ex) { Flash("No se pudo generar: " + ex.Message, true); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private async Task EliminarInformeAsync(Guid id)
+    {
+        if (!await Confirm("Eliminar este informe?")) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/informes/{id}");
+            resp.EnsureSuccessStatusCode();
+            if (_informeAbierto?.Id == id) CerrarInforme();
+            await CargarAsync();
+        }
+        catch (Exception ex) { Flash("No se pudo eliminar: " + ex.Message, true); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    // ---------- Plantillas ----------
+    private void NuevaPlantilla()
+    {
+        _plantillaEsNueva = true;
+        _plantillaEd = new PlantillaEd();
+    }
+
+    private async Task EditarPlantillaAsync(Guid id)
+    {
+        _busy = true;
+        try
+        {
+            var p = await Auth().GetFromJsonAsync<InformePlantillaDto>($"/api/informes/plantillas/{id}");
+            if (p is not null)
+            {
+                _plantillaEsNueva = false;
+                _plantillaEd = new PlantillaEd
+                {
+                    Id = p.Id, Nombre = p.Nombre, Descripcion = p.Descripcion,
+                    Secciones = p.Secciones.OrderBy(s => s.Orden)
+                        .Select(s => new SeccionPlEd { Id = s.Id, Titulo = s.Titulo, Prompt = s.Prompt }).ToList()
+                };
+            }
+        }
+        catch (Exception ex) { Flash("No se pudo abrir: " + ex.Message, true); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private void AgregarSeccionPlantilla() => _plantillaEd?.Secciones.Add(new SeccionPlEd { Titulo = "Nueva seccion" });
+
+    private void MoverSeccion(int idx, int delta)
+    {
+        if (_plantillaEd is null) return;
+        var j = idx + delta;
+        if (j < 0 || j >= _plantillaEd.Secciones.Count) return;
+        (_plantillaEd.Secciones[idx], _plantillaEd.Secciones[j]) = (_plantillaEd.Secciones[j], _plantillaEd.Secciones[idx]);
+    }
+
+    private void QuitarSeccion(int idx)
+    {
+        if (_plantillaEd is null) return;
+        if (idx >= 0 && idx < _plantillaEd.Secciones.Count) _plantillaEd.Secciones.RemoveAt(idx);
+    }
+
+    private async Task GuardarPlantillaAsync()
+    {
+        if (_plantillaEd is null) return;
+        if (string.IsNullOrWhiteSpace(_plantillaEd.Nombre)) { Flash("El nombre es obligatorio.", true); return; }
+        _busy = true;
+        try
+        {
+            var secciones = _plantillaEd.Secciones
+                .Select((s, i) => new GuardarPlantillaSeccionRequest(s.Id, s.Titulo?.Trim() ?? "", i, s.Prompt))
+                .ToList();
+            var req = new GuardarPlantillaRequest(_plantillaEd.Nombre.Trim(), _plantillaEd.Descripcion, secciones);
+
+            HttpResponseMessage resp;
+            if (_plantillaEsNueva)
+                resp = await Auth().PostAsJsonAsync("/api/informes/plantillas", req);
+            else
+                resp = await Auth().PutAsJsonAsync($"/api/informes/plantillas/{_plantillaEd.Id}", req);
+            resp.EnsureSuccessStatusCode();
+
+            _plantillaEd = null;
+            await CargarAsync();
+            Flash("Plantilla guardada.", false);
+        }
+        catch (Exception ex) { Flash("No se pudo guardar: " + ex.Message, true); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private async Task EliminarPlantillaAsync(Guid id)
+    {
+        if (!await Confirm("Eliminar esta plantilla?")) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/informes/plantillas/{id}");
+            resp.EnsureSuccessStatusCode();
+            await CargarAsync();
+        }
+        catch (Exception ex) { Flash("No se pudo eliminar: " + ex.Message, true); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    // ---------- Utilidades ----------
+    private async Task<bool> Confirm(string msg)
+    {
+        try { return await Js.InvokeAsync<bool>("confirm", msg); }
+        catch { return true; }
+    }
+
+    private void Flash(string msg, bool error) { _flash = msg; _flashError = error; }
+
+    private static string EstadoLabel(EstadoInforme e) => e switch
+    {
+        EstadoInforme.Borrador => "Borrador",
+        EstadoInforme.Generado => "Generado",
+        EstadoInforme.Finalizado => "Finalizado",
+        _ => e.ToString()
+    };
+    private static string EstadoClass(EstadoInforme e) => e switch
+    {
+        EstadoInforme.Generado => "inf-pill--gen",
+        EstadoInforme.Finalizado => "inf-pill--fin",
+        _ => "inf-pill--bor"
+    };
+}
+
+<style>
+    .inf-page { padding: 24px 28px; max-width: 1900px; margin: 0 auto; }
+    .inf-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+    .inf-title { font-size: 1.5rem; font-weight: 700; color: var(--propia-text, #1e293b); margin: 0; }
+    .inf-sub { color: var(--propia-text-soft, #64748b); margin: 4px 0 0; max-width: 720px; }
+    .inf-tabs { display: flex; gap: 4px; background: var(--propia-surface-2, #f1f5f9); padding: 4px; border-radius: 10px; }
+    .inf-tab { border: none; background: transparent; padding: 8px 18px; border-radius: 8px; font-weight: 600; color: var(--propia-text-soft, #64748b); cursor: pointer; }
+    .inf-tab--on { background: var(--propia-surface, #fff); color: var(--propia-primary, #7C5CFA); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+
+    .inf-flash { margin: 16px 0 0; padding: 10px 14px; border-radius: 8px; font-weight: 500; }
+    .inf-flash--ok { background: #ecfdf5; color: #047857; }
+    .inf-flash--err { background: #fef2f2; color: #b91c1c; }
+
+    .inf-toolbar { margin: 20px 0 12px; display: flex; justify-content: flex-end; }
+    .inf-empty { margin-top: 24px; padding: 32px; text-align: center; color: var(--propia-text-soft, #64748b); background: var(--propia-surface-2, #f8fafc); border-radius: 12px; border: 1px dashed var(--propia-border, #e2e8f0); }
+
+    .inf-btn-primary { background: var(--propia-primary, #7C5CFA); color: #fff; border: none; padding: 9px 18px; border-radius: 9px; font-weight: 600; cursor: pointer; }
+    .inf-btn-primary:disabled { opacity: .6; cursor: default; }
+    .inf-btn-ghost { background: var(--propia-surface, #fff); color: var(--propia-text, #334155); border: 1px solid var(--propia-border, #e2e8f0); padding: 7px 14px; border-radius: 8px; font-weight: 600; cursor: pointer; }
+    .inf-btn-back { background: transparent; border: none; color: var(--propia-text-soft, #64748b); font-weight: 600; cursor: pointer; padding: 6px 4px; }
+    .inf-btn-ai { background: #eef2ff; color: #4f46e5; border: 1px solid #c7d2fe; padding: 7px 14px; border-radius: 8px; font-weight: 600; cursor: pointer; }
+    .inf-btn-ai:disabled { opacity: .6; cursor: default; }
+    .inf-btn-save { background: var(--propia-primary, #7C5CFA); color: #fff; border: none; padding: 7px 14px; border-radius: 8px; font-weight: 600; cursor: pointer; }
+    .inf-btn-save:disabled { opacity: .45; cursor: default; }
+
+    .inf-tablewrap { margin-top: 8px; overflow-x: auto; background: var(--propia-surface, #fff); border: 1px solid var(--propia-border, #e2e8f0); border-radius: 12px; }
+    .inf-table { width: 100%; border-collapse: collapse; }
+    .inf-table thead th { text-align: left; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; color: var(--propia-text-soft, #94a3b8); padding: 12px 16px; border-bottom: 1px solid var(--propia-border, #e2e8f0); }
+    .inf-table td { padding: 13px 16px; border-bottom: 1px solid var(--propia-border, #f1f5f9); color: var(--propia-text, #334155); }
+    .inf-row { cursor: pointer; }
+    .inf-row:hover { background: var(--propia-surface-2, #f8fafc); }
+    .inf-strong { font-weight: 600; color: var(--propia-text, #1e293b); }
+    .inf-c { text-align: center; }
+    .inf-actions { display: flex; gap: 6px; justify-content: flex-end; }
+    .inf-ico { background: transparent; border: 1px solid var(--propia-border, #e2e8f0); border-radius: 7px; padding: 4px 10px; font-size: .82rem; cursor: pointer; color: var(--propia-text, #475569); }
+    .inf-ico:disabled { opacity: .4; cursor: default; }
+    .inf-ico--del { color: #dc2626; border-color: #fecaca; }
+
+    .inf-pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: .78rem; font-weight: 600; }
+    .inf-pill--bor { background: #f1f5f9; color: #64748b; }
+    .inf-pill--gen { background: #eef2ff; color: #4f46e5; }
+    .inf-pill--fin { background: #ecfdf5; color: #059669; }
+
+    .inf-editor { margin-top: 12px; }
+    .inf-editor-top { display: flex; align-items: center; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--propia-border, #e2e8f0); }
+    .inf-editor-titles { flex: 1; }
+    .inf-editor-title { font-size: 1.2rem; font-weight: 700; margin: 0; color: var(--propia-text, #1e293b); }
+    .inf-editor-meta { display: inline-flex; align-items: center; gap: 8px; color: var(--propia-text-soft, #64748b); font-size: .9rem; }
+
+    .inf-sec { margin-top: 16px; background: var(--propia-surface, #fff); border: 1px solid var(--propia-border, #e2e8f0); border-radius: 12px; padding: 16px; }
+    .inf-sec-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+    .inf-sec-titulo { font-weight: 700; color: var(--propia-text, #1e293b); font-size: 1.02rem; }
+    .inf-sec-actions { display: flex; gap: 8px; }
+    .inf-sec-prompt { margin-bottom: 10px; }
+    .inf-ta { width: 100%; border: 1px solid var(--propia-border, #e2e8f0); border-radius: 8px; padding: 10px 12px; font-family: inherit; font-size: .95rem; color: var(--propia-text, #1e293b); resize: vertical; background: var(--propia-surface, #fff); }
+    .inf-ta--prompt { background: var(--propia-surface-2, #f8fafc); font-size: .88rem; color: var(--propia-text-soft, #475569); }
+    .inf-ta:focus, .inf-inp:focus { outline: none; border-color: var(--propia-primary, #7C5CFA); }
+    .inf-lbl { display: block; font-size: .8rem; font-weight: 600; color: var(--propia-text-soft, #64748b); margin-bottom: 4px; }
+
+    .inf-form { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+    .inf-field { display: flex; flex-direction: column; }
+    .inf-inp { border: 1px solid var(--propia-border, #e2e8f0); border-radius: 8px; padding: 9px 12px; font-family: inherit; font-size: .95rem; color: var(--propia-text, #1e293b); background: var(--propia-surface, #fff); }
+
+    .inf-secciones-head { display: flex; align-items: center; justify-content: space-between; margin: 24px 0 8px; }
+    .inf-h3 { font-size: 1.05rem; font-weight: 700; margin: 0; color: var(--propia-text, #1e293b); }
+    .inf-plsec { background: var(--propia-surface, #fff); border: 1px solid var(--propia-border, #e2e8f0); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+    .inf-plsec-top { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .inf-plsec-n { width: 26px; height: 26px; flex: 0 0 26px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: #eef2ff; color: #4f46e5; font-weight: 700; font-size: .82rem; }
+    .inf-plsec-titulo { flex: 1; }
+    .inf-plsec-move { display: flex; gap: 4px; }
+
+    .inf-plgrid { margin-top: 8px; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+    .inf-plcard { background: var(--propia-surface, #fff); border: 1px solid var(--propia-border, #e2e8f0); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; justify-content: space-between; gap: 12px; }
+    .inf-plcard-body { cursor: pointer; }
+    .inf-plcard-name { font-weight: 700; color: var(--propia-text, #1e293b); font-size: 1.05rem; }
+    .inf-plcard-desc { color: var(--propia-text-soft, #64748b); font-size: .88rem; margin-top: 4px; }
+    .inf-plcard-meta { color: var(--propia-primary, #7C5CFA); font-size: .82rem; font-weight: 600; margin-top: 8px; }
+    .inf-plcard-actions { display: flex; gap: 6px; align-items: center; }
+
+    .inf-modal-back { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: center; justify-content: center; z-index: 1050; }
+    .inf-modal { background: var(--propia-surface, #fff); border-radius: 14px; width: min(480px, 92vw); box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+    .inf-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; border-bottom: 1px solid var(--propia-border, #e2e8f0); }
+    .inf-modal-head h3 { margin: 0; font-size: 1.1rem; font-weight: 700; }
+    .inf-x { background: transparent; border: none; font-size: 1.4rem; line-height: 1; cursor: pointer; color: var(--propia-text-soft, #94a3b8); }
+    .inf-modal-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+    .inf-modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--propia-border, #e2e8f0); }
+</style>

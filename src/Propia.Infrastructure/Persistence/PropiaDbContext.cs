@@ -80,6 +80,11 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<ContratoCampo> ContratoCampos => Set<ContratoCampo>();
     public DbSet<ContratoCampoValor> ContratoCampoValores => Set<ContratoCampoValor>();
     public DbSet<ContratoEtapa> ContratoEtapas => Set<ContratoEtapa>();
+    // Informes de gestion (plantillas inteligentes + generacion IA)
+    public DbSet<InformePlantilla> InformePlantillas => Set<InformePlantilla>();
+    public DbSet<InformePlantillaSeccion> InformePlantillaSecciones => Set<InformePlantillaSeccion>();
+    public DbSet<Informe> Informes => Set<Informe>();
+    public DbSet<InformeSeccion> InformeSecciones => Set<InformeSeccion>();
     // Servicios y contratos (Finanzas)
     public DbSet<Servicio> Servicios => Set<Servicio>();
     public DbSet<ServicioContacto> ServicioContactos => Set<ServicioContacto>();
@@ -640,6 +645,39 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.Nombre).IsRequired().HasMaxLength(80);
             b.Property(x => x.Color).HasMaxLength(9);
             b.HasIndex(x => x.TenantId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // Informes de gestion (plantillas inteligentes + generacion IA)
+        modelBuilder.Entity<InformePlantilla>(b =>
+        {
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(160);
+            b.Property(x => x.Descripcion).HasMaxLength(600);
+            b.HasIndex(x => x.TenantId);
+            b.HasMany(x => x.Secciones).WithOne(s => s.Plantilla!).HasForeignKey(s => s.PlantillaId).OnDelete(DeleteBehavior.Cascade);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<InformePlantillaSeccion>(b =>
+        {
+            b.Property(x => x.Titulo).IsRequired().HasMaxLength(200);
+            b.Property(x => x.Prompt).HasMaxLength(4000);
+            b.HasIndex(x => new { x.TenantId, x.PlantillaId });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<Informe>(b =>
+        {
+            b.Property(x => x.Titulo).IsRequired().HasMaxLength(200);
+            b.Property(x => x.Periodo).HasMaxLength(120);
+            b.Property(x => x.Estado).HasDefaultValue(EstadoInforme.Borrador);
+            b.HasIndex(x => x.TenantId);
+            b.HasMany(x => x.Secciones).WithOne(s => s.Informe!).HasForeignKey(s => s.InformeId).OnDelete(DeleteBehavior.Cascade);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<InformeSeccion>(b =>
+        {
+            b.Property(x => x.Titulo).IsRequired().HasMaxLength(200);
+            b.Property(x => x.Prompt).HasMaxLength(4000);
+            b.HasIndex(x => new { x.TenantId, x.InformeId });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

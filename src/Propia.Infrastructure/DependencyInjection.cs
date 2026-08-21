@@ -196,6 +196,9 @@ public static class DependencyInjection
         // Modulo 2.9 PQRSD y Convivencia
         services.AddScoped<Application.Pqrsd.IPqrsdService, Pqrsd.PqrsdService>();
 
+        // Modulo Informes de gestion (plantillas inteligentes + generacion IA)
+        services.AddScoped<Application.Informes.IInformesService, Informes.InformesService>();
+
         // Modulo 2.8 Asambleas y Organos de Gobierno
         services.AddScoped<Application.Asambleas.IAsambleaService, Asambleas.AsambleaService>();
 
