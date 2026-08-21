@@ -164,7 +164,7 @@ else
 
         @* ---- Buscador + Filtros (un solo boton, constructor de reglas estilo Tareas) + Agrupar ---- *@
         <div class="ctr-filtros">
-            <div class="ctr-search"><i class="fi fi-rr-search"></i><input placeholder="Buscar proveedor, NIT, tipo..." value="@_cFiltroTexto" @oninput="e => { _cFiltroTexto = e.Value?.ToString() ?? string.Empty; }" /></div>
+            <div class="ctr-search"><i class="fi fi-rr-search"></i><input placeholder="Buscar proveedor, NIT, tipo..." value="@_cFiltroTexto" @oninput="e => { _cFiltroTexto = e.Value?.ToString() ?? string.Empty; _cPage = 0; }" /></div>
             <div class="ctr-filtro-wrap">
                 <button class="ctr-fbtn @(HayReglasActivas ? "on" : "")" @onclick="ToggleFiltrosC" title="Filtrar contratos">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18M6 12h12M10 19h4" /></svg>
@@ -286,19 +286,22 @@ else
             }
             else
             {
-                <div class="ctr-count">@filtrados.Count de @_contratos.Count contratos</div>
-                @foreach (var grupo in AgruparContratos(filtrados))
+                var totalPag = Math.Max(1, (int)Math.Ceiling(filtrados.Count / (double)_cPageSize));
+                var pag = Math.Min(Math.Max(0, _cPage), totalPag - 1);
+                var pageItems = filtrados.Skip(pag * _cPageSize).Take(_cPageSize).ToList();
+                <div class="ctr-count">@filtrados.Count de @_contratos.Count contratos@(totalPag > 1 ? $" · pagina {pag + 1} de {totalPag}" : "")</div>
+                @foreach (var grupo in AgruparContratos(pageItems))
                 {
                     @if (_cAgrupar != "")
                     {
                         <div class="ctr-group-h">@grupo.Key <span class="ctr-group-n">@grupo.Count()</span></div>
                     }
-                    <div class="ctr-table-wrap">
+                    <div class="ctr-table-wrap @(_cAgrupar == "" ? "ctr-scroll" : "")">
                         <table class="ctr-table">
                             <thead>
                                 <tr>
-                                    <th>Tercero</th><th>Tipo</th><th>Inicio</th><th>Vencimiento</th>
-                                    <th class="ctr-r">$/mes</th><th>Estado</th>
+                                    <th class="ctr-w-eye"></th><th>Tercero</th><th>Tipo</th><th>Inicio</th><th>Vencimiento</th>
+                                    <th class="ctr-r">$/mes</th><th>Estado</th><th>Etapa</th><th>Contacto</th><th>Renov.</th><th class="ctr-r">Dias alerta</th><th>Observaciones</th>
                                     @foreach (var campo in CamposActivos) { <th title="@campo.Descripcion">@campo.Label</th> }
                                     <th class="ctr-w2"></th>
                                 </tr>
@@ -308,6 +311,11 @@ else
                                 {
                                     var cc = c;
                                     <tr class="ctr-row">
+                                        <td class="ctr-w-eye">
+                                            <span class="ctr-eye" @onclick="() => AbrirModal(cc)" title="Ver ficha completa">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                                            </span>
+                                        </td>
                                         @* Tercero: proveedor + NIT, ambos editables inline (click) *@
                                         <td class="ctr-ct">
                                             @if (CEnEd(c.Id, "prov"))
@@ -385,6 +393,43 @@ else
                                                 </span>
                                             }
                                         </td>
+                                        @* Etapa: click -> select de etapas configurables *@
+                                        <td>
+                                            @if (CEnEd(c.Id, "etapa"))
+                                            {
+                                                <select class="ctr-inp" value="@_cEditVal" @onchange='(e) => CEtapaSelChange(cc, e)' @onblur="CancelarCEd">
+                                                    @foreach (var et in _etapas) { <option value="@et.Id">@et.Nombre</option> }
+                                                </select>
+                                            }
+                                            else
+                                            {
+                                                var etp = _etapas.FirstOrDefault(x => x.Id == c.EtapaId);
+                                                <span class="ctr-ed" @onclick='() => IniciarCEd(cc.Id, "etapa", cc.EtapaId?.ToString())' title="Cambiar etapa">
+                                                    @if (etp is not null) { <span class="ctr-etpill" style="background:@((etp.Color ?? "#94A3B8"))22;color:@(etp.Color ?? "#64748B");">@etp.Nombre</span> }
+                                                    else { <span class="ctr-cval">-</span> }
+                                                </span>
+                                            }
+                                        </td>
+                                        @* Contacto: texto inline *@
+                                        <td>
+                                            @if (CEnEd(c.Id, "contacto"))
+                                            {
+                                                <input class="ctr-inp" @bind="_cEditVal" @bind:event="oninput" autofocus @onblur='() => GuardarCEd(cc, "contacto")' @onkeydown='(e) => CEdKeydown(e, cc, "contacto")' />
+                                            }
+                                            else { <span class="ctr-ed ctr-cval" @onclick='() => IniciarCEd(cc.Id, "contacto", cc.Contacto)'>@(string.IsNullOrWhiteSpace(c.Contacto) ? "-" : c.Contacto)</span> }
+                                        </td>
+                                        @* Renovacion automatica: solo lectura (se edita en la ficha) *@
+                                        <td><span class="ctr-cval">@(c.RenovacionAutomatica ? "Si" : "No")</span></td>
+                                        @* Dias de anticipacion de alerta: numero inline *@
+                                        <td class="ctr-r">
+                                            @if (CEnEd(c.Id, "dias"))
+                                            {
+                                                <input type="number" class="ctr-inp ctr-inp-r" @bind="_cEditVal" @bind:event="oninput" autofocus @onblur='() => GuardarCEd(cc, "dias")' @onkeydown='(e) => CEdKeydown(e, cc, "dias")' />
+                                            }
+                                            else { <span class="ctr-ed" @onclick='() => IniciarCEd(cc.Id, "dias", cc.DiasAnticipacionAlerta.ToString())'>@c.DiasAnticipacionAlerta</span> }
+                                        </td>
+                                        @* Observaciones: solo lectura truncada (se edita en la ficha) *@
+                                        <td><span class="ctr-obs" title="@c.Observaciones">@(string.IsNullOrWhiteSpace(c.Observaciones) ? "-" : c.Observaciones)</span></td>
                                         @* Columnas de campos dinamicos (EAV), editables inline *@
                                         @foreach (var campo in CamposActivos)
                                         {
@@ -429,15 +474,20 @@ else
                                             </td>
                                         }
                                         <td class="ctr-w2">
-                                            <span class="ctr-open" @onclick="() => AbrirModal(cc)" title="Abrir ficha completa">
-                                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
-                                            </span>
                                             <span class="srv-del" @onclick="() => EliminarAsync(cc.Id)" title="Eliminar"><i class="fi fi-rr-trash"></i></span>
                                         </td>
                                     </tr>
                                 }
                             </tbody>
                         </table>
+                    </div>
+                }
+                @if (totalPag > 1)
+                {
+                    <div class="ctr-pager">
+                        <button disabled="@(pag == 0)" @onclick="() => _cPage = Math.Max(0, pag - 1)">&#8249; Anterior</button>
+                        <span class="ctr-pager-info">Pagina @(pag + 1) de @totalPag</span>
+                        <button disabled="@(pag >= totalPag - 1)" @onclick="() => _cPage = pag + 1">Siguiente &#8250;</button>
                     </div>
                 }
             }
@@ -464,10 +514,15 @@ else
                     else
                     {
                         <div class="ctr-cm-list">
-                            @foreach (var campo in _cCampos.OrderBy(c => c.Orden))
+                            @{ var ordenados = _cCampos.OrderBy(c => c.Orden).ToList(); }
+                            @for (int i = 0; i < ordenados.Count; i++)
                             {
-                                var cm = campo;
+                                var idx = i; var cm = ordenados[idx];
                                 <div class="ctr-cm-row @(cm.Activo ? "" : "off")">
+                                    <div class="ctr-et-ord">
+                                        <button class="ctr-et-mv" disabled="@(idx == 0)" @onclick="() => MoverCampoAsync(ordenados, idx, -1)" title="Subir">&#9650;</button>
+                                        <button class="ctr-et-mv" disabled="@(idx == ordenados.Count - 1)" @onclick="() => MoverCampoAsync(ordenados, idx, 1)" title="Bajar">&#9660;</button>
+                                    </div>
                                     <div class="ctr-cm-rn">@cm.Label</div>
                                     <span class="ctr-cm-tipo">@TipoCampoLabel(cm.Tipo)</span>
                                     <label class="ctr-cm-sw" title="Mostrar como columna">
@@ -1294,6 +1349,22 @@ else
     .ctr-open { cursor: pointer; color: #B6C1CF; display: inline-flex; vertical-align: middle; padding: 3px; border-radius: 6px; }
     .ctr-open:hover { color: #7C5CFA; background: #F1ECFD; }
     .ctr-cval { color: #516F90; min-width: 40px; }
+    /* Ojo en la 1a columna (abre la ficha) */
+    .ctr-table th.ctr-w-eye, .ctr-table td.ctr-w-eye { width: 34px; text-align: center; }
+    .ctr-eye { cursor: pointer; color: #B6C1CF; display: inline-flex; padding: 3px; border-radius: 6px; }
+    .ctr-eye:hover { color: #7C5CFA; background: #F1ECFD; }
+    /* Pill de etapa + observaciones truncadas */
+    .ctr-etpill { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 20px; padding: 2px 9px; white-space: nowrap; }
+    .ctr-obs { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #64748B; font-size: 12px; vertical-align: middle; }
+    /* Header fijo + scroll vertical (solo sin agrupar) */
+    .ctr-table thead th { position: sticky; top: 0; z-index: 3; background: #fff; }
+    .ctr-scroll { max-height: 62vh; overflow: auto; }
+    /* Paginador */
+    .ctr-pager { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 14px 20px 6px; }
+    .ctr-pager button { border: 1px solid #D9DEE7; background: #fff; color: #46586B; font-size: 12.5px; font-weight: 700; border-radius: 8px; padding: 7px 14px; cursor: pointer; }
+    .ctr-pager button:hover:not(:disabled) { border-color: #C9B8F6; color: #5838C9; }
+    .ctr-pager button:disabled { opacity: .4; cursor: default; }
+    .ctr-pager-info { font-size: 12.5px; color: #7C8A9C; font-weight: 600; }
     /* Boton "Campos" */
     .ctr-cfg-btn { display: inline-flex; align-items: center; gap: 6px; background: #F4F1FE; color: #5838C9; border: 1px solid #E1D9FA; border-radius: 9px; padding: 8px 13px; font-size: 12.5px; font-weight: 700; cursor: pointer; }
     .ctr-cfg-btn:hover { background: #EDE7FD; border-color: #C9B8F6; }
@@ -1308,7 +1379,7 @@ else
     .ctr-cm-body { padding: 16px 20px 20px; }
     .ctr-cm-empty { padding: 16px; text-align: center; color: #94A3B8; font-size: 13px; background: #F8FAFC; border: 1px dashed #DCE4EC; border-radius: 12px; }
     .ctr-cm-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
-    .ctr-cm-row { display: grid; grid-template-columns: 1fr auto auto 34px; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #EDF1F6; border-radius: 11px; }
+    .ctr-cm-row { display: grid; grid-template-columns: 26px 1fr auto auto 34px; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #EDF1F6; border-radius: 11px; }
     .ctr-cm-row.off { opacity: .55; }
     .ctr-cm-rn { font-weight: 700; color: #26303C; font-size: 13.5px; }
     .ctr-cm-tipo { font-size: 11px; font-weight: 700; color: #6D4FE3; background: #F4F1FE; border: 1px solid #E4DBFA; border-radius: 20px; padding: 2px 9px; }
@@ -1837,6 +1908,19 @@ else
         StateHasChanged();
     }
 
+    // Reordenar columnas personalizadas: intercambia el Orden de dos campos y persiste ambos.
+    private async Task MoverCampoAsync(List<ContratoCampoDto> ordenados, int idx, int dir)
+    {
+        var j = idx + dir;
+        if (idx < 0 || idx >= ordenados.Count || j < 0 || j >= ordenados.Count) return;
+        var a = ordenados[idx]; var b = ordenados[j];
+        await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/campos/{a.Id}",
+            new ActualizarContratoCampoRequest(a.Label, a.Tipo, a.Opciones, a.Descripcion, b.Orden, a.Activo));
+        await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/campos/{b.Id}",
+            new ActualizarContratoCampoRequest(b.Label, b.Tipo, b.Opciones, b.Descripcion, a.Orden, b.Activo));
+        await RecargarCamposAsync();
+    }
+
     // Guardar el valor de un campo dinamico de un contrato (inline).
     private async Task GuardarCVal(ContratoServicioDto c, ContratoCampoDto campo)
     {
@@ -1963,6 +2047,22 @@ else
         await Auth().PutAsJsonAsync("/api/mi-copropiedad/contratos/etapas/reordenar",
             new ReordenarContratoEtapasRequest(_etapas.Select(e => e.Id).ToList()));
     }
+
+    // Cambiar la etapa de un contrato desde el select inline de la tabla.
+    private async Task CEtapaSelChange(ContratoServicioDto c, ChangeEventArgs e)
+    {
+        CancelarCEd();
+        if (!Guid.TryParse(e.Value?.ToString(), out var eid)) return;
+        var i = _contratos.FindIndex(x => x.Id == c.Id);
+        if (i >= 0) _contratos[i] = _contratos[i] with { EtapaId = eid };
+        StateHasChanged();
+        var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/{c.Id}/etapa", new CambiarEtapaContratoRequest(eid));
+        if (!resp.IsSuccessStatusCode) await CargarAsync();
+    }
+
+    // ---- Paginacion de la tabla ----
+    private int _cPage = 0;
+    private int _cPageSize = 25;
 
     // Carga perezosa de expedientes + proyectos para los desplegables del contrato.
     private async Task CargarDropdownsAsync()
@@ -2351,6 +2451,9 @@ else
             var fin = c.FechaFin;
             var valor = c.ValorMensual;
             var estado = c.Estado == EstadoContrato.Vencido ? EstadoContrato.Vigente : c.Estado;
+            string? contacto = c.Contacto;   // null => MERGE lo conserva
+            int dias = c.DiasAnticipacionAlerta;
+            string? obs = null;              // null => MERGE conserva observaciones
             var val = _cEditVal.Trim();
 
             switch (campo)
@@ -2372,13 +2475,19 @@ else
                     break;
                 case "estado":
                     if (Enum.TryParse<EstadoContrato>(val, out var es)) estado = es; break;
+                case "contacto":
+                    contacto = string.IsNullOrWhiteSpace(val) ? "" : val; break;   // "" limpia
+                case "dias":
+                    if (int.TryParse(val, out var dd)) dias = dd < 0 ? 0 : dd; break;
+                case "obs":
+                    obs = string.IsNullOrWhiteSpace(val) ? "" : val; break;   // "" limpia
             }
             CancelarCEd();
             var req = new ActualizarContratoRequest(
-                estado, c.DiasAnticipacionAlerta <= 0 ? 30 : c.DiasAnticipacionAlerta,
+                estado, dias <= 0 ? 30 : dias,
                 Tipo: tipo, Proveedor: prov, NitProveedor: nit,
-                Contacto: c.Contacto, FechaInicio: ini, FechaFin: fin,
-                ValorMensual: valor, Observaciones: null);
+                Contacto: contacto, FechaInicio: ini, FechaFin: fin,
+                ValorMensual: valor, Observaciones: obs);
             await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/{c.Id}", req);
             await CargarAsync();   // estado/alerta se derivan de FechaFin -> recargar
             StateHasChanged();
