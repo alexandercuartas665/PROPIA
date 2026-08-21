@@ -143,7 +143,10 @@ else
     <div class="srv-card">
         <div class="srv-card-head">
             <span class="srv-card-title">Todos los contratos</span>
-            <button class="srv-btn-primary" @onclick="() => AbrirModal(null)"><i class="fi fi-rr-plus"></i> Nuevo contrato</button>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <button class="ctr-cfg-btn" @onclick="() => _showCamposModal = true" title="Crear y administrar columnas personalizadas"><i class="fi fi-rr-settings-sliders"></i> Campos</button>
+                <button class="srv-btn-primary" @onclick="() => AbrirModal(null)"><i class="fi fi-rr-plus"></i> Nuevo contrato</button>
+            </div>
         </div>
 
         @* ---- Barra de filtros + agrupar ---- *@
@@ -204,7 +207,9 @@ else
                             <thead>
                                 <tr>
                                     <th>Tercero</th><th>Tipo</th><th>Inicio</th><th>Vencimiento</th>
-                                    <th class="ctr-r">$/mes</th><th>Estado</th><th class="ctr-w2"></th>
+                                    <th class="ctr-r">$/mes</th><th>Estado</th>
+                                    @foreach (var campo in CamposActivos) { <th title="@campo.Descripcion">@campo.Label</th> }
+                                    <th class="ctr-w2"></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -289,6 +294,49 @@ else
                                                 </span>
                                             }
                                         </td>
+                                        @* Columnas de campos dinamicos (EAV), editables inline *@
+                                        @foreach (var campo in CamposActivos)
+                                        {
+                                            var cpo = campo;
+                                            <td>
+                                                @if (CEnEd(c.Id, "campo:" + cpo.Id))
+                                                {
+                                                    @switch (cpo.Tipo)
+                                                    {
+                                                        case TipoCampoTablero.Seleccion:
+                                                            <select class="ctr-inp" value="@_cEditVal" @onchange='(e) => CCampoSelChange(cc, cpo, e)' @onblur="CancelarCEd">
+                                                                <option value="">-</option>
+                                                                @foreach (var op in OpcionesDe(cpo)) { <option value="@op">@op</option> }
+                                                            </select>
+                                                            break;
+                                                        case TipoCampoTablero.Booleano:
+                                                            <select class="ctr-inp" value="@_cEditVal" @onchange='(e) => CCampoSelChange(cc, cpo, e)' @onblur="CancelarCEd">
+                                                                <option value="">-</option>
+                                                                <option value="Si">Si</option>
+                                                                <option value="No">No</option>
+                                                            </select>
+                                                            break;
+                                                        case TipoCampoTablero.Fecha:
+                                                            <input type="date" class="ctr-inp" value="@_cEditVal" @oninput='(e) => _cEditVal = e.Value?.ToString() ?? ""' autofocus
+                                                                   @onblur='() => GuardarCVal(cc, cpo)' @onkeydown='(e) => CValKeydown(e, cc, cpo)' />
+                                                            break;
+                                                        case TipoCampoTablero.Numero:
+                                                        case TipoCampoTablero.Moneda:
+                                                            <input type="number" class="ctr-inp" @bind="_cEditVal" @bind:event="oninput" autofocus
+                                                                   @onblur='() => GuardarCVal(cc, cpo)' @onkeydown='(e) => CValKeydown(e, cc, cpo)' />
+                                                            break;
+                                                        default:
+                                                            <input class="ctr-inp" @bind="_cEditVal" @bind:event="oninput" autofocus
+                                                                   @onblur='() => GuardarCVal(cc, cpo)' @onkeydown='(e) => CValKeydown(e, cc, cpo)' />
+                                                            break;
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    <span class="ctr-ed ctr-cval" @onclick='() => IniciarCEd(cc.Id, "campo:" + cpo.Id, ValorCampo(cc, cpo.Id))' title="@cpo.Label">@(ValorCampo(c, cpo.Id) is { Length: > 0 } vv ? vv : "-")</span>
+                                                }
+                                            </td>
+                                        }
                                         <td class="ctr-w2">
                                             <span class="ctr-open" @onclick="() => AbrirModal(cc)" title="Abrir ficha completa">
                                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
@@ -304,6 +352,63 @@ else
             }
         }
     </div>
+
+    @* ---- Modal: configurar campos personalizados (Fase C) ---- *@
+    @if (_showCamposModal)
+    {
+        <div class="ctr-cm-back" @onclick="() => _showCamposModal = false">
+            <div class="ctr-cm" @onclick:stopPropagation="true">
+                <div class="ctr-cm-head">
+                    <div>
+                        <div class="ctr-cm-title">Campos personalizados</div>
+                        <div class="ctr-cm-sub">Columnas a medida que aparecen en la tabla de contratos.</div>
+                    </div>
+                    <button class="ctr-cm-x" @onclick="() => _showCamposModal = false" title="Cerrar"><i class="fi fi-rr-cross-small"></i></button>
+                </div>
+                <div class="ctr-cm-body">
+                    @if (_cCampos.Count == 0)
+                    {
+                        <div class="ctr-cm-empty">Aun no hay campos. Crea el primero abajo (ej. "Numero de poliza", "Responsable", "Renovado el").</div>
+                    }
+                    else
+                    {
+                        <div class="ctr-cm-list">
+                            @foreach (var campo in _cCampos.OrderBy(c => c.Orden))
+                            {
+                                var cm = campo;
+                                <div class="ctr-cm-row @(cm.Activo ? "" : "off")">
+                                    <div class="ctr-cm-rn">@cm.Label</div>
+                                    <span class="ctr-cm-tipo">@TipoCampoLabel(cm.Tipo)</span>
+                                    <label class="ctr-cm-sw" title="Mostrar como columna">
+                                        <input type="checkbox" checked="@cm.Activo" @onchange="() => ToggleCampoActivoAsync(cm)" />
+                                        <span>@(cm.Activo ? "Visible" : "Oculto")</span>
+                                    </label>
+                                    <button class="ctr-cm-del" @onclick="() => EliminarCampoAsync(cm.Id)" title="Eliminar campo"><i class="fi fi-rr-trash"></i></button>
+                                </div>
+                            }
+                        </div>
+                    }
+                    <div class="ctr-cm-new">
+                        <div class="ctr-cm-new-t">Nuevo campo</div>
+                        <div class="ctr-cm-new-grid">
+                            <input class="srv-input" placeholder="Nombre del campo" @bind="_nuevoCampoLabel" @bind:event="oninput" @onkeydown='(e) => { if (e.Key == "Enter") return CrearCampoAsync(); return Task.CompletedTask; }' />
+                            <select class="srv-input" @bind="_nuevoCampoTipo">
+                                @foreach (var t in new[] { TipoCampoTablero.Texto, TipoCampoTablero.Numero, TipoCampoTablero.Moneda, TipoCampoTablero.Fecha, TipoCampoTablero.Seleccion, TipoCampoTablero.Booleano, TipoCampoTablero.Telefono, TipoCampoTablero.Url, TipoCampoTablero.Email })
+                                {
+                                    <option value="@t">@TipoCampoLabel(t)</option>
+                                }
+                            </select>
+                        </div>
+                        @if (_nuevoCampoTipo == TipoCampoTablero.Seleccion)
+                        {
+                            <textarea class="srv-input" rows="3" placeholder="Una opcion por linea" @bind="_nuevoCampoOpciones" @bind:event="oninput"></textarea>
+                        }
+                        <button class="srv-btn-primary sm" @onclick="CrearCampoAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoCampoLabel))"><i class="fi fi-rr-plus"></i> Agregar campo</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
     }
     else
     {
@@ -996,6 +1101,32 @@ else
     .ctr-inp-r { text-align: right; }
     .ctr-open { cursor: pointer; color: #B6C1CF; display: inline-flex; vertical-align: middle; padding: 3px; border-radius: 6px; }
     .ctr-open:hover { color: #7C5CFA; background: #F1ECFD; }
+    .ctr-cval { color: #516F90; min-width: 40px; }
+    /* Boton "Campos" */
+    .ctr-cfg-btn { display: inline-flex; align-items: center; gap: 6px; background: #F4F1FE; color: #5838C9; border: 1px solid #E1D9FA; border-radius: 9px; padding: 8px 13px; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+    .ctr-cfg-btn:hover { background: #EDE7FD; border-color: #C9B8F6; }
+    /* Modal de campos */
+    .ctr-cm-back { position: fixed; inset: 0; background: rgba(30,30,50,.42); display: flex; align-items: center; justify-content: center; z-index: 1200; padding: 20px; }
+    .ctr-cm { background: #fff; width: 100%; max-width: 520px; max-height: 86vh; overflow: auto; border-radius: 16px; box-shadow: 0 24px 60px rgba(30,30,60,.28); }
+    .ctr-cm-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 20px 12px; border-bottom: 1px solid #EEF3F8; }
+    .ctr-cm-title { font-size: 16px; font-weight: 800; color: #1f2430; }
+    .ctr-cm-sub { font-size: 12px; color: #8593A5; margin-top: 2px; }
+    .ctr-cm-x { background: #F3F6FA; border: 0; border-radius: 8px; width: 30px; height: 30px; cursor: pointer; color: #64748B; font-size: 16px; display: inline-flex; align-items: center; justify-content: center; }
+    .ctr-cm-x:hover { background: #E9EEF4; }
+    .ctr-cm-body { padding: 16px 20px 20px; }
+    .ctr-cm-empty { padding: 16px; text-align: center; color: #94A3B8; font-size: 13px; background: #F8FAFC; border: 1px dashed #DCE4EC; border-radius: 12px; }
+    .ctr-cm-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+    .ctr-cm-row { display: grid; grid-template-columns: 1fr auto auto 34px; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #EDF1F6; border-radius: 11px; }
+    .ctr-cm-row.off { opacity: .55; }
+    .ctr-cm-rn { font-weight: 700; color: #26303C; font-size: 13.5px; }
+    .ctr-cm-tipo { font-size: 11px; font-weight: 700; color: #6D4FE3; background: #F4F1FE; border: 1px solid #E4DBFA; border-radius: 20px; padding: 2px 9px; }
+    .ctr-cm-sw { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: #64748B; cursor: pointer; }
+    .ctr-cm-del { background: none; border: 0; color: #C3CEDA; cursor: pointer; font-size: 14px; padding: 4px; border-radius: 6px; }
+    .ctr-cm-del:hover { color: #E14B4B; background: #FDECEC; }
+    .ctr-cm-new { border-top: 1px dashed #E4EAF0; padding-top: 14px; }
+    .ctr-cm-new-t { font-size: 12px; font-weight: 800; color: #7C8A9C; text-transform: uppercase; letter-spacing: .3px; margin-bottom: 9px; }
+    .ctr-cm-new-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 8px; margin-bottom: 8px; }
+    .ctr-cm-new textarea { margin-bottom: 8px; }
 
     .srv-ov { position: fixed; inset: 0; background: rgba(27,42,58,.55); z-index: 1200; }
     .srv-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 1210; background: #fff; border-radius: 16px; box-shadow: 0 30px 70px rgba(27,42,58,.4); width: min(720px, 96vw); max-height: 92vh; display: flex; flex-direction: column; }
@@ -1271,10 +1402,105 @@ else
         try { _contratos = await GetAuthAsync<List<ContratoServicioDto>>("/api/mi-copropiedad/contratos") ?? new(); }
         catch (SesionRedirigidaException) { return; }
         catch { _contratos = new(); }
+        try { _cCampos = await GetAuthAsync<List<ContratoCampoDto>>("/api/mi-copropiedad/contratos/campos") ?? new(); }
+        catch (SesionRedirigidaException) { return; }
+        catch { _cCampos = new(); }
         try { _servicios = await GetAuthAsync<List<ServicioDto>>("/api/servicios") ?? new(); }
         catch (SesionRedirigidaException) { return; }
         catch { _servicios = new(); }
     }
+
+    // ---- Campos personalizados (EAV) de contratos (Fase C) ----
+    private List<ContratoCampoDto> _cCampos = new();
+    private IEnumerable<ContratoCampoDto> CamposActivos => _cCampos.Where(c => c.Activo);
+    private bool _showCamposModal;
+    private string _nuevoCampoLabel = "";
+    private TipoCampoTablero _nuevoCampoTipo = TipoCampoTablero.Texto;
+    private string _nuevoCampoOpciones = "";
+
+    private string? ValorCampo(ContratoServicioDto c, Guid campoId)
+        => c.CamposValores?.FirstOrDefault(v => v.CampoId == campoId)?.Valor;
+
+    private async Task RecargarCamposAsync()
+    {
+        try { _cCampos = await GetAuthAsync<List<ContratoCampoDto>>("/api/mi-copropiedad/contratos/campos") ?? new(); }
+        catch { }
+        StateHasChanged();
+    }
+
+    private async Task CrearCampoAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevoCampoLabel)) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/contratos/campos",
+                new CrearContratoCampoRequest(_nuevoCampoLabel.Trim(), _nuevoCampoTipo,
+                    _nuevoCampoTipo == TipoCampoTablero.Seleccion && !string.IsNullOrWhiteSpace(_nuevoCampoOpciones) ? _nuevoCampoOpciones.Trim() : null, null));
+            if (resp.IsSuccessStatusCode) { _nuevoCampoLabel = ""; _nuevoCampoOpciones = ""; _nuevoCampoTipo = TipoCampoTablero.Texto; await RecargarCamposAsync(); }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ToggleCampoActivoAsync(ContratoCampoDto campo)
+    {
+        await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/campos/{campo.Id}",
+            new ActualizarContratoCampoRequest(campo.Label, campo.Tipo, campo.Opciones, campo.Descripcion, campo.Orden, !campo.Activo));
+        await RecargarCamposAsync();
+    }
+
+    private async Task EliminarCampoAsync(Guid campoId)
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", "Eliminar este campo y todos sus valores? No se puede deshacer.")) return;
+        await Auth().DeleteAsync($"/api/mi-copropiedad/contratos/campos/{campoId}");
+        await RecargarCamposAsync();
+        await CargarAsync();
+        StateHasChanged();
+    }
+
+    // Guardar el valor de un campo dinamico de un contrato (inline).
+    private async Task GuardarCVal(ContratoServicioDto c, ContratoCampoDto campo)
+    {
+        if (_cEditKey != c.Id + ":campo:" + campo.Id || _cEditBusy) return;
+        _cEditBusy = true;
+        try
+        {
+            var val = _cEditVal.Trim();
+            CancelarCEd();
+            await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/{c.Id}/campo-valor/{campo.Id}",
+                new GuardarContratoCampoValorRequest(string.IsNullOrWhiteSpace(val) ? null : val));
+            await CargarAsync();
+            StateHasChanged();
+        }
+        finally { _cEditBusy = false; }
+    }
+    private Task CCampoSelChange(ContratoServicioDto c, ContratoCampoDto campo, ChangeEventArgs e)
+    {
+        _cEditVal = e.Value?.ToString() ?? "";
+        return GuardarCVal(c, campo);
+    }
+    private async Task CValKeydown(KeyboardEventArgs e, ContratoServicioDto c, ContratoCampoDto campo)
+    {
+        if (e.Key == "Enter") await GuardarCVal(c, campo);
+        else if (e.Key == "Escape") { CancelarCEd(); StateHasChanged(); }
+    }
+    private static string TipoCampoLabel(TipoCampoTablero t) => t switch
+    {
+        TipoCampoTablero.Texto => "Texto",
+        TipoCampoTablero.AreaTexto => "Texto largo",
+        TipoCampoTablero.Numero => "Numero",
+        TipoCampoTablero.Moneda => "Moneda",
+        TipoCampoTablero.Fecha => "Fecha",
+        TipoCampoTablero.Hora => "Hora",
+        TipoCampoTablero.Telefono => "Telefono",
+        TipoCampoTablero.Seleccion => "Seleccion",
+        TipoCampoTablero.Booleano => "Si / No",
+        TipoCampoTablero.Url => "URL",
+        TipoCampoTablero.Email => "Email",
+        _ => t.ToString()
+    };
+    private static IEnumerable<string> OpcionesDe(ContratoCampoDto c)
+        => (c.Opciones ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     // Carga perezosa de expedientes + proyectos para los desplegables del contrato.
     private async Task CargarDropdownsAsync()

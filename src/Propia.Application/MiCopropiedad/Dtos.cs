@@ -204,7 +204,16 @@ public record ContratoServicioDto(
     EstadoContrato Estado, int DiasAnticipacionAlerta,
     int? DiasParaVencer, bool AlertaVencimiento,
     bool RenovacionAutomatica = false, Guid? ServicioId = null, Guid? ExpedienteId = null,
-    Guid? ProyectoTareaId = null, int CantidadAdjuntos = 0);
+    Guid? ProyectoTareaId = null, int CantidadAdjuntos = 0,
+    IReadOnlyList<ContratoCampoValorDto>? CamposValores = null);
+
+// ----- Campos personalizados (EAV) de contratos -----
+public record ContratoCampoDto(
+    Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones, string? Descripcion, bool Activo);
+public record ContratoCampoValorDto(Guid CampoId, string? Valor);
+public record CrearContratoCampoRequest(string Label, TipoCampoTablero Tipo, string? Opciones, string? Descripcion);
+public record ActualizarContratoCampoRequest(string Label, TipoCampoTablero Tipo, string? Opciones, string? Descripcion, int Orden, bool Activo);
+public record GuardarContratoCampoValorRequest(string? Valor);
 
 // Directriz: el proveedor de un contrato es un tercero del Directorio (Persona o Empresa).
 // Los campos de texto quedan como snapshot para los contratos ya cargados a mano.

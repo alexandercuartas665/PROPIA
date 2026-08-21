@@ -77,6 +77,8 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<ZonaComun> ZonasComunes => Set<ZonaComun>();
     public DbSet<EquipoActivo> EquiposActivos => Set<EquipoActivo>();
     public DbSet<ContratoServicio> ContratosServicio => Set<ContratoServicio>();
+    public DbSet<ContratoCampo> ContratoCampos => Set<ContratoCampo>();
+    public DbSet<ContratoCampoValor> ContratoCampoValores => Set<ContratoCampoValor>();
     // Servicios y contratos (Finanzas)
     public DbSet<Servicio> Servicios => Set<Servicio>();
     public DbSet<ServicioContacto> ServicioContactos => Set<ServicioContacto>();
@@ -612,6 +614,24 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasIndex(x => x.FechaFin);
             b.HasIndex(x => x.ServicioId);
             b.HasMany(x => x.Adjuntos).WithOne(a => a.Contrato!).HasForeignKey(a => a.ContratoId).OnDelete(DeleteBehavior.Cascade);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // Campos personalizados (EAV) de los contratos
+        modelBuilder.Entity<ContratoCampo>(b =>
+        {
+            b.Property(x => x.Label).IsRequired().HasMaxLength(120);
+            b.Property(x => x.Opciones).HasMaxLength(2000);
+            b.Property(x => x.Descripcion).HasMaxLength(500);
+            b.Property(x => x.Activo).HasDefaultValue(true);
+            b.HasIndex(x => x.TenantId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<ContratoCampoValor>(b =>
+        {
+            b.Property(x => x.Valor).HasMaxLength(4000);
+            b.HasIndex(x => new { x.TenantId, x.ContratoId });
+            b.HasIndex(x => new { x.ContratoId, x.ContratoCampoId }).IsUnique();
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

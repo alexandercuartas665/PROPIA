@@ -54,3 +54,34 @@ public class ContratoServicio : TenantEntity
     /// <summary>Archivos del contrato (PDF firmado, anexos, otrosi).</summary>
     public ICollection<ContratoAdjunto> Adjuntos { get; set; } = new List<ContratoAdjunto>();
 }
+
+/// <summary>
+/// Definicion de un campo personalizado (EAV) para los contratos de la copropiedad.
+/// A diferencia de los campos de un tablero, estos son compartidos por TODOS los contratos
+/// del tenant (aparecen como columna en la tabla de /contratos). Mismo patron que TableroCampo.
+/// </summary>
+public class ContratoCampo : TenantEntity
+{
+    public string Label { get; set; } = string.Empty;
+    public int Orden { get; set; }
+
+    /// <summary>Tipo de captura/render del campo (reusa el enum de tableros).</summary>
+    public TipoCampoTablero Tipo { get; set; } = TipoCampoTablero.Texto;
+
+    /// <summary>Opciones para tipo Seleccion, separadas por salto de linea.</summary>
+    public string? Opciones { get; set; }
+
+    /// <summary>Ayuda/contexto del campo.</summary>
+    public string? Descripcion { get; set; }
+
+    /// <summary>Soft-delete: si es false el campo se oculta sin borrar sus valores.</summary>
+    public bool Activo { get; set; } = true;
+}
+
+/// <summary>Valor de un campo personalizado para un contrato concreto (EAV).</summary>
+public class ContratoCampoValor : TenantEntity
+{
+    public Guid ContratoId { get; set; }
+    public Guid ContratoCampoId { get; set; }
+    public string? Valor { get; set; }
+}

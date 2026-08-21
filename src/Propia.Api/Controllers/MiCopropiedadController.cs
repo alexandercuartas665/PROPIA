@@ -489,6 +489,24 @@ public class MiCopropiedadController : ControllerBase
     public async Task<IActionResult> EliminarContrato(Guid id, CancellationToken ct)
         => await _svc.EliminarContratoAsync(id, ct) ? NoContent() : NotFound();
 
+    // Campos personalizados (EAV) de contratos
+    [HttpGet("contratos/campos")] public async Task<IActionResult> ListContratoCampos(CancellationToken ct) => Ok(await _svc.ListContratoCamposAsync(ct));
+    [HttpPost("contratos/campos")]
+    public async Task<IActionResult> CrearContratoCampo([FromBody] CrearContratoCampoRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.CrearContratoCampoAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+    [HttpPut("contratos/campos/{campoId:guid}")]
+    public async Task<IActionResult> ActualizarContratoCampo(Guid campoId, [FromBody] ActualizarContratoCampoRequest req, CancellationToken ct)
+        => await _svc.ActualizarContratoCampoAsync(campoId, req, ct) ? NoContent() : NotFound();
+    [HttpDelete("contratos/campos/{campoId:guid}")]
+    public async Task<IActionResult> EliminarContratoCampo(Guid campoId, CancellationToken ct)
+        => await _svc.EliminarContratoCampoAsync(campoId, ct) ? NoContent() : NotFound();
+    [HttpPut("contratos/{id:guid}/campo-valor/{campoId:guid}")]
+    public async Task<IActionResult> GuardarContratoCampoValor(Guid id, Guid campoId, [FromBody] GuardarContratoCampoValorRequest req, CancellationToken ct)
+        => await _svc.GuardarContratoCampoValorAsync(id, campoId, req, ct) ? NoContent() : NotFound();
+
     // ---------- Seccion 6: Zonas Comunes ----------
     [HttpGet("zonas")] public async Task<IActionResult> ListZonas(CancellationToken ct) => Ok(await _svc.ListZonasComunesAsync(ct));
     [HttpPost("zonas")]

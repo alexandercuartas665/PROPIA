@@ -1387,7 +1387,14 @@ public class MiCopropiedadService : IMiCopropiedadService
             .Include(x => x.Adjuntos)
             .OrderBy(c => c.Tipo)
             .ToListAsync(ct);
-        return contratos.Select(ToContratoDto).ToList();
+        var ids = contratos.Select(c => c.Id).ToList();
+        var valores = await _db.ContratoCampoValores.AsNoTracking()
+            .Where(v => ids.Contains(v.ContratoId))
+            .ToListAsync(ct);
+        var porContrato = valores.GroupBy(v => v.ContratoId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<ContratoCampoValorDto>)g
+                .Select(v => new ContratoCampoValorDto(v.ContratoCampoId, v.Valor)).ToList());
+        return contratos.Select(c => ToContratoDto(c, porContrato.GetValueOrDefault(c.Id))).ToList();
     }
 
     public async Task<ContratoServicioDto> CrearContratoAsync(CrearContratoServicioRequest req, CancellationToken ct)
@@ -1446,7 +1453,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         return true;
     }
 
-    private static ContratoServicioDto ToContratoDto(ContratoServicio c)
+    private static ContratoServicioDto ToContratoDto(ContratoServicio c, IReadOnlyList<ContratoCampoValorDto>? valores = null)
     {
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
         int? dias = c.FechaFin.HasValue ? c.FechaFin.Value.DayNumber - hoy.DayNumber : null;
@@ -1456,14 +1463,96 @@ public class MiCopropiedadService : IMiCopropiedadService
             c.FechaInicio, c.FechaFin, c.ValorMensual, c.Observaciones,
             estado, c.DiasAnticipacionAlerta, dias, alerta,
             c.RenovacionAutomatica, c.ServicioId, c.ExpedienteId, c.ProyectoTareaId,
-            c.Adjuntos?.Count ?? 0);
+            c.Adjuntos?.Count ?? 0, valores);
     }
 
     public async Task<bool> EliminarContratoAsync(Guid contratoId, CancellationToken ct)
     {
         var c = await _db.ContratosServicio.FirstOrDefaultAsync(x => x.Id == contratoId, ct);
         if (c is null) return false;
+        // Limpiar los valores EAV del contrato (no hay cascade configurado).
+        var valores = await _db.ContratoCampoValores.Where(v => v.ContratoId == contratoId).ToListAsync(ct);
+        if (valores.Count > 0) _db.ContratoCampoValores.RemoveRange(valores);
         _db.ContratosServicio.Remove(c);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    // ---- Campos personalizados (EAV) de contratos ----
+    public async Task<IReadOnlyList<ContratoCampoDto>> ListContratoCamposAsync(CancellationToken ct)
+    {
+        return await _db.ContratoCampos.AsNoTracking()
+            .OrderBy(c => c.Orden).ThenBy(c => c.Label)
+            .Select(c => new ContratoCampoDto(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones, c.Descripcion, c.Activo))
+            .ToListAsync(ct);
+    }
+
+    public async Task<ContratoCampoDto> CrearContratoCampoAsync(CrearContratoCampoRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Label))
+            throw new InvalidOperationException("El nombre del campo es obligatorio.");
+        var maxOrden = await _db.ContratoCampos.AnyAsync(ct) ? await _db.ContratoCampos.MaxAsync(c => (int?)c.Orden, ct) ?? 0 : 0;
+        var campo = new ContratoCampo
+        {
+            Label = req.Label.Trim(),
+            Tipo = req.Tipo,
+            Opciones = string.IsNullOrWhiteSpace(req.Opciones) ? null : req.Opciones.Trim(),
+            Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim(),
+            Orden = maxOrden + 1,
+            Activo = true
+        };
+        _db.ContratoCampos.Add(campo);
+        await _db.SaveChangesAsync(ct);
+        return new ContratoCampoDto(campo.Id, campo.Label, campo.Orden, campo.Tipo, campo.Opciones, campo.Descripcion, campo.Activo);
+    }
+
+    public async Task<bool> ActualizarContratoCampoAsync(Guid campoId, ActualizarContratoCampoRequest req, CancellationToken ct)
+    {
+        var campo = await _db.ContratoCampos.FirstOrDefaultAsync(c => c.Id == campoId, ct);
+        if (campo is null) return false;
+        if (!string.IsNullOrWhiteSpace(req.Label)) campo.Label = req.Label.Trim();
+        campo.Tipo = req.Tipo;
+        campo.Opciones = string.IsNullOrWhiteSpace(req.Opciones) ? null : req.Opciones.Trim();
+        campo.Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim();
+        campo.Orden = req.Orden;
+        campo.Activo = req.Activo;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> EliminarContratoCampoAsync(Guid campoId, CancellationToken ct)
+    {
+        var campo = await _db.ContratoCampos.FirstOrDefaultAsync(c => c.Id == campoId, ct);
+        if (campo is null) return false;
+        var valores = await _db.ContratoCampoValores.Where(v => v.ContratoCampoId == campoId).ToListAsync(ct);
+        if (valores.Count > 0) _db.ContratoCampoValores.RemoveRange(valores);
+        _db.ContratoCampos.Remove(campo);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> GuardarContratoCampoValorAsync(Guid contratoId, Guid campoId, GuardarContratoCampoValorRequest req, CancellationToken ct)
+    {
+        var contrato = await _db.ContratosServicio.AnyAsync(c => c.Id == contratoId, ct);
+        if (!contrato) return false;
+        var campo = await _db.ContratoCampos.AnyAsync(c => c.Id == campoId, ct);
+        if (!campo) return false;
+        var val = string.IsNullOrWhiteSpace(req.Valor) ? null : req.Valor.Trim();
+        var existente = await _db.ContratoCampoValores
+            .FirstOrDefaultAsync(v => v.ContratoId == contratoId && v.ContratoCampoId == campoId, ct);
+        if (existente is null)
+        {
+            if (val is null) return true;   // nada que guardar
+            _db.ContratoCampoValores.Add(new ContratoCampoValor { ContratoId = contratoId, ContratoCampoId = campoId, Valor = val });
+        }
+        else if (val is null)
+        {
+            _db.ContratoCampoValores.Remove(existente);
+        }
+        else
+        {
+            existente.Valor = val;
+        }
         await _db.SaveChangesAsync(ct);
         return true;
     }
