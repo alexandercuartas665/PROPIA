@@ -185,6 +185,13 @@ public class PqrsdController : ControllerBase
         return dto is null ? NotFound() : Ok(dto);
     }
 
+    // --- Tareas enlazadas al PQR (tablero "PQRSD") ---
+    [HttpGet("{id:guid}/tareas")]
+    public async Task<IActionResult> ListTareasDePqr(Guid id, CancellationToken ct) => Ok(await _svc.ListTareasDePqrAsync(id, ct));
+    [HttpPost("{id:guid}/tareas")]
+    public async Task<IActionResult> CrearTareaDePqr(Guid id, [FromBody] CrearPqrTareaRequest req, CancellationToken ct)
+        => await _svc.CrearTareaDePqrAsync(id, req, ct) ? NoContent() : BadRequest(new { error = "No se pudo crear la tarea." });
+
     // --- Radicacion ---
     [HttpPost]
     public async Task<IActionResult> Radicar([FromBody] RadicarPqrsdRequest req, CancellationToken ct)

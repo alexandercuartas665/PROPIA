@@ -277,3 +277,10 @@ public record RegistrarSesionComiteRequest(
     DateTimeOffset FechaSesion,
     string? Acta,
     ResultadoComite Resultado);
+
+// ----- Tareas enlazadas a un PQR (tab Tareas del modal, tablero "PQRSD") -----
+public record PqrEtapaDto(Guid Id, string Nombre, string? Color, int Orden, bool EsTerminal);
+public record PqrTareaDto(Guid Id, string NumeroTarea, string Titulo, Guid EstadoId,
+    string EstadoNombre, string? EstadoColor, bool EstadoEsTerminal, string? AsignadoNombre);
+public record PqrTareasDto(IReadOnlyList<PqrEtapaDto> Etapas, IReadOnlyList<PqrTareaDto> Tareas, int Porcentaje);
+public record CrearPqrTareaRequest(string Titulo, Guid? AsignadoPersonaId);

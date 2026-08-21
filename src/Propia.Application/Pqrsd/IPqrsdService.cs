@@ -89,4 +89,8 @@ public interface IPqrsdService
     // Comite de Convivencia (solo Denuncia)
     Task<PqrsdComiteSesionDto> EscalarAComiteAsync(Guid expedienteId, EscalarAComiteRequest req, CancellationToken ct);
     Task<bool> RegistrarSesionComiteAsync(Guid sesionId, RegistrarSesionComiteRequest req, CancellationToken ct);
+
+    // Tareas enlazadas al PQR (tablero "PQRSD" del modulo Tareas)
+    Task<PqrTareasDto> ListTareasDePqrAsync(Guid pqrId, CancellationToken ct);
+    Task<bool> CrearTareaDePqrAsync(Guid pqrId, CrearPqrTareaRequest req, CancellationToken ct);
 }

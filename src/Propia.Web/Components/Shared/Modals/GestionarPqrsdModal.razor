@@ -50,6 +50,7 @@
         {
             <button type="button" class="gpq-tab @(_tab == "responder" ? "active" : "")" @onclick='@(() => _tab = "responder")'>Responder</button>
         }
+        <button type="button" class="gpq-tab @(_tab == "tareas" ? "active" : "")" @onclick="AbrirTabTareas">Tareas@(_pqrTareas is not null && _pqrTareas.Tareas.Count > 0 ? $" ({_pqrTareas.Tareas.Count})" : "")</button>
         <button type="button" class="gpq-tab @(_tab == "historial" ? "active" : "")" @onclick='@(() => _tab = "historial")'>Historial@(_detalle.Historial.Count > 0 ? $" ({_detalle.Historial.Count})" : "")</button>
         <button type="button" class="gpq-tab @(_tab == "adjuntos" ? "active" : "")" @onclick='@(() => _tab = "adjuntos")'>Adjuntos@(_detalle.Adjuntos.Count > 0 ? $" ({_detalle.Adjuntos.Count})" : "")</button>
     </div>
@@ -723,6 +724,67 @@
             </div>
         }
     </div>
+
+    @* ===== Tab Tareas (enlazadas al PQR, tablero "PQRSD" del modulo Tareas) ===== *@
+    <div class="gpq-pane" style="@(_detalle is not null && _tab == "tareas" ? "" : "display:none")">
+        <div class="gpq-tk-new">
+            <input class="gpq-input" placeholder="Nueva tarea para este PQR..." @bind="_nuevaTareaTitulo" @bind:event="oninput"
+                   @onkeydown='@(async (e) => { if (e.Key == "Enter") await CrearPqrTareaAsync(); })' />
+            <select class="gpq-input gpq-tk-asig" @bind="_nuevaTareaAsignado">
+                <option value="">Sin asignar</option>
+                @foreach (var p in _pqrPersonas) { <option value="@p.Id">@p.Nombres @p.Apellidos</option> }
+            </select>
+            <button class="gpq-btn-brand" type="button" @onclick="CrearPqrTareaAsync" disabled="@(_pqrBusy || string.IsNullOrWhiteSpace(_nuevaTareaTitulo))">+ Agregar tarea</button>
+        </div>
+
+        @if (_pqrTareas is null)
+        {
+            <div class="gpq-tk-empty">Cargando tareas...</div>
+        }
+        else
+        {
+            <div class="gpq-tk-prog">
+                <div class="gpq-tk-prog-top"><span>Avance</span><span class="gpq-tk-prog-pct">@_pqrTareas.Porcentaje%</span></div>
+                <div class="gpq-tk-prog-bar"><div class="gpq-tk-prog-fill" style="width:@(_pqrTareas.Porcentaje)%"></div></div>
+                <div class="gpq-tk-prog-sub">@_pqrTareas.Tareas.Count(t => t.EstadoEsTerminal) de @_pqrTareas.Tareas.Count completadas</div>
+            </div>
+
+            @if (_pqrTareas.Tareas.Count == 0)
+            {
+                <div class="gpq-tk-empty">Aun no hay tareas. Crea la primera arriba.</div>
+            }
+            else
+            {
+                <div class="gpq-tk-kanban">
+                    @foreach (var et in _pqrTareas.Etapas)
+                    {
+                        var enEt = _pqrTareas.Tareas.Where(t => t.EstadoId == et.Id).ToList();
+                        <div class="gpq-tk-col">
+                            <div class="gpq-tk-col-h">
+                                <span class="gpq-tk-dot" style="background:@(et.Color ?? "#94A3B8")"></span>
+                                <span class="gpq-tk-col-t">@et.Nombre</span>
+                                <span class="gpq-tk-col-n">@enEt.Count</span>
+                            </div>
+                            <div class="gpq-tk-col-body">
+                                @foreach (var t in enEt)
+                                {
+                                    <div class="gpq-tk-card">
+                                        <div class="gpq-tk-card-t">@t.Titulo</div>
+                                        <div class="gpq-tk-card-m">
+                                            <span class="gpq-tk-num">@t.NumeroTarea</span>
+                                            @if (!string.IsNullOrWhiteSpace(t.AsignadoNombre)) { <span class="gpq-tk-asig-b">@t.AsignadoNombre</span> }
+                                        </div>
+                                    </div>
+                                }
+                                @if (enEt.Count == 0) { <div class="gpq-tk-col-empty">-</div> }
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="gpq-tk-foot">Las tareas se gestionan en el modulo <strong>Tareas</strong> (tablero "PQRSD"): alli cambias estado, responsable y fecha.</div>
+            }
+        }
+    </div>
 </div>
 </div>
 
@@ -760,6 +822,31 @@
     .gpq-tabs { display: flex; gap: 2px; padding: 0 24px; border-bottom: 1px solid #EEF3F8; flex-shrink: 0; background: #fff; }
     .gpq-tab { border: 0; background: transparent; padding: 11px 16px; font-size: 13px; font-weight: 700; color: #7C98B6; cursor: pointer; border-bottom: 2px solid transparent; font-family: inherit; }
     .gpq-tab.active { color: var(--propia-brand, #6D4FE3); border-bottom-color: var(--propia-brand, #6D4FE3); }
+    /* ---- Tab Tareas del PQR ---- */
+    .gpq-tk-new { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+    .gpq-tk-new .gpq-input { flex: 1 1 220px; min-width: 160px; }
+    .gpq-tk-asig { flex: 0 1 190px; cursor: pointer; }
+    .gpq-tk-empty { text-align: center; color: #94A3B8; font-size: 13px; padding: 22px; background: #F8FAFC; border: 1px dashed #DCE4EC; border-radius: 12px; }
+    .gpq-tk-prog { margin-bottom: 16px; }
+    .gpq-tk-prog-top { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; font-weight: 700; color: #64748B; }
+    .gpq-tk-prog-pct { font-size: 18px; font-weight: 800; color: #22C55E; }
+    .gpq-tk-prog-bar { height: 9px; background: #EEF3F8; border-radius: 20px; overflow: hidden; margin: 6px 0 4px; }
+    .gpq-tk-prog-fill { height: 100%; background: linear-gradient(90deg, #34C77B, #22C55E); border-radius: 20px; transition: width .3s; }
+    .gpq-tk-prog-sub { font-size: 11.5px; color: #94A3B8; }
+    .gpq-tk-kanban { display: flex; gap: 11px; overflow-x: auto; align-items: flex-start; padding-bottom: 6px; }
+    .gpq-tk-col { flex: 0 0 210px; background: #F7F9FC; border: 1px solid #EDF1F6; border-radius: 12px; padding: 8px; }
+    .gpq-tk-col-h { display: flex; align-items: center; gap: 6px; padding: 5px 6px 8px; }
+    .gpq-tk-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+    .gpq-tk-col-t { font-size: 12px; font-weight: 800; color: #33414F; flex: 1; }
+    .gpq-tk-col-n { font-size: 10.5px; font-weight: 800; color: #7C8A9C; background: #E9EEF4; border-radius: 20px; padding: 1px 7px; }
+    .gpq-tk-col-body { display: flex; flex-direction: column; gap: 7px; min-height: 40px; }
+    .gpq-tk-card { background: #fff; border: 1px solid #E9EEF3; border-radius: 10px; padding: 9px 10px; box-shadow: 0 1px 2px rgba(45,62,80,.05); }
+    .gpq-tk-card-t { font-size: 12.5px; font-weight: 600; color: #26303C; }
+    .gpq-tk-card-m { display: flex; align-items: center; gap: 7px; margin-top: 5px; flex-wrap: wrap; }
+    .gpq-tk-num { font-size: 10.5px; font-weight: 700; color: #A6B2C1; }
+    .gpq-tk-asig-b { font-size: 10.5px; font-weight: 700; color: #5838C9; background: #F1ECFD; border-radius: 20px; padding: 1px 8px; }
+    .gpq-tk-col-empty { color: #C3CEDA; font-size: 11px; text-align: center; padding: 8px; }
+    .gpq-tk-foot { margin-top: 14px; font-size: 11.5px; color: #94A3B8; }
     .gpq-pane { width: 100%; padding: 20px 24px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
     .gpq-close {
         width: 34px; height: 34px; border-radius: 9px;
@@ -1218,6 +1305,44 @@
     private bool _msgError;
     private bool _huboCambios;
     private string _tab = "detalle";
+
+    // ---- Tab Tareas (enlazadas al PQR, tablero "PQRSD") ----
+    private PqrTareasDto? _pqrTareas;
+    private List<PersonaResumenDto> _pqrPersonas = new();
+    private string _nuevaTareaTitulo = "";
+    private Guid? _nuevaTareaAsignado;
+    private bool _pqrBusy;
+
+    private async Task AbrirTabTareas()
+    {
+        _tab = "tareas";
+        if (_pqrTareas is null) await CargarPqrTareasAsync();
+    }
+
+    private async Task CargarPqrTareasAsync()
+    {
+        try { _pqrTareas = await Auth().GetFromJsonAsync<PqrTareasDto>($"/api/pqrsd/{ExpedienteId}/tareas"); }
+        catch { _pqrTareas = new PqrTareasDto(new List<PqrEtapaDto>(), new List<PqrTareaDto>(), 0); }
+        if (_pqrPersonas.Count == 0)
+        {
+            try { _pqrPersonas = await Auth().GetFromJsonAsync<List<PersonaResumenDto>>("/api/directorio/personas") ?? new(); }
+            catch { _pqrPersonas = new(); }
+        }
+        StateHasChanged();
+    }
+
+    private async Task CrearPqrTareaAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevaTareaTitulo) || _pqrBusy) return;
+        _pqrBusy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/pqrsd/{ExpedienteId}/tareas",
+                new CrearPqrTareaRequest(_nuevaTareaTitulo.Trim(), _nuevaTareaAsignado));
+            if (resp.IsSuccessStatusCode) { _nuevaTareaTitulo = ""; _nuevaTareaAsignado = null; await CargarPqrTareasAsync(); }
+        }
+        finally { _pqrBusy = false; }
+    }
 
     // Edicion de propiedad + solicitante + campos dinamicos
     private List<UnidadDto> _unidades = new();

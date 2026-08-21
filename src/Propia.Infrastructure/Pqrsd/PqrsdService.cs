@@ -1824,4 +1824,55 @@ public class PqrsdService : IPqrsdService
         await _db.SaveChangesAsync(ct);
         return true;
     }
+
+    // ===================== Tareas enlazadas al PQR (tablero "PQRSD") =====================
+    private const string TableroPqrsdNombre = "PQRSD";
+
+    private async Task<Guid> AsegurarTableroPqrsdAsync(CancellationToken ct)
+    {
+        var board = await _db.Tableros.FirstOrDefaultAsync(t => t.Nombre == TableroPqrsdNombre, ct);
+        if (board is not null) return board.Id;
+        var dto = await _tareas.CrearTableroAsync(
+            new Propia.Application.Tareas.GuardarTableroRequest(TableroPqrsdNombre, "Tareas generadas desde PQRSD", "#7C5CFA", new List<Guid>()), ct);
+        return dto.Id;
+    }
+
+    public async Task<bool> CrearTareaDePqrAsync(Guid pqrId, CrearPqrTareaRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Titulo)) return false;
+        if (!await _db.PqrsdExpedientes.AnyAsync(x => x.Id == pqrId, ct)) return false;
+        var boardId = await AsegurarTableroPqrsdAsync(ct);
+        var det = await _tareas.CrearTareaAsync(new Propia.Application.Tareas.CrearTareaRequest(
+            req.Titulo.Trim(), null, PrioridadTarea.Normal, null, req.AsignadoPersonaId,
+            null, null, null, null, TableroId: boardId), ct);
+        // Enlazar la tarea al PQR (Origen = modulo externo). CrearTareaRequest no lleva estos campos.
+        var t = await _db.Tareas.FirstOrDefaultAsync(x => x.Id == det.Id, ct);
+        if (t is not null)
+        {
+            t.Origen = OrigenTarea.ModuloExterno;
+            t.ModuloOrigenCodigo = TableroPqrsdNombre;
+            t.ModuloOrigenEntidadId = pqrId;
+            await _db.SaveChangesAsync(ct);
+        }
+        return true;
+    }
+
+    public async Task<PqrTareasDto> ListTareasDePqrAsync(Guid pqrId, CancellationToken ct)
+    {
+        var boardId = await AsegurarTableroPqrsdAsync(ct);
+        var etapas = await _db.TareasEstados.AsNoTracking()
+            .Where(e => e.TableroId == boardId).OrderBy(e => e.Orden)
+            .Select(e => new PqrEtapaDto(e.Id, e.Nombre, e.Color, e.Orden, e.EsTerminal))
+            .ToListAsync(ct);
+        var tareas = await _db.Tareas.AsNoTracking()
+            .Where(t => t.ModuloOrigenCodigo == TableroPqrsdNombre && t.ModuloOrigenEntidadId == pqrId && !t.Eliminada)
+            .Include(t => t.Estado).Include(t => t.AsignadoPersona)
+            .OrderBy(t => t.NumeroTarea)
+            .Select(t => new PqrTareaDto(t.Id, t.NumeroTarea, t.Titulo, t.EstadoId,
+                t.Estado!.Nombre, t.Estado.Color, t.Estado.EsTerminal,
+                t.AsignadoPersona != null ? (t.AsignadoPersona.Nombres + " " + t.AsignadoPersona.Apellidos).Trim() : null))
+            .ToListAsync(ct);
+        var pct = tareas.Count == 0 ? 0 : (int)Math.Round(100.0 * tareas.Count(x => x.EstadoEsTerminal) / tareas.Count);
+        return new PqrTareasDto(etapas, tareas, pct);
+    }
 }
