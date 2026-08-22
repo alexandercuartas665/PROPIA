@@ -190,7 +190,10 @@ public class PqrsdController : ControllerBase
     public async Task<IActionResult> ListTareasDePqr(Guid id, CancellationToken ct) => Ok(await _svc.ListTareasDePqrAsync(id, ct));
     [HttpPost("{id:guid}/tareas")]
     public async Task<IActionResult> CrearTareaDePqr(Guid id, [FromBody] CrearPqrTareaRequest req, CancellationToken ct)
-        => await _svc.CrearTareaDePqrAsync(id, req, ct) ? NoContent() : BadRequest(new { error = "No se pudo crear la tarea." });
+    {
+        var tareaId = await _svc.CrearTareaDePqrAsync(id, req, ct);
+        return tareaId is null ? BadRequest(new { error = "No se pudo crear la tarea." }) : Ok(new { id = tareaId });
+    }
 
     // --- Radicacion ---
     [HttpPost]

@@ -1837,10 +1837,10 @@ public class PqrsdService : IPqrsdService
         return dto.Id;
     }
 
-    public async Task<bool> CrearTareaDePqrAsync(Guid pqrId, CrearPqrTareaRequest req, CancellationToken ct)
+    public async Task<Guid?> CrearTareaDePqrAsync(Guid pqrId, CrearPqrTareaRequest req, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Titulo)) return false;
-        if (!await _db.PqrsdExpedientes.AnyAsync(x => x.Id == pqrId, ct)) return false;
+        if (string.IsNullOrWhiteSpace(req.Titulo)) return null;
+        if (!await _db.PqrsdExpedientes.AnyAsync(x => x.Id == pqrId, ct)) return null;
         var boardId = await AsegurarTableroPqrsdAsync(ct);
         var det = await _tareas.CrearTareaAsync(new Propia.Application.Tareas.CrearTareaRequest(
             req.Titulo.Trim(), null, PrioridadTarea.Normal, null, req.AsignadoPersonaId,
@@ -1854,7 +1854,7 @@ public class PqrsdService : IPqrsdService
             t.ModuloOrigenEntidadId = pqrId;
             await _db.SaveChangesAsync(ct);
         }
-        return true;
+        return det.Id;
     }
 
     public async Task<PqrTareasDto> ListTareasDePqrAsync(Guid pqrId, CancellationToken ct)
@@ -1870,7 +1870,8 @@ public class PqrsdService : IPqrsdService
             .OrderBy(t => t.NumeroTarea)
             .Select(t => new PqrTareaDto(t.Id, t.NumeroTarea, t.Titulo, t.EstadoId,
                 t.Estado!.Nombre, t.Estado.Color, t.Estado.EsTerminal,
-                t.AsignadoPersona != null ? (t.AsignadoPersona.Nombres + " " + t.AsignadoPersona.Apellidos).Trim() : null))
+                t.AsignadoPersona != null ? (t.AsignadoPersona.Nombres + " " + t.AsignadoPersona.Apellidos).Trim() : null,
+                t.Prioridad.ToString(), t.FechaVencimiento, t.Progreso))
             .ToListAsync(ct);
         var pct = tareas.Count == 0 ? 0 : (int)Math.Round(100.0 * tareas.Count(x => x.EstadoEsTerminal) / tareas.Count);
         return new PqrTareasDto(etapas, tareas, pct);

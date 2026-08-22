@@ -281,6 +281,7 @@ public record RegistrarSesionComiteRequest(
 // ----- Tareas enlazadas a un PQR (tab Tareas del modal, tablero "PQRSD") -----
 public record PqrEtapaDto(Guid Id, string Nombre, string? Color, int Orden, bool EsTerminal);
 public record PqrTareaDto(Guid Id, string NumeroTarea, string Titulo, Guid EstadoId,
-    string EstadoNombre, string? EstadoColor, bool EstadoEsTerminal, string? AsignadoNombre);
+    string EstadoNombre, string? EstadoColor, bool EstadoEsTerminal, string? AsignadoNombre,
+    string Prioridad = "Normal", DateOnly? FechaVencimiento = null, int Progreso = 0);
 public record PqrTareasDto(IReadOnlyList<PqrEtapaDto> Etapas, IReadOnlyList<PqrTareaDto> Tareas, int Porcentaje);
 public record CrearPqrTareaRequest(string Titulo, Guid? AsignadoPersonaId);

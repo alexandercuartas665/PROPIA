@@ -567,11 +567,13 @@ else
                 </div>
                 @if (_cardGroup == "none")
                 {
-                    @* Sin agrupar: lista plana, sin encabezados de grupo. *@
+                    @* Sin agrupar: lista plana, sin encabezados de grupo. La fila de alta compacta
+                       al final permite crear tareas tambien en esta vista (la etapa se elige en la fila). *@
                     @foreach (var t in AplicarSort(_tareas.Where(x => x.PadreId == null).Where(PasaFiltros).ToList()))
                     {
                         @RenderArbol(t, 0)
                     }
+                    @NuevaFilaFlat
                 }
                 else if (string.IsNullOrEmpty(_cardGroup))
                 {
@@ -670,9 +672,13 @@ else
                                 }
                             </div>
                         }
-                        <div class="tb-row-acc">
+                        <div class="tb-row-acc tb-nf-acts">
                             <button class="tb-nf-crear" title="Crear tarea (Enter)" @onclick="() => CrearDesdeNuevaFila(estado.Id)" disabled="@string.IsNullOrWhiteSpace(nf.Titulo)">
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>
+                            </button>
+                            @* Expander estilo Airtable: crea la tarea y abre de una su modal completo. *@
+                            <button class="tb-nf-crear tb-nf-abrir" title="Crear y abrir la tarea" @onclick="() => CrearDesdeNuevaFilaYAbrir(estado.Id)" disabled="@string.IsNullOrWhiteSpace(nf.Titulo)">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                             </button>
                         </div>
                     </div>
@@ -2153,6 +2159,8 @@ else
     .tb-row { display: flex; align-items: center; gap: 12px; padding: 9px 18px; border-bottom: 1px solid #F4F7FA; min-width: 860px; border-left: 3px solid transparent; }
     .tb-row:hover { background: #FBFAFE; }
     .tb-row-tit { width: 300px; flex-shrink: 0; min-width: 0; display: flex; align-items: center; gap: 5px; }
+    /* Codigo de la tarea como primer elemento de la fila (chip discreto, estilo Airtable/Linear). */
+    .tb-row-num { flex-shrink: 0; font-size: 10px; font-weight: 800; letter-spacing: .02em; color: #7C8A9C; background: #F0F3F8; border: 1px solid #E4EAF1; border-radius: 6px; padding: 1px 6px; font-variant-numeric: tabular-nums; }
     .tb-exp { width: 20px; height: 20px; flex-shrink: 0; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: #6D4FE3; background: #F1ECFD; border: 0; cursor: pointer; }
     .tb-row-child { background: #FCFCFE; }
     .tb-row-kidmark { width: 20px; flex-shrink: 0; display: flex; justify-content: center; color: #C3D0DD; font-weight: 700; }
@@ -2295,6 +2303,11 @@ else
     .tb-nf-crear { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: #fff; background: #6D4FE3; border: 0; cursor: pointer; }
     .tb-nf-crear:hover { background: #5B3FD1; }
     .tb-nf-crear:disabled { background: #D7DCE6; cursor: default; }
+    /* Acciones de la fila de alta: crear + expander "crear y abrir" (estilo Airtable). */
+    .tb-nf-acts { display: flex; gap: 4px; align-items: center; }
+    .tb-nf-abrir { background: #F1ECFD; color: #6D4FE3; }
+    .tb-nf-abrir:hover { background: #E4DBFB; }
+    .tb-nf-abrir:disabled { background: #F0F3F8; color: #C3CEDA; }
     /* Compositor rapido en tarjetas (kanban) */
     .tb-composer { background: #fff; border: 1.5px solid #6D4FE3; border-radius: 11px; padding: 9px; box-shadow: 0 4px 14px rgba(109,79,227,.15); display: flex; flex-direction: column; gap: 7px; }
     .tb-composer-inp { width: 100%; border: 0; outline: none; font-size: 13px; color: #33475B; font-weight: 600; background: transparent; box-sizing: border-box; }
@@ -3129,6 +3142,31 @@ else
         }
         catch { }
     }
+
+    /// <summary>
+    /// Si la URL trae ?abrir={tareaId} (llegada desde otro modulo, ej. tab Tareas de un PQR),
+    /// abre el tablero de esa tarea y su modal completo. Devuelve true si tomo el control.
+    /// </summary>
+    private async Task<bool> AbrirTareaDesdeQueryAsync()
+    {
+        try
+        {
+            var query = new Uri(Nav.Uri).Query.TrimStart('?');
+            var abrirRaw = query.Split('&', StringSplitOptions.RemoveEmptyEntries)
+                .Select(p => p.Split('=', 2))
+                .Where(kv => kv.Length == 2 && kv[0].Equals("abrir", StringComparison.OrdinalIgnoreCase))
+                .Select(kv => Uri.UnescapeDataString(kv[1]))
+                .FirstOrDefault();
+            if (!Guid.TryParse(abrirRaw, out var tareaId)) return false;
+            var det = await Auth().GetFromJsonAsync<TareaDetalleDto>($"/api/tareas/{tareaId}");
+            if (det?.TableroId is not Guid boardId || _tableros.All(t => t.Id != boardId)) return false;
+            await AbrirBoardAsync(boardId);
+            var t = _tareas.FirstOrDefault(x => x.Id == tareaId);
+            if (t is not null) await AbrirCardDraft(t, null);
+            return true;
+        }
+        catch { return false; }
+    }
     private List<PersonaMini>? _personas;
     private readonly HashSet<Guid> _expandidas = new();
 
@@ -3900,7 +3938,10 @@ else
                 _jwt = stored;
                 _miUsuarioId = LeerUsuarioIdDeJwt(stored);
                 await CargarAsync();
-                await AbrirUltimoTableroAsync();   // por usuario: reabrir el ultimo tablero en su ultimo modo
+                // ?abrir={tareaId}: llega desde otros modulos (ej. tab Tareas de un PQR) para
+                // abrir directamente el modal completo de esa tarea (en su tablero).
+                if (!await AbrirTareaDesdeQueryAsync())
+                    await AbrirUltimoTableroAsync();   // por usuario: reabrir el ultimo tablero en su ultimo modo
                 StateHasChanged();
             }
         }
@@ -4570,6 +4611,10 @@ else
         <div class="tb-row @(esHija ? "tb-row-child" : "")" style="border-left-color:@(t.Color ?? (esHija ? "#E1E8EE" : "transparent"))">
             @* ---- TITULO (editable inline) ---- *@
             <div class="tb-row-tit @(_pinTitulo ? "tb-pin" : "")" style="padding-left:@(depth * 22)px">
+                @if (!string.IsNullOrWhiteSpace(t.NumeroTarea))
+                {
+                    <span class="tb-row-num" title="Codigo de la tarea">@t.NumeroTarea</span>
+                }
                 @if (t.CantidadSubtareas > 0)
                 {
                     <button class="tb-exp" @onclick="() => ToggleExp(tarea.Id)" title="Ver tareas hijas">
@@ -5002,6 +5047,86 @@ else
         if (resp.IsSuccessStatusCode) { _nuevaFilas[estadoId] = new NuevaFilaDraft { EstadoId = estadoId }; _nfFocusEstado = estadoId; await RecargarBoard(); }
         else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
     }
+
+    /// <summary>
+    /// Expander estilo Airtable de la fila de alta: crea la tarea y abre de una su modal completo
+    /// (mismo flujo que CrearDesdeNuevaFila y luego AbrirCardDraft de la recien creada).
+    /// </summary>
+    private async Task CrearDesdeNuevaFilaYAbrir(Guid estadoId)
+    {
+        var d = NuevaFilaDe(estadoId);
+        if (string.IsNullOrWhiteSpace(d.Titulo) || _board is null) return;
+        var camposValores = d.Campos.Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+            .Select(kv => new TareaCampoValorDto(kv.Key, kv.Value)).ToList();
+        var oTipo = string.IsNullOrWhiteSpace(d.OrigenTipo) ? null : d.OrigenTipo;
+        var oRef = oTipo is null || string.IsNullOrWhiteSpace(d.OrigenReferencia) ? null : d.OrigenReferencia;
+        var req = new CrearTareaRequest(d.Titulo.Trim(), string.IsNullOrWhiteSpace(d.Descripcion) ? null : d.Descripcion.Trim(),
+            d.Prioridad, d.EstadoId, null, null, d.FechaVencimiento, null, new List<Guid>(), _board.Tablero.Id,
+            null, false, d.Valor, null, null, oTipo, oRef, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores);
+        var resp = await Auth().PostAsJsonAsync("/api/tareas", req);
+        if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+        _nuevaFilas[estadoId] = new NuevaFilaDraft { EstadoId = estadoId };
+        await RecargarBoard();
+        try
+        {
+            var det = await resp.Content.ReadFromJsonAsync<TareaDetalleDto>();
+            var t = det is null ? null : _tareas.FirstOrDefault(x => x.Id == det.Id);
+            if (t is not null) await AbrirCardDraft(t, null);
+        }
+        catch { }
+    }
+
+    // Fila de alta compacta para la vista de lista cuando NO esta agrupada por etapa
+    // (sin agrupar o agrupada por otra dimension): la etapa se elige en la propia fila.
+    private RenderFragment NuevaFilaFlat => __builder =>
+    {
+        if (_board is null || _board.Estados.Count == 0) { return; }
+        var estadoId = _board.Estados[0].Id;
+        var nf = NuevaFilaDe(estadoId);
+        <div class="tb-newrow" @key="nf">
+            <div class="tb-row-tit @(_pinTitulo ? "tb-pin" : "")">
+                <span class="tb-newrow-plus">+</span>
+                <input class="tb-nf-inp tb-nf-tit" data-nf-tit="@estadoId" placeholder="Nueva tarea..." @oninput="@(e => nf.Titulo = e.Value?.ToString() ?? string.Empty)" @onkeydown="@(e => NuevaFilaKeydown(e, estadoId))" />
+            </div>
+            @if (_colDesc) { <div class="tb-row-desc"><input class="tb-nf-inp" placeholder="Descripcion" @oninput="@(e => nf.Descripcion = e.Value?.ToString())" @onkeydown="@(e => NuevaFilaKeydown(e, estadoId))" /></div> }
+            <div class="tb-row-cell-est">
+                <select class="tb-est-sel" style="background:#6D4FE3" @bind="nf.EstadoId">
+                    @foreach (var es in _board.Estados) { <option value="@es.Id" style="background:#fff;color:#33475B">@es.Nombre</option> }
+                </select>
+            </div>
+            @if (_colResp)
+            {
+                <div class="tb-row-resp">
+                    <select class="tb-nf-inp" value="@(nf.Asignados.Count > 0 ? nf.Asignados[0].ToString() : "")" @onchange="@(e => SetNuevaFilaAsignado(nf, e))">
+                        <option value="">Sin asignar</option>
+                        @foreach (var p in _personas ?? new List<PersonaMini>()) { <option value="@p.Id">@p.Nombre</option> }
+                    </select>
+                </div>
+            }
+            <div class="tb-row-prog"><span class="tb-nf-mut">&mdash;</span></div>
+            @if (_colEtiq) { <div class="tb-row-etiq"></div> }
+            @if (_colPrio)
+            {
+                <div class="tb-row-prio">
+                    <select class="tb-prio-sel" style="color:@PrioFg(nf.Prioridad);background:@PrioBg(nf.Prioridad)" @bind="nf.Prioridad">
+                        @foreach (var pr in Enum.GetValues<PrioridadTarea>()) { <option value="@pr" style="background:#fff;color:#33475B">@pr</option> }
+                    </select>
+                </div>
+            }
+            @if (_colDue) { <div class="tb-row-due"><input type="date" class="tb-nf-inp" @bind="nf.FechaVencimiento" /></div> }
+            @if (_colValor) { <div class="tb-row-valor tb-num"><input type="number" step="1000" class="tb-nf-inp" placeholder="$" @bind="nf.Valor" @bind:event="oninput" /></div> }
+            @if (_colOrigen) { <div class="tb-row-orig"></div> }
+            @foreach (var c in CamposVisibles) { <div class="tb-row-campo tb-cc-@c.Id"></div> }
+            <div class="tb-row-acc tb-nf-acts">
+                <button class="tb-nf-crear" title="Crear tarea (Enter)" @onclick="() => CrearDesdeNuevaFila(estadoId)" disabled="@string.IsNullOrWhiteSpace(nf.Titulo)">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>
+                </button>
+                <button class="tb-nf-crear tb-nf-abrir" title="Crear y abrir la tarea" @onclick="() => CrearDesdeNuevaFilaYAbrir(estadoId)" disabled="@string.IsNullOrWhiteSpace(nf.Titulo)">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                </button>
+            </div>
+        </div>
+    };
 
     // Compositor progresivo en la vista tarjetas (kanban): titulo primero y, a medida
     // que se tabula, van apareciendo los demas campos (descripcion, asignado, prioridad,
