@@ -149,11 +149,11 @@
            extraidos para no engrosar esta pagina. *@
         @if (_tab == "personas")
         {
-            <DirectorioPersonasVista Personas="PersonasFiltradas" Vista="_view" OnAbrir="AbrirPersona" OnCrear="CrearPersonaTabla" />
+            <DirectorioPersonasVista Personas="PersonasFiltradas" Vista="_view" OnAbrir="AbrirPersona" OnCrear="CrearPersonaTabla" OnCrearAbrir="CrearPersonaTablaYAbrir" />
         }
         else
         {
-            <DirectorioEmpresasVista Empresas="EmpresasFiltradas" Vista="_view" OnAbrir="AbrirEmpresa" OnCrear="CrearEmpresaTabla" />
+            <DirectorioEmpresasVista Empresas="EmpresasFiltradas" Vista="_view" OnAbrir="AbrirEmpresa" OnCrear="CrearEmpresaTabla" OnCrearAbrir="CrearEmpresaTablaYAbrir" />
         }
     }
 </div>
@@ -845,6 +845,11 @@
     .dtab-add { width: 26px; height: 26px; padding: 0; line-height: 1; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 7px; background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 17px; font-weight: 700; cursor: pointer; font-family: inherit; }
     .dtab-add:hover:not(:disabled) { filter: brightness(1.08); }
     .dtab-add:disabled { background: transparent; color: #D9E0E8; cursor: default; }
+    /* Fila de alta: "+" y el expander "crear y abrir ficha" (estilo Airtable) lado a lado. */
+    .dtab-act-nf { display: flex; gap: 4px; align-items: center; justify-content: flex-end; }
+    .dtab-abrir { background: #F1ECFD; color: #6D4FE3; }
+    .dtab-abrir:hover:not(:disabled) { background: #E4DBFB; filter: none; }
+    .dtab-abrir:disabled { background: transparent; color: #D9E0E8; }
     .dir-impres { margin: 0 0 14px; font-size: 12.5px; color: #33475B; background: #F1F8F4; border: 1px solid #CDE9D8; border-radius: 10px; padding: 10px 14px; }
     .dir-impres-err { color: #C0383C; font-weight: 700; }
     .dir-impres-list { margin: 6px 0 0; padding-left: 18px; color: #C0383C; font-size: 12px; }
@@ -1298,7 +1303,16 @@
     }
 
     // Alta inline desde la vista Tabla (personas). Crea la persona + la vincula a la copropiedad.
-    private async Task CrearPersonaTabla(NuevaPersonaDir d)
+    private async Task CrearPersonaTabla(NuevaPersonaDir d) => await CrearPersonaTablaCoreAsync(d);
+
+    // Expander de la fila de alta: crea la persona y abre de una su ficha.
+    private async Task CrearPersonaTablaYAbrir(NuevaPersonaDir d)
+    {
+        var id = await CrearPersonaTablaCoreAsync(d);
+        if (id is Guid g) await AbrirPersona(g);
+    }
+
+    private async Task<Guid?> CrearPersonaTablaCoreAsync(NuevaPersonaDir d)
     {
         _loadError = null;
         var http = Auth();
@@ -1307,17 +1321,27 @@
         if (!crear.IsSuccessStatusCode)
         {
             _loadError = "No se pudo crear la persona: " + await MensajeDeError(crear, "revisa los datos de la fila.");
-            return;
+            return null;
         }
         var nueva = await crear.Content.ReadFromJsonAsync<PersonaDetalleDto>();
         if (nueva is not null)
             await http.PostAsJsonAsync("/api/directorio/vinculos",
                 new CrearVinculoRequest(EntidadDirectorio.Persona, nueva.Id, DateOnly.FromDateTime(DateTime.UtcNow), new List<Guid>()));
         await CargarAsync();
+        return nueva?.Id;
     }
 
     // Alta inline desde la vista Tabla (empresas).
-    private async Task CrearEmpresaTabla(NuevaEmpresaDir d)
+    private async Task CrearEmpresaTabla(NuevaEmpresaDir d) => await CrearEmpresaTablaCoreAsync(d);
+
+    // Expander de la fila de alta: crea la empresa y abre de una su ficha.
+    private async Task CrearEmpresaTablaYAbrir(NuevaEmpresaDir d)
+    {
+        var id = await CrearEmpresaTablaCoreAsync(d);
+        if (id is Guid g) await AbrirEmpresa(g);
+    }
+
+    private async Task<Guid?> CrearEmpresaTablaCoreAsync(NuevaEmpresaDir d)
     {
         _loadError = null;
         var http = Auth();
@@ -1326,13 +1350,14 @@
         if (!crear.IsSuccessStatusCode)
         {
             _loadError = "No se pudo crear la empresa: " + await MensajeDeError(crear, "revisa los datos de la fila.");
-            return;
+            return null;
         }
         var nueva = await crear.Content.ReadFromJsonAsync<EmpresaDetalleDto>();
         if (nueva is not null)
             await http.PostAsJsonAsync("/api/directorio/vinculos",
                 new CrearVinculoRequest(EntidadDirectorio.Empresa, nueva.Id, DateOnly.FromDateTime(DateTime.UtcNow), new List<Guid>()));
         await CargarAsync();
+        return nueva?.Id;
     }
 
     // La API responde {"error":"..."} en los 400; sin esto el banner mostraba el JSON crudo.

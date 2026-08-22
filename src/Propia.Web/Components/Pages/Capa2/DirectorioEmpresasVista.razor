@@ -83,7 +83,13 @@ else
                 <input class="dtab-inp" placeholder="Email" @oninput="@(e => _draft.Email = e.Value?.ToString())" @onkeydown="RowKeydown" />
                 <input class="dtab-inp" placeholder="Telefono" @oninput="@(e => _draft.Telefono = e.Value?.ToString())" @onkeydown="RowKeydown" />
                 <div class="dtab-nf-mut">Activo</div>
-                <div class="dtab-act"><button type="button" class="dtab-add" title="Agregar (Enter)" @onclick="CrearEmpresaInline" disabled="@(_busy || !DraftValido)">+</button></div>
+                <div class="dtab-act dtab-act-nf">
+                    <button type="button" class="dtab-add" title="Agregar (Enter)" @onclick="CrearEmpresaInline" disabled="@(_busy || !DraftValido)">+</button>
+                    @* Expander estilo Airtable: crea la empresa y abre de una su ficha. *@
+                    <button type="button" class="dtab-add dtab-abrir" title="Crear y abrir ficha" @onclick="CrearEmpresaAbrirInline" disabled="@(_busy || !DraftValido)">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -93,6 +99,8 @@ else
     [Parameter] public List<EmpresaResumenDto>? Empresas { get; set; }
     [Parameter] public EventCallback<Guid> OnAbrir { get; set; }
     [Parameter] public EventCallback<NuevaEmpresaDir> OnCrear { get; set; }
+    /// <summary>Variante del alta: crear y ABRIR la ficha de una (expander de la fila).</summary>
+    [Parameter] public EventCallback<NuevaEmpresaDir> OnCrearAbrir { get; set; }
 
     [Parameter] public string Vista { get; set; } = "lista";  // "lista" | "tabla" (la controla Directorio.razor)
     private bool _busy;
@@ -131,17 +139,32 @@ else
         _busy = true;
         try
         {
-            await OnCrear.InvokeAsync(new NuevaEmpresaDir(
-                _draft.Nit.Trim(),
-                string.IsNullOrWhiteSpace(_draft.Dv) ? null : _draft.Dv.Trim(),
-                _draft.RazonSocial.Trim(),
-                string.IsNullOrWhiteSpace(_draft.NombreComercial) ? null : _draft.NombreComercial.Trim(),
-                string.IsNullOrWhiteSpace(_draft.Email) ? null : _draft.Email.Trim(),
-                string.IsNullOrWhiteSpace(_draft.Telefono) ? null : _draft.Telefono.Trim()));
+            await OnCrear.InvokeAsync(DraftDto());
             _draft.Reset(); _nonce++; _focusPending = true;
         }
         finally { _busy = false; }
     }
+
+    // Expander: mismo alta pero la pagina abre la ficha de la empresa recien creada.
+    private async Task CrearEmpresaAbrirInline()
+    {
+        if (!DraftValido) return;
+        _busy = true;
+        try
+        {
+            await OnCrearAbrir.InvokeAsync(DraftDto());
+            _draft.Reset(); _nonce++;
+        }
+        finally { _busy = false; }
+    }
+
+    private NuevaEmpresaDir DraftDto() => new(
+        _draft.Nit.Trim(),
+        string.IsNullOrWhiteSpace(_draft.Dv) ? null : _draft.Dv.Trim(),
+        _draft.RazonSocial.Trim(),
+        string.IsNullOrWhiteSpace(_draft.NombreComercial) ? null : _draft.NombreComercial.Trim(),
+        string.IsNullOrWhiteSpace(_draft.Email) ? null : _draft.Email.Trim(),
+        string.IsNullOrWhiteSpace(_draft.Telefono) ? null : _draft.Telefono.Trim());
 
     private static string ChipStyle(string? color)
         => string.IsNullOrWhiteSpace(color) ? "" : $"background:{color}1A;color:{color};border-color:{color}55;";

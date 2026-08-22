@@ -10,6 +10,7 @@
 @using Microsoft.AspNetCore.Components.Forms
 
 @inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
 
 @* ====== MODAL (contenedor auto-acotado, estilo Tareas) ====== *@
 <div class="gpq-modal">
@@ -734,7 +735,15 @@
                 <option value="">Sin asignar</option>
                 @foreach (var p in _pqrPersonas) { <option value="@p.Id">@p.Nombres @p.Apellidos</option> }
             </select>
-            <button class="gpq-btn-brand" type="button" @onclick="CrearPqrTareaAsync" disabled="@(_pqrBusy || string.IsNullOrWhiteSpace(_nuevaTareaTitulo))">+ Agregar tarea</button>
+            @* Crear y ABRIR el modal completo del modulo Tareas (navega a /tareas?abrir={id}). *@
+            <button class="gpq-btn-brand" type="button" @onclick="CrearPqrTareaAsync" disabled="@(_pqrBusy || string.IsNullOrWhiteSpace(_nuevaTareaTitulo))">
+                + Agregar tarea
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:4px"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+            </button>
+            <div class="gpq-tk-vsw" role="tablist" aria-label="Vista de tareas">
+                <button type="button" class="gpq-tk-vbtn @(_pqrVista == "tarjetas" ? "on" : "")" @onclick='() => _pqrVista = "tarjetas"'>Tablero</button>
+                <button type="button" class="gpq-tk-vbtn @(_pqrVista == "lista" ? "on" : "")" @onclick='() => _pqrVista = "lista"'>Lista</button>
+            </div>
         </div>
 
         @if (_pqrTareas is null)
@@ -753,8 +762,36 @@
             {
                 <div class="gpq-tk-empty">Aun no hay tareas. Crea la primera arriba.</div>
             }
+            else if (_pqrVista == "lista")
+            {
+                @* ---- Vista LISTA: tabla plana con el codigo como primer elemento ---- *@
+                <div class="gpq-tk-table">
+                    <div class="gpq-tk-tr gpq-tk-thead">
+                        <span>CODIGO</span><span>TITULO</span><span>ETAPA</span><span>ASIGNADO</span><span>VENCE</span><span>%</span><span></span>
+                    </div>
+                    @foreach (var t in _pqrTareas.Tareas)
+                    {
+                        var tt = t;
+                        <div class="gpq-tk-tr">
+                            <span class="gpq-tk-num">@t.NumeroTarea</span>
+                            <span class="gpq-tk-td-tit">@t.Titulo</span>
+                            <span><span class="gpq-tk-etpill" style="background:@(t.EstadoColor ?? "#94A3B8")">@t.EstadoNombre</span></span>
+                            <span class="gpq-tk-td-asig">
+                                @if (!string.IsNullOrWhiteSpace(t.AsignadoNombre)) { <span class="gpq-tk-ava">@IniPqr(t.AsignadoNombre)</span> @t.AsignadoNombre }
+                                else { <span class="gpq-tk-mut">Sin asignar</span> }
+                            </span>
+                            <span class="@(TareaVencida(t) ? "gpq-tk-venc" : "")">@(t.FechaVencimiento?.ToString("dd MMM") ?? "-")</span>
+                            <span class="gpq-tk-td-pct">@t.Progreso%</span>
+                            <button type="button" class="gpq-tk-exp" title="Abrir el modal completo en Tareas" @onclick="() => AbrirTareaCompleta(tt.Id)">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                            </button>
+                        </div>
+                    }
+                </div>
+            }
             else
             {
+                @* ---- Vista TABLERO: mini-Kanban con tarjetas ricas (estilo modulo Tareas) ---- *@
                 <div class="gpq-tk-kanban">
                     @foreach (var et in _pqrTareas.Etapas)
                     {
@@ -768,11 +805,29 @@
                             <div class="gpq-tk-col-body">
                                 @foreach (var t in enEt)
                                 {
-                                    <div class="gpq-tk-card">
+                                    var tt = t;
+                                    <div class="gpq-tk-card" style="border-left:3px solid @(et.Color ?? "#94A3B8")">
+                                        <div class="gpq-tk-card-top">
+                                            <span class="gpq-tk-num">@t.NumeroTarea</span>
+                                            <button type="button" class="gpq-tk-exp" title="Abrir el modal completo en Tareas" @onclick="() => AbrirTareaCompleta(tt.Id)">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                                            </button>
+                                        </div>
                                         <div class="gpq-tk-card-t">@t.Titulo</div>
                                         <div class="gpq-tk-card-m">
-                                            <span class="gpq-tk-num">@t.NumeroTarea</span>
-                                            @if (!string.IsNullOrWhiteSpace(t.AsignadoNombre)) { <span class="gpq-tk-asig-b">@t.AsignadoNombre</span> }
+                                            <span class="gpq-tk-prio" style="color:@PrioPqrFg(t.Prioridad);background:@PrioPqrBg(t.Prioridad)">@t.Prioridad</span>
+                                            @if (t.FechaVencimiento is not null)
+                                            {
+                                                <span class="gpq-tk-due @(TareaVencida(t) ? "gpq-tk-venc" : "")">@t.FechaVencimiento?.ToString("dd MMM")</span>
+                                            }
+                                        </div>
+                                        @if (!string.IsNullOrWhiteSpace(t.AsignadoNombre))
+                                        {
+                                            <div class="gpq-tk-card-asig"><span class="gpq-tk-ava">@IniPqr(t.AsignadoNombre)</span><span class="gpq-tk-asig-n">@t.AsignadoNombre</span></div>
+                                        }
+                                        <div class="gpq-tk-card-prog">
+                                            <div class="gpq-tk-cprog-bar"><div class="gpq-tk-cprog-fill" style="width:@(t.Progreso)%;background:@(t.Progreso >= 100 ? "#1A8754" : "#6D4FE3")"></div></div>
+                                            <span class="gpq-tk-cprog-v">@t.Progreso%</span>
                                         </div>
                                     </div>
                                 }
@@ -781,8 +836,8 @@
                         </div>
                     }
                 </div>
-                <div class="gpq-tk-foot">Las tareas se gestionan en el modulo <strong>Tareas</strong> (tablero "PQRSD"): alli cambias estado, responsable y fecha.</div>
             }
+            <div class="gpq-tk-foot">Las tareas se gestionan en el modulo <strong>Tareas</strong> (tablero "PQRSD"); el expander abre alli su modal completo.</div>
         }
     </div>
 </div>
@@ -843,6 +898,32 @@
     .gpq-tk-card { background: #fff; border: 1px solid #E9EEF3; border-radius: 10px; padding: 9px 10px; box-shadow: 0 1px 2px rgba(45,62,80,.05); }
     .gpq-tk-card-t { font-size: 12.5px; font-weight: 600; color: #26303C; }
     .gpq-tk-card-m { display: flex; align-items: center; gap: 7px; margin-top: 5px; flex-wrap: wrap; }
+    /* ---- Tarjetas ricas (estilo modulo Tareas) + expander + vista lista ---- */
+    .gpq-tk-vsw { display: flex; gap: 0; border: 1px solid #E1E8EE; border-radius: 9px; overflow: hidden; margin-left: auto; }
+    .gpq-tk-vbtn { border: 0; background: #fff; color: #607286; font-size: 12px; font-weight: 700; padding: 7px 14px; cursor: pointer; }
+    .gpq-tk-vbtn.on { background: #6D4FE3; color: #fff; }
+    .gpq-tk-card-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 3px; }
+    .gpq-tk-exp { border: 0; background: #F1ECFD; color: #6D4FE3; width: 22px; height: 22px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex: 0 0 auto; }
+    .gpq-tk-exp:hover { background: #E4DBFB; }
+    .gpq-tk-prio { font-size: 10px; font-weight: 800; border-radius: 20px; padding: 2px 8px; }
+    .gpq-tk-due { font-size: 10.5px; font-weight: 700; color: #607286; }
+    .gpq-tk-venc { color: #C81E1E; }
+    .gpq-tk-card-asig { display: flex; align-items: center; gap: 6px; margin-top: 6px; min-width: 0; }
+    .gpq-tk-ava { width: 20px; height: 20px; flex: 0 0 20px; border-radius: 50%; background: #6D4FE3; color: #fff; font-size: 9px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+    .gpq-tk-asig-n { font-size: 11px; color: #33414F; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .gpq-tk-card-prog { display: flex; align-items: center; gap: 6px; margin-top: 7px; }
+    .gpq-tk-cprog-bar { flex: 1; height: 5px; border-radius: 4px; background: #EEF3F8; overflow: hidden; }
+    .gpq-tk-cprog-fill { height: 100%; border-radius: 4px; }
+    .gpq-tk-cprog-v { font-size: 10px; font-weight: 800; color: #607286; }
+    .gpq-tk-table { border: 1px solid #E9EEF3; border-radius: 12px; overflow: hidden; }
+    .gpq-tk-tr { display: grid; grid-template-columns: 92px 1.6fr 120px 1.1fr 74px 44px 34px; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #F1F4F8; font-size: 12px; color: #33414F; }
+    .gpq-tk-tr:last-child { border-bottom: 0; }
+    .gpq-tk-thead { background: #F7F9FC; font-size: 10px; font-weight: 800; letter-spacing: .03em; color: #7C8A9C; }
+    .gpq-tk-td-tit { font-weight: 600; color: #26303C; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .gpq-tk-etpill { color: #fff; font-size: 10px; font-weight: 800; border-radius: 20px; padding: 2px 9px; white-space: nowrap; }
+    .gpq-tk-td-asig { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; }
+    .gpq-tk-td-pct { font-weight: 800; color: #607286; }
+    .gpq-tk-mut { color: #A5B2C1; font-style: italic; }
     .gpq-tk-num { font-size: 10.5px; font-weight: 700; color: #A6B2C1; }
     .gpq-tk-asig-b { font-size: 10.5px; font-weight: 700; color: #5838C9; background: #F1ECFD; border-radius: 20px; padding: 1px 8px; }
     .gpq-tk-col-empty { color: #C3CEDA; font-size: 11px; text-align: center; padding: 8px; }
@@ -1331,6 +1412,12 @@
         StateHasChanged();
     }
 
+    // Vista del tab Tareas: mini-Kanban (tarjetas ricas) o tabla plana.
+    private string _pqrVista = "tarjetas";
+
+    /// <summary>Expander: abre la tarea en el modulo Tareas con su modal COMPLETO abierto.</summary>
+    private void AbrirTareaCompleta(Guid tareaId) => Nav.NavigateTo($"/tareas?abrir={tareaId}", forceLoad: true);
+
     private async Task CrearPqrTareaAsync()
     {
         if (string.IsNullOrWhiteSpace(_nuevaTareaTitulo) || _pqrBusy) return;
@@ -1339,10 +1426,42 @@
         {
             var resp = await Auth().PostAsJsonAsync($"/api/pqrsd/{ExpedienteId}/tareas",
                 new CrearPqrTareaRequest(_nuevaTareaTitulo.Trim(), _nuevaTareaAsignado));
-            if (resp.IsSuccessStatusCode) { _nuevaTareaTitulo = ""; _nuevaTareaAsignado = null; await CargarPqrTareasAsync(); }
+            if (resp.IsSuccessStatusCode)
+            {
+                _nuevaTareaTitulo = ""; _nuevaTareaAsignado = null;
+                // El POST devuelve {id}: abrir de una el modal completo de la tarea en el modulo Tareas.
+                try
+                {
+                    var creada = await resp.Content.ReadFromJsonAsync<CrearPqrTareaResp>();
+                    if (creada?.Id is Guid nid && nid != Guid.Empty) { AbrirTareaCompleta(nid); return; }
+                }
+                catch { }
+                await CargarPqrTareasAsync();
+            }
         }
         finally { _pqrBusy = false; }
     }
+
+    private sealed record CrearPqrTareaResp(Guid Id);
+
+    private bool TareaVencida(PqrTareaDto t)
+        => t.FechaVencimiento is { } f && !t.EstadoEsTerminal && f < DateOnly.FromDateTime(DateTime.Today);
+
+    private static string IniPqr(string? nombre)
+    {
+        var p = (nombre ?? "").Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (p.Length == 0) return "?";
+        return (p.Length >= 2 ? $"{p[0][0]}{p[1][0]}" : p[0][..Math.Min(2, p[0].Length)]).ToUpperInvariant();
+    }
+
+    private static string PrioPqrBg(string prioridad) => prioridad switch
+    {
+        "Urgente" => "#FDE8E8", "Alta" => "#FFF3E0", "Baja" => "#EEF3F8", _ => "#EEF2FF"
+    };
+    private static string PrioPqrFg(string prioridad) => prioridad switch
+    {
+        "Urgente" => "#C81E1E", "Alta" => "#B45309", "Baja" => "#64748B", _ => "#4F46E5"
+    };
 
     // Edicion de propiedad + solicitante + campos dinamicos
     private List<UnidadDto> _unidades = new();
