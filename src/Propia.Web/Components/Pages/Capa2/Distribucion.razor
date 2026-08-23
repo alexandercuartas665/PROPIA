@@ -100,6 +100,21 @@ else
             {
                 <button type="button" class="dst-fclear" @onclick="LimpiarFiltros" title="Limpiar filtros">Limpiar</button>
             }
+            @* Agrupador (Torre / Propietario / Estado / Tipo). La seleccion se recuerda por modulo. *@
+            <select class="dst-fsel dst-agrupar @(_agruparPor != "" ? "on" : "")" @onchange="SetAgrupar" title="Agrupar unidades">
+                <option value="" selected="@(_agruparPor == "")">Sin agrupar</option>
+                <option value="torre" selected="@(_agruparPor == "torre")">Agrupar: @LabelAgrupacionSingular</option>
+                <option value="propietario" selected="@(_agruparPor == "propietario")">Agrupar: Propietario</option>
+                <option value="estado" selected="@(_agruparPor == "estado")">Agrupar: Estado</option>
+                <option value="tipo" selected="@(_agruparPor == "tipo")">Agrupar: Tipo</option>
+            </select>
+            @if (_vista == "tabla")
+            {
+                <button type="button" class="dst-fclear dst-cols" @onclick="() => _cfgColsAbierto = true" title="Configurar columnas">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+                    Columnas
+                </button>
+            }
             @* Toggle Lista/Tabla, igual que en los demas modulos: la seleccion se recuerda por
                modulo (propia_view_unidades) y sobrevive al cierre de sesion. *@
             <div class="dst-viewtoggle">
@@ -135,43 +150,75 @@ else
         <div class="dst-table">
             @if (_vista == "tabla")
             {
+                @* Tabla: primera columna Expandir (hover -> abre ficha) + celdas editables inline.
+                   Columnas configurables (mostrar/ocultar/renombrar) y agrupables. *@
                 <div class="dst-scroll">
-                    <div class="dst-head dst-grid">
-                        <div>UNIDAD</div><div>@LabelAgrupacionSingular.ToUpper()</div><div>@LabelPisoSingular.ToUpper()</div>
-                        <div>TIPO</div><div>AREA</div><div>COEFICIENTE</div><div>PROPIETARIO</div><div></div>
+                    <div class="dst-head dst-grid2" style="grid-template-columns:@GridCols">
+                        <div></div>
+                        @foreach (var c in ColsVisibles) { <div>@Etiqueta(c)</div> }
+                        <div></div>
                     </div>
-                    @foreach (var u in UnidadesPagina)
+                    @foreach (var item in FilasRender())
                     {
-                        var uu = u;
-                        <div class="dst-row dst-grid" @onclick="() => AbrirFichaAsync(uu)" title="Abrir ficha de la unidad">
-                            <div class="dst-c dst-c--num">
-                                <span class="dst-num-icon">
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-6 9 6v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
-                                </span>
-                                @u.Numero
+                        if (item.EsGrupo)
+                        {
+                            var g = item.Grupo!;
+                            <div class="dst-group"><span class="dst-group-t">@g.Titulo</span><span class="dst-group-n">@g.Items.Count</span></div>
+                            continue;
+                        }
+                        var uu = item.Unidad!;
+                        <div class="dst-row dst-grid2" style="grid-template-columns:@GridCols">
+                            <div class="dst-exp-col">
+                                <button type="button" class="dst-exp" title="Abrir la ficha de la unidad" @onclick="() => AbrirFichaAsync(uu)">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                                </button>
                             </div>
-                            <div class="dst-c dst-c--torre">@(u.TorreNombre ?? "-")</div>
-                            <div class="dst-c">@(u.Piso?.ToString() ?? "-")</div>
-                            <div class="dst-c">@Etiqueta(u.Tipo)</div>
-                            <div class="dst-c">@(u.AreaM2 is null ? "-" : $"{u.AreaM2:0.##} m2")</div>
-                            <div class="dst-c">@u.CoeficientePropiedad.ToString("0.######")</div>
-                            <div class="dst-c">
-                                @if (string.IsNullOrWhiteSpace(u.PropietarioNombre))
+                            @foreach (var c in ColsVisibles)
+                            {
+                                switch (c.Key)
                                 {
-                                    <span class="dst-sin">Sin propietario</span>
+                                    case "num":
+                                        <input class="dst-cell dst-cell-num" value="@uu.Numero" @onchange="@(e => Inline(uu, "num", e))" />
+                                        break;
+                                    case "torre":
+                                        <select class="dst-cell" @onchange="@(e => Inline(uu, "torre", e))">
+                                            <option value="" selected="@(uu.TorreId is null)">-</option>
+                                            @foreach (var t in _torres.OrderBy(x => x.Nombre))
+                                            {
+                                                <option value="@t.Id" selected="@(uu.TorreId == t.Id)">@t.Nombre</option>
+                                            }
+                                        </select>
+                                        break;
+                                    case "piso":
+                                        <input class="dst-cell" type="number" value="@(uu.Piso?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "piso", e))" />
+                                        break;
+                                    case "tipo":
+                                        <select class="dst-cell" @onchange="@(e => Inline(uu, "tipo", e))">
+                                            @foreach (var t in Enum.GetValues<TipoUnidad>())
+                                            {
+                                                <option value="@t" selected="@(uu.Tipo == t)">@Etiqueta(t)</option>
+                                            }
+                                        </select>
+                                        break;
+                                    case "area":
+                                        <input class="dst-cell" type="number" step="0.01" value="@(uu.AreaM2?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "area", e))" />
+                                        break;
+                                    case "coef":
+                                        <input class="dst-cell" type="number" step="0.0001" value="@uu.CoeficientePropiedad.ToString(System.Globalization.CultureInfo.InvariantCulture)" @onchange="@(e => Inline(uu, "coef", e))" />
+                                        break;
+                                    case "prop":
+                                        <div class="dst-c dst-ro">
+                                            @if (string.IsNullOrWhiteSpace(uu.PropietarioNombre)) { <span class="dst-sin">Sin propietario</span> }
+                                            else
+                                            {
+                                                <span>@uu.PropietarioNombre</span>
+                                                @if (uu.PropietariosCount > 1) { <span class="dst-mas" title="@uu.PropietariosCount propietarios">+@(uu.PropietariosCount - 1)</span> }
+                                            }
+                                        </div>
+                                        break;
                                 }
-                                else
-                                {
-                                    <span>@u.PropietarioNombre</span>
-                                    @if (u.PropietariosCount > 1)
-                                    {
-                                        <span class="dst-mas" title="@u.PropietariosCount propietarios">+@(u.PropietariosCount - 1)</span>
-                                    }
-                                }
-                            </div>
-                            <div class="dst-act">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#C3D0DD" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
-                            </div>
+                            }
+                            <div></div>
                         </div>
                     }
                 </div>
@@ -181,9 +228,16 @@ else
                 @* Vista Lista: fila compacta y amigable por unidad (icono + numero + torre/piso/tipo
                    + propietario + tags de area y coeficiente). Comparte paginacion con la Tabla. *@
                 <div class="dst-lista">
-                    @foreach (var u in UnidadesPagina)
+                    @foreach (var item in FilasRender())
                     {
-                        var uu = u;
+                        if (item.EsGrupo)
+                        {
+                            var g = item.Grupo!;
+                            <div class="dst-group"><span class="dst-group-t">@g.Titulo</span><span class="dst-group-n">@g.Items.Count</span></div>
+                            continue;
+                        }
+                        var uu = item.Unidad!;
+                        var u = uu;
                         <div class="dst-lrow" @onclick="() => AbrirFichaAsync(uu)" title="Abrir ficha de la unidad">
                             <span class="dst-lav">
                                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-6 9 6v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>
@@ -219,7 +273,10 @@ else
                 </div>
             }
 
-            @* Paginacion: una PH puede tener cientos de unidades y no se listan todas de golpe. *@
+            @* Paginacion: una PH puede tener cientos de unidades y no se listan todas de golpe.
+               Con agrupacion activa se muestran todos los grupos completos, sin paginar. *@
+            @if (_agruparPor == "")
+            {
             <div class="dst-pager">
                 <div class="dst-pager-info">
                     Mostrando @(Filtradas.Count == 0 ? 0 : Desde + 1)-@Hasta de @Filtradas.Count unidades
@@ -243,8 +300,41 @@ else
                     }
                 </div>
             </div>
+            }
         </div>
     }
+}
+
+@* Panel Configurar columnas (por usuario) *@
+@if (_cfgColsAbierto)
+{
+    <div class="dst-cfg-back" @onclick="() => _cfgColsAbierto = false">
+        <div class="dst-cfg" @onclick:stopPropagation="true">
+            <div class="dst-cfg-head">
+                <strong>Columnas de la tabla</strong>
+                <button type="button" class="dst-cfg-x" @onclick="() => _cfgColsAbierto = false" title="Cerrar">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <p class="dst-cfg-sub">Elige que columnas ver y como se llaman. Se guarda solo para ti.</p>
+            @foreach (var col in Catalogo)
+            {
+                var pref = PrefDe(col.Key);
+                var key = col.Key;
+                <div class="dst-cfg-row">
+                    <label class="dst-cfg-vis" title="@(col.Hideable ? "Mostrar u ocultar" : "Columna requerida, siempre visible")">
+                        <input type="checkbox" checked="@pref.Visible" disabled="@(!col.Hideable)" @onchange="@(e => SetColVisible(key, (bool)(e.Value ?? false)))" />
+                    </label>
+                    <input class="dst-cfg-inp" value="@(string.IsNullOrWhiteSpace(pref.Label) ? col.DefLabel : pref.Label)" placeholder="@col.DefLabel" @onchange="@(e => SetColLabel(key, e.Value?.ToString()))" />
+                    @if (!col.Hideable) { <span class="dst-cfg-req">requerida</span> }
+                </div>
+            }
+            <div class="dst-cfg-actions">
+                <button type="button" class="dst-fclear" @onclick="RestablecerCols">Restablecer</button>
+                <button type="button" class="propia-btn-brand" @onclick="() => _cfgColsAbierto = false">Listo</button>
+            </div>
+        </div>
+    </div>
 }
 
 @* Obligatorio en cada pagina que abre modales: IModalService es Scoped por circuit y
@@ -330,6 +420,149 @@ else
         _pagina = 1;   // el offset viejo puede no existir con el tamano nuevo
     }
 
+    // ===== Agrupador (Torre / Propietario / Estado / Tipo) =====
+    private string _agruparPor = "";   // "", "torre", "propietario", "estado", "tipo"
+    private const string AgruparKey = "propia_agrupar_unidades";
+
+    private async Task SetAgrupar(ChangeEventArgs e)
+    {
+        _agruparPor = e.Value?.ToString() ?? "";
+        _pagina = 1;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, _agruparPor); } catch { }
+    }
+
+    private sealed record GrupoUni(string Titulo, List<UnidadDto> Items);
+
+    // Grupos sobre la lista filtrada COMPLETA (sin paginar): agrupar y paginar juntos confunde.
+    private List<GrupoUni>? Grupos()
+    {
+        if (_agruparPor == "") return null;
+        var items = Filtradas;
+        var gs = _agruparPor switch
+        {
+            "torre" => items.GroupBy(u => u.TorreNombre ?? $"Sin {LabelAgrupacionSingular.ToLower()}"),
+            "estado" => items.GroupBy(u => string.IsNullOrWhiteSpace(u.Estado) ? "Sin estado" : u.Estado!),
+            "tipo" => items.GroupBy(u => Etiqueta(u.Tipo)),
+            "propietario" => items.GroupBy(u => string.IsNullOrWhiteSpace(u.PropietarioNombre) ? "Sin propietario" : u.PropietarioNombre!),
+            _ => null
+        };
+        if (gs is null) return null;
+        return gs.Select(g => new GrupoUni(g.Key, g.ToList()))
+                 .OrderBy(g => g.Titulo.StartsWith("Sin ", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
+                 .ThenBy(g => g.Titulo, StringComparer.CurrentCultureIgnoreCase)
+                 .ToList();
+    }
+
+    // Una entrada a pintar: cabecera de grupo o unidad. Sin agrupar va paginado; agrupado va
+    // completo (todos los grupos). Sirve para la vista Tabla y la vista Tarjetas por igual.
+    private readonly record struct FilaUni(bool EsGrupo, GrupoUni? Grupo, UnidadDto? Unidad);
+    private IEnumerable<FilaUni> FilasRender()
+    {
+        var gs = Grupos();
+        if (gs is null)
+        {
+            foreach (var u in UnidadesPagina) yield return new FilaUni(false, null, u);
+        }
+        else
+        {
+            foreach (var g in gs)
+            {
+                yield return new FilaUni(true, g, null);
+                foreach (var u in g.Items) yield return new FilaUni(false, null, u);
+            }
+        }
+    }
+
+    // ===== Configurar columnas (por usuario, localStorage) =====
+    private bool _cfgColsAbierto;
+    private Dictionary<string, ColPref> _cols = new();
+    private const string ColsKey = "propia_cols_unidades";
+
+    public sealed class ColPref { public bool Visible { get; set; } = true; public string? Label { get; set; } }
+
+    private sealed record ColDef(string Key, string DefLabel, string Width, bool Hideable);
+    // Catalogo dinamico: los labels de agrupacion/piso salen de la identidad de la copropiedad.
+    private ColDef[] Catalogo => new[]
+    {
+        new ColDef("num", "UNIDAD", "120px", false),
+        new ColDef("torre", LabelAgrupacionSingular.ToUpper(), "1fr", true),
+        new ColDef("piso", LabelPisoSingular.ToUpper(), ".7fr", true),
+        new ColDef("tipo", "TIPO", "1.1fr", true),
+        new ColDef("area", "AREA", ".9fr", true),
+        new ColDef("coef", "COEFICIENTE", "1fr", true),
+        new ColDef("prop", "PROPIETARIO", "1.5fr", true),
+    };
+
+    private bool EsVisible(ColDef c) => !c.Hideable || !_cols.TryGetValue(c.Key, out var p) || p.Visible;
+    private string Etiqueta(ColDef c) => (_cols.TryGetValue(c.Key, out var p) && !string.IsNullOrWhiteSpace(p.Label)) ? p.Label! : c.DefLabel;
+    private IEnumerable<ColDef> ColsVisibles => Catalogo.Where(EsVisible);
+    private string GridCols => "34px " + string.Join(" ", ColsVisibles.Select(c => c.Width)) + " 34px";
+
+    private ColPref PrefDe(string key)
+    {
+        if (!_cols.TryGetValue(key, out var p)) { p = new(); _cols[key] = p; }
+        return p;
+    }
+    private async Task SetColVisible(string key, bool v) { PrefDe(key).Visible = v; await GuardarColsAsync(); }
+    private async Task SetColLabel(string key, string? label)
+    {
+        var def = Catalogo.First(c => c.Key == key).DefLabel;
+        var l = label?.Trim();
+        PrefDe(key).Label = string.IsNullOrWhiteSpace(l) || string.Equals(l, def, StringComparison.Ordinal) ? null : l;
+        await GuardarColsAsync();
+    }
+    private async Task GuardarColsAsync()
+    { try { await Js.InvokeVoidAsync("localStorage.setItem", ColsKey, System.Text.Json.JsonSerializer.Serialize(_cols)); } catch { } }
+    private async Task RestablecerCols() { _cols.Clear(); await GuardarColsAsync(); }
+
+    private async Task RestaurarPrefsAsync()
+    {
+        try
+        {
+            var ag = await Js.InvokeAsync<string?>("localStorage.getItem", AgruparKey);
+            if (ag is "torre" or "propietario" or "estado" or "tipo") _agruparPor = ag;
+            var raw = await Js.InvokeAsync<string?>("localStorage.getItem", ColsKey);
+            if (!string.IsNullOrWhiteSpace(raw))
+                _cols = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, ColPref>>(raw) ?? new();
+        }
+        catch { }
+    }
+
+    // ===== Edicion inline (vista Tabla). El UnidadDto de la lista ya trae todos los campos,
+    // asi que se arma el ActualizarUnidadRequest sin traer el detalle. =====
+    private async Task GuardarUnidadInline(UnidadDto u, string campo, string? val)
+    {
+        var v = val?.Trim();
+        var numero = u.Numero; var tipo = u.Tipo; var torreId = u.TorreId; var piso = u.Piso;
+        var coef = u.CoeficientePropiedad; var area = u.AreaM2;
+        switch (campo)
+        {
+            case "num": if (string.IsNullOrWhiteSpace(v) || v == u.Numero) return; numero = v; break;
+            case "tipo": if (!Enum.TryParse<TipoUnidad>(v, out var tp) || tp == u.Tipo) return; tipo = tp; break;
+            case "torre": var t = string.IsNullOrEmpty(v) ? (Guid?)null : (Guid.TryParse(v, out var g) ? g : u.TorreId); if (t == u.TorreId) return; torreId = t; break;
+            case "piso": var pi = string.IsNullOrWhiteSpace(v) ? (int?)null : (int.TryParse(v, out var pp) ? pp : u.Piso); if (pi == u.Piso) return; piso = pi; break;
+            case "coef": if (!decimal.TryParse(v, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var cf) || cf == u.CoeficientePropiedad) return; coef = cf; break;
+            case "area": var ar = string.IsNullOrWhiteSpace(v) ? (decimal?)null : (decimal.TryParse(v, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var aa) ? aa : u.AreaM2); if (ar == u.AreaM2) return; area = ar; break;
+            default: return;
+        }
+        var req = new ActualizarUnidadRequest(numero, tipo, torreId, piso, coef, area,
+            u.Habitaciones, u.Banos, u.Parqueaderos, u.Estado, u.Observaciones,
+            u.MatriculaInmobiliaria, u.PagaAdministracion, u.CuotaMensual);
+        try
+        {
+            var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades/{u.Id}", req);
+            if (r.IsSuccessStatusCode)
+            {
+                var nombreTorre = torreId is null ? null : _torres.FirstOrDefault(x => x.Id == torreId)?.Nombre ?? u.TorreNombre;
+                var i = _unidades.FindIndex(x => x.Id == u.Id);
+                if (i >= 0) _unidades[i] = u with { Numero = numero, Tipo = tipo, TorreId = torreId, TorreNombre = nombreTorre, Piso = piso, CoeficientePropiedad = coef, AreaM2 = area };
+            }
+        }
+        catch { }
+    }
+
+    private Task Inline(UnidadDto u, string campo, ChangeEventArgs e) => GuardarUnidadInline(u, campo, e.Value?.ToString());
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender || _jwt is not null) return;
@@ -341,6 +574,7 @@ else
             {
                 _jwt = stored;
                 await RestaurarVistaAsync();
+                await RestaurarPrefsAsync();
                 await CargarAsync();
             }
             else
@@ -487,4 +721,40 @@ else
     .dst-pager-btn:hover:not(:disabled) { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); background: #F7F5FE; }
     .dst-pager-btn:disabled { opacity: .4; cursor: default; }
     .dst-pager-pos { font-size: 12.5px; font-weight: 700; color: #33475B; min-width: 52px; text-align: center; }
+
+    /* ===== Ola 4: tabla data-driven (expander + inline + grupos + configurar columnas) ===== */
+    .dst-grid2 { display: grid; align-items: center; gap: 8px; padding: 6px 16px; min-width: 940px; }
+    .dst-agrupar.on { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); background: #F3EFFE; font-weight: 700; }
+    .dst-cols { display: inline-flex; align-items: center; gap: 6px; }
+    /* Expander: se ve al pasar el mouse por la fila. */
+    .dst-exp-col { display: flex; align-items: center; justify-content: center; }
+    .dst-exp { width: 26px; height: 26px; border: 0; border-radius: 7px; background: #F1ECFD; color: var(--propia-brand, #6D4FE3); display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s; }
+    .dst-row:hover .dst-exp { opacity: 1; }
+    .dst-exp:hover { background: #E4DBFB; }
+    /* Celdas editables inline. */
+    .dst-cell { width: 100%; box-sizing: border-box; border: 1px solid transparent; border-radius: 7px; padding: 5px 8px; font-size: 12.5px; color: #516F90; background: transparent; outline: none; font-family: inherit; }
+    .dst-cell:hover { border-color: #E1E8EE; background: #FBFCFD; }
+    .dst-cell:focus { border-color: var(--propia-brand, #6D4FE3); background: #fff; color: #33475B; }
+    .dst-cell-num { font-weight: 700; color: #1B2A3A; }
+    .dst-ro { color: #516F90; padding: 5px 2px; }
+    /* Cabecera de grupo. */
+    .dst-group { display: flex; align-items: center; gap: 10px; padding: 10px 16px 6px; border-top: 1px solid #EEF2F6; }
+    .dst-group:first-of-type { border-top: 0; }
+    .dst-group-t { font-size: 12px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: #F3EFFE; border-radius: 8px; padding: 3px 11px; }
+    .dst-group-n { font-size: 11.5px; font-weight: 700; color: #90A4B7; background: #F1F4F7; border-radius: 10px; padding: 1px 9px; }
+    /* Panel Configurar columnas. */
+    .dst-cfg-back { position: fixed; inset: 0; z-index: 1080; background: rgba(27,42,58,.55); display: flex; align-items: flex-start; justify-content: center; padding: 40px 20px; overflow-y: auto; }
+    .dst-cfg { width: 420px; max-width: 100%; background: #fff; border-radius: 14px; box-shadow: 0 18px 50px rgba(27,42,58,.28); padding: 18px 20px 16px; }
+    .dst-cfg-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+    .dst-cfg-head strong { font-size: 15px; color: #33475B; }
+    .dst-cfg-x { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #7C98B6; border: 1px solid #E1E8EE; background: #fff; cursor: pointer; }
+    .dst-cfg-x:hover { background: #F5F8FA; color: #33475B; }
+    .dst-cfg-sub { font-size: 12.5px; color: #7C98B6; margin: 2px 0 12px; }
+    .dst-cfg-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
+    .dst-cfg-vis input { width: 16px; height: 16px; accent-color: var(--propia-brand, #6D4FE3); cursor: pointer; }
+    .dst-cfg-vis input:disabled { cursor: not-allowed; }
+    .dst-cfg-inp { flex: 1; border: 1px solid #E1E8EE; border-radius: 8px; padding: 7px 10px; font-size: 13px; color: #33475B; font-family: inherit; outline: none; }
+    .dst-cfg-inp:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .dst-cfg-req { font-size: 10.5px; font-weight: 700; color: #90A4B7; text-transform: uppercase; letter-spacing: .3px; }
+    .dst-cfg-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 </style>
