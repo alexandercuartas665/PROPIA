@@ -48,11 +48,12 @@ else
             <div class="tb-kpis">
                 @foreach (var k in TaskKpis())
                 {
-                    <div class="tb-kpi" style="background:@k.Grad">
-                        <svg class="tb-kpi-wm" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6"><path d="@k.Icon"/></svg>
+                    @* Tarjeta blanca estandar del sistema (misma familia que Zonas/Reservas). *@
+                    <div class="tb-kpi tb-kpi--@k.Acento">
+                        <div class="tb-kpi-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="@k.Icon"/></svg></div>
                         <div class="tb-kpi-body">
-                            <div class="tb-kpi-label">@k.Label</div>
                             <div class="tb-kpi-n">@k.Valor</div>
+                            <div class="tb-kpi-label">@k.Label</div>
                             <div class="tb-kpi-sub">@k.Sub</div>
                         </div>
                     </div>
@@ -224,6 +225,8 @@ else
         @if (_boardMode == "tablero")
         {
             <div class="tb-cardbar">
+                @* El mismo boton Filtros de la vista Lista: el filtro se conserva al cambiar de vista. *@
+                @BloqueFiltros
                 <div class="tb-flex"></div>
                 <div class="tb-menuwrap">
                     <button class="tb-filter-btn @(!string.IsNullOrEmpty(_sortCol) ? "on" : "")" @onclick="() => { _cardSortMenu = !_cardSortMenu; _cardGroupMenu = false; }" title="Ordenar tarjetas">
@@ -270,7 +273,7 @@ else
                 @foreach (var est in _board.Estados)
                 {
                     var estado = est;
-                    var cards = AplicarSort(RaicesPorEstado(est.Id)).ToList();
+                    var cards = AplicarSort(RaicesPorEstado(est.Id).Where(PasaFiltros).ToList()).ToList();
                     @* El dragover se cancela con un handler HTML plano (no con @@ondragover:preventDefault):
                        Blazor solo instala el listener de un evento si hay un manejador para el, asi que
                        la marca de preventDefault sola no se aplicaba y el navegador rechazaba el drop. *@
@@ -449,66 +452,8 @@ else
         else if (_boardMode == "lista")
         {
             <div class="tb-filters">
-                @* Constructor de filtros: boton compacto con contador -> panel donde se agregan varias
-                   reglas (campo + condicion + valor), combinables con Y/O. Reemplaza la fila fija de menus. *@
-                <div class="tb-menuwrap">
-                    <button class="tb-filter-btn @(HayFiltros ? "on" : "")" @onclick="ToggleFiltros" title="Filtrar tareas">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18M6 12h12M10 19h4"/></svg><span>Filtros</span>@if (CuentaFiltros > 0) { <span class="tb-filter-badge">@CuentaFiltros</span> }
-                    </button>
-                    @if (_filtrosMenu)
-                    {
-                        <div class="tb-filterpop-bd" @onclick="() => _filtrosMenu = false"></div>
-                        <div class="tb-filterpop" @onclick:stopPropagation="true">
-                            @if (_reglas.Count == 0)
-                            {
-                                <div class="tb-filterpop-empty">Sin filtros aplicados.<br />Agrega una condicion para acotar las tareas.</div>
-                            }
-                            else
-                            {
-                                @for (int i = 0; i < _reglas.Count; i++)
-                                {
-                                    var idx = i; var r = _reglas[idx];
-                                    <div class="tb-frule">
-                                        @if (idx == 0)
-                                        {
-                                            <span class="tb-frule-lead">Donde</span>
-                                        }
-                                        else if (idx == 1)
-                                        {
-                                            <select class="tb-frule-lead tb-frule-logic" @onchange="SetFiltroLogica">
-                                                <option value="and" selected="@(_filtroLogica == "and")">Y</option>
-                                                <option value="or" selected="@(_filtroLogica == "or")">O</option>
-                                            </select>
-                                        }
-                                        else
-                                        {
-                                            <span class="tb-frule-lead">@(_filtroLogica == "or" ? "O" : "Y")</span>
-                                        }
-                                        <select class="tb-frule-f" @onchange="(e) => SetReglaCampo(idx, e)">
-                                            @foreach (var opt in CamposFiltro()) { <option value="@opt.Key" selected="@(r.Campo == opt.Key)">@opt.Label</option> }
-                                        </select>
-                                        <select class="tb-frule-op" @onchange="(e) => SetReglaOp(idx, e)">
-                                            @foreach (var op in OperadoresDe(r.Campo)) { <option value="@op.Key" selected="@(r.Op == op.Key)">@op.Label</option> }
-                                        </select>
-                                        @if (r.Op is not "vacio" and not "no_vacio")
-                                        {
-                                            @RenderValorFiltro(idx)
-                                        }
-                                        <button class="tb-frule-del" title="Quitar condicion" @onclick="() => QuitarRegla(idx)">
-                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                                        </button>
-                                    </div>
-                                }
-                            }
-                            <div class="tb-filterpop-foot">
-                                <button class="tb-filter-add" @onclick="AgregarRegla">
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>Agregar filtro
-                                </button>
-                                @if (_reglas.Count > 0) { <button class="tb-filter-clear2" @onclick="LimpiarFiltros">Limpiar todo</button> }
-                            </div>
-                        </div>
-                    }
-                </div>
+                @* Constructor de filtros (compartido con la vista Tablero via BloqueFiltros). *@
+                @BloqueFiltros
                 @* Buscador junto a "Filtros" (como en PQRSD). *@
                 <input class="tb-search tb-search--sm" @bind="_buscarTarea" @bind:event="oninput" placeholder="Buscar por titulo o numero..." />
                 <div class="tb-flex"></div>
@@ -2016,12 +1961,19 @@ else
 
     /* Indicadores (KPIs) del modulo, prototipo v2 */
     .tb-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 13px; margin-bottom: 20px; }
-    .tb-kpi { position: relative; border-radius: 16px; padding: 17px 18px; overflow: hidden; box-shadow: 0 8px 22px rgba(45,62,80,.16); }
-    .tb-kpi-wm { position: absolute; right: -14px; bottom: -14px; width: 88px; height: 88px; opacity: .16; }
-    .tb-kpi-body { position: relative; }
-    .tb-kpi-label { font-size: 11px; font-weight: 700; letter-spacing: .3px; color: rgba(255,255,255,.85); }
-    .tb-kpi-n { font-size: 33px; font-weight: 800; letter-spacing: -1px; color: #fff; margin-top: 6px; line-height: 1; }
-    .tb-kpi-sub { font-size: 11.5px; font-weight: 600; color: rgba(255,255,255,.82); margin-top: 6px; }
+    /* Tarjeta blanca estandar del sistema: borde suave + icono cuadrado con fondo pastel. */
+    .tb-kpi { display: flex; align-items: center; gap: 12px; background: #fff; border: 1px solid #E1E8EE; border-radius: 12px; padding: 12px 16px; box-shadow: 0 1px 2px rgba(45,62,80,.05); }
+    .tb-kpi-ic { width: 36px; height: 36px; flex-shrink: 0; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+    .tb-kpi--brand .tb-kpi-ic { background: #F1ECFD; color: #6D4FE3; }
+    .tb-kpi--ok .tb-kpi-ic { background: #E6F6EE; color: #0F8A4F; }
+    .tb-kpi--warn .tb-kpi-ic { background: #FEF3C7; color: #B45309; }
+    .tb-kpi--err .tb-kpi-ic { background: #FEE2E2; color: #B91C1C; }
+    .tb-kpi--err .tb-kpi-n { color: #B91C1C; }
+    .tb-kpi--warn .tb-kpi-n { color: #B45309; }
+    .tb-kpi-body { min-width: 0; }
+    .tb-kpi-label { font-size: 11.5px; font-weight: 700; color: #516F90; margin-top: 1px; }
+    .tb-kpi-n { font-size: 20px; font-weight: 800; letter-spacing: -0.3px; color: #1B2A3A; line-height: 1.1; }
+    .tb-kpi-sub { font-size: 10.5px; font-weight: 600; color: #A6B7C8; margin-top: 1px; }
     @@media (max-width: 1100px) { .tb-kpis { grid-template-columns: repeat(2, 1fr); } }
 
     .tb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
@@ -3527,9 +3479,9 @@ else
         "relacionado" => t => string.IsNullOrWhiteSpace(t.OrigenReferencia) ? "Sin relacion" : t.OrigenReferencia!,
         _ => t => t.EstadoNombre
     };
-    // Tablero (tarjetas): agrupa las raices sin aplicar filtros (la vista tarjetas no tiene filtros).
+    // Tablero (tarjetas): agrupa las raices aplicando los mismos filtros que la vista Lista.
     private List<(string Key, List<TareaListaDto> Items)> AgruparCards()
-        => _tareas.Where(t => t.PadreId == null).GroupBy(ClaveGrupo())
+        => _tareas.Where(t => t.PadreId == null).Where(PasaFiltros).GroupBy(ClaveGrupo())
             .Select(g => (Key: g.Key, Items: AplicarSort(g.ToList()).ToList()))
             .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -4082,25 +4034,25 @@ else
     }
 
     // Indicadores del modulo (prototipo v2): 4 tarjetas con gradiente sobre todos los tableros.
-    private record KpiVm(string Label, string Valor, string Sub, string Grad, string Icon);
+    private record KpiVm(string Label, string Valor, string Sub, string Acento, string Icon);
     private List<KpiVm> TaskKpis()
     {
         var r = _resumen!;
         var hoyTxt = DateTime.Today.ToString("d 'de' MMMM", Es);
-        var vencGrad = r.Vencidas > 0 ? "linear-gradient(135deg,#E0556B,#B3243C)" : "linear-gradient(135deg,#34C77B,#1A8754)";
+        var vencAcc = r.Vencidas > 0 ? "err" : "ok";
         return new()
         {
             new("Tareas pendientes", r.Activas.ToString(), $"de {r.Total} totales",
-                "linear-gradient(135deg,#6D4FE3,#4B2BB0)",
+                "brand",
                 "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"),
             new("Tareas vencidas", r.Vencidas.ToString(), r.Vencidas > 0 ? "requieren atencion" : "todo al dia",
-                vencGrad,
+                vencAcc,
                 "M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"),
             new("Vencen hoy", r.VencenHoy.ToString(), hoyTxt,
-                "linear-gradient(135deg,#F0A23C,#C5781A)",
+                "warn",
                 "M3 4h18v18H3zM3 10h18M8 2v4M16 2v4"),
             new("Avance global", r.AvancePct + "%", $"{r.Completadas} completadas",
-                "linear-gradient(135deg,#2BB7C4,#1E7A8C)",
+                "ok",
                 "M3 3v18h18M7 14l3-4 3 3 4-6"),
         };
     }
@@ -4266,6 +4218,70 @@ else
             .Select(t => t.AsignadoNombre!).Distinct().OrderBy(x => x);
 
     // ---- Constructor de filtros: reglas, operadores, edicion desde la UI y evaluacion ----
+    // Boton "Filtros" + popover de reglas, compartido por las vistas Lista y Tablero
+    // (mismo estado _reglas: el filtro se conserva intacto al cambiar de vista, como en PQRSD).
+    private RenderFragment BloqueFiltros => __builder =>
+    {
+        <div class="tb-menuwrap">
+            <button class="tb-filter-btn @(HayFiltros ? "on" : "")" @onclick="ToggleFiltros" title="Filtrar tareas">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18M6 12h12M10 19h4"/></svg><span>Filtros</span>@if (CuentaFiltros > 0) { <span class="tb-filter-badge">@CuentaFiltros</span> }
+            </button>
+            @if (_filtrosMenu)
+            {
+                <div class="tb-filterpop-bd" @onclick="() => _filtrosMenu = false"></div>
+                <div class="tb-filterpop" @onclick:stopPropagation="true">
+                    @if (_reglas.Count == 0)
+                    {
+                        <div class="tb-filterpop-empty">Sin filtros aplicados.<br />Agrega una condicion para acotar las tareas.</div>
+                    }
+                    else
+                    {
+                        @for (int i = 0; i < _reglas.Count; i++)
+                        {
+                            var idx = i; var r = _reglas[idx];
+                            <div class="tb-frule">
+                                @if (idx == 0)
+                                {
+                                    <span class="tb-frule-lead">Donde</span>
+                                }
+                                else if (idx == 1)
+                                {
+                                    <select class="tb-frule-lead tb-frule-logic" @onchange="SetFiltroLogica">
+                                        <option value="and" selected="@(_filtroLogica == "and")">Y</option>
+                                        <option value="or" selected="@(_filtroLogica == "or")">O</option>
+                                    </select>
+                                }
+                                else
+                                {
+                                    <span class="tb-frule-lead">@(_filtroLogica == "or" ? "O" : "Y")</span>
+                                }
+                                <select class="tb-frule-f" @onchange="(e) => SetReglaCampo(idx, e)">
+                                    @foreach (var opt in CamposFiltro()) { <option value="@opt.Key" selected="@(r.Campo == opt.Key)">@opt.Label</option> }
+                                </select>
+                                <select class="tb-frule-op" @onchange="(e) => SetReglaOp(idx, e)">
+                                    @foreach (var op in OperadoresDe(r.Campo)) { <option value="@op.Key" selected="@(r.Op == op.Key)">@op.Label</option> }
+                                </select>
+                                @if (r.Op is not "vacio" and not "no_vacio")
+                                {
+                                    @RenderValorFiltro(idx)
+                                }
+                                <button class="tb-frule-del" title="Quitar condicion" @onclick="() => QuitarRegla(idx)">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                </button>
+                            </div>
+                        }
+                    }
+                    <div class="tb-filterpop-foot">
+                        <button class="tb-filter-add" @onclick="AgregarRegla">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>Agregar filtro
+                        </button>
+                        @if (_reglas.Count > 0) { <button class="tb-filter-clear2" @onclick="LimpiarFiltros">Limpiar todo</button> }
+                    </div>
+                </div>
+            }
+        </div>
+    };
+
     private int CuentaFiltros => _reglas.Count(ReglaActiva);
     private bool HayFiltros => _reglas.Any(ReglaActiva);
     private void LimpiarFiltros() { _reglas.Clear(); _filtroLogica = "and"; _ = PersistFiltrosAsync(); }
