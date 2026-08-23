@@ -17,4 +17,8 @@ public class BitacoraMiCopropiedad : TenantEntity
 
     /// <summary>Nombre/identificacion del autor del cambio (opcional).</summary>
     public string? Autor { get; set; }
+
+    /// <summary>Entidad concreta a la que aplica el evento (ej. la UnidadPrivada), para poder
+    /// mostrar la bitacora filtrada por unidad en su ficha. Null = evento global de la copropiedad.</summary>
+    public Guid? EntidadId { get; set; }
 }

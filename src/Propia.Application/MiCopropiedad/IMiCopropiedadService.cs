@@ -208,10 +208,11 @@ public interface IMiCopropiedadService
 
     // Bitacora de cambios (RN-06)
     Task<IReadOnlyList<BitacoraEntradaDto>> ListBitacoraAsync(int limit, CancellationToken ct);
+    Task<IReadOnlyList<BitacoraEntradaDto>> ListBitacoraEntidadAsync(Guid entidadId, int limit, CancellationToken ct);
 
     /// <summary>
     /// Registra una entrada en la bitacora de la copropiedad activa. Lo usan los
     /// metodos del servicio y la Capa MCP para auditar acciones de agentes (RN-06).
     /// </summary>
-    Task RegistrarBitacoraAsync(string categoria, string descripcion, CancellationToken ct);
+    Task RegistrarBitacoraAsync(string categoria, string descripcion, CancellationToken ct, Guid? entidadId = null);
 }

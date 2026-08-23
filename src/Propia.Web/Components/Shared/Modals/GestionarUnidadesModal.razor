@@ -4,6 +4,7 @@
    Layout 2 paneles: izq lista torres/unidades, der ficha unidad seleccionada. *@
 
 @inherits ModalBase<bool>
+@using Propia.Web.Components.Shared
 @using Propia.Web.Components.Shared.Modals
 @using Propia.Application.MiCopropiedad
 @using Propia.Application.Directorio
@@ -974,10 +975,34 @@
                     </div>
                 </div>
 
-                @* === HISTORIAL (proto L.761-766) === *@
-                <div class="gum-unit-card">
-                    <div class="gum-unit-eyebrow">HISTORIAL</div>
-                    <div class="gum-hist-empty">Sin eventos registrados en la unidad.</div>
+                @* === HISTORIAL RELACIONADO (Ola 2/3): tareas + PQRSD + mantenimientos de la unidad === *@
+                <div class="gum-unit-card gum-unit-card--full">
+                    <div class="gum-unit-eyebrow">HISTORIAL RELACIONADO</div>
+                    <HistorialRelacionadoPanel Jwt="@Jwt" Tipo="TipoEntidadHistorial.Unidad" EntidadId="@_selected.Id" />
+                </div>
+
+                @* === BITACORA DE CAMBIOS (RN-06): eventos automaticos de la unidad === *@
+                <div class="gum-unit-card gum-unit-card--full">
+                    <div class="gum-unit-eyebrow">BITACORA DE CAMBIOS</div>
+                    @if (_bitacora.Count == 0)
+                    {
+                        <div class="gum-hist-empty">Sin cambios registrados en la unidad todavia.</div>
+                    }
+                    else
+                    {
+                        <div class="gum-bit-list">
+                            @foreach (var b in _bitacora)
+                            {
+                                <div class="gum-bit-item">
+                                    <span class="gum-bit-dot"></span>
+                                    <div class="gum-bit-body">
+                                        <div class="gum-bit-txt">@b.Descripcion</div>
+                                        <div class="gum-bit-meta">@b.Fecha.ToLocalTime().ToString("dd MMM yyyy · HH:mm")@(string.IsNullOrWhiteSpace(b.Autor) ? "" : $" · {b.Autor}")</div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
                 </div>
 
                 @* === DOCUMENTOS (proto L.785-792) === *@
@@ -1572,6 +1597,14 @@
 
     /* Historial / Facturas vacios */
     .gum-hist-empty { font-size: 11.5px; color: #A6B7C8; padding: 4px 2px; }
+    /* Bitacora de cambios de la unidad (RN-06): linea de tiempo compacta. */
+    .gum-bit-list { display: flex; flex-direction: column; gap: 0; }
+    .gum-bit-item { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid #F1F4F7; }
+    .gum-bit-item:last-child { border-bottom: 0; }
+    .gum-bit-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--propia-brand, #6D4FE3); margin-top: 5px; flex-shrink: 0; }
+    .gum-bit-body { flex: 1; min-width: 0; }
+    .gum-bit-txt { font-size: 12.5px; color: #33475B; }
+    .gum-bit-meta { font-size: 10.5px; color: #A6B7C8; margin-top: 1px; }
 
     /* Documentos */
     .gum-doc-upload {
@@ -1709,6 +1742,7 @@
     // Oleada 2 - historico de propietarios + campos dinamicos por persona
     private string _contactTab = "actuales"; // actuales | historico
     private List<UnidadTitularidadDto> _titularidad = new();
+    private List<BitacoraEntradaDto> _bitacora = new();
     private string _titNombre = "";
     private string _titRol = "Propietario";
     private DateOnly? _titDesde;
@@ -1943,7 +1977,17 @@
         catch { _empleadas = new(); }
         try { _titularidad = await Auth().GetFromJsonAsync<List<UnidadTitularidadDto>>($"/api/mi-copropiedad/unidades/{u.Id}/titularidad") ?? new(); }
         catch { _titularidad = new(); }
+        try { _bitacora = await Auth().GetFromJsonAsync<List<BitacoraEntradaDto>>($"/api/mi-copropiedad/unidades/{u.Id}/bitacora") ?? new(); }
+        catch { _bitacora = new(); }
         await CargarCamposPersonasAsync();
+    }
+
+    // Recarga solo la bitacora (tras un cambio inline/edicion) para reflejar el nuevo evento.
+    private async Task RecargarBitacoraAsync()
+    {
+        if (_selected is null) return;
+        try { _bitacora = await Auth().GetFromJsonAsync<List<BitacoraEntradaDto>>($"/api/mi-copropiedad/unidades/{_selected.Id}/bitacora") ?? new(); }
+        catch { }
     }
 
     private async Task CargarCamposPersonasAsync()

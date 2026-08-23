@@ -161,6 +161,11 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    /// <summary>Bitacora de cambios de una unidad (RN-06), para la ficha.</summary>
+    [HttpGet("unidades/{id:guid}/bitacora")]
+    public async Task<IActionResult> BitacoraUnidad(Guid id, [FromQuery] int limit, CancellationToken ct)
+        => Ok(await _svc.ListBitacoraEntidadAsync(id, limit, ct));
+
     // ---------- Vinculos entre unidades (RN-09) ----------
     [HttpGet("unidades/{id:guid}/vinculos")]
     public async Task<IActionResult> ListVinculos(Guid id, CancellationToken ct) => Ok(await _svc.ListVinculosAsync(id, ct));

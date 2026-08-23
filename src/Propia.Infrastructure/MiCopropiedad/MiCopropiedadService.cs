@@ -213,7 +213,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         var torreNombre = unidad.TorreId.HasValue
             ? await _db.Torres.Where(t => t.Id == unidad.TorreId).Select(t => t.Nombre).FirstOrDefaultAsync(ct)
             : null;
-        await RegistrarBitacoraAsync("Unidad", $"Unidad '{unidad.Numero}' creada ({unidad.Tipo}, coef {unidad.CoeficientePropiedad}%).", ct);
+        await RegistrarBitacoraAsync("Unidad", $"Unidad '{unidad.Numero}' creada ({unidad.Tipo}, coef {unidad.CoeficientePropiedad}%).", ct, unidad.Id);
         return new UnidadDto(unidad.Id, unidad.Numero, unidad.Tipo,
             unidad.TorreId, torreNombre, unidad.Piso,
             unidad.CoeficientePropiedad, unidad.AreaM2,
@@ -231,7 +231,33 @@ public class MiCopropiedadService : IMiCopropiedadService
         var u = await _db.UnidadesPrivadas.FirstOrDefaultAsync(x => x.Id == unidadId, ct);
         if (u is null) return null;
 
-        u.Numero = req.Numero.Trim();
+        // Diff en lenguaje natural para la bitacora (RN-06): que cambio de esta unidad.
+        var cambios = new List<string>();
+        void Dif(string campo, string? antes, string? ahora)
+        {
+            var a = antes ?? "-"; var b = ahora ?? "-";
+            if (!string.Equals(a, b, StringComparison.Ordinal)) cambios.Add($"{campo}: {a} -> {b}");
+        }
+        string? torreNombreDe(Guid? id) => id.HasValue
+            ? _db.Torres.Where(t => t.Id == id).Select(t => t.Nombre).FirstOrDefault()
+            : null;
+
+        var numeroTrim = req.Numero.Trim();
+        Dif("Numero", u.Numero, numeroTrim);
+        Dif("Tipo", u.Tipo.ToString(), req.Tipo.ToString());
+        if (u.TorreId != req.TorreId) Dif("Torre", torreNombreDe(u.TorreId), torreNombreDe(req.TorreId));
+        Dif("Piso", u.Piso?.ToString(), req.Piso?.ToString());
+        Dif("Coeficiente", u.CoeficientePropiedad.ToString("0.####"), req.CoeficientePropiedad.ToString("0.####"));
+        Dif("Area", u.AreaM2?.ToString("0.##"), req.AreaM2?.ToString("0.##"));
+        Dif("Habitaciones", u.Habitaciones?.ToString(), req.Habitaciones?.ToString());
+        Dif("Banos", u.Banos?.ToString(), req.Banos?.ToString());
+        Dif("Parqueaderos", u.Parqueaderos?.ToString(), req.Parqueaderos?.ToString());
+        Dif("Estado", u.Estado, req.Estado);
+        Dif("Matricula", u.MatriculaInmobiliaria, req.MatriculaInmobiliaria);
+        if (u.PagaAdministracion != req.PagaAdministracion) Dif("Paga administracion", u.PagaAdministracion ? "Si" : "No", req.PagaAdministracion ? "Si" : "No");
+        Dif("Cuota", u.CuotaMensual?.ToString("N0"), req.CuotaMensual?.ToString("N0"));
+
+        u.Numero = numeroTrim;
         u.Tipo = req.Tipo;
         u.TorreId = req.TorreId;
         u.Piso = req.Piso;
@@ -252,7 +278,8 @@ public class MiCopropiedadService : IMiCopropiedadService
             ? await _db.Torres.Where(t => t.Id == u.TorreId).Select(t => t.Nombre).FirstOrDefaultAsync(ct)
             : null;
 
-        await RegistrarBitacoraAsync("Unidad", $"Unidad '{u.Numero}' actualizada.", ct);
+        if (cambios.Count > 0)
+            await RegistrarBitacoraAsync("Unidad", $"Unidad '{u.Numero}': {string.Join("; ", cambios)}.", ct, u.Id);
 
         return new UnidadDto(u.Id, u.Numero, u.Tipo,
             u.TorreId, torreNombre, u.Piso,
@@ -300,7 +327,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         };
         _db.UnidadVinculos.Add(v);
         await _db.SaveChangesAsync(ct);
-        await RegistrarBitacoraAsync("Unidad", $"{asociada.Tipo} '{asociada.Numero}' vinculado a unidad '{principal.Numero}' ({(req.IncluyeEnFacturacion ? "factura" : "no factura")}).", ct);
+        await RegistrarBitacoraAsync("Unidad", $"{asociada.Tipo} '{asociada.Numero}' vinculado a unidad '{principal.Numero}' ({(req.IncluyeEnFacturacion ? "factura" : "no factura")}).", ct, principal.Id);
         return new UnidadVinculoDto(v.Id, v.UnidadAsociadaId, asociada.Numero, asociada.Tipo, v.IncluyeEnFacturacion);
     }
 
@@ -391,7 +418,7 @@ public class MiCopropiedadService : IMiCopropiedadService
             await _db.SaveChangesAsync(ct);
             // Etiqueta automatica en el Directorio segun el rol (best-effort, no rompe el alta).
             try { await _dir.AsegurarEtiquetaPorRolAsync(EntidadDirectorio.Empresa, empId, req.Rol, ct); } catch { /* no bloquear el vinculo */ }
-            await RegistrarBitacoraAsync("Unidad", $"{req.Rol} '{empresa.RazonSocial}' (empresa) vinculado a unidad '{unidad.Numero}'.", ct);
+            await RegistrarBitacoraAsync("Unidad", $"{req.Rol} '{empresa.RazonSocial}' (empresa) vinculado a unidad '{unidad.Numero}'.", ct, unidad.Id);
             return new UnidadPersonaDto(upE.Id, Guid.Empty, empresa.RazonSocial, NitConDv(empresa), empresa.Email, empresa.Telefono,
                 upE.Rol, upE.Habita, upE.Parentesco, empresa.RazonSocial, "", EntidadDirectorio.Empresa, empresa.Id);
         }
@@ -447,7 +474,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         try { await _dir.AsegurarEtiquetaPorRolAsync(EntidadDirectorio.Persona, personaId, req.Rol, ct); } catch { /* no bloquear el vinculo */ }
 
         var persona = await _db.Personas.AsNoTracking().FirstAsync(p => p.Id == personaId, ct);
-        await RegistrarBitacoraAsync("Unidad", $"{req.Rol} '{persona.Nombres} {persona.Apellidos}' vinculado a unidad '{unidad.Numero}'.", ct);
+        await RegistrarBitacoraAsync("Unidad", $"{req.Rol} '{persona.Nombres} {persona.Apellidos}' vinculado a unidad '{unidad.Numero}'.", ct, unidad.Id);
 
         return new UnidadPersonaDto(up.Id, personaId,
             ($"{persona.Nombres} {persona.Apellidos}").Trim(), persona.Documento, persona.Email, persona.Telefono,
@@ -514,7 +541,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         try { await _seed.SembrarPorFacetaAsync(persona.Id, up.Rol, ct); } catch { /* no bloquear */ }
         // Asegura la etiqueta del rol actual (aditivo: no quita la del rol anterior).
         try { await _dir.AsegurarEtiquetaPorRolAsync(EntidadDirectorio.Persona, persona.Id, up.Rol, ct); } catch { /* no bloquear */ }
-        await RegistrarBitacoraAsync("Unidad", $"Datos de '{persona.Nombres} {persona.Apellidos}' actualizados.", ct);
+        await RegistrarBitacoraAsync("Unidad", $"Datos de '{persona.Nombres} {persona.Apellidos}' actualizados.", ct, up.UnidadId);
 
         return new UnidadPersonaDto(up.Id, persona.Id,
             ($"{persona.Nombres} {persona.Apellidos}").Trim(), persona.Documento, persona.Email, persona.Telefono,
@@ -617,7 +644,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         var d = new UnidadDocumento { TenantId = tid, UnidadId = unidadId, Nombre = nombre.Trim(), Url = url, Tamano = tamano };
         _db.UnidadDocumentos.Add(d);
         await _db.SaveChangesAsync(ct);
-        await RegistrarBitacoraAsync("Unidad", $"Documento '{d.Nombre}' adjuntado a la unidad.", ct);
+        await RegistrarBitacoraAsync("Unidad", $"Documento '{d.Nombre}' adjuntado a la unidad.", ct, unidadId);
         return new UnidadDocumentoDto(d.Id, d.Nombre, _blob.ResolveUrl(d.Url) ?? d.Url, d.Tamano);
     }
 
@@ -650,7 +677,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         var e = new UnidadPlaca { TenantId = tid, UnidadId = unidadId, Placa = placa, TipoVehiculo = req.TipoVehiculo };
         _db.UnidadPlacas.Add(e);
         await _db.SaveChangesAsync(ct);
-        await RegistrarBitacoraAsync("Unidad", $"Placa '{placa}' habilitada en la unidad.", ct);
+        await RegistrarBitacoraAsync("Unidad", $"Placa '{placa}' habilitada en la unidad.", ct, unidadId);
         return new UnidadPlacaDto(e.Id, e.Placa, e.TipoVehiculo);
     }
 
@@ -683,7 +710,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         var e = new UnidadArriendo { TenantId = tid, UnidadId = unidadId, Concepto = concepto, ValorMensual = req.ValorMensual, Referencia = refTxt };
         _db.UnidadArriendos.Add(e);
         await _db.SaveChangesAsync(ct);
-        await RegistrarBitacoraAsync("Unidad", $"Arriendo/cobro '{concepto}' agregado a la unidad.", ct);
+        await RegistrarBitacoraAsync("Unidad", $"Arriendo/cobro '{concepto}' agregado a la unidad.", ct, unidadId);
         return new UnidadArriendoDto(e.Id, e.Concepto, e.ValorMensual, e.Referencia);
     }
 
@@ -715,7 +742,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         var e = new UnidadMascota { TenantId = tid, UnidadId = unidadId, Nombre = nombre, Tipo = req.Tipo, Raza = raza };
         _db.UnidadMascotas.Add(e);
         await _db.SaveChangesAsync(ct);
-        await RegistrarBitacoraAsync("Unidad", $"Mascota '{nombre}' registrada en la unidad.", ct);
+        await RegistrarBitacoraAsync("Unidad", $"Mascota '{nombre}' registrada en la unidad.", ct, unidadId);
         return new UnidadMascotaDto(e.Id, e.Nombre, e.Tipo, e.Raza);
     }
 
@@ -755,7 +782,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         };
         _db.UnidadEmpleadas.Add(e);
         await _db.SaveChangesAsync(ct);
-        await RegistrarBitacoraAsync("Unidad", $"Empleada de servicio '{nombre}' registrada en la unidad.", ct);
+        await RegistrarBitacoraAsync("Unidad", $"Empleada de servicio '{nombre}' registrada en la unidad.", ct, unidadId);
         return new UnidadEmpleadaDto(e.Id, e.Nombre, e.Documento, e.Celular, e.Horario, e.PersonaId);
     }
 
@@ -796,7 +823,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         };
         _db.UnidadTitularidades.Add(e);
         await _db.SaveChangesAsync(ct);
-        await RegistrarBitacoraAsync("Unidad", $"Titularidad historica '{nombre}' agregada a la unidad.", ct);
+        await RegistrarBitacoraAsync("Unidad", $"Titularidad historica '{nombre}' agregada a la unidad.", ct, unidadId);
         return new UnidadTitularidadDto(e.Id, e.Nombre, e.Rol, e.Desde, e.Hasta, e.Hasta == null, e.PersonaId);
     }
 
@@ -2489,13 +2516,27 @@ public class MiCopropiedadService : IMiCopropiedadService
             .ToListAsync(ct);
     }
 
-    /// <summary>Registra una entrada de bitacora (persistencia propia). RN-06.</summary>
-    public async Task RegistrarBitacoraAsync(string categoria, string descripcion, CancellationToken ct)
+    /// <summary>Bitacora filtrada por una entidad concreta (ej. una unidad), para su ficha.</summary>
+    public async Task<IReadOnlyList<BitacoraEntradaDto>> ListBitacoraEntidadAsync(Guid entidadId, int limit, CancellationToken ct)
+    {
+        return await _db.BitacoraMiCopropiedad
+            .AsNoTracking()
+            .Where(b => b.EntidadId == entidadId)
+            .OrderByDescending(b => b.CreatedAt)
+            .Take(limit <= 0 ? 100 : limit)
+            .Select(b => new BitacoraEntradaDto(b.Id, b.Categoria, b.Descripcion, b.Autor, b.CreatedAt))
+            .ToListAsync(ct);
+    }
+
+    /// <summary>Registra una entrada de bitacora (persistencia propia). RN-06.
+    /// entidadId (opcional) enlaza el evento a una entidad concreta para su ficha.</summary>
+    public async Task RegistrarBitacoraAsync(string categoria, string descripcion, CancellationToken ct, Guid? entidadId = null)
     {
         _db.BitacoraMiCopropiedad.Add(new BitacoraMiCopropiedad
         {
             Categoria = categoria,
-            Descripcion = descripcion
+            Descripcion = descripcion,
+            EntidadId = entidadId
         });
         await _db.SaveChangesAsync(ct);
     }
