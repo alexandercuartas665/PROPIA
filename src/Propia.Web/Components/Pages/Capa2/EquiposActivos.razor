@@ -194,17 +194,30 @@ else
     {
         <div class="ea-list">
             <div class="ea-list-head ea-listgrid">
-                <div>NOMBRE</div><div>CATEGORIA</div><div>TIPO</div><div>CANT</div><div>ESTADO</div><div></div>
+                <div></div><div>NOMBRE</div><div>CATEGORIA</div><div>TIPO</div><div>CANT</div><div>ESTADO</div><div></div>
             </div>
             @foreach (var e in Filtrados())
             {
                 var eq = e;
+                @* Datos editables inline; el expansor (primera columna, se ve al hover) abre la ficha. *@
                 <div class="ea-list-row ea-listgrid">
-                    <button type="button" class="ea-list-link" @onclick="() => AbrirFichaEquipoAsync(eq)" title="Abrir ficha">@e.Nombre</button>
-                    <div class="ea-list-c">@e.Categoria</div>
-                    <div class="ea-list-c">@e.Tipo</div>
-                    <div class="ea-list-c">@e.Cantidad</div>
-                    <div class="ea-list-c"><span class="ea-badge ea-badge--@EstadoBadge(e.Estado)">@EstadoTextoCorto(e.Estado)</span></div>
+                    <div class="ea-col-exp">
+                        <button type="button" class="ea-exp-fijo" title="Abrir la ficha para editar" @onclick="() => AbrirFichaEquipoAsync(eq)">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                        </button>
+                    </div>
+                    <input class="ea-cell ea-cell-nom" value="@e.Nombre" @onchange="@(ev => GuardarEquipoInline(eq, "nombre", ev))" />
+                    <select class="ea-cell" @onchange="@(ev => GuardarEquipoInline(eq, "categoria", ev))">
+                        @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c" selected="@(e.Categoria == c)">@c</option> }
+                    </select>
+                    <select class="ea-cell" @onchange="@(ev => GuardarEquipoInline(eq, "tipo", ev))">
+                        <option value="@TipoElemento.Equipo" selected="@(e.Tipo == TipoElemento.Equipo)">Equipo</option>
+                        <option value="@TipoElemento.Activo" selected="@(e.Tipo == TipoElemento.Activo)">Activo</option>
+                    </select>
+                    <input type="number" min="1" class="ea-cell ea-num" value="@e.Cantidad" @onchange="@(ev => GuardarEquipoInline(eq, "cantidad", ev))" />
+                    <select class="ea-cell ea-cell-est" @onchange="@(ev => GuardarEquipoInline(eq, "estado", ev))">
+                        @foreach (var s in Enum.GetValues<EstadoEquipoActivo>()) { <option value="@s" selected="@(e.Estado == s)">@EstadoTextoCorto(s)</option> }
+                    </select>
                     <div class="ea-list-act">
                         <button type="button" class="ea-row-del" @onclick="() => EliminarEquipoAsync(eq.Id, eq.Nombre)" title="Eliminar">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
@@ -214,17 +227,14 @@ else
             }
             @* @@key limpia la fila al crear; @@oninput SIN value= evita perder pulsaciones. *@
             <div class="ea-list-newrow ea-listgrid" @key="_nonce">
-                <div class="ea-inp-wrap">
-                    <input class="ea-row-inp" @ref="_nombreRef" placeholder="Nuevo equipo o activo..."
-                           @oninput="@(e => _draft.Nombre = e.Value?.ToString() ?? string.Empty)" @onkeydown="Keydown" />
-                    @if (!string.IsNullOrWhiteSpace(_draft.Nombre))
-                    {
-                        <button type="button" class="ea-inp-eye" title="Crear y abrir ficha"
-                                @onclick="CrearYAbrirFichaAsync" disabled="@_busy">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
-                        </button>
-                    }
+                <div class="ea-col-exp">
+                    <button type="button" class="ea-exp-fijo" tabindex="-1" title="Crear y abrir la ficha"
+                            @onclick="CrearYAbrirFichaAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_draft.Nombre))">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                    </button>
                 </div>
+                <input class="ea-row-inp" @ref="_nombreRef" placeholder="Nuevo equipo o activo..."
+                       @oninput="@(e => _draft.Nombre = e.Value?.ToString() ?? string.Empty)" @onkeydown="Keydown" />
                 <select class="ea-row-inp" @bind="_draft.Categoria">
                     @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c">@c</option> }
                 </select>
@@ -467,6 +477,45 @@ else
         else if (e.Key == "Escape") CancelarComposer();
     }
 
+    // Edicion inline en la vista Tabla: guarda al salir del campo. Nombre/categoria/tipo/cantidad
+    // van por PUT /equipos/{id} (conservando la ficha); el estado por su propio endpoint.
+    private async Task GuardarEquipoInline(EquipoActivoDto e, string campo, ChangeEventArgs ev)
+    {
+        var val = ev.Value?.ToString() ?? "";
+        try
+        {
+            if (campo == "estado")
+            {
+                if (!Enum.TryParse<EstadoEquipoActivo>(val, out var est) || est == e.Estado) return;
+                var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos/{e.Id}/estado", new CambiarEstadoEquipoRequest(est));
+                if (r.IsSuccessStatusCode) { var i = _equipos.FindIndex(x => x.Id == e.Id); if (i >= 0) _equipos[i] = e with { Estado = est }; Msg("Equipo actualizado.", true); }
+                else Msg(await MensajeDeError(r, "No se pudo actualizar."), false);
+                return;
+            }
+            var nombre = e.Nombre; var categoria = e.Categoria; var tipo = e.Tipo; var cantidad = e.Cantidad;
+            switch (campo)
+            {
+                case "nombre": if (string.IsNullOrWhiteSpace(val) || val.Trim() == e.Nombre) return; nombre = val.Trim(); break;
+                case "categoria": if (!Enum.TryParse<CategoriaEquipo>(val, out categoria) || categoria == e.Categoria) return; break;
+                case "tipo": if (!Enum.TryParse<TipoElemento>(val, out tipo) || tipo == e.Tipo) return; if (tipo == TipoElemento.Equipo) cantidad = 1; break;
+                case "cantidad": cantidad = int.TryParse(val, out var c) ? Math.Max(1, c) : e.Cantidad; if (cantidad == e.Cantidad) return; break;
+            }
+            var req = new ActualizarEquipoActivoRequest(nombre, categoria, tipo, cantidad, e.EsReservable,
+                e.Modelo, e.NumeroSerie, e.FechaInstalacion, e.GarantiaHasta, e.Ubicacion, e.Observaciones,
+                e.VidaUtilAnios, e.FechaAdquisicion, e.ValorAdquisicion, e.Proveedor, e.NumeroFactura, e.CodigoBarra, e.CondicionesUso);
+            var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos/{e.Id}", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                var upd = await resp.Content.ReadFromJsonAsync<EquipoActivoDto>();
+                var i = _equipos.FindIndex(x => x.Id == e.Id);
+                if (upd is not null && i >= 0) _equipos[i] = upd;
+                Msg("Equipo actualizado.", true);
+            }
+            else Msg(await MensajeDeError(resp, "No se pudo actualizar."), false);
+        }
+        catch (Exception ex) { Msg(ex.Message, false); }
+    }
+
     private async Task CrearDesdeDraftAsync()
     {
         if (string.IsNullOrWhiteSpace(_draft.Nombre)) return;
@@ -629,7 +678,20 @@ else
     .ea-composer-ok:disabled { opacity: .5; cursor: default; }
 
     .ea-list { border: 1px solid #E1E8EE; border-radius: 12px; overflow: hidden; background: #fff; }
-    .ea-listgrid { display: grid; grid-template-columns: 2fr 1.2fr 1fr .6fr 1.1fr 60px; gap: 10px; align-items: center; }
+    .ea-listgrid { display: grid; grid-template-columns: 34px 2fr 1.2fr 1fr .6fr 1.1fr 60px; gap: 10px; align-items: center; }
+    /* Columna del expansor: se ve al pasar el mouse por la fila (o al escribir en la fila de alta). */
+    .ea-col-exp { display: flex; align-items: center; justify-content: center; }
+    .ea-exp-fijo { width: 26px; height: 26px; border: 0; border-radius: 7px; background: #F1ECFD; color: var(--propia-brand, #6D4FE3); display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s; }
+    .ea-list-row:hover .ea-exp-fijo, .ea-list-newrow:hover .ea-exp-fijo, .ea-list-newrow:focus-within .ea-exp-fijo { opacity: 1; }
+    .ea-exp-fijo:hover { background: #E4DBFB; }
+    .ea-exp-fijo:disabled { opacity: 0; cursor: default; }
+    .ea-list-newrow:hover .ea-exp-fijo:disabled, .ea-list-newrow:focus-within .ea-exp-fijo:disabled { opacity: .35; }
+    /* Celdas editables inline: se leen como texto y se marcan al hover/foco. */
+    .ea-cell { width: 100%; box-sizing: border-box; border: 1px solid transparent; border-radius: 7px; padding: 6px 8px; font-size: 12.5px; color: #516F90; background: transparent; outline: none; font-family: inherit; }
+    .ea-cell:hover { border-color: #E1E8EE; background: #FBFCFD; }
+    .ea-cell:focus { border-color: var(--propia-brand, #6D4FE3); background: #fff; color: #33475B; }
+    .ea-cell-nom { font-weight: 700; color: #33475B; }
+    select.ea-cell { cursor: pointer; }
     .ea-list-head { padding: 10px 14px; background: #F8FAFC; font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: #A6B7C8; border-bottom: 1px solid #EEF3F8; }
     .ea-list-row { padding: 10px 14px; border-bottom: 1px solid #F3F7FA; }
     .ea-list-row:hover { background: #FBFCFD; }
