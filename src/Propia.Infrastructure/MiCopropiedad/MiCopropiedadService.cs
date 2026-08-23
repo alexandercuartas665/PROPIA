@@ -1698,6 +1698,10 @@ public class MiCopropiedadService : IMiCopropiedadService
         z.TarifaReserva = req.TarifaReserva;
         z.ReglasUso = req.ReglasUso;
         z.Estado = req.Estado;
+        // Reserva y aforo solo se tocan si vienen en el request (edicion inline de la tabla);
+        // null = conservar el valor actual (la plantilla y la ficha no los mandan por aqui).
+        if (req.EsReservable is bool r) z.EsReservable = r;
+        if (req.CapacidadPersonas is not null) z.CapacidadPersonas = req.CapacidadPersonas;
         await _db.SaveChangesAsync(ct);
         if (prevEstado != req.Estado)
             await RegistrarBitacoraAsync("Zona", $"Zona '{z.Nombre}': estado {prevEstado} -> {req.Estado}.", ct);

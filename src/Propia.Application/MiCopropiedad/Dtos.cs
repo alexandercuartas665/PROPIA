@@ -266,7 +266,8 @@ public record CambiarEstadoZonaRequest(EstadoZonaComunMantenimiento Estado);
 /// (reservable, aforo, horarios) NO va aqui: esa se guarda con GuardarZonaFichaRequest.</summary>
 public record ActualizarZonaComunRequest(
     string Nombre, CategoriaZonaComun Categoria, string? Descripcion,
-    decimal? TarifaReserva, string? ReglasUso, EstadoZonaComunMantenimiento Estado);
+    decimal? TarifaReserva, string? ReglasUso, EstadoZonaComunMantenimiento Estado,
+    bool? EsReservable = null, int? CapacidadPersonas = null);
 
 // ----- Tipos de unidad personalizados (spec 2.3 - distribucion) -----
 public record TipoUnidadCustomDto(Guid Id, string Nombre, bool PagaAdministracionPorDefecto, string? Descripcion, bool Activo);

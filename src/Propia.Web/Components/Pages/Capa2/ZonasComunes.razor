@@ -194,12 +194,21 @@ else
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                         </button>
                     </div>
-                    @* El modal se abre desde el expansor de la primera columna; el nombre es solo texto. *@
-                    <div class="zc-list-nom">@z.Nombre</div>
-                    <div class="zc-list-c">@z.Categoria</div>
-                    <div class="zc-list-c">@(z.EsReservable ? "Si" : "No")</div>
-                    <div class="zc-list-c">@(z.CapacidadPersonas?.ToString() ?? "-")</div>
-                    <div class="zc-list-c"><span class="zc-list-badge">@z.Estado</span></div>
+                    @* Datos editables inline (Blazor Server: value= + @onchange guarda al salir del
+                       campo; no hay re-render mientras se escribe, asi que no se comen pulsaciones).
+                       Para crear/editar la ficha completa esta el expansor de la primera columna. *@
+                    <input class="zc-cell zc-cell-nom" value="@z.Nombre" @onchange="@(e => GuardarZonaInline(zona, "nombre", e))" />
+                    <select class="zc-cell" @onchange="@(e => GuardarZonaInline(zona, "categoria", e))">
+                        @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c" selected="@(z.Categoria == c)">@c</option> }
+                    </select>
+                    <select class="zc-cell" @onchange="@(e => GuardarZonaInline(zona, "reservable", e))">
+                        <option value="false" selected="@(!z.EsReservable)">No</option>
+                        <option value="true" selected="@z.EsReservable">Si</option>
+                    </select>
+                    <input type="number" min="0" class="zc-cell zc-num" value="@z.CapacidadPersonas" placeholder="-" @onchange="@(e => GuardarZonaInline(zona, "aforo", e))" />
+                    <select class="zc-cell zc-cell-est" @onchange="@(e => GuardarZonaInline(zona, "estado", e))">
+                        @foreach (var s in Enum.GetValues<EstadoZonaComunMantenimiento>()) { <option value="@s" selected="@(z.Estado == s)">@s</option> }
+                    </select>
                     <div class="zc-list-act">
                         <button type="button" class="zc-row-del" @onclick="() => EliminarZonaAsync(zona.Id, zona.Nombre)" title="Eliminar">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
@@ -456,6 +465,49 @@ else
         else if (e.Key == "Escape") CancelarComposer();
     }
 
+    // Edicion inline de una celda en la vista Tabla: arma el request con el valor cambiado y
+    // conserva el resto (reserva/aforo van como null cuando no cambian, para no pisarlos).
+    private async Task GuardarZonaInline(ZonaComunDto z, string campo, ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString() ?? "";
+        var nombre = z.Nombre; var categoria = z.Categoria; var estado = z.Estado;
+        bool? reservable = null; int? aforo = null;
+        switch (campo)
+        {
+            case "nombre":
+                if (string.IsNullOrWhiteSpace(val) || val.Trim() == z.Nombre) return;
+                nombre = val.Trim(); break;
+            case "categoria":
+                if (!Enum.TryParse<CategoriaZonaComun>(val, out categoria) || categoria == z.Categoria) return;
+                break;
+            case "estado":
+                if (!Enum.TryParse<EstadoZonaComunMantenimiento>(val, out estado) || estado == z.Estado) return;
+                break;
+            case "reservable":
+                var r = val == "true";
+                if (r == z.EsReservable) return;
+                reservable = r; break;
+            case "aforo":
+                aforo = int.TryParse(val, out var a) ? a : (int?)null;
+                if (aforo == z.CapacidadPersonas) return;
+                break;
+        }
+        try
+        {
+            var req = new ActualizarZonaComunRequest(nombre, categoria, z.Descripcion, z.TarifaReserva, z.ReglasUso, estado, reservable, aforo);
+            var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/zonas/{z.Id}", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                var upd = await resp.Content.ReadFromJsonAsync<ZonaComunDto>();
+                var idx = _zonas.FindIndex(x => x.Id == z.Id);
+                if (upd is not null && idx >= 0) _zonas[idx] = upd;
+                Msg("Zona actualizada.", true);
+            }
+            else Msg(await MensajeDeError(resp, "No se pudo actualizar la zona."), false);
+        }
+        catch (Exception ex) { Msg(ex.Message, false); }
+    }
+
     private async Task CrearDesdeDraftAsync()
     {
         if (string.IsNullOrWhiteSpace(_draft.Nombre)) return;
@@ -611,7 +663,13 @@ else
     .zc-list-head { padding: 10px 14px; background: #F8FAFC; font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: #A6B7C8; border-bottom: 1px solid #EEF3F8; }
     .zc-list-row { padding: 10px 14px; border-bottom: 1px solid #F3F7FA; }
     .zc-list-row:hover { background: #FBFCFD; }
-    .zc-list-nom { font-size: 13px; font-weight: 700; color: #33475B; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* Celdas editables inline: se leen como texto (borde invisible) y se marcan al hover/foco. */
+    .zc-cell { width: 100%; box-sizing: border-box; border: 1px solid transparent; border-radius: 7px; padding: 6px 8px; font-size: 12.5px; color: #516F90; background: transparent; outline: none; font-family: inherit; }
+    .zc-cell:hover { border-color: #E1E8EE; background: #FBFCFD; }
+    .zc-cell:focus { border-color: var(--propia-brand, #6D4FE3); background: #fff; color: #33475B; }
+    .zc-cell-nom { font-weight: 700; color: #33475B; }
+    select.zc-cell { cursor: pointer; }
+    .zc-cell.zc-num { text-align: left; }
     .zc-list-c { font-size: 12.5px; color: #516F90; }
     .zc-list-badge { font-size: 10.5px; font-weight: 700; color: #516F90; background: #EEF3F8; border-radius: 6px; padding: 3px 8px; }
     .zc-list-act { display: flex; justify-content: flex-end; }
