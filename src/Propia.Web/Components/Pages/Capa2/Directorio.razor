@@ -93,6 +93,19 @@
                 <input class="mod-search-inp" style="width:280px;" value="@_query" @oninput="OnQueryInput" placeholder="Buscar por nombre, documento, email, etiqueta..." />
             </div>
             <span class="mod-search-count" style="margin-left:auto;">@ResultadosCount resultados</span>
+            @* Agrupar por etiqueta: parte la vista en secciones. Mismo look que los toggles. *@
+            <button type="button" class="dir-btn-ghost @(_agrupar ? "is-on" : "")" @onclick="ToggleAgrupar" title="Agrupar por etiqueta">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/><circle cx="6" cy="6" r="1.6" fill="currentColor" stroke="none"/><circle cx="6" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="6" cy="18" r="1.6" fill="currentColor" stroke="none"/></svg>
+                Agrupar
+            </button>
+            @* Configurar columnas visibles y sus nombres (solo en vista Tabla). *@
+            @if (_view == "tabla")
+            {
+                <button type="button" class="dir-btn-ghost" @onclick="() => _cfgColsAbierto = true" title="Configurar columnas de la tabla">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+                    Columnas
+                </button>
+            }
             @* Toggle Lista/Tabla dentro de la barra de filtros (como en los demas modulos),
                no en una fila propia. La vista la controla la pagina y se pasa a las vistas
                hijas, asi el Directorio se lee igual que Zonas / Equipos / Usuarios. *@
@@ -118,14 +131,46 @@
            extraidos para no engrosar esta pagina. *@
         @if (_tab == "personas")
         {
-            <DirectorioPersonasVista Personas="PersonasFiltradas" Vista="_view" OnAbrir="AbrirPersona" OnCrear="CrearPersonaTabla" OnCrearAbrir="CrearPersonaTablaYAbrir" />
+            <DirectorioPersonasVista Personas="PersonasFiltradas" Grupos="GruposPersonas()" ColsConfig="_colsPersonas" Vista="_view" OnAbrir="AbrirPersona" OnCrear="CrearPersonaTabla" OnCrearAbrir="CrearPersonaTablaYAbrir" OnEditarCampo="EditarPersonaInline" />
         }
         else
         {
-            <DirectorioEmpresasVista Empresas="EmpresasFiltradas" Vista="_view" OnAbrir="AbrirEmpresa" OnCrear="CrearEmpresaTabla" OnCrearAbrir="CrearEmpresaTablaYAbrir" />
+            <DirectorioEmpresasVista Empresas="EmpresasFiltradas" Grupos="GruposEmpresas()" ColsConfig="_colsEmpresas" Vista="_view" OnAbrir="AbrirEmpresa" OnCrear="CrearEmpresaTabla" OnCrearAbrir="CrearEmpresaTablaYAbrir" OnEditarCampo="EditarEmpresaInline" />
         }
     }
 </div>
+
+@* ===================== MODAL Configurar columnas ===================== *@
+@if (_cfgColsAbierto)
+{
+    <div class="dir-modal-backdrop" @onclick="() => _cfgColsAbierto = false">
+        <div class="dir-cfgcols" @onclick:stopPropagation="true">
+            <div class="dir-cfgcols-head">
+                <strong>Columnas de la tabla</strong>
+                <button type="button" class="dir-cfgcols-x" @onclick="() => _cfgColsAbierto = false" title="Cerrar">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <p class="dir-cfgcols-sub">Elige que columnas ver y como se llaman. Se guarda solo para ti (@(_tab == "empresas" ? "empresas" : "personas")).</p>
+            @foreach (var col in CatalogoActivo)
+            {
+                var pref = PrefDe(col.Key);
+                var key = col.Key;
+                <div class="dir-cfgcols-row">
+                    <label class="dir-cfgcols-vis" title="@(col.Hideable ? "Mostrar u ocultar" : "Columna requerida, siempre visible")">
+                        <input type="checkbox" checked="@pref.Visible" disabled="@(!col.Hideable)" @onchange="@(e => SetColVisible(key, (bool)(e.Value ?? false)))" />
+                    </label>
+                    <input class="dir-cfgcols-inp" value="@(string.IsNullOrWhiteSpace(pref.Label) ? col.DefLabel : pref.Label)" placeholder="@col.DefLabel" @onchange="@(e => SetColLabel(key, e.Value?.ToString()))" />
+                    @if (!col.Hideable) { <span class="dir-cfgcols-req">requerida</span> }
+                </div>
+            }
+            <div class="dir-cfgcols-actions">
+                <button type="button" class="dir-btn-ghost" @onclick="RestablecerCols">Restablecer</button>
+                <button type="button" class="dir-btn-brand" @onclick="() => _cfgColsAbierto = false">Listo</button>
+            </div>
+        </div>
+    </div>
+}
 
 @* ===================== MODAL 360 (Persona / Empresa) ===================== *@
 @if (_detalleAbierto)
@@ -751,6 +796,7 @@
     .dir-actions { display: flex; gap: 9px; }
     .dir-btn-ghost { display: inline-flex; align-items: center; gap: 7px; padding: 10px 15px; border-radius: 10px; border: 1px solid #E1E8EE; background: #fff; font-size: 13px; font-weight: 600; color: #516F90; cursor: pointer; font-family: inherit; }
     .dir-btn-ghost:hover { border-color: #C3D0DD; color: #33475B; }
+    .dir-btn-ghost.is-on { border-color: var(--propia-brand, #6D4FE3); background: #F5F2FE; color: var(--propia-brand, #6D4FE3); }
     /* Boton de plantilla en morado suave (mismo look que zc-btn-ghost de Zonas/Equipos). */
     .dir-btn-soft { display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border: 1px solid #DCD2F8; border-radius: 9px; background: #F1ECFD; color: var(--propia-brand, #6D4FE3); font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
     .dir-btn-soft:hover { background: #E5DEFB; }
@@ -805,6 +851,21 @@
     .dir-modal-backdrop { position: fixed; inset: 0; z-index: 1080; background: rgba(27,42,58,.55); display: flex; align-items: flex-start; justify-content: center; padding: 34px 20px; overflow-y: auto; }
     .dir-modal { width: 600px; max-width: 100%; background: #fff; border-radius: 18px; box-shadow: 0 30px 70px rgba(27,42,58,.4); margin: auto; overflow: hidden; display: flex; flex-direction: column; max-height: 90vh; font-family: var(--propia-font-base, 'Lexend', sans-serif); }
     .dir-modal--lg { width: 880px; }
+    /* Panel Configurar columnas */
+    .dir-cfgcols { width: 420px; max-width: 100%; background: #fff; border-radius: 14px; box-shadow: 0 18px 50px rgba(27,42,58,.28); padding: 18px 20px 16px; align-self: flex-start; margin-top: 40px; }
+    .dir-cfgcols-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+    .dir-cfgcols-head strong { font-size: 15px; color: #33475B; }
+    .dir-cfgcols-x { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #7C98B6; border: 1px solid #E1E8EE; background: #fff; cursor: pointer; }
+    .dir-cfgcols-x:hover { background: #F5F8FA; color: #33475B; }
+    .dir-cfgcols-sub { font-size: 12.5px; color: #7C98B6; margin: 2px 0 12px; }
+    .dir-cfgcols-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
+    .dir-cfgcols-vis { display: flex; align-items: center; }
+    .dir-cfgcols-vis input { width: 16px; height: 16px; accent-color: var(--propia-brand, #6D4FE3); cursor: pointer; }
+    .dir-cfgcols-vis input:disabled { cursor: not-allowed; }
+    .dir-cfgcols-inp { flex: 1; border: 1px solid #E1E8EE; border-radius: 8px; padding: 7px 10px; font-size: 13px; color: #33475B; font-family: inherit; outline: none; }
+    .dir-cfgcols-inp:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .dir-cfgcols-req { font-size: 10.5px; font-weight: 700; color: #90A4B7; text-transform: uppercase; letter-spacing: .3px; }
+    .dir-cfgcols-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
     .dir-x { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; color: #7C98B6; border: 1px solid #E1E8EE; background: #fff; cursor: pointer; flex-shrink: 0; }
     .dir-x:hover { background: #F5F8FA; color: #33475B; }
 
@@ -1105,6 +1166,118 @@
             _ => ""
         }) ?? true).ToList();
 
+    // Agrupar por etiqueta: cuando esta activo, la tabla/lista se parte en secciones por etiqueta.
+    // Un contacto con varias etiquetas aparece en cada seccion; los que no tienen etiqueta caen
+    // en "Sin etiqueta", que va siempre al final. Las secciones se ordenan por nombre de etiqueta.
+    private bool _agrupar;
+    private const string AgruparKey = "propia_agrupar_directorio";
+
+    private List<DirectorioPersonasVista.Grupo>? GruposPersonas()
+    {
+        var items = PersonasFiltradas;
+        if (!_agrupar || items is null) return null;
+        var grupos = new List<DirectorioPersonasVista.Grupo>();
+        foreach (var chip in items
+            .Where(p => p.Etiquetas is not null)
+            .SelectMany(p => p.Etiquetas!)
+            .GroupBy(e => e.EtiquetaId)
+            .Select(g => g.First())
+            .OrderBy(e => e.Nombre, StringComparer.CurrentCultureIgnoreCase))
+        {
+            var miembros = items.Where(p => p.Etiquetas is not null && p.Etiquetas.Any(e => e.EtiquetaId == chip.EtiquetaId)).ToList();
+            if (miembros.Count > 0) grupos.Add(new(chip.Nombre, chip.Color, chip.Icono, miembros));
+        }
+        var sin = items.Where(p => p.Etiquetas is null || p.Etiquetas.Count == 0).ToList();
+        if (sin.Count > 0) grupos.Add(new("Sin etiqueta", null, null, sin));
+        return grupos;
+    }
+
+    private List<DirectorioEmpresasVista.Grupo>? GruposEmpresas()
+    {
+        var items = EmpresasFiltradas;
+        if (!_agrupar || items is null) return null;
+        var grupos = new List<DirectorioEmpresasVista.Grupo>();
+        foreach (var chip in items
+            .Where(e => e.Etiquetas is not null)
+            .SelectMany(e => e.Etiquetas!)
+            .GroupBy(e => e.EtiquetaId)
+            .Select(g => g.First())
+            .OrderBy(e => e.Nombre, StringComparer.CurrentCultureIgnoreCase))
+        {
+            var miembros = items.Where(e => e.Etiquetas is not null && e.Etiquetas.Any(x => x.EtiquetaId == chip.EtiquetaId)).ToList();
+            if (miembros.Count > 0) grupos.Add(new(chip.Nombre, chip.Color, chip.Icono, miembros));
+        }
+        var sin = items.Where(e => e.Etiquetas is null || e.Etiquetas.Count == 0).ToList();
+        if (sin.Count > 0) grupos.Add(new("Sin etiqueta", null, null, sin));
+        return grupos;
+    }
+
+    private async Task ToggleAgrupar()
+    {
+        _agrupar = !_agrupar;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, _agrupar ? "1" : "0"); } catch { }
+    }
+
+    // ----- Configurar columnas (por usuario, en localStorage; una config por pestana) -----
+    private Dictionary<string, DirectorioPersonasVista.ColPref> _colsPersonas = new();
+    private Dictionary<string, DirectorioPersonasVista.ColPref> _colsEmpresas = new();
+    private bool _cfgColsAbierto;
+
+    private string ColsKey => _tab == "empresas" ? "propia_cols_directorio_empresas" : "propia_cols_directorio_personas";
+    private Dictionary<string, DirectorioPersonasVista.ColPref> ColsActivas => _tab == "empresas" ? _colsEmpresas : _colsPersonas;
+    private IReadOnlyList<(string Key, string DefLabel, bool Hideable)> CatalogoActivo =>
+        _tab == "empresas" ? DirectorioEmpresasVista.Columnas : DirectorioPersonasVista.Columnas;
+
+    private async Task RestaurarColsAsync()
+    {
+        _colsPersonas = await LeerColsAsync("propia_cols_directorio_personas");
+        _colsEmpresas = await LeerColsAsync("propia_cols_directorio_empresas");
+    }
+
+    private async Task<Dictionary<string, DirectorioPersonasVista.ColPref>> LeerColsAsync(string key)
+    {
+        try
+        {
+            var raw = await Js.InvokeAsync<string?>("localStorage.getItem", key);
+            if (!string.IsNullOrWhiteSpace(raw))
+                return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, DirectorioPersonasVista.ColPref>>(raw) ?? new();
+        }
+        catch { }
+        return new();
+    }
+
+    private DirectorioPersonasVista.ColPref PrefDe(string key)
+    {
+        var d = ColsActivas;
+        if (!d.TryGetValue(key, out var p)) { p = new(); d[key] = p; }
+        return p;
+    }
+
+    private async Task SetColVisible(string key, bool visible)
+    {
+        PrefDe(key).Visible = visible;
+        await GuardarColsAsync();
+    }
+
+    private async Task SetColLabel(string key, string? label)
+    {
+        var def = CatalogoActivo.FirstOrDefault(c => c.Key == key).DefLabel;
+        var l = label?.Trim();
+        PrefDe(key).Label = string.IsNullOrWhiteSpace(l) || string.Equals(l, def, StringComparison.Ordinal) ? null : l;
+        await GuardarColsAsync();
+    }
+
+    private async Task GuardarColsAsync()
+    {
+        try { await Js.InvokeVoidAsync("localStorage.setItem", ColsKey, System.Text.Json.JsonSerializer.Serialize(ColsActivas)); } catch { }
+    }
+
+    private async Task RestablecerCols()
+    {
+        ColsActivas.Clear();
+        await GuardarColsAsync();
+    }
+
     // Conteo de terceros por etiqueta, calculado sobre la vista activa (personas o empresas):
     // solo aparecen en el filtro las etiquetas que tienen al menos un contacto, con su cantidad.
     // ----- Detalle 360 -----
@@ -1226,6 +1399,7 @@
                 }
                 catch { }
                 await RestaurarVistaAsync();
+                await RestaurarColsAsync();
                 await CargarEtiquetasAsync();
                 await CargarAsync();
                 StateHasChanged();
@@ -1252,6 +1426,8 @@
         {
             var v = await Js.InvokeAsync<string?>("localStorage.getItem", VistaKey);
             if (v == "lista" || v == "tabla") _view = v;
+            var ag = await Js.InvokeAsync<string?>("localStorage.getItem", AgruparKey);
+            _agrupar = ag == "1";
         }
         catch { }
     }
@@ -1544,6 +1720,40 @@
     // Alta inline desde la vista Tabla (personas). Crea la persona + la vincula a la copropiedad.
     private async Task CrearPersonaTabla(NuevaPersonaDir d) => await CrearPersonaTablaCoreAsync(d);
 
+    // Edicion inline de una celda de persona en la vista Tabla (nombres/apellidos/email/telefono).
+    // Tipo y documento (identidad) se editan en la ficha, no aqui.
+    private async Task EditarPersonaInline(DirectorioPersonasVista.EdicionCampoDir ed)
+    {
+        var p = _personas?.FirstOrDefault(x => x.Id == ed.Id);
+        if (p is null) return;
+        var val = ed.Valor?.Trim();
+        var nombres = p.Nombres; var apellidos = p.Apellidos; var email = p.Email; var telefono = p.Telefono;
+        switch (ed.Campo)
+        {
+            case "nombres": if (string.IsNullOrWhiteSpace(val) || val == p.Nombres) return; nombres = val; break;
+            case "apellidos": if (string.IsNullOrWhiteSpace(val) || val == p.Apellidos) return; apellidos = val; break;
+            case "email": if (val == (p.Email ?? "")) return; email = string.IsNullOrWhiteSpace(val) ? null : val; break;
+            case "telefono": if (val == (p.Telefono ?? "")) return; telefono = string.IsNullOrWhiteSpace(val) ? null : val; break;
+            default: return;
+        }
+        try
+        {
+            // Traer el detalle completo para NO pisar fecha de nacimiento / genero / foto al guardar.
+            // El endpoint responde Persona360Dto (detalle anidado en .Persona), no PersonaDetalleDto.
+            var d360 = await Auth().GetFromJsonAsync<Persona360Dto>($"/api/directorio/personas/{p.Id}");
+            var det = d360?.Persona;
+            var req = new ActualizarPersonaRequest(nombres, apellidos, email, telefono,
+                det?.FotoUrl, det?.FechaNacimiento, det?.Genero);
+            var resp = await Auth().PutAsJsonAsync($"/api/directorio/personas/{p.Id}", req);
+            if (resp.IsSuccessStatusCode && _personas is not null)
+            {
+                var i = _personas.FindIndex(x => x.Id == p.Id);
+                if (i >= 0) _personas[i] = p with { Nombres = nombres, Apellidos = apellidos, Email = email, Telefono = telefono };
+            }
+        }
+        catch { }
+    }
+
     // Expander de la fila de alta: crea la persona y abre de una su ficha.
     private async Task CrearPersonaTablaYAbrir(NuevaPersonaDir d)
     {
@@ -1572,6 +1782,41 @@
 
     // Alta inline desde la vista Tabla (empresas).
     private async Task CrearEmpresaTabla(NuevaEmpresaDir d) => await CrearEmpresaTablaCoreAsync(d);
+
+    // Edicion inline de una celda de empresa (razon social / nombre comercial / email / telefono).
+    // El NIT (identidad) se edita en la ficha.
+    private async Task EditarEmpresaInline(DirectorioPersonasVista.EdicionCampoDir ed)
+    {
+        var e = _empresas?.FirstOrDefault(x => x.Id == ed.Id);
+        if (e is null) return;
+        var val = ed.Valor?.Trim();
+        var razon = e.RazonSocial; var comercial = e.NombreComercial; var email = e.Email; var telefono = e.Telefono;
+        switch (ed.Campo)
+        {
+            case "razon": if (string.IsNullOrWhiteSpace(val) || val == e.RazonSocial) return; razon = val; break;
+            case "comercial": if (val == (e.NombreComercial ?? "")) return; comercial = string.IsNullOrWhiteSpace(val) ? null : val; break;
+            case "email": if (val == (e.Email ?? "")) return; email = string.IsNullOrWhiteSpace(val) ? null : val; break;
+            case "telefono": if (val == (e.Telefono ?? "")) return; telefono = string.IsNullOrWhiteSpace(val) ? null : val; break;
+            default: return;
+        }
+        try
+        {
+            // Traer el detalle para NO pisar direccion / sector / regimen / sitio web al guardar.
+            // El endpoint responde Empresa360Dto (detalle anidado en .Empresa), no EmpresaDetalleDto.
+            var e360 = await Auth().GetFromJsonAsync<Empresa360Dto>($"/api/directorio/empresas/{e.Id}");
+            var det = e360?.Empresa;
+            var req = new ActualizarEmpresaRequest(razon, comercial, email, telefono,
+                det?.Direccion, det?.TipoEmpresa, det?.SectorEconomico, det?.RegimenTributario,
+                det?.SitioWeb, det?.LogoUrl, det?.RepresentanteLegalPersonaId);
+            var resp = await Auth().PutAsJsonAsync($"/api/directorio/empresas/{e.Id}", req);
+            if (resp.IsSuccessStatusCode && _empresas is not null)
+            {
+                var i = _empresas.FindIndex(x => x.Id == e.Id);
+                if (i >= 0) _empresas[i] = e with { RazonSocial = razon, NombreComercial = comercial, Email = email, Telefono = telefono };
+            }
+        }
+        catch { }
+    }
 
     // Expander de la fila de alta: crea la empresa y abre de una su ficha.
     private async Task CrearEmpresaTablaYAbrir(NuevaEmpresaDir d)

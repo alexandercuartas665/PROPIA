@@ -23,8 +23,18 @@ else if (Vista == "lista")
     else
     {
         <div class="dir-list">
-            @foreach (var p in Personas)
+            @foreach (var item in FilasRender())
             {
+                if (item.EsGrupo)
+                {
+                    var g = item.Grupo!;
+                    <div class="dtab-group">
+                        <span class="dir-tag dir-tag--et dtab-group-chip" style="@ChipStyle(g.Color)">@EtiquetaIconos.Svg(g.Icono)<span>@g.Titulo</span></span>
+                        <span class="dtab-group-n">@g.Items.Count</span>
+                    </div>
+                    continue;
+                }
+                var p = item.Persona!;
                 var pid = p.Id;
                 <button type="button" class="dir-row" @onclick="() => OnAbrir.InvokeAsync(pid)">
                     <div class="dir-avatar dir-avatar--persona">@Iniciales(p.Nombres, p.Apellidos)</div>
@@ -63,57 +73,120 @@ else if (Vista == "lista")
 }
 else
 {
-    @* Tabla: todas las columnas + fila de alta inline (estilo tablero) *@
+    @* Tabla: primera columna Expandir (hover -> abre ficha) + celdas editables inline. Orden:
+       Expandir | Nombres | Apellidos | Tipo | Documento | Email | Telefono | Estado | Etiquetas. *@
     <div class="dtab-table">
         <div class="dtab-scroll">
-            <div class="dtab-head dvp-grid">
-                <div>TIPO</div><div>DOCUMENTO</div><div>NOMBRES</div><div>APELLIDOS</div><div>EMAIL</div><div>TELEFONO</div><div>ESTADO</div><div></div>
+            <div class="dtab-head dvp-grid" style="grid-template-columns:@GridCols">
+                <div></div>
+                @foreach (var c in ColsVisibles) { <div>@Etiqueta(c)</div> }
+                <div></div>
             </div>
-            @foreach (var p in Personas)
+            @foreach (var item in FilasRender())
             {
+                if (item.EsGrupo)
+                {
+                    var g = item.Grupo!;
+                    <div class="dtab-group dtab-group--row">
+                        <span class="dir-tag dir-tag--et dtab-group-chip" style="@ChipStyle(g.Color)">@EtiquetaIconos.Svg(g.Icono)<span>@g.Titulo</span></span>
+                        <span class="dtab-group-n">@g.Items.Count</span>
+                    </div>
+                    continue;
+                }
+                var p = item.Persona!;
                 var pid = p.Id;
-                <div class="dtab-row dvp-grid">
-                    <div class="dtab-c">@p.TipoDocumento</div>
-                    <div class="dtab-c">@p.Documento</div>
-                    <button type="button" class="dtab-link" @onclick="() => OnAbrir.InvokeAsync(pid)" title="Abrir ficha">@p.Nombres</button>
-                    <div class="dtab-c">@p.Apellidos</div>
-                    <div class="dtab-c">@(p.Email ?? "-")</div>
-                    <div class="dtab-c">@(p.Telefono ?? "-")</div>
-                    <div class="dtab-c">
-                        @if (p.Estado == EstadoDirectorio.Activo) { <span class="dtab-badge dtab-badge--ok">Activo</span> }
-                        else { <span class="dtab-badge">@p.Estado</span> }
+                <div class="dtab-row dvp-grid" style="grid-template-columns:@GridCols">
+                    <div class="dtab-exp-col">
+                        <button type="button" class="dtab-exp" title="Abrir la ficha para editar" @onclick="() => OnAbrir.InvokeAsync(pid)">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                        </button>
                     </div>
-                    <div class="dtab-act">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#C3D0DD" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
-                    </div>
+                    @foreach (var c in ColsVisibles)
+                    {
+                        switch (c.Key)
+                        {
+                            case "nombres":
+                                <input class="dtab-cell dtab-cell-nom" value="@p.Nombres" @onchange="@(e => Editar(pid, "nombres", e))" />
+                                break;
+                            case "apellidos":
+                                <input class="dtab-cell" value="@p.Apellidos" @onchange="@(e => Editar(pid, "apellidos", e))" />
+                                break;
+                            case "tipo":
+                                <div class="dtab-c dtab-ro" title="El tipo de documento se edita en la ficha">@p.TipoDocumento</div>
+                                break;
+                            case "doc":
+                                <div class="dtab-c dtab-ro" title="El numero de documento se edita en la ficha">@p.Documento</div>
+                                break;
+                            case "email":
+                                <input class="dtab-cell" value="@(p.Email ?? "")" placeholder="-" @onchange="@(e => Editar(pid, "email", e))" />
+                                break;
+                            case "telefono":
+                                <input class="dtab-cell" value="@(p.Telefono ?? "")" placeholder="-" @onchange="@(e => Editar(pid, "telefono", e))" />
+                                break;
+                            case "estado":
+                                <div class="dtab-c">
+                                    @if (p.Estado == EstadoDirectorio.Activo) { <span class="dtab-badge dtab-badge--ok">Activo</span> }
+                                    else { <span class="dtab-badge">@p.Estado</span> }
+                                </div>
+                                break;
+                            case "etiquetas":
+                                <div class="dtab-c dtab-tags-cell">
+                                    @if (p.Etiquetas is not null) { @foreach (var et in p.Etiquetas) { <span class="dir-tag dir-tag--et" style="@ChipStyle(et.Color)">@EtiquetaIconos.Svg(et.Icono)<span>@et.Nombre</span></span> } }
+                                </div>
+                                break;
+                        }
+                    }
+                    <div></div>
                 </div>
             }
             @* Fila nueva: alta inline con todos los campos.
                @@key limpia la fila al crear (recrea los inputs); los inputs usan @@oninput SIN
                value= para no perder pulsaciones en Blazor Server (value= se reafirma en cada
-               re-render y pisa lo escrito mientras el round-trip esta en vuelo). *@
-            <div class="dtab-newrow dvp-grid" @key="_nonce">
-                <div class="dtab-nf-first">
-                    <span class="dtab-nf-plus">+</span>
-                    <select class="dtab-inp" @bind="_draft.TipoDocumento">
-                        <option value="@TipoDocumento.CC">CC</option>
-                        <option value="@TipoDocumento.CE">CE</option>
-                        <option value="@TipoDocumento.PA">Pasaporte</option>
-                        <option value="@TipoDocumento.TI">T. Identidad</option>
-                    </select>
+               re-render y pisa lo escrito mientras el round-trip esta en vuelo).
+               Las columnas requeridas del alta (nombres/apellidos/tipo/doc) no se pueden ocultar. *@
+            <div class="dtab-newrow dvp-grid" @key="_nonce" style="grid-template-columns:@GridCols">
+                <div class="dtab-exp-col">
+                    <button type="button" class="dtab-exp" tabindex="-1" title="Crear y abrir ficha" @onclick="CrearPersonaAbrirInline" disabled="@(_busy || !DraftValido)">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                    </button>
                 </div>
-                <input class="dtab-inp" @ref="_firstRef" placeholder="Documento" @oninput="@(e => _draft.Documento = e.Value?.ToString() ?? string.Empty)" @onkeydown="RowKeydown" />
-                <input class="dtab-inp" placeholder="Nueva persona..." @oninput="@(e => _draft.Nombres = e.Value?.ToString() ?? string.Empty)" @onkeydown="RowKeydown" />
-                <input class="dtab-inp" placeholder="Apellidos" @oninput="@(e => _draft.Apellidos = e.Value?.ToString() ?? string.Empty)" @onkeydown="RowKeydown" />
-                <input class="dtab-inp" placeholder="Email" @oninput="@(e => _draft.Email = e.Value?.ToString())" @onkeydown="RowKeydown" />
-                <input class="dtab-inp" placeholder="Telefono" @oninput="@(e => _draft.Telefono = e.Value?.ToString())" @onkeydown="RowKeydown" />
-                <div class="dtab-nf-mut">Activo</div>
+                @foreach (var c in ColsVisibles)
+                {
+                    switch (c.Key)
+                    {
+                        case "nombres":
+                            <input class="dtab-inp" @ref="_firstRef" placeholder="Nueva persona..." @oninput="@(e => _draft.Nombres = e.Value?.ToString() ?? string.Empty)" @onkeydown="RowKeydown" />
+                            break;
+                        case "apellidos":
+                            <input class="dtab-inp" placeholder="Apellidos" @oninput="@(e => _draft.Apellidos = e.Value?.ToString() ?? string.Empty)" @onkeydown="RowKeydown" />
+                            break;
+                        case "tipo":
+                            <select class="dtab-inp" @bind="_draft.TipoDocumento">
+                                <option value="@TipoDocumento.CC">CC</option>
+                                <option value="@TipoDocumento.CE">CE</option>
+                                <option value="@TipoDocumento.PA">PA</option>
+                                <option value="@TipoDocumento.TI">TI</option>
+                            </select>
+                            break;
+                        case "doc":
+                            <input class="dtab-inp" placeholder="Documento" @oninput="@(e => _draft.Documento = e.Value?.ToString() ?? string.Empty)" @onkeydown="RowKeydown" />
+                            break;
+                        case "email":
+                            <input class="dtab-inp" placeholder="Email" @oninput="@(e => _draft.Email = e.Value?.ToString())" @onkeydown="RowKeydown" />
+                            break;
+                        case "telefono":
+                            <input class="dtab-inp" placeholder="Telefono" @oninput="@(e => _draft.Telefono = e.Value?.ToString())" @onkeydown="RowKeydown" />
+                            break;
+                        case "estado":
+                            <div class="dtab-nf-mut">Activo</div>
+                            break;
+                        case "etiquetas":
+                            <div class="dtab-nf-mut"></div>
+                            break;
+                    }
+                }
                 <div class="dtab-act dtab-act-nf">
                     <button type="button" class="dtab-add" title="Agregar (Enter)" @onclick="CrearPersonaInline" disabled="@(_busy || !DraftValido)">+</button>
-                    @* Expander estilo Airtable: crea la persona y abre de una su ficha. *@
-                    <button type="button" class="dtab-add dtab-abrir" title="Crear y abrir ficha" @onclick="CrearPersonaAbrirInline" disabled="@(_busy || !DraftValido)">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                    </button>
                 </div>
             </div>
         </div>
@@ -126,6 +199,71 @@ else
     [Parameter] public EventCallback<NuevaPersonaDir> OnCrear { get; set; }
     /// <summary>Variante del alta: crear y ABRIR la ficha de una (expander de la fila).</summary>
     [Parameter] public EventCallback<NuevaPersonaDir> OnCrearAbrir { get; set; }
+    /// <summary>Edicion inline de una celda: la pagina persiste (tiene el DTO completo y Auth).</summary>
+    [Parameter] public EventCallback<EdicionCampoDir> OnEditarCampo { get; set; }
+
+    /// <summary>Edicion inline emitida al padre (Id de la persona, campo y nuevo valor).</summary>
+    public sealed record EdicionCampoDir(Guid Id, string Campo, string? Valor);
+
+    /// <summary>Agrupacion por etiqueta que arma la pagina; si es null, la tabla va plana.</summary>
+    [Parameter] public List<Grupo>? Grupos { get; set; }
+
+    /// <summary>Config de columnas por usuario (visibilidad + nombre) que arma la pagina desde
+    /// localStorage; clave = Key de la columna. Si es null, se usan los valores por defecto.</summary>
+    [Parameter] public Dictionary<string, ColPref>? ColsConfig { get; set; }
+
+    /// <summary>Preferencia de una columna: si se ve y con que nombre.</summary>
+    public sealed class ColPref { public bool Visible { get; set; } = true; public string? Label { get; set; } }
+
+    // Catalogo de columnas de la tabla de personas: clave, nombre por defecto, ancho de grid y
+    // si se puede ocultar. Las requeridas para el alta (nombres/apellidos/tipo/doc) no se ocultan.
+    private sealed record ColDef(string Key, string DefLabel, string Width, bool Hideable);
+    private static readonly ColDef[] Catalogo =
+    {
+        new("nombres", "NOMBRES", "1.2fr", false),
+        new("apellidos", "APELLIDOS", "1.2fr", false),
+        new("tipo", "TIPO", "70px", false),
+        new("doc", "IDENTIFICACION", "1.1fr", false),
+        new("email", "EMAIL", "1.6fr", true),
+        new("telefono", "TELEFONO", "1.1fr", true),
+        new("estado", "ESTADO", "92px", true),
+        new("etiquetas", "ETIQUETAS", "1.4fr", true),
+    };
+
+    /// <summary>Columnas del directorio de personas para armar el panel Configurar en la pagina.</summary>
+    public static IReadOnlyList<(string Key, string DefLabel, bool Hideable)> Columnas =>
+        Catalogo.Select(c => (c.Key, c.DefLabel, c.Hideable)).ToList();
+
+    private bool EsVisible(ColDef c) => !c.Hideable || ColsConfig is null || !ColsConfig.TryGetValue(c.Key, out var p) || p.Visible;
+    private string Etiqueta(ColDef c) => (ColsConfig is not null && ColsConfig.TryGetValue(c.Key, out var p) && !string.IsNullOrWhiteSpace(p.Label)) ? p.Label! : c.DefLabel;
+    private IEnumerable<ColDef> ColsVisibles => Catalogo.Where(EsVisible);
+    private string GridCols => "34px " + string.Join(" ", ColsVisibles.Select(c => c.Width)) + " 44px";
+
+    /// <summary>Un grupo de la vista agrupada: cabecera (etiqueta) + sus personas.</summary>
+    public sealed record Grupo(string Titulo, string? Color, string? Icono, List<PersonaResumenDto> Items);
+
+    // Fila a pintar: una cabecera de grupo o una persona. Asi el markup de fila se escribe
+    // una sola vez y sirve tanto para la vista plana como para la agrupada.
+    private readonly record struct FilaRender(bool EsGrupo, Grupo? Grupo, PersonaResumenDto? Persona);
+
+    private IEnumerable<FilaRender> FilasRender()
+    {
+        if (Grupos is null)
+        {
+            foreach (var p in Personas!) yield return new FilaRender(false, null, p);
+        }
+        else
+        {
+            foreach (var g in Grupos)
+            {
+                yield return new FilaRender(true, g, null);
+                foreach (var p in g.Items) yield return new FilaRender(false, null, p);
+            }
+        }
+    }
+
+    private Task Editar(Guid id, string campo, ChangeEventArgs e)
+        => OnEditarCampo.InvokeAsync(new EdicionCampoDir(id, campo, e.Value?.ToString()));
 
     [Parameter] public string Vista { get; set; } = "lista";  // "lista" | "tabla" (la controla Directorio.razor)
     private bool _busy;
@@ -209,6 +347,26 @@ else
 <style>
     /* Solo el grid propio de personas; el resto de la tabla (dtab-*) lo define Directorio.razor. */
     /* La primera columna aloja el "+" de la fila de alta junto al select de tipo. */
-    .dvp-grid { display: grid; grid-template-columns: 116px 1.1fr 1.2fr 1.2fr 1.6fr 1.1fr 92px 44px; align-items: center; gap: 8px; padding: 8px 14px; min-width: 900px; }
+    /* Orden: Expandir | Nombres | Apellidos | Tipo | Documento | Email | Telefono | Estado | Etiquetas. */
+    .dvp-grid { display: grid; grid-template-columns: 34px 1.2fr 1.2fr 70px 1.1fr 1.6fr 1.1fr 92px 1.4fr; align-items: center; gap: 8px; padding: 6px 14px; min-width: 960px; }
     .dir-tag--et { display: inline-flex; align-items: center; gap: 3px; border: 1px solid #E1D9FA; background: #F5F2FE; color: #6D4FE3; font-weight: 700; }
+    /* Expandir: se ve al pasar el mouse por la fila (o al escribir en la fila de alta). */
+    .dtab-exp-col { display: flex; align-items: center; justify-content: center; }
+    .dtab-exp { width: 26px; height: 26px; border: 0; border-radius: 7px; background: #F1ECFD; color: var(--propia-brand, #6D4FE3); display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s; }
+    .dtab-row:hover .dtab-exp, .dtab-newrow:hover .dtab-exp, .dtab-newrow:focus-within .dtab-exp { opacity: 1; }
+    .dtab-exp:hover { background: #E4DBFB; }
+    .dtab-exp:disabled { opacity: 0; cursor: default; }
+    .dtab-newrow:hover .dtab-exp:disabled, .dtab-newrow:focus-within .dtab-exp:disabled { opacity: .35; }
+    /* Celdas editables inline: se leen como texto y se marcan al hover/foco. */
+    .dtab-cell { width: 100%; box-sizing: border-box; border: 1px solid transparent; border-radius: 7px; padding: 5px 8px; font-size: 12.5px; color: #516F90; background: transparent; outline: none; font-family: inherit; }
+    .dtab-cell:hover { border-color: #E1E8EE; background: #FBFCFD; }
+    .dtab-cell:focus { border-color: var(--propia-brand, #6D4FE3); background: #fff; color: #33475B; }
+    .dtab-cell-nom { font-weight: 700; color: #33475B; }
+    .dtab-ro { color: #90A4B7; }
+    .dtab-tags-cell { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
+    /* Cabecera de grupo (agrupar por etiqueta): banda tenue con el chip y el conteo. */
+    .dtab-group { display: flex; align-items: center; gap: 10px; padding: 10px 14px 6px; }
+    .dtab-group--row { border-top: 1px solid #EEF2F6; margin-top: 4px; }
+    .dtab-group-chip { font-size: 12px; }
+    .dtab-group-n { font-size: 11.5px; font-weight: 700; color: #90A4B7; background: #F1F4F7; border-radius: 10px; padding: 1px 9px; }
 </style>
