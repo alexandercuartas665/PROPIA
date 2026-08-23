@@ -357,21 +357,58 @@
                     }
                     else if (_adjuntos.Count > 0)
                     {
-                        <div class="dir-doc-list">
-                            @foreach (var a in _adjuntos)
-                            {
-                                var adj = a;
-                                <div class="dir-doc-row">
-                                    <span class="dir-doc-ic">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
-                                    </span>
-                                    <a class="dir-doc-nom" href="@a.Url" target="_blank" rel="noopener" title="Abrir @a.Nombre">@a.Nombre</a>
-                                    <span class="dir-doc-meta">@TamanoLegible(a.TamanoBytes) &middot; @a.CreatedAt.ToLocalTime().ToString("dd MMM yyyy")</span>
-                                    <button type="button" class="dir-doc-del" title="Eliminar" @onclick="() => EliminarAdjuntoAsync(adj.Id)" disabled="@_adjBusy">
-                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
-                                    </button>
-                                </div>
-                            }
+                        @* Mismo patron del tab Archivos de Tareas: miniaturas a la izquierda +
+                           visor grande a la derecha (imagen con zoom, PDF embebido, otros con descarga). *@
+                        var selAdj = _adjuntos.FirstOrDefault(a => a.Id == _adjSel) ?? _adjuntos[0];
+                        <div class="dir-files">
+                            <div class="dir-thumbs">
+                                @foreach (var a in _adjuntos)
+                                {
+                                    var adj = a;
+                                    <div class="dir-thumb @(selAdj.Id == a.Id ? "on" : "")" @onclick="() => _adjSel = adj.Id" title="@a.Nombre">
+                                        <div class="dir-thumb-ic">
+                                            @if (EsImg(a.Url)) { <img src="@a.Url" alt="@a.Nombre" /> }
+                                            else { <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h4"/></svg> }
+                                        </div>
+                                        <div class="dir-thumb-meta">
+                                            <span class="dir-thumb-nm">@a.Nombre</span>
+                                            <span class="dir-thumb-by">@TamanoLegible(a.TamanoBytes) &middot; @a.CreatedAt.ToLocalTime().ToString("dd MMM yyyy")</span>
+                                        </div>
+                                        <button type="button" class="dir-thumb-x" @onclick:stopPropagation="true" @onclick="() => EliminarAdjuntoAsync(adj.Id)" disabled="@_adjBusy" title="Eliminar">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                        </button>
+                                    </div>
+                                }
+                            </div>
+                            <div class="dir-viewer">
+                                @if (EsImg(selAdj.Url))
+                                {
+                                    <div class="dir-viewer-imgwrap" @onclick="() => _adjLightbox = selAdj.Url" title="Clic para ampliar">
+                                        <img class="dir-viewer-img" src="@selAdj.Url" alt="@selAdj.Nombre" />
+                                        <span class="dir-viewer-zoom"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg> Ampliar</span>
+                                    </div>
+                                    <div class="dir-viewer-bar">
+                                        <span class="dir-viewer-nm">@selAdj.Nombre</span>
+                                        <a class="dir-viewer-open" href="@selAdj.Url" target="_blank" rel="noopener">Abrir</a>
+                                    </div>
+                                }
+                                else if (EsPdf(selAdj.Url))
+                                {
+                                    <iframe class="dir-viewer-pdf" src="@selAdj.Url" title="@selAdj.Nombre"></iframe>
+                                    <div class="dir-viewer-bar">
+                                        <span class="dir-viewer-nm">@selAdj.Nombre</span>
+                                        <a class="dir-viewer-open" href="@selAdj.Url" target="_blank" rel="noopener">Abrir en pestana</a>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="dir-viewer-file">
+                                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h4"/></svg>
+                                        <p class="dir-viewer-nm">@selAdj.Nombre</p>
+                                        <a class="dir-viewer-open" href="@selAdj.Url" target="_blank" rel="noopener">Abrir / descargar</a>
+                                    </div>
+                                }
+                            </div>
                         </div>
                     }
                 }
@@ -429,6 +466,17 @@
                 }
             </div>
         </div>
+    </div>
+}
+
+@* Lightbox de imagen adjunta: clic fuera o en la X para cerrar. *@
+@if (_adjLightbox is not null)
+{
+    <div class="dir-lightbox" @onclick="() => _adjLightbox = null">
+        <img class="dir-lightbox-img" src="@_adjLightbox" alt="Vista ampliada" @onclick:stopPropagation="true" />
+        <button type="button" class="dir-lightbox-x" title="Cerrar" @onclick="() => _adjLightbox = null">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
     </div>
 }
 
@@ -525,9 +573,18 @@
                     {
                         <div class="dir-cr-notfound">
                             <div class="dir-cr-ok"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12l5 5 9-11"/></svg>No existe - escribe el nombre arriba y completa los datos</div>
+                            @* Mismos campos que el formulario de edicion de la ficha 360, para que
+                               crear y editar se sientan identicos. *@
                             <div class="dir-form-grid">
                                 <div class="dir-field"><label>Email</label><input @bind="_persona.Email" /></div>
                                 <div class="dir-field"><label>Telefono / WhatsApp</label><input @bind="_persona.Telefono" /></div>
+                                <div class="dir-field"><label>Fecha de nacimiento</label><input type="date" @bind="_persona.FechaNacimiento" /></div>
+                                <div class="dir-field"><label>Genero</label>
+                                    <select @bind="_persona.Genero">
+                                        <option value="">- Genero -</option>
+                                        @foreach (var g in Enum.GetValues<GeneroPersona>()) { <option value="@g">@g</option> }
+                                    </select>
+                                </div>
                                 <div class="dir-field dir-field--wide"><label>Etiqueta de identidad</label>
                                     <select @bind="_etiquetaPersonaSel">
                                         <option value="">- Sin etiqueta -</option>
@@ -546,6 +603,7 @@
                 }
                 else
                 {
+                    @* Mismos campos que el formulario de edicion de la ficha 360 de empresa. *@
                     <div class="dir-form-grid">
                         <div class="dir-field"><label>NIT (solo numeros)</label><input @bind="_empresa.Nit" @bind:event="oninput" @onblur="CalcularDvNit" /></div>
                         <div class="dir-field dir-field--dv"><label>DV</label><input @bind="_empresa.DigitoVerificacion" readonly /></div>
@@ -553,6 +611,10 @@
                         <div class="dir-field"><label>Email</label><input @bind="_empresa.Email" /></div>
                         <div class="dir-field"><label>Telefono</label><input @bind="_empresa.Telefono" /></div>
                         <div class="dir-field"><label>Direccion</label><input @bind="_empresa.Direccion" /></div>
+                        <div class="dir-field"><label>Sector economico</label><input @bind="_empresa.SectorEconomico" /></div>
+                        <div class="dir-field"><label>Tipo de empresa</label><input @bind="_empresa.TipoEmpresa" /></div>
+                        <div class="dir-field"><label>Regimen tributario</label><input @bind="_empresa.RegimenTributario" /></div>
+                        <div class="dir-field"><label>Sitio web</label><input @bind="_empresa.SitioWeb" /></div>
                         <div class="dir-field dir-field--wide"><label>Etiqueta de identidad</label>
                             <select @bind="_etiquetaEmpresaSel">
                                 <option value="">- Sin etiqueta -</option>
@@ -921,6 +983,34 @@
     .dir-doc-meta { flex: 0 0 auto; font-size: 11.5px; color: #7C98B6; }
     .dir-doc-del { flex: 0 0 auto; border: 0; background: transparent; color: #C3D0DD; cursor: pointer; padding: 4px; border-radius: 6px; display: flex; }
     .dir-doc-del:hover { color: #DC2626; background: #FEF2F2; }
+
+    /* === Archivos estilo Tareas: miniaturas a la izquierda + visor a la derecha === */
+    .dir-files { display: grid; grid-template-columns: 250px 1fr; gap: 14px; margin-top: 14px; min-height: 320px; }
+    .dir-thumbs { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; max-height: 420px; padding-right: 2px; }
+    .dir-thumb { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border: 1.5px solid #E9EEF3; border-radius: 11px; background: #fff; cursor: pointer; transition: border-color .12s, background .12s; }
+    .dir-thumb:hover { border-color: #C9B8F5; }
+    .dir-thumb.on { border-color: #6D4FE3; background: #F8F5FE; }
+    .dir-thumb-ic { flex: 0 0 auto; width: 40px; height: 40px; border-radius: 8px; background: #F1ECFD; color: #6D4FE3; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    .dir-thumb-ic img { width: 100%; height: 100%; object-fit: cover; }
+    .dir-thumb-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .dir-thumb-nm { font-size: 12px; font-weight: 700; color: #33475B; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dir-thumb-by { font-size: 10.5px; color: #7C98B6; }
+    .dir-thumb-x { flex: 0 0 auto; border: 0; background: transparent; color: #C3D0DD; cursor: pointer; padding: 4px; border-radius: 6px; display: flex; }
+    .dir-thumb-x:hover { color: #DC2626; background: #FEF2F2; }
+    .dir-viewer { border: 1px solid #E9EEF3; border-radius: 12px; background: #FBFCFD; display: flex; flex-direction: column; overflow: hidden; }
+    .dir-viewer-imgwrap { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; padding: 12px; cursor: zoom-in; min-height: 240px; }
+    .dir-viewer-img { max-width: 100%; max-height: 340px; border-radius: 8px; object-fit: contain; box-shadow: 0 4px 14px rgba(20,40,70,.12); }
+    .dir-viewer-zoom { position: absolute; right: 12px; bottom: 12px; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: #fff; background: rgba(20,30,50,.55); border-radius: 7px; padding: 4px 9px; }
+    .dir-viewer-pdf { flex: 1; width: 100%; min-height: 340px; border: 0; }
+    .dir-viewer-file { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #A6B7C8; padding: 24px; text-align: center; }
+    .dir-viewer-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 14px; border-top: 1px solid #EEF3F8; background: #fff; }
+    .dir-viewer-nm { font-size: 12.5px; font-weight: 700; color: #33475B; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dir-viewer-open { flex: 0 0 auto; font-size: 12px; font-weight: 700; color: #6D4FE3; text-decoration: none; background: #F1ECFD; border-radius: 7px; padding: 6px 12px; }
+    .dir-viewer-open:hover { background: #E4DBFB; }
+    .dir-lightbox { position: fixed; inset: 0; z-index: 3000; background: rgba(10,16,28,.82); display: flex; align-items: center; justify-content: center; padding: 30px; cursor: zoom-out; }
+    .dir-lightbox-img { max-width: 92vw; max-height: 88vh; border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,.5); cursor: default; }
+    .dir-lightbox-x { position: absolute; top: 18px; right: 20px; border: 0; background: rgba(255,255,255,.12); color: #fff; width: 38px; height: 38px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .dir-lightbox-x:hover { background: rgba(255,255,255,.25); }
     .dir-impres { margin: 0 0 14px; font-size: 12.5px; color: #33475B; background: #F1F8F4; border: 1px solid #CDE9D8; border-radius: 10px; padding: 10px 14px; }
     .dir-impres-err { color: #C0383C; font-weight: 700; }
     .dir-impres-list { margin: 6px 0 0; padding-left: 18px; color: #C0383C; font-size: 12px; }
@@ -929,6 +1019,9 @@
         .dir-page { padding-left: 14px; padding-right: 14px; }
         .dir-list { overflow-x: auto; }
         .dir-row { min-width: 560px; }
+        .dir-files { grid-template-columns: 1fr; }
+        .dir-thumbs { flex-direction: row; overflow-x: auto; max-height: none; }
+        .dir-thumb { min-width: 190px; }
     }
 </style>
 
@@ -1041,6 +1134,8 @@
     private List<DirectorioAdjuntoDto> _adjuntos = new();
     private bool _adjBusy;
     private string? _adjMsg;
+    private Guid? _adjSel;          // adjunto seleccionado en el visor (patron del tab Archivos de Tareas)
+    private string? _adjLightbox;   // url de la imagen ampliada en el lightbox
 
     private string AdjTipoRuta => _detalleTipo == "empresa" ? "Empresa" : "Persona";
 
@@ -1054,6 +1149,8 @@
     {
         try { _adjuntos = await Auth().GetFromJsonAsync<List<DirectorioAdjuntoDto>>($"/api/directorio/adjuntos/{AdjTipoRuta}/{_detalleId}") ?? new(); }
         catch { _adjuntos = new(); }
+        // Mantener la seleccion del visor viva: si el seleccionado ya no existe, tomar el primero.
+        if (_adjSel is null || _adjuntos.All(a => a.Id != _adjSel)) _adjSel = _adjuntos.FirstOrDefault()?.Id;
         StateHasChanged();
     }
 
@@ -1098,6 +1195,14 @@
         >= 1_024 => $"{bytes / 1_024.0:0.#} KB",
         _ => $"{bytes} B"
     };
+
+    private static bool EsImg(string url)
+    {
+        // Quitar el ?query (ej. ?v=...) antes de mirar la extension, si no las imagenes con querystring no previsualizan.
+        var u = url.ToLowerInvariant().Split('?')[0].TrimEnd();
+        return u.EndsWith(".jpg") || u.EndsWith(".jpeg") || u.EndsWith(".png") || u.EndsWith(".webp") || u.EndsWith(".gif") || u.EndsWith(".bmp") || u.EndsWith(".svg");
+    }
+    private static bool EsPdf(string url) => url.ToLowerInvariant().Split('?')[0].TrimEnd().EndsWith(".pdf");
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -1516,7 +1621,8 @@
             var http = Auth();
             var crear = await http.PostAsJsonAsync("/api/directorio/personas",
                 new CrearPersonaRequest(_persona.TipoDocumento, _persona.Documento.Trim(),
-                    _persona.Nombres.Trim(), _persona.Apellidos.Trim(), _persona.Email, _persona.Telefono, null, null));
+                    _persona.Nombres.Trim(), _persona.Apellidos.Trim(), _persona.Email, _persona.Telefono,
+                    _persona.FechaNacimiento, _persona.Genero));
             if (!crear.IsSuccessStatusCode) { _msgPersona = await crear.Content.ReadAsStringAsync(); _msgPersonaClass = "alert-danger"; return; }
             var nueva = await crear.Content.ReadFromJsonAsync<PersonaDetalleDto>();
             if (nueva is null) return;
@@ -1554,7 +1660,8 @@
                 new CrearEmpresaRequest(_empresa.Nit, _empresa.DigitoVerificacion,
                     _empresa.RazonSocial, _empresa.NombreComercial,
                     _empresa.Email, _empresa.Telefono, _empresa.Direccion,
-                    null, null, null, null));
+                    _empresa.TipoEmpresa, _empresa.SectorEconomico, _empresa.RegimenTributario,
+                    _empresa.SitioWeb));
             if (!crear.IsSuccessStatusCode) { _msgEmpresa = await crear.Content.ReadAsStringAsync(); _msgEmpresaClass = "alert-danger"; return; }
             var nueva = await crear.Content.ReadFromJsonAsync<EmpresaDetalleDto>();
             if (nueva is null) return;
@@ -1649,6 +1756,8 @@
         public string Apellidos { get; set; } = "";
         public string? Email { get; set; }
         public string? Telefono { get; set; }
+        public DateOnly? FechaNacimiento { get; set; }
+        public GeneroPersona? Genero { get; set; }
     }
 
     private class EmpresaForm
@@ -1660,6 +1769,10 @@
         public string? Email { get; set; }
         public string? Telefono { get; set; }
         public string? Direccion { get; set; }
+        public string? TipoEmpresa { get; set; }
+        public string? SectorEconomico { get; set; }
+        public string? RegimenTributario { get; set; }
+        public string? SitioWeb { get; set; }
     }
 
     private record DvResponse(string Dv);
