@@ -505,6 +505,7 @@ public class TareasService : ITareasService
             HoraFin = req.HoraFin,
             OrigenTipo = string.IsNullOrWhiteSpace(req.OrigenTipo) ? null : req.OrigenTipo,
             OrigenReferencia = string.IsNullOrWhiteSpace(req.OrigenReferencia) ? null : req.OrigenReferencia,
+            OrigenEntidadId = req.OrigenEntidadId,
             CreadoPorUsuarioId = GetUsuarioActualId()
         };
         _db.Tareas.Add(t);
@@ -570,6 +571,8 @@ public class TareasService : ITareasService
         t.HoraFin = req.HoraFin;
         t.OrigenTipo = string.IsNullOrWhiteSpace(req.OrigenTipo) ? null : req.OrigenTipo;
         t.OrigenReferencia = string.IsNullOrWhiteSpace(req.OrigenReferencia) ? null : req.OrigenReferencia;
+        // OrigenEntidadId: solo se sobreescribe si el request lo trae (null en edicion = conservar).
+        if (req.OrigenEntidadId.HasValue) t.OrigenEntidadId = req.OrigenEntidadId;
         // Solicitante (opcional): solo se cambia si viene en el request y es distinto; valida que la persona exista.
         if (req.SolicitantePersonaId is { } spid && spid != t.SolicitantePersonaId)
         {

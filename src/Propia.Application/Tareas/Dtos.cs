@@ -132,7 +132,8 @@ public record CrearTareaRequest(
     IReadOnlyList<Guid>? ResponsablePersonaIds = null,
     IReadOnlyList<SubtareaCheckItem>? Checklist = null,
     IReadOnlyList<TareaCampoValorDto>? CamposValores = null,
-    Guid? SolicitantePersonaId = null);
+    Guid? SolicitantePersonaId = null,
+    Guid? OrigenEntidadId = null);
 
 public record ActualizarTareaRequest(
     string Titulo,
@@ -153,7 +154,8 @@ public record ActualizarTareaRequest(
     IReadOnlyList<Guid>? ResponsablePersonaIds = null,
     IReadOnlyList<SubtareaCheckItem>? Checklist = null,
     IReadOnlyList<TareaCampoValorDto>? CamposValores = null,
-    Guid? SolicitantePersonaId = null);
+    Guid? SolicitantePersonaId = null,
+    Guid? OrigenEntidadId = null);
 
 public record CambiarEstadoRequest(Guid EstadoId, string? MotivoCancelacion, Guid? MotivoCierreId = null);
 public record CrearComentarioRequest(string Texto);

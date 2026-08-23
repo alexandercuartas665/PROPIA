@@ -84,6 +84,10 @@ public class Tarea : TenantEntity
     public string? OrigenTipo { get; set; }
     /// <summary>Referencia legible del elemento relacionado (numero de unidad, nombre de zona/equipo).</summary>
     public string? OrigenReferencia { get; set; }
+    /// <summary>Id del elemento relacionado (UnidadPrivada / ZonaComun / EquipoActivo) segun OrigenTipo.
+    /// Vinculo logico por Id, sin FK dura, para el Historial relacionado. Null = sin relacion o legado
+    /// (esas tareas viejas se resuelven por nombre via OrigenReferencia).</summary>
+    public Guid? OrigenEntidadId { get; set; }
 
     /// <summary>Soft-delete de la tarjeta (el historial es append-only, no se puede borrar fisico).</summary>
     public bool Eliminada { get; set; }

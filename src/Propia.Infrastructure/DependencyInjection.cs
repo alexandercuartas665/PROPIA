@@ -205,6 +205,9 @@ public static class DependencyInjection
         // Modulo 2.11 Mantenimiento y Activos
         services.AddScoped<Application.Mantenimiento.IMantenimientoService, Mantenimiento.MantenimientoService>();
 
+        // Historial relacionado cross-modulo (tareas + PQRSD + mantenimientos por entidad)
+        services.AddScoped<Application.Historial.IHistorialRelacionadoService, Historial.HistorialRelacionadoService>();
+
         // Modulo 2.14 Comunicaciones
         services.AddScoped<Application.Comunicaciones.IComunicacionesService, Comunicaciones.ComunicacionesService>();
 
