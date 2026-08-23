@@ -91,23 +91,8 @@ else
             <input class="mod-search-inp" placeholder="Buscar zona..."
                    @oninput="@(e => _q = e.Value?.ToString() ?? string.Empty)" />
         </div>
-        <select class="mod-fsel" @bind="_fCategoria">
-            <option value="">Toda categoria</option>
-            @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c">@c</option> }
-        </select>
-        <select class="mod-fsel" @bind="_fEstado">
-            <option value="">Todo estado</option>
-            @foreach (var s in Enum.GetValues<EstadoZonaComunMantenimiento>()) { <option value="@s">@s</option> }
-        </select>
-        <select class="mod-fsel" @bind="_fReservable">
-            <option value="">Reservable: todas</option>
-            <option value="si">Solo reservables</option>
-            <option value="no">No reservables</option>
-        </select>
-        @if (HayFiltros)
-        {
-            <button type="button" class="mod-fclear" @onclick="LimpiarFiltros" title="Limpiar filtros">Limpiar</button>
-        }
+        @* Un solo boton "Filtros" con reglas dinamicas (patron Tareas) en vez de selects sueltos. *@
+        <FiltroDinamico @ref="_fd" Campos="CamposFiltro" OnChanged="StateHasChanged" />
         <div class="zc-viewtoggle" style="margin-left:auto;">
             <button type="button" class="zc-vt @(_view == "cards" ? "on" : "")" @onclick='() => SetVista("cards")' title="Tarjetas">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
@@ -277,24 +262,38 @@ else
     private bool _msgOk = true;
 
     // Filtros (client-side: la lista de zonas de una copropiedad es corta).
+    // Un solo boton "Filtros" con reglas dinamicas (componente compartido FiltroDinamico).
     private string _q = "";
-    private string _fCategoria = "";
-    private string _fEstado = "";
-    private string _fReservable = "";
+    private FiltroDinamico? _fd;
 
-    private bool HayFiltros =>
-        !string.IsNullOrWhiteSpace(_q) || _fCategoria != "" || _fEstado != "" || _fReservable != "";
+    private bool HayFiltros => !string.IsNullOrWhiteSpace(_q) || (_fd?.Hay ?? false);
 
-    private void LimpiarFiltros() { _q = ""; _fCategoria = ""; _fEstado = ""; _fReservable = ""; }
+    private List<FiltroDinamico.CampoDef> CamposFiltro => new()
+    {
+        new() { Key = "nombre", Label = "Nombre", Kind = "texto" },
+        new() { Key = "categoria", Label = "Categoria", Kind = "sel",
+                Opciones = Enum.GetValues<CategoriaZonaComun>().Select(c => (c.ToString(), c.ToString())).ToList() },
+        new() { Key = "estado", Label = "Estado", Kind = "sel",
+                Opciones = Enum.GetValues<EstadoZonaComunMantenimiento>().Select(s => (s.ToString(), s.ToString())).ToList() },
+        new() { Key = "reservable", Label = "Reservable", Kind = "sel",
+                Opciones = new() { ("si", "Si"), ("no", "No") } },
+        new() { Key = "aforo", Label = "Aforo", Kind = "num" },
+    };
 
     private IEnumerable<ZonaComunDto> Filtradas()
     {
         var q = _q.Trim();
         return _zonas
             .Where(z => q == "" || z.Nombre.Contains(q, StringComparison.OrdinalIgnoreCase))
-            .Where(z => _fCategoria == "" || z.Categoria.ToString() == _fCategoria)
-            .Where(z => _fEstado == "" || z.Estado.ToString() == _fEstado)
-            .Where(z => _fReservable == "" || (_fReservable == "si" ? z.EsReservable : !z.EsReservable))
+            .Where(z => _fd?.Pasa(campo => campo switch
+            {
+                "nombre" => z.Nombre,
+                "categoria" => z.Categoria.ToString(),
+                "estado" => z.Estado.ToString(),
+                "reservable" => z.EsReservable ? "si" : "no",
+                "aforo" => z.CapacidadPersonas?.ToString() ?? "",
+                _ => ""
+            }) ?? true)
             .OrderBy(z => z.Categoria).ThenBy(z => z.Nombre);
     }
 

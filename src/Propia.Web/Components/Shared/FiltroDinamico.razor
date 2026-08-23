@@ -1,0 +1,214 @@
+@* Boton "Filtros" unico + popover de reglas dinamicas (Donde campo / operador / valor,
+   con logica Y-O y agregar condicion), mismo patron del filtro de Tareas/PQRSD.
+   Reutilizable por modulos con campos fijos: el padre define los Campos y evalua con
+   Pasa(valorDe), entregando el valor crudo de cada campo por item. *@
+
+<div class="fd-wrap">
+    <button type="button" class="fd-btn @(Hay ? "on" : "")" @onclick="Toggle" title="Filtrar">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18M6 12h12M10 19h4"/></svg>
+        <span>Filtros</span>
+        @if (Cuenta > 0) { <span class="fd-badge">@Cuenta</span> }
+    </button>
+    @if (_open)
+    {
+        <div class="fd-bd" @onclick="Cerrar"></div>
+        <div class="fd-pop" @onclick:stopPropagation="true">
+            @if (_reglas.Count == 0)
+            {
+                <div class="fd-empty">Sin filtros aplicados.<br />Agrega una condicion para acotar los resultados.</div>
+            }
+            else
+            {
+                @for (int i = 0; i < _reglas.Count; i++)
+                {
+                    var idx = i; var r = _reglas[idx];
+                    var def = DefDe(r.Campo);
+                    <div class="fd-rule">
+                        @if (idx == 0)
+                        {
+                            <span class="fd-lead">Donde</span>
+                        }
+                        else if (idx == 1)
+                        {
+                            <select class="fd-lead fd-logic" @onchange="SetLogica">
+                                <option value="and" selected="@(_logica == "and")">Y</option>
+                                <option value="or" selected="@(_logica == "or")">O</option>
+                            </select>
+                        }
+                        else
+                        {
+                            <span class="fd-lead">@(_logica == "or" ? "O" : "Y")</span>
+                        }
+                        <select class="fd-f" @onchange="e => SetCampo(idx, e)">
+                            @foreach (var c in Campos) { <option value="@c.Key" selected="@(r.Campo == c.Key)">@c.Label</option> }
+                        </select>
+                        <select class="fd-op" @onchange="e => SetOp(idx, e)">
+                            @foreach (var op in Ops(def)) { <option value="@op.Key" selected="@(r.Op == op.Key)">@op.Label</option> }
+                        </select>
+                        @if (r.Op is not "vacio" and not "no_vacio")
+                        {
+                            @if (def.Kind is "sel" or "multi")
+                            {
+                                <select class="fd-v" @onchange="e => SetValor(idx, e)">
+                                    <option value="" selected="@(r.Valor == "")">- elige -</option>
+                                    @foreach (var o in def.Opciones) { <option value="@o.Value" selected="@(r.Valor == o.Value)">@o.Label</option> }
+                                </select>
+                            }
+                            else if (def.Kind == "num")
+                            {
+                                <input class="fd-v" type="number" value="@r.Valor" @onchange="e => SetValor(idx, e)" />
+                            }
+                            else if (def.Kind == "fecha")
+                            {
+                                <input class="fd-v" type="date" value="@r.Valor" @onchange="e => SetValor(idx, e)" />
+                            }
+                            else
+                            {
+                                <input class="fd-v" type="text" placeholder="Valor..." value="@r.Valor" @oninput="e => SetValor(idx, e)" />
+                            }
+                        }
+                        <button type="button" class="fd-del" title="Quitar condicion" @onclick="() => Quitar(idx)">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                        </button>
+                    </div>
+                }
+            }
+            <div class="fd-foot">
+                <button type="button" class="fd-add" @onclick="Agregar">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>Agregar filtro
+                </button>
+                @if (_reglas.Count > 0) { <button type="button" class="fd-clear" @onclick="Limpiar">Limpiar todo</button> }
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .fd-wrap { position: relative; }
+    .fd-btn { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 9px; border: 1px solid #E1E8EE; background: #fff; font-size: 12.5px; font-weight: 700; color: #516F90; cursor: pointer; font-family: inherit; }
+    .fd-btn.on { border-color: #6D4FE3; background: #F1ECFD; color: #6D4FE3; }
+    .fd-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px; padding: 0 5px; margin-left: 2px; border-radius: 9px; background: #6D4FE3; color: #fff; font-size: 10.5px; font-weight: 800; }
+    .fd-bd { position: fixed; inset: 0; z-index: 44; }
+    .fd-pop { position: absolute; top: 42px; left: 0; z-index: 45; width: min(660px, 92vw); background: #fff; border: 1px solid #E1E8EE; border-radius: 12px; box-shadow: 0 16px 40px rgba(27,42,58,.2); padding: 12px; }
+    .fd-empty { font-size: 12.5px; color: #7C98B6; text-align: center; padding: 14px 8px 16px; line-height: 1.5; }
+    .fd-rule { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; }
+    .fd-lead { flex: 0 0 60px; font-size: 12px; font-weight: 700; color: #7C98B6; text-align: right; }
+    select.fd-lead.fd-logic { flex: 0 0 60px; text-align: left; border: 1px solid #E1E8EE; border-radius: 8px; padding: 5px 6px; background: #FAFBFC; color: #6D4FE3; font-weight: 800; cursor: pointer; outline: none; }
+    .fd-f, .fd-op, .fd-v { font-size: 12.5px; font-weight: 600; color: #33475B; border: 1px solid #E1E8EE; border-radius: 8px; padding: 6px 8px; background: #fff; outline: none; min-width: 0; font-family: inherit; }
+    .fd-f { flex: 0 0 150px; }
+    .fd-op { flex: 0 0 130px; color: #516F90; }
+    .fd-v { flex: 1 1 auto; min-width: 90px; }
+    .fd-f:focus, .fd-op:focus, .fd-v:focus, select.fd-logic:focus { border-color: #6D4FE3; }
+    .fd-del { flex: 0 0 auto; width: 28px; height: 28px; border-radius: 7px; border: 1px solid #E1E8EE; background: #fff; color: #90A4B7; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+    .fd-del:hover { background: #FDE7E7; color: #D7263D; border-color: #F2CFC9; }
+    .fd-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; padding-top: 10px; border-top: 1px solid #EEF3F8; }
+    .fd-add { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: #6D4FE3; background: #F1ECFD; border: 0; border-radius: 8px; padding: 7px 12px; cursor: pointer; font-family: inherit; }
+    .fd-add:hover { background: #E5DEFB; }
+    .fd-clear { font-size: 12px; font-weight: 700; color: #C0383C; background: transparent; border: 0; border-radius: 8px; padding: 7px 10px; cursor: pointer; font-family: inherit; }
+</style>
+
+@code {
+    /// <summary>Definicion de un campo filtrable. Kind: texto | sel | multi | num | fecha.
+    /// "sel" compara contra un valor unico; "multi" contra una lista separada por comas
+    /// (ej. etiquetas de un contacto) con operadores tiene / no tiene.</summary>
+    public sealed class CampoDef
+    {
+        public string Key { get; set; } = "";
+        public string Label { get; set; } = "";
+        public string Kind { get; set; } = "texto";
+        public List<(string Value, string Label)> Opciones { get; set; } = new();
+    }
+
+    private sealed class Regla { public string Campo = ""; public string Op = "es"; public string Valor = ""; }
+
+    [Parameter] public List<CampoDef> Campos { get; set; } = new();
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private readonly List<Regla> _reglas = new();
+    private string _logica = "and";
+    private bool _open;
+
+    public int Cuenta => _reglas.Count(Activa);
+    public bool Hay => _reglas.Any(Activa);
+    private bool Activa(Regla r) => r.Op is "vacio" or "no_vacio" || !string.IsNullOrWhiteSpace(r.Valor);
+
+    private CampoDef DefDe(string key) => Campos.FirstOrDefault(c => c.Key == key) ?? Campos.FirstOrDefault() ?? new CampoDef();
+
+    private void Toggle() { _open = !_open; if (_open && _reglas.Count == 0) Agregar(); }
+    private void Cerrar() => _open = false;
+    private void Agregar()
+    {
+        var c = Campos.FirstOrDefault();
+        _reglas.Add(new Regla { Campo = c?.Key ?? "", Op = Ops(c ?? new CampoDef()).First().Key });
+    }
+    private async Task Quitar(int i) { if (i >= 0 && i < _reglas.Count) _reglas.RemoveAt(i); await Notify(); }
+    private async Task Limpiar() { _reglas.Clear(); _logica = "and"; await Notify(); }
+    private async Task SetLogica(ChangeEventArgs e) { _logica = e.Value?.ToString() == "or" ? "or" : "and"; await Notify(); }
+    private async Task SetCampo(int i, ChangeEventArgs e)
+    {
+        if (i < 0 || i >= _reglas.Count) return;
+        _reglas[i].Campo = e.Value?.ToString() ?? "";
+        // Al cambiar de campo el operador anterior puede no aplicar: se ajusta al primero valido.
+        var ops = Ops(DefDe(_reglas[i].Campo)).ToList();
+        if (!ops.Any(o => o.Key == _reglas[i].Op)) _reglas[i].Op = ops.First().Key;
+        _reglas[i].Valor = "";
+        await Notify();
+    }
+    private async Task SetOp(int i, ChangeEventArgs e) { if (i >= 0 && i < _reglas.Count) { _reglas[i].Op = e.Value?.ToString() ?? "es"; await Notify(); } }
+    private async Task SetValor(int i, ChangeEventArgs e) { if (i >= 0 && i < _reglas.Count) { _reglas[i].Valor = e.Value?.ToString() ?? ""; await Notify(); } }
+    private Task Notify() => OnChanged.InvokeAsync();
+
+    private static IEnumerable<(string Key, string Label)> Ops(CampoDef def) => def.Kind switch
+    {
+        "num" => new[] { ("=", "es igual a"), ("!=", "es distinto de"), (">", "mayor que"), (">=", "mayor o igual"),
+                         ("<", "menor que"), ("<=", "menor o igual"), ("vacio", "esta vacio"), ("no_vacio", "no esta vacio") },
+        "fecha" => new[] { ("es", "es"), ("antes", "antes de"), ("despues", "despues de"), ("vacio", "esta vacio"), ("no_vacio", "no esta vacio") },
+        "sel" => new[] { ("es", "es"), ("no_es", "no es") },
+        "multi" => new[] { ("tiene", "tiene"), ("no_tiene", "no tiene"), ("vacio", "esta vacio"), ("no_vacio", "no esta vacio") },
+        _ => new[] { ("contiene", "contiene"), ("no_contiene", "no contiene"), ("es", "es"), ("no_es", "no es"),
+                     ("vacio", "esta vacio"), ("no_vacio", "no esta vacio") },
+    };
+
+    /// <summary>Evalua las reglas activas contra un item. valorDe entrega el valor crudo
+    /// de cada campo (para "multi", los valores separados por coma).</summary>
+    public bool Pasa(Func<string, string?> valorDe)
+    {
+        var act = _reglas.Where(Activa).ToList();
+        if (act.Count == 0) return true;
+        return _logica == "or" ? act.Any(r => Eval(r, valorDe)) : act.All(r => Eval(r, valorDe));
+    }
+
+    private bool Eval(Regla r, Func<string, string?> valorDe)
+    {
+        var def = DefDe(r.Campo);
+        var v = valorDe(r.Campo) ?? "";
+        if (r.Op == "vacio") return string.IsNullOrWhiteSpace(v);
+        if (r.Op == "no_vacio") return !string.IsNullOrWhiteSpace(v);
+        switch (def.Kind)
+        {
+            case "num":
+                if (!decimal.TryParse(v, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var nv)) return false;
+                if (!decimal.TryParse(r.Valor, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var fv)) return true;
+                return r.Op switch { "=" => nv == fv, "!=" => nv != fv, ">" => nv > fv, ">=" => nv >= fv, "<" => nv < fv, "<=" => nv <= fv, _ => true };
+            case "fecha":
+                if (!DateOnly.TryParse(v, out var dv) || !DateOnly.TryParse(r.Valor, out var df)) return false;
+                return r.Op switch { "es" => dv == df, "antes" => dv < df, "despues" => dv > df, _ => true };
+            case "multi":
+                var set = v.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                var has = set.Contains(r.Valor, StringComparer.OrdinalIgnoreCase);
+                return r.Op == "no_tiene" ? !has : has;
+            case "sel":
+                var eq = string.Equals(v, r.Valor, StringComparison.OrdinalIgnoreCase);
+                return r.Op == "no_es" ? !eq : eq;
+            default:
+                return r.Op switch
+                {
+                    "contiene" => v.Contains(r.Valor, StringComparison.OrdinalIgnoreCase),
+                    "no_contiene" => !v.Contains(r.Valor, StringComparison.OrdinalIgnoreCase),
+                    "es" => string.Equals(v, r.Valor, StringComparison.OrdinalIgnoreCase),
+                    "no_es" => !string.Equals(v, r.Valor, StringComparison.OrdinalIgnoreCase),
+                    _ => true
+                };
+        }
+    }
+}

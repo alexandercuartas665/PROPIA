@@ -83,42 +83,9 @@
         </div>
 
         <div class="mod-filtros">
-            <div class="dir-filtrowrap">
-                <button type="button" class="dir-filtrobtn @(_filtroEtq.Count > 0 ? "on" : "")" @onclick="() => _filtroOpen = !_filtroOpen">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-                    Filtro
-                    @if (_filtroEtq.Count > 0) { <span class="dir-filtrobadge">@_filtroEtq.Count</span> }
-                </button>
-                @if (_filtroOpen)
-                {
-                    <div class="dir-filtroback" @onclick="() => _filtroOpen = false"></div>
-                    <div class="dir-filtropop" @onclick:stopPropagation="true">
-                        <div class="dir-filtropop-head">
-                            <span>Filtrar por etiqueta</span>
-                            @if (_filtroEtq.Count > 0)
-                            {
-                                <button type="button" class="dir-etqclear" @onclick="() => _filtroEtq.Clear()">Limpiar</button>
-                            }
-                        </div>
-                        <div class="dir-filtropop-body">
-                            @{ var _conteos = ConteoEtiquetasActivas();
-                               var _etsConDatos = _etiquetasTodas.Where(e => _conteos.ContainsKey(e.Id)).ToList(); }
-                            @if (_etsConDatos.Count == 0)
-                            {
-                                <div class="dir-filtro-empty">Ningun contacto tiene etiquetas todavia.</div>
-                            }
-                            @foreach (var et in _etsConDatos)
-                            {
-                                var on = _filtroEtq.Contains(et.Id);
-                                <button type="button" class="dir-etqchip @(on ? "on" : "")" style="@(on ? ChipStyle(et.Color) : "")" @onclick="() => ToggleFiltroEtq(et.Id)">
-                                    @EtiquetaIconos.Svg(et.Icono)<span>@et.Nombre</span>
-                                    <span class="dir-etqcount">@_conteos[et.Id]</span>
-                                </button>
-                            }
-                        </div>
-                    </div>
-                }
-            </div>
+            @* Un solo boton "Filtros" con reglas dinamicas (patron Tareas); la etiqueta es
+               un campo mas del filtro (tipo multi: tiene / no tiene). *@
+            <FiltroDinamico @ref="_fd" Campos="CamposFiltroDir" OnChanged="StateHasChanged" />
             <div class="mod-search">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
                 <input class="mod-search-inp" style="width:280px;" value="@_query" @oninput="OnQueryInput" placeholder="Buscar por nombre, documento, email, etiqueta..." />
@@ -1065,8 +1032,8 @@
 
     // ----- Etiquetas: catalogo completo, filtro y panel de configuracion -----
     private List<EtiquetaCatalogoDto> _etiquetasTodas = new();
-    private readonly HashSet<Guid> _filtroEtq = new();
-    private bool _filtroOpen;
+    // Filtro dinamico unico (componente compartido): mismos campos para personas y empresas.
+    private FiltroDinamico? _fd;
     private bool _cfgOpen;
     private Guid? _cfgEditId;
     private string _cfgNombre = "";
@@ -1076,40 +1043,44 @@
     private AplicaEtiqueta _cfgAplica = AplicaEtiqueta.Persona;
     private string? _cfgMsg; private bool _cfgErr; private bool _cfgBusy;
 
+    private List<FiltroDinamico.CampoDef> CamposFiltroDir => new()
+    {
+        new() { Key = "nombre", Label = "Nombre", Kind = "texto" },
+        new() { Key = "documento", Label = "Documento / NIT", Kind = "texto" },
+        new() { Key = "email", Label = "Email", Kind = "texto" },
+        new() { Key = "telefono", Label = "Telefono", Kind = "texto" },
+        new() { Key = "estado", Label = "Estado", Kind = "sel",
+                Opciones = Enum.GetValues<EstadoDirectorio>().Select(s => (s.ToString(), s.ToString())).ToList() },
+        new() { Key = "etiqueta", Label = "Etiqueta", Kind = "multi",
+                Opciones = _etiquetasTodas.Select(e => (e.Id.ToString(), e.Nombre)).ToList() },
+    };
+
     private List<PersonaResumenDto>? PersonasFiltradas =>
-        (_filtroEtq.Count == 0 || _personas is null)
-            ? _personas
-            : _personas.Where(p => p.Etiquetas is not null && p.Etiquetas.Any(e => _filtroEtq.Contains(e.EtiquetaId))).ToList();
+        _personas?.Where(p => _fd?.Pasa(campo => campo switch
+        {
+            "nombre" => $"{p.Nombres} {p.Apellidos}",
+            "documento" => p.Documento,
+            "email" => p.Email ?? "",
+            "telefono" => p.Telefono ?? "",
+            "estado" => p.Estado.ToString(),
+            "etiqueta" => p.Etiquetas is null ? "" : string.Join(",", p.Etiquetas.Select(e => e.EtiquetaId)),
+            _ => ""
+        }) ?? true).ToList();
 
     private List<EmpresaResumenDto>? EmpresasFiltradas =>
-        (_filtroEtq.Count == 0 || _empresas is null)
-            ? _empresas
-            : _empresas.Where(e => e.Etiquetas is not null && e.Etiquetas.Any(x => _filtroEtq.Contains(x.EtiquetaId))).ToList();
+        _empresas?.Where(em => _fd?.Pasa(campo => campo switch
+        {
+            "nombre" => $"{em.RazonSocial} {em.NombreComercial}",
+            "documento" => em.Nit,
+            "email" => em.Email ?? "",
+            "telefono" => em.Telefono ?? "",
+            "estado" => em.Estado.ToString(),
+            "etiqueta" => em.Etiquetas is null ? "" : string.Join(",", em.Etiquetas.Select(e => e.EtiquetaId)),
+            _ => ""
+        }) ?? true).ToList();
 
     // Conteo de terceros por etiqueta, calculado sobre la vista activa (personas o empresas):
     // solo aparecen en el filtro las etiquetas que tienen al menos un contacto, con su cantidad.
-    private Dictionary<Guid, int> ConteoEtiquetasActivas()
-    {
-        var dict = new Dictionary<Guid, int>();
-        if (_tab == "personas")
-        {
-            if (_personas is not null)
-                foreach (var p in _personas)
-                    if (p.Etiquetas is not null)
-                        foreach (var e in p.Etiquetas)
-                            dict[e.EtiquetaId] = dict.GetValueOrDefault(e.EtiquetaId) + 1;
-        }
-        else
-        {
-            if (_empresas is not null)
-                foreach (var em in _empresas)
-                    if (em.Etiquetas is not null)
-                        foreach (var e in em.Etiquetas)
-                            dict[e.EtiquetaId] = dict.GetValueOrDefault(e.EtiquetaId) + 1;
-        }
-        return dict;
-    }
-
     // ----- Detalle 360 -----
     private bool _detalleAbierto;
     private string _detalleTipo = "persona";   // "persona" | "empresa"
@@ -1293,12 +1264,7 @@
         _etiquetasTodas = await http.GetFromJsonAsync<List<EtiquetaCatalogoDto>>("/api/directorio/etiquetas") ?? new();
     }
 
-    // ===================== Etiquetas: filtro + configuracion =====================
-    private void ToggleFiltroEtq(Guid id)
-    {
-        if (!_filtroEtq.Remove(id)) _filtroEtq.Add(id);
-    }
-
+    // ===================== Etiquetas: configuracion =====================
     private void AbrirCfgEtiquetas() { _cfgOpen = true; ResetCfgForm(); }
 
     private void ResetCfgForm()
@@ -1355,7 +1321,6 @@
             var resp = await Auth().DeleteAsync($"/api/directorio/etiquetas/{id}");
             if (resp.IsSuccessStatusCode)
             {
-                _filtroEtq.Remove(id);
                 if (_cfgEditId == id) ResetCfgForm();
                 await CargarEtiquetasAsync();
                 await CargarAsync();

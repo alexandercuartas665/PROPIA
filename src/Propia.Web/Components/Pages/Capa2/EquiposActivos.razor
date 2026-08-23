@@ -90,23 +90,8 @@ else
             <input class="mod-search-inp" placeholder="Buscar equipo o activo..."
                    @oninput="@(e => _q = e.Value?.ToString() ?? string.Empty)" />
         </div>
-        <select class="mod-fsel" @bind="_fCategoria">
-            <option value="">Toda categoria</option>
-            @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c">@c</option> }
-        </select>
-        <select class="mod-fsel" @bind="_fEstado">
-            <option value="">Todo estado</option>
-            @foreach (var s in Enum.GetValues<EstadoEquipoActivo>()) { <option value="@s">@EstadoTextoCorto(s)</option> }
-        </select>
-        <select class="mod-fsel" @bind="_fTipo">
-            <option value="">Equipos y activos</option>
-            <option value="@TipoElemento.Equipo">Solo equipos</option>
-            <option value="@TipoElemento.Activo">Solo activos</option>
-        </select>
-        @if (HayFiltros)
-        {
-            <button type="button" class="mod-fclear" @onclick="LimpiarFiltros" title="Limpiar filtros">Limpiar</button>
-        }
+        @* Un solo boton "Filtros" con reglas dinamicas (patron Tareas) en vez de selects sueltos. *@
+        <FiltroDinamico @ref="_fd" Campos="CamposFiltro" OnChanged="StateHasChanged" />
         <div class="ea-viewtoggle" style="margin-left:auto;">
             <button type="button" class="ea-vt @(_view == "cards" ? "on" : "")" @onclick='() => SetVista("cards")' title="Tarjetas">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
@@ -291,24 +276,45 @@ else
     private bool _msgOk = true;
 
     // Filtros (client-side: el inventario de una copropiedad cabe de sobra en memoria).
+    // Un solo boton "Filtros" con reglas dinamicas (componente compartido FiltroDinamico).
     private string _q = "";
-    private string _fCategoria = "";
-    private string _fEstado = "";
-    private string _fTipo = "";
+    private FiltroDinamico? _fd;
 
-    private bool HayFiltros =>
-        !string.IsNullOrWhiteSpace(_q) || _fCategoria != "" || _fEstado != "" || _fTipo != "";
+    private bool HayFiltros => !string.IsNullOrWhiteSpace(_q) || (_fd?.Hay ?? false);
 
-    private void LimpiarFiltros() { _q = ""; _fCategoria = ""; _fEstado = ""; _fTipo = ""; }
+    private List<FiltroDinamico.CampoDef> CamposFiltro => new()
+    {
+        new() { Key = "nombre", Label = "Nombre", Kind = "texto" },
+        new() { Key = "categoria", Label = "Categoria", Kind = "sel",
+                Opciones = Enum.GetValues<CategoriaEquipo>().Select(c => (c.ToString(), c.ToString())).ToList() },
+        new() { Key = "estado", Label = "Estado", Kind = "sel",
+                Opciones = Enum.GetValues<EstadoEquipoActivo>().Select(s => (s.ToString(), EstadoTextoCorto(s))).ToList() },
+        new() { Key = "tipo", Label = "Tipo", Kind = "sel",
+                Opciones = new() { (TipoElemento.Equipo.ToString(), "Equipo"), (TipoElemento.Activo.ToString(), "Activo") } },
+        new() { Key = "reservable", Label = "Reservable", Kind = "sel",
+                Opciones = new() { ("si", "Si"), ("no", "No") } },
+        new() { Key = "ubicacion", Label = "Ubicacion", Kind = "texto" },
+        new() { Key = "marca", Label = "Marca", Kind = "texto" },
+        new() { Key = "cantidad", Label = "Cantidad", Kind = "num" },
+    };
 
     private IEnumerable<EquipoActivoDto> Filtrados()
     {
         var q = _q.Trim();
         return _equipos
             .Where(e => q == "" || e.Nombre.Contains(q, StringComparison.OrdinalIgnoreCase))
-            .Where(e => _fCategoria == "" || e.Categoria.ToString() == _fCategoria)
-            .Where(e => _fEstado == "" || e.Estado.ToString() == _fEstado)
-            .Where(e => _fTipo == "" || e.Tipo.ToString() == _fTipo);
+            .Where(e => _fd?.Pasa(campo => campo switch
+            {
+                "nombre" => e.Nombre,
+                "categoria" => e.Categoria.ToString(),
+                "estado" => e.Estado.ToString(),
+                "tipo" => e.Tipo.ToString(),
+                "reservable" => e.EsReservable ? "si" : "no",
+                "ubicacion" => e.Ubicacion ?? "",
+                "marca" => e.Marca ?? "",
+                "cantidad" => e.Cantidad.ToString(),
+                _ => ""
+            }) ?? true);
     }
 
     private sealed class EquipoDraft
