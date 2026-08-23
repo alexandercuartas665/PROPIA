@@ -21,3 +21,21 @@ public class DirectorioContacto : TenantEntity
     public VisibilidadContacto Visibilidad { get; set; } = VisibilidadContacto.Copropiedad;
     public bool Activo { get; set; } = true;
 }
+
+/// <summary>
+/// Documento adjunto de una persona o empresa del directorio (RUT, camara de comercio,
+/// certificados, cedula). GLOBAL como los contactos: el documento viaja con la identidad
+/// y se reutiliza en cualquier copropiedad; tenant_id solo registra el origen del cargue.
+/// </summary>
+public class DirectorioAdjunto : TenantEntity
+{
+    public EntidadDirectorio EntidadTipo { get; set; }
+    public Guid EntidadId { get; set; }
+
+    /// <summary>Nombre original del archivo (como lo subio el usuario).</summary>
+    public string Nombre { get; set; } = string.Empty;
+    /// <summary>URL relativa servida por el host unificado (convencion ResolveUrl).</summary>
+    public string Url { get; set; } = string.Empty;
+    public string? ContentType { get; set; }
+    public long TamanoBytes { get; set; }
+}

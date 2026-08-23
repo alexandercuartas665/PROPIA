@@ -77,6 +77,12 @@ public interface IDirectorioService
     Task<bool> ActualizarEtiquetaAsync(Guid etiquetaId, EditarEtiquetaRequest req, CancellationToken ct);
     Task<bool> EliminarEtiquetaCustomAsync(Guid etiquetaId, CancellationToken ct);
 
+    // --- Adjuntos (documentos de la identidad: RUT, camara de comercio, certificados) ---
+    Task<IReadOnlyList<DirectorioAdjuntoDto>> ListarAdjuntosAsync(EntidadDirectorio tipo, Guid entidadId, CancellationToken ct);
+    /// <summary>Sube el archivo al storage y registra el adjunto de la persona/empresa.</summary>
+    Task<DirectorioAdjuntoDto> AgregarAdjuntoAsync(EntidadDirectorio tipo, Guid entidadId, string nombreArchivo, string? contentType, long tamanoBytes, Stream contenido, CancellationToken ct);
+    Task<bool> EliminarAdjuntoAsync(Guid adjuntoId, CancellationToken ct);
+
     // --- Helper de validacion NIT (digito DIAN) ---
     string CalcularDigitoVerificacionNit(string nit);
 }

@@ -240,7 +240,7 @@
                 @foreach (var t in _detTabs)
                 {
                     var tk = t.Key;
-                    <button class="dir-dt-tab @(_detalleTab == t.Key ? "on" : "")" @onclick="() => _detalleTab = tk">@t.Value</button>
+                    <button class="dir-dt-tab @(_detalleTab == t.Key ? "on" : "")" @onclick="() => SetDetalleTabAsync(tk)">@t.Value</button>
                 }
             </div>
 
@@ -331,13 +331,49 @@
                 }
                 else if (_detalleTab == "documentos")
                 {
-                    <div class="dir-empty dir-empty--tab">
-                        <div class="dir-empty-ic">
-                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                    @* Dropzone: el InputFile invisible cubre toda la zona, asi el drag & drop nativo
+                       del navegador (soltar sobre un input file) funciona sin JS extra. *@
+                    <div class="dir-dropzone @(_adjBusy ? "dir-dropzone--busy" : "")">
+                        <InputFile OnChange="SubirAdjuntosAsync" multiple class="dir-dropzone-input" disabled="@_adjBusy" />
+                        <div class="dir-dropzone-inner">
+                            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+                            <strong>@(_adjBusy ? "Subiendo..." : "Arrastra archivos aqui o haz clic para elegir")</strong>
+                            <span>RUT, Camara de Comercio, certificados, cedula - maximo 10 MB por archivo</span>
                         </div>
-                        <strong>Sin documentos cargados</strong>
-                        <span>RUT, Camara de Comercio y certificados se podran adjuntar aqui (proximamente).</span>
                     </div>
+                    @if (!string.IsNullOrEmpty(_adjMsg))
+                    {
+                        <div class="alert alert-danger py-2 small mt-2 mb-0">@_adjMsg</div>
+                    }
+                    @if (_adjuntos.Count == 0 && !_adjBusy)
+                    {
+                        <div class="dir-empty dir-empty--tab" style="margin-top:14px">
+                            <div class="dir-empty-ic">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                            </div>
+                            <strong>Sin documentos cargados</strong>
+                            <span>Los archivos viajan con la identidad: se ven desde cualquier copropiedad.</span>
+                        </div>
+                    }
+                    else if (_adjuntos.Count > 0)
+                    {
+                        <div class="dir-doc-list">
+                            @foreach (var a in _adjuntos)
+                            {
+                                var adj = a;
+                                <div class="dir-doc-row">
+                                    <span class="dir-doc-ic">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                                    </span>
+                                    <a class="dir-doc-nom" href="@a.Url" target="_blank" rel="noopener" title="Abrir @a.Nombre">@a.Nombre</a>
+                                    <span class="dir-doc-meta">@TamanoLegible(a.TamanoBytes) &middot; @a.CreatedAt.ToLocalTime().ToString("dd MMM yyyy")</span>
+                                    <button type="button" class="dir-doc-del" title="Eliminar" @onclick="() => EliminarAdjuntoAsync(adj.Id)" disabled="@_adjBusy">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    }
                 }
                 else if (_detalleTab == "vinculos")
                 {
@@ -399,20 +435,60 @@
 @* ===================== MODAL CREAR (Persona / Empresa) ===================== *@
 @if (_showCrear)
 {
+    @* El modal de CREACION usa la MISMA anatomia que la ficha 360 (header con avatar + nombre
+       editable en el header + acciones arriba) para que crear y editar se sientan iguales. *@
+    var crIniciales = _tab == "personas"
+        ? (string.IsNullOrWhiteSpace(_persona.Nombres) && string.IsNullOrWhiteSpace(_persona.Apellidos) ? "?" : Iniciales(_persona.Nombres ?? "", _persona.Apellidos ?? ""))
+        : (string.IsNullOrWhiteSpace(_empresa.RazonSocial) ? "?" : InicialesEmpresa(_empresa.RazonSocial));
+    var crPersonaConForm = _tab == "personas" && _personaEncontrada is null && _busquedaHecha;
+
     <div class="dir-modal-backdrop" @onclick="CerrarCrear">
-        <div class="dir-modal" @onclick:stopPropagation="true">
-            <div class="dir-cr-head">
-                <div class="dir-cr-head-ic">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6"/></svg>
+        <div class="dir-modal dir-modal--lg" @onclick:stopPropagation="true">
+            <div class="dir-dt-head">
+                <div class="dir-dt-headrow">
+                    <div class="dir-dt-avatar @(_tab == "empresas" ? "dir-dt-avatar--empresa" : "")">@crIniciales</div>
+                    <div class="dir-dt-id">
+                        @if (crPersonaConForm)
+                        {
+                            <div class="dir-dt-nombre-edit">
+                                <input class="dir-dt-nombre-input" @bind="_persona.Nombres" placeholder="Nombres *" />
+                                <input class="dir-dt-nombre-input" @bind="_persona.Apellidos" placeholder="Apellidos *" />
+                            </div>
+                            <div class="dir-dt-sub">@_persona.TipoDocumento @_persona.Documento &middot; Persona nueva</div>
+                        }
+                        else if (_tab == "empresas")
+                        {
+                            <input class="dir-dt-nombre-input" @bind="_empresa.RazonSocial" placeholder="Razon social *" />
+                            <div class="dir-dt-sub">@(string.IsNullOrWhiteSpace(_empresa.Nit) ? "Nueva empresa" : $"NIT {_empresa.Nit}{(string.IsNullOrEmpty(_empresa.DigitoVerificacion) ? "" : "-" + _empresa.DigitoVerificacion)}")</div>
+                        }
+                        else
+                        {
+                            <div class="dir-dt-nombre">Nueva persona</div>
+                            <div class="dir-dt-sub">Primero busca por documento para evitar duplicados</div>
+                        }
+                    </div>
+                    <div class="dir-dt-acts">
+                        <button class="dir-btn-cancel" @onclick="CerrarCrear" disabled="@_busy">Cancelar</button>
+                        @if (_tab == "personas" && _personaEncontrada is null)
+                        {
+                            <button class="dir-btn-save" @onclick="CrearPersona" disabled="@(_busy || !_busquedaHecha)">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>
+                                @(_busy ? "Guardando..." : "Guardar")
+                            </button>
+                        }
+                        else if (_tab == "empresas")
+                        {
+                            <button class="dir-btn-save" @onclick="CrearEmpresa" disabled="@_busy">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>
+                                @(_busy ? "Guardando..." : "Guardar")
+                            </button>
+                        }
+                        <button class="dir-x" @onclick="CerrarCrear" title="Cerrar"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                    </div>
                 </div>
-                <div class="dir-cr-head-id">
-                    <div class="dir-cr-head-t">@(_tab == "personas" ? "Nueva persona" : "Nueva empresa")</div>
-                    <div class="dir-cr-head-s">@(_tab == "personas" ? "Primero busca por documento para evitar duplicados" : "El NIT se valida con digito DIAN")</div>
-                </div>
-                <button class="dir-x" @onclick="CerrarCrear" title="Cerrar"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
             </div>
 
-            <div class="dir-cr-body">
+            <div class="dir-dt-body">
                 @if (_tab == "personas")
                 {
                     <div class="dir-cr-docrow">
@@ -448,10 +524,8 @@
                     else if (_busquedaHecha)
                     {
                         <div class="dir-cr-notfound">
-                            <div class="dir-cr-ok"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12l5 5 9-11"/></svg>No existe - completa los datos para crearla</div>
+                            <div class="dir-cr-ok"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12l5 5 9-11"/></svg>No existe - escribe el nombre arriba y completa los datos</div>
                             <div class="dir-form-grid">
-                                <div class="dir-field"><label>Nombres *</label><input @bind="_persona.Nombres" /></div>
-                                <div class="dir-field"><label>Apellidos *</label><input @bind="_persona.Apellidos" /></div>
                                 <div class="dir-field"><label>Email</label><input @bind="_persona.Email" /></div>
                                 <div class="dir-field"><label>Telefono / WhatsApp</label><input @bind="_persona.Telefono" /></div>
                                 <div class="dir-field dir-field--wide"><label>Etiqueta de identidad</label>
@@ -475,7 +549,6 @@
                     <div class="dir-form-grid">
                         <div class="dir-field"><label>NIT (solo numeros)</label><input @bind="_empresa.Nit" @bind:event="oninput" @onblur="CalcularDvNit" /></div>
                         <div class="dir-field dir-field--dv"><label>DV</label><input @bind="_empresa.DigitoVerificacion" readonly /></div>
-                        <div class="dir-field dir-field--wide"><label>Razon social *</label><input @bind="_empresa.RazonSocial" /></div>
                         <div class="dir-field"><label>Nombre comercial</label><input @bind="_empresa.NombreComercial" /></div>
                         <div class="dir-field"><label>Email</label><input @bind="_empresa.Email" /></div>
                         <div class="dir-field"><label>Telefono</label><input @bind="_empresa.Telefono" /></div>
@@ -494,26 +567,6 @@
                 }
             </div>
 
-            @if (_personaEncontrada is null)
-            {
-                <div class="dir-cr-foot">
-                    <button class="dir-btn-cancel" @onclick="CerrarCrear">Cancelar</button>
-                    @if (_tab == "personas")
-                    {
-                        <button class="dir-btn-save" @onclick="CrearPersona" disabled="@(_busy || !_busquedaHecha)">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>
-                            @(_busy ? "Guardando..." : "Guardar")
-                        </button>
-                    }
-                    else
-                    {
-                        <button class="dir-btn-save" @onclick="CrearEmpresa" disabled="@_busy">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>
-                            @(_busy ? "Guardando..." : "Guardar")
-                        </button>
-                    }
-                </div>
-            }
         </div>
     </div>
 }
@@ -850,6 +903,24 @@
     .dtab-abrir { background: #F1ECFD; color: #6D4FE3; }
     .dtab-abrir:hover:not(:disabled) { background: #E4DBFB; filter: none; }
     .dtab-abrir:disabled { background: transparent; color: #D9E0E8; }
+
+    /* ---- Tab Documentos: dropzone (drag & drop nativo sobre el InputFile invisible) + lista ---- */
+    .dir-dropzone { position: relative; border: 1.5px dashed #C9B8F5; border-radius: 12px; background: #FBFAFF; transition: border-color .15s, background .15s; }
+    .dir-dropzone:hover { border-color: #6D4FE3; background: #F5F2FE; }
+    .dir-dropzone--busy { opacity: .65; pointer-events: none; }
+    .dir-dropzone-input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+    .dir-dropzone-inner { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 26px 16px; color: #6D4FE3; pointer-events: none; text-align: center; }
+    .dir-dropzone-inner strong { font-size: 13px; color: #33475B; }
+    .dir-dropzone-inner span { font-size: 11.5px; color: #7C98B6; }
+    .dir-doc-list { margin-top: 14px; border: 1px solid #E9EEF3; border-radius: 12px; overflow: hidden; }
+    .dir-doc-row { display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-bottom: 1px solid #F1F4F8; }
+    .dir-doc-row:last-child { border-bottom: 0; }
+    .dir-doc-ic { color: #6D4FE3; flex: 0 0 auto; display: flex; }
+    .dir-doc-nom { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: #33475B; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dir-doc-nom:hover { color: #6D4FE3; text-decoration: underline; }
+    .dir-doc-meta { flex: 0 0 auto; font-size: 11.5px; color: #7C98B6; }
+    .dir-doc-del { flex: 0 0 auto; border: 0; background: transparent; color: #C3D0DD; cursor: pointer; padding: 4px; border-radius: 6px; display: flex; }
+    .dir-doc-del:hover { color: #DC2626; background: #FEF2F2; }
     .dir-impres { margin: 0 0 14px; font-size: 12.5px; color: #33475B; background: #F1F8F4; border: 1px solid #CDE9D8; border-radius: 10px; padding: 10px 14px; }
     .dir-impres-err { color: #C0383C; font-weight: 700; }
     .dir-impres-list { margin: 6px 0 0; padding-left: 18px; color: #C0383C; font-size: 12px; }
@@ -964,6 +1035,68 @@
         ["vinculos"] = "Vinculos",
         ["acceso"] = "Acceso",
         ["historial"] = "Historial"
+    };
+
+    // ---------- Adjuntos (documentos de la identidad) ----------
+    private List<DirectorioAdjuntoDto> _adjuntos = new();
+    private bool _adjBusy;
+    private string? _adjMsg;
+
+    private string AdjTipoRuta => _detalleTipo == "empresa" ? "Empresa" : "Persona";
+
+    private async Task SetDetalleTabAsync(string tab)
+    {
+        _detalleTab = tab;
+        if (tab == "documentos") await CargarAdjuntosAsync();
+    }
+
+    private async Task CargarAdjuntosAsync()
+    {
+        try { _adjuntos = await Auth().GetFromJsonAsync<List<DirectorioAdjuntoDto>>($"/api/directorio/adjuntos/{AdjTipoRuta}/{_detalleId}") ?? new(); }
+        catch { _adjuntos = new(); }
+        StateHasChanged();
+    }
+
+    private async Task SubirAdjuntosAsync(InputFileChangeEventArgs e)
+    {
+        _adjMsg = null; _adjBusy = true;
+        StateHasChanged();
+        try
+        {
+            foreach (var f in e.GetMultipleFiles(10))
+            {
+                if (f.Size > 10_000_000) { _adjMsg = $"\"{f.Name}\" supera 10 MB y no se subio."; continue; }
+                using var content = new MultipartFormDataContent();
+                var sc = new StreamContent(f.OpenReadStream(maxAllowedSize: 10_000_000));
+                sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                    string.IsNullOrWhiteSpace(f.ContentType) ? "application/octet-stream" : f.ContentType);
+                content.Add(sc, "file", f.Name);
+                var resp = await Auth().PostAsync($"/api/directorio/adjuntos/{AdjTipoRuta}/{_detalleId}", content);
+                if (!resp.IsSuccessStatusCode)
+                    _adjMsg = "No se pudo subir \"" + f.Name + "\": " + await MensajeDeError(resp, "revisa el archivo.");
+            }
+            await CargarAdjuntosAsync();
+        }
+        catch (Exception ex) { _adjMsg = "Error subiendo archivos: " + ex.Message; }
+        finally { _adjBusy = false; StateHasChanged(); }
+    }
+
+    private async Task EliminarAdjuntoAsync(Guid id)
+    {
+        _adjBusy = true;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/directorio/adjuntos/{id}");
+            if (resp.IsSuccessStatusCode) await CargarAdjuntosAsync();
+        }
+        finally { _adjBusy = false; StateHasChanged(); }
+    }
+
+    private static string TamanoLegible(long bytes) => bytes switch
+    {
+        >= 1_048_576 => $"{bytes / 1_048_576.0:0.#} MB",
+        >= 1_024 => $"{bytes / 1_024.0:0.#} KB",
+        _ => $"{bytes} B"
     };
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -1171,6 +1304,7 @@
     {
         _detalleAbierto = true; _detalleTipo = "persona"; _detalleTab = "perfil"; _detalleEdit = false;
         _detalleId = id; _p360 = null; _e360 = null; _detalleError = null; _detalleCargando = true;
+        _adjuntos = new(); _adjMsg = null;
         try
         {
             var resp = await Auth().GetAsync($"/api/directorio/personas/{id}");
@@ -1186,6 +1320,7 @@
     {
         _detalleAbierto = true; _detalleTipo = "empresa"; _detalleTab = "perfil"; _detalleEdit = false;
         _detalleId = id; _p360 = null; _e360 = null; _detalleError = null; _detalleCargando = true;
+        _adjuntos = new(); _adjMsg = null;
         try
         {
             var resp = await Auth().GetAsync($"/api/directorio/empresas/{id}");

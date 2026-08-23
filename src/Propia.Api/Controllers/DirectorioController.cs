@@ -42,6 +42,26 @@ public class DirectorioController : ControllerBase
         catch (Exception ex) { return BadRequest(new { error = "archivo_invalido", detalle = ex.Message }); }
     }
 
+    // ---------- Adjuntos (documentos de la identidad: RUT, camara, certificados) ----------
+    [HttpGet("adjuntos/{tipo}/{entidadId:guid}")]
+    public async Task<IActionResult> ListarAdjuntos(EntidadDirectorio tipo, Guid entidadId, CancellationToken ct)
+        => Ok(await _svc.ListarAdjuntosAsync(tipo, entidadId, ct));
+
+    [HttpPost("adjuntos/{tipo}/{entidadId:guid}")]
+    [RequestSizeLimit(15 * 1024 * 1024)]
+    public async Task<IActionResult> SubirAdjunto(EntidadDirectorio tipo, Guid entidadId, [FromForm] IFormFile? file, CancellationToken ct)
+    {
+        if (file is null || file.Length == 0) return BadRequest(new { error = "Archivo vacio." });
+        if (file.Length > 10_000_000) return BadRequest(new { error = "Maximo 10 MB por archivo." });
+        await using var stream = file.OpenReadStream();
+        var dto = await _svc.AgregarAdjuntoAsync(tipo, entidadId, file.FileName, file.ContentType, file.Length, stream, ct);
+        return Ok(dto);
+    }
+
+    [HttpDelete("adjuntos/{adjuntoId:guid}")]
+    public async Task<IActionResult> EliminarAdjunto(Guid adjuntoId, CancellationToken ct)
+        => await _svc.EliminarAdjuntoAsync(adjuntoId, ct) ? NoContent() : NotFound();
+
     // ---------- Personas ----------
     [HttpGet("personas")]
     public async Task<IActionResult> ListarPersonas([FromQuery] string? q, CancellationToken ct)

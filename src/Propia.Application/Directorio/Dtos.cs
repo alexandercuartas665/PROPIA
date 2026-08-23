@@ -124,3 +124,7 @@ public record Empresa360Dto(
 public record EquipoEmpresaDto(
     Guid Id, Guid PersonaId, string PersonaNombre, string PersonaDocumento,
     string? Cargo, bool EsRepresentanteLegal, bool EsContactoPrincipal, EstadoDirectorio Estado);
+
+// ---------- Adjuntos (documentos de la identidad: RUT, camara de comercio, certificados) ----------
+public record DirectorioAdjuntoDto(
+    Guid Id, string Nombre, string Url, string? ContentType, long TamanoBytes, DateTimeOffset CreatedAt);

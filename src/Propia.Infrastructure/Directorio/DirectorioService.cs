@@ -1001,4 +1001,45 @@ public class DirectorioService : IDirectorioService
         if (d.Length <= 4) return d;
         return new string('*', Math.Min(4, d.Length - 4)) + d[^4..];
     }
+
+    // ============================ Adjuntos (documentos de la identidad) ============================
+    // GLOBAL como los contactos: el documento viaja con la persona/empresa entre copropiedades.
+
+    public async Task<IReadOnlyList<DirectorioAdjuntoDto>> ListarAdjuntosAsync(EntidadDirectorio tipo, Guid entidadId, CancellationToken ct)
+        => await _db.DirectorioAdjuntos.AsNoTracking()
+            .Where(a => a.EntidadTipo == tipo && a.EntidadId == entidadId)
+            .OrderByDescending(a => a.CreatedAt)
+            .Select(a => new DirectorioAdjuntoDto(a.Id, a.Nombre, a.Url, a.ContentType, a.TamanoBytes, a.CreatedAt))
+            .ToListAsync(ct);
+
+    public async Task<DirectorioAdjuntoDto> AgregarAdjuntoAsync(EntidadDirectorio tipo, Guid entidadId, string nombreArchivo, string? contentType, long tamanoBytes, Stream contenido, CancellationToken ct)
+    {
+        var ext = Path.GetExtension(nombreArchivo);
+        var key = $"directorio/{tipo.ToString().ToLowerInvariant()}/{entidadId:N}/docs/{Guid.NewGuid():N}{ext}";
+        var url = await _blob.UploadAsync(key, contenido, string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType!, ct);
+
+        var adj = new DirectorioAdjunto
+        {
+            Id = Guid.NewGuid(),
+            EntidadTipo = tipo,
+            EntidadId = entidadId,
+            Nombre = nombreArchivo.Trim(),
+            Url = url,
+            ContentType = contentType,
+            TamanoBytes = tamanoBytes,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        _db.DirectorioAdjuntos.Add(adj);
+        await _db.SaveChangesAsync(ct);
+        return new DirectorioAdjuntoDto(adj.Id, adj.Nombre, adj.Url, adj.ContentType, adj.TamanoBytes, adj.CreatedAt);
+    }
+
+    public async Task<bool> EliminarAdjuntoAsync(Guid adjuntoId, CancellationToken ct)
+    {
+        var adj = await _db.DirectorioAdjuntos.FirstOrDefaultAsync(a => a.Id == adjuntoId, ct);
+        if (adj is null) return false;
+        _db.DirectorioAdjuntos.Remove(adj);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
 }

@@ -110,6 +110,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<EtiquetaCatalogo> EtiquetasCatalogo => Set<EtiquetaCatalogo>();  // global+tenant mezclados via TenantId nullable
     public DbSet<DirectorioVinculo> DirectorioVinculos => Set<DirectorioVinculo>();
     public DbSet<DirectorioContacto> DirectorioContactos => Set<DirectorioContacto>();
+    public DbSet<DirectorioAdjunto> DirectorioAdjuntos => Set<DirectorioAdjunto>();
     public DbSet<DirectorioEtiqueta> DirectorioEtiquetas => Set<DirectorioEtiqueta>();
     public DbSet<PersonaEmpresa> PersonaEmpresas => Set<PersonaEmpresa>();
 
@@ -904,6 +905,17 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             // y se reutilizan en cualquier copropiedad donde aparezca. Sin HasQueryFilter y sin RLS
             // (la policy tenant_isolation se elimina en migracion). tenant_id queda solo como registro
             // de que copropiedad capturo el dato; la lectura/escritura es por (EntidadTipo, EntidadId).
+        });
+
+        // Documentos adjuntos de la identidad (RUT, camara, certificados). GLOBAL como los contactos.
+        modelBuilder.Entity<DirectorioAdjunto>(b =>
+        {
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(300);
+            b.Property(x => x.Url).IsRequired().HasMaxLength(600);
+            b.Property(x => x.ContentType).HasMaxLength(120);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.EntidadTipo, x.EntidadId });
+            // Sin HasQueryFilter: mismo criterio global que DirectorioContacto.
         });
 
         modelBuilder.Entity<DirectorioEtiqueta>(b =>
