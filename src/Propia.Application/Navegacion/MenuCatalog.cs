@@ -67,13 +67,13 @@ public static class MenuCatalog
         new MenuItemDef("com-documentos", "tabComunicacion", "Documentos", "/documentos", "fi-rr-folder-open", 2),
         new MenuItemDef("com-reportes", "tabComunicacion", "Reportes e indicadores", "/reportes", "fi-rr-chart-line-up", 3),
         new MenuItemDef("com-informes", "tabComunicacion", "Informes de gestion", "/informes", "fi-rr-document", 4),
-        // Subgrupo "Infraestructura & IA"
-        new MenuItemDef("ia-lineas", "tabComunicacion", "Lineas WhatsApp", "/ia/lineas", "fi-rr-comment-alt", 5, Subheading: "Infraestructura & IA"),
-        new MenuItemDef("ia-agentes", "tabComunicacion", "Agentes de IA", "/ia/agentes", "fi-rr-robot", 6, Subheading: "Infraestructura & IA"),
-        new MenuItemDef("ia-conversaciones", "tabComunicacion", "Conversaciones", "/ia/conversaciones", "fi-rr-comments", 7, Subheading: "Infraestructura & IA"),
-        new MenuItemDef("ia-bitacora", "tabComunicacion", "Bitacora del agente", "/ia/bitacora", "fi-rr-time-past", 8, Subheading: "Infraestructura & IA"),
-        new MenuItemDef("ia-automatizaciones", "tabComunicacion", "Automatizaciones", "/ia/automatizaciones", "fi-rr-bolt", 9, Subheading: "Infraestructura & IA"),
-        new MenuItemDef("ia-lista-negra", "tabComunicacion", "Lista negra", "/ia/lista-negra", "fi-rr-ban", 10, Subheading: "Infraestructura & IA"),
+        // (rotulo "Infraestructura & IA" retirado a peticion del usuario; los items quedan)
+        new MenuItemDef("ia-lineas", "tabComunicacion", "Lineas WhatsApp", "/ia/lineas", "fi-rr-comment-alt", 5),
+        new MenuItemDef("ia-agentes", "tabComunicacion", "Agentes de IA", "/ia/agentes", "fi-rr-robot", 6),
+        new MenuItemDef("ia-conversaciones", "tabComunicacion", "Conversaciones", "/ia/conversaciones", "fi-rr-comments", 7),
+        new MenuItemDef("ia-bitacora", "tabComunicacion", "Bitacora del agente", "/ia/bitacora", "fi-rr-time-past", 8),
+        new MenuItemDef("ia-automatizaciones", "tabComunicacion", "Automatizaciones", "/ia/automatizaciones", "fi-rr-bolt", 9),
+        new MenuItemDef("ia-lista-negra", "tabComunicacion", "Lista negra", "/ia/lista-negra", "fi-rr-ban", 10),
 
         // Organizacion (Capa 1)
         new MenuItemDef("org-panel", "tabOrg", "Panel consolidado", "/org/panel-consolidado", "fi-rr-dashboard", 1),
@@ -81,8 +81,8 @@ public static class MenuCatalog
         new MenuItemDef("org-equipo", "tabOrg", "Equipo de trabajo", "/org/equipo", "fi-rr-users-medical", 3),
         new MenuItemDef("org-reportes", "tabOrg", "Reportes cruzados", "/org/reportes-cruzados", "fi-rr-chart-pie", 4),
         new MenuItemDef("org-transferencia", "tabOrg", "Transferencia custodia", "/org/transferencia-custodia", "fi-rr-arrows-repeat", 5),
-        // Subgrupo "Operador A&D (Capa 0)" (con divisor antes)
-        new MenuItemDef("op0-info", "tabOrg", "Acerca del operador", "/operador/info", "fi-rr-shield", 6, Subheading: "Operador A&D (Capa 0)", DividerBefore: true),
+        // (rotulo "Operador A&D (Capa 0)" retirado; se conserva el divisor antes del item)
+        new MenuItemDef("op0-info", "tabOrg", "Acerca del operador", "/operador/info", "fi-rr-shield", 6, DividerBefore: true),
 
         // Mi cuenta
         new MenuItemDef("cta-perfil", "tabCuenta", "Perfil", "/cuenta/perfil", "fi-rr-user", 1),
