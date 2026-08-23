@@ -25,20 +25,25 @@
         <div class="pk-head-actions">
             @if (!(_authChecked && string.IsNullOrEmpty(_jwt)))
             {
-                <div class="pk-seg">
-                    <button class="pk-seg-btn @(_boardMode == "tablero" ? "pk-seg-btn--on" : "")" @onclick="@(() => SetVista("tablero"))">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="11" rx="1"/></svg>
-                        Kanban
-                    </button>
-                    <button class="pk-seg-btn @(_boardMode == "tabla" ? "pk-seg-btn--on" : "")" @onclick="@(() => SetVista("tabla"))">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18"/></svg>
-                        Tabla
-                    </button>
-                    <button class="pk-seg-btn @(_boardMode == "calendario" ? "pk-seg-btn--on" : "")" @onclick="@(() => SetVista("calendario"))">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-                        Calendario
-                    </button>
-                </div>
+                @* En Cerrados no hay diseno de tablero (solo tabla de consulta, como en Tareas):
+                   el selector de vistas se oculta. *@
+                @if (!_verArchivados)
+                {
+                    <div class="pk-seg">
+                        <button class="pk-seg-btn @(_boardMode == "tablero" ? "pk-seg-btn--on" : "")" @onclick="@(() => SetVista("tablero"))">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="11" rx="1"/></svg>
+                            Tablero
+                        </button>
+                        <button class="pk-seg-btn @(_boardMode == "tabla" ? "pk-seg-btn--on" : "")" @onclick="@(() => SetVista("tabla"))">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18"/></svg>
+                            Tabla
+                        </button>
+                        <button class="pk-seg-btn @(_boardMode == "calendario" ? "pk-seg-btn--on" : "")" @onclick="@(() => SetVista("calendario"))">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                            Calendario
+                        </button>
+                    </div>
+                }
                 <button class="pk-input-btn" @onclick="AbrirConfigColumnas" title="Configurar columnas del tablero">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
                     Configurar
@@ -164,7 +169,7 @@
                 }
             </div>
 
-            @if (_boardMode == "tabla")
+            @if (VistaEfectiva == "tabla")
             {
                 <button class="pk-input-btn @(_pin ? "pk-input-btn--on" : "")" @onclick="TogglePin" title="Congelar la primera columna al desplazar la tabla">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4v6l-2 4h10l-2-4V4M12 14v6M8 4h8"/></svg>
@@ -205,7 +210,7 @@
         </div>
 
         @* ===================== VISTA KANBAN ===================== *@
-        @if (_boardMode == "tablero")
+        @if (VistaEfectiva == "tablero")
         {
             <div class="pk-board" style="grid-template-columns: repeat(@Math.Max(_estados.Count, 1), minmax(240px, 1fr));">
                 @foreach (var col in _estados.OrderBy(e => e.Orden))
@@ -288,7 +293,7 @@
                 }
             </div>
         }
-        else if (_boardMode == "calendario")
+        else if (VistaEfectiva == "calendario")
         {
             @* ===================== VISTA CALENDARIO (por fecha de vencimiento legal) ===================== *@
             <div class="pk-cal">
@@ -970,6 +975,8 @@
     private bool _verArchivados;
 
     private string _boardMode = "tablero";
+    // En Cerrados solo hay tabla de consulta (mismo criterio que Tareas): se fuerza la vista.
+    private string VistaEfectiva => _verArchivados ? "tabla" : _boardMode;
     private string _group = "ninguno";
     private bool _pin;
     private string? _pop;

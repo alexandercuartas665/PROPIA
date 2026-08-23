@@ -54,6 +54,7 @@
     <button class="mt-tab @(_tab == "activos" ? "mt-tab--on" : "")" type="button" @onclick='() => SwitchTab("activos")'>Activos</button>
     <button class="mt-tab @(_tab == "intervenciones" ? "mt-tab--on" : "")" type="button" @onclick='() => SwitchTab("intervenciones")'>Intervenciones</button>
     <button class="mt-tab @(_tab == "planes" ? "mt-tab--on" : "")" type="button" @onclick='() => SwitchTab("planes")'>Planes preventivos</button>
+    <button class="mt-tab @(_tab == "calendario" ? "mt-tab--on" : "")" type="button" @onclick='() => SwitchTab("calendario")'>Calendario</button>
 </div>
 
 @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
@@ -245,6 +246,40 @@ else if (_tab == "planes")
             </table>
         </div>
     }
+}
+else if (_tab == "calendario")
+{
+    @* Calendario mensual de programaciones (estilo Reservas/PQRSD): intervenciones por fecha
+       programada y planes preventivos por su proxima ejecucion. *@
+    <div class="mt-cal">
+        <div class="mt-cal-bar">
+            <button class="mt-cal-nav" type="button" @onclick="() => MtCalMover(-1)">&#8249;</button>
+            <span class="mt-cal-title">@MtCalTitulo</span>
+            <button class="mt-cal-nav" type="button" @onclick="() => MtCalMover(1)">&#8250;</button>
+            <button class="mt-cal-hoy" type="button" @onclick="MtCalHoy">Hoy</button>
+            <span class="mt-cal-hint">Intervenciones por fecha programada &middot; planes preventivos por proxima ejecucion.</span>
+        </div>
+        <div class="mt-cal-head">
+            @foreach (var dw in new[] { "LUN", "MAR", "MIE", "JUE", "VIE", "SAB", "DOM" }) { <div class="mt-cal-dow">@dw</div> }
+        </div>
+        <div class="mt-cal-grid">
+            @foreach (var celda in MtCalCeldas())
+            {
+                <div class="mt-cal-cell @(celda.EsHoy ? "mt-cal-cell--hoy" : "") @(celda.EsMes ? "" : "mt-cal-cell--off")">
+                    <div class="mt-cal-daynum">@celda.Dia</div>
+                    @foreach (var ev in celda.Items.Take(3))
+                    {
+                        var evLocal = ev;
+                        <div class="mt-cal-ev @ev.Clase" title="@ev.Titulo"
+                             @onclick="async () => { if (evLocal.IntervencionId is Guid iid) await MostrarFicha(iid); }">
+                            @ev.Texto
+                        </div>
+                    }
+                    @if (celda.Items.Count > 3) { <div class="mt-cal-more">+@(celda.Items.Count - 3) mas</div> }
+                </div>
+            }
+        </div>
+    </div>
 }
 
 @* ===== Modal Crear Intervencion ===== *@
@@ -613,6 +648,28 @@ else if (_tab == "planes")
     .semaforo-amarillo { border-left: 4px solid #f59e0b; }
     .semaforo-rojo { border-left: 4px solid #ef4444; }
     .semaforo-negro { border-left: 4px solid #6b7280; }
+    /* === Calendario de programaciones (mismo patron visual del calendario de PQRSD) === */
+    .mt-cal { border: 1px solid #E1E8EE; border-radius: 14px; overflow: hidden; background: #fff; margin-bottom: 30px; }
+    .mt-cal-bar { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #EEF3F8; }
+    .mt-cal-nav { font-size: 18px; border: 1px solid #E1E8EE; border-radius: 8px; width: 30px; height: 30px; background: #fff; color: #516F90; cursor: pointer; }
+    .mt-cal-title { font-size: 15px; font-weight: 800; color: #1B2A3A; min-width: 150px; text-align: center; }
+    .mt-cal-hoy { padding: 6px 12px; border: 1px solid #E1E8EE; border-radius: 8px; background: #fff; color: #516F90; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .mt-cal-hint { margin-left: auto; font-size: 11.5px; color: #A6B7C8; }
+    .mt-cal-head { display: grid; grid-template-columns: repeat(7, 1fr); background: #FAFBFC; border-bottom: 1px solid #EEF3F8; }
+    .mt-cal-dow { padding: 8px 10px; font-size: 10px; font-weight: 800; letter-spacing: .4px; color: #A6B7C8; }
+    .mt-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: #EEF3F8; }
+    .mt-cal-cell { background: #fff; min-height: 92px; padding: 6px 7px; display: flex; flex-direction: column; gap: 3px; }
+    .mt-cal-cell--off { background: #FBFCFE; }
+    .mt-cal-cell--off .mt-cal-daynum { color: #C3D0DD; }
+    .mt-cal-cell--hoy { background: #F6F3FE; }
+    .mt-cal-daynum { font-size: 11.5px; font-weight: 700; color: #516F90; }
+    .mt-cal-cell--hoy .mt-cal-daynum { color: var(--propia-brand, #6D4FE3); }
+    .mt-cal-ev { font-size: 10.5px; font-weight: 700; color: #1D4ED8; background: #EFF6FF; border-radius: 5px; padding: 2px 6px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mt-cal-ev:hover { filter: brightness(.96); }
+    .mt-cal-ev--ok { color: #15703F; background: #E6F6EE; }
+    .mt-cal-ev--err { color: #B91C1C; background: #FEE2E2; }
+    .mt-cal-ev--plan { color: var(--propia-brand, #6D4FE3); background: #F1ECFD; }
+    .mt-cal-more { font-size: 10px; font-weight: 700; color: #7C98B6; padding: 1px 4px; }
     /* === Movil (hasta 640px): colapsar la fila de 8 KPIs === */
     @@media (max-width: 640px) {
         .mt-kpis { grid-template-columns: repeat(2, 1fr); }
@@ -691,6 +748,53 @@ else if (_tab == "planes")
         await CargarAsync();
     }
 
+    // ---------- Calendario de programaciones (estilo Reservas/PQRSD) ----------
+    private int _mtCalYear; private int _mtCalMonth; private bool _mtCalInit;
+    private void MtCalEnsure() { if (!_mtCalInit) { var t = DateTime.Today; _mtCalYear = t.Year; _mtCalMonth = t.Month; _mtCalInit = true; } }
+    private string MtCalTitulo { get { MtCalEnsure(); var s = new DateTime(_mtCalYear, _mtCalMonth, 1).ToString("MMMM yyyy", new System.Globalization.CultureInfo("es-CO")); return char.ToUpper(s[0]) + s.Substring(1); } }
+    private void MtCalMover(int d) { MtCalEnsure(); var nf = new DateTime(_mtCalYear, _mtCalMonth, 1).AddMonths(d); _mtCalYear = nf.Year; _mtCalMonth = nf.Month; }
+    private void MtCalHoy() { var t = DateTime.Today; _mtCalYear = t.Year; _mtCalMonth = t.Month; _mtCalInit = true; }
+
+    private sealed record MtCalItem(Guid? IntervencionId, string Texto, string Clase, string Titulo);
+    private sealed record MtCalCelda(int Dia, bool EsMes, bool EsHoy, List<MtCalItem> Items);
+
+    private List<MtCalCelda> MtCalCeldas()
+    {
+        MtCalEnsure();
+        var primero = new DateTime(_mtCalYear, _mtCalMonth, 1);
+        int offset = ((int)primero.DayOfWeek + 6) % 7; // la semana inicia el lunes
+        var inicio = primero.AddDays(-offset);
+        var hoy = DateOnly.FromDateTime(DateTime.Today);
+
+        // Intervenciones con fecha programada (excluye canceladas) + planes activos por proxima ejecucion.
+        var porDia = new Dictionary<DateOnly, List<MtCalItem>>();
+        void Add(DateOnly f, MtCalItem it) { if (!porDia.TryGetValue(f, out var l)) porDia[f] = l = new(); l.Add(it); }
+
+        foreach (var it in (_intervenciones ?? new()).Where(x => x.FechaProgramada is not null && x.Estado != EstadoIntervencion.Cancelada))
+        {
+            var clase = it.Estado == EstadoIntervencion.Completada ? "mt-cal-ev--ok"
+                      : it.Vencida ? "mt-cal-ev--err" : "";
+            Add(it.FechaProgramada!.Value, new MtCalItem(it.Id, $"{it.Codigo} {it.ActivoNombre}", clase,
+                $"{it.Codigo} - {it.Titulo} ({it.ActivoNombre}) - {it.Estado}"));
+        }
+        foreach (var p in (_planes ?? new()).Where(x => x.Activo))
+        {
+            var clase = p.ProximaEjecucion < hoy ? "mt-cal-ev--err" : "mt-cal-ev--plan";
+            Add(p.ProximaEjecucion, new MtCalItem(null, $"Plan: {p.Nombre}", clase,
+                $"Plan preventivo - {p.Nombre} ({p.ActivoNombre}) - {p.Frecuencia}"));
+        }
+
+        var res = new List<MtCalCelda>(42);
+        for (int i = 0; i < 42; i++)
+        {
+            var f = inicio.AddDays(i);
+            var fd = DateOnly.FromDateTime(f);
+            res.Add(new MtCalCelda(f.Day, f.Month == _mtCalMonth, fd == hoy,
+                porDia.GetValueOrDefault(fd, new List<MtCalItem>())));
+        }
+        return res;
+    }
+
     private async Task CargarAsync()
     {
         try
@@ -706,9 +810,10 @@ else if (_tab == "planes")
             if (qp.Count > 0) activosUrl += "?" + string.Join("&", qp);
             _activos = await http.GetFromJsonAsync<List<ActivoPanelDto>>(activosUrl) ?? new();
 
-            if (_tab == "intervenciones")
+            // El calendario combina intervenciones (fecha programada) y planes (proxima ejecucion).
+            if (_tab is "intervenciones" or "calendario")
                 _intervenciones = await http.GetFromJsonAsync<List<IntervencionListaDto>>("/api/mantenimiento/intervenciones") ?? new();
-            if (_tab == "planes")
+            if (_tab is "planes" or "calendario")
                 _planes = await http.GetFromJsonAsync<List<PlanDto>>("/api/mantenimiento/planes") ?? new();
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }

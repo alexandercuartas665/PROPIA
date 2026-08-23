@@ -332,6 +332,10 @@ public class ReservasService : IReservasService
         var zonaLocal = Propia.Infrastructure.Programaciones.CronHelper.Zona(null);
         var ahoraLocal = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zonaLocal);
         var inicioReserva = req.Fecha.ToDateTime(req.HoraInicio);
+        // Mensaje claro cuando la fecha/hora ya paso (ej. clic en un dia anterior de la agenda):
+        // "anticipacion minima Xh" confunde si el problema real es que el horario ya vencio.
+        if (inicioReserva < ahoraLocal)
+            throw new InvalidOperationException("La fecha y hora de inicio ya pasaron. Elige un horario futuro.");
         if (inicioReserva < ahoraLocal.AddHours(cfg.AnticipacionMinimaHoras))
             throw new InvalidOperationException($"RN-07: anticipacion minima {cfg.AnticipacionMinimaHoras}h.");
         if (inicioReserva > ahoraLocal.AddDays(cfg.AnticipacionMaximaDias))
@@ -535,6 +539,8 @@ public class ReservasService : IReservasService
         var zonaLocal = Propia.Infrastructure.Programaciones.CronHelper.Zona(null);
         var ahoraLocal = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zonaLocal);
         var inicioReserva = req.Fecha.ToDateTime(req.HoraInicio);
+        if (inicioReserva < ahoraLocal)
+            throw new InvalidOperationException("La fecha y hora de inicio ya pasaron. Elige un horario futuro.");
         if (inicioReserva < ahoraLocal.AddHours(cfg.AnticipacionMinimaHoras))
             throw new InvalidOperationException($"RN-07: anticipacion minima {cfg.AnticipacionMinimaHoras}h.");
         if (inicioReserva > ahoraLocal.AddDays(cfg.AnticipacionMaximaDias))
