@@ -77,26 +77,17 @@
 
     @* ===================== Buscador + filtros + vista ===================== *@
     <div class="mod-filtros">
+        @* Boton "Filtros" PRIMERO (reglas dinamicas, patron Tareas) y luego el buscador. *@
+        @if (_tab != EstadoUsuarioTenant.Pendiente)
+        {
+            <FiltroDinamico @ref="_fd" Campos="CamposFiltroUsr" OnChanged="StateHasChanged" />
+        }
         <div class="mod-search">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
             <input class="mod-search-inp" style="width:280px;" placeholder="Buscar por nombre, documento, email o rol..." @bind="_query" @bind:event="oninput" @onkeyup="CargarAsync" />
         </div>
         @if (_tab != EstadoUsuarioTenant.Pendiente)
         {
-            <select class="mod-fsel" @bind="_filtroRolId">
-                <option value="@Guid.Empty">Todos los roles</option>
-                @foreach (var r in RolesDisponibles())
-                {
-                    <option value="@r.Id">@r.Nombre</option>
-                }
-            </select>
-            <select class="mod-fsel" @bind="_filtroEtiquetaId">
-                <option value="@Guid.Empty">Todas las etiquetas</option>
-                @foreach (var e in _etiquetas)
-                {
-                    <option value="@e.Id">@e.Nombre</option>
-                }
-            </select>
             @* Dos vistas, las mismas que el Directorio: Lista (filas con avatar) y Tabla
                (todas las columnas + alta inline). Mismo toggle para que se lean igual. *@
             <div class="usr-viewtoggle" style="margin-left:auto;">
@@ -175,8 +166,15 @@
         else
         {
             var lista = _usuarios.Where(u => u.Estado == _tab)
-                .Where(u => _filtroRolId == Guid.Empty || u.RolId == _filtroRolId)
-                .Where(u => _filtroEtiquetaId == Guid.Empty || u.Etiquetas.Any(e => e.Id == _filtroEtiquetaId))
+                .Where(u => _fd?.Pasa(campo => campo switch
+                {
+                    "nombre" => u.NombreCompleto,
+                    "documento" => u.Documento,
+                    "email" => u.Email ?? "",
+                    "rol" => u.RolId?.ToString() ?? "",
+                    "etiqueta" => string.Join(",", u.Etiquetas.Select(e => e.Id)),
+                    _ => ""
+                }) ?? true)
                 .ToList();
             @if (lista.Count == 0 && _vista == "lista")
             {
@@ -1061,8 +1059,19 @@
     private bool _sinPermiso;
 
     // Filtros y vista (2.5.C)
-    private Guid _filtroRolId;
-    private Guid _filtroEtiquetaId;
+    // Filtro dinamico unico (componente compartido): rol y etiqueta como reglas.
+    private FiltroDinamico? _fd;
+
+    private List<FiltroDinamico.CampoDef> CamposFiltroUsr => new()
+    {
+        new() { Key = "nombre", Label = "Nombre", Kind = "texto" },
+        new() { Key = "documento", Label = "Documento", Kind = "texto" },
+        new() { Key = "email", Label = "Email", Kind = "texto" },
+        new() { Key = "rol", Label = "Rol", Kind = "sel",
+                Opciones = RolesDisponibles().Select(r => (r.Id.ToString(), r.Nombre)).ToList() },
+        new() { Key = "etiqueta", Label = "Etiqueta", Kind = "multi",
+                Opciones = _etiquetas.Select(e => (e.Id.ToString(), e.Nombre)).ToList() },
+    };
     private string _vista = "lista";  // "lista" | "tabla" (las mismas dos vistas del Directorio)
     private const string VistaKey = "propia_view_usuarios";
     private string? _msg; private string _msgClass = "alert-info";

@@ -101,12 +101,13 @@
     // Se hace con estilos INLINE !important porque la plantilla NexLink trae reglas :has()
     // por-breakpoint (80px entre 1200-1480, etc.) que, en este motor, le ganan de forma anomala
     // a nuestras reglas :has()/planas del <style> del layout. El inline !important gana a todo.
-    var SIDEBAR_W = 276; // debe coincidir con --app-menubar-tabs del MainLayout
+    var SIDEBAR_W = 276;     // debe coincidir con --app-menubar-tabs del MainLayout
+    var SIDEBAR_MINI = 72;   // riel de iconos en modo mini (debe coincidir con --pnav-w mini)
     function syncSidebarLayout() {
         try {
             var mode = docEl.getAttribute('data-app-sidebar');
             var mobile = window.innerWidth < 1200;
-            var off = (mobile || mode === 'mini') ? '0px' : (SIDEBAR_W + 'px');
+            var off = mobile ? '0px' : (mode === 'mini' ? (SIDEBAR_MINI + 'px') : (SIDEBAR_W + 'px'));
             var w = document.querySelector('.app-wrapper');
             var h = document.querySelector('.app-header');
             if (w) w.style.setProperty('margin-left', off, 'important');
