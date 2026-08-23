@@ -102,7 +102,9 @@ public static class MenuCatalog
             ov.TryGetValue(s.Key, out var o);
             var label = string.IsNullOrWhiteSpace(o?.Label) ? s.Label : o!.Label!;
             var order = o?.SortOrder ?? s.Order;
-            return new SectionShape(s.Key, label, s.Icon, s.TooltipDesc, order, s.SeparatorBefore, false);
+            // El icono de los nodos base tambien es editable (override); vacio = icono base.
+            var icon = string.IsNullOrWhiteSpace(o?.Icon) ? s.Icon : o!.Icon!;
+            return new SectionShape(s.Key, label, icon, s.TooltipDesc, order, s.SeparatorBefore, false, o?.Hidden ?? false);
         });
         var customSections = all
             .Where(o => o.IsCustom && string.Equals(o.NodeType, "section", StringComparison.OrdinalIgnoreCase))
@@ -110,7 +112,7 @@ public static class MenuCatalog
                 o.NodeKey,
                 string.IsNullOrWhiteSpace(o.Label) ? "Seccion" : o.Label!,
                 string.IsNullOrWhiteSpace(o.Icon) ? "fi-rr-apps" : o.Icon!,
-                string.Empty, o.SortOrder ?? 999, false, true));
+                string.Empty, o.SortOrder ?? 999, false, true, o.Hidden));
 
         var sections = baseSections.Concat(customSections)
             .OrderBy(x => x.Order).ThenBy(x => x.Label, StringComparer.Ordinal)
@@ -125,7 +127,8 @@ public static class MenuCatalog
                 ? o.ParentKey! : i.SectionKey;
             var label = string.IsNullOrWhiteSpace(o?.Label) ? i.Label : o!.Label!;
             var order = o?.SortOrder ?? i.Order;
-            return new ResolvedMenuItem(i.Key, section, label, i.Href, i.Icon, order, i.Subheading, i.DividerBefore, false);
+            var icon = string.IsNullOrWhiteSpace(o?.Icon) ? i.Icon : o!.Icon!;
+            return new ResolvedMenuItem(i.Key, section, label, i.Href, icon, order, i.Subheading, i.DividerBefore, false, o?.Hidden ?? false);
         });
         var customItems = all
             .Where(o => o.IsCustom && string.Equals(o.NodeType, "item", StringComparison.OrdinalIgnoreCase))
@@ -138,7 +141,7 @@ public static class MenuCatalog
                     string.IsNullOrWhiteSpace(o.Label) ? "Item" : o.Label!,
                     string.IsNullOrWhiteSpace(o.Href) ? "/proximamente" : o.Href!,
                     string.IsNullOrWhiteSpace(o.Icon) ? "fi-rr-clock-three" : o.Icon!,
-                    o.SortOrder ?? 999, null, false, true);
+                    o.SortOrder ?? 999, null, false, true, o.Hidden);
             });
 
         var items = baseItems.Concat(customItems).ToList();
@@ -151,12 +154,12 @@ public static class MenuCatalog
                 .OrderBy(i => i.Order).ThenBy(i => i.Label, StringComparer.Ordinal)
                 .ToList();
             resolved.Add(new ResolvedMenuSection(s.Key, s.Label, s.Icon, s.TooltipDesc, s.Order,
-                s.SeparatorBefore, secItems, BuildGroups(secItems), s.IsCustom));
+                s.SeparatorBefore, secItems, BuildGroups(secItems), s.IsCustom, s.Hidden));
         }
         return new ResolvedMenu(resolved);
     }
 
-    private sealed record SectionShape(string Key, string Label, string Icon, string TooltipDesc, int Order, bool SeparatorBefore, bool IsCustom);
+    private sealed record SectionShape(string Key, string Label, string Icon, string TooltipDesc, int Order, bool SeparatorBefore, bool IsCustom, bool Hidden = false);
 
     /// <summary>Agrupa los items de una seccion por subheading (corridas consecutivas). El primer grupo
     /// sin heading (null) se pinta bajo el titulo de la seccion.</summary>

@@ -36,4 +36,8 @@ public class MenuOverride : BaseEntity
 
     /// <summary>Solo custom item: ruta destino. Los items sin funcion todavia apuntan a /proximamente.</summary>
     public string? Href { get; set; }
+
+    /// <summary>true = el nodo (seccion o item) esta OCULTO en el menu del cliente. El editor lo
+    /// sigue mostrando (atenuado) para poder reactivarlo.</summary>
+    public bool Hidden { get; set; }
 }

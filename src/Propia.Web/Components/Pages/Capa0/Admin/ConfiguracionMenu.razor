@@ -51,20 +51,22 @@ else
                             <button class="btn btn-outline-secondary" title="Subir seccion" disabled="@(sIdx == 0)" @onclick="() => MoverSeccion(sIdx, -1)"><i class="fi fi-rr-angle-up"></i></button>
                             <button class="btn btn-outline-secondary" title="Bajar seccion" disabled="@(sIdx == _sections.Count - 1)" @onclick="() => MoverSeccion(sIdx, 1)"><i class="fi fi-rr-angle-down"></i></button>
                         </div>
-                        @if (sec.IsCustom)
-                        {
-                            <input class="form-control form-control-sm" style="max-width:120px" @bind="sec.Icon" placeholder="fi-rr-apps" title="Clase de icono (fi-rr-*)" />
-                        }
-                        else
-                        {
-                            <i class="fi @sec.Icon text-muted"></i>
-                        }
-                        <input class="form-control form-control-sm fw-semibold" style="max-width:280px" @bind="sec.Label" />
+                        @* El icono es editable en TODAS las secciones (base y nuevas). *@
+                        <i class="fi @sec.Icon text-muted"></i>
+                        <input class="form-control form-control-sm" style="max-width:120px" @bind="sec.Icon" placeholder="fi-rr-apps" title="Clase de icono (fi-rr-*)" />
+                        <input class="form-control form-control-sm fw-semibold @(sec.Hidden ? "text-decoration-line-through text-muted" : "")" style="max-width:280px" @bind="sec.Label" />
                         @if (sec.IsCustom)
                         {
                             <span class="badge bg-primary-subtle text-primary-emphasis">nueva</span>
                         }
+                        @if (sec.Hidden)
+                        {
+                            <span class="badge bg-secondary-subtle text-secondary-emphasis">oculta</span>
+                        }
                         <span class="badge bg-light text-muted ms-auto">@sec.Items.Count items</span>
+                        <button class="btn btn-sm @(sec.Hidden ? "btn-secondary" : "btn-outline-secondary")" title="@(sec.Hidden ? "Mostrar seccion en el menu" : "Ocultar seccion del menu")" @onclick="() => sec.Hidden = !sec.Hidden">
+                            <i class="fi @(sec.Hidden ? "fi-rr-eye-crossed" : "fi-rr-eye")"></i>
+                        </button>
                         @if (sec.IsCustom)
                         {
                             <button class="btn btn-sm btn-outline-danger" title="Eliminar seccion" @onclick="() => EliminarSeccion(sec)"><i class="fi fi-rr-trash"></i></button>
@@ -85,15 +87,10 @@ else
                                         <button class="btn btn-outline-secondary" title="Subir" disabled="@(iIdx == 0)" @onclick="() => MoverItem(sec, iIdx, -1)"><i class="fi fi-rr-angle-up"></i></button>
                                         <button class="btn btn-outline-secondary" title="Bajar" disabled="@(iIdx == sec.Items.Count - 1)" @onclick="() => MoverItem(sec, iIdx, 1)"><i class="fi fi-rr-angle-down"></i></button>
                                     </div>
-                                    @if (it.IsCustom)
-                                    {
-                                        <input class="form-control form-control-sm" style="max-width:110px" @bind="it.Icon" placeholder="fi-rr-*" title="Icono (fi-rr-*)" />
-                                    }
-                                    else
-                                    {
-                                        <i class="fi @it.Icon text-muted"></i>
-                                    }
-                                    <input class="form-control form-control-sm" style="max-width:300px" @bind="it.Label" />
+                                    @* El icono es editable en TODOS los items (base y nuevos). *@
+                                    <i class="fi @it.Icon text-muted"></i>
+                                    <input class="form-control form-control-sm" style="max-width:110px" @bind="it.Icon" placeholder="fi-rr-*" title="Icono (fi-rr-*)" />
+                                    <input class="form-control form-control-sm @(it.Hidden ? "text-decoration-line-through text-muted" : "")" style="max-width:300px" @bind="it.Label" />
                                     <code class="small text-muted d-none d-md-inline">@it.Href</code>
                                     @if (!string.IsNullOrWhiteSpace(it.Subheading))
                                     {
@@ -108,6 +105,9 @@ else
                                                 <option value="@dest.Key" selected="@(dest.Key == sec.Key)">@dest.Label</option>
                                             }
                                         </select>
+                                        <button class="btn btn-sm @(it.Hidden ? "btn-secondary" : "btn-outline-secondary")" title="@(it.Hidden ? "Mostrar en el menu" : "Ocultar del menu")" @onclick="() => it.Hidden = !it.Hidden">
+                                            <i class="fi @(it.Hidden ? "fi-rr-eye-crossed" : "fi-rr-eye")"></i>
+                                        </button>
                                         @if (it.IsCustom)
                                         {
                                             <button class="btn btn-sm btn-outline-danger" title="Eliminar item" @onclick="() => EliminarItem(sec, it)"><i class="fi fi-rr-trash"></i></button>
@@ -139,6 +139,7 @@ else
         public string Icon { get; set; } = "";
         public string? Subheading { get; set; }
         public bool IsCustom { get; set; }
+        public bool Hidden { get; set; }
     }
 
     private sealed class EdSection
@@ -147,6 +148,7 @@ else
         public string Label { get; set; } = "";
         public string Icon { get; set; } = "";
         public bool IsCustom { get; set; }
+        public bool Hidden { get; set; }
         public List<EdItem> Items { get; set; } = new();
     }
 
@@ -174,7 +176,8 @@ else
                 Label = s.Label,
                 Icon = s.Icon,
                 IsCustom = s.IsCustom,
-                Items = s.Items.Select(i => new EdItem { Key = i.Key, Label = i.Label, Href = i.Href, Icon = i.Icon, Subheading = i.Subheading, IsCustom = i.IsCustom }).ToList()
+                Hidden = s.Hidden,
+                Items = s.Items.Select(i => new EdItem { Key = i.Key, Label = i.Label, Href = i.Href, Icon = i.Icon, Subheading = i.Subheading, IsCustom = i.IsCustom, Hidden = i.Hidden }).ToList()
             })
             .ToList();
     }
@@ -263,8 +266,8 @@ else
             var req = new SaveMenuArrangementRequest(
                 _sections.Select((s, si) => new MenuSectionArrangement(
                     s.Key, s.Label, si + 1,
-                    s.Items.Select((it, ii) => new MenuItemArrangement(it.Key, it.Label, ii + 1, it.IsCustom, it.Icon, it.Href)).ToList(),
-                    s.IsCustom, s.Icon)).ToList());
+                    s.Items.Select((it, ii) => new MenuItemArrangement(it.Key, it.Label, ii + 1, it.IsCustom, it.Icon, it.Href, it.Hidden)).ToList(),
+                    s.IsCustom, s.Icon, s.Hidden)).ToList());
 
             var resp = await Auth().PutAsJsonAsync("/admin/menu", req);
             if (resp.IsSuccessStatusCode)

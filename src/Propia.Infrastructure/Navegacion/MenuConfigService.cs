@@ -35,7 +35,7 @@ public sealed class MenuConfigService : IMenuConfigService
         }
 
         var overrides = await _db.MenuOverrides.AsNoTracking()
-            .Select(o => new MenuOverrideData(o.NodeKey, o.Label, o.ParentKey, o.SortOrder, o.IsCustom, o.NodeType, o.Icon, o.Href))
+            .Select(o => new MenuOverrideData(o.NodeKey, o.Label, o.ParentKey, o.SortOrder, o.IsCustom, o.NodeType, o.Icon, o.Href, o.Hidden))
             .ToListAsync(ct);
         var resolved = MenuCatalog.Resolve(overrides);
         _cache.Set(CacheKey, resolved, CacheTtl);
@@ -57,7 +57,7 @@ public sealed class MenuConfigService : IMenuConfigService
                 {
                     NodeKey = s.Key, IsCustom = true, NodeType = "section",
                     Label = Clean(s.Label) ?? "Seccion", SortOrder = s.Order,
-                    Icon = Clean(s.Icon) ?? "fi-rr-apps"
+                    Icon = Clean(s.Icon) ?? "fi-rr-apps", Hidden = s.Hidden
                 });
             }
             else if (sectionBase.TryGetValue(s.Key, out var sb))
@@ -65,9 +65,12 @@ public sealed class MenuConfigService : IMenuConfigService
                 var label = Clean(s.Label);
                 var labelDelta = label is not null && label != sb.Label ? label : null;
                 int? orderDelta = s.Order != sb.Order ? s.Order : null;
-                if (labelDelta is not null || orderDelta is not null)
+                // El icono de las secciones base tambien se puede cambiar (delta vs el base).
+                var icon = Clean(s.Icon);
+                var iconDelta = icon is not null && icon != sb.Icon ? icon : null;
+                if (labelDelta is not null || orderDelta is not null || iconDelta is not null || s.Hidden)
                 {
-                    rows.Add(new MenuOverride { NodeKey = s.Key, Label = labelDelta, ParentKey = null, SortOrder = orderDelta });
+                    rows.Add(new MenuOverride { NodeKey = s.Key, Label = labelDelta, ParentKey = null, SortOrder = orderDelta, Icon = iconDelta, Hidden = s.Hidden });
                 }
             }
             else { continue; } // seccion base desconocida (stale): se ignora
@@ -82,7 +85,8 @@ public sealed class MenuConfigService : IMenuConfigService
                         NodeKey = it.Key, IsCustom = true, NodeType = "item",
                         Label = Clean(it.Label) ?? "Item", ParentKey = s.Key, SortOrder = it.Order,
                         Icon = Clean(it.Icon) ?? "fi-rr-clock-three",
-                        Href = Clean(it.Href) ?? "/proximamente"
+                        Href = Clean(it.Href) ?? "/proximamente",
+                        Hidden = it.Hidden
                     });
                 }
                 else if (itemBase.TryGetValue(it.Key, out var ib))
@@ -91,9 +95,12 @@ public sealed class MenuConfigService : IMenuConfigService
                     var labelDelta = label is not null && label != ib.Label ? label : null;
                     var parentDelta = !string.Equals(s.Key, ib.SectionKey, StringComparison.Ordinal) ? s.Key : null;
                     int? orderDelta = it.Order != ib.Order ? it.Order : null;
-                    if (labelDelta is not null || parentDelta is not null || orderDelta is not null)
+                    // El icono de los items base tambien se puede cambiar (delta vs el base).
+                    var icon = Clean(it.Icon);
+                    var iconDelta = icon is not null && icon != ib.Icon ? icon : null;
+                    if (labelDelta is not null || parentDelta is not null || orderDelta is not null || iconDelta is not null || it.Hidden)
                     {
-                        rows.Add(new MenuOverride { NodeKey = it.Key, Label = labelDelta, ParentKey = parentDelta, SortOrder = orderDelta });
+                        rows.Add(new MenuOverride { NodeKey = it.Key, Label = labelDelta, ParentKey = parentDelta, SortOrder = orderDelta, Icon = iconDelta, Hidden = it.Hidden });
                     }
                 }
             }
