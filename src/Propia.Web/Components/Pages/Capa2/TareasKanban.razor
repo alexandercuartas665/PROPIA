@@ -540,8 +540,11 @@ else
 
             <div class="tb-list" id="tbList">
                 <div class="tb-list-hdr">
+                    @* Columna del expansor (primera, fija): abre el modal; se ve al pasar el mouse. *@
+                    <div class="tb-lc tb-lc-exp"></div>
                     <div class="tb-lc tb-lc-tit tb-lc-sort @(_pinTitulo ? "tb-pin tb-pin-h" : "")" @onclick='() => SortBy("titulo")'><span>TITULO</span>@SortInd("titulo")</div>
                     @if (_colDesc) { <div class="tb-lc tb-lc-desc tb-lc-sort" @onclick='() => SortBy("descripcion")'><span>DESCRIPCION</span>@ColorDot("desc")</div> }
+                    @if (_colCodigo) { <div class="tb-lc tb-lc-cod tb-lc-sort" @onclick='() => SortBy("numero")'><span>CODIGO</span>@SortInd("numero")@ColorDot("cod")</div> }
                     <div class="tb-lc tb-lc-est"><span>ETAPA</span>@ColorDot("est")</div>
                     @if (_colResp) { <div class="tb-lc tb-lc-resp tb-lc-sort" @onclick='() => SortBy("asignado")'><span>ASIGNADO</span>@SortInd("asignado")@ColorDot("resp")</div> }
                     <div class="tb-lc tb-lc-prog tb-lc-sort" @onclick='() => SortBy("progreso")'><span>PROGRESO</span>@SortInd("progreso")@ColorDot("prog")</div>
@@ -583,6 +586,12 @@ else
                        perder pulsaciones (value= se reafirma en cada re-render en Blazor Server). *@
                     var nf = NuevaFilaDe(estado.Id);
                     <div class="tb-newrow" @key="nf">
+                        @* Expansor de la fila de alta: crea la tarea y abre su modal (se ve al escribir). *@
+                        <div class="tb-row-exp">
+                            <button type="button" class="tb-exp-fijo" tabindex="-1" title="Crear y abrir la tarea" @onclick="() => CrearDesdeNuevaFilaYAbrir(estado.Id)" disabled="@string.IsNullOrWhiteSpace(nf.Titulo)">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                            </button>
+                        </div>
                         <div class="tb-row-tit @(_pinTitulo ? "tb-pin" : "")">
                             <span class="tb-newrow-plus">+</span>
                             <input class="tb-nf-inp tb-nf-tit" data-nf-tit="@estado.Id" placeholder="Nueva tarea..." @oninput="@(e => nf.Titulo = e.Value?.ToString() ?? string.Empty)" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" />
@@ -591,6 +600,7 @@ else
                         {
                             <div class="tb-row-desc"><input class="tb-nf-inp" placeholder="Descripcion" @oninput="@(e => nf.Descripcion = e.Value?.ToString())" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" /></div>
                         }
+                        @if (_colCodigo) { <div class="tb-row-cod"><span class="tb-nf-mut">&mdash;</span></div> }
                         <div class="tb-row-cell-est">
                             <select class="tb-est-sel" style="background:#6D4FE3" @bind="nf.EstadoId">
                                 @if (_board is not null) { @foreach (var es in _board.Estados) { <option value="@es.Id" style="background:#fff;color:#33475B">@es.Nombre</option> } }
@@ -660,13 +670,10 @@ else
                                 }
                             </div>
                         }
+                        @* Crear en su lugar (Enter tambien crea); crear-y-abrir vive en el expansor. *@
                         <div class="tb-row-acc tb-nf-acts">
                             <button class="tb-nf-crear" title="Crear tarea (Enter)" @onclick="() => CrearDesdeNuevaFila(estado.Id)" disabled="@string.IsNullOrWhiteSpace(nf.Titulo)">
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>
-                            </button>
-                            @* Expander estilo Airtable: crea la tarea y abre de una su modal completo. *@
-                            <button class="tb-nf-crear tb-nf-abrir" title="Crear y abrir la tarea" @onclick="() => CrearDesdeNuevaFilaYAbrir(estado.Id)" disabled="@string.IsNullOrWhiteSpace(nf.Titulo)">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                             </button>
                         </div>
                     </div>
@@ -2163,6 +2170,15 @@ else
     .tb-lc-sort { cursor: pointer; user-select: none; }
     .tb-lc-sort:hover { color: #6D4FE3; }
     .tb-lc { font-size: 10.5px; letter-spacing: .4px; font-weight: 700; color: #A6B7C8; }
+    /* Columna del expansor (primera, fija 34px) + columna Codigo. */
+    .tb-lc-exp, .tb-row-exp { width: 34px; flex: 0 0 34px; display: flex; align-items: center; justify-content: center; }
+    .tb-lc-cod { width: 110px; flex-shrink: 0; } .tb-row-cod { width: 110px; flex-shrink: 0; display: flex; align-items: center; }
+    /* Expansor: se ve solo al pasar el mouse por la fila (o al escribir en la fila de alta). */
+    .tb-exp-fijo { width: 26px; height: 26px; border: 0; border-radius: 7px; background: #F1ECFD; color: var(--propia-brand, #6D4FE3); display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s; }
+    .tb-row:hover .tb-exp-fijo, .tb-newrow:hover .tb-exp-fijo, .tb-newrow:focus-within .tb-exp-fijo { opacity: 1; }
+    .tb-exp-fijo:hover { background: #E4DBFB; }
+    .tb-exp-fijo:disabled { opacity: 0; cursor: default; }
+    .tb-newrow:hover .tb-exp-fijo:disabled, .tb-newrow:focus-within .tb-exp-fijo:disabled { opacity: .35; }
     .tb-lc-tit { width: 300px; flex-shrink: 0; } .tb-lc-est { width: 130px; flex-shrink: 0; } .tb-lc-resp { width: 150px; flex-shrink: 0; }
     .tb-lc-prog { width: 140px; flex-shrink: 0; } .tb-lc-prio { width: 90px; flex-shrink: 0; } .tb-lc-due { flex: 1; min-width: 70px; }
     .tb-list-group { display: flex; align-items: center; gap: 12px; padding: 6px 18px; background: #F8FAFC; border-bottom: 1px solid #EEF3F8; min-width: 860px; }
@@ -3208,6 +3224,7 @@ else
         Func<TareaListaDto, object?> key = _sortCol switch
         {
             "titulo" => t => t.Titulo,
+            "numero" => t => t.NumeroTarea ?? "",
             "asignado" => t => t.AsignadoNombre ?? "",
             "progreso" => t => t.Progreso,
             "prioridad" => t => (int)t.Prioridad,
@@ -3318,7 +3335,9 @@ else
                 <button class="tb-group-add" @onclick="() => AbrirCardDraft(null, estadoId.Value)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Agregar</button>
             }
         </div>
+        <div class="tb-lc tb-lc-exp"></div>
         @if (_colDesc) { <div class="tb-lc tb-lc-desc"></div> }
+        @if (_colCodigo) { <div class="tb-lc tb-lc-cod"></div> }
         <div class="tb-lc tb-lc-est"></div>
         @if (_colResp) { <div class="tb-lc tb-lc-resp"></div> }
         <div class="tb-lc tb-lc-prog"></div>
@@ -3360,6 +3379,7 @@ else
     private static string? ColSelectores(string key) => key switch
     {
         "desc" => ".tb-list .tb-row-desc",
+        "cod" => ".tb-list .tb-row-cod",
         "est" => ".tb-list .tb-row-cell-est",
         "resp" => ".tb-list .tb-row-resp",
         "prog" => ".tb-list .tb-row-prog",
@@ -3438,7 +3458,9 @@ else
         return
     @<div class="tb-list-sum @(interactivo ? "tb-sum-total" : "")">
         <div class="tb-lc tb-lc-tit tb-sum-lead @(_pinTitulo ? "tb-pin tb-pin-g" : "")">@lead</div>
+        <div class="tb-lc tb-lc-exp"></div>
         @if (_colDesc) { <div class="tb-lc tb-lc-desc"></div> }
+        @if (_colCodigo) { <div class="tb-lc tb-lc-cod"></div> }
         <div class="tb-lc tb-lc-est"></div>
         @if (_colResp) { <div class="tb-lc tb-lc-resp"></div> }
         <div class="tb-lc tb-lc-prog"></div>
@@ -3541,7 +3563,7 @@ else
 
     private bool _pinTitulo; private bool _colsMenu;
     private bool _colResp = true; private bool _colEtiq = true; private bool _colPrio = true; private bool _colDue = true;
-    private bool _colValor = true; private bool _colDesc = true; private bool _colOrigen = true;
+    private bool _colValor = true; private bool _colDesc = true; private bool _colOrigen = true; private bool _colCodigo = true;
 
     // Visibilidad por campo dinamico del tablero. Se guarda el set de OCULTOS (vacio = todos
     // visibles), para conservar el comportamiento previo (los campos siempre se mostraban).
@@ -3559,6 +3581,7 @@ else
             case "prio": _colPrio = !_colPrio; break;
             case "due": _colDue = !_colDue; break;
             case "desc": _colDesc = !_colDesc; break;
+            case "cod": _colCodigo = !_colCodigo; break;
             case "valor": _colValor = !_colValor; break;
             case "orig": _colOrigen = !_colOrigen; break;
             case "pin": _pinTitulo = !_pinTitulo; break;
@@ -3567,13 +3590,13 @@ else
     }
     private async Task ColsTodos()
     {
-        _colResp = _colEtiq = _colPrio = _colDue = _colDesc = _colValor = _colOrigen = true;
+        _colResp = _colEtiq = _colPrio = _colDue = _colDesc = _colValor = _colOrigen = _colCodigo = true;
         _colsCampoOcultos.Clear();
         await PersistColsAsync();
     }
     private async Task ColsNinguno()
     {
-        _colResp = _colEtiq = _colPrio = _colDue = _colDesc = _colValor = _colOrigen = false;
+        _colResp = _colEtiq = _colPrio = _colDue = _colDesc = _colValor = _colOrigen = _colCodigo = false;
         _colsCampoOcultos = CamposDelTablero.Select(c => c.Id).ToHashSet();
         await PersistColsAsync();
     }
@@ -3581,11 +3604,11 @@ else
     // Persistencia de la config de columnas POR TABLERO en localStorage. Cada tablero tiene sus
     // propios campos dinamicos, asi que la config va llaveada por su Id (propia_tb_cols_<id>).
     // Sobrevive recarga y cierre de sesion (el logout solo borra llaves puntuales).
-    private sealed record ColsCfg(bool Resp, bool Etiq, bool Prio, bool Due, bool Desc, bool Valor, bool Orig, bool Pin, List<Guid> Ocultos, List<string>? Orden = null);
+    private sealed record ColsCfg(bool Resp, bool Etiq, bool Prio, bool Due, bool Desc, bool Valor, bool Orig, bool Pin, List<Guid> Ocultos, List<string>? Orden = null, bool Cod = true);
     private static string ColsKey(Guid tableroId) => $"propia_tb_cols_{tableroId}";
     private void ColsReset()   // defaults: todo visible, titulo sin fijar
     {
-        _colResp = _colEtiq = _colPrio = _colDue = _colDesc = _colValor = _colOrigen = true;
+        _colResp = _colEtiq = _colPrio = _colDue = _colDesc = _colValor = _colOrigen = _colCodigo = true;
         _pinTitulo = false;
         _colsCampoOcultos = new();
         _colOrden = new();
@@ -3593,7 +3616,7 @@ else
     private async Task PersistColsAsync()
     {
         if (_board is null) return;
-        var cfg = new ColsCfg(_colResp, _colEtiq, _colPrio, _colDue, _colDesc, _colValor, _colOrigen, _pinTitulo, _colsCampoOcultos.ToList(), _colOrden.ToList());
+        var cfg = new ColsCfg(_colResp, _colEtiq, _colPrio, _colDue, _colDesc, _colValor, _colOrigen, _pinTitulo, _colsCampoOcultos.ToList(), _colOrden.ToList(), _colCodigo);
         try { await Js.InvokeVoidAsync("localStorage.setItem", ColsKey(_board.Tablero.Id), System.Text.Json.JsonSerializer.Serialize(cfg)); } catch { }
     }
     private async Task RestaurarColsAsync()
@@ -3605,7 +3628,7 @@ else
             var cfg = string.IsNullOrEmpty(raw) ? null : System.Text.Json.JsonSerializer.Deserialize<ColsCfg>(raw);
             if (cfg is null) { ColsReset(); return; }   // sin config guardada: defaults del tablero
             _colResp = cfg.Resp; _colEtiq = cfg.Etiq; _colPrio = cfg.Prio; _colDue = cfg.Due;
-            _colDesc = cfg.Desc; _colValor = cfg.Valor; _colOrigen = cfg.Orig; _pinTitulo = cfg.Pin;
+            _colDesc = cfg.Desc; _colValor = cfg.Valor; _colOrigen = cfg.Orig; _pinTitulo = cfg.Pin; _colCodigo = cfg.Cod;
             _colsCampoOcultos = cfg.Ocultos?.ToHashSet() ?? new();
             _colOrden = cfg.Orden?.ToList() ?? new();
         }
@@ -3614,7 +3637,7 @@ else
 
     // ---- Orden de columnas (vista Lista): reordenable via flechas; se aplica por CSS `order`, sin tocar el markup ----
     private List<string> _colOrden = new();
-    private static readonly string[] ClavesBaseOrden = { "desc", "est", "resp", "prog", "etiq", "prio", "due", "valor", "orig" };
+    private static readonly string[] ClavesBaseOrden = { "desc", "cod", "est", "resp", "prog", "etiq", "prio", "due", "valor", "orig" };
     private List<string> ClavesReordenables()
     {
         var claves = ClavesBaseOrden.ToList();
@@ -3623,13 +3646,26 @@ else
             .Select(c => c.Id.ToString()));
         return claves;
     }
-    // Deja _colOrden con exactamente las claves validas actuales: conserva el orden guardado y anexa las nuevas.
+    // Deja _colOrden con exactamente las claves validas actuales: conserva el orden guardado e
+    // inserta las nuevas en su POSICION CANONICA (junto a su columna predecesora), no al final,
+    // para que una columna agregada al catalogo (ej. Codigo entre Descripcion y Etapa) caiga en su
+    // sitio aunque el tablero ya tuviera un orden guardado sin ella.
     private void ReconciliarOrden()
     {
-        var validas = ClavesReordenables();
-        var nuevo = _colOrden.Where(validas.Contains).ToList();
-        nuevo.AddRange(validas.Where(k => !nuevo.Contains(k)));
-        _colOrden = nuevo;
+        var canon = ClavesReordenables();
+        var res = _colOrden.Where(canon.Contains).ToList();
+        foreach (var k in canon.Where(k => !res.Contains(k)))
+        {
+            int ci = canon.IndexOf(k);
+            int insertAt = res.Count;
+            for (int p = ci - 1; p >= 0; p--)
+            {
+                int idx = res.IndexOf(canon[p]);
+                if (idx >= 0) { insertAt = idx + 1; break; }
+            }
+            res.Insert(insertAt, k);
+        }
+        _colOrden = res;
     }
     private void MoverColumna(int idx, int dir)
     {
@@ -3641,7 +3677,7 @@ else
     private static bool ColKeyBloqueada(string key) => key is "est" or "prog";  // Etapa y Progreso no se pueden ocultar
     private bool ColKeyVisible(string key) => key switch
     {
-        "desc" => _colDesc, "est" => true, "resp" => _colResp, "prog" => true,
+        "desc" => _colDesc, "cod" => _colCodigo, "est" => true, "resp" => _colResp, "prog" => true,
         "etiq" => _colEtiq, "prio" => _colPrio, "due" => _colDue, "valor" => _colValor, "orig" => _colOrigen,
         _ => Guid.TryParse(key, out var g) && CampoColVisible(g)
     };
@@ -3652,7 +3688,7 @@ else
     }
     private string ColKeyLabel(string key) => key switch
     {
-        "desc" => "Descripcion", "est" => "Etapa", "resp" => "Asignado", "prog" => "Progreso",
+        "desc" => "Descripcion", "cod" => "Codigo", "est" => "Etapa", "resp" => "Asignado", "prog" => "Progreso",
         "etiq" => "Etiquetas", "prio" => "Prioridad", "due" => "Vence", "valor" => "Valor", "orig" => "Relacionado con",
         _ => (Guid.TryParse(key, out var g) ? CamposDelTablero.FirstOrDefault(c => c.Id == g)?.Label : null) ?? key
     };
@@ -3662,6 +3698,7 @@ else
         get
         {
             var sb = new System.Text.StringBuilder("<style>");
+            sb.Append(".tb-list .tb-lc-exp,.tb-list .tb-row-exp{order:-1 !important;}");
             sb.Append(".tb-list .tb-lc-tit,.tb-list .tb-row-tit{order:0 !important;}");
             int i = 1;
             foreach (var key in _colOrden)
@@ -4691,13 +4728,14 @@ else
         var tarea = t;
         var esHija = depth > 0;
         <div class="tb-row @(esHija ? "tb-row-child" : "")" style="border-left-color:@(t.Color ?? (esHija ? "#E1E8EE" : "transparent"))">
+            @* ---- EXPANSOR (primera columna, se ve al pasar el mouse): abre el modal ---- *@
+            <div class="tb-row-exp">
+                <button type="button" class="tb-exp-fijo" title="Abrir la tarea" @onclick="() => AbrirCardDraft(tarea, null)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                </button>
+            </div>
             @* ---- TITULO (editable inline) ---- *@
             <div class="tb-row-tit @(_pinTitulo ? "tb-pin" : "")" style="padding-left:@(depth * 22)px">
-                @if (!string.IsNullOrWhiteSpace(t.NumeroTarea))
-                {
-                    @* El chip del codigo abre la tarea (reemplaza al ojito que habia al final de la fila). *@
-                    <button type="button" class="tb-row-num tb-row-num-btn" title="Abrir la tarea" @onclick="() => AbrirCardDraft(tarea, null)">@t.NumeroTarea</button>
-                }
                 @if (t.CantidadSubtareas > 0)
                 {
                     <button class="tb-exp" @onclick="() => ToggleExp(tarea.Id)" title="Ver tareas hijas">
@@ -4737,6 +4775,13 @@ else
                     {
                         <div class="tb-editable tb-row-desc-prev" title="Click para editar" @onclick='() => IniciarEd(tarea.Id, "descripcion", tarea.Descripcion)'>@(string.IsNullOrWhiteSpace(t.Descripcion) ? "—" : t.Descripcion)</div>
                     }
+                </div>
+            }
+            @* ---- CODIGO (columna configurable; ya no abre el modal, eso lo hace el expansor) ---- *@
+            @if (_colCodigo)
+            {
+                <div class="tb-row-cod">
+                    @if (!string.IsNullOrWhiteSpace(t.NumeroTarea)) { <span class="tb-row-num" title="Codigo de la tarea">@t.NumeroTarea</span> }
                 </div>
             }
             @* ---- ETAPA ---- *@
@@ -5166,11 +5211,17 @@ else
         var estadoId = _board.Estados[0].Id;
         var nf = NuevaFilaDe(estadoId);
         <div class="tb-newrow" @key="nf">
+            <div class="tb-row-exp">
+                <button type="button" class="tb-exp-fijo" tabindex="-1" title="Crear y abrir la tarea" @onclick="() => CrearDesdeNuevaFilaYAbrir(estadoId)" disabled="@string.IsNullOrWhiteSpace(nf.Titulo)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                </button>
+            </div>
             <div class="tb-row-tit @(_pinTitulo ? "tb-pin" : "")">
                 <span class="tb-newrow-plus">+</span>
                 <input class="tb-nf-inp tb-nf-tit" data-nf-tit="@estadoId" placeholder="Nueva tarea..." @oninput="@(e => nf.Titulo = e.Value?.ToString() ?? string.Empty)" @onkeydown="@(e => NuevaFilaKeydown(e, estadoId))" />
             </div>
             @if (_colDesc) { <div class="tb-row-desc"><input class="tb-nf-inp" placeholder="Descripcion" @oninput="@(e => nf.Descripcion = e.Value?.ToString())" @onkeydown="@(e => NuevaFilaKeydown(e, estadoId))" /></div> }
+            @if (_colCodigo) { <div class="tb-row-cod"><span class="tb-nf-mut">&mdash;</span></div> }
             <div class="tb-row-cell-est">
                 <select class="tb-est-sel" style="background:#6D4FE3" @bind="nf.EstadoId">
                     @foreach (var es in _board.Estados) { <option value="@es.Id" style="background:#fff;color:#33475B">@es.Nombre</option> }
@@ -5202,9 +5253,6 @@ else
             <div class="tb-row-acc tb-nf-acts">
                 <button class="tb-nf-crear" title="Crear tarea (Enter)" @onclick="() => CrearDesdeNuevaFila(estadoId)" disabled="@string.IsNullOrWhiteSpace(nf.Titulo)">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>
-                </button>
-                <button class="tb-nf-crear tb-nf-abrir" title="Crear y abrir la tarea" @onclick="() => CrearDesdeNuevaFilaYAbrir(estadoId)" disabled="@string.IsNullOrWhiteSpace(nf.Titulo)">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                 </button>
             </div>
         </div>
