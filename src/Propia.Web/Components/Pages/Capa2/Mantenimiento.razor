@@ -61,25 +61,12 @@
 
 @if (_tab == "activos")
 {
-    <div class="row g-2 mb-3">
-        <div class="col-md-6">
-            <input class="form-control form-control-sm" placeholder="Buscar activo..." @bind="_query" @bind:event="oninput" @onkeyup="CargarAsync" />
-        </div>
-        <div class="col-md-3">
-            <select class="form-select form-select-sm" @bind="_filtroTipo" @bind:after="CargarAsync">
-                <option value="">Todo tipo</option>
-                <option value="Equipo">Equipos</option>
-                <option value="ZonaComun">Zonas comunes</option>
-            </select>
-        </div>
-        <div class="col-md-3">
-            <select class="form-select form-select-sm" @bind="_filtroSemaforo" @bind:after="CargarAsync">
-                <option value="">Todo semaforo</option>
-                <option value="Verde">Verde - al dia</option>
-                <option value="Amarillo">Amarillo - proximo</option>
-                <option value="Rojo">Rojo - vencido</option>
-                <option value="Negro">Negro - sin plan</option>
-            </select>
+    @* Fila de filtros estandar de los modulos (como Zonas Comunes): boton Filtros + buscador. *@
+    <div class="mod-filtros" style="margin-bottom:14px;">
+        <FiltroDinamico @ref="_fdAct" Campos="CamposFiltroActivos" OnChanged="StateHasChanged" />
+        <div class="mod-search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input class="mod-search-inp" placeholder="Buscar activo..." @bind="_query" @bind:event="oninput" @onkeyup="CargarAsync" />
         </div>
     </div>
 
@@ -93,49 +80,43 @@
     }
     else
     {
-        <div class="row g-3">
-            @foreach (var a in _activos)
+        @* Tarjetas compactas al estilo Zonas Comunes: icono con el color del semaforo,
+           nombre + meta, plan proximo y chip de intervenciones abiertas. *@
+        <div class="mt-acards">
+            @foreach (var a in ActivosFiltrados())
             {
-                <div class="col-md-6 col-lg-4">
-                    <div class="card semaforo-@a.Semaforo.ToString().ToLower()">
-                        <div class="card-body">
-                            <div class="d-flex justify-content-between align-items-start mb-2">
-                                <div>
-                                    <h6 class="mb-0">@RenderSemaforoIcon(a.Semaforo) @a.Nombre</h6>
-                                    <small class="text-muted">@a.ActivoTipo &middot; @(a.Categoria ?? "-") &middot; @a.EstadoActivo</small>
-                                </div>
-                                <span class="badge bg-light text-dark">@a.IntervencionesAbiertas abiertas</span>
-                            </div>
-                            @if (a.PlanProximo is not null)
-                            {
-                                <div class="small text-muted mt-2">
-                                    Proximo: <strong>@a.PlanProximo</strong>
-                                    @if (a.ProximaEjecucion.HasValue)
-                                    {
-                                        <span> - @a.ProximaEjecucion.Value.ToString("yyyy-MM-dd")</span>
-                                        @if (a.DiasParaVencer.HasValue)
-                                        {
-                                            <span class="ms-1 @(a.DiasParaVencer < 0 ? "text-danger fw-bold" : a.DiasParaVencer < 7 ? "text-warning fw-bold" : "")">
-                                                (@(a.DiasParaVencer < 0 ? $"vencio hace {-a.DiasParaVencer.Value} dias" : $"en {a.DiasParaVencer.Value} dias"))
-                                            </span>
-                                        }
-                                    }
-                                </div>
-                                @if (!string.IsNullOrEmpty(a.ProveedorPreferido))
-                                {
-                                    <div class="small text-muted">Proveedor: @a.ProveedorPreferido</div>
-                                }
-                            }
-                            else
-                            {
-                                <div class="small text-muted mt-2">Sin plan preventivo configurado</div>
-                            }
-                            @if (a.UltimoMantenimiento.HasValue)
-                            {
-                                <div class="small text-muted">Ultimo: @a.UltimoMantenimiento.Value.ToString("yyyy-MM-dd")</div>
-                            }
-                        </div>
+                <div class="mt-acard">
+                    <div class="mt-acard-ic mt-sem-@a.Semaforo.ToString().ToLower()" title="Semaforo: @a.Semaforo">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-2.4 2.6-2.6z"/></svg>
                     </div>
+                    <div class="mt-acard-id">
+                        <div class="mt-acard-nom">@a.Nombre</div>
+                        <div class="mt-acard-meta">@a.ActivoTipo &middot; @(a.Categoria ?? "-") &middot; @a.EstadoActivo</div>
+                        @if (a.PlanProximo is not null)
+                        {
+                            <div class="mt-acard-plan">
+                                @a.PlanProximo
+                                @if (a.ProximaEjecucion.HasValue)
+                                {
+                                    <span> &middot; @a.ProximaEjecucion.Value.ToString("yyyy-MM-dd")</span>
+                                    @if (a.DiasParaVencer.HasValue)
+                                    {
+                                        <span class="@(a.DiasParaVencer < 0 ? "mt-acard-venc" : a.DiasParaVencer < 7 ? "mt-acard-prox" : "")">
+                                            (@(a.DiasParaVencer < 0 ? $"vencio hace {-a.DiasParaVencer.Value}d" : $"en {a.DiasParaVencer.Value}d"))
+                                        </span>
+                                    }
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="mt-acard-plan mt-acard-plan--off">Sin plan preventivo configurado</div>
+                        }
+                    </div>
+                    @if (a.IntervencionesAbiertas > 0)
+                    {
+                        <span class="mt-acard-chip">@a.IntervencionesAbiertas abiertas</span>
+                    }
                 </div>
             }
         </div>
@@ -648,6 +629,24 @@ else if (_tab == "calendario")
     .semaforo-amarillo { border-left: 4px solid #f59e0b; }
     .semaforo-rojo { border-left: 4px solid #ef4444; }
     .semaforo-negro { border-left: 4px solid #6b7280; }
+    /* === Tarjetas de activos al estilo Zonas Comunes (icono con color del semaforo) === */
+    .mt-acards { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; }
+    .mt-acard { display: flex; align-items: center; gap: 11px; padding: 12px 14px; border: 1px solid #E1E8EE; border-radius: 12px; background: #fff; }
+    .mt-acard-ic { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .mt-sem-verde { background: #E6F6EE; color: #15703F; }
+    .mt-sem-amarillo { background: #FEF3C7; color: #B45309; }
+    .mt-sem-rojo { background: #FEE2E2; color: #B91C1C; }
+    .mt-sem-negro { background: #EEF3F8; color: #516F90; }
+    .mt-acard-id { flex: 1; min-width: 0; }
+    .mt-acard-nom { font-size: 13.5px; font-weight: 700; color: #1B2A3A; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mt-acard-meta { font-size: 11px; color: #A6B7C8; }
+    .mt-acard-plan { font-size: 11.5px; color: #516F90; margin-top: 3px; }
+    .mt-acard-plan--off { color: #A6B7C8; font-style: italic; }
+    .mt-acard-venc { color: #B91C1C; font-weight: 700; }
+    .mt-acard-prox { color: #B45309; font-weight: 700; }
+    .mt-acard-chip { flex: 0 0 auto; font-size: 10.5px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: #F1ECFD; border-radius: 7px; padding: 4px 9px; white-space: nowrap; }
+    @@media (max-width: 640px) { .mt-acards { grid-template-columns: 1fr; } }
+
     /* === Calendario de programaciones (mismo patron visual del calendario de PQRSD) === */
     .mt-cal { border: 1px solid #E1E8EE; border-radius: 14px; overflow: hidden; background: #fff; margin-bottom: 30px; }
     .mt-cal-bar { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #EEF3F8; }
@@ -691,8 +690,30 @@ else if (_tab == "calendario")
     private IntervencionDetalleDto? _fichaIntervencion;
 
     private string _query = "";
-    private string _filtroTipo = "";
-    private string _filtroSemaforo = "";
+    // Filtro dinamico unico del tab Activos (componente compartido, patron Tareas).
+    private FiltroDinamico? _fdAct;
+
+    private List<FiltroDinamico.CampoDef> CamposFiltroActivos => new()
+    {
+        new() { Key = "nombre", Label = "Nombre", Kind = "texto" },
+        new() { Key = "tipo", Label = "Tipo", Kind = "sel",
+                Opciones = new() { ("Equipo", "Equipo"), ("ZonaComun", "Zona comun") } },
+        new() { Key = "semaforo", Label = "Semaforo", Kind = "sel",
+                Opciones = new() { ("Verde", "Verde - al dia"), ("Amarillo", "Amarillo - proximo"), ("Rojo", "Rojo - vencido"), ("Negro", "Negro - sin plan") } },
+        new() { Key = "categoria", Label = "Categoria", Kind = "texto" },
+        new() { Key = "abiertas", Label = "Interv. abiertas", Kind = "num" },
+    };
+
+    private IEnumerable<ActivoPanelDto> ActivosFiltrados() =>
+        (_activos ?? new()).Where(a => _fdAct?.Pasa(campo => campo switch
+        {
+            "nombre" => a.Nombre,
+            "tipo" => a.ActivoTipo.ToString(),
+            "semaforo" => a.Semaforo.ToString(),
+            "categoria" => a.Categoria ?? "",
+            "abiertas" => a.IntervencionesAbiertas.ToString(),
+            _ => ""
+        }) ?? true);
 
     private bool _showCrearIntervencion;
     private string _crearTipo = "Correctivo";
@@ -802,12 +823,9 @@ else if (_tab == "calendario")
             var http = Auth();
             _resumen = await http.GetFromJsonAsync<ResumenMantenimientoDto>("/api/mantenimiento/resumen");
 
+            // Tipo/semaforo se filtran client-side (FiltroDinamico); al server solo va la busqueda.
             var activosUrl = "/api/mantenimiento/activos";
-            var qp = new List<string>();
-            if (!string.IsNullOrEmpty(_filtroTipo)) qp.Add($"activoTipo={_filtroTipo}");
-            if (!string.IsNullOrEmpty(_filtroSemaforo)) qp.Add($"semaforo={_filtroSemaforo}");
-            if (!string.IsNullOrEmpty(_query)) qp.Add($"q={Uri.EscapeDataString(_query)}");
-            if (qp.Count > 0) activosUrl += "?" + string.Join("&", qp);
+            if (!string.IsNullOrEmpty(_query)) activosUrl += $"?q={Uri.EscapeDataString(_query)}";
             _activos = await http.GetFromJsonAsync<List<ActivoPanelDto>>(activosUrl) ?? new();
 
             // El calendario combina intervenciones (fecha programada) y planes (proxima ejecucion).
