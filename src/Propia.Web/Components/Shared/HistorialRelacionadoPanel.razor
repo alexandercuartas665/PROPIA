@@ -1,0 +1,121 @@
+@* Historial relacionado de una entidad (unidad/zona/equipo): tareas + PQRSD + mantenimientos
+   vinculados, en linea de tiempo. Consume GET /api/historial/{tipo}/{id} (modulo Ola 2).
+   Se usa como pestana "Historial" en las fichas de Zonas, Equipos y Unidades. *@
+@using Propia.Application.Historial
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+
+<div class="hrp">
+    @if (_data is null && _error is null)
+    {
+        <div class="hrp-msg">Cargando historial...</div>
+    }
+    else if (_error is not null)
+    {
+        <div class="hrp-msg hrp-msg--err">@_error</div>
+    }
+    else
+    {
+        <div class="hrp-stats">
+            <span class="hrp-chip hrp-chip--tarea">@_data!.TotalTareas @Plural(_data.TotalTareas, "tarea", "tareas")</span>
+            <span class="hrp-chip hrp-chip--pqrsd">@_data.TotalPqrsd PQRSD</span>
+            <span class="hrp-chip hrp-chip--mant">@_data.TotalMantenimientos @Plural(_data.TotalMantenimientos, "mantenimiento", "mantenimientos")</span>
+        </div>
+
+        @if (_data.Items.Count == 0)
+        {
+            <div class="hrp-empty">
+                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                <span>Sin historial relacionado todavia.</span>
+                <small>Las tareas, PQRSD y mantenimientos vinculados a este elemento apareceran aqui.</small>
+            </div>
+        }
+        else
+        {
+            <div class="hrp-timeline">
+                @foreach (var it in _data.Items)
+                {
+                    <div class="hrp-item">
+                        <span class="hrp-badge hrp-badge--@Cls(it.Origen)">@OrigenTxt(it.Origen)</span>
+                        <div class="hrp-item-body">
+                            <div class="hrp-item-title">@it.Titulo</div>
+                            <div class="hrp-item-meta">
+                                @if (!string.IsNullOrEmpty(it.Codigo)) { <span class="hrp-cod">@it.Codigo</span> }
+                                @if (!string.IsNullOrEmpty(it.Estado)) { <span class="hrp-est">@it.Estado</span> }
+                            </div>
+                        </div>
+                        <span class="hrp-fecha">@it.Fecha.ToLocalTime().ToString("dd MMM yyyy")</span>
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+    [Parameter] public TipoEntidadHistorial Tipo { get; set; }
+    [Parameter] public Guid EntidadId { get; set; }
+
+    private HistorialRelacionadoDto? _data;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (EntidadId == Guid.Empty) { _error = "Sin entidad."; return; }
+        try
+        {
+            var http = HttpFactory.CreateClient("PropiaApi");
+            if (!string.IsNullOrEmpty(Jwt))
+                http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+            _data = await http.GetFromJsonAsync<HistorialRelacionadoDto>($"/api/historial/{(int)Tipo}/{EntidadId}");
+        }
+        catch (Exception ex) { _error = "No se pudo cargar el historial: " + ex.Message; }
+    }
+
+    private static string OrigenTxt(OrigenHistorial o) => o switch
+    {
+        OrigenHistorial.Tarea => "Tarea",
+        OrigenHistorial.Pqrsd => "PQRSD",
+        OrigenHistorial.Mantenimiento => "Mantenimiento",
+        _ => ""
+    };
+
+    private static string Cls(OrigenHistorial o) => o switch
+    {
+        OrigenHistorial.Tarea => "tarea",
+        OrigenHistorial.Pqrsd => "pqrsd",
+        OrigenHistorial.Mantenimiento => "mant",
+        _ => ""
+    };
+
+    private static string Plural(int n, string uno, string varios) => n == 1 ? uno : varios;
+}
+
+<style>
+    .hrp { display: flex; flex-direction: column; gap: 14px; }
+    .hrp-msg { font-size: 13px; color: #7C98B6; padding: 8px 2px; }
+    .hrp-msg--err { color: #D7263D; }
+    .hrp-stats { display: flex; flex-wrap: wrap; gap: 8px; }
+    .hrp-chip { font-size: 11.5px; font-weight: 700; padding: 5px 11px; border-radius: 8px; }
+    .hrp-chip--tarea { color: #6D4FE3; background: #F1ECFD; }
+    .hrp-chip--pqrsd { color: #B45309; background: #FEF3DC; }
+    .hrp-chip--mant { color: #1A8754; background: #E6F6EE; }
+
+    .hrp-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding: 34px 20px; color: #A6B7C8; }
+    .hrp-empty span { font-size: 13px; font-weight: 700; color: #7C98B6; }
+    .hrp-empty small { font-size: 11.5px; color: #A6B7C8; max-width: 320px; }
+
+    .hrp-timeline { display: flex; flex-direction: column; gap: 7px; }
+    .hrp-item { display: flex; align-items: center; gap: 10px; border: 1px solid #E1E8EE; border-radius: 10px; padding: 10px 13px; background: #fff; }
+    .hrp-badge { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .3px; padding: 4px 8px; border-radius: 6px; flex-shrink: 0; min-width: 74px; text-align: center; }
+    .hrp-badge--tarea { color: #6D4FE3; background: #F1ECFD; }
+    .hrp-badge--pqrsd { color: #B45309; background: #FEF3DC; }
+    .hrp-badge--mant { color: #1A8754; background: #E6F6EE; }
+    .hrp-item-body { flex: 1; min-width: 0; }
+    .hrp-item-title { font-size: 12.5px; font-weight: 700; color: #33475B; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hrp-item-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+    .hrp-cod { font-size: 10.5px; color: #A6B7C8; font-weight: 600; }
+    .hrp-est { font-size: 10.5px; color: #516F90; font-weight: 700; }
+    .hrp-fecha { font-size: 11px; color: #A6B7C8; flex-shrink: 0; }
+</style>
