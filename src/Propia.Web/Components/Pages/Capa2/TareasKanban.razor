@@ -111,28 +111,38 @@ else
                 <h1 class="tb-board-nom">@_board.Tablero.Nombre</h1>
                 <p class="tb-board-desc">@_board.Tablero.Descripcion</p>
             </div>
-            <div class="tb-board-actions">
-                <div class="tb-avatars tb-avatars-lg">
-                    @foreach (var u in _board.Tablero.Usuarios.Take(4)) { <div class="tb-ava" title="@u.Nombre">@u.Iniciales</div> }
-                </div>
-                @* En "Cerrados" no hay diseno de tablero: solo una tabla de consulta. *@
-                @if (!_verCerradas)
-                {
-                    <div class="tb-modeswitch">
-                        @foreach (var m in _modes)
-                        {
-                            var mode = m.Key;
-                            <button class="tb-mode @(_boardMode == mode ? "on" : "")" @onclick="() => SetBoardMode(mode)" title="@m.Label">
-                                @((MarkupString)m.Icon)<span>@m.Label</span>
-                            </button>
-                        }
+            @* Distribucion al estilo PQRSD: controles (vistas, copropiedad, configurar) en la
+               fila superior derecha y el CTA principal en su propia linea debajo. *@
+            <div class="tb-board-actions tb-board-actions--col">
+                <div class="tb-actions-row">
+                    <div class="tb-avatars tb-avatars-lg">
+                        @foreach (var u in _board.Tablero.Usuarios.Take(4)) { <div class="tb-ava" title="@u.Nombre">@u.Iniciales</div> }
                     </div>
-                }
-                @SelectorCopropiedad
+                    @* En "Cerrados" no hay diseno de tablero: solo una tabla de consulta. *@
+                    @if (!_verCerradas)
+                    {
+                        <div class="tb-modeswitch">
+                            @foreach (var m in _modes)
+                            {
+                                var mode = m.Key;
+                                <button class="tb-mode @(_boardMode == mode ? "on" : "")" @onclick="() => SetBoardMode(mode)" title="@m.Label">
+                                    @((MarkupString)m.Icon)<span>@m.Label</span>
+                                </button>
+                            }
+                        </div>
+                    }
+                    @SelectorCopropiedad
+                    @if (!_verCerradas)
+                    {
+                        <button class="tb-btn tb-btn-soft" @onclick="AbrirConfigBoard"><i class="fi fi-rr-settings"></i>Configurar</button>
+                    }
+                </div>
                 @if (!_verCerradas)
                 {
-                    <button class="tb-btn tb-btn-soft" @onclick="AbrirConfigBoard"><i class="fi fi-rr-settings"></i>Configurar</button>
-                    <button class="tb-btn tb-btn-primary" @onclick="() => AbrirCardDraft(null, _board.Estados.FirstOrDefault()?.Id)"><i class="fi fi-rr-plus"></i>Nueva tarea</button>
+                    <button class="tb-cta-brand" @onclick="() => AbrirCardDraft(null, _board.Estados.FirstOrDefault()?.Id)">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+                        Nueva tarea
+                    </button>
                 }
             </div>
         </div>
@@ -145,6 +155,23 @@ else
             @* En vista Lista el buscador va junto a "Filtros" (como en PQRSD); aqui se oculta para no duplicarlo. *@
             @if (_boardMode != "lista") { <input class="tb-search" @bind="_buscarTarea" @bind:event="oninput" placeholder="Buscar por titulo o numero..." /> }
         </div>
+
+        @* === KPIs del tablero al estilo PQRSD: total + una tarjeta por etapa + por vencer + vencidas === *@
+        @if (!_verCerradas && _board.Tareas.Count > 0)
+        {
+            var hoyKpi = DateOnly.FromDateTime(DateTime.Today);
+            var porVencerKpi = _board.Tareas.Count(t => !t.Vencida && !t.EstadoEsTerminal && t.FechaVencimiento is DateOnly fv && fv >= hoyKpi && fv <= hoyKpi.AddDays(3));
+            var vencidasKpi = _board.Tareas.Count(t => t.Vencida && !t.EstadoEsTerminal);
+            <div class="tb-bkpis">
+                <div class="tb-bkpi"><div class="tb-bkpi-val">@_board.Tareas.Count</div><div class="tb-bkpi-lbl">total</div></div>
+                @foreach (var es in _board.Estados)
+                {
+                    <div class="tb-bkpi"><div class="tb-bkpi-val">@_board.Tareas.Count(t => t.EstadoId == es.Id)</div><div class="tb-bkpi-lbl">@es.Nombre.ToLowerInvariant()</div></div>
+                }
+                <div class="tb-bkpi @(porVencerKpi > 0 ? "tb-bkpi--warn" : "")"><div class="tb-bkpi-val">@porVencerKpi</div><div class="tb-bkpi-lbl">por vencer</div></div>
+                <div class="tb-bkpi @(vencidasKpi > 0 ? "tb-bkpi--err" : "")"><div class="tb-bkpi-val">@vencidasKpi</div><div class="tb-bkpi-lbl">vencidas</div></div>
+            </div>
+        }
 
 
         @* ========== CERRADOS: una sola tabla de consulta (sin diseno de tablero) ========== *@
@@ -1928,6 +1955,18 @@ else
     /* El header del tablero envuelve: si no cabe, las acciones bajan a otra linea en vez de machucar el titulo. */
     .tb-board-head { flex-wrap: wrap; align-items: center; row-gap: 10px; }
     .tb-board-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-left: auto; }
+    /* Distribucion estilo PQRSD: controles arriba y CTA principal en su propia linea, alineados a la derecha. */
+    .tb-board-actions--col { flex-direction: column; align-items: flex-end; gap: 10px; }
+    .tb-actions-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+    .tb-cta-brand { display: inline-flex; align-items: center; gap: 8px; padding: 11px 17px; border-radius: 10px; background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 13.5px; font-weight: 700; border: 0; cursor: pointer; box-shadow: 0 6px 16px rgba(109,79,227,.32); font-family: inherit; }
+    .tb-cta-brand:hover { background: var(--propia-brand-hover, #5838C9); }
+    /* KPIs del tablero (mismas tarjetas blancas minimalistas de PQRSD). */
+    .tb-bkpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(108px, 1fr)); gap: 8px; margin-bottom: 16px; }
+    .tb-bkpi { background: #fff; border: 1px solid #E1E8EE; border-radius: 11px; padding: 11px 13px; }
+    .tb-bkpi-val { font-size: 22px; font-weight: 800; color: #1B2A3A; letter-spacing: -0.3px; }
+    .tb-bkpi-lbl { font-size: 10.5px; color: #A6B7C8; font-weight: 600; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tb-bkpi--warn .tb-bkpi-val { color: #B45309; }
+    .tb-bkpi--err .tb-bkpi-val { color: #DC2626; }
     /* Pestanas Activos/Cerrados + buscador */
     .tb-board-tabs { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid #EEF3F8; margin-bottom: 14px; }
     .tb-btab { border: 0; background: transparent; padding: 8px 16px; font-size: 13px; font-weight: 700; color: #7C98B6; cursor: pointer; border-bottom: 2px solid transparent; font-family: inherit; }
