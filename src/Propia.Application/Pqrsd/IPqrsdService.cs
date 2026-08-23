@@ -94,4 +94,8 @@ public interface IPqrsdService
     Task<PqrTareasDto> ListTareasDePqrAsync(Guid pqrId, CancellationToken ct);
     /// <summary>Crea la tarea enlazada y devuelve su Id (null si el PQR no existe o el titulo esta vacio).</summary>
     Task<Guid?> CrearTareaDePqrAsync(Guid pqrId, CrearPqrTareaRequest req, CancellationToken ct);
+
+    /// <summary>Tablero del modulo Tareas donde caen las tareas creadas desde un PQR (null = "PQRSD" por defecto).</summary>
+    Task<Guid?> ObtenerTableroTareasConfigAsync(CancellationToken ct);
+    Task GuardarTableroTareasConfigAsync(Guid? tableroId, CancellationToken ct);
 }

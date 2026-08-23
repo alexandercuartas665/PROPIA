@@ -731,14 +731,14 @@
         <div class="gpq-tk-new">
             <input class="gpq-input" placeholder="Nueva tarea para este PQR..." @bind="_nuevaTareaTitulo" @bind:event="oninput"
                    @onkeydown='@(async (e) => { if (e.Key == "Enter") await CrearPqrTareaAsync(); })' />
+            @* Solo se puede asignar a usuarios ACTIVOS del modulo Usuarios (no a cualquier persona del directorio). *@
             <select class="gpq-input gpq-tk-asig" @bind="_nuevaTareaAsignado">
                 <option value="">Sin asignar</option>
-                @foreach (var p in _pqrPersonas) { <option value="@p.Id">@p.Nombres @p.Apellidos</option> }
+                @foreach (var u in _pqrUsuarios) { <option value="@u.PersonaId">@u.NombreCompleto</option> }
             </select>
-            @* Crear y ABRIR el modal completo del modulo Tareas (navega a /tareas?abrir={id}). *@
+            @* Crea la tarea y se queda AQUI (sin salir del modulo PQRSD); la tarjeta aparece abajo. *@
             <button class="gpq-btn-brand" type="button" @onclick="CrearPqrTareaAsync" disabled="@(_pqrBusy || string.IsNullOrWhiteSpace(_nuevaTareaTitulo))">
                 + Agregar tarea
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:4px"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
             </button>
             <div class="gpq-tk-vsw" role="tablist" aria-label="Vista de tareas">
                 <button type="button" class="gpq-tk-vbtn @(_pqrVista == "tarjetas" ? "on" : "")" @onclick='() => _pqrVista = "tarjetas"'>Tablero</button>
@@ -1389,7 +1389,8 @@
 
     // ---- Tab Tareas (enlazadas al PQR, tablero "PQRSD") ----
     private PqrTareasDto? _pqrTareas;
-    private List<PersonaResumenDto> _pqrPersonas = new();
+    // Asignables: solo usuarios ACTIVOS del modulo Usuarios (2.5), no todo el directorio.
+    private List<Propia.Application.UsuariosAccesos.UsuarioListaDto> _pqrUsuarios = new();
     private string _nuevaTareaTitulo = "";
     private Guid? _nuevaTareaAsignado;
     private bool _pqrBusy;
@@ -1404,10 +1405,14 @@
     {
         try { _pqrTareas = await Auth().GetFromJsonAsync<PqrTareasDto>($"/api/pqrsd/{ExpedienteId}/tareas"); }
         catch { _pqrTareas = new PqrTareasDto(new List<PqrEtapaDto>(), new List<PqrTareaDto>(), 0); }
-        if (_pqrPersonas.Count == 0)
+        if (_pqrUsuarios.Count == 0)
         {
-            try { _pqrPersonas = await Auth().GetFromJsonAsync<List<PersonaResumenDto>>("/api/directorio/personas") ?? new(); }
-            catch { _pqrPersonas = new(); }
+            try
+            {
+                var us = await Auth().GetFromJsonAsync<List<Propia.Application.UsuariosAccesos.UsuarioListaDto>>("/api/usuarios") ?? new();
+                _pqrUsuarios = us.Where(u => u.Estado == EstadoUsuarioTenant.Activo).OrderBy(u => u.NombreCompleto).ToList();
+            }
+            catch { _pqrUsuarios = new(); }
         }
         StateHasChanged();
     }
@@ -1429,13 +1434,7 @@
             if (resp.IsSuccessStatusCode)
             {
                 _nuevaTareaTitulo = ""; _nuevaTareaAsignado = null;
-                // El POST devuelve {id}: abrir de una el modal completo de la tarea en el modulo Tareas.
-                try
-                {
-                    var creada = await resp.Content.ReadFromJsonAsync<CrearPqrTareaResp>();
-                    if (creada?.Id is Guid nid && nid != Guid.Empty) { AbrirTareaCompleta(nid); return; }
-                }
-                catch { }
+                // Sin salir del modulo: se recarga la lista y la tarea recien creada aparece abajo.
                 await CargarPqrTareasAsync();
             }
         }

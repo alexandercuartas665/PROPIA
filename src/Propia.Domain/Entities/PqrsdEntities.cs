@@ -270,6 +270,13 @@ public class PqrsdConfiguracionPlazo : TenantEntity
     public NivelUrgenciaPqrsd NivelUrgencia { get; set; }
 }
 
+/// <summary>Config de la integracion PQRSD -> Tareas: a que tablero del modulo Tareas caen las
+/// tareas creadas desde un PQR. Null = tablero "PQRSD" por defecto. Una fila por copropiedad.</summary>
+public class PqrsdTareasConfig : TenantEntity
+{
+    public Guid? TableroId { get; set; }
+}
+
 /// <summary>Config del formulario publico de radicacion (que campos opcionales se muestran + textos). Una fila por copropiedad.</summary>
 public class PqrsdFormularioPublicoConfig : TenantEntity
 {

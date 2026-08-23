@@ -1825,16 +1825,34 @@ public class PqrsdService : IPqrsdService
         return true;
     }
 
-    // ===================== Tareas enlazadas al PQR (tablero "PQRSD") =====================
+    // ===================== Tareas enlazadas al PQR (tablero configurable) =====================
     private const string TableroPqrsdNombre = "PQRSD";
 
     private async Task<Guid> AsegurarTableroPqrsdAsync(CancellationToken ct)
     {
+        // Si el administrador configuro un tablero destino (y sigue existiendo), se respeta.
+        var cfg = await _db.PqrsdTareasConfigs.AsNoTracking().FirstOrDefaultAsync(ct);
+        if (cfg?.TableroId is Guid elegido && await _db.Tableros.AnyAsync(t => t.Id == elegido, ct))
+            return elegido;
+        // Fallback: tablero "PQRSD" por defecto (se crea si no existe).
         var board = await _db.Tableros.FirstOrDefaultAsync(t => t.Nombre == TableroPqrsdNombre, ct);
         if (board is not null) return board.Id;
         var dto = await _tareas.CrearTableroAsync(
             new Propia.Application.Tareas.GuardarTableroRequest(TableroPqrsdNombre, "Tareas generadas desde PQRSD", "#7C5CFA", new List<Guid>()), ct);
         return dto.Id;
+    }
+
+    public async Task<Guid?> ObtenerTableroTareasConfigAsync(CancellationToken ct)
+        => (await _db.PqrsdTareasConfigs.AsNoTracking().FirstOrDefaultAsync(ct))?.TableroId;
+
+    public async Task GuardarTableroTareasConfigAsync(Guid? tableroId, CancellationToken ct)
+    {
+        if (tableroId is Guid tid && !await _db.Tableros.AnyAsync(t => t.Id == tid, ct))
+            throw new InvalidOperationException("El tablero elegido no existe.");
+        var cfg = await _db.PqrsdTareasConfigs.FirstOrDefaultAsync(ct);
+        if (cfg is null) { cfg = new PqrsdTareasConfig { TableroId = tableroId }; _db.PqrsdTareasConfigs.Add(cfg); }
+        else cfg.TableroId = tableroId;
+        await _db.SaveChangesAsync(ct);
     }
 
     public async Task<Guid?> CrearTareaDePqrAsync(Guid pqrId, CrearPqrTareaRequest req, CancellationToken ct)

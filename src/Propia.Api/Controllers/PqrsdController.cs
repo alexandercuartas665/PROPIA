@@ -195,6 +195,18 @@ public class PqrsdController : ControllerBase
         return tareaId is null ? BadRequest(new { error = "No se pudo crear la tarea." }) : Ok(new { id = tareaId });
     }
 
+    // --- Config: tablero destino de las tareas creadas desde PQRSD ---
+    [HttpGet("config/tablero-tareas")]
+    public async Task<IActionResult> ObtenerTableroTareas(CancellationToken ct)
+        => Ok(new { tableroId = await _svc.ObtenerTableroTareasConfigAsync(ct) });
+    public record GuardarTableroTareasRequest(Guid? TableroId);
+    [HttpPut("config/tablero-tareas")]
+    public async Task<IActionResult> GuardarTableroTareas([FromBody] GuardarTableroTareasRequest req, CancellationToken ct)
+    {
+        try { await _svc.GuardarTableroTareasConfigAsync(req.TableroId, ct); return NoContent(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     // --- Radicacion ---
     [HttpPost]
     public async Task<IActionResult> Radicar([FromBody] RadicarPqrsdRequest req, CancellationToken ct)
