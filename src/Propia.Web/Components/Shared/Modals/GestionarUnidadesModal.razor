@@ -8,6 +8,8 @@
 @using Propia.Web.Components.Shared.Modals
 @using Propia.Application.MiCopropiedad
 @using Propia.Application.Directorio
+@using Propia.Application.Cartera
+@using Propia.Application.Historial
 @using Propia.Domain.Enums
 
 @inject IHttpClientFactory HttpFactory
@@ -959,19 +961,30 @@
                     }
                 </div>
 
-                @* === ESTADISTICA (proto L.755-760) === *@
+                @* === ESTADISTICA: deuda + estado de cuenta (2.7) + PQRSD (Ola 6) === *@
                 <div class="gum-unit-card--full gum-stats">
                     <div class="gum-stat">
                         <div class="gum-stat-lbl">Deuda actual</div>
-                        <div class="gum-stat-val gum-stat-val--ok">$ 0</div>
+                        <div class="gum-stat-val @((_cartera?.SaldoTotal ?? 0) > 0 ? "gum-stat-val--err" : "gum-stat-val--ok")">$ @((_cartera?.SaldoTotal ?? 0).ToString("N0"))</div>
+                    </div>
+                    <div class="gum-stat">
+                        <div class="gum-stat-lbl">Estado de cuenta</div>
+                        @if (_cartera is null)
+                        {
+                            <div class="gum-stat-val gum-stat-val--ok">Sin cartera</div>
+                        }
+                        else if (_cartera.DiasMora > 0)
+                        {
+                            <div class="gum-stat-val gum-stat-val--err">En mora · @_cartera.DiasMora d</div>
+                        }
+                        else
+                        {
+                            <div class="gum-stat-val gum-stat-val--ok">Al dia</div>
+                        }
                     </div>
                     <div class="gum-stat">
                         <div class="gum-stat-lbl">PQRSD</div>
-                        <div class="gum-stat-val">0</div>
-                    </div>
-                    <div class="gum-stat">
-                        <div class="gum-stat-lbl">Pagos del ano</div>
-                        <div class="gum-stat-val">0</div>
+                        <div class="gum-stat-val">@(_histResumen?.TotalPqrsd ?? 0)</div>
                     </div>
                 </div>
 
@@ -1054,10 +1067,45 @@
                     }
                 </div>
 
-                @* === FACTURAS - HISTORIAL DE PAGOS (proto L.767-783) === *@
+                @* === ESTADO DE CUENTA (2.7 Cartera) - Ola 6: datos reales === *@
                 <div class="gum-unit-card gum-unit-card--full">
-                    <div class="gum-unit-eyebrow">FACTURAS - HISTORIAL DE PAGOS</div>
-                    <div class="gum-hist-empty">Sin facturas emitidas a la unidad.</div>
+                    <div class="gum-unit-eyebrow">ESTADO DE CUENTA &middot; 2.7 CARTERA</div>
+                    @if (_cartera is null)
+                    {
+                        <div class="gum-hist-empty">Sin movimientos de cartera para esta unidad (aun no hay liquidaciones del modulo 2.6).</div>
+                    }
+                    else
+                    {
+                        <div class="gum-cta-grid">
+                            <div class="gum-cta-box"><span>Capital</span><b>$ @_cartera.SaldoCapital.ToString("N0")</b></div>
+                            <div class="gum-cta-box"><span>Intereses</span><b>$ @_cartera.SaldoIntereses.ToString("N0")</b></div>
+                            <div class="gum-cta-box"><span>Total</span><b class="@(_cartera.SaldoTotal > 0 ? "gum-cta-neg" : "")">$ @_cartera.SaldoTotal.ToString("N0")</b></div>
+                            <div class="gum-cta-box"><span>Dias en mora</span><b>@_cartera.DiasMora</b></div>
+                        </div>
+                        @if (_cartera.TieneAcuerdoVigente)
+                        {
+                            <div class="gum-cta-badge">Con acuerdo de pago vigente</div>
+                        }
+                        @if (_cartera.Deudas.Count > 0)
+                        {
+                            <div class="gum-cta-deudas">
+                                @foreach (var d in _cartera.Deudas.OrderByDescending(x => x.Periodo).Take(8))
+                                {
+                                    <div class="gum-cta-deuda">
+                                        <div class="gum-cta-deuda-main">
+                                            <span class="gum-cta-deuda-con">@d.Concepto</span>
+                                            <span class="gum-cta-deuda-per">@d.Periodo.ToString("MMM yyyy")</span>
+                                        </div>
+                                        <span class="gum-cta-deuda-val">$ @((d.CapitalPendiente + d.InteresAcumulado).ToString("N0"))</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="gum-people-empty" style="margin-top:8px">La unidad esta al dia: sin deudas pendientes.</div>
+                        }
+                    }
                 </div>
             </div>
         }
@@ -1605,6 +1653,19 @@
     .gum-bit-body { flex: 1; min-width: 0; }
     .gum-bit-txt { font-size: 12.5px; color: #33475B; }
     .gum-bit-meta { font-size: 10.5px; color: #A6B7C8; margin-top: 1px; }
+    /* Estado de cuenta (2.7 Cartera) en la ficha de unidad. */
+    .gum-cta-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .gum-cta-box { border: 1px solid #E1E8EE; border-radius: 9px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; }
+    .gum-cta-box span { font-size: 10.5px; color: #A6B7C8; font-weight: 600; }
+    .gum-cta-box b { font-size: 13px; color: #33475B; }
+    .gum-cta-neg { color: #C0383C !important; }
+    .gum-cta-badge { display: inline-block; margin-top: 10px; font-size: 11px; font-weight: 700; color: #1A8754; background: #E6F6EE; padding: 4px 10px; border-radius: 7px; }
+    .gum-cta-deudas { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+    .gum-cta-deuda { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid #EEF2F6; border-radius: 8px; padding: 7px 11px; }
+    .gum-cta-deuda-main { display: flex; flex-direction: column; }
+    .gum-cta-deuda-con { font-size: 12px; font-weight: 700; color: #33475B; }
+    .gum-cta-deuda-per { font-size: 10.5px; color: #A6B7C8; text-transform: capitalize; }
+    .gum-cta-deuda-val { font-size: 12.5px; font-weight: 700; color: #C0383C; }
 
     /* Documentos */
     .gum-doc-upload {
@@ -1743,6 +1804,8 @@
     private string _contactTab = "actuales"; // actuales | historico
     private List<UnidadTitularidadDto> _titularidad = new();
     private List<BitacoraEntradaDto> _bitacora = new();
+    private CarteraUnidadDetalleDto? _cartera;        // estado de cuenta real (2.7), null si la unidad no tiene cartera
+    private HistorialRelacionadoDto? _histResumen;    // solo para el contador de PQRSD en la estadistica
     private string _titNombre = "";
     private string _titRol = "Propietario";
     private DateOnly? _titDesde;
@@ -1979,6 +2042,16 @@
         catch { _titularidad = new(); }
         try { _bitacora = await Auth().GetFromJsonAsync<List<BitacoraEntradaDto>>($"/api/mi-copropiedad/unidades/{u.Id}/bitacora") ?? new(); }
         catch { _bitacora = new(); }
+        // Estado de cuenta real (2.7). 404 si la unidad aun no tiene cartera -> queda null.
+        try
+        {
+            var cResp = await Auth().GetAsync($"/api/cartera/unidades/{u.Id}");
+            _cartera = cResp.IsSuccessStatusCode ? await cResp.Content.ReadFromJsonAsync<CarteraUnidadDetalleDto>() : null;
+        }
+        catch { _cartera = null; }
+        // Contador de PQRSD (reusa el motor de Historial de Ola 2).
+        try { _histResumen = await Auth().GetFromJsonAsync<HistorialRelacionadoDto>($"/api/historial/1/{u.Id}"); }
+        catch { _histResumen = null; }
         await CargarCamposPersonasAsync();
     }
 
