@@ -763,8 +763,9 @@ else
             @if (_editId is not null)
             {
                 <div class="srv-modal-tabs">
-                    <button class="@(_modalTab == "detalle" ? "on" : "")" @onclick='() => _modalTab = "detalle"'><i class="fi fi-rr-document"></i> Detalle</button>
-                    <button class="@(_modalTab == "archivos" ? "on" : "")" @onclick='() => _modalTab = "archivos"'><i class="fi fi-rr-clip"></i> Archivos <span class="srv-tab-n">@_contratoAdjuntos.Count</span></button>
+                    <button class="@(_modalTab == "detalle" ? "on" : "")" @onclick='() => _modalTab = "detalle"'><i class="fi fi-rr-document"></i> Contrato</button>
+                    <button class="@(_modalTab == "archivos" ? "on" : "")" @onclick='() => _modalTab = "archivos"'><i class="fi fi-rr-folder"></i> Documentos <span class="srv-tab-n">@(_contratoExpedientes.Count + _contratoAdjuntos.Count)</span></button>
+                    <button class="@(_modalTab == "historial" ? "on" : "")" @onclick='AbrirHistorialTab'><i class="fi fi-rr-time-past"></i> Historial</button>
                 </div>
             }
             @if (_editId is null || _modalTab == "detalle")
@@ -899,6 +900,33 @@ else
 
             @if (_editId is not null && _modalTab == "archivos")
             {
+                @* Expedientes conectados (modulo 2.15). Se conectan uno o varios expedientes ya existentes. *@
+                <div class="srv-attach">
+                    <div class="srv-attach-h"><i class="fi fi-rr-folder"></i> Expedientes conectados (@_contratoExpedientes.Count)</div>
+                    <div class="srv-attach-list">
+                        @foreach (var ex in _contratoExpedientes)
+                        {
+                            var exx = ex;
+                            <div class="srv-attach-item">
+                                <i class="fi fi-rr-folder"></i>
+                                <a href="/documentos" class="srv-attach-name" title="Abrir en Documentos">@ex.Codigo - @ex.Nombre</a>
+                                <span class="srv-del" @onclick="() => DesconectarExpedienteAsync(exx.ExpedienteId)" title="Desconectar"><i class="fi fi-rr-cross-small"></i></span>
+                            </div>
+                        }
+                        @if (_contratoExpedientes.Count == 0) { <div class="srv-prog-tx" style="padding:4px 2px;">Sin expedientes conectados.</div> }
+                        <div class="srv-prog-row" style="margin-top:8px;">
+                            <select class="srv-input" style="flex:1;min-width:0;" @bind="_expedienteAConectar">
+                                <option value="">- Selecciona un expediente para conectar -</option>
+                                @foreach (var e in _expedientes.Where(e => !_contratoExpedientes.Any(x => x.ExpedienteId == e.Id)))
+                                {
+                                    <option value="@e.Id">@e.Codigo - @e.Nombre</option>
+                                }
+                            </select>
+                            <button class="srv-btn-ghost" @onclick="ConectarExpedienteAsync" disabled="@(string.IsNullOrEmpty(_expedienteAConectar) || _busy)"><i class="fi fi-rr-link"></i> Conectar</button>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="srv-attach">
                     <div class="srv-attach-h"><i class="fi fi-rr-clip"></i> Archivos del contrato (@_contratoAdjuntos.Count)</div>
                     <div class="srv-attach-list">
@@ -925,6 +953,32 @@ else
                         <span class="srv-prog-tx">Crea una tarea (unica o recurrente) en un tablero para no olvidar la renovacion.</span>
                         <button class="srv-btn-ghost" @onclick="AbrirProgramadorContrato"><i class="fi fi-rr-calendar-plus"></i> Programar tarea</button>
                     </div>
+                </div>
+            }
+
+            @if (_editId is not null && _modalTab == "historial")
+            {
+                <div class="srv-attach">
+                    <div class="srv-attach-h"><i class="fi fi-rr-time-past"></i> Historial del contrato</div>
+                    @if (_contratoBitacora.Count == 0)
+                    {
+                        <div class="srv-prog-tx" style="padding:4px 2px;">Sin eventos registrados todavia.</div>
+                    }
+                    else
+                    {
+                        <div class="srv-hist-list">
+                            @foreach (var b in _contratoBitacora)
+                            {
+                                <div class="srv-hist-item">
+                                    <span class="srv-hist-dot"></span>
+                                    <div class="srv-hist-body">
+                                        <div class="srv-hist-tx">@b.Descripcion</div>
+                                        <div class="srv-hist-meta">@b.Fecha.ToLocalTime().ToString("dd MMM yyyy · HH:mm")@(string.IsNullOrWhiteSpace(b.Autor) ? "" : $" · {b.Autor}")</div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
                 </div>
             }
 
@@ -1535,6 +1589,14 @@ else
     .srv-modal-tabs button { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: #7C8A9C; font-size: 13px; font-weight: 700; padding: 9px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
     .srv-modal-tabs button:hover { color: #5838C9; }
     .srv-modal-tabs button.on { color: #5838C9; border-bottom-color: #7C5CFA; }
+    /* Historial del contrato (bitacora) */
+    .srv-hist-list { display: flex; flex-direction: column; gap: 0; margin-top: 6px; }
+    .srv-hist-item { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid #F1F4F7; }
+    .srv-hist-item:last-child { border-bottom: 0; }
+    .srv-hist-dot { width: 8px; height: 8px; border-radius: 50%; background: #7C5CFA; margin-top: 5px; flex-shrink: 0; }
+    .srv-hist-body { flex: 1; min-width: 0; }
+    .srv-hist-tx { font-size: 12.5px; color: #33475B; }
+    .srv-hist-meta { font-size: 10.5px; color: #A6B7C8; margin-top: 1px; }
     .srv-tab-n { font-size: 11px; font-weight: 800; background: #F1ECFD; color: #5838C9; border-radius: 20px; padding: 1px 7px; }
     .srv-modal-body { padding: 20px 22px; overflow-y: auto; }
     .srv-x { width: 34px; height: 34px; border-radius: 9px; border: 1px solid #E1E8EE; background: #fff; color: #7C98B6; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; font-size: 17px; }
@@ -1903,7 +1965,11 @@ else
     // Adjuntos (servicio + contrato comparten el flag de subida)
     private bool _attachBusy;
     private List<AdjuntoDto> _contratoAdjuntos = new();
-    private string _modalTab = "detalle";   // "detalle" | "archivos" (tabs del modal de contrato, estilo Tareas)
+    private string _modalTab = "detalle";   // "detalle"(Contrato) | "archivos"(Documentos) | "historial"
+    // Ola 2: expedientes conectados al contrato + bitacora del contrato.
+    private List<ContratoExpedienteDto> _contratoExpedientes = new();
+    private string _expedienteAConectar = "";
+    private List<BitacoraEntradaDto> _contratoBitacora = new();
 
     // Picker de tercero del Directorio (compartido ejecutor/contacto)
     private string _tTarget = "";   // "", "ejecutor", "contacto"
@@ -2632,8 +2698,50 @@ else
             };
             try { _contratoAdjuntos = await Auth().GetFromJsonAsync<List<AdjuntoDto>>($"/api/servicios/contratos/{c.Id}/adjuntos") ?? new(); }
             catch { _contratoAdjuntos = new(); }
+            try { _contratoExpedientes = await Auth().GetFromJsonAsync<List<ContratoExpedienteDto>>($"/api/mi-copropiedad/contratos/{c.Id}/expedientes") ?? new(); }
+            catch { _contratoExpedientes = new(); }
+            _contratoBitacora = new();   // se carga perezoso al abrir la pestana Historial
         }
+        _expedienteAConectar = "";
         _showModal = true;
+    }
+
+    // Pestana Historial: carga perezosa de la bitacora del contrato.
+    private async Task AbrirHistorialTab()
+    {
+        _modalTab = "historial";
+        if (_editId is not { } id) return;
+        try { _contratoBitacora = await Auth().GetFromJsonAsync<List<BitacoraEntradaDto>>($"/api/mi-copropiedad/contratos/{id}/bitacora") ?? new(); }
+        catch { _contratoBitacora = new(); }
+    }
+
+    private async Task ConectarExpedienteAsync()
+    {
+        if (_editId is not { } id || string.IsNullOrEmpty(_expedienteAConectar)) return;
+        _busy = true;
+        try
+        {
+            var r = await Auth().PostAsync($"/api/mi-copropiedad/contratos/{id}/expedientes/{_expedienteAConectar}", null);
+            if (r.IsSuccessStatusCode)
+            {
+                _contratoExpedientes = await Auth().GetFromJsonAsync<List<ContratoExpedienteDto>>($"/api/mi-copropiedad/contratos/{id}/expedientes") ?? _contratoExpedientes;
+                _expedienteAConectar = "";
+            }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task DesconectarExpedienteAsync(Guid expedienteId)
+    {
+        if (_editId is not { } id) return;
+        _busy = true;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/contratos/{id}/expedientes/{expedienteId}");
+            if (r.IsSuccessStatusCode)
+                _contratoExpedientes = _contratoExpedientes.Where(x => x.ExpedienteId != expedienteId).ToList();
+        }
+        finally { _busy = false; }
     }
 
     private void OnAsociadoTipoChange(ChangeEventArgs e)

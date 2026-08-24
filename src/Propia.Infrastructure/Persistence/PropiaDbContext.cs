@@ -80,6 +80,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<ContratoCampo> ContratoCampos => Set<ContratoCampo>();
     public DbSet<ContratoCampoValor> ContratoCampoValores => Set<ContratoCampoValor>();
     public DbSet<ContratoEtapa> ContratoEtapas => Set<ContratoEtapa>();
+    public DbSet<ContratoExpediente> ContratoExpedientes => Set<ContratoExpediente>();
     // Informes de gestion (plantillas inteligentes + generacion IA)
     public DbSet<InformePlantilla> InformePlantillas => Set<InformePlantilla>();
     public DbSet<InformePlantillaSeccion> InformePlantillaSecciones => Set<InformePlantillaSeccion>();

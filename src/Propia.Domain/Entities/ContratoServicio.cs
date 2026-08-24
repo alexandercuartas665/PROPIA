@@ -115,6 +115,14 @@ public class ContratoCampoValor : TenantEntity
     public string? Valor { get; set; }
 }
 
+/// <summary>Vinculo N:M entre un contrato y expedientes del modulo 2.15 (Ola 2). Un contrato puede
+/// conectar uno o varios expedientes existentes para su documentacion.</summary>
+public class ContratoExpediente : TenantEntity
+{
+    public Guid ContratoId { get; set; }
+    public Guid ExpedienteId { get; set; }
+}
+
 /// <summary>
 /// Etapa de flujo (columna del Kanban) de los contratos de la copropiedad. Configurable por tenant,
 /// sembrada con 4 etapas base. Mismo espiritu que los estados de un tablero de Tareas.

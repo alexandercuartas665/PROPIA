@@ -1539,8 +1539,49 @@ public class MiCopropiedadService : IMiCopropiedadService
         // Limpiar los valores EAV del contrato (no hay cascade configurado).
         var valores = await _db.ContratoCampoValores.Where(v => v.ContratoId == contratoId).ToListAsync(ct);
         if (valores.Count > 0) _db.ContratoCampoValores.RemoveRange(valores);
+        var vincs = await _db.ContratoExpedientes.Where(v => v.ContratoId == contratoId).ToListAsync(ct);
+        if (vincs.Count > 0) _db.ContratoExpedientes.RemoveRange(vincs);
         _db.ContratosServicio.Remove(c);
         await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    // ---- Expedientes vinculados a un contrato (Ola 2: pestana Documentos) ----
+    public async Task<IReadOnlyList<ContratoExpedienteDto>> ListExpedientesContratoAsync(Guid contratoId, CancellationToken ct)
+    {
+        // Dos queries (evita el Join entre DbSets con HasQueryFilter, que EF no traduce).
+        var ids = await _db.ContratoExpedientes.AsNoTracking()
+            .Where(v => v.ContratoId == contratoId)
+            .Select(v => v.ExpedienteId)
+            .ToListAsync(ct);
+        if (ids.Count == 0) return Array.Empty<ContratoExpedienteDto>();
+        return await _db.Expedientes.AsNoTracking()
+            .Where(e => ids.Contains(e.Id))
+            .OrderBy(e => e.Codigo)
+            .Select(e => new ContratoExpedienteDto(e.Id, e.Codigo, e.Nombre))
+            .ToListAsync(ct);
+    }
+
+    public async Task<bool> VincularExpedienteContratoAsync(Guid contratoId, Guid expedienteId, CancellationToken ct)
+    {
+        if (!await _db.ContratosServicio.AnyAsync(c => c.Id == contratoId, ct)) return false;
+        if (!await _db.Expedientes.AnyAsync(e => e.Id == expedienteId, ct)) return false;
+        if (await _db.ContratoExpedientes.AnyAsync(v => v.ContratoId == contratoId && v.ExpedienteId == expedienteId, ct))
+            return true;   // ya vinculado, idempotente
+        _db.ContratoExpedientes.Add(new ContratoExpediente { ContratoId = contratoId, ExpedienteId = expedienteId });
+        await _db.SaveChangesAsync(ct);
+        var cod = await _db.Expedientes.Where(e => e.Id == expedienteId).Select(e => e.Codigo).FirstOrDefaultAsync(ct);
+        await RegistrarBitacoraAsync("Contrato", $"Expediente '{cod}' conectado al contrato.", ct, contratoId);
+        return true;
+    }
+
+    public async Task<bool> DesvincularExpedienteContratoAsync(Guid contratoId, Guid expedienteId, CancellationToken ct)
+    {
+        var v = await _db.ContratoExpedientes.FirstOrDefaultAsync(x => x.ContratoId == contratoId && x.ExpedienteId == expedienteId, ct);
+        if (v is null) return false;
+        _db.ContratoExpedientes.Remove(v);
+        await _db.SaveChangesAsync(ct);
+        await RegistrarBitacoraAsync("Contrato", "Expediente desconectado del contrato.", ct, contratoId);
         return true;
     }
 

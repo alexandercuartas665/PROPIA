@@ -494,6 +494,22 @@ public class MiCopropiedadController : ControllerBase
     public async Task<IActionResult> EliminarContrato(Guid id, CancellationToken ct)
         => await _svc.EliminarContratoAsync(id, ct) ? NoContent() : NotFound();
 
+    // Expedientes vinculados a un contrato (Ola 2: pestana Documentos)
+    [HttpGet("contratos/{id:guid}/expedientes")]
+    public async Task<IActionResult> ListExpedientesContrato(Guid id, CancellationToken ct)
+        => Ok(await _svc.ListExpedientesContratoAsync(id, ct));
+    [HttpPost("contratos/{id:guid}/expedientes/{expedienteId:guid}")]
+    public async Task<IActionResult> VincularExpedienteContrato(Guid id, Guid expedienteId, CancellationToken ct)
+        => await _svc.VincularExpedienteContratoAsync(id, expedienteId, ct) ? NoContent() : NotFound();
+    [HttpDelete("contratos/{id:guid}/expedientes/{expedienteId:guid}")]
+    public async Task<IActionResult> DesvincularExpedienteContrato(Guid id, Guid expedienteId, CancellationToken ct)
+        => await _svc.DesvincularExpedienteContratoAsync(id, expedienteId, ct) ? NoContent() : NotFound();
+
+    /// <summary>Bitacora de cambios de un contrato (Ola 2: pestana Historial).</summary>
+    [HttpGet("contratos/{id:guid}/bitacora")]
+    public async Task<IActionResult> BitacoraContrato(Guid id, [FromQuery] int limit, CancellationToken ct)
+        => Ok(await _svc.ListBitacoraEntidadAsync(id, limit, ct));
+
     // Campos personalizados (EAV) de contratos
     [HttpGet("contratos/campos")] public async Task<IActionResult> ListContratoCampos(CancellationToken ct) => Ok(await _svc.ListContratoCamposAsync(ct));
     [HttpPost("contratos/campos")]

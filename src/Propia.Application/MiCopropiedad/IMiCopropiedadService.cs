@@ -136,6 +136,10 @@ public interface IMiCopropiedadService
     Task<ContratoServicioDto> CrearContratoAsync(CrearContratoServicioRequest req, CancellationToken ct);
     Task<bool> ActualizarContratoAsync(Guid contratoId, ActualizarContratoRequest req, CancellationToken ct);
     Task<bool> EliminarContratoAsync(Guid contratoId, CancellationToken ct);
+    // Expedientes vinculados a un contrato (Ola 2: pestana Documentos)
+    Task<IReadOnlyList<ContratoExpedienteDto>> ListExpedientesContratoAsync(Guid contratoId, CancellationToken ct);
+    Task<bool> VincularExpedienteContratoAsync(Guid contratoId, Guid expedienteId, CancellationToken ct);
+    Task<bool> DesvincularExpedienteContratoAsync(Guid contratoId, Guid expedienteId, CancellationToken ct);
     // Campos personalizados (EAV) de contratos
     Task<IReadOnlyList<ContratoCampoDto>> ListContratoCamposAsync(CancellationToken ct);
     Task<ContratoCampoDto> CrearContratoCampoAsync(CrearContratoCampoRequest req, CancellationToken ct);

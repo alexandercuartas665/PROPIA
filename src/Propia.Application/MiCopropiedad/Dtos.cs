@@ -219,6 +219,9 @@ public record ActualizarContratoEtapaRequest(string Nombre, string? Color);
 public record ReordenarContratoEtapasRequest(List<Guid> Orden);
 public record CambiarEtapaContratoRequest(Guid? EtapaId);
 
+// ----- Expedientes vinculados a un contrato (Ola 2: pestana Documentos) -----
+public record ContratoExpedienteDto(Guid ExpedienteId, string Codigo, string Nombre);
+
 // ----- Campos personalizados (EAV) de contratos -----
 public record ContratoCampoDto(
     Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones, string? Descripcion, bool Activo);
