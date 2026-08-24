@@ -250,6 +250,10 @@ else
                                         </label>
                                     </div>
                                 }
+                                <div class="ctr-cm-acts">
+                                    <button type="button" class="ctr-cm-act" @onclick="MostrarTodasCols">Mostrar todo</button>
+                                    <button type="button" class="ctr-cm-act" @onclick="OcultarTodasCols">Ocultar todo</button>
+                                </div>
                             </div>
                         }
                     </div>
@@ -316,6 +320,7 @@ else
                     <table class="ctr-table">
                         <thead>
                             <tr>
+                                <th class="ctr-exp-col"></th>
                                 @foreach (var k in ColsVisibles()) { <th class="@ColThClass(k)" title="@ColDesc(k)">@ColLabel(k)</th> }
                                 <th class="ctr-w2"></th>
                             </tr>
@@ -328,7 +333,7 @@ else
                                 {
                                     var gcolor = _cAgrupar == "etapa" ? (_etapas.FirstOrDefault(e => e.Nombre == grupo.Key)?.Color ?? "#94A3B8") : null;
                                     <tr class="ctr-grow">
-                                        <td colspan="@(ColsVisibles().Count() + 1)">
+                                        <td colspan="@(ColsVisibles().Count() + 2)">
                                             @if (gcolor is not null) { <span class="ctr-kdot" style="background:@gcolor"></span> }
                                             <span class="ctr-grow-t">@grupo.Key</span> <span class="ctr-group-n">@grupo.Count()</span>
                                         </td>
@@ -338,6 +343,11 @@ else
                                 {
                                     var cc = c;
                                     <tr class="ctr-row">
+                                        <td class="ctr-exp-col">
+                                            <button type="button" class="ctr-exp" title="Abrir la ficha" @onclick="() => AbrirModal(cc)">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                                            </button>
+                                        </td>
                                         @foreach (var k in ColsVisibles())
                                         {
                                             var col = k;
@@ -1402,6 +1412,9 @@ else
     .ctr-menu-it { display: block; width: 100%; text-align: left; border: 0; background: transparent; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; font-weight: 600; color: #33475B; cursor: pointer; font-family: inherit; }
     .ctr-menu-it:hover { background: #F4F1FE; }
     .ctr-menu-it.on { background: #F4F1FE; color: #5838C9; }
+    .ctr-cm-acts { display: flex; gap: 6px; border-top: 1px solid #EEF3F8; margin-top: 6px; padding-top: 8px; }
+    .ctr-cm-act { flex: 1; border: 1px solid #E1E8EE; background: #fff; border-radius: 7px; padding: 6px 8px; font-size: 11.5px; font-weight: 700; color: #516F90; cursor: pointer; font-family: inherit; }
+    .ctr-cm-act:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
     .ctr-colrow { display: grid; grid-template-columns: 26px 1fr; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 8px; }
     .ctr-colrow:hover { background: #F8FAFC; }
     .ctr-colchk { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #33414F; cursor: pointer; }
@@ -1534,6 +1547,11 @@ else
     .ctr-table th.ctr-w-eye, .ctr-table td.ctr-w-eye { width: 34px; text-align: center; }
     .ctr-eye { cursor: pointer; color: #B6C1CF; display: inline-flex; padding: 3px; border-radius: 6px; }
     .ctr-eye:hover { color: #7C5CFA; background: #F1ECFD; }
+    /* Columna expander (primera): icono que aparece al pasar el mouse y abre la ficha (patron Tableros). */
+    .ctr-exp-col { width: 34px; text-align: center; padding: 0 4px; }
+    .ctr-exp { width: 26px; height: 26px; border: 0; border-radius: 7px; background: #F1ECFD; color: var(--propia-brand, #6D4FE3); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s; }
+    .ctr-row:hover .ctr-exp { opacity: 1; }
+    .ctr-exp:hover { background: #E4DBFB; }
     /* Pill de etapa + observaciones truncadas */
     .ctr-etpill { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 20px; padding: 2px 9px; white-space: nowrap; }
     .ctr-obs { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #64748B; font-size: 12px; vertical-align: middle; }
@@ -2349,6 +2367,13 @@ else
     {
         if (k == "tercero") return;   // la columna principal (con el ojo) no se oculta
         if (!_colsOcultas.Remove(k)) _colsOcultas.Add(k);
+        await PersistColsAsync();
+    }
+    private async Task MostrarTodasCols() { _colsOcultas.Clear(); await PersistColsAsync(); }
+    private async Task OcultarTodasCols()
+    {
+        foreach (var (Key, _) in _colsFijas) if (Key != "tercero") _colsOcultas.Add(Key);
+        foreach (var c in CamposActivos) _colsOcultas.Add(c.Id.ToString());
         await PersistColsAsync();
     }
     private async Task MoverColAsync(int idx, int dir)
