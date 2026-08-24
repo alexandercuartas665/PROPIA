@@ -155,7 +155,7 @@
             <div class="pk-filters-spacer"></div>
 
             <div class="pk-menu-wrap">
-                <button class="pk-input-btn" @onclick='() => TogglePop("group")'>
+                <button class="pk-input-btn @(_group != "ninguno" ? "pk-input-btn--on" : "")" @onclick='() => TogglePop("group")'>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
                     Agrupar@(_group != "ninguno" ? ": " + GroupLabel(_group) : "")
                 </button>
@@ -181,12 +181,20 @@
                     {
                         <div class="pk-pop pk-pop--wide">
                             <div class="pk-pop-h">Columnas fijas</div>
-                            @foreach (var col in _colsFijas)
+                            @{ var _ord = ColsFijasOrd().ToList(); }
+                            @for (int i = 0; i < _ord.Count; i++)
                             {
-                                <label class="pk-pop-chk">
-                                    <input type="checkbox" checked="@(!_colsOcultas.Contains(col.Key))" @onchange="() => ToggleCol(col.Key)" />
-                                    <span>@col.Label</span>
-                                </label>
+                                var idx = i; var col = _ord[idx];
+                                <div class="pk-pop-row">
+                                    <span class="pk-pop-ord">
+                                        <button type="button" class="pk-pop-mv" disabled="@(idx == 0)" @onclick="() => MoverColPqr(idx, -1)" title="Subir">&#9650;</button>
+                                        <button type="button" class="pk-pop-mv" disabled="@(idx == _ord.Count - 1)" @onclick="() => MoverColPqr(idx, 1)" title="Bajar">&#9660;</button>
+                                    </span>
+                                    <label class="pk-pop-chk">
+                                        <input type="checkbox" checked="@(!_colsOcultas.Contains(col.Key))" @onchange="() => ToggleCol(col.Key)" />
+                                        <span>@col.Label</span>
+                                    </label>
+                                </div>
                             }
                             @if (_campos.Count > 0)
                             {
@@ -199,6 +207,10 @@
                                     </label>
                                 }
                             }
+                            <div class="pk-pop-acts">
+                                <button type="button" class="pk-pop-act" @onclick="MostrarTodoCols">Mostrar todo</button>
+                                <button type="button" class="pk-pop-act" @onclick="OcultarTodoCols">Ocultar todo</button>
+                            </div>
                         </div>
                     }
                 </div>
@@ -332,7 +344,7 @@
                 <table class="pk-table @(_pin ? "pk-table--pin" : "")">
                     <thead>
                         <tr>
-                            @foreach (var col in _colsFijas.Where(c => !_colsOcultas.Contains(c.Key)))
+                            @foreach (var col in ColsFijasOrd().Where(c => !_colsOcultas.Contains(c.Key)))
                             {
                                 var ck = col.Key;
                                 <th class="pk-th-sort pk-col-@ck @(ck == "radicado" ? "pk-th-pin" : "")" @onclick="() => SortByPqr(ck)">
@@ -359,7 +371,7 @@
                             @foreach (var it in AplicarSortPqr(grp))
                             {
                                 <tr class="pk-tr" @onclick="() => IrA(it.Id)">
-                                    @foreach (var col in _colsFijas.Where(c => !_colsOcultas.Contains(c.Key)))
+                                    @foreach (var col in ColsFijasOrd().Where(c => !_colsOcultas.Contains(c.Key)))
                                     {
                                         <td class="pk-col-@col.Key @(col.Key == "radicado" ? "pk-td-pin" : "")">
                                             @switch (col.Key)
@@ -741,6 +753,14 @@
     .pk-pop-chk { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 12.5px; color: #33475B; cursor: pointer; }
     .pk-pop-chk:hover { background: #F6F8FB; border-radius: 6px; }
     .pk-pop-chk--sep { border-top: 1px solid #EEF3F8; margin-top: 4px; padding-top: 9px; }
+    .pk-pop-row { display: flex; align-items: center; gap: 4px; }
+    .pk-pop-row .pk-pop-chk { flex: 1; }
+    .pk-pop-ord { display: flex; flex-direction: column; padding-left: 4px; }
+    .pk-pop-mv { border: 0; background: transparent; color: #A6B7C8; cursor: pointer; font-size: 9px; line-height: 1; padding: 1px; }
+    .pk-pop-mv:disabled { opacity: .3; cursor: default; }
+    .pk-pop-acts { display: flex; gap: 6px; border-top: 1px solid #EEF3F8; margin-top: 6px; padding: 8px 6px 4px; }
+    .pk-pop-act { flex: 1; border: 1px solid #E1E8EE; background: #fff; border-radius: 7px; padding: 6px 8px; font-size: 11.5px; font-weight: 700; color: #516F90; cursor: pointer; font-family: inherit; }
+    .pk-pop-act:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
 
     /* ===== Constructor de filtros (boton compacto + panel de reglas) ===== */
     .pk-input-btn--on { border-color: var(--propia-brand, #6D4FE3); background: var(--propia-brand-soft, #F1ECFD); color: var(--propia-brand, #6D4FE3); }
@@ -1004,6 +1024,24 @@
     private string? _pop;
     private readonly HashSet<string> _colsOcultas = new();
     private readonly HashSet<Guid> _camposOcultos = new();
+    private List<string> _colsOrden = new();
+    private IEnumerable<ColFija> ColsFijasOrd()
+        => _colsOrden.Count == 0 ? _colsFijas
+           : _colsFijas.OrderBy(c => { var i = _colsOrden.IndexOf(c.Key); return i < 0 ? 999 : i; });
+    private void MoverColPqr(int idx, int dir)
+    {
+        var ord = ColsFijasOrd().Select(c => c.Key).ToList();
+        var j = idx + dir;
+        if (j < 0 || j >= ord.Count) return;
+        (ord[idx], ord[j]) = (ord[j], ord[idx]);
+        _colsOrden = ord;
+    }
+    private void MostrarTodoCols() { _colsOcultas.Clear(); _camposOcultos.Clear(); }
+    private void OcultarTodoCols()
+    {
+        foreach (var c in _colsFijas) if (c.Key != "radicado") _colsOcultas.Add(c.Key);
+        foreach (var c in _campos) _camposOcultos.Add(c.Id);
+    }
 
     private Guid? _draggingId;
 
