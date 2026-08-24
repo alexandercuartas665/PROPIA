@@ -210,7 +210,8 @@ public record ContratoServicioDto(
     string? NumeroContrato = null, TipoContrato? TipoContrato = null, CategoriaContrato? Categoria = null,
     decimal? ValorTotal = null, int? FormaPagoCuotas = null, bool PagoMensual = false,
     TipoActivoMantenimiento? AsociadoTipo = null, Guid? AsociadoId = null, string? AsociadoNombre = null,
-    Guid? ProveedorPersonaId = null, Guid? ProveedorEmpresaId = null, Guid? ContactoPersonaId = null);
+    Guid? ProveedorPersonaId = null, Guid? ProveedorEmpresaId = null, Guid? ContactoPersonaId = null,
+    SemaforoContrato SemaforoVencimiento = SemaforoContrato.Ninguno);
 
 // ----- Etapas de flujo (Kanban) de contratos -----
 public record ContratoEtapaDto(Guid Id, string Nombre, int Orden, string? Color);

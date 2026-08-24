@@ -59,6 +59,16 @@ public enum EstadoContrato
     Vencido = 3
 }
 
+/// <summary>Semaforo de vencimiento del contrato/poliza (Ola 3). Calculado por % de dias totales:
+/// Amarillo al 20% restante, Rojo al 10% o vencido. Ninguno = sin fecha de finalizacion.</summary>
+public enum SemaforoContrato
+{
+    Ninguno = 0,
+    Verde = 1,
+    Amarillo = 2,
+    Rojo = 3
+}
+
 /// <summary>Tipo de contrato (clasificacion legal del pedido de Contratos, Ola 1).
 /// Independiente de TipoServicio (que clasifica el servicio operativo).</summary>
 public enum TipoContrato

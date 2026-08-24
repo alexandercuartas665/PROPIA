@@ -1516,12 +1516,29 @@ public class MiCopropiedadService : IMiCopropiedadService
         return true;
     }
 
+    /// <summary>Semaforo de vencimiento por % de dias totales (Ola 3): sin fecha fin = Ninguno;
+    /// vencido = Rojo; &lt;=10% restante = Rojo; &lt;=20% = Amarillo; resto = Verde.</summary>
+    public static SemaforoContrato CalcularSemaforoContrato(DateOnly inicio, DateOnly? fin, DateOnly hoy)
+    {
+        if (fin is not { } f) return SemaforoContrato.Ninguno;
+        var restante = f.DayNumber - hoy.DayNumber;
+        if (restante < 0) return SemaforoContrato.Rojo;                 // vencido
+        var total = f.DayNumber - inicio.DayNumber;
+        if (total <= 0) return SemaforoContrato.Rojo;                   // fin <= inicio: critico
+        var pct = (double)restante / total;
+        return pct <= 0.10 ? SemaforoContrato.Rojo
+             : pct <= 0.20 ? SemaforoContrato.Amarillo
+             : SemaforoContrato.Verde;
+    }
+
     private static ContratoServicioDto ToContratoDto(ContratoServicio c, IReadOnlyList<ContratoCampoValorDto>? valores = null, string? asociadoNombre = null)
     {
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
         int? dias = c.FechaFin.HasValue ? c.FechaFin.Value.DayNumber - hoy.DayNumber : null;
         var estado = (c.FechaFin.HasValue && c.FechaFin.Value < hoy) ? EstadoContrato.Vencido : c.Estado;
-        var alerta = dias is >= 0 && dias <= c.DiasAnticipacionAlerta;
+        // Semaforo por % de dias totales del contrato (Ola 3): 20% -> amarillo, 10% o vencido -> rojo.
+        var semaforo = CalcularSemaforoContrato(c.FechaInicio, c.FechaFin, hoy);
+        var alerta = semaforo is SemaforoContrato.Amarillo or SemaforoContrato.Rojo;
         return new ContratoServicioDto(c.Id, c.Tipo, c.Proveedor, c.NitProveedor, c.Contacto,
             c.FechaInicio, c.FechaFin, c.ValorMensual, c.Observaciones,
             estado, c.DiasAnticipacionAlerta, dias, alerta,
@@ -1529,7 +1546,7 @@ public class MiCopropiedadService : IMiCopropiedadService
             c.Adjuntos?.Count ?? 0, valores, c.EtapaId,
             c.NumeroContrato, c.TipoContrato, c.Categoria, c.ValorTotal, c.FormaPagoCuotas, c.PagoMensual,
             c.AsociadoTipo, c.AsociadoId, asociadoNombre,
-            c.ProveedorPersonaId, c.ProveedorEmpresaId, c.ContactoPersonaId);
+            c.ProveedorPersonaId, c.ProveedorEmpresaId, c.ContactoPersonaId, semaforo);
     }
 
     public async Task<bool> EliminarContratoAsync(Guid contratoId, CancellationToken ct)

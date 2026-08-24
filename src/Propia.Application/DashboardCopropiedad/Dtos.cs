@@ -12,6 +12,9 @@ public record ActividadFeedDto(
 
 public record TareaResumenDto(Guid Id, string NumeroTarea, string Titulo, string Estado, string Prioridad, DateOnly? FechaVencimiento, bool Vencida);
 
+/// <summary>Contrato/poliza proximo a vencer para el widget del Dashboard (Ola 3).</summary>
+public record ContratoPorVencerDto(Guid Id, string Nombre, DateOnly? FechaFin, int? DiasParaVencer, SemaforoContrato Semaforo);
+
 public record DashboardResumenDto(
     // Banda alertas criticas
     IReadOnlyList<AlertaDashboardDto> Alertas,
@@ -30,7 +33,9 @@ public record DashboardResumenDto(
     // Feed
     IReadOnlyList<ActividadFeedDto> Feed,
     // Acciones rapidas - flags de modulos activos
-    bool ModuloPresupuestoConfigurado);
+    bool ModuloPresupuestoConfigurado,
+    // Contratos proximos a vencer (Ola 3). Default para no romper construcciones existentes.
+    IReadOnlyList<ContratoPorVencerDto>? ContratosPorVencer = null);
 
 public record CrearAlertaRequest(TipoAlertaDashboard Tipo, SeveridadAlerta Severidad, string Titulo, string Descripcion, string? UrlAccion);
 public record CrearEventoFeedRequest(TipoEventoActividad Tipo, string Descripcion, string? ModuloCodigo, string? UrlItem);

@@ -81,13 +81,32 @@ public class DashboardCopropiedadService : IDashboardCopropiedadService
             .Select(f => new ActividadFeedDto(f.Id, f.Tipo, f.ActorNombre, f.Descripcion, f.ModuloCodigo, f.UrlItem, f.OcurridoAt))
             .ToListAsync(ct);
 
+        // 6. Contratos proximos a vencer (Ola 3): semaforo amarillo/rojo por % de dias totales.
+        var hoyC = DateOnly.FromDateTime(DateTime.UtcNow);
+        var contratosPorVencer = (await _db.ContratosServicio.AsNoTracking()
+                .Where(c => c.FechaFin != null)
+                .Select(c => new { c.Id, c.Proveedor, c.FechaInicio, c.FechaFin })
+                .ToListAsync(ct))
+            .Select(c => new
+            {
+                c.Id, c.Proveedor, c.FechaFin,
+                Sem = MiCopropiedad.MiCopropiedadService.CalcularSemaforoContrato(c.FechaInicio, c.FechaFin, hoyC),
+                Dias = c.FechaFin!.Value.DayNumber - hoyC.DayNumber
+            })
+            .Where(x => x.Sem is SemaforoContrato.Amarillo or SemaforoContrato.Rojo)
+            .OrderBy(x => x.Dias)
+            .Take(8)
+            .Select(x => new ContratoPorVencerDto(x.Id, x.Proveedor, x.FechaFin, x.Dias, x.Sem))
+            .ToList();
+
         return new DashboardResumenDto(
             alertas,
             recaudoPct, unidadesEnMora, null,
             tareasActivas, tareasVencidas, tareasUrgentes,
             totalUnidades, torresTotal, zonasTotal,
             feed,
-            moduloPresupuestoConfig);
+            moduloPresupuestoConfig,
+            contratosPorVencer);
     }
 
     public async Task<IReadOnlyList<AlertaDashboardDto>> ListarAlertasAsync(CancellationToken ct)

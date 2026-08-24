@@ -66,6 +66,10 @@ public class ContratoServicio : TenantEntity
     /// <summary>Clausula de renovacion automatica del contrato.</summary>
     public bool RenovacionAutomatica { get; set; }
 
+    /// <summary>Ultimo umbral de vencimiento ya notificado por el job (20 o 10). Null = ninguno.
+    /// Evita alertas repetidas; se resetea a null cuando el contrato vuelve a verde (renovado).</summary>
+    public int? AlertaVencimientoPctNotificado { get; set; }
+
     /// <summary>Servicio al que pertenece (un servicio agrupa uno o mas contratos). Opcional.</summary>
     public Guid? ServicioId { get; set; }
     public Servicio? Servicio { get; set; }
