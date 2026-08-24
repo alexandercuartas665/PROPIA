@@ -56,8 +56,8 @@ param(
   [switch]$SkipTests,
   [switch]$SkipMigrations,
   [switch]$SkipPull,
-  [string]$ApiUrl = "https://propia-production-e484.up.railway.app",
-  [string]$WebUrl = "https://refreshing-laughter-production-d4ec.up.railway.app",
+  [string]$ApiUrl = "https://app.propia-ad.com",
+  [string]$WebUrl = "https://app.propia-ad.com",
   [switch]$DryRun
 )
 
