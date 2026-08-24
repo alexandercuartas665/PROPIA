@@ -1,0 +1,706 @@
+@page "/seguros"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.Seguros
+@using Propia.Application.Directorio
+@using Propia.Application.MiCopropiedad
+@using Propia.Domain.Enums
+@using Microsoft.AspNetCore.Components.Forms
+@using Propia.Web.Components.Shared
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<PageTitle>Seguros - PROPIA</PageTitle>
+
+@* Modulo Seguros (Ola 4): polizas dedicadas. Bandeja al estandar del sistema
+   (Tarjetas/Tabla, buscar, agrupar, configurar columnas, expander) + modal con
+   pestanas Poliza / Documentos / Reclamaciones y extraccion por OCR. *@
+
+<div class="seg-page">
+    <div class="mod-pagehead">
+        <div>
+            <h1 class="mod-pagetitle">Seguros</h1>
+            <p class="mod-pagesub">Polizas de la copropiedad, su vigencia y reclamaciones.</p>
+        </div>
+        @if (_authChecked && _jwt is not null)
+        {
+            <button class="propia-btn-brand" @onclick="() => AbrirModal(null)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+                Nueva poliza
+            </button>
+        }
+    </div>
+
+    @if (!_authChecked)
+    {
+        <div class="seg-loading"><div class="spinner-border" style="color: var(--propia-brand, #6D4FE3);"></div></div>
+    }
+    else if (string.IsNullOrEmpty(_jwt))
+    {
+        <AuthMessage />
+    }
+    else
+    {
+        <div class="mod-stats">
+            <div class="mod-stat"><div class="mod-stat-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg></div><div><div class="mod-stat-n">@_polizas.Count</div><div class="mod-stat-l">polizas</div></div></div>
+            <div class="mod-stat"><div class="mod-stat-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12l5 5 9-11"/></svg></div><div><div class="mod-stat-n">@_polizas.Count(p => p.Semaforo is SemaforoContrato.Verde or SemaforoContrato.Ninguno)</div><div class="mod-stat-l">al dia</div></div></div>
+            <div class="mod-stat"><div class="mod-stat-icon" style="background:#FEF3DC;color:#B45309;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div><div><div class="mod-stat-n">@_polizas.Count(p => p.Semaforo == SemaforoContrato.Amarillo)</div><div class="mod-stat-l">por vencer</div></div></div>
+            <div class="mod-stat"><div class="mod-stat-icon" style="background:#FDE7E7;color:#C0383C;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></div><div><div class="mod-stat-n">@_polizas.Count(p => p.Semaforo == SemaforoContrato.Rojo)</div><div class="mod-stat-l">vencidas</div></div></div>
+        </div>
+
+        <div class="mod-filtros">
+            <div class="seg-search">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                <input class="seg-search-inp" placeholder="Buscar por numero, aseguradora, corredor..." @oninput="OnBuscar" />
+            </div>
+            <select class="seg-fsel @(_agruparPor != "" ? "on" : "")" @onchange="SetAgrupar" title="Agrupar polizas">
+                <option value="" selected="@(_agruparPor == "")">Sin agrupar</option>
+                <option value="aseguradora" selected="@(_agruparPor == "aseguradora")">Agrupar: Aseguradora</option>
+                <option value="estado" selected="@(_agruparPor == "estado")">Agrupar: Vencimiento</option>
+            </select>
+            <span class="mod-search-count" style="margin-left:auto;">@Filtradas.Count polizas</span>
+            <div class="seg-toggle">
+                <button type="button" class="seg-vt @(_vista == "tarjetas" ? "on" : "")" @onclick='() => SetVista("tarjetas")'>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                    Tarjetas
+                </button>
+                <button type="button" class="seg-vt @(_vista == "tabla" ? "on" : "")" @onclick='() => SetVista("tabla")'>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>
+                    Tabla
+                </button>
+            </div>
+        </div>
+
+        @if (_loadError is not null) { <div class="alert alert-danger">@_loadError</div> }
+
+        @if (Filtradas.Count == 0)
+        {
+            <div class="seg-empty"><strong>Sin polizas.</strong><span>Usa "Nueva poliza" para registrar la primera.</span></div>
+        }
+        else if (_vista == "tabla")
+        {
+            <div class="seg-table">
+                <div class="seg-scroll">
+                    <div class="seg-head seg-grid">
+                        <div></div><div>N POLIZA</div><div>ASEGURADORA</div><div>CORREDOR</div><div>INICIO</div><div>FINALIZACION</div><div>VENCIMIENTO</div><div>VALOR</div><div>RECLAM.</div>
+                    </div>
+                    @foreach (var item in FilasRender())
+                    {
+                        if (item.EsGrupo)
+                        {
+                            <div class="seg-group"><span class="seg-group-t">@item.Grupo</span><span class="seg-group-n">@item.Count</span></div>
+                            continue;
+                        }
+                        var p = item.Poliza!;
+                        var pp = p;
+                        <div class="seg-row seg-grid">
+                            <div class="seg-exp-col">
+                                <button type="button" class="seg-exp" title="Abrir la ficha" @onclick="() => AbrirModal(pp.Id)">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                                </button>
+                            </div>
+                            <div class="seg-c seg-c--num">@(string.IsNullOrWhiteSpace(p.NumeroPoliza) ? "-" : p.NumeroPoliza)</div>
+                            <div class="seg-c seg-c--aseg">@p.Aseguradora</div>
+                            <div class="seg-c">@(string.IsNullOrWhiteSpace(p.Corredor) ? "-" : p.Corredor)</div>
+                            <div class="seg-c">@(p.FechaInicio?.ToString("dd MMM yyyy") ?? "-")</div>
+                            <div class="seg-c">@(p.FechaFin?.ToString("dd MMM yyyy") ?? "-")</div>
+                            <div class="seg-c">@SemaforoBadge(p)</div>
+                            <div class="seg-c">@(p.ValorPoliza is { } v ? "$" + v.ToString("N0") : "-")</div>
+                            <div class="seg-c">@(p.ReclamacionesCount > 0 ? p.ReclamacionesCount.ToString() : "-")</div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="seg-cards">
+                @foreach (var item in FilasRender())
+                {
+                    if (item.EsGrupo)
+                    {
+                        <div class="seg-group seg-group--card"><span class="seg-group-t">@item.Grupo</span><span class="seg-group-n">@item.Count</span></div>
+                        continue;
+                    }
+                    var p = item.Poliza!;
+                    var pp = p;
+                    <button type="button" class="seg-card" @onclick="() => AbrirModal(pp.Id)">
+                        <div class="seg-card-top">
+                            <span class="seg-card-aseg">@p.Aseguradora</span>
+                            @SemaforoBadge(p)
+                        </div>
+                        <div class="seg-card-num">@(string.IsNullOrWhiteSpace(p.NumeroPoliza) ? "Sin numero" : "N " + p.NumeroPoliza)</div>
+                        <div class="seg-card-meta">
+                            @(p.FechaFin is { } f ? "Vence " + f.ToString("dd MMM yyyy") : "Sin vigencia")
+                            @(p.ValorPoliza is { } v ? " - $" + v.ToString("N0") : "")
+                        </div>
+                    </button>
+                }
+            </div>
+        }
+    }
+</div>
+
+@if (_modal)
+{
+    <div class="seg-ov" @onclick="() => _modal = false"></div>
+    <div class="seg-modal">
+        <div class="seg-modal-head">
+            <div class="seg-modal-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg></div>
+            <div style="flex:1;min-width:0;">
+                <div class="seg-modal-title">@(_editId is null ? "Nueva poliza" : (string.IsNullOrWhiteSpace(_f.NumeroPoliza) ? "Poliza" : "Poliza " + _f.NumeroPoliza))</div>
+                <div class="seg-modal-sub">@(_editId is null ? "Registra la poliza y su vigencia." : _f.Aseguradora)</div>
+            </div>
+            <button class="seg-x" @onclick="() => _modal = false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+        </div>
+
+        @if (_editId is not null)
+        {
+            <div class="seg-tabs">
+                <button class="@(_tab == "poliza" ? "on" : "")" @onclick='() => _tab = "poliza"'>Poliza</button>
+                <button class="@(_tab == "docs" ? "on" : "")" @onclick='() => _tab = "docs"'>Documentos</button>
+                <button class="@(_tab == "recl" ? "on" : "")" @onclick='AbrirReclamacionesTab'>Reclamaciones <span class="seg-tab-n">@_reclamaciones.Count</span></button>
+            </div>
+        }
+
+        <div class="seg-modal-body">
+            @if (_editId is null || _tab == "poliza")
+            {
+                @* Cargar PDF con OCR para prellenar (reusa el motor de Super Admin). *@
+                <div class="seg-ocr">
+                    <label class="seg-ocr-btn @(_ocrBusy ? "busy" : "")">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                        @(_ocrBusy ? "Leyendo poliza..." : "Cargar PDF y extraer con OCR")
+                        <InputFile OnChange="OnOcrFile" accept=".pdf,image/*" hidden disabled="@_ocrBusy" />
+                    </label>
+                    @if (_ocrMsg is not null) { <span class="seg-ocr-msg">@_ocrMsg</span> }
+                </div>
+
+                <div class="seg-grid-form">
+                    <div class="seg-col-full">
+                        <label class="seg-lbl">Aseguradora * <span class="seg-hint">(busca en el Directorio o crea)</span></label>
+                        <SelectorPersona Jwt="@_jwt" Seleccionada="_aseguradoraSel" SeleccionadaChanged="OnAseguradoraSel" PermiteEmpresa="true" Placeholder="Buscar aseguradora (empresa o persona)..." />
+                        <input class="seg-input" style="margin-top:6px;" @bind="_f.Aseguradora" @bind:event="oninput" placeholder="Nombre de la aseguradora" />
+                    </div>
+                    <div class="seg-col-full">
+                        <label class="seg-lbl">Corredor de seguro <span class="seg-hint">(opcional, del Directorio)</span></label>
+                        <SelectorPersona Jwt="@_jwt" Seleccionada="_corredorSel" SeleccionadaChanged="OnCorredorSel" PermiteEmpresa="true" Placeholder="Buscar corredor..." />
+                        <input class="seg-input" style="margin-top:6px;" @bind="_f.Corredor" @bind:event="oninput" placeholder="Nombre del corredor" />
+                    </div>
+                    <div><label class="seg-lbl">Numero de poliza</label><input class="seg-input" @bind="_f.NumeroPoliza" @bind:event="oninput" placeholder="Nro" /></div>
+                    <div><label class="seg-lbl">Valor de poliza (COP)</label><input class="seg-input" type="number" step="any" @bind="_f.ValorPoliza" placeholder="0" /></div>
+                    <div><label class="seg-lbl">Fecha de inicio</label><input class="seg-input" type="date" @bind="_f.Inicio" /></div>
+                    <div><label class="seg-lbl">Fecha de finalizacion</label><input class="seg-input" type="date" @bind="_f.Fin" /></div>
+                    <div><label class="seg-lbl">Forma de pago (cuotas)</label><input class="seg-input" type="number" min="1" @bind="_f.FormaPagoCuotas" placeholder="Cuotas" /></div>
+                    <div><label class="seg-lbl">Pago mensual</label><label class="seg-check" style="margin-top:6px;"><input type="checkbox" @bind="_f.PagoMensual" /> Se paga mensualmente</label></div>
+                    <div class="seg-col-full"><label class="seg-check"><input type="checkbox" @bind="_f.IncluyeZonasUnidades" /> Incluye zonas y unidades privadas</label></div>
+                    <div class="seg-col-full"><label class="seg-lbl">Cobertura</label><textarea class="seg-input" rows="2" @bind="_f.Cobertura" placeholder="Condiciones de cobertura"></textarea></div>
+                    <div class="seg-col-full"><label class="seg-lbl">Valores agregados</label><textarea class="seg-input" rows="2" @bind="_f.ValoresAgregados"></textarea></div>
+                    <div class="seg-col-full"><label class="seg-lbl">Observaciones</label><textarea class="seg-input" rows="2" @bind="_f.Observaciones"></textarea></div>
+                </div>
+            }
+            else if (_tab == "docs")
+            {
+                <div class="seg-doc-h">Expediente de la poliza (documentos)</div>
+                <select class="seg-input" @bind="_f.ExpedienteId">
+                    <option value="">- Sin expediente -</option>
+                    @foreach (var e in _expedientes) { <option value="@e.Id">@e.Codigo - @e.Nombre</option> }
+                </select>
+                <p class="seg-doc-note">Conecta el expediente con la poliza, corredor y aseguradora. Los documentos se cargan en el modulo <a href="/documentos">Documentos</a>. Recuerda Guardar.</p>
+            }
+            else if (_tab == "recl")
+            {
+                <div class="seg-doc-h">Reclamaciones (@_reclamaciones.Count)</div>
+                @if (_reclamaciones.Count > 0)
+                {
+                    <table class="seg-recl-tbl">
+                        <thead><tr><th>Fecha</th><th>Que reclama</th><th>Reclamado</th><th>Estado</th><th>Reconocido</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var r in _reclamaciones)
+                            {
+                                var rr = r;
+                                <tr>
+                                    <td>@r.Fecha.ToString("dd MMM yyyy")</td>
+                                    <td>@r.Descripcion</td>
+                                    <td>$ @r.MontoReclamado.ToString("N0")</td>
+                                    <td><span class="seg-recl-badge @(r.Estado == EstadoReclamacion.Vigente ? "vig" : "cer")">@(r.Estado == EstadoReclamacion.Vigente ? "Vigente" : "Cerrada")</span></td>
+                                    <td>@(r.MontoReconocido is { } m ? "$" + m.ToString("N0") : "-")</td>
+                                    <td>@if (r.Estado == EstadoReclamacion.Vigente) { <button class="seg-btn-ghost" @onclick="() => AbrirCerrar(rr)">Cerrar</button> }</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                else { <p class="seg-doc-note">Sin reclamaciones registradas.</p> }
+
+                @if (_cerrarId is not null)
+                {
+                    <div class="seg-recl-form">
+                        <span>Monto reconocido por la aseguradora:</span>
+                        <input class="seg-input seg-mini" type="number" step="any" @bind="_montoReconocido" placeholder="0" />
+                        <button class="seg-btn-brand" @onclick="ConfirmarCerrar" disabled="@_busy">Cerrar reclamacion</button>
+                        <button class="seg-btn-ghost" @onclick="() => _cerrarId = null">Cancelar</button>
+                    </div>
+                }
+                else
+                {
+                    <div class="seg-recl-nueva">
+                        <div class="seg-doc-h" style="margin-top:14px;">Nueva reclamacion</div>
+                        <div class="seg-grid-form">
+                            <div><label class="seg-lbl">Fecha</label><input class="seg-input" type="date" @bind="_nrFecha" /></div>
+                            <div><label class="seg-lbl">Monto a reclamar</label><input class="seg-input" type="number" step="any" @bind="_nrMonto" placeholder="0" /></div>
+                            <div class="seg-col-full"><label class="seg-lbl">Que va a reclamar</label><input class="seg-input" @bind="_nrDesc" @bind:event="oninput" placeholder="Descripcion del siniestro" /></div>
+                        </div>
+                        <button class="seg-btn-brand" style="margin-top:8px;" @onclick="CrearReclamacion" disabled="@(_busy || string.IsNullOrWhiteSpace(_nrDesc))">Agregar reclamacion</button>
+                    </div>
+                }
+            }
+
+            @if (_modalError is not null) { <div class="seg-banner err">@_modalError</div> }
+            @if (_editId is null || _tab == "poliza")
+            {
+                <div class="seg-modal-foot">
+                    <button class="seg-btn-ghost" @onclick="() => _modal = false">Cancelar</button>
+                    <button class="seg-btn-brand" @onclick="GuardarAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_f.Aseguradora))">@(_editId is null ? "Crear poliza" : "Guardar poliza")</button>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<style>
+    .mod-pagehead { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+    .mod-pagetitle { font-size: 30px; font-weight: 800; color: #1B2A3A; margin: 0 0 4px; letter-spacing: -.5px; }
+    .mod-pagesub { font-size: 14px; color: #6B7C8F; margin: 0; }
+    .seg-loading { display: flex; justify-content: center; padding: 60px 0; }
+    .mod-stats { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
+    .mod-stat { display: flex; align-items: center; gap: 12px; background: #fff; border: 1px solid #E1E8EE; border-radius: 12px; padding: 14px 18px; min-width: 160px; }
+    .mod-stat-icon { width: 34px; height: 34px; flex-shrink: 0; border-radius: 9px; background: #F3EFFE; color: var(--propia-brand, #6D4FE3); display: flex; align-items: center; justify-content: center; }
+    .mod-stat-n { font-size: 21px; font-weight: 800; color: #1B2A3A; line-height: 1.1; }
+    .mod-stat-l { font-size: 12px; color: #6B7C8F; }
+
+    .mod-filtros { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .seg-search { display: flex; align-items: center; gap: 7px; border: 1px solid #E1E8EE; border-radius: 9px; padding: 0 11px; background: #fff; }
+    .seg-search svg { color: #A6B7C8; }
+    .seg-search-inp { border: 0; outline: none; padding: 8px 0; font-size: 12.5px; color: #33475B; width: 260px; background: transparent; }
+    .seg-fsel { border: 1px solid #E1E8EE; border-radius: 9px; padding: 8px 10px; font-size: 12px; color: #516F90; background: #fff; cursor: pointer; }
+    .seg-fsel.on { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); background: #F3EFFE; font-weight: 700; }
+    .mod-search-count { font-size: 12.5px; color: #90A4B7; }
+    .seg-toggle { display: inline-flex; gap: 2px; background: #EEF2F6; border-radius: 9px; padding: 3px; }
+    .seg-vt { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: #6B7C8F; font-size: 12.5px; font-weight: 600; padding: 5px 11px; border-radius: 7px; cursor: pointer; }
+    .seg-vt.on { background: #fff; color: var(--propia-brand, #6D4FE3); box-shadow: 0 1px 3px rgba(27,42,58,.12); }
+
+    .seg-empty { background: #fff; border: 1px dashed #DCE4EC; border-radius: 12px; padding: 34px; text-align: center; display: flex; flex-direction: column; gap: 5px; }
+    .seg-empty strong { font-size: 14.5px; color: #33475B; }
+    .seg-empty span { font-size: 13px; color: #90A4B7; }
+
+    .seg-table { background: #fff; border: 1px solid #E1E8EE; border-radius: 12px; overflow: hidden; }
+    .seg-scroll { overflow-x: auto; }
+    .seg-grid { display: grid; grid-template-columns: 34px 1.1fr 1.6fr 1.3fr 1fr 1fr 1.1fr 1fr .7fr; align-items: center; gap: 8px; padding: 8px 16px; min-width: 1000px; }
+    .seg-head { background: #F7F9FB; font-size: 10.5px; font-weight: 700; color: #90A4B7; letter-spacing: .4px; border-bottom: 1px solid #E1E8EE; }
+    .seg-row { border-bottom: 1px solid #EEF2F6; font-size: 13px; color: #33475B; }
+    .seg-row:hover { background: #FBFAFE; }
+    .seg-c { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .seg-c--num { font-weight: 700; color: #1B2A3A; }
+    .seg-c--aseg { font-weight: 600; color: var(--propia-brand, #6D4FE3); }
+    .seg-exp-col { display: flex; align-items: center; justify-content: center; }
+    .seg-exp { width: 26px; height: 26px; border: 0; border-radius: 7px; background: #F1ECFD; color: var(--propia-brand, #6D4FE3); display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity .12s; }
+    .seg-row:hover .seg-exp { opacity: 1; }
+
+    .seg-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+    .seg-card { text-align: left; border: 1px solid #E1E8EE; border-radius: 12px; padding: 14px; background: #fff; cursor: pointer; display: flex; flex-direction: column; gap: 6px; }
+    .seg-card:hover { border-color: var(--propia-brand, #6D4FE3); box-shadow: 0 2px 10px rgba(109,79,227,.10); }
+    .seg-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .seg-card-aseg { font-weight: 700; color: #1B2A3A; }
+    .seg-card-num { font-size: 12.5px; color: #516F90; }
+    .seg-card-meta { font-size: 11.5px; color: #90A4B7; }
+
+    .seg-group { display: flex; align-items: center; gap: 10px; padding: 10px 16px 6px; border-top: 1px solid #EEF2F6; }
+    .seg-group--card { grid-column: 1 / -1; border-top: 0; padding: 6px 2px; }
+    .seg-group-t { font-size: 12px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: #F3EFFE; border-radius: 8px; padding: 3px 11px; }
+    .seg-group-n { font-size: 11.5px; font-weight: 700; color: #90A4B7; background: #F1F4F7; border-radius: 10px; padding: 1px 9px; }
+
+    .seg-badge { font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 6px; text-transform: uppercase; letter-spacing: .3px; }
+    .seg-badge--verde { color: #1A8754; background: #E6F6EE; }
+    .seg-badge--amarillo { color: #B45309; background: #FEF3DC; }
+    .seg-badge--rojo { color: #C0383C; background: #FDE7E7; }
+    .seg-badge--none { color: #7C98B6; background: #EEF2F6; }
+
+    /* Modal */
+    .seg-ov { position: fixed; inset: 0; background: rgba(27,42,58,.5); z-index: 1080; }
+    .seg-modal { position: fixed; z-index: 1081; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 720px; max-width: calc(100vw - 32px); max-height: calc(100vh - 48px); background: #fff; border-radius: 16px; box-shadow: 0 24px 60px rgba(27,42,58,.32); display: flex; flex-direction: column; }
+    .seg-modal-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid #EEF3F8; }
+    .seg-modal-ic { width: 42px; height: 42px; border-radius: 11px; background: #F1ECFD; color: var(--propia-brand, #6D4FE3); display: flex; align-items: center; justify-content: center; }
+    .seg-modal-title { font-size: 17px; font-weight: 800; color: #1B2A3A; }
+    .seg-modal-sub { font-size: 12px; color: #7C98B6; }
+    .seg-x { width: 34px; height: 34px; border-radius: 9px; border: 1px solid #E1E8EE; background: #fff; color: #7C98B6; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .seg-tabs { display: flex; gap: 4px; padding: 0 20px; border-bottom: 1px solid #EEF3F8; }
+    .seg-tabs button { border: 0; background: transparent; color: #7C8A9C; font-size: 13px; font-weight: 700; padding: 10px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .seg-tabs button.on { color: var(--propia-brand, #6D4FE3); border-bottom-color: var(--propia-brand, #6D4FE3); }
+    .seg-tab-n { font-size: 10px; background: #EEF2F6; color: #516F90; border-radius: 8px; padding: 1px 6px; margin-left: 4px; }
+    .seg-modal-body { padding: 16px 20px; overflow-y: auto; }
+    .seg-grid-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+    .seg-col-full { grid-column: 1 / -1; }
+    .seg-lbl { display: block; font-size: 11.5px; font-weight: 700; color: #7C98B6; margin-bottom: 3px; }
+    .seg-hint { font-weight: 400; color: #A6B7C8; }
+    .seg-input { width: 100%; box-sizing: border-box; border: 1px solid #E1E8EE; border-radius: 8px; padding: 8px 10px; font-size: 13px; color: #33475B; outline: none; font-family: inherit; background: #fff; }
+    .seg-input:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .seg-check { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: #33475B; cursor: pointer; }
+    .seg-check input { accent-color: var(--propia-brand, #6D4FE3); }
+    .seg-modal-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+    .seg-btn-ghost { padding: 8px 14px; border-radius: 8px; border: 1px solid #E1E8EE; background: #fff; font-size: 13px; font-weight: 700; color: #516F90; cursor: pointer; font-family: inherit; }
+    .seg-btn-brand { padding: 8px 14px; border-radius: 8px; border: 0; background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .seg-btn-brand:disabled { opacity: .55; cursor: not-allowed; }
+    .seg-banner { margin-top: 12px; padding: 10px 12px; border-radius: 9px; font-size: 12.5px; }
+    .seg-banner.err { background: #FDECEC; border: 1px solid #F5C2C2; color: #B4232A; }
+
+    .seg-ocr { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; padding: 10px 12px; background: #F5F2FE; border: 1px dashed #DCD2F8; border-radius: 10px; }
+    .seg-ocr-btn { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 700; color: var(--propia-brand, #6D4FE3); cursor: pointer; }
+    .seg-ocr-btn.busy { opacity: .6; pointer-events: none; }
+    .seg-ocr-msg { font-size: 11.5px; color: #516F90; }
+
+    .seg-doc-h { font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--propia-brand, #6D4FE3); font-weight: 800; margin-bottom: 8px; }
+    .seg-doc-note { font-size: 12px; color: #7C98B6; margin-top: 8px; }
+    .seg-recl-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .seg-recl-tbl th { text-align: left; font-size: 10.5px; color: #90A4B7; text-transform: uppercase; letter-spacing: .3px; padding: 6px 8px; border-bottom: 1px solid #EEF2F6; }
+    .seg-recl-tbl td { padding: 8px; border-bottom: 1px solid #F1F4F7; color: #33475B; }
+    .seg-recl-badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 6px; }
+    .seg-recl-badge.vig { color: #B45309; background: #FEF3DC; }
+    .seg-recl-badge.cer { color: #1A8754; background: #E6F6EE; }
+    .seg-recl-form { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    .seg-mini { width: 160px; }
+</style>
+
+@code {
+    private string? _jwt;
+    private bool _authChecked;
+    private string? _loadError;
+
+    private List<PolizaDto> _polizas = new();
+    private List<ExpedienteLite> _expedientes = new();
+    private string _q = "";
+    private string _vista = "tabla";
+    private const string VistaKey = "propia_view_seguros";
+    private string _agruparPor = "";
+    private const string AgruparKey = "propia_agrupar_seguros";
+
+    private bool _modal;
+    private string _tab = "poliza";
+    private Guid? _editId;
+    private bool _busy;
+    private string? _modalError;
+    private readonly Form _f = new();
+    private PersonaCandidatoDto? _aseguradoraSel;
+    private PersonaCandidatoDto? _corredorSel;
+
+    // OCR
+    private bool _ocrBusy;
+    private string? _ocrMsg;
+
+    // Reclamaciones
+    private List<ReclamacionDto> _reclamaciones = new();
+    private DateTime? _nrFecha = DateTime.Today;
+    private decimal? _nrMonto;
+    private string _nrDesc = "";
+    private Guid? _cerrarId;
+    private decimal? _montoReconocido;
+
+    private sealed class Form
+    {
+        public string Aseguradora = "";
+        public string? NumeroPoliza;
+        public Guid? AseguradoraPersonaId, AseguradoraEmpresaId, CorredorPersonaId, CorredorEmpresaId;
+        public string? Corredor;
+        public DateTime? Inicio = DateTime.Today;
+        public DateTime? Fin;
+        public decimal? ValorPoliza;
+        public int? FormaPagoCuotas;
+        public bool PagoMensual;
+        public string? Cobertura;
+        public bool IncluyeZonasUnidades;
+        public string? ValoresAgregados;
+        public string? Observaciones;
+        public string? ExpedienteId;
+    }
+
+    public sealed record ExpedienteLite(Guid Id, string Codigo, string Nombre);
+
+    private List<PolizaDto> Filtradas
+    {
+        get
+        {
+            var q = _q.Trim();
+            return _polizas.Where(p => q == ""
+                || (p.NumeroPoliza ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)
+                || p.Aseguradora.Contains(q, StringComparison.OrdinalIgnoreCase)
+                || (p.Corredor ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
+        }
+    }
+
+    private readonly record struct Fila(bool EsGrupo, string? Grupo, int Count, PolizaDto? Poliza);
+    private IEnumerable<Fila> FilasRender()
+    {
+        if (_agruparPor == "")
+        {
+            foreach (var p in Filtradas) yield return new Fila(false, null, 0, p);
+            yield break;
+        }
+        var grupos = Filtradas
+            .GroupBy(p => _agruparPor == "aseguradora"
+                ? (string.IsNullOrWhiteSpace(p.Aseguradora) ? "Sin aseguradora" : p.Aseguradora)
+                : SemaforoTexto(p.Semaforo))
+            .OrderBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase);
+        foreach (var g in grupos)
+        {
+            yield return new Fila(true, g.Key, g.Count(), null);
+            foreach (var p in g) yield return new Fila(false, null, 0, p);
+        }
+    }
+
+    private static string SemaforoTexto(SemaforoContrato s) => s switch
+    {
+        SemaforoContrato.Verde => "Al dia",
+        SemaforoContrato.Amarillo => "Por vencer",
+        SemaforoContrato.Rojo => "Vencida",
+        _ => "Sin vigencia"
+    };
+
+    private static RenderFragment SemaforoBadge(PolizaDto p) => builder =>
+    {
+        var cls = p.Semaforo switch
+        {
+            SemaforoContrato.Verde => "verde",
+            SemaforoContrato.Amarillo => "amarillo",
+            SemaforoContrato.Rojo => "rojo",
+            _ => "none"
+        };
+        var txt = p.Semaforo switch
+        {
+            SemaforoContrato.Rojo => p.DiasParaVencer is { } d && d < 0 ? "Vencida" : "Critico",
+            SemaforoContrato.Amarillo => p.DiasParaVencer is { } d ? $"{d} dias" : "Por vencer",
+            SemaforoContrato.Verde => p.DiasParaVencer is { } d ? $"{d} dias" : "Al dia",
+            _ => "Sin fin"
+        };
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "class", $"seg-badge seg-badge--{cls}");
+        builder.AddContent(2, txt);
+        builder.CloseElement();
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            _authChecked = true;
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                try { var v = await Js.InvokeAsync<string?>("localStorage.getItem", VistaKey); if (v is "tabla" or "tarjetas") _vista = v; } catch { }
+                try { var a = await Js.InvokeAsync<string?>("localStorage.getItem", AgruparKey); if (a is "aseguradora" or "estado") _agruparPor = a; } catch { }
+                await CargarAsync();
+            }
+            else { Nav.NavigateTo("/login?returnUrl=%2Fseguros", true); return; }
+            StateHasChanged();
+        }
+        catch { }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(_jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
+        return http;
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            _loadError = null;
+            _polizas = await Auth().GetFromJsonAsync<List<PolizaDto>>("/api/seguros/polizas") ?? new();
+        }
+        catch (Exception ex) { _loadError = ex.Message; }
+    }
+
+    private void OnBuscar(ChangeEventArgs e) => _q = e.Value?.ToString() ?? "";
+    private async Task SetVista(string v) { _vista = v; try { await Js.InvokeVoidAsync("localStorage.setItem", VistaKey, v); } catch { } }
+    private async Task SetAgrupar(ChangeEventArgs e) { _agruparPor = e.Value?.ToString() ?? ""; try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, _agruparPor); } catch { } }
+
+    private async Task AbrirModal(Guid? id)
+    {
+        _modalError = null; _ocrMsg = null; _tab = "poliza"; _reclamaciones = new(); _cerrarId = null;
+        if (_expedientes.Count == 0)
+        {
+            try { _expedientes = await Auth().GetFromJsonAsync<List<ExpedienteLite>>("/api/expedientes") ?? new(); } catch { }
+        }
+        if (id is null)
+        {
+            _editId = null; ResetForm(); _aseguradoraSel = null; _corredorSel = null;
+        }
+        else
+        {
+            _editId = id;
+            var p = _polizas.FirstOrDefault(x => x.Id == id);
+            if (p is null) { try { p = await Auth().GetFromJsonAsync<PolizaDto>($"/api/seguros/polizas/{id}"); } catch { } }
+            if (p is not null) CargarForm(p);
+            try { _reclamaciones = await Auth().GetFromJsonAsync<List<ReclamacionDto>>($"/api/seguros/polizas/{id}/reclamaciones") ?? new(); } catch { }
+        }
+        _modal = true;
+    }
+
+    private void ResetForm()
+    {
+        _f.Aseguradora = ""; _f.NumeroPoliza = null; _f.AseguradoraPersonaId = _f.AseguradoraEmpresaId = _f.CorredorPersonaId = _f.CorredorEmpresaId = null;
+        _f.Corredor = null; _f.Inicio = DateTime.Today; _f.Fin = null; _f.ValorPoliza = null; _f.FormaPagoCuotas = null;
+        _f.PagoMensual = false; _f.Cobertura = null; _f.IncluyeZonasUnidades = false; _f.ValoresAgregados = null; _f.Observaciones = null; _f.ExpedienteId = null;
+    }
+
+    private void CargarForm(PolizaDto p)
+    {
+        _f.Aseguradora = p.Aseguradora; _f.NumeroPoliza = p.NumeroPoliza;
+        _f.AseguradoraPersonaId = p.AseguradoraPersonaId; _f.AseguradoraEmpresaId = p.AseguradoraEmpresaId;
+        _f.CorredorPersonaId = p.CorredorPersonaId; _f.CorredorEmpresaId = p.CorredorEmpresaId; _f.Corredor = p.Corredor;
+        _f.Inicio = p.FechaInicio?.ToDateTime(TimeOnly.MinValue); _f.Fin = p.FechaFin?.ToDateTime(TimeOnly.MinValue);
+        _f.ValorPoliza = p.ValorPoliza; _f.FormaPagoCuotas = p.FormaPagoCuotas; _f.PagoMensual = p.PagoMensual;
+        _f.Cobertura = p.Cobertura; _f.IncluyeZonasUnidades = p.IncluyeZonasUnidades; _f.ValoresAgregados = p.ValoresAgregados;
+        _f.Observaciones = p.Observaciones; _f.ExpedienteId = p.ExpedienteId?.ToString();
+        _aseguradoraSel = p.AseguradoraEmpresaId is { } ae ? Cand(ae, p.Aseguradora, EntidadDirectorio.Empresa)
+            : p.AseguradoraPersonaId is { } ap ? Cand(ap, p.Aseguradora, EntidadDirectorio.Persona) : null;
+        _corredorSel = p.CorredorEmpresaId is { } ce ? Cand(ce, p.Corredor ?? "", EntidadDirectorio.Empresa)
+            : p.CorredorPersonaId is { } cp ? Cand(cp, p.Corredor ?? "", EntidadDirectorio.Persona) : null;
+    }
+
+    private static PersonaCandidatoDto Cand(Guid id, string nombre, EntidadDirectorio tipo)
+        => new(id, nombre, TipoDocumento.CC, "", true, Array.Empty<string>(), tipo);
+
+    private void OnAseguradoraSel(PersonaCandidatoDto? s)
+    {
+        _aseguradoraSel = s;
+        if (s is null) { _f.AseguradoraPersonaId = _f.AseguradoraEmpresaId = null; return; }
+        if (s.EntidadTipo == EntidadDirectorio.Empresa) { _f.AseguradoraEmpresaId = s.PersonaId; _f.AseguradoraPersonaId = null; }
+        else { _f.AseguradoraPersonaId = s.PersonaId; _f.AseguradoraEmpresaId = null; }
+        _f.Aseguradora = s.NombreCompleto;
+    }
+
+    private void OnCorredorSel(PersonaCandidatoDto? s)
+    {
+        _corredorSel = s;
+        if (s is null) { _f.CorredorPersonaId = _f.CorredorEmpresaId = null; return; }
+        if (s.EntidadTipo == EntidadDirectorio.Empresa) { _f.CorredorEmpresaId = s.PersonaId; _f.CorredorPersonaId = null; }
+        else { _f.CorredorPersonaId = s.PersonaId; _f.CorredorEmpresaId = null; }
+        _f.Corredor = s.NombreCompleto;
+    }
+
+    private async Task GuardarAsync()
+    {
+        _modalError = null;
+        if (string.IsNullOrWhiteSpace(_f.Aseguradora)) { _modalError = "La aseguradora es obligatoria."; return; }
+        _busy = true;
+        try
+        {
+            DateOnly? ini = _f.Inicio.HasValue ? DateOnly.FromDateTime(_f.Inicio.Value) : null;
+            DateOnly? fin = _f.Fin.HasValue ? DateOnly.FromDateTime(_f.Fin.Value) : null;
+            Guid? exp = Guid.TryParse(_f.ExpedienteId, out var g) ? g : null;
+            HttpResponseMessage resp;
+            if (_editId is null)
+            {
+                resp = await Auth().PostAsJsonAsync("/api/seguros/polizas", new CrearPolizaRequest(
+                    _f.Aseguradora.Trim(), _f.NumeroPoliza, _f.AseguradoraPersonaId, _f.AseguradoraEmpresaId,
+                    _f.Corredor, _f.CorredorPersonaId, _f.CorredorEmpresaId, ini, fin,
+                    _f.ValorPoliza, _f.FormaPagoCuotas, _f.PagoMensual, _f.Cobertura, _f.IncluyeZonasUnidades,
+                    _f.ValoresAgregados, _f.Observaciones, exp));
+            }
+            else
+            {
+                resp = await Auth().PutAsJsonAsync($"/api/seguros/polizas/{_editId}", new ActualizarPolizaRequest(
+                    _f.Aseguradora.Trim(), _f.NumeroPoliza, _f.AseguradoraPersonaId, _f.AseguradoraEmpresaId,
+                    _f.Corredor, _f.CorredorPersonaId, _f.CorredorEmpresaId, ini, fin,
+                    _f.ValorPoliza, _f.FormaPagoCuotas, _f.PagoMensual, _f.Cobertura, _f.IncluyeZonasUnidades,
+                    _f.ValoresAgregados, _f.Observaciones, exp, LimpiarExpediente: exp is null));
+            }
+            if (!resp.IsSuccessStatusCode) { _modalError = await resp.Content.ReadAsStringAsync(); return; }
+            _modal = false;
+            await CargarAsync();
+        }
+        catch (Exception ex) { _modalError = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    // ---- OCR: extrae y prellena ----
+    private async Task OnOcrFile(InputFileChangeEventArgs e)
+    {
+        _ocrBusy = true; _ocrMsg = null;
+        try
+        {
+            var file = e.File;
+            using var content = new MultipartFormDataContent();
+            var fc = new StreamContent(file.OpenReadStream(15 * 1024 * 1024));
+            fc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType);
+            content.Add(fc, "file", file.Name);
+            var resp = await Auth().PostAsync("/api/ocr/extraer", content);
+            if (!resp.IsSuccessStatusCode) { _ocrMsg = "No se pudo leer el documento (" + (int)resp.StatusCode + ")."; return; }
+            var r = await resp.Content.ReadFromJsonAsync<OcrResp>();
+            if (r is null) { _ocrMsg = "Sin datos."; return; }
+            // Prefill best-effort: fecha y valor sugeridos + numero de poliza desde campos/texto.
+            if (r.ValorSugerido is { } v && _f.ValorPoliza is null) _f.ValorPoliza = v;
+            if (!string.IsNullOrWhiteSpace(r.FechaSugerida) && DateTime.TryParse(r.FechaSugerida, out var fs) && _f.Inicio == DateTime.Today) _f.Inicio = fs;
+            var num = r.Campos?.FirstOrDefault(c => c.Nombre.Contains("Policy", StringComparison.OrdinalIgnoreCase) || c.Nombre.Contains("Poliza", StringComparison.OrdinalIgnoreCase))?.Valor;
+            if (!string.IsNullOrWhiteSpace(num) && string.IsNullOrWhiteSpace(_f.NumeroPoliza)) _f.NumeroPoliza = num;
+            _ocrMsg = $"Documento leido ({r.Proveedor}). Revisa y completa los campos.";
+        }
+        catch (Exception ex) { _ocrMsg = "Error: " + ex.Message; }
+        finally { _ocrBusy = false; }
+    }
+    private sealed record OcrCampo(string Nombre, string? Valor, double? Confianza);
+    private sealed record OcrResp(bool Ok, string? Proveedor, string? Modelo, decimal? ValorSugerido, string? FechaSugerida, List<OcrCampo>? Campos, string? TextoCompleto);
+
+    // ---- Reclamaciones ----
+    private async Task AbrirReclamacionesTab()
+    {
+        _tab = "recl";
+        if (_editId is { } id)
+        {
+            try { _reclamaciones = await Auth().GetFromJsonAsync<List<ReclamacionDto>>($"/api/seguros/polizas/{id}/reclamaciones") ?? new(); } catch { }
+        }
+    }
+
+    private async Task CrearReclamacion()
+    {
+        if (_editId is not { } id || string.IsNullOrWhiteSpace(_nrDesc)) return;
+        _busy = true;
+        try
+        {
+            var fecha = DateOnly.FromDateTime(_nrFecha ?? DateTime.Today);
+            var resp = await Auth().PostAsJsonAsync($"/api/seguros/polizas/{id}/reclamaciones",
+                new CrearReclamacionRequest(fecha, _nrMonto ?? 0, _nrDesc.Trim()));
+            if (resp.IsSuccessStatusCode)
+            {
+                _nrDesc = ""; _nrMonto = null; _nrFecha = DateTime.Today;
+                _reclamaciones = await Auth().GetFromJsonAsync<List<ReclamacionDto>>($"/api/seguros/polizas/{id}/reclamaciones") ?? _reclamaciones;
+                await CargarAsync();
+            }
+        }
+        finally { _busy = false; }
+    }
+
+    private void AbrirCerrar(ReclamacionDto r) { _cerrarId = r.Id; _montoReconocido = r.MontoReclamado; }
+
+    private async Task ConfirmarCerrar()
+    {
+        if (_cerrarId is not { } rid || _editId is not { } id) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/seguros/reclamaciones/{rid}/cerrar", new CerrarReclamacionRequest(_montoReconocido ?? 0));
+            if (resp.IsSuccessStatusCode)
+            {
+                _cerrarId = null; _montoReconocido = null;
+                _reclamaciones = await Auth().GetFromJsonAsync<List<ReclamacionDto>>($"/api/seguros/polizas/{id}/reclamaciones") ?? _reclamaciones;
+            }
+        }
+        finally { _busy = false; }
+    }
+}
