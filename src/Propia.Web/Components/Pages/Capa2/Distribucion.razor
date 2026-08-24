@@ -3,6 +3,7 @@
 @using Propia.Application.MiCopropiedad
 @using Propia.Domain.Enums
 @using Propia.Web.Components.Shared.Modals
+@using Microsoft.AspNetCore.Components.Forms
 @inject IHttpClientFactory HttpFactory
 @inject NavigationManager Nav
 @inject IJSRuntime Js
@@ -23,12 +24,37 @@
     </div>
     @if (_authChecked && _jwt is not null)
     {
-        <button class="propia-btn-brand" @onclick="AbrirGestionarUnidadesAsync">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-            Gestionar unidades
-        </button>
+        @* Estandar del sistema (como Zonas/Equipos): carga masiva por plantilla. La plantilla
+           crea torres y unidades; para editar una unidad se abre su ficha desde el expander. *@
+        <div class="dst-head-actions">
+            <button class="dst-btn-soft" type="button" @onclick="DescargarPlantillaUnidadesAsync" disabled="@_impBusy" title="Descargar plantilla CSV de unidades">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>
+                Descargar plantilla
+            </button>
+            <label class="propia-btn-brand @(_impBusy ? "is-busy" : "")" style="cursor:pointer;" title="Cargar plantilla CSV (crea torres y unidades)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21V9m0 0l-4 4m4-4l4 4M4 3h16"/></svg>
+                @(_impBusy ? "Cargando..." : "Cargar plantilla")
+                <InputFile OnChange="OnPlantillaImportUnidades" accept=".csv,text/csv" style="display:none" disabled="@_impBusy" />
+            </label>
+        </div>
     }
 </div>
+
+@if (_impResult is not null)
+{
+    <div class="dst-impres @(_impResult.Aceptado ? "ok" : "err")">
+        @if (_impResult.Aceptado)
+        {
+            <b>Carga completa:</b> <span>@_impResult.UnidadesCreadas unidades creadas (suma de coeficientes @_impResult.SumaCoeficientes.ToString("0.####")%).</span>
+        }
+        else
+        {
+            <b>No se pudo cargar la plantilla.</b>
+            <ul class="dst-impres-list">@foreach (var er in _impResult.Errores.Take(12)) { <li>@(er.Fila > 0 ? $"Fila {er.Fila} - " : "")@er.Campo: @er.Mensaje</li> }</ul>
+        }
+        <button type="button" class="dst-impres-x" @onclick="() => _impResult = null" title="Cerrar">&times;</button>
+    </div>
+}
 
 @if (!_authChecked)
 {
@@ -621,9 +647,56 @@ else
         catch (Exception ex) { _loadError = ex.Message; }
     }
 
-    private Task AbrirGestionarUnidadesAsync() => AbrirModalAsync(null);
-
     private Task AbrirFichaAsync(UnidadDto u) => AbrirModalAsync(u.Id);
+
+    // ===== Carga masiva por plantilla (reemplaza a "Gestionar unidades") =====
+    private bool _impBusy;
+    private ImportarUnidadesResponse? _impResult;
+
+    // Plantilla CSV generada en cliente (formato que espera importar-csv: crea torres por nombre).
+    private async Task DescargarPlantillaUnidadesAsync()
+    {
+        var csv = "identificador,tipo_unidad,agrupacion,piso,coeficiente,area_m2\n"
+                + "101,Apartamento,Torre A,1,0.023400,72\n"
+                + "102,Apartamento,Torre A,1,0.023400,72\n"
+                + "201,Apartamento,Torre B,2,0.023400,72\n"
+                + "L-1,Local,Torre A,0,0.010000,40\n"
+                + "P-101,Parqueadero,Torre A,-1,0.001000,12\n";
+        try
+        {
+            var b64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(csv));
+            await Js.InvokeVoidAsync("propiaUI.downloadBase64", "plantilla-unidades-propia.csv", b64);
+        }
+        catch { }
+    }
+
+    private async Task OnPlantillaImportUnidades(InputFileChangeEventArgs e)
+    {
+        _impBusy = true; _impResult = null;
+        try
+        {
+            var file = e.File;
+            using var reader = new StreamReader(file.OpenReadStream(10 * 1024 * 1024));
+            var csv = await reader.ReadToEndAsync();
+            var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/unidades/importar-csv", new ImportarUnidadesRequest(csv));
+            if (resp.IsSuccessStatusCode)
+            {
+                _impResult = await resp.Content.ReadFromJsonAsync<ImportarUnidadesResponse>();
+                if (_impResult?.Aceptado == true) await CargarAsync();
+            }
+            else
+            {
+                _impResult = new ImportarUnidadesResponse(false, 0, 0, 0m,
+                    new List<ImportacionFilaError> { new(0, "servidor", $"Error {(int)resp.StatusCode} al procesar la plantilla.") });
+            }
+        }
+        catch (Exception ex)
+        {
+            _impResult = new ImportarUnidadesResponse(false, 0, 0, 0m,
+                new List<ImportacionFilaError> { new(0, "archivo", ex.Message) });
+        }
+        finally { _impBusy = false; }
+    }
 
     // Mismo modal para el boton y para el clic en una fila; con UnidadInicialId abre en su ficha.
     private async Task AbrirModalAsync(Guid? unidadId)
@@ -656,6 +729,21 @@ else
     .dst-pagetitle { font-size: 30px; font-weight: 800; color: #1B2A3A; margin: 0 0 4px; letter-spacing: -.5px; }
     .dst-pagesub { font-size: 14px; color: #6B7C8F; margin: 0; }
     .dst-loading { display: flex; justify-content: center; padding: 60px 0; }
+
+    /* Cabecera: acciones de plantilla (estandar Zonas/Equipos). */
+    .dst-head-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .dst-btn-soft { display: inline-flex; align-items: center; gap: 7px; padding: 9px 15px; border-radius: 10px; border: 1px solid #DCD2F8; background: #F5F2FE; color: var(--propia-brand, #6D4FE3); font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .dst-btn-soft:hover:not(:disabled) { background: #ECE4FC; }
+    .dst-btn-soft:disabled { opacity: .6; cursor: default; }
+    .propia-btn-brand.is-busy { opacity: .7; pointer-events: none; }
+    /* Banner de resultado de la carga. */
+    .dst-impres { position: relative; margin-bottom: 14px; border-radius: 11px; padding: 12px 40px 12px 14px; font-size: 13px; }
+    .dst-impres.ok { background: #E6F6EE; border: 1px solid #BFE8D2; color: #0F8A4F; }
+    .dst-impres.err { background: #FDECEC; border: 1px solid #F5C2C2; color: #B4232A; }
+    .dst-impres-list { margin: 6px 0 0; padding-left: 18px; }
+    .dst-impres-list li { margin: 2px 0; }
+    .dst-impres-x { position: absolute; top: 8px; right: 10px; border: 0; background: transparent; font-size: 20px; line-height: 1; color: inherit; opacity: .6; cursor: pointer; }
+    .dst-impres-x:hover { opacity: 1; }
 
     /* Tarjetas de resumen: agrupaciones, unidades y estado de coeficientes. */
     .dst-stats { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
