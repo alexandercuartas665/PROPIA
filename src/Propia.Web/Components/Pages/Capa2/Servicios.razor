@@ -7,6 +7,7 @@
 @using Propia.Application.Directorio
 @using Propia.Application.Programaciones
 @using Propia.Domain.Enums
+@using Propia.Web.Components.Shared
 @using Propia.Web.Components.Shared.Modals
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
@@ -772,8 +773,10 @@ else
             {
             <div class="srv-grid">
                 <div class="srv-col-full">
-                    <label class="srv-lbl">Contratista *</label>
-                    <input class="srv-input" @bind="_f.Proveedor" @bind:event="oninput" placeholder="Nombre del contratista (persona o empresa)" />
+                    <label class="srv-lbl">Contratista * <span style="font-weight:400;color:#8fa0b3;">(busca en el Directorio o crea uno nuevo)</span></label>
+                    <SelectorPersona Jwt="@_jwt" Seleccionada="_contratistaSel" SeleccionadaChanged="OnContratistaSel"
+                                     PermiteEmpresa="true" Placeholder="Buscar persona o empresa por nombre/documento..." />
+                    <input class="srv-input" style="margin-top:6px;" @bind="_f.Proveedor" @bind:event="oninput" placeholder="Nombre del contratista (se completa al elegirlo)" />
                 </div>
                 <div>
                     <label class="srv-lbl">Tipo de contrato</label>
@@ -1943,6 +1946,8 @@ else
     private Guid? _editId;
     private string? _modalError;
     private Form _f = new();
+    // Contratista elegido con el SelectorPersona (persona o empresa del Directorio).
+    private PersonaCandidatoDto? _contratistaSel;
 
     // ===================== Servicios (catalogo) =====================
     private List<ServicioDto> _servicios = new();
@@ -2669,10 +2674,17 @@ else
         {
             _editId = null;
             _f = new Form();
+            _contratistaSel = null;
         }
         else
         {
             _editId = c.Id;
+            // Prechip del contratista si el contrato ya tiene un tercero del Directorio vinculado.
+            _contratistaSel = c.ProveedorEmpresaId is { } eid
+                ? new PersonaCandidatoDto(eid, c.Proveedor, TipoDocumento.CC, c.NitProveedor ?? "", true, Array.Empty<string>(), EntidadDirectorio.Empresa)
+                : c.ProveedorPersonaId is { } pid
+                    ? new PersonaCandidatoDto(pid, c.Proveedor, TipoDocumento.CC, c.NitProveedor ?? "", true, Array.Empty<string>(), EntidadDirectorio.Persona)
+                    : null;
             _f = new Form
             {
                 Tipo = c.Tipo, Proveedor = c.Proveedor, Nit = c.NitProveedor, Contacto = c.Contacto,
@@ -2742,6 +2754,17 @@ else
                 _contratoExpedientes = _contratoExpedientes.Where(x => x.ExpedienteId != expedienteId).ToList();
         }
         finally { _busy = false; }
+    }
+
+    // Contratista del Directorio (persona o empresa): rellena el snapshot + los FK del contrato.
+    private void OnContratistaSel(PersonaCandidatoDto? sel)
+    {
+        _contratistaSel = sel;
+        if (sel is null) { _f.ProveedorPersonaId = null; _f.ProveedorEmpresaId = null; return; }
+        if (sel.EntidadTipo == EntidadDirectorio.Empresa) { _f.ProveedorEmpresaId = sel.PersonaId; _f.ProveedorPersonaId = null; }
+        else { _f.ProveedorPersonaId = sel.PersonaId; _f.ProveedorEmpresaId = null; }
+        _f.Proveedor = sel.NombreCompleto;
+        if (string.IsNullOrWhiteSpace(_f.Nit)) _f.Nit = sel.DocumentoEnmascarado;
     }
 
     private void OnAsociadoTipoChange(ChangeEventArgs e)
