@@ -280,6 +280,81 @@ public class IndicadoresService : IIndicadoresService
         return new IndicadoresDocumentosDto(total, nuevos, nuevasVersiones, compartidos, tamano);
     }
 
+    public async Task<IndicadoresContratosDto> GetContratosSegurosAsync(DateOnly desde, DateOnly hasta, CancellationToken ct)
+    {
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        // Mapea el enum de semaforo al string usado por la UI ("ninguno" -> "neutro").
+        static string SemStr(SemaforoContrato s) => s switch
+        {
+            SemaforoContrato.Verde => "verde",
+            SemaforoContrato.Amarillo => "amarillo",
+            SemaforoContrato.Rojo => "rojo",
+            _ => "neutro"
+        };
+
+        // ----- Contratos (2.5) -----
+        var contratos = await _db.ContratosServicio.AsNoTracking()
+            .Select(c => new { c.Id, c.Proveedor, c.TipoContrato, c.FechaInicio, c.FechaFin, c.ValorTotal })
+            .ToListAsync(ct);
+
+        var contratosCalc = contratos.Select(c =>
+        {
+            var sem = MiCopropiedad.MiCopropiedadService.CalcularSemaforoContrato(c.FechaInicio, c.FechaFin, hoy);
+            var vencido = c.FechaFin is { } f && f < hoy;
+            return new
+            {
+                c.Id, c.Proveedor, c.TipoContrato, c.FechaFin, c.ValorTotal, sem, vencido,
+                dias = c.FechaFin is { } ff ? ff.DayNumber - hoy.DayNumber : (int?)null
+            };
+        }).ToList();
+
+        var contratosActivos = contratosCalc.Count(c => !c.vencido);
+        var contratosVencidos = contratosCalc.Count(c => c.vencido);
+        var contratosPorVencer = contratosCalc.Count(c => !c.vencido && c.sem is SemaforoContrato.Amarillo or SemaforoContrato.Rojo);
+        var valorContratado = contratosCalc.Where(c => !c.vencido).Sum(c => c.ValorTotal ?? 0m);
+        var contratosProximos = contratosCalc
+            .Where(c => c.sem is SemaforoContrato.Amarillo or SemaforoContrato.Rojo)
+            .OrderBy(c => c.dias ?? int.MaxValue)
+            .Take(50)
+            .Select(c => new ItemVencimientoDto(
+                c.Id, c.Proveedor, c.TipoContrato?.ToString(), c.FechaFin, c.dias, SemStr(c.sem), c.ValorTotal))
+            .ToList();
+
+        // ----- Seguros (polizas) -----
+        var polizas = await _db.Polizas.AsNoTracking()
+            .Select(p => new { p.Id, p.Aseguradora, p.NumeroPoliza, p.FechaInicio, p.FechaFin, p.ValorPoliza })
+            .ToListAsync(ct);
+
+        var polizasCalc = polizas.Select(p =>
+        {
+            var ini = p.FechaInicio ?? p.FechaFin ?? hoy;
+            var sem = MiCopropiedad.MiCopropiedadService.CalcularSemaforoContrato(ini, p.FechaFin, hoy);
+            var vencido = p.FechaFin is { } f && f < hoy;
+            return new
+            {
+                p.Id, p.Aseguradora, p.NumeroPoliza, p.FechaFin, p.ValorPoliza, sem, vencido,
+                dias = p.FechaFin is { } ff ? ff.DayNumber - hoy.DayNumber : (int?)null
+            };
+        }).ToList();
+
+        var polizasActivas = polizasCalc.Count(p => !p.vencido);
+        var polizasVencidas = polizasCalc.Count(p => p.vencido);
+        var polizasPorVencer = polizasCalc.Count(p => !p.vencido && p.sem is SemaforoContrato.Amarillo or SemaforoContrato.Rojo);
+        var valorAsegurado = polizasCalc.Where(p => !p.vencido).Sum(p => p.ValorPoliza ?? 0m);
+        var polizasProximas = polizasCalc
+            .Where(p => p.sem is SemaforoContrato.Amarillo or SemaforoContrato.Rojo)
+            .OrderBy(p => p.dias ?? int.MaxValue)
+            .Take(50)
+            .Select(p => new ItemVencimientoDto(
+                p.Id, p.Aseguradora, p.NumeroPoliza, p.FechaFin, p.dias, SemStr(p.sem), p.ValorPoliza))
+            .ToList();
+
+        return new IndicadoresContratosDto(
+            contratosActivos, contratosPorVencer, contratosVencidos, valorContratado, contratosProximos,
+            polizasActivas, polizasPorVencer, polizasVencidas, valorAsegurado, polizasProximas);
+    }
+
     public async Task<KpisConsejoDto> GetKpisConsejoAsync(DateOnly desde, DateOnly hasta, CancellationToken ct)
     {
         var fin = await GetFinancieroAsync(desde, hasta, ct);

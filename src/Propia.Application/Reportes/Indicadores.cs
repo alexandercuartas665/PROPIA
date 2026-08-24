@@ -29,6 +29,9 @@ public interface IIndicadoresService
     // 2.15 Documentos (uso interno - audit del repositorio)
     Task<IndicadoresDocumentosDto> GetDocumentosAsync(DateOnly desde, DateOnly hasta, CancellationToken ct);
 
+    // 2.5 Contratos + Seguros (Ola 6): vencimientos y valor contratado/asegurado.
+    Task<IndicadoresContratosDto> GetContratosSegurosAsync(DateOnly desde, DateOnly hasta, CancellationToken ct);
+
     // KPI ejecutivos consolidados para el consejo (spec seccion 7)
     Task<KpisConsejoDto> GetKpisConsejoAsync(DateOnly desde, DateOnly hasta, CancellationToken ct);
 
@@ -111,6 +114,30 @@ public record IndicadoresDocumentosDto(
     int NuevasVersionesEnPeriodo,
     int CompartidosConsejo,  // proxy: cuantos estan en visibilidad EQUIPO o PUBLICO
     long TamanoTotalBytes);
+
+/// <summary>
+/// Indicadores de Contratos (2.5) y Seguros (Ola 6) para Reportes e Indicadores.
+/// Los "por vencer" usan el semaforo por % de dias totales del contrato/poliza
+/// (mismo criterio del Dashboard y del job de vencimiento).
+/// </summary>
+public record IndicadoresContratosDto(
+    // Contratos (2.5)
+    int ContratosActivos,
+    int ContratosPorVencer,
+    int ContratosVencidos,
+    decimal ValorContratado,
+    IReadOnlyList<ItemVencimientoDto> ContratosProximos,
+    // Seguros (polizas)
+    int PolizasActivas,
+    int PolizasPorVencer,
+    int PolizasVencidas,
+    decimal ValorAsegurado,
+    IReadOnlyList<ItemVencimientoDto> PolizasProximas);
+
+/// <summary>Contrato o poliza con su estado de vencimiento. Semaforo: "verde"|"amarillo"|"rojo"|"neutro".</summary>
+public record ItemVencimientoDto(
+    Guid Id, string Nombre, string? Tipo, DateOnly? FechaFin,
+    int? DiasParaVencer, string Semaforo, decimal? Valor);
 
 /// <summary>KPIs del consejo (4-6 cards segun spec seccion 7).</summary>
 public record KpisConsejoDto(

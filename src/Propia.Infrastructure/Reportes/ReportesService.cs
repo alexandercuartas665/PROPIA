@@ -352,6 +352,9 @@ public class ReportesService : IReportesService
             "comunicaciones.apertura" => await _indicadores.GetComunicacionesAsync(desde, hasta, ct),
             "comunicaciones.eficiencia" => await _indicadores.GetComunicacionesAsync(desde, hasta, ct),
             "documentos.resumen" => await _indicadores.GetDocumentosAsync(desde, hasta, ct),
+            "contratos.resumen" => await _indicadores.GetContratosSegurosAsync(desde, hasta, ct),
+            "contratos.por_vencer" => await _indicadores.GetContratosSegurosAsync(desde, hasta, ct),
+            "seguros.polizas_por_vencer" => await _indicadores.GetContratosSegurosAsync(desde, hasta, ct),
             _ => throw new InvalidOperationException($"Clave de reporte no soportada en MVP: {clave}")
         };
     }
