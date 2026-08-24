@@ -527,6 +527,18 @@ else
                                     </tr>
                                 }
                             }
+                            @* Fila de alta inline (crear desde la tabla, tipo hoja de calculo) *@
+                            <tr class="ctr-row ctr-newrow">
+                                <td class="ctr-exp-col">
+                                    <button type="button" class="ctr-exp ctr-exp-fijo" title="Crear contrato y abrir la ficha" @onclick="CrearContratoInline" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoProveedor))">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                                    </button>
+                                </td>
+                                <td class="ctr-ct">
+                                    <input class="ctr-inp" placeholder="Nuevo contrato: nombre del contratista..." @bind="_nuevoProveedor" @bind:event="oninput" @onkeydown="NuevoContratoKeydown" />
+                                </td>
+                                <td colspan="@ColsVisibles().Count()"><span class="ctr-newrow-hint">Enter para crear y completar en la ficha</span></td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -1552,6 +1564,10 @@ else
     .ctr-exp { width: 26px; height: 26px; border: 0; border-radius: 7px; background: #F1ECFD; color: var(--propia-brand, #6D4FE3); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s; }
     .ctr-row:hover .ctr-exp { opacity: 1; }
     .ctr-exp:hover { background: #E4DBFB; }
+    .ctr-newrow .ctr-exp-fijo { opacity: 1; }
+    .ctr-exp-fijo:disabled { opacity: .3; cursor: default; }
+    .ctr-newrow-hint { font-size: 11.5px; color: #A6B7C8; }
+    .ctr-newrow .ctr-inp { width: 100%; }
     /* Pill de etapa + observaciones truncadas */
     .ctr-etpill { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 20px; padding: 2px 9px; white-space: nowrap; }
     .ctr-obs { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #64748B; font-size: 12px; vertical-align: middle; }
@@ -2680,6 +2696,33 @@ else
     {
         string[] n = { "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre" };
         return m >= 1 && m <= 12 ? n[m - 1] : m.ToString();
+    }
+
+    // ----- Alta inline desde la tabla (crea con el contratista y abre la ficha para completar) -----
+    private string _nuevoProveedor = "";
+    private async Task NuevoContratoKeydown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await CrearContratoInline();
+    }
+    private async Task CrearContratoInline()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevoProveedor)) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/contratos",
+                new CrearContratoServicioRequest(TipoServicio.Otros, _nuevoProveedor.Trim(), null, null,
+                    DateOnly.FromDateTime(DateTime.Today), null, null, null));
+            if (resp.IsSuccessStatusCode)
+            {
+                ContratoServicioDto? creado = null;
+                try { creado = await resp.Content.ReadFromJsonAsync<ContratoServicioDto>(); } catch { }
+                _nuevoProveedor = "";
+                await CargarAsync();
+                if (creado is not null) await AbrirModal(creado);
+            }
+        }
+        finally { _busy = false; }
     }
 
     private async Task AbrirModal(ContratoServicioDto? c)
