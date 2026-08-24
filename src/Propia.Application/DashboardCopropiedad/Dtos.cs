@@ -35,7 +35,9 @@ public record DashboardResumenDto(
     // Acciones rapidas - flags de modulos activos
     bool ModuloPresupuestoConfigurado,
     // Contratos proximos a vencer (Ola 3). Default para no romper construcciones existentes.
-    IReadOnlyList<ContratoPorVencerDto>? ContratosPorVencer = null);
+    IReadOnlyList<ContratoPorVencerDto>? ContratosPorVencer = null,
+    // Polizas proximas a vencer (Ola 4c). Reusa el mismo DTO (Nombre = aseguradora).
+    IReadOnlyList<ContratoPorVencerDto>? PolizasPorVencer = null);
 
 public record CrearAlertaRequest(TipoAlertaDashboard Tipo, SeveridadAlerta Severidad, string Titulo, string Descripcion, string? UrlAccion);
 public record CrearEventoFeedRequest(TipoEventoActividad Tipo, string Descripcion, string? ModuloCodigo, string? UrlItem);

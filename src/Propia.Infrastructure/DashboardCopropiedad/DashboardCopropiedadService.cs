@@ -99,6 +99,23 @@ public class DashboardCopropiedadService : IDashboardCopropiedadService
             .Select(x => new ContratoPorVencerDto(x.Id, x.Proveedor, x.FechaFin, x.Dias, x.Sem))
             .ToList();
 
+        // Polizas proximas a vencer (Ola 4c).
+        var polizasPorVencer = (await _db.Polizas.AsNoTracking()
+                .Where(p => p.FechaFin != null)
+                .Select(p => new { p.Id, p.Aseguradora, p.FechaInicio, p.FechaFin })
+                .ToListAsync(ct))
+            .Select(p => new
+            {
+                p.Id, p.Aseguradora, p.FechaFin,
+                Sem = MiCopropiedad.MiCopropiedadService.CalcularSemaforoContrato(p.FechaInicio ?? p.FechaFin!.Value, p.FechaFin, hoyC),
+                Dias = p.FechaFin!.Value.DayNumber - hoyC.DayNumber
+            })
+            .Where(x => x.Sem is SemaforoContrato.Amarillo or SemaforoContrato.Rojo)
+            .OrderBy(x => x.Dias)
+            .Take(8)
+            .Select(x => new ContratoPorVencerDto(x.Id, x.Aseguradora, x.FechaFin, x.Dias, x.Sem))
+            .ToList();
+
         return new DashboardResumenDto(
             alertas,
             recaudoPct, unidadesEnMora, null,
@@ -106,7 +123,8 @@ public class DashboardCopropiedadService : IDashboardCopropiedadService
             totalUnidades, torresTotal, zonasTotal,
             feed,
             moduloPresupuestoConfig,
-            contratosPorVencer);
+            contratosPorVencer,
+            polizasPorVencer);
     }
 
     public async Task<IReadOnlyList<AlertaDashboardDto>> ListarAlertasAsync(CancellationToken ct)

@@ -79,6 +79,37 @@ public class ContratosVencimientoJob : IBackgroundJob
                     cambios = true;
                 }
 
+                // ----- Polizas (Ola 4c): mismo semaforo y alertas de vencimiento -----
+                var polizas = await _db.Polizas.Where(p => p.FechaFin != null).ToListAsync(ct);
+                foreach (var p in polizas)
+                {
+                    var sem = MiCopropiedadService.CalcularSemaforoContrato(p.FechaInicio ?? p.FechaFin!.Value, p.FechaFin, hoy);
+                    if (sem is SemaforoContrato.Verde or SemaforoContrato.Ninguno)
+                    {
+                        if (p.AlertaVencimientoPctNotificado != null) { p.AlertaVencimientoPctNotificado = null; cambios = true; }
+                        continue;
+                    }
+                    var umbral = sem == SemaforoContrato.Rojo ? 10 : 20;
+                    var ya = p.AlertaVencimientoPctNotificado;
+                    if (!(ya is null || (umbral == 10 && ya != 10))) continue;
+                    var dias = p.FechaFin!.Value.DayNumber - hoy.DayNumber;
+                    _db.AlertasCopropiedad.Add(new AlertaCopropiedad
+                    {
+                        Tipo = TipoAlertaDashboard.ContratoPorVencer,
+                        Severidad = sem == SemaforoContrato.Rojo ? SeveridadAlerta.Critica : SeveridadAlerta.Advertencia,
+                        Titulo = dias < 0 ? "Poliza vencida" : $"Poliza por vencer ({dias} dias)",
+                        Descripcion = dias < 0
+                            ? $"La poliza de '{p.Aseguradora}' esta vencida."
+                            : $"Faltan {dias} dias para el vencimiento de la poliza de '{p.Aseguradora}'.",
+                        UrlAccion = "/seguros",
+                        ModuloOrigenCodigo = "seguros",
+                        EntidadId = p.Id,
+                        Activa = true
+                    });
+                    p.AlertaVencimientoPctNotificado = umbral;
+                    alertas++; cambios = true;
+                }
+
                 if (cambios) { await _db.SaveChangesAsync(ct); tenantsConTrabajo++; }
             }
             catch { errores++; /* no romper el resto de tenants */ }
