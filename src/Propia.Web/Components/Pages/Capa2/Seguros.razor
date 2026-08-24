@@ -66,13 +66,24 @@
                 <input class="seg-search-inp" placeholder="Buscar por numero, aseguradora, corredor..." @oninput="OnBuscar" />
             </div>
             <div class="mod-filtros-spacer"></div>
-            <select class="seg-fsel @(_agruparPor != "" ? "on" : "")" @onchange="SetAgrupar" title="Agrupar polizas">
-                <option value="" selected="@(_agruparPor == "")">Sin agrupar</option>
-                <option value="aseguradora" selected="@(_agruparPor == "aseguradora")">Agrupar: Aseguradora</option>
-                <option value="estado" selected="@(_agruparPor == "estado")">Agrupar: Vencimiento</option>
-            </select>
+            <div class="seg-menu-wrap">
+                <button type="button" class="seg-fsel @(_agruparPor != "" ? "on" : "")" @onclick="() => _showAgruparMenu = !_showAgruparMenu" title="Agrupar polizas">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:5px;"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Agrupar@(_agruparPor != "" ? ": " + AgruparLabel(_agruparPor) : "")
+                </button>
+                @if (_showAgruparMenu)
+                {
+                    <div class="seg-menu-bd" @onclick="() => _showAgruparMenu = false"></div>
+                    <div class="seg-menu">
+                        @foreach (var g in new[] { ("", "Sin agrupar"), ("aseguradora", "Aseguradora"), ("estado", "Vencimiento") })
+                        {
+                            var gk = g.Item1;
+                            <button class="seg-menu-it @(_agruparPor == gk ? "on" : "")" @onclick="() => SetAgruparVal(gk)">@g.Item2</button>
+                        }
+                    </div>
+                }
+            </div>
             <button type="button" class="seg-fsel" @onclick="() => _showCampos = true" title="Gestionar campos personalizados">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px;"><path d="M3 6h18M3 12h18M3 18h18"/></svg>Campos
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:5px;"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>Campos
             </button>
         </div>
 
@@ -400,8 +411,15 @@
     .seg-search { display: flex; align-items: center; gap: 7px; border: 1px solid #E1E8EE; border-radius: 9px; padding: 0 11px; background: #fff; }
     .seg-search svg { color: #A6B7C8; }
     .seg-search-inp { border: 0; outline: none; padding: 8px 0; font-size: 12.5px; color: #33475B; width: 260px; background: transparent; }
-    .seg-fsel { border: 1px solid #E1E8EE; border-radius: 9px; padding: 8px 10px; font-size: 12px; color: #516F90; background: #fff; cursor: pointer; }
+    .seg-fsel { display: inline-flex; align-items: center; border: 1px solid #E1E8EE; border-radius: 9px; padding: 8px 12px; font-size: 12.5px; font-weight: 600; color: #516F90; background: #fff; cursor: pointer; font-family: inherit; }
     .seg-fsel.on { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); background: #F3EFFE; font-weight: 700; }
+    .seg-fsel:hover { border-color: var(--propia-brand, #6D4FE3); }
+    .seg-menu-wrap { position: relative; }
+    .seg-menu-bd { position: fixed; inset: 0; z-index: 40; }
+    .seg-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; min-width: 190px; background: #fff; border: 1px solid #E6ECF2; border-radius: 12px; box-shadow: 0 12px 30px rgba(30,40,60,.18); padding: 6px; }
+    .seg-menu-it { display: block; width: 100%; text-align: left; border: 0; background: transparent; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; font-weight: 600; color: #33475B; cursor: pointer; font-family: inherit; }
+    .seg-menu-it:hover { background: #F3EFFE; }
+    .seg-menu-it.on { background: #F3EFFE; color: var(--propia-brand, #6D4FE3); }
     .mod-search-count { font-size: 12.5px; color: #90A4B7; }
     .seg-toggle { display: inline-flex; gap: 2px; background: #EEF2F6; border-radius: 9px; padding: 3px; }
     .seg-vt { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: #6B7C8F; font-size: 12.5px; font-weight: 600; padding: 5px 11px; border-radius: 7px; cursor: pointer; }
@@ -515,6 +533,7 @@
     private string _vista = "tabla";
     private const string VistaKey = "propia_view_seguros";
     private string _agruparPor = "";
+    private bool _showAgruparMenu;
     private const string AgruparKey = "propia_agrupar_seguros";
 
     private bool _modal;
@@ -712,6 +731,8 @@
     private void OnBuscar(ChangeEventArgs e) => _q = e.Value?.ToString() ?? "";
     private async Task SetVista(string v) { _vista = v; try { await Js.InvokeVoidAsync("localStorage.setItem", VistaKey, v); } catch { } }
     private async Task SetAgrupar(ChangeEventArgs e) { _agruparPor = e.Value?.ToString() ?? ""; try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, _agruparPor); } catch { } }
+    private async Task SetAgruparVal(string v) { _agruparPor = v; _showAgruparMenu = false; try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, _agruparPor); } catch { } }
+    private static string AgruparLabel(string v) => v switch { "aseguradora" => "Aseguradora", "estado" => "Vencimiento", _ => "" };
 
     private async Task AbrirModal(Guid? id)
     {
