@@ -59,6 +59,33 @@ public enum EstadoContrato
     Vencido = 3
 }
 
+/// <summary>Tipo de contrato (clasificacion legal del pedido de Contratos, Ola 1).
+/// Independiente de TipoServicio (que clasifica el servicio operativo).</summary>
+public enum TipoContrato
+{
+    PrestacionServicios = 1,
+    Obra = 2,
+    Mantenimiento = 3,
+    CompraVenta = 4,
+    Arrendamiento = 5,
+    Seguro = 6,
+    Licenciamiento = 7
+}
+
+/// <summary>Categoria del contrato (pedido de Contratos, Ola 1).</summary>
+public enum CategoriaContrato
+{
+    Administracion = 1,
+    Contabilidad = 2,
+    Asesoria = 3,
+    Aseo = 4,
+    Seguridad = 5,
+    Mantenimiento = 6,
+    Jardineria = 7,
+    ServiciosPublicos = 8,
+    Seguros = 9
+}
+
 /// <summary>Tipo de servicio externo contratado por la copropiedad.</summary>
 public enum TipoServicio
 {

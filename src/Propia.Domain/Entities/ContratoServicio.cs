@@ -29,6 +29,31 @@ public class ContratoServicio : TenantEntity
     public DateOnly? FechaFin { get; set; }
     public decimal? ValorMensual { get; set; }
 
+    // ---- Campos del pedido de Contratos (Ola 1). Aditivos: /servicios sigue usando lo de arriba. ----
+    /// <summary>Numero/consecutivo del contrato (no obligatorio).</summary>
+    public string? NumeroContrato { get; set; }
+
+    /// <summary>Tipo de contrato (clasificacion legal del pedido: Prestacion de servicios, Obra, ...).
+    /// Distinto de Tipo (TipoServicio), que sigue vivo para el modulo Servicios.</summary>
+    public TipoContrato? TipoContrato { get; set; }
+
+    /// <summary>Categoria del contrato (Administracion, Aseo, Seguridad, ...).</summary>
+    public CategoriaContrato? Categoria { get; set; }
+
+    /// <summary>Valor total del contrato (COP).</summary>
+    public decimal? ValorTotal { get; set; }
+
+    /// <summary>Forma de pago: cantidad de cuotas.</summary>
+    public int? FormaPagoCuotas { get; set; }
+
+    /// <summary>Si el contrato se paga mensualmente (Si/No).</summary>
+    public bool PagoMensual { get; set; }
+
+    /// <summary>"Asociado a": amarra el contrato a un Equipo o una Zona comun. Reusa el discriminador
+    /// polimorfico de Mantenimiento (Equipo/ZonaComun). Null = sin asociacion.</summary>
+    public TipoActivoMantenimiento? AsociadoTipo { get; set; }
+    public Guid? AsociadoId { get; set; }
+
     /// <summary>Texto libre: "Renovacion automatica con 30 dias de aviso", etc.</summary>
     public string? Observaciones { get; set; }
 

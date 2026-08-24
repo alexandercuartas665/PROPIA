@@ -205,7 +205,12 @@ public record ContratoServicioDto(
     int? DiasParaVencer, bool AlertaVencimiento,
     bool RenovacionAutomatica = false, Guid? ServicioId = null, Guid? ExpedienteId = null,
     Guid? ProyectoTareaId = null, int CantidadAdjuntos = 0,
-    IReadOnlyList<ContratoCampoValorDto>? CamposValores = null, Guid? EtapaId = null);
+    IReadOnlyList<ContratoCampoValorDto>? CamposValores = null, Guid? EtapaId = null,
+    // ----- Campos del pedido de Contratos (Ola 1) -----
+    string? NumeroContrato = null, TipoContrato? TipoContrato = null, CategoriaContrato? Categoria = null,
+    decimal? ValorTotal = null, int? FormaPagoCuotas = null, bool PagoMensual = false,
+    TipoActivoMantenimiento? AsociadoTipo = null, Guid? AsociadoId = null, string? AsociadoNombre = null,
+    Guid? ProveedorPersonaId = null, Guid? ProveedorEmpresaId = null, Guid? ContactoPersonaId = null);
 
 // ----- Etapas de flujo (Kanban) de contratos -----
 public record ContratoEtapaDto(Guid Id, string Nombre, int Orden, string? Color);
@@ -230,7 +235,11 @@ public record CrearContratoServicioRequest(
     int DiasAnticipacionAlerta = 30,
     bool RenovacionAutomatica = false, Guid? ServicioId = null, Guid? ExpedienteId = null,
     Guid? ProyectoTareaId = null,
-    Guid? ProveedorPersonaId = null, Guid? ProveedorEmpresaId = null, Guid? ContactoPersonaId = null);
+    Guid? ProveedorPersonaId = null, Guid? ProveedorEmpresaId = null, Guid? ContactoPersonaId = null,
+    // ----- Campos del pedido de Contratos (Ola 1) -----
+    string? NumeroContrato = null, TipoContrato? TipoContrato = null, CategoriaContrato? Categoria = null,
+    decimal? ValorTotal = null, int? FormaPagoCuotas = null, bool PagoMensual = false,
+    TipoActivoMantenimiento? AsociadoTipo = null, Guid? AsociadoId = null);
 
 /// <summary>
 /// Actualiza un contrato. Estado + dias siempre se aplican. Los demas campos son opcionales:
@@ -245,7 +254,12 @@ public record ActualizarContratoRequest(
     string? Contacto = null, DateOnly? FechaInicio = null, DateOnly? FechaFin = null,
     decimal? ValorMensual = null, string? Observaciones = null,
     bool ActualizarVinculos = false, bool RenovacionAutomatica = false,
-    Guid? ServicioId = null, Guid? ExpedienteId = null, Guid? ProyectoTareaId = null);
+    Guid? ServicioId = null, Guid? ExpedienteId = null, Guid? ProyectoTareaId = null,
+    // ----- Campos del pedido de Contratos (Ola 1). MERGE: se aplican si vienen con valor. -----
+    string? NumeroContrato = null, TipoContrato? TipoContrato = null, CategoriaContrato? Categoria = null,
+    decimal? ValorTotal = null, int? FormaPagoCuotas = null, bool? PagoMensual = null,
+    TipoActivoMantenimiento? AsociadoTipo = null, Guid? AsociadoId = null, bool LimpiarAsociado = false,
+    Guid? ProveedorPersonaId = null, Guid? ProveedorEmpresaId = null, Guid? ContactoPersonaId = null);
 
 // ----- Zonas Comunes (seccion 6) -----
 public record ZonaComunDto(

@@ -750,27 +750,79 @@ else
             {
             <div class="srv-grid">
                 <div class="srv-col-full">
-                    <label class="srv-lbl">Nombre del contrato / servicio *</label>
-                    <input class="srv-input" @bind="_f.Proveedor" @bind:event="oninput" placeholder="Ej. Vigilancia Andina S.A." />
+                    <label class="srv-lbl">Contratista *</label>
+                    <input class="srv-input" @bind="_f.Proveedor" @bind:event="oninput" placeholder="Nombre del contratista (persona o empresa)" />
                 </div>
                 <div>
-                    <label class="srv-lbl">Tipo de servicio</label>
-                    <select class="srv-input" @bind="_f.Tipo">
-                        @foreach (var t in Enum.GetValues<TipoServicio>()) { <option value="@t">@TipoLabel(t)</option> }
+                    <label class="srv-lbl">Tipo de contrato</label>
+                    <select class="srv-input" @bind="_f.TipoContrato">
+                        <option value="">- Sin especificar -</option>
+                        @foreach (var t in Enum.GetValues<TipoContrato>()) { <option value="@t">@TipoContratoLabel(t)</option> }
                     </select>
                 </div>
                 <div>
-                    <label class="srv-lbl">Proveedor / NIT</label>
-                    <input class="srv-input" @bind="_f.Nit" @bind:event="oninput" placeholder="NIT o razon social" />
+                    <label class="srv-lbl">Numero de contrato</label>
+                    <input class="srv-input" @bind="_f.NumeroContrato" @bind:event="oninput" placeholder="Consecutivo (opcional)" />
+                </div>
+                <div>
+                    <label class="srv-lbl">Categoria</label>
+                    <select class="srv-input" @bind="_f.Categoria">
+                        <option value="">- Sin especificar -</option>
+                        @foreach (var c in Enum.GetValues<CategoriaContrato>()) { <option value="@c">@CategoriaContratoLabel(c)</option> }
+                    </select>
+                </div>
+                <div>
+                    <label class="srv-lbl">Identificacion / NIT</label>
+                    <input class="srv-input" @bind="_f.Nit" @bind:event="oninput" placeholder="NIT o documento del contratista" />
                 </div>
                 <div>
                     <label class="srv-lbl">Contacto</label>
                     <input class="srv-input" @bind="_f.Contacto" @bind:event="oninput" placeholder="Telefono / email" />
                 </div>
                 <div>
+                    <label class="srv-lbl">Valor del contrato (COP)</label>
+                    <input class="srv-input" type="number" step="any" @bind="_f.ValorTotal" placeholder="0" />
+                </div>
+                <div>
                     <label class="srv-lbl">Valor mensual (COP)</label>
                     <input class="srv-input" type="number" step="any" @bind="_f.Valor" placeholder="0" />
                 </div>
+                <div>
+                    <label class="srv-lbl">Forma de pago (cuotas)</label>
+                    <input class="srv-input" type="number" min="1" @bind="_f.FormaPagoCuotas" placeholder="Cantidad de cuotas" />
+                </div>
+                <div>
+                    <label class="srv-lbl">Pago mensual</label>
+                    <label class="srv-check" style="margin-top:6px;"><input type="checkbox" @bind="_f.PagoMensual" /> Se paga mensualmente</label>
+                </div>
+                <div>
+                    <label class="srv-lbl">Asociado a</label>
+                    <select class="srv-input" @onchange="OnAsociadoTipoChange">
+                        <option value="" selected="@(_f.AsociadoTipo is null)">- Nada -</option>
+                        <option value="Equipo" selected="@(_f.AsociadoTipo == TipoActivoMantenimiento.Equipo)">Equipo</option>
+                        <option value="ZonaComun" selected="@(_f.AsociadoTipo == TipoActivoMantenimiento.ZonaComun)">Zona comun</option>
+                    </select>
+                </div>
+                @if (_f.AsociadoTipo == TipoActivoMantenimiento.Equipo)
+                {
+                    <div>
+                        <label class="srv-lbl">Equipo</label>
+                        <select class="srv-input" @bind="_f.AsociadoId">
+                            <option value="">- Selecciona equipo -</option>
+                            @foreach (var e in _equiposAsoc) { <option value="@e.Id">@e.Nombre</option> }
+                        </select>
+                    </div>
+                }
+                else if (_f.AsociadoTipo == TipoActivoMantenimiento.ZonaComun)
+                {
+                    <div>
+                        <label class="srv-lbl">Zona comun</label>
+                        <select class="srv-input" @bind="_f.AsociadoId">
+                            <option value="">- Selecciona zona -</option>
+                            @foreach (var z in _zonasAsoc) { <option value="@z.Id">@z.Nombre</option> }
+                        </select>
+                    </div>
+                }
                 <div>
                     <label class="srv-lbl">Fecha de inicio</label>
                     <input class="srv-input" type="date" @bind="_f.Inicio" />
@@ -1813,6 +1865,9 @@ else
     private List<ServicioDto> _servicios = new();
     private List<ExpedienteLite> _expedientes = new();
     private List<ProyectoLite> _proyectos = new();
+    // "Asociado a": equipos y zonas de la copropiedad para el selector del contrato.
+    private List<EquipoActivoDto> _equiposAsoc = new();
+    private List<ZonaComunDto> _zonasAsoc = new();
     private bool _dropdownsLoaded;
 
     private bool _showSrvModal;
@@ -1882,6 +1937,18 @@ else
         public string? ServicioId { get; set; }
         public string? ExpedienteId { get; set; }
         public string? ProyectoId { get; set; }
+        // ----- Campos del pedido de Contratos (Ola 1) -----
+        public string? NumeroContrato { get; set; }
+        public TipoContrato? TipoContrato { get; set; }
+        public CategoriaContrato? Categoria { get; set; }
+        public decimal? ValorTotal { get; set; }
+        public int? FormaPagoCuotas { get; set; }
+        public bool PagoMensual { get; set; }
+        public TipoActivoMantenimiento? AsociadoTipo { get; set; }
+        public string? AsociadoId { get; set; }
+        // Contratista vinculado al Directorio (persona o empresa) + snapshot en Proveedor/Nit.
+        public Guid? ProveedorPersonaId { get; set; }
+        public Guid? ProveedorEmpresaId { get; set; }
     }
 
     protected override void OnInitialized()
@@ -2239,6 +2306,13 @@ else
         }
         catch (SesionRedirigidaException) { return; }
         catch { _proyectos = new(); }
+        // "Asociado a": equipos y zonas para amarrar el contrato a un activo/zona.
+        try { _equiposAsoc = await GetAuthAsync<List<EquipoActivoDto>>("/api/mi-copropiedad/equipos") ?? new(); }
+        catch (SesionRedirigidaException) { return; }
+        catch { _equiposAsoc = new(); }
+        try { _zonasAsoc = await GetAuthAsync<List<ZonaComunDto>>("/api/mi-copropiedad/zonas") ?? new(); }
+        catch (SesionRedirigidaException) { return; }
+        catch { _zonasAsoc = new(); }
         _dropdownsLoaded = true;
     }
 
@@ -2515,7 +2589,18 @@ else
                 RenovacionAutomatica = c.RenovacionAutomatica,
                 ServicioId = c.ServicioId?.ToString(),
                 ExpedienteId = c.ExpedienteId?.ToString(),
-                ProyectoId = c.ProyectoTareaId?.ToString()
+                ProyectoId = c.ProyectoTareaId?.ToString(),
+                // ----- Campos del pedido de Contratos (Ola 1) -----
+                NumeroContrato = c.NumeroContrato,
+                TipoContrato = c.TipoContrato,
+                Categoria = c.Categoria,
+                ValorTotal = c.ValorTotal,
+                FormaPagoCuotas = c.FormaPagoCuotas,
+                PagoMensual = c.PagoMensual,
+                AsociadoTipo = c.AsociadoTipo,
+                AsociadoId = c.AsociadoId?.ToString(),
+                ProveedorPersonaId = c.ProveedorPersonaId,
+                ProveedorEmpresaId = c.ProveedorEmpresaId
             };
             try { _contratoAdjuntos = await Auth().GetFromJsonAsync<List<AdjuntoDto>>($"/api/servicios/contratos/{c.Id}/adjuntos") ?? new(); }
             catch { _contratoAdjuntos = new(); }
@@ -2523,29 +2608,65 @@ else
         _showModal = true;
     }
 
+    private void OnAsociadoTipoChange(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString();
+        _f.AsociadoTipo = v switch
+        {
+            "Equipo" => TipoActivoMantenimiento.Equipo,
+            "ZonaComun" => TipoActivoMantenimiento.ZonaComun,
+            _ => (TipoActivoMantenimiento?)null
+        };
+        _f.AsociadoId = null;   // al cambiar de tipo, se limpia el elemento elegido
+    }
+
+    private static string TipoContratoLabel(TipoContrato t) => t switch
+    {
+        TipoContrato.PrestacionServicios => "Prestacion de servicios",
+        TipoContrato.CompraVenta => "Compra y venta",
+        _ => t.ToString()
+    };
+
+    private static string CategoriaContratoLabel(CategoriaContrato c) => c switch
+    {
+        CategoriaContrato.ServiciosPublicos => "Servicios publicos",
+        _ => c.ToString()
+    };
+
     private async Task GuardarAsync()
     {
         _modalError = null;
-        if (string.IsNullOrWhiteSpace(_f.Proveedor)) { _modalError = "El nombre del contrato es obligatorio."; return; }
+        if (string.IsNullOrWhiteSpace(_f.Proveedor)) { _modalError = "El contratista es obligatorio."; return; }
         _busy = true;
         try
         {
             var inicio = DateOnly.FromDateTime(_f.Inicio ?? DateTime.Today);
             DateOnly? fin = _f.Fin.HasValue ? DateOnly.FromDateTime(_f.Fin.Value) : null;
+            // "Asociado a": solo se guarda el tipo si hay un elemento elegido.
+            Guid? asocId = ParseG(_f.AsociadoId);
+            TipoActivoMantenimiento? asocTipo = asocId.HasValue ? _f.AsociadoTipo : null;
             HttpResponseMessage resp;
             if (_editId is null)
             {
                 resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/contratos",
                     new CrearContratoServicioRequest(_f.Tipo, _f.Proveedor.Trim(), Limpio(_f.Nit), Limpio(_f.Contacto),
                         inicio, fin, _f.Valor, Limpio(_f.Observaciones), _f.Dias <= 0 ? 30 : _f.Dias,
-                        _f.RenovacionAutomatica, ParseG(_f.ServicioId), ParseG(_f.ExpedienteId), ParseG(_f.ProyectoId)));
+                        _f.RenovacionAutomatica, ParseG(_f.ServicioId), ParseG(_f.ExpedienteId), ParseG(_f.ProyectoId),
+                        ProveedorPersonaId: _f.ProveedorPersonaId, ProveedorEmpresaId: _f.ProveedorEmpresaId,
+                        NumeroContrato: Limpio(_f.NumeroContrato), TipoContrato: _f.TipoContrato, Categoria: _f.Categoria,
+                        ValorTotal: _f.ValorTotal, FormaPagoCuotas: _f.FormaPagoCuotas, PagoMensual: _f.PagoMensual,
+                        AsociadoTipo: asocTipo, AsociadoId: asocId));
             }
             else
             {
                 resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/{_editId}",
                     new ActualizarContratoRequest(_f.Estado, _f.Dias <= 0 ? 30 : _f.Dias, _f.Tipo, _f.Proveedor.Trim(),
                         Limpio(_f.Nit) ?? "", Limpio(_f.Contacto) ?? "", inicio, fin, _f.Valor, Limpio(_f.Observaciones) ?? "",
-                        true, _f.RenovacionAutomatica, ParseG(_f.ServicioId), ParseG(_f.ExpedienteId), ParseG(_f.ProyectoId)));
+                        true, _f.RenovacionAutomatica, ParseG(_f.ServicioId), ParseG(_f.ExpedienteId), ParseG(_f.ProyectoId),
+                        NumeroContrato: Limpio(_f.NumeroContrato) ?? "", TipoContrato: _f.TipoContrato, Categoria: _f.Categoria,
+                        ValorTotal: _f.ValorTotal, FormaPagoCuotas: _f.FormaPagoCuotas, PagoMensual: _f.PagoMensual,
+                        AsociadoTipo: asocTipo, AsociadoId: asocId, LimpiarAsociado: asocId is null,
+                        ProveedorPersonaId: _f.ProveedorPersonaId, ProveedorEmpresaId: _f.ProveedorEmpresaId));
             }
             if (!resp.IsSuccessStatusCode) { _modalError = await resp.Content.ReadAsStringAsync(); return; }
             _showModal = false;

@@ -1422,7 +1422,18 @@ public class MiCopropiedadService : IMiCopropiedadService
         var porContrato = valores.GroupBy(v => v.ContratoId)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<ContratoCampoValorDto>)g
                 .Select(v => new ContratoCampoValorDto(v.ContratoCampoId, v.Valor)).ToList());
-        return contratos.Select(c => ToContratoDto(c, porContrato.GetValueOrDefault(c.Id))).ToList();
+
+        // "Asociado a": resolver nombres de equipos/zonas referenciados, en batch.
+        var equipoIds = contratos.Where(c => c.AsociadoTipo == TipoActivoMantenimiento.Equipo && c.AsociadoId.HasValue).Select(c => c.AsociadoId!.Value).Distinct().ToList();
+        var zonaIds = contratos.Where(c => c.AsociadoTipo == TipoActivoMantenimiento.ZonaComun && c.AsociadoId.HasValue).Select(c => c.AsociadoId!.Value).Distinct().ToList();
+        var equipoNombres = equipoIds.Count == 0 ? new() : await _db.EquiposActivos.AsNoTracking().Where(e => equipoIds.Contains(e.Id)).ToDictionaryAsync(e => e.Id, e => e.Nombre, ct);
+        var zonaNombres = zonaIds.Count == 0 ? new() : await _db.ZonasComunes.AsNoTracking().Where(z => zonaIds.Contains(z.Id)).ToDictionaryAsync(z => z.Id, z => z.Nombre, ct);
+        string? AsocNombre(ContratoServicio c) => c.AsociadoId is not { } id ? null
+            : c.AsociadoTipo == TipoActivoMantenimiento.Equipo ? equipoNombres.GetValueOrDefault(id)
+            : c.AsociadoTipo == TipoActivoMantenimiento.ZonaComun ? zonaNombres.GetValueOrDefault(id)
+            : null;
+
+        return contratos.Select(c => ToContratoDto(c, porContrato.GetValueOrDefault(c.Id), AsocNombre(c))).ToList();
     }
 
     public async Task<ContratoServicioDto> CrearContratoAsync(CrearContratoServicioRequest req, CancellationToken ct)
@@ -1446,10 +1457,20 @@ public class MiCopropiedadService : IMiCopropiedadService
             RenovacionAutomatica = req.RenovacionAutomatica,
             ServicioId = req.ServicioId,
             ExpedienteId = req.ExpedienteId,
-            ProyectoTareaId = req.ProyectoTareaId
+            ProyectoTareaId = req.ProyectoTareaId,
+            // ----- Campos del pedido de Contratos (Ola 1) -----
+            NumeroContrato = string.IsNullOrWhiteSpace(req.NumeroContrato) ? null : req.NumeroContrato.Trim(),
+            TipoContrato = req.TipoContrato,
+            Categoria = req.Categoria,
+            ValorTotal = req.ValorTotal,
+            FormaPagoCuotas = req.FormaPagoCuotas,
+            PagoMensual = req.PagoMensual,
+            AsociadoTipo = req.AsociadoTipo,
+            AsociadoId = req.AsociadoId
         };
         _db.ContratosServicio.Add(c);
         await _db.SaveChangesAsync(ct);
+        await RegistrarBitacoraAsync("Contrato", $"Contrato con '{c.Proveedor}' creado.", ct, c.Id);
         return ToContratoDto(c);
     }
 
@@ -1469,6 +1490,15 @@ public class MiCopropiedadService : IMiCopropiedadService
         if (req.FechaFin.HasValue) c.FechaFin = req.FechaFin.Value;
         if (req.ValorMensual.HasValue) c.ValorMensual = req.ValorMensual.Value;
         if (req.Observaciones is not null) c.Observaciones = string.IsNullOrWhiteSpace(req.Observaciones) ? null : req.Observaciones.Trim();
+        // ----- Campos del pedido de Contratos (Ola 1). MERGE: se aplican si vienen. -----
+        if (req.NumeroContrato is not null) c.NumeroContrato = string.IsNullOrWhiteSpace(req.NumeroContrato) ? null : req.NumeroContrato.Trim();
+        if (req.TipoContrato.HasValue) c.TipoContrato = req.TipoContrato.Value;
+        if (req.Categoria.HasValue) c.Categoria = req.Categoria.Value;
+        if (req.ValorTotal.HasValue) c.ValorTotal = req.ValorTotal.Value;
+        if (req.FormaPagoCuotas.HasValue) c.FormaPagoCuotas = req.FormaPagoCuotas.Value;
+        if (req.PagoMensual.HasValue) c.PagoMensual = req.PagoMensual.Value;
+        if (req.LimpiarAsociado) { c.AsociadoTipo = null; c.AsociadoId = null; }
+        else if (req.AsociadoTipo.HasValue && req.AsociadoId.HasValue) { c.AsociadoTipo = req.AsociadoTipo.Value; c.AsociadoId = req.AsociadoId.Value; }
         // Vinculos: solo el editor de la pagina los toca (ActualizarVinculos=true). La tool MCP no.
         if (req.ActualizarVinculos)
         {
@@ -1476,12 +1506,17 @@ public class MiCopropiedadService : IMiCopropiedadService
             c.ServicioId = req.ServicioId;
             c.ExpedienteId = req.ExpedienteId;
             c.ProyectoTareaId = req.ProyectoTareaId;
+            // Tercero del Directorio (contratista): se persisten los FK del selector.
+            c.ProveedorPersonaId = req.ProveedorPersonaId;
+            c.ProveedorEmpresaId = req.ProveedorEmpresaId;
+            c.ContactoPersonaId = req.ContactoPersonaId;
         }
         await _db.SaveChangesAsync(ct);
+        await RegistrarBitacoraAsync("Contrato", $"Contrato con '{c.Proveedor}' actualizado.", ct, c.Id);
         return true;
     }
 
-    private static ContratoServicioDto ToContratoDto(ContratoServicio c, IReadOnlyList<ContratoCampoValorDto>? valores = null)
+    private static ContratoServicioDto ToContratoDto(ContratoServicio c, IReadOnlyList<ContratoCampoValorDto>? valores = null, string? asociadoNombre = null)
     {
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
         int? dias = c.FechaFin.HasValue ? c.FechaFin.Value.DayNumber - hoy.DayNumber : null;
@@ -1491,7 +1526,10 @@ public class MiCopropiedadService : IMiCopropiedadService
             c.FechaInicio, c.FechaFin, c.ValorMensual, c.Observaciones,
             estado, c.DiasAnticipacionAlerta, dias, alerta,
             c.RenovacionAutomatica, c.ServicioId, c.ExpedienteId, c.ProyectoTareaId,
-            c.Adjuntos?.Count ?? 0, valores, c.EtapaId);
+            c.Adjuntos?.Count ?? 0, valores, c.EtapaId,
+            c.NumeroContrato, c.TipoContrato, c.Categoria, c.ValorTotal, c.FormaPagoCuotas, c.PagoMensual,
+            c.AsociadoTipo, c.AsociadoId, asociadoNombre,
+            c.ProveedorPersonaId, c.ProveedorEmpresaId, c.ContactoPersonaId);
     }
 
     public async Task<bool> EliminarContratoAsync(Guid contratoId, CancellationToken ct)
