@@ -208,6 +208,9 @@ public static class DependencyInjection
         // Historial relacionado cross-modulo (tareas + PQRSD + mantenimientos por entidad)
         services.AddScoped<Application.Historial.IHistorialRelacionadoService, Historial.HistorialRelacionadoService>();
 
+        // Modulo Seguros (Ola 4): polizas + reclamaciones
+        services.AddScoped<Application.Seguros.ISegurosService, Seguros.SegurosService>();
+
         // Modulo 2.14 Comunicaciones
         services.AddScoped<Application.Comunicaciones.IComunicacionesService, Comunicaciones.ComunicacionesService>();
 

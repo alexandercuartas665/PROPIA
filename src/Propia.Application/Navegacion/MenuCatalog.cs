@@ -50,7 +50,8 @@ public static class MenuCatalog
         new MenuItemDef("fin-cartera", "tabFinanzas", "Cartera y estado de cuenta", "/cartera", "fi-rr-credit-card", 2),
         new MenuItemDef("fin-servicios", "tabFinanzas", "Servicios", "/servicios", "fi-rr-briefcase", 3),
         new MenuItemDef("fin-contratos", "tabFinanzas", "Contratos", "/contratos", "fi-rr-file-signature", 4),
-        new MenuItemDef("fin-numeracion", "tabFinanzas", "Numeracion de documentos", "/finanzas/numeracion", "fi-rr-hashtag", 5),
+        new MenuItemDef("fin-seguros", "tabFinanzas", "Seguros", "/seguros", "fi-rr-shield", 5),
+        new MenuItemDef("fin-numeracion", "tabFinanzas", "Numeracion de documentos", "/finanzas/numeracion", "fi-rr-hashtag", 6),
 
         // Gobierno y convivencia
         new MenuItemDef("gob-asambleas", "tabGobierno", "Asambleas y organos", "/asambleas", "fi-rr-podium-star", 1),

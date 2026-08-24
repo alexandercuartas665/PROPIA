@@ -81,6 +81,11 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<ContratoCampoValor> ContratoCampoValores => Set<ContratoCampoValor>();
     public DbSet<ContratoEtapa> ContratoEtapas => Set<ContratoEtapa>();
     public DbSet<ContratoExpediente> ContratoExpedientes => Set<ContratoExpediente>();
+    // Modulo Seguros (Ola 4)
+    public DbSet<Poliza> Polizas => Set<Poliza>();
+    public DbSet<PolizaCampo> PolizaCampos => Set<PolizaCampo>();
+    public DbSet<PolizaCampoValor> PolizaCampoValores => Set<PolizaCampoValor>();
+    public DbSet<PolizaReclamacion> PolizaReclamaciones => Set<PolizaReclamacion>();
     // Informes de gestion (plantillas inteligentes + generacion IA)
     public DbSet<InformePlantilla> InformePlantillas => Set<InformePlantilla>();
     public DbSet<InformePlantillaSeccion> InformePlantillaSecciones => Set<InformePlantillaSeccion>();
@@ -648,6 +653,52 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.Nombre).IsRequired().HasMaxLength(80);
             b.Property(x => x.Color).HasMaxLength(9);
             b.HasIndex(x => x.TenantId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<ContratoExpediente>(b =>
+        {
+            b.HasIndex(x => new { x.TenantId, x.ContratoId });
+            b.HasIndex(x => new { x.ContratoId, x.ExpedienteId }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // ----- Modulo Seguros (Ola 4): Polizas -----
+        modelBuilder.Entity<Poliza>(b =>
+        {
+            b.Property(x => x.NumeroPoliza).HasMaxLength(80);
+            b.Property(x => x.Aseguradora).IsRequired().HasMaxLength(200);
+            b.Property(x => x.Corredor).HasMaxLength(200);
+            b.Property(x => x.ValorPoliza).HasPrecision(14, 2);
+            b.Property(x => x.Cobertura).HasMaxLength(4000);
+            b.Property(x => x.ValoresAgregados).HasMaxLength(4000);
+            b.Property(x => x.Observaciones).HasMaxLength(2000);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.FechaFin);
+            b.HasMany(x => x.Reclamaciones).WithOne(r => r.Poliza!).HasForeignKey(r => r.PolizaId).OnDelete(DeleteBehavior.Cascade);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<PolizaCampo>(b =>
+        {
+            b.Property(x => x.Label).IsRequired().HasMaxLength(120);
+            b.Property(x => x.Opciones).HasMaxLength(2000);
+            b.Property(x => x.Descripcion).HasMaxLength(500);
+            b.Property(x => x.Activo).HasDefaultValue(true);
+            b.HasIndex(x => x.TenantId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<PolizaCampoValor>(b =>
+        {
+            b.Property(x => x.Valor).HasMaxLength(4000);
+            b.HasIndex(x => new { x.TenantId, x.PolizaId });
+            b.HasIndex(x => new { x.PolizaId, x.PolizaCampoId }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<PolizaReclamacion>(b =>
+        {
+            b.Property(x => x.Descripcion).IsRequired().HasMaxLength(2000);
+            b.Property(x => x.MontoReclamado).HasPrecision(14, 2);
+            b.Property(x => x.MontoReconocido).HasPrecision(14, 2);
+            b.HasIndex(x => new { x.TenantId, x.PolizaId });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
