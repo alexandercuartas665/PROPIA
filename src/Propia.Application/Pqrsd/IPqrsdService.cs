@@ -88,6 +88,12 @@ public interface IPqrsdService
     /// <summary>Vista publica del seguimiento resuelta por (tenant, token). Null si no matchea. Solo adjuntos compartidos.</summary>
     Task<PqrsdSeguimientoPublicoDto?> GetSeguimientoPublicoAsync(Guid tenantId, Guid token, CancellationToken ct);
 
+    // Respuestas tipo correo (borradores con editor enriquecido)
+    /// <summary>Lista las respuestas (borradores) del expediente, mas recientes primero, con sus adjuntos.</summary>
+    Task<IReadOnlyList<PqrsdRespuestaDto>> ListarRespuestasAsync(Guid expedienteId, CancellationToken ct);
+    /// <summary>Crea una respuesta borrador (guarda con trazabilidad autor/fecha). Null si el expediente no existe.</summary>
+    Task<PqrsdRespuestaDto?> CrearRespuestaBorradorAsync(Guid expedienteId, CrearRespuestaBorradorRequest req, CancellationToken ct);
+
     // Tutela
     Task<bool> ActivarTutelaAsync(Guid id, ActivarTutelaRequest req, CancellationToken ct);
 

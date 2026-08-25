@@ -231,6 +231,22 @@ public record PqrsdSeguimientoPublicoDto(
 /// <summary>Resultado de generar/obtener el link publico de seguimiento (token por-expediente).</summary>
 public record PqrsdShareLinkDto(Guid Token);
 
+// ===================== Respuestas tipo correo (borradores con editor enriquecido) =====================
+
+/// <summary>Respuesta (borrador) a un expediente: cuerpo HTML + autor/fecha + sus adjuntos.</summary>
+public record PqrsdRespuestaDto(
+    Guid Id,
+    string? Asunto,
+    string CuerpoHtml,
+    string? AutorNombre,
+    DateTimeOffset CreatedAt,
+    bool Enviada,
+    DateTimeOffset? EnviadaAt,
+    IReadOnlyList<PqrsdAdjuntoDto> Adjuntos);
+
+/// <summary>Crea una respuesta borrador (aun sin enviar) con el contenido del editor.</summary>
+public record CrearRespuestaBorradorRequest(string? Asunto, string CuerpoHtml);
+
 // ===================== Requests =====================
 
 public record RadicarPqrsdRequest(

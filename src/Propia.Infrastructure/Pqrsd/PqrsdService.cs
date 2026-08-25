@@ -903,6 +903,43 @@ public class PqrsdService : IPqrsdService
             exp.CreatedAt, exp.RespuestaAdmin, exp.RespuestaAdminAt, adjuntos);
     }
 
+    // ===================== Respuestas tipo correo (borradores con editor enriquecido) =====================
+
+    public async Task<IReadOnlyList<PqrsdRespuestaDto>> ListarRespuestasAsync(Guid expedienteId, CancellationToken ct)
+    {
+        var respuestas = await _db.PqrsdRespuestas.AsNoTracking()
+            .Where(r => r.ExpedienteId == expedienteId)
+            .Include(r => r.Adjuntos)
+            .OrderByDescending(r => r.CreatedAt)
+            .ToListAsync(ct);
+        return respuestas.Select(r => new PqrsdRespuestaDto(
+            r.Id, r.Asunto, r.CuerpoHtml, r.AutorNombre, r.CreatedAt, r.Enviada, r.EnviadaAt,
+            r.Adjuntos.OrderBy(a => a.CreatedAt).Select(a => new PqrsdAdjuntoDto(
+                a.Id, a.NombreArchivo, a.TipoMime, a.TamanioBytes, a.UrlStorage, a.CreatedAt,
+                null, a.SubidoPorUsuarioId == Guid.Empty ? null : a.SubidoPorUsuarioId, a.Texto, a.Compartido)).ToList()))
+            .ToList();
+    }
+
+    public async Task<PqrsdRespuestaDto?> CrearRespuestaBorradorAsync(Guid expedienteId, CrearRespuestaBorradorRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.CuerpoHtml)) return null;
+        var exp = await _db.PqrsdExpedientes.FirstOrDefaultAsync(e => e.Id == expedienteId, ct);
+        if (exp is null) return null;
+        var (uid, nombre) = ActorActual();
+        var r = new PqrsdRespuesta
+        {
+            ExpedienteId = expedienteId,
+            Asunto = string.IsNullOrWhiteSpace(req.Asunto) ? null : req.Asunto.Trim(),
+            CuerpoHtml = req.CuerpoHtml,
+            AutorUsuarioId = uid ?? Guid.Empty,
+            AutorNombre = nombre
+        };
+        _db.PqrsdRespuestas.Add(r);
+        await _db.SaveChangesAsync(ct);
+        return new PqrsdRespuestaDto(r.Id, r.Asunto, r.CuerpoHtml, r.AutorNombre, r.CreatedAt,
+            r.Enviada, r.EnviadaAt, new List<PqrsdAdjuntoDto>());
+    }
+
     // ---- Config del formulario publico (admin): campos opcionales + textos + orden de campos fijos ----
     // Claves canonicas de los campos FIJOS del formulario publico, en su orden por defecto.
     private static readonly string[] CamposFijosDefault =

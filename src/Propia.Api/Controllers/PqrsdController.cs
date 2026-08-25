@@ -427,7 +427,7 @@ public class PqrsdController : ControllerBase
     // Acepta un caption opcional 'texto' para el chat de actividad (burbuja con imagen/archivo + texto).
     [HttpPost("{id:guid}/adjuntos/upload")]
     [RequestSizeLimit(52_500_000)]
-    public async Task<IActionResult> SubirAdjuntoBinario(Guid id, IFormFile file, [FromForm] string? texto, CancellationToken ct)
+    public async Task<IActionResult> SubirAdjuntoBinario(Guid id, IFormFile file, [FromForm] string? texto, [FromForm] Guid? respuestaId, CancellationToken ct)
     {
         var tenantId = GetTenantId();
         if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
@@ -451,7 +451,8 @@ public class PqrsdController : ControllerBase
             TamanioBytes = file.Length,
             UrlStorage = url,
             SubidoPorUsuarioId = uid,
-            Texto = string.IsNullOrWhiteSpace(texto) ? null : texto.Trim()
+            Texto = string.IsNullOrWhiteSpace(texto) ? null : texto.Trim(),
+            RespuestaId = respuestaId
         };
         _db.PqrsdAdjuntos.Add(adj);
         await _db.SaveChangesAsync(ct);
@@ -484,6 +485,18 @@ public class PqrsdController : ControllerBase
     {
         var token = await _svc.ObtenerOCrearShareTokenAsync(id, ct);
         return token is null ? NotFound() : Ok(new PqrsdShareLinkDto(token.Value));
+    }
+
+    // --- Respuestas tipo correo (borradores con editor enriquecido) ---
+    [HttpGet("{id:guid}/respuestas")]
+    public async Task<IActionResult> ListarRespuestas(Guid id, CancellationToken ct)
+        => Ok(await _svc.ListarRespuestasAsync(id, ct));
+
+    [HttpPost("{id:guid}/respuestas")]
+    public async Task<IActionResult> CrearRespuesta(Guid id, [FromBody] CrearRespuestaBorradorRequest req, CancellationToken ct)
+    {
+        var dto = await _svc.CrearRespuestaBorradorAsync(id, req, ct);
+        return dto is null ? NotFound() : Created("", dto);
     }
 }
 

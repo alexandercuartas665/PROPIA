@@ -99,6 +99,34 @@ public class PqrsdExpediente : TenantEntity
     public ICollection<PqrsdHistorialEstado> Historial { get; set; } = new List<PqrsdHistorialEstado>();
     public ICollection<PqrsdCampoValor> CamposValores { get; set; } = new List<PqrsdCampoValor>();
     public ICollection<PqrsdComentario> Comentarios { get; set; } = new List<PqrsdComentario>();
+    public ICollection<PqrsdRespuesta> Respuestas { get; set; } = new List<PqrsdRespuesta>();
+}
+
+/// <summary>
+/// Respuesta (borrador) del gestor a un expediente. A diferencia de <see cref="PqrsdExpediente.RespuestaAdmin"/>
+/// (respuesta legal unica), aqui pueden existir VARIAS respuestas tipo "correo": cada una con su cuerpo HTML
+/// enriquecido, su autor/fecha (trazabilidad) y sus propios adjuntos. El envio al radicador se agrega despues;
+/// por ahora solo se guardan como borradores.
+/// </summary>
+public class PqrsdRespuesta : TenantEntity
+{
+    public Guid ExpedienteId { get; set; }
+    public PqrsdExpediente? Expediente { get; set; }
+
+    /// <summary>Cuerpo de la respuesta en HTML (editor enriquecido). Se sanitiza al mostrarse en publico.</summary>
+    public string CuerpoHtml { get; set; } = string.Empty;
+
+    /// <summary>Asunto/titulo corto opcional de la respuesta (estilo correo).</summary>
+    public string? Asunto { get; set; }
+
+    public Guid AutorUsuarioId { get; set; }
+    public string? AutorNombre { get; set; }
+
+    /// <summary>Marca si esta respuesta ya fue enviada al radicador (el envio se construye despues).</summary>
+    public bool Enviada { get; set; }
+    public DateTimeOffset? EnviadaAt { get; set; }
+
+    public ICollection<PqrsdAdjunto> Adjuntos { get; set; } = new List<PqrsdAdjunto>();
 }
 
 /// <summary>Reporte de actividad / comentario libre sobre un expediente PQRS (port del feed de Tareas).</summary>
@@ -258,6 +286,11 @@ public class PqrsdAdjunto : TenantEntity
     /// compartido automaticamente al enviar la respuesta.
     /// </summary>
     public bool Compartido { get; set; }
+
+    /// <summary>Si el adjunto pertenece a una respuesta especifica (borrador tipo correo), su FK. Null =
+    /// adjunto general del expediente.</summary>
+    public Guid? RespuestaId { get; set; }
+    public PqrsdRespuesta? Respuesta { get; set; }
 }
 
 /// <summary>Historial append-only de estados. Spec 2.9 v1.0 tabla pqrsd_historial_estado + trigger SQL.</summary>
