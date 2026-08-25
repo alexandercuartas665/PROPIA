@@ -342,7 +342,7 @@ else
                                 @foreach (var c in grupo)
                                 {
                                     var cc = c;
-                                    <tr class="ctr-row">
+                                    <tr class="ctr-row @(_ctrRecienCreados.Contains(c.Id) ? "ctr-row-nuevo" : "")">
                                         <td class="ctr-exp-col">
                                             <button type="button" class="ctr-exp" title="Abrir la ficha" @onclick="() => AbrirModal(cc)">
                                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -545,23 +545,82 @@ else
                                     </tr>
                                 }
                             }
-                            @* Fila de alta inline (crear desde la tabla, tipo hoja de calculo) *@
+                            @* Fila de alta inline (crear desde la tabla): captura los campos como listas. *@
                             <tr class="ctr-row ctr-newrow">
                                 <td class="ctr-exp-col">
-                                    <button type="button" class="ctr-exp ctr-exp-fijo" title="Crear contrato en blanco y abrir la ficha" @onclick="() => AbrirModal(null)" disabled="@_busy">
+                                    <button type="button" class="ctr-exp ctr-exp-fijo" title="Crear el contrato" @onclick="CrearDesdeAltaAsync" disabled="@_busy">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                                     </button>
                                 </td>
-                                <td class="ctr-ct">
-                                    <div class="ctr-terc-sel">
-                                        <SelectorPersona Jwt="@_jwt" PermiteEmpresa="true" SeleccionadaChanged="CrearContratoDesdeTercero" Placeholder="Buscar contratista (Directorio) o crear..." Flotante="true" />
-                                    </div>
+                                @foreach (var k in ColsVisibles())
+                                {
+                                    var col = k;
+                                    <td class="@ColTdClass(col)">
+                                        @switch (col)
+                                        {
+                                            case "tercero":
+                                                <div class="ctr-terc-sel">
+                                                    <SelectorPersona Jwt="@_jwt" PermiteEmpresa="true" @bind-Seleccionada="_ncProveedor" Placeholder="Contratista (buscar o crear)..." Flotante="true" />
+                                                </div>
+                                                break;
+                                            case "tipoContrato":
+                                                <select class="ctr-inp" @bind="_ncTipoContrato">
+                                                    <option value="">- Tipo -</option>
+                                                    @foreach (var t in Enum.GetValues<TipoContrato>()) { <option value="@((int)t)">@TipoContratoLabel(t)</option> }
+                                                </select>
+                                                break;
+                                            case "numero":
+                                                <input class="ctr-inp" @bind="_ncNumero" placeholder="N contrato" />
+                                                break;
+                                            case "categoria":
+                                                <select class="ctr-inp" @bind="_ncCategoria">
+                                                    <option value="">- Categoria -</option>
+                                                    @foreach (var ca in Enum.GetValues<CategoriaContrato>()) { <option value="@((int)ca)">@CategoriaContratoLabel(ca)</option> }
+                                                </select>
+                                                break;
+                                            case "asociado":
+                                                <select class="ctr-inp" @bind="_ncAsociado">
+                                                    <option value="">- Nada -</option>
+                                                    <optgroup label="Equipos">
+                                                        @foreach (var e0 in _equiposAsoc) { <option value="@($"Equipo:{e0.Id}")">@e0.Nombre</option> }
+                                                    </optgroup>
+                                                    <optgroup label="Zonas comunes">
+                                                        @foreach (var z0 in _zonasAsoc) { <option value="@($"ZonaComun:{z0.Id}")">@z0.Nombre</option> }
+                                                    </optgroup>
+                                                </select>
+                                                break;
+                                            case "inicio":
+                                                <input type="date" class="ctr-inp" value="@_ncInicio" @oninput="e => _ncInicio = e.Value?.ToString() ?? string.Empty" />
+                                                break;
+                                            case "fin":
+                                                <input type="date" class="ctr-inp" value="@_ncFin" @oninput="e => _ncFin = e.Value?.ToString() ?? string.Empty" />
+                                                break;
+                                            case "valor":
+                                                <input type="number" step="1000" class="ctr-inp ctr-inp-r" @bind="_ncValor" placeholder="Valor" />
+                                                break;
+                                            case "contacto":
+                                                <input class="ctr-inp" @bind="_ncContacto" placeholder="Contacto" />
+                                                break;
+                                            case "dias":
+                                                <input type="number" class="ctr-inp ctr-inp-r" @bind="_ncDias" />
+                                                break;
+                                            case "obs":
+                                                <input class="ctr-inp" @bind="_ncObs" placeholder="Obs" />
+                                                break;
+                                            case "estado": <span class="ctr-cval">Vigente</span> break;
+                                            case "vencimiento": <span class="ctr-cval">(auto)</span> break;
+                                            default: <span class="ctr-cval">-</span> break;
+                                        }
+                                    </td>
+                                }
+                                <td class="ctr-w2">
+                                    <button type="button" class="ctr-row-add" @onclick="CrearDesdeAltaAsync" disabled="@_busy">+ Agregar</button>
                                 </td>
-                                <td colspan="@ColsVisibles().Count()"><span class="ctr-newrow-hint">Elige el contratista para crear y completar en la ficha</span></td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
+                @if (!string.IsNullOrEmpty(_msg)) { <div class="ctr-toast" @onclick="() => _msg = null">@_msg</div> }
                 @if (totalPag > 1)
                 {
                     <div class="ctr-pager">
@@ -1587,6 +1646,12 @@ else
     .ctr-newrow .ctr-exp-fijo { opacity: 1; }
     .ctr-exp-fijo:disabled { opacity: .3; cursor: default; }
     .ctr-newrow-hint { font-size: 11.5px; color: #A6B7C8; }
+    .ctr-row-add { font-size: 11.5px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: #F1ECFD; border: 1px solid #DCD2F8; border-radius: 7px; padding: 6px 10px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+    .ctr-row-add:hover:not(:disabled) { background: #E4DBFB; }
+    .ctr-row-add:disabled { opacity: .5; cursor: default; }
+    .ctr-row-nuevo td { background: #ECFBF2 !important; }
+    .ctr-row-nuevo td.ctr-exp-col { box-shadow: inset 3px 0 0 #34C759; }
+    .ctr-toast { position: sticky; bottom: 10px; margin: 10px auto 0; width: fit-content; background: #15703F; color: #fff; font-size: 12.5px; font-weight: 600; padding: 8px 16px; border-radius: 9px; cursor: pointer; box-shadow: 0 6px 18px rgba(21,112,63,.28); }
     .ctr-terc-sel { min-width: 240px; }
     .ctr-newrow .ctr-inp { width: 100%; }
     /* Pill de etapa + observaciones truncadas */
@@ -1990,6 +2055,7 @@ else
     private bool _showModal;
     private Guid? _editId;
     private string? _modalError;
+    private string? _msg;   // toast breve para la vista tabla (creacion inline)
     private Form _f = new();
     // Contratista elegido con el SelectorPersona (persona o empresa del Directorio).
     private PersonaCandidatoDto? _contratistaSel;
@@ -2723,25 +2789,58 @@ else
 
     // ----- Alta inline desde la tabla: se elige el contratista con el buscador de terceros,
     // se crea el contrato con ese tercero y se abre la ficha para completar. -----
-    private async Task CrearContratoDesdeTercero(PersonaCandidatoDto? sel)
+    // ---- Fila de alta inline (compositor): captura los campos como listas para crear el contrato ----
+    private PersonaCandidatoDto? _ncProveedor;
+    private string _ncTipoContrato = "", _ncNumero = "", _ncCategoria = "", _ncAsociado = "", _ncContacto = "", _ncObs = "";
+    private string _ncInicio = DateTime.Today.ToString("yyyy-MM-dd");
+    private string _ncFin = "";
+    private string _ncValor = "";
+    private string _ncDias = "30";
+    // Contratos recien creados en esta pantalla: se resaltan hasta el proximo refresco.
+    private readonly List<Guid> _ctrRecienCreados = new();
+
+    private async Task CrearDesdeAltaAsync()
     {
-        if (sel is null) return;
+        if (_ncProveedor is null) { _msg = "Elige el contratista para crear el contrato."; return; }
         _busy = true;
         try
         {
-            Guid? ppid = sel.EntidadTipo == EntidadDirectorio.Empresa ? null : sel.PersonaId;
-            Guid? peid = sel.EntidadTipo == EntidadDirectorio.Empresa ? sel.PersonaId : (Guid?)null;
-            var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/contratos",
-                new CrearContratoServicioRequest(TipoServicio.Otros, sel.NombreCompleto, null, null,
-                    DateOnly.FromDateTime(DateTime.Today), null, null, null,
-                    ProveedorPersonaId: ppid, ProveedorEmpresaId: peid));
+            Guid? ppid = _ncProveedor.EntidadTipo == EntidadDirectorio.Empresa ? null : _ncProveedor.PersonaId;
+            Guid? peid = _ncProveedor.EntidadTipo == EntidadDirectorio.Empresa ? _ncProveedor.PersonaId : (Guid?)null;
+            TipoContrato? tc = int.TryParse(_ncTipoContrato, out var tci) && Enum.IsDefined(typeof(TipoContrato), tci) ? (TipoContrato)tci : null;
+            CategoriaContrato? cat = int.TryParse(_ncCategoria, out var cai) && Enum.IsDefined(typeof(CategoriaContrato), cai) ? (CategoriaContrato)cai : null;
+            TipoActivoMantenimiento? asocTipo = null; Guid? asocId = null;
+            if (!string.IsNullOrEmpty(_ncAsociado))
+            {
+                var parts = _ncAsociado.Split(':', 2);
+                if (parts.Length == 2 && Guid.TryParse(parts[1], out var g))
+                {
+                    asocId = g;
+                    asocTipo = parts[0] switch { "Equipo" => TipoActivoMantenimiento.Equipo, "ZonaComun" => TipoActivoMantenimiento.ZonaComun, _ => (TipoActivoMantenimiento?)null };
+                }
+            }
+            var inicio = DateOnly.TryParse(_ncInicio, out var di) ? di : DateOnly.FromDateTime(DateTime.Today);
+            DateOnly? fin = DateOnly.TryParse(_ncFin, out var df) ? df : (DateOnly?)null;
+            decimal? valor = decimal.TryParse(_ncValor, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var vv) ? vv : null;
+            int dias = int.TryParse(_ncDias, out var dd) && dd > 0 ? dd : 30;
+
+            var req = new CrearContratoServicioRequest(TipoServicio.Otros, _ncProveedor.NombreCompleto, null,
+                string.IsNullOrWhiteSpace(_ncContacto) ? null : _ncContacto.Trim(),
+                inicio, fin, valor, string.IsNullOrWhiteSpace(_ncObs) ? null : _ncObs.Trim(),
+                DiasAnticipacionAlerta: dias,
+                ProveedorPersonaId: ppid, ProveedorEmpresaId: peid,
+                NumeroContrato: string.IsNullOrWhiteSpace(_ncNumero) ? null : _ncNumero.Trim(),
+                TipoContrato: tc, Categoria: cat, AsociadoTipo: asocTipo, AsociadoId: asocId);
+            var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/contratos", req);
             if (resp.IsSuccessStatusCode)
             {
-                ContratoServicioDto? creado = null;
-                try { creado = await resp.Content.ReadFromJsonAsync<ContratoServicioDto>(); } catch { }
+                try { var creado = await resp.Content.ReadFromJsonAsync<ContratoServicioDto>(); if (creado is not null) _ctrRecienCreados.Add(creado.Id); } catch { }
+                _ncProveedor = null; _ncTipoContrato = ""; _ncNumero = ""; _ncCategoria = ""; _ncAsociado = "";
+                _ncContacto = ""; _ncObs = ""; _ncFin = ""; _ncValor = ""; _ncDias = "30"; _ncInicio = DateTime.Today.ToString("yyyy-MM-dd");
+                _msg = "Contrato creado.";
                 await CargarAsync();
-                if (creado is not null) await AbrirModal(creado);
             }
+            else { _msg = "No se pudo crear el contrato."; }
         }
         finally { _busy = false; }
     }
