@@ -44,7 +44,7 @@
 
         @if (_q.Length > 0)
         {
-        <div class="sp-pop @(Flotante ? "sp-pop--float" : "")" style="@(Flotante ? _popStyle : null)">
+        <div class="sp-pop @(Flotante ? "sp-pop--float" : "")" style="@(Flotante ? _popStyle : null)" @ref="_popRef">
         @if (_q.Length < 3)
         {
             <div class="sp-hint">Escribe al menos 3 letras del nombre o del documento.</div>
@@ -172,6 +172,7 @@
     [Parameter] public bool Flotante { get; set; }
 
     private ElementReference _anchorRef;
+    private ElementReference _popRef;
     private string? _popStyle;
     private bool _floatHelperReady;
 
@@ -214,8 +215,10 @@
         {
             try
             {
+                // Calcula posicion fixed anclada al input, con FLIP hacia arriba si no cabe abajo,
+                // clamp horizontal al viewport y max-height para nunca salirse de pantalla.
                 await JS.InvokeVoidAsync("eval",
-                    "window.propiaFloatAnchor = window.propiaFloatAnchor || function(el){ if(!el) return null; var r = el.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.bottom), Math.round(r.width), window.innerWidth]; };");
+                    "window.propiaFloatPos = window.propiaFloatPos || function(a, p){ if(!a) return null; var r = a.getBoundingClientRect(); var vw = window.innerWidth, vh = window.innerHeight, m = 8, gap = 4; var w = Math.max(r.width, 300); var left = r.left; if (left + w > vw - m) left = Math.max(m, vw - w - m); var ph = p ? p.scrollHeight : 0; var below = vh - r.bottom - m, above = r.top - m; var up = ph > below && above > below; var top, maxH; if (up) { maxH = above; top = Math.max(m, r.top - gap - Math.min(ph, maxH)); } else { maxH = below; top = r.bottom + gap; } return [Math.round(top), Math.round(left), Math.round(w), Math.round(maxH)]; };");
                 _floatHelperReady = true;
             }
             catch { return; }
@@ -225,14 +228,10 @@
         {
             try
             {
-                var r = await JS.InvokeAsync<double[]?>("propiaFloatAnchor", _anchorRef);
+                var r = await JS.InvokeAsync<double[]?>("propiaFloatPos", _anchorRef, _popRef);
                 if (r is { Length: 4 })
                 {
-                    var w = Math.Max(r[2], 300);
-                    var left = r[0];
-                    var vw = r[3];
-                    if (left + w > vw - 8) left = Math.Max(8, vw - w - 8);
-                    var s = $"position:fixed; top:{r[1] + 4}px; left:{left}px; width:{w}px; z-index:4000;";
+                    var s = $"position:fixed; top:{r[0]}px; left:{r[1]}px; width:{r[2]}px; max-height:{r[3]}px; overflow-y:auto; z-index:4000;";
                     if (s != _popStyle) { _popStyle = s; StateHasChanged(); }
                 }
             }
@@ -453,7 +452,7 @@
        presenta como tarjeta que flota por fuera del contenedor (escapa overflow de la tabla). */
     .sp-pop { display: flex; flex-direction: column; gap: 7px; }
     .sp-pop--float { background: #fff; border: 1px solid #E1E8EE; border-radius: 12px; padding: 7px; box-shadow: 0 14px 38px rgba(27,42,58,.22); }
-    .sp-pop--float .sp-list { border: 0; padding: 0; max-height: 320px; }
+    .sp-pop--float .sp-list { border: 0; padding: 0; max-height: none; overflow: visible; }
 
     .sp-list { display: flex; flex-direction: column; gap: 3px; border: 1px solid #E1E8EE; border-radius: 10px; padding: 6px; background: #fff; max-height: 290px; overflow-y: auto; }
     .sp-item { display: flex; align-items: center; gap: 9px; padding: 8px 9px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; text-align: left; font-family: inherit; width: 100%; }
