@@ -373,7 +373,7 @@
                             }
                             @foreach (var it in AplicarSortPqr(grp))
                             {
-                                <tr class="pk-tr" @onclick="() => IrA(it.Id)">
+                                <tr class="pk-tr @(_recienCreados.Contains(it.Id) ? "pk-tr-nuevo" : "")" @onclick="() => IrA(it.Id)">
                                     <td class="pk-td-exp" @onclick:stopPropagation="true">
                                         <button type="button" class="pk-exp" title="Abrir la ficha" @onclick="() => IrA(it.Id)">
                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -982,6 +982,10 @@
     .pk-table .pk-col-asunto .pk-td-muted { max-width: 380px; }
     .pk-tr { cursor: pointer; }
     .pk-tr:hover td { background: #FAFBFD; }
+    /* Fila recien agregada: resaltada (verde suave) y fijada al final hasta refrescar, para que el
+       usuario confirme visualmente que su registro se creo y no lo pierda de vista. */
+    .pk-tr-nuevo td { background: #ECFBF2 !important; }
+    .pk-tr-nuevo td.pk-td-pin { background: #ECFBF2 !important; box-shadow: inset 3px 0 0 #34C759; }
     /* Columna expander (primera, 34px): icono que aparece al hover y abre la ficha (patron Tableros). */
     .pk-th-exp, .pk-td-exp { width: 34px; text-align: center; padding: 0 4px; }
     .pk-exp { width: 24px; height: 24px; border: 0; border-radius: 6px; background: #F1ECFD; color: var(--propia-brand, #6D4FE3); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s; }
@@ -1149,6 +1153,9 @@
     private Guid? _compUnidad;
     private PersonaCandidatoDto? _compRadicador;
     private List<UnidadDto> _unidades = new();
+    // IDs creados en esta sesion de pantalla: se mantienen al final de la tabla y resaltados hasta
+    // que el usuario refresque (recarga completa de la pagina), para que no los pierda de vista.
+    private readonly List<Guid> _recienCreados = new();
 
     // Config columnas
     private bool _cfgOpen;
@@ -1227,20 +1234,28 @@
     private MarkupString SortIndPqr(string col) => _sortCol == col ? (MarkupString)(_sortAsc ? " ▲" : " ▼") : (MarkupString)"";
     private IEnumerable<PqrsdBandejaItemDto> AplicarSortPqr(IEnumerable<PqrsdBandejaItemDto> items)
     {
-        if (string.IsNullOrEmpty(_sortCol)) return items;
-        Func<PqrsdBandejaItemDto, IComparable> key = _sortCol switch
+        IEnumerable<PqrsdBandejaItemDto> seq = items;
+        if (!string.IsNullOrEmpty(_sortCol))
         {
-            "radicado" => x => x.NumeroRadicado,
-            "tipo" => x => TipoLabel(x.Tipo),
-            "categoria" => x => x.CategoriaNombre ?? "",
-            "estado" => x => _estados.FirstOrDefault(e => e.Id == x.EstadoId)?.Orden ?? 0,
-            "semaforo" => x => (int)x.Semaforo,
-            "radicador" => x => x.RadicadorNombre ?? "",
-            "unidad" => x => x.UnidadNumero ?? "",
-            "vence" => x => x.DiasHastaVencimiento,
-            _ => x => Guid.TryParse(_sortCol, out var cid) ? (x.Campos?.FirstOrDefault(v => v.CampoId == cid)?.Valor ?? "") : ""
-        };
-        return _sortAsc ? items.OrderBy(key) : items.OrderByDescending(key);
+            Func<PqrsdBandejaItemDto, IComparable> key = _sortCol switch
+            {
+                "radicado" => x => x.NumeroRadicado,
+                "tipo" => x => TipoLabel(x.Tipo),
+                "categoria" => x => x.CategoriaNombre ?? "",
+                "estado" => x => _estados.FirstOrDefault(e => e.Id == x.EstadoId)?.Orden ?? 0,
+                "semaforo" => x => (int)x.Semaforo,
+                "radicador" => x => x.RadicadorNombre ?? "",
+                "unidad" => x => x.UnidadNumero ?? "",
+                "vence" => x => x.DiasHastaVencimiento,
+                _ => x => Guid.TryParse(_sortCol, out var cid) ? (x.Campos?.FirstOrDefault(v => v.CampoId == cid)?.Valor ?? "") : ""
+            };
+            seq = _sortAsc ? items.OrderBy(key) : items.OrderByDescending(key);
+        }
+        // Los recien creados en esta pantalla se mantienen SIEMPRE al final (OrderBy es estable), para
+        // que el usuario los vea recien agregados; se reordenan al orden natural al refrescar la pagina.
+        if (_recienCreados.Count > 0)
+            seq = seq.OrderBy(x => _recienCreados.Contains(x.Id) ? 1 : 0);
+        return seq;
     }
 
     // ===================== Color por columna (vista Tabla), persistido en localStorage =====================
@@ -1702,10 +1717,11 @@
         _compCampos.Clear();
         _compUnidad = null;
         _compRadicador = null;
+        // Se mantiene el recien creado al final (y resaltado) hasta el proximo refresco de pantalla,
+        // para que el usuario NO lo pierda de vista si el orden natural lo moveria a otra posicion.
+        _recienCreados.Add(id.Value);
         await CargarAsync();
-        Toast("PQR creada. Completa los detalles.", false);
-        // Abre el expediente recien creado en el modal para terminar de completarlo ahi.
-        await IrA(id.Value);
+        Toast("PQR creada.", false);
     }
 
     // ---------- Config columnas ----------
