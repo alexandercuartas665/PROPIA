@@ -355,29 +355,16 @@ else
                                                 @switch (col)
                                                 {
                                                     case "tercero":
-                                                        <div class="ctr-terc-line">
-                                                            @if (CEnEd(c.Id, "prov"))
-                                                            {
-                                                                <div class="ctr-terc-sel" @onclick:stopPropagation="true">
-                                                                    <SelectorPersona Jwt="@_jwt" PermiteEmpresa="true" SeleccionadaChanged="(cand) => GuardarTerceroInline(cc, cand)" Placeholder="Buscar tercero..." Flotante="true" />
-                                                                </div>
-                                                            }
-                                                            else
-                                                            {
-                                                                <div class="ctr-terc ctr-ed" @onclick='() => IniciarCEd(cc.Id, "prov", cc.Proveedor)' title="Cambiar tercero (buscar en Directorio)">@c.Proveedor</div>
-                                                            }
-                                                            <span class="ctr-eye" @onclick="() => AbrirModal(cc)" title="Ver ficha completa">
-                                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
-                                                            </span>
-                                                        </div>
-                                                        @if (CEnEd(c.Id, "nit"))
+                                                        @* Solo el nombre del contratista (sin NIT y sin ojito): el expander de la fila abre la ficha. *@
+                                                        @if (CEnEd(c.Id, "prov"))
                                                         {
-                                                            <input class="ctr-inp ctr-inp-sub" @bind="_cEditVal" @bind:event="oninput" autofocus placeholder="NIT"
-                                                                   @onblur='() => GuardarCEd(cc, "nit")' @onkeydown='(e) => CEdKeydown(e, cc, "nit")' />
+                                                            <div class="ctr-terc-sel" @onclick:stopPropagation="true">
+                                                                <SelectorPersona Jwt="@_jwt" PermiteEmpresa="true" SeleccionadaChanged="(cand) => GuardarTerceroInline(cc, cand)" Placeholder="Buscar tercero..." Flotante="true" />
+                                                            </div>
                                                         }
                                                         else
                                                         {
-                                                            <div class="ctr-terc-sub ctr-ed" @onclick='() => IniciarCEd(cc.Id, "nit", cc.NitProveedor)' title="Editar NIT">@(string.IsNullOrWhiteSpace(c.NitProveedor) ? "+ NIT" : "NIT " + c.NitProveedor)</div>
+                                                            <div class="ctr-terc ctr-ed" @onclick='() => IniciarCEd(cc.Id, "prov", cc.Proveedor)' title="Cambiar tercero (buscar en Directorio)">@c.Proveedor</div>
                                                         }
                                                         break;
                                                     case "tipo":
@@ -485,7 +472,19 @@ else
                                                         else { <span class="ctr-ed ctr-cval" @onclick='() => IniciarCEd(cc.Id, "categoria", cc.Categoria is { } c0 ? ((int)c0).ToString() : "")'>@(c.Categoria is { } ca ? CategoriaContratoLabel(ca) : "-")</span> }
                                                         break;
                                                     case "asociado":
-                                                        <span class="ctr-cval">@(string.IsNullOrWhiteSpace(c.AsociadoNombre) ? "-" : c.AsociadoNombre)</span>
+                                                        @if (CEnEd(c.Id, "asociado"))
+                                                        {
+                                                            <select class="ctr-inp" @onchange="(e) => GuardarAsociadoInline(cc, e)" @onblur="CancelarCEd">
+                                                                <option value="" selected="@(c.AsociadoId is null)">- Nada -</option>
+                                                                <optgroup label="Equipos">
+                                                                    @foreach (var e0 in _equiposAsoc) { <option value="@($"Equipo:{e0.Id}")" selected="@(c.AsociadoId == e0.Id)">@e0.Nombre</option> }
+                                                                </optgroup>
+                                                                <optgroup label="Zonas comunes">
+                                                                    @foreach (var z0 in _zonasAsoc) { <option value="@($"ZonaComun:{z0.Id}")" selected="@(c.AsociadoId == z0.Id)">@z0.Nombre</option> }
+                                                                </optgroup>
+                                                            </select>
+                                                        }
+                                                        else { <span class="ctr-ed ctr-cval" @onclick='() => IniciarCEd(cc.Id, "asociado", "")'>@(string.IsNullOrWhiteSpace(c.AsociadoNombre) ? "-" : c.AsociadoNombre)</span> }
                                                         break;
                                                     case "valorTotal":
                                                         <span class="ctr-cval">@(c.ValorTotal is { } vt ? "$" + vt.ToString("N0") : "-")</span>
@@ -2144,6 +2143,8 @@ else
         try { _servicios = await GetAuthAsync<List<ServicioDto>>("/api/servicios") ?? new(); }
         catch (SesionRedirigidaException) { return; }
         catch { _servicios = new(); }
+        // Equipos/zonas para el select inline "Asociado a" en modo tabla (se cargan una sola vez).
+        await CargarDropdownsAsync();
     }
 
     // ---- Campos personalizados (EAV) de contratos (Fase C) ----
@@ -3023,6 +3024,44 @@ else
                 NumeroContrato: numero, TipoContrato: tipoC, Categoria: cat);
             await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/{c.Id}", req);
             await CargarAsync();   // estado/alerta se derivan de FechaFin -> recargar
+            StateHasChanged();
+        }
+        finally { _cEditBusy = false; }
+    }
+
+    // Guarda "Asociado a" (equipo o zona) desde el select inline. value = "Equipo:{id}" / "ZonaComun:{id}" / "".
+    private async Task GuardarAsociadoInline(ContratoServicioDto c, ChangeEventArgs e)
+    {
+        if (_cEditBusy) return;
+        _cEditBusy = true;
+        try
+        {
+            var val = e.Value?.ToString() ?? "";
+            TipoActivoMantenimiento? tipo = null;
+            Guid? id = null;
+            if (!string.IsNullOrEmpty(val))
+            {
+                var parts = val.Split(':', 2);
+                if (parts.Length == 2 && Guid.TryParse(parts[1], out var g))
+                {
+                    id = g;
+                    tipo = parts[0] switch
+                    {
+                        "Equipo" => TipoActivoMantenimiento.Equipo,
+                        "ZonaComun" => TipoActivoMantenimiento.ZonaComun,
+                        _ => (TipoActivoMantenimiento?)null
+                    };
+                }
+            }
+            CancelarCEd();
+            var estado = c.Estado == EstadoContrato.Vencido ? EstadoContrato.Vigente : c.Estado;
+            var req = new ActualizarContratoRequest(
+                estado, c.DiasAnticipacionAlerta <= 0 ? 30 : c.DiasAnticipacionAlerta,
+                Tipo: c.Tipo, Proveedor: c.Proveedor,
+                FechaInicio: c.FechaInicio, FechaFin: c.FechaFin, ValorMensual: c.ValorMensual,
+                AsociadoTipo: tipo, AsociadoId: id, LimpiarAsociado: id is null);
+            await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/{c.Id}", req);
+            await CargarAsync();
             StateHasChanged();
         }
         finally { _cEditBusy = false; }
