@@ -3,6 +3,8 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.Pqrsd
 @using Propia.Application.Cierre
+@using Propia.Application.MiCopropiedad
+@using Propia.Application.Directorio
 @using Propia.Domain.Enums
 @inject IHttpClientFactory HttpFactory
 @inject NavigationManager Nav
@@ -420,31 +422,77 @@
                                 </tr>
                             }
                         }
-                        @* Fila compositor *@
+                        @* Fila de alta inline (crear en modo tabla, alineada a las columnas) *@
                         @if (!_verArchivados)
                         {
                             <tr class="pk-tr pk-tr-new">
                                 <td class="pk-td-exp">
-                                    <button type="button" class="pk-exp pk-exp-fijo" title="Crear la PQR" @onclick="() => CrearDesdeFila()" disabled="@(_compTexto.Trim().Length < 20)">
+                                    <button type="button" class="pk-exp pk-exp-fijo" title="Crear la PQR (min 20 caracteres en el asunto)" @onclick="() => CrearDesdeFila()" disabled="@(_compTexto.Trim().Length < 20)">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                                     </button>
                                 </td>
-                                <td class="pk-td-pin">
-                                    <input class="pk-cell-input" placeholder="Nueva PQR (min 20 caract.)..." @bind="_compTexto" @bind:event="oninput" @onkeydown="NuevaFilaKeydown" @onclick:stopPropagation="true" />
-                                </td>
-                                <td @onclick:stopPropagation="true">
-                                    <select class="pk-cell-input" @bind="_compTipo">
-                                        @foreach (var t in Enum.GetValues<TipoPqrsd>()) { <option value="@t">@TipoLabel(t)</option> }
-                                    </select>
-                                </td>
-                                <td @onclick:stopPropagation="true">
-                                    <select class="pk-cell-input" @bind="_compCategoria">
-                                        @foreach (var c in _categorias.Where(c => c.Activa)) { <option value="@c.Id">@c.Nombre</option> }
-                                    </select>
-                                </td>
-                                <td colspan="99" @onclick:stopPropagation="true">
-                                    <button class="pk-comp-ok" @onclick="() => CrearDesdeFila()" disabled="@(_compTexto.Trim().Length < 20)">Agregar</button>
-                                </td>
+                                @foreach (var col in ColsFijasOrd().Where(c => !_colsOcultas.Contains(c.Key)))
+                                {
+                                    <td class="pk-col-@col.Key @(col.Key == "radicado" ? "pk-td-pin" : "")" @onclick:stopPropagation="true">
+                                        @switch (col.Key)
+                                        {
+                                            case "radicado": <span class="pk-td-muted">(auto)</span> break;
+                                            case "asunto":
+                                                <input class="pk-cell-input" placeholder="Asunto / descripcion (min 20 caract.)..." @bind="_compTexto" @bind:event="oninput" @onkeydown="NuevaFilaKeydown" />
+                                                break;
+                                            case "tipo":
+                                                <select class="pk-cell-input" @bind="_compTipo">
+                                                    @foreach (var t in Enum.GetValues<TipoPqrsd>()) { <option value="@t">@TipoLabel(t)</option> }
+                                                </select>
+                                                break;
+                                            case "categoria":
+                                                <select class="pk-cell-input" @bind="_compCategoria">
+                                                    <option value="">- Categoria -</option>
+                                                    @foreach (var c in _categorias.Where(c => c.Activa)) { <option value="@c.Id">@c.Nombre</option> }
+                                                </select>
+                                                break;
+                                            case "radicador":
+                                                <SelectorPersona Jwt="@_jwt" @bind-Seleccionada="_compRadicador"
+                                                                 Placeholder="Solicitante (opcional)..." PermiteEmpresa="true" />
+                                                break;
+                                            case "unidad":
+                                                <SelectorUnidadCascada Unidades="_unidades" UnidadId="_compUnidad"
+                                                                       UnidadIdChanged="@(v => _compUnidad = v)"
+                                                                       Class="pk-cell-input" MostrarLabels="false" />
+                                                break;
+                                            case "estado": <span class="pk-td-muted">Recibida</span> break;
+                                            case "semaforo": <span class="pk-td-muted">(auto)</span> break;
+                                            case "vence": <span class="pk-td-muted">(auto)</span> break;
+                                            default: <span class="pk-td-muted">-</span> break;
+                                        }
+                                    </td>
+                                }
+                                @foreach (var c in _campos.Where(c => !_camposOcultos.Contains(c.Id)).OrderBy(c => c.Orden))
+                                {
+                                    var cid = c.Id;
+                                    <td @onclick:stopPropagation="true">
+                                        @switch (c.Tipo)
+                                        {
+                                            case TipoCampoTablero.Seleccion:
+                                                <select class="pk-cell-input" value="@CompCampoVal(cid)" @onchange="e => SetCompCampo(cid, e.Value?.ToString())">
+                                                    <option value="">@c.Label...</option>
+                                                    @foreach (var o in CampoOpciones(c)) { <option value="@o">@o</option> }
+                                                </select>
+                                                break;
+                                            case TipoCampoTablero.Fecha:
+                                                <input class="pk-cell-input" type="date" value="@CompCampoVal(cid)" @oninput="e => SetCompCampo(cid, e.Value?.ToString())" />
+                                                break;
+                                            case TipoCampoTablero.Numero:
+                                            case TipoCampoTablero.Moneda:
+                                                <input class="pk-cell-input" type="number" placeholder="@c.Label" value="@CompCampoVal(cid)" @oninput="e => SetCompCampo(cid, e.Value?.ToString())" />
+                                                break;
+                                            default:
+                                                <input class="pk-cell-input" placeholder="@c.Label" value="@CompCampoVal(cid)" @oninput="e => SetCompCampo(cid, e.Value?.ToString())" />
+                                                break;
+                                        }
+                                    </td>
+                                }
+                                <td class="pk-td-actions"></td>
                             </tr>
                         }
                     </tbody>
@@ -1067,8 +1115,14 @@
     // Compositor
     private Guid? _composerCol;
     private string _compTexto = "";
+    private readonly Dictionary<Guid, string?> _compCampos = new();
+    private string? CompCampoVal(Guid id) => _compCampos.TryGetValue(id, out var v) ? v : null;
+    private void SetCompCampo(Guid id, string? v) => _compCampos[id] = v;
     private string _compTipo = TipoPqrsd.Peticion.ToString();
     private string _compCategoria = "";
+    private Guid? _compUnidad;
+    private PersonaCandidatoDto? _compRadicador;
+    private List<UnidadDto> _unidades = new();
 
     // Config columnas
     private bool _cfgOpen;
@@ -1511,6 +1565,7 @@
             _estados = (await http.GetFromJsonAsync<List<PqrsdEstadoDto>>("/api/pqrsd/estados")) ?? new();
             _campos = (await http.GetFromJsonAsync<List<PqrsdCampoDto>>("/api/pqrsd/campos")) ?? new();
             _categorias = (await http.GetFromJsonAsync<List<PqrsdCategoriaDto>>("/api/pqrsd/categorias")) ?? new();
+            _unidades = (await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades")) ?? new();
             if (string.IsNullOrEmpty(_compCategoria)) _compCategoria = _categorias.FirstOrDefault(c => c.Activa)?.Id.ToString() ?? "";
         }
         catch (Exception ex) { Toast(ex.Message, true); }
@@ -1590,7 +1645,11 @@
             catId = _categorias.FirstOrDefault(c => c.Activa)?.Id ?? Guid.Empty;
             if (catId == Guid.Empty) { Toast("No hay categorias configuradas.", true); return null; }
         }
-        var req = new RadicarPqrsdRequest(tipo, catId, _compTexto.Trim(), false, null);
+        var campos = _compCampos.Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+            .Select(kv => new PqrsdCampoValorDto(kv.Key, kv.Value)).ToList();
+        var req = new RadicarPqrsdRequest(tipo, catId, _compTexto.Trim(), false, null,
+            UnidadPrivadaId: _compUnidad, RadicadorPersonaId: _compRadicador?.PersonaId,
+            Campos: campos.Count > 0 ? campos : null);
         var resp = await Auth().PostAsJsonAsync("/api/pqrsd", req);
         if (!resp.IsSuccessStatusCode) { Toast("No se pudo crear: " + await resp.Content.ReadAsStringAsync(), true); return null; }
         var creado = await resp.Content.ReadFromJsonAsync<PqrsdExpedienteDetalleDto>();
@@ -1614,6 +1673,9 @@
         var id = await CrearRapidoAsync();
         if (id is null) return;
         _compTexto = "";
+        _compCampos.Clear();
+        _compUnidad = null;
+        _compRadicador = null;
         await CargarAsync();
         Toast("PQR creada.", false);
     }
