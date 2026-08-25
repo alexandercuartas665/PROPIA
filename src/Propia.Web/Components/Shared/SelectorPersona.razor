@@ -16,6 +16,7 @@
 @using Propia.Domain.Enums
 @using Microsoft.AspNetCore.Components.Web
 @inject IHttpClientFactory HttpFactory
+@inject IJSRuntime JS
 
 <div class="sp">
     @if (Seleccionada is not null)
@@ -34,18 +35,21 @@
     }
     else
     {
-        <div class="sp-search">
+        <div class="sp-search" @ref="_anchorRef">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
             @* Sin value=: en Blazor Server reafirmarlo en cada re-render se come pulsaciones. *@
             <input class="sp-search-inp" placeholder="@Placeholder" @oninput="OnBuscarInput" @onkeydown="OnKeydown" />
             @if (_buscando) { <span class="sp-spin"></span> }
         </div>
 
-        @if (_q.Length > 0 && _q.Length < 3)
+        @if (_q.Length > 0)
+        {
+        <div class="sp-pop @(Flotante ? "sp-pop--float" : "")" style="@(Flotante ? _popStyle : null)">
+        @if (_q.Length < 3)
         {
             <div class="sp-hint">Escribe al menos 3 letras del nombre o del documento.</div>
         }
-        else if (_q.Length >= 3)
+        else
         {
             <div class="sp-list">
                 @foreach (var c in _candidatos)
@@ -144,6 +148,8 @@
                 }
             </div>
         }
+        </div>
+        }
     }
 
     @if (!string.IsNullOrEmpty(_msg)) { <div class="sp-msg">@_msg</div> }
@@ -159,6 +165,15 @@
     /// <summary>Habilita el toggle Persona/Empresa al crear. Se activa donde un tercero juridico
     /// tiene sentido (propietario, residente, proveedor). Por defecto false = solo personas.</summary>
     [Parameter] public bool PermiteEmpresa { get; set; }
+
+    /// <summary>Si es true, el panel de resultados FLOTA (position:fixed anclado al input) en vez de
+    /// quedar dentro del flujo. Usar cuando el control vive dentro de un contenedor con overflow que
+    /// lo recorta (ej. una fila de tabla). Por defecto false = comportamiento en flujo de siempre.</summary>
+    [Parameter] public bool Flotante { get; set; }
+
+    private ElementReference _anchorRef;
+    private string? _popStyle;
+    private bool _floatHelperReady;
 
     private string _q = "";
     private List<PersonaCandidatoDto> _candidatos = new();
@@ -187,6 +202,47 @@
         if (!string.IsNullOrEmpty(Jwt))
             http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
         return http;
+    }
+
+    // Modo flotante: posiciona el panel de resultados (position:fixed) justo debajo del input,
+    // para que escape del overflow del contenedor (ej. la fila de la tabla). Se recalcula tras
+    // cada render mientras hay busqueda visible; se estabiliza porque el top depende solo del input.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!Flotante) return;
+        if (!_floatHelperReady)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("eval",
+                    "window.propiaFloatAnchor = window.propiaFloatAnchor || function(el){ if(!el) return null; var r = el.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.bottom), Math.round(r.width), window.innerWidth]; };");
+                _floatHelperReady = true;
+            }
+            catch { return; }
+        }
+
+        if (Seleccionada is null && _q.Length > 0)
+        {
+            try
+            {
+                var r = await JS.InvokeAsync<double[]?>("propiaFloatAnchor", _anchorRef);
+                if (r is { Length: 4 })
+                {
+                    var w = Math.Max(r[2], 300);
+                    var left = r[0];
+                    var vw = r[3];
+                    if (left + w > vw - 8) left = Math.Max(8, vw - w - 8);
+                    var s = $"position:fixed; top:{r[1] + 4}px; left:{left}px; width:{w}px; z-index:4000;";
+                    if (s != _popStyle) { _popStyle = s; StateHasChanged(); }
+                }
+            }
+            catch { }
+        }
+        else if (_popStyle is not null)
+        {
+            _popStyle = null;
+            StateHasChanged();
+        }
     }
 
     private async Task OnBuscarInput(ChangeEventArgs e)
@@ -392,6 +448,12 @@
     @@keyframes sp-rot { to { transform: rotate(360deg); } }
 
     .sp-hint { font-size: 11.5px; color: #A6B7C8; padding-left: 2px; }
+
+    /* Panel de resultados. En modo flotante (Flotante=true) se posiciona fixed via _popStyle y se
+       presenta como tarjeta que flota por fuera del contenedor (escapa overflow de la tabla). */
+    .sp-pop { display: flex; flex-direction: column; gap: 7px; }
+    .sp-pop--float { background: #fff; border: 1px solid #E1E8EE; border-radius: 12px; padding: 7px; box-shadow: 0 14px 38px rgba(27,42,58,.22); }
+    .sp-pop--float .sp-list { border: 0; padding: 0; max-height: 320px; }
 
     .sp-list { display: flex; flex-direction: column; gap: 3px; border: 1px solid #E1E8EE; border-radius: 10px; padding: 6px; background: #fff; max-height: 290px; overflow-y: auto; }
     .sp-item { display: flex; align-items: center; gap: 9px; padding: 8px 9px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; text-align: left; font-family: inherit; width: 100%; }
