@@ -1,0 +1,216 @@
+@* Modal de respuesta PQRSD estilo "correo": redactar con editor enriquecido (TinyMCE) o ver una
+   respuesta ya guardada con sus adjuntos. El envio al radicador se construye despues (aqui solo
+   se guardan borradores con trazabilidad). *@
+@inherits ModalBase<bool>
+@using Propia.Application.Pqrsd
+@using Microsoft.AspNetCore.Components.Forms
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+
+<div class="rrp">
+    <div class="rrp-head">
+        <div>
+            <div class="rrp-eyebrow">@(_modo == "ver" ? "RESPUESTA" : "NUEVA RESPUESTA")</div>
+            @if (_modo == "ver" && _dto is not null)
+            {
+                <div class="rrp-title">@(string.IsNullOrWhiteSpace(_dto.Asunto) ? "(sin asunto)" : _dto.Asunto)</div>
+                <div class="rrp-meta">@(_dto.AutorNombre ?? "-") &middot; @_dto.CreatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm") @(_dto.Enviada ? " · Enviada" : " · Borrador")</div>
+            }
+            else
+            {
+                <div class="rrp-title">Redactar respuesta</div>
+            }
+        </div>
+        <button type="button" class="rrp-x" title="Cerrar" @onclick="Cerrar">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+    </div>
+
+    @if (_modo != "ver")
+    {
+        <input class="rrp-asunto" placeholder="Asunto (opcional)" @bind="_asunto" @bind:event="oninput" />
+        <textarea id="pqr-resp-ed"></textarea>
+        @if (!string.IsNullOrEmpty(_msg)) { <div class="rrp-msg @(_err ? "err" : "ok")">@_msg</div> }
+        <div class="rrp-foot">
+            <span class="rrp-hint">Se guarda como borrador con trazabilidad. El envio al radicador se hara despues.</span>
+            <div class="rrp-foot-btns">
+                <button type="button" class="rrp-btn-ghost" @onclick="Cerrar">Cancelar</button>
+                <button type="button" class="rrp-btn-brand" @onclick="GuardarAsync" disabled="@_busy">@(_busy ? "Guardando..." : "Guardar respuesta")</button>
+            </div>
+        </div>
+    }
+    else if (_dto is not null)
+    {
+        <div class="rrp-mail">@((MarkupString)_dto.CuerpoHtml)</div>
+
+        <div class="rrp-adj">
+            <div class="rrp-adj-h">ADJUNTOS DE ESTA RESPUESTA (@_dto.Adjuntos.Count)</div>
+            <div class="rrp-adj-list">
+                @foreach (var a in _dto.Adjuntos)
+                {
+                    <a class="rrp-adj-item" href="@a.UrlStorage" target="_blank" rel="noopener" title="@a.NombreArchivo">
+                        <span class="rrp-adj-ic">@Ext(a.NombreArchivo)</span>
+                        <span class="rrp-adj-nm">@a.NombreArchivo</span>
+                    </a>
+                }
+                <label class="rrp-adj-up @(_subiendo ? "busy" : "")">
+                    @if (_subiendo) { <span>Subiendo...</span> }
+                    else { <span>+ Adjuntar archivo</span> }
+                    <InputFile OnChange="OnSubirAdjunto" multiple style="display:none" />
+                </label>
+            </div>
+            @if (!string.IsNullOrEmpty(_msg)) { <div class="rrp-msg @(_err ? "err" : "ok")">@_msg</div> }
+        </div>
+
+        <div class="rrp-foot">
+            <span class="rrp-hint">El envio al radicador se construira despues.</span>
+            <div class="rrp-foot-btns">
+                <button type="button" class="rrp-btn-brand" @onclick="Cerrar">Listo</button>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .rrp { display: flex; flex-direction: column; gap: 12px; padding: 4px 2px; }
+    .rrp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .rrp-eyebrow { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; color: #7C98B6; }
+    .rrp-title { font-size: 17px; font-weight: 800; color: #1B2A3A; margin-top: 2px; }
+    .rrp-meta { font-size: 11.5px; color: #7C98B6; margin-top: 2px; }
+    .rrp-x { width: 30px; height: 30px; border-radius: 8px; border: 1px solid #E1E8EE; background: #fff; color: #7C98B6; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+    .rrp-x:hover { color: #D7263D; border-color: #F0C9C9; }
+    .rrp-asunto { border: 1px solid #E1E8EE; border-radius: 9px; padding: 10px 12px; font-size: 14px; color: #1B2A3A; outline: none; font-family: inherit; }
+    .rrp-asunto:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .rrp-msg { font-size: 12px; font-weight: 600; }
+    .rrp-msg.err { color: #C0383C; }
+    .rrp-msg.ok { color: #15703F; }
+    .rrp-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .rrp-hint { font-size: 11.5px; color: #94A3B8; }
+    .rrp-foot-btns { display: flex; gap: 8px; }
+    .rrp-btn-brand { padding: 10px 18px; border-radius: 9px; background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 13px; font-weight: 700; border: 0; cursor: pointer; }
+    .rrp-btn-brand:disabled { opacity: .5; cursor: default; }
+    .rrp-btn-ghost { padding: 10px 16px; border-radius: 9px; background: #fff; border: 1px solid #E1E8EE; font-size: 13px; font-weight: 600; color: #516F90; cursor: pointer; }
+    .rrp-mail { border: 1px solid #E7EDF3; border-radius: 12px; padding: 18px 20px; background: #fff; font-size: 14px; line-height: 1.55; color: #1B2A3A; max-height: 46vh; overflow-y: auto; }
+    .rrp-mail img { max-width: 100%; }
+    .rrp-adj { border-top: 1px solid #EEF3F8; padding-top: 12px; }
+    .rrp-adj-h { font-size: 10.5px; font-weight: 800; letter-spacing: .05em; color: #7C98B6; margin-bottom: 8px; }
+    .rrp-adj-list { display: flex; flex-wrap: wrap; gap: 8px; }
+    .rrp-adj-item { display: inline-flex; align-items: center; gap: 7px; border: 1px solid #E7EDF3; border-radius: 9px; padding: 7px 11px; text-decoration: none; background: #FAFBFD; color: #1B2A3A; }
+    .rrp-adj-item:hover { background: #F1ECFD; border-color: #D8CCF7; }
+    .rrp-adj-ic { font-size: 10px; font-weight: 800; color: #fff; background: #6D4FE3; border-radius: 5px; padding: 3px 5px; text-transform: uppercase; }
+    .rrp-adj-nm { font-size: 12.5px; font-weight: 600; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rrp-adj-up { display: inline-flex; align-items: center; gap: 6px; border: 1px dashed #C3D0DD; border-radius: 9px; padding: 7px 12px; font-size: 12.5px; font-weight: 700; color: var(--propia-brand, #6D4FE3); cursor: pointer; background: transparent; }
+    .rrp-adj-up:hover { border-color: var(--propia-brand, #6D4FE3); background: #F8F5FE; }
+    .rrp-adj-up.busy { opacity: .6; }
+</style>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+    [Parameter] public Guid ExpedienteId { get; set; }
+    /// <summary>Si viene una respuesta, el modal abre en modo VER; si es null, abre en modo REDACTAR.</summary>
+    [Parameter] public PqrsdRespuestaDto? Respuesta { get; set; }
+
+    private string _modo = "redactar";        // "redactar" | "ver"
+    private PqrsdRespuestaDto? _dto;
+    private string _asunto = "";
+    private bool _busy, _subiendo, _err;
+    private string? _msg;
+    private bool _editorListo;
+    private const string EdSel = "#pqr-resp-ed";
+
+    protected override void OnInitialized()
+    {
+        if (Respuesta is not null) { _dto = Respuesta; _modo = "ver"; }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_modo == "redactar" && !_editorListo)
+        {
+            _editorListo = true;
+            try { await Js.InvokeAsync<bool>("propiaTiny.init", EdSel, ""); } catch { }
+        }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    private async Task GuardarAsync()
+    {
+        _busy = true; _msg = null; _err = false;
+        try
+        {
+            string cuerpo = "";
+            try { cuerpo = await Js.InvokeAsync<string>("propiaTiny.getContent", EdSel); } catch { }
+            if (string.IsNullOrWhiteSpace(System.Text.RegularExpressions.Regex.Replace(cuerpo ?? "", "<[^>]+>", "").Trim()))
+            {
+                _err = true; _msg = "Escribe el contenido de la respuesta."; _busy = false; return;
+            }
+            var resp = await Auth().PostAsJsonAsync($"/api/pqrsd/{ExpedienteId}/respuestas",
+                new CrearRespuestaBorradorRequest(string.IsNullOrWhiteSpace(_asunto) ? null : _asunto.Trim(), cuerpo!));
+            if (!resp.IsSuccessStatusCode) { _err = true; _msg = "No se pudo guardar: " + await resp.Content.ReadAsStringAsync(); return; }
+            var creada = await resp.Content.ReadFromJsonAsync<PqrsdRespuestaDto>();
+            try { await Js.InvokeVoidAsync("propiaTiny.destroy", EdSel); } catch { }
+            // Pasa a modo VER para poder adjuntar archivos a la respuesta recien guardada.
+            _dto = creada;
+            _modo = "ver";
+            _msg = "Respuesta guardada."; _err = false;
+        }
+        catch (Exception ex) { _err = true; _msg = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task OnSubirAdjunto(InputFileChangeEventArgs e)
+    {
+        if (_dto is null) return;
+        _subiendo = true; _msg = null; _err = false;
+        var subidos = 0;
+        foreach (var archivo in e.GetMultipleFiles(maximumFileCount: 10))
+        {
+            try
+            {
+                using var content = new MultipartFormDataContent();
+                var sc = new StreamContent(archivo.OpenReadStream(20_000_000));
+                sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                    string.IsNullOrEmpty(archivo.ContentType) ? "application/octet-stream" : archivo.ContentType);
+                content.Add(sc, "file", archivo.Name);
+                content.Add(new StringContent(_dto.Id.ToString()), "respuestaId");
+                var resp = await Auth().PostAsync($"/api/pqrsd/{ExpedienteId}/adjuntos/upload", content);
+                if (resp.IsSuccessStatusCode) subidos++;
+            }
+            catch { }
+        }
+        _subiendo = false;
+        if (subidos > 0) { await RecargarDtoAsync(); _msg = $"{subidos} archivo(s) adjuntado(s)."; }
+        else { _err = true; _msg = "No se pudo adjuntar."; }
+    }
+
+    private async Task RecargarDtoAsync()
+    {
+        if (_dto is null) return;
+        try
+        {
+            var lista = await Auth().GetFromJsonAsync<List<PqrsdRespuestaDto>>($"/api/pqrsd/{ExpedienteId}/respuestas");
+            var actual = lista?.FirstOrDefault(r => r.Id == _dto.Id);
+            if (actual is not null) _dto = actual;
+        }
+        catch { }
+    }
+
+    private async Task Cerrar()
+    {
+        try { await Js.InvokeVoidAsync("propiaTiny.destroy", EdSel); } catch { }
+        Close(true);
+    }
+
+    private static string Ext(string nombre)
+    {
+        var e = System.IO.Path.GetExtension(nombre)?.TrimStart('.');
+        return string.IsNullOrEmpty(e) ? "FILE" : e.ToUpperInvariant();
+    }
+}

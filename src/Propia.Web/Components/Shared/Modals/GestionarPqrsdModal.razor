@@ -50,7 +50,7 @@
         <button type="button" class="gpq-tab @(_tab == "detalle" ? "active" : "")" @onclick='@(() => _tab = "detalle")'>Detalle</button>
         @if (_detalle.Estado != EstadoPqrsd.Cerrada && _detalle.Estado != EstadoPqrsd.ViaInternaAgotada)
         {
-            <button type="button" class="gpq-tab @(_tab == "responder" ? "active" : "")" @onclick='@(() => _tab = "responder")'>Responder</button>
+            <button type="button" class="gpq-tab @(_tab == "responder" ? "active" : "")" @onclick="AbrirTabResponder">Responder</button>
         }
         <button type="button" class="gpq-tab @(_tab == "tareas" ? "active" : "")" @onclick="AbrirTabTareas">Tareas@(_pqrTareas is not null && _pqrTareas.Tareas.Count > 0 ? $" ({_pqrTareas.Tareas.Count})" : "")</button>
         <button type="button" class="gpq-tab @(_tab == "historial" ? "active" : "")" @onclick='@(() => _tab = "historial")'>Historial@(_detalle.Historial.Count > 0 ? $" ({_detalle.Historial.Count})" : "")</button>
@@ -548,28 +548,38 @@
         @if (_detalle is not null)
         {
             <div class="gpq-card">
-                <div class="gpq-card-eyebrow">RESPONDER AL SOLICITANTE</div>
-                <label class="gpq-mini-lbl">Respuesta * <span class="gpq-resp-count @(_respTexto.Trim().Length < 20 ? "gpq-resp-count--low" : "")">@_respTexto.Trim().Length / 20 min</span></label>
-                <textarea class="gpq-input gpq-resp-editor" rows="9" maxlength="4000" @bind="_respTexto" @bind:event="oninput" placeholder="Escribe la respuesta oficial al solicitante (minimo 20 caracteres). Al enviar se genera un PDF con esta respuesta y se adjunta al expediente, disponible para compartir con el solicitante."></textarea>
-                <div class="gpq-mini-hint">Al enviar se genera automaticamente un <strong>PDF</strong> de la respuesta, se agrega a los adjuntos y queda marcado como compartido para el link de seguimiento del solicitante.</div>
-
-                <label class="gpq-mini-lbl" style="margin-top:12px;">Canal de respuesta</label>
-                <div class="gpq-resp-canales">
-                    <label class="gpq-resp-chk"><input type="checkbox" @bind="_respCorreo" /><span>Correo@(string.IsNullOrEmpty(RadicadorEmail) ? " (el solicitante no tiene correo)" : $": {RadicadorEmail}")</span></label>
-                    <label class="gpq-resp-chk"><input type="checkbox" @bind="_respCelular" /><span>Celular@(string.IsNullOrEmpty(RadicadorTel) ? " (el solicitante no tiene telefono)" : $": {RadicadorTel}")</span></label>
+                <div class="gpq-resp-head">
+                    <div class="gpq-card-eyebrow">RESPUESTAS AL SOLICITANTE</div>
+                    <button class="gpq-btn-brand" type="button" @onclick="NuevaRespuesta">+ Nueva respuesta</button>
                 </div>
-                <div class="gpq-mini-hint">Marca correo, celular o ambos. La respuesta se envia al solicitante y queda registrada en el expediente.</div>
+                <div class="gpq-mini-hint">Redacta con un editor enriquecido; al guardar queda como tarjeta con su trazabilidad (autor y fecha) y puedes adjuntarle archivos. El envio al solicitante se trabajara despues.</div>
 
-                <button class="gpq-btn-brand" style="margin-top:12px;" type="button" @onclick="EnviarRespuestaTab"
-                        disabled="@(_respBusy || _respTexto.Trim().Length < 20 || (!_respCorreo && !_respCelular))">
-                    @(_respBusy ? "Enviando..." : "Enviar respuesta")
-                </button>
-                @if (!string.IsNullOrEmpty(_respMsg)) { <div class="gpq-msg @(_respErr ? "gpq-msg--err" : "gpq-msg--ok")" style="margin-top:10px;">@_respMsg</div> }
+                @if (_respuestas.Count == 0)
+                {
+                    <div class="gpq-empty" style="margin-top:12px;">Aun no hay respuestas. Crea la primera con "+ Nueva respuesta".</div>
+                }
+                else
+                {
+                    <div class="gpq-resp-cards">
+                        @foreach (var r in _respuestas)
+                        {
+                            var rr = r;
+                            <button type="button" class="gpq-resp-card" @onclick="() => VerRespuesta(rr)">
+                                <div class="gpq-resp-card-top">
+                                    <span class="gpq-resp-card-asunto">@(string.IsNullOrWhiteSpace(r.Asunto) ? "(sin asunto)" : r.Asunto)</span>
+                                    <span class="gpq-resp-card-badge @(r.Enviada ? "env" : "bor")">@(r.Enviada ? "Enviada" : "Borrador")</span>
+                                </div>
+                                <div class="gpq-resp-card-prev">@ResumenHtml(r.CuerpoHtml)</div>
+                                <div class="gpq-resp-card-meta">@(r.AutorNombre ?? "-") &middot; @r.CreatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm")@(r.Adjuntos.Count > 0 ? $" · {r.Adjuntos.Count} adj." : "")</div>
+                            </button>
+                        }
+                    </div>
+                }
 
                 @if (!string.IsNullOrEmpty(_detalle.RespuestaAdmin))
                 {
                     <div class="gpq-card gpq-card--resp" style="margin-top:16px;">
-                        <div class="gpq-card-eyebrow">ULTIMA RESPUESTA REGISTRADA</div>
+                        <div class="gpq-card-eyebrow">RESPUESTA LEGAL REGISTRADA</div>
                         <div class="gpq-desc">@_detalle.RespuestaAdmin</div>
                         @if (_detalle.RespuestaAdminAt.HasValue) { <div class="gpq-meta">@_detalle.RespuestaAdminAt.Value.ToString("dd MMM yyyy HH:mm")</div> }
                     </div>
@@ -1219,10 +1229,18 @@
     .gpq-thumb-share { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; color: #64798F; font-weight: 600; margin-top: 3px; cursor: pointer; }
     .gpq-thumb-share input { width: 13px; height: 13px; accent-color: var(--propia-brand, #6D4FE3); cursor: pointer; }
 
-    /* ---- Editor de respuesta mejorado ---- */
-    .gpq-resp-editor { line-height: 1.45; resize: vertical; min-height: 150px; }
-    .gpq-resp-count { font-size: 10.5px; font-weight: 700; color: #34C759; margin-left: 6px; }
-    .gpq-resp-count--low { color: #94A3B8; }
+    /* ---- Respuestas tipo correo (tarjetas) ---- */
+    .gpq-resp-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+    .gpq-resp-cards { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+    .gpq-resp-card { text-align: left; width: 100%; border: 1px solid #E7EDF3; border-radius: 12px; padding: 13px 15px; background: #fff; cursor: pointer; transition: background .12s, border-color .12s; font-family: inherit; }
+    .gpq-resp-card:hover { background: #F8F5FE; border-color: #D8CCF7; }
+    .gpq-resp-card-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .gpq-resp-card-asunto { font-size: 14px; font-weight: 800; color: #1B2A3A; }
+    .gpq-resp-card-badge { font-size: 9.5px; font-weight: 800; border-radius: 5px; padding: 3px 8px; letter-spacing: .3px; }
+    .gpq-resp-card-badge.bor { color: #9A6A00; background: #FFF8E6; }
+    .gpq-resp-card-badge.env { color: #15703F; background: #E7F6EE; }
+    .gpq-resp-card-prev { font-size: 12.5px; color: #516F90; margin-top: 5px; line-height: 1.4; }
+    .gpq-resp-card-meta { font-size: 11px; color: #94A3B8; margin-top: 7px; }
     .gpq-btn-warn:disabled { opacity: .5; cursor: not-allowed; }
 
     .gpq-form {
@@ -1512,15 +1530,48 @@
     private bool _generandoTarea;
     private bool _guardandoRel;
 
-    // ---- Tab Responder (canal correo/celular/ambos) ----
-    private string _respTexto = "";
-    private bool _respCorreo;
-    private bool _respCelular;
-    private bool _respBusy;
-    private string _respMsg = "";
-    private bool _respErr;
-    private string? RadicadorEmail => _contexto?.Personas.FirstOrDefault(p => p.EsRadicador)?.Email;
-    private string? RadicadorTel => _contexto?.Personas.FirstOrDefault(p => p.EsRadicador)?.Telefono;
+    // ---- Tab Responder: respuestas tipo correo (borradores con editor enriquecido) ----
+    private List<PqrsdRespuestaDto> _respuestas = new();
+
+    private async Task AbrirTabResponder()
+    {
+        _tab = "responder";
+        await CargarRespuestasAsync();
+    }
+
+    private async Task CargarRespuestasAsync()
+    {
+        try { _respuestas = (await Auth().GetFromJsonAsync<List<PqrsdRespuestaDto>>($"/api/pqrsd/{ExpedienteId}/respuestas")) ?? new(); }
+        catch { _respuestas = new(); }
+        StateHasChanged();
+    }
+
+    private async Task NuevaRespuesta()
+    {
+        var parameters = new ModalParameters().Set("Jwt", Jwt).Set("ExpedienteId", ExpedienteId);
+        var options = new ModalOptions { Width = "820px" };
+        await Modals.OpenAsync<RedactarRespuestaPqrsdModal, bool>(parameters, options);
+        _huboCambios = true;
+        await CargarRespuestasAsync();
+    }
+
+    private async Task VerRespuesta(PqrsdRespuestaDto r)
+    {
+        var parameters = new ModalParameters().Set("Jwt", Jwt).Set("ExpedienteId", ExpedienteId).Set("Respuesta", r);
+        var options = new ModalOptions { Width = "820px" };
+        await Modals.OpenAsync<RedactarRespuestaPqrsdModal, bool>(parameters, options);
+        _huboCambios = true;
+        await CargarRespuestasAsync();
+    }
+
+    private static string ResumenHtml(string? html)
+    {
+        if (string.IsNullOrWhiteSpace(html)) return "";
+        var txt = System.Text.RegularExpressions.Regex.Replace(html, "<[^>]+>", " ");
+        txt = System.Net.WebUtility.HtmlDecode(txt);
+        txt = System.Text.RegularExpressions.Regex.Replace(txt, "\\s+", " ").Trim();
+        return txt.Length > 160 ? txt.Substring(0, 160) + "..." : txt;
+    }
 
     // ---- Chat de actividad (comentarios + adjuntos inline, @menciones, lightbox) estilo Tareas ----
     private static readonly System.Globalization.CultureInfo Es = new("es-CO");
@@ -1973,32 +2024,6 @@
         await TrasAccion(resp, "Respuesta enviada.");
     }
 
-    // Tab Responder: envia la respuesta al solicitante por el/los canales elegidos (correo/celular/ambos).
-    private async Task EnviarRespuestaTab()
-    {
-        if (_respTexto.Trim().Length < 20 || (!_respCorreo && !_respCelular)) return;
-        _respBusy = true; _respMsg = ""; _respErr = false;
-        try
-        {
-            var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{ExpedienteId}/responder",
-                new ResponderExpedienteRequest(_respTexto.Trim(), _respCorreo, _respCelular));
-            if (resp.IsSuccessStatusCode)
-            {
-                _respMsg = "Respuesta enviada al solicitante.";
-                _respErr = false;
-                _respTexto = ""; _respCorreo = false; _respCelular = false;
-                _huboCambios = true;
-                await CargarAsync();
-            }
-            else
-            {
-                _respErr = true;
-                _respMsg = "No se pudo enviar: " + await resp.Content.ReadAsStringAsync();
-            }
-        }
-        catch (Exception ex) { _respErr = true; _respMsg = ex.Message; }
-        finally { _respBusy = false; }
-    }
 
     private async Task EjecutarCerrar()
     {
