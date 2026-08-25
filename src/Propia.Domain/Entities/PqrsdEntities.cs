@@ -88,6 +88,13 @@ public class PqrsdExpediente : TenantEntity
     /// <summary>Motivo de cierre elegido al cerrar (catalogo configurable MotivoCierre, modulo "pqrsd").</summary>
     public Guid? MotivoCierreId { get; set; }
 
+    /// <summary>
+    /// Token opaco para el link publico de seguimiento que se comparte con el radicador
+    /// (le permite ver los adjuntos marcados como compartidos). Se genera bajo demanda la
+    /// primera vez que el gestor comparte. El link incluye tambien el tenantId para resolver RLS.
+    /// </summary>
+    public Guid? ShareToken { get; set; }
+
     public ICollection<PqrsdAdjunto> Adjuntos { get; set; } = new List<PqrsdAdjunto>();
     public ICollection<PqrsdHistorialEstado> Historial { get; set; } = new List<PqrsdHistorialEstado>();
     public ICollection<PqrsdCampoValor> CamposValores { get; set; } = new List<PqrsdCampoValor>();
@@ -244,6 +251,13 @@ public class PqrsdAdjunto : TenantEntity
 
     /// <summary>Comentario/caption opcional que acompana el adjunto cuando se sube desde el chat de actividad.</summary>
     public string? Texto { get; set; }
+
+    /// <summary>
+    /// Si es true, el adjunto se expone en el link publico de seguimiento que se comparte con el
+    /// radicador. El gestor selecciona por-archivo que se comparte. El PDF de la respuesta se marca
+    /// compartido automaticamente al enviar la respuesta.
+    /// </summary>
+    public bool Compartido { get; set; }
 }
 
 /// <summary>Historial append-only de estados. Spec 2.9 v1.0 tabla pqrsd_historial_estado + trigger SQL.</summary>

@@ -625,7 +625,7 @@ public class PqrsdService : IPqrsdService
             .Select(a => new PqrsdAdjuntoDto(a.Id, a.NombreArchivo, a.TipoMime, a.TamanioBytes, a.UrlStorage, a.CreatedAt,
                 a.SubidoPorUsuarioId != Guid.Empty && nombresSubido.TryGetValue(a.SubidoPorUsuarioId, out var sn) ? sn : null,
                 a.SubidoPorUsuarioId == Guid.Empty ? null : a.SubidoPorUsuarioId,
-                a.Texto))
+                a.Texto, a.Compartido))
             .ToList();
 
         var historial = x.Historial.OrderByDescending(h => h.CreatedAt)
@@ -846,6 +846,61 @@ public class PqrsdService : IPqrsdService
             fcfg?.MostrarTorre ?? true, fcfg?.MostrarCorreo ?? true, fcfg?.MostrarTelefono ?? true,
             fcfg?.EncabezadoTexto, fcfg?.PieTexto, camposPub,
             ParseOrdenCamposFijos(fcfg?.OrdenCamposFijosJson));
+    }
+
+    // ===================== Seguimiento publico (link compartible con el radicador) =====================
+
+    public async Task<bool> SetAdjuntoCompartidoAsync(Guid expedienteId, Guid adjuntoId, bool compartido, CancellationToken ct)
+    {
+        var adj = await _db.PqrsdAdjuntos
+            .FirstOrDefaultAsync(a => a.Id == adjuntoId && a.ExpedienteId == expedienteId, ct);
+        if (adj is null) return false;
+        adj.Compartido = compartido;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<Guid?> ObtenerOCrearShareTokenAsync(Guid expedienteId, CancellationToken ct)
+    {
+        var exp = await _db.PqrsdExpedientes.FirstOrDefaultAsync(e => e.Id == expedienteId, ct);
+        if (exp is null) return null;
+        if (exp.ShareToken is null)
+        {
+            exp.ShareToken = Guid.NewGuid();
+            await _db.SaveChangesAsync(ct);
+        }
+        return exp.ShareToken;
+    }
+
+    public async Task<PqrsdSeguimientoPublicoDto?> GetSeguimientoPublicoAsync(Guid tenantId, Guid token, CancellationToken ct)
+    {
+        // Tenants es entidad global: se lee el branding sin tenant en sesion.
+        var tenant = await _db.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == tenantId, ct);
+        if (tenant is null || tenant.Estado != EstadoCopropiedad.Activa) return null;
+
+        await ActivarTenantPublicoAsync(tenantId);
+
+        var exp = await _db.PqrsdExpedientes.AsNoTracking()
+            .Include(e => e.Categoria)
+            .Include(e => e.TipoConfig)
+            .Include(e => e.EstadoColumna)
+            .Include(e => e.Adjuntos)
+            .FirstOrDefaultAsync(e => e.ShareToken == token, ct);
+        if (exp is null) return null;
+
+        var tipoNombre = exp.TipoConfig?.Nombre ?? exp.Tipo.ToString();
+        var estadoNombre = exp.EstadoColumna?.Nombre ?? exp.Estado.ToString();
+
+        var adjuntos = exp.Adjuntos
+            .Where(a => a.Compartido)
+            .OrderBy(a => a.CreatedAt)
+            .Select(a => new PqrsdSeguimientoAdjuntoDto(a.Id, a.NombreArchivo, a.TipoMime, a.TamanioBytes, a.UrlStorage, a.CreatedAt))
+            .ToList();
+
+        return new PqrsdSeguimientoPublicoDto(
+            tenant.Nombre, tenant.LogoUrl,
+            exp.NumeroRadicado, tipoNombre, exp.Categoria?.Nombre ?? "-", estadoNombre,
+            exp.CreatedAt, exp.RespuestaAdmin, exp.RespuestaAdminAt, adjuntos);
     }
 
     // ---- Config del formulario publico (admin): campos opcionales + textos + orden de campos fijos ----

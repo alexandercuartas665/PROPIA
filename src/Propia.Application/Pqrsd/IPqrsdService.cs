@@ -80,6 +80,14 @@ public interface IPqrsdService
     Task<bool> ManifestarInconformidadAsync(Guid id, ManifestarInconformidadRequest req, CancellationToken ct);
     Task<bool> CerrarDefinitivoAsync(Guid id, CerrarDefinitivoRequest req, CancellationToken ct);
 
+    // Seguimiento publico (link compartible con el radicador)
+    /// <summary>Marca/desmarca un adjunto como compartido en el link publico de seguimiento. False si no existe.</summary>
+    Task<bool> SetAdjuntoCompartidoAsync(Guid expedienteId, Guid adjuntoId, bool compartido, CancellationToken ct);
+    /// <summary>Devuelve (creando si hace falta) el token del link publico de seguimiento del expediente. Null si no existe.</summary>
+    Task<Guid?> ObtenerOCrearShareTokenAsync(Guid expedienteId, CancellationToken ct);
+    /// <summary>Vista publica del seguimiento resuelta por (tenant, token). Null si no matchea. Solo adjuntos compartidos.</summary>
+    Task<PqrsdSeguimientoPublicoDto?> GetSeguimientoPublicoAsync(Guid tenantId, Guid token, CancellationToken ct);
+
     // Tutela
     Task<bool> ActivarTutelaAsync(Guid id, ActivarTutelaRequest req, CancellationToken ct);
 

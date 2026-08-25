@@ -14,7 +14,7 @@ public record ActualizarPlazoRequest(int DiasHabiles, int DiasInconformidad, Niv
 // ===================== Expediente =====================
 
 public record PqrsdAdjuntoDto(Guid Id, string NombreArchivo, string TipoMime, long TamanioBytes, string UrlStorage, DateTimeOffset CreatedAt,
-    string? SubidoPorNombre = null, Guid? SubidoPorUsuarioId = null, string? Texto = null);
+    string? SubidoPorNombre = null, Guid? SubidoPorUsuarioId = null, string? Texto = null, bool Compartido = false);
 
 public record PqrsdHistorialDto(
     EstadoPqrsd? EstadoAnterior,
@@ -206,6 +206,30 @@ public record RadicarPublicoRequest(
     IReadOnlyDictionary<Guid, string?>? CamposDinamicos = null);
 
 public record RadicarPublicoResultDto(string NumeroRadicado);
+
+// ===================== Seguimiento publico (link compartido con el radicador) =====================
+
+/// <summary>Adjunto compartido tal como lo ve el radicador en el link publico de seguimiento.</summary>
+public record PqrsdSeguimientoAdjuntoDto(Guid Id, string NombreArchivo, string TipoMime, long TamanioBytes, string Url, DateTimeOffset CreatedAt);
+
+/// <summary>
+/// Vista publica del seguimiento de un expediente para el radicador (sin login), resuelta por token.
+/// Solo expone datos que el radicador ya conoce + la respuesta + los adjuntos marcados como compartidos.
+/// </summary>
+public record PqrsdSeguimientoPublicoDto(
+    string CopropiedadNombre,
+    string? LogoUrl,
+    string NumeroRadicado,
+    string TipoNombre,
+    string CategoriaNombre,
+    string EstadoNombre,
+    DateTimeOffset RadicadoAt,
+    string? RespuestaAdmin,
+    DateTimeOffset? RespuestaAdminAt,
+    IReadOnlyList<PqrsdSeguimientoAdjuntoDto> Adjuntos);
+
+/// <summary>Resultado de generar/obtener el link publico de seguimiento (token por-expediente).</summary>
+public record PqrsdShareLinkDto(Guid Token);
 
 // ===================== Requests =====================
 

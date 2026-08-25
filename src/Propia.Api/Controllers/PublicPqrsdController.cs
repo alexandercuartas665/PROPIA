@@ -49,6 +49,15 @@ public class PublicPqrsdController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    // Seguimiento publico: el radicador ve el estado + la respuesta + los adjuntos que el gestor
+    // marco como compartidos. Se resuelve por (tenant, token opaco). No expone datos de otros expedientes.
+    [HttpGet("{tenantId:guid}/seguimiento/{token:guid}")]
+    public async Task<IActionResult> Seguimiento(Guid tenantId, Guid token, CancellationToken ct)
+    {
+        var dto = await _svc.GetSeguimientoPublicoAsync(tenantId, token, ct);
+        return dto is null ? NotFound(new { error = "Seguimiento no disponible." }) : Ok(dto);
+    }
+
     private string ClienteIp()
     {
         // Detras del proxy de Railway la IP real llega en X-Forwarded-For (primer valor de la lista).

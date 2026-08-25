@@ -1,0 +1,169 @@
+@page "/pqr-seguimiento/{TenantId:guid}/{Token:guid}"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.Pqrsd
+@layout Propia.Web.Components.Layout.PublicLayout
+@inject IHttpClientFactory HttpFactory
+
+<PageTitle>Seguimiento PQRSD - PROPIA</PageTitle>
+
+<div class="pqrseg-wrap">
+@if (_cargando)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border" style="color: var(--propia-primary, #5955D1);"></div>
+        <p class="text-muted mt-3 small">Cargando seguimiento...</p>
+    </div>
+}
+else if (_error is not null)
+{
+    <div class="pqrseg-card text-center">
+        <h4 class="mb-2">Seguimiento no disponible</h4>
+        <p class="text-muted mb-0">@_error</p>
+    </div>
+}
+else if (_dto is not null)
+{
+    <div class="pqrseg-hero">
+        @if (!string.IsNullOrWhiteSpace(_dto.LogoUrl))
+        {
+            <img src="@_dto.LogoUrl" alt="@_dto.CopropiedadNombre" class="pqrseg-logo" />
+        }
+        <div class="pqrseg-hero-name">@_dto.CopropiedadNombre</div>
+        <div class="pqrseg-hero-sub">Seguimiento de tu solicitud</div>
+    </div>
+
+    <div class="pqrseg-card">
+        <div class="pqrseg-radicado-row">
+            <div>
+                <div class="pqrseg-eyebrow">RADICADO</div>
+                <div class="pqrseg-radicado">@_dto.NumeroRadicado</div>
+            </div>
+            <span class="pqrseg-estado">@_dto.EstadoNombre</span>
+        </div>
+
+        <div class="pqrseg-grid">
+            <div><span class="pqrseg-k">Tipo</span><span class="pqrseg-v">@_dto.TipoNombre</span></div>
+            <div><span class="pqrseg-k">Categoria</span><span class="pqrseg-v">@_dto.CategoriaNombre</span></div>
+            <div><span class="pqrseg-k">Radicado el</span><span class="pqrseg-v">@_dto.RadicadoAt.ToLocalTime().ToString("dd MMM yyyy")</span></div>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_dto.RespuestaAdmin))
+    {
+        <div class="pqrseg-card">
+            <div class="pqrseg-eyebrow">RESPUESTA DE LA ADMINISTRACION</div>
+            <div class="pqrseg-resp">@_dto.RespuestaAdmin</div>
+            @if (_dto.RespuestaAdminAt.HasValue)
+            {
+                <div class="pqrseg-resp-at">@_dto.RespuestaAdminAt.Value.ToLocalTime().ToString("dd MMM yyyy HH:mm")</div>
+            }
+        </div>
+    }
+
+    <div class="pqrseg-card">
+        <div class="pqrseg-eyebrow">DOCUMENTOS COMPARTIDOS (@_dto.Adjuntos.Count)</div>
+        @if (_dto.Adjuntos.Count == 0)
+        {
+            <div class="pqrseg-empty">La administracion aun no ha compartido documentos.</div>
+        }
+        else
+        {
+            <div class="pqrseg-files">
+                @foreach (var a in _dto.Adjuntos)
+                {
+                    <a class="pqrseg-file" href="@a.Url" target="_blank" rel="noopener">
+                        @if (EsImagen(a.TipoMime, a.NombreArchivo))
+                        {
+                            <div class="pqrseg-file-thumb"><img src="@a.Url" alt="@a.NombreArchivo" /></div>
+                        }
+                        else
+                        {
+                            <div class="pqrseg-file-ic">@Extension(a.NombreArchivo)</div>
+                        }
+                        <div class="pqrseg-file-meta">
+                            <span class="pqrseg-file-nm">@a.NombreArchivo</span>
+                            <span class="pqrseg-file-sz">@FormatSize(a.TamanioBytes)</span>
+                        </div>
+                    </a>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="pqrseg-foot">Operado por A&amp;D GROUP S.A.S. &middot; PROPIA</div>
+}
+</div>
+
+<style>
+    .pqrseg-wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
+    .pqrseg-hero { text-align: center; margin-bottom: 18px; }
+    .pqrseg-logo { max-height: 62px; max-width: 220px; object-fit: contain; margin-bottom: 10px; }
+    .pqrseg-hero-name { font-size: 19px; font-weight: 800; color: #1B2A3A; }
+    .pqrseg-hero-sub { font-size: 13px; color: #64798F; margin-top: 2px; }
+    .pqrseg-card { background: #fff; border: 1px solid #E7EDF3; border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; box-shadow: 0 2px 10px rgba(27,42,58,.04); }
+    .pqrseg-eyebrow { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; color: #7C98B6; margin-bottom: 8px; }
+    .pqrseg-radicado-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .pqrseg-radicado { font-size: 20px; font-weight: 800; color: #6D4FE3; }
+    .pqrseg-estado { background: #F1ECFD; color: #6D4FE3; font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 999px; white-space: nowrap; }
+    .pqrseg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 16px; }
+    .pqrseg-grid > div { display: flex; flex-direction: column; }
+    .pqrseg-k { font-size: 11px; color: #7C98B6; }
+    .pqrseg-v { font-size: 14px; font-weight: 700; color: #1B2A3A; }
+    .pqrseg-resp { font-size: 14px; line-height: 1.5; color: #1B2A3A; white-space: pre-wrap; }
+    .pqrseg-resp-at { font-size: 11px; color: #7C98B6; margin-top: 8px; }
+    .pqrseg-empty { font-size: 13px; color: #94A3B8; }
+    .pqrseg-files { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+    .pqrseg-file { display: flex; align-items: center; gap: 10px; border: 1px solid #E7EDF3; border-radius: 10px; padding: 9px 11px; text-decoration: none; background: #FAFBFD; transition: background .12s, border-color .12s; }
+    .pqrseg-file:hover { background: #F1ECFD; border-color: #D8CCF7; }
+    .pqrseg-file-thumb { width: 42px; height: 42px; border-radius: 8px; overflow: hidden; flex: 0 0 auto; background: #EEF3F8; }
+    .pqrseg-file-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .pqrseg-file-ic { width: 42px; height: 42px; border-radius: 8px; flex: 0 0 auto; background: #6D4FE3; color: #fff; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; text-transform: uppercase; }
+    .pqrseg-file-meta { display: flex; flex-direction: column; min-width: 0; }
+    .pqrseg-file-nm { font-size: 12.5px; font-weight: 700; color: #1B2A3A; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pqrseg-file-sz { font-size: 11px; color: #7C98B6; }
+    .pqrseg-foot { text-align: center; font-size: 11px; color: #A6B7C8; margin-top: 18px; }
+</style>
+
+@code {
+    [Parameter] public Guid TenantId { get; set; }
+    [Parameter] public Guid Token { get; set; }
+
+    private bool _cargando = true;
+    private string? _error;
+    private PqrsdSeguimientoPublicoDto? _dto;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var http = HttpFactory.CreateClient("PropiaApi");
+            var resp = await http.GetAsync($"/api/publico/pqrsd/{TenantId}/seguimiento/{Token}");
+            if (!resp.IsSuccessStatusCode)
+                _error = "Este enlace no es valido o el seguimiento no esta disponible.";
+            else
+                _dto = await resp.Content.ReadFromJsonAsync<PqrsdSeguimientoPublicoDto>();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _cargando = false; }
+    }
+
+    private static bool EsImagen(string mime, string nombre)
+    {
+        if (!string.IsNullOrEmpty(mime) && mime.StartsWith("image/")) return true;
+        var ext = System.IO.Path.GetExtension(nombre)?.ToLowerInvariant();
+        return ext is ".png" or ".jpg" or ".jpeg" or ".gif" or ".webp" or ".bmp";
+    }
+
+    private static string Extension(string nombre)
+    {
+        var ext = System.IO.Path.GetExtension(nombre)?.TrimStart('.');
+        return string.IsNullOrEmpty(ext) ? "FILE" : ext.ToUpperInvariant();
+    }
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:0.#} KB";
+        return $"{bytes / (1024.0 * 1024.0):0.#} MB";
+    }
+}

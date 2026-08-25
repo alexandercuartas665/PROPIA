@@ -11,6 +11,7 @@
 
 @inject IHttpClientFactory HttpFactory
 @inject NavigationManager Nav
+@inject IJSRuntime Js
 
 @* ====== MODAL (contenedor auto-acotado, estilo Tareas) ====== *@
 <div class="gpq-modal">
@@ -548,8 +549,9 @@
         {
             <div class="gpq-card">
                 <div class="gpq-card-eyebrow">RESPONDER AL SOLICITANTE</div>
-                <label class="gpq-mini-lbl">Respuesta *</label>
-                <textarea class="gpq-input" rows="6" @bind="_respTexto" @bind:event="oninput" placeholder="Escribe la respuesta oficial al solicitante (minimo 20 caracteres)."></textarea>
+                <label class="gpq-mini-lbl">Respuesta * <span class="gpq-resp-count @(_respTexto.Trim().Length < 20 ? "gpq-resp-count--low" : "")">@_respTexto.Trim().Length / 20 min</span></label>
+                <textarea class="gpq-input gpq-resp-editor" rows="9" maxlength="4000" @bind="_respTexto" @bind:event="oninput" placeholder="Escribe la respuesta oficial al solicitante (minimo 20 caracteres). Al enviar se genera un PDF con esta respuesta y se adjunta al expediente, disponible para compartir con el solicitante."></textarea>
+                <div class="gpq-mini-hint">Al enviar se genera automaticamente un <strong>PDF</strong> de la respuesta, se agrega a los adjuntos y queda marcado como compartido para el link de seguimiento del solicitante.</div>
 
                 <label class="gpq-mini-lbl" style="margin-top:12px;">Canal de respuesta</label>
                 <div class="gpq-resp-canales">
@@ -621,6 +623,29 @@
 
             <div class="gpq-card" style="@(_tab == "adjuntos" ? "" : "display:none")">
                 <div class="gpq-card-eyebrow">ADJUNTOS (@_detalle.Adjuntos.Count)</div>
+
+                @* ===== Compartir seguimiento con el radicador ===== *@
+                <div class="gpq-share">
+                    <div class="gpq-share-head">
+                        <div>
+                            <div class="gpq-share-tit">Compartir seguimiento con el solicitante</div>
+                            <div class="gpq-share-sub">Genera un link publico donde el solicitante ve los adjuntos que marques como <strong>compartidos</strong> abajo. La respuesta oficial (PDF) se marca automaticamente.</div>
+                        </div>
+                        <button class="gpq-btn-brand" type="button" @onclick="GenerarLinkSeguimiento" disabled="@_shareBusy">
+                            @(_shareBusy ? "Generando..." : (string.IsNullOrEmpty(_shareLink) ? "Generar link" : "Regenerar link"))
+                        </button>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_shareLink))
+                    {
+                        <div class="gpq-share-linkrow">
+                            <input class="gpq-input gpq-share-link" readonly value="@_shareLink" @onfocus="SeleccionarTodoLink" />
+                            <button class="gpq-btn-soft" type="button" @onclick="CopiarLink">@(_shareCopiado ? "Copiado" : "Copiar")</button>
+                            <a class="gpq-btn-soft" href="@_shareLink" target="_blank" rel="noopener">Abrir</a>
+                        </div>
+                        <div class="gpq-share-count">Se comparten @_detalle.Adjuntos.Count(a => a.Compartido) de @_detalle.Adjuntos.Count adjunto(s).</div>
+                    }
+                </div>
+
                 @{ var selAdj = _detalle.Adjuntos.FirstOrDefault(x => x.Id == _adjSel) ?? _detalle.Adjuntos.FirstOrDefault(); }
                 <div class="gpq-files">
                     @* Columna izquierda: lista de miniaturas + boton "Subir archivo" (estilo Tareas) *@
@@ -638,6 +663,10 @@
                                 <div class="gpq-thumb-meta">
                                     <span class="gpq-thumb-nm">@a.NombreArchivo</span>
                                     <span class="gpq-thumb-sz">@FormatSize(a.TamanioBytes)@(string.IsNullOrWhiteSpace(a.SubidoPorNombre) ? "" : " - " + a.SubidoPorNombre)</span>
+                                    <label class="gpq-thumb-share" @onclick:stopPropagation="true" title="Mostrar este archivo en el link de seguimiento del solicitante">
+                                        <input type="checkbox" checked="@aa.Compartido" @onchange="@(e => ToggleCompartirAdjunto(aa, (bool)(e.Value ?? false)))" />
+                                        <span>Compartir</span>
+                                    </label>
                                 </div>
                             </div>
                         }
@@ -1177,6 +1206,29 @@
         font-size: 13px; font-weight: 700; border: 0; cursor: pointer;
     }
     .gpq-btn-warn:hover { background: #B91C1C; }
+
+    /* ---- Compartir seguimiento (adjuntos) ---- */
+    .gpq-share { border: 1px solid #E7EDF3; background: #FAFBFD; border-radius: 11px; padding: 13px 15px; margin-bottom: 14px; }
+    .gpq-share-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+    .gpq-share-tit { font-size: 13px; font-weight: 800; color: #1B2A3A; }
+    .gpq-share-sub { font-size: 11.5px; color: #64798F; margin-top: 3px; max-width: 520px; line-height: 1.4; }
+    .gpq-share-head .gpq-btn-brand { white-space: nowrap; flex: 0 0 auto; }
+    .gpq-share-linkrow { display: flex; align-items: center; gap: 8px; margin-top: 11px; }
+    .gpq-share-link { flex: 1 1 auto; font-size: 12px; background: #fff; }
+    .gpq-btn-soft {
+        padding: 9px 14px; border-radius: 9px; background: #EEF1FB; color: #4B39B5;
+        font-size: 12.5px; font-weight: 700; border: 0; cursor: pointer; text-decoration: none;
+        display: inline-flex; align-items: center; white-space: nowrap;
+    }
+    .gpq-btn-soft:hover { background: #E2E6FA; }
+    .gpq-share-count { font-size: 11px; color: #7C98B6; margin-top: 7px; }
+    .gpq-thumb-share { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; color: #64798F; font-weight: 600; margin-top: 3px; cursor: pointer; }
+    .gpq-thumb-share input { width: 13px; height: 13px; accent-color: var(--propia-brand, #6D4FE3); cursor: pointer; }
+
+    /* ---- Editor de respuesta mejorado ---- */
+    .gpq-resp-editor { line-height: 1.45; resize: vertical; min-height: 150px; }
+    .gpq-resp-count { font-size: 10.5px; font-weight: 700; color: #34C759; margin-left: 6px; }
+    .gpq-resp-count--low { color: #94A3B8; }
     .gpq-btn-warn:disabled { opacity: .5; cursor: not-allowed; }
 
     .gpq-form {
@@ -1531,6 +1583,67 @@
             http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
         return http;
     }
+
+    // ===================== Seguimiento publico (link compartible con el radicador) =====================
+    private string? _shareLink;
+    private bool _shareBusy;
+    private bool _shareCopiado;
+
+    private Guid? TenantIdDeJwt()
+    {
+        if (string.IsNullOrEmpty(Jwt)) return null;
+        try
+        {
+            var parts = Jwt.Split('.');
+            if (parts.Length < 2) return null;
+            var payload = parts[1].Replace('-', '+').Replace('_', '/');
+            switch (payload.Length % 4) { case 2: payload += "=="; break; case 3: payload += "="; break; }
+            var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(payload));
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("tenant_id", out var t) && Guid.TryParse(t.GetString(), out var g)) return g;
+        }
+        catch { }
+        return null;
+    }
+
+    private async Task GenerarLinkSeguimiento()
+    {
+        _shareBusy = true; _shareCopiado = false;
+        try
+        {
+            var resp = await Auth().PostAsync($"/api/pqrsd/{ExpedienteId}/compartir", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                var dto = await resp.Content.ReadFromJsonAsync<PqrsdShareLinkDto>();
+                var tid = TenantIdDeJwt();
+                if (dto is not null && tid is not null)
+                    _shareLink = $"{Nav.BaseUri.TrimEnd('/')}/pqr-seguimiento/{tid}/{dto.Token}";
+            }
+            else { ShowMsg("No se pudo generar el link.", true); }
+        }
+        catch (Exception ex) { ShowMsg(ex.Message, true); }
+        finally { _shareBusy = false; }
+    }
+
+    private async Task ToggleCompartirAdjunto(PqrsdAdjuntoDto a, bool compartido)
+    {
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{ExpedienteId}/adjuntos/{a.Id}/compartir",
+                new { Compartido = compartido });
+            if (resp.IsSuccessStatusCode) { _huboCambios = true; await CargarAsync(); }
+            else { ShowMsg("No se pudo actualizar el adjunto.", true); }
+        }
+        catch (Exception ex) { ShowMsg(ex.Message, true); }
+    }
+
+    private async Task CopiarLink()
+    {
+        if (string.IsNullOrEmpty(_shareLink)) return;
+        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", _shareLink); _shareCopiado = true; } catch { }
+    }
+
+    private async Task SeleccionarTodoLink(FocusEventArgs _) { try { await Js.InvokeVoidAsync("eval", "document.activeElement && document.activeElement.select && document.activeElement.select()"); } catch { } }
 
     // ---- Crear campo dinamico desde el modal (como Tareas): POST /api/pqrsd/campos y recarga ----
     private bool _nuevoCampoOpen;

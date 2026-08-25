@@ -19,7 +19,9 @@ public class PqrsdController : ControllerBase
     private readonly IPqrsdService _svc;
     private readonly PropiaDbContext _db;
     private readonly IBlobStorage _storage;
-    public PqrsdController(IPqrsdService svc, PropiaDbContext db, IBlobStorage storage) { _svc = svc; _db = db; _storage = storage; }
+    private readonly IPqrsdRespuestaPdfService _respuestaPdf;
+    public PqrsdController(IPqrsdService svc, PropiaDbContext db, IBlobStorage storage, IPqrsdRespuestaPdfService respuestaPdf)
+    { _svc = svc; _db = db; _storage = storage; _respuestaPdf = respuestaPdf; }
 
     private Guid? GetTenantId()
     {
@@ -227,8 +229,47 @@ public class PqrsdController : ControllerBase
     [HttpPut("{id:guid}/responder")]
     public async Task<IActionResult> Responder(Guid id, [FromBody] ResponderExpedienteRequest req, CancellationToken ct)
     {
-        try { return await _svc.ResponderAsync(id, req, ct) ? NoContent() : NotFound(); }
+        try
+        {
+            var ok = await _svc.ResponderAsync(id, req, ct);
+            if (!ok) return NotFound();
+            // Genera el PDF de la respuesta y lo adjunta (compartido por defecto: es la respuesta oficial).
+            await GenerarAdjuntoRespuestaPdfAsync(id, req.Texto, ct);
+            return NoContent();
+        }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    // Genera el PDF de la respuesta, lo sube al blob y crea el PqrsdAdjunto marcado como compartido.
+    // No aborta la respuesta si el PDF falla (best-effort): la respuesta legal ya quedo guardada.
+    private async Task GenerarAdjuntoRespuestaPdfAsync(Guid id, string texto, CancellationToken ct)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId is null) return;
+        try
+        {
+            var pdf = await _respuestaPdf.GenerarRespuestaPdfAsync(id, texto, ct);
+            if (pdf is null) return;
+
+            var key = $"tenants/{tenantId:N}/pqrsd/{id:N}/{Guid.NewGuid():N}.pdf";
+            await using var stream = new System.IO.MemoryStream(pdf.Value.Pdf);
+            var url = await _storage.UploadAsync(key, stream, "application/pdf", ct);
+
+            var uid = Guid.TryParse(User.FindFirstValue("user_id"), out var u) ? u : Guid.Empty;
+            _db.PqrsdAdjuntos.Add(new PqrsdAdjunto
+            {
+                ExpedienteId = id,
+                NombreArchivo = pdf.Value.FileName,
+                TipoMime = "application/pdf",
+                TamanioBytes = pdf.Value.Pdf.LongLength,
+                UrlStorage = url,
+                SubidoPorUsuarioId = uid,
+                Texto = "Respuesta oficial (PDF generado automaticamente)",
+                Compartido = true
+            });
+            await _db.SaveChangesAsync(ct);
+        }
+        catch { /* best-effort: el PDF es un complemento, no debe tumbar la respuesta */ }
     }
 
     [HttpPut("{id:guid}/inconformidad")]
@@ -431,4 +472,20 @@ public class PqrsdController : ControllerBase
         await _db.SaveChangesAsync(ct);
         return NoContent();
     }
+
+    // --- Marcar/desmarcar un adjunto como compartido en el link publico de seguimiento ---
+    [HttpPut("{id:guid}/adjuntos/{adjuntoId:guid}/compartir")]
+    public async Task<IActionResult> CompartirAdjunto(Guid id, Guid adjuntoId, [FromBody] CompartirAdjuntoRequest req, CancellationToken ct)
+        => await _svc.SetAdjuntoCompartidoAsync(id, adjuntoId, req.Compartido, ct) ? NoContent() : NotFound();
+
+    // --- Obtener/crear el token del link publico de seguimiento del expediente ---
+    [HttpPost("{id:guid}/compartir")]
+    public async Task<IActionResult> CompartirSeguimiento(Guid id, CancellationToken ct)
+    {
+        var token = await _svc.ObtenerOCrearShareTokenAsync(id, ct);
+        return token is null ? NotFound() : Ok(new PqrsdShareLinkDto(token.Value));
+    }
 }
+
+/// <summary>Body para alternar el flag de adjunto compartido.</summary>
+public record CompartirAdjuntoRequest(bool Compartido);
