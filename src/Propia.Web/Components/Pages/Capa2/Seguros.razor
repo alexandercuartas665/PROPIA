@@ -110,7 +110,7 @@
                         }
                         var p = item.Poliza!;
                         var pp = p;
-                        <div class="seg-row seg-grid" style="@GridStyle()">
+                        <div class="seg-row seg-grid @(_segRecienCreados.Contains(p.Id) ? "seg-row-nuevo" : "")" style="@GridStyle()">
                             <div class="seg-exp-col">
                                 <button type="button" class="seg-exp" title="Abrir la ficha" @onclick="() => AbrirModal(pp.Id)">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -127,7 +127,25 @@
                             @foreach (var cm in CamposActivos) { <div class="seg-c" title="@cm.Label">@(ValorCampoTexto(p, cm) is { Length: > 0 } vv ? vv : "-")</div> }
                         </div>
                     }
+                    @* Fila de alta inline: crear poliza desde la tabla (como Zonas Comunes). *@
+                    <div class="seg-row seg-newrow seg-grid" style="@GridStyle()">
+                        <div class="seg-exp-col">
+                            <button type="button" class="seg-exp seg-exp-fijo" title="Crear la poliza" @onclick="CrearPolizaDesdeAltaAsync" disabled="@_creandoInline">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                            </button>
+                        </div>
+                        <div class="seg-c"><input class="seg-nf-inp" @bind="_npNumero" @bind:event="oninput" placeholder="N poliza" /></div>
+                        <div class="seg-c"><input class="seg-nf-inp" @bind="_npAseguradora" @bind:event="oninput" placeholder="Aseguradora *" /></div>
+                        <div class="seg-c"><input class="seg-nf-inp" @bind="_npCorredor" @bind:event="oninput" placeholder="Corredor" /></div>
+                        <div class="seg-c"><input type="date" class="seg-nf-inp" value="@_npInicio" @oninput="e => _npInicio = e.Value?.ToString() ?? string.Empty" /></div>
+                        <div class="seg-c"><input type="date" class="seg-nf-inp" value="@_npFin" @oninput="e => _npFin = e.Value?.ToString() ?? string.Empty" /></div>
+                        <div class="seg-c seg-c--auto">(auto)</div>
+                        <div class="seg-c"><input type="number" step="1000" class="seg-nf-inp" @bind="_npValor" @bind:event="oninput" placeholder="Valor" /></div>
+                        <div class="seg-c"><button type="button" class="seg-row-add" @onclick="CrearPolizaDesdeAltaAsync" disabled="@_creandoInline">+ Agregar</button></div>
+                        @foreach (var cm in CamposActivos) { <div class="seg-c seg-c--auto">-</div> }
+                    </div>
                 </div>
+                @if (!string.IsNullOrEmpty(_inlineMsg)) { <div class="seg-toast" @onclick="() => _inlineMsg = null">@_inlineMsg</div> }
             </div>
         }
         else
@@ -436,6 +454,17 @@
     .seg-exp-col { display: flex; align-items: center; justify-content: center; }
     .seg-exp { width: 26px; height: 26px; border: 0; border-radius: 7px; background: #F1ECFD; color: var(--propia-brand, #6D4FE3); display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity .12s; }
     .seg-row:hover .seg-exp { opacity: 1; }
+    .seg-newrow .seg-exp-fijo { opacity: 1; }
+    .seg-exp-fijo:disabled { opacity: .3; cursor: default; }
+    /* Fila de alta inline: inputs con estilo canonico de Tareas (.tb-nf-inp), boton estilo Zonas. */
+    .seg-nf-inp { width: 100%; box-sizing: border-box; border: 1px dashed #D7E0EA; border-radius: 7px; padding: 5px 7px; font-size: 12px; color: #33475B; background: #fff; outline: none; font-family: inherit; }
+    .seg-nf-inp:focus { border-style: solid; border-color: #6D4FE3; box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
+    .seg-c--auto { color: #A6B7C8; font-size: 12px; }
+    .seg-row-add { font-size: 11px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: #F1ECFD; border: 1px solid #DCD2F8; border-radius: 7px; padding: 5px 8px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+    .seg-row-add:hover:not(:disabled) { background: #E4DBFB; }
+    .seg-row-add:disabled { opacity: .5; cursor: default; }
+    .seg-row-nuevo { background: #ECFBF2 !important; box-shadow: inset 3px 0 0 #34C759; }
+    .seg-toast { position: sticky; bottom: 10px; margin: 10px auto 0; width: fit-content; background: #15703F; color: #fff; font-size: 12.5px; font-weight: 600; padding: 8px 16px; border-radius: 9px; cursor: pointer; box-shadow: 0 6px 18px rgba(21,112,63,.28); }
 
     .seg-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
     .seg-card { text-align: left; border: 1px solid #E1E8EE; border-radius: 12px; padding: 14px; background: #fff; cursor: pointer; display: flex; flex-direction: column; gap: 6px; }
@@ -710,6 +739,39 @@
         if (!string.IsNullOrEmpty(_jwt))
             http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
         return http;
+    }
+
+    // ---- Alta inline (crear poliza desde la tabla) ----
+    private string _npNumero = "", _npAseguradora = "", _npCorredor = "", _npValor = "", _npInicio = "", _npFin = "";
+    private bool _creandoInline;
+    private string? _inlineMsg;
+    private readonly List<Guid> _segRecienCreados = new();
+
+    private async Task CrearPolizaDesdeAltaAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_npAseguradora)) { _inlineMsg = "Indica la aseguradora para crear la poliza."; return; }
+        _creandoInline = true;
+        try
+        {
+            DateOnly? ini = DateOnly.TryParse(_npInicio, out var di) ? di : (DateOnly?)null;
+            DateOnly? fin = DateOnly.TryParse(_npFin, out var df) ? df : (DateOnly?)null;
+            decimal? valor = decimal.TryParse(_npValor, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var vv) ? vv : null;
+            var resp = await Auth().PostAsJsonAsync("/api/seguros/polizas", new CrearPolizaRequest(
+                _npAseguradora.Trim(),
+                NumeroPoliza: string.IsNullOrWhiteSpace(_npNumero) ? null : _npNumero.Trim(),
+                Corredor: string.IsNullOrWhiteSpace(_npCorredor) ? null : _npCorredor.Trim(),
+                FechaInicio: ini, FechaFin: fin, ValorPoliza: valor));
+            if (resp.IsSuccessStatusCode)
+            {
+                try { var creada = await resp.Content.ReadFromJsonAsync<PolizaDto>(); if (creada is not null) _segRecienCreados.Add(creada.Id); } catch { }
+                _npNumero = ""; _npAseguradora = ""; _npCorredor = ""; _npValor = ""; _npInicio = ""; _npFin = "";
+                _inlineMsg = "Poliza creada.";
+                await CargarAsync();
+            }
+            else { _inlineMsg = "No se pudo crear la poliza."; }
+        }
+        catch (Exception ex) { _inlineMsg = ex.Message; }
+        finally { _creandoInline = false; }
     }
 
     private async Task CargarAsync()
