@@ -1,0 +1,199 @@
+@* Gestor de plantillas de respuesta (combinacion de correspondencia). Crear/editar/eliminar
+   plantillas cuyo cuerpo puede llevar tokens {grupo.campo} que se reemplazan al usarlas. *@
+@inherits ModalBase<bool>
+@using Propia.Application.Pqrsd
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+
+<div class="gpl">
+    <div class="gpl-head">
+        <div class="gpl-eyebrow">PLANTILLAS DE RESPUESTA</div>
+        <button type="button" class="gpl-x" @onclick="Cerrar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+
+    <div class="gpl-body">
+        @* Lista de plantillas *@
+        <div class="gpl-list">
+            <button type="button" class="gpl-new" @onclick="NuevaPlantilla">+ Nueva plantilla</button>
+            @foreach (var p in _plantillas)
+            {
+                var pp = p;
+                <div class="gpl-item @(_editId == p.Id ? "on" : "")" @onclick="() => Editar(pp)">
+                    <span class="gpl-item-nm">@p.Nombre</span>
+                    <button type="button" class="gpl-item-del" title="Eliminar" @onclick:stopPropagation="true" @onclick="() => EliminarAsync(pp)">&times;</button>
+                </div>
+            }
+            @if (_plantillas.Count == 0) { <div class="gpl-empty">Sin plantillas.</div> }
+        </div>
+
+        @* Editor de la plantilla *@
+        <div class="gpl-edit">
+            @if (_editando)
+            {
+                <input class="gpl-nombre" placeholder="Nombre de la plantilla" @bind="_nombre" @bind:event="oninput" />
+                <div class="gpl-tokens">
+                    <span class="gpl-tokens-h">Insertar dato:</span>
+                    @foreach (var t in _tokens)
+                    {
+                        var tk = t;
+                        <button type="button" class="gpl-token" title="@t.Descripcion" @onclick="() => InsertarToken(tk.Token)">@t.Token</button>
+                    }
+                </div>
+                <textarea id="pqr-plt-ed"></textarea>
+                @if (!string.IsNullOrEmpty(_msg)) { <div class="gpl-msg @(_err ? "err" : "ok")">@_msg</div> }
+                <div class="gpl-foot">
+                    <span class="gpl-hint">Los tokens {grupo.campo} se reemplazan por los datos reales al usar la plantilla.</span>
+                    <button type="button" class="gpl-btn-brand" @onclick="GuardarAsync" disabled="@_busy">@(_busy ? "Guardando..." : "Guardar plantilla")</button>
+                </div>
+            }
+            else
+            {
+                <div class="gpl-placeholder">Elige una plantilla para editarla o crea una nueva.</div>
+            }
+        </div>
+    </div>
+</div>
+
+<style>
+    .gpl { display: flex; flex-direction: column; gap: 12px; padding: 4px 2px; }
+    .gpl-head { display: flex; align-items: center; justify-content: space-between; }
+    .gpl-eyebrow { font-size: 12px; font-weight: 800; letter-spacing: .05em; color: #1B2A3A; }
+    .gpl-x { width: 30px; height: 30px; border-radius: 8px; border: 1px solid #E1E8EE; background: #fff; color: #7C98B6; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+    .gpl-body { display: grid; grid-template-columns: 240px 1fr; gap: 14px; min-height: 420px; }
+    .gpl-list { display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #EEF3F8; padding-right: 12px; }
+    .gpl-new { padding: 9px; border: 1px dashed #C3D0DD; border-radius: 8px; background: transparent; color: var(--propia-brand, #6D4FE3); font-weight: 700; font-size: 12.5px; cursor: pointer; }
+    .gpl-new:hover { background: #F8F5FE; border-color: var(--propia-brand, #6D4FE3); }
+    .gpl-item { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 9px 11px; border: 1px solid #E7EDF3; border-radius: 8px; cursor: pointer; background: #fff; }
+    .gpl-item:hover { background: #F8F5FE; }
+    .gpl-item.on { border-color: var(--propia-brand, #6D4FE3); background: #F1ECFD; }
+    .gpl-item-nm { font-size: 13px; font-weight: 700; color: #1B2A3A; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .gpl-item-del { border: 0; background: transparent; color: #B6C1CF; font-size: 17px; line-height: 1; cursor: pointer; }
+    .gpl-item-del:hover { color: #D7263D; }
+    .gpl-empty { font-size: 12px; color: #94A3B8; padding: 8px; }
+    .gpl-edit { display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+    .gpl-nombre { border: 1px solid #E1E8EE; border-radius: 8px; padding: 9px 12px; font-size: 14px; font-weight: 700; color: #1B2A3A; outline: none; }
+    .gpl-nombre:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .gpl-tokens { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+    .gpl-tokens-h { font-size: 11px; font-weight: 700; color: #7C98B6; margin-right: 4px; }
+    .gpl-token { font-size: 11px; font-family: 'Cascadia Code', Consolas, monospace; color: #4B39B5; background: #EEF1FB; border: 1px solid #DCD2F8; border-radius: 6px; padding: 3px 7px; cursor: pointer; }
+    .gpl-token:hover { background: #E2E6FA; }
+    .gpl-msg { font-size: 12px; font-weight: 600; }
+    .gpl-msg.err { color: #C0383C; } .gpl-msg.ok { color: #15703F; }
+    .gpl-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .gpl-hint { font-size: 11px; color: #94A3B8; }
+    .gpl-btn-brand { padding: 9px 16px; border-radius: 8px; background: var(--propia-brand, #6D4FE3); color: #fff; font-weight: 700; font-size: 13px; border: 0; cursor: pointer; }
+    .gpl-btn-brand:disabled { opacity: .5; }
+    .gpl-placeholder { display: flex; align-items: center; justify-content: center; color: #94A3B8; font-size: 13px; height: 100%; }
+</style>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+
+    private List<PqrsdPlantillaDto> _plantillas = new();
+    private List<PqrsdTokenDto> _tokens = new();
+    private bool _editando, _busy, _err;
+    private Guid? _editId;
+    private string _nombre = "";
+    private string? _msg;
+    private bool _initEditor;
+    private const string EdSel = "#pqr-plt-ed";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAsync();
+        try { _tokens = (await Auth().GetFromJsonAsync<List<PqrsdTokenDto>>("/api/pqrsd/plantillas/tokens")) ?? new(); } catch { }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_editando && _initEditor)
+        {
+            _initEditor = false;
+            try { await Js.InvokeAsync<bool>("propiaTiny.init", EdSel, _cuerpoInicial); } catch { }
+        }
+    }
+
+    private string _cuerpoInicial = "";
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    private async Task CargarAsync()
+    {
+        try { _plantillas = (await Auth().GetFromJsonAsync<List<PqrsdPlantillaDto>>("/api/pqrsd/plantillas")) ?? new(); }
+        catch { _plantillas = new(); }
+    }
+
+    private async Task NuevaPlantilla()
+    {
+        await DestruirEditor();
+        _editId = null; _nombre = ""; _cuerpoInicial = ""; _msg = null; _err = false;
+        _editando = true; _initEditor = true;
+    }
+
+    private async Task Editar(PqrsdPlantillaDto p)
+    {
+        await DestruirEditor();
+        _editId = p.Id; _nombre = p.Nombre; _cuerpoInicial = p.CuerpoHtml; _msg = null; _err = false;
+        _editando = true; _initEditor = true;
+    }
+
+    private async Task InsertarToken(string token)
+    {
+        try { await Js.InvokeVoidAsync("propiaTiny.insert", EdSel, token); } catch { }
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nombre)) { _err = true; _msg = "Ponle un nombre a la plantilla."; return; }
+        _busy = true; _msg = null; _err = false;
+        try
+        {
+            string cuerpo = "";
+            try { cuerpo = await Js.InvokeAsync<string>("propiaTiny.getContent", EdSel); } catch { }
+            var req = new GuardarPlantillaRequest(_nombre.Trim(), cuerpo ?? "");
+            HttpResponseMessage resp;
+            if (_editId is { } id) resp = await Auth().PutAsJsonAsync($"/api/pqrsd/plantillas/{id}", req);
+            else resp = await Auth().PostAsJsonAsync("/api/pqrsd/plantillas", req);
+            if (!resp.IsSuccessStatusCode) { _err = true; _msg = "No se pudo guardar."; return; }
+            _msg = "Plantilla guardada."; _err = false;
+            await CargarAsync();
+            if (_editId is null)
+            {
+                try { var creada = await resp.Content.ReadFromJsonAsync<PqrsdPlantillaDto>(); if (creada is not null) _editId = creada.Id; } catch { }
+            }
+        }
+        catch (Exception ex) { _err = true; _msg = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task EliminarAsync(PqrsdPlantillaDto p)
+    {
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/pqrsd/plantillas/{p.Id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                if (_editId == p.Id) { await DestruirEditor(); _editando = false; _editId = null; }
+                await CargarAsync();
+            }
+        }
+        catch { }
+    }
+
+    private async Task DestruirEditor()
+    {
+        try { await Js.InvokeVoidAsync("propiaTiny.destroy", EdSel); } catch { }
+    }
+
+    private async Task Cerrar()
+    {
+        await DestruirEditor();
+        Close(true);
+    }
+}

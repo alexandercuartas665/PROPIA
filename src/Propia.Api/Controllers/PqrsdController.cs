@@ -498,6 +498,33 @@ public class PqrsdController : ControllerBase
         var dto = await _svc.CrearRespuestaBorradorAsync(id, req, ct);
         return dto is null ? NotFound() : Created("", dto);
     }
+
+    // --- Plantillas de respuesta (combinacion de correspondencia) ---
+    [HttpGet("plantillas/tokens")]
+    public IActionResult ListarTokensPlantilla() => Ok(_svc.ListarTokensPlantilla());
+
+    [HttpGet("plantillas")]
+    public async Task<IActionResult> ListarPlantillas(CancellationToken ct) => Ok(await _svc.ListarPlantillasAsync(ct));
+
+    [HttpPost("plantillas")]
+    public async Task<IActionResult> CrearPlantilla([FromBody] GuardarPlantillaRequest req, CancellationToken ct)
+        => Ok(await _svc.CrearPlantillaAsync(req, ct));
+
+    [HttpPut("plantillas/{plantillaId:guid}")]
+    public async Task<IActionResult> ActualizarPlantilla(Guid plantillaId, [FromBody] GuardarPlantillaRequest req, CancellationToken ct)
+        => await _svc.ActualizarPlantillaAsync(plantillaId, req, ct) ? NoContent() : NotFound();
+
+    [HttpDelete("plantillas/{plantillaId:guid}")]
+    public async Task<IActionResult> EliminarPlantilla(Guid plantillaId, CancellationToken ct)
+        => await _svc.EliminarPlantillaAsync(plantillaId, ct) ? NoContent() : NotFound();
+
+    // Devuelve el cuerpo de la plantilla con los tokens ya reemplazados por los datos del expediente.
+    [HttpGet("{id:guid}/plantillas/{plantillaId:guid}/resuelta")]
+    public async Task<IActionResult> ResolverPlantilla(Guid id, Guid plantillaId, CancellationToken ct)
+    {
+        var html = await _svc.ResolverPlantillaAsync(id, plantillaId, ct);
+        return html is null ? NotFound() : Ok(new { html });
+    }
 }
 
 /// <summary>Body para alternar el flag de adjunto compartido.</summary>

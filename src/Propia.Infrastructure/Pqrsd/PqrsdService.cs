@@ -940,6 +940,132 @@ public class PqrsdService : IPqrsdService
             r.Enviada, r.EnviadaAt, new List<PqrsdAdjuntoDto>());
     }
 
+    // ===================== Plantillas de respuesta (combinacion de correspondencia) =====================
+
+    private static readonly (string Token, string Desc)[] _tokensPlantilla = new[]
+    {
+        ("copropiedad.nombre", "Nombre de la copropiedad"),
+        ("copropiedad.nit", "NIT de la copropiedad"),
+        ("copropiedad.direccion", "Direccion de la copropiedad"),
+        ("copropiedad.ciudad", "Ciudad"),
+        ("radicado.numero", "Numero de radicado"),
+        ("radicado.tipo", "Tipo de PQRSD"),
+        ("radicado.categoria", "Categoria"),
+        ("radicado.fecha", "Fecha de radicacion"),
+        ("radicado.estado", "Estado actual"),
+        ("solicitante.nombre", "Nombre del solicitante"),
+        ("solicitante.identificacion", "Identificacion del solicitante"),
+        ("solicitante.correo", "Correo del solicitante"),
+        ("solicitante.telefono", "Telefono del solicitante"),
+        ("usuario.nombre", "Nombre del solicitante (alias)"),
+        ("usuario.identificacion", "Identificacion del solicitante (alias)"),
+        ("unidad.numero", "Numero de la unidad"),
+        ("unidad.torre", "Torre/bloque de la unidad"),
+        ("unidad_privada.propietario", "Propietario de la unidad"),
+        ("unidad.propietario", "Propietario de la unidad (alias)"),
+        ("gestor.nombre", "Nombre de quien responde (usuario actual)"),
+        ("fecha.hoy", "Fecha de hoy"),
+    };
+
+    public IReadOnlyList<PqrsdTokenDto> ListarTokensPlantilla()
+        => _tokensPlantilla.Select(t => new PqrsdTokenDto("{" + t.Token + "}", t.Desc)).ToList();
+
+    public async Task<IReadOnlyList<PqrsdPlantillaDto>> ListarPlantillasAsync(CancellationToken ct)
+        => await _db.PqrsdPlantillasRespuesta.AsNoTracking().Where(p => p.Activa)
+            .OrderBy(p => p.Orden).ThenBy(p => p.Nombre)
+            .Select(p => new PqrsdPlantillaDto(p.Id, p.Nombre, p.CuerpoHtml)).ToListAsync(ct);
+
+    public async Task<PqrsdPlantillaDto> CrearPlantillaAsync(GuardarPlantillaRequest req, CancellationToken ct)
+    {
+        var count = await _db.PqrsdPlantillasRespuesta.CountAsync(ct);
+        var p = new PqrsdPlantillaRespuesta { Nombre = (req.Nombre ?? "Plantilla").Trim(), CuerpoHtml = req.CuerpoHtml ?? "", Activa = true, Orden = count };
+        _db.PqrsdPlantillasRespuesta.Add(p);
+        await _db.SaveChangesAsync(ct);
+        return new PqrsdPlantillaDto(p.Id, p.Nombre, p.CuerpoHtml);
+    }
+
+    public async Task<bool> ActualizarPlantillaAsync(Guid id, GuardarPlantillaRequest req, CancellationToken ct)
+    {
+        var p = await _db.PqrsdPlantillasRespuesta.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (p is null) return false;
+        p.Nombre = (req.Nombre ?? p.Nombre).Trim();
+        p.CuerpoHtml = req.CuerpoHtml ?? "";
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> EliminarPlantillaAsync(Guid id, CancellationToken ct)
+    {
+        var p = await _db.PqrsdPlantillasRespuesta.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (p is null) return false;
+        _db.PqrsdPlantillasRespuesta.Remove(p);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<string?> ResolverPlantillaAsync(Guid expedienteId, Guid plantillaId, CancellationToken ct)
+    {
+        var plantilla = await _db.PqrsdPlantillasRespuesta.AsNoTracking().FirstOrDefaultAsync(p => p.Id == plantillaId, ct);
+        if (plantilla is null) return null;
+        var exp = await _db.PqrsdExpedientes.AsNoTracking()
+            .Include(e => e.Categoria).Include(e => e.TipoConfig).Include(e => e.RadicadorPersona)
+            .FirstOrDefaultAsync(e => e.Id == expedienteId, ct);
+        if (exp is null) return null;
+        var tenant = await _db.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == exp.TenantId, ct);
+        var (_, gestorNombre) = ActorActual();
+        var esCO = new System.Globalization.CultureInfo("es-CO");
+
+        string unidadNum = "", unidadTorre = "", propietario = "";
+        if (exp.UnidadPrivadaId is { } uid)
+        {
+            var unidad = await _db.UnidadesPrivadas.AsNoTracking().Include(u => u.Torre).FirstOrDefaultAsync(u => u.Id == uid, ct);
+            if (unidad is not null) { unidadNum = unidad.Numero; unidadTorre = unidad.Torre?.Nombre ?? ""; }
+            var propId = await _db.UnidadPersonas.AsNoTracking()
+                .Where(up => up.UnidadId == uid && up.Rol == Domain.Enums.RolUnidadPersona.Propietario && up.PersonaId != null)
+                .Select(up => up.PersonaId).FirstOrDefaultAsync(ct);
+            if (propId is { } pid)
+            {
+                var prop = await _db.Personas.AsNoTracking().FirstOrDefaultAsync(p => p.Id == pid, ct);
+                if (prop is not null) propietario = $"{prop.Nombres} {prop.Apellidos}".Trim();
+            }
+        }
+
+        var rad = exp.RadicadorPersona;
+        var solNombre = exp.IdentidadReservada ? "(reservada)" : (rad is null ? "" : $"{rad.Nombres} {rad.Apellidos}".Trim());
+        var solDoc = exp.IdentidadReservada ? "" : (rad?.Documento ?? "");
+
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["copropiedad.nombre"] = tenant?.Nombre ?? "",
+            ["copropiedad.nit"] = tenant?.Nit ?? "",
+            ["copropiedad.direccion"] = tenant?.Direccion ?? "",
+            ["copropiedad.ciudad"] = tenant?.Ciudad ?? "",
+            ["radicado.numero"] = exp.NumeroRadicado,
+            ["radicado.tipo"] = exp.TipoConfig?.Nombre ?? exp.Tipo.ToString(),
+            ["radicado.categoria"] = exp.Categoria?.Nombre ?? "",
+            ["radicado.fecha"] = exp.CreatedAt.ToLocalTime().ToString("dd 'de' MMMM 'de' yyyy", esCO),
+            ["radicado.estado"] = exp.Estado.ToString(),
+            ["solicitante.nombre"] = solNombre,
+            ["solicitante.identificacion"] = solDoc,
+            ["solicitante.correo"] = exp.IdentidadReservada ? "" : (rad?.Email ?? ""),
+            ["solicitante.telefono"] = exp.IdentidadReservada ? "" : (rad?.Telefono ?? ""),
+            ["usuario.nombre"] = solNombre,
+            ["usuario.identificacion"] = solDoc,
+            ["unidad.numero"] = unidadNum,
+            ["unidad.torre"] = unidadTorre,
+            ["unidad_privada.propietario"] = propietario,
+            ["unidad.propietario"] = propietario,
+            ["gestor.nombre"] = gestorNombre ?? "",
+            ["fecha.hoy"] = DateTimeOffset.Now.ToLocalTime().ToString("dd 'de' MMMM 'de' yyyy", esCO),
+        };
+
+        return System.Text.RegularExpressions.Regex.Replace(plantilla.CuerpoHtml, @"\{([a-zA-Z_]+\.[a-zA-Z_]+)\}", m =>
+        {
+            var key = m.Groups[1].Value;
+            return map.TryGetValue(key, out var val) ? System.Net.WebUtility.HtmlEncode(val) : m.Value;
+        });
+    }
+
     // ---- Config del formulario publico (admin): campos opcionales + textos + orden de campos fijos ----
     // Claves canonicas de los campos FIJOS del formulario publico, en su orden por defecto.
     private static readonly string[] CamposFijosDefault =

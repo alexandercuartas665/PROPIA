@@ -33,6 +33,14 @@ window.propiaTiny = {
             return true;
         } catch (e) { console.error('tiny init', e); return false; }
     },
+    setContent(selector, html) {
+        const id = selector.replace('#', '');
+        try { const ed = window.tinymce && tinymce.get(id); if (ed) ed.setContent(html || ''); } catch (e) { }
+    },
+    insert(selector, text) {
+        const id = selector.replace('#', '');
+        try { const ed = window.tinymce && tinymce.get(id); if (ed) ed.insertContent(text); } catch (e) { }
+    },
     getContent(selector) {
         const id = selector.replace('#', '');
         try { const ed = window.tinymce && tinymce.get(id); return ed ? ed.getContent() : ''; }

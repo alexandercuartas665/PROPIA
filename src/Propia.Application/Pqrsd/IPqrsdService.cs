@@ -94,6 +94,16 @@ public interface IPqrsdService
     /// <summary>Crea una respuesta borrador (guarda con trazabilidad autor/fecha). Null si el expediente no existe.</summary>
     Task<PqrsdRespuestaDto?> CrearRespuestaBorradorAsync(Guid expedienteId, CrearRespuestaBorradorRequest req, CancellationToken ct);
 
+    // Plantillas de respuesta (combinacion de correspondencia)
+    /// <summary>Catalogo de tokens disponibles para plantillas (con su descripcion).</summary>
+    IReadOnlyList<PqrsdTokenDto> ListarTokensPlantilla();
+    Task<IReadOnlyList<PqrsdPlantillaDto>> ListarPlantillasAsync(CancellationToken ct);
+    Task<PqrsdPlantillaDto> CrearPlantillaAsync(GuardarPlantillaRequest req, CancellationToken ct);
+    Task<bool> ActualizarPlantillaAsync(Guid id, GuardarPlantillaRequest req, CancellationToken ct);
+    Task<bool> EliminarPlantillaAsync(Guid id, CancellationToken ct);
+    /// <summary>Devuelve el cuerpo de la plantilla con los tokens reemplazados por los datos reales del expediente.</summary>
+    Task<string?> ResolverPlantillaAsync(Guid expedienteId, Guid plantillaId, CancellationToken ct);
+
     // Tutela
     Task<bool> ActivarTutelaAsync(Guid id, ActivarTutelaRequest req, CancellationToken ct);
 

@@ -30,12 +30,9 @@
     @if (_modo != "ver")
     {
         <input class="rrp-asunto" placeholder="Asunto (opcional)" @bind="_asunto" @bind:event="oninput" />
-        <div class="rrp-doc">
-            <textarea id="pqr-resp-ed"></textarea>
-        </div>
 
-        @* Galeria de adjuntos (pendientes: se suben al guardar) *@
-        <div class="rrp-adj">
+        @* Adjuntos ARRIBA (pendientes: se suben al guardar) *@
+        <div class="rrp-adj rrp-adj--top">
             <div class="rrp-adj-h">ADJUNTOS (@_pendientes.Count)</div>
             <div class="rrp-gal">
                 @for (int i = 0; i < _pendientes.Count; i++)
@@ -47,11 +44,36 @@
                         <button type="button" class="rrp-gal-x" title="Quitar" @onclick="() => QuitarPendiente(idx)">&times;</button>
                     </div>
                 }
-                <label class="rrp-gal-add">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                <label class="rrp-gal-add rrp-gal-add--sm">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
                     <span>Agregar</span>
                     <InputFile OnChange="OnElegirPendientes" multiple style="display:none" />
                 </label>
+            </div>
+        </div>
+
+        @* Editor (documento) + panel de plantillas al lado *@
+        <div class="rrp-compose">
+            <div class="rrp-doc">
+                <textarea id="pqr-resp-ed"></textarea>
+            </div>
+            <div class="rrp-tpl">
+                <div class="rrp-tpl-h">
+                    <span>PLANTILLAS</span>
+                    <button type="button" class="rrp-tpl-gear" title="Crear/editar plantillas" @onclick="GestionarPlantillas">Gestionar</button>
+                </div>
+                <div class="rrp-tpl-hint">Al usar una plantilla, los datos ({unidad}, {copropiedad}...) se reemplazan por los reales.</div>
+                <div class="rrp-tpl-list">
+                    @foreach (var p in _plantillas)
+                    {
+                        var pp = p;
+                        <div class="rrp-tpl-item">
+                            <span class="rrp-tpl-nm" title="@p.Nombre">@p.Nombre</span>
+                            <button type="button" class="rrp-tpl-use" @onclick="() => UsarPlantilla(pp)" disabled="@_busy">Usar</button>
+                        </div>
+                    }
+                    @if (_plantillas.Count == 0) { <div class="rrp-tpl-empty">Sin plantillas. Crea una con "Gestionar".</div> }
+                </div>
             </div>
         </div>
 
@@ -150,6 +172,23 @@
     .rrp-gal-add { border: 1px dashed #C3D0DD; border-radius: 10px; min-height: 108px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--propia-brand, #6D4FE3); cursor: pointer; background: transparent; }
     .rrp-gal-add:hover { border-color: var(--propia-brand, #6D4FE3); background: #F8F5FE; }
     .rrp-gal-add.busy { opacity: .6; }
+    .rrp-adj--top { border-top: 0; padding-top: 0; }
+    .rrp-adj--top .rrp-gal { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+    .rrp-gal-add--sm { min-height: 70px; }
+
+    /* Layout redaccion: editor + panel de plantillas al lado */
+    .rrp-compose { display: grid; grid-template-columns: 1fr 260px; gap: 12px; align-items: start; }
+    .rrp-tpl { border: 1px solid #E7EDF3; border-radius: 12px; padding: 12px; background: #FAFBFD; display: flex; flex-direction: column; gap: 8px; max-height: 62vh; overflow-y: auto; }
+    .rrp-tpl-h { display: flex; align-items: center; justify-content: space-between; font-size: 10.5px; font-weight: 800; letter-spacing: .05em; color: #7C98B6; }
+    .rrp-tpl-gear { font-size: 11px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: #EEF1FB; border: 1px solid #DCD2F8; border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+    .rrp-tpl-gear:hover { background: #E2E6FA; }
+    .rrp-tpl-hint { font-size: 10.5px; color: #94A3B8; line-height: 1.35; }
+    .rrp-tpl-list { display: flex; flex-direction: column; gap: 6px; }
+    .rrp-tpl-item { display: flex; align-items: center; justify-content: space-between; gap: 6px; border: 1px solid #E7EDF3; border-radius: 8px; padding: 8px 9px; background: #fff; }
+    .rrp-tpl-nm { font-size: 12.5px; font-weight: 700; color: #1B2A3A; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rrp-tpl-use { font-size: 11.5px; font-weight: 700; color: #fff; background: var(--propia-brand, #6D4FE3); border: 0; border-radius: 6px; padding: 5px 10px; cursor: pointer; flex: 0 0 auto; }
+    .rrp-tpl-use:disabled { opacity: .5; }
+    .rrp-tpl-empty { font-size: 11.5px; color: #94A3B8; }
 </style>
 
 @code {
@@ -166,11 +205,39 @@
     private bool _editorListo;
     private const string EdSel = "#pqr-resp-ed";
     private readonly List<IBrowserFile> _pendientes = new();
+    private List<PqrsdPlantillaDto> _plantillas = new();
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         if (Respuesta is not null) { _dto = Respuesta; _modo = "ver"; }
+        else await CargarPlantillasAsync();
     }
+
+    private async Task CargarPlantillasAsync()
+    {
+        try { _plantillas = (await Auth().GetFromJsonAsync<List<PqrsdPlantillaDto>>("/api/pqrsd/plantillas")) ?? new(); }
+        catch { _plantillas = new(); }
+    }
+
+    private async Task UsarPlantilla(PqrsdPlantillaDto p)
+    {
+        try
+        {
+            var res = await Auth().GetFromJsonAsync<HtmlResp>($"/api/pqrsd/{ExpedienteId}/plantillas/{p.Id}/resuelta");
+            if (res?.Html is not null) await Js.InvokeVoidAsync("propiaTiny.setContent", EdSel, res.Html);
+        }
+        catch (Exception ex) { _err = true; _msg = ex.Message; }
+    }
+
+    private async Task GestionarPlantillas()
+    {
+        var parameters = new ModalParameters().Set("Jwt", Jwt);
+        var options = new ModalOptions { Width = "980px" };
+        await Modals.OpenAsync<GestionarPlantillasPqrsdModal, bool>(parameters, options);
+        await CargarPlantillasAsync();
+    }
+
+    private sealed record HtmlResp(string Html);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {

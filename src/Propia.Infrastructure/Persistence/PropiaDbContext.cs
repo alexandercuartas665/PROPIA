@@ -203,6 +203,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<PqrsdCampoValor> PqrsdCampoValores => Set<PqrsdCampoValor>();
     public DbSet<PqrsdComentario> PqrsdComentarios => Set<PqrsdComentario>();
     public DbSet<PqrsdRespuesta> PqrsdRespuestas => Set<PqrsdRespuesta>();
+    public DbSet<PqrsdPlantillaRespuesta> PqrsdPlantillasRespuesta => Set<PqrsdPlantillaRespuesta>();
     public DbSet<PqrsdTipo> PqrsdTipos => Set<PqrsdTipo>();
 
     // Motivos de cierre configurables (compartido Tareas/PQRSD via discriminador Modulo)
@@ -1673,6 +1674,15 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasOne(x => x.Expediente).WithMany(e => e.Respuestas).HasForeignKey(x => x.ExpedienteId).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => x.ExpedienteId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PqrsdPlantillaRespuesta>(b =>
+        {
+            b.ToTable("pqrsd_plantillas_respuesta");
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(200);
+            b.Property(x => x.CuerpoHtml).IsRequired().HasColumnType("text");
+            b.HasIndex(x => x.TenantId);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
