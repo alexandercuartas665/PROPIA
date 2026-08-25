@@ -1,6 +1,7 @@
-@* Modal de respuesta PQRSD estilo "correo": redactar con editor enriquecido (TinyMCE) o ver una
-   respuesta ya guardada con sus adjuntos. El envio al radicador se construye despues (aqui solo
-   se guardan borradores con trazabilidad). *@
+@* Modal de respuesta PQRSD estilo "documento/carta": redactar con editor enriquecido (TinyMCE) o ver
+   una respuesta guardada. Los adjuntos se manejan como una GALERIA en la parte de abajo: en redaccion
+   se eligen y quedan pendientes (se suben al guardar); en vista se ven y se pueden agregar mas. El
+   envio al radicador se construye despues (aqui solo se guardan borradores con trazabilidad). *@
 @inherits ModalBase<bool>
 @using Propia.Application.Pqrsd
 @using Microsoft.AspNetCore.Components.Forms
@@ -29,7 +30,31 @@
     @if (_modo != "ver")
     {
         <input class="rrp-asunto" placeholder="Asunto (opcional)" @bind="_asunto" @bind:event="oninput" />
-        <textarea id="pqr-resp-ed"></textarea>
+        <div class="rrp-doc">
+            <textarea id="pqr-resp-ed"></textarea>
+        </div>
+
+        @* Galeria de adjuntos (pendientes: se suben al guardar) *@
+        <div class="rrp-adj">
+            <div class="rrp-adj-h">ADJUNTOS (@_pendientes.Count)</div>
+            <div class="rrp-gal">
+                @for (int i = 0; i < _pendientes.Count; i++)
+                {
+                    var idx = i; var f = _pendientes[i];
+                    <div class="rrp-gal-item">
+                        <div class="rrp-gal-ic">@Ext(f.Name)</div>
+                        <div class="rrp-gal-nm" title="@f.Name">@f.Name</div>
+                        <button type="button" class="rrp-gal-x" title="Quitar" @onclick="() => QuitarPendiente(idx)">&times;</button>
+                    </div>
+                }
+                <label class="rrp-gal-add">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                    <span>Agregar</span>
+                    <InputFile OnChange="OnElegirPendientes" multiple style="display:none" />
+                </label>
+            </div>
+        </div>
+
         @if (!string.IsNullOrEmpty(_msg)) { <div class="rrp-msg @(_err ? "err" : "ok")">@_msg</div> }
         <div class="rrp-foot">
             <span class="rrp-hint">Se guarda como borrador con trazabilidad. El envio al radicador se hara despues.</span>
@@ -41,21 +66,37 @@
     }
     else if (_dto is not null)
     {
-        <div class="rrp-mail">@((MarkupString)_dto.CuerpoHtml)</div>
+        <div class="rrp-doc rrp-doc--ver">
+            <div class="rrp-page">@((MarkupString)_dto.CuerpoHtml)</div>
+        </div>
 
         <div class="rrp-adj">
-            <div class="rrp-adj-h">ADJUNTOS DE ESTA RESPUESTA (@_dto.Adjuntos.Count)</div>
-            <div class="rrp-adj-list">
+            <div class="rrp-adj-h">ADJUNTOS (@_dto.Adjuntos.Count)</div>
+            <div class="rrp-gal">
                 @foreach (var a in _dto.Adjuntos)
                 {
-                    <a class="rrp-adj-item" href="@a.UrlStorage" target="_blank" rel="noopener" title="@a.NombreArchivo">
-                        <span class="rrp-adj-ic">@Ext(a.NombreArchivo)</span>
-                        <span class="rrp-adj-nm">@a.NombreArchivo</span>
+                    <a class="rrp-gal-item rrp-gal-item--link" href="@a.UrlStorage" target="_blank" rel="noopener" title="@a.NombreArchivo">
+                        @if (EsImagen(a.TipoMime, a.NombreArchivo))
+                        {
+                            <div class="rrp-gal-thumb"><img src="@a.UrlStorage" alt="@a.NombreArchivo" /></div>
+                        }
+                        else
+                        {
+                            <div class="rrp-gal-ic">@Ext(a.NombreArchivo)</div>
+                        }
+                        <div class="rrp-gal-nm">@a.NombreArchivo</div>
                     </a>
                 }
-                <label class="rrp-adj-up @(_subiendo ? "busy" : "")">
-                    @if (_subiendo) { <span>Subiendo...</span> }
-                    else { <span>+ Adjuntar archivo</span> }
+                <label class="rrp-gal-add @(_subiendo ? "busy" : "")">
+                    @if (_subiendo)
+                    {
+                        <span>Subiendo...</span>
+                    }
+                    else
+                    {
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                        <span>Agregar</span>
+                    }
                     <InputFile OnChange="OnSubirAdjunto" multiple style="display:none" />
                 </label>
             </div>
@@ -79,8 +120,12 @@
     .rrp-meta { font-size: 11.5px; color: #7C98B6; margin-top: 2px; }
     .rrp-x { width: 30px; height: 30px; border-radius: 8px; border: 1px solid #E1E8EE; background: #fff; color: #7C98B6; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
     .rrp-x:hover { color: #D7263D; border-color: #F0C9C9; }
-    .rrp-asunto { border: 1px solid #E1E8EE; border-radius: 9px; padding: 10px 12px; font-size: 14px; color: #1B2A3A; outline: none; font-family: inherit; }
+    .rrp-asunto { border: 1px solid #E1E8EE; border-radius: 9px; padding: 11px 14px; font-size: 15px; color: #1B2A3A; outline: none; font-family: inherit; }
     .rrp-asunto:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .rrp-doc { border: 1px solid #E7EDF3; border-radius: 12px; overflow: hidden; background: #eceff3; }
+    .rrp-doc--ver { max-height: 52vh; overflow-y: auto; padding: 22px 0; }
+    .rrp-page { background: #fff; max-width: 760px; margin: 0 auto; padding: 56px 64px; box-shadow: 0 3px 16px rgba(27,42,58,.14); border-radius: 2px; font-family: Georgia, 'Times New Roman', serif; font-size: 15px; line-height: 1.6; color: #1B2A3A; }
+    .rrp-page img { max-width: 100%; }
     .rrp-msg { font-size: 12px; font-weight: 600; }
     .rrp-msg.err { color: #C0383C; }
     .rrp-msg.ok { color: #15703F; }
@@ -90,18 +135,21 @@
     .rrp-btn-brand { padding: 10px 18px; border-radius: 9px; background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 13px; font-weight: 700; border: 0; cursor: pointer; }
     .rrp-btn-brand:disabled { opacity: .5; cursor: default; }
     .rrp-btn-ghost { padding: 10px 16px; border-radius: 9px; background: #fff; border: 1px solid #E1E8EE; font-size: 13px; font-weight: 600; color: #516F90; cursor: pointer; }
-    .rrp-mail { border: 1px solid #E7EDF3; border-radius: 12px; padding: 18px 20px; background: #fff; font-size: 14px; line-height: 1.55; color: #1B2A3A; max-height: 46vh; overflow-y: auto; }
-    .rrp-mail img { max-width: 100%; }
+
+    /* Galeria de adjuntos */
     .rrp-adj { border-top: 1px solid #EEF3F8; padding-top: 12px; }
     .rrp-adj-h { font-size: 10.5px; font-weight: 800; letter-spacing: .05em; color: #7C98B6; margin-bottom: 8px; }
-    .rrp-adj-list { display: flex; flex-wrap: wrap; gap: 8px; }
-    .rrp-adj-item { display: inline-flex; align-items: center; gap: 7px; border: 1px solid #E7EDF3; border-radius: 9px; padding: 7px 11px; text-decoration: none; background: #FAFBFD; color: #1B2A3A; }
-    .rrp-adj-item:hover { background: #F1ECFD; border-color: #D8CCF7; }
-    .rrp-adj-ic { font-size: 10px; font-weight: 800; color: #fff; background: #6D4FE3; border-radius: 5px; padding: 3px 5px; text-transform: uppercase; }
-    .rrp-adj-nm { font-size: 12.5px; font-weight: 600; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .rrp-adj-up { display: inline-flex; align-items: center; gap: 6px; border: 1px dashed #C3D0DD; border-radius: 9px; padding: 7px 12px; font-size: 12.5px; font-weight: 700; color: var(--propia-brand, #6D4FE3); cursor: pointer; background: transparent; }
-    .rrp-adj-up:hover { border-color: var(--propia-brand, #6D4FE3); background: #F8F5FE; }
-    .rrp-adj-up.busy { opacity: .6; }
+    .rrp-gal { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+    .rrp-gal-item { position: relative; border: 1px solid #E7EDF3; border-radius: 10px; padding: 10px; background: #FAFBFD; display: flex; flex-direction: column; align-items: center; gap: 7px; text-decoration: none; color: #1B2A3A; }
+    .rrp-gal-item--link:hover { background: #F1ECFD; border-color: #D8CCF7; }
+    .rrp-gal-thumb { width: 100%; height: 70px; border-radius: 7px; overflow: hidden; background: #EEF3F8; }
+    .rrp-gal-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .rrp-gal-ic { width: 100%; height: 70px; border-radius: 7px; background: #6D4FE3; color: #fff; font-size: 13px; font-weight: 800; display: flex; align-items: center; justify-content: center; text-transform: uppercase; }
+    .rrp-gal-nm { font-size: 11.5px; font-weight: 600; width: 100%; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rrp-gal-x { position: absolute; top: -7px; right: -7px; width: 22px; height: 22px; border-radius: 50%; border: 1px solid #F0C9C9; background: #fff; color: #D7263D; font-size: 15px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .rrp-gal-add { border: 1px dashed #C3D0DD; border-radius: 10px; min-height: 108px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--propia-brand, #6D4FE3); cursor: pointer; background: transparent; }
+    .rrp-gal-add:hover { border-color: var(--propia-brand, #6D4FE3); background: #F8F5FE; }
+    .rrp-gal-add.busy { opacity: .6; }
 </style>
 
 @code {
@@ -117,6 +165,7 @@
     private string? _msg;
     private bool _editorListo;
     private const string EdSel = "#pqr-resp-ed";
+    private readonly List<IBrowserFile> _pendientes = new();
 
     protected override void OnInitialized()
     {
@@ -140,6 +189,17 @@
         return http;
     }
 
+    private void OnElegirPendientes(InputFileChangeEventArgs e)
+    {
+        foreach (var f in e.GetMultipleFiles(maximumFileCount: 20))
+            _pendientes.Add(f);
+    }
+
+    private void QuitarPendiente(int idx)
+    {
+        if (idx >= 0 && idx < _pendientes.Count) _pendientes.RemoveAt(idx);
+    }
+
     private async Task GuardarAsync()
     {
         _busy = true; _msg = null; _err = false;
@@ -156,8 +216,16 @@
             if (!resp.IsSuccessStatusCode) { _err = true; _msg = "No se pudo guardar: " + await resp.Content.ReadAsStringAsync(); return; }
             var creada = await resp.Content.ReadFromJsonAsync<PqrsdRespuestaDto>();
             try { await Js.InvokeVoidAsync("propiaTiny.destroy", EdSel); } catch { }
-            // Pasa a modo VER para poder adjuntar archivos a la respuesta recien guardada.
             _dto = creada;
+            // Sube los adjuntos pendientes elegidos durante la redaccion.
+            if (creada is not null && _pendientes.Count > 0)
+            {
+                _subiendo = true; StateHasChanged();
+                foreach (var f in _pendientes) await SubirUnoAsync(creada.Id, f);
+                _pendientes.Clear();
+                _subiendo = false;
+                await RecargarDtoAsync();
+            }
             _modo = "ver";
             _msg = "Respuesta guardada."; _err = false;
         }
@@ -170,24 +238,29 @@
         if (_dto is null) return;
         _subiendo = true; _msg = null; _err = false;
         var subidos = 0;
-        foreach (var archivo in e.GetMultipleFiles(maximumFileCount: 10))
+        foreach (var archivo in e.GetMultipleFiles(maximumFileCount: 20))
         {
-            try
-            {
-                using var content = new MultipartFormDataContent();
-                var sc = new StreamContent(archivo.OpenReadStream(20_000_000));
-                sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
-                    string.IsNullOrEmpty(archivo.ContentType) ? "application/octet-stream" : archivo.ContentType);
-                content.Add(sc, "file", archivo.Name);
-                content.Add(new StringContent(_dto.Id.ToString()), "respuestaId");
-                var resp = await Auth().PostAsync($"/api/pqrsd/{ExpedienteId}/adjuntos/upload", content);
-                if (resp.IsSuccessStatusCode) subidos++;
-            }
-            catch { }
+            if (await SubirUnoAsync(_dto.Id, archivo)) subidos++;
         }
         _subiendo = false;
         if (subidos > 0) { await RecargarDtoAsync(); _msg = $"{subidos} archivo(s) adjuntado(s)."; }
         else { _err = true; _msg = "No se pudo adjuntar."; }
+    }
+
+    private async Task<bool> SubirUnoAsync(Guid respuestaId, IBrowserFile archivo)
+    {
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var sc = new StreamContent(archivo.OpenReadStream(20_000_000));
+            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                string.IsNullOrEmpty(archivo.ContentType) ? "application/octet-stream" : archivo.ContentType);
+            content.Add(sc, "file", archivo.Name);
+            content.Add(new StringContent(respuestaId.ToString()), "respuestaId");
+            var resp = await Auth().PostAsync($"/api/pqrsd/{ExpedienteId}/adjuntos/upload", content);
+            return resp.IsSuccessStatusCode;
+        }
+        catch { return false; }
     }
 
     private async Task RecargarDtoAsync()
@@ -212,5 +285,12 @@
     {
         var e = System.IO.Path.GetExtension(nombre)?.TrimStart('.');
         return string.IsNullOrEmpty(e) ? "FILE" : e.ToUpperInvariant();
+    }
+
+    private static bool EsImagen(string mime, string nombre)
+    {
+        if (!string.IsNullOrEmpty(mime) && mime.StartsWith("image/")) return true;
+        var ext = System.IO.Path.GetExtension(nombre)?.ToLowerInvariant();
+        return ext is ".png" or ".jpg" or ".jpeg" or ".gif" or ".webp" or ".bmp";
     }
 }
