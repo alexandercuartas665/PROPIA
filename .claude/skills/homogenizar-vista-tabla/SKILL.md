@@ -130,6 +130,42 @@ tarjeta con sombra. Solo pasar el parametro.
 Dar `min-width` a columnas que cortan el dato (ref PQRSD: Radicado 140, Asunto 280/resumen 380, Tipo 120,
 Estado 155, Unidad 170, Persona 240). Medir en Chrome que no se corte.
 
+## 14. Footer / paginador de la tabla (referencia: Unidades `.dst-pager`)
+
+Barra inferior FIJA al pie de la tabla, con el conteo a la izquierda y los controles a la derecha.
+Referencia canonica: Distribucion.razor (Unidades) y ZonasComunes.razor.
+- **UBICACION (critico):** el footer va DENTRO del MISMO contenedor con borde/radio/`overflow:hidden`
+  que envuelve la tabla (NO como hermano/pegado despues del contenedor, que se ve "flotando"). Debe ser
+  el ultimo hijo de esa caja, despues de la zona scrolleable/filas y de la fila de alta. Asi comparte el
+  borde, el radio inferior y el `overflow:hidden` de la caja y se integra (su `border-top` lo separa de
+  las filas). Estructura canonica: `caja(border+radius+overflow:hidden) > [scroll/filas] + [fila alta] + <TablaPager/>`.
+  - Modulos cuyo contenedor de tabla ES el scroll (overflow:auto con borde/radio, ej. PQRSD `.pk-table-wrap`,
+    Contratos `.ctr-table-wrap`): envolver `[scroll][footer]` en una caja externa `overflow:hidden` con el
+    borde/radio, y quitarselos al scroll interno (para que el footer no scrollee en horizontal con la tabla).
+  - Modulos con sub-vista (Directorio/Usuarios): renderizar el `<TablaPager>` DENTRO de la sub-vista (pasarle
+    Total/Pagina/PorPagina + callbacks), para que quede dentro de su propio contenedor de tabla.
+- Usar SIEMPRE el componente compartido `TablaPager` (fuente unica del diseno).
+- Contenedor: `display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+  padding:10px 16px; background:#FAFBFC; border-top:1px solid #EEF2F6`.
+- IZQUIERDA `.dst-pager-info` (12.5px, color #6B7C8F): `Mostrando {desde}-{hasta} de {total} {entidad}`
+  (ej. "Mostrando 1-25 de 213 unidades"). Con 0 registros -> "Mostrando 0 de 0".
+- DERECHA `.dst-pager-ctrl` (flex, gap 8):
+  - `<select>` tamano de pagina con opciones **25 / 50 / 100** ("N por pagina"). Borde #E1E8EE, radius 7,
+    12.5px; focus violeta. SIEMPRE visible.
+  - Anterior / posicion / Siguiente SOLO si `TotalPaginas > 1`: botones 28x28 (borde #E1E8EE, radius 7,
+    hover violeta, disabled opacity .4) con chevrons `M15 6l-6 6 6 6` / `M9 6l6 6-6 6`, y en medio
+    `.dst-pager-pos` "{pagina} / {total}" (12.5px/700, min-width 52px, centrado).
+- Estado/計算 en el @code: `_porPagina` (default 25), `TamanosPagina = {25,50,100}`, `_pagina`,
+  `TotalPaginas = ceil(total/porPagina)`, `Desde=(pagina-1)*porPagina`, `Hasta=min(Desde+porPagina,total)`,
+  `Pagina = Filtradas.Skip(Desde).Take(porPagina)`. La paginacion cuenta sobre la lista YA FILTRADA.
+- El footer se muestra cuando hay registros; **con agrupacion activa NO se pagina** (se muestran los grupos
+  completos, sin footer). El conteo + el selector "por pagina" se ven siempre; anterior/siguiente solo con >1 pagina.
+- La vista Tarjetas/Lista comparte la misma paginacion y footer (mismo _pagina/_porPagina).
+- Modulos con footer canonico: Unidades (Distribucion) = referencia. Contratos tiene un paginador VIEJO
+  distinto (centrado, "Pagina X de Y", sin conteo ni "por pagina") que debe migrarse a este. Tareas/PQRSD/
+  Seguros/Directorio/Zonas/Usuarios/Equipos NO tienen footer (listas client-side); al homogenizar, agregar
+  este footer (aunque la lista sea corta: mostrara "Mostrando N de N" + "25 por pagina" sin anterior/siguiente).
+
 ## Protocolo de auditoria (obligatorio por cada punto)
 
 1. Medir con getComputedStyle/getBoundingClientRect y comparar contra Tareas/Zonas (KPI vs tb-bkpi; boton

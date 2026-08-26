@@ -91,7 +91,7 @@ else
         <div class="mod-search">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
             <input class="mod-search-inp" placeholder="Buscar zona..."
-                   @oninput="@(e => _q = e.Value?.ToString() ?? string.Empty)" />
+                   @oninput="@(e => { _q = e.Value?.ToString() ?? string.Empty; _paginaZ = 1; })" />
         </div>
         <div class="zc-bar-spacer"></div>
         @if (_view == "list")
@@ -334,6 +334,14 @@ else
                     <button type="button" class="zc-row-add" @onclick="CrearDesdeDraftAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_draft.Nombre))">+ Agregar</button>
                 </div>
             </div>
+            @* Footer DENTRO del contenedor de la tabla (borde/radio/overflow), para que se integre
+               como en Unidades y no se vea "pegado". *@
+            @if (_agruparZ == "" && Filtradas().Any())
+            {
+                <TablaPager Total="Filtradas().Count()" Pagina="_paginaZ" PorPagina="_porPaginaZ" Entidad="zonas"
+                            PaginaChanged="p => _paginaZ = p"
+                            PorPaginaChanged="n => { _porPaginaZ = n; _paginaZ = 1; }" />
+            }
         </div>
     }
 
@@ -393,18 +401,31 @@ else
     private void ColsTodasZ() { _colHiddenZ.Clear(); }
     private void ColsNingunaZ() { foreach (var c in CatalogoZ) { if (c.Hideable) _colHiddenZ.Add(c.Key); } }
 
+    // ===== Paginacion (footer canonico, solo en modo tabla). =====
+    private int _paginaZ = 1;
+    private int _porPaginaZ = 25;
+
     // ===== Agrupar (boton "Agrupar"): agrupa la lista por un campo. =====
     private string _agruparZ = "";
     private bool _showAgruparZ;
     private static string AgruparLabelZ(string k) => k switch { "categoria" => "Categoria", "reserva" => "Reserva", "estado" => "Estado", _ => "" };
-    private void SetAgruparZ(string k) { _agruparZ = k; _showAgruparZ = false; }
+    private void SetAgruparZ(string k) { _agruparZ = k; _showAgruparZ = false; _paginaZ = 1; }
     private IEnumerable<IGrouping<string, ZonaComunDto>> AgruparZonas(IEnumerable<ZonaComunDto> zonas) => _agruparZ switch
     {
         "categoria" => zonas.GroupBy(z => z.Categoria.ToString()),
         "reserva" => zonas.GroupBy(z => z.EsReservable ? "Reservable" : "No reservable"),
         "estado" => zonas.GroupBy(z => z.Estado.ToString()),
-        _ => zonas.GroupBy(_ => "")
+        _ => PaginarSinGrupoZ(zonas)   // sin agrupar: se pagina (footer canonico)
     };
+    // Envuelve la pagina actual en un unico "grupo" sin titulo (el header de grupo se oculta cuando
+    // _agruparZ == ""). Asi la vista tabla reusa el mismo render pero paginado.
+    private IEnumerable<IGrouping<string, ZonaComunDto>> PaginarSinGrupoZ(IEnumerable<ZonaComunDto> zonas)
+    {
+        var list = zonas as IList<ZonaComunDto> ?? zonas.ToList();
+        var totalPag = list.Count == 0 ? 1 : (int)Math.Ceiling(list.Count / (double)_porPaginaZ);
+        var pag = Math.Clamp(_paginaZ, 1, totalPag);
+        return list.Skip((pag - 1) * _porPaginaZ).Take(_porPaginaZ).GroupBy(_ => "");
+    }
 
     // Filtros (client-side: la lista de zonas de una copropiedad es corta).
     // Un solo boton "Filtros" con reglas dinamicas (componente compartido FiltroDinamico).

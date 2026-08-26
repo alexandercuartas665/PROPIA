@@ -172,11 +172,17 @@
            extraidos para no engrosar esta pagina. *@
         @if (_tab == "personas")
         {
-            <DirectorioPersonasVista Personas="PersonasFiltradas" Grupos="GruposPersonas()" ColsConfig="_colsPersonas" ColsOrder="_ordenPersonas" Vista="_view" OnAbrir="AbrirPersona" OnCrear="CrearPersonaTabla" OnCrearAbrir="CrearPersonaTablaYAbrir" OnEditarCampo="EditarPersonaInline" />
+            <DirectorioPersonasVista Personas="PersonasParaVista()" Grupos="GruposPersonas()" ColsConfig="_colsPersonas" ColsOrder="_ordenPersonas" Vista="_view"
+                                     Total="@(PersonasFiltradas?.Count ?? 0)" Pagina="_pagina" PorPagina="_porPagina"
+                                     PaginaChanged="p => _pagina = p" PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }"
+                                     OnAbrir="AbrirPersona" OnCrear="CrearPersonaTabla" OnCrearAbrir="CrearPersonaTablaYAbrir" OnEditarCampo="EditarPersonaInline" />
         }
         else
         {
-            <DirectorioEmpresasVista Empresas="EmpresasFiltradas" Grupos="GruposEmpresas()" ColsConfig="_colsEmpresas" ColsOrder="_ordenEmpresas" Vista="_view" OnAbrir="AbrirEmpresa" OnCrear="CrearEmpresaTabla" OnCrearAbrir="CrearEmpresaTablaYAbrir" OnEditarCampo="EditarEmpresaInline" />
+            <DirectorioEmpresasVista Empresas="EmpresasParaVista()" Grupos="GruposEmpresas()" ColsConfig="_colsEmpresas" ColsOrder="_ordenEmpresas" Vista="_view"
+                                     Total="@(EmpresasFiltradas?.Count ?? 0)" Pagina="_pagina" PorPagina="_porPagina"
+                                     PaginaChanged="p => _pagina = p" PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }"
+                                     OnAbrir="AbrirEmpresa" OnCrear="CrearEmpresaTabla" OnCrearAbrir="CrearEmpresaTablaYAbrir" OnEditarCampo="EditarEmpresaInline" />
         }
     }
 </div>
@@ -1173,6 +1179,28 @@
                 Opciones = _etiquetasTodas.Select(e => (e.Id.ToString(), e.Nombre)).ToList() },
     };
 
+    // Paginacion (footer canonico) de la vista Tabla. Sin agrupar; con agrupacion se ven todos.
+    private int _pagina = 1;
+    private int _porPagina = 25;
+
+    // Lista que se pasa a la sub-vista: paginada en Tabla sin agrupar; completa en Tarjetas o agrupado.
+    private List<PersonaResumenDto>? PersonasParaVista()
+    {
+        var all = PersonasFiltradas;
+        if (all is null || _agrupar || _view != "tabla") return all;
+        var totalPag = all.Count == 0 ? 1 : (int)Math.Ceiling(all.Count / (double)_porPagina);
+        var pag = Math.Clamp(_pagina, 1, totalPag);
+        return all.Skip((pag - 1) * _porPagina).Take(_porPagina).ToList();
+    }
+    private List<EmpresaResumenDto>? EmpresasParaVista()
+    {
+        var all = EmpresasFiltradas;
+        if (all is null || _agrupar || _view != "tabla") return all;
+        var totalPag = all.Count == 0 ? 1 : (int)Math.Ceiling(all.Count / (double)_porPagina);
+        var pag = Math.Clamp(_pagina, 1, totalPag);
+        return all.Skip((pag - 1) * _porPagina).Take(_porPagina).ToList();
+    }
+
     private List<PersonaResumenDto>? PersonasFiltradas =>
         _personas?.Where(p => _fd?.Pasa(campo => campo switch
         {
@@ -1252,7 +1280,7 @@
     private bool _showAgruparMenu;
     private async Task SetAgruparDir(bool on)
     {
-        _agrupar = on; _showAgruparMenu = false;
+        _agrupar = on; _showAgruparMenu = false; _pagina = 1;
         try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, _agrupar ? "1" : "0"); } catch { }
     }
 
@@ -1496,7 +1524,7 @@
 
     // await (no fire-and-forget) para que Blazor re-renderice al terminar la carga;
     // antes quedaba en "loading" al cambiar de pestana porque _ = CargarAsync() no re-renderiza.
-    private async Task SetTab(string tab) { _tab = tab; await CargarAsync(); }
+    private async Task SetTab(string tab) { _tab = tab; _pagina = 1; await CargarAsync(); }
 
     // La vista (Lista/Tabla) se recuerda por modulo en localStorage: sobrevive al cierre de
     // sesion (el logout solo borra llaves puntuales, no hace localStorage.clear()).
@@ -2071,6 +2099,7 @@
     private async Task OnQueryInput(ChangeEventArgs e)
     {
         _query = e.Value?.ToString() ?? "";
+        _pagina = 1;
         _searchCts?.Cancel();
         _searchCts = new System.Threading.CancellationTokenSource();
         var token = _searchCts.Token;

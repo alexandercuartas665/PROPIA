@@ -264,6 +264,12 @@
                     </div>
                 </div>
                 @if (!string.IsNullOrEmpty(_inlineMsg)) { <div class="seg-toast" @onclick="() => _inlineMsg = null">@_inlineMsg</div> }
+                @if (Filtradas.Count > 0 && _agruparPor == "")
+                {
+                    <TablaPager Total="Filtradas.Count" Pagina="_pagina" PorPagina="_porPagina" Entidad="polizas"
+                                PaginaChanged="p => _pagina = p"
+                                PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
+                }
             </div>
         }
         else
@@ -631,6 +637,8 @@
     private string _vista = "tabla";
     private const string VistaKey = "propia_view_seguros";
     private string _agruparPor = "";
+    private int _pagina = 1;
+    private int _porPagina = 25;
     private bool _showAgruparMenu;
     private const string AgruparKey = "propia_agrupar_seguros";
 
@@ -942,7 +950,20 @@
     {
         if (_agruparPor == "")
         {
-            foreach (var p in Filtradas) yield return new Fila(false, null, 0, p);
+            // Sin agrupar: en modo tabla se pagina; en tarjetas se muestran todas. (Con agrupacion
+            // se muestran los grupos completos, sin paginar.)
+            if (_vista == "tabla")
+            {
+                var total = Filtradas.Count;
+                var totalPag = total == 0 ? 1 : (int)Math.Ceiling(total / (double)_porPagina);
+                var pag = Math.Clamp(_pagina, 1, totalPag);
+                foreach (var p in Filtradas.Skip((pag - 1) * _porPagina).Take(_porPagina))
+                    yield return new Fila(false, null, 0, p);
+            }
+            else
+            {
+                foreach (var p in Filtradas) yield return new Fila(false, null, 0, p);
+            }
             yield break;
         }
         var grupos = Filtradas
@@ -1059,10 +1080,10 @@
         catch (Exception ex) { _loadError = ex.Message; }
     }
 
-    private void OnBuscar(ChangeEventArgs e) => _q = e.Value?.ToString() ?? "";
+    private void OnBuscar(ChangeEventArgs e) { _q = e.Value?.ToString() ?? ""; _pagina = 1; }
     private async Task SetVista(string v) { _vista = v; try { await Js.InvokeVoidAsync("localStorage.setItem", VistaKey, v); } catch { } }
     private async Task SetAgrupar(ChangeEventArgs e) { _agruparPor = e.Value?.ToString() ?? ""; try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, _agruparPor); } catch { } }
-    private async Task SetAgruparVal(string v) { _agruparPor = v; _showAgruparMenu = false; try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, _agruparPor); } catch { } }
+    private async Task SetAgruparVal(string v) { _agruparPor = v; _showAgruparMenu = false; _pagina = 1; try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, _agruparPor); } catch { } }
     private static string AgruparLabel(string v) => v switch { "aseguradora" => "Aseguradora", "estado" => "Vencimiento", _ => "" };
 
     private async Task AbrirModal(Guid? id)

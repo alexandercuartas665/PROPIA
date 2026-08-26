@@ -152,7 +152,7 @@
                 }
             </div>
 
-            <input class="pk-input" @bind="_buscar" @bind:event="oninput" placeholder="Buscar por radicado o resumen..." />
+            <input class="pk-input" value="@_buscar" @oninput="e => { _buscar = e.Value?.ToString() ?? string.Empty; _pagina = 1; }" placeholder="Buscar por radicado o resumen..." />
 
             <div class="pk-filters-spacer"></div>
 
@@ -342,6 +342,7 @@
             @ColumnColorCss
             @* Doble scroll horizontal: barra superior espejo, sincronizada por JS con la tabla (igual que Tareas). *@
             <div class="pk-topscroll" id="pkTopScroll"><div id="pkTopScrollInner"></div></div>
+            <div class="pk-tablebox">
             <div class="pk-table-wrap" id="pkTableWrap">
                 <table class="pk-table @(_pin ? "pk-table--pin" : "")">
                     <thead>
@@ -500,6 +501,13 @@
                     </tbody>
                 </table>
                 @if (ItemsFiltrados.Count() == 0) { <div class="pk-col-empty">Sin PQRs.</div> }
+            </div>
+            @if (_group == "ninguno" && ItemsFiltrados.Any())
+            {
+                <TablaPager Total="ItemsFiltrados.Count()" Pagina="_pagina" PorPagina="_porPagina" Entidad="PQRs"
+                            PaginaChanged="p => _pagina = p"
+                            PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
+            }
             </div>
         }
 
@@ -940,7 +948,9 @@
     .pk-card:hover .pk-card-arch { opacity: 1; }
 
     /* Tabla */
-    .pk-table-wrap { overflow: auto; max-height: calc(100vh - 300px); border: 1px solid #E1E8EE; border-radius: 12px; margin-bottom: 30px; background: #fff; }
+    /* Caja externa (borde/radio/overflow:hidden) que integra tabla + footer; el scroll va en el wrap interno. */
+    .pk-tablebox { border: 1px solid #E1E8EE; border-radius: 12px; overflow: hidden; margin-bottom: 30px; background: #fff; }
+    .pk-table-wrap { overflow: auto; max-height: calc(100vh - 300px); background: #fff; }
 
     /* Doble scroll horizontal: barra superior espejo (sincronizada por JS con la tabla). */
     .pk-topscroll { overflow-x: auto; overflow-y: hidden; height: 14px; margin-bottom: 7px; border-radius: 8px; }
@@ -1114,6 +1124,8 @@
     // En Cerrados solo hay tabla de consulta (mismo criterio que Tareas): se fuerza la vista.
     private string VistaEfectiva => _verArchivados ? "tabla" : _boardMode;
     private string _group = "ninguno";
+    private int _pagina = 1;
+    private int _porPagina = 25;
     private bool _pin = true;  // primera columna SIEMPRE fija (sin boton)
     private string? _pop;
     private readonly HashSet<string> _colsOcultas = new();
@@ -1220,9 +1232,19 @@
                 "tipo" => items.GroupBy(x => TipoLabel(x.Tipo)),
                 "categoria" => items.GroupBy(x => x.CategoriaNombre),
                 "unidad" => items.GroupBy(x => string.IsNullOrEmpty(x.UnidadNumero) ? "Sin unidad" : x.UnidadNumero!),
-                _ => items.GroupBy(_ => "")
+                _ => PaginarSinGrupoPqr(items)   // sin agrupar: se ordena y se pagina (footer canonico)
             };
         }
+    }
+
+    // Sin agrupar: ordena la lista completa y devuelve SOLO la pagina actual como un unico "grupo"
+    // sin titulo (el header de grupo se oculta cuando _group == "ninguno").
+    private IEnumerable<IGrouping<string, PqrsdBandejaItemDto>> PaginarSinGrupoPqr(IEnumerable<PqrsdBandejaItemDto> items)
+    {
+        var ordenado = AplicarSortPqr(items).ToList();
+        var totalPag = ordenado.Count == 0 ? 1 : (int)Math.Ceiling(ordenado.Count / (double)_porPagina);
+        var pag = Math.Clamp(_pagina, 1, totalPag);
+        return ordenado.Skip((pag - 1) * _porPagina).Take(_porPagina).GroupBy(_ => "");
     }
 
     // ===================== Ordenamiento por columna (vista Tabla): clic en el encabezado ordena; reclic invierte =====================
@@ -1625,7 +1647,7 @@
     }
     private async Task SetGroup(string g)
     {
-        _group = g; _pop = null;
+        _group = g; _pop = null; _pagina = 1;
         try { await Js.InvokeVoidAsync("localStorage.setItem", "propia_pqrs_group", g); } catch { }
     }
     private void ToggleCol(string key) { if (!_colsOcultas.Remove(key)) _colsOcultas.Add(key); }

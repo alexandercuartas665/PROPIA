@@ -523,6 +523,7 @@ else
             @* Scroll horizontal SUPERIOR (espejo del de abajo), sincronizado por JS con la tabla. *@
             <div class="tb-topscroll" id="tbTopScroll"><div id="tbTopScrollInner"></div></div>
 
+            <div class="tb-listbox">
             <div class="tb-list" id="tbList">
                 <div class="tb-list-hdr">
                     @* Columna del expansor (primera, fija): abre el modal; se ve al pasar el mouse. *@
@@ -543,9 +544,12 @@ else
                 </div>
                 @if (_cardGroup == "none")
                 {
-                    @* Sin agrupar: lista plana, sin encabezados de grupo. La fila de alta compacta
-                       al final permite crear tareas tambien en esta vista (la etapa se elige en la fila). *@
-                    @foreach (var t in AplicarSort(_tareas.Where(x => x.PadreId == null).Where(PasaFiltros).ToList()))
+                    @* Sin agrupar: lista plana PAGINADA (footer canonico), sin encabezados de grupo. La
+                       fila de alta compacta al final permite crear tareas tambien en esta vista. *@
+                    var raicesT = AplicarSort(_tareas.Where(x => x.PadreId == null).Where(PasaFiltros).ToList()).ToList();
+                    var totalPagT = raicesT.Count == 0 ? 1 : (int)Math.Ceiling(raicesT.Count / (double)_porPagina);
+                    var pagT = Math.Clamp(_pagina, 1, totalPagT);
+                    foreach (var t in raicesT.Skip((pagT - 1) * _porPagina).Take(_porPagina))
                     {
                         @RenderArbol(t, 0)
                     }
@@ -675,6 +679,13 @@ else
                 }
                 @* La fila de TOTALES generales al pie se retiro a peticion del usuario;
                    los subtotales por grupo (chips en el titulo de cada grupo) se mantienen. *@
+            </div>
+            @if (_cardGroup == "none" && _tareas.Any(x => x.PadreId == null && PasaFiltros(x)))
+            {
+                <TablaPager Total="_tareas.Count(x => x.PadreId == null && PasaFiltros(x))" Pagina="_pagina" PorPagina="_porPagina" Entidad="tareas"
+                            PaginaChanged="p => _pagina = p"
+                            PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
+            }
             </div>
         }
 
@@ -2148,7 +2159,9 @@ else
     /* Alto acotado + scroll interno para que la fila de encabezados quede fija (sticky top)
        cuando se baja por las tareas: los titulos de columna se "congelan" arriba. */
     /* Densidad compacta: filas mas bajas y mas alto util para ver ~el doble de registros por pantalla. */
-    .tb-list { background: #fff; border: 1px solid #E1E8EE; border-radius: 14px; box-shadow: 0 1px 2px rgba(45,62,80,.05); overflow: auto; max-height: calc(100vh - 190px); }
+    /* Caja externa (borde/radio/overflow:hidden) que integra tabla + footer; el scroll va en .tb-list. */
+    .tb-listbox { background: #fff; border: 1px solid #E1E8EE; border-radius: 14px; box-shadow: 0 1px 2px rgba(45,62,80,.05); overflow: hidden; }
+    .tb-list { background: #fff; overflow: auto; max-height: calc(100vh - 190px); }
     .tb-list-hdr { display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-bottom: 1px solid #EEF3F8; background: #FAFBFC; min-width: 860px; position: sticky; top: 0; z-index: 8; }
     .tb-lc-sort { cursor: pointer; user-select: none; }
     .tb-lc-sort:hover { color: #6D4FE3; }
@@ -3226,8 +3239,10 @@ else
 
     // ---- Vista Tablero (tarjetas): ordenar + agrupar por dimension (incluye ubicacion) ----
     private bool _cardSortMenu; private bool _cardGroupMenu; private string _cardGroup = "";
+    private int _pagina = 1;
+    private int _porPagina = 25;
     private void SetCardSort(string k) { if (string.IsNullOrEmpty(k)) _sortCol = ""; else SortBy(k); _cardSortMenu = false; }
-    private async Task SetCardGroup(string k) { _cardGroup = k; _cardGroupMenu = false; await PersistGroupAsync(); }
+    private async Task SetCardGroup(string k) { _cardGroup = k; _cardGroupMenu = false; _pagina = 1; await PersistGroupAsync(); }
     private async Task ClearCardGroup() { _cardGroup = ""; _cardGroupMenu = false; await PersistGroupAsync(); }
     private IEnumerable<(string Key, string Label)> OpcionesOrden()
     {

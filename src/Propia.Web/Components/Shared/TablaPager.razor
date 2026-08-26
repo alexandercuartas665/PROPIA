@@ -1,0 +1,71 @@
+@* Footer / paginador canonico de la vista tabla (referencia: Unidades .dst-pager).
+   Fuente unica del diseno: conteo a la izquierda + selector "por pagina" (25/50/100) y
+   anterior/siguiente a la derecha. El modulo mantiene su estado (_pagina, _porPagina) y pagina
+   su propia lista; este componente solo pinta el footer y emite los cambios.
+   Uso:
+     <TablaPager Total="filtrados.Count" Pagina="_pagina" PorPagina="_porPagina" Entidad="polizas"
+                 PaginaChanged="p => { _pagina = p; }"
+                 PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" /> *@
+
+<div class="tpg">
+    <div class="tpg-info">Mostrando @(Total == 0 ? 0 : Desde + 1)-@Hasta de @Total @Entidad</div>
+    <div class="tpg-ctrl">
+        <select class="tpg-sel" @onchange="OnPorPagina">
+            @foreach (var n in Tamanos)
+            {
+                <option value="@n" selected="@(n == PorPagina)">@n por pagina</option>
+            }
+        </select>
+        @if (TotalPaginas > 1)
+        {
+            <button type="button" class="tpg-btn" disabled="@(Pagina <= 1)" @onclick="() => Ir(Pagina - 1)" title="Anterior">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6" /></svg>
+            </button>
+            <span class="tpg-pos">@Pagina / @TotalPaginas</span>
+            <button type="button" class="tpg-btn" disabled="@(Pagina >= TotalPaginas)" @onclick="() => Ir(Pagina + 1)" title="Siguiente">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6" /></svg>
+            </button>
+        }
+    </div>
+</div>
+
+@code {
+    /// <summary>Total de registros (sobre la lista YA filtrada).</summary>
+    [Parameter, EditorRequired] public int Total { get; set; }
+    /// <summary>Pagina actual (1-based).</summary>
+    [Parameter, EditorRequired] public int Pagina { get; set; }
+    /// <summary>Registros por pagina.</summary>
+    [Parameter, EditorRequired] public int PorPagina { get; set; }
+    /// <summary>Etiqueta del tipo de registro (ej. "polizas", "unidades", "contratos").</summary>
+    [Parameter] public string Entidad { get; set; } = "registros";
+    /// <summary>Opciones del selector "por pagina".</summary>
+    [Parameter] public int[] Tamanos { get; set; } = new[] { 25, 50, 100 };
+
+    [Parameter] public EventCallback<int> PaginaChanged { get; set; }
+    [Parameter] public EventCallback<int> PorPaginaChanged { get; set; }
+
+    private int TotalPaginas => Total == 0 ? 1 : (int)Math.Ceiling(Total / (double)Math.Max(1, PorPagina));
+    private int Desde => (Pagina - 1) * PorPagina;
+    private int Hasta => Math.Min(Desde + PorPagina, Total);
+
+    private Task Ir(int p) => PaginaChanged.InvokeAsync(Math.Clamp(p, 1, TotalPaginas));
+
+    private Task OnPorPagina(ChangeEventArgs e)
+        => int.TryParse(e.Value?.ToString(), out var n) ? PorPaginaChanged.InvokeAsync(n) : Task.CompletedTask;
+}
+
+<style>
+    /* Footer canonico de la vista tabla (identico a Unidades .dst-pager). */
+    .tpg { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 16px; background: #FAFBFC; border-top: 1px solid #EEF2F6; }
+    .tpg-info { font-size: 12.5px; color: #6B7C8F; }
+    .tpg-ctrl { display: flex; align-items: center; gap: 8px; }
+    .tpg-sel { border: 1px solid #E1E8EE; border-radius: 7px; padding: 5px 8px; font-size: 12.5px; color: #33475B; background: #fff; outline: none; cursor: pointer; font-family: inherit; }
+    .tpg-sel:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .tpg-btn { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 1px solid #E1E8EE; border-radius: 7px; background: #fff; color: #516F90; cursor: pointer; }
+    .tpg-btn:hover:not(:disabled) { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); background: #F7F5FE; }
+    .tpg-btn:disabled { opacity: .4; cursor: default; }
+    .tpg-pos { font-size: 12.5px; font-weight: 700; color: #33475B; min-width: 52px; text-align: center; }
+    [data-bs-theme="dark"] .tpg { background: #1B2233; border-color: #2D3650; }
+    [data-bs-theme="dark"] .tpg-sel, [data-bs-theme="dark"] .tpg-btn { background: #232B40; border-color: #2D3650; color: #C7CEDB; }
+    [data-bs-theme="dark"] .tpg-pos { color: #C7CEDB; }
+</style>
