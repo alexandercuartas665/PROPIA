@@ -42,15 +42,18 @@ public class MisCopropiedadesService : IMisCopropiedadesService
         if (user?.PersonaId is not Guid personaId)
             throw new InvalidOperationException("El usuario no tiene una persona asociada.");
 
-        // Guarda 1: solo un Administrador de la copropiedad activa puede dar de alta otra.
-        var vinculo = await _db.UsuariosTenant.AsNoTracking()
-            .FirstOrDefaultAsync(u => u.PersonaId == personaId && u.TenantId == tenantActivo, ct);
-        if (vinculo is null || !string.Equals(vinculo.Rol, RolAdministrador, StringComparison.OrdinalIgnoreCase))
+        // Guarda 1: el usuario debe ser Administrador en ALGUNA de sus copropiedades (capacidad de
+        // organizacion, no solo la activa). Se usa la funcion SECURITY DEFINER get_tenants_for_persona
+        // porque la RLS de usuarios_tenant solo deja ver el vinculo del tenant activo.
+        var tenantsAdmin = await GetTenantsAdministradosAsync(personaId, ct);
+        if (tenantsAdmin.Count == 0)
             throw new InvalidOperationException("Solo un Administrador puede crear una copropiedad nueva.");
 
-        // Guarda 2: la nueva copropiedad cuelga de la organizacion y hereda su suscripcion.
-        // Sin organizacion no hay de que colgarla (la suscripcion estaria atada a la copropiedad sola).
-        var actual = await _db.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == tenantActivo, ct);
+        // Guarda 2: la nueva copropiedad cuelga de una organizacion que el usuario ADMINISTRA (no de
+        // una donde solo es residente). Preferimos la organizacion de la copropiedad activa si la
+        // administra; si no, la de la primera que administre. Hereda su suscripcion.
+        var tenantParaOrg = tenantsAdmin.Contains(tenantActivo) ? tenantActivo : tenantsAdmin[0];
+        var actual = await _db.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == tenantParaOrg, ct);
         var organizacionId = actual?.OrganizacionId
             ?? throw new InvalidOperationException(
                 "Esta copropiedad es autoadministrada (no pertenece a una organizacion), " +
@@ -125,5 +128,40 @@ public class MisCopropiedadesService : IMisCopropiedadesService
             nuevo.Nombre, nuevo.Id, personaId, organizacionId);
 
         return new CopropiedadCreadaDto(nuevo.Id, nuevo.Nombre);
+    }
+
+    /// <summary>
+    /// Ids de las copropiedades donde la persona es Administrador (rol exacto), leidas via la
+    /// funcion SECURITY DEFINER get_tenants_for_persona para saltar la RLS de usuarios_tenant (que
+    /// solo deja ver el tenant activo). Habilita crear copropiedades desde cualquier contexto.
+    /// </summary>
+    private async Task<List<Guid>> GetTenantsAdministradosAsync(Guid personaId, CancellationToken ct)
+    {
+        var ids = new List<Guid>();
+        var conn = _db.Database.GetDbConnection();
+        var abiertaAqui = conn.State != System.Data.ConnectionState.Open;
+        if (abiertaAqui) await conn.OpenAsync(ct);
+        try
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT tenant_id, rol FROM get_tenants_for_persona(@p_persona_id)";
+            var p = cmd.CreateParameter();
+            p.ParameterName = "@p_persona_id";
+            p.Value = personaId;
+            cmd.Parameters.Add(p);
+
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                var rol = reader.IsDBNull(1) ? string.Empty : reader.GetString(1);
+                if (string.Equals(rol, RolAdministrador, StringComparison.OrdinalIgnoreCase))
+                    ids.Add(reader.GetGuid(0));
+            }
+        }
+        finally
+        {
+            if (abiertaAqui) await conn.CloseAsync();
+        }
+        return ids;
     }
 }

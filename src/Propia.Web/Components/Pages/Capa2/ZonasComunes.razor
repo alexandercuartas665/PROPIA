@@ -93,7 +93,62 @@ else
             <input class="mod-search-inp" placeholder="Buscar zona..."
                    @oninput="@(e => _q = e.Value?.ToString() ?? string.Empty)" />
         </div>
-        <div class="zc-viewtoggle" style="margin-left:auto;">
+        <div class="zc-bar-spacer"></div>
+        @if (_view == "list")
+        {
+            @* Agrupar (menu) + Campos (menu), a la derecha, patron estandar. *@
+            <div class="zc-menu-wrap">
+                <button type="button" class="zc-fbtn @(_agruparZ != "" ? "on" : "")" @onclick="() => _showAgruparZ = !_showAgruparZ" title="Agrupar zonas">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+                    <span>Agrupar@(_agruparZ != "" ? ": " + AgruparLabelZ(_agruparZ) : "")</span>
+                </button>
+                @if (_showAgruparZ)
+                {
+                    <div class="zc-menu-bd" @onclick="() => _showAgruparZ = false"></div>
+                    <div class="zc-menu">
+                        @foreach (var g in new[] { ("", "Sin agrupar"), ("categoria", "Categoria"), ("reserva", "Reserva"), ("estado", "Estado") })
+                        {
+                            var gk = g.Item1;
+                            <button class="zc-menu-it @(_agruparZ == gk ? "on" : "")" @onclick="() => SetAgruparZ(gk)">@g.Item2</button>
+                        }
+                    </div>
+                }
+            </div>
+            <div class="zc-menu-wrap">
+                <button type="button" class="zc-fbtn" @onclick="() => _showCamposZ = !_showCamposZ" title="Campos y columnas de la tabla">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
+                    <span>Campos</span>
+                </button>
+                @if (_showCamposZ)
+                {
+                    <div class="zc-menu-bd" @onclick="() => _showCamposZ = false"></div>
+                    <div class="zc-colsmenu">
+                        <div class="zc-colsmenu-h">COLUMNAS (orden y visibilidad)</div>
+                        @for (int i = 0; i < _colOrderZ.Count; i++)
+                        {
+                            var idx = i; var col = CatalogoZ.First(c => c.Key == _colOrderZ[idx]);
+                            <div class="zc-colsmenu-i @(ColVisibleZ(col.Key) ? "" : "off")">
+                                <button class="zc-colsmenu-mv" disabled="@(idx == 0)" @onclick="() => MoverColZ(idx, -1)" title="Subir">&#9650;</button>
+                                <button class="zc-colsmenu-mv" disabled="@(idx == _colOrderZ.Count - 1)" @onclick="() => MoverColZ(idx, 1)" title="Bajar">&#9660;</button>
+                                <span class="zc-colsmenu-lbl">@col.DefLabel</span>
+                                @if (col.Hideable)
+                                {
+                                    <label class="zc-colsmenu-sw" title="Mostrar columna">
+                                        <input type="checkbox" checked="@ColVisibleZ(col.Key)" @onchange="() => ToggleColZ(col.Key)" />
+                                    </label>
+                                }
+                                else { <span class="zc-colsmenu-fija">fija</span> }
+                            </div>
+                        }
+                        <div class="zc-colsmenu-acts">
+                            <button class="zc-colsmenu-act" @onclick="ColsTodasZ">Mostrar todas</button>
+                            <button class="zc-colsmenu-act" @onclick="ColsNingunaZ">Ocultar todas</button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        <div class="zc-viewtoggle">
             <button type="button" class="zc-vt @(_view == "cards" ? "on" : "")" @onclick='() => SetVista("cards")' title="Tarjetas">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
                 Tarjetas
@@ -182,42 +237,65 @@ else
         <div class="zc-list">
             @* El expansor tiene su PROPIA columna (la primera, siempre visible): abre la ficha
                del registro para editarlo; en la fila de alta crea la zona y abre su ficha. *@
-            <div class="zc-list-head zc-grid">
-                <div></div><div>NOMBRE</div><div>CATEGORIA</div><div>RESERVA</div><div>AFORO</div><div>ESTADO</div><div></div>
+            <div class="zc-list-head zc-grid" style="@ZcGridStyle">
+                <div></div>
+                @foreach (var col in ColsVisiblesZ) { <div>@col.DefLabel</div> }
+                <div></div>
             </div>
-            @foreach (var z in Filtradas())
+            @foreach (var grupo in AgruparZonas(Filtradas()))
             {
-                var zona = z;
-                <div class="zc-list-row zc-grid">
-                    <div class="zc-col-exp">
-                        <button type="button" class="zc-nf-exp zc-exp-fijo" title="Abrir la ficha para editar" @onclick="() => AbrirFichaZonaAsync(zona)">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                        </button>
+                @if (_agruparZ != "")
+                {
+                    <div class="zc-group"><span class="zc-group-t">@grupo.Key</span><span class="zc-group-n">@grupo.Count()</span></div>
+                }
+                @foreach (var z in grupo)
+                {
+                    var zona = z;
+                    <div class="zc-list-row zc-grid" style="@ZcGridStyle">
+                        <div class="zc-col-exp">
+                            <button type="button" class="zc-nf-exp zc-exp-fijo" title="Abrir la ficha para editar" @onclick="() => AbrirFichaZonaAsync(zona)">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                            </button>
+                        </div>
+                        @* Datos editables inline (value= + @onchange guarda al salir del campo). *@
+                        @foreach (var col in ColsVisiblesZ)
+                        {
+                            switch (col.Key)
+                            {
+                                case "nombre":
+                                    <input class="zc-cell zc-cell-nom" value="@z.Nombre" @onchange="@(e => GuardarZonaInline(zona, "nombre", e))" />
+                                    break;
+                                case "categoria":
+                                    <select class="zc-cell" @onchange="@(e => GuardarZonaInline(zona, "categoria", e))">
+                                        @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c" selected="@(z.Categoria == c)">@c</option> }
+                                    </select>
+                                    break;
+                                case "reserva":
+                                    <select class="zc-cell" @onchange="@(e => GuardarZonaInline(zona, "reservable", e))">
+                                        <option value="false" selected="@(!z.EsReservable)">No</option>
+                                        <option value="true" selected="@z.EsReservable">Si</option>
+                                    </select>
+                                    break;
+                                case "aforo":
+                                    <input type="number" min="0" class="zc-cell zc-num" value="@z.CapacidadPersonas" placeholder="-" @onchange="@(e => GuardarZonaInline(zona, "aforo", e))" />
+                                    break;
+                                case "estado":
+                                    <select class="zc-cell zc-cell-est" @onchange="@(e => GuardarZonaInline(zona, "estado", e))">
+                                        @foreach (var s in Enum.GetValues<EstadoZonaComunMantenimiento>()) { <option value="@s" selected="@(z.Estado == s)">@s</option> }
+                                    </select>
+                                    break;
+                            }
+                        }
+                        <div class="zc-list-act">
+                            <button type="button" class="zc-row-del" @onclick="() => EliminarZonaAsync(zona.Id, zona.Nombre)" title="Eliminar">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+                            </button>
+                        </div>
                     </div>
-                    @* Datos editables inline (Blazor Server: value= + @onchange guarda al salir del
-                       campo; no hay re-render mientras se escribe, asi que no se comen pulsaciones).
-                       Para crear/editar la ficha completa esta el expansor de la primera columna. *@
-                    <input class="zc-cell zc-cell-nom" value="@z.Nombre" @onchange="@(e => GuardarZonaInline(zona, "nombre", e))" />
-                    <select class="zc-cell" @onchange="@(e => GuardarZonaInline(zona, "categoria", e))">
-                        @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c" selected="@(z.Categoria == c)">@c</option> }
-                    </select>
-                    <select class="zc-cell" @onchange="@(e => GuardarZonaInline(zona, "reservable", e))">
-                        <option value="false" selected="@(!z.EsReservable)">No</option>
-                        <option value="true" selected="@z.EsReservable">Si</option>
-                    </select>
-                    <input type="number" min="0" class="zc-cell zc-num" value="@z.CapacidadPersonas" placeholder="-" @onchange="@(e => GuardarZonaInline(zona, "aforo", e))" />
-                    <select class="zc-cell zc-cell-est" @onchange="@(e => GuardarZonaInline(zona, "estado", e))">
-                        @foreach (var s in Enum.GetValues<EstadoZonaComunMantenimiento>()) { <option value="@s" selected="@(z.Estado == s)">@s</option> }
-                    </select>
-                    <div class="zc-list-act">
-                        <button type="button" class="zc-row-del" @onclick="() => EliminarZonaAsync(zona.Id, zona.Nombre)" title="Eliminar">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
-                        </button>
-                    </div>
-                </div>
+                }
             }
             @* Alta inline. @@key limpia la fila al crear; @@oninput SIN value= evita perder pulsaciones. *@
-            <div class="zc-list-newrow zc-grid" @key="_nonce">
+            <div class="zc-list-newrow zc-grid" style="@ZcGridStyle" @key="_nonce">
                 @* El expansor de la fila de alta vive en su columna fija: crea la zona y abre su ficha. *@
                 <div class="zc-col-exp">
                     <button type="button" class="zc-nf-exp zc-exp-fijo" title="Crear y abrir la ficha completa"
@@ -225,17 +303,33 @@ else
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                     </button>
                 </div>
-                <input class="zc-row-inp" @ref="_nombreRef" placeholder="Nueva zona comun..."
-                       @oninput="@(e => _draft.Nombre = e.Value?.ToString() ?? string.Empty)" @onkeydown="Keydown" />
-                <select class="zc-row-inp" @bind="_draft.Categoria">
-                    @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c">@c</option> }
-                </select>
-                <select class="zc-row-inp" @onchange="@(e => _draft.EsReservable = e.Value?.ToString() == "true")">
-                    <option value="false" selected="@(!_draft.EsReservable)">No</option>
-                    <option value="true" selected="@_draft.EsReservable">Si</option>
-                </select>
-                <input type="number" min="0" class="zc-row-inp" placeholder="-" @bind="_draft.Aforo" />
-                <div class="zc-list-c">Activa</div>
+                @foreach (var col in ColsVisiblesZ)
+                {
+                    switch (col.Key)
+                    {
+                        case "nombre":
+                            <input class="zc-row-inp" @ref="_nombreRef" placeholder="Nueva zona comun..."
+                                   @oninput="@(e => _draft.Nombre = e.Value?.ToString() ?? string.Empty)" @onkeydown="Keydown" />
+                            break;
+                        case "categoria":
+                            <select class="zc-row-inp" @bind="_draft.Categoria">
+                                @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c">@c</option> }
+                            </select>
+                            break;
+                        case "reserva":
+                            <select class="zc-row-inp" @onchange="@(e => _draft.EsReservable = e.Value?.ToString() == "true")">
+                                <option value="false" selected="@(!_draft.EsReservable)">No</option>
+                                <option value="true" selected="@_draft.EsReservable">Si</option>
+                            </select>
+                            break;
+                        case "aforo":
+                            <input type="number" min="0" class="zc-row-inp" placeholder="-" @bind="_draft.Aforo" />
+                            break;
+                        case "estado":
+                            <div class="zc-list-c">Activa</div>
+                            break;
+                    }
+                }
                 <div class="zc-list-act">
                     <button type="button" class="zc-row-add" @onclick="CrearDesdeDraftAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_draft.Nombre))">+ Agregar</button>
                 </div>
@@ -277,6 +371,40 @@ else
 
     private string _msg = "";
     private bool _msgOk = true;
+
+    // ===== Columnas (boton "Campos"): orden + visibilidad, patron Directorio/Unidades. =====
+    private sealed record ColDefZ(string Key, string DefLabel, string Width, bool Hideable);
+    private static readonly ColDefZ[] CatalogoZ =
+    {
+        new("nombre", "NOMBRE", "2fr", false),
+        new("categoria", "CATEGORIA", "1.2fr", true),
+        new("reserva", "RESERVA", ".8fr", true),
+        new("aforo", "AFORO", ".8fr", true),
+        new("estado", "ESTADO", "1fr", true),
+    };
+    private List<string> _colOrderZ = CatalogoZ.Select(c => c.Key).ToList();
+    private readonly HashSet<string> _colHiddenZ = new();
+    private bool _showCamposZ;
+    private bool ColVisibleZ(string key) { var c = CatalogoZ.First(x => x.Key == key); return !c.Hideable || !_colHiddenZ.Contains(key); }
+    private IEnumerable<ColDefZ> ColsVisiblesZ => _colOrderZ.Select(k => CatalogoZ.First(c => c.Key == k)).Where(c => ColVisibleZ(c.Key));
+    private string ZcGridStyle => "grid-template-columns: 34px " + string.Join(" ", ColsVisiblesZ.Select(c => c.Width)) + " 60px";
+    private void ToggleColZ(string key) { if (!_colHiddenZ.Remove(key)) _colHiddenZ.Add(key); }
+    private void MoverColZ(int idx, int dir) { var ni = idx + dir; if (ni < 0 || ni >= _colOrderZ.Count) return; (_colOrderZ[idx], _colOrderZ[ni]) = (_colOrderZ[ni], _colOrderZ[idx]); }
+    private void ColsTodasZ() { _colHiddenZ.Clear(); }
+    private void ColsNingunaZ() { foreach (var c in CatalogoZ) { if (c.Hideable) _colHiddenZ.Add(c.Key); } }
+
+    // ===== Agrupar (boton "Agrupar"): agrupa la lista por un campo. =====
+    private string _agruparZ = "";
+    private bool _showAgruparZ;
+    private static string AgruparLabelZ(string k) => k switch { "categoria" => "Categoria", "reserva" => "Reserva", "estado" => "Estado", _ => "" };
+    private void SetAgruparZ(string k) { _agruparZ = k; _showAgruparZ = false; }
+    private IEnumerable<IGrouping<string, ZonaComunDto>> AgruparZonas(IEnumerable<ZonaComunDto> zonas) => _agruparZ switch
+    {
+        "categoria" => zonas.GroupBy(z => z.Categoria.ToString()),
+        "reserva" => zonas.GroupBy(z => z.EsReservable ? "Reservable" : "No reservable"),
+        "estado" => zonas.GroupBy(z => z.Estado.ToString()),
+        _ => zonas.GroupBy(_ => "")
+    };
 
     // Filtros (client-side: la lista de zonas de una copropiedad es corta).
     // Un solo boton "Filtros" con reglas dinamicas (componente compartido FiltroDinamico).
@@ -649,7 +777,34 @@ else
 
     .zc-list { border: 1px solid #E1E8EE; border-radius: 12px; overflow: hidden; background: #fff; }
     /* Primera columna fija (34px) para el expansor: abrir/editar la ficha del registro. */
-    .zc-grid { display: grid; grid-template-columns: 34px 2fr 1.2fr .8fr .8fr 1fr 60px; gap: 10px; align-items: center; }
+    /* Columnas via estilo inline (ZcGridStyle) para soportar orden/visibilidad configurables. */
+    .zc-grid { display: grid; gap: 10px; align-items: center; }
+    /* Barra: Filtros/Buscar a la izquierda, spacer, Agrupar/Campos y toggle a la derecha. */
+    .zc-bar-spacer { flex: 1 1 auto; min-width: 8px; }
+    .zc-menu-wrap { position: relative; }
+    .zc-fbtn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #E1E8EE; border-radius: 9px; padding: 8px 12px; font-size: 13px; font-weight: 600; color: #516F90; background: #fff; cursor: pointer; font-family: inherit; }
+    .zc-fbtn:hover { border-color: var(--propia-brand, #6D4FE3); }
+    .zc-fbtn.on { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); background: #F1ECFD; font-weight: 700; }
+    .zc-menu-bd { position: fixed; inset: 0; z-index: 40; }
+    .zc-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; min-width: 190px; background: #fff; border: 1px solid #E6ECF2; border-radius: 12px; box-shadow: 0 12px 30px rgba(30,40,60,.18); padding: 6px; }
+    .zc-menu-it { display: block; width: 100%; text-align: left; border: 0; background: transparent; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; font-weight: 600; color: #33475B; cursor: pointer; font-family: inherit; }
+    .zc-menu-it:hover { background: #F1ECFD; }
+    .zc-menu-it.on { background: #F1ECFD; color: var(--propia-brand, #6D4FE3); }
+    .zc-colsmenu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; min-width: 260px; background: #fff; border: 1px solid #E6ECF2; border-radius: 12px; box-shadow: 0 12px 30px rgba(30,40,60,.18); padding: 8px; }
+    .zc-colsmenu-h { font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: #A6B7C8; text-transform: uppercase; padding: 4px 6px 8px; }
+    .zc-colsmenu-i { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 7px; }
+    .zc-colsmenu-i:hover { background: #F6F8FB; }
+    .zc-colsmenu-i.off .zc-colsmenu-lbl { color: #A6B7C8; }
+    .zc-colsmenu-mv { border: 1px solid #E1E8EE; background: #fff; color: #90A4B7; border-radius: 6px; width: 22px; height: 22px; font-size: 9px; line-height: 1; cursor: pointer; flex: 0 0 auto; }
+    .zc-colsmenu-mv:disabled { opacity: .35; cursor: default; }
+    .zc-colsmenu-lbl { flex: 1; font-size: 12.5px; font-weight: 600; color: #33475B; }
+    .zc-colsmenu-sw { display: inline-flex; align-items: center; cursor: pointer; }
+    .zc-colsmenu-fija { font-size: 10px; color: #A6B7C8; font-weight: 600; }
+    .zc-colsmenu-acts { display: flex; gap: 8px; margin-top: 6px; padding-top: 8px; border-top: 1px solid #EEF3F8; }
+    .zc-colsmenu-act { flex: 1; border: 1px solid #E1E8EE; background: #fff; border-radius: 7px; padding: 6px 8px; font-size: 11.5px; font-weight: 700; color: #516F90; cursor: pointer; font-family: inherit; }
+    .zc-colsmenu-act:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
+    .zc-group { display: flex; align-items: center; gap: 8px; padding: 10px 6px 4px; font-size: 12px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; color: #5838C9; }
+    .zc-group-n { background: #F1ECFD; color: #5838C9; font-size: 11px; font-weight: 800; border-radius: 20px; padding: 1px 8px; }
     .zc-col-exp { display: flex; align-items: center; justify-content: center; }
     /* Variante FIJA del expansor (columna propia): aparece solo al pasar el mouse por la fila
        (o al estar escribiendo en la fila de alta). */

@@ -66,40 +66,41 @@ else if (_loadError is not null)
 }
 else
 {
-    <div class="dst-stats">
-        <div class="dst-stat">
-            <div class="dst-stat-icon">
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M6 21V5h8v16M14 21V9h4v12M9 9h.01M9 13h.01M9 17h.01"/></svg>
-            </div>
+    @* KPIs con la clase compartida estandar (.mod-stat, identicas a Seguros/Zonas/Tareas). *@
+    <div class="mod-stats">
+        <div class="mod-stat">
+            <div class="mod-stat-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M6 21V5h8v16M14 21V9h4v12M9 9h.01M9 13h.01M9 17h.01"/></svg></div>
             <div>
-                <div class="dst-stat-n">@_torres.Count</div>
-                <div class="dst-stat-l">@LabelAgrupacionPlural.ToLower()</div>
+                <div class="mod-stat-n">@_torres.Count</div>
+                <div class="mod-stat-l">@LabelAgrupacionPlural.ToLower()</div>
             </div>
         </div>
-        <div class="dst-stat">
-            <div class="dst-stat-icon">
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-6 9 6v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>
-            </div>
+        <div class="mod-stat">
+            <div class="mod-stat-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-6 9 6v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg></div>
             <div>
-                <div class="dst-stat-n">@_unidades.Count</div>
-                <div class="dst-stat-l">unidades</div>
+                <div class="mod-stat-n">@_unidades.Count</div>
+                <div class="mod-stat-l">unidades</div>
             </div>
         </div>
         @if (_unidades.Count > 0)
         {
             var suma = _unidades.Sum(u => u.CoeficientePropiedad);
             var completo = Math.Abs(suma - 100m) < 0.01m;
-            <div class="dst-stat dst-stat--coef @(completo ? "ok" : "warn")">
-                @if (completo)
-                {
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>
-                    <span>Coeficientes: 100%</span>
-                }
-                else
-                {
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
-                    <span>Coeficientes: @suma.ToString("0.####")% (falta @((100m - suma).ToString("0.####"))%)</span>
-                }
+            <div class="mod-stat @(completo ? "mod-stat--ok" : "mod-stat--warn")">
+                <div class="mod-stat-icon">
+                    @if (completo)
+                    {
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12l5 5 9-11"/></svg>
+                    }
+                    else
+                    {
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+                    }
+                </div>
+                <div>
+                    <div class="mod-stat-n">@(completo ? "100%" : suma.ToString("0.##") + "%")</div>
+                    <div class="mod-stat-l">@(completo ? "coeficientes" : "falta " + (100m - suma).ToString("0.##") + "%")</div>
+                </div>
             </div>
         }
     </div>
@@ -109,23 +110,14 @@ else
     @if (_unidades.Count > 0)
     {
         <div class="dst-filtros">
+            @* Boton "Filtros" (reglas dinamicas, componente compartido) PRIMERO y luego el buscador,
+               orden estandar. Reemplaza los selects sueltos "Todo tipo"/"Toda torre". *@
+            <FiltroDinamico @ref="_fd" Campos="CamposFiltroU" OnChanged="@(() => { _pagina = 1; StateHasChanged(); })" />
             <div class="dst-search">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
                 <input class="dst-search-inp" placeholder="Buscar unidad o propietario..."
                        @oninput="@(e => { _q = e.Value?.ToString() ?? string.Empty; _pagina = 1; })" />
             </div>
-            <select class="dst-fsel" @bind="_fTipo" @bind:after="() => _pagina = 1">
-                <option value="">Todo tipo</option>
-                @foreach (var t in Enum.GetValues<TipoUnidad>()) { <option value="@t">@t</option> }
-            </select>
-            <select class="dst-fsel" @bind="_fTorreId" @bind:after="() => _pagina = 1">
-                <option value="">@("Toda " + LabelAgrupacionSingular.ToLower())</option>
-                @foreach (var t in _torres.OrderBy(x => x.Nombre)) { <option value="@t.Id">@t.Nombre</option> }
-            </select>
-            @if (HayFiltros)
-            {
-                <button type="button" class="dst-fclear" @onclick="LimpiarFiltros" title="Limpiar filtros">Limpiar</button>
-            }
             <div class="dst-filtros-spacer"></div>
             @* Agrupador como boton + menu (pregunta por cual campo). Patron Tableros. *@
             <div class="dst-menu-wrap">
@@ -147,10 +139,40 @@ else
             </div>
             @if (_vista == "tabla")
             {
-                <button type="button" class="dst-fbtn" @onclick="() => _cfgColsAbierto = true" title="Campos y columnas de la tabla">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
-                    <span>Campos</span>
-                </button>
+                <div class="dst-menu-wrap">
+                    <button type="button" class="dst-fbtn @(_cfgColsAbierto ? "on" : "")" @onclick="() => _cfgColsAbierto = !_cfgColsAbierto" title="Campos y columnas de la tabla">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
+                        <span>Campos</span>
+                    </button>
+                    @if (_cfgColsAbierto)
+                    {
+                        <div class="dst-menu-bd" @onclick="() => _cfgColsAbierto = false"></div>
+                        <div class="dst-colsmenu">
+                            <div class="dst-colsmenu-h">COLUMNAS (orden, visibilidad y nombre)</div>
+                            @for (int i = 0; i < _colOrderU.Count; i++)
+                            {
+                                var idx = i;
+                                var col = Catalogo.First(c => c.Key == _colOrderU[idx]);
+                                var pref = PrefDe(col.Key);
+                                var key = col.Key;
+                                <div class="dst-colsmenu-i">
+                                    <div class="dst-colsmenu-ord">
+                                        <button class="dst-colsmenu-mv" disabled="@(idx == 0)" @onclick="() => MoverColU(idx, -1)" title="Subir">&#9650;</button>
+                                        <button class="dst-colsmenu-mv" disabled="@(idx == _colOrderU.Count - 1)" @onclick="() => MoverColU(idx, 1)" title="Bajar">&#9660;</button>
+                                    </div>
+                                    <label class="dst-cfg-vis" title="@(col.Hideable ? "Mostrar u ocultar" : "Columna requerida, siempre visible")">
+                                        <input type="checkbox" checked="@pref.Visible" disabled="@(!col.Hideable)" @onchange="@(e => SetColVisible(key, (bool)(e.Value ?? false)))" />
+                                    </label>
+                                    <input class="dst-cfg-inp" value="@(string.IsNullOrWhiteSpace(pref.Label) ? col.DefLabel : pref.Label)" placeholder="@col.DefLabel" @onchange="@(e => SetColLabel(key, e.Value?.ToString()))" />
+                                    @if (!col.Hideable) { <span class="dst-cfg-req">fija</span> }
+                                </div>
+                            }
+                            <div class="dst-colsmenu-acts">
+                                <button type="button" class="dst-colsmenu-act" @onclick="RestablecerCols">Restablecer</button>
+                            </div>
+                        </div>
+                    }
+                </div>
             }
             @* Toggle Lista/Tabla, igual que en los demas modulos: la seleccion se recuerda por
                modulo (propia_view_unidades) y sobrevive al cierre de sesion. *@
@@ -204,7 +226,7 @@ else
                             continue;
                         }
                         var uu = item.Unidad!;
-                        <div class="dst-row dst-grid2" style="grid-template-columns:@GridCols">
+                        <div class="dst-row dst-grid2 @(_uniRecienCreados.Contains(uu.Id) ? "dst-row-nuevo" : "")" style="grid-template-columns:@GridCols">
                             <div class="dst-exp-col">
                                 <button type="button" class="dst-exp" title="Abrir la ficha de la unidad" @onclick="() => AbrirFichaAsync(uu)">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -258,7 +280,52 @@ else
                             <div></div>
                         </div>
                     }
+                    @* Fila de alta inline: crear unidad desde la tabla (como Zonas/Seguros). El propietario
+                       se asigna despues en la ficha (expander). El expander de esta fila crea y abre la ficha. *@
+                    <div class="dst-row dst-newrow dst-grid2" style="grid-template-columns:@GridCols">
+                        <div class="dst-exp-col">
+                            <button type="button" class="dst-exp dst-exp-fijo" title="Crear y abrir la ficha" @onclick="() => CrearUnidadDesdeAltaAsync(true)" disabled="@_creandoUnidad">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                            </button>
+                        </div>
+                        @foreach (var c in ColsVisibles)
+                        {
+                            switch (c.Key)
+                            {
+                                case "num":
+                                    <input class="dst-nf-inp" placeholder="Nueva unidad..." @bind="_nuNum" @bind:event="oninput" />
+                                    break;
+                                case "torre":
+                                    <select class="dst-nf-inp" @bind="_nuTorreId">
+                                        <option value="">-</option>
+                                        @foreach (var t in _torres.OrderBy(x => x.Nombre)) { <option value="@t.Id">@t.Nombre</option> }
+                                    </select>
+                                    break;
+                                case "piso":
+                                    <input class="dst-nf-inp" type="number" placeholder="-" @bind="_nuPiso" @bind:event="oninput" />
+                                    break;
+                                case "tipo":
+                                    <select class="dst-nf-inp" @bind="_nuTipo">
+                                        @foreach (var t in Enum.GetValues<TipoUnidad>()) { <option value="@t">@Etiqueta(t)</option> }
+                                    </select>
+                                    break;
+                                case "area":
+                                    <input class="dst-nf-inp" type="number" step="0.01" placeholder="-" @bind="_nuArea" @bind:event="oninput" />
+                                    break;
+                                case "coef":
+                                    <input class="dst-nf-inp" type="number" step="0.0001" placeholder="0" @bind="_nuCoef" @bind:event="oninput" />
+                                    break;
+                                case "prop":
+                                    <div class="dst-nf-mut">En la ficha</div>
+                                    break;
+                            }
+                        }
+                        <div class="dst-act dst-act-nf">
+                            <button type="button" class="dst-row-add" @onclick="() => CrearUnidadDesdeAltaAsync(false)" disabled="@_creandoUnidad">+ Agregar</button>
+                        </div>
+                    </div>
                 </div>
+                @if (!string.IsNullOrEmpty(_inlineMsgU)) { <div class="dst-toast" @onclick="() => _inlineMsgU = null">@_inlineMsgU</div> }
             }
             else
             {
@@ -342,37 +409,6 @@ else
     }
 }
 
-@* Panel Configurar columnas (por usuario) *@
-@if (_cfgColsAbierto)
-{
-    <div class="dst-cfg-back" @onclick="() => _cfgColsAbierto = false">
-        <div class="dst-cfg" @onclick:stopPropagation="true">
-            <div class="dst-cfg-head">
-                <strong>Columnas de la tabla</strong>
-                <button type="button" class="dst-cfg-x" @onclick="() => _cfgColsAbierto = false" title="Cerrar">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                </button>
-            </div>
-            <p class="dst-cfg-sub">Elige que columnas ver y como se llaman. Se guarda solo para ti.</p>
-            @foreach (var col in Catalogo)
-            {
-                var pref = PrefDe(col.Key);
-                var key = col.Key;
-                <div class="dst-cfg-row">
-                    <label class="dst-cfg-vis" title="@(col.Hideable ? "Mostrar u ocultar" : "Columna requerida, siempre visible")">
-                        <input type="checkbox" checked="@pref.Visible" disabled="@(!col.Hideable)" @onchange="@(e => SetColVisible(key, (bool)(e.Value ?? false)))" />
-                    </label>
-                    <input class="dst-cfg-inp" value="@(string.IsNullOrWhiteSpace(pref.Label) ? col.DefLabel : pref.Label)" placeholder="@col.DefLabel" @onchange="@(e => SetColLabel(key, e.Value?.ToString()))" />
-                    @if (!col.Hideable) { <span class="dst-cfg-req">requerida</span> }
-                </div>
-            }
-            <div class="dst-cfg-actions">
-                <button type="button" class="dst-fclear" @onclick="RestablecerCols">Restablecer</button>
-                <button type="button" class="propia-btn-brand" @onclick="() => _cfgColsAbierto = false">Listo</button>
-            </div>
-        </div>
-    </div>
-}
 
 @* Obligatorio en cada pagina que abre modales: IModalService es Scoped por circuit y
    MainLayout vive en otro boundary de render, asi que el host debe estar aqui dentro
@@ -388,6 +424,17 @@ else
     private List<TorreDto> _torres = new();
     private List<UnidadDto> _unidades = new();
 
+    // Alta inline (crear unidad desde la vista Tabla, como Zonas/Seguros).
+    private string _nuNum = "";
+    private string _nuTorreId = "";
+    private string _nuPiso = "";
+    private TipoUnidad _nuTipo;
+    private string _nuArea = "";
+    private string _nuCoef = "";
+    private bool _creandoUnidad;
+    private string? _inlineMsgU;
+    private readonly HashSet<Guid> _uniRecienCreados = new();
+
     private string LabelAgrupacionSingular => string.IsNullOrWhiteSpace(_resumen?.Identidad.LabelAgrupacion) ? "Torre" : _resumen!.Identidad.LabelAgrupacion!;
     private string LabelAgrupacionPlural => LabelAgrupacionSingular + "s";
     private string LabelPisoSingular => string.IsNullOrWhiteSpace(_resumen?.Identidad.LabelPiso) ? "Piso" : _resumen!.Identidad.LabelPiso!;
@@ -401,15 +448,26 @@ else
     // Filtros (client-side). La paginacion cuenta sobre la lista YA filtrada: si contara
     // sobre el total, el pie diria "de 120" mostrando 3 resultados.
     private string _q = "";
-    private string _fTipo = "";
-    private string _fTorreId = "";
+    private FiltroDinamico? _fd;   // boton "Filtros" con reglas dinamicas (componente compartido)
+
+    // Campos filtrables para el boton "Filtros" (reemplazan los selects "Todo tipo"/"Toda torre").
+    private List<FiltroDinamico.CampoDef> CamposFiltroU => new()
+    {
+        new() { Key = "numero", Label = "Unidad", Kind = "texto" },
+        new() { Key = "tipo", Label = "Tipo", Kind = "sel",
+                Opciones = Enum.GetValues<TipoUnidad>().Select(t => (t.ToString(), Etiqueta(t))).ToList() },
+        new() { Key = "torre", Label = LabelAgrupacionSingular, Kind = "sel",
+                Opciones = _torres.OrderBy(x => x.Nombre).Select(t => (t.Id.ToString(), t.Nombre)).ToList() },
+        new() { Key = "piso", Label = LabelPisoSingular, Kind = "num" },
+        new() { Key = "area", Label = "Area", Kind = "num" },
+        new() { Key = "coef", Label = "Coeficiente", Kind = "num" },
+        new() { Key = "propietario", Label = "Propietario", Kind = "texto" },
+    };
 
     private string _vista = "tabla";   // "tabla" | "lista" (se recuerda por modulo)
     private const string VistaKey = "propia_view_unidades";
 
-    private bool HayFiltros => !string.IsNullOrWhiteSpace(_q) || _fTipo != "" || _fTorreId != "";
-
-    private void LimpiarFiltros() { _q = ""; _fTipo = ""; _fTorreId = ""; _pagina = 1; }
+    private bool HayFiltros => !string.IsNullOrWhiteSpace(_q) || (_fd?.Hay ?? false);
 
     // La vista (Lista/Tabla) se recuerda por modulo en localStorage: sobrevive al cierre de
     // sesion (el logout solo borra llaves puntuales, no hace localStorage.clear()).
@@ -434,12 +492,22 @@ else
         get
         {
             var q = _q.Trim();
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
             return _unidades
                 .Where(u => q == ""
                     || u.Numero.Contains(q, StringComparison.OrdinalIgnoreCase)
                     || (u.PropietarioNombre ?? "").Contains(q, StringComparison.OrdinalIgnoreCase))
-                .Where(u => _fTipo == "" || u.Tipo.ToString() == _fTipo)
-                .Where(u => _fTorreId == "" || u.TorreId?.ToString() == _fTorreId)
+                .Where(u => _fd?.Pasa(campo => campo switch
+                {
+                    "numero" => u.Numero,
+                    "tipo" => u.Tipo.ToString(),
+                    "torre" => u.TorreId?.ToString() ?? "",
+                    "piso" => u.Piso?.ToString() ?? "",
+                    "area" => u.AreaM2?.ToString(ci) ?? "",
+                    "coef" => u.CoeficientePropiedad.ToString(ci),
+                    "propietario" => u.PropietarioNombre ?? "",
+                    _ => ""
+                }) ?? true)
                 .ToList();
         }
     }
@@ -522,6 +590,9 @@ else
     private bool _cfgColsAbierto;
     private Dictionary<string, ColPref> _cols = new();
     private const string ColsKey = "propia_cols_unidades";
+    private const string ColOrderKey = "propia_colorder_unidades";
+    private static readonly string[] ColDefaultOrder = { "num", "torre", "piso", "tipo", "area", "coef", "prop" };
+    private List<string> _colOrderU = ColDefaultOrder.ToList();
 
     public sealed class ColPref { public bool Visible { get; set; } = true; public string? Label { get; set; } }
 
@@ -540,7 +611,17 @@ else
 
     private bool EsVisible(ColDef c) => !c.Hideable || !_cols.TryGetValue(c.Key, out var p) || p.Visible;
     private string Etiqueta(ColDef c) => (_cols.TryGetValue(c.Key, out var p) && !string.IsNullOrWhiteSpace(p.Label)) ? p.Label! : c.DefLabel;
-    private IEnumerable<ColDef> ColsVisibles => Catalogo.Where(EsVisible);
+    // Catalogo en el orden elegido por el usuario (claves desconocidas van al final, por seguridad).
+    private IEnumerable<ColDef> CatalogoOrdenado
+    {
+        get
+        {
+            var byKey = Catalogo.ToDictionary(c => c.Key);
+            foreach (var k in _colOrderU) { if (byKey.TryGetValue(k, out var c)) yield return c; }
+            foreach (var c in Catalogo) { if (!_colOrderU.Contains(c.Key)) yield return c; }
+        }
+    }
+    private IEnumerable<ColDef> ColsVisibles => CatalogoOrdenado.Where(EsVisible);
     private string GridCols => "34px " + string.Join(" ", ColsVisibles.Select(c => c.Width)) + " 34px";
 
     private ColPref PrefDe(string key)
@@ -549,6 +630,13 @@ else
         return p;
     }
     private async Task SetColVisible(string key, bool v) { PrefDe(key).Visible = v; await GuardarColsAsync(); }
+    private async Task MoverColU(int idx, int dir)
+    {
+        var ni = idx + dir;
+        if (ni < 0 || ni >= _colOrderU.Count) return;
+        (_colOrderU[idx], _colOrderU[ni]) = (_colOrderU[ni], _colOrderU[idx]);
+        await GuardarColsAsync();
+    }
     private async Task SetColLabel(string key, string? label)
     {
         var def = Catalogo.First(c => c.Key == key).DefLabel;
@@ -557,8 +645,15 @@ else
         await GuardarColsAsync();
     }
     private async Task GuardarColsAsync()
-    { try { await Js.InvokeVoidAsync("localStorage.setItem", ColsKey, System.Text.Json.JsonSerializer.Serialize(_cols)); } catch { } }
-    private async Task RestablecerCols() { _cols.Clear(); await GuardarColsAsync(); }
+    {
+        try
+        {
+            await Js.InvokeVoidAsync("localStorage.setItem", ColsKey, System.Text.Json.JsonSerializer.Serialize(_cols));
+            await Js.InvokeVoidAsync("localStorage.setItem", ColOrderKey, System.Text.Json.JsonSerializer.Serialize(_colOrderU));
+        }
+        catch { }
+    }
+    private async Task RestablecerCols() { _cols.Clear(); _colOrderU = ColDefaultOrder.ToList(); await GuardarColsAsync(); }
 
     private async Task RestaurarPrefsAsync()
     {
@@ -569,6 +664,12 @@ else
             var raw = await Js.InvokeAsync<string?>("localStorage.getItem", ColsKey);
             if (!string.IsNullOrWhiteSpace(raw))
                 _cols = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, ColPref>>(raw) ?? new();
+            var ord = await Js.InvokeAsync<string?>("localStorage.getItem", ColOrderKey);
+            if (!string.IsNullOrWhiteSpace(ord))
+            {
+                var list = System.Text.Json.JsonSerializer.Deserialize<List<string>>(ord);
+                if (list is { Count: > 0 }) _colOrderU = list;
+            }
         }
         catch { }
     }
@@ -607,6 +708,43 @@ else
     }
 
     private Task Inline(UnidadDto u, string campo, ChangeEventArgs e) => GuardarUnidadInline(u, campo, e.Value?.ToString());
+
+    // ===== Alta inline: crea una unidad desde la fila de alta de la tabla. Si abrir=true, abre la
+    // ficha recien creada (para asignar propietario/detalle); si no, la deja resaltada en la lista. =====
+    private async Task CrearUnidadDesdeAltaAsync(bool abrir)
+    {
+        if (_creandoUnidad) return;
+        if (string.IsNullOrWhiteSpace(_nuNum)) { _inlineMsgU = "El numero de la unidad es obligatorio."; return; }
+        _creandoUnidad = true;
+        try
+        {
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            Guid? torreId = Guid.TryParse(_nuTorreId, out var tg) ? tg : null;
+            int? piso = int.TryParse(_nuPiso, out var pp) ? pp : null;
+            decimal? area = decimal.TryParse(_nuArea, System.Globalization.NumberStyles.Any, ci, out var aa) ? aa : null;
+            decimal coef = decimal.TryParse(_nuCoef, System.Globalization.NumberStyles.Any, ci, out var cc) ? cc : 0m;
+            var req = new CrearUnidadRequest(_nuNum.Trim(), _nuTipo, torreId, piso, coef, area,
+                null, null, null, null, null);
+            var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/unidades", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                UnidadDto? creada = null;
+                try { creada = await resp.Content.ReadFromJsonAsync<UnidadDto>(); } catch { }
+                if (creada is not null)
+                {
+                    _unidades.Add(creada);
+                    _uniRecienCreados.Add(creada.Id);
+                    _inlineMsgU = $"Unidad {creada.Numero} creada.";
+                    _nuNum = ""; _nuTorreId = ""; _nuPiso = ""; _nuArea = ""; _nuCoef = ""; _nuTipo = default;
+                    if (abrir) await AbrirModalAsync(creada.Id);
+                }
+                else { await CargarAsync(); }
+            }
+            else { _inlineMsgU = "No se pudo crear la unidad."; }
+        }
+        catch { _inlineMsgU = "Error al crear la unidad."; }
+        finally { _creandoUnidad = false; }
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -854,6 +992,20 @@ else
     .dst-cell:hover { border-color: #E1E8EE; background: #FBFCFD; }
     .dst-cell:focus { border-color: var(--propia-brand, #6D4FE3); background: #fff; color: #33475B; }
     .dst-cell-num { font-weight: 700; color: #1B2A3A; }
+    /* Fila de alta inline (crear unidad): inputs punteados en reposo, violeta al enfocar (canonico). */
+    .dst-newrow { cursor: default; }
+    .dst-newrow:hover { background: transparent; }
+    .dst-newrow .dst-exp-fijo { opacity: 1; }
+    .dst-newrow .dst-exp-fijo:disabled { opacity: .35; cursor: default; }
+    .dst-nf-inp { width: 100%; box-sizing: border-box; border: 1px dashed #D7E0EA; border-radius: 7px; padding: 5px 8px; font-size: 12.5px; color: #33475B; background: #fff; outline: none; font-family: inherit; }
+    .dst-nf-inp:focus { border-style: solid; border-color: var(--propia-brand, #6D4FE3); box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
+    .dst-nf-mut { font-size: 11.5px; color: #A6B7C8; display: flex; align-items: center; }
+    .dst-act-nf { display: flex; gap: 4px; align-items: center; justify-content: flex-end; }
+    .dst-row-add { display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border-radius: 7px; border: 1px solid #DCD2F8; background: #F1ECFD; color: var(--propia-brand, #6D4FE3); font-size: 11.5px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; }
+    .dst-row-add:hover:not(:disabled) { background: #E4DBFB; }
+    .dst-row-add:disabled { opacity: .5; cursor: default; }
+    .dst-row-nuevo { background: #ECFBF2 !important; box-shadow: inset 3px 0 0 #34C759; }
+    .dst-toast { position: sticky; bottom: 10px; margin: 10px auto 0; width: fit-content; background: #15703F; color: #fff; font-size: 12.5px; font-weight: 600; padding: 8px 16px; border-radius: 9px; cursor: pointer; box-shadow: 0 6px 18px rgba(21,112,63,.28); }
     .dst-ro { color: #516F90; padding: 5px 2px; }
     /* Cabecera de grupo. */
     .dst-group { display: flex; align-items: center; gap: 10px; padding: 10px 16px 6px; border-top: 1px solid #EEF2F6; }
@@ -875,4 +1027,15 @@ else
     .dst-cfg-inp:focus { border-color: var(--propia-brand, #6D4FE3); }
     .dst-cfg-req { font-size: 10.5px; font-weight: 700; color: #90A4B7; text-transform: uppercase; letter-spacing: .3px; }
     .dst-cfg-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+    /* Menu "Campos" (antes modal): popover anclado al boton, patron Tareas. */
+    .dst-colsmenu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; min-width: 300px; background: #fff; border: 1px solid #E6ECF2; border-radius: 12px; box-shadow: 0 12px 30px rgba(30,40,60,.18); padding: 8px; }
+    .dst-colsmenu-h { font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: #A6B7C8; text-transform: uppercase; padding: 4px 6px 8px; }
+    .dst-colsmenu-i { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 7px; }
+    .dst-colsmenu-i:hover { background: #F6F8FB; }
+    .dst-colsmenu-ord { display: flex; gap: 2px; flex: 0 0 auto; }
+    .dst-colsmenu-mv { border: 1px solid #E1E8EE; background: #fff; color: #90A4B7; border-radius: 6px; width: 22px; height: 22px; font-size: 9px; line-height: 1; cursor: pointer; }
+    .dst-colsmenu-mv:disabled { opacity: .35; cursor: default; }
+    .dst-colsmenu-acts { display: flex; gap: 8px; margin-top: 6px; padding-top: 8px; border-top: 1px solid #EEF3F8; }
+    .dst-colsmenu-act { flex: 1; border: 1px solid #E1E8EE; background: #fff; border-radius: 7px; padding: 6px 8px; font-size: 11.5px; font-weight: 700; color: #516F90; cursor: pointer; font-family: inherit; }
+    .dst-colsmenu-act:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
 </style>

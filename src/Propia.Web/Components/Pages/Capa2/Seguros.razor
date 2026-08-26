@@ -61,6 +61,65 @@
         </div>
 
         <div class="mod-filtros">
+            <div class="seg-filtro-wrap">
+                <button type="button" class="seg-fsel @(HaySegReglasActivas ? "on" : "")" @onclick="ToggleFiltrosS" title="Filtrar polizas">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:5px;"><path d="M3 5h18M6 12h12M10 19h4"/></svg><span>Filtros</span>
+                    @if (CuentaReglasS > 0) { <span class="seg-fbadge">@CuentaReglasS</span> }
+                </button>
+                @if (_filtrosMenuS)
+                {
+                    <div class="seg-menu-bd" @onclick="() => _filtrosMenuS = false"></div>
+                    <div class="seg-fpop" @onclick:stopPropagation="true">
+                        @if (_reglasS.Count == 0)
+                        {
+                            <div class="seg-fpop-empty">Sin filtros aplicados.<br />Agrega una condicion para acotar las polizas.</div>
+                        }
+                        else
+                        {
+                            @for (int i = 0; i < _reglasS.Count; i++)
+                            {
+                                var idx = i; var r = _reglasS[idx];
+                                <div class="seg-frule">
+                                    @if (idx == 0)
+                                    {
+                                        <span class="seg-frule-lead">Donde</span>
+                                    }
+                                    else if (idx == 1)
+                                    {
+                                        <select class="seg-frule-lead seg-frule-logic" @onchange="SetLogicaS">
+                                            <option value="and" selected="@(_logicaS == "and")">Y</option>
+                                            <option value="or" selected="@(_logicaS == "or")">O</option>
+                                        </select>
+                                    }
+                                    else
+                                    {
+                                        <span class="seg-frule-lead">@(_logicaS == "or" ? "O" : "Y")</span>
+                                    }
+                                    <select class="seg-frule-f" @onchange="(e) => SetReglaCampoS(idx, e)">
+                                        @foreach (var opt in CamposFiltroS()) { <option value="@opt.Key" selected="@(r.Campo == opt.Key)">@opt.Label</option> }
+                                    </select>
+                                    <select class="seg-frule-op" @onchange="(e) => SetReglaOpS(idx, e)">
+                                        @foreach (var op in OperadoresS(r.Campo)) { <option value="@op.Key" selected="@(r.Op == op.Key)">@op.Label</option> }
+                                    </select>
+                                    @if (r.Op is not "vacio" and not "no_vacio")
+                                    {
+                                        @RenderValorS(idx)
+                                    }
+                                    <button class="seg-frule-del" title="Quitar condicion" @onclick="() => QuitarReglaS(idx)">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                    </button>
+                                </div>
+                            }
+                        }
+                        <div class="seg-fpop-foot">
+                            <button class="seg-fadd" @onclick="AgregarReglaS">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>Agregar filtro
+                            </button>
+                            @if (_reglasS.Count > 0) { <button class="seg-fclear2" @onclick="LimpiarReglasS">Limpiar todo</button> }
+                        </div>
+                    </div>
+                }
+            </div>
             <div class="seg-search">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
                 <input class="seg-search-inp" placeholder="Buscar por numero, aseguradora, corredor..." @oninput="OnBuscar" />
@@ -82,9 +141,68 @@
                     </div>
                 }
             </div>
-            <button type="button" class="seg-fsel" @onclick="() => _showCampos = true" title="Gestionar campos personalizados">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:5px;"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>Campos
-            </button>
+            <div class="seg-menu-wrap">
+                <button type="button" class="seg-fsel @(_showCampos ? "on" : "")" @onclick="() => _showCampos = !_showCampos" title="Campos: orden, visibilidad y campos personalizados">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:5px;"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>Campos
+                </button>
+                @if (_showCampos)
+                {
+                    <div class="seg-menu-bd" @onclick="() => _showCampos = false"></div>
+                    <div class="seg-campospop" @onclick:stopPropagation="true">
+                        <div class="seg-campospop-h">CAMPOS (orden y visibilidad)</div>
+                        @if (_campos.Count == 0)
+                        {
+                            <div class="seg-cm-empty">Aun no hay campos personalizados. Crea el primero abajo (ej. "Deducible", "Renovada el").</div>
+                        }
+                        else
+                        {
+                            <div class="seg-cm-list">
+                                @{ var ordenados = _campos.OrderBy(c => c.Orden).ToList(); }
+                                @for (int i = 0; i < ordenados.Count; i++)
+                                {
+                                    var idx = i; var cm = ordenados[idx];
+                                    <div class="seg-cm-row @(cm.Activo ? "" : "off")">
+                                        <div class="seg-cm-ord">
+                                            <button class="seg-cm-mv" disabled="@(idx == 0)" @onclick="() => MoverCampoAsync(ordenados, idx, -1)" title="Subir">&#9650;</button>
+                                            <button class="seg-cm-mv" disabled="@(idx == ordenados.Count - 1)" @onclick="() => MoverCampoAsync(ordenados, idx, 1)" title="Bajar">&#9660;</button>
+                                        </div>
+                                        <input class="seg-cm-nom" value="@cm.Label" @onchange="e => RenombrarCampoAsync(cm, e)" />
+                                        <span class="seg-cm-tipo">@TipoCampoLabel(cm.Tipo)</span>
+                                        <label class="seg-cm-sw" title="Mostrar como columna">
+                                            <input type="checkbox" checked="@cm.Activo" @onchange="() => ToggleCampoActivoAsync(cm)" />
+                                            <span>@(cm.Activo ? "Visible" : "Oculto")</span>
+                                        </label>
+                                        <button class="seg-cm-del" @onclick="() => EliminarCampoAsync(cm.Id)" title="Eliminar campo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        <div class="seg-cm-new">
+                            <div class="seg-campospop-h" style="margin-top:6px;">NUEVO CAMPO</div>
+                            <div class="seg-grid-form">
+                                <div><label class="seg-lbl">Nombre del campo</label><input class="seg-input" placeholder="Ej. Deducible" @bind="_nuevoCampoLabel" @bind:event="oninput" /></div>
+                                <div>
+                                    <label class="seg-lbl">Tipo</label>
+                                    <select class="seg-input" @bind="_nuevoCampoTipo">
+                                        @foreach (var t in new[] { TipoCampoTablero.Texto, TipoCampoTablero.AreaTexto, TipoCampoTablero.Numero, TipoCampoTablero.Moneda, TipoCampoTablero.Fecha, TipoCampoTablero.Seleccion, TipoCampoTablero.Booleano, TipoCampoTablero.Telefono, TipoCampoTablero.Url, TipoCampoTablero.Email })
+                                        {
+                                            <option value="@t">@TipoCampoLabel(t)</option>
+                                        }
+                                    </select>
+                                </div>
+                                @if (_nuevoCampoTipo == TipoCampoTablero.Seleccion)
+                                {
+                                    <div class="seg-col-full"><label class="seg-lbl">Opciones (una por linea)</label><textarea class="seg-input" rows="3" @bind="_nuevoCampoOpciones" @bind:event="oninput"></textarea></div>
+                                }
+                            </div>
+                            @if (_camposError is not null) { <div class="seg-banner err">@_camposError</div> }
+                            <button class="seg-btn-brand" style="margin-top:10px;" @onclick="CrearCampoAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoCampoLabel))">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:4px;"><path d="M12 5v14M5 12h14"/></svg>Agregar campo
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
         </div>
 
         @if (_loadError is not null) { <div class="alert alert-danger">@_loadError</div> }
@@ -345,73 +463,6 @@
     </div>
 }
 
-@if (_showCampos)
-{
-    <div class="seg-ov" @onclick="() => _showCampos = false"></div>
-    <div class="seg-modal" style="width:560px;">
-        <div class="seg-modal-head">
-            <div class="seg-modal-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 6h18M3 12h18M3 18h18"/></svg></div>
-            <div style="flex:1;min-width:0;">
-                <div class="seg-modal-title">Campos personalizados</div>
-                <div class="seg-modal-sub">Campos tipados que apareceran en la ficha y como columnas de la tabla.</div>
-            </div>
-            <button class="seg-x" @onclick="() => _showCampos = false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-        </div>
-        <div class="seg-modal-body">
-            @if (_campos.Count == 0)
-            {
-                <div class="seg-cm-empty">Aun no hay campos. Crea el primero abajo (ej. "Deducible", "Corredor de contacto", "Renovada el").</div>
-            }
-            else
-            {
-                <div class="seg-cm-list">
-                    @{ var ordenados = _campos.OrderBy(c => c.Orden).ToList(); }
-                    @for (int i = 0; i < ordenados.Count; i++)
-                    {
-                        var idx = i; var cm = ordenados[idx];
-                        <div class="seg-cm-row @(cm.Activo ? "" : "off")">
-                            <div class="seg-cm-ord">
-                                <button class="seg-cm-mv" disabled="@(idx == 0)" @onclick="() => MoverCampoAsync(ordenados, idx, -1)" title="Subir">&#9650;</button>
-                                <button class="seg-cm-mv" disabled="@(idx == ordenados.Count - 1)" @onclick="() => MoverCampoAsync(ordenados, idx, 1)" title="Bajar">&#9660;</button>
-                            </div>
-                            <input class="seg-cm-nom" value="@cm.Label" @onchange="e => RenombrarCampoAsync(cm, e)" />
-                            <span class="seg-cm-tipo">@TipoCampoLabel(cm.Tipo)</span>
-                            <label class="seg-cm-sw" title="Mostrar como columna">
-                                <input type="checkbox" checked="@cm.Activo" @onchange="() => ToggleCampoActivoAsync(cm)" />
-                                <span>@(cm.Activo ? "Visible" : "Oculto")</span>
-                            </label>
-                            <button class="seg-cm-del" @onclick="() => EliminarCampoAsync(cm.Id)" title="Eliminar campo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
-                        </div>
-                    }
-                </div>
-            }
-            <div class="seg-cm-new">
-                <div class="seg-doc-h" style="margin-top:14px;">Nuevo campo</div>
-                <div class="seg-grid-form">
-                    <div><label class="seg-lbl">Nombre del campo</label><input class="seg-input" placeholder="Ej. Deducible" @bind="_nuevoCampoLabel" @bind:event="oninput" /></div>
-                    <div>
-                        <label class="seg-lbl">Tipo</label>
-                        <select class="seg-input" @bind="_nuevoCampoTipo">
-                            @foreach (var t in new[] { TipoCampoTablero.Texto, TipoCampoTablero.AreaTexto, TipoCampoTablero.Numero, TipoCampoTablero.Moneda, TipoCampoTablero.Fecha, TipoCampoTablero.Seleccion, TipoCampoTablero.Booleano, TipoCampoTablero.Telefono, TipoCampoTablero.Url, TipoCampoTablero.Email })
-                            {
-                                <option value="@t">@TipoCampoLabel(t)</option>
-                            }
-                        </select>
-                    </div>
-                    @if (_nuevoCampoTipo == TipoCampoTablero.Seleccion)
-                    {
-                        <div class="seg-col-full"><label class="seg-lbl">Opciones (una por linea)</label><textarea class="seg-input" rows="3" @bind="_nuevoCampoOpciones" @bind:event="oninput"></textarea></div>
-                    }
-                </div>
-                @if (_camposError is not null) { <div class="seg-banner err">@_camposError</div> }
-                <button class="seg-btn-brand" style="margin-top:10px;" @onclick="CrearCampoAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoCampoLabel))">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:4px;"><path d="M12 5v14M5 12h14"/></svg>Agregar campo
-                </button>
-            </div>
-        </div>
-    </div>
-}
-
 <style>
     .mod-pagehead { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
     .mod-pagetitle { font-size: 30px; font-weight: 800; color: #1B2A3A; margin: 0 0 4px; letter-spacing: -.5px; }
@@ -433,6 +484,28 @@
     .seg-menu-it { display: block; width: 100%; text-align: left; border: 0; background: transparent; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; font-weight: 600; color: #33475B; cursor: pointer; font-family: inherit; }
     .seg-menu-it:hover { background: #F3EFFE; }
     .seg-menu-it.on { background: #F3EFFE; color: var(--propia-brand, #6D4FE3); }
+    /* Boton "Filtros" + popover constructor de reglas (mismo diseno que Contratos/PQRS). */
+    .seg-filtro-wrap { position: relative; }
+    .seg-fbadge { background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 10.5px; font-weight: 800; border-radius: 20px; padding: 0 6px; min-width: 17px; height: 17px; margin-left: 5px; display: inline-flex; align-items: center; justify-content: center; }
+    .seg-fpop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 41; width: 540px; max-width: 88vw; background: #fff; border: 1px solid #E6ECF2; border-radius: 13px; box-shadow: 0 18px 44px rgba(30,40,60,.22); padding: 12px; }
+    .seg-fpop-empty { padding: 14px; text-align: center; color: #94A3B8; font-size: 12.5px; line-height: 1.5; }
+    .seg-frule { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
+    .seg-frule-lead { font-size: 11.5px; font-weight: 700; color: #8593A5; min-width: 42px; }
+    .seg-frule-logic { min-width: 52px; }
+    .seg-frule select, .seg-frule input { border: 1px solid #DCE3EC; border-radius: 7px; padding: 5px 7px; font-size: 12px; color: #33414F; background: #fff; font-family: inherit; }
+    .seg-frule-f { flex: 1 1 120px; min-width: 90px; }
+    .seg-frule-op { flex: 0 1 120px; }
+    .seg-frule-v { flex: 1 1 120px; min-width: 90px; }
+    .seg-frule-del { border: 0; background: #F3F6FA; color: #97A6B6; border-radius: 6px; width: 24px; height: 24px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+    .seg-frule-del:hover { background: #FDECEC; color: #E14B4B; }
+    .seg-fpop-foot { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding-top: 9px; border-top: 1px dashed #E4EAF0; }
+    .seg-fadd { display: inline-flex; align-items: center; gap: 5px; border: 0; background: #F4F1FE; color: #5838C9; font-weight: 700; font-size: 12px; border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+    .seg-fadd:hover { background: #E6DEFB; }
+    .seg-fclear2 { border: 0; background: transparent; color: #8593A5; font-weight: 600; font-size: 12px; cursor: pointer; }
+    .seg-fclear2:hover { color: #E14B4B; }
+    /* Menu "Campos" (antes modal): popover anclado al boton, como Tareas. */
+    .seg-campospop { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; width: 520px; max-width: 92vw; max-height: 72vh; overflow: auto; background: #fff; border: 1px solid #E6ECF2; border-radius: 12px; box-shadow: 0 16px 40px rgba(30,40,60,.2); padding: 12px; }
+    .seg-campospop-h { font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: #A6B7C8; text-transform: uppercase; margin-bottom: 8px; }
     .mod-search-count { font-size: 12.5px; color: #90A4B7; }
     .seg-toggle { display: inline-flex; gap: 2px; background: #EEF2F6; border-radius: 9px; padding: 3px; }
     .seg-vt { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: #6B7C8F; font-size: 12.5px; font-weight: 600; padding: 5px 11px; border-radius: 7px; cursor: pointer; }
@@ -445,7 +518,8 @@
     .seg-table { background: #fff; border: 1px solid #E1E8EE; border-radius: 12px; overflow: hidden; }
     .seg-scroll { overflow: auto; max-height: calc(100vh - 300px); }
     .seg-grid { display: grid; grid-template-columns: 34px 1.1fr 1.6fr 1.3fr 1fr 1fr 1.1fr 1fr .7fr; align-items: center; gap: 8px; padding: 8px 16px; min-width: 1000px; }
-    .seg-head { background: #F7F9FB; font-size: 10.5px; font-weight: 700; color: #90A4B7; letter-spacing: .4px; border-bottom: 1px solid #E1E8EE; position: sticky; top: 0; z-index: 3; }
+    /* Header canonico (estandar Tareas): tokens homogeneos, sticky top OPACO. */
+    .seg-head { background: #FAFBFC; font-size: 10.5px; font-weight: 700; color: #A6B7C8; letter-spacing: .4px; text-transform: uppercase; border-bottom: 1px solid #EEF3F8; position: sticky; top: 0; z-index: 3; }
     .seg-row { border-bottom: 1px solid #EEF2F6; font-size: 13px; color: #33475B; }
     .seg-row:hover { background: #FBFAFE; }
     .seg-c { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -651,15 +725,215 @@
 
     public sealed record ExpedienteLite(Guid Id, string Codigo, string Nombre);
 
+    // -- Constructor de reglas de filtro (Donde / Y-O / campo + operador + valor). Patron PQRS/Contratos. --
+    private sealed class ReglaS { public string Campo = "estado"; public string Op = "es"; public string Valor = ""; }
+    private readonly List<ReglaS> _reglasS = new();
+    private string _logicaS = "and";
+    private bool _filtrosMenuS;
+    private bool ReglaActivaS(ReglaS r) => r.Op is "vacio" or "no_vacio" || !string.IsNullOrWhiteSpace(r.Valor);
+    private int CuentaReglasS => _reglasS.Count(ReglaActivaS);
+    private bool HaySegReglasActivas => _reglasS.Any(ReglaActivaS);
+    private void ToggleFiltrosS() { _filtrosMenuS = !_filtrosMenuS; if (_filtrosMenuS && _reglasS.Count == 0) AgregarReglaS(); }
+    private void AgregarReglaS() => _reglasS.Add(new ReglaS { Campo = "estado", Op = "es", Valor = "" });
+    private void QuitarReglaS(int idx) { if (idx >= 0 && idx < _reglasS.Count) _reglasS.RemoveAt(idx); }
+    private void LimpiarReglasS() { _reglasS.Clear(); _logicaS = "and"; }
+    private void SetLogicaS(ChangeEventArgs e) => _logicaS = e.Value?.ToString() == "or" ? "or" : "and";
+    private void SetReglaCampoS(int idx, ChangeEventArgs e)
+    {
+        if (idx < 0 || idx >= _reglasS.Count) return;
+        _reglasS[idx].Campo = e.Value?.ToString() ?? "estado";
+        var ops = OperadoresS(_reglasS[idx].Campo);
+        if (!ops.Any(o => o.Key == _reglasS[idx].Op)) _reglasS[idx].Op = ops.First().Key;
+        _reglasS[idx].Valor = "";
+    }
+    private void SetReglaOpS(int idx, ChangeEventArgs e) { if (idx >= 0 && idx < _reglasS.Count) _reglasS[idx].Op = e.Value?.ToString() ?? "es"; }
+    private void SetReglaValorS(int idx, ChangeEventArgs e) { if (idx >= 0 && idx < _reglasS.Count) _reglasS[idx].Valor = e.Value?.ToString() ?? ""; }
+
+    private IEnumerable<(string Key, string Label)> CamposFiltroS()
+    {
+        yield return ("numero", "N poliza");
+        yield return ("aseguradora", "Aseguradora");
+        yield return ("corredor", "Corredor");
+        yield return ("estado", "Vencimiento");
+        yield return ("inicio", "Inicio");
+        yield return ("fin", "Finalizacion");
+        yield return ("valor", "Valor");
+        yield return ("reclam", "Reclamaciones");
+        foreach (var c in CamposActivos) yield return (c.Id.ToString(), c.Label);
+    }
+    private PolizaCampoDto? CampoDinS(string campo) => Guid.TryParse(campo, out var g) ? CamposActivos.FirstOrDefault(c => c.Id == g) : null;
+    private string FiltroKindS(string campo) => campo switch
+    {
+        "estado" => "sel-estado",
+        "inicio" or "fin" => "fecha",
+        "valor" or "reclam" => "num",
+        "numero" or "aseguradora" or "corredor" => "texto",
+        _ => CampoDinS(campo)?.Tipo switch
+        {
+            TipoCampoTablero.Numero or TipoCampoTablero.Moneda => "num",
+            TipoCampoTablero.Fecha => "fecha",
+            TipoCampoTablero.Seleccion => "sel-din",
+            TipoCampoTablero.Booleano => "sel-bool",
+            _ => "texto"
+        }
+    };
+    private IEnumerable<(string Key, string Label)> OperadoresS(string campo)
+    {
+        switch (FiltroKindS(campo))
+        {
+            case "num":
+                return new[] { ("=", "es igual a"), ("!=", "es distinto de"), (">", "mayor que"), (">=", "mayor o igual"),
+                               ("<", "menor que"), ("<=", "menor o igual"), ("vacio", "esta vacio"), ("no_vacio", "no esta vacio") };
+            case "fecha":
+                return new[] { ("es", "es"), ("antes", "antes de"), ("despues", "despues de"), ("vacio", "esta vacio"), ("no_vacio", "no esta vacio") };
+            case "sel-estado":
+            case "sel-din":
+            case "sel-bool":
+                return new[] { ("es", "es"), ("no_es", "no es"), ("vacio", "esta vacio"), ("no_vacio", "no esta vacio") };
+            default:
+                return new[] { ("contiene", "contiene"), ("no_contiene", "no contiene"), ("es", "es"), ("no_es", "no es"),
+                               ("vacio", "esta vacio"), ("no_vacio", "no esta vacio") };
+        }
+    }
+    private static string EstadoSemanticS(PolizaDto p) => p.Semaforo switch
+    {
+        SemaforoContrato.Rojo => "vencida",
+        SemaforoContrato.Amarillo => "por-vencer",
+        _ => "al-dia"
+    };
+    private string CampoValorRawS(PolizaDto p, string campo)
+    {
+        if (!Guid.TryParse(campo, out var g)) return "";
+        var cm = CamposActivos.FirstOrDefault(c => c.Id == g);
+        if (cm is null) return "";
+        var raw = p.CamposValores?.FirstOrDefault(v => v.CampoId == g)?.Valor ?? "";
+        if (cm.Tipo == TipoCampoTablero.Booleano) return raw == "true" ? "Si" : (raw == "false" ? "No" : "");
+        return raw;
+    }
+    private string ValorTextoS(PolizaDto p, string campo) => campo switch
+    {
+        "numero" => p.NumeroPoliza ?? "",
+        "aseguradora" => p.Aseguradora ?? "",
+        "corredor" => p.Corredor ?? "",
+        "estado" => EstadoSemanticS(p),
+        "valor" => p.ValorPoliza?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "",
+        "reclam" => p.ReclamacionesCount.ToString(),
+        "inicio" => p.FechaInicio?.ToString("yyyy-MM-dd") ?? "",
+        "fin" => p.FechaFin?.ToString("yyyy-MM-dd") ?? "",
+        _ => CampoValorRawS(p, campo)
+    };
+    private decimal? ValorNumS(PolizaDto p, string campo)
+    {
+        if (campo == "valor") return p.ValorPoliza;
+        if (campo == "reclam") return p.ReclamacionesCount;
+        return decimal.TryParse(CampoValorRawS(p, campo), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
+    }
+    private DateOnly? FechaS(PolizaDto p, string campo)
+    {
+        if (campo == "inicio") return p.FechaInicio;
+        if (campo == "fin") return p.FechaFin;
+        return DateOnly.TryParse(CampoValorRawS(p, campo), out var d) ? d : null;
+    }
+    private static IEnumerable<string> OpcionesDeS(PolizaCampoDto cm) =>
+        (cm.Opciones ?? "").Split(new[] { '\n', ',' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    private bool EvalReglaS(PolizaDto p, ReglaS r)
+    {
+        var kind = FiltroKindS(r.Campo);
+        if (kind == "num")
+        {
+            var nv = ValorNumS(p, r.Campo);
+            if (r.Op == "vacio") return nv is null;
+            if (r.Op == "no_vacio") return nv is not null;
+            if (!decimal.TryParse(r.Valor, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var rv)) return true;
+            if (nv is null) return false;
+            return r.Op switch { "=" => nv == rv, "!=" => nv != rv, ">" => nv > rv, ">=" => nv >= rv, "<" => nv < rv, "<=" => nv <= rv, _ => true };
+        }
+        if (kind == "fecha")
+        {
+            var dv = FechaS(p, r.Campo);
+            if (r.Op == "vacio") return dv is null;
+            if (r.Op == "no_vacio") return dv is not null;
+            if (!DateOnly.TryParse(r.Valor, out var rd)) return true;
+            if (dv is null) return false;
+            return r.Op switch { "es" => dv == rd, "antes" => dv < rd, "despues" => dv > rd, _ => true };
+        }
+        var sv = ValorTextoS(p, r.Campo);
+        if (r.Op == "vacio") return string.IsNullOrWhiteSpace(sv);
+        if (r.Op == "no_vacio") return !string.IsNullOrWhiteSpace(sv);
+        if (string.IsNullOrEmpty(r.Valor)) return true;
+        return r.Op switch
+        {
+            "es" => string.Equals(sv, r.Valor, StringComparison.OrdinalIgnoreCase),
+            "no_es" => !string.Equals(sv, r.Valor, StringComparison.OrdinalIgnoreCase),
+            "contiene" => sv.Contains(r.Valor, StringComparison.OrdinalIgnoreCase),
+            "no_contiene" => !sv.Contains(r.Valor, StringComparison.OrdinalIgnoreCase),
+            _ => true
+        };
+    }
+    // Editor de valor de una regla (segun tipo). Se oculta para vacio/no_vacio.
+    private RenderFragment RenderValorS(int idx) => builder =>
+    {
+        if (idx < 0 || idx >= _reglasS.Count) return;
+        var r = _reglasS[idx];
+        var kind = FiltroKindS(r.Campo);
+        void Sel(IEnumerable<(string Val, string Txt)> opts, string ph)
+        {
+            builder.OpenElement(0, "select");
+            builder.AddAttribute(1, "class", "seg-frule-v");
+            builder.AddAttribute(2, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e => SetReglaValorS(idx, e)));
+            builder.OpenElement(3, "option");
+            builder.AddAttribute(4, "value", "");
+            builder.AddAttribute(5, "selected", string.IsNullOrEmpty(r.Valor));
+            builder.AddContent(6, ph);
+            builder.CloseElement();
+            var k = 7;
+            foreach (var (val, txt) in opts)
+            {
+                builder.OpenElement(k++, "option");
+                builder.AddAttribute(k++, "value", val);
+                builder.AddAttribute(k++, "selected", r.Valor == val);
+                builder.AddContent(k++, txt);
+                builder.CloseElement();
+            }
+            builder.CloseElement();
+        }
+        void Inp(string type)
+        {
+            builder.OpenElement(20, "input");
+            builder.AddAttribute(21, "class", "seg-frule-v");
+            builder.AddAttribute(22, "type", type);
+            builder.AddAttribute(23, "value", r.Valor);
+            builder.AddAttribute(24, "placeholder", "Valor");
+            builder.AddAttribute(25, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e => SetReglaValorS(idx, e)));
+            builder.CloseElement();
+        }
+        switch (kind)
+        {
+            case "sel-estado": Sel(new[] { ("al-dia", "Al dia"), ("por-vencer", "Por vencer"), ("vencida", "Vencida") }, "Elegir estado..."); break;
+            case "sel-din": Sel(OpcionesDeS(CampoDinS(r.Campo)!).Select(o => (o, o)), "Elegir opcion..."); break;
+            case "sel-bool": Sel(new[] { ("Si", "Si"), ("No", "No") }, "Elegir..."); break;
+            case "num": Inp("number"); break;
+            case "fecha": Inp("date"); break;
+            default: Inp("text"); break;
+        }
+    };
+
     private List<PolizaDto> Filtradas
     {
         get
         {
             var q = _q.Trim();
-            return _polizas.Where(p => q == ""
-                || (p.NumeroPoliza ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)
-                || p.Aseguradora.Contains(q, StringComparison.OrdinalIgnoreCase)
-                || (p.Corredor ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
+            var activas = _reglasS.Where(ReglaActivaS).ToList();
+            return _polizas.Where(p =>
+            {
+                if (q != ""
+                    && !(p.NumeroPoliza ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)
+                    && !p.Aseguradora.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    && !(p.Corredor ?? "").Contains(q, StringComparison.OrdinalIgnoreCase))
+                    return false;
+                if (activas.Count == 0) return true;
+                return _logicaS == "or" ? activas.Any(r => EvalReglaS(p, r)) : activas.All(r => EvalReglaS(p, r));
+            }).ToList();
         }
     }
 

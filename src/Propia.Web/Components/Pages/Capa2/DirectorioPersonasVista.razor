@@ -186,7 +186,7 @@ else
                     }
                 }
                 <div class="dtab-act dtab-act-nf">
-                    <button type="button" class="dtab-add" title="Agregar (Enter)" @onclick="CrearPersonaInline" disabled="@(_busy || !DraftValido)">+</button>
+                    <button type="button" class="dtab-add" title="Agregar (Enter)" @onclick="CrearPersonaInline" disabled="@(_busy || !DraftValido)">+ Agregar</button>
                 </div>
             </div>
         </div>
@@ -212,6 +212,9 @@ else
     /// localStorage; clave = Key de la columna. Si es null, se usan los valores por defecto.</summary>
     [Parameter] public Dictionary<string, ColPref>? ColsConfig { get; set; }
 
+    /// <summary>Orden de columnas (claves) elegido por el usuario; si es null, se usa el orden del catalogo.</summary>
+    [Parameter] public List<string>? ColsOrder { get; set; }
+
     /// <summary>Preferencia de una columna: si se ve y con que nombre.</summary>
     public sealed class ColPref { public bool Visible { get; set; } = true; public string? Label { get; set; } }
 
@@ -236,7 +239,20 @@ else
 
     private bool EsVisible(ColDef c) => !c.Hideable || ColsConfig is null || !ColsConfig.TryGetValue(c.Key, out var p) || p.Visible;
     private string Etiqueta(ColDef c) => (ColsConfig is not null && ColsConfig.TryGetValue(c.Key, out var p) && !string.IsNullOrWhiteSpace(p.Label)) ? p.Label! : c.DefLabel;
-    private IEnumerable<ColDef> ColsVisibles => Catalogo.Where(EsVisible);
+    private IEnumerable<ColDef> ColsVisibles
+    {
+        get
+        {
+            IEnumerable<ColDef> ordenado = Catalogo;
+            if (ColsOrder is { Count: > 0 })
+            {
+                var byKey = Catalogo.ToDictionary(c => c.Key);
+                ordenado = ColsOrder.Where(byKey.ContainsKey).Select(k => byKey[k])
+                    .Concat(Catalogo.Where(c => !ColsOrder.Contains(c.Key)));
+            }
+            return ordenado.Where(EsVisible);
+        }
+    }
     private string GridCols => "34px " + string.Join(" ", ColsVisibles.Select(c => c.Width)) + " 44px";
 
     /// <summary>Un grupo de la vista agrupada: cabecera (etiqueta) + sus personas.</summary>

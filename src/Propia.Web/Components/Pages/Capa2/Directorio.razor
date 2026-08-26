@@ -111,10 +111,41 @@
             @* Configurar columnas visibles, su orden y nombres (solo en vista Tabla). *@
             @if (_view == "tabla")
             {
-                <button type="button" class="fd-btn" @onclick="() => _cfgColsAbierto = true" title="Campos y columnas de la tabla">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
-                    <span>Campos</span>
-                </button>
+                <div class="dir-menu-wrap">
+                    <button type="button" class="fd-btn @(_cfgColsAbierto ? "on" : "")" @onclick="() => _cfgColsAbierto = !_cfgColsAbierto" title="Campos y columnas de la tabla">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
+                        <span>Campos</span>
+                    </button>
+                    @if (_cfgColsAbierto)
+                    {
+                        <div class="dir-menu-bd" @onclick="() => _cfgColsAbierto = false"></div>
+                        <div class="dir-colsmenu">
+                            <div class="dir-colsmenu-h">COLUMNAS (orden y visibilidad) &mdash; @(_tab == "empresas" ? "empresas" : "personas")</div>
+                            @{ var catOrd = CatalogoActivoOrdenado.ToList(); }
+                            @for (int i = 0; i < catOrd.Count; i++)
+                            {
+                                var idx = i;
+                                var col = catOrd[idx];
+                                var pref = PrefDe(col.Key);
+                                var key = col.Key;
+                                <div class="dir-colsmenu-i">
+                                    <div class="dir-colsmenu-ord">
+                                        <button class="dir-colsmenu-mv" disabled="@(idx == 0)" @onclick="() => MoverColDir(idx, -1)" title="Subir">&#9650;</button>
+                                        <button class="dir-colsmenu-mv" disabled="@(idx == catOrd.Count - 1)" @onclick="() => MoverColDir(idx, 1)" title="Bajar">&#9660;</button>
+                                    </div>
+                                    <label class="dir-cfgcols-vis" title="@(col.Hideable ? "Mostrar u ocultar" : "Columna requerida, siempre visible")">
+                                        <input type="checkbox" checked="@pref.Visible" disabled="@(!col.Hideable)" @onchange="@(e => SetColVisible(key, (bool)(e.Value ?? false)))" />
+                                    </label>
+                                    <input class="dir-cfgcols-inp" value="@(string.IsNullOrWhiteSpace(pref.Label) ? col.DefLabel : pref.Label)" placeholder="@col.DefLabel" @onchange="@(e => SetColLabel(key, e.Value?.ToString()))" />
+                                    @if (!col.Hideable) { <span class="dir-cfgcols-req">fija</span> }
+                                </div>
+                            }
+                            <div class="dir-colsmenu-acts">
+                                <button type="button" class="dir-colsmenu-act" @onclick="RestablecerCols">Restablecer</button>
+                            </div>
+                        </div>
+                    }
+                </div>
             }
             @* Toggle Lista/Tabla dentro de la barra de filtros (como en los demas modulos),
                no en una fila propia. La vista la controla la pagina y se pasa a las vistas
@@ -141,46 +172,15 @@
            extraidos para no engrosar esta pagina. *@
         @if (_tab == "personas")
         {
-            <DirectorioPersonasVista Personas="PersonasFiltradas" Grupos="GruposPersonas()" ColsConfig="_colsPersonas" Vista="_view" OnAbrir="AbrirPersona" OnCrear="CrearPersonaTabla" OnCrearAbrir="CrearPersonaTablaYAbrir" OnEditarCampo="EditarPersonaInline" />
+            <DirectorioPersonasVista Personas="PersonasFiltradas" Grupos="GruposPersonas()" ColsConfig="_colsPersonas" ColsOrder="_ordenPersonas" Vista="_view" OnAbrir="AbrirPersona" OnCrear="CrearPersonaTabla" OnCrearAbrir="CrearPersonaTablaYAbrir" OnEditarCampo="EditarPersonaInline" />
         }
         else
         {
-            <DirectorioEmpresasVista Empresas="EmpresasFiltradas" Grupos="GruposEmpresas()" ColsConfig="_colsEmpresas" Vista="_view" OnAbrir="AbrirEmpresa" OnCrear="CrearEmpresaTabla" OnCrearAbrir="CrearEmpresaTablaYAbrir" OnEditarCampo="EditarEmpresaInline" />
+            <DirectorioEmpresasVista Empresas="EmpresasFiltradas" Grupos="GruposEmpresas()" ColsConfig="_colsEmpresas" ColsOrder="_ordenEmpresas" Vista="_view" OnAbrir="AbrirEmpresa" OnCrear="CrearEmpresaTabla" OnCrearAbrir="CrearEmpresaTablaYAbrir" OnEditarCampo="EditarEmpresaInline" />
         }
     }
 </div>
 
-@* ===================== MODAL Configurar columnas ===================== *@
-@if (_cfgColsAbierto)
-{
-    <div class="dir-modal-backdrop" @onclick="() => _cfgColsAbierto = false">
-        <div class="dir-cfgcols" @onclick:stopPropagation="true">
-            <div class="dir-cfgcols-head">
-                <strong>Columnas de la tabla</strong>
-                <button type="button" class="dir-cfgcols-x" @onclick="() => _cfgColsAbierto = false" title="Cerrar">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                </button>
-            </div>
-            <p class="dir-cfgcols-sub">Elige que columnas ver y como se llaman. Se guarda solo para ti (@(_tab == "empresas" ? "empresas" : "personas")).</p>
-            @foreach (var col in CatalogoActivo)
-            {
-                var pref = PrefDe(col.Key);
-                var key = col.Key;
-                <div class="dir-cfgcols-row">
-                    <label class="dir-cfgcols-vis" title="@(col.Hideable ? "Mostrar u ocultar" : "Columna requerida, siempre visible")">
-                        <input type="checkbox" checked="@pref.Visible" disabled="@(!col.Hideable)" @onchange="@(e => SetColVisible(key, (bool)(e.Value ?? false)))" />
-                    </label>
-                    <input class="dir-cfgcols-inp" value="@(string.IsNullOrWhiteSpace(pref.Label) ? col.DefLabel : pref.Label)" placeholder="@col.DefLabel" @onchange="@(e => SetColLabel(key, e.Value?.ToString()))" />
-                    @if (!col.Hideable) { <span class="dir-cfgcols-req">requerida</span> }
-                </div>
-            }
-            <div class="dir-cfgcols-actions">
-                <button type="button" class="dir-btn-ghost" @onclick="RestablecerCols">Restablecer</button>
-                <button type="button" class="dir-btn-brand" @onclick="() => _cfgColsAbierto = false">Listo</button>
-            </div>
-        </div>
-    </div>
-}
 
 @* ===================== MODAL 360 (Persona / Empresa) ===================== *@
 @if (_detalleAbierto)
@@ -882,6 +882,18 @@
     .dir-cfgcols-vis input:disabled { cursor: not-allowed; }
     .dir-cfgcols-inp { flex: 1; border: 1px solid #E1E8EE; border-radius: 8px; padding: 7px 10px; font-size: 13px; color: #33475B; font-family: inherit; outline: none; }
     .dir-cfgcols-inp:focus { border-color: var(--propia-brand, #6D4FE3); }
+    /* Menu "Campos" (antes modal): popover anclado al boton, con reorden (patron Zonas/Unidades). */
+    .dir-menu-bd { position: fixed; inset: 0; z-index: 40; }
+    .dir-colsmenu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; min-width: 320px; background: #fff; border: 1px solid #E6ECF2; border-radius: 12px; box-shadow: 0 12px 30px rgba(30,40,60,.18); padding: 8px; }
+    .dir-colsmenu-h { font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: #A6B7C8; text-transform: uppercase; padding: 4px 6px 8px; }
+    .dir-colsmenu-i { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 7px; }
+    .dir-colsmenu-i:hover { background: #F6F8FB; }
+    .dir-colsmenu-ord { display: flex; gap: 2px; flex: 0 0 auto; }
+    .dir-colsmenu-mv { border: 1px solid #E1E8EE; background: #fff; color: #90A4B7; border-radius: 6px; width: 22px; height: 22px; font-size: 9px; line-height: 1; cursor: pointer; }
+    .dir-colsmenu-mv:disabled { opacity: .35; cursor: default; }
+    .dir-colsmenu-acts { display: flex; gap: 8px; margin-top: 6px; padding-top: 8px; border-top: 1px solid #EEF3F8; }
+    .dir-colsmenu-act { flex: 1; border: 1px solid #E1E8EE; background: #fff; border-radius: 7px; padding: 6px 8px; font-size: 11.5px; font-weight: 700; color: #516F90; cursor: pointer; font-family: inherit; }
+    .dir-colsmenu-act:hover { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); }
     .dir-cfgcols-req { font-size: 10.5px; font-weight: 700; color: #90A4B7; text-transform: uppercase; letter-spacing: .3px; }
     .dir-cfgcols-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
     .dir-x { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; color: #7C98B6; border: 1px solid #E1E8EE; background: #fff; cursor: pointer; flex-shrink: 0; }
@@ -1014,9 +1026,10 @@
     .dtab-nf-plus { flex-shrink: 0; color: #B7A6F0; font-size: 15px; font-weight: 700; }
     /* Confirmar: en la celda de acciones (44px), donde las otras filas llevan su
        chevron. Se pinta solo cuando la fila ya es valida; antes seria ruido. */
-    .dtab-add { width: 26px; height: 26px; padding: 0; line-height: 1; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 7px; background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 17px; font-weight: 700; cursor: pointer; font-family: inherit; }
-    .dtab-add:hover:not(:disabled) { filter: brightness(1.08); }
-    .dtab-add:disabled { background: transparent; color: #D9E0E8; cursor: default; }
+    /* Boton "+ Agregar" canonico (zc-row-add): al final de la fila de alta, violeta suave. */
+    .dtab-add { display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border-radius: 7px; border: 1px solid #DCD2F8; background: #F1ECFD; color: var(--propia-brand, #6D4FE3); font-size: 11.5px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; }
+    .dtab-add:hover:not(:disabled) { background: #E4DBFB; }
+    .dtab-add:disabled { opacity: .5; cursor: default; }
     /* Fila de alta: "+" y el expander "crear y abrir ficha" (estilo Airtable) lado a lado. */
     .dtab-act-nf { display: flex; gap: 4px; align-items: center; justify-content: flex-end; }
     .dtab-abrir { background: #F1ECFD; color: #6D4FE3; }
@@ -1248,15 +1261,56 @@
     private Dictionary<string, DirectorioPersonasVista.ColPref> _colsEmpresas = new();
     private bool _cfgColsAbierto;
 
+    // Orden de columnas por pestana (persistido por usuario), como Zonas/Unidades.
+    private List<string> _ordenPersonas = DirectorioPersonasVista.Columnas.Select(c => c.Key).ToList();
+    private List<string> _ordenEmpresas = DirectorioEmpresasVista.Columnas.Select(c => c.Key).ToList();
+    private string ColOrderKey => _tab == "empresas" ? "propia_colorder_directorio_empresas" : "propia_colorder_directorio_personas";
+    private List<string> OrdenActiva => _tab == "empresas" ? _ordenEmpresas : _ordenPersonas;
+
     private string ColsKey => _tab == "empresas" ? "propia_cols_directorio_empresas" : "propia_cols_directorio_personas";
     private Dictionary<string, DirectorioPersonasVista.ColPref> ColsActivas => _tab == "empresas" ? _colsEmpresas : _colsPersonas;
     private IReadOnlyList<(string Key, string DefLabel, bool Hideable)> CatalogoActivo =>
         _tab == "empresas" ? DirectorioEmpresasVista.Columnas : DirectorioPersonasVista.Columnas;
+    // Catalogo de la pestana activa en el orden elegido (claves desconocidas al final).
+    private IEnumerable<(string Key, string DefLabel, bool Hideable)> CatalogoActivoOrdenado
+    {
+        get
+        {
+            var byKey = CatalogoActivo.ToDictionary(c => c.Key);
+            foreach (var k in OrdenActiva) { if (byKey.TryGetValue(k, out var c)) yield return c; }
+            foreach (var c in CatalogoActivo) { if (!OrdenActiva.Contains(c.Key)) yield return c; }
+        }
+    }
+    private async Task MoverColDir(int idx, int dir)
+    {
+        var ord = OrdenActiva;
+        var ni = idx + dir;
+        if (ni < 0 || ni >= ord.Count) return;
+        (ord[idx], ord[ni]) = (ord[ni], ord[idx]);
+        await GuardarColsAsync();
+    }
 
     private async Task RestaurarColsAsync()
     {
         _colsPersonas = await LeerColsAsync("propia_cols_directorio_personas");
         _colsEmpresas = await LeerColsAsync("propia_cols_directorio_empresas");
+        _ordenPersonas = await LeerOrdenAsync("propia_colorder_directorio_personas", _ordenPersonas);
+        _ordenEmpresas = await LeerOrdenAsync("propia_colorder_directorio_empresas", _ordenEmpresas);
+    }
+
+    private async Task<List<string>> LeerOrdenAsync(string key, List<string> def)
+    {
+        try
+        {
+            var raw = await Js.InvokeAsync<string?>("localStorage.getItem", key);
+            if (!string.IsNullOrWhiteSpace(raw))
+            {
+                var list = System.Text.Json.JsonSerializer.Deserialize<List<string>>(raw);
+                if (list is { Count: > 0 }) return list;
+            }
+        }
+        catch { }
+        return def;
     }
 
     private async Task<Dictionary<string, DirectorioPersonasVista.ColPref>> LeerColsAsync(string key)
@@ -1294,12 +1348,19 @@
 
     private async Task GuardarColsAsync()
     {
-        try { await Js.InvokeVoidAsync("localStorage.setItem", ColsKey, System.Text.Json.JsonSerializer.Serialize(ColsActivas)); } catch { }
+        try
+        {
+            await Js.InvokeVoidAsync("localStorage.setItem", ColsKey, System.Text.Json.JsonSerializer.Serialize(ColsActivas));
+            await Js.InvokeVoidAsync("localStorage.setItem", ColOrderKey, System.Text.Json.JsonSerializer.Serialize(OrdenActiva));
+        }
+        catch { }
     }
 
     private async Task RestablecerCols()
     {
         ColsActivas.Clear();
+        if (_tab == "empresas") _ordenEmpresas = DirectorioEmpresasVista.Columnas.Select(c => c.Key).ToList();
+        else _ordenPersonas = DirectorioPersonasVista.Columnas.Select(c => c.Key).ToList();
         await GuardarColsAsync();
     }
 
