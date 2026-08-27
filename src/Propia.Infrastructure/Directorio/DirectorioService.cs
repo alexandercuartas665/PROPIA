@@ -326,7 +326,22 @@ public class DirectorioService : IDirectorioService
         // esta no es un error que valga la pena mostrarle al usuario.
         var vinculoExistente = await _db.DirectorioVinculos.FirstOrDefaultAsync(v =>
             v.EntidadTipo == req.EntidadTipo && v.EntidadId == req.EntidadId && v.Estado == EstadoVinculo.Activo, ct);
-        if (vinculoExistente is not null) return await GetVinculoConEtiquetasAsync(vinculoExistente.Id, ct);
+        if (vinculoExistente is not null)
+        {
+            // El vinculo ya existe (ej. el alta de persona lo creo). Aun asi aseguramos las
+            // etiquetas solicitadas: pedir "vincular con X" debe dejar X aplicada, no ignorarla.
+            if (req.EtiquetaIds is { Count: > 0 })
+            {
+                var actuales = await _db.DirectorioEtiquetas
+                    .Where(e => e.VinculoId == vinculoExistente.Id)
+                    .Select(e => e.EtiquetaId).ToListAsync(ct);
+                var nuevas = req.EtiquetaIds.Distinct().Where(id => !actuales.Contains(id)).ToList();
+                foreach (var eid in nuevas)
+                    _db.DirectorioEtiquetas.Add(new DirectorioEtiqueta { VinculoId = vinculoExistente.Id, EtiquetaId = eid });
+                if (nuevas.Count > 0) await _db.SaveChangesAsync(ct);
+            }
+            return await GetVinculoConEtiquetasAsync(vinculoExistente.Id, ct);
+        }
 
         var v = new DirectorioVinculo
         {

@@ -39,6 +39,8 @@ public class PqrsdFlowTests : IAsyncLifetime
             .AddEntityFrameworkStores<PropiaDbContext>()
             .AddDefaultTokenProviders();
         sc.AddSingleton<Propia.Application.Notificaciones.INotificacionDispatcher, FakeNotificacionDispatcher>();
+        sc.AddScoped<Propia.Application.Tareas.ITareasService, Propia.Infrastructure.Tareas.TareasService>();
+        sc.AddSingleton<Propia.Application.Documents.IMembreteDocumentBuilder, Propia.Infrastructure.Documents.MembreteDocumentBuilder>();
         _services = sc.BuildServiceProvider();
         return Task.CompletedTask;
     }
@@ -84,7 +86,7 @@ public class PqrsdFlowTests : IAsyncLifetime
             "Hay ruido excesivo en el apartamento 304 los fines de semana entre las 11pm y 3am.",
             false, null), CancellationToken.None);
 
-        Assert.StartsWith($"PQRS-{DateTime.UtcNow.Year}-", x1.NumeroRadicado);
+        Assert.StartsWith($"PQRSD-{DateTime.UtcNow.Year}-", x1.NumeroRadicado);
         Assert.EndsWith("0001", x1.NumeroRadicado);
         Assert.EndsWith("0002", x2.NumeroRadicado);
         Assert.Equal(EstadoPqrsd.Recibida, x1.Estado);

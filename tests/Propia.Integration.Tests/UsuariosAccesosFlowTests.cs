@@ -59,6 +59,7 @@ public class UsuariosAccesosFlowTests : IAsyncLifetime
             o.AccessTokenMinutes = 60;
         });
         sc.AddScoped<ITokenService, TokenService>();
+        sc.AddScoped<Propia.Application.UsuariosAccesos.ISeedUsuarioRolService, Propia.Infrastructure.UsuariosAccesos.SeedUsuarioRolService>();
         _services = sc.BuildServiceProvider();
         return Task.CompletedTask;
     }

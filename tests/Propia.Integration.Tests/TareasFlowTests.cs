@@ -82,14 +82,16 @@ public class TareasFlowTests : IAsyncLifetime
     public async Task Cambiar_estado_a_Completada_marca_fecha_completada_y_registra_historial()
     {
         var tenantId = await SeedTenantAsync("Tareas Completar");
-        var (svc, _, _) = Build(tenantId);
+        var (svc, db, _) = Build(tenantId);
 
         var t = await svc.CrearTareaAsync(new CrearTareaRequest(
             "T", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
         var estados = await svc.ListarEstadosAsync(CancellationToken.None);
         var completada = estados.First(e => e.Nombre == EstadoTareaBase.Completada);
 
-        await svc.CambiarEstadoAsync(t.Id, new CambiarEstadoRequest(completada.Id, null), CancellationToken.None);
+        // Completada es estado terminal -> requiere motivo de cierre.
+        var motivoId = await CrearMotivoTareasAsync(db);
+        await svc.CambiarEstadoAsync(t.Id, new CambiarEstadoRequest(completada.Id, null, motivoId), CancellationToken.None);
 
         var d = await svc.GetTareaAsync(t.Id, CancellationToken.None);
         Assert.Equal(EstadoTareaBase.Completada, d!.Estado.Nombre);
@@ -103,18 +105,19 @@ public class TareasFlowTests : IAsyncLifetime
     public async Task Cancelar_requiere_motivo_explicito()
     {
         var tenantId = await SeedTenantAsync("Tareas Cancelar");
-        var (svc, _, _) = Build(tenantId);
+        var (svc, db, _) = Build(tenantId);
 
         var t = await svc.CrearTareaAsync(new CrearTareaRequest(
             "T", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
         var cancelada = (await svc.ListarEstadosAsync(CancellationToken.None)).First(e => e.Nombre == EstadoTareaBase.Cancelada);
 
-        // Sin motivo -> error
+        // Sin motivo de cierre -> error
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             svc.CambiarEstadoAsync(t.Id, new CambiarEstadoRequest(cancelada.Id, null), CancellationToken.None));
 
-        // Con motivo -> ok
-        await svc.CambiarEstadoAsync(t.Id, new CambiarEstadoRequest(cancelada.Id, "No es necesario"), CancellationToken.None);
+        // Con motivo de cierre -> ok
+        var motivoId = await CrearMotivoTareasAsync(db);
+        await svc.CambiarEstadoAsync(t.Id, new CambiarEstadoRequest(cancelada.Id, "No es necesario", motivoId), CancellationToken.None);
         var d = await svc.GetTareaAsync(t.Id, CancellationToken.None);
         Assert.Equal(EstadoTareaBase.Cancelada, d!.Estado.Nombre);
 
@@ -298,6 +301,15 @@ public class TareasFlowTests : IAsyncLifetime
         var http = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
         var noti = scope.ServiceProvider.GetRequiredService<Propia.Application.Notificaciones.INotificacionDispatcher>();
         return (new TareasService(db, ctx, http, noti), db, scope);
+    }
+
+    // Crea un motivo de cierre del modulo "tareas" (requerido al pasar a un estado terminal).
+    private static async Task<Guid> CrearMotivoTareasAsync(PropiaDbContext db)
+    {
+        var m = new Propia.Domain.Entities.MotivoCierre { Modulo = "tareas", Nombre = "Resuelto", Activo = true };
+        db.MotivosCierre.Add(m);
+        await db.SaveChangesAsync(CancellationToken.None);
+        return m.Id;
     }
 
     private static HttpContext BuildFakeHttpContext()
