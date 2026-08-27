@@ -20,8 +20,11 @@ public class PqrsdController : ControllerBase
     private readonly PropiaDbContext _db;
     private readonly IBlobStorage _storage;
     private readonly IPqrsdRespuestaPdfService _respuestaPdf;
-    public PqrsdController(IPqrsdService svc, PropiaDbContext db, IBlobStorage storage, IPqrsdRespuestaPdfService respuestaPdf)
-    { _svc = svc; _db = db; _storage = storage; _respuestaPdf = respuestaPdf; }
+    private readonly Propia.Application.Documents.IHtmlToPdfService _htmlToPdf;
+    private readonly Propia.Application.Common.IGmailSender _gmail;
+    public PqrsdController(IPqrsdService svc, PropiaDbContext db, IBlobStorage storage, IPqrsdRespuestaPdfService respuestaPdf,
+        Propia.Application.Documents.IHtmlToPdfService htmlToPdf, Propia.Application.Common.IGmailSender gmail)
+    { _svc = svc; _db = db; _storage = storage; _respuestaPdf = respuestaPdf; _htmlToPdf = htmlToPdf; _gmail = gmail; }
 
     private Guid? GetTenantId()
     {
@@ -497,6 +500,132 @@ public class PqrsdController : ControllerBase
     {
         var dto = await _svc.CrearRespuestaBorradorAsync(id, req, ct);
         return dto is null ? NotFound() : Created("", dto);
+    }
+
+    [HttpPut("{id:guid}/respuestas/{respuestaId:guid}")]
+    public async Task<IActionResult> ActualizarRespuesta(Guid id, Guid respuestaId, [FromBody] CrearRespuestaBorradorRequest req, CancellationToken ct)
+    {
+        var dto = await _svc.ActualizarRespuestaBorradorAsync(id, respuestaId, req, ct);
+        return dto is null ? NotFound() : Ok(dto);
+    }
+
+    // Archiva/desarchiva una respuesta.
+    [HttpPut("{id:guid}/respuestas/{respuestaId:guid}/archivar")]
+    public async Task<IActionResult> ArchivarRespuesta(Guid id, Guid respuestaId, [FromBody] ArchivarRespuestaRequest req, CancellationToken ct)
+        => await _svc.ArchivarRespuestaAsync(id, respuestaId, req.Archivar, ct) ? NoContent() : NotFound();
+
+    // Historial de versiones del documento de una respuesta.
+    [HttpGet("{id:guid}/respuestas/{respuestaId:guid}/versiones")]
+    public async Task<IActionResult> ListarVersionesRespuesta(Guid id, Guid respuestaId, CancellationToken ct)
+        => Ok(await _svc.ListarVersionesRespuestaAsync(id, respuestaId, ct));
+
+    // Vista previa del documento oficial (membrete + cuerpo) como HTML. El mismo HTML se renderiza luego a PDF.
+    [HttpPost("{id:guid}/respuestas/documento-preview")]
+    public async Task<IActionResult> PreviewDocumento(Guid id, [FromBody] CrearRespuestaBorradorRequest req, CancellationToken ct)
+    {
+        var html = await _svc.ComponerDocumentoRespuestaAsync(id, req.CuerpoHtml ?? "", ct);
+        return html is null ? NotFound() : Ok(new { html });
+    }
+
+    // Genera el PDF oficial (membrete + cuerpo) de una respuesta con Chromium y lo adjunta (compartido).
+    [HttpPost("{id:guid}/respuestas/{respuestaId:guid}/pdf")]
+    public async Task<IActionResult> GenerarPdfRespuesta(Guid id, Guid respuestaId, CancellationToken ct)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId is null) return Unauthorized();
+
+        var r = await _db.PqrsdRespuestas.FirstOrDefaultAsync(x => x.Id == respuestaId && x.ExpedienteId == id, ct);
+        if (r is null) return NotFound();
+
+        var html = await _svc.ComponerDocumentoRespuestaAsync(id, r.CuerpoHtml, ct);
+        if (html is null) return NotFound();
+
+        byte[] pdf;
+        try { pdf = await _htmlToPdf.RenderAsync(html, ct); }
+        catch (Exception ex) { return StatusCode(500, new { error = "No se pudo generar el PDF: " + ex.Message }); }
+
+        var key = $"tenants/{tenantId:N}/pqrsd/{id:N}/{Guid.NewGuid():N}.pdf";
+        await using var stream = new System.IO.MemoryStream(pdf);
+        var url = await _storage.UploadAsync(key, stream, "application/pdf", ct);
+
+        var uid = Guid.TryParse(User.FindFirstValue("user_id"), out var u) ? u : Guid.Empty;
+        var nombre = $"documento-oficial-{respuestaId:N}.pdf";
+        _db.PqrsdAdjuntos.Add(new PqrsdAdjunto
+        {
+            ExpedienteId = id,
+            RespuestaId = respuestaId,
+            NombreArchivo = nombre,
+            TipoMime = "application/pdf",
+            TamanioBytes = pdf.LongLength,
+            UrlStorage = url,
+            SubidoPorUsuarioId = uid,
+            Texto = "Documento oficial (PDF con membrete)",
+            Compartido = true
+        });
+        await _db.SaveChangesAsync(ct);
+        return Ok(new { url, nombre });
+    }
+
+    // Envia la respuesta por Gmail a sus destinatarios: compone el documento, genera el PDF (Chromium),
+    // lo adjunta al correo (y al expediente) y marca la respuesta como Enviada.
+    [HttpPost("{id:guid}/respuestas/{respuestaId:guid}/enviar")]
+    public async Task<IActionResult> EnviarRespuesta(Guid id, Guid respuestaId, CancellationToken ct)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId is null) return Unauthorized();
+
+        var r = await _db.PqrsdRespuestas.Include(x => x.Destinatarios)
+            .FirstOrDefaultAsync(x => x.Id == respuestaId && x.ExpedienteId == id, ct);
+        if (r is null) return NotFound();
+
+        var emails = r.Destinatarios.Select(d => d.Email).Where(e => !string.IsNullOrWhiteSpace(e)).Distinct().ToList();
+        if (emails.Count == 0) return BadRequest(new { error = "Agrega al menos un destinatario con correo." });
+
+        var exp = await _db.PqrsdExpedientes.AsNoTracking().FirstOrDefaultAsync(e => e.Id == id, ct);
+        var radicado = exp?.NumeroRadicado ?? "";
+
+        var html = await _svc.ComponerDocumentoRespuestaAsync(id, r.CuerpoHtml, ct);
+        if (html is null) return NotFound();
+
+        byte[] pdf;
+        try { pdf = await _htmlToPdf.RenderAsync(html, ct); }
+        catch (Exception ex) { return StatusCode(500, new { error = "No se pudo generar el PDF: " + ex.Message }); }
+
+        var asunto = string.IsNullOrWhiteSpace(r.Asunto) ? $"Respuesta a su PQRSD {radicado}".Trim() : r.Asunto!;
+        var cuerpo = "<html><body style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1B2A3A;line-height:1.6\">"
+                     + r.CuerpoHtml
+                     + "<hr style=\"border:0;border-top:1px solid #E4E9EF;margin:18px 0\">"
+                     + "<p style=\"font-size:12px;color:#63748A\">Se adjunta el documento oficial en PDF.</p>"
+                     + "</body></html>";
+        var adjPdf = new Propia.Application.Common.CorreoAdjunto($"respuesta-{radicado}.pdf", "application/pdf", pdf);
+
+        var envio = await _gmail.SendAsync(tenantId.Value, emails, asunto, cuerpo, new[] { adjPdf }, ct);
+        if (!envio.Success) return BadRequest(new { error = envio.Error ?? "No se pudo enviar el correo." });
+
+        // Guarda el PDF como adjunto oficial del expediente y marca la respuesta enviada.
+        var key = $"tenants/{tenantId:N}/pqrsd/{id:N}/{Guid.NewGuid():N}.pdf";
+        await using (var stream = new System.IO.MemoryStream(pdf))
+        {
+            var url = await _storage.UploadAsync(key, stream, "application/pdf", ct);
+            var uid = Guid.TryParse(User.FindFirstValue("user_id"), out var u) ? u : Guid.Empty;
+            _db.PqrsdAdjuntos.Add(new PqrsdAdjunto
+            {
+                ExpedienteId = id,
+                RespuestaId = respuestaId,
+                NombreArchivo = $"respuesta-{radicado}.pdf",
+                TipoMime = "application/pdf",
+                TamanioBytes = pdf.LongLength,
+                UrlStorage = url,
+                SubidoPorUsuarioId = uid,
+                Texto = "Respuesta enviada por correo (PDF)",
+                Compartido = true
+            });
+        }
+        r.Enviada = true;
+        r.EnviadaAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new { enviados = emails.Count });
     }
 
     // --- Plantillas de respuesta (combinacion de correspondencia) ---

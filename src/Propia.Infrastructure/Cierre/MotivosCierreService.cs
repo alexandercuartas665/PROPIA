@@ -53,8 +53,13 @@ public class MotivosCierreService : IMotivosCierreService
         {
             _db.MotivosCierre.Add(new MotivoCierre
             {
-                TenantId = tid, Modulo = modulo, Nombre = nombre, Clasificacion = clas,
-                EsBase = true, Activo = true, Orden = orden++
+                TenantId = tid,
+                Modulo = modulo,
+                Nombre = nombre,
+                Clasificacion = clas,
+                EsBase = true,
+                Activo = true,
+                Orden = orden++
             });
         }
         try { await _db.SaveChangesAsync(ct); } catch { _db.ChangeTracker.Clear(); }  // carrera concurrente -> ignorar
@@ -79,8 +84,13 @@ public class MotivosCierreService : IMotivosCierreService
         var maxOrden = await _db.MotivosCierre.Where(m => m.Modulo == modulo).Select(m => (int?)m.Orden).MaxAsync(ct) ?? -1;
         var m = new MotivoCierre
         {
-            TenantId = tid, Modulo = modulo, Nombre = req.Nombre.Trim(), Clasificacion = req.Clasificacion,
-            EsBase = false, Activo = req.Activo ?? true, Orden = req.Orden ?? (maxOrden + 1)
+            TenantId = tid,
+            Modulo = modulo,
+            Nombre = req.Nombre.Trim(),
+            Clasificacion = req.Clasificacion,
+            EsBase = false,
+            Activo = req.Activo ?? true,
+            Orden = req.Orden ?? (maxOrden + 1)
         };
         _db.MotivosCierre.Add(m);
         await _db.SaveChangesAsync(ct);

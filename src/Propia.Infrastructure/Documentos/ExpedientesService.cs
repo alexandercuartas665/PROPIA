@@ -195,7 +195,9 @@ public class ExpedientesService : IExpedientesService
         {
             _db.ExpedienteTipologias.Add(new ExpedienteTipologia
             {
-                TenantId = tenantId, ExpedienteId = exp.Id, Nombre = t.Nombre,
+                TenantId = tenantId,
+                ExpedienteId = exp.Id,
+                Nombre = t.Nombre,
                 Obligatoria = orden < 3, // las primeras 3 obligatorias por defecto (como el prototipo)
                 Orden = orden++
             });

@@ -4,9 +4,11 @@
    envio al radicador se construye despues (aqui solo se guardan borradores con trazabilidad). *@
 @inherits ModalBase<bool>
 @using Propia.Application.Pqrsd
+@using Propia.Application.Directorio
 @using Microsoft.AspNetCore.Components.Forms
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
+@inject NavigationManager Nav
 
 <div class="rrp">
     <div class="rrp-head">
@@ -14,8 +16,17 @@
             <div class="rrp-eyebrow">@(_modo == "ver" ? "RESPUESTA" : "NUEVA RESPUESTA")</div>
             @if (_modo == "ver" && _dto is not null)
             {
-                <div class="rrp-title">@(string.IsNullOrWhiteSpace(_dto.Asunto) ? "(sin asunto)" : _dto.Asunto)</div>
-                <div class="rrp-meta">@(_dto.AutorNombre ?? "-") &middot; @_dto.CreatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm") @(_dto.Enviada ? " · Enviada" : " · Borrador")</div>
+                <div class="rrp-title">
+                    @(string.IsNullOrWhiteSpace(_dto.Asunto) ? "(sin asunto)" : _dto.Asunto)
+                    @if (_dto.Versiones > 1) { <span class="rrp-ver-badge">v@(_dto.Versiones)</span> }
+                </div>
+                <div class="rrp-meta">
+                    @(string.IsNullOrWhiteSpace(_dto.AutorNombre) ? "Sistema" : _dto.AutorNombre) &middot; @_dto.CreatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm") @(_dto.Enviada ? " · Enviada" : " · Borrador")
+                    @if (_dto.Versiones > 1)
+                    {
+                        <button type="button" class="rrp-ver-link" @onclick="AbrirVersionesAsync">Historial de versiones</button>
+                    }
+                </div>
             }
             else
             {
@@ -29,6 +40,34 @@
 
     @if (_modo != "ver")
     {
+        <div class="rrp-body">
+        <div class="rrp-dests">
+            <div class="rrp-dests-top">
+                <span class="rrp-para-lbl">PARA</span>
+                @if (!string.IsNullOrEmpty(_dstMsg)) { <span class="rrp-dests-msg">@_dstMsg</span> }
+            </div>
+            <div class="rrp-dests-chips">
+                @foreach (var d in _dests)
+                {
+                    var dd = d;
+                    <span class="rrp-chip @(d.PersonaId is null ? "anon" : "")">
+                        @if (!string.IsNullOrWhiteSpace(d.Nombre)) { <b>@d.Nombre</b> }
+                        <span class="rrp-chip-mail">@(string.IsNullOrWhiteSpace(d.Email) ? "sin correo" : d.Email)</span>
+                        <button type="button" class="rrp-chip-x" title="Quitar" @onclick="() => QuitarDest(dd)">&times;</button>
+                    </span>
+                }
+                @if (_dests.Count == 0) { <span class="rrp-dests-empty">Agrega destinatarios: busca un tercero o escribe un correo.</span> }
+            </div>
+            <div class="rrp-dests-add">
+                <div class="rrp-dests-buscar">
+                    <SelectorPersona Jwt="@Jwt" Seleccionada="null" SeleccionadaChanged="OnTerceroElegido" Placeholder="Buscar tercero por nombre/documento..." Flotante="true" />
+                </div>
+                <div class="rrp-dests-email">
+                    <input class="rrp-dests-email-in" placeholder="correo@@ejemplo.com" @bind="_emailNuevo" @bind:event="oninput" @onkeydown="OnEmailKey" />
+                    <button type="button" class="rrp-btn-ghost" @onclick="AgregarEmail">Agregar correo</button>
+                </div>
+            </div>
+        </div>
         <input class="rrp-asunto" placeholder="Asunto (opcional)" @bind="_asunto" @bind:event="oninput" />
 
         @* Adjuntos ARRIBA (pendientes: se suben al guardar) *@
@@ -67,9 +106,15 @@
                     @foreach (var p in _plantillas)
                     {
                         var pp = p;
-                        <div class="rrp-tpl-item">
-                            <span class="rrp-tpl-nm" title="@p.Nombre">@p.Nombre</span>
-                            <button type="button" class="rrp-tpl-use" @onclick="() => UsarPlantilla(pp)" disabled="@_busy">Usar</button>
+                        <div class="rrp-tpl-item" title="@p.Nombre">
+                            @* Minivista del documento: se pinta el cuerpo de la plantilla en pequeño (clip). *@
+                            <div class="rrp-tpl-thumb" aria-hidden="true">
+                                <div class="rrp-tpl-thumb-page">@((MarkupString)p.CuerpoHtml)</div>
+                            </div>
+                            <div class="rrp-tpl-cardfoot">
+                                <span class="rrp-tpl-nm">@p.Nombre</span>
+                                <button type="button" class="rrp-tpl-use" @onclick="() => UsarPlantilla(pp)" disabled="@_busy">Usar</button>
+                            </div>
                         </div>
                     }
                     @if (_plantillas.Count == 0) { <div class="rrp-tpl-empty">Sin plantillas. Crea una con "Gestionar".</div> }
@@ -78,18 +123,27 @@
         </div>
 
         @if (!string.IsNullOrEmpty(_msg)) { <div class="rrp-msg @(_err ? "err" : "ok")">@_msg</div> }
+        </div>
         <div class="rrp-foot">
             <span class="rrp-hint">Se guarda como borrador con trazabilidad. El envio al radicador se hara despues.</span>
             <div class="rrp-foot-btns">
                 <button type="button" class="rrp-btn-ghost" @onclick="Cerrar">Cancelar</button>
+                <button type="button" class="rrp-btn-ghost" @onclick="VistaPreviaAsync" disabled="@_busy">Vista previa</button>
                 <button type="button" class="rrp-btn-brand" @onclick="GuardarAsync" disabled="@_busy">@(_busy ? "Guardando..." : "Guardar respuesta")</button>
             </div>
         </div>
     }
     else if (_dto is not null)
     {
+        <div class="rrp-body">
+        @if (_versionSel is not null)
+        {
+            <div class="rrp-ver-banner">
+                Viendo <b>v@(_versionSel)</b> (historica). <button type="button" class="rrp-ver-actual" @onclick="() => _versionSel = null">Volver a la actual</button>
+            </div>
+        }
         <div class="rrp-doc rrp-doc--ver">
-            <div class="rrp-page">@((MarkupString)_dto.CuerpoHtml)</div>
+            <div class="rrp-page">@((MarkupString)ContenidoMostrado())</div>
         </div>
 
         <div class="rrp-adj">
@@ -124,28 +178,140 @@
             </div>
             @if (!string.IsNullOrEmpty(_msg)) { <div class="rrp-msg @(_err ? "err" : "ok")">@_msg</div> }
         </div>
+        </div>
 
-        <div class="rrp-foot">
-            <span class="rrp-hint">El envio al radicador se construira despues.</span>
-            <div class="rrp-foot-btns">
-                <button type="button" class="rrp-btn-brand" @onclick="Cerrar">Listo</button>
+        @if (_verConectar)
+        {
+            <div class="rrp-conectar">
+                <div>
+                    <b>@(_gmailAppOk ? "Conecta el Gmail de la copropiedad" : "Envio por Gmail no configurado")</b>
+                    <div class="rrp-conectar-s">@(_gmailAppOk ? "Autoriza una cuenta Gmail para enviar las respuestas desde ella." : "El operador (Super Admin) aun no ha configurado el OAuth client de envio.")</div>
+                </div>
+                @if (_gmailAppOk)
+                {
+                    <button type="button" class="rrp-btn-brand" @onclick="ConectarGmailAsync">Conectar Gmail</button>
+                }
             </div>
+        }
+        @if (!string.IsNullOrEmpty(_msg)) { <div class="rrp-msg @(_err ? "err" : "ok")" style="padding:0 2px 6px;">@_msg</div> }
+        <div class="rrp-foot">
+            <span class="rrp-hint">
+                @if (_dto.Enviada) { <text>Enviada @(_dto.EnviadaAt is { } ea ? "el " + ea.ToLocalTime().ToString("dd MMM yyyy HH:mm") : "").</text> }
+                else if (_dto.Destinatarios is { Count: > 0 }) { <text>Para: @string.Join(", ", _dto.Destinatarios.Select(d => d.Email))</text> }
+                else { <text>Sin destinatarios. Edita la respuesta para agregarlos.</text> }
+            </span>
+            <div class="rrp-foot-btns">
+                @if (!_dto.Enviada)
+                {
+                    <button type="button" class="rrp-btn-ghost" @onclick="Editar" disabled="@(_busy || _generandoPdf || _enviando)">Editar</button>
+                }
+                <button type="button" class="rrp-btn-ghost" @onclick="GenerarPdfAsync" disabled="@(_generandoPdf || _enviando)">@(_generandoPdf ? "Generando PDF..." : "Generar PDF")</button>
+                <button type="button" class="rrp-btn-brand" @onclick="EnviarPorCorreoAsync" disabled="@(_enviando || (_dto.Destinatarios is null or { Count: 0 }))">@(_enviando ? "Enviando..." : "Enviar por correo")</button>
+                <button type="button" class="rrp-btn-ghost" @onclick="Cerrar">Cerrar</button>
+            </div>
+        </div>
+    }
+
+    @if (_verVersiones)
+    {
+        <div class="rrp-preview">
+            <div class="rrp-preview-bar">
+                <div class="rrp-preview-t">Historial de versiones</div>
+                <button type="button" class="rrp-btn-ghost" @onclick="() => _verVersiones = false">Cerrar</button>
+            </div>
+            <div class="rrp-ver-list">
+                @foreach (var v in _versiones)
+                {
+                    var vv = v;
+                    <div class="rrp-ver-row">
+                        <div class="rrp-ver-num">v@(v.Numero)</div>
+                        <div class="rrp-ver-info">
+                            <div class="rrp-ver-asunto">@(string.IsNullOrWhiteSpace(v.Asunto) ? "(sin asunto)" : v.Asunto)</div>
+                            <div class="rrp-ver-meta">@(string.IsNullOrWhiteSpace(v.AutorNombre) ? "Sistema" : v.AutorNombre) &middot; @v.CreatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm")</div>
+                        </div>
+                        <button type="button" class="rrp-btn-ghost" @onclick="() => MostrarVersion(vv.Numero)">Ver</button>
+                    </div>
+                }
+                @if (_versiones.Count == 0) { <div class="rrp-ver-empty">Sin versiones registradas.</div> }
+            </div>
+        </div>
+    }
+
+    @if (_verPreview)
+    {
+        <div class="rrp-preview">
+            <div class="rrp-preview-bar">
+                <div class="rrp-preview-t">Vista previa &mdash; documento oficial</div>
+                <button type="button" class="rrp-btn-ghost" @onclick="CerrarPreview">Cerrar vista previa</button>
+            </div>
+            <iframe class="rrp-preview-frame" srcdoc="@_previewHtml" title="Vista previa del documento"></iframe>
         </div>
     }
 </div>
 
 <style>
-    .rrp { display: flex; flex-direction: column; gap: 12px; padding: 4px 2px; }
-    .rrp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    /* Ocupa el alto del shell (que trae ModalOptions.Height); header y footer fijos, el cuerpo scrollea
+       para que los botones SIEMPRE se vean sin tener que agrandar la ventana. */
+    .rrp { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 16px 18px; gap: 12px; }
+    /* Overlay de vista previa: cubre el modal y muestra el documento compuesto en un iframe. */
+    .rrp-preview { position: absolute; inset: 0; z-index: 6; background: #eceff3; display: flex; flex-direction: column; }
+    .rrp-preview-bar { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; background: #fff; border-bottom: 1px solid #E7EDF3; }
+    .rrp-preview-t { font-size: 13px; font-weight: 800; color: #1B2A3A; }
+    .rrp-preview-frame { flex: 1 1 auto; width: 100%; border: 0; background: #eceff3; }
+    /* Versiones */
+    .rrp-ver-badge { display: inline-block; font-size: 10.5px; font-weight: 800; color: var(--propia-brand, #6D4FE3); background: #EEF1FB; border: 1px solid #DCD2F8; border-radius: 6px; padding: 1px 7px; margin-left: 8px; vertical-align: middle; }
+    .rrp-ver-link { margin-left: 8px; font-size: 11.5px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: transparent; border: 0; padding: 0; cursor: pointer; }
+    .rrp-ver-link:hover { text-decoration: underline; }
+    .rrp-ver-banner { background: #FFF8E6; border: 1px solid #F0DCA6; color: #9A6A00; border-radius: 9px; padding: 8px 12px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+    .rrp-ver-actual { font-size: 11.5px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: #fff; border: 1px solid #DCD2F8; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+    .rrp-ver-list { flex: 1 1 auto; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+    .rrp-ver-row { display: flex; align-items: center; gap: 12px; background: #fff; border: 1px solid #E7EDF3; border-radius: 10px; padding: 10px 12px; }
+    .rrp-ver-num { flex: 0 0 auto; font-size: 13px; font-weight: 800; color: var(--propia-brand, #6D4FE3); background: #EEF1FB; border-radius: 7px; padding: 6px 10px; }
+    .rrp-ver-info { flex: 1 1 auto; min-width: 0; }
+    .rrp-ver-asunto { font-size: 13px; font-weight: 700; color: #1B2A3A; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rrp-ver-meta { font-size: 11px; color: #94A3B8; margin-top: 2px; }
+    .rrp-ver-empty { font-size: 12px; color: #94A3B8; padding: 10px; }
+    /* Banner conectar Gmail */
+    .rrp-conectar { display: flex; align-items: center; justify-content: space-between; gap: 14px; background: #FFF8E6; border: 1px solid #F0DCA6; border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; }
+    .rrp-conectar b { font-size: 13px; color: #1B2A3A; }
+    .rrp-conectar-s { font-size: 11.5px; color: #7a5c1e; margin-top: 3px; }
+    .rrp-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-right: 2px; }
+    .rrp-head, .rrp-foot { flex: 0 0 auto; }
+    .rrp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid #EEF3F8; }
+    .rrp-foot { padding-top: 12px; border-top: 1px solid #EEF3F8; }
     .rrp-eyebrow { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; color: #7C98B6; }
     .rrp-title { font-size: 17px; font-weight: 800; color: #1B2A3A; margin-top: 2px; }
     .rrp-meta { font-size: 11.5px; color: #7C98B6; margin-top: 2px; }
     .rrp-x { width: 30px; height: 30px; border-radius: 8px; border: 1px solid #E1E8EE; background: #fff; color: #7C98B6; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
     .rrp-x:hover { color: #D7263D; border-color: #F0C9C9; }
+    .rrp-para { display: flex; align-items: center; gap: 10px; padding: 9px 13px; background: #F6F8FB; border: 1px solid #E7EDF3; border-radius: 9px; }
+    .rrp-para-lbl { font-size: 10px; font-weight: 800; letter-spacing: .06em; color: #7C98B6; flex: 0 0 auto; }
+    .rrp-para-val { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: #1B2A3A; }
+    .rrp-para-mail { color: var(--propia-brand, #6D4FE3); font-weight: 600; text-decoration: none; }
+    .rrp-para-mail:hover { text-decoration: underline; }
+    .rrp-para-nomail { color: #B0392F; font-size: 11.5px; font-style: italic; }
+    .rrp-para-tel { color: #63748A; }
+    /* Editor de destinatarios */
+    .rrp-dests { display: flex; flex-direction: column; gap: 9px; padding: 11px 13px; background: #F6F8FB; border: 1px solid #E7EDF3; border-radius: 10px; }
+    .rrp-dests-top { display: flex; align-items: center; gap: 10px; }
+    .rrp-dests-msg { font-size: 11px; font-weight: 600; color: #B0392F; }
+    .rrp-dests-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .rrp-dests-empty { font-size: 11.5px; color: #94A3B8; font-style: italic; }
+    .rrp-chip { display: inline-flex; align-items: center; gap: 6px; background: #EEF1FB; border: 1px solid #DCD2F8; border-radius: 20px; padding: 4px 6px 4px 11px; font-size: 12px; color: #1B2A3A; }
+    .rrp-chip.anon { background: #EFF3F7; border-color: #DAE3EC; }
+    .rrp-chip b { font-weight: 700; }
+    .rrp-chip-mail { color: #516F90; }
+    .rrp-chip-x { width: 18px; height: 18px; border-radius: 50%; border: 0; background: rgba(27,42,58,.08); color: #516F90; font-size: 14px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+    .rrp-chip-x:hover { background: #F0C9C9; color: #C0383C; }
+    .rrp-dests-add { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .rrp-dests-buscar { flex: 1 1 260px; min-width: 220px; }
+    .rrp-dests-email { display: flex; gap: 6px; align-items: center; flex: 1 1 260px; }
+    .rrp-dests-email-in { flex: 1 1 auto; border: 1px solid #E1E8EE; border-radius: 8px; padding: 8px 11px; font-size: 12.5px; outline: none; font-family: inherit; }
+    .rrp-dests-email-in:focus { border-color: var(--propia-brand, #6D4FE3); }
     .rrp-asunto { border: 1px solid #E1E8EE; border-radius: 9px; padding: 11px 14px; font-size: 15px; color: #1B2A3A; outline: none; font-family: inherit; }
     .rrp-asunto:focus { border-color: var(--propia-brand, #6D4FE3); }
     .rrp-doc { border: 1px solid #E7EDF3; border-radius: 12px; overflow: hidden; background: #eceff3; }
-    .rrp-doc--ver { max-height: 52vh; overflow-y: auto; padding: 22px 0; }
+    .rrp-doc--ver { padding: 22px 0; }
     .rrp-page { background: #fff; max-width: 760px; margin: 0 auto; padding: 56px 64px; box-shadow: 0 3px 16px rgba(27,42,58,.14); border-radius: 2px; font-family: Georgia, 'Times New Roman', serif; font-size: 15px; line-height: 1.6; color: #1B2A3A; }
     .rrp-page img { max-width: 100%; }
     .rrp-msg { font-size: 12px; font-weight: 600; }
@@ -176,17 +342,24 @@
     .rrp-adj--top .rrp-gal { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
     .rrp-gal-add--sm { min-height: 70px; }
 
-    /* Layout redaccion: editor + panel de plantillas al lado */
-    .rrp-compose { display: grid; grid-template-columns: 1fr 260px; gap: 12px; align-items: start; }
-    .rrp-tpl { border: 1px solid #E7EDF3; border-radius: 12px; padding: 12px; background: #FAFBFD; display: flex; flex-direction: column; gap: 8px; max-height: 62vh; overflow-y: auto; }
+    /* Layout redaccion: editor (documento) + panel de plantillas al lado */
+    .rrp-compose { display: grid; grid-template-columns: 1fr 300px; gap: 14px; align-items: start; }
+    .rrp-tpl { border: 1px solid #E7EDF3; border-radius: 12px; padding: 12px; background: #FAFBFD; display: flex; flex-direction: column; gap: 8px; }
     .rrp-tpl-h { display: flex; align-items: center; justify-content: space-between; font-size: 10.5px; font-weight: 800; letter-spacing: .05em; color: #7C98B6; }
     .rrp-tpl-gear { font-size: 11px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: #EEF1FB; border: 1px solid #DCD2F8; border-radius: 6px; padding: 3px 8px; cursor: pointer; }
     .rrp-tpl-gear:hover { background: #E2E6FA; }
     .rrp-tpl-hint { font-size: 10.5px; color: #94A3B8; line-height: 1.35; }
-    .rrp-tpl-list { display: flex; flex-direction: column; gap: 6px; }
-    .rrp-tpl-item { display: flex; align-items: center; justify-content: space-between; gap: 6px; border: 1px solid #E7EDF3; border-radius: 8px; padding: 8px 9px; background: #fff; }
+    .rrp-tpl-list { display: flex; flex-direction: column; gap: 10px; }
+    /* Tarjeta de plantilla = minivista de documento (thumbnail) + nombre + Usar. */
+    .rrp-tpl-item { display: flex; flex-direction: column; border: 1px solid #E7EDF3; border-radius: 10px; background: #fff; overflow: hidden; transition: border-color .12s, box-shadow .12s; }
+    .rrp-tpl-item:hover { border-color: #D8CCF7; box-shadow: 0 5px 14px rgba(109,79,227,.12); }
+    .rrp-tpl-thumb { height: 132px; background: #eceff3; overflow: hidden; padding: 10px 12px 0; }
+    .rrp-tpl-thumb-page { background: #fff; border-radius: 2px; box-shadow: 0 1px 6px rgba(27,42,58,.14); padding: 12px 14px; height: 100%; overflow: hidden; pointer-events: none; font-family: Georgia, 'Times New Roman', serif; font-size: 7.5px; line-height: 1.45; color: #33414F; }
+    .rrp-tpl-thumb-page * { max-width: 100% !important; font-size: inherit !important; margin: 0 0 4px !important; }
+    .rrp-tpl-thumb-page img { display: none; }
+    .rrp-tpl-cardfoot { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 8px 10px; }
     .rrp-tpl-nm { font-size: 12.5px; font-weight: 700; color: #1B2A3A; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .rrp-tpl-use { font-size: 11.5px; font-weight: 700; color: #fff; background: var(--propia-brand, #6D4FE3); border: 0; border-radius: 6px; padding: 5px 10px; cursor: pointer; flex: 0 0 auto; }
+    .rrp-tpl-use { font-size: 11.5px; font-weight: 700; color: #fff; background: var(--propia-brand, #6D4FE3); border: 0; border-radius: 6px; padding: 5px 12px; cursor: pointer; flex: 0 0 auto; }
     .rrp-tpl-use:disabled { opacity: .5; }
     .rrp-tpl-empty { font-size: 11.5px; color: #94A3B8; }
 </style>
@@ -196,21 +369,47 @@
     [Parameter] public Guid ExpedienteId { get; set; }
     /// <summary>Si viene una respuesta, el modal abre en modo VER; si es null, abre en modo REDACTAR.</summary>
     [Parameter] public PqrsdRespuestaDto? Respuesta { get; set; }
+    // Datos del tercero (radicador) para responderle. Salen del detalle del expediente.
+    [Parameter] public string? DestinatarioNombre { get; set; }
+    [Parameter] public string? DestinatarioCorreo { get; set; }
+    [Parameter] public string? DestinatarioTelefono { get; set; }
 
     private string _modo = "redactar";        // "redactar" | "ver"
+    private Guid? _editandoId;                 // si != null, GuardarAsync ACTUALIZA (PUT) en vez de crear
     private PqrsdRespuestaDto? _dto;
     private string _asunto = "";
-    private bool _busy, _subiendo, _err;
+    private bool _busy, _subiendo, _err, _generandoPdf;
     private string? _msg;
     private bool _editorListo;
+    private string? _previewHtml;              // HTML del documento compuesto (membrete + cuerpo)
+    private bool _verPreview;
+    private List<PqrsdRespuestaVersionDto> _versiones = new();
+    private bool _verVersiones;
+    private int? _versionSel;                  // version historica mostrada; null = actual
+    private bool _enviando, _verConectar, _gmailAppOk;
     private const string EdSel = "#pqr-resp-ed";
     private readonly List<IBrowserFile> _pendientes = new();
     private List<PqrsdPlantillaDto> _plantillas = new();
+    // Destinatarios editables (terceros del directorio + correos sueltos)
+    private readonly List<DestinatarioRespuestaDto> _dests = new();
+    private string _emailNuevo = "";
+    private string? _dstMsg;
 
     protected override async Task OnInitializedAsync()
     {
         if (Respuesta is not null) { _dto = Respuesta; _modo = "ver"; }
-        else await CargarPlantillasAsync();
+        else
+        {
+            SembrarDestinatarioRadicador();
+            await CargarPlantillasAsync();
+        }
+    }
+
+    // Precarga el radicador (tercero) como primer destinatario si tiene correo.
+    private void SembrarDestinatarioRadicador()
+    {
+        if (_dests.Count == 0 && !string.IsNullOrWhiteSpace(DestinatarioCorreo))
+            _dests.Add(new DestinatarioRespuestaDto(null, DestinatarioNombre, DestinatarioCorreo!.Trim()));
     }
 
     private async Task CargarPlantillasAsync()
@@ -244,9 +443,73 @@
         if (_modo == "redactar" && !_editorListo)
         {
             _editorListo = true;
-            try { await Js.InvokeAsync<bool>("propiaTiny.init", EdSel, ""); } catch { }
+            // Al EDITAR un borrador, el editor arranca con el contenido guardado.
+            var inicial = _editandoId is not null ? (_dto?.CuerpoHtml ?? "") : "";
+            try { await Js.InvokeAsync<bool>("propiaTiny.init", EdSel, inicial); } catch { }
         }
     }
+
+    /// <summary>Vuelve a modo redaccion con el contenido del borrador cargado (solo si no esta enviada).</summary>
+    private void Editar()
+    {
+        if (_dto is null || _dto.Enviada) return;
+        _editandoId = _dto.Id;
+        _asunto = _dto.Asunto ?? "";
+        _msg = null; _err = false;
+        // Carga los destinatarios guardados; si no hay, siembra el radicador.
+        _dests.Clear();
+        if (_dto.Destinatarios is { Count: > 0 }) _dests.AddRange(_dto.Destinatarios);
+        else SembrarDestinatarioRadicador();
+        _editorListo = false;   // OnAfterRender re-inicializa TinyMCE con el contenido
+        _modo = "redactar";
+    }
+
+    // ---- Destinatarios ----
+    private void OnTerceroElegido(PersonaCandidatoDto? p)
+    {
+        _dstMsg = null;
+        if (p is null) return;
+        var email = p.Contactos?
+            .Where(c => c.Tipo == TipoContacto.Email && !string.IsNullOrWhiteSpace(c.Valor))
+            .OrderByDescending(c => c.Principal)
+            .Select(c => c.Valor.Trim())
+            .FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            _dstMsg = $"{p.NombreCompleto} no tiene correo en el directorio; agregalo manualmente.";
+            return;
+        }
+        if (_dests.Any(d => string.Equals(d.Email, email, StringComparison.OrdinalIgnoreCase)))
+        {
+            _dstMsg = "Ese correo ya esta en la lista.";
+            return;
+        }
+        _dests.Add(new DestinatarioRespuestaDto(p.PersonaId, p.NombreCompleto, email));
+    }
+
+    private void AgregarEmail()
+    {
+        _dstMsg = null;
+        var email = _emailNuevo?.Trim() ?? "";
+        if (email.Length < 3 || !email.Contains('@') || !email.Contains('.'))
+        {
+            _dstMsg = "Correo invalido.";
+            return;
+        }
+        if (_dests.Any(d => string.Equals(d.Email, email, StringComparison.OrdinalIgnoreCase)))
+        {
+            _dstMsg = "Ese correo ya esta en la lista."; _emailNuevo = ""; return;
+        }
+        _dests.Add(new DestinatarioRespuestaDto(null, null, email));
+        _emailNuevo = "";
+    }
+
+    private void OnEmailKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") AgregarEmail();
+    }
+
+    private void QuitarDest(DestinatarioRespuestaDto d) => _dests.Remove(d);
 
     private HttpClient Auth()
     {
@@ -267,6 +530,134 @@
         if (idx >= 0 && idx < _pendientes.Count) _pendientes.RemoveAt(idx);
     }
 
+    /// <summary>Compone el documento oficial (membrete + cuerpo actual) y lo muestra en un iframe.</summary>
+    private async Task VistaPreviaAsync()
+    {
+        _msg = null; _err = false;
+        string cuerpo = "";
+        try { cuerpo = await Js.InvokeAsync<string>("propiaTiny.getContent", EdSel); } catch { }
+        if (string.IsNullOrWhiteSpace(System.Text.RegularExpressions.Regex.Replace(cuerpo ?? "", "<[^>]+>", "").Trim()))
+        {
+            _err = true; _msg = "Escribe el contenido para ver la vista previa."; return;
+        }
+        try
+        {
+            var body = new CrearRespuestaBorradorRequest(string.IsNullOrWhiteSpace(_asunto) ? null : _asunto.Trim(), cuerpo!);
+            var resp = await Auth().PostAsJsonAsync($"/api/pqrsd/{ExpedienteId}/respuestas/documento-preview", body);
+            if (!resp.IsSuccessStatusCode) { _err = true; _msg = "No se pudo generar la vista previa."; return; }
+            var r = await resp.Content.ReadFromJsonAsync<HtmlResp>();
+            _previewHtml = r?.Html;
+            _verPreview = true;
+        }
+        catch (Exception ex) { _err = true; _msg = ex.Message; }
+    }
+
+    private void CerrarPreview() => _verPreview = false;
+
+    private string ContenidoMostrado()
+    {
+        if (_versionSel is int n)
+        {
+            var v = _versiones.FirstOrDefault(x => x.Numero == n);
+            if (v is not null) return v.CuerpoHtml;
+        }
+        return _dto?.CuerpoHtml ?? "";
+    }
+
+    /// <summary>Carga el historial de versiones de la respuesta y abre el panel.</summary>
+    private async Task AbrirVersionesAsync()
+    {
+        if (_dto is null) return;
+        try
+        {
+            _versiones = (await Auth().GetFromJsonAsync<List<PqrsdRespuestaVersionDto>>(
+                $"/api/pqrsd/{ExpedienteId}/respuestas/{_dto.Id}/versiones")) ?? new();
+        }
+        catch { _versiones = new(); }
+        _verVersiones = true;
+    }
+
+    private void MostrarVersion(int numero)
+    {
+        _versionSel = numero;
+        _verVersiones = false;
+    }
+
+    // ---- Envio por correo (Gmail) ----
+    private sealed record GmailEstadoResp(bool AppConfigurada, bool Conectada, string? Email);
+
+    private async Task EnviarPorCorreoAsync()
+    {
+        if (_dto is null) return;
+        _msg = null; _err = false; _verConectar = false;
+        _enviando = true;
+        try
+        {
+            // 1) Verifica que la copropiedad tenga Gmail conectado.
+            GmailEstadoResp? estado = null;
+            try { estado = await Auth().GetFromJsonAsync<GmailEstadoResp>("/api/gmail-envio/estado"); } catch { }
+            if (estado is null || !estado.Conectada)
+            {
+                _gmailAppOk = estado?.AppConfigurada ?? false;
+                _verConectar = true;
+                _err = true;
+                _msg = _gmailAppOk ? "Primero conecta el Gmail de la copropiedad." : "El envio por Gmail no esta configurado por el operador.";
+                return;
+            }
+
+            // 2) Envia.
+            var resp = await Auth().PostAsync($"/api/pqrsd/{ExpedienteId}/respuestas/{_dto.Id}/enviar", null);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _err = true; _msg = "No se pudo enviar: " + await resp.Content.ReadAsStringAsync();
+                return;
+            }
+            await RecargarDtoAsync();
+            _err = false; _msg = $"Respuesta enviada desde {estado.Email}.";
+        }
+        catch (Exception ex) { _err = true; _msg = ex.Message; }
+        finally { _enviando = false; }
+    }
+
+    private async Task ConectarGmailAsync()
+    {
+        try
+        {
+            var redirectUri = new Uri(new Uri(Nav.BaseUri), "oauth/gmail/callback").ToString();
+            var r = await Auth().GetFromJsonAsync<UrlResp>($"/api/gmail-envio/conectar?redirectUri={Uri.EscapeDataString(redirectUri)}");
+            if (!string.IsNullOrEmpty(r?.Url))
+                Nav.NavigateTo(r!.Url, forceLoad: true);
+        }
+        catch (Exception ex) { _err = true; _msg = ex.Message; }
+    }
+
+    private sealed record UrlResp(string Url);
+
+    /// <summary>Genera el PDF oficial (membrete) de la respuesta guardada, lo adjunta y lo abre.</summary>
+    private async Task GenerarPdfAsync()
+    {
+        if (_dto is null) return;
+        _generandoPdf = true; _msg = null; _err = false;
+        try
+        {
+            var resp = await Auth().PostAsync($"/api/pqrsd/{ExpedienteId}/respuestas/{_dto.Id}/pdf", null);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _err = true; _msg = "No se pudo generar el PDF: " + await resp.Content.ReadAsStringAsync();
+                return;
+            }
+            var r = await resp.Content.ReadFromJsonAsync<PdfResp>();
+            await RecargarDtoAsync();   // el PDF aparece en la galeria de adjuntos
+            _msg = "Documento oficial generado."; _err = false;
+            if (!string.IsNullOrEmpty(r?.Url))
+                try { await Js.InvokeVoidAsync("open", r!.Url, "_blank"); } catch { }
+        }
+        catch (Exception ex) { _err = true; _msg = ex.Message; }
+        finally { _generandoPdf = false; }
+    }
+
+    private sealed record PdfResp(string Url, string Nombre);
+
     private async Task GuardarAsync()
     {
         _busy = true; _msg = null; _err = false;
@@ -278,12 +669,19 @@
             {
                 _err = true; _msg = "Escribe el contenido de la respuesta."; _busy = false; return;
             }
-            var resp = await Auth().PostAsJsonAsync($"/api/pqrsd/{ExpedienteId}/respuestas",
-                new CrearRespuestaBorradorRequest(string.IsNullOrWhiteSpace(_asunto) ? null : _asunto.Trim(), cuerpo!));
+            var body = new CrearRespuestaBorradorRequest(
+                string.IsNullOrWhiteSpace(_asunto) ? null : _asunto.Trim(), cuerpo!,
+                _dests.Count > 0 ? _dests.ToList() : null);
+            HttpResponseMessage resp;
+            if (_editandoId is not null)
+                resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{ExpedienteId}/respuestas/{_editandoId}", body);
+            else
+                resp = await Auth().PostAsJsonAsync($"/api/pqrsd/{ExpedienteId}/respuestas", body);
             if (!resp.IsSuccessStatusCode) { _err = true; _msg = "No se pudo guardar: " + await resp.Content.ReadAsStringAsync(); return; }
             var creada = await resp.Content.ReadFromJsonAsync<PqrsdRespuestaDto>();
             try { await Js.InvokeVoidAsync("propiaTiny.destroy", EdSel); } catch { }
             _dto = creada;
+            _editandoId = null;
             // Sube los adjuntos pendientes elegidos durante la redaccion.
             if (creada is not null && _pendientes.Count > 0)
             {

@@ -519,9 +519,13 @@ public class PorteriaService : IPorteriaService
         var orden = (await _db.PorteriaCampos.Select(c => (int?)c.Orden).MaxAsync(ct) ?? 0) + 1;
         var c2 = new PorteriaCampo
         {
-            TenantId = tenantId, Label = lab, Orden = orden, Tipo = req.Tipo,
+            TenantId = tenantId,
+            Label = lab,
+            Orden = orden,
+            Tipo = req.Tipo,
             Opciones = string.IsNullOrWhiteSpace(req.Opciones) ? null : req.Opciones.Trim(),
-            MostrarEnFiltro = req.MostrarEnFiltro, Columna = ClampCol(req.Columna),
+            MostrarEnFiltro = req.MostrarEnFiltro,
+            Columna = ClampCol(req.Columna),
             Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim()
         };
         _db.PorteriaCampos.Add(c2);

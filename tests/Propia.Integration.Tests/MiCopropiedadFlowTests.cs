@@ -547,7 +547,8 @@ public class MiCopropiedadFlowTests
             .Options;
 
         var db = new PropiaDbContext(options, tenantCtx);
-        return (new MiCopropiedadService(db, tenantCtx, new NoopBlobStorage()), db, tenantCtx);
+        var directorio = new Propia.Infrastructure.Directorio.DirectorioService(db, tenantCtx, new NoopBlobStorage());
+        return (new MiCopropiedadService(db, tenantCtx, new NoopBlobStorage(), new StubSeedUsuarioRolService(), directorio), db, tenantCtx);
     }
 
     private sealed class NoopBlobStorage : IBlobStorage

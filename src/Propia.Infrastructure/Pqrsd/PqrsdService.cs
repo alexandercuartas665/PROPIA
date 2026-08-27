@@ -21,27 +21,53 @@ public class PqrsdService : IPqrsdService
     private readonly IHttpContextAccessor _http;
     private readonly Propia.Application.Notificaciones.INotificacionDispatcher _noti;
     private readonly Propia.Application.Tareas.ITareasService _tareas;
+    private readonly Propia.Application.Documents.IMembreteDocumentBuilder _membrete;
 
     public PqrsdService(
         PropiaDbContext db,
         ITenantContext tenantContext,
         IHttpContextAccessor http,
         Propia.Application.Notificaciones.INotificacionDispatcher noti,
-        Propia.Application.Tareas.ITareasService tareas)
+        Propia.Application.Tareas.ITareasService tareas,
+        Propia.Application.Documents.IMembreteDocumentBuilder membrete)
     {
         _db = db;
         _tenantContext = tenantContext;
         _http = http;
         _noti = noti;
         _tareas = tareas;
+        _membrete = membrete;
     }
 
     private (Guid? UsuarioId, string? Nombre) ActorActual()
     {
         var u = _http.HttpContext?.User;
         Guid? uid = Guid.TryParse(u?.FindFirst("user_id")?.Value, out var g) ? g : null;
-        var nombre = u?.FindFirst("name")?.Value ?? u?.FindFirst(ClaimTypes.Name)?.Value ?? u?.FindFirst("email")?.Value;
+        var nombre = u?.FindFirst("name")?.Value
+            ?? u?.FindFirst(ClaimTypes.Name)?.Value
+            ?? u?.FindFirst("email")?.Value
+            ?? u?.FindFirst(ClaimTypes.Email)?.Value
+            ?? u?.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Email)?.Value;
         return (uid, nombre);
+    }
+
+    // Nombre legible del actor: resuelve por persona_id (Nombres + Apellidos); cae al email del token.
+    private async Task<string?> ResolverNombreActorAsync(CancellationToken ct)
+    {
+        var u = _http.HttpContext?.User;
+        if (Guid.TryParse(u?.FindFirst("persona_id")?.Value, out var pid))
+        {
+            var p = await _db.Personas.AsNoTracking()
+                .Where(x => x.Id == pid)
+                .Select(x => new { x.Nombres, x.Apellidos })
+                .FirstOrDefaultAsync(ct);
+            if (p is not null)
+            {
+                var nombre = $"{p.Nombres} {p.Apellidos}".Trim();
+                if (!string.IsNullOrWhiteSpace(nombre)) return nombre;
+            }
+        }
+        return ActorActual().Nombre;
     }
 
     private async Task NotificarAdminsTenantAsync(
@@ -675,7 +701,9 @@ public class PqrsdService : IPqrsdService
             x.RespuestaDefinitiva, x.RespuestaDefinitivaAt, x.FechaCierre, x.TareaId,
             x.CreatedAt, adjuntos, historial, comiteDto,
             x.EstadoId, x.UnidadPrivadaId, x.Archivado, camposValores, x.TipoId, tipoNombre,
-            x.AsignadoPersonaId, asignadoNombre, x.Progreso, comentarios, x.ProrrogaDias);
+            x.AsignadoPersonaId, asignadoNombre, x.Progreso, comentarios, x.ProrrogaDias,
+            x.IdentidadReservada ? null : rad?.Email,
+            x.IdentidadReservada ? null : rad?.Telefono);
     }
 
     // ===================== Radicacion =====================
@@ -910,14 +938,91 @@ public class PqrsdService : IPqrsdService
         var respuestas = await _db.PqrsdRespuestas.AsNoTracking()
             .Where(r => r.ExpedienteId == expedienteId)
             .Include(r => r.Adjuntos)
+            .Include(r => r.Destinatarios)
             .OrderByDescending(r => r.CreatedAt)
             .ToListAsync(ct);
+
+        // Nombre del autor: resuelve por AutorUsuarioId (User -> Persona) para que salga en todas
+        // las respuestas (incluidas las viejas sin AutorNombre guardado). Fallback: email o "Sistema".
+        var autorNombres = await ResolverNombresUsuariosAsync(
+            respuestas.Select(r => r.AutorUsuarioId).Where(g => g != Guid.Empty), ct);
+
+        // Numero de version actual por respuesta (para el badge "vN"). Sin historial => 1.
+        var respIds = respuestas.Select(r => r.Id).ToList();
+        var verMax = await _db.PqrsdRespuestaVersiones.AsNoTracking()
+            .Where(v => respIds.Contains(v.RespuestaId))
+            .GroupBy(v => v.RespuestaId)
+            .Select(g => new { RespuestaId = g.Key, Max = g.Max(x => x.Numero) })
+            .ToDictionaryAsync(x => x.RespuestaId, x => x.Max, ct);
+
         return respuestas.Select(r => new PqrsdRespuestaDto(
-            r.Id, r.Asunto, r.CuerpoHtml, r.AutorNombre, r.CreatedAt, r.Enviada, r.EnviadaAt,
+            r.Id, r.Asunto, r.CuerpoHtml,
+            !string.IsNullOrWhiteSpace(r.AutorNombre) ? r.AutorNombre
+                : (r.AutorUsuarioId != Guid.Empty && autorNombres.TryGetValue(r.AutorUsuarioId, out var an) ? an : null),
+            r.CreatedAt, r.Enviada, r.EnviadaAt,
             r.Adjuntos.OrderBy(a => a.CreatedAt).Select(a => new PqrsdAdjuntoDto(
                 a.Id, a.NombreArchivo, a.TipoMime, a.TamanioBytes, a.UrlStorage, a.CreatedAt,
-                null, a.SubidoPorUsuarioId == Guid.Empty ? null : a.SubidoPorUsuarioId, a.Texto, a.Compartido)).ToList()))
+                null, a.SubidoPorUsuarioId == Guid.Empty ? null : a.SubidoPorUsuarioId, a.Texto, a.Compartido)).ToList(),
+            r.Archivada, r.ArchivadaAt, verMax.GetValueOrDefault(r.Id, 1),
+            r.Destinatarios.Select(d => new DestinatarioRespuestaDto(d.PersonaId, d.Nombre, d.Email)).ToList()))
             .ToList();
+    }
+
+    // Mapea los destinatarios del request a entidades (dedup por email, descarta emails invalidos).
+    private static IEnumerable<PqrsdRespuestaDestinatario> MapDestinatarios(IEnumerable<DestinatarioRespuestaDto>? dtos)
+    {
+        if (dtos is null) yield break;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var d in dtos)
+        {
+            var email = d.Email?.Trim();
+            if (string.IsNullOrWhiteSpace(email) || !email.Contains('@')) continue;
+            if (!seen.Add(email)) continue;
+            yield return new PqrsdRespuestaDestinatario
+            {
+                PersonaId = d.PersonaId,
+                Nombre = string.IsNullOrWhiteSpace(d.Nombre) ? null : d.Nombre.Trim(),
+                Email = email
+            };
+        }
+    }
+
+    // Resuelve nombres legibles de usuarios (User.Id -> Persona "Nombres Apellidos", fallback email).
+    private async Task<Dictionary<Guid, string>> ResolverNombresUsuariosAsync(IEnumerable<Guid> userIds, CancellationToken ct)
+    {
+        var ids = userIds.Distinct().ToList();
+        var res = new Dictionary<Guid, string>();
+        if (ids.Count == 0) return res;
+        var users = await _db.Users.AsNoTracking()
+            .Where(u => ids.Contains(u.Id))
+            .Select(u => new { u.Id, u.PersonaId, u.Email })
+            .ToListAsync(ct);
+        var personaIds = users.Where(u => u.PersonaId != null).Select(u => u.PersonaId!.Value).Distinct().ToList();
+        var personas = personaIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await _db.Personas.AsNoTracking().Where(p => personaIds.Contains(p.Id))
+                .ToDictionaryAsync(p => p.Id, p => $"{p.Nombres} {p.Apellidos}".Trim(), ct);
+        foreach (var u in users)
+        {
+            string? nombre = null;
+            if (u.PersonaId is { } pid && personas.TryGetValue(pid, out var pn) && !string.IsNullOrWhiteSpace(pn))
+                nombre = pn;
+            nombre ??= u.Email;
+            if (!string.IsNullOrWhiteSpace(nombre)) res[u.Id] = nombre!;
+        }
+        return res;
+    }
+
+    // Archiva/desarchiva una respuesta. Las archivadas salen de las tarjetas activas y van a la tabla de archivados.
+    public async Task<bool> ArchivarRespuestaAsync(Guid expedienteId, Guid respuestaId, bool archivar, CancellationToken ct)
+    {
+        var r = await _db.PqrsdRespuestas.FirstOrDefaultAsync(x => x.Id == respuestaId && x.ExpedienteId == expedienteId, ct);
+        if (r is null) return false;
+        r.Archivada = archivar;
+        r.ArchivadaAt = archivar ? DateTimeOffset.UtcNow : null;
+        r.ArchivadaPorUsuarioId = archivar ? ActorActual().UsuarioId : null;
+        await _db.SaveChangesAsync(ct);
+        return true;
     }
 
     public async Task<PqrsdRespuestaDto?> CrearRespuestaBorradorAsync(Guid expedienteId, CrearRespuestaBorradorRequest req, CancellationToken ct)
@@ -925,7 +1030,8 @@ public class PqrsdService : IPqrsdService
         if (string.IsNullOrWhiteSpace(req.CuerpoHtml)) return null;
         var exp = await _db.PqrsdExpedientes.FirstOrDefaultAsync(e => e.Id == expedienteId, ct);
         if (exp is null) return null;
-        var (uid, nombre) = ActorActual();
+        var (uid, _) = ActorActual();
+        var nombre = await ResolverNombreActorAsync(ct);
         var r = new PqrsdRespuesta
         {
             ExpedienteId = expedienteId,
@@ -934,10 +1040,137 @@ public class PqrsdService : IPqrsdService
             AutorUsuarioId = uid ?? Guid.Empty,
             AutorNombre = nombre
         };
+        // v1: snapshot inicial del documento.
+        r.Versiones.Add(new PqrsdRespuestaVersion
+        {
+            Numero = 1,
+            CuerpoHtml = r.CuerpoHtml,
+            Asunto = r.Asunto,
+            AutorUsuarioId = r.AutorUsuarioId,
+            AutorNombre = nombre
+        });
+        foreach (var dst in MapDestinatarios(req.Destinatarios)) r.Destinatarios.Add(dst);
         _db.PqrsdRespuestas.Add(r);
         await _db.SaveChangesAsync(ct);
         return new PqrsdRespuestaDto(r.Id, r.Asunto, r.CuerpoHtml, r.AutorNombre, r.CreatedAt,
-            r.Enviada, r.EnviadaAt, new List<PqrsdAdjuntoDto>());
+            r.Enviada, r.EnviadaAt, new List<PqrsdAdjuntoDto>(), false, null, 1,
+            r.Destinatarios.Select(d => new DestinatarioRespuestaDto(d.PersonaId, d.Nombre, d.Email)).ToList());
+    }
+
+    public async Task<PqrsdRespuestaDto?> ActualizarRespuestaBorradorAsync(Guid expedienteId, Guid respuestaId, CrearRespuestaBorradorRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.CuerpoHtml)) return null;
+        var r = await _db.PqrsdRespuestas
+            .Include(x => x.Adjuntos)
+            .Include(x => x.Destinatarios)
+            .FirstOrDefaultAsync(x => x.Id == respuestaId && x.ExpedienteId == expedienteId, ct);
+        if (r is null || r.Enviada) return null;   // una respuesta ya enviada no se edita
+
+        // Snapshot del estado previo antes de sobrescribir (para el historial de versiones).
+        var oldCuerpo = r.CuerpoHtml;
+        var oldAsunto = r.Asunto;
+
+        r.Asunto = string.IsNullOrWhiteSpace(req.Asunto) ? null : req.Asunto.Trim();
+        r.CuerpoHtml = req.CuerpoHtml;
+
+        var existentes = await _db.PqrsdRespuestaVersiones
+            .Where(v => v.RespuestaId == r.Id).Select(v => v.Numero).ToListAsync(ct);
+        int nextNum;
+        if (existentes.Count == 0)
+        {
+            // Respuesta creada antes de existir el historial: siembra v1 con el estado previo.
+            _db.PqrsdRespuestaVersiones.Add(new PqrsdRespuestaVersion
+            {
+                RespuestaId = r.Id,
+                Numero = 1,
+                CuerpoHtml = oldCuerpo,
+                Asunto = oldAsunto,
+                AutorUsuarioId = r.AutorUsuarioId,
+                AutorNombre = r.AutorNombre
+            });
+            nextNum = 2;
+        }
+        else nextNum = existentes.Max() + 1;
+
+        var (uid, _) = ActorActual();
+        var editorNombre = await ResolverNombreActorAsync(ct);
+        _db.PqrsdRespuestaVersiones.Add(new PqrsdRespuestaVersion
+        {
+            RespuestaId = r.Id,
+            Numero = nextNum,
+            CuerpoHtml = r.CuerpoHtml,
+            Asunto = r.Asunto,
+            AutorUsuarioId = uid ?? Guid.Empty,
+            AutorNombre = editorNombre
+        });
+
+        // Reemplaza los destinatarios por los enviados (si el request los trae).
+        if (req.Destinatarios is not null)
+        {
+            _db.PqrsdRespuestaDestinatarios.RemoveRange(r.Destinatarios);
+            r.Destinatarios.Clear();
+            foreach (var dst in MapDestinatarios(req.Destinatarios)) r.Destinatarios.Add(dst);
+        }
+
+        await _db.SaveChangesAsync(ct);
+        return new PqrsdRespuestaDto(r.Id, r.Asunto, r.CuerpoHtml, r.AutorNombre, r.CreatedAt, r.Enviada, r.EnviadaAt,
+            r.Adjuntos.OrderBy(a => a.CreatedAt).Select(a => new PqrsdAdjuntoDto(
+                a.Id, a.NombreArchivo, a.TipoMime, a.TamanioBytes, a.UrlStorage, a.CreatedAt,
+                null, a.SubidoPorUsuarioId == Guid.Empty ? null : a.SubidoPorUsuarioId, a.Texto, a.Compartido)).ToList(),
+            r.Archivada, r.ArchivadaAt, nextNum,
+            r.Destinatarios.Select(d => new DestinatarioRespuestaDto(d.PersonaId, d.Nombre, d.Email)).ToList());
+    }
+
+    // Lista el historial de versiones de una respuesta (mas reciente primero).
+    public async Task<IReadOnlyList<PqrsdRespuestaVersionDto>> ListarVersionesRespuestaAsync(Guid expedienteId, Guid respuestaId, CancellationToken ct)
+    {
+        var existe = await _db.PqrsdRespuestas.AsNoTracking()
+            .AnyAsync(x => x.Id == respuestaId && x.ExpedienteId == expedienteId, ct);
+        if (!existe) return Array.Empty<PqrsdRespuestaVersionDto>();
+
+        var vs = await _db.PqrsdRespuestaVersiones.AsNoTracking()
+            .Where(v => v.RespuestaId == respuestaId)
+            .OrderByDescending(v => v.Numero)
+            .ToListAsync(ct);
+        var nombres = await ResolverNombresUsuariosAsync(vs.Select(v => v.AutorUsuarioId).Where(g => g != Guid.Empty), ct);
+        return vs.Select(v => new PqrsdRespuestaVersionDto(
+            v.Numero, v.Asunto, v.CuerpoHtml,
+            !string.IsNullOrWhiteSpace(v.AutorNombre) ? v.AutorNombre
+                : (v.AutorUsuarioId != Guid.Empty && nombres.TryGetValue(v.AutorUsuarioId, out var n) ? n : null),
+            v.CreatedAt)).ToList();
+    }
+
+    // Compone el HTML del documento oficial (membrete + cuerpo) para vista previa o generacion de PDF.
+    // Usa la identidad del Tenant + su config de membrete; el cuerpoHtml es el texto de la respuesta.
+    public async Task<string?> ComponerDocumentoRespuestaAsync(Guid expedienteId, string cuerpoHtml, CancellationToken ct)
+    {
+        var exp = await _db.PqrsdExpedientes.AsNoTracking()
+            .Include(e => e.TipoConfig)
+            .Include(e => e.RadicadorPersona)
+            .FirstOrDefaultAsync(e => e.Id == expedienteId, ct);
+        if (exp is null) return null;
+
+        var tenant = await _db.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == exp.TenantId, ct);
+        if (tenant is null) return null;
+
+        var tipoNombre = exp.TipoConfig?.Nombre ?? exp.Tipo.ToString();
+        var destinatario = exp.IdentidadReservada
+            ? "Identidad reservada"
+            : exp.RadicadorPersona is null
+                ? null
+                : $"{exp.RadicadorPersona.Nombres} {exp.RadicadorPersona.Apellidos}".Trim();
+
+        var contenido = new Propia.Application.Documents.MembreteDocContenido(
+            TipoBadge: "Respuesta PQRSD",
+            RadicadoLabel: "Radicado",
+            Radicado: exp.NumeroRadicado,
+            Fecha: exp.RespuestaAdminAt ?? DateTimeOffset.UtcNow,
+            CuerpoHtml: cuerpoHtml ?? "",
+            DestinatarioNombre: destinatario,
+            // Referencia del expediente (tipo) como linea del destinatario; el badge dice "Respuesta PQRSD".
+            DestinatarioLinea: string.IsNullOrWhiteSpace(tipoNombre) ? null : $"Ref. {tipoNombre} - {exp.NumeroRadicado}");
+
+        return _membrete.Construir(tenant, contenido);
     }
 
     // ===================== Plantillas de respuesta (combinacion de correspondencia) =====================

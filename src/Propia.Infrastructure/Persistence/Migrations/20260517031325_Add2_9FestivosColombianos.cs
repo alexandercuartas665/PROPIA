@@ -81,12 +81,12 @@ namespace Propia.Infrastructure.Persistence.Migrations
                 lista.Add((new DateOnly(y, 12, 25), "Navidad"));
 
                 // Trasladados (Emiliani)
-                lista.Add((SiguienteLunes(new DateOnly(y, 1, 6)),  "Reyes Magos (trasladado)"));
+                lista.Add((SiguienteLunes(new DateOnly(y, 1, 6)), "Reyes Magos (trasladado)"));
                 lista.Add((SiguienteLunes(new DateOnly(y, 3, 19)), "San Jose (trasladado)"));
                 lista.Add((SiguienteLunes(new DateOnly(y, 6, 29)), "San Pedro y San Pablo (trasladado)"));
-                lista.Add((SiguienteLunes(new DateOnly(y, 10, 12)),"Dia de la Raza (trasladado)"));
+                lista.Add((SiguienteLunes(new DateOnly(y, 10, 12)), "Dia de la Raza (trasladado)"));
                 lista.Add((SiguienteLunes(new DateOnly(y, 11, 1)), "Todos los Santos (trasladado)"));
-                lista.Add((SiguienteLunes(new DateOnly(y, 11, 11)),"Independencia de Cartagena (trasladado)"));
+                lista.Add((SiguienteLunes(new DateOnly(y, 11, 11)), "Independencia de Cartagena (trasladado)"));
 
                 // Religiosos derivados de Pascua
                 var pascua = CalcularPascua(y);

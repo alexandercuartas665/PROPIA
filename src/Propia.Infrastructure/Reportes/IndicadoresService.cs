@@ -304,7 +304,13 @@ public class IndicadoresService : IIndicadoresService
             var vencido = c.FechaFin is { } f && f < hoy;
             return new
             {
-                c.Id, c.Proveedor, c.TipoContrato, c.FechaFin, c.ValorTotal, sem, vencido,
+                c.Id,
+                c.Proveedor,
+                c.TipoContrato,
+                c.FechaFin,
+                c.ValorTotal,
+                sem,
+                vencido,
                 dias = c.FechaFin is { } ff ? ff.DayNumber - hoy.DayNumber : (int?)null
             };
         }).ToList();
@@ -333,7 +339,13 @@ public class IndicadoresService : IIndicadoresService
             var vencido = p.FechaFin is { } f && f < hoy;
             return new
             {
-                p.Id, p.Aseguradora, p.NumeroPoliza, p.FechaFin, p.ValorPoliza, sem, vencido,
+                p.Id,
+                p.Aseguradora,
+                p.NumeroPoliza,
+                p.FechaFin,
+                p.ValorPoliza,
+                sem,
+                vencido,
                 dias = p.FechaFin is { } ff ? ff.DayNumber - hoy.DayNumber : (int?)null
             };
         }).ToList();

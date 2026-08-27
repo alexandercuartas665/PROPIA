@@ -52,6 +52,15 @@ RUN dotnet publish "${PROJECT_DIR}/${PROJECT}.csproj" \
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS runtime
 ARG PROJECT
 WORKDIR /app
+
+# Chromium para HTML->PDF (PuppeteerSharp genera el PDF de las respuestas PQRSD con membrete).
+# Se instala por apt y se apunta con PUPPETEER_EXECUTABLE_PATH para NO descargarlo en runtime.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        chromium fonts-liberation fonts-dejavu-core ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
 COPY --from=build /app/publish .
 
 ENV ASPNETCORE_URLS=http://+:8080

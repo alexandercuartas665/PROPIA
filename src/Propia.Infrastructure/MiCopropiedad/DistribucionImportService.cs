@@ -345,9 +345,9 @@ public class DistribucionImportService : IDistribucionImportService
                 // Personas 1:1 (bloques de 5 columnas): Prop1 (15), Prop2 (20), Residente (25),
                 // Arrendatario (30). Cada una se crea en el Directorio (dedup por cedula) y se
                 // vincula a la unidad con su rol. Un error de persona NO tumba la unidad.
-                if (await AgregarPersonaDesdeFila(creada.Id, row, 15, RolUnidadPersona.Propietario,  false, fila, errores, ct)) personasVinculadas++;
-                if (await AgregarPersonaDesdeFila(creada.Id, row, 20, RolUnidadPersona.Propietario,  false, fila, errores, ct)) personasVinculadas++;
-                if (await AgregarPersonaDesdeFila(creada.Id, row, 25, RolUnidadPersona.Residente,    false, fila, errores, ct)) personasVinculadas++;
+                if (await AgregarPersonaDesdeFila(creada.Id, row, 15, RolUnidadPersona.Propietario, false, fila, errores, ct)) personasVinculadas++;
+                if (await AgregarPersonaDesdeFila(creada.Id, row, 20, RolUnidadPersona.Propietario, false, fila, errores, ct)) personasVinculadas++;
+                if (await AgregarPersonaDesdeFila(creada.Id, row, 25, RolUnidadPersona.Residente, false, fila, errores, ct)) personasVinculadas++;
                 if (await AgregarPersonaDesdeFila(creada.Id, row, 30, RolUnidadPersona.Arrendatario, false, fila, errores, ct)) personasVinculadas++;
                 // Grupo familiar: bloques de 4 columnas (cedula, nombres, apellidos, parentesco) desde la 35.
                 for (int fCol = 35; fCol <= 51; fCol += 4)

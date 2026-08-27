@@ -139,7 +139,51 @@ public class PqrsdRespuesta : TenantEntity
     public bool Enviada { get; set; }
     public DateTimeOffset? EnviadaAt { get; set; }
 
+    /// <summary>Archivada: sale de las tarjetas activas y pasa a la vista de archivados (tabla).</summary>
+    public bool Archivada { get; set; }
+    public DateTimeOffset? ArchivadaAt { get; set; }
+    public Guid? ArchivadaPorUsuarioId { get; set; }
+
     public ICollection<PqrsdAdjunto> Adjuntos { get; set; } = new List<PqrsdAdjunto>();
+
+    /// <summary>Historial de versiones del documento (cada guardar de una edicion crea una).</summary>
+    public ICollection<PqrsdRespuestaVersion> Versiones { get; set; } = new List<PqrsdRespuestaVersion>();
+
+    /// <summary>Destinatarios a los que se enviara la respuesta (terceros del directorio o correos sueltos).</summary>
+    public ICollection<PqrsdRespuestaDestinatario> Destinatarios { get; set; } = new List<PqrsdRespuestaDestinatario>();
+}
+
+/// <summary>
+/// Destinatario de una respuesta PQRSD. Puede ser un tercero del directorio (PersonaId != null)
+/// o un correo suelto/anonimo (PersonaId null). El envio (Fase D) usa Email.
+/// </summary>
+public class PqrsdRespuestaDestinatario : TenantEntity
+{
+    public Guid RespuestaId { get; set; }
+    public PqrsdRespuesta? Respuesta { get; set; }
+
+    public Guid? PersonaId { get; set; }        // null = correo suelto sin tercero
+    public string? Nombre { get; set; }
+    public string Email { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Snapshot de una version del documento de respuesta. Se crea al crear la respuesta (v1) y en
+/// cada edicion guardada (v2, v3...). Permite consultar el historial de cambios del documento.
+/// </summary>
+public class PqrsdRespuestaVersion : TenantEntity
+{
+    public Guid RespuestaId { get; set; }
+    public PqrsdRespuesta? Respuesta { get; set; }
+
+    /// <summary>Numero consecutivo de version dentro de la respuesta (1, 2, 3...).</summary>
+    public int Numero { get; set; }
+
+    public string CuerpoHtml { get; set; } = string.Empty;
+    public string? Asunto { get; set; }
+
+    public Guid AutorUsuarioId { get; set; }
+    public string? AutorNombre { get; set; }
 }
 
 /// <summary>Reporte de actividad / comentario libre sobre un expediente PQRS (port del feed de Tareas).</summary>

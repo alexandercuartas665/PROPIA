@@ -197,6 +197,16 @@ public static class DependencyInjection
         services.AddScoped<Application.Pqrsd.IPqrsdService, Pqrsd.PqrsdService>();
         services.AddScoped<Application.Pqrsd.IPqrsdRespuestaPdfService, Pqrsd.PqrsdRespuestaPdfService>();
 
+        // Documentos con membrete (header/footer configurable) - HTML compuesto reutilizable
+        services.AddSingleton<Application.Documents.IMembreteDocumentBuilder, Documents.MembreteDocumentBuilder>();
+        // HTML -> PDF (Chromium headless). Singleton: reutiliza el navegador entre requests.
+        services.AddSingleton<Application.Documents.IHtmlToPdfService, Documents.PuppeteerHtmlToPdfService>();
+        services.AddHostedService<Documents.PdfEngineWarmup>();
+
+        // Envio de respuestas por Gmail (OAuth por copropiedad + Gmail API)
+        services.AddScoped<Application.Integraciones.IGmailEnvioService, GmailEnvio.GmailEnvioService>();
+        services.AddScoped<Application.Common.IGmailSender, GmailEnvio.GmailSender>();
+
         // Modulo Informes de gestion (plantillas inteligentes + generacion IA)
         services.AddScoped<Application.Informes.IInformesService, Informes.InformesService>();
 

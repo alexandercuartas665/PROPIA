@@ -1,0 +1,128 @@
+@page "/integraciones/gmail-envio"
+@rendermode InteractiveServer
+@using Propia.Application.Integraciones
+@inject IHttpClientFactory HttpFactory
+@inject SuperAdminSession Session
+@inject NavigationManager Nav
+
+<PageTitle>Gmail (envio de respuestas)</PageTitle>
+
+@if (!Session.IsAuthenticated) { Nav.NavigateTo("/login", forceLoad: true); return; }
+
+<h1 class="h3 mb-1">Gmail - envio de respuestas PQRSD</h1>
+<p class="text-muted mb-4">Credenciales del OAuth client dedicado para que cada copropiedad conecte su cuenta Gmail y envie las respuestas PQRSD desde ella (scope <code>gmail.send</code>). El Client Secret se guarda cifrado. Distinto del "Iniciar sesion con Google".</p>
+
+@if (_cargando)
+{
+    <div class="text-center py-5"><div class="spinner-border"></div></div>
+}
+else if (_form is not null)
+{
+    <div class="row g-4">
+        <div class="col-md-7">
+            <div class="card">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <strong>OAuth client de envio</strong>
+                    @if (_form.IsEnabled)
+                    {
+                        <span class="badge bg-success">Habilitado</span>
+                    }
+                    else
+                    {
+                        <span class="badge bg-secondary">Deshabilitado</span>
+                    }
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label">Client ID</label>
+                            <input class="form-control" @bind="_form.ClientId" placeholder="xxxxx.apps.googleusercontent.com" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Client Secret @(_form.TieneSecret ? "(guardado - dejar vacio para conservar)" : "")</label>
+                            <input type="password" class="form-control" @bind="_form.ClientSecret" placeholder="@(_form.TieneSecret ? "********" : "GOCSPX-...")" />
+                        </div>
+                        <div class="col-12">
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="en" @bind="_form.IsEnabled" />
+                                <label class="form-check-label" for="en">Habilitar envio por Gmail</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-5">
+            <div class="card">
+                <div class="card-header bg-white"><strong>Redirect URIs a registrar en Google</strong></div>
+                <div class="card-body">
+                    <p class="text-muted small">En Google Cloud, en el OAuth client (Web application), agrega estas "Authorized redirect URIs":</p>
+                    <ul class="small mb-2">
+                        <li><code>http://localhost:5105/oauth/gmail/callback</code> <span class="text-muted">(desarrollo)</span></li>
+                        <li><code>https://app.propia-ad.com/oauth/gmail/callback</code> <span class="text-muted">(produccion)</span></li>
+                    </ul>
+                    <p class="text-muted small mb-0">Habilita la <strong>Gmail API</strong>, agrega el scope <code>.../auth/gmail.send</code> en la pantalla de consentimiento y agregate como <strong>usuario de prueba</strong> mientras el app no este verificado.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-4">
+        @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgCls">@_msg</div> }
+        <button class="btn btn-dark btn-lg" @onclick="GuardarAsync" disabled="@_busy">@(_busy ? "Guardando..." : "Guardar configuracion")</button>
+    </div>
+}
+
+@code {
+    private bool _cargando = true;
+    private bool _busy;
+    private string? _msg;
+    private string _msgCls = "alert-info";
+    private Form? _form;
+
+    private class Form
+    {
+        public string? ClientId { get; set; }
+        public string? ClientSecret { get; set; }
+        public bool IsEnabled { get; set; }
+        public bool TieneSecret { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var c = await AuthorizedClient().GetFromJsonAsync<GmailEnvioAppConfigDto>("/admin/gmail-envio-config");
+            _form = c is null
+                ? new Form()
+                : new Form { ClientId = c.ClientId, TieneSecret = c.TieneSecret, IsEnabled = c.IsEnabled };
+        }
+        finally { _cargando = false; }
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_form is null) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var req = new GuardarGmailEnvioAppConfigRequest(_form.ClientId, _form.ClientSecret, _form.IsEnabled);
+            var resp = await AuthorizedClient().PutAsJsonAsync("/admin/gmail-envio-config", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                var dto = await resp.Content.ReadFromJsonAsync<GmailEnvioAppConfigDto>();
+                if (dto is not null) { _form.TieneSecret = dto.TieneSecret; _form.ClientSecret = null; }
+                _msg = "Configuracion guardada."; _msgCls = "alert-success";
+            }
+            else { _msg = $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}"; _msgCls = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private HttpClient AuthorizedClient()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Session.AccessToken!);
+        return http;
+    }
+}

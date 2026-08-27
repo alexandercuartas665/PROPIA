@@ -40,9 +40,16 @@ public class ServiciosService : IServiciosService
             .AsNoTracking()
             .Select(s => new
             {
-                s.Id, s.Tipo, s.Nombre, s.Descripcion,
-                s.EjecutorPersonaId, s.EjecutorEmpresaId, s.EjecutorNombre,
-                s.CostoMensual, s.CostoAnual, s.Estado,
+                s.Id,
+                s.Tipo,
+                s.Nombre,
+                s.Descripcion,
+                s.EjecutorPersonaId,
+                s.EjecutorEmpresaId,
+                s.EjecutorNombre,
+                s.CostoMensual,
+                s.CostoAnual,
+                s.Estado,
                 Adjuntos = s.Adjuntos.Count,
                 Contactos = s.Contactos.Count
             })

@@ -93,6 +93,13 @@ public interface IPqrsdService
     Task<IReadOnlyList<PqrsdRespuestaDto>> ListarRespuestasAsync(Guid expedienteId, CancellationToken ct);
     /// <summary>Crea una respuesta borrador (guarda con trazabilidad autor/fecha). Null si el expediente no existe.</summary>
     Task<PqrsdRespuestaDto?> CrearRespuestaBorradorAsync(Guid expedienteId, CrearRespuestaBorradorRequest req, CancellationToken ct);
+    Task<PqrsdRespuestaDto?> ActualizarRespuestaBorradorAsync(Guid expedienteId, Guid respuestaId, CrearRespuestaBorradorRequest req, CancellationToken ct);
+    /// <summary>Archiva/desarchiva una respuesta (sale de las tarjetas activas hacia la tabla de archivados).</summary>
+    Task<bool> ArchivarRespuestaAsync(Guid expedienteId, Guid respuestaId, bool archivar, CancellationToken ct);
+    /// <summary>Historial de versiones del documento de una respuesta (mas reciente primero).</summary>
+    Task<IReadOnlyList<PqrsdRespuestaVersionDto>> ListarVersionesRespuestaAsync(Guid expedienteId, Guid respuestaId, CancellationToken ct);
+    /// <summary>Compone el HTML del documento oficial (membrete + cuerpo) para vista previa o PDF. Null si no existe expediente/tenant.</summary>
+    Task<string?> ComponerDocumentoRespuestaAsync(Guid expedienteId, string cuerpoHtml, CancellationToken ct);
 
     // Plantillas de respuesta (combinacion de correspondencia)
     /// <summary>Catalogo de tokens disponibles para plantillas (con su descripcion).</summary>

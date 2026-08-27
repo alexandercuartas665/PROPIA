@@ -258,7 +258,7 @@ public class UsuariosAccesosFlowTests : IAsyncLifetime
         var tenantCtx = scope.ServiceProvider.GetRequiredService<ITenantContext>();
         tenantCtx.SetTenant(tenantId);
         var db = scope.ServiceProvider.GetRequiredService<PropiaDbContext>();
-        var svc = new RolesService(db, tenantCtx);
+        var svc = new RolesService(db, tenantCtx, scope.ServiceProvider.GetRequiredService<Propia.Application.UsuariosAccesos.ISeedUsuarioRolService>());
         return (svc, db, (TenantContext)tenantCtx, scope);
     }
 
@@ -274,7 +274,7 @@ public class UsuariosAccesosFlowTests : IAsyncLifetime
         var jwt = scope.ServiceProvider.GetRequiredService<IOptions<JwtSettings>>();
         var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build();
         var svc = new UsuariosService(db, tenantCtx, userManager, tokenSvc, jwt, new NoopBlobStorage(), new NoopEmailSender(), config);
-        var roles = new RolesService(db, tenantCtx);
+        var roles = new RolesService(db, tenantCtx, scope.ServiceProvider.GetRequiredService<Propia.Application.UsuariosAccesos.ISeedUsuarioRolService>());
         return (svc, roles, (TenantContext)tenantCtx, db);
     }
 

@@ -9,8 +9,8 @@ window.propiaTiny = {
         try {
             await tinymce.init({
                 selector: selector,
-                menubar: 'edit view format table',
-                height: 560,
+                menubar: false,
+                height: 620,
                 plugins: 'lists link autolink table image charmap code fullscreen hr searchreplace wordcount visualblocks',
                 toolbar: 'undo redo | blocks fontfamily fontsize | bold italic underline strikethrough | forecolor backcolor | ' +
                     'alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | ' +
@@ -22,8 +22,8 @@ window.propiaTiny = {
                 font_size_formats: '10px 11px 12px 14px 16px 18px 24px 30px 36px',
                 // Hoja tipo carta (blanca, con margenes y sombra) sobre lienzo gris.
                 content_style:
-                    "html{background:#eceff3;} " +
-                    "body{background:#fff; max-width:760px; margin:26px auto; padding:64px 72px; " +
+                    "html{background:#eceff3; padding:0 28px;} " +
+                    "body{background:#fff; max-width:720px; margin:26px auto; padding:64px 76px; " +
                     "box-shadow:0 3px 16px rgba(27,42,58,.14); border-radius:2px; " +
                     "font-family:Georgia,'Times New Roman',serif; font-size:15px; line-height:1.6; color:#1B2A3A; min-height:900px;}",
                 setup: function (ed) {

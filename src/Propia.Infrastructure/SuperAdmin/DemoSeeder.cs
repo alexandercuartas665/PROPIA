@@ -208,20 +208,20 @@ public static class DemoSeeder
 
     private static Plan NuevoPlan(string nombre, string desc, decimal feeBase, decimal descAnual,
         int? limUnidades, int? limUsuarios, int? limWhatsapp, int? limIa, int diasTrial, DateTimeOffset now) => new()
-    {
-        Nombre = nombre,
-        Descripcion = desc,
-        FeeBase = feeBase,
-        FeeVariablePorUnidad = 0m,
-        CicloMensual = true,
-        CicloAnual = true,
-        DescuentoAnualPct = descAnual,
-        LimiteUnidades = limUnidades,
-        LimiteUsuarios = limUsuarios,
-        LimiteLineasWhatsapp = limWhatsapp,
-        LimiteLlamadasIaMensual = limIa,
-        DiasTrial = diasTrial,
-        Estado = EstadoPlan.Activo,
-        CreatedAt = now,
-    };
+        {
+            Nombre = nombre,
+            Descripcion = desc,
+            FeeBase = feeBase,
+            FeeVariablePorUnidad = 0m,
+            CicloMensual = true,
+            CicloAnual = true,
+            DescuentoAnualPct = descAnual,
+            LimiteUnidades = limUnidades,
+            LimiteUsuarios = limUsuarios,
+            LimiteLineasWhatsapp = limWhatsapp,
+            LimiteLlamadasIaMensual = limIa,
+            DiasTrial = diasTrial,
+            Estado = EstadoPlan.Activo,
+            CreatedAt = now,
+        };
 }

@@ -46,6 +46,8 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     // Integraciones de plataforma (Super Admin) - portadas de CUBOT.travels. Globales singleton.
     public DbSet<EmailConfig> EmailConfigs => Set<EmailConfig>();
     public DbSet<GoogleAuthConfig> GoogleAuthConfigs => Set<GoogleAuthConfig>();
+    public DbSet<GmailEnvioAppConfig> GmailEnvioAppConfigs => Set<GmailEnvioAppConfig>();
+    public DbSet<GmailEnvioConexion> GmailEnvioConexiones => Set<GmailEnvioConexion>();
     public DbSet<PlatformBranding> PlatformBrandings => Set<PlatformBranding>();
     public DbSet<AiProviderConfig> AiProviderConfigs => Set<AiProviderConfig>();
     public DbSet<OcrProviderConfig> OcrProviderConfigs => Set<OcrProviderConfig>();
@@ -203,6 +205,8 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<PqrsdCampoValor> PqrsdCampoValores => Set<PqrsdCampoValor>();
     public DbSet<PqrsdComentario> PqrsdComentarios => Set<PqrsdComentario>();
     public DbSet<PqrsdRespuesta> PqrsdRespuestas => Set<PqrsdRespuesta>();
+    public DbSet<PqrsdRespuestaVersion> PqrsdRespuestaVersiones => Set<PqrsdRespuestaVersion>();
+    public DbSet<PqrsdRespuestaDestinatario> PqrsdRespuestaDestinatarios => Set<PqrsdRespuestaDestinatario>();
     public DbSet<PqrsdPlantillaRespuesta> PqrsdPlantillasRespuesta => Set<PqrsdPlantillaRespuesta>();
     public DbSet<PqrsdTipo> PqrsdTipos => Set<PqrsdTipo>();
 
@@ -1677,6 +1681,29 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
+        modelBuilder.Entity<PqrsdRespuestaDestinatario>(b =>
+        {
+            b.ToTable("pqrsd_respuesta_destinatarios");
+            b.Property(x => x.Email).IsRequired().HasMaxLength(320);
+            b.Property(x => x.Nombre).HasMaxLength(200);
+            b.HasOne(x => x.Respuesta).WithMany(r => r.Destinatarios).HasForeignKey(x => x.RespuestaId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.RespuestaId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PqrsdRespuestaVersion>(b =>
+        {
+            b.ToTable("pqrsd_respuesta_versiones");
+            b.Property(x => x.CuerpoHtml).IsRequired().HasColumnType("text");
+            b.Property(x => x.Asunto).HasMaxLength(300);
+            b.Property(x => x.AutorNombre).HasMaxLength(200);
+            b.HasOne(x => x.Respuesta).WithMany(r => r.Versiones).HasForeignKey(x => x.RespuestaId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.RespuestaId, x.Numero });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
         modelBuilder.Entity<PqrsdPlantillaRespuesta>(b =>
         {
             b.ToTable("pqrsd_plantillas_respuesta");
@@ -2830,6 +2857,22 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
         {
             b.Property(x => x.ClientId).HasMaxLength(255);
             b.Property(x => x.ClientSecretEncrypted).HasMaxLength(1024);
+        });
+
+        modelBuilder.Entity<GmailEnvioAppConfig>(b =>
+        {
+            b.ToTable("gmail_envio_app_configs");
+            b.Property(x => x.ClientId).HasMaxLength(255);
+            b.Property(x => x.ClientSecretEncrypted).HasMaxLength(1024);
+        });
+
+        modelBuilder.Entity<GmailEnvioConexion>(b =>
+        {
+            b.ToTable("gmail_envio_conexiones");
+            b.Property(x => x.Email).IsRequired().HasMaxLength(320);
+            b.Property(x => x.RefreshTokenEncrypted).HasMaxLength(2048);
+            b.HasIndex(x => x.TenantId).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
         modelBuilder.Entity<PlatformBranding>(b =>

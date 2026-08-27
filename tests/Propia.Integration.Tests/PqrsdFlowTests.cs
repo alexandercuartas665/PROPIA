@@ -277,7 +277,9 @@ public class PqrsdFlowTests : IAsyncLifetime
         var db = scope.ServiceProvider.GetRequiredService<PropiaDbContext>();
         var http = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
         var noti = scope.ServiceProvider.GetRequiredService<Propia.Application.Notificaciones.INotificacionDispatcher>();
-        return (new PqrsdService(db, ctx, http, noti), db, scope);
+        var tareas = scope.ServiceProvider.GetRequiredService<Propia.Application.Tareas.ITareasService>();
+        var membrete = scope.ServiceProvider.GetRequiredService<Propia.Application.Documents.IMembreteDocumentBuilder>();
+        return (new PqrsdService(db, ctx, http, noti, tareas, membrete), db, scope);
     }
 
     private HttpContext BuildFakeHttpContext(Guid personaId)

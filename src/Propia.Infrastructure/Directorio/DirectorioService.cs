@@ -392,11 +392,11 @@ public class DirectorioService : IDirectorioService
     private static readonly IReadOnlyDictionary<RolUnidadPersona, string> RolEtiquetaNombre =
         new Dictionary<RolUnidadPersona, string>
         {
-            [RolUnidadPersona.Propietario]  = "Propietario",
-            [RolUnidadPersona.Residente]    = "Residente",
-            [RolUnidadPersona.Familiar]     = "Familiar",
+            [RolUnidadPersona.Propietario] = "Propietario",
+            [RolUnidadPersona.Residente] = "Residente",
+            [RolUnidadPersona.Familiar] = "Familiar",
             [RolUnidadPersona.Arrendatario] = "Arrendatario",
-            [RolUnidadPersona.Apoderado]    = "Apoderado",
+            [RolUnidadPersona.Apoderado] = "Apoderado",
         };
 
     /// <summary>
@@ -517,9 +517,17 @@ public class DirectorioService : IDirectorioService
             {
                 _db.EtiquetasCatalogo.Add(new EtiquetaCatalogo
                 {
-                    Codigo = b.Codigo, Nombre = b.Nombre, Grupo = b.Grupo, AplicaA = b.Aplica,
-                    EsBase = true, TieneLogicaEspecial = false, Icono = b.Icono, Color = b.Color,
-                    Orden = b.Orden, TenantId = null, Activo = true
+                    Codigo = b.Codigo,
+                    Nombre = b.Nombre,
+                    Grupo = b.Grupo,
+                    AplicaA = b.Aplica,
+                    EsBase = true,
+                    TieneLogicaEspecial = false,
+                    Icono = b.Icono,
+                    Color = b.Color,
+                    Orden = b.Orden,
+                    TenantId = null,
+                    Activo = true
                 });
                 cambios = true;
             }

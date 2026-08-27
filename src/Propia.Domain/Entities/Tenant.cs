@@ -78,6 +78,16 @@ public class Tenant : BaseEntity
     public string? ZonaFacturacion { get; set; }          // ej. Sur, Norte (distinta a Ciudad)
     public int? EstratoFacturacion { get; set; }
 
+    // ----- Membrete / identidad de documentos (header/footer de los PDF generados) -----
+    // Global de la copropiedad; se auto-rellena desde la identidad y se ajusta con estos campos.
+    public string? MembreteColorAcento { get; set; }        // hex; null = color de marca
+    public string? MembreteLineaLegal { get; set; }         // ej. "Vigilada - Ley 675 de 2001"
+    public string? MembreteContactoFooter { get; set; }     // override del contacto del footer; null = deriva de identidad
+    public string? MembreteFirmanteNombre { get; set; }
+    public string? MembreteFirmanteCargo { get; set; }
+    public bool MembreteMostrarLogo { get; set; } = true;
+    public bool MembreteMostrarNumeracion { get; set; } = true;
+
     public EstadoCopropiedad Estado { get; set; } = EstadoCopropiedad.Activa;
     public EstadoCustodia EstadoCustodia { get; set; } = EstadoCustodia.SinAdmin;
 

@@ -26,6 +26,7 @@ public class AdminIntegracionesController : ControllerBase
     private readonly IEvolutionMasterConfigService _evolution;
     private readonly IGoogleAuthConfigService _google;
     private readonly IBlobStorage _storage;
+    private readonly IGmailEnvioService _gmailEnvio;
 
     public AdminIntegracionesController(
         IEmailConfigService email,
@@ -36,7 +37,8 @@ public class AdminIntegracionesController : ControllerBase
         IWompiConfigService wompi,
         IEvolutionMasterConfigService evolution,
         IGoogleAuthConfigService google,
-        IBlobStorage storage)
+        IBlobStorage storage,
+        IGmailEnvioService gmailEnvio)
     {
         _email = email;
         _branding = branding;
@@ -47,6 +49,20 @@ public class AdminIntegracionesController : ControllerBase
         _evolution = evolution;
         _google = google;
         _storage = storage;
+        _gmailEnvio = gmailEnvio;
+    }
+
+    // -------------------- Gmail (envio de respuestas PQRSD): OAuth client dedicado --------------------
+
+    [HttpGet("gmail-envio-config")]
+    public async Task<IActionResult> GetGmailEnvioConfig(CancellationToken ct)
+        => Ok(await _gmailEnvio.ObtenerAppConfigAsync(ct) ?? new GmailEnvioAppConfigDto(null, false, false));
+
+    [HttpPut("gmail-envio-config")]
+    public async Task<IActionResult> SaveGmailEnvioConfig([FromBody] GuardarGmailEnvioAppConfigRequest req, CancellationToken ct)
+    {
+        await _gmailEnvio.GuardarAppConfigAsync(req, ct);
+        return Ok(await _gmailEnvio.ObtenerAppConfigAsync(ct));
     }
 
     // -------------------- Servidor de Correo --------------------

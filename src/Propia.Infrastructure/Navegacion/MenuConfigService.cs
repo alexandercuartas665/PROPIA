@@ -55,9 +55,13 @@ public sealed class MenuConfigService : IMenuConfigService
                 // Seccion NUEVA: se guarda completa (no existe en el base).
                 rows.Add(new MenuOverride
                 {
-                    NodeKey = s.Key, IsCustom = true, NodeType = "section",
-                    Label = Clean(s.Label) ?? "Seccion", SortOrder = s.Order,
-                    Icon = Clean(s.Icon) ?? "fi-rr-apps", Hidden = s.Hidden
+                    NodeKey = s.Key,
+                    IsCustom = true,
+                    NodeType = "section",
+                    Label = Clean(s.Label) ?? "Seccion",
+                    SortOrder = s.Order,
+                    Icon = Clean(s.Icon) ?? "fi-rr-apps",
+                    Hidden = s.Hidden
                 });
             }
             else if (sectionBase.TryGetValue(s.Key, out var sb))
@@ -82,8 +86,12 @@ public sealed class MenuConfigService : IMenuConfigService
                     // Item NUEVO: se guarda completo. Sin funcion todavia -> Href /proximamente.
                     rows.Add(new MenuOverride
                     {
-                        NodeKey = it.Key, IsCustom = true, NodeType = "item",
-                        Label = Clean(it.Label) ?? "Item", ParentKey = s.Key, SortOrder = it.Order,
+                        NodeKey = it.Key,
+                        IsCustom = true,
+                        NodeType = "item",
+                        Label = Clean(it.Label) ?? "Item",
+                        ParentKey = s.Key,
+                        SortOrder = it.Order,
                         Icon = Clean(it.Icon) ?? "fi-rr-clock-three",
                         Href = Clean(it.Href) ?? "/proximamente",
                         Hidden = it.Hidden

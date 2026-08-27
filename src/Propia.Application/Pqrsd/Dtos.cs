@@ -113,7 +113,10 @@ public record PqrsdExpedienteDetalleDto(
     int Progreso = 0,
     IReadOnlyList<PqrsdComentarioDto>? Comentarios = null,
     /// <summary>Dias habiles de prorroga acumulados (ya sumados a FechaVencimiento).</summary>
-    int ProrrogaDias = 0);
+    int ProrrogaDias = 0,
+    /// <summary>Correo del radicador (tercero) para responderle. Null si reserva de identidad o sin correo.</summary>
+    string? RadicadorCorreo = null,
+    string? RadicadorTelefono = null);
 
 public record PqrsdComentarioDto(Guid Id, string Texto, string? AutorNombre, DateTimeOffset CreatedAt, Guid? AutorUsuarioId = null);
 
@@ -242,10 +245,29 @@ public record PqrsdRespuestaDto(
     DateTimeOffset CreatedAt,
     bool Enviada,
     DateTimeOffset? EnviadaAt,
-    IReadOnlyList<PqrsdAdjuntoDto> Adjuntos);
+    IReadOnlyList<PqrsdAdjuntoDto> Adjuntos,
+    bool Archivada = false,
+    DateTimeOffset? ArchivadaAt = null,
+    int Versiones = 1,
+    IReadOnlyList<DestinatarioRespuestaDto>? Destinatarios = null);
+
+/// <summary>Destinatario de una respuesta: tercero del directorio (PersonaId) o correo suelto.</summary>
+public record DestinatarioRespuestaDto(Guid? PersonaId, string? Nombre, string Email);
+
+/// <summary>Una version historica del documento de respuesta.</summary>
+public record PqrsdRespuestaVersionDto(
+    int Numero,
+    string? Asunto,
+    string CuerpoHtml,
+    string? AutorNombre,
+    DateTimeOffset CreatedAt);
 
 /// <summary>Crea una respuesta borrador (aun sin enviar) con el contenido del editor.</summary>
-public record CrearRespuestaBorradorRequest(string? Asunto, string CuerpoHtml);
+public record CrearRespuestaBorradorRequest(string? Asunto, string CuerpoHtml,
+    IReadOnlyList<DestinatarioRespuestaDto>? Destinatarios = null);
+
+/// <summary>Archiva (true) o desarchiva (false) una respuesta.</summary>
+public record ArchivarRespuestaRequest(bool Archivar);
 
 // ===================== Plantillas de respuesta (combinacion de correspondencia) =====================
 

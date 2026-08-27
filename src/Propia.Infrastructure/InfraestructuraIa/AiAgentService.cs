@@ -285,8 +285,12 @@ public sealed class AiAgentService : IAiAgentService
         {
             _db.AiAgentPrompts.Add(new AiAgentPrompt
             {
-                TenantId = tenantId, AgentId = newId,
-                Name = p.Name, Rule = p.Rule, Body = p.Body, SortOrder = p.SortOrder
+                TenantId = tenantId,
+                AgentId = newId,
+                Name = p.Name,
+                Rule = p.Rule,
+                Body = p.Body,
+                SortOrder = p.SortOrder
             });
         }
 
@@ -295,9 +299,14 @@ public sealed class AiAgentService : IAiAgentService
         {
             _db.AiAgentResources.Add(new AiAgentResource
             {
-                TenantId = tenantId, AgentId = newId,
-                Name = r.Name, ResourceType = r.ResourceType, Detail = r.Detail,
-                FileUrl = r.FileUrl, FileName = r.FileName, SortOrder = r.SortOrder
+                TenantId = tenantId,
+                AgentId = newId,
+                Name = r.Name,
+                ResourceType = r.ResourceType,
+                Detail = r.Detail,
+                FileUrl = r.FileUrl,
+                FileName = r.FileName,
+                SortOrder = r.SortOrder
             });
         }
 
@@ -307,8 +316,10 @@ public sealed class AiAgentService : IAiAgentService
         {
             _db.AiAgentMcpTools.Add(new AiAgentMcpTool
             {
-                TenantId = tenantId, AgentId = newId,
-                ConnectionCode = t.ConnectionCode, ToolName = t.ToolName
+                TenantId = tenantId,
+                AgentId = newId,
+                ConnectionCode = t.ConnectionCode,
+                ToolName = t.ToolName
             });
         }
 

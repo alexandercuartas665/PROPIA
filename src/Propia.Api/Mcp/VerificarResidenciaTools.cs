@@ -74,7 +74,10 @@ public sealed class VerificarResidenciaTools
         {
             return new VerificacionResidenciaDto
             {
-                Encontrado = false, EsResidente = false, UnidadResuelta = resolved?.Label, CoincideUnidad = false,
+                Encontrado = false,
+                EsResidente = false,
+                UnidadResuelta = resolved?.Label,
+                CoincideUnidad = false,
                 Mensaje = $"El numero terminado en {last4} no figura vinculado a ninguna unidad de la copropiedad."
             };
         }

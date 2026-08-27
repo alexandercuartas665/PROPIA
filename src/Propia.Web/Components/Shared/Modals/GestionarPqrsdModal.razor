@@ -547,32 +547,75 @@
     <div class="gpq-pane" style="@(_detalle is not null && _tab == "responder" ? "" : "display:none")">
         @if (_detalle is not null)
         {
+            var _activas = _respuestas.Where(r => !r.Archivada).ToList();
+            var _archivadas = _respuestas.Where(r => r.Archivada).ToList();
             <div class="gpq-card">
                 <div class="gpq-resp-head">
                     <div class="gpq-card-eyebrow">RESPUESTAS AL SOLICITANTE</div>
-                    <button class="gpq-btn-brand" type="button" @onclick="NuevaRespuesta">+ Nueva respuesta</button>
+                    <div class="gpq-resp-head-actions">
+                        @if (_archivadas.Count > 0)
+                        {
+                            <button class="gpq-btn-ghost2" type="button" @onclick="() => _verArchivados = !_verArchivados">
+                                @(_verArchivados ? "Ver activas" : $"Archivados ({_archivadas.Count})")
+                            </button>
+                        }
+                        <button class="gpq-btn-brand" type="button" @onclick="NuevaRespuesta">+ Nueva respuesta</button>
+                    </div>
                 </div>
                 <div class="gpq-mini-hint">Redacta con un editor enriquecido; al guardar queda como tarjeta con su trazabilidad (autor y fecha) y puedes adjuntarle archivos. El envio al solicitante se trabajara despues.</div>
 
-                @if (_respuestas.Count == 0)
+                @if (!_verArchivados)
                 {
-                    <div class="gpq-empty" style="margin-top:12px;">Aun no hay respuestas. Crea la primera con "+ Nueva respuesta".</div>
+                    @if (_activas.Count == 0)
+                    {
+                        <div class="gpq-empty" style="margin-top:12px;">Aun no hay respuestas activas. Crea la primera con "+ Nueva respuesta".</div>
+                    }
+                    else
+                    {
+                        <div class="gpq-resp-cards">
+                            @foreach (var r in _activas)
+                            {
+                                var rr = r;
+                                <div class="gpq-resp-card" @onclick="() => VerRespuesta(rr)">
+                                    <div class="gpq-resp-card-top">
+                                        <span class="gpq-resp-card-asunto">@(string.IsNullOrWhiteSpace(r.Asunto) ? "(sin asunto)" : r.Asunto)</span>
+                                        <span class="gpq-resp-card-badges">
+                                            @if (r.Versiones > 1) { <span class="gpq-resp-card-ver">v@(r.Versiones)</span> }
+                                            <span class="gpq-resp-card-badge @(r.Enviada ? "env" : "bor")">@(r.Enviada ? "Enviada" : "Borrador")</span>
+                                        </span>
+                                    </div>
+                                    <div class="gpq-resp-card-prev">@ResumenHtml(r.CuerpoHtml)</div>
+                                    <div class="gpq-resp-card-foot">
+                                        <span class="gpq-resp-card-meta">@(string.IsNullOrWhiteSpace(r.AutorNombre) ? "Sistema" : r.AutorNombre) &middot; @r.CreatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm")@(r.Adjuntos.Count > 0 ? $" · {r.Adjuntos.Count} adj." : "")</span>
+                                        <button class="gpq-resp-card-arch" type="button" title="Archivar respuesta" @onclick:stopPropagation="true" @onclick="() => ArchivarRespuestaAsync(rr, true)">Archivar</button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
                 }
                 else
                 {
-                    <div class="gpq-resp-cards">
-                        @foreach (var r in _respuestas)
-                        {
-                            var rr = r;
-                            <button type="button" class="gpq-resp-card" @onclick="() => VerRespuesta(rr)">
-                                <div class="gpq-resp-card-top">
-                                    <span class="gpq-resp-card-asunto">@(string.IsNullOrWhiteSpace(r.Asunto) ? "(sin asunto)" : r.Asunto)</span>
-                                    <span class="gpq-resp-card-badge @(r.Enviada ? "env" : "bor")">@(r.Enviada ? "Enviada" : "Borrador")</span>
-                                </div>
-                                <div class="gpq-resp-card-prev">@ResumenHtml(r.CuerpoHtml)</div>
-                                <div class="gpq-resp-card-meta">@(r.AutorNombre ?? "-") &middot; @r.CreatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm")@(r.Adjuntos.Count > 0 ? $" · {r.Adjuntos.Count} adj." : "")</div>
-                            </button>
-                        }
+                    <div class="gpq-arch-wrap">
+                        <table class="gpq-arch-table">
+                            <thead>
+                                <tr><th>Asunto</th><th>Extracto</th><th>Usuario</th><th>Creada</th><th>Archivada</th><th></th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var r in _archivadas)
+                                {
+                                    var rr = r;
+                                    <tr>
+                                        <td><button class="gpq-arch-link" type="button" @onclick="() => VerRespuesta(rr)">@(string.IsNullOrWhiteSpace(r.Asunto) ? "(sin asunto)" : r.Asunto)</button></td>
+                                        <td class="gpq-arch-prev">@ResumenHtml(r.CuerpoHtml)</td>
+                                        <td>@(string.IsNullOrWhiteSpace(r.AutorNombre) ? "Sistema" : r.AutorNombre)</td>
+                                        <td class="gpq-arch-date">@r.CreatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm")</td>
+                                        <td class="gpq-arch-date">@(r.ArchivadaAt?.ToLocalTime().ToString("dd MMM yyyy HH:mm") ?? "-")</td>
+                                        <td><button class="gpq-arch-restore" type="button" @onclick="() => ArchivarRespuestaAsync(rr, false)">Restaurar</button></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
                     </div>
                 }
 
@@ -1231,16 +1274,39 @@
 
     /* ---- Respuestas tipo correo (tarjetas) ---- */
     .gpq-resp-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
-    .gpq-resp-cards { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
-    .gpq-resp-card { text-align: left; width: 100%; border: 1px solid #E7EDF3; border-radius: 12px; padding: 13px 15px; background: #fff; cursor: pointer; transition: background .12s, border-color .12s; font-family: inherit; }
+    .gpq-resp-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+    @@media (max-width: 900px) { .gpq-resp-cards { grid-template-columns: repeat(2, 1fr); } }
+    @@media (max-width: 620px) { .gpq-resp-cards { grid-template-columns: 1fr; } }
+    .gpq-resp-card { text-align: left; width: 100%; border: 1px solid #E7EDF3; border-radius: 12px; padding: 13px 15px; background: #fff; cursor: pointer; transition: background .12s, border-color .12s; font-family: inherit; display: flex; flex-direction: column; }
     .gpq-resp-card:hover { background: #F8F5FE; border-color: #D8CCF7; }
-    .gpq-resp-card-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-    .gpq-resp-card-asunto { font-size: 14px; font-weight: 800; color: #1B2A3A; }
-    .gpq-resp-card-badge { font-size: 9.5px; font-weight: 800; border-radius: 5px; padding: 3px 8px; letter-spacing: .3px; }
+    .gpq-resp-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .gpq-resp-card-asunto { font-size: 13.5px; font-weight: 800; color: #1B2A3A; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .gpq-resp-card-badges { display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; }
+    .gpq-resp-card-ver { font-size: 9px; font-weight: 800; color: #6D4FE3; background: #EEF1FB; border: 1px solid #DCD2F8; border-radius: 5px; padding: 2px 6px; }
+    .gpq-resp-card-badge { font-size: 9px; font-weight: 800; border-radius: 5px; padding: 3px 7px; letter-spacing: .3px; flex: 0 0 auto; }
     .gpq-resp-card-badge.bor { color: #9A6A00; background: #FFF8E6; }
     .gpq-resp-card-badge.env { color: #15703F; background: #E7F6EE; }
-    .gpq-resp-card-prev { font-size: 12.5px; color: #516F90; margin-top: 5px; line-height: 1.4; }
-    .gpq-resp-card-meta { font-size: 11px; color: #94A3B8; margin-top: 7px; }
+    .gpq-resp-card-prev { font-size: 12px; color: #516F90; margin-top: 6px; line-height: 1.4; flex: 1 1 auto;
+        display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    .gpq-resp-card-meta { font-size: 10.5px; color: #94A3B8; }
+    .gpq-resp-head-actions { display: flex; align-items: center; gap: 8px; }
+    .gpq-btn-ghost2 { font-size: 12px; font-weight: 700; color: #516F90; background: #fff; border: 1px solid #E1E8EE; border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+    .gpq-btn-ghost2:hover { background: #F6F8FB; border-color: #CBD6E2; }
+    .gpq-resp-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+    .gpq-resp-card-arch { flex: 0 0 auto; font-size: 10.5px; font-weight: 700; color: #94A3B8; background: transparent; border: 1px solid #E7EDF3; border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+    .gpq-resp-card-arch:hover { color: #9A6A00; border-color: #F0DCA6; background: #FFFBF0; }
+    /* Tabla de archivados */
+    .gpq-arch-wrap { margin-top: 12px; border: 1px solid #E7EDF3; border-radius: 12px; overflow: auto; }
+    .gpq-arch-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .gpq-arch-table thead th { text-align: left; font-size: 10px; font-weight: 800; letter-spacing: .04em; color: #7C98B6; text-transform: uppercase; padding: 10px 12px; background: #FAFBFD; border-bottom: 1px solid #EEF3F8; white-space: nowrap; }
+    .gpq-arch-table td { padding: 10px 12px; border-bottom: 1px solid #F1F5F9; color: #1B2A3A; vertical-align: top; }
+    .gpq-arch-table tr:last-child td { border-bottom: 0; }
+    .gpq-arch-link { font-weight: 700; color: #1B2A3A; background: transparent; border: 0; padding: 0; cursor: pointer; text-align: left; }
+    .gpq-arch-link:hover { color: var(--propia-brand, #6D4FE3); text-decoration: underline; }
+    .gpq-arch-prev { color: #516F90; max-width: 320px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .gpq-arch-date { color: #63748A; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .gpq-arch-restore { font-size: 11px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: #EEF1FB; border: 1px solid #DCD2F8; border-radius: 6px; padding: 4px 10px; cursor: pointer; white-space: nowrap; }
+    .gpq-arch-restore:hover { background: #E2E6FA; }
     .gpq-btn-warn:disabled { opacity: .5; cursor: not-allowed; }
 
     .gpq-form {
@@ -1532,6 +1598,7 @@
 
     // ---- Tab Responder: respuestas tipo correo (borradores con editor enriquecido) ----
     private List<PqrsdRespuestaDto> _respuestas = new();
+    private bool _verArchivados;
 
     private async Task AbrirTabResponder()
     {
@@ -1543,13 +1610,34 @@
     {
         try { _respuestas = (await Auth().GetFromJsonAsync<List<PqrsdRespuestaDto>>($"/api/pqrsd/{ExpedienteId}/respuestas")) ?? new(); }
         catch { _respuestas = new(); }
+        if (_respuestas.All(r => r.Archivada)) { /* si todo esta archivado, deja el toggle como este */ }
+        else if (!_respuestas.Any(r => r.Archivada)) _verArchivados = false;
         StateHasChanged();
+    }
+
+    /// <summary>Archiva o restaura una respuesta y recarga la lista.</summary>
+    private async Task ArchivarRespuestaAsync(PqrsdRespuestaDto r, bool archivar)
+    {
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{ExpedienteId}/respuestas/{r.Id}/archivar", new { Archivar = archivar });
+            if (resp.IsSuccessStatusCode)
+            {
+                _huboCambios = true;
+                await CargarRespuestasAsync();
+                if (!_respuestas.Any(x => x.Archivada)) _verArchivados = false;
+            }
+        }
+        catch { }
     }
 
     private async Task NuevaRespuesta()
     {
-        var parameters = new ModalParameters().Set("Jwt", Jwt).Set("ExpedienteId", ExpedienteId);
-        var options = new ModalOptions { Width = "1000px" };
+        var parameters = new ModalParameters().Set("Jwt", Jwt).Set("ExpedienteId", ExpedienteId)
+            .Set("DestinatarioNombre", _detalle?.RadicadorNombre)
+            .Set("DestinatarioCorreo", _detalle?.RadicadorCorreo)
+            .Set("DestinatarioTelefono", _detalle?.RadicadorTelefono);
+        var options = new ModalOptions { Width = "1240px", Height = "min(900px, 92vh)" };
         await Modals.OpenAsync<RedactarRespuestaPqrsdModal, bool>(parameters, options);
         _huboCambios = true;
         await CargarRespuestasAsync();
@@ -1557,8 +1645,11 @@
 
     private async Task VerRespuesta(PqrsdRespuestaDto r)
     {
-        var parameters = new ModalParameters().Set("Jwt", Jwt).Set("ExpedienteId", ExpedienteId).Set("Respuesta", r);
-        var options = new ModalOptions { Width = "1000px" };
+        var parameters = new ModalParameters().Set("Jwt", Jwt).Set("ExpedienteId", ExpedienteId).Set("Respuesta", r)
+            .Set("DestinatarioNombre", _detalle?.RadicadorNombre)
+            .Set("DestinatarioCorreo", _detalle?.RadicadorCorreo)
+            .Set("DestinatarioTelefono", _detalle?.RadicadorTelefono);
+        var options = new ModalOptions { Width = "1240px", Height = "min(900px, 92vh)" };
         await Modals.OpenAsync<RedactarRespuestaPqrsdModal, bool>(parameters, options);
         _huboCambios = true;
         await CargarRespuestasAsync();

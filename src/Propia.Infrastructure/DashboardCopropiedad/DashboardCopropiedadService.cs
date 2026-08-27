@@ -89,7 +89,9 @@ public class DashboardCopropiedadService : IDashboardCopropiedadService
                 .ToListAsync(ct))
             .Select(c => new
             {
-                c.Id, c.Proveedor, c.FechaFin,
+                c.Id,
+                c.Proveedor,
+                c.FechaFin,
                 Sem = MiCopropiedad.MiCopropiedadService.CalcularSemaforoContrato(c.FechaInicio, c.FechaFin, hoyC),
                 Dias = c.FechaFin!.Value.DayNumber - hoyC.DayNumber
             })
@@ -106,7 +108,9 @@ public class DashboardCopropiedadService : IDashboardCopropiedadService
                 .ToListAsync(ct))
             .Select(p => new
             {
-                p.Id, p.Aseguradora, p.FechaFin,
+                p.Id,
+                p.Aseguradora,
+                p.FechaFin,
                 Sem = MiCopropiedad.MiCopropiedadService.CalcularSemaforoContrato(p.FechaInicio ?? p.FechaFin!.Value, p.FechaFin, hoyC),
                 Dias = p.FechaFin!.Value.DayNumber - hoyC.DayNumber
             })
