@@ -40,14 +40,14 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
 
         // ---- Hoja de referencia (datos + rangos para dropdowns) ----
         var wsRef = wb.AddWorksheet("DATOS DE CARGA");
-        var (coproRange, rolesRange) = ConstruirReferencia(wsRef, copros, roles);
+        var (coproList, rolesList) = ConstruirReferencia(wsRef, copros, roles);
 
         // ---- Hojas de datos ----
-        HojaUnidades(wb, coproRange, camposUnidad);
-        HojaPersonas(wb, coproRange, rolesRange);
-        HojaVehiculos(wb, coproRange);
-        HojaMascotas(wb, coproRange);
-        HojaTerceros(wb, coproRange);
+        HojaUnidades(wb, coproList, camposUnidad);
+        HojaPersonas(wb, coproList, rolesList);
+        HojaVehiculos(wb, coproList);
+        HojaMascotas(wb, coproList);
+        HojaTerceros(wb, coproList);
 
         wsRef.SheetView.FreezeRows(3);
         using var ms = new MemoryStream();
@@ -55,8 +55,19 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         return (ms.ToArray(), "Plantilla carga unidades privadas.xlsx");
     }
 
+    // Construye la formula de validacion: lista INLINE si cabe (se ve en cualquier Excel),
+    // o referencia al RANGO de la hoja de datos si es muy larga / tiene comas.
+    private static string ListaFormula(IEnumerable<string> valores, string rangeFallback)
+    {
+        var vals = valores.Where(v => !string.IsNullOrWhiteSpace(v)).ToList();
+        var inline = string.Join(",", vals);
+        if (vals.Count > 0 && !vals.Any(v => v.Contains(',')) && inline.Length <= 250)
+            return "\"" + inline + "\"";
+        return rangeFallback;
+    }
+
     // ===================== Hoja de referencia =====================
-    private static (string CoproRange, string RolesRange) ConstruirReferencia(
+    private static (string CoproList, string RolesList) ConstruirReferencia(
         IXLWorksheet ws, List<(Guid Id, string Nombre, string? Codigo)> copros, List<string> roles)
     {
         ws.Cell(1, 1).Value = "DATOS DE CARGA - REFERENCIA";
@@ -79,6 +90,7 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         }
         var coproLast = Math.Max(5, r - 1);
         var coproRange = $"'DATOS DE CARGA'!$A$5:$A${coproLast}";
+        var coproList = ListaFormula(copros.Select(c => c.Nombre), coproRange);
 
         // Roles del sistema (para ROLL)
         ws.Cell(4, 5).Value = "ROL DEL SISTEMA";
@@ -87,9 +99,10 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         foreach (var rol in roles) ws.Cell(rr++, 5).Value = rol;
         var rolesLast = Math.Max(5, rr - 1);
         var rolesRange = $"'DATOS DE CARGA'!$E$5:$E${rolesLast}";
+        var rolesList = ListaFormula(roles, rolesRange);
 
         ws.Columns(1, 5).AdjustToContents();
-        return (coproRange, rolesRange);
+        return (coproList, rolesList);
     }
 
     // ===================== Hojas de datos =====================
@@ -210,18 +223,25 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         return ws;
     }
 
-    private static void Dropdown(IXLWorksheet ws, int col, string rangeFormula)
-    {
-        var dv = ws.Range(DataStart, col, MaxRows, col).CreateDataValidation();
-        dv.List(rangeFormula, true);
-        dv.IgnoreBlanks = true;
-    }
+    private static void Dropdown(IXLWorksheet ws, int col, string listFormula)
+        => AplicarLista(ws, col, listFormula);
 
     private static void DropdownInline(IXLWorksheet ws, int col, string csv)
+        => AplicarLista(ws, col, "\"" + csv + "\"");
+
+    private static void AplicarLista(IXLWorksheet ws, int col, string listFormula)
     {
         var dv = ws.Range(DataStart, col, MaxRows, col).CreateDataValidation();
-        dv.List("\"" + csv + "\"", true);
+        dv.List(listFormula, true);
         dv.IgnoreBlanks = true;
+        // Rechaza valores fuera de la lista y muestra ayuda al seleccionar la celda.
+        dv.ErrorStyle = XLErrorStyle.Stop;
+        dv.ShowErrorMessage = true;
+        dv.ErrorTitle = "Valor no valido";
+        dv.ErrorMessage = "Elige un valor de la lista desplegable.";
+        dv.ShowInputMessage = true;
+        dv.InputTitle = "Lista";
+        dv.InputMessage = "Haz clic en la flecha y elige de la lista.";
     }
 
     private static void Ajustar(IXLWorksheet ws, int nCols)

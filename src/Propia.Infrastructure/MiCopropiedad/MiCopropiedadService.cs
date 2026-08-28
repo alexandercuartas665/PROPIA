@@ -205,6 +205,7 @@ public class MiCopropiedadService : IMiCopropiedadService
             Estado = req.Estado,
             Observaciones = req.Observaciones,
             MatriculaInmobiliaria = req.MatriculaInmobiliaria,
+            ReferenciaPago = req.ReferenciaPago,
             PagaAdministracion = req.PagaAdministracion,
             CuotaMensual = req.CuotaMensual
         };

@@ -26,8 +26,9 @@ public class MiCopropiedadController : ControllerBase
     private readonly IDistribucionImportService _import;
     private readonly IPlantillasService _plantillas;
     private readonly IUnidadesPlantillaService _plantillaCarga;
+    private readonly IUnidadesCargaImportService _cargaImport;
 
-    public MiCopropiedadController(IMiCopropiedadService svc, IPresupuestoService presupuesto, ICarteraService cartera, IBlobStorage storage, IDistribucionImportService import, IPlantillasService plantillas, IUnidadesPlantillaService plantillaCarga)
+    public MiCopropiedadController(IMiCopropiedadService svc, IPresupuestoService presupuesto, ICarteraService cartera, IBlobStorage storage, IDistribucionImportService import, IPlantillasService plantillas, IUnidadesPlantillaService plantillaCarga, IUnidadesCargaImportService cargaImport)
     {
         _svc = svc;
         _presupuesto = presupuesto;
@@ -36,6 +37,7 @@ public class MiCopropiedadController : ControllerBase
         _import = import;
         _plantillas = plantillas;
         _plantillaCarga = plantillaCarga;
+        _cargaImport = cargaImport;
     }
 
     private const string XlsxMime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -96,6 +98,22 @@ public class MiCopropiedadController : ControllerBase
     {
         var (bytes, nombre) = await _plantillaCarga.GenerarPlantillaCargaAsync(ct);
         return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", nombre);
+    }
+
+    /// <summary>Procesa la plantilla Excel multi-hoja: carga unidades/personas/vehiculos/mascotas en
+    /// una o varias copropiedades del cliente. Devuelve el resumen + errores por fila.</summary>
+    [HttpPost("distribucion/importar-carga")]
+    [RequestSizeLimit(15 * 1024 * 1024)]
+    public async Task<IActionResult> ImportarCarga([FromForm] IFormFile? file, CancellationToken ct)
+    {
+        if (file is null || file.Length == 0) return BadRequest(new { error = "archivo_vacio" });
+        try
+        {
+            await using var s = file.OpenReadStream();
+            var res = await _cargaImport.ImportarAsync(s, ct);
+            return Ok(res);
+        }
+        catch (Exception ex) { return BadRequest(new { error = "archivo_invalido", detalle = ex.Message }); }
     }
 
     /// <summary>Procesa la plantilla subida: crea torres y unidades del tenant. Devuelve el resumen + errores por fila.</summary>

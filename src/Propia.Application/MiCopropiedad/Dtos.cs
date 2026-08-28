@@ -56,7 +56,7 @@ public record CrearUnidadRequest(
     int? Habitaciones, int? Banos, int? Parqueaderos,
     string? Estado, string? Observaciones,
     string? MatriculaInmobiliaria = null, bool PagaAdministracion = true,
-    decimal? CuotaMensual = null);
+    decimal? CuotaMensual = null, string? ReferenciaPago = null);
 
 /// <summary>Actualiza la ficha completa de una unidad (todos los campos editables).</summary>
 public record ActualizarUnidadRequest(

@@ -147,6 +147,7 @@ public static class DependencyInjection
         services.AddScoped<Application.MiCopropiedad.IMiCopropiedadService, MiCopropiedad.MiCopropiedadService>();
         services.AddScoped<Application.MiCopropiedad.IDistribucionImportService, MiCopropiedad.DistribucionImportService>();
         services.AddScoped<Application.MiCopropiedad.IUnidadesPlantillaService, MiCopropiedad.UnidadesPlantillaService>();
+        services.AddScoped<Application.MiCopropiedad.IUnidadesCargaImportService, MiCopropiedad.UnidadesCargaImportService>();
         services.AddScoped<Application.MiCopropiedad.IPlantillasService, MiCopropiedad.PlantillasService>();
 
         // Alta de copropiedades desde el selector (cliente autenticado)

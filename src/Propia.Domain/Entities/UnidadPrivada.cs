@@ -38,6 +38,9 @@ public class UnidadPrivada : TenantEntity
     /// <summary>Matricula inmobiliaria (folio de registro) - spec 2.3 seccion 2.</summary>
     public string? MatriculaInmobiliaria { get; set; }
 
+    /// <summary>Referencia de pago/recaudo de la unidad (alfanumerica). Usada en carga masiva y recaudo.</summary>
+    public string? ReferenciaPago { get; set; }
+
     /// <summary>Si la unidad paga cuota de administracion (un deposito/util puede no pagar).</summary>
     public bool PagaAdministracion { get; set; } = true;
 
