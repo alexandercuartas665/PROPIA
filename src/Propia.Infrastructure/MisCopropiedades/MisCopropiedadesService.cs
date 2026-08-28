@@ -80,7 +80,8 @@ public class MisCopropiedadesService : IMisCopropiedadesService
             OrganizacionId = organizacionId,
             Estado = EstadoCopropiedad.Activa,
             EstadoCustodia = EstadoCustodia.ConAdmin,
-            FechaActivacion = DateTimeOffset.UtcNow
+            FechaActivacion = DateTimeOffset.UtcNow,
+            CodigoCorto = await GenerarCodigoCortoUnicoAsync(ct)
         };
         _db.Tenants.Add(nuevo);
         await _db.SaveChangesAsync(ct);
@@ -163,5 +164,22 @@ public class MisCopropiedadesService : IMisCopropiedadesService
             if (abiertaAqui) await conn.CloseAsync();
         }
         return ids;
+    }
+
+    // Alfabeto sin caracteres ambiguos (sin O/0, I/1, L) para un codigo legible de 6 chars.
+    private const string CodigoAlfabeto = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+    private async Task<string> GenerarCodigoCortoUnicoAsync(CancellationToken ct)
+    {
+        for (var intento = 0; intento < 20; intento++)
+        {
+            var chars = new char[6];
+            for (var i = 0; i < 6; i++) chars[i] = CodigoAlfabeto[Random.Shared.Next(CodigoAlfabeto.Length)];
+            var code = new string(chars);
+            if (!await _db.Tenants.AsNoTracking().AnyAsync(t => t.CodigoCorto == code, ct))
+                return code;
+        }
+        // Extremadamente improbable; fallback con mas entropia.
+        return "C" + Guid.NewGuid().ToString("N")[..5].ToUpperInvariant();
     }
 }

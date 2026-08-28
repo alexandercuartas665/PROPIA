@@ -17,7 +17,10 @@ public class Tenant : BaseEntity
     public string? Direccion { get; set; }
     public string? Ciudad { get; set; }
     public string? Departamento { get; set; }
-    public string? CodigoPropia { get; set; }  // Codigo legible asignado por la plataforma
+    public string? CodigoPropia { get; set; }  // Codigo legible asignado por la plataforma (ej. PROPIA-0002)
+    /// <summary>Codigo corto (6 chars, alfanumerico sin ambiguos) unico, generado por el sistema.
+    /// Identificador amigable de la copropiedad para cargas/referencias.</summary>
+    public string? CodigoCorto { get; set; }
 
     // Datos para el modulo 2.3 Mi Copropiedad - seccion Identidad
     public TipoCopropiedad? TipoCopropiedad { get; set; }

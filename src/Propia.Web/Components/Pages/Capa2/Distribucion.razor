@@ -31,6 +31,10 @@
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>
                 Descargar plantilla
             </button>
+            <button class="dst-btn-soft" type="button" @onclick="DescargarPlantillaCargaExcelAsync" disabled="@_plantillaBusy" title="Plantilla Excel multi-hoja (unidades, personas, vehiculos, mascotas, terceros) con datos de referencia y listas">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>
+                @(_plantillaBusy ? "Generando..." : "Plantilla carga (Excel)")
+            </button>
             <label class="propia-btn-brand @(_impBusy ? "is-busy" : "")" style="cursor:pointer;" title="Cargar plantilla CSV (crea torres y unidades)">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21V9m0 0l-4 4m4-4l4 4M4 3h16"/></svg>
                 @(_impBusy ? "Cargando..." : "Cargar plantilla")
@@ -808,7 +812,26 @@ else
 
     // ===== Carga masiva por plantilla (reemplaza a "Gestionar unidades") =====
     private bool _impBusy;
+    private bool _plantillaBusy;
     private ImportarUnidadesResponse? _impResult;
+
+    // Plantilla Excel multi-hoja generada por el backend (con datos de referencia + dropdowns).
+    private async Task DescargarPlantillaCargaExcelAsync()
+    {
+        _plantillaBusy = true;
+        try
+        {
+            var resp = await Auth().GetAsync("/api/mi-copropiedad/distribucion/plantilla-carga");
+            if (resp.IsSuccessStatusCode)
+            {
+                var bytes = await resp.Content.ReadAsByteArrayAsync();
+                var b64 = Convert.ToBase64String(bytes);
+                await Js.InvokeVoidAsync("propiaUI.downloadBase64", "Plantilla carga unidades privadas.xlsx", b64);
+            }
+        }
+        catch { }
+        finally { _plantillaBusy = false; }
+    }
 
     // Plantilla CSV generada en cliente (formato que espera importar-csv: crea torres por nombre).
     private async Task DescargarPlantillaUnidadesAsync()

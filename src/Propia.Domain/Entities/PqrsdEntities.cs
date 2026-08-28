@@ -116,6 +116,19 @@ public class PqrsdPlantillaRespuesta : TenantEntity
 }
 
 /// <summary>
+/// Plantilla SEMILLA de respuesta PQRSD: catalogo GLOBAL administrado por el operador (Super Admin,
+/// Capa 0). Cada copropiedad nueva "nace" con una copia de estas plantillas en su propio catalogo
+/// (<see cref="PqrsdPlantillaRespuesta"/>), que luego puede editar sin afectar la semilla global.
+/// </summary>
+public class PqrsdPlantillaSemilla : BaseEntity
+{
+    public string Nombre { get; set; } = string.Empty;
+    public string CuerpoHtml { get; set; } = string.Empty;
+    public bool Activa { get; set; } = true;
+    public int Orden { get; set; }
+}
+
+/// <summary>
 /// Respuesta (borrador) del gestor a un expediente. A diferencia de <see cref="PqrsdExpediente.RespuestaAdmin"/>
 /// (respuesta legal unica), aqui pueden existir VARIAS respuestas tipo "correo": cada una con su cuerpo HTML
 /// enriquecido, su autor/fecha (trazabilidad) y sus propios adjuntos. El envio al radicador se agrega despues;

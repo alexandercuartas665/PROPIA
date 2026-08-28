@@ -146,6 +146,7 @@ public static class DependencyInjection
         // Modulo 2.3 Mi Copropiedad
         services.AddScoped<Application.MiCopropiedad.IMiCopropiedadService, MiCopropiedad.MiCopropiedadService>();
         services.AddScoped<Application.MiCopropiedad.IDistribucionImportService, MiCopropiedad.DistribucionImportService>();
+        services.AddScoped<Application.MiCopropiedad.IUnidadesPlantillaService, MiCopropiedad.UnidadesPlantillaService>();
         services.AddScoped<Application.MiCopropiedad.IPlantillasService, MiCopropiedad.PlantillasService>();
 
         // Alta de copropiedades desde el selector (cliente autenticado)
@@ -196,6 +197,7 @@ public static class DependencyInjection
         // Modulo 2.9 PQRSD y Convivencia
         services.AddScoped<Application.Pqrsd.IPqrsdService, Pqrsd.PqrsdService>();
         services.AddScoped<Application.Pqrsd.IPqrsdRespuestaPdfService, Pqrsd.PqrsdRespuestaPdfService>();
+        services.AddScoped<Application.Pqrsd.IPqrsdPlantillaSemillaService, Pqrsd.PqrsdPlantillaSemillaService>();
 
         // Documentos con membrete (header/footer configurable) - HTML compuesto reutilizable
         services.AddSingleton<Application.Documents.IMembreteDocumentBuilder, Documents.MembreteDocumentBuilder>();

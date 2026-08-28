@@ -1204,9 +1204,38 @@ public class PqrsdService : IPqrsdService
         => _tokensPlantilla.Select(t => new PqrsdTokenDto("{" + t.Token + "}", t.Desc)).ToList();
 
     public async Task<IReadOnlyList<PqrsdPlantillaDto>> ListarPlantillasAsync(CancellationToken ct)
-        => await _db.PqrsdPlantillasRespuesta.AsNoTracking().Where(p => p.Activa)
+    {
+        await SembrarPlantillasDesdeSemillaSiVacioAsync(ct);
+        return await _db.PqrsdPlantillasRespuesta.AsNoTracking().Where(p => p.Activa)
             .OrderBy(p => p.Orden).ThenBy(p => p.Nombre)
             .Select(p => new PqrsdPlantillaDto(p.Id, p.Nombre, p.CuerpoHtml)).ToListAsync(ct);
+    }
+
+    // "Nace con" las plantillas: si la copropiedad no tiene NINGUNA plantilla propia, copia las
+    // semillas activas del catalogo global (Super Admin). Idempotente: solo actua si esta vacio,
+    // asi el admin puede borrar las que no quiera sin que reaparezcan. Corre en el contexto del
+    // tenant actual (RLS ok: inserta filas de su propio tenant_id).
+    private async Task SembrarPlantillasDesdeSemillaSiVacioAsync(CancellationToken ct)
+    {
+        var tenantId = _tenantContext.CurrentTenantId;
+        if (tenantId is null) return;
+        if (await _db.PqrsdPlantillasRespuesta.AnyAsync(ct)) return;   // ya tiene (query filter -> del tenant)
+
+        var semillas = await _db.PqrsdPlantillasSemilla.AsNoTracking()
+            .Where(s => s.Activa).OrderBy(s => s.Orden).ThenBy(s => s.Nombre).ToListAsync(ct);
+        if (semillas.Count == 0) return;
+
+        foreach (var s in semillas)
+            _db.PqrsdPlantillasRespuesta.Add(new PqrsdPlantillaRespuesta
+            {
+                TenantId = tenantId.Value,
+                Nombre = s.Nombre,
+                CuerpoHtml = s.CuerpoHtml,
+                Activa = true,
+                Orden = s.Orden
+            });
+        await _db.SaveChangesAsync(ct);
+    }
 
     public async Task<PqrsdPlantillaDto> CrearPlantillaAsync(GuardarPlantillaRequest req, CancellationToken ct)
     {

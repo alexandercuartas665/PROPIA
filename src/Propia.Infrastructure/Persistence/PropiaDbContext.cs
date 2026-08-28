@@ -208,6 +208,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<PqrsdRespuestaVersion> PqrsdRespuestaVersiones => Set<PqrsdRespuestaVersion>();
     public DbSet<PqrsdRespuestaDestinatario> PqrsdRespuestaDestinatarios => Set<PqrsdRespuestaDestinatario>();
     public DbSet<PqrsdPlantillaRespuesta> PqrsdPlantillasRespuesta => Set<PqrsdPlantillaRespuesta>();
+    public DbSet<PqrsdPlantillaSemilla> PqrsdPlantillasSemilla => Set<PqrsdPlantillaSemilla>();
     public DbSet<PqrsdTipo> PqrsdTipos => Set<PqrsdTipo>();
 
     // Motivos de cierre configurables (compartido Tareas/PQRSD via discriminador Modulo)
@@ -396,6 +397,8 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.Nit).HasMaxLength(20);
             b.Property(x => x.CodigoPropia).HasMaxLength(20);
             b.HasIndex(x => x.CodigoPropia).IsUnique().HasFilter("codigo_propia IS NOT NULL");
+            b.Property(x => x.CodigoCorto).HasMaxLength(6);
+            b.HasIndex(x => x.CodigoCorto).IsUnique().HasFilter("codigo_corto IS NOT NULL");
             b.HasIndex(x => x.Nit).HasFilter("nit IS NOT NULL");
 
             b.HasOne(x => x.Organizacion)
@@ -1711,6 +1714,14 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.CuerpoHtml).IsRequired().HasColumnType("text");
             b.HasIndex(x => x.TenantId);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // Catalogo GLOBAL de plantillas semilla (operado por Super Admin). Sin tenant_id, sin RLS.
+        modelBuilder.Entity<PqrsdPlantillaSemilla>(b =>
+        {
+            b.ToTable("pqrsd_plantillas_semilla");
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(200);
+            b.Property(x => x.CuerpoHtml).IsRequired().HasColumnType("text");
         });
 
         modelBuilder.Entity<PqrsdHistorialEstado>(b =>

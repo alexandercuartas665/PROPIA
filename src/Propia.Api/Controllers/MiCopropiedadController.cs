@@ -25,8 +25,9 @@ public class MiCopropiedadController : ControllerBase
     private readonly IBlobStorage _storage;
     private readonly IDistribucionImportService _import;
     private readonly IPlantillasService _plantillas;
+    private readonly IUnidadesPlantillaService _plantillaCarga;
 
-    public MiCopropiedadController(IMiCopropiedadService svc, IPresupuestoService presupuesto, ICarteraService cartera, IBlobStorage storage, IDistribucionImportService import, IPlantillasService plantillas)
+    public MiCopropiedadController(IMiCopropiedadService svc, IPresupuestoService presupuesto, ICarteraService cartera, IBlobStorage storage, IDistribucionImportService import, IPlantillasService plantillas, IUnidadesPlantillaService plantillaCarga)
     {
         _svc = svc;
         _presupuesto = presupuesto;
@@ -34,6 +35,7 @@ public class MiCopropiedadController : ControllerBase
         _storage = storage;
         _import = import;
         _plantillas = plantillas;
+        _plantillaCarga = plantillaCarga;
     }
 
     private const string XlsxMime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -85,6 +87,15 @@ public class MiCopropiedadController : ControllerBase
         var bytes = _import.GenerarPlantilla();
         return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "plantilla-distribucion-propia.xlsx");
+    }
+
+    /// <summary>Descarga la plantilla NUEVA multi-hoja (Unidades/Personas/Vehiculos/Mascotas/Terceros) con
+    /// datos de referencia (IDs de las copropiedades del cliente) y listas desplegables validadas.</summary>
+    [HttpGet("distribucion/plantilla-carga")]
+    public async Task<IActionResult> DescargarPlantillaCarga(CancellationToken ct)
+    {
+        var (bytes, nombre) = await _plantillaCarga.GenerarPlantillaCargaAsync(ct);
+        return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", nombre);
     }
 
     /// <summary>Procesa la plantilla subida: crea torres y unidades del tenant. Devuelve el resumen + errores por fila.</summary>

@@ -1,0 +1,159 @@
+@page "/plantillas-pqrsd"
+@rendermode InteractiveServer
+@using Propia.Application.Pqrsd
+@inject IHttpClientFactory HttpFactory
+@inject SuperAdminSession Session
+@inject NavigationManager Nav
+
+<PageTitle>Plantillas PQRSD (semilla)</PageTitle>
+
+@if (!Session.IsAuthenticated) { Nav.NavigateTo("/login", forceLoad: true); return; }
+
+<h1 class="h3 mb-1">Plantillas de respuesta PQRSD (semilla global)</h1>
+<p class="text-muted mb-4">Catalogo del operador. Cada copropiedad NUEVA nace con una copia de las plantillas <strong>activas</strong> y luego las edita a su gusto sin afectar estas. El cuerpo admite tokens con llaves simples.</p>
+
+@if (_cargando)
+{
+    <div class="text-center py-5"><div class="spinner-border"></div></div>
+}
+else
+{
+    <div class="row g-4">
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <strong>Plantillas (@_items.Count)</strong>
+                    <button class="btn btn-sm btn-dark" @onclick="Nueva">+ Nueva</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0 align-middle">
+                        <thead><tr><th>#</th><th>Nombre</th><th>Activa</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var p in _items.OrderBy(x => x.Orden))
+                            {
+                                <tr class="@(_edit?.Id == p.Id ? "table-active" : "")">
+                                    <td>@p.Orden</td>
+                                    <td>@p.Nombre</td>
+                                    <td>@(p.Activa ? "Si" : "No")</td>
+                                    <td class="text-end">
+                                        <button class="btn btn-sm btn-outline-dark" @onclick="() => Editar(p)">Editar</button>
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => Eliminar(p)">Eliminar</button>
+                                    </td>
+                                </tr>
+                            }
+                            @if (_items.Count == 0)
+                            {
+                                <tr><td colspan="4" class="text-muted text-center py-3">Sin plantillas. Crea la primera con "+ Nueva".</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card mt-3">
+                <div class="card-header bg-white"><strong>Tokens disponibles</strong></div>
+                <div class="card-body small text-muted">
+                    <code>{copropiedad.nombre}</code> <code>{copropiedad.nit}</code> <code>{copropiedad.direccion}</code> <code>{copropiedad.ciudad}</code>
+                    <code>{radicado.numero}</code> <code>{radicado.tipo}</code> <code>{radicado.categoria}</code> <code>{radicado.fecha}</code> <code>{radicado.estado}</code>
+                    <code>{solicitante.nombre}</code> <code>{solicitante.identificacion}</code> <code>{solicitante.correo}</code> <code>{solicitante.telefono}</code>
+                    <code>{unidad.numero}</code> <code>{unidad.torre}</code> <code>{gestor.nombre}</code> <code>{fecha.hoy}</code>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            @if (_edit is not null)
+            {
+                <div class="card">
+                    <div class="card-header bg-white"><strong>@(_edit.Id == Guid.Empty ? "Nueva plantilla" : "Editar plantilla")</strong></div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-8"><label class="form-label">Nombre</label><input class="form-control" @bind="_edit.Nombre" /></div>
+                            <div class="col-4"><label class="form-label">Orden</label><input type="number" class="form-control" @bind="_edit.Orden" /></div>
+                            <div class="col-12">
+                                <label class="form-label">Cuerpo (HTML con tokens)</label>
+                                <textarea class="form-control font-monospace" style="min-height:280px" @bind="_edit.CuerpoHtml"></textarea>
+                            </div>
+                            <div class="col-12">
+                                <div class="form-check"><input type="checkbox" class="form-check-input" id="act" @bind="_edit.Activa" /><label class="form-check-label" for="act">Activa (las copropiedades nuevas la heredan)</label></div>
+                            </div>
+                        </div>
+                        @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgCls mt-3">@_msg</div> }
+                        <div class="mt-3 d-flex gap-2">
+                            <button class="btn btn-dark" @onclick="Guardar" disabled="@_busy">@(_busy ? "Guardando..." : "Guardar")</button>
+                            <button class="btn btn-outline-secondary" @onclick="() => _edit = null" disabled="@_busy">Cancelar</button>
+                        </div>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="text-muted">Selecciona una plantilla para editar o crea una nueva.</div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private bool _cargando = true, _busy;
+    private string? _msg;
+    private string _msgCls = "alert-info";
+    private List<PqrsdPlantillaSemillaDto> _items = new();
+    private Editable? _edit;
+
+    private class Editable
+    {
+        public Guid Id { get; set; }
+        public string Nombre { get; set; } = "";
+        public string CuerpoHtml { get; set; } = "";
+        public bool Activa { get; set; } = true;
+        public int Orden { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        try { _items = (await Client().GetFromJsonAsync<List<PqrsdPlantillaSemillaDto>>("/admin/pqrsd-plantillas-semilla?incluirInactivas=true")) ?? new(); }
+        catch { _items = new(); }
+        finally { _cargando = false; }
+    }
+
+    private void Nueva() { _msg = null; _edit = new Editable { Orden = _items.Count }; }
+
+    private void Editar(PqrsdPlantillaSemillaDto p)
+    {
+        _msg = null;
+        _edit = new Editable { Id = p.Id, Nombre = p.Nombre, CuerpoHtml = p.CuerpoHtml, Activa = p.Activa, Orden = p.Orden };
+    }
+
+    private async Task Guardar()
+    {
+        if (_edit is null) return;
+        if (string.IsNullOrWhiteSpace(_edit.Nombre)) { _msg = "El nombre es obligatorio."; _msgCls = "alert-warning"; return; }
+        _busy = true; _msg = null;
+        try
+        {
+            var req = new GuardarPlantillaSemillaRequest(_edit.Nombre.Trim(), _edit.CuerpoHtml ?? "", _edit.Activa, _edit.Orden);
+            var resp = _edit.Id == Guid.Empty
+                ? await Client().PostAsJsonAsync("/admin/pqrsd-plantillas-semilla", req)
+                : await Client().PutAsJsonAsync($"/admin/pqrsd-plantillas-semilla/{_edit.Id}", req);
+            if (resp.IsSuccessStatusCode) { _edit = null; await CargarAsync(); _msg = "Guardado."; _msgCls = "alert-success"; }
+            else { _msg = $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}"; _msgCls = "alert-danger"; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task Eliminar(PqrsdPlantillaSemillaDto p)
+    {
+        var resp = await Client().DeleteAsync($"/admin/pqrsd-plantillas-semilla/{p.Id}");
+        if (resp.IsSuccessStatusCode) { if (_edit?.Id == p.Id) _edit = null; await CargarAsync(); }
+    }
+
+    private HttpClient Client()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Session.AccessToken!);
+        return http;
+    }
+}
