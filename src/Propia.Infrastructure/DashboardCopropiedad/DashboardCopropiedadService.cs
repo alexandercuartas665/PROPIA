@@ -175,6 +175,45 @@ public class DashboardCopropiedadService : IDashboardCopropiedadService
                 n.CreatedAt, n.TareaId != null))
             .ToList();
 
+        // 10. Dashboard v3 - graficas. Volumenes acotados (6 meses / 8 semanas): se traen solo las
+        //     fechas y se agrupa en memoria para no depender de traducciones EF de Year/Month/Date.
+        var inicioSerie = new DateTimeOffset(new DateTime(hoy.Year, hoy.Month, 1, 0, 0, 0, DateTimeKind.Utc)).AddMonths(-5);
+        var fTareas = await _db.Tareas.AsNoTracking().Where(t => t.CreatedAt >= inicioSerie).Select(t => t.CreatedAt).ToListAsync(ct);
+        var fPqrs = await _db.PqrsdExpedientes.AsNoTracking().Where(p => p.CreatedAt >= inicioSerie).Select(p => p.CreatedAt).ToListAsync(ct);
+        var fNovs = await _db.NovedadesTurno.AsNoTracking().Where(n => n.CreatedAt >= inicioSerie).Select(n => n.CreatedAt).ToListAsync(ct);
+
+        var serieMensual = new List<SerieMensualDto>(6);
+        for (var i = 0; i < 6; i++)
+        {
+            var mes = inicioSerie.AddMonths(i);
+            serieMensual.Add(new SerieMensualDto(
+                mes.Year, mes.Month,
+                fTareas.Count(f => f.Year == mes.Year && f.Month == mes.Month),
+                fPqrs.Count(f => f.Year == mes.Year && f.Month == mes.Month),
+                fNovs.Count(f => f.Year == mes.Year && f.Month == mes.Month)));
+        }
+
+        var pqrsPorTipo = (await _db.PqrsdExpedientes.AsNoTracking()
+                .GroupBy(p => p.Tipo)
+                .Select(g => new { Tipo = g.Key, C = g.Count() })
+                .ToListAsync(ct))
+            .OrderByDescending(x => x.C)
+            .Select(x => new PqrsPorTipoDto(x.Tipo.ToString(), x.C))
+            .ToList();
+
+        // Heatmap: 8 semanas (56 dias) de actividad combinada tareas+pqrs+novedades por dia.
+        var inicioHm = DateTimeOffset.UtcNow.Date.AddDays(-55);
+        var porDia = fTareas.Concat(fPqrs).Concat(fNovs)
+            .Where(f => f >= inicioHm)
+            .GroupBy(f => DateOnly.FromDateTime(f.UtcDateTime.Date))
+            .ToDictionary(g => g.Key, g => g.Count());
+        var actividadDiaria = new List<ActividadDiaDto>(56);
+        for (var i = 0; i < 56; i++)
+        {
+            var dia = DateOnly.FromDateTime(inicioHm.AddDays(i));
+            actividadDiaria.Add(new ActividadDiaDto(dia, porDia.GetValueOrDefault(dia)));
+        }
+
         return new DashboardResumenDto(
             alertas,
             recaudoPct, unidadesEnMora, null,
@@ -186,7 +225,8 @@ public class DashboardCopropiedadService : IDashboardCopropiedadService
             polizasPorVencer,
             tareasPorEtapa,
             pqrsAbiertas, pqrsPorVencer, pqrsVencidas, pqrsProximas,
-            novedadesHoy, novedadesPorteria);
+            novedadesHoy, novedadesPorteria,
+            serieMensual, pqrsPorTipo, actividadDiaria);
     }
 
     public async Task<IReadOnlyList<AlertaDashboardDto>> ListarAlertasAsync(CancellationToken ct)

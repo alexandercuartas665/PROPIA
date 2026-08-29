@@ -51,34 +51,6 @@
         </div>
     </div>
 
-    @* ===== Alertas criticas ===== *@
-    @if (_d.Alertas.Any())
-    {
-        <div class="dsh-alertas">
-            <div class="dsh-alertas-head">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
-                <strong>Alertas críticas (@_d.Alertas.Count)</strong>
-            </div>
-            @* Con muchas alertas la banda se comia la pantalla: se muestran 3 y el resto colapsa. *@
-            @foreach (var a in (_alertasExp ? _d.Alertas : _d.Alertas.Take(3)))
-            {
-                var aid = a.Id;
-                <div class="dsh-alerta">
-                    <span class="dsh-alerta-tag">@a.Tipo</span>
-                    <span class="dsh-alerta-tx"><strong>@a.Titulo</strong> — @a.Descripcion</span>
-                    <button class="dsh-alerta-ok" @onclick="() => Resolver(aid)">Resolver</button>
-                </div>
-            }
-            @if (_d.Alertas.Count > 3)
-            {
-                <button class="dsh-alertas-more" @onclick="() => _alertasExp = !_alertasExp">
-                    @(_alertasExp ? "Mostrar menos" : $"Ver las {_d.Alertas.Count - 3} restantes")
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" style="transform:rotate(@(_alertasExp ? "180deg" : "0deg"))"><path d="M6 9l6 6 6-6"/></svg>
-                </button>
-            }
-        </div>
-    }
-
     @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
 
     @* ===== KPIs ===== *@
@@ -133,6 +105,94 @@
             <span class="dsh-kpi-l">Novedades de hoy</span>
         </a>
     </div>
+
+    @* ===== Graficas: actividad mensual (linea/area) + PQRSD por tipo (dona) ===== *@
+    @if (_d.SerieMensual is { Count: > 0 } serie)
+    {
+        <div class="dsh-rowcharts">
+            <div class="dsh-card">
+                <div class="dsh-card-head">
+                    <div class="dsh-card-t">Actividad de los últimos 6 meses</div>
+                    <div class="dsh-legend">
+                        <span class="dsh-leg"><i style="background:#6D4FE3"></i>Tareas</span>
+                        <span class="dsh-leg"><i style="background:#1D63D8"></i>PQRSD</span>
+                        <span class="dsh-leg"><i style="background:#16A34A"></i>Novedades</span>
+                    </div>
+                </div>
+                @{
+                    var maxSerie = Math.Max(4, serie.Max(s => Math.Max(s.Tareas, Math.Max(s.Pqrs, s.Novedades))));
+                }
+                <svg class="dsh-line" viewBox="0 0 640 210" preserveAspectRatio="none">
+                    <defs>
+                        <linearGradient id="dshArea" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="#6D4FE3" stop-opacity=".22" />
+                            <stop offset="100%" stop-color="#6D4FE3" stop-opacity="0" />
+                        </linearGradient>
+                    </defs>
+                    @for (var g = 0; g <= 4; g++)
+                    {
+                        var gy = Inv(16 + g * (150.0 / 4));
+                        <line x1="34" y1="@gy" x2="630" y2="@gy" stroke="#EEF1F6" stroke-width="1" />
+                        <g><text x="28" y="@Inv(16 + g * (150.0 / 4) + 4)" text-anchor="end" class="dsh-ax">@((int)Math.Round(maxSerie - g * (maxSerie / 4.0)))</text></g>
+                    }
+                    <path d="@AreaPath(serie, s => s.Tareas, maxSerie)" fill="url(#dshArea)" />
+                    <polyline points="@Puntos(serie, s => s.Tareas, maxSerie)" fill="none" stroke="#6D4FE3" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />
+                    <polyline points="@Puntos(serie, s => s.Pqrs, maxSerie)" fill="none" stroke="#1D63D8" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="1 0" />
+                    <polyline points="@Puntos(serie, s => s.Novedades, maxSerie)" fill="none" stroke="#16A34A" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+                    @for (var i = 0; i < serie.Count; i++)
+                    {
+                        var s = serie[i];
+                        <circle cx="@Cx(i, serie.Count)" cy="@Cy(s.Tareas, maxSerie)" r="3.4" fill="#fff" stroke="#6D4FE3" stroke-width="2.2"><title>@MesAbrev(s.Mes): @s.Tareas tareas</title></circle>
+                        <circle cx="@Cx(i, serie.Count)" cy="@Cy(s.Pqrs, maxSerie)" r="3" fill="#fff" stroke="#1D63D8" stroke-width="2"><title>@MesAbrev(s.Mes): @s.Pqrs PQRSD</title></circle>
+                        <circle cx="@Cx(i, serie.Count)" cy="@Cy(s.Novedades, maxSerie)" r="3" fill="#fff" stroke="#16A34A" stroke-width="2"><title>@MesAbrev(s.Mes): @s.Novedades novedades</title></circle>
+                        <g><text x="@Cx(i, serie.Count)" y="200" text-anchor="middle" class="dsh-ax">@MesAbrev(s.Mes)</text></g>
+                    }
+                </svg>
+            </div>
+
+            <div class="dsh-card">
+                <div class="dsh-card-head"><div class="dsh-card-t">PQRSD por tipo</div></div>
+                @if (_d.PqrsPorTipo is null || _d.PqrsPorTipo.Count == 0)
+                {
+                    <div class="dsh-empty">Aún no hay PQRSD radicadas.</div>
+                }
+                else
+                {
+                    var totalTipos = Math.Max(1, _d.PqrsPorTipo.Sum(x => x.Cantidad));
+                    var acumulado = 0.0;
+                    <div class="dsh-pie-wrap">
+                        <svg viewBox="0 0 100 100" class="dsh-pie">
+                            @for (var i = 0; i < _d.PqrsPorTipo.Count; i++)
+                            {
+                                var seg = _d.PqrsPorTipo[i];
+                                var frac = (double)seg.Cantidad / totalTipos;
+                                var largo = Inv(frac * 251.3);
+                                var offset = Inv(-acumulado * 251.3);
+                                acumulado += frac;
+                                <circle cx="50" cy="50" r="40" fill="none" stroke="@ColorTipo(i)" stroke-width="14"
+                                        stroke-dasharray="@largo 251.3" stroke-dashoffset="@offset" transform="rotate(-90 50 50)">
+                                    <title>@seg.Tipo: @seg.Cantidad</title>
+                                </circle>
+                            }
+                            <text x="50" y="48" text-anchor="middle" class="dsh-pie-n">@totalTipos</text>
+                            <text x="50" y="60" text-anchor="middle" class="dsh-pie-l">PQRSD</text>
+                        </svg>
+                        <div class="dsh-pie-leg">
+                            @for (var i = 0; i < _d.PqrsPorTipo.Count; i++)
+                            {
+                                var seg = _d.PqrsPorTipo[i];
+                                <div class="dsh-pie-item">
+                                    <i style="background:@ColorTipo(i)"></i>
+                                    <span class="dsh-pie-t">@seg.Tipo</span>
+                                    <span class="dsh-pie-v">@Math.Round(100.0 * seg.Cantidad / totalTipos)%</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
 
     @* ===== Fila principal: Tareas + PQRSD ===== *@
     <div class="dsh-row2">
@@ -212,8 +272,46 @@
         </div>
     </div>
 
-    @* ===== Fila secundaria: Vencimientos + Porteria + Actividad ===== *@
+    @* ===== Fila secundaria: Heatmap + Vencimientos + Porteria ===== *@
     <div class="dsh-row3">
+        <div class="dsh-card">
+            <div class="dsh-card-head">
+                <div class="dsh-card-t">Días más activos</div>
+                <span class="dsh-card-sub">últimas 8 semanas</span>
+            </div>
+            @if (_d.ActividadDiaria is { Count: > 0 })
+            {
+                var grid = HeatGrid(_d.ActividadDiaria);
+                var maxDia = Math.Max(1, _d.ActividadDiaria.Max(x => x.Cantidad));
+                <div class="dsh-heat">
+                    @for (var fila = 0; fila < 7; fila++)
+                    {
+                        <div class="dsh-heat-row">
+                            <span class="dsh-heat-lbl">@(new[] { "L", "M", "X", "J", "V", "S", "D" }[fila])</span>
+                            @foreach (var celda in grid[fila])
+                            {
+                                @if (celda.Dia is null)
+                                {
+                                    <span class="dsh-heat-c dsh-heat-c--off"></span>
+                                }
+                                else
+                                {
+                                    var alpha = celda.Cant == 0 ? 0.07 : 0.18 + 0.82 * celda.Cant / maxDia;
+                                    <span class="dsh-heat-c" style="background:rgba(109,79,227,@Inv(alpha))"
+                                          title="@(celda.Dia!.Value.ToString("dd MMM")): @(celda.Cant) actividades"></span>
+                                }
+                            }
+                        </div>
+                    }
+                    <div class="dsh-heat-foot"><span>Menos</span><span class="dsh-heat-c" style="background:rgba(109,79,227,.07)"></span><span class="dsh-heat-c" style="background:rgba(109,79,227,.35)"></span><span class="dsh-heat-c" style="background:rgba(109,79,227,.65)"></span><span class="dsh-heat-c" style="background:rgba(109,79,227,1)"></span><span>Más</span></div>
+                </div>
+            }
+            else
+            {
+                <div class="dsh-empty">Sin actividad registrada aún.</div>
+            }
+        </div>
+
         <div class="dsh-card">
             <div class="dsh-card-head">
                 <div class="dsh-card-t">Contratos y pólizas por vencer</div>
@@ -269,6 +367,42 @@
                         </div>
                     }
                 </div>
+            }
+        </div>
+
+    </div>
+
+    @* ===== Fila final: Alertas (reubicadas) + Actividad reciente ===== *@
+    <div class="dsh-row2">
+        <div class="dsh-card dsh-card--alertas">
+            <div class="dsh-card-head">
+                <div class="dsh-card-t dsh-t-rojo">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+                    Alertas críticas @(_d.Alertas.Count > 0 ? $"({_d.Alertas.Count})" : "")
+                </div>
+            </div>
+            @if (!_d.Alertas.Any())
+            {
+                <div class="dsh-empty">Sin alertas activas. Todo en orden.</div>
+            }
+            else
+            {
+                @foreach (var a in (_alertasExp ? _d.Alertas : _d.Alertas.Take(4)))
+                {
+                    var aid = a.Id;
+                    <div class="dsh-alerta">
+                        <span class="dsh-alerta-tag">@a.Tipo</span>
+                        <span class="dsh-alerta-tx"><strong>@a.Titulo</strong> — @a.Descripcion</span>
+                        <button class="dsh-alerta-ok" @onclick="() => Resolver(aid)">Resolver</button>
+                    </div>
+                }
+                @if (_d.Alertas.Count > 4)
+                {
+                    <button class="dsh-alertas-more" @onclick="() => _alertasExp = !_alertasExp">
+                        @(_alertasExp ? "Mostrar menos" : $"Ver las {_d.Alertas.Count - 4} restantes")
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" style="transform:rotate(@(_alertasExp ? "180deg" : "0deg"))"><path d="M6 9l6 6 6-6"/></svg>
+                    </button>
+                }
             }
         </div>
 
@@ -397,6 +531,47 @@
         if (d.TotalDays < 7) return $"hace {(int)d.TotalDays} d";
         return t.LocalDateTime.ToString("dd MMM");
     }
+
+    // ---------- Helpers de graficas (todo con InvariantCulture: es-CO usa coma decimal) ----------
+
+    /// <summary>Formatea un double para atributos SVG/CSS sin coma decimal.</summary>
+    private static string Inv(double v) => v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    // Area de dibujo de la linea: x en [34, 630], y en [16, 166] (150 px de alto util).
+    private static string Cx(int i, int n) => Inv(34 + i * (596.0 / Math.Max(1, n - 1)));
+    private static string Cy(int valor, int max) => Inv(166 - 150.0 * valor / Math.Max(1, max));
+
+    private static string Puntos(IReadOnlyList<SerieMensualDto> serie, Func<SerieMensualDto, int> sel, int max)
+        => string.Join(" ", serie.Select((s, i) => $"{Cx(i, serie.Count)},{Cy(sel(s), max)}"));
+
+    private static string AreaPath(IReadOnlyList<SerieMensualDto> serie, Func<SerieMensualDto, int> sel, int max)
+        => $"M {Cx(0, serie.Count)},166 L {Puntos(serie, sel, max).Replace(" ", " L ")} L {Cx(serie.Count - 1, serie.Count)},166 Z";
+
+    private static string MesAbrev(int mes)
+        => new[] { "ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic" }[Math.Clamp(mes, 1, 12) - 1];
+
+    private static readonly string[] PaletaTipos = { "#6D4FE3", "#1D63D8", "#12A5BC", "#E8A13C", "#E23A8E", "#94A3B8" };
+    private static string ColorTipo(int i) => PaletaTipos[i % PaletaTipos.Length];
+
+    /// <summary>Arma la matriz 7 filas (Lun..Dom) x N semanas del heatmap desde la lista de dias.</summary>
+    private static List<List<(DateOnly? Dia, int Cant)>> HeatGrid(IReadOnlyList<ActividadDiaDto> dias)
+    {
+        var offset = ((int)dias[0].Dia.DayOfWeek + 6) % 7;   // Lunes = 0
+        var cols = (offset + dias.Count + 6) / 7;
+        var grid = new List<List<(DateOnly?, int)>>();
+        for (var fila = 0; fila < 7; fila++)
+        {
+            var filaCeldas = new List<(DateOnly?, int)>();
+            for (var col = 0; col < cols; col++)
+            {
+                var idx = col * 7 + fila - offset;
+                if (idx < 0 || idx >= dias.Count) filaCeldas.Add((null, 0));
+                else filaCeldas.Add((dias[idx].Dia, dias[idx].Cantidad));
+            }
+            grid.Add(filaCeldas);
+        }
+        return grid;
+    }
 }
 
 <style>
@@ -502,6 +677,40 @@
 
     .dsh-hint { font-size: .8rem; color: #7C98B6; background: #FBFAFF; border: 1px dashed #D9D2F6; border-radius: 12px; padding: 10px 14px; }
     .dsh-hint a { color: #6D4FE3; font-weight: 700; }
+
+    /* ===== Graficas (v3) ===== */
+    .dsh-rowcharts { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; }
+    @@media (max-width: 1100px) { .dsh-rowcharts { grid-template-columns: 1fr; } }
+    .dsh-card-sub { font-size: .74rem; color: #9AABBE; font-weight: 600; }
+    .dsh-legend { display: flex; gap: 12px; flex-wrap: wrap; }
+    .dsh-leg { display: inline-flex; align-items: center; gap: 5px; font-size: .74rem; font-weight: 700; color: #516F90; }
+    .dsh-leg i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+    .dsh-line { width: 100%; height: auto; display: block; }
+    .dsh-ax { font-size: 10px; fill: #9AABBE; font-family: inherit; }
+
+    /* Dona por tipo */
+    .dsh-pie-wrap { display: flex; align-items: center; gap: 16px; }
+    .dsh-pie { width: 132px; height: 132px; flex: 0 0 132px; }
+    .dsh-pie-n { font-size: 17px; font-weight: 800; fill: #1B2A3A; font-family: inherit; }
+    .dsh-pie-l { font-size: 8.5px; font-weight: 700; fill: #9AABBE; font-family: inherit; letter-spacing: .08em; }
+    .dsh-pie-leg { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+    .dsh-pie-item { display: flex; align-items: center; gap: 7px; }
+    .dsh-pie-item i { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; }
+    .dsh-pie-t { flex: 1; min-width: 0; font-size: .8rem; font-weight: 600; color: #516F90; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dsh-pie-v { font-size: .8rem; font-weight: 800; color: #1B2A3A; }
+
+    /* Heatmap dias mas activos */
+    .dsh-heat { display: flex; flex-direction: column; gap: 4px; }
+    .dsh-heat-row { display: flex; align-items: center; gap: 4px; }
+    .dsh-heat-lbl { flex: 0 0 16px; font-size: .64rem; font-weight: 800; color: #9AABBE; text-align: center; }
+    .dsh-heat-c { flex: 1; aspect-ratio: 1; max-width: 26px; border-radius: 5px; }
+    .dsh-heat-c--off { background: transparent; }
+    .dsh-heat-foot { display: flex; align-items: center; gap: 5px; margin-top: 6px; font-size: .68rem; color: #9AABBE; }
+    .dsh-heat-foot .dsh-heat-c { flex: 0 0 14px; max-width: 14px; }
+
+    /* Tarjeta de alertas reubicada */
+    .dsh-card--alertas { border-color: #F3D4D4; background: #FFFBFB; }
+    .dsh-t-rojo { color: #C81E1E; display: inline-flex; align-items: center; gap: 6px; }
 
     /* Modo oscuro del tema (tokens bs del template) */
     [data-bs-theme="dark"] .dsh-card, [data-bs-theme="dark"] .dsh-kpi, [data-bs-theme="dark"] .dsh-chip, [data-bs-theme="dark"] .dsh-btn { background: var(--bs-body-bg); border-color: var(--bs-border-color); }

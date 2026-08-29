@@ -24,6 +24,15 @@ public record PqrDashboardDto(Guid Id, string NumeroRadicado, string Tipo, strin
 /// <summary>Novedad de porteria reciente para el widget del Dashboard.</summary>
 public record NovedadPorteriaDashboardDto(Guid Id, string Tipo, string Descripcion, string? GuardaNombre, DateTimeOffset OcurridoAt, bool GeneroTarea);
 
+/// <summary>Punto de la serie mensual de actividad (grafica de lineas del Dashboard).</summary>
+public record SerieMensualDto(int Anio, int Mes, int Tareas, int Pqrs, int Novedades);
+
+/// <summary>Distribucion de PQRSD por tipo (dona con porcentajes del Dashboard).</summary>
+public record PqrsPorTipoDto(string Tipo, int Cantidad);
+
+/// <summary>Actividad combinada de un dia (heatmap "dias mas activos" del Dashboard).</summary>
+public record ActividadDiaDto(DateOnly Dia, int Cantidad);
+
 public record DashboardResumenDto(
     // Banda alertas criticas
     IReadOnlyList<AlertaDashboardDto> Alertas,
@@ -54,7 +63,11 @@ public record DashboardResumenDto(
     int PqrsVencidas = 0,
     IReadOnlyList<PqrDashboardDto>? PqrsProximas = null,
     int NovedadesHoy = 0,
-    IReadOnlyList<NovedadPorteriaDashboardDto>? NovedadesPorteria = null);
+    IReadOnlyList<NovedadPorteriaDashboardDto>? NovedadesPorteria = null,
+    // ----- Dashboard v3: graficas (linea mensual, dona por tipo, heatmap diario) -----
+    IReadOnlyList<SerieMensualDto>? SerieMensual = null,
+    IReadOnlyList<PqrsPorTipoDto>? PqrsPorTipo = null,
+    IReadOnlyList<ActividadDiaDto>? ActividadDiaria = null);
 
 public record CrearAlertaRequest(TipoAlertaDashboard Tipo, SeveridadAlerta Severidad, string Titulo, string Descripcion, string? UrlAccion);
 public record CrearEventoFeedRequest(TipoEventoActividad Tipo, string Descripcion, string? ModuloCodigo, string? UrlItem);
