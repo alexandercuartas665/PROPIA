@@ -537,6 +537,12 @@ public class TareasService : ITareasService
         // Si es subtarea, el padre ahora se vuelve derivado: recalcular su progreso.
         if (req.PadreId.HasValue) await RecomputarProgresoAncestrosAsync(req.PadreId, ct);
 
+        // Notificar al responsable asignado (todos sus canales configurados).
+        if (asignado is { } asigNuevo)
+            await _noti.EnviarEventoUsuarioAsync(asigNuevo, $"Tarea asignada: {t.NumeroTarea}",
+                $"Te asignaron la tarea {t.NumeroTarea} - {t.Titulo}", "2.10", t.Id,
+                _tenantContext.CurrentTenantId, PrioridadNotificacion.Normal, ct);
+
         return (await GetTareaAsync(t.Id, ct))!;
     }
 
@@ -603,6 +609,12 @@ public class TareasService : ITareasService
             await RegistrarHistorial(t.Id, TipoEventoTarea.Actualizada, "Marcada como proyecto", null, null, ct);
         }
         await _db.SaveChangesAsync(ct);
+
+        // Notificar al nuevo responsable si cambio la asignacion (todos sus canales).
+        if (prevAsig != asignado && asignado is { } nuevoAsig)
+            await _noti.EnviarEventoUsuarioAsync(nuevoAsig, $"Tarea asignada: {t.NumeroTarea}",
+                $"Te asignaron la tarea {t.NumeroTarea} - {t.Titulo}", "2.10", t.Id,
+                _tenantContext.CurrentTenantId, PrioridadNotificacion.Normal, ct);
 
         // Estado (mismo flujo de historial que CambiarEstado).
         if (req.EstadoId.HasValue && req.EstadoId.Value != Guid.Empty && req.EstadoId.Value != t.EstadoId)
@@ -950,16 +962,11 @@ public class TareasService : ITareasService
             .Select(p => p.Id).Distinct().ToList();
         if (matches.Count == 0) return;
 
-        var lote = matches.Select(pid => new Propia.Application.Notificaciones.EnviarNotificacionRequest(
-            Canal: CanalNotificacion.InApp,
-            Cuerpo: $"Te mencionaron en la tarea {tarea.NumeroTarea} - {tarea.Titulo}",
-            TenantId: _tenantContext.CurrentTenantId,
-            PersonaDestinatariaId: pid,
-            Asunto: $"Mencion en {tarea.NumeroTarea}",
-            Prioridad: PrioridadNotificacion.Normal,
-            ModuloOrigenCodigo: "2.10",
-            EntidadOrigenId: tarea.Id));
-        await _noti.EnviarLoteAsync(lote, ct);
+        foreach (var pid in matches)
+            await _noti.EnviarEventoUsuarioAsync(pid,
+                $"Mencion en {tarea.NumeroTarea}",
+                $"Te mencionaron en la tarea {tarea.NumeroTarea} - {tarea.Titulo}",
+                "2.10", tarea.Id, _tenantContext.CurrentTenantId, PrioridadNotificacion.Normal, ct);
 
         foreach (var pid in matches)
         {

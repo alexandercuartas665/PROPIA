@@ -1,6 +1,6 @@
 ---
 name: homogenizar-vista-tabla
-description: Patron CANONICO unico de la "vista tabla" de PROPIA (toolbar, filtros, agrupar, campos, orden, header fijo, KPIs, expander, alta inline, edicion inline, bordes/colores). USA SIEMPRE que se cree o ajuste la vista tabla / modo tabla de cualquier modulo (Contratos, Seguros, Directorio, Unidades, Zonas, Equipos, Usuarios, PQRSD, etc.) o cuando el usuario hable de homogenizar tablas, boton "+ Agregar", header que se ve raro, KPIs de indicadores, columnas, o inline crear/editar desde la tabla. El objetivo es que TODOS los modulos queden IDENTICOS en tamano, comportamiento y estilo. Referencia viva: modulo Tareas (barra/header/alta) y Zonas Comunes (alta inline).
+description: Patron CANONICO unico de la "vista tabla" de PROPIA (toolbar, filtros, agrupar, campos, orden, header fijo, KPIs, expander, alta inline, edicion inline, bordes/colores). USA SIEMPRE que se cree o ajuste la vista tabla / modo tabla de cualquier modulo (Contratos, Seguros, Directorio, Unidades, Zonas, Equipos, Usuarios, PQRSD, etc.) o cuando el usuario hable de homogenizar tablas, boton "+ Agregar", header que se ve raro, columnas, o inline crear/editar desde la tabla. NOTA: los modulos ya NO usan tarjetas KPI/indicadores (ver seccion 7). El objetivo es que TODOS los modulos queden IDENTICOS en tamano, comportamiento y estilo. Referencia viva: modulo Tareas (barra/header/alta) y Zonas Comunes (alta inline).
 ---
 
 # Homogenizar la vista tabla de PROPIA
@@ -73,11 +73,13 @@ Fijo SOLO en vertical (sticky top) y OPACO; las filas pasan por DEBAJO. El heade
   header y parece que los datos pasan por detras). Separadores de fila en el `td`, no en el `tr`. Sombra
   opcional `box-shadow: 0 2px 4px -2px rgba(27,42,58,.12)`.
 
-## 7. KPIs (indicadores) - tamano de Tareas (tb-bkpi)
+## 7. Sin KPIs / indicadores (decision de producto)
 
-Clase compartida `.mod-stat*` (propia-tokens.css) ya alineada a tb-bkpi: tarjeta ~51px alto, icono 30x30
-radius 8, valor 17px, label 10.5px color #A6B7C8 peso 600, padding 7px 11px, radius 11.
-Grid: `repeat(auto-fit, minmax(128px,1fr))`, gap 8, margin-bottom 10. NO tarjeta grande, NO override local.
+Los modulos de vista tabla **NO** llevan tarjetas de indicadores (KPI). Se eliminaron por decision
+de producto: el header pasa directo del titulo/subtitulo a la barra de filtros, sin bloque `.mod-stats`.
+NO agregar tarjetas `.mod-stat`. Si un modulo usaba esas tarjetas como TABS (Directorio: Personas/Empresas,
+Usuarios: Activos/Pendientes/Inactivos), se reemplazan por **tabs de texto simples** (`.dir-tab` / `.usr-tab`:
+boton plano con subrayado inferior en el activo), no por tarjetas KPI.
 
 ## 8. Columna expander (primera) + ALTA INLINE
 

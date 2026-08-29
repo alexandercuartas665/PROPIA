@@ -2207,17 +2207,11 @@ public class PqrsdService : IPqrsdService
         if (destinatarios.Count == 0) return;
 
         var resumen = texto.Length > 120 ? texto[..120] + "..." : texto;
-        var lote = destinatarios.Select(pid =>
-            new Propia.Application.Notificaciones.EnviarNotificacionRequest(
-                Canal: Domain.Enums.CanalNotificacion.InApp,
-                Cuerpo: $"Te mencionaron en el PQR {exp.NumeroRadicado}: {resumen}",
-                TenantId: tenantId,
-                PersonaDestinatariaId: pid,
-                Asunto: $"Mencion en PQR {exp.NumeroRadicado}",
-                Prioridad: Domain.Enums.PrioridadNotificacion.Normal,
-                ModuloOrigenCodigo: "2.9",
-                EntidadOrigenId: exp.Id));
-        await _noti.EnviarLoteAsync(lote, ct);
+        foreach (var pid in destinatarios)
+            await _noti.EnviarEventoUsuarioAsync(pid,
+                $"Mencion en PQR {exp.NumeroRadicado}",
+                $"Te mencionaron en el PQR {exp.NumeroRadicado}: {resumen}",
+                "2.9", exp.Id, tenantId, Domain.Enums.PrioridadNotificacion.Normal, ct);
     }
 
     // Genera una tarea interna (modulo 2.10) a partir del PQR y la vincula (TareaId). Idempotente.
@@ -2253,10 +2247,16 @@ public class PqrsdService : IPqrsdService
         x.UnidadPrivadaId = req.UnidadPrivadaId;
 
         // Persona asignada (Guid.Empty = quitar; null = no tocar; otro = asignar validando)
+        var prevAsignado = x.AsignadoPersonaId;
+        Guid? asignadoNuevo = null;
         if (req.AsignadoPersonaId is { } aPid)
         {
             if (aPid == Guid.Empty) x.AsignadoPersonaId = null;
-            else if (await _db.Personas.AsNoTracking().AnyAsync(p => p.Id == aPid, ct)) x.AsignadoPersonaId = aPid;
+            else if (await _db.Personas.AsNoTracking().AnyAsync(p => p.Id == aPid, ct))
+            {
+                x.AsignadoPersonaId = aPid;
+                if (aPid != prevAsignado) asignadoNuevo = aPid;
+            }
             else throw new InvalidOperationException("La persona asignada no existe.");
         }
         if (req.Progreso is { } prog) x.Progreso = Math.Clamp(prog, 0, 100);
@@ -2302,6 +2302,13 @@ public class PqrsdService : IPqrsdService
 
         x.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
+
+        // Notificar al nuevo responsable del expediente (todos sus canales configurados).
+        if (asignadoNuevo is { } respPid)
+            await _noti.EnviarEventoUsuarioAsync(respPid, $"PQR asignado: {x.NumeroRadicado}",
+                $"Te asignaron como responsable del PQR {x.NumeroRadicado}", "2.9", x.Id,
+                _tenantContext.CurrentTenantId, Domain.Enums.PrioridadNotificacion.Normal, ct);
+
         return true;
     }
 
@@ -2352,6 +2359,17 @@ public class PqrsdService : IPqrsdService
             t.ModuloOrigenEntidadId = pqrId;
             await _db.SaveChangesAsync(ct);
         }
+
+        // Avisar al responsable del PQR que se creo una tarea en su expediente (todos sus canales).
+        var exp = await _db.PqrsdExpedientes.AsNoTracking()
+            .Where(x => x.Id == pqrId)
+            .Select(x => new { x.AsignadoPersonaId, x.NumeroRadicado })
+            .FirstOrDefaultAsync(ct);
+        if (exp?.AsignadoPersonaId is { } respPid)
+            await _noti.EnviarEventoUsuarioAsync(respPid, $"Nueva tarea en PQR {exp.NumeroRadicado}",
+                $"Se creo la tarea \"{req.Titulo.Trim()}\" en el PQR {exp.NumeroRadicado}", "2.9", det.Id,
+                _tenantContext.CurrentTenantId, Domain.Enums.PrioridadNotificacion.Normal, ct);
+
         return det.Id;
     }
 

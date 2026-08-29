@@ -17,14 +17,6 @@
 
 @* ====== HEADER ====== *@
 <div class="gum-header">
-    <div class="gum-header-icon">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="7" height="7" rx="1"/>
-            <rect x="14" y="3" width="7" height="7" rx="1"/>
-            <rect x="3" y="14" width="7" height="7" rx="1"/>
-            <rect x="14" y="14" width="7" height="7" rx="1"/>
-        </svg>
-    </div>
     <div class="gum-header-text">
         @* Sin numeral: Distribucion dejo de ser la seccion 2 del acordeon y es su propio modulo. *@
         <div class="gum-title">Gestionar unidades</div>
@@ -47,242 +39,33 @@
        sin seleccion (unidad no encontrada, unidad eliminada) reponen _arbolVisible por codigo. *@
     @if (_arbolVisible)
     {
+    @* Panel de creacion: solo el alta por codigo (se quito el arbol/CTAs/generador). *@
     <div class="gum-panel-left">
-        @if (_genToast > 0)
-        {
-            <div class="gum-toast-ok">
-                <div class="gum-toast-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg></div>
-                Estructura generada: <b>@_genToast unidades</b> creadas en el arbol.
+        <div class="gum-card-soft">
+            <div class="gum-card-title">Crear unidad por codigo</div>
+            <div class="gum-card-sub">
+                Un solo codigo con el formato <b>@AgrupacionLabelSingular.ToUpperInvariant()-APARTAMENTO</b>
+                (ej. <b>A1-202</b>): @(AgrupacionLabelSingular.ToLower()) A1, apartamento 202.
+                Si la @(AgrupacionLabelSingular.ToLower()) no existe, se crea sola; el @(PisoLabelSingular.ToLower()) se infiere del numero de apto.
             </div>
-        }
-
-        <div class="gum-summary">
-            <span class="gum-summary-strong">@_torres.Count @AgrupacionLabelPlural</span>
-            <span class="gum-summary-sep">-</span>
-            <span>@_unidades.Count unidades</span>
-            @if (_unidades.Count > 0)
+            <div class="gum-form-row">
+                <input class="gum-input gum-grow gum-code" @bind="_manCodigo" @bind:event="oninput" placeholder="A1-202" />
+                <select class="gum-input" @bind="_manTipo">
+                    @foreach (var t in Enum.GetValues<TipoUnidad>()) { <option value="@t">@t</option> }
+                </select>
+                <button class="gum-btn-brand" @onclick="AgregarUnidadPorCodigoAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_manCodigo))">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+                    Agregar
+                </button>
+            </div>
+            @if (!string.IsNullOrEmpty(_msg))
             {
-                var coefOk = Math.Abs(CoefTotal - 100m) < 0.01m;
-                <span class="gum-chip @(coefOk ? "" : "gum-chip--warn")">
-                    @if (coefOk)
-                    {
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>
-                    }
-                    else
-                    {
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 9v4M12 17h.01M4.93 19h14.14a2 2 0 0 0 1.73-3L13.73 4a2 2 0 0 0-3.46 0L3.2 16a2 2 0 0 0 1.73 3z"/></svg>
-                    }
-                    Coeficientes: @CoefTotal.ToString("0.##")%
-                </span>
-                @if (!coefOk)
-                {
-                    <button class="gum-rebal-btn" type="button" @onclick="Rebalancear" disabled="@_busy">
-                        @(_busy ? "Rebalanceando..." : "Rebalancear a 100%")
-                    </button>
-                }
+                <div class="gum-msg @(_msgError ? "gum-msg--err" : "gum-msg--ok")" style="margin-top:12px;">@_msg</div>
             }
         </div>
-
-        @* CTAs *@
-        <div class="gum-ctas">
-            <button class="gum-cta @(_mode == "manual" ? "gum-cta--active" : "")" @onclick='() => SetMode("manual")'>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
-                Agregar manual
-            </button>
-            <button class="gum-cta @(_mode == "import" ? "gum-cta--active" : "")" @onclick='() => SetMode("import")'>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
-                Importar Excel
-            </button>
-            <button class="gum-cta gum-cta--brand @(_mode == "gen" ? "gum-cta--active" : "")" @onclick='() => SetMode("gen")'>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L4.5 13H11l-1 9 8.5-11H12l1-9z"/></svg>
-                Generar automatico
-            </button>
-        </div>
-
-        @* Wizard inline segun modo *@
-        @if (_mode == "manual")
-        {
-            <div class="gum-card-soft">
-                <div class="gum-card-title">Agregar unidad manualmente</div>
-                <div class="gum-card-sub">Indica la torre y el piso: la unidad se incorpora al arbol junto a las demas.</div>
-                <div class="gum-form-row">
-                    <div class="gum-field gum-grow">
-                        <label class="gum-lbl">@AgrupacionLabelSingular</label>
-                        <select class="gum-input" @bind="ManTorreSel">
-                            @foreach (var t in _torres) { <option value="@t.Id">@t.Nombre</option> }
-                            <option value="__nueva__">@($"+ Nueva {AgrupacionLabelSingular.ToLower()}...")</option>
-                        </select>
-                    </div>
-                    <div class="gum-field" style="width:110px">
-                        <label class="gum-lbl">@PisoLabelSingular</label>
-                        <input type="number" min="1" class="gum-input" @bind="_manPiso" placeholder="1" />
-                    </div>
-                </div>
-                @if (_manNuevaTorre)
-                {
-                    <div class="gum-form-row">
-                        <input class="gum-input gum-grow" @bind="_manNuevaTorreNombre" @bind:event="oninput"
-                               placeholder="@($"Nombre de la nueva {AgrupacionLabelSingular.ToLower()} (ej. Torre A)")" />
-                    </div>
-                }
-                <div class="gum-form-row">
-                    <input class="gum-input gum-grow" @bind="_manNumero" @bind:event="oninput" placeholder="Identificador (ej. 1501)" />
-                    <select class="gum-input" @bind="_manTipo">
-                        @foreach (var t in Enum.GetValues<TipoUnidad>()) { <option value="@t">@t</option> }
-                    </select>
-                    <button class="gum-btn-brand" @onclick="AgregarUnidadManual" disabled="@(string.IsNullOrWhiteSpace(_manNumero))">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-                        Agregar
-                    </button>
-                </div>
-            </div>
-        }
-
-        @if (_mode == "gen")
-        {
-            <div class="gum-card-brand">
-                <div class="gum-genhead">
-                    <div class="gum-genicon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L4.5 13H11l-1 9 8.5-11H12l1-9z"/></svg></div>
-                    <div>
-                        <div class="gum-gen-title">Generador inteligente</div>
-                        <div class="gum-gen-sub">Configuralo una vez y crea toda la estructura</div>
-                    </div>
-                </div>
-                <div class="gum-lbl">Cuantas @AgrupacionLabelPlural.ToLower() tiene tu conjunto?</div>
-                <div class="gum-n-options">
-                    @for (int n = 1; n <= GenMaxChip; n++)
-                    {
-                        var i = n;
-                        <button class="gum-n @(_genN == i ? "gum-n--active" : "")" @onclick="() => SetGenN(i)">@i</button>
-                    }
-                    @if (_genN < GenTopeAgrupaciones)
-                    {
-                        <button class="gum-n gum-n--add" title="Agregar otra @AgrupacionLabelSingular.ToLower()"
-                                @onclick="() => SetGenN(_genN + 1)">+</button>
-                    }
-                </div>
-                <div class="gum-lbl">Nombre de cada @AgrupacionLabelSingular.ToLower()</div>
-                <div class="gum-grid3">
-                    @for (int i = 0; i < _genNombres.Count; i++)
-                    {
-                        var idx = i;
-                        <input class="gum-input" @bind="_genNombres[idx]" @bind:event="oninput" />
-                    }
-                </div>
-                <div class="gum-grid2">
-                    <div class="gum-field"><label class="gum-lbl">@(PisoLabelSingular)s por @AgrupacionLabelSingular.ToLower()</label><input class="gum-input" type="number" min="1" @bind="_genPisos" /></div>
-                    <div class="gum-field"><label class="gum-lbl">Unidades por @PisoLabelSingular.ToLower()</label><input class="gum-input" type="number" min="1" @bind="_genPorPiso" /></div>
-                </div>
-                <div class="gum-preview">
-                    <div class="gum-preview-eyebrow">VISTA PREVIA</div>
-                    <div class="gum-preview-chips">
-                        @foreach (var n in _genNombres)
-                        {
-                            <span class="gum-preview-chip">@n - @(_genPisos * _genPorPiso) unidades</span>
-                        }
-                    </div>
-                    <div class="gum-preview-total">Total: @GenTotal unidades a generar</div>
-                </div>
-                <div class="gum-gen-footer">
-                    <button class="gum-btn-ghost" @onclick='() => SetMode(null)'>Cancelar</button>
-                    <button class="gum-btn-brand" @onclick="EjecutarGenerador" disabled="@_busy">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L4.5 13H11l-1 9 8.5-11H12l1-9z"/></svg>
-                        Generar @GenTotal unidades
-                    </button>
-                </div>
-            </div>
-        }
-
-        @if (_mode == "import")
-        {
-            <div class="gum-card-soft">
-                <div class="gum-card-title">Importar distribucion desde Excel</div>
-                <div class="gum-card-sub">Descarga la plantilla, llena las hojas <b>Torres</b> y <b>Unidades</b> y subela. La plantilla trae un ejemplo cargable y una hoja de instrucciones.</div>
-
-                <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;">
-                    <button type="button" @onclick="DescargarPlantilla" disabled="@_impBusy"
-                            style="display:inline-flex;align-items:center;gap:7px;padding:9px 15px;border:1px solid #d7e0ea;border-radius:9px;background:#fff;color:#33475b;font-size:13px;font-weight:600;cursor:pointer;">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
-                        Descargar plantilla
-                    </button>
-                    <label class="gum-btn-brand" style="@(_impBusy ? "opacity:.6;pointer-events:none;" : "")">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
-                        @(_impBusy ? "Importando..." : "Subir archivo (.xlsx)")
-                        <InputFile OnChange="OnArchivoImport" accept=".xlsx" style="display:none" disabled="@_impBusy" />
-                    </label>
-                </div>
-
-                @if (_impResult is not null)
-                {
-                    <div style="margin-top:14px;border-top:1px solid #eef3f8;padding-top:12px;">
-                        <div style="font-size:13.5px;color:#1b2a3a;">
-                            Importadas <strong>@_impResult.UnidadesCreadas</strong> unidades y <strong>@_impResult.TorresCreadas</strong> torres.
-                            @if (_impResult.FilasConError > 0)
-                            {
-                                <span style="color:#b91c1c;font-weight:600;"> - @_impResult.FilasConError fila(s) con error</span>
-                            }
-                        </div>
-                        @if (_impResult.Errores.Count > 0)
-                        {
-                            <ul style="margin:8px 0 0;padding-left:18px;font-size:12px;color:#7c98b6;max-height:160px;overflow:auto;">
-                                @foreach (var er in _impResult.Errores.Take(20))
-                                {
-                                    <li><span style="color:#b45309;font-weight:600;">@er.Hoja fila @er.Fila:</span> @er.Mensaje</li>
-                                }
-                            </ul>
-                        }
-                    </div>
-                }
-            </div>
-        }
-
-        @* Lista de torres *@
-        @foreach (var t in _torres)
-        {
-            <div class="gum-torre">
-                <div class="gum-torre-headrow">
-                    <button class="gum-torre-head" @onclick="() => ToggleTorre(t.Id)">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
-                             style="@($"transform:rotate({(IsOpen(t.Id) ? 90 : 0)}deg);transition:transform .18s")">
-                            <path d="M9 6l6 6-6 6"/>
-                        </svg>
-                        <span class="gum-torre-name">@t.Nombre</span>
-                        <span class="gum-torre-meta">- @_unidades.Count(u => u.TorreId == t.Id) unidades</span>
-                    </button>
-                    <button class="gum-torre-del" @onclick="() => EliminarTorre(t)" disabled="@_busy" title="@($"Eliminar {AgrupacionLabelSingular.ToLower()}")">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
-                    </button>
-                </div>
-                @if (IsOpen(t.Id))
-                {
-                    <div class="gum-torre-body">
-                        @foreach (var grupo in _unidades.Where(u => u.TorreId == t.Id).GroupBy(u => u.Piso ?? 0).OrderBy(g => g.Key))
-                        {
-                            <div class="gum-piso">
-                                <span class="gum-piso-lbl">@PisoLabelSingular @grupo.Key</span>
-                                <div class="gum-piso-units">
-                                    @foreach (var u in grupo.OrderBy(x => x.Numero))
-                                    {
-                                        <button class="gum-unit @(_selected?.Id == u.Id ? "gum-unit--active" : "")" @onclick="() => SeleccionarUnidad(u)">@u.Numero</button>
-                                    }
-                                </div>
-                            </div>
-                        }
-                        @if (!_unidades.Any(u => u.TorreId == t.Id))
-                        {
-                            <div class="gum-torre-empty">Sin unidades. Usa "Agregar manual" o "Generador automatico".</div>
-                        }
-                    </div>
-                }
-            </div>
-        }
-
-        @if (!string.IsNullOrEmpty(_msg))
-        {
-            <div class="gum-msg @(_msgError ? "gum-msg--err" : "gum-msg--ok")">@_msg</div>
-        }
     </div>
     }
+
 
     @* ===== Panel DER - ficha unidad ===== *@
     <div class="gum-panel-right">
@@ -301,15 +84,6 @@
         else
         {
             <div class="gum-unit-head">
-                @* Solo en modo unidad-unica (desde la tabla): permite traer de vuelta el arbol para
-                   saltar a otra unidad sin cerrar el modal. *@
-                @if (OcultarArbol)
-                {
-                    <button class="gum-unit-toggle" type="button" @onclick="() => _arbolVisible = !_arbolVisible"
-                            title="@(_arbolVisible ? "Ocultar lista de unidades" : "Ver todas las unidades")">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
-                    </button>
-                }
                 <div class="gum-unit-avatar">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18M5 21V7l7-4 7 4v14M10 21v-4h4v4"/></svg>
                 </div>
@@ -1219,6 +993,8 @@
         background: #fff; outline: none;
         width: 100%; box-sizing: border-box; font-family: inherit;
     }
+    .gum-code { text-transform: uppercase; letter-spacing: .8px; font-weight: 700; }
+    .gum-code::placeholder { letter-spacing: normal; font-weight: 400; }
     .gum-input:focus { border-color: var(--propia-brand, #6D4FE3); }
 
     .gum-genhead { display: flex; align-items: center; gap: 9px; margin-bottom: 16px; }
@@ -2510,9 +2286,50 @@
         _busy = false;
     }
 
-    private async Task AgregarUnidadManual()
+    // Alta por codigo unico TORRE-PISO-UNIDAD (ej. A-3-101). Si la torre no existe, se crea.
+    private string _manCodigo = "";
+
+    private async Task AgregarUnidadPorCodigoAsync()
     {
-        if (string.IsNullOrWhiteSpace(_manNumero)) return;
+        var raw = (_manCodigo ?? "").Trim();
+        if (raw.Length == 0) return;
+
+        var parts = raw.Split(new[] { '-', '/' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length < 2)
+        {
+            ShowMsg("Usa el formato TORRE-APARTAMENTO, por ejemplo A1-202.", true);
+            return;
+        }
+        var torreToken = parts[0];
+        var numero = string.Join("-", parts.Skip(1)).Trim();
+        if (numero.Length == 0) { ShowMsg("Falta el numero del apartamento. Ejemplo: A1-202.", true); return; }
+        // El piso se infiere del numero de apto (202 -> 2, 1502 -> 15) cuando es numerico de 3+ digitos.
+        int? piso = (numero.Length >= 3 && numero.All(char.IsDigit) && int.TryParse(numero[..^2], out var f) && f > 0) ? f : (int?)null;
+
+        // Resolver torre por nombre exacto, por "Torre X" o por la ultima palabra del nombre.
+        var existe = _torres.FirstOrDefault(t =>
+            t.Nombre.Equals(torreToken, StringComparison.OrdinalIgnoreCase)
+            || t.Nombre.Equals($"{AgrupacionLabelSingular} {torreToken}", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(t.Nombre.Split(' ').LastOrDefault(), torreToken, StringComparison.OrdinalIgnoreCase));
+        if (existe is not null)
+        {
+            _manNuevaTorre = false;
+            _manTorreId = existe.Id;
+        }
+        else
+        {
+            _manNuevaTorre = true;
+            _manNuevaTorreNombre = torreToken.Length <= 4 ? $"{AgrupacionLabelSingular} {torreToken}" : torreToken;
+        }
+        _manPiso = piso;
+        _manNumero = numero;
+
+        if (await AgregarUnidadManualCore()) _manCodigo = "";
+    }
+
+    private async Task<bool> AgregarUnidadManualCore()
+    {
+        if (string.IsNullOrWhiteSpace(_manNumero)) return false;
 
         // Si el usuario eligio "+ Nueva torre...", la creamos primero y usamos su Id.
         if (_manNuevaTorre)
@@ -2521,7 +2338,7 @@
             if (string.IsNullOrWhiteSpace(nombre))
             {
                 ShowMsg($"Escribe el nombre de la nueva {AgrupacionLabelSingular.ToLower()}.", true);
-                return;
+                return false;
             }
             _busy = true;
             var existe = _torres.FirstOrDefault(t => t.Nombre.Equals(nombre, StringComparison.OrdinalIgnoreCase));
@@ -2536,10 +2353,10 @@
                 {
                     ShowMsg($"Error al crear {AgrupacionLabelSingular.ToLower()}: " + await respTorre.Content.ReadAsStringAsync(), true);
                     _busy = false;
-                    return;
+                    return false;
                 }
                 var nuevaTorre = await respTorre.Content.ReadFromJsonAsync<TorreDto>();
-                if (nuevaTorre is null) { ShowMsg($"Respuesta inesperada al crear {AgrupacionLabelSingular.ToLower()}.", true); _busy = false; return; }
+                if (nuevaTorre is null) { ShowMsg($"Respuesta inesperada al crear {AgrupacionLabelSingular.ToLower()}.", true); _busy = false; return false; }
                 _torres.Add(nuevaTorre);
                 _manTorreId = nuevaTorre.Id;
                 _huboCambios = true;
@@ -2549,11 +2366,12 @@
             _busy = false;
         }
 
-        if (_manTorreId == Guid.Empty) { ShowMsg($"Selecciona {AgrupacionLabelSingular.ToLower()}.", true); return; }
+        if (_manTorreId == Guid.Empty) { ShowMsg($"Selecciona {AgrupacionLabelSingular.ToLower()}.", true); return false; }
         _busy = true;
         var req = new CrearUnidadRequest(_manNumero.Trim(), _manTipo, _manTorreId, _manPiso, 0m, null, null, null, null, null, null);
         var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/unidades", req);
-        if (resp.IsSuccessStatusCode)
+        var ok = resp.IsSuccessStatusCode;
+        if (ok)
         {
             _manNumero = "";
             _huboCambios = true;
@@ -2562,6 +2380,7 @@
         }
         else { ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true); }
         _busy = false;
+        return ok;
     }
 
     private async Task EjecutarGenerador()

@@ -48,7 +48,9 @@ public record UnidadDto(
     string? Estado, string? Observaciones,
     string? MatriculaInmobiliaria = null, bool PagaAdministracion = true,
     decimal? CuotaMensual = null,
-    string? PropietarioNombre = null, int PropietariosCount = 0);
+    string? PropietarioNombre = null, int PropietariosCount = 0,
+    Guid? PrincipalId = null,     // si es un anexo (parqueadero/cuarto util), la unidad principal a la que pertenece
+    string? ReferenciaPago = null);
 
 public record CrearUnidadRequest(
     string Numero, TipoUnidad Tipo, Guid? TorreId, int? Piso,
@@ -65,7 +67,7 @@ public record ActualizarUnidadRequest(
     int? Habitaciones, int? Banos, int? Parqueaderos,
     string? Estado, string? Observaciones,
     string? MatriculaInmobiliaria, bool PagaAdministracion,
-    decimal? CuotaMensual = null);
+    decimal? CuotaMensual = null, string? ReferenciaPago = null);
 
 // ----- Vinculos entre unidades (seccion 2 - RN-09) -----
 public record UnidadVinculoDto(

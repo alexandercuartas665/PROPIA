@@ -82,45 +82,6 @@ else if (_loadError is not null)
 }
 else
 {
-    @* KPIs con la clase compartida estandar (.mod-stat, identicas a Seguros/Zonas/Tareas). *@
-    <div class="mod-stats">
-        <div class="mod-stat">
-            <div class="mod-stat-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M6 21V5h8v16M14 21V9h4v12M9 9h.01M9 13h.01M9 17h.01"/></svg></div>
-            <div>
-                <div class="mod-stat-n">@_torres.Count</div>
-                <div class="mod-stat-l">@LabelAgrupacionPlural.ToLower()</div>
-            </div>
-        </div>
-        <div class="mod-stat">
-            <div class="mod-stat-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-6 9 6v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg></div>
-            <div>
-                <div class="mod-stat-n">@_unidades.Count</div>
-                <div class="mod-stat-l">unidades</div>
-            </div>
-        </div>
-        @if (_unidades.Count > 0)
-        {
-            var suma = _unidades.Sum(u => u.CoeficientePropiedad);
-            var completo = Math.Abs(suma - 100m) < 0.01m;
-            <div class="mod-stat @(completo ? "mod-stat--ok" : "mod-stat--warn")">
-                <div class="mod-stat-icon">
-                    @if (completo)
-                    {
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12l5 5 9-11"/></svg>
-                    }
-                    else
-                    {
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
-                    }
-                </div>
-                <div>
-                    <div class="mod-stat-n">@(completo ? "100%" : suma.ToString("0.##") + "%")</div>
-                    <div class="mod-stat-l">@(completo ? "coeficientes" : "falta " + (100m - suma).ToString("0.##") + "%")</div>
-                </div>
-            </div>
-        }
-    </div>
-
     @* Filtros. Sin value= en el buscador: Blazor Server lo reafirma en cada re-render y
        se come pulsaciones mientras el round-trip esta en vuelo. *@
     @if (_unidades.Count > 0)
@@ -242,7 +203,9 @@ else
                             continue;
                         }
                         var uu = item.Unidad!;
-                        <div class="dst-row dst-grid2 @(_uniRecienCreados.Contains(uu.Id) ? "dst-row-nuevo" : "")" style="grid-template-columns:@GridCols">
+                        var esAnexo = item.EsAnexo;
+                        var nAnx = esAnexo ? 0 : Anexos(uu.Id).Count;
+                        <div class="dst-row dst-grid2 @(esAnexo ? "dst-row--anexo" : "") @(_uniRecienCreados.Contains(uu.Id) ? "dst-row-nuevo" : "")" style="grid-template-columns:@GridCols">
                             <div class="dst-exp-col">
                                 <button type="button" class="dst-exp" title="Abrir la ficha de la unidad" @onclick="() => AbrirFichaAsync(uu)">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -253,7 +216,10 @@ else
                                 switch (c.Key)
                                 {
                                     case "num":
-                                        <input class="dst-cell dst-cell-num" value="@uu.Numero" @onchange="@(e => Inline(uu, "num", e))" />
+                                        <div class="dst-numcell">
+                                            @if (esAnexo) { <span class="dst-anexo-branch" title="Anexo">&#8627;</span> }
+                                            <input class="dst-cell dst-cell-num" value="@uu.Numero" @onchange="@(e => Inline(uu, "num", e))" />
+                                        </div>
                                         break;
                                     case "torre":
                                         <select class="dst-cell" @onchange="@(e => Inline(uu, "torre", e))">
@@ -281,6 +247,18 @@ else
                                     case "coef":
                                         <input class="dst-cell" type="number" step="0.0001" value="@uu.CoeficientePropiedad.ToString(System.Globalization.CultureInfo.InvariantCulture)" @onchange="@(e => Inline(uu, "coef", e))" />
                                         break;
+                                    case "agrupacion":
+                                        <div class="dst-c dst-ro">
+                                            @{ var agr = AgrupacionDe(uu); }
+                                            <span class="dst-agr dst-agr--@agr.ToLowerInvariant()">@agr</span>
+                                        </div>
+                                        break;
+                                    case "matricula":
+                                        <input class="dst-cell" value="@(uu.MatriculaInmobiliaria ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "matricula", e))" />
+                                        break;
+                                    case "refpago":
+                                        <input class="dst-cell" value="@(uu.ReferenciaPago ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "refpago", e))" />
+                                        break;
                                     case "prop":
                                         <div class="dst-c dst-ro">
                                             @if (string.IsNullOrWhiteSpace(uu.PropietarioNombre)) { <span class="dst-sin">Sin propietario</span> }
@@ -293,14 +271,40 @@ else
                                         break;
                                 }
                             }
-                            <div></div>
+                            <div class="dst-anx-cell">
+                                @if (!esAnexo)
+                                {
+                                    @if (nAnx > 0)
+                                    {
+                                        <button class="dst-anx-toggle" type="button" @onclick="() => ToggleAnexos(uu.Id)" title="Ver anexos (parqueaderos, cuartos utiles, bodegas)">
+                                            @if (_anexosExpandidos.Contains(uu.Id)) { <span>&#9662;</span> } else { <span>&#9656;</span> }
+                                            <span>@nAnx</span>
+                                        </button>
+                                    }
+                                    <button class="dst-anx-add" type="button" @onclick="() => AbrirAgregarAnexo(uu)" title="Agregar anexo (parqueadero / cuarto util / bodega)">+ anexo</button>
+                                }
+                            </div>
                         </div>
+                        @if (!esAnexo && _anexoAddPara == uu.Id)
+                        {
+                            <div class="dst-anexoadd">
+                                <span class="dst-anexoadd-lbl">&#8627; Nuevo anexo de <strong>@uu.Numero</strong></span>
+                                <select class="dst-nf-inp dst-anexoadd-tipo" @bind="_anexoTipo">
+                                    <option value="@TipoUnidad.Parqueadero">Parqueadero</option>
+                                    <option value="@TipoUnidad.UtilCuarto">Cuarto util</option>
+                                    <option value="@TipoUnidad.Bodega">Bodega</option>
+                                </select>
+                                <input class="dst-nf-inp dst-anexoadd-num" placeholder="Numero (ej. P-12)" @bind="_anexoNum" @bind:event="oninput" />
+                                <button class="dst-row-add" type="button" @onclick="() => CrearAnexoAsync(uu)" disabled="@(_creandoAnexo || string.IsNullOrWhiteSpace(_anexoNum))">@(_creandoAnexo ? "..." : "Agregar")</button>
+                                <button class="dst-anx-cancel" type="button" @onclick="@(() => { _anexoAddPara = null; _anexoNum = string.Empty; })">Cancelar</button>
+                            </div>
+                        }
                     }
                     @* Fila de alta inline: crear unidad desde la tabla (como Zonas/Seguros). El propietario
                        se asigna despues en la ficha (expander). El expander de esta fila crea y abre la ficha. *@
                     <div class="dst-row dst-newrow dst-grid2" style="grid-template-columns:@GridCols">
                         <div class="dst-exp-col">
-                            <button type="button" class="dst-exp dst-exp-fijo" title="Crear y abrir la ficha" @onclick="() => CrearUnidadDesdeAltaAsync(true)" disabled="@_creandoUnidad">
+                            <button type="button" class="dst-exp dst-exp-fijo" title="@(string.IsNullOrWhiteSpace(_nuNum) ? "Abrir el modal de creacion" : "Crear y abrir la ficha")" @onclick="OnExpandNuevaFila" disabled="@_creandoUnidad">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                             </button>
                         </div>
@@ -309,16 +313,13 @@ else
                             switch (c.Key)
                             {
                                 case "num":
-                                    <input class="dst-nf-inp" placeholder="Nueva unidad..." @bind="_nuNum" @bind:event="oninput" />
+                                    <input class="dst-nf-inp" placeholder="A1-202" title="Codigo TORRE-APARTAMENTO (ej. A1-202). La torre sale del codigo y el piso se infiere del numero de apto." @bind="_nuNum" @bind:event="oninput" />
                                     break;
                                 case "torre":
-                                    <select class="dst-nf-inp" @bind="_nuTorreId">
-                                        <option value="">-</option>
-                                        @foreach (var t in _torres.OrderBy(x => x.Nombre)) { <option value="@t.Id">@t.Nombre</option> }
-                                    </select>
+                                    <div class="dst-nf-mut" title="Se toma del codigo (ej. la 'A1' de A1-202)">del codigo</div>
                                     break;
                                 case "piso":
-                                    <input class="dst-nf-inp" type="number" placeholder="-" @bind="_nuPiso" @bind:event="oninput" />
+                                    <div class="dst-nf-mut" title="Se infiere del numero de apto (ej. 202 = piso 2)">auto</div>
                                     break;
                                 case "tipo":
                                     <select class="dst-nf-inp" @bind="_nuTipo">
@@ -330,6 +331,15 @@ else
                                     break;
                                 case "coef":
                                     <input class="dst-nf-inp" type="number" step="0.0001" placeholder="0" @bind="_nuCoef" @bind:event="oninput" />
+                                    break;
+                                case "agrupacion":
+                                    <div class="dst-nf-mut" title="Se define al crear anexos (+ anexo)">auto</div>
+                                    break;
+                                case "matricula":
+                                    <input class="dst-nf-inp" placeholder="Matricula" @bind="_nuMatricula" @bind:event="oninput" />
+                                    break;
+                                case "refpago":
+                                    <input class="dst-nf-inp" placeholder="Ref. pago" @bind="_nuRefPago" @bind:event="oninput" />
                                     break;
                                 case "prop":
                                     <div class="dst-nf-mut">En la ficha</div>
@@ -447,6 +457,19 @@ else
     private TipoUnidad _nuTipo;
     private string _nuArea = "";
     private string _nuCoef = "";
+    private string _nuMatricula = "";
+    private string _nuRefPago = "";
+
+    // Agrupacion derivada: Anexo (es hija), Principal (tiene hijas) o Individual.
+    private string AgrupacionDe(UnidadDto u)
+        => u.PrincipalId is not null ? "Anexo" : (_unidades.Any(x => x.PrincipalId == u.Id) ? "Principal" : "Individual");
+
+    // Expander de la fila de alta: si esta vacia, abre el modal de creacion; si hay codigo, crea inline y abre la ficha.
+    private async Task OnExpandNuevaFila()
+    {
+        if (string.IsNullOrWhiteSpace(_nuNum)) await AbrirModalAsync(null);
+        else await CrearUnidadDesdeAltaAsync(true);
+    }
     private bool _creandoUnidad;
     private string? _inlineMsgU;
     private readonly HashSet<Guid> _uniRecienCreados = new();
@@ -510,6 +533,7 @@ else
             var q = _q.Trim();
             var ci = System.Globalization.CultureInfo.InvariantCulture;
             return _unidades
+                .Where(u => u.PrincipalId is null)   // los anexos (parqueaderos/cuartos) se anidan bajo su principal, no van al top-level
                 .Where(u => q == ""
                     || u.Numero.Contains(q, StringComparison.OrdinalIgnoreCase)
                     || (u.PropietarioNombre ?? "").Contains(q, StringComparison.OrdinalIgnoreCase))
@@ -584,22 +608,69 @@ else
 
     // Una entrada a pintar: cabecera de grupo o unidad. Sin agrupar va paginado; agrupado va
     // completo (todos los grupos). Sirve para la vista Tabla y la vista Tarjetas por igual.
-    private readonly record struct FilaUni(bool EsGrupo, GrupoUni? Grupo, UnidadDto? Unidad);
+    private readonly record struct FilaUni(bool EsGrupo, GrupoUni? Grupo, UnidadDto? Unidad, bool EsAnexo = false);
     private IEnumerable<FilaUni> FilasRender()
     {
         var gs = Grupos();
         if (gs is null)
         {
-            foreach (var u in UnidadesPagina) yield return new FilaUni(false, null, u);
+            foreach (var u in UnidadesPagina)
+            {
+                yield return new FilaUni(false, null, u);
+                if (_anexosExpandidos.Contains(u.Id))
+                    foreach (var a in Anexos(u.Id)) yield return new FilaUni(false, null, a, true);
+            }
         }
         else
         {
             foreach (var g in gs)
             {
                 yield return new FilaUni(true, g, null);
-                foreach (var u in g.Items) yield return new FilaUni(false, null, u);
+                foreach (var u in g.Items)
+                {
+                    yield return new FilaUni(false, null, u);
+                    if (_anexosExpandidos.Contains(u.Id))
+                        foreach (var a in Anexos(u.Id)) yield return new FilaUni(false, null, a, true);
+                }
             }
         }
+    }
+
+    // ===== Anexos (unidades hijas: parqueaderos, cuartos utiles, bodegas) =====
+    private readonly HashSet<Guid> _anexosExpandidos = new();
+    private Guid? _anexoAddPara;
+    private string _anexoNum = "";
+    private TipoUnidad _anexoTipo = TipoUnidad.Parqueadero;
+    private bool _creandoAnexo;
+
+    private List<UnidadDto> Anexos(Guid principalId) => _unidades.Where(u => u.PrincipalId == principalId).OrderBy(u => u.Numero).ToList();
+    private void ToggleAnexos(Guid id) { if (!_anexosExpandidos.Add(id)) _anexosExpandidos.Remove(id); }
+    private void AbrirAgregarAnexo(UnidadDto principal) { _anexoAddPara = principal.Id; _anexoNum = ""; _anexoTipo = TipoUnidad.Parqueadero; }
+
+    // Crea el anexo como unidad (tipo parqueadero/cuarto/bodega) y lo vincula a la principal (RN-09).
+    private async Task CrearAnexoAsync(UnidadDto principal)
+    {
+        if (_creandoAnexo || string.IsNullOrWhiteSpace(_anexoNum)) return;
+        _creandoAnexo = true;
+        try
+        {
+            var req = new CrearUnidadRequest(_anexoNum.Trim(), _anexoTipo, principal.TorreId, principal.Piso, 0m, null,
+                null, null, null, null, null);
+            var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/unidades", req);
+            if (!resp.IsSuccessStatusCode) { _inlineMsgU = "No se pudo crear el anexo: " + await resp.Content.ReadAsStringAsync(); return; }
+            var creada = await resp.Content.ReadFromJsonAsync<UnidadDto>();
+            if (creada is not null)
+            {
+                var vresp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{principal.Id}/vinculos",
+                    new CrearVinculoUnidadRequest(creada.Id, true));
+                if (!vresp.IsSuccessStatusCode) _inlineMsgU = "Anexo creado, pero no se pudo vincular: " + await vresp.Content.ReadAsStringAsync();
+            }
+            _anexoAddPara = null; _anexoNum = "";
+            _anexosExpandidos.Add(principal.Id);
+            await CargarAsync();
+        }
+        catch (Exception ex) { _inlineMsgU = "Error al crear el anexo: " + ex.Message; }
+        finally { _creandoAnexo = false; }
     }
 
     // ===== Configurar columnas (por usuario, localStorage) =====
@@ -607,7 +678,7 @@ else
     private Dictionary<string, ColPref> _cols = new();
     private const string ColsKey = "propia_cols_unidades";
     private const string ColOrderKey = "propia_colorder_unidades";
-    private static readonly string[] ColDefaultOrder = { "num", "torre", "piso", "tipo", "area", "coef", "prop" };
+    private static readonly string[] ColDefaultOrder = { "num", "tipo", "agrupacion", "matricula", "coef", "refpago" };
     private List<string> _colOrderU = ColDefaultOrder.ToList();
 
     public sealed class ColPref { public bool Visible { get; set; } = true; public string? Label { get; set; } }
@@ -616,13 +687,13 @@ else
     // Catalogo dinamico: los labels de agrupacion/piso salen de la identidad de la copropiedad.
     private ColDef[] Catalogo => new[]
     {
-        new ColDef("num", "UNIDAD", "120px", false),
-        new ColDef("torre", LabelAgrupacionSingular.ToUpper(), "1fr", true),
-        new ColDef("piso", LabelPisoSingular.ToUpper(), ".7fr", true),
-        new ColDef("tipo", "TIPO", "1.1fr", true),
-        new ColDef("area", "AREA", ".9fr", true),
-        new ColDef("coef", "COEFICIENTE", "1fr", true),
-        new ColDef("prop", "PROPIETARIO", "1.5fr", true),
+        new ColDef("num", "UNIDAD", "130px", false),
+        new ColDef("tipo", "TIPO", "1fr", true),
+        new ColDef("agrupacion", "AGRUPACION", ".9fr", true),
+        new ColDef("matricula", "MATRICULA", "1.1fr", true),
+        new ColDef("coef", "COEFICIENTE", ".9fr", true),
+        new ColDef("refpago", "REF PAGO", "1.1fr", true),
+        // Torre, Piso, Area y Propietario retirados de la vista (torre/piso salen del codigo).
     };
 
     private bool EsVisible(ColDef c) => !c.Hideable || !_cols.TryGetValue(c.Key, out var p) || p.Visible;
@@ -638,7 +709,7 @@ else
         }
     }
     private IEnumerable<ColDef> ColsVisibles => CatalogoOrdenado.Where(EsVisible);
-    private string GridCols => "34px " + string.Join(" ", ColsVisibles.Select(c => c.Width)) + " 34px";
+    private string GridCols => "34px " + string.Join(" ", ColsVisibles.Select(c => c.Width)) + " 120px";
 
     private ColPref PrefDe(string key)
     {
@@ -697,6 +768,7 @@ else
         var v = val?.Trim();
         var numero = u.Numero; var tipo = u.Tipo; var torreId = u.TorreId; var piso = u.Piso;
         var coef = u.CoeficientePropiedad; var area = u.AreaM2;
+        var matricula = u.MatriculaInmobiliaria; var refpago = u.ReferenciaPago;
         switch (campo)
         {
             case "num": if (string.IsNullOrWhiteSpace(v) || v == u.Numero) return; numero = v; break;
@@ -705,11 +777,13 @@ else
             case "piso": var pi = string.IsNullOrWhiteSpace(v) ? (int?)null : (int.TryParse(v, out var pp) ? pp : u.Piso); if (pi == u.Piso) return; piso = pi; break;
             case "coef": if (!decimal.TryParse(v, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var cf) || cf == u.CoeficientePropiedad) return; coef = cf; break;
             case "area": var ar = string.IsNullOrWhiteSpace(v) ? (decimal?)null : (decimal.TryParse(v, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var aa) ? aa : u.AreaM2); if (ar == u.AreaM2) return; area = ar; break;
+            case "matricula": var mt = string.IsNullOrWhiteSpace(v) ? null : v; if (mt == u.MatriculaInmobiliaria) return; matricula = mt; break;
+            case "refpago": var rp = v ?? ""; if (rp == (u.ReferenciaPago ?? "")) return; refpago = rp; break;
             default: return;
         }
         var req = new ActualizarUnidadRequest(numero, tipo, torreId, piso, coef, area,
             u.Habitaciones, u.Banos, u.Parqueaderos, u.Estado, u.Observaciones,
-            u.MatriculaInmobiliaria, u.PagaAdministracion, u.CuotaMensual);
+            matricula, u.PagaAdministracion, u.CuotaMensual, refpago);
         try
         {
             var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades/{u.Id}", req);
@@ -717,7 +791,7 @@ else
             {
                 var nombreTorre = torreId is null ? null : _torres.FirstOrDefault(x => x.Id == torreId)?.Nombre ?? u.TorreNombre;
                 var i = _unidades.FindIndex(x => x.Id == u.Id);
-                if (i >= 0) _unidades[i] = u with { Numero = numero, Tipo = tipo, TorreId = torreId, TorreNombre = nombreTorre, Piso = piso, CoeficientePropiedad = coef, AreaM2 = area };
+                if (i >= 0) _unidades[i] = u with { Numero = numero, Tipo = tipo, TorreId = torreId, TorreNombre = nombreTorre, Piso = piso, CoeficientePropiedad = coef, AreaM2 = area, MatriculaInmobiliaria = matricula, ReferenciaPago = refpago };
             }
         }
         catch { }
@@ -737,10 +811,29 @@ else
             var ci = System.Globalization.CultureInfo.InvariantCulture;
             Guid? torreId = Guid.TryParse(_nuTorreId, out var tg) ? tg : null;
             int? piso = int.TryParse(_nuPiso, out var pp) ? pp : null;
+            var numero = _nuNum.Trim();
+
+            // Codigo mascara TORRE-APARTAMENTO (ej. A1-202) en el campo "Nueva unidad".
+            // Si trae separador, se parsea, se crea la torre si no existe y se infiere el piso del apto.
+            if (numero.IndexOfAny(new[] { '-', '/' }) >= 0)
+            {
+                var parts = numero.Split(new[] { '-', '/' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (parts.Length >= 2)
+                {
+                    var tId = await ResolverOCrearTorreAsync(parts[0]);
+                    if (tId is null) { _inlineMsgU = "No se pudo resolver o crear la torre del codigo."; _creandoUnidad = false; return; }
+                    torreId = tId;
+                    numero = string.Join("-", parts.Skip(1)).Trim();
+                    piso = InferirPiso(numero) ?? piso;
+                }
+            }
+
             decimal? area = decimal.TryParse(_nuArea, System.Globalization.NumberStyles.Any, ci, out var aa) ? aa : null;
             decimal coef = decimal.TryParse(_nuCoef, System.Globalization.NumberStyles.Any, ci, out var cc) ? cc : 0m;
-            var req = new CrearUnidadRequest(_nuNum.Trim(), _nuTipo, torreId, piso, coef, area,
-                null, null, null, null, null);
+            var req = new CrearUnidadRequest(numero, _nuTipo, torreId, piso, coef, area,
+                null, null, null, null, null,
+                MatriculaInmobiliaria: string.IsNullOrWhiteSpace(_nuMatricula) ? null : _nuMatricula.Trim(),
+                ReferenciaPago: string.IsNullOrWhiteSpace(_nuRefPago) ? null : _nuRefPago.Trim());
             var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/unidades", req);
             if (resp.IsSuccessStatusCode)
             {
@@ -751,15 +844,51 @@ else
                     _unidades.Add(creada);
                     _uniRecienCreados.Add(creada.Id);
                     _inlineMsgU = $"Unidad {creada.Numero} creada.";
-                    _nuNum = ""; _nuTorreId = ""; _nuPiso = ""; _nuArea = ""; _nuCoef = ""; _nuTipo = default;
+                    _nuNum = ""; _nuTorreId = ""; _nuPiso = ""; _nuArea = ""; _nuCoef = ""; _nuTipo = default; _nuMatricula = ""; _nuRefPago = "";
                     if (abrir) await AbrirModalAsync(creada.Id);
                 }
                 else { await CargarAsync(); }
             }
-            else { _inlineMsgU = "No se pudo crear la unidad."; }
+            else
+            {
+                var detalle = await resp.Content.ReadAsStringAsync();
+                _inlineMsgU = string.IsNullOrWhiteSpace(detalle) ? "No se pudo crear la unidad." : $"No se pudo crear: {detalle}";
+            }
         }
-        catch { _inlineMsgU = "Error al crear la unidad."; }
+        catch (Exception ex) { _inlineMsgU = "Error al crear la unidad: " + ex.Message; }
         finally { _creandoUnidad = false; }
+    }
+
+    // Infiere el piso desde el numero de apartamento (convencion: 202 -> piso 2, 1502 -> piso 15).
+    // Solo cuando el apto es numerico y tiene 3+ digitos; si no, devuelve null (no se fuerza el piso).
+    private static int? InferirPiso(string apto)
+    {
+        apto = (apto ?? "").Trim();
+        if (apto.Length >= 3 && apto.All(char.IsDigit))
+        {
+            var floorPart = apto[..^2];
+            if (int.TryParse(floorPart, out var f) && f > 0) return f;
+        }
+        return null;
+    }
+
+    // Resuelve la torre por token del codigo (nombre exacto, "Torre X" o ultima palabra); si no existe, la crea.
+    private async Task<Guid?> ResolverOCrearTorreAsync(string token)
+    {
+        token = token.Trim();
+        var existe = _torres.FirstOrDefault(t =>
+            t.Nombre.Equals(token, StringComparison.OrdinalIgnoreCase)
+            || t.Nombre.Equals($"{LabelAgrupacionSingular} {token}", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(t.Nombre.Split(' ').LastOrDefault(), token, StringComparison.OrdinalIgnoreCase));
+        if (existe is not null) return existe.Id;
+
+        var nombre = token.Length <= 4 ? $"{LabelAgrupacionSingular} {token}" : token;
+        var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/torres", new CrearTorreRequest(nombre, null, null));
+        if (!resp.IsSuccessStatusCode) return null;
+        var nueva = await resp.Content.ReadFromJsonAsync<TorreDto>();
+        if (nueva is null) return null;
+        _torres.Add(nueva);
+        return nueva.Id;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -1028,7 +1157,7 @@ else
     .dst-table { background: #fff; border: 1px solid #E1E8EE; border-radius: 12px; overflow: hidden; }
     .dst-scroll { overflow-x: auto; }
     .dst-grid { display: grid; grid-template-columns: 120px 1fr .7fr 1.1fr .9fr 1fr 1.5fr 34px; align-items: center; gap: 8px; padding: 9px 16px; min-width: 940px; }
-    .dst-head { background: #F7F9FB; font-size: 10.5px; font-weight: 700; color: #90A4B7; letter-spacing: .4px; border-bottom: 1px solid #E1E8EE; }
+    .dst-head { background: #F7F9FB; font-size: 10.5px; font-weight: 700; color: #90A4B7; letter-spacing: .4px; border-bottom: 1px solid #E1E8EE; position: sticky; top: 0; z-index: 6; }
     .dst-row { border-bottom: 1px solid #EEF2F6; font-size: 13px; color: #33475B; cursor: pointer; }
     .dst-row:hover { background: #FBFAFE; }
     .dst-c { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1063,6 +1192,28 @@ else
     .dst-cell:hover { border-color: #E1E8EE; background: #FBFCFD; }
     .dst-cell:focus { border-color: var(--propia-brand, #6D4FE3); background: #fff; color: #33475B; }
     .dst-cell-num { font-weight: 700; color: #1B2A3A; }
+    .dst-agr { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 20px; }
+    .dst-agr--individual { background: #EEF3F8; color: #64748B; }
+    .dst-agr--principal { background: #F1ECFD; color: #6D4FE3; }
+    .dst-agr--anexo { background: #E7F6EC; color: #1A8754; }
+
+    /* Anexos (unidades hijas): filas anidadas + controles. */
+    .dst-numcell { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .dst-anexo-branch { color: #B7C4D2; font-size: 15px; line-height: 1; flex: 0 0 auto; }
+    .dst-row--anexo { background: #FBFAFE; }
+    .dst-row--anexo:hover { background: #F5F2FE; }
+    .dst-row--anexo .dst-numcell { padding-left: 14px; }
+    .dst-anx-cell { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+    .dst-anx-toggle { display: inline-flex; align-items: center; gap: 3px; padding: 3px 7px; border: 1px solid #E1E8EE; border-radius: 7px; background: #fff; color: #516F90; font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .dst-anx-toggle:hover { border-color: #DCD2F8; color: var(--propia-brand, #6D4FE3); background: #F5F2FE; }
+    .dst-anx-add { padding: 3px 8px; border: 1px dashed #C9B8F2; border-radius: 7px; background: transparent; color: var(--propia-brand, #6D4FE3); font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; }
+    .dst-anx-add:hover { background: #F5F2FE; }
+    .dst-anexoadd { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 9px 16px 9px 48px; background: #F5F2FE; border-bottom: 1px solid #E9E3FA; }
+    .dst-anexoadd-lbl { font-size: 12px; color: #4B2BB0; }
+    .dst-anexoadd-tipo { width: 150px; }
+    .dst-anexoadd-num { width: 170px; }
+    .dst-anx-cancel { border: 0; background: transparent; color: #90A4B7; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .dst-anx-cancel:hover { color: #516F90; text-decoration: underline; }
     /* Fila de alta inline (crear unidad): inputs punteados en reposo, violeta al enfocar (canonico). */
     .dst-newrow { cursor: default; }
     .dst-newrow:hover { background: transparent; }

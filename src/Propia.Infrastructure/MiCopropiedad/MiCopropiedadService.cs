@@ -180,7 +180,10 @@ public class MiCopropiedadService : IMiCopropiedadService
                      ? _db.Empresas.Where(e => e.Id == up.EmpresaId).Select(e => e.RazonSocial).FirstOrDefault()
                      : _db.Personas.Where(p => p.Id == up.PersonaId).Select(p => (p.Nombres + " " + p.Apellidos).Trim()).FirstOrDefault()
                 ).FirstOrDefault(),
-                _db.UnidadPersonas.Count(up => up.UnidadId == u.Id && up.Rol == RolUnidadPersona.Propietario)))
+                _db.UnidadPersonas.Count(up => up.UnidadId == u.Id && up.Rol == RolUnidadPersona.Propietario),
+                // Si esta unidad es una asociada (anexo) de otra, su principal (para anidar como fila hija).
+                (from v in _db.UnidadVinculos where v.UnidadAsociadaId == u.Id select (Guid?)v.UnidadPrincipalId).FirstOrDefault(),
+                u.ReferenciaPago))
             .ToListAsync(ct);
     }
 
@@ -272,6 +275,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         u.MatriculaInmobiliaria = req.MatriculaInmobiliaria;
         u.PagaAdministracion = req.PagaAdministracion;
         u.CuotaMensual = req.CuotaMensual;
+        if (req.ReferenciaPago is not null) u.ReferenciaPago = req.ReferenciaPago;
 
         await _db.SaveChangesAsync(ct);
 
@@ -965,7 +969,9 @@ public class MiCopropiedadService : IMiCopropiedadService
                      ? _db.Empresas.Where(e => e.Id == up.EmpresaId).Select(e => e.RazonSocial).FirstOrDefault()
                      : _db.Personas.Where(p => p.Id == up.PersonaId).Select(p => (p.Nombres + " " + p.Apellidos).Trim()).FirstOrDefault()
                 ).FirstOrDefault(),
-                _db.UnidadPersonas.Count(up => up.UnidadId == u.Id && up.Rol == RolUnidadPersona.Propietario)))
+                _db.UnidadPersonas.Count(up => up.UnidadId == u.Id && up.Rol == RolUnidadPersona.Propietario),
+                (from v in _db.UnidadVinculos where v.UnidadAsociadaId == u.Id select (Guid?)v.UnidadPrincipalId).FirstOrDefault(),
+                u.ReferenciaPago))
             .FirstOrDefaultAsync(ct);
     }
 

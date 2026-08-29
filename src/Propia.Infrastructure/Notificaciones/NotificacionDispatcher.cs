@@ -150,6 +150,63 @@ public class NotificacionDispatcher : INotificacionDispatcher
         return resultados;
     }
 
+    public async Task EnviarEventoUsuarioAsync(
+        Guid personaId, string asunto, string cuerpo, string moduloOrigen, Guid? entidadOrigenId,
+        Guid? tenantId, PrioridadNotificacion prioridad, CancellationToken ct)
+    {
+        if (personaId == Guid.Empty || string.IsNullOrWhiteSpace(cuerpo)) return;
+
+        // No auto-notificar: si el actor de la accion es el mismo destinatario, no enviamos.
+        var actor = await ActorPersonaIdAsync(ct);
+        if (actor is { } a && a == personaId) return;
+
+        tenantId ??= _tenantContext.CurrentTenantId;
+
+        // 1) InApp (inbox del usuario).
+        await TryEnviarAsync(new EnviarNotificacionRequest(
+            Canal: CanalNotificacion.InApp, Cuerpo: cuerpo, TenantId: tenantId,
+            PersonaDestinatariaId: personaId, Asunto: asunto, Prioridad: prioridad,
+            ModuloOrigenCodigo: moduloOrigen, EntidadOrigenId: entidadOrigenId), ct);
+
+        // 2) Contactos configurados por el usuario (Mi Perfil): correos/telefonos activos.
+        var contactos = await _db.UsuarioContactosNotificacion.AsNoTracking()
+            .Where(c => c.PersonaId == personaId && c.Activo)
+            .Select(c => new { c.Canal, c.Valor })
+            .ToListAsync(ct);
+
+        if (contactos.Count == 0)
+        {
+            // Fallback: el correo de la Persona (si tiene). El dispatcher lo resuelve solo.
+            await TryEnviarAsync(new EnviarNotificacionRequest(
+                Canal: CanalNotificacion.Email, Cuerpo: cuerpo, TenantId: tenantId,
+                PersonaDestinatariaId: personaId, Asunto: asunto, Prioridad: prioridad,
+                ModuloOrigenCodigo: moduloOrigen, EntidadOrigenId: entidadOrigenId), ct);
+            return;
+        }
+
+        foreach (var c in contactos)
+        {
+            await TryEnviarAsync(new EnviarNotificacionRequest(
+                Canal: c.Canal, Cuerpo: cuerpo, TenantId: tenantId,
+                PersonaDestinatariaId: personaId, Destino: c.Valor, Asunto: asunto, Prioridad: prioridad,
+                ModuloOrigenCodigo: moduloOrigen, EntidadOrigenId: entidadOrigenId), ct);
+        }
+    }
+
+    private async Task TryEnviarAsync(EnviarNotificacionRequest req, CancellationToken ct)
+    {
+        try { await EnviarAsync(req, ct); }
+        catch (Exception ex) { _log.LogWarning(ex, "T.2 evento-usuario fallo canal={Canal}", req.Canal); }
+    }
+
+    private async Task<Guid?> ActorPersonaIdAsync(CancellationToken ct)
+    {
+        var uid = GetUsuarioActualId();
+        if (uid == Guid.Empty) return null;
+        var pid = await _db.Users.AsNoTracking().Where(u => u.Id == uid).Select(u => u.PersonaId).FirstOrDefaultAsync(ct);
+        return pid == Guid.Empty ? null : pid;
+    }
+
     // -----------------------------------------------------------------------
     // Resolucion de destino
     // -----------------------------------------------------------------------

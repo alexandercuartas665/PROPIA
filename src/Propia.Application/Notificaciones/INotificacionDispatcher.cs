@@ -1,3 +1,5 @@
+using Propia.Domain.Enums;
+
 namespace Propia.Application.Notificaciones;
 
 /// <summary>
@@ -21,6 +23,17 @@ public interface INotificacionDispatcher
     /// <summary>Envio en lote - util para broadcasts grandes (2.14, 1.5).</summary>
     Task<IReadOnlyList<ResultadoEnvioNotificacion>> EnviarLoteAsync(
         IEnumerable<EnviarNotificacionRequest> requests, CancellationToken ct);
+
+    /// <summary>
+    /// Notifica un evento a un usuario (persona) por TODOS sus canales: InApp (inbox) +
+    /// cada contacto activo que configuro en Mi Perfil (correos/telefonos). Si no configuro
+    /// contactos, cae al correo de la Persona. No notifica al propio actor de la accion.
+    /// Punto unico para "me asignaron / me mencionaron / me crearon algo".
+    /// </summary>
+    Task EnviarEventoUsuarioAsync(
+        Guid personaId, string asunto, string cuerpo, string moduloOrigen, Guid? entidadOrigenId,
+        Guid? tenantId = null, PrioridadNotificacion prioridad = PrioridadNotificacion.Normal,
+        CancellationToken ct = default);
 }
 
 /// <summary>
