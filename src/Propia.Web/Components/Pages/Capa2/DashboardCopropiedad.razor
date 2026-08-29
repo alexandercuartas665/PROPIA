@@ -7,12 +7,11 @@
 @inject NavigationManager Nav
 @inject IJSRuntime Js
 
-<PageTitle>Dashboard de la Copropiedad - PROPIA</PageTitle>
+<PageTitle>Inicio - PROPIA</PageTitle>
 
-<div class="mb-4">
-    <h1 class="h3 mb-1 fw-semibold">Dashboard de la Copropiedad</h1>
-    <p class="text-muted mb-0">Modulo 2.2 - pantalla de trabajo diaria</p>
-</div>
+@* Dashboard de la Copropiedad v2 (modulo 2.2): pantalla de trabajo diaria. Rediseno tipo
+   "analytics" pero 100% en los tonos PROPIA: tarjetas blancas, acentos morados, graficas
+   en SVG puro (donut de recaudo, barras por etapa) sin librerias externas. *@
 
 @if (!_authChecked)
 {
@@ -32,173 +31,421 @@
     return;
 }
 
-@* Banda alertas criticas (solo si hay) *@
-@if (_d.Alertas.Any())
-{
-    <div class="card border-danger mb-3">
-        <div class="card-body py-2">
-            <div class="d-flex justify-content-between">
-                <strong class="text-danger">Alertas criticas (@_d.Alertas.Count)</strong>
-                <small class="text-muted">@_d.Alertas.First().CreatedAt.LocalDateTime.ToString("HH:mm")</small>
+<div class="dsh">
+
+    @* ===== Hero: saludo + fecha + resumen + acciones rapidas ===== *@
+    <div class="dsh-hero">
+        <div class="dsh-hero-id">
+            <h1 class="dsh-title">@Saludo()</h1>
+            <div class="dsh-sub">@DateTime.Now.ToString("dddd, dd 'de' MMMM 'de' yyyy") &middot; así amanece tu copropiedad</div>
+            <div class="dsh-chips">
+                <span class="dsh-chip"><strong>@_d.TotalUnidades</strong> unidades</span>
+                <span class="dsh-chip"><strong>@_d.TorresTotal</strong> torres</span>
+                <span class="dsh-chip"><strong>@_d.ZonasComunesTotal</strong> zonas comunes</span>
             </div>
-            <div class="small mt-1">
-                @foreach (var a in _d.Alertas)
+        </div>
+        <div class="dsh-hero-acts">
+            <a class="dsh-btn dsh-btn-brand" href="/tareas"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>Nueva tarea</a>
+            <a class="dsh-btn" href="/pqrs">Radicar PQR</a>
+            <a class="dsh-btn" href="/porteria">Portería</a>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+    @* ===== KPIs ===== *@
+    <div class="dsh-kpis">
+        <div class="dsh-kpi dsh-kpi--gauge">
+            <div class="dsh-gauge">
+                @{ var pct = Math.Clamp((double)(_d.RecaudoMesPorcentaje ?? 0), 0, 100); var dash = pct * 2.639; }
+                <svg viewBox="0 0 100 100" width="86" height="86">
+                    <circle cx="50" cy="50" r="42" fill="none" stroke="#EFECFB" stroke-width="11" />
+                    <circle cx="50" cy="50" r="42" fill="none" stroke="url(#dshGrad)" stroke-width="11" stroke-linecap="round"
+                            stroke-dasharray="@dash.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) 263.9"
+                            transform="rotate(-90 50 50)" />
+                    <defs><linearGradient id="dshGrad" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%" stop-color="#7A77E0" /><stop offset="100%" stop-color="#5955D1" />
+                    </linearGradient></defs>
+                    <text x="50" y="55" text-anchor="middle" class="dsh-gauge-v">@(_d.RecaudoMesPorcentaje.HasValue ? $"{_d.RecaudoMesPorcentaje.Value:0}%" : "—")</text>
+                </svg>
+            </div>
+            <div class="dsh-kpi-id">
+                <div class="dsh-kpi-l">Recaudo del mes</div>
+                <div class="dsh-kpi-s">@_d.UnidadesEnMora en mora</div>
+            </div>
+        </div>
+
+        <a class="dsh-kpi" href="/cartera">
+            <span class="dsh-kpi-ic dsh-ic-rojo"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></span>
+            <span class="dsh-kpi-n">@_d.UnidadesEnMora</span>
+            <span class="dsh-kpi-l">Unidades en mora</span>
+        </a>
+
+        <a class="dsh-kpi" href="/tareas">
+            <span class="dsh-kpi-ic dsh-ic-morado"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
+            <span class="dsh-kpi-n">@_d.TareasTotalActivas</span>
+            <span class="dsh-kpi-l">Tareas activas @(_d.TareasVencidas > 0 ? $"· {_d.TareasVencidas} vencidas" : "")</span>
+        </a>
+
+        <a class="dsh-kpi" href="/pqrs">
+            <span class="dsh-kpi-ic dsh-ic-azul"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.8-.9L3 21l2-4.9a8.4 8.4 0 1 1 16-4.6z"/></svg></span>
+            <span class="dsh-kpi-n">@_d.PqrsAbiertas</span>
+            <span class="dsh-kpi-l">PQRSD en gestión @(_d.PqrsVencidas > 0 ? $"· {_d.PqrsVencidas} vencidas" : _d.PqrsPorVencer > 0 ? $"· {_d.PqrsPorVencer} por vencer" : "")</span>
+        </a>
+
+        <a class="dsh-kpi" href="/contratos">
+            <span class="dsh-kpi-ic dsh-ic-ambar"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span>
+            <span class="dsh-kpi-n">@VencimientosTotal</span>
+            <span class="dsh-kpi-l">Vencimientos próximos</span>
+        </a>
+
+        <a class="dsh-kpi" href="/porteria">
+            <span class="dsh-kpi-ic dsh-ic-verde"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+            <span class="dsh-kpi-n">@_d.NovedadesHoy</span>
+            <span class="dsh-kpi-l">Novedades de hoy</span>
+        </a>
+    </div>
+
+    @* ===== Graficas: actividad mensual (linea/area) + PQRSD por tipo (dona) ===== *@
+    @if (_d.SerieMensual is { Count: > 0 } serie)
+    {
+        <div class="dsh-rowcharts">
+            <div class="dsh-card">
+                <div class="dsh-card-head">
+                    <div class="dsh-card-t">Actividad de los últimos 6 meses</div>
+                    <div class="dsh-legend">
+                        <span class="dsh-leg"><i style="background:#6D4FE3"></i>Tareas</span>
+                        <span class="dsh-leg"><i style="background:#1D63D8"></i>PQRSD</span>
+                        <span class="dsh-leg"><i style="background:#16A34A"></i>Novedades</span>
+                    </div>
+                </div>
+                @{
+                    var maxSerie = Math.Max(4, serie.Max(s => Math.Max(s.Tareas, Math.Max(s.Pqrs, s.Novedades))));
+                }
+                <svg class="dsh-line" viewBox="0 0 640 210" preserveAspectRatio="none">
+                    <defs>
+                        <linearGradient id="dshArea" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="#6D4FE3" stop-opacity=".22" />
+                            <stop offset="100%" stop-color="#6D4FE3" stop-opacity="0" />
+                        </linearGradient>
+                    </defs>
+                    @for (var g = 0; g <= 4; g++)
+                    {
+                        var gy = Inv(16 + g * (150.0 / 4));
+                        <line x1="34" y1="@gy" x2="630" y2="@gy" stroke="#EEF1F6" stroke-width="1" />
+                        <g><text x="28" y="@Inv(16 + g * (150.0 / 4) + 4)" text-anchor="end" class="dsh-ax">@((int)Math.Round(maxSerie - g * (maxSerie / 4.0)))</text></g>
+                    }
+                    <path d="@AreaPath(serie, s => s.Tareas, maxSerie)" fill="url(#dshArea)" />
+                    <polyline points="@Puntos(serie, s => s.Tareas, maxSerie)" fill="none" stroke="#6D4FE3" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />
+                    <polyline points="@Puntos(serie, s => s.Pqrs, maxSerie)" fill="none" stroke="#1D63D8" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="1 0" />
+                    <polyline points="@Puntos(serie, s => s.Novedades, maxSerie)" fill="none" stroke="#16A34A" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+                    @for (var i = 0; i < serie.Count; i++)
+                    {
+                        var s = serie[i];
+                        <circle cx="@Cx(i, serie.Count)" cy="@Cy(s.Tareas, maxSerie)" r="3.4" fill="#fff" stroke="#6D4FE3" stroke-width="2.2"><title>@MesAbrev(s.Mes): @s.Tareas tareas</title></circle>
+                        <circle cx="@Cx(i, serie.Count)" cy="@Cy(s.Pqrs, maxSerie)" r="3" fill="#fff" stroke="#1D63D8" stroke-width="2"><title>@MesAbrev(s.Mes): @s.Pqrs PQRSD</title></circle>
+                        <circle cx="@Cx(i, serie.Count)" cy="@Cy(s.Novedades, maxSerie)" r="3" fill="#fff" stroke="#16A34A" stroke-width="2"><title>@MesAbrev(s.Mes): @s.Novedades novedades</title></circle>
+                        <g><text x="@Cx(i, serie.Count)" y="200" text-anchor="middle" class="dsh-ax">@MesAbrev(s.Mes)</text></g>
+                    }
+                </svg>
+            </div>
+
+            <div class="dsh-card">
+                <div class="dsh-card-head"><div class="dsh-card-t">PQRSD por tipo</div></div>
+                @if (_d.PqrsPorTipo is null || _d.PqrsPorTipo.Count == 0)
                 {
-                    var aid = a.Id;
-                    <div class="d-flex justify-content-between border-bottom py-1">
-                        <span><span class="badge bg-danger me-1">@a.Tipo</span> @a.Titulo - @a.Descripcion</span>
-                        <button class="btn btn-sm btn-outline-dark" @onclick="() => Resolver(aid)">Resolver</button>
+                    <div class="dsh-empty">Aún no hay PQRSD radicadas.</div>
+                }
+                else
+                {
+                    var totalTipos = Math.Max(1, _d.PqrsPorTipo.Sum(x => x.Cantidad));
+                    var acumulado = 0.0;
+                    <div class="dsh-pie-wrap">
+                        <svg viewBox="0 0 100 100" class="dsh-pie">
+                            @for (var i = 0; i < _d.PqrsPorTipo.Count; i++)
+                            {
+                                var seg = _d.PqrsPorTipo[i];
+                                var frac = (double)seg.Cantidad / totalTipos;
+                                var largo = Inv(frac * 251.3);
+                                var offset = Inv(-acumulado * 251.3);
+                                acumulado += frac;
+                                <circle cx="50" cy="50" r="40" fill="none" stroke="@ColorTipo(i)" stroke-width="14"
+                                        stroke-dasharray="@largo 251.3" stroke-dashoffset="@offset" transform="rotate(-90 50 50)">
+                                    <title>@seg.Tipo: @seg.Cantidad</title>
+                                </circle>
+                            }
+                            <text x="50" y="48" text-anchor="middle" class="dsh-pie-n">@totalTipos</text>
+                            <text x="50" y="60" text-anchor="middle" class="dsh-pie-l">PQRSD</text>
+                        </svg>
+                        <div class="dsh-pie-leg">
+                            @for (var i = 0; i < _d.PqrsPorTipo.Count; i++)
+                            {
+                                var seg = _d.PqrsPorTipo[i];
+                                <div class="dsh-pie-item">
+                                    <i style="background:@ColorTipo(i)"></i>
+                                    <span class="dsh-pie-t">@seg.Tipo</span>
+                                    <span class="dsh-pie-v">@Math.Round(100.0 * seg.Cantidad / totalTipos)%</span>
+                                </div>
+                            }
+                        </div>
                     </div>
                 }
             </div>
         </div>
-    </div>
-}
-
-@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
-
-<div class="row g-3 mb-4">
-    @* Bloque financiero *@
-    <div class="col-md-4">
-        <div class="card kpi-mini"><div class="card-body py-3">
-            <div class="text-muted small">Recaudo del mes</div>
-            <h3 class="mb-0">@(_d.RecaudoMesPorcentaje.HasValue ? $"{_d.RecaudoMesPorcentaje.Value:0.0}%" : "-")</h3>
-            <small class="text-muted">@_d.UnidadesEnMora unidades en mora</small>
-        </div></div>
-    </div>
-    <div class="col-md-4">
-        <div class="card kpi-mini"><div class="card-body py-3">
-            <div class="text-muted small">Tareas activas</div>
-            <h3 class="mb-0">@_d.TareasTotalActivas</h3>
-            <small class="text-danger">@_d.TareasVencidas vencidas</small>
-        </div></div>
-    </div>
-    <div class="col-md-4">
-        <div class="card kpi-mini"><div class="card-body py-3">
-            <div class="text-muted small">Resumen copropiedad</div>
-            <h3 class="mb-0">@_d.TotalUnidades</h3>
-            <small class="text-muted">unidades &middot; @_d.TorresTotal torres &middot; @_d.ZonasComunesTotal zonas</small>
-        </div></div>
-    </div>
-</div>
-
-@* Acciones rapidas *@
-<div class="card mb-3"><div class="card-body py-2">
-    <strong class="me-3 small">Acciones rapidas:</strong>
-    <a class="btn btn-sm btn-outline-dark me-2" href="/tareas">+ Nueva tarea</a>
-    @if (!_d.ModuloPresupuestoConfigurado)
-    {
-        <span class="badge bg-warning text-dark">Configura el presupuesto para activar mas widgets</span>
     }
-</div></div>
 
-<div class="row g-3">
-    <div class="col-md-7">
-        @* Tareas urgentes *@
-        <div class="card"><div class="card-body">
-            <h6 class="mb-2">Tareas urgentes</h6>
-            @if (_d.TareasUrgentes.Count == 0)
+    @* ===== Fila principal: Tareas + PQRSD ===== *@
+    <div class="dsh-row2">
+        <div class="dsh-card">
+            <div class="dsh-card-head">
+                <div class="dsh-card-t">Tareas por etapa</div>
+                <a class="dsh-link" href="/tareas">Ir a Tareas</a>
+            </div>
+            @if (_d.TareasPorEtapa is null || _d.TareasPorEtapa.Count == 0)
             {
-                <p class="text-muted small mb-0">Sin tareas urgentes. <a href="/tareas">Crear una</a></p>
+                <div class="dsh-empty">Sin tareas activas. <a href="/tareas">Crear la primera</a></div>
             }
             else
             {
-                <ul class="list-unstyled small mb-0">
+                var maxEt = Math.Max(1, _d.TareasPorEtapa.Max(x => x.Cantidad));
+                <div class="dsh-bars">
+                    @foreach (var e in _d.TareasPorEtapa)
+                    {
+                        var anchoPct = (100.0 * e.Cantidad / maxEt).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+                        <div class="dsh-bar-row" title="@e.Nombre: @e.Cantidad">
+                            <span class="dsh-bar-l">@e.Nombre</span>
+                            <div class="dsh-bar-track"><div class="dsh-bar-fill" style="width:@(anchoPct)%;background:@(string.IsNullOrWhiteSpace(e.Color) ? "#6D4FE3" : e.Color)"></div></div>
+                            <span class="dsh-bar-v">@e.Cantidad</span>
+                        </div>
+                    }
+                </div>
+            }
+            @if (_d.TareasUrgentes.Count > 0)
+            {
+                <div class="dsh-sec-t">Próximas a vencer</div>
+                <div class="dsh-list">
                     @foreach (var t in _d.TareasUrgentes)
                     {
-                        <li class="border-bottom py-1">
-                            <span class="text-muted">@t.NumeroTarea</span>
-                            &middot; <a href="@($"/tareas/{t.Id}")" class="text-decoration-none">@t.Titulo</a>
-                            <span class="badge bg-light text-dark border ms-1">@t.Estado</span>
-                            @if (t.FechaVencimiento.HasValue)
+                        <a class="dsh-item" href="/tareas?abrir=@t.Id">
+                            <span class="dsh-num">@t.NumeroTarea</span>
+                            <span class="dsh-item-t">@t.Titulo</span>
+                            @if (t.FechaVencimiento is { } fv)
                             {
-                                <small class="@(t.Vencida ? "text-danger fw-bold" : "text-muted") ms-1">Vence @t.FechaVencimiento.Value.ToString("yyyy-MM-dd")</small>
+                                <span class="dsh-due @(t.Vencida ? "dsh-due--r" : "")">@fv.ToString("dd MMM")</span>
                             }
-                        </li>
+                        </a>
                     }
-                </ul>
+                </div>
             }
-        </div></div>
+        </div>
 
-        @* Contratos por vencer (Ola 3) *@
-        <div class="card mt-3"><div class="card-body">
-            <h6 class="mb-2">Contratos por vencer</h6>
-            @if (_d.ContratosPorVencer is null || _d.ContratosPorVencer.Count == 0)
+        <div class="dsh-card">
+            <div class="dsh-card-head">
+                <div class="dsh-card-t">PQRSD y convivencia</div>
+                <a class="dsh-link" href="/pqrs">Ir a PQRSD</a>
+            </div>
+            <div class="dsh-sem">
+                <div class="dsh-sem-p dsh-sem--v"><span class="dsh-sem-n">@(_d.PqrsAbiertas - _d.PqrsPorVencer - _d.PqrsVencidas)</span>al día</div>
+                <div class="dsh-sem-p dsh-sem--a"><span class="dsh-sem-n">@_d.PqrsPorVencer</span>por vencer</div>
+                <div class="dsh-sem-p dsh-sem--r"><span class="dsh-sem-n">@_d.PqrsVencidas</span>vencidas</div>
+            </div>
+            @if (_d.PqrsProximas is null || _d.PqrsProximas.Count == 0)
             {
-                <p class="text-muted small mb-0">Sin contratos proximos a vencer. <a href="/contratos">Ver contratos</a></p>
+                <div class="dsh-empty">No hay PQRSD en gestión. Buen trabajo.</div>
             }
             else
             {
-                <ul class="list-unstyled small mb-0">
-                    @foreach (var c in _d.ContratosPorVencer)
+                <div class="dsh-list">
+                    @foreach (var p in _d.PqrsProximas)
                     {
-                        <li class="border-bottom py-1 d-flex align-items-center gap-2">
-                            <span class="badge @(c.Semaforo == Propia.Domain.Enums.SemaforoContrato.Rojo ? "bg-danger" : "bg-warning text-dark")">@(c.DiasParaVencer is { } dd && dd >= 0 ? $"{dd} d" : "Vencido")</span>
-                            <a href="/contratos" class="text-decoration-none flex-grow-1">@c.Nombre</a>
-                            @if (c.FechaFin is { } ff) { <small class="text-muted">@ff.ToString("dd MMM yyyy")</small> }
-                        </li>
+                        <a class="dsh-item" href="/pqrs">
+                            <span class="dsh-dot @SemClass(p.Semaforo)"></span>
+                            <span class="dsh-num">@p.NumeroRadicado</span>
+                            <span class="dsh-item-t">@p.Descripcion</span>
+                            <span class="dsh-due @(p.DiasHastaVencimiento < 0 ? "dsh-due--r" : p.DiasHastaVencimiento <= 3 ? "dsh-due--a" : "")">
+                                @(p.DiasHastaVencimiento < 0 ? $"-{Math.Abs(p.DiasHastaVencimiento)} d" : $"{p.DiasHastaVencimiento} d")
+                            </span>
+                        </a>
                     }
-                </ul>
+                </div>
             }
-        </div></div>
-
-        @* Polizas por vencer (Ola 4c) *@
-        <div class="card mt-3"><div class="card-body">
-            <h6 class="mb-2">Polizas por vencer</h6>
-            @if (_d.PolizasPorVencer is null || _d.PolizasPorVencer.Count == 0)
-            {
-                <p class="text-muted small mb-0">Sin polizas proximas a vencer. <a href="/seguros">Ver seguros</a></p>
-            }
-            else
-            {
-                <ul class="list-unstyled small mb-0">
-                    @foreach (var c in _d.PolizasPorVencer)
-                    {
-                        <li class="border-bottom py-1 d-flex align-items-center gap-2">
-                            <span class="badge @(c.Semaforo == Propia.Domain.Enums.SemaforoContrato.Rojo ? "bg-danger" : "bg-warning text-dark")">@(c.DiasParaVencer is { } dd && dd >= 0 ? $"{dd} d" : "Vencida")</span>
-                            <a href="/seguros" class="text-decoration-none flex-grow-1">@c.Nombre</a>
-                            @if (c.FechaFin is { } ff) { <small class="text-muted">@ff.ToString("dd MMM yyyy")</small> }
-                        </li>
-                    }
-                </ul>
-            }
-        </div></div>
+        </div>
     </div>
 
-    <div class="col-md-5">
-        @* Feed actividad *@
-        <div class="card"><div class="card-body">
-            <h6 class="mb-2">Actividad reciente</h6>
+    @* ===== Fila secundaria: Heatmap + Vencimientos + Porteria ===== *@
+    <div class="dsh-row3">
+        <div class="dsh-card">
+            <div class="dsh-card-head">
+                <div class="dsh-card-t">Días más activos</div>
+                <span class="dsh-card-sub">últimas 8 semanas</span>
+            </div>
+            @if (_d.ActividadDiaria is { Count: > 0 })
+            {
+                var grid = HeatGrid(_d.ActividadDiaria);
+                var maxDia = Math.Max(1, _d.ActividadDiaria.Max(x => x.Cantidad));
+                <div class="dsh-heat">
+                    @for (var fila = 0; fila < 7; fila++)
+                    {
+                        <div class="dsh-heat-row">
+                            <span class="dsh-heat-lbl">@(new[] { "L", "M", "X", "J", "V", "S", "D" }[fila])</span>
+                            @foreach (var celda in grid[fila])
+                            {
+                                @if (celda.Dia is null)
+                                {
+                                    <span class="dsh-heat-c dsh-heat-c--off"></span>
+                                }
+                                else
+                                {
+                                    var alpha = celda.Cant == 0 ? 0.07 : 0.18 + 0.82 * celda.Cant / maxDia;
+                                    <span class="dsh-heat-c" style="background:rgba(109,79,227,@Inv(alpha))"
+                                          title="@(celda.Dia!.Value.ToString("dd MMM")): @(celda.Cant) actividades"></span>
+                                }
+                            }
+                        </div>
+                    }
+                    <div class="dsh-heat-foot"><span>Menos</span><span class="dsh-heat-c" style="background:rgba(109,79,227,.07)"></span><span class="dsh-heat-c" style="background:rgba(109,79,227,.35)"></span><span class="dsh-heat-c" style="background:rgba(109,79,227,.65)"></span><span class="dsh-heat-c" style="background:rgba(109,79,227,1)"></span><span>Más</span></div>
+                </div>
+            }
+            else
+            {
+                <div class="dsh-empty">Sin actividad registrada aún.</div>
+            }
+        </div>
+
+        <div class="dsh-card">
+            <div class="dsh-card-head">
+                <div class="dsh-card-t">Contratos y pólizas por vencer</div>
+                <a class="dsh-link" href="/contratos">Ver todos</a>
+            </div>
+            @if (VencimientosTotal == 0)
+            {
+                <div class="dsh-empty">Nada próximo a vencer.</div>
+            }
+            else
+            {
+                <div class="dsh-list">
+                    @foreach (var c in _d.ContratosPorVencer ?? new List<ContratoPorVencerDto>())
+                    {
+                        <a class="dsh-item" href="/contratos">
+                            <span class="dsh-mini-tag">Contrato</span>
+                            <span class="dsh-item-t">@c.Nombre</span>
+                            <span class="dsh-due @(c.Semaforo == SemaforoContrato.Rojo ? "dsh-due--r" : "dsh-due--a")">@(c.DiasParaVencer is { } d1 && d1 >= 0 ? $"{d1} d" : "Vencido")</span>
+                        </a>
+                    }
+                    @foreach (var c in _d.PolizasPorVencer ?? new List<ContratoPorVencerDto>())
+                    {
+                        <a class="dsh-item" href="/seguros">
+                            <span class="dsh-mini-tag dsh-mini-tag--pol">Póliza</span>
+                            <span class="dsh-item-t">@c.Nombre</span>
+                            <span class="dsh-due @(c.Semaforo == SemaforoContrato.Rojo ? "dsh-due--r" : "dsh-due--a")">@(c.DiasParaVencer is { } d2 && d2 >= 0 ? $"{d2} d" : "Vencida")</span>
+                        </a>
+                    }
+                </div>
+            }
+        </div>
+
+        <div class="dsh-card">
+            <div class="dsh-card-head">
+                <div class="dsh-card-t">Novedades de portería</div>
+                <a class="dsh-link" href="/porteria">Ir a Portería</a>
+            </div>
+            @if (_d.NovedadesPorteria is null || _d.NovedadesPorteria.Count == 0)
+            {
+                <div class="dsh-empty">Sin novedades recientes.</div>
+            }
+            else
+            {
+                <div class="dsh-feed">
+                    @foreach (var n in _d.NovedadesPorteria)
+                    {
+                        <div class="dsh-nov">
+                            <span class="dsh-nov-tag" style="background:@NovBg(n.Tipo);color:@NovFg(n.Tipo)">@NovLabel(n.Tipo)</span>
+                            <div class="dsh-nov-body">
+                                <div class="dsh-nov-tx">@n.Descripcion</div>
+                                <div class="dsh-nov-meta">@(n.GuardaNombre ?? "Portería") &middot; @HaceCuanto(n.OcurridoAt)@(n.GeneroTarea ? " · generó tarea" : "")</div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+    </div>
+
+    @* ===== Fila final: Alertas (reubicadas) + Actividad reciente ===== *@
+    <div class="dsh-row2">
+        <div class="dsh-card dsh-card--alertas">
+            <div class="dsh-card-head">
+                <div class="dsh-card-t dsh-t-rojo">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+                    Alertas críticas @(_d.Alertas.Count > 0 ? $"({_d.Alertas.Count})" : "")
+                </div>
+            </div>
+            @if (!_d.Alertas.Any())
+            {
+                <div class="dsh-empty">Sin alertas activas. Todo en orden.</div>
+            }
+            else
+            {
+                @foreach (var a in (_alertasExp ? _d.Alertas : _d.Alertas.Take(4)))
+                {
+                    var aid = a.Id;
+                    <div class="dsh-alerta">
+                        <span class="dsh-alerta-tag">@a.Tipo</span>
+                        <span class="dsh-alerta-tx"><strong>@a.Titulo</strong> — @a.Descripcion</span>
+                        <button class="dsh-alerta-ok" @onclick="() => Resolver(aid)">Resolver</button>
+                    </div>
+                }
+                @if (_d.Alertas.Count > 4)
+                {
+                    <button class="dsh-alertas-more" @onclick="() => _alertasExp = !_alertasExp">
+                        @(_alertasExp ? "Mostrar menos" : $"Ver las {_d.Alertas.Count - 4} restantes")
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" style="transform:rotate(@(_alertasExp ? "180deg" : "0deg"))"><path d="M6 9l6 6 6-6"/></svg>
+                    </button>
+                }
+            }
+        </div>
+
+        <div class="dsh-card">
+            <div class="dsh-card-head">
+                <div class="dsh-card-t">Actividad reciente</div>
+            </div>
             @if (_d.Feed.Count == 0)
             {
-                <p class="text-muted small mb-0">Sin actividad reciente.</p>
+                <div class="dsh-empty">Sin actividad reciente.</div>
             }
             else
             {
-                <ul class="list-unstyled small mb-0">
+                <div class="dsh-feed">
                     @foreach (var f in _d.Feed)
                     {
-                        <li class="mb-1">
-                            <span class="text-muted">@f.OcurridoAt.LocalDateTime.ToString("MM-dd HH:mm")</span>
-                            &middot; <span class="badge bg-light text-dark border">@f.Tipo</span>
-                            &middot; @f.Descripcion
-                        </li>
+                        <div class="dsh-act">
+                            <span class="dsh-act-dot"></span>
+                            <div class="dsh-nov-body">
+                                <div class="dsh-nov-tx">@f.Descripcion</div>
+                                <div class="dsh-nov-meta">@(string.IsNullOrEmpty(f.ActorNombre) ? "" : f.ActorNombre + " · ")@HaceCuanto(f.OcurridoAt)</div>
+                            </div>
+                        </div>
                     }
-                </ul>
+                </div>
             }
-        </div></div>
+        </div>
     </div>
-</div>
 
-<style>
-    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
-</style>
+    @if (!_d.ModuloPresupuestoConfigurado)
+    {
+        <div class="dsh-hint">Configura el <a href="/presupuesto">presupuesto</a> para activar el recaudo y más indicadores financieros.</div>
+    }
+</div>
 
 @code {
     private string? _jwt;
     private bool _authChecked;
     private string? _msg; private string _msgClass = "alert-info";
     private DashboardResumenDto? _d;
+    private bool _alertasExp;   // banda de alertas: colapsada (3 visibles) por defecto
+
+    private int VencimientosTotal => (_d?.ContratosPorVencer?.Count ?? 0) + (_d?.PolizasPorVencer?.Count ?? 0);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -239,4 +486,237 @@
         http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
         return http;
     }
+
+    private static string Saludo()
+    {
+        var h = DateTime.Now.Hour;
+        return h < 12 ? "Buenos días" : h < 18 ? "Buenas tardes" : "Buenas noches";
+    }
+
+    private static string SemClass(string sem) => sem switch
+    {
+        "rojo" => "dsh-dot--r",
+        "amarillo" => "dsh-dot--a",
+        _ => "dsh-dot--v"
+    };
+
+    private static string NovLabel(string tipo) => tipo switch
+    {
+        "Dano" => "Daño",
+        _ => tipo
+    };
+    private static string NovBg(string tipo) => tipo switch
+    {
+        "Seguridad" => "#FDE8E8",
+        "Dano" => "#FFF1E4",
+        "Reclamo" => "#FFF8DE",
+        "Mantenimiento" => "#E7F0FE",
+        _ => "#EEF2F7"
+    };
+    private static string NovFg(string tipo) => tipo switch
+    {
+        "Seguridad" => "#C81E1E",
+        "Dano" => "#C2570A",
+        "Reclamo" => "#A16207",
+        "Mantenimiento" => "#1D63D8",
+        _ => "#5A6B7E"
+    };
+
+    private static string HaceCuanto(DateTimeOffset t)
+    {
+        var d = DateTimeOffset.UtcNow - t.ToUniversalTime();
+        if (d.TotalMinutes < 1) return "ahora";
+        if (d.TotalMinutes < 60) return $"hace {(int)d.TotalMinutes} min";
+        if (d.TotalHours < 24) return $"hace {(int)d.TotalHours} h";
+        if (d.TotalDays < 7) return $"hace {(int)d.TotalDays} d";
+        return t.LocalDateTime.ToString("dd MMM");
+    }
+
+    // ---------- Helpers de graficas (todo con InvariantCulture: es-CO usa coma decimal) ----------
+
+    /// <summary>Formatea un double para atributos SVG/CSS sin coma decimal.</summary>
+    private static string Inv(double v) => v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    // Area de dibujo de la linea: x en [34, 630], y en [16, 166] (150 px de alto util).
+    private static string Cx(int i, int n) => Inv(34 + i * (596.0 / Math.Max(1, n - 1)));
+    private static string Cy(int valor, int max) => Inv(166 - 150.0 * valor / Math.Max(1, max));
+
+    private static string Puntos(IReadOnlyList<SerieMensualDto> serie, Func<SerieMensualDto, int> sel, int max)
+        => string.Join(" ", serie.Select((s, i) => $"{Cx(i, serie.Count)},{Cy(sel(s), max)}"));
+
+    private static string AreaPath(IReadOnlyList<SerieMensualDto> serie, Func<SerieMensualDto, int> sel, int max)
+        => $"M {Cx(0, serie.Count)},166 L {Puntos(serie, sel, max).Replace(" ", " L ")} L {Cx(serie.Count - 1, serie.Count)},166 Z";
+
+    private static string MesAbrev(int mes)
+        => new[] { "ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic" }[Math.Clamp(mes, 1, 12) - 1];
+
+    private static readonly string[] PaletaTipos = { "#6D4FE3", "#1D63D8", "#12A5BC", "#E8A13C", "#E23A8E", "#94A3B8" };
+    private static string ColorTipo(int i) => PaletaTipos[i % PaletaTipos.Length];
+
+    /// <summary>Arma la matriz 7 filas (Lun..Dom) x N semanas del heatmap desde la lista de dias.</summary>
+    private static List<List<(DateOnly? Dia, int Cant)>> HeatGrid(IReadOnlyList<ActividadDiaDto> dias)
+    {
+        var offset = ((int)dias[0].Dia.DayOfWeek + 6) % 7;   // Lunes = 0
+        var cols = (offset + dias.Count + 6) / 7;
+        var grid = new List<List<(DateOnly?, int)>>();
+        for (var fila = 0; fila < 7; fila++)
+        {
+            var filaCeldas = new List<(DateOnly?, int)>();
+            for (var col = 0; col < cols; col++)
+            {
+                var idx = col * 7 + fila - offset;
+                if (idx < 0 || idx >= dias.Count) filaCeldas.Add((null, 0));
+                else filaCeldas.Add((dias[idx].Dia, dias[idx].Cantidad));
+            }
+            grid.Add(filaCeldas);
+        }
+        return grid;
+    }
 }
+
+<style>
+    .dsh { max-width: 1900px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+
+    /* ===== Hero ===== */
+    .dsh-hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    .dsh-title { font-size: 1.45rem; font-weight: 800; color: #1B2A3A; margin: 0; }
+    .dsh-sub { color: #7C98B6; font-size: .86rem; margin-top: 2px; }
+    .dsh-chips { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .dsh-chip { font-size: .78rem; color: #516F90; background: #fff; border: 1px solid #E9EEF3; border-radius: 20px; padding: 4px 12px; }
+    .dsh-chip strong { color: #5955D1; }
+    .dsh-hero-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+    .dsh-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 10px; font-size: .84rem; font-weight: 700; text-decoration: none; color: #33475B; background: #fff; border: 1px solid #E1E8EE; transition: border-color .12s, background .12s; }
+    .dsh-btn:hover { border-color: #6D4FE3; color: #6D4FE3; }
+    .dsh-btn-brand { background: #5955D1; border-color: #5955D1; color: #fff; }
+    .dsh-btn-brand:hover { background: #4B47C4; color: #fff; }
+
+    /* ===== Alertas ===== */
+    .dsh-alertas { background: #FFF7F7; border: 1px solid #F3C9C9; border-radius: 14px; padding: 12px 16px; }
+    .dsh-alertas-head { display: flex; align-items: center; gap: 7px; color: #C81E1E; font-size: .86rem; margin-bottom: 6px; }
+    .dsh-alerta { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid #F8E3E3; font-size: .84rem; color: #513A3A; }
+    .dsh-alerta-tag { flex: 0 0 auto; font-size: .68rem; font-weight: 800; background: #C81E1E; color: #fff; border-radius: 20px; padding: 2px 9px; }
+    .dsh-alerta-tx { flex: 1; min-width: 0; }
+    .dsh-alerta-ok { flex: 0 0 auto; border: 1px solid #E1B4B4; background: #fff; color: #A33; border-radius: 8px; font-size: .76rem; font-weight: 700; padding: 4px 12px; cursor: pointer; }
+    .dsh-alerta-ok:hover { background: #FDECEC; }
+    .dsh-alertas-more { display: inline-flex; align-items: center; gap: 5px; margin-top: 6px; border: 0; background: transparent; color: #C81E1E; font-size: .78rem; font-weight: 800; cursor: pointer; padding: 4px 2px; }
+    .dsh-alertas-more:hover { text-decoration: underline; }
+
+    /* ===== KPIs ===== */
+    .dsh-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+    .dsh-kpi { display: flex; flex-direction: column; gap: 4px; background: #fff; border: 1px solid #E9EEF3; border-radius: 14px; padding: 16px; text-decoration: none; transition: box-shadow .14s, transform .14s, border-color .14s; }
+    a.dsh-kpi:hover { border-color: #D9D2F6; box-shadow: 0 8px 22px rgba(89, 85, 209, .10); transform: translateY(-2px); }
+    .dsh-kpi--gauge { flex-direction: row; align-items: center; gap: 12px; grid-row: span 1; }
+    .dsh-gauge-v { font-size: 19px; font-weight: 800; fill: #1B2A3A; font-family: inherit; }
+    .dsh-kpi-ic { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }
+    .dsh-ic-morado { background: #F1ECFD; color: #6D4FE3; }
+    .dsh-ic-azul { background: #E7F0FE; color: #1D63D8; }
+    .dsh-ic-rojo { background: #FDE8E8; color: #C81E1E; }
+    .dsh-ic-ambar { background: #FFF4E0; color: #B45309; }
+    .dsh-ic-verde { background: #E4F7EC; color: #16794C; }
+    .dsh-kpi-n { font-size: 1.55rem; font-weight: 800; color: #1B2A3A; line-height: 1.1; }
+    .dsh-kpi-l { font-size: .78rem; color: #7C98B6; font-weight: 600; }
+    .dsh-kpi-s { font-size: .76rem; color: #7C98B6; }
+
+    /* ===== Cards ===== */
+    .dsh-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .dsh-row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+    @@media (max-width: 1100px) { .dsh-row2, .dsh-row3 { grid-template-columns: 1fr; } }
+    .dsh-card { background: #fff; border: 1px solid #E9EEF3; border-radius: 14px; padding: 16px 18px; min-width: 0; }
+    .dsh-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+    .dsh-card-t { font-size: .95rem; font-weight: 800; color: #1B2A3A; }
+    .dsh-link { font-size: .78rem; font-weight: 700; color: #6D4FE3; text-decoration: none; }
+    .dsh-link:hover { text-decoration: underline; }
+    .dsh-empty { color: #9AABBE; font-size: .84rem; padding: 14px 0; }
+    .dsh-empty a { color: #6D4FE3; }
+    .dsh-sec-t { font-size: .7rem; font-weight: 800; letter-spacing: .05em; color: #9AABBE; text-transform: uppercase; margin: 14px 0 6px; }
+
+    /* Barras por etapa */
+    .dsh-bars { display: flex; flex-direction: column; gap: 8px; }
+    .dsh-bar-row { display: grid; grid-template-columns: 120px 1fr 30px; align-items: center; gap: 10px; }
+    .dsh-bar-l { font-size: .8rem; color: #516F90; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dsh-bar-track { height: 9px; border-radius: 6px; background: #F1F4F8; overflow: hidden; }
+    .dsh-bar-fill { height: 100%; border-radius: 6px; transition: width .5s ease; }
+    .dsh-bar-v { font-size: .8rem; font-weight: 800; color: #33475B; text-align: right; }
+
+    /* Semaforo PQRSD */
+    .dsh-sem { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+    .dsh-sem-p { border-radius: 11px; padding: 9px 12px; font-size: .74rem; font-weight: 700; display: flex; flex-direction: column; }
+    .dsh-sem-n { font-size: 1.25rem; font-weight: 800; line-height: 1.15; }
+    .dsh-sem--v { background: #E4F7EC; color: #16794C; }
+    .dsh-sem--a { background: #FFF6DE; color: #A16207; }
+    .dsh-sem--r { background: #FDE8E8; color: #C81E1E; }
+
+    /* Listas de items */
+    .dsh-list { display: flex; flex-direction: column; }
+    .dsh-item { display: flex; align-items: center; gap: 8px; padding: 7px 4px; border-top: 1px solid #F4F6F9; text-decoration: none; border-radius: 8px; }
+    .dsh-item:first-child { border-top: 0; }
+    .dsh-item:hover { background: #FAF9FE; }
+    .dsh-num { flex: 0 0 auto; font-size: .66rem; font-weight: 800; color: #7C8A9C; background: #F0F3F8; border: 1px solid #E4EAF1; border-radius: 6px; padding: 1px 6px; font-variant-numeric: tabular-nums; }
+    .dsh-item-t { flex: 1; min-width: 0; font-size: .84rem; font-weight: 600; color: #33475B; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dsh-due { flex: 0 0 auto; font-size: .74rem; font-weight: 800; color: #7C98B6; }
+    .dsh-due--a { color: #B45309; }
+    .dsh-due--r { color: #C81E1E; }
+    .dsh-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; }
+    .dsh-dot--v { background: #22A362; }
+    .dsh-dot--a { background: #EAB308; }
+    .dsh-dot--r { background: #E23A3A; }
+    .dsh-mini-tag { flex: 0 0 auto; font-size: .64rem; font-weight: 800; color: #6D4FE3; background: #F1ECFD; border-radius: 6px; padding: 1px 7px; }
+    .dsh-mini-tag--pol { color: #1D63D8; background: #E7F0FE; }
+
+    /* Feeds (porteria + actividad) */
+    .dsh-feed { display: flex; flex-direction: column; }
+    .dsh-nov { display: flex; align-items: flex-start; gap: 9px; padding: 8px 2px; border-top: 1px solid #F4F6F9; }
+    .dsh-nov:first-child { border-top: 0; }
+    .dsh-nov-tag { flex: 0 0 auto; font-size: .64rem; font-weight: 800; border-radius: 6px; padding: 2px 8px; margin-top: 1px; }
+    .dsh-nov-body { flex: 1; min-width: 0; }
+    .dsh-nov-tx { font-size: .82rem; color: #33475B; line-height: 1.35; }
+    .dsh-nov-meta { font-size: .72rem; color: #9AABBE; margin-top: 2px; }
+    .dsh-act { display: flex; align-items: flex-start; gap: 9px; padding: 8px 2px; border-top: 1px solid #F4F6F9; }
+    .dsh-act:first-child { border-top: 0; }
+    .dsh-act-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: #C9BFF5; margin-top: 5px; }
+
+    .dsh-hint { font-size: .8rem; color: #7C98B6; background: #FBFAFF; border: 1px dashed #D9D2F6; border-radius: 12px; padding: 10px 14px; }
+    .dsh-hint a { color: #6D4FE3; font-weight: 700; }
+
+    /* ===== Graficas (v3) ===== */
+    .dsh-rowcharts { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; }
+    @@media (max-width: 1100px) { .dsh-rowcharts { grid-template-columns: 1fr; } }
+    .dsh-card-sub { font-size: .74rem; color: #9AABBE; font-weight: 600; }
+    .dsh-legend { display: flex; gap: 12px; flex-wrap: wrap; }
+    .dsh-leg { display: inline-flex; align-items: center; gap: 5px; font-size: .74rem; font-weight: 700; color: #516F90; }
+    .dsh-leg i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+    .dsh-line { width: 100%; height: auto; display: block; }
+    .dsh-ax { font-size: 10px; fill: #9AABBE; font-family: inherit; }
+
+    /* Dona por tipo */
+    .dsh-pie-wrap { display: flex; align-items: center; gap: 16px; }
+    .dsh-pie { width: 132px; height: 132px; flex: 0 0 132px; }
+    .dsh-pie-n { font-size: 17px; font-weight: 800; fill: #1B2A3A; font-family: inherit; }
+    .dsh-pie-l { font-size: 8.5px; font-weight: 700; fill: #9AABBE; font-family: inherit; letter-spacing: .08em; }
+    .dsh-pie-leg { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+    .dsh-pie-item { display: flex; align-items: center; gap: 7px; }
+    .dsh-pie-item i { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; }
+    .dsh-pie-t { flex: 1; min-width: 0; font-size: .8rem; font-weight: 600; color: #516F90; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dsh-pie-v { font-size: .8rem; font-weight: 800; color: #1B2A3A; }
+
+    /* Heatmap dias mas activos */
+    .dsh-heat { display: flex; flex-direction: column; gap: 4px; }
+    .dsh-heat-row { display: flex; align-items: center; gap: 4px; }
+    .dsh-heat-lbl { flex: 0 0 16px; font-size: .64rem; font-weight: 800; color: #9AABBE; text-align: center; }
+    .dsh-heat-c { flex: 1; aspect-ratio: 1; max-width: 26px; border-radius: 5px; }
+    .dsh-heat-c--off { background: transparent; }
+    .dsh-heat-foot { display: flex; align-items: center; gap: 5px; margin-top: 6px; font-size: .68rem; color: #9AABBE; }
+    .dsh-heat-foot .dsh-heat-c { flex: 0 0 14px; max-width: 14px; }
+
+    /* Tarjeta de alertas reubicada */
+    .dsh-card--alertas { border-color: #F3D4D4; background: #FFFBFB; }
+    .dsh-t-rojo { color: #C81E1E; display: inline-flex; align-items: center; gap: 6px; }
+
+    /* Modo oscuro del tema (tokens bs del template) */
+    [data-bs-theme="dark"] .dsh-card, [data-bs-theme="dark"] .dsh-kpi, [data-bs-theme="dark"] .dsh-chip, [data-bs-theme="dark"] .dsh-btn { background: var(--bs-body-bg); border-color: var(--bs-border-color); }
+    [data-bs-theme="dark"] .dsh-title, [data-bs-theme="dark"] .dsh-kpi-n, [data-bs-theme="dark"] .dsh-card-t { color: var(--bs-heading-color); }
+    [data-bs-theme="dark"] .dsh-item-t, [data-bs-theme="dark"] .dsh-nov-tx { color: var(--bs-body-color); }
+    [data-bs-theme="dark"] .dsh-item:hover { background: rgba(109, 79, 227, .08); }
+    [data-bs-theme="dark"] .dsh-bar-track { background: rgba(255, 255, 255, .08); }
+    [data-bs-theme="dark"] .dsh-gauge-v { fill: var(--bs-heading-color); }
+</style>
