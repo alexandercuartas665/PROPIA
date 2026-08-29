@@ -120,6 +120,61 @@ public class DashboardCopropiedadService : IDashboardCopropiedadService
             .Select(x => new ContratoPorVencerDto(x.Id, x.Aseguradora, x.FechaFin, x.Dias, x.Sem))
             .ToList();
 
+        // 7. Dashboard v2 - distribucion de tareas activas por etapa (para la grafica de barras).
+        //    Se agrupa por NOMBRE de etapa (los tableros repiten nombres tipo "Pendiente"): la vista
+        //    es un panorama global de la copropiedad, no de un tablero puntual.
+        var tareasPorEtapa = (await (
+                from t in _db.Tareas.AsNoTracking().Where(t => !t.Estado!.EsTerminal)
+                join e in _db.TareasEstados on t.EstadoId equals e.Id
+                group e by e.Nombre into g
+                select new { Nombre = g.Key, Color = g.Min(x => x.Color), Cantidad = g.Count() }
+            ).ToListAsync(ct))
+            .OrderByDescending(x => x.Cantidad)
+            .Take(8)
+            .Select(x => new TareasPorEtapaDto(x.Nombre, x.Color, x.Cantidad))
+            .ToList();
+
+        // 8. Dashboard v2 - PQRSD en gestion (abiertas = ni cerradas ni via agotada, sin archivar).
+        var pqrsAbiertasQ = _db.PqrsdExpedientes.AsNoTracking()
+            .Where(p => !p.Archivado && p.Estado != EstadoPqrsd.Cerrada && p.Estado != EstadoPqrsd.ViaInternaAgotada);
+        var pqrsAbiertas = await pqrsAbiertasQ.CountAsync(ct);
+        var pqrsVencidas = await pqrsAbiertasQ.CountAsync(p => p.FechaVencimiento < hoy, ct);
+        var pqrsPorVencer = await pqrsAbiertasQ.CountAsync(p => p.FechaVencimiento >= hoy && p.FechaVencimiento.DayNumber - hoy.DayNumber <= 3, ct);
+        var pqrsProximas = (await pqrsAbiertasQ
+                .OrderBy(p => p.FechaVencimiento)
+                .Take(6)
+                .Select(p => new { p.Id, p.NumeroRadicado, p.Tipo, p.Descripcion, p.FechaVencimiento })
+                .ToListAsync(ct))
+            .Select(p =>
+            {
+                var dias = p.FechaVencimiento.DayNumber - hoy.DayNumber;
+                var sem = dias < 0 ? "rojo" : dias <= 3 ? "amarillo" : "verde";
+                var resumen = p.Descripcion.Length > 70 ? p.Descripcion[..70] + "..." : p.Descripcion;
+                return new PqrDashboardDto(p.Id, p.NumeroRadicado, p.Tipo.ToString(), resumen, p.FechaVencimiento, dias, sem);
+            })
+            .ToList();
+
+        // 9. Dashboard v2 - novedades de porteria recientes (con nombre del guarda, global sin RLS).
+        var hoyUtc = DateTime.UtcNow.Date;
+        var novedadesHoy = await _db.NovedadesTurno.AsNoTracking()
+            .CountAsync(n => n.CreatedAt >= hoyUtc, ct);
+        var novedadesRaw = await _db.NovedadesTurno.AsNoTracking()
+            .OrderByDescending(n => n.CreatedAt).Take(6)
+            .Select(n => new { n.Id, n.Tipo, n.Descripcion, n.GuardaPersonaId, n.CreatedAt, n.TareaId })
+            .ToListAsync(ct);
+        var guardaIds = novedadesRaw.Select(n => n.GuardaPersonaId).Distinct().ToList();
+        var guardas = await _db.Personas.AsNoTracking()
+            .Where(p => guardaIds.Contains(p.Id))
+            .Select(p => new { p.Id, Nombre = (p.Nombres + " " + p.Apellidos).Trim() })
+            .ToDictionaryAsync(p => p.Id, p => p.Nombre, ct);
+        var novedadesPorteria = novedadesRaw
+            .Select(n => new NovedadPorteriaDashboardDto(
+                n.Id, n.Tipo.ToString(),
+                n.Descripcion.Length > 90 ? n.Descripcion[..90] + "..." : n.Descripcion,
+                guardas.TryGetValue(n.GuardaPersonaId, out var g) ? g : null,
+                n.CreatedAt, n.TareaId != null))
+            .ToList();
+
         return new DashboardResumenDto(
             alertas,
             recaudoPct, unidadesEnMora, null,
@@ -128,7 +183,10 @@ public class DashboardCopropiedadService : IDashboardCopropiedadService
             feed,
             moduloPresupuestoConfig,
             contratosPorVencer,
-            polizasPorVencer);
+            polizasPorVencer,
+            tareasPorEtapa,
+            pqrsAbiertas, pqrsPorVencer, pqrsVencidas, pqrsProximas,
+            novedadesHoy, novedadesPorteria);
     }
 
     public async Task<IReadOnlyList<AlertaDashboardDto>> ListarAlertasAsync(CancellationToken ct)
