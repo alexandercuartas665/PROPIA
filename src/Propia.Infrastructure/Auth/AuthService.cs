@@ -72,7 +72,34 @@ public class AuthService : IAuthService
             user.Persona?.Nombres,
             user.Persona?.Apellidos,
             activeTenantId,
-            tenants);
+            tenants,
+            _blob.ResolveUrl(user.Persona?.FotoUrl),
+            _blob.ResolveUrl(user.Persona?.FirmaUrl));
+    }
+
+    public async Task<(bool Ok, string? Error)> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 8)
+            return (false, "La nueva clave debe tener al menos 8 caracteres.");
+
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user is null) return (false, "Usuario no encontrado.");
+
+        var res = await _userManager.ChangePasswordAsync(user, currentPassword ?? "", newPassword);
+        if (res.Succeeded) return (true, null);
+
+        var err = res.Errors.FirstOrDefault();
+        var msg = (err?.Code) switch
+        {
+            "PasswordMismatch" => "La clave actual no es correcta.",
+            "PasswordTooShort" => "La nueva clave es muy corta.",
+            "PasswordRequiresNonAlphanumeric" => "La clave debe incluir un caracter especial.",
+            "PasswordRequiresDigit" => "La clave debe incluir un numero.",
+            "PasswordRequiresUpper" => "La clave debe incluir una mayuscula.",
+            "PasswordRequiresLower" => "La clave debe incluir una minuscula.",
+            _ => err?.Description ?? "No se pudo cambiar la clave."
+        };
+        return (false, msg);
     }
 
     public async Task<LoginResponse?> SwitchTenantAsync(Guid userId, Guid newTenantId, CancellationToken ct)

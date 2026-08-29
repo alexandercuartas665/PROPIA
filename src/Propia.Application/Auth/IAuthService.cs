@@ -16,4 +16,10 @@ public interface IAuthService
     /// y emite uno nuevo con la misma identidad y tenant. Devuelve null si firma invalida o vencido fuera de ventana.
     /// </summary>
     Task<LoginResponse?> RefreshAsync(string rawJwt, CancellationToken ct);
+
+    /// <summary>
+    /// Cambia la contrasena del usuario autenticado validando la actual.
+    /// Devuelve (ok, error). error trae el motivo legible si ok=false.
+    /// </summary>
+    Task<(bool Ok, string? Error)> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword, CancellationToken ct);
 }

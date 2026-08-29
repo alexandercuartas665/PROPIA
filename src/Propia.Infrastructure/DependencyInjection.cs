@@ -173,6 +173,7 @@ public static class DependencyInjection
 
         // Modulo 2.5 Usuarios, Roles y Accesos
         services.AddScoped<Application.UsuariosAccesos.IUsuariosService, UsuariosAccesos.UsuariosService>();
+        services.AddScoped<Application.MiPerfil.IMiPerfilService, MiPerfil.MiPerfilService>();
         services.AddScoped<Application.UsuariosAccesos.IRolesService, UsuariosAccesos.RolesService>();
         services.AddScoped<Application.UsuariosAccesos.ISeedUsuarioRolService, UsuariosAccesos.SeedUsuarioRolService>();
 

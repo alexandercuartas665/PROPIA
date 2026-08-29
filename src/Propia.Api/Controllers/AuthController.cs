@@ -148,6 +148,18 @@ public class AuthController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Cambia la clave del usuario autenticado validando la actual (Mi Perfil).</summary>
+    [HttpPost("change-password")]
+    [Authorize]
+    public async Task<IActionResult> ChangePassword([FromBody] Propia.Application.MiPerfil.CambiarPasswordRequest request, CancellationToken ct)
+    {
+        var userId = GetUserId();
+        if (userId is null) return Unauthorized();
+
+        var (ok, error) = await _auth.ChangePasswordAsync(userId.Value, request.CurrentPassword, request.NewPassword, ct);
+        return ok ? NoContent() : BadRequest(new { error });
+    }
+
     private Guid? GetUserId()
     {
         var raw = User.FindFirstValue("user_id") ?? User.FindFirstValue(ClaimTypes.NameIdentifier);

@@ -17,7 +17,9 @@ public record MeResponse(
     string? PersonaNombres,
     string? PersonaApellidos,
     Guid? ActiveTenantId,
-    IReadOnlyList<TenantInfo> AvailableTenants);
+    IReadOnlyList<TenantInfo> AvailableTenants,
+    string? PersonaFotoUrl = null,
+    string? PersonaFirmaUrl = null);
 
 public record TenantInfo(
     Guid TenantId,

@@ -1,0 +1,238 @@
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.Auth
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+@* Menu de cuenta (arriba-derecha): agrupa identidad del usuario, Mi Perfil, tema del sistema y Salir.
+   Isla interactiva dentro del MainLayout (SSR). Los datos vienen de /connect/me. *@
+
+@if (_ready)
+{
+    @if (_me is not null)
+    {
+        <div class="um-wrap">
+            <button class="um-trigger" type="button" @onclick="Toggle" title="Mi cuenta" aria-label="Mi cuenta">
+                <span class="um-avatar">
+                    @if (!string.IsNullOrEmpty(_me.PersonaFotoUrl))
+                    {
+                        <img src="@_me.PersonaFotoUrl" alt="Foto de perfil" />
+                    }
+                    else
+                    {
+                        <span>@Iniciales</span>
+                    }
+                </span>
+                <span class="um-name d-none d-lg-inline">@NombreCorto</span>
+                <svg class="um-caret" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+            </button>
+
+            @if (_open)
+            {
+                <div class="um-clickaway" @onclick="Cerrar"></div>
+                <div class="um-pop" @onclick:stopPropagation="true">
+                    @* Cabecera: identidad *@
+                    <div class="um-head">
+                        <span class="um-avatar um-avatar--lg">
+                            @if (!string.IsNullOrEmpty(_me.PersonaFotoUrl))
+                            {
+                                <img src="@_me.PersonaFotoUrl" alt="Foto de perfil" />
+                            }
+                            else
+                            {
+                                <span>@Iniciales</span>
+                            }
+                        </span>
+                        <div class="um-head-info">
+                            <div class="um-head-name">@NombreCompleto</div>
+                            @if (RolActivo is not null)
+                            {
+                                <div class="um-head-rol">@RolActivo</div>
+                            }
+                            <div class="um-head-email">@_me.Email</div>
+                        </div>
+                    </div>
+
+                    <div class="um-sep"></div>
+
+                    @* Mi Perfil *@
+                    <a class="um-item" href="/cuenta/perfil" @onclick="Cerrar">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+                        <span>Mi perfil</span>
+                    </a>
+
+                    @* Tema del sistema *@
+                    <button class="um-item" type="button" @onclick="ToggleTema">
+                        @if (_temaOscuro)
+                        {
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
+                        }
+                        else
+                        {
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /></svg>
+                        }
+                        <span>Tema @(_temaOscuro ? "oscuro" : "claro")</span>
+                        <span class="um-switch @(_temaOscuro ? "on" : "")"><span class="um-switch-knob"></span></span>
+                    </button>
+
+                    <div class="um-sep"></div>
+
+                    @* Salir *@
+                    <button class="um-item um-item--danger" type="button" @onclick="Salir">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></svg>
+                        <span>Salir</span>
+                    </button>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <a href="/login" class="btn btn-primary btn-sm waves-effect waves-light">
+            <i class="fi fi-rr-sign-in-alt me-1"></i>Ingresar
+        </a>
+    }
+}
+
+@code {
+    private string? _jwt;
+    private bool _ready;
+    private bool _open;
+    private bool _temaOscuro;
+    private MeResponse? _me;
+
+    private string Iniciales
+    {
+        get
+        {
+            var n = _me?.PersonaNombres?.Trim() ?? "";
+            var a = _me?.PersonaApellidos?.Trim() ?? "";
+            var i1 = n.Length > 0 ? n[0].ToString() : (_me?.Email?.Length > 0 ? _me.Email[0].ToString() : "?");
+            var i2 = a.Length > 0 ? a[0].ToString() : "";
+            return (i1 + i2).ToUpperInvariant();
+        }
+    }
+    private string NombreCompleto => $"{_me?.PersonaNombres} {_me?.PersonaApellidos}".Trim() is { Length: > 0 } s ? s : (_me?.Email ?? "Usuario");
+    private string NombreCorto => _me?.PersonaNombres?.Trim() is { Length: > 0 } n ? n : (_me?.Email ?? "Cuenta");
+    private string? RolActivo => _me?.AvailableTenants.FirstOrDefault(t => t.TenantId == _me.ActiveTenantId)?.Rol;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _ready) return;
+        try
+        {
+            _jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            try { var t = await Js.InvokeAsync<string?>("propiaUI.getTheme"); _temaOscuro = t == "dark"; } catch { }
+            if (!string.IsNullOrWhiteSpace(_jwt)) await CargarAsync();
+        }
+        catch { _me = null; }
+        finally { _ready = true; StateHasChanged(); }
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var resp = await Auth().GetAsync("/connect/me");
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                var nuevo = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+                if (string.IsNullOrEmpty(nuevo)) return;
+                _jwt = nuevo;
+                resp = await Auth().GetAsync("/connect/me");
+            }
+            if (resp.IsSuccessStatusCode)
+                _me = await resp.Content.ReadFromJsonAsync<MeResponse>();
+        }
+        catch { _me = null; }
+    }
+
+    private void Toggle() => _open = !_open;
+    private void Cerrar() => _open = false;
+
+    private async Task ToggleTema()
+    {
+        try
+        {
+            var nuevo = await Js.InvokeAsync<string>("propiaUI.toggleTheme");
+            _temaOscuro = nuevo == "dark";
+        }
+        catch { }
+    }
+
+    private async Task Salir()
+    {
+        _open = false;
+        try { await Js.InvokeVoidAsync("propiaAuth.clear"); } catch { }
+        Nav.NavigateTo("/login", forceLoad: true);
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(_jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
+        return http;
+    }
+}
+
+<style>
+    .um-wrap { position: relative; display: flex; align-items: center; }
+
+    .um-trigger {
+        display: inline-flex; align-items: center; gap: 9px;
+        height: 40px; padding: 3px 10px 3px 4px;
+        border: 1px solid var(--bs-border-color); border-radius: 22px;
+        background: var(--bs-body-bg); color: var(--bs-heading-color);
+        cursor: pointer; font-family: inherit;
+        transition: border-color .15s, background .15s;
+    }
+    .um-trigger:hover { border-color: var(--propia-primary, #6D4FE3); background: rgba(109,79,227,.05); }
+    .um-name { font-size: .85rem; font-weight: 600; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .um-caret { color: var(--bs-secondary-color); flex: 0 0 auto; }
+
+    .um-avatar {
+        width: 32px; height: 32px; border-radius: 50%; flex: 0 0 auto; overflow: hidden;
+        display: inline-flex; align-items: center; justify-content: center;
+        background: linear-gradient(140deg, #8366F0, #5838C9); color: #fff;
+        font-size: .8rem; font-weight: 800;
+    }
+    .um-avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .um-avatar--lg { width: 46px; height: 46px; font-size: 1.05rem; border-radius: 13px; }
+
+    .um-clickaway { position: fixed; inset: 0; z-index: 1090; background: transparent; }
+    .um-pop {
+        position: absolute; top: calc(100% + 10px); right: 0; z-index: 1095;
+        width: 300px; max-width: calc(100vw - 24px);
+        background: var(--bs-body-bg); border: 1px solid var(--bs-border-color);
+        border-radius: 14px; box-shadow: 0 18px 48px rgba(0,0,0,.22);
+        overflow: hidden; padding: 6px;
+        animation: um-fade .12s ease-out;
+    }
+    @@keyframes um-fade { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+    .um-head { display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px; }
+    .um-head-info { min-width: 0; }
+    .um-head-name { font-size: .95rem; font-weight: 800; color: var(--bs-heading-color); line-height: 1.2; }
+    .um-head-rol { font-size: .72rem; font-weight: 700; color: var(--propia-primary, #6D4FE3); margin-top: 2px; }
+    .um-head-email { font-size: .75rem; color: var(--bs-secondary-color); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .um-sep { height: 1px; background: var(--bs-border-color); margin: 5px 6px; }
+
+    .um-item {
+        display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
+        padding: 10px 11px; border: 0; border-radius: 9px; background: transparent;
+        color: var(--bs-heading-color); font-size: .87rem; font-weight: 600;
+        cursor: pointer; font-family: inherit; text-decoration: none;
+    }
+    .um-item:hover { background: rgba(109,79,227,.08); color: var(--propia-primary, #6D4FE3); }
+    .um-item svg { color: var(--bs-secondary-color); flex: 0 0 auto; }
+    .um-item:hover svg { color: var(--propia-primary, #6D4FE3); }
+    .um-item--danger:hover { background: rgba(220,53,69,.09); color: #dc3545; }
+    .um-item--danger:hover svg { color: #dc3545; }
+
+    .um-switch { margin-left: auto; width: 34px; height: 19px; border-radius: 11px; background: var(--bs-border-color); position: relative; transition: background .15s; flex: 0 0 auto; }
+    .um-switch.on { background: var(--propia-primary, #6D4FE3); }
+    .um-switch-knob { position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; transition: left .15s; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+    .um-switch.on .um-switch-knob { left: 17px; }
+</style>

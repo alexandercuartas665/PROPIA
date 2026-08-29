@@ -39,6 +39,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
     public DbSet<Organizacion> Organizaciones => Set<Organizacion>();
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<Persona> Personas => Set<Persona>();
+    public DbSet<UsuarioContactoNotificacion> UsuarioContactosNotificacion => Set<UsuarioContactoNotificacion>();
     public DbSet<Empresa> Empresas => Set<Empresa>();
     public DbSet<SuperAdminUsuario> SuperAdminUsuarios => Set<SuperAdminUsuario>();
     public DbSet<SuperAdminLog> SuperAdminLogs => Set<SuperAdminLog>();
@@ -416,6 +417,15 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.Email).HasMaxLength(200).HasColumnType("citext");
             b.HasIndex(x => new { x.TipoDocumento, x.Documento }).IsUnique();
             b.HasIndex(x => x.Email).IsUnique().HasFilter("email IS NOT NULL");
+        });
+
+        // Contactos de notificacion del usuario (global por persona, sin tenant/RLS).
+        modelBuilder.Entity<UsuarioContactoNotificacion>(b =>
+        {
+            b.Property(x => x.Valor).IsRequired().HasMaxLength(200);
+            b.Property(x => x.Canal).HasConversion<int>();
+            b.HasIndex(x => x.PersonaId);
+            b.HasOne(x => x.Persona).WithMany().HasForeignKey(x => x.PersonaId).OnDelete(DeleteBehavior.Cascade);
         });
 
         // Empresa

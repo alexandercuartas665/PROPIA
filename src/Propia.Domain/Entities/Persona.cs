@@ -18,6 +18,7 @@ public class Persona : BaseEntity
     public string? Email { get; set; }
     public string? Telefono { get; set; }
     public string? FotoUrl { get; set; }
+    public string? FirmaUrl { get; set; }
 
     // Modulo 2.4 Directorio (spec v1.0)
     public DateOnly? FechaNacimiento { get; set; }

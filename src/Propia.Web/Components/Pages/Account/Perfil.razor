@@ -1,20 +1,22 @@
 @page "/cuenta/perfil"
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.Auth
+@using Propia.Application.MiPerfil
+@using Propia.Domain.Enums
+@using Microsoft.AspNetCore.Components.Forms
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
 @inject NavigationManager Nav
 
 <PageTitle>Mi Perfil - PROPIA</PageTitle>
 
-@* Modulo "Mi Perfil" (Mi cuenta). Datos del usuario + copropiedades vinculadas con su rol + sesion.
-   Los datos vienen de /connect/me (identidad + tenants). Los datos personales detallados (documento,
-   telefonos) se gestionan en el Directorio 2.4; la contrasena/MFA quedan para Fase 2. *@
+@* Modulo "Mi Perfil" (Mi cuenta): identidad + foto, firma, seguridad (clave) y contactos de
+   notificacion (correos/telefonos). Identidad viene de /connect/me; el resto de /api/mi-perfil. *@
 
 <div class="pf-page">
     <div class="pf-head">
         <h1 class="pf-title">Mi Perfil</h1>
-        <p class="pf-sub">Tus datos, las copropiedades a las que tienes acceso y tu sesion.</p>
+        <p class="pf-sub">Tus datos, tu foto y firma, la seguridad de tu cuenta y como quieres recibir notificaciones.</p>
     </div>
 
     @if (_me is null)
@@ -24,9 +26,18 @@
     else
     {
         <div class="pf-grid">
-            @* Identidad *@
+            @* Identidad + foto *@
             <div class="pf-card pf-card--id">
-                <div class="pf-avatar">@Iniciales</div>
+                <div class="pf-avatar">
+                    @if (!string.IsNullOrEmpty(_me.PersonaFotoUrl))
+                    {
+                        <img src="@_me.PersonaFotoUrl" alt="Foto de perfil" />
+                    }
+                    else
+                    {
+                        @Iniciales
+                    }
+                </div>
                 <div class="pf-id-info">
                     <div class="pf-name">@NombreCompleto</div>
                     <div class="pf-email">@_me.Email</div>
@@ -34,6 +45,13 @@
                     {
                         <span class="pf-rol-badge">@RolActivo en @NombreCopActiva</span>
                     }
+                    <div class="pf-id-actions">
+                        <label class="pf-btn-soft @(_subiendoFoto ? "is-busy" : "")">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                            @(_subiendoFoto ? "Subiendo..." : (string.IsNullOrEmpty(_me.PersonaFotoUrl) ? "Subir foto" : "Cambiar foto"))
+                            <InputFile OnChange="OnFotoChange" accept="image/png,image/jpeg,image/webp" style="display:none" disabled="@_subiendoFoto" />
+                        </label>
+                    </div>
                 </div>
             </div>
 
@@ -46,6 +64,105 @@
                     <div class="pf-row"><span>Correo</span><span>@_me.Email</span></div>
                 </div>
                 <div class="pf-note">Tus datos personales detallados (documento, telefonos) se administran en el Directorio de tu copropiedad.</div>
+            </div>
+
+            @* Firma *@
+            <div class="pf-card">
+                <div class="pf-eyebrow">MI FIRMA</div>
+                <div class="pf-firma">
+                    @if (!string.IsNullOrEmpty(_me.PersonaFirmaUrl))
+                    {
+                        <div class="pf-firma-box"><img src="@_me.PersonaFirmaUrl" alt="Firma" /></div>
+                    }
+                    else
+                    {
+                        <div class="pf-firma-box pf-firma-box--empty">Aun no has cargado tu firma.</div>
+                    }
+                    <label class="pf-btn-soft @(_subiendoFirma ? "is-busy" : "")">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+                        @(_subiendoFirma ? "Subiendo..." : (string.IsNullOrEmpty(_me.PersonaFirmaUrl) ? "Subir firma" : "Cambiar firma"))
+                        <InputFile OnChange="OnFirmaChange" accept="image/png,image/jpeg,image/webp" style="display:none" disabled="@_subiendoFirma" />
+                    </label>
+                </div>
+                <div class="pf-note">Imagen PNG, JPG o WEBP (fondo transparente recomendado). Se usa para documentos que requieren tu firma.</div>
+            </div>
+
+            @* Seguridad: cambiar clave *@
+            <div class="pf-card">
+                <div class="pf-eyebrow">SEGURIDAD - CAMBIAR CLAVE</div>
+                <label class="pf-lbl">Clave actual</label>
+                <input class="pf-input" type="password" @bind="_pwActual" @bind:event="oninput" autocomplete="current-password" />
+                <label class="pf-lbl">Nueva clave</label>
+                <input class="pf-input" type="password" @bind="_pwNueva" @bind:event="oninput" autocomplete="new-password" />
+                <label class="pf-lbl">Confirmar nueva clave</label>
+                <input class="pf-input" type="password" @bind="_pwConfirmar" @bind:event="oninput" autocomplete="new-password" />
+                @if (!string.IsNullOrEmpty(_pwMsg))
+                {
+                    <div class="pf-msg @(_pwOk ? "pf-msg--ok" : "pf-msg--err")">@_pwMsg</div>
+                }
+                <button class="pf-btn-brand" type="button" @onclick="CambiarClaveAsync" disabled="@(_pwBusy || !PwValida)">
+                    @(_pwBusy ? "Guardando..." : "Actualizar clave")
+                </button>
+                <div class="pf-note">Minimo 8 caracteres. Al cambiarla, sigues con la sesion actual.</div>
+            </div>
+
+            @* Notificaciones: contactos *@
+            <div class="pf-card pf-card--full">
+                <div class="pf-eyebrow">COMO RECIBIR MIS NOTIFICACIONES</div>
+                <div class="pf-note" style="margin-top:0;margin-bottom:14px;">Agrega los correos y telefonos (WhatsApp) a los que quieres que el sistema te envie tus notificaciones. Aplican en todas tus copropiedades.</div>
+
+                @* Alta *@
+                <div class="pf-nt-add">
+                    <select class="pf-input pf-nt-canal" @bind="_ntCanal">
+                        <option value="@CanalNotificacion.Email">Correo</option>
+                        <option value="@CanalNotificacion.WhatsApp">WhatsApp</option>
+                    </select>
+                    <input class="pf-input pf-nt-valor" @bind="_ntValor" @bind:event="oninput"
+                           placeholder="@(_ntCanal == CanalNotificacion.Email ? "correo@ejemplo.com" : "+57 300 000 0000")" />
+                    <button class="pf-btn-brand pf-nt-add-btn" type="button" @onclick="AgregarContactoAsync" disabled="@(_ntBusy || string.IsNullOrWhiteSpace(_ntValor))">
+                        @(_ntBusy ? "..." : "Agregar")
+                    </button>
+                </div>
+                @if (!string.IsNullOrEmpty(_ntMsg))
+                {
+                    <div class="pf-msg pf-msg--err" style="margin-top:10px;">@_ntMsg</div>
+                }
+
+                @* Lista *@
+                @if (_contactos.Count == 0)
+                {
+                    <div class="pf-empty" style="margin-top:12px;">Aun no has agregado contactos de notificacion.</div>
+                }
+                else
+                {
+                    <div class="pf-nt-list">
+                        @foreach (var c in _contactos)
+                        {
+                            var cc = c;
+                            <div class="pf-nt-item @(c.Activo ? "" : "pf-nt-item--off")">
+                                <span class="pf-nt-ico">
+                                    @if (c.Canal == CanalNotificacion.Email)
+                                    {
+                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 7l10 6 10-6"/></svg>
+                                    }
+                                    else
+                                    {
+                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.6A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>
+                                    }
+                                </span>
+                                <div class="pf-nt-body">
+                                    <div class="pf-nt-valor-t">@c.Valor</div>
+                                    <div class="pf-nt-canal-t">@(c.Canal == CanalNotificacion.Email ? "Correo" : "WhatsApp")</div>
+                                </div>
+                                <button class="pf-nt-toggle @(c.Activo ? "on" : "")" type="button" title="@(c.Activo ? "Activo (clic para pausar)" : "Pausado (clic para activar)")"
+                                        @onclick="() => ToggleContactoAsync(cc)"><span></span></button>
+                                <button class="pf-nt-del" type="button" title="Eliminar" @onclick="() => EliminarContactoAsync(cc)">
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                                </button>
+                            </div>
+                        }
+                    </div>
+                }
             </div>
 
             @* Copropiedades vinculadas *@
@@ -81,9 +198,9 @@
 
             @* Sesion *@
             <div class="pf-card pf-card--full">
-                <div class="pf-eyebrow">SESION Y SEGURIDAD</div>
+                <div class="pf-eyebrow">SESION</div>
                 <div class="pf-session">
-                    <div class="pf-note pf-note--inline">El cambio de contrasena y la autenticacion en dos pasos (MFA) llegan en una proxima fase.</div>
+                    <div class="pf-note pf-note--inline">La autenticacion en dos pasos (MFA) llega en una proxima fase.</div>
                     <button class="pf-btn-logout" type="button" @onclick="CerrarSesionAsync">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
                         Cerrar sesion
@@ -104,10 +221,13 @@
     .pf-card { background: #fff; border: 1px solid #E1E8EE; border-radius: 14px; padding: 18px 20px; }
     .pf-card--full { grid-column: 1 / -1; }
     .pf-card--id { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; }
-    .pf-avatar { width: 58px; height: 58px; border-radius: 15px; flex-shrink: 0; background: linear-gradient(140deg,#8366F0,#5838C9); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 800; }
+    .pf-avatar { width: 58px; height: 58px; border-radius: 15px; flex-shrink: 0; overflow: hidden; background: linear-gradient(140deg,#8366F0,#5838C9); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 800; }
+    .pf-avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .pf-id-info { min-width: 0; }
     .pf-name { font-size: 19px; font-weight: 800; color: #1B2A3A; letter-spacing: -.3px; }
     .pf-email { font-size: 13px; color: #7C98B6; margin-top: 2px; }
     .pf-rol-badge { display: inline-block; margin-top: 8px; font-size: 11px; font-weight: 700; color: var(--propia-brand,#6D4FE3); background: #F1ECFD; border: 1px solid #DCD2F8; padding: 3px 10px; border-radius: 7px; }
+    .pf-id-actions { margin-top: 12px; }
     .pf-eyebrow { font-size: 10.5px; letter-spacing: .5px; color: #A6B7C8; font-weight: 700; margin-bottom: 12px; }
     .pf-rows { display: flex; flex-direction: column; gap: 10px; }
     .pf-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -116,6 +236,45 @@
     .pf-note { font-size: 11.5px; color: #A6B7C8; margin-top: 12px; line-height: 1.5; }
     .pf-note--inline { margin: 0; flex: 1; }
     .pf-empty { font-size: 12.5px; color: #A6B7C8; padding: 6px 0; }
+
+    .pf-lbl { display: block; font-size: 12px; font-weight: 600; color: #7C98B6; margin: 12px 0 5px; }
+    .pf-input { width: 100%; border: 1px solid #DCE3EB; border-radius: 9px; padding: 9px 11px; font-size: 13px; color: #33475B; background: #fff; outline: none; font-family: inherit; }
+    .pf-input:focus { border-color: var(--propia-brand,#6D4FE3); }
+
+    .pf-btn-brand { display: inline-flex; align-items: center; justify-content: center; gap: 7px; margin-top: 14px; padding: 10px 18px; border-radius: 9px; border: 0; background: var(--propia-brand,#6D4FE3); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .pf-btn-brand:hover { background: var(--propia-brand-hover,#5838C9); }
+    .pf-btn-brand:disabled { opacity: .5; cursor: not-allowed; }
+    .pf-btn-soft { display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border: 1px solid #DCD2F8; border-radius: 9px; background: #F1ECFD; color: var(--propia-brand,#6D4FE3); font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .pf-btn-soft:hover { background: #E7DEFB; }
+    .pf-btn-soft.is-busy { opacity: .6; pointer-events: none; }
+
+    .pf-msg { margin-top: 12px; padding: 9px 12px; border-radius: 8px; font-size: 12.5px; font-weight: 600; }
+    .pf-msg--ok { background: #E6F6EE; color: #15703F; }
+    .pf-msg--err { background: #FEE2E2; color: #B91C1C; }
+
+    .pf-firma { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    .pf-firma-box { width: 200px; height: 84px; border: 1px solid #E1E8EE; border-radius: 10px; background: #FBFBFD; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    .pf-firma-box img { max-width: 100%; max-height: 100%; object-fit: contain; }
+    .pf-firma-box--empty { font-size: 11.5px; color: #A6B7C8; text-align: center; padding: 8px; }
+
+    .pf-nt-add { display: flex; gap: 9px; align-items: center; }
+    .pf-nt-canal { width: 130px; flex: 0 0 auto; }
+    .pf-nt-valor { flex: 1 1 auto; }
+    .pf-nt-add-btn { margin-top: 0; flex: 0 0 auto; }
+    .pf-nt-list { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+    .pf-nt-item { display: flex; align-items: center; gap: 11px; border: 1px solid #E1E8EE; border-radius: 11px; padding: 10px 12px; background: #fff; }
+    .pf-nt-item--off { opacity: .55; }
+    .pf-nt-ico { width: 32px; height: 32px; border-radius: 9px; flex: 0 0 auto; background: #F1ECFD; color: var(--propia-brand,#6D4FE3); display: flex; align-items: center; justify-content: center; }
+    .pf-nt-body { flex: 1 1 auto; min-width: 0; }
+    .pf-nt-valor-t { font-size: 13px; font-weight: 700; color: #33475B; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pf-nt-canal-t { font-size: 11px; color: #7C98B6; font-weight: 600; margin-top: 1px; }
+    .pf-nt-toggle { flex: 0 0 auto; width: 38px; height: 21px; border-radius: 12px; border: 0; background: #CDD6E0; position: relative; cursor: pointer; transition: background .15s; }
+    .pf-nt-toggle.on { background: #34C759; }
+    .pf-nt-toggle > span { position: absolute; top: 2px; left: 2px; width: 17px; height: 17px; border-radius: 50%; background: #fff; transition: left .15s; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+    .pf-nt-toggle.on > span { left: 19px; }
+    .pf-nt-del { flex: 0 0 auto; width: 32px; height: 32px; border: 0; background: transparent; color: #A6B7C8; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+    .pf-nt-del:hover { background: #FEE2E2; color: #DC2626; }
+
     .pf-cops { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .pf-cop { display: flex; align-items: center; gap: 11px; border: 1px solid #E1E8EE; border-radius: 11px; padding: 12px 13px; background: #FBFBFD; }
     .pf-cop--act { border-color: #DCD2F8; background: #F8F5FE; }
@@ -136,6 +295,26 @@
 @code {
     private string? _jwt;
     private MeResponse? _me;
+    private List<ContactoNotificacionDto> _contactos = new();
+
+    // Foto / firma
+    private bool _subiendoFoto;
+    private bool _subiendoFirma;
+
+    // Clave
+    private string _pwActual = "";
+    private string _pwNueva = "";
+    private string _pwConfirmar = "";
+    private bool _pwBusy;
+    private bool _pwOk;
+    private string? _pwMsg;
+    private bool PwValida => _pwActual.Length > 0 && _pwNueva.Length >= 8 && _pwNueva == _pwConfirmar;
+
+    // Contactos
+    private CanalNotificacion _ntCanal = CanalNotificacion.Email;
+    private string _ntValor = "";
+    private bool _ntBusy;
+    private string? _ntMsg;
 
     private string Iniciales
     {
@@ -157,7 +336,12 @@
         if (!firstRender) return;
         try { _jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt"); }
         catch { _jwt = null; }
-        if (!string.IsNullOrEmpty(_jwt)) { await CargarAsync(); StateHasChanged(); }
+        if (!string.IsNullOrEmpty(_jwt))
+        {
+            await CargarAsync();
+            await CargarContactosAsync();
+            StateHasChanged();
+        }
     }
 
     private HttpClient Auth()
@@ -183,7 +367,123 @@
             resp.EnsureSuccessStatusCode();
             _me = await resp.Content.ReadFromJsonAsync<MeResponse>();
         }
-        catch { /* sin datos: queda en "Cargando" -> mostramos vacio si falla */ }
+        catch { }
+    }
+
+    private async Task CargarContactosAsync()
+    {
+        try { _contactos = await Auth().GetFromJsonAsync<List<ContactoNotificacionDto>>("/api/mi-perfil/notificaciones") ?? new(); }
+        catch { _contactos = new(); }
+    }
+
+    // ---- Foto / firma ----
+    private Task OnFotoChange(InputFileChangeEventArgs e) => SubirAsync(e, esFirma: false);
+    private Task OnFirmaChange(InputFileChangeEventArgs e) => SubirAsync(e, esFirma: true);
+
+    private async Task SubirAsync(InputFileChangeEventArgs e, bool esFirma)
+    {
+        var file = e.File;
+        if (file is null) return;
+        if (esFirma) _subiendoFirma = true; else _subiendoFoto = true;
+        StateHasChanged();
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var stream = file.OpenReadStream(5_000_000);
+            var sc = new StreamContent(stream);
+            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType);
+            content.Add(sc, "file", file.Name);
+
+            var resp = await Auth().PostAsync(esFirma ? "/api/mi-perfil/firma" : "/api/mi-perfil/foto", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                var r = await resp.Content.ReadFromJsonAsync<UrlResp>();
+                if (_me is not null && r is not null)
+                {
+                    _me = esFirma
+                        ? _me with { PersonaFirmaUrl = r.url }
+                        : _me with { PersonaFotoUrl = r.url };
+                }
+            }
+        }
+        catch { }
+        finally { if (esFirma) _subiendoFirma = false; else _subiendoFoto = false; StateHasChanged(); }
+    }
+
+    private sealed record UrlResp(string url);
+
+    // ---- Clave ----
+    private async Task CambiarClaveAsync()
+    {
+        _pwMsg = null;
+        if (!PwValida) { _pwMsg = "Revisa: clave actual, nueva de 8+ y que coincida la confirmacion."; _pwOk = false; return; }
+        _pwBusy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/connect/change-password", new CambiarPasswordRequest(_pwActual, _pwNueva));
+            if (resp.IsSuccessStatusCode)
+            {
+                _pwOk = true; _pwMsg = "Clave actualizada correctamente.";
+                _pwActual = _pwNueva = _pwConfirmar = "";
+            }
+            else
+            {
+                _pwOk = false;
+                var err = await resp.Content.ReadFromJsonAsync<ErrResp>();
+                _pwMsg = err?.error ?? "No se pudo cambiar la clave.";
+            }
+        }
+        catch (Exception ex) { _pwOk = false; _pwMsg = ex.Message; }
+        finally { _pwBusy = false; }
+    }
+
+    private sealed record ErrResp(string error);
+
+    // ---- Contactos ----
+    private async Task AgregarContactoAsync()
+    {
+        _ntMsg = null;
+        if (string.IsNullOrWhiteSpace(_ntValor)) return;
+        _ntBusy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/api/mi-perfil/notificaciones",
+                new CrearContactoNotificacionRequest(_ntCanal, _ntValor.Trim()));
+            if (resp.IsSuccessStatusCode)
+            {
+                _ntValor = "";
+                await CargarContactosAsync();
+            }
+            else
+            {
+                var err = await resp.Content.ReadFromJsonAsync<ErrResp>();
+                _ntMsg = err?.error ?? "No se pudo agregar el contacto.";
+            }
+        }
+        catch (Exception ex) { _ntMsg = ex.Message; }
+        finally { _ntBusy = false; }
+    }
+
+    private async Task ToggleContactoAsync(ContactoNotificacionDto c)
+    {
+        try
+        {
+            await Auth().PutAsJsonAsync($"/api/mi-perfil/notificaciones/{c.Id}",
+                new ActualizarContactoNotificacionRequest(Activo: !c.Activo));
+            await CargarContactosAsync();
+        }
+        catch { }
+    }
+
+    private async Task EliminarContactoAsync(ContactoNotificacionDto c)
+    {
+        try
+        {
+            await Auth().DeleteAsync($"/api/mi-perfil/notificaciones/{c.Id}");
+            await CargarContactosAsync();
+        }
+        catch { }
     }
 
     private async Task CerrarSesionAsync()
