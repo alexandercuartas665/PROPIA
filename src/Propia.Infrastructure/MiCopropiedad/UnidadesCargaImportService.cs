@@ -198,10 +198,10 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
         var res = new List<(Dictionary<string, string>, int)>();
         if (!wb.TryGetWorksheet(nombre, out var ws)) return res;
         var headers = new Dictionary<int, string>();
-        foreach (var cell in ws.Row(1).CellsUsed())
+        foreach (var cell in ws.Row(2).CellsUsed())   // fila 1 = banner, fila 2 = encabezados
             headers[cell.Address.ColumnNumber] = cell.GetString().Trim().ToUpperInvariant();
         var last = ws.LastRowUsed()?.RowNumber() ?? 0;
-        for (var r = 3; r <= last; r++)   // fila 1 = encabezado, fila 2 = ayuda, datos desde la 3
+        for (var r = 4; r <= last; r++)   // fila 3 = ayuda, datos desde la 4
         {
             var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var any = false;

@@ -14,8 +14,15 @@ namespace Propia.Infrastructure.MiCopropiedad;
 /// </summary>
 public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
 {
-    private const int DataStart = 3;      // fila 1 = encabezado, fila 2 = ayuda, datos desde la 3
+    private const int DataStart = 4;      // fila 1 = banner, fila 2 = encabezado, fila 3 = ayuda, datos desde la 4
     private const int MaxRows = 1000;     // hasta donde se aplican los dropdowns
+
+    // Paleta PROPIA (para que la plantilla se vea como salida del sistema).
+    private static readonly XLColor Brand = XLColor.FromHtml("#6D4FE3");
+    private static readonly XLColor Ink = XLColor.FromHtml("#1B2A3A");
+    private static readonly XLColor Soft = XLColor.FromHtml("#F1ECFD");
+    private static readonly XLColor Border = XLColor.FromHtml("#DCD2F8");
+    private static readonly XLColor BrandText = XLColor.FromHtml("#4B2BB0");
 
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenant;
@@ -50,6 +57,9 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         HojaTerceros(wb, coproList);
 
         wsRef.SheetView.FreezeRows(3);
+        wb.Properties.Author = "PROPIA";
+        wb.Properties.Company = "A&D GROUP S.A.S";
+        wb.Properties.Title = "Plantilla de carga - Unidades privadas";
         using var ms = new MemoryStream();
         wb.SaveAs(ms);
         return (ms.ToArray(), "Plantilla carga unidades privadas.xlsx");
@@ -70,16 +80,32 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     private static (string CoproList, string RolesList) ConstruirReferencia(
         IXLWorksheet ws, List<(Guid Id, string Nombre, string? Codigo)> copros, List<string> roles)
     {
-        ws.Cell(1, 1).Value = "DATOS DE CARGA - REFERENCIA";
-        ws.Cell(1, 1).Style.Font.Bold = true;
-        ws.Cell(2, 1).Value = "Usa la columna COPROPIEDAD (por nombre) en cada hoja. Aqui ves su ID y codigo. Las listas fuerzan valores validos.";
-        ws.Cell(2, 1).Style.Font.FontColor = XLColor.Gray;
+        var banner = ws.Range(1, 1, 1, 5).Merge();
+        banner.Value = "PROPIA   |   Datos de referencia";
+        banner.Style.Fill.BackgroundColor = Brand;
+        banner.Style.Font.FontColor = XLColor.White;
+        banner.Style.Font.Bold = true;
+        banner.Style.Font.FontSize = 13;
+        banner.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+        banner.Style.Alignment.Indent = 1;
+        ws.Row(1).Height = 26;
+        ws.Cell(2, 1).Value = "Usa la columna COPROPIEDAD (por nombre) en cada hoja. Aqui ves su codigo e ID. Las listas fuerzan valores validos.";
+        ws.Cell(2, 1).Style.Font.FontColor = BrandText;
+        ws.Cell(2, 1).Style.Font.Italic = true;
 
         // Copropiedades del cliente: Nombre | Codigo | ID
         ws.Cell(4, 1).Value = "COPROPIEDAD (nombre)";
         ws.Cell(4, 2).Value = "CODIGO";
         ws.Cell(4, 3).Value = "ID (uuid)";
-        for (var i = 0; i < 3; i++) ws.Cell(4, i + 1).Style.Font.Bold = true;
+        for (var i = 0; i < 3; i++)
+        {
+            var h = ws.Cell(4, i + 1);
+            h.Style.Font.Bold = true;
+            h.Style.Fill.BackgroundColor = Soft;
+            h.Style.Font.FontColor = BrandText;
+            h.Style.Border.BottomBorder = XLBorderStyleValues.Thin;
+            h.Style.Border.BottomBorderColor = Border;
+        }
         var r = 5;
         foreach (var c in copros)
         {
@@ -93,15 +119,21 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         var coproList = ListaFormula(copros.Select(c => c.Nombre), coproRange);
 
         // Roles del sistema (para ROLL)
-        ws.Cell(4, 5).Value = "ROL DEL SISTEMA";
-        ws.Cell(4, 5).Style.Font.Bold = true;
+        var rh = ws.Cell(4, 5);
+        rh.Value = "ROL DEL SISTEMA";
+        rh.Style.Font.Bold = true;
+        rh.Style.Fill.BackgroundColor = Soft;
+        rh.Style.Font.FontColor = BrandText;
+        rh.Style.Border.BottomBorder = XLBorderStyleValues.Thin;
+        rh.Style.Border.BottomBorderColor = Border;
         var rr = 5;
         foreach (var rol in roles) ws.Cell(rr++, 5).Value = rol;
         var rolesLast = Math.Max(5, rr - 1);
         var rolesRange = $"'DATOS DE CARGA'!$E$5:$E${rolesLast}";
         var rolesList = ListaFormula(roles, rolesRange);
 
-        ws.Columns(1, 5).AdjustToContents();
+        ws.Column(1).Width = 34; ws.Column(2).Width = 14; ws.Column(3).Width = 38;
+        ws.Column(4).Width = 3; ws.Column(5).Width = 24;
         return (coproList, rolesList);
     }
 
@@ -207,19 +239,40 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     private static IXLWorksheet Encabezado(XLWorkbook wb, string nombre, List<(string H, string Ayuda)> cols)
     {
         var ws = wb.AddWorksheet(nombre);
-        for (var i = 0; i < cols.Count; i++)
+        var n = cols.Count;
+
+        // Fila 1: banner de marca PROPIA.
+        var banner = ws.Range(1, 1, 1, n).Merge();
+        banner.Value = $"PROPIA   |   Carga masiva   |   {nombre}";
+        banner.Style.Fill.BackgroundColor = Brand;
+        banner.Style.Font.FontColor = XLColor.White;
+        banner.Style.Font.Bold = true;
+        banner.Style.Font.FontSize = 13;
+        banner.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+        banner.Style.Alignment.Indent = 1;
+        ws.Row(1).Height = 26;
+
+        // Fila 2: encabezados. Fila 3: ayuda.
+        for (var i = 0; i < n; i++)
         {
-            var c = ws.Cell(1, i + 1);
+            var c = ws.Cell(2, i + 1);
             c.Value = cols[i].H;
             c.Style.Font.Bold = true;
-            c.Style.Fill.BackgroundColor = XLColor.FromHtml("#1B2A3A");
+            c.Style.Fill.BackgroundColor = Ink;
             c.Style.Font.FontColor = XLColor.White;
-            var a = ws.Cell(2, i + 1);
+            c.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+            c.Style.Border.BottomBorder = XLBorderStyleValues.Thin;
+            c.Style.Border.BottomBorderColor = Brand;
+
+            var a = ws.Cell(3, i + 1);
             a.Value = cols[i].Ayuda;
-            a.Style.Font.FontColor = XLColor.Gray;
+            a.Style.Font.FontColor = BrandText;
             a.Style.Font.Italic = true;
+            a.Style.Font.FontSize = 9;
+            a.Style.Fill.BackgroundColor = Soft;
         }
-        ws.SheetView.FreezeRows(2);
+        ws.Row(2).Height = 20;
+        ws.SheetView.FreezeRows(3);
         return ws;
     }
 

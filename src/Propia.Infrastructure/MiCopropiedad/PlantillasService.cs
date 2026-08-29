@@ -27,7 +27,11 @@ public class PlantillasService : IPlantillasService
         _mc = mc; _dir = dir; _db = db;
     }
 
-    private static readonly string HeaderColor = "#5955D1";
+    // Paleta PROPIA (consistente con la plantilla de unidades y la app).
+    private static readonly string HeaderColor = "#6D4FE3";   // brand (morado)
+    private static readonly XLColor Ink = XLColor.FromHtml("#1B2A3A");
+    private static readonly XLColor Brand = XLColor.FromHtml("#6D4FE3");
+    private static readonly XLColor BrandText = XLColor.FromHtml("#4B2BB0");
 
     // =====================================================================================
     // ZONAS COMUNES
@@ -342,8 +346,12 @@ public class PlantillasService : IPlantillasService
             c.Value = headers[i];
             c.Style.Font.Bold = true;
             c.Style.Font.FontColor = XLColor.White;
-            c.Style.Fill.BackgroundColor = XLColor.FromHtml(HeaderColor);
+            c.Style.Fill.BackgroundColor = Ink;                 // slate PROPIA
+            c.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+            c.Style.Border.BottomBorder = XLBorderStyleValues.Thin;
+            c.Style.Border.BottomBorderColor = Brand;           // acento morado
         }
+        ws.Row(1).Height = 22;
     }
 
     private static void AnchosYFreeze(IXLWorksheet ws, int cols)
@@ -357,8 +365,12 @@ public class PlantillasService : IPlantillasService
     {
         var ws = wb.AddWorksheet("Instrucciones");
         ws.Column(1).Width = 118;
-        var c0 = ws.Cell(1, 1); c0.Value = titulo;
-        c0.Style.Font.Bold = true; c0.Style.Font.FontSize = 15; c0.Style.Font.FontColor = XLColor.FromHtml(HeaderColor);
+        var c0 = ws.Cell(1, 1); c0.Value = "PROPIA   |   " + titulo;
+        c0.Style.Font.Bold = true; c0.Style.Font.FontSize = 14; c0.Style.Font.FontColor = XLColor.White;
+        c0.Style.Fill.BackgroundColor = Brand;
+        c0.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+        c0.Style.Alignment.Indent = 1;
+        ws.Row(1).Height = 26;
         int r = 3;
         foreach (var l in lineas)
         {
@@ -374,6 +386,7 @@ public class PlantillasService : IPlantillasService
         foreach (var (titulo, valores) in cols)
         {
             var h = ws.Cell(1, colIdx); h.Value = titulo; h.Style.Font.Bold = true;
+            h.Style.Fill.BackgroundColor = XLColor.FromHtml("#F1ECFD"); h.Style.Font.FontColor = BrandText;
             int r = 2;
             foreach (var v in valores) ws.Cell(r++, colIdx).Value = v;
             ws.Column(colIdx).Width = 24;

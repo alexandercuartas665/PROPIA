@@ -6,6 +6,7 @@
 @using Propia.Application.Pqrsd
 @using Propia.Application.MiCopropiedad
 @using Propia.Application.Directorio
+@using Propia.Application.UsuariosAccesos
 @using Propia.Domain.Enums
 @using Microsoft.AspNetCore.Components.Forms
 
@@ -69,12 +70,103 @@
         }
         else
         {
-            @* Pills de caracterizacion (estilo Tareas): tipo, categoria, edad y SLA *@
-            <div class="gpq-pills">
-                <span class="gpq-pill gpq-pill-tipo">@(_detalle.TipoNombre ?? TipoLabel(_detalle.Tipo))</span>
-                <span class="gpq-pill gpq-pill-cat">@_detalle.CategoriaNombre</span>
-                <span class="gpq-pill gpq-pill-age">Radicada hace @DiasDesde(_detalle.CreatedAt)</span>
-                <span class="gpq-pill @PlazoPillClass()">@PlazoTexto()</span>
+            @* Franja de metadatos (estilo referencia): tipo, dependencia, radicada, radicado, estado, unidad, responsable *@
+            <div class="gpq-metabar">
+                <div class="gpq-meta-f">
+                    <div class="gpq-meta-lbl">TIPO</div>
+                    <div class="gpq-meta-val"><span class="gpq-pill gpq-pill-tipo">@(_detalle.TipoNombre ?? TipoLabel(_detalle.Tipo))</span></div>
+                </div>
+                <div class="gpq-meta-f">
+                    <div class="gpq-meta-lbl">DEPENDENCIA</div>
+                    <div class="gpq-meta-val"><span class="gpq-pill gpq-pill-cat">@_detalle.CategoriaNombre</span></div>
+                </div>
+                <div class="gpq-meta-f">
+                    <div class="gpq-meta-lbl">RADICADA</div>
+                    <div class="gpq-meta-val gpq-meta-strong">Hace @DiasDesde(_detalle.CreatedAt)</div>
+                </div>
+                <div class="gpq-meta-f">
+                    <div class="gpq-meta-lbl">RADICADO</div>
+                    <div class="gpq-meta-val">@_detalle.CreatedAt.ToString("dd MMM yyyy")</div>
+                </div>
+                <div class="gpq-meta-f">
+                    <div class="gpq-meta-lbl">ESTADO OPERATIVO</div>
+                    <div class="gpq-meta-val"><span class="gpq-estado-pill @EstadoClass(_detalle.Estado)">@EstadoLabel(_detalle.Estado)</span></div>
+                </div>
+                @* Unidad afectada: editable como tarjeta flotante (no autocompletado) *@
+                <div class="gpq-meta-f gpq-meta-f--act">
+                    <div class="gpq-meta-lbl">UNIDAD AFECTADA</div>
+                    <div class="gpq-meta-val gpq-pop-anchor">
+                        @if (_unidadSel is not null)
+                        {
+                            <button class="gpq-qf-chip" type="button" title="Cambiar unidad" @onclick="ToggleUnidad">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 21h18M5 21V7l7-4 7 4v14M10 21v-4h4v4"/></svg>
+                                <span>@UnidadLabel()</span>
+                                <svg class="gpq-qf-pen" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+                            </button>
+                        }
+                        else
+                        {
+                            <button class="gpq-qf-add" type="button" @onclick="ToggleUnidad">+ Asignar unidad</button>
+                        }
+                        @if (_editUnidad)
+                        {
+                            <div class="gpq-pop">
+                                <div class="gpq-pop-head"><span>Unidad afectada</span><button class="gpq-qf-x" type="button" @onclick="() => _editUnidad = false"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+                                <SelectorUnidadCascada Unidades="_unidades" UnidadId="_unidadSel" UnidadIdChanged="OnUnidadInlineChanged" Class="gpq-input" MostrarLabels="false" />
+                                @if (_unidadSel is not null)
+                                {
+                                    <button class="gpq-pop-clear" type="button" @onclick="() => OnUnidadInlineChanged(null)">Quitar unidad</button>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+                @* Responsable: lista de usuarios del sistema en tarjeta flotante *@
+                <div class="gpq-meta-f gpq-meta-f--act">
+                    <div class="gpq-meta-lbl">RESPONSABLE</div>
+                    <div class="gpq-meta-val gpq-pop-anchor">
+                        @if (!string.IsNullOrEmpty(_detalle.AsignadoNombre))
+                        {
+                            <button class="gpq-qf-chip" type="button" title="Cambiar responsable" @onclick="ToggleResp">
+                                <span class="gpq-qf-ava">@Iniciales(_detalle.AsignadoNombre)</span>
+                                <span>@_detalle.AsignadoNombre</span>
+                                <svg class="gpq-qf-pen" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+                            </button>
+                        }
+                        else
+                        {
+                            <button class="gpq-qf-add" type="button" @onclick="ToggleResp">+ Asignar responsable</button>
+                        }
+                        @if (_editResp)
+                        {
+                            <div class="gpq-pop">
+                                <div class="gpq-pop-head"><span>Usuarios del sistema</span><button class="gpq-qf-x" type="button" @onclick="() => _editResp = false"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+                                @if (_usuariosSistema is null)
+                                {
+                                    <div class="gpq-pop-loading">Cargando usuarios...</div>
+                                }
+                                else if (_usuariosSistema.Count == 0)
+                                {
+                                    <div class="gpq-pop-loading">No hay usuarios activos en el sistema.</div>
+                                }
+                                else
+                                {
+                                    <div class="gpq-pop-list">
+                                        <button class="gpq-pop-it gpq-pop-it--none @(_detalle.AsignadoPersonaId is null ? "on" : "")" type="button" @onclick="() => GuardarResponsableAsync(null)">Sin asignar</button>
+                                        @foreach (var u in _usuariosSistema)
+                                        {
+                                            var uu = u;
+                                            <button class="gpq-pop-it @(_detalle.AsignadoPersonaId == u.PersonaId ? "on" : "")" type="button" @onclick="() => GuardarResponsableAsync(uu.PersonaId)">
+                                                <span class="gpq-qf-ava">@Iniciales(u.NombreCompleto)</span>
+                                                <span class="gpq-pop-it-nm">@u.NombreCompleto<small>@u.RolNombre</small></span>
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
             </div>
 
             @* Flags arriba *@
@@ -105,34 +197,8 @@
                 <div class="gpq-desc">@_detalle.Descripcion</div>
             </div>
 
-            @* Contexto unidad *@
-            @if (_contexto?.Unidad.UnidadId.HasValue == true)
-            {
-                <div class="gpq-card gpq-card--unit">
-                    <div class="gpq-card-eyebrow">UNIDAD AFECTADA</div>
-                    <div class="gpq-unit-head">
-                        <div class="gpq-unit-icon">
-                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18M5 21V7l7-4 7 4v14M10 21v-4h4v4"/></svg>
-                        </div>
-                        <div class="gpq-unit-id">
-                            <div class="gpq-unit-num">@_contexto.Unidad.Tipo @_contexto.Unidad.UnidadNumero</div>
-                            <div class="gpq-unit-meta">
-                                @(_contexto.Unidad.TorreNombre ?? "Sin torre")
-                                @(_contexto.Unidad.Piso.HasValue ? $" · Piso {_contexto.Unidad.Piso}" : "")
-                                @(_contexto.Unidad.CoeficientePropiedad.HasValue ? $" · Coef {_contexto.Unidad.CoeficientePropiedad:0.##}%" : "")
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            }
-            else
-            {
-                <div class="gpq-card gpq-card--unit gpq-card--nounit">
-                    <div class="gpq-card-eyebrow">UNIDAD AFECTADA</div>
-                    <div class="gpq-noref">Radicador sin unidad asociada. PQR de uso general.</div>
-                </div>
-            }
-
+            @* Solicitante (contacto) y Plazo legal lado a lado (estilo referencia) *@
+            <div class="gpq-subrow">
             @* Contacto humano + cambiar solicitante (unificado: antes eran 2 cajas separadas) *@
             <div class="gpq-card">
                 <div class="gpq-card-eyebrow">CONTACTO HUMANO@(_contexto is not null && _contexto.Personas.Count > 0 ? $" ({_contexto.Personas.Count})" : "")</div>
@@ -174,44 +240,8 @@
                 }
                 <label class="gpq-mini-lbl" style="margin-top:8px;">Cambiar solicitante (directorio - se puede crear)</label>
                 <SelectorPersona Jwt="@Jwt" @bind-Seleccionada="_personaSel" Placeholder="Buscar o crear persona..." />
-                <div class="gpq-mini-hint">Se guarda con "Guardar cambios" en Propiedad y gestion.</div>
+                <div class="gpq-mini-hint">Se guarda con "Guardar cambios" (en Campos dinamicos).</div>
             </div>
-
-            @* CAMPOS DINAMICOS (movido a la col 1, debajo de Contacto humano) *@
-            <div class="gpq-card">
-                <div class="gpq-card-eyebrow">CAMPOS DINAMICOS</div>
-                @if (_campos.Count > 0)
-                {
-                    @foreach (var c in _campos.OrderBy(c => c.Orden))
-                    {
-                        <label class="gpq-mini-lbl">@c.Label</label>
-                        @if (c.Tipo == TipoCampoTablero.Seleccion)
-                        {
-                            <select class="gpq-input" value="@_campoValores.GetValueOrDefault(c.Id, "")" @onchange="(e) => SetCampo(c.Id, e.Value?.ToString())">
-                                <option value="">- elegir -</option>
-                                @foreach (var op in (c.Opciones ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                                {
-                                    <option value="@op">@op</option>
-                                }
-                            </select>
-                        }
-                        else if (c.Tipo == TipoCampoTablero.AreaTexto)
-                        {
-                            <textarea class="gpq-input" rows="2" value="@_campoValores.GetValueOrDefault(c.Id, "")" @onchange="(e) => SetCampo(c.Id, e.Value?.ToString())"></textarea>
-                        }
-                        else
-                        {
-                            <input class="gpq-input" type="@CampoInputType(c.Tipo)" value="@_campoValores.GetValueOrDefault(c.Id, "")" @onchange="(e) => SetCampo(c.Id, e.Value?.ToString())" />
-                        }
-                    }
-                }
-                else
-                {
-                    <div class="gpq-actividad-empty">Sin campos configurados. Se administran en Configurar PQRSD &gt; Campos dinamicos.</div>
-                }
-            </div>
-
-            @* (col 1 + col 2 unidas en una sola columna) *@
 
             @* Plazo (SLA visual, estilo Tareas): barra de tiempo transcurrido + cuanto queda para responder *@
             <div class="gpq-card">
@@ -280,49 +310,44 @@
                 </div>
             </div>
 
-            @* Propiedad + gestion (editable). El solicitante se cambia en la caja Contacto humano. *@
-            <div class="gpq-card">
-                <div class="gpq-card-eyebrow">PROPIEDAD Y GESTION</div>
-                <label class="gpq-mini-lbl">Propiedad relacionada</label>
-                <SelectorUnidadCascada Unidades="_unidades" UnidadId="_unidadSel"
-                                       UnidadIdChanged="@(v => _unidadSel = v)"
-                                       Class="gpq-input" MostrarLabels="false" />
-
-                @* Progreso de gestion (slider, estilo Tareas) *@
-                <label class="gpq-mini-lbl" style="margin-top:10px;">Progreso: <strong>@_progreso%</strong></label>
-                <input type="range" min="0" max="100" step="5" class="gpq-range" @bind="_progreso" @bind:event="oninput" />
-                <div class="gpq-progbar"><div class="gpq-progfill" style="width:@_progreso%"></div></div>
-
-                @* Responsable / persona asignada *@
-                <label class="gpq-mini-lbl" style="margin-top:10px;">Responsable asignado</label>
-                <div class="gpq-asig-cur">
-                    Actual: <strong>@(_detalle.AsignadoNombre ?? "sin asignar")</strong>
-                    @if (!string.IsNullOrEmpty(_detalle.AsignadoNombre))
-                    {
-                        <button type="button" class="gpq-asig-quitar" @onclick="@(() => { _quitarAsignado = true; _asignadoSel = null; })">quitar</button>
-                    }
-                    @if (_quitarAsignado) { <span class="gpq-asig-quitando">(se quitara al guardar)</span> }
-                </div>
-                <SelectorPersona Jwt="@Jwt" @bind-Seleccionada="_asignadoSel" Placeholder="Asignar responsable..." />
-
-                <button class="gpq-btn-brand" style="margin-top:10px;" type="button" @onclick="GuardarDatos" disabled="@_guardandoRel">
-                    @(_guardandoRel ? "Guardando..." : "Guardar cambios")
-                </button>
             </div>
 
-            @* Crear tarea interna (2.10) desde el PQR *@
+            @* Campos dinamicos + guardado. La unidad y el responsable se guardan solos desde los
+               accesos rapidos de arriba; aqui se persisten el solicitante y los campos. *@
             <div class="gpq-card">
-                <div class="gpq-card-eyebrow">TAREA INTERNA</div>
-                @if (_detalle.TareaId is not null)
+                <div class="gpq-card-eyebrow">CAMPOS DINAMICOS</div>
+                @if (_campos.Count > 0)
                 {
-                    <div class="gpq-plazo-row"><span>Este PQR ya tiene una tarea vinculada.</span><strong>Vinculada</strong></div>
+                    @foreach (var c in _campos.OrderBy(c => c.Orden))
+                    {
+                        <label class="gpq-mini-lbl">@c.Label</label>
+                        @if (c.Tipo == TipoCampoTablero.Seleccion)
+                        {
+                            <select class="gpq-input" value="@_campoValores.GetValueOrDefault(c.Id, "")" @onchange="(e) => SetCampo(c.Id, e.Value?.ToString())">
+                                <option value="">- elegir -</option>
+                                @foreach (var op in (c.Opciones ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                                {
+                                    <option value="@op">@op</option>
+                                }
+                            </select>
+                        }
+                        else if (c.Tipo == TipoCampoTablero.AreaTexto)
+                        {
+                            <textarea class="gpq-input" rows="2" value="@_campoValores.GetValueOrDefault(c.Id, "")" @onchange="(e) => SetCampo(c.Id, e.Value?.ToString())"></textarea>
+                        }
+                        else
+                        {
+                            <input class="gpq-input" type="@CampoInputType(c.Tipo)" value="@_campoValores.GetValueOrDefault(c.Id, "")" @onchange="(e) => SetCampo(c.Id, e.Value?.ToString())" />
+                        }
+                    }
                 }
                 else
                 {
-                    <button class="gpq-btn-brand" type="button" @onclick="CrearTareaDesdePqr" disabled="@_generandoTarea">
-                        @(_generandoTarea ? "Creando..." : "Crear tarea desde este PQR")
-                    </button>
+                    <div class="gpq-actividad-empty">Sin campos configurados. Se administran en Configurar PQRSD &gt; Campos dinamicos.</div>
                 }
+                <button class="gpq-btn-brand" style="margin-top:12px;" type="button" @onclick="GuardarDatos" disabled="@_guardandoRel">
+                    @(_guardandoRel ? "Guardando..." : "Guardar cambios")
+                </button>
             </div>
 
             </div>@* fin col 2 *@
@@ -468,12 +493,10 @@
             </div>@* fin col 3 *@
             </div>@* fin gpq-cols *@
 
-            @* === ACCIONES segun estado === *@
+            @* === ACCIONES segun estado (Recibida: se toma auto al asignar responsable) === *@
+            @if (_detalle.Estado == EstadoPqrsd.EnGestion || _detalle.Estado == EstadoPqrsd.Respondida)
+            {
             <div class="gpq-acciones">
-                @if (_detalle.Estado == EstadoPqrsd.Recibida)
-                {
-                    <button class="gpq-btn-brand" type="button" @onclick="@(() => SetAccion("tomar"))">Tomar expediente</button>
-                }
                 @if (_detalle.Estado == EstadoPqrsd.EnGestion)
                 {
                     <button class="gpq-btn-brand" type="button" @onclick="@(() => SetAccion("responder"))">Responder</button>
@@ -484,6 +507,7 @@
                     <button class="gpq-btn-ghost" type="button" @onclick="@(() => SetAccion("inconformidad"))">Registrar inconformidad</button>
                 }
             </div>
+            }
 
             @* === FORM accion seleccionada === *@
             @if (_accion is not null)
@@ -491,14 +515,6 @@
                 <div class="gpq-form">
                     @switch (_accion)
                     {
-                        case "tomar":
-                            <div class="gpq-form-title">Tomar expediente</div>
-                            <input class="gpq-input" @bind="_textoAccion" @bind:event="oninput" placeholder="Nota (opcional)" />
-                            <div class="gpq-form-foot">
-                                <button class="gpq-btn-ghost" type="button" @onclick="CancelarAccion">Cancelar</button>
-                                <button class="gpq-btn-brand" type="button" @onclick="EjecutarTomar" disabled="@_busy">Confirmar</button>
-                            </div>
-                            break;
                         case "responder":
                             <div class="gpq-form-title">Responder al expediente</div>
                             <textarea class="gpq-input" rows="4" @bind="_textoAccion" @bind:event="oninput" placeholder="Respuesta detallada *"></textarea>
@@ -1179,6 +1195,50 @@
     .gpq-warn { color: #B45309 !important; }
 
     /* Pills de caracterizacion (estilo Tareas) */
+    /* Franja de metadatos superior (estilo referencia): campos etiquetados en fila (incluye unidad y responsable). */
+    .gpq-metabar { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 26px; padding: 13px 16px; margin-bottom: 16px; background: #fff; border: 1px solid #EDF0F4; border-radius: 12px; }
+    .gpq-meta-f { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1 1 118px; }
+    .gpq-meta-f--act { flex: 1 1 178px; }
+    .gpq-meta-lbl { font-size: 10.5px; font-weight: 700; letter-spacing: .5px; color: #90A4B7; text-transform: uppercase; }
+    .gpq-meta-val { font-size: 13px; font-weight: 600; color: #1B2A3A; display: flex; align-items: center; min-height: 30px; }
+    .gpq-meta-val .gpq-pill, .gpq-meta-val .gpq-estado-pill { font-size: 11px; }
+    .gpq-meta-strong { color: var(--propia-brand, #6D4FE3); font-weight: 700; }
+    @@media (max-width: 560px) { .gpq-meta-f { flex-basis: 42%; } }
+    [data-bs-theme="dark"] .gpq-metabar { background: #232B40; border-color: #2D3650; }
+    [data-bs-theme="dark"] .gpq-meta-val { color: #E4E8F0; }
+
+    /* Chips "info" (reusados en la franja): unidad y responsable. */
+    .gpq-qf-chip { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; padding: 6px 10px; border: 1px solid #DCD2F8; border-radius: 8px; background: #F1ECFD; color: #4B2BB0; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .gpq-qf-chip:hover { background: #E7DEFB; }
+    .gpq-qf-chip > span:not(.gpq-qf-ava) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .gpq-qf-pen { flex: 0 0 auto; opacity: .5; }
+    .gpq-qf-ava { flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%; background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 9px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+    .gpq-qf-add { padding: 6px 11px; border: 1px dashed #C9B8F2; border-radius: 8px; background: transparent; color: var(--propia-brand, #6D4FE3); font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .gpq-qf-add:hover { background: #F5F2FE; }
+    .gpq-qf-x { flex: 0 0 auto; border: 0; background: transparent; color: #90A4B7; cursor: pointer; padding: 4px; border-radius: 6px; line-height: 0; }
+    .gpq-qf-x:hover { background: #EEF3F8; color: #516F90; }
+    [data-bs-theme="dark"] .gpq-qf-chip { background: #2C2350; border-color: #40357a; color: #cbb8ff; }
+    [data-bs-theme="dark"] .gpq-qf-add { border-color: #40357a; color: #b39bff; }
+
+    /* Tarjeta flotante (popover) para capturar unidad / elegir responsable. */
+    .gpq-pop-anchor { position: relative; }
+    .gpq-pop { position: absolute; top: calc(100% + 6px); right: 0; left: auto; z-index: 40; width: 300px; max-width: 84vw; background: #fff; border: 1px solid #E4DAF7; border-radius: 12px; box-shadow: 0 16px 40px rgba(27,42,58,.18); padding: 12px; }
+    .gpq-pop-head { display: flex; align-items: center; justify-content: space-between; font-size: 11px; font-weight: 700; letter-spacing: .3px; color: #6B4FD0; text-transform: uppercase; margin-bottom: 10px; }
+    .gpq-pop-loading { font-size: 12.5px; color: #90A4B7; padding: 8px 2px; }
+    .gpq-pop-clear { margin-top: 10px; width: 100%; padding: 7px; border: 1px solid #F0D9D9; border-radius: 8px; background: #FDF3F3; color: #C0392B; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .gpq-pop-clear:hover { background: #FBE9E9; }
+    .gpq-pop-list { display: flex; flex-direction: column; gap: 3px; max-height: 280px; overflow-y: auto; }
+    .gpq-pop-it { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; padding: 7px 9px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; font-family: inherit; font-size: 13px; color: #1B2A3A; }
+    .gpq-pop-it:hover { background: #F5F2FE; }
+    .gpq-pop-it.on { background: #EDE7FB; }
+    .gpq-pop-it--none { color: #7B8794; font-weight: 600; font-size: 12.5px; border-bottom: 1px solid #EEF1F5; border-radius: 0; margin-bottom: 3px; padding-bottom: 9px; }
+    .gpq-pop-it-nm { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+    .gpq-pop-it-nm small { color: #90A4B7; font-size: 10.5px; font-weight: 600; }
+    [data-bs-theme="dark"] .gpq-pop { background: #232B40; border-color: #34415e; }
+    [data-bs-theme="dark"] .gpq-pop-it { color: #E4E8F0; }
+    [data-bs-theme="dark"] .gpq-pop-it:hover { background: #2C3550; }
+    [data-bs-theme="dark"] .gpq-pop-it.on { background: #33285e; }
+
     .gpq-pills { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; }
     .gpq-pill { font-size: 11px; font-weight: 700; padding: 4px 11px; border-radius: 20px; letter-spacing: .2px; }
     .gpq-pill-tipo { background: #EEF2FF; color: #4F46E5; }
@@ -1450,14 +1510,16 @@
     .gpq-cols { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: start; }
     .gpq-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
     .gpq-col > .gpq-card { margin-bottom: 0; }
+    /* Sub-fila Solicitante | Plazo dentro de la columna de contenido (1 col en angosto). */
+    .gpq-subrow { display: grid; grid-template-columns: 1fr; gap: 12px; align-items: start; }
+    .gpq-subrow > .gpq-card { margin-bottom: 0; }
     @@media (min-width: 760px) { .gpq-cols { grid-template-columns: 1fr 1fr; } }
     @@media (min-width: 1100px) {
         .gpq-cols { grid-template-columns: 1.6fr 1fr; }
-        /* La columna de contenido (col 1 + col 2 unidas) distribuye sus cards en 2 sub-columnas
-           (masonry), con la Descripcion a lo ancho arriba. Evita que los campos se estiren. */
-        .gpq-col:not(.gpq-col--act) { display: block; columns: 2; column-gap: 14px; }
-        .gpq-col:not(.gpq-col--act) > .gpq-card { break-inside: avoid; margin: 0 0 14px; }
-        .gpq-col:not(.gpq-col--act) > .gpq-card:first-child { column-span: all; }
+        /* La columna de contenido apila sus cards en orden deterministico (estilo referencia):
+           Descripcion, luego Solicitante | Plazo lado a lado (.gpq-subrow), Gestion, Campos... */
+        .gpq-col:not(.gpq-col--act) { display: flex; flex-direction: column; gap: 14px; }
+        .gpq-subrow { grid-template-columns: 1fr 1fr; }
         /* La columna de Actividad ocupa la altura del modal: se fija arriba y su chat rellena. */
         .gpq-col--act { position: sticky; top: 0; align-self: stretch; height: calc(92vh - 185px); }
         .gpq-col--act > .gpq-card--chat { height: 100%; display: flex; flex-direction: column; margin-bottom: 0; }
@@ -1589,11 +1651,11 @@
     }
     private PersonaCandidatoDto? _personaSel;
     private readonly Dictionary<Guid, string> _campoValores = new();
-    private PersonaCandidatoDto? _asignadoSel;
-    private bool _quitarAsignado;
+    private bool _editUnidad;   // tarjeta flotante: editar unidad afectada
+    private bool _editResp;     // tarjeta flotante: elegir responsable (usuarios del sistema)
+    private List<UsuarioListaDto>? _usuariosSistema;   // usuarios ACTIVOS del sistema (2.5), asignables como responsable
     private int _progreso;
     private bool _reportando;
-    private bool _generandoTarea;
     private bool _guardandoRel;
 
     // ---- Tab Responder: respuestas tipo correo (borradores con editor enriquecido) ----
@@ -1832,8 +1894,6 @@
         {
             _unidadIdStr = _detalle.UnidadPrivadaId?.ToString() ?? "";
             _progreso = _detalle.Progreso;
-            _asignadoSel = null;
-            _quitarAsignado = false;
             _campoValores.Clear();
             if (_detalle.Campos is not null)
                 foreach (var v in _detalle.Campos) _campoValores[v.CampoId] = v.Valor ?? "";
@@ -1888,9 +1948,9 @@
         _guardandoRel = true;
         Guid? unidadId = Guid.TryParse(_unidadIdStr, out var uid) ? uid : null;
         Guid? radId = _personaSel?.PersonaId;
-        Guid? asigId = _quitarAsignado ? Guid.Empty : _asignadoSel?.PersonaId;
         var campos = _campoValores.Select(kv => new PqrsdCampoValorDto(kv.Key, kv.Value)).ToList();
-        var req = new ActualizarExpedienteRequest(unidadId, radId, null, campos, asigId, _progreso);
+        // El responsable se gestiona aparte (tarjeta flotante de usuarios); null = no tocar responsable aqui.
+        var req = new ActualizarExpedienteRequest(unidadId, radId, null, campos, null, _progreso);
         try
         {
             var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{ExpedienteId}/actualizar", req);
@@ -1900,6 +1960,101 @@
                 _personaSel = null;
                 await CargarAsync();
                 ShowMsg("Cambios guardados.", false);
+            }
+            else { ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true); }
+        }
+        catch (Exception ex) { ShowMsg(ex.Message, true); }
+        _guardandoRel = false;
+    }
+
+    // Abre/cierra la tarjeta flotante de unidad.
+    private void ToggleUnidad()
+    {
+        _editUnidad = !_editUnidad;
+        if (_editUnidad) _editResp = false;
+    }
+
+    // Abre/cierra la tarjeta flotante de responsable; carga los usuarios del sistema la primera vez.
+    private async Task ToggleResp()
+    {
+        _editResp = !_editResp;
+        if (_editResp)
+        {
+            _editUnidad = false;
+            if (_usuariosSistema is null) await CargarUsuariosSistemaAsync();
+        }
+    }
+
+    // Usuarios ACTIVOS del sistema (modulo Usuarios 2.5) disponibles como responsable.
+    private async Task CargarUsuariosSistemaAsync()
+    {
+        try { _usuariosSistema = await Auth().GetFromJsonAsync<List<UsuarioListaDto>>("/api/usuarios?estado=Activo") ?? new(); }
+        catch { _usuariosSistema = new(); }
+        StateHasChanged();
+    }
+
+    // Elegir unidad desde la tarjeta flotante: cambia, guarda solo y cierra.
+    private async Task OnUnidadInlineChanged(Guid? unidadId)
+    {
+        _unidadSel = unidadId;
+        _editUnidad = false;
+        await GuardarUnidadAsync();
+    }
+
+    // Persiste la unidad relacionada (sin tocar el responsable: null = no tocar).
+    private async Task GuardarUnidadAsync()
+    {
+        if (_detalle is null) return;
+        _guardandoRel = true;
+        try
+        {
+            var campos = _campoValores.Select(kv => new PqrsdCampoValorDto(kv.Key, kv.Value)).ToList();
+            var req = new ActualizarExpedienteRequest(_unidadSel, _personaSel?.PersonaId, null, campos, null, _progreso);
+            var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{ExpedienteId}/actualizar", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                _huboCambios = true;
+                await CargarAsync();
+                ShowMsg("Unidad actualizada.", false);
+            }
+            else { ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true); }
+        }
+        catch (Exception ex) { ShowMsg(ex.Message, true); }
+        _guardandoRel = false;
+    }
+
+    // Etiqueta compacta de la unidad seleccionada para el chip "info".
+    private string UnidadLabel()
+    {
+        var u = _unidades.FirstOrDefault(x => x.Id == _unidadSel);
+        if (u is not null)
+            return $"{u.Tipo} {u.Numero}" + (string.IsNullOrEmpty(u.TorreNombre) ? "" : $" - {u.TorreNombre}");
+        if (_contexto?.Unidad.UnidadId is not null)
+            return $"{_contexto.Unidad.Tipo} {_contexto.Unidad.UnidadNumero}".Trim();
+        return "Unidad";
+    }
+
+    // Asignar responsable desde la lista de usuarios del sistema (null = quitar). Guarda solo y cierra.
+    // Si se asigna y el expediente esta Recibido, ademas lo "toma" (Recibida -> En gestion).
+    private async Task GuardarResponsableAsync(Guid? personaId)
+    {
+        if (_detalle is null) return;
+        _editResp = false;
+        _guardandoRel = true;
+        try
+        {
+            if (personaId is not null && _detalle.Estado == EstadoPqrsd.Recibida)
+                await Auth().PutAsJsonAsync($"/api/pqrsd/{ExpedienteId}/tomar", new TomarExpedienteRequest(null));
+
+            Guid? asigId = personaId ?? Guid.Empty;   // Guid.Empty = quitar responsable
+            var campos = _campoValores.Select(kv => new PqrsdCampoValorDto(kv.Key, kv.Value)).ToList();
+            var req = new ActualizarExpedienteRequest(_unidadSel, _personaSel?.PersonaId, null, campos, asigId, _progreso);
+            var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{ExpedienteId}/actualizar", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                _huboCambios = true;
+                await CargarAsync();
+                ShowMsg(personaId is null ? "Responsable retirado." : "Responsable asignado.", false);
             }
             else { ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true); }
         }
@@ -2034,19 +2189,6 @@
     private static string MencionToken(string nombre) => nombre.Trim().ToLowerInvariant().Replace(" ", ".");
 
     // Crear tarea interna (2.10) desde el PQR y vincularla
-    private async Task CrearTareaDesdePqr()
-    {
-        _generandoTarea = true;
-        try
-        {
-            var resp = await Auth().PostAsync($"/api/pqrsd/{ExpedienteId}/generar-tarea", null);
-            if (resp.IsSuccessStatusCode) { _huboCambios = true; await CargarAsync(); ShowMsg("Tarea creada y vinculada al PQR.", false); }
-            else { ShowMsg("No se pudo crear la tarea.", true); }
-        }
-        catch (Exception ex) { ShowMsg(ex.Message, true); }
-        _generandoTarea = false;
-    }
-
     // Sube el binario real de cada archivo al storage (endpoint multipart) y registra el adjunto.
     private async Task OnArchivosSeleccionados(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs e)
     {
@@ -2097,14 +2239,6 @@
         return parts.Length == 1
             ? parts[0][0].ToString().ToUpper()
             : (parts[0][0].ToString() + parts[^1][0].ToString()).ToUpper();
-    }
-
-    private async Task EjecutarTomar()
-    {
-        _busy = true;
-        var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{ExpedienteId}/tomar",
-            new TomarExpedienteRequest(string.IsNullOrWhiteSpace(_textoAccion) ? null : _textoAccion.Trim()));
-        await TrasAccion(resp, "Expediente tomado.");
     }
 
     private async Task EjecutarResponder()
