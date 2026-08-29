@@ -85,7 +85,8 @@ public record UnidadPersonaDto(
     // El miembro puede ser persona natural o empresa (dueno/residente juridico). Para empresa,
     // PersonaId lleva Guid.Empty y EmpresaId el id; PersonaNombre/Documento muestran razon social/NIT.
     EntidadDirectorio EntidadTipo = EntidadDirectorio.Persona,
-    Guid? EmpresaId = null);
+    Guid? EmpresaId = null,
+    bool Activo = true);
 
 // PersonaId llega cuando la persona se eligio con el SelectorPersona (ya existe y ya quedo
 // vinculada a la copropiedad). En ese caso Documento/Nombres/Apellidos van vacios y no se
@@ -99,7 +100,8 @@ public record AgregarPersonaUnidadRequest(
     // Cuando el miembro es una empresa (dueno/residente juridico): EntidadTipo = Empresa y EmpresaId.
     // El selector resuelve la identidad, asi que por esta via Documento/Nombres/Apellidos van vacios.
     EntidadDirectorio EntidadTipo = EntidadDirectorio.Persona,
-    Guid? EmpresaId = null);
+    Guid? EmpresaId = null,
+    bool Activo = true);
 
 // ----- Campos personalizados de unidad: la DEFINICION es por copropiedad (catalogo compartido,
 //       aplica a todas las unidades) y el VALOR es por unidad. -----

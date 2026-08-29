@@ -382,15 +382,15 @@ public class MiCopropiedadService : IMiCopropiedadService
         {
             // Para empresa: la ficha muestra razon social como "nombre" y NIT como "documento".
             return new UnidadPersonaDto(up.Id, Guid.Empty, e.RazonSocial, NitConDv(e), e.Email, e.Telefono,
-                up.Rol, up.Habita, up.Parentesco, e.RazonSocial, "", EntidadDirectorio.Empresa, e.Id);
+                up.Rol, up.Habita, up.Parentesco, e.RazonSocial, "", EntidadDirectorio.Empresa, e.Id, up.Activo);
         }
         if (up.PersonaId is Guid pid && personas.TryGetValue(pid, out var p))
         {
             return new UnidadPersonaDto(up.Id, p.Id, ($"{p.Nombres} {p.Apellidos}").Trim(), p.Documento,
-                p.Email, p.Telefono, up.Rol, up.Habita, up.Parentesco, p.Nombres, p.Apellidos, EntidadDirectorio.Persona, null);
+                p.Email, p.Telefono, up.Rol, up.Habita, up.Parentesco, p.Nombres, p.Apellidos, EntidadDirectorio.Persona, null, up.Activo);
         }
         return new UnidadPersonaDto(up.Id, up.PersonaId ?? Guid.Empty, "(desconocido)", "", null, null,
-            up.Rol, up.Habita, up.Parentesco, "", "", up.EntidadTipo, up.EmpresaId);
+            up.Rol, up.Habita, up.Parentesco, "", "", up.EntidadTipo, up.EmpresaId, up.Activo);
     }
 
     public async Task<UnidadPersonaDto> AgregarPersonaUnidadAsync(Guid unidadId, AgregarPersonaUnidadRequest req, CancellationToken ct)
@@ -417,6 +417,7 @@ public class MiCopropiedadService : IMiCopropiedadService
                 EmpresaId = empId,
                 Rol = req.Rol,
                 Habita = req.Habita,
+                Activo = req.Activo,
                 Parentesco = string.IsNullOrWhiteSpace(req.Parentesco) ? null : req.Parentesco.Trim()
             };
             _db.UnidadPersonas.Add(upE);
@@ -467,6 +468,7 @@ public class MiCopropiedadService : IMiCopropiedadService
             PersonaId = personaId,
             Rol = req.Rol,
             Habita = req.Habita,
+            Activo = req.Activo,
             Parentesco = string.IsNullOrWhiteSpace(req.Parentesco) ? null : req.Parentesco.Trim()
         };
         _db.UnidadPersonas.Add(up);
@@ -483,7 +485,7 @@ public class MiCopropiedadService : IMiCopropiedadService
 
         return new UnidadPersonaDto(up.Id, personaId,
             ($"{persona.Nombres} {persona.Apellidos}").Trim(), persona.Documento, persona.Email, persona.Telefono,
-            up.Rol, up.Habita, up.Parentesco, persona.Nombres, persona.Apellidos, EntidadDirectorio.Persona, null);
+            up.Rol, up.Habita, up.Parentesco, persona.Nombres, persona.Apellidos, EntidadDirectorio.Persona, null, up.Activo);
     }
 
     public async Task<UnidadPersonaDto?> EditarPersonaUnidadAsync(Guid unidadPersonaId, AgregarPersonaUnidadRequest req, CancellationToken ct)
@@ -501,11 +503,12 @@ public class MiCopropiedadService : IMiCopropiedadService
                 throw new InvalidOperationException($"Esta empresa ya tiene el rol {req.Rol} en la unidad.");
             up.Rol = req.Rol;
             up.Habita = req.Habita;
+            up.Activo = req.Activo;
             up.Parentesco = string.IsNullOrWhiteSpace(req.Parentesco) ? null : req.Parentesco.Trim();
             await _db.SaveChangesAsync(ct);
             try { await _dir.AsegurarEtiquetaPorRolAsync(EntidadDirectorio.Empresa, up.EmpresaId ?? Guid.Empty, up.Rol, ct); } catch { /* no bloquear */ }
             return new UnidadPersonaDto(up.Id, Guid.Empty, empresa.RazonSocial, NitConDv(empresa), empresa.Email, empresa.Telefono,
-                up.Rol, up.Habita, up.Parentesco, empresa.RazonSocial, "", EntidadDirectorio.Empresa, empresa.Id);
+                up.Rol, up.Habita, up.Parentesco, empresa.RazonSocial, "", EntidadDirectorio.Empresa, empresa.Id, up.Activo);
         }
 
         // ----- Persona natural -----
@@ -539,6 +542,7 @@ public class MiCopropiedadService : IMiCopropiedadService
         persona.Email = email;
         persona.Telefono = string.IsNullOrWhiteSpace(req.Telefono) ? null : req.Telefono.Trim();
         up.Habita = req.Habita;
+        up.Activo = req.Activo;
         up.Parentesco = string.IsNullOrWhiteSpace(req.Parentesco) ? null : req.Parentesco.Trim();
 
         await _db.SaveChangesAsync(ct);
@@ -550,7 +554,7 @@ public class MiCopropiedadService : IMiCopropiedadService
 
         return new UnidadPersonaDto(up.Id, persona.Id,
             ($"{persona.Nombres} {persona.Apellidos}").Trim(), persona.Documento, persona.Email, persona.Telefono,
-            up.Rol, up.Habita, up.Parentesco, persona.Nombres, persona.Apellidos, EntidadDirectorio.Persona, null);
+            up.Rol, up.Habita, up.Parentesco, persona.Nombres, persona.Apellidos, EntidadDirectorio.Persona, null, up.Activo);
     }
 
     public async Task<bool> EliminarPersonaUnidadAsync(Guid unidadPersonaId, CancellationToken ct)

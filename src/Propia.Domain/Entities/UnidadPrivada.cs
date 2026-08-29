@@ -79,6 +79,9 @@ public class UnidadPersona : TenantEntity
 
     /// <summary>Parentesco o nota libre (hijo, esposa, sobrina, etc). Opcional, util para Familiar.</summary>
     public string? Parentesco { get; set; }
+
+    /// <summary>Estado del vinculo persona-unidad: activo o inactivo (no borra, solo desactiva).</summary>
+    public bool Activo { get; set; } = true;
 }
 
 /// <summary>
