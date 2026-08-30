@@ -88,7 +88,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                     if (agr.StartsWith("3") && principal.Length > 0)
                         anexosPend.Add((fila, principal, numero));
                 }
-                catch (Exception ex) { errores.Add(new("UNIDADES PRIVADAS", fila, Msg(ex))); }
+                catch (Exception ex) { errores.Add(new("UNIDADES PRIVADAS", fila, Fallo(ex))); }
             }
 
             // ---- Anexos (2a pasada: ya existen ambas unidades) ----
@@ -106,7 +106,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                     await _mi.CrearVinculoAsync(pid, new CrearVinculoUnidadRequest(aid, false), ct);
                     nAnexo++;
                 }
-                catch (Exception ex) { errores.Add(new("UNIDADES PRIVADAS", fila, Msg(ex))); }
+                catch (Exception ex) { errores.Add(new("UNIDADES PRIVADAS", fila, Fallo(ex))); }
             }
 
             // ---- Personas ----
@@ -125,7 +125,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                     await _mi.AgregarPersonaUnidadAsync(uid, req, ct);
                     nPer++;
                 }
-                catch (Exception ex) { errores.Add(new("PERSONAS", fila, Msg(ex))); }
+                catch (Exception ex) { errores.Add(new("PERSONAS", fila, Fallo(ex))); }
             }
 
             // ---- Vehiculos ----
@@ -142,7 +142,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                         NullIfEmpty(Val(row, "MARCA")), NullIfEmpty(Val(row, "MODELO")), NullIfEmpty(Val(row, "COLOR")), null), ct);
                     nVeh++;
                 }
-                catch (Exception ex) { errores.Add(new("VEHICULOS", fila, Msg(ex))); }
+                catch (Exception ex) { errores.Add(new("VEHICULOS", fila, Fallo(ex))); }
             }
 
             // ---- Mascotas ----
@@ -157,7 +157,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                         nom, ParseEnum(Val(row, "TIPO MASCOTA"), TipoMascota.Perro), NullIfEmpty(Val(row, "RAZA"))), ct);
                     nMas++;
                 }
-                catch (Exception ex) { errores.Add(new("MASCOTAS", fila, Msg(ex))); }
+                catch (Exception ex) { errores.Add(new("MASCOTAS", fila, Fallo(ex))); }
             }
 
             // ---- Zonas comunes ----
@@ -178,7 +178,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                         await _mi.CambiarEstadoZonaAsync(creada.Id, new CambiarEstadoZonaRequest(est), ct);
                     nZon++;
                 }
-                catch (Exception ex) { errores.Add(new("ZONAS COMUNES", fila, Msg(ex))); }
+                catch (Exception ex) { errores.Add(new("ZONAS COMUNES", fila, Fallo(ex))); }
             }
 
             // ---- Equipos y activos ----
@@ -212,7 +212,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                         await _mi.CambiarEstadoEquipoAsync(creado.Id, new CambiarEstadoEquipoRequest(est), ct);
                     nEqu++;
                 }
-                catch (Exception ex) { errores.Add(new("EQUIPOS", fila, Msg(ex))); }
+                catch (Exception ex) { errores.Add(new("EQUIPOS", fila, Fallo(ex))); }
             }
         }
 
@@ -326,7 +326,30 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
         return fallback;
     }
 
-    private static string Msg(Exception ex) => ex is InvalidOperationException ? ex.Message : "Error al procesar la fila.";
+    // Registra el fallo de una fila: descarta la entidad fallida del ChangeTracker para NO contaminar
+    // las filas siguientes de la misma copropiedad (un SaveChanges fallido deja la entidad "pegada"),
+    // y devuelve un motivo legible.
+    private string Fallo(Exception ex)
+    {
+        try { _db.ChangeTracker.Clear(); } catch { /* best-effort */ }
+        return Msg(ex);
+    }
+
+    // Traduce la excepcion a un motivo legible (recorre inner exceptions por errores de BD comunes).
+    private static string Msg(Exception ex)
+    {
+        if (ex is InvalidOperationException) return ex.Message;
+        for (var e = ex; e is not null; e = e.InnerException)
+        {
+            var m = e.Message ?? string.Empty;
+            if (m.Contains("IX_personas_email")) return "Ya existe otra persona con ese EMAIL (debe ser unico).";
+            if (m.Contains("IX_personas_documento") || m.Contains("_documento")) return "Ya existe otra persona con ese DOCUMENTO.";
+            if (m.Contains("vehiculos") && m.Contains("placa")) return "Ya existe un vehiculo con esa PLACA.";
+            if (m.Contains("duplicate key")) return "Registro duplicado (ya existe).";
+            if (m.Contains("foreign key") || m.Contains("violates foreign key")) return "Referencia invalida (un dato relacionado no existe).";
+        }
+        return "No se pudo procesar: " + (ex.InnerException?.Message ?? ex.Message);
+    }
 
     private async Task<Dictionary<string, Guid>> CopropiedadesDelClienteAsync(CancellationToken ct)
     {

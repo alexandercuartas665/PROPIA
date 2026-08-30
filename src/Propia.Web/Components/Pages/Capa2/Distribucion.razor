@@ -31,11 +31,10 @@
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>
                 @(_plantillaBusy ? "Generando..." : "Descargar plantilla (Excel)")
             </button>
-            <label class="propia-btn-brand @(_cargaBusy ? "is-busy" : "")" style="cursor:pointer;" title="Cargar la plantilla Excel (unidades, personas, vehiculos, mascotas) en una o varias copropiedades">
+            <button class="propia-btn-brand" type="button" @onclick="AbrirCargaModal" title="Cargar la plantilla Excel: se procesa cada hoja y se muestra el detalle">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21V9m0 0l-4 4m4-4l4 4M4 3h16"/></svg>
-                @(_cargaBusy ? "Cargando..." : "Cargar plantilla (Excel)")
-                <InputFile OnChange="OnCargaExcel" accept=".xlsx" style="display:none" disabled="@_cargaBusy" />
-            </label>
+                Cargar plantilla (Excel)
+            </button>
         </div>
     }
 </div>
@@ -56,19 +55,82 @@
     </div>
 }
 
-@if (_cargaResult is not null)
+@* ============ Modal de carga por Excel (seleccion + log detallado por hoja) ============ *@
+@if (_showCargaModal)
 {
-    <div class="dst-impres @(_cargaResult.Errores.Count == 0 ? "ok" : "err")">
-        <b>Carga:</b>
-        <span>@_cargaResult.Copropiedades copropiedad(es) · @_cargaResult.Unidades unidades · @_cargaResult.Anexos anexos · @_cargaResult.Personas personas · @_cargaResult.Vehiculos vehiculos · @_cargaResult.Mascotas mascotas · @_cargaResult.Zonas zonas · @_cargaResult.Equipos equipos.</span>
-        @if (_cargaResult.Errores.Count > 0)
-        {
-            <ul class="dst-impres-list">
-                @foreach (var er in _cargaResult.Errores.Take(15)) { <li>@er.Hoja @(er.Fila > 0 ? $"fila {er.Fila}" : "") - @er.Motivo</li> }
-                @if (_cargaResult.Errores.Count > 15) { <li>...y @(_cargaResult.Errores.Count - 15) mas.</li> }
-            </ul>
-        }
-        <button type="button" class="dst-impres-x" @onclick="() => _cargaResult = null" title="Cerrar">&times;</button>
+    <div class="cg-back" @onclick="CerrarCargaModal">
+        <div class="cg-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+            <div class="cg-head">
+                <div>
+                    <div class="cg-title">Cargar plantilla (Excel)</div>
+                    <div class="cg-sub">Se procesa cada hoja y se muestra el detalle de creados y errores.</div>
+                </div>
+                <button class="cg-x" type="button" @onclick="CerrarCargaModal" aria-label="Cerrar">&times;</button>
+            </div>
+
+            <div class="cg-body">
+                @if (_cargaResult is null)
+                {
+                    @* Paso 1: seleccionar archivo *@
+                    <label class="cg-drop">
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21V9m0 0l-4 4m4-4l4 4M4 3h16"/></svg>
+                        <span class="cg-drop-t">@(_cargaFileName ?? "Selecciona el archivo .xlsx")</span>
+                        <span class="cg-drop-h">Usa la plantilla descargada. Formato .xlsx</span>
+                        <InputFile OnChange="OnFileSelected" accept=".xlsx" style="display:none" disabled="@_cargaBusy" />
+                    </label>
+                    <div class="cg-actions">
+                        <button class="cg-btn-ghost" type="button" @onclick="CerrarCargaModal" disabled="@_cargaBusy">Cancelar</button>
+                        <button class="cg-btn-brand" type="button" @onclick="EjecutarCargaAsync" disabled="@(_cargaBusy || _cargaFile is null)">
+                            @(_cargaBusy ? "Procesando..." : "Cargar y procesar")
+                        </button>
+                    </div>
+                }
+                else
+                {
+                    @* Paso 2: resultado con log detallado por hoja *@
+                    var okTotal = _cargaResult.Errores.Count == 0;
+                    <div class="cg-summary @(okTotal ? "ok" : "warn")">
+                        @if (okTotal) { <strong>Carga completa sin errores.</strong> }
+                        else { <strong>Carga con @_cargaResult.Errores.Count advertencia(s).</strong> }
+                        <span>@_cargaResult.Copropiedades copropiedad(es) procesada(s).</span>
+                    </div>
+
+                    <table class="cg-tbl">
+                        <thead><tr><th>Hoja</th><th>Creados</th><th>Errores</th></tr></thead>
+                        <tbody>
+                            @foreach (var f in ResumenHojas())
+                            {
+                                <tr class="@(f.Errores > 0 ? "cg-row-warn" : "")">
+                                    <td>@f.Hoja</td>
+                                    <td>@f.Creados</td>
+                                    <td>@(f.Errores > 0 ? f.Errores.ToString() : "-")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+
+                    @if (_cargaResult.Errores.Count > 0)
+                    {
+                        <div class="cg-log-title">Detalle de errores</div>
+                        <div class="cg-log">
+                            @foreach (var er in _cargaResult.Errores)
+                            {
+                                <div class="cg-log-item">
+                                    <span class="cg-log-hoja">@er.Hoja</span>
+                                    @if (er.Fila > 0) { <span class="cg-log-fila">fila @er.Fila</span> }
+                                    <span class="cg-log-msg">@er.Motivo</span>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    <div class="cg-actions">
+                        <button class="cg-btn-ghost" type="button" @onclick="ReiniciarCarga">Cargar otro</button>
+                        <button class="cg-btn-brand" type="button" @onclick="CerrarCargaModal">Cerrar</button>
+                    </div>
+                }
+            </div>
+        </div>
     </div>
 }
 
@@ -953,19 +1015,36 @@ else
     private ImportarUnidadesResponse? _impResult;
     private Propia.Application.MiCopropiedad.ResultadoCargaUnidades? _cargaResult;
 
-    // Carga masiva desde la plantilla Excel multi-hoja (una o varias copropiedades).
-    private async Task OnCargaExcel(InputFileChangeEventArgs e)
+    // ---- Modal de carga por Excel ----
+    private bool _showCargaModal;
+    private IBrowserFile? _cargaFile;
+    private string? _cargaFileName;
+
+    private void AbrirCargaModal()
     {
-        var file = e.File;
-        if (file is null) return;
+        _cargaFile = null; _cargaFileName = null; _cargaResult = null; _showCargaModal = true;
+    }
+    private void CerrarCargaModal() { if (!_cargaBusy) _showCargaModal = false; }
+    private void ReiniciarCarga() { _cargaResult = null; _cargaFile = null; _cargaFileName = null; }
+
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _cargaFile = e.File;
+        _cargaFileName = e.File?.Name;
+    }
+
+    // Sube el archivo seleccionado y guarda el resultado para el log detallado.
+    private async Task EjecutarCargaAsync()
+    {
+        if (_cargaFile is null) return;
         _cargaBusy = true; _cargaResult = null;
         try
         {
             using var content = new MultipartFormDataContent();
-            var sc = new StreamContent(file.OpenReadStream(15_000_000));
+            var sc = new StreamContent(_cargaFile.OpenReadStream(15_000_000));
             sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            content.Add(sc, "file", file.Name);
+            content.Add(sc, "file", _cargaFile.Name);
             var resp = await Auth().PostAsync("/api/mi-copropiedad/distribucion/importar-carga", content);
             if (resp.IsSuccessStatusCode)
             {
@@ -984,6 +1063,22 @@ else
                 new List<Propia.Application.MiCopropiedad.CargaUnidadesError> { new("GENERAL", 0, ex.Message) });
         }
         finally { _cargaBusy = false; }
+    }
+
+    // Resumen por hoja para el log del modal: creados (contadores del backend) + errores de esa hoja.
+    private readonly record struct ResumenHoja(string Hoja, int Creados, int Errores);
+    private IEnumerable<ResumenHoja> ResumenHojas()
+    {
+        if (_cargaResult is null) yield break;
+        int Err(string h) => _cargaResult.Errores.Count(e => string.Equals(e.Hoja, h, StringComparison.OrdinalIgnoreCase));
+        yield return new("UNIDADES PRIVADAS", _cargaResult.Unidades + _cargaResult.Anexos, Err("UNIDADES PRIVADAS"));
+        yield return new("PERSONAS", _cargaResult.Personas, Err("PERSONAS"));
+        yield return new("VEHICULOS", _cargaResult.Vehiculos, Err("VEHICULOS"));
+        yield return new("MASCOTAS", _cargaResult.Mascotas, Err("MASCOTAS"));
+        yield return new("ZONAS COMUNES", _cargaResult.Zonas, Err("ZONAS COMUNES"));
+        yield return new("EQUIPOS", _cargaResult.Equipos, Err("EQUIPOS"));
+        var gen = Err("GENERAL");
+        if (gen > 0) yield return new("GENERAL", 0, gen);
     }
 
     // Plantilla Excel multi-hoja generada por el backend (con datos de referencia + dropdowns).
@@ -1096,6 +1191,39 @@ else
     .dst-impres-list li { margin: 2px 0; }
     .dst-impres-x { position: absolute; top: 8px; right: 10px; border: 0; background: transparent; font-size: 20px; line-height: 1; color: inherit; opacity: .6; cursor: pointer; }
     .dst-impres-x:hover { opacity: 1; }
+
+    /* ===== Modal de carga por Excel (seleccion + log detallado por hoja) ===== */
+    .cg-back { position: fixed; inset: 0; z-index: 1090; background: rgba(15,15,30,.45); display: flex; align-items: flex-start; justify-content: center; padding-top: 8vh; }
+    .cg-modal { width: 640px; max-width: calc(100vw - 32px); max-height: 84vh; display: flex; flex-direction: column; background: #fff; border: 1px solid #E1E8EE; border-radius: 16px; box-shadow: 0 18px 48px rgba(0,0,0,.28); overflow: hidden; }
+    .cg-head { display: flex; align-items: flex-start; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid #EEF2F6; }
+    .cg-title { font-weight: 700; color: #1B2A3A; font-size: 15px; }
+    .cg-sub { font-size: 12.5px; color: #6B7C8F; margin-top: 2px; }
+    .cg-x { background: none; border: 0; font-size: 22px; line-height: 1; color: #90A4B7; cursor: pointer; }
+    .cg-x:hover { color: #33475B; }
+    .cg-body { padding: 16px 18px; overflow-y: auto; }
+    .cg-drop { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding: 26px 16px; border: 2px dashed #D7E0EA; border-radius: 12px; color: var(--propia-brand, #6D4FE3); cursor: pointer; transition: border-color .12s, background .12s; }
+    .cg-drop:hover { border-color: var(--propia-brand, #6D4FE3); background: #FAF8FE; }
+    .cg-drop-t { font-size: 13.5px; font-weight: 700; color: #33475B; }
+    .cg-drop-h { font-size: 12px; color: #90A4B7; }
+    .cg-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+    .cg-btn-ghost { height: 36px; padding: 0 14px; border-radius: 9px; border: 1px solid #E1E8EE; background: #fff; color: #516F90; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .cg-btn-brand { height: 36px; padding: 0 16px; border-radius: 9px; border: 1px solid var(--propia-brand, #6D4FE3); background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; }
+    .cg-btn-brand:disabled { opacity: .55; cursor: default; }
+    .cg-summary { border-radius: 10px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .cg-summary.ok { background: #E6F6EE; border: 1px solid #BFE8D2; color: #0F8A4F; }
+    .cg-summary.warn { background: #FFF6E6; border: 1px solid #F5DDA8; color: #A8720C; }
+    .cg-tbl { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; margin-bottom: 12px; }
+    .cg-tbl th { text-align: left; font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: #A6B7C8; text-transform: uppercase; padding: 6px 10px; border-bottom: 1px solid #EEF2F6; }
+    .cg-tbl td { padding: 7px 10px; border-bottom: 1px solid #F3F6F9; color: #33475B; }
+    .cg-tbl td:nth-child(2), .cg-tbl td:nth-child(3) { text-align: center; width: 90px; }
+    .cg-row-warn td { background: #FFFaf2; }
+    .cg-log-title { font-size: 11px; font-weight: 700; letter-spacing: .3px; color: #A6B7C8; text-transform: uppercase; margin: 6px 0; }
+    .cg-log { border: 1px solid #F0D9D9; border-radius: 10px; background: #FDF6F6; max-height: 220px; overflow-y: auto; }
+    .cg-log-item { display: flex; align-items: baseline; gap: 8px; padding: 6px 10px; border-bottom: 1px solid #F6E7E7; font-size: 12.5px; }
+    .cg-log-item:last-child { border-bottom: 0; }
+    .cg-log-hoja { font-weight: 700; color: #B4232A; min-width: 130px; }
+    .cg-log-fila { font-size: 11px; color: #90A4B7; min-width: 46px; }
+    .cg-log-msg { color: #6B4A4A; }
 
     /* Tarjetas de resumen: agrupaciones, unidades y estado de coeficientes. */
     .dst-stats { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }

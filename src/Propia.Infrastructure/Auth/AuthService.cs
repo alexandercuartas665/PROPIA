@@ -209,6 +209,18 @@ public class AuthService : IAuthService
         {
             if (openedHere) await conn.CloseAsync();
         }
+
+        // Adjunta el codigo corto de 6 chars (tabla global tenants, sin RLS) para mostrarlo en el
+        // selector de copropiedad. get_tenants_for_persona no lo devuelve, se resuelve aparte.
+        if (rows.Count > 0)
+        {
+            var ids = rows.Select(r => r.TenantId).ToList();
+            var codigos = await _db.Tenants.AsNoTracking()
+                .Where(t => ids.Contains(t.Id))
+                .Select(t => new { t.Id, t.CodigoCorto })
+                .ToDictionaryAsync(x => x.Id, x => x.CodigoCorto, ct);
+            rows = rows.Select(r => codigos.TryGetValue(r.TenantId, out var c) ? r with { CodigoCorto = c } : r).ToList();
+        }
         return rows;
     }
 

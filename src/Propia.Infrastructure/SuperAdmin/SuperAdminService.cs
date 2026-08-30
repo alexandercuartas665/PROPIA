@@ -59,7 +59,7 @@ public class SuperAdminService : ISuperAdminService
             .Select(t => new TenantDto(
                 t.Id, t.Nombre, t.Nit, t.CodigoPropia, t.Estado, t.EstadoCustodia,
                 t.OrganizacionId, t.Organizacion != null ? t.Organizacion.Nombre : null,
-                t.FechaActivacion))
+                t.FechaActivacion, t.CodigoCorto))
             .ToListAsync(ct);
     }
 
@@ -83,7 +83,7 @@ public class SuperAdminService : ISuperAdminService
         var orgNombre = tenant.OrganizacionId.HasValue
             ? await _db.Organizaciones.Where(o => o.Id == tenant.OrganizacionId).Select(o => o.Nombre).FirstOrDefaultAsync(ct)
             : null;
-        return new TenantDto(tenant.Id, tenant.Nombre, tenant.Nit, tenant.CodigoPropia, tenant.Estado, tenant.EstadoCustodia, tenant.OrganizacionId, orgNombre, tenant.FechaActivacion);
+        return new TenantDto(tenant.Id, tenant.Nombre, tenant.Nit, tenant.CodigoPropia, tenant.Estado, tenant.EstadoCustodia, tenant.OrganizacionId, orgNombre, tenant.FechaActivacion, tenant.CodigoCorto);
     }
 
     public async Task<TenantDto?> CambiarEstadoTenantAsync(Guid tenantId, CambiarEstadoTenantRequest req, Guid actorId, string actorEmail, string? ip, CancellationToken ct)
@@ -105,7 +105,7 @@ public class SuperAdminService : ISuperAdminService
             ip));
 
         await _db.SaveChangesAsync(ct);
-        return new TenantDto(tenant.Id, tenant.Nombre, tenant.Nit, tenant.CodigoPropia, tenant.Estado, tenant.EstadoCustodia, tenant.OrganizacionId, tenant.Organizacion?.Nombre, tenant.FechaActivacion);
+        return new TenantDto(tenant.Id, tenant.Nombre, tenant.Nit, tenant.CodigoPropia, tenant.Estado, tenant.EstadoCustodia, tenant.OrganizacionId, tenant.Organizacion?.Nombre, tenant.FechaActivacion, tenant.CodigoCorto);
     }
 
     // ---------------------------------- Equipo A&D GROUP ----------------------------------

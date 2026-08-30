@@ -25,7 +25,8 @@ public record TenantInfo(
     Guid TenantId,
     string Nombre,
     string Rol,
-    string? LogoUrl = null);
+    string? LogoUrl = null,
+    string? CodigoCorto = null);
 
 public record SwitchTenantRequest(Guid TenantId);
 

@@ -26,7 +26,7 @@ public record OrganizacionDto(Guid Id, string Nombre, TipoOrganizacion Tipo, str
 public record CrearOrganizacionRequest(string Nombre, TipoOrganizacion Tipo, string? Nit, string? Email, string? Telefono);
 
 // ----- Tenants (Copropiedades) -----
-public record TenantDto(Guid Id, string Nombre, string? Nit, string? CodigoPropia, EstadoCopropiedad Estado, EstadoCustodia EstadoCustodia, Guid? OrganizacionId, string? OrganizacionNombre, DateTimeOffset? FechaActivacion);
+public record TenantDto(Guid Id, string Nombre, string? Nit, string? CodigoPropia, EstadoCopropiedad Estado, EstadoCustodia EstadoCustodia, Guid? OrganizacionId, string? OrganizacionNombre, DateTimeOffset? FechaActivacion, string? CodigoCorto = null);
 public record CrearTenantRequest(string Nombre, string? Nit, string? Direccion, string? CodigoPropia, Guid? OrganizacionId);
 public record CambiarEstadoTenantRequest(EstadoCopropiedad NuevoEstado, string Justificacion);
 

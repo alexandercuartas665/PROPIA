@@ -24,6 +24,6 @@ public record MeResponseDto(
     Guid? ActiveTenantId,
     IReadOnlyList<TenantInfoDto> AvailableTenants);
 
-public record TenantInfoDto(Guid TenantId, string Nombre, string Rol, string? LogoUrl = null);
+public record TenantInfoDto(Guid TenantId, string Nombre, string Rol, string? LogoUrl = null, string? CodigoCorto = null);
 
 public record SwitchTenantRequestDto(Guid TenantId);

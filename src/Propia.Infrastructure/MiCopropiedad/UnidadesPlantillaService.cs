@@ -22,7 +22,6 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     private static readonly XLColor Brand = XLColor.FromHtml("#6D4FE3");
     private static readonly XLColor Ink = XLColor.FromHtml("#1B2A3A");
     private static readonly XLColor Soft = XLColor.FromHtml("#F1ECFD");
-    private static readonly XLColor Border = XLColor.FromHtml("#DCD2F8");
     private static readonly XLColor BrandText = XLColor.FromHtml("#4B2BB0");
 
     private readonly PropiaDbContext _db;
@@ -46,9 +45,11 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
 
         using var wb = new XLWorkbook();
 
-        // ---- Hoja de referencia (datos + rangos para dropdowns) ----
-        var wsRef = wb.AddWorksheet("DATOS DE CARGA");
-        var (coproList, rolesList) = ConstruirReferencia(wsRef, copros, roles);
+        // Listas para los desplegables, INLINE (sin hoja de referencia "DATOS DE CARGA").
+        // Si una lista no cabe inline (demasiados valores o con comas), esa columna queda
+        // libre (sin dropdown) en vez de romper la validacion.
+        var coproList = InlineList(copros.Select(c => c.Nombre));
+        var rolesList = InlineList(roles);
 
         // ---- Hojas de datos ----
         HojaUnidades(wb, coproList, camposUnidad);
@@ -59,7 +60,6 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         HojaZonasComunes(wb, coproList);
         HojaEquipos(wb, coproList);
 
-        wsRef.SheetView.FreezeRows(3);
         wb.Properties.Author = "PROPIA";
         wb.Properties.Company = "A&D GROUP S.A.S";
         wb.Properties.Title = "Plantilla de carga - Unidades privadas";
@@ -68,85 +68,24 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         return (ms.ToArray(), "Plantilla carga unidades privadas.xlsx");
     }
 
-    // Construye la formula de validacion: lista INLINE si cabe (se ve en cualquier Excel),
-    // o referencia al RANGO de la hoja de datos si es muy larga / tiene comas.
-    private static string ListaFormula(IEnumerable<string> valores, string rangeFallback)
+    // Lista de validacion INLINE (formula "a,b,c") si cabe en Excel y no hay comas en los
+    // valores; de lo contrario null (esa columna queda sin dropdown). Sin hoja de referencia.
+    private static string? InlineList(IEnumerable<string> valores)
     {
-        var vals = valores.Where(v => !string.IsNullOrWhiteSpace(v)).ToList();
+        var vals = valores.Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => v.Trim()).ToList();
+        if (vals.Count == 0) return null;
         var inline = string.Join(",", vals);
-        if (vals.Count > 0 && !vals.Any(v => v.Contains(',')) && inline.Length <= 250)
-            return "\"" + inline + "\"";
-        return rangeFallback;
-    }
-
-    // ===================== Hoja de referencia =====================
-    private static (string CoproList, string RolesList) ConstruirReferencia(
-        IXLWorksheet ws, List<(Guid Id, string Nombre, string? Codigo)> copros, List<string> roles)
-    {
-        var banner = ws.Range(1, 1, 1, 5).Merge();
-        banner.Value = "PROPIA   |   Datos de referencia";
-        banner.Style.Fill.BackgroundColor = Brand;
-        banner.Style.Font.FontColor = XLColor.White;
-        banner.Style.Font.Bold = true;
-        banner.Style.Font.FontSize = 13;
-        banner.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
-        banner.Style.Alignment.Indent = 1;
-        ws.Row(1).Height = 26;
-        ws.Cell(2, 1).Value = "Usa la columna COPROPIEDAD (por nombre) en cada hoja. Aqui ves su codigo e ID. Las listas fuerzan valores validos.";
-        ws.Cell(2, 1).Style.Font.FontColor = BrandText;
-        ws.Cell(2, 1).Style.Font.Italic = true;
-
-        // Copropiedades del cliente: Nombre | Codigo | ID
-        ws.Cell(4, 1).Value = "COPROPIEDAD (nombre)";
-        ws.Cell(4, 2).Value = "CODIGO";
-        ws.Cell(4, 3).Value = "ID (uuid)";
-        for (var i = 0; i < 3; i++)
-        {
-            var h = ws.Cell(4, i + 1);
-            h.Style.Font.Bold = true;
-            h.Style.Fill.BackgroundColor = Soft;
-            h.Style.Font.FontColor = BrandText;
-            h.Style.Border.BottomBorder = XLBorderStyleValues.Thin;
-            h.Style.Border.BottomBorderColor = Border;
-        }
-        var r = 5;
-        foreach (var c in copros)
-        {
-            ws.Cell(r, 1).Value = c.Nombre;
-            ws.Cell(r, 2).Value = c.Codigo ?? "";
-            ws.Cell(r, 3).Value = c.Id.ToString();
-            r++;
-        }
-        var coproLast = Math.Max(5, r - 1);
-        var coproRange = $"'DATOS DE CARGA'!$A$5:$A${coproLast}";
-        var coproList = ListaFormula(copros.Select(c => c.Nombre), coproRange);
-
-        // Roles del sistema (para ROLL)
-        var rh = ws.Cell(4, 5);
-        rh.Value = "ROL DEL SISTEMA";
-        rh.Style.Font.Bold = true;
-        rh.Style.Fill.BackgroundColor = Soft;
-        rh.Style.Font.FontColor = BrandText;
-        rh.Style.Border.BottomBorder = XLBorderStyleValues.Thin;
-        rh.Style.Border.BottomBorderColor = Border;
-        var rr = 5;
-        foreach (var rol in roles) ws.Cell(rr++, 5).Value = rol;
-        var rolesLast = Math.Max(5, rr - 1);
-        var rolesRange = $"'DATOS DE CARGA'!$E$5:$E${rolesLast}";
-        var rolesList = ListaFormula(roles, rolesRange);
-
-        ws.Column(1).Width = 34; ws.Column(2).Width = 14; ws.Column(3).Width = 38;
-        ws.Column(4).Width = 3; ws.Column(5).Width = 24;
-        return (coproList, rolesList);
+        if (vals.Any(v => v.Contains(',')) || inline.Length > 250) return null;
+        return "\"" + inline + "\"";
     }
 
     // ===================== Hojas de datos =====================
-    private static void HojaUnidades(XLWorkbook wb, string coproRange, List<string> camposUnidad)
+    private static void HojaUnidades(XLWorkbook wb, string? coproRange, List<string> camposUnidad)
     {
         var cols = new List<(string H, string Ayuda)>
         {
             ("COPROPIEDAD", "Elige de la lista"),
-            ("UNIDAD PRIVADA", "Codigo de la unidad (ubicacion y nomenclatura). Ej: Apartamento A1101 (A1=Torre, 101=Apto); Parqueadero P1S1 (Parqueadero 1 del sotano 1); Deposito D1S2"),
+            ("UNIDAD PRIVADA", "Codigo de la unidad con guion TORRE-NUMERO. Ej: Apartamento A1-101 (A1=Torre, 101=Apto); Parqueadero P1-15; Deposito D1-02"),
             ("TIPO", "Elige de la lista"),
             ("AGRUPACION", "1=Individual, 2=Principal, 3=Anexo"),
             ("PRINCIPAL", "Si es Anexo (3): codigo de la unidad principal"),
@@ -160,11 +99,11 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         Dropdown(ws, 1, coproRange);
         DropdownInline(ws, 3, "Apartamento,Local,Casa,Oficina,Bodega,Parqueadero,UtilCuarto");
         DropdownInline(ws, 4, "1,2,3");
-        Ejemplo(ws, EjemploCopro, "A1203", "Apartamento", "2", "", "", "1.25", "");
+        Ejemplo(ws, EjemploCopro, "A1-203", "Apartamento", "2", "", "", "1.25", "");
         Ajustar(ws, cols.Count);
     }
 
-    private static void HojaPersonas(XLWorkbook wb, string coproRange, string rolesRange)
+    private static void HojaPersonas(XLWorkbook wb, string? coproRange, string? rolesRange)
     {
         var cols = new List<(string H, string Ayuda)>
         {
@@ -187,11 +126,11 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         DropdownInline(ws, 4, "CC,CE,Pasaporte,NIT,Otro");
         DropdownInline(ws, 9, "M,F");
         Dropdown(ws, 12, rolesRange);
-        Ejemplo(ws, EjemploCopro, "A1203", "Propietario", "CC", "Juan Perez", "123456789", "juan@correo.com", "3001234567", "M", "1985-04-12", "Ingeniero", "");
+        Ejemplo(ws, EjemploCopro, "A1-203", "Propietario", "CC", "Juan Perez", "123456789", "juan@correo.com", "3001234567", "M", "1985-04-12", "Ingeniero", "");
         Ajustar(ws, cols.Count);
     }
 
-    private static void HojaVehiculos(XLWorkbook wb, string coproRange)
+    private static void HojaVehiculos(XLWorkbook wb, string? coproRange)
     {
         var cols = new List<(string H, string Ayuda)>
         {
@@ -203,11 +142,11 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         var ws = Encabezado(wb, "VEHICULOS", cols);
         Dropdown(ws, 1, coproRange);
         DropdownInline(ws, 3, "Automovil,Moto,Bicicleta,Camioneta,Otro");
-        Ejemplo(ws, EjemploCopro, "A1203", "Automovil", "Mazda", "2022", "Gris", "ABC123");
+        Ejemplo(ws, EjemploCopro, "A1-203", "Automovil", "Mazda", "2022", "Gris", "ABC123");
         Ajustar(ws, cols.Count);
     }
 
-    private static void HojaMascotas(XLWorkbook wb, string coproRange)
+    private static void HojaMascotas(XLWorkbook wb, string? coproRange)
     {
         var cols = new List<(string H, string Ayuda)>
         {
@@ -219,11 +158,11 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         var ws = Encabezado(wb, "MASCOTAS", cols);
         Dropdown(ws, 1, coproRange);
         DropdownInline(ws, 3, "Perro,Gato,Ave,Otro");
-        Ejemplo(ws, EjemploCopro, "A1203", "Perro", "Labrador", "Rocky");
+        Ejemplo(ws, EjemploCopro, "A1-203", "Perro", "Labrador", "Rocky");
         Ajustar(ws, cols.Count);
     }
 
-    private static void HojaTerceros(XLWorkbook wb, string coproRange)
+    private static void HojaTerceros(XLWorkbook wb, string? coproRange)
     {
         var cols = new List<(string H, string Ayuda)>
         {
@@ -239,12 +178,12 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         Dropdown(ws, 1, coproRange);
         DropdownInline(ws, 2, "TODAS,ESPECIFICA");
         DropdownInline(ws, 4, "CC,CE,Pasaporte,NIT,Otro");
-        Ejemplo(ws, EjemploCopro, "ESPECIFICA", "A1203", "CC", "Maria Lopez", "987654321", "maria@correo.com", "3009876543");
+        Ejemplo(ws, EjemploCopro, "ESPECIFICA", "A1-203", "CC", "Maria Lopez", "987654321", "maria@correo.com", "3009876543");
         Ajustar(ws, cols.Count);
     }
 
     // ===================== Hojas nuevas: Zonas comunes y Equipos =====================
-    private static void HojaZonasComunes(XLWorkbook wb, string coproRange)
+    private static void HojaZonasComunes(XLWorkbook wb, string? coproRange)
     {
         var cols = new List<(string H, string Ayuda)>
         {
@@ -267,7 +206,7 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         Ajustar(ws, cols.Count);
     }
 
-    private static void HojaEquipos(XLWorkbook wb, string coproRange)
+    private static void HojaEquipos(XLWorkbook wb, string? coproRange)
     {
         var cols = new List<(string H, string Ayuda)>
         {
@@ -333,20 +272,26 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
             a.Style.Font.Italic = true;
             a.Style.Font.FontSize = 9;
             a.Style.Fill.BackgroundColor = Soft;
+            // Ajuste de texto + alineacion arriba: la ayuda multilinea cabe en una fila de altura
+            // FIJA (igual que el archivo guia) en vez de estirar la fila a un tamano enorme.
+            a.Style.Alignment.WrapText = true;
+            a.Style.Alignment.Vertical = XLAlignmentVerticalValues.Top;
         }
         ws.Row(2).Height = 20;
+        ws.Row(3).Height = 97.2;   // altura fija de la fila de informacion (guia: ht=97.2)
         ws.SheetView.FreezeRows(3);
         return ws;
     }
 
-    private static void Dropdown(IXLWorksheet ws, int col, string listFormula)
+    private static void Dropdown(IXLWorksheet ws, int col, string? listFormula)
         => AplicarLista(ws, col, listFormula);
 
     private static void DropdownInline(IXLWorksheet ws, int col, string csv)
         => AplicarLista(ws, col, "\"" + csv + "\"");
 
-    private static void AplicarLista(IXLWorksheet ws, int col, string listFormula)
+    private static void AplicarLista(IXLWorksheet ws, int col, string? listFormula)
     {
+        if (string.IsNullOrEmpty(listFormula)) return;   // sin lista -> columna libre (sin dropdown)
         var dv = ws.Range(DataStart, col, MaxRows, col).CreateDataValidation();
         dv.List(listFormula, true);
         dv.IgnoreBlanks = true;
