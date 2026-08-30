@@ -132,6 +132,130 @@ public class MisCopropiedadesService : IMisCopropiedadesService
     }
 
     /// <summary>
+    /// Alta desde el onboarding de bienvenida (/bienvenida). A diferencia de CrearAsync:
+    /// - NO exige tenant activo (el usuario recien llega y su JWT no tiene tenant_id).
+    /// - Si el usuario no administra ninguna copropiedad, crea la ORGANIZACION segun su perfil
+    ///   (empresa administradora con nombre/NIT, o autoadministrada a nombre de la persona).
+    /// - Guarda ademas contacto y descripcion (la ficha del paso 3 del onboarding es mas completa).
+    /// </summary>
+    public async Task<CopropiedadCreadaDto> CrearPrimeraAsync(CrearPrimeraCopropiedadRequest req, Guid userId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Nombre))
+            throw new InvalidOperationException("El nombre de la copropiedad es obligatorio.");
+
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (user?.PersonaId is not Guid personaId)
+            throw new InvalidOperationException("El usuario no tiene una persona asociada.");
+        var persona = await _db.Personas.AsNoTracking().FirstOrDefaultAsync(p => p.Id == personaId, ct)
+            ?? throw new InvalidOperationException("No se encontro la persona del usuario.");
+
+        // Organizacion: si ya administra copropiedades, reusa la organizacion de la primera que
+        // tenga una (mismo criterio de CrearAsync). Si no, la crea segun el perfil elegido.
+        var tenantsAdmin = await GetTenantsAdministradosAsync(personaId, ct);
+        Guid? organizacionId = null;
+        if (tenantsAdmin.Count > 0)
+        {
+            organizacionId = await _db.Tenants.AsNoTracking()
+                .Where(t => tenantsAdmin.Contains(t.Id) && t.OrganizacionId != null)
+                .Select(t => t.OrganizacionId)
+                .FirstOrDefaultAsync(ct);
+        }
+        string? nombreOrg = null;
+        if (organizacionId is null || organizacionId == Guid.Empty)
+        {
+            nombreOrg = req.EsEmpresa && !string.IsNullOrWhiteSpace(req.EmpresaNombre)
+                ? req.EmpresaNombre!.Trim()
+                : $"Administracion de {persona.Nombres} {persona.Apellidos}".Trim();
+            var org = new Organizacion
+            {
+                Nombre = nombreOrg,
+                Tipo = req.EsEmpresa ? TipoOrganizacion.Administradora : TipoOrganizacion.Autoadministrada,
+                Nit = string.IsNullOrWhiteSpace(req.EmpresaNit) ? null : req.EmpresaNit!.Trim(),
+                Email = user.Email,
+                FechaActivacion = DateTimeOffset.UtcNow
+            };
+            _db.Organizaciones.Add(org);
+            await _db.SaveChangesAsync(ct);
+            organizacionId = org.Id;
+        }
+
+        var nombre = req.Nombre.Trim();
+        var duplicada = await _db.Tenants.AsNoTracking()
+            .AnyAsync(t => t.OrganizacionId == organizacionId && t.Nombre == nombre, ct);
+        if (duplicada)
+            throw new InvalidOperationException($"Ya existe una copropiedad llamada '{nombre}' en tu organizacion.");
+
+        // La tabla tenants no tiene RLS: se puede insertar sin tenant activo en la sesion.
+        var nuevo = new Tenant
+        {
+            Nombre = nombre,
+            Nit = string.IsNullOrWhiteSpace(req.Nit) ? null : req.Nit!.Trim(),
+            DigitoVerificacion = string.IsNullOrWhiteSpace(req.DigitoVerificacion) ? null : req.DigitoVerificacion!.Trim(),
+            Direccion = req.Direccion,
+            Departamento = req.Departamento,
+            Ciudad = req.Ciudad,
+            Pais = "Colombia",
+            TipoCopropiedad = req.Tipo,
+            Estrato = req.Estrato,
+            TelefonoContacto = req.Telefono,
+            EmailContacto = req.Email,
+            Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion!.Trim(),
+            OrganizacionId = organizacionId,
+            Estado = EstadoCopropiedad.Activa,
+            EstadoCustodia = EstadoCustodia.ConAdmin,
+            FechaActivacion = DateTimeOffset.UtcNow,
+            CodigoCorto = await GenerarCodigoCortoUnicoAsync(ct)
+        };
+        _db.Tenants.Add(nuevo);
+        await _db.SaveChangesAsync(ct);
+
+        // Vinculo usuarios_tenant bajo RLS: set_config al tenant NUEVO y restaurar al salir.
+        // En el primer onboarding no hay tenant activo: se restaura a cadena vacia.
+        var tenantActivo = _tenantContext.CurrentTenantId;
+        var conn = _db.Database.GetDbConnection();
+        var abiertaAqui = conn.State != System.Data.ConnectionState.Open;
+        if (abiertaAqui) await conn.OpenAsync(ct);
+        try
+        {
+            await using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = $@"
+                    SELECT set_config('app.tenant_id', '{nuevo.Id}', false);
+                    INSERT INTO usuarios_tenant (id, tenant_id, persona_id, rol, estado, fecha_activacion, created_at)
+                    VALUES ('{Guid.NewGuid()}', '{nuevo.Id}', '{personaId}', '{RolAdministrador}', 1, now(), now());";
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            try
+            {
+                if (nombreOrg is null)
+                {
+                    var org = await _db.Organizaciones.AsNoTracking()
+                        .FirstOrDefaultAsync(o => o.Id == organizacionId, ct);
+                    nombreOrg = org?.Nombre;
+                }
+                await _aiAgentTemplates.DeployToTenantAsync(nuevo.Id, nuevo.Nombre, nombreOrg, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Fallo desplegando plantillas de agente al tenant {TenantId}", nuevo.Id);
+            }
+        }
+        finally
+        {
+            await using var restore = conn.CreateCommand();
+            restore.CommandText = $"SELECT set_config('app.tenant_id', '{(tenantActivo?.ToString() ?? string.Empty)}', false);";
+            await restore.ExecuteNonQueryAsync(ct);
+            if (abiertaAqui) await conn.CloseAsync();
+        }
+
+        _logger.LogInformation("Primera copropiedad {Nombre} ({TenantId}) creada por persona {PersonaId} en la organizacion {OrgId}",
+            nuevo.Nombre, nuevo.Id, personaId, organizacionId);
+
+        return new CopropiedadCreadaDto(nuevo.Id, nuevo.Nombre);
+    }
+
+    /// <summary>
     /// Ids de las copropiedades donde la persona es Administrador (rol exacto), leidas via la
     /// funcion SECURITY DEFINER get_tenants_for_persona para saltar la RLS de usuarios_tenant (que
     /// solo deja ver el tenant activo). Habilita crear copropiedades desde cualquier contexto.
