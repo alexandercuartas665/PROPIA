@@ -45,13 +45,15 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
         var personas = LeerHoja(wb, "PERSONAS");
         var vehiculos = LeerHoja(wb, "VEHICULOS");
         var mascotas = LeerHoja(wb, "MASCOTAS");
+        var zonas = LeerHoja(wb, "ZONAS COMUNES");
+        var equipos = LeerHoja(wb, "EQUIPOS");
 
-        var nombresCopro = unidades.Concat(personas).Concat(vehiculos).Concat(mascotas)
+        var nombresCopro = unidades.Concat(personas).Concat(vehiculos).Concat(mascotas).Concat(zonas).Concat(equipos)
             .Select(r => Val(r.Row, "COPROPIEDAD"))
             .Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
-        int nCopro = 0, nUni = 0, nAnexo = 0, nPer = 0, nVeh = 0, nMas = 0;
+        int nCopro = 0, nUni = 0, nAnexo = 0, nPer = 0, nVeh = 0, nMas = 0, nZon = 0, nEqu = 0;
 
         foreach (var nombre in nombresCopro)
         {
@@ -157,11 +159,66 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                 }
                 catch (Exception ex) { errores.Add(new("MASCOTAS", fila, Msg(ex))); }
             }
+
+            // ---- Zonas comunes ----
+            foreach (var (row, fila) in zonas.Where(r => Eq(Val(r.Row, "COPROPIEDAD"), nombre)))
+            {
+                try
+                {
+                    var nom = Val(row, "NOMBRE").Trim();
+                    if (nom.Length == 0) { errores.Add(new("ZONAS COMUNES", fila, "Falta NOMBRE")); continue; }
+                    var req = new CrearZonaComunRequest(
+                        nom, ParseEnum(Val(row, "CATEGORIA"), CategoriaZonaComun.Otros),
+                        NullIfEmpty(Val(row, "DESCRIPCION")), ParseSiNo(Val(row, "RESERVABLE")),
+                        ParseDecimalNull(Val(row, "TARIFA RESERVA")), ParseIntNull(Val(row, "AFORO")),
+                        null, NullIfEmpty(Val(row, "REGLAS DE USO")));
+                    var creada = await _mi.CrearZonaComunAsync(req, ct);
+                    var est = ParseEnum(Val(row, "ESTADO"), EstadoZonaComunMantenimiento.Activa);
+                    if (est != EstadoZonaComunMantenimiento.Activa)
+                        await _mi.CambiarEstadoZonaAsync(creada.Id, new CambiarEstadoZonaRequest(est), ct);
+                    nZon++;
+                }
+                catch (Exception ex) { errores.Add(new("ZONAS COMUNES", fila, Msg(ex))); }
+            }
+
+            // ---- Equipos y activos ----
+            foreach (var (row, fila) in equipos.Where(r => Eq(Val(r.Row, "COPROPIEDAD"), nombre)))
+            {
+                try
+                {
+                    var nom = Val(row, "NOMBRE").Trim();
+                    if (nom.Length == 0) { errores.Add(new("EQUIPOS", fila, "Falta NOMBRE")); continue; }
+                    var cat = ParseEnum(Val(row, "CATEGORIA"), CategoriaEquipo.Otros);
+                    var tipo = ParseEnum(Val(row, "TIPO"), TipoElemento.Equipo);
+                    var cant = Math.Max(1, ParseIntNull(Val(row, "CANTIDAD")) ?? 1);
+                    var reservable = ParseSiNo(Val(row, "RESERVABLE"));
+                    var creado = await _mi.CrearEquipoAsync(new CrearEquipoActivoRequest(nom, cat, tipo, cant, reservable), ct);
+
+                    // Ficha completa (solo si viene algun dato adicional).
+                    var modelo = NullIfEmpty(Val(row, "MODELO"));
+                    var serie = NullIfEmpty(Val(row, "NUMERO DE SERIE"));
+                    var ubic = NullIfEmpty(Val(row, "UBICACION"));
+                    var obs = NullIfEmpty(Val(row, "OBSERVACIONES"));
+                    var vida = ParseIntNull(Val(row, "VIDA UTIL"));
+                    var valor = ParseDecimalNull(Val(row, "VALOR ADQUISICION"));
+                    var prov = NullIfEmpty(Val(row, "PROVEEDOR"));
+                    var fact = NullIfEmpty(Val(row, "NUMERO FACTURA"));
+                    if (modelo != null || serie != null || ubic != null || obs != null || vida != null || valor != null || prov != null || fact != null)
+                        await _mi.ActualizarEquipoAsync(creado.Id, new ActualizarEquipoActivoRequest(
+                            nom, cat, tipo, cant, reservable, modelo, serie, null, null, ubic, obs, vida, null, valor, prov, fact), ct);
+
+                    var est = ParseEnum(Val(row, "ESTADO"), EstadoEquipoActivo.Operativo);
+                    if (est != EstadoEquipoActivo.Operativo)
+                        await _mi.CambiarEstadoEquipoAsync(creado.Id, new CambiarEstadoEquipoRequest(est), ct);
+                    nEqu++;
+                }
+                catch (Exception ex) { errores.Add(new("EQUIPOS", fila, Msg(ex))); }
+            }
         }
 
         // Restaura el contexto de tenant original de la sesion.
         if (tenantOriginal is { } to) await SetTenantSqlAsync(to, ct);
-        return new ResultadoCargaUnidades(nCopro, nUni, nAnexo, nPer, nVeh, nMas, errores);
+        return new ResultadoCargaUnidades(nCopro, nUni, nAnexo, nPer, nVeh, nMas, nZon, nEqu, errores);
     }
 
     // Fija el tenant en EF (ITenantContext, para HasQueryFilter + TenantId al guardar) y en la
@@ -211,7 +268,11 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                 dict[h] = v;
                 if (v.Length > 0) any = true;
             }
-            if (any) res.Add((dict, r));
+            if (!any) continue;
+            // Ignora la fila de ejemplo de la plantilla (COPROPIEDAD = "EJEMPLO (borrar fila)").
+            var cop = dict.TryGetValue("COPROPIEDAD", out var cc) ? cc.TrimStart() : "";
+            if (cop.StartsWith("EJEMPLO", StringComparison.OrdinalIgnoreCase)) continue;
+            res.Add((dict, r));
         }
         return res;
     }
@@ -227,6 +288,25 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
     {
         s = (s ?? "").Trim().Replace(",", ".");
         return decimal.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var d) ? d : 0m;
+    }
+
+    private static decimal? ParseDecimalNull(string s)
+    {
+        s = (s ?? "").Trim().Replace(",", ".");
+        return decimal.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var d) ? d : (decimal?)null;
+    }
+
+    private static int? ParseIntNull(string s)
+    {
+        s = (s ?? "").Trim();
+        return int.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var n) ? n : (int?)null;
+    }
+
+    // "Si"/"No" (o Si/1/true) -> bool. Reservable en zonas/equipos.
+    private static bool ParseSiNo(string s)
+    {
+        s = (s ?? "").Trim().ToLowerInvariant();
+        return s is "si" or "sí" or "1" or "true" or "x" or "verdadero";
     }
 
     private static (string Nombres, string Apellidos) SplitNombre(string nombre)

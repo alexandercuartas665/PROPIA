@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Propia.Application.Common;
 using Propia.Application.MiCopropiedad;
+using Propia.Domain.Enums;
 using Propia.Infrastructure.Persistence;
 
 namespace Propia.Infrastructure.MiCopropiedad;
@@ -55,6 +56,8 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         HojaVehiculos(wb, coproList);
         HojaMascotas(wb, coproList);
         HojaTerceros(wb, coproList);
+        HojaZonasComunes(wb, coproList);
+        HojaEquipos(wb, coproList);
 
         wsRef.SheetView.FreezeRows(3);
         wb.Properties.Author = "PROPIA";
@@ -143,12 +146,12 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         var cols = new List<(string H, string Ayuda)>
         {
             ("COPROPIEDAD", "Elige de la lista"),
-            ("UNIDAD PRIVADA", "Codigo de la unidad (ej. A1101)"),
+            ("UNIDAD PRIVADA", "Codigo de la unidad (ubicacion y nomenclatura). Ej: Apartamento A1101 (A1=Torre, 101=Apto); Parqueadero P1S1 (Parqueadero 1 del sotano 1); Deposito D1S2"),
             ("TIPO", "Elige de la lista"),
             ("AGRUPACION", "1=Individual, 2=Principal, 3=Anexo"),
             ("PRINCIPAL", "Si es Anexo (3): codigo de la unidad principal"),
             ("MATRICULA", "Matricula inmobiliaria"),
-            ("COEFICIENTE", "Porcentaje. Max 5 decimales"),
+            ("COEFICIENTE", "Porcentaje. Max 5 decimales (1,25)"),
             ("REF PAGO", "Referencia de pago (alfanumerica)"),
         };
         foreach (var lbl in camposUnidad) cols.Add(($"[{lbl}]", "Campo dinamico de la copropiedad"));
@@ -157,6 +160,7 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         Dropdown(ws, 1, coproRange);
         DropdownInline(ws, 3, "Apartamento,Local,Casa,Oficina,Bodega,Parqueadero,UtilCuarto");
         DropdownInline(ws, 4, "1,2,3");
+        Ejemplo(ws, EjemploCopro, "A1203", "Apartamento", "2", "", "", "1.25", "");
         Ajustar(ws, cols.Count);
     }
 
@@ -183,6 +187,7 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         DropdownInline(ws, 4, "CC,CE,Pasaporte,NIT,Otro");
         DropdownInline(ws, 9, "M,F");
         Dropdown(ws, 12, rolesRange);
+        Ejemplo(ws, EjemploCopro, "A1203", "Propietario", "CC", "Juan Perez", "123456789", "juan@correo.com", "3001234567", "M", "1985-04-12", "Ingeniero", "");
         Ajustar(ws, cols.Count);
     }
 
@@ -198,6 +203,7 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         var ws = Encabezado(wb, "VEHICULOS", cols);
         Dropdown(ws, 1, coproRange);
         DropdownInline(ws, 3, "Automovil,Moto,Bicicleta,Camioneta,Otro");
+        Ejemplo(ws, EjemploCopro, "A1203", "Automovil", "Mazda", "2022", "Gris", "ABC123");
         Ajustar(ws, cols.Count);
     }
 
@@ -213,6 +219,7 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         var ws = Encabezado(wb, "MASCOTAS", cols);
         Dropdown(ws, 1, coproRange);
         DropdownInline(ws, 3, "Perro,Gato,Ave,Otro");
+        Ejemplo(ws, EjemploCopro, "A1203", "Perro", "Labrador", "Rocky");
         Ajustar(ws, cols.Count);
     }
 
@@ -232,6 +239,62 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         Dropdown(ws, 1, coproRange);
         DropdownInline(ws, 2, "TODAS,ESPECIFICA");
         DropdownInline(ws, 4, "CC,CE,Pasaporte,NIT,Otro");
+        Ejemplo(ws, EjemploCopro, "ESPECIFICA", "A1203", "CC", "Maria Lopez", "987654321", "maria@correo.com", "3009876543");
+        Ajustar(ws, cols.Count);
+    }
+
+    // ===================== Hojas nuevas: Zonas comunes y Equipos =====================
+    private static void HojaZonasComunes(XLWorkbook wb, string coproRange)
+    {
+        var cols = new List<(string H, string Ayuda)>
+        {
+            ("COPROPIEDAD", "Elige de la lista"),
+            ("NOMBRE", "Nombre de la zona (obligatorio)"),
+            ("CATEGORIA", "Elige de la lista"),
+            ("RESERVABLE", "Si / No"),
+            ("AFORO", "Capacidad en personas (numero)"),
+            ("ESTADO", "Elige de la lista"),
+            ("DESCRIPCION", ""),
+            ("TARIFA RESERVA", "Valor de la reserva (numero)"),
+            ("REGLAS DE USO", ""),
+        };
+        var ws = Encabezado(wb, "ZONAS COMUNES", cols);
+        Dropdown(ws, 1, coproRange);
+        DropdownInline(ws, 3, EnumCsv<CategoriaZonaComun>());
+        DropdownInline(ws, 4, "Si,No");
+        DropdownInline(ws, 6, EnumCsv<EstadoZonaComunMantenimiento>());
+        Ejemplo(ws, EjemploCopro, "Salon Social", "Social", "Si", "80", "Activa", "Salon para eventos", "50000", "Reservar con 3 dias");
+        Ajustar(ws, cols.Count);
+    }
+
+    private static void HojaEquipos(XLWorkbook wb, string coproRange)
+    {
+        var cols = new List<(string H, string Ayuda)>
+        {
+            ("COPROPIEDAD", "Elige de la lista"),
+            ("NOMBRE", "Nombre del equipo/activo (obligatorio)"),
+            ("CATEGORIA", "Elige de la lista"),
+            ("TIPO", "Equipo / Activo"),
+            ("CANTIDAD", "Numero (>=1)"),
+            ("RESERVABLE", "Si / No"),
+            ("MODELO", ""),
+            ("NUMERO DE SERIE", ""),
+            ("UBICACION", ""),
+            ("ESTADO", "Elige de la lista"),
+            ("OBSERVACIONES", ""),
+            ("VIDA UTIL", "Anios (numero)"),
+            ("VALOR ADQUISICION", "Numero"),
+            ("PROVEEDOR", ""),
+            ("NUMERO FACTURA", ""),
+        };
+        var ws = Encabezado(wb, "EQUIPOS", cols);
+        Dropdown(ws, 1, coproRange);
+        DropdownInline(ws, 3, EnumCsv<CategoriaEquipo>());
+        DropdownInline(ws, 4, EnumCsv<TipoElemento>());
+        DropdownInline(ws, 6, "Si,No");
+        DropdownInline(ws, 10, EnumCsv<EstadoEquipoActivo>());
+        Ejemplo(ws, EjemploCopro, "Bomba de agua principal", "Bombeo", "Equipo", "1", "No", "BX-200", "SER-123",
+            "Cuarto de bombas", "Operativo", "Revision mensual", "10", "5000000", "HidroServicios", "FAC-001");
         Ajustar(ws, cols.Count);
     }
 
@@ -301,6 +364,28 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     {
         for (var i = 1; i <= nCols; i++) ws.Column(i).Width = 18;
     }
+
+    // Sentinel de la columna COPROPIEDAD en la fila de ejemplo: el importador ignora toda fila
+    // cuya COPROPIEDAD empiece por "EJEMPLO". Asi la fila 4 sirve de guia y no se carga.
+    private const string EjemploCopro = "EJEMPLO (borrar fila)";
+
+    // Escribe la fila de ejemplo (fila 4) en gris/italica para que se lea como muestra.
+    private static void Ejemplo(IXLWorksheet ws, params string[] valores)
+    {
+        var muted = XLColor.FromHtml("#9AA7B4");
+        for (var i = 0; i < valores.Length; i++)
+        {
+            if (string.IsNullOrEmpty(valores[i])) continue;
+            var c = ws.Cell(DataStart, i + 1);
+            c.Value = valores[i];
+            c.Style.Font.Italic = true;
+            c.Style.Font.FontColor = muted;
+        }
+    }
+
+    // CSV de los nombres de un enum, para las listas desplegables (coinciden con lo que parsea el importador).
+    private static string EnumCsv<TEnum>() where TEnum : struct, Enum
+        => string.Join(",", Enum.GetNames<TEnum>());
 
     // ===================== Referencia: copropiedades del cliente =====================
     private async Task<List<(Guid Id, string Nombre, string? Codigo)>> CopropiedadesDelClienteAsync(CancellationToken ct)

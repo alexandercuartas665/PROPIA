@@ -101,6 +101,10 @@ boton plano con subrayado inferior en el activo), no por tarjetas KPI.
   violeta fijo). radius 7; padding 5px 8px; font 12.5px; color #33475B; background #fff; box-sizing border-box.
   FOCUS: `border-style:solid; border-color:#6D4FE3; box-shadow:0 0 0 2px rgba(109,79,227,.12)`. Numeros: text-align right.
   Dark: bg #232342; border #3a3a5a; color #D5D5E0.
+  - **Aplica a TODAS las clases de alta de cada modulo** (mismos valores exactos), no solo a `.tb-nf-inp`:
+    `.dst-nf-inp` (Unidades), `.dtab-inp` (Directorio), `.utb-inp` (Usuarios), `.zc-row-inp` (Zonas),
+    `.ea-row-inp` (Equipos), etc. Un alta con borde **SOLIDO** en reposo (o sin el glow al focus) es un BUG
+    de homogeneidad: se ve como caja de formulario maciza en vez del input "fantasma" punteado del canon.
 - B. EDICION de celda existente (`.tb-cell-inp`): `1px solid #6D4FE3` + `box-shadow 0 0 0 2px rgba(109,79,227,.12)`
   (violeta = edicion activa). radius 6; padding 4px 7px; font 12.5px. Solo mientras la celda esta en edicion.
 - C. SELECTS: mismas reglas. `<optgroup>` cuando se agrupan opciones (ej "Asociado a" -> Equipos/Zonas).
@@ -160,13 +164,26 @@ Referencia canonica: Distribucion.razor (Unidades) y ZonasComunes.razor.
 - Estado/計算 en el @code: `_porPagina` (default 25), `TamanosPagina = {25,50,100}`, `_pagina`,
   `TotalPaginas = ceil(total/porPagina)`, `Desde=(pagina-1)*porPagina`, `Hasta=min(Desde+porPagina,total)`,
   `Pagina = Filtradas.Skip(Desde).Take(porPagina)`. La paginacion cuenta sobre la lista YA FILTRADA.
-- El footer se muestra cuando hay registros; **con agrupacion activa NO se pagina** (se muestran los grupos
-  completos, sin footer). El conteo + el selector "por pagina" se ven siempre; anterior/siguiente solo con >1 pagina.
-- La vista Tarjetas/Lista comparte la misma paginacion y footer (mismo _pagina/_porPagina).
-- Modulos con footer canonico: Unidades (Distribucion) = referencia. Contratos tiene un paginador VIEJO
-  distinto (centrado, "Pagina X de Y", sin conteo ni "por pagina") que debe migrarse a este. Tareas/PQRSD/
-  Seguros/Directorio/Zonas/Usuarios/Equipos NO tienen footer (listas client-side); al homogenizar, agregar
-  este footer (aunque la lista sea corta: mostrara "Mostrando N de N" + "25 por pagina" sin anterior/siguiente).
+- **El footer se muestra SIEMPRE que la tabla este visible, incluso con 0 filas** (NO gatear con
+  `Total > 0`). Con la tabla vacia el footer sale igual: "Mostrando 0 de 0 {entidad}" + selector "25 por
+  pagina" (sin anterior/siguiente). El conteo + el selector "por pagina" se ven siempre; anterior/siguiente
+  solo con >1 pagina. Regla de vista vacia (decision de producto): un modulo de vista tabla, al quedar
+  **sin filas, NO muestra una tarjeta de estado vacio en lugar de la tabla**: renderiza la MISMA tabla
+  (barra + cabecera + fila de alta + footer "Mostrando 0 de 0") para poder empezar a llenar en la fila
+  inline desde cero. Referencia: Unidades, Directorio (Tabla) y Usuarios (Tabla).
+- **Unica excepcion al footer:** con **agrupacion activa** NO se pagina (se muestran los grupos completos,
+  sin footer). Por eso el gate correcto es `@if (Grupos is null)` (o el equivalente "sin agrupar"), NUNCA
+  `Total > 0`.
+- La vista Tarjetas/Lista comparte la misma paginacion y footer (mismo _pagina/_porPagina). En Tarjetas/Lista
+  con 0 filas si es valido un mensaje breve (no la tabla), pero la vista Tabla siempre lleva la tabla + footer.
+- Modulos con footer canonico: Unidades (Distribucion) = referencia. **Directorio (Personas/Empresas),
+  Usuarios, Zonas Comunes y Equipos y Activos ya tienen el footer canonico via `<TablaPager>`, visible
+  tambien con 0 filas** (en su vista Tabla). En Zonas/Equipos el cartel de vacio (`zc-empty`/`ea-empty`)
+  se muestra SOLO en la vista Tarjetas (`_view == "cards"`); en la vista Tabla el vacio lo comunica la
+  propia tabla (cabecera + fila de alta + footer "Mostrando 0 de 0"). Contratos tiene un paginador VIEJO
+  distinto (centrado, "Pagina X de Y", sin conteo ni "por pagina") que debe migrarse a este.
+  Tareas/PQRSD/Seguros: al homogenizar, agregar este footer (aunque la lista sea corta o vacia: mostrara
+  "Mostrando N de N" + "25 por pagina" sin anterior/siguiente).
 
 ## Protocolo de auditoria (obligatorio por cada punto)
 

@@ -11,6 +11,8 @@ public record ResultadoCargaUnidades(
     int Personas,
     int Vehiculos,
     int Mascotas,
+    int Zonas,
+    int Equipos,
     IReadOnlyList<CargaUnidadesError> Errores);
 
 /// <summary>
