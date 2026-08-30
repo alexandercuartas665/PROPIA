@@ -28,9 +28,14 @@ public sealed class McpGateway : IMcpGateway
 
     public async Task<IReadOnlyList<McpToolInfo>> ListToolsAsync(string connectionCode, string bearerToken, CancellationToken ct = default)
     {
+        // El servidor fisico es uno (/mcp): la conexion particiona el catalogo por prefijo de
+        // nombre (ej. "plataforma_"), asi las tools de plataforma no aparecen en "copropiedades".
+        var con = McpConnectionCatalog.Find(connectionCode)
+            ?? throw new InvalidOperationException($"Conexion MCP desconocida: {connectionCode}");
         await using var client = await ConnectAsync(connectionCode, bearerToken, null, null, ct);
         var tools = await client.ListToolsAsync(cancellationToken: ct);
         return tools
+            .Where(t => McpConnectionCatalog.ToolBelongsTo(con, t.Name))
             .Select(t => new McpToolInfo(t.Name, t.Description, t.JsonSchema.GetRawText()))
             .ToList();
     }
@@ -38,6 +43,12 @@ public sealed class McpGateway : IMcpGateway
     public async Task<string> CallToolAsync(string connectionCode, string toolName, IReadOnlyDictionary<string, object?> arguments,
         string bearerToken, string? contactPhone = null, Guid? conversationId = null, CancellationToken ct = default)
     {
+        var con = McpConnectionCatalog.Find(connectionCode)
+            ?? throw new InvalidOperationException($"Conexion MCP desconocida: {connectionCode}");
+        if (!McpConnectionCatalog.ToolBelongsTo(con, toolName))
+        {
+            throw new InvalidOperationException($"La tool '{toolName}' no pertenece a la conexion '{connectionCode}'.");
+        }
         await using var client = await ConnectAsync(connectionCode, bearerToken, contactPhone, conversationId, ct);
         // El SDK espera IReadOnlyDictionary<string, object> (sin null); filtramos los nulos.
         var args = arguments

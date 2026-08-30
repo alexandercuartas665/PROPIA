@@ -399,8 +399,10 @@ public class IaController : ControllerBase
             .Select(s => $"{s.ConnectionCode}|{s.ToolName}")
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+        // Las conexiones PlatformOnly (agentes de plataforma, ej. bienvenida) no se ofrecen a
+        // los agentes de tenant.
         var resultado = new List<AgentMcpConnectionDto>();
-        foreach (var con in McpConnectionCatalog.All)
+        foreach (var con in McpConnectionCatalog.All.Where(c => !c.PlatformOnly))
         {
             try
             {
@@ -421,7 +423,14 @@ public class IaController : ControllerBase
     /// <summary>Reemplaza la seleccion completa de tools MCP del agente.</summary>
     [HttpPut("agentes/{id:guid}/mcp")]
     public async Task<IActionResult> SaveMcpTools(Guid id, [FromBody] SaveAgentMcpToolsRequest req, CancellationToken ct)
-        => await _agents.SetMcpToolsAsync(id, req.Tools ?? Array.Empty<AgentMcpToolSelection>(), ct) ? NoContent() : NotFound();
+    {
+        // Guarda de plataforma: un agente de tenant jamas puede habilitar tools de una conexion
+        // PlatformOnly (aunque el request se arme a mano).
+        var tools = (req.Tools ?? Array.Empty<AgentMcpToolSelection>())
+            .Where(t => McpConnectionCatalog.Find(t.ConnectionCode)?.PlatformOnly != true)
+            .ToList();
+        return await _agents.SetMcpToolsAsync(id, tools, ct) ? NoContent() : NotFound();
+    }
 
     private string? BearerToken()
     {

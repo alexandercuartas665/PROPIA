@@ -153,6 +153,9 @@ public static class DependencyInjection
         // Alta de copropiedades desde el selector (cliente autenticado)
         services.AddScoped<Application.MisCopropiedades.IMisCopropiedadesService, MisCopropiedades.MisCopropiedadesService>();
 
+        // Onboarding de bienvenida (/bienvenida): asistente de plataforma (config global de IA)
+        services.AddScoped<Application.Bienvenida.IAsistenteBienvenidaService, Bienvenida.AsistenteBienvenidaService>();
+
         // Modulo 2.17 Servicios publicos
         services.AddScoped<Application.ServiciosPublicos.IServiciosPublicosService, ServiciosPublicos.ServiciosPublicosService>();
 

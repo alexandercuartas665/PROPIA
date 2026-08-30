@@ -22,12 +22,25 @@ public sealed class AdminAiAgentTemplatesController : ControllerBase
 {
     private readonly IAiAgentTemplateService _svc;
     private readonly IMcpGateway _mcp;
+    private readonly Propia.Application.Bienvenida.IAsistenteBienvenidaService _asistente;
 
-    public AdminAiAgentTemplatesController(IAiAgentTemplateService svc, IMcpGateway mcp)
+    public AdminAiAgentTemplatesController(IAiAgentTemplateService svc, IMcpGateway mcp,
+        Propia.Application.Bienvenida.IAsistenteBienvenidaService asistente)
     {
         _svc = svc;
         _mcp = mcp;
+        _asistente = asistente;
     }
+
+    public sealed record ProbarPlantillaRequest(List<Propia.Application.Bienvenida.BienvenidaTurno> Conversacion);
+
+    /// <summary>
+    /// Playground: conversa con una plantilla de PLATAFORMA (prompt y tools GUARDADOS). Las
+    /// plantillas normales no son ejecutables aqui (sus tools se siembran al desplegar al tenant).
+    /// </summary>
+    [HttpPost("{id:guid}/probar")]
+    public async Task<IActionResult> Probar(Guid id, [FromBody] ProbarPlantillaRequest req, CancellationToken ct)
+        => Ok(await _asistente.ProbarAsync(id, req.Conversacion ?? new(), BearerToken(), ct));
 
     /// <summary>
     /// Devuelve el catalogo de conexiones MCP + sus tools EN VIVO. Lo usa el form de plantillas
@@ -114,9 +127,13 @@ public sealed class AdminAiAgentTemplatesController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        var (actorId, email) = Actor();
-        var ok = await _svc.DeleteAsync(id, actorId, email, Ip(), ct);
-        return ok ? NoContent() : NotFound();
+        try
+        {
+            var (actorId, email) = Actor();
+            var ok = await _svc.DeleteAsync(id, actorId, email, Ip(), ct);
+            return ok ? NoContent() : NotFound();
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
     /// <summary>Lista todos los agentes existentes (de todos los tenants) que pueden importarse como plantilla.</summary>

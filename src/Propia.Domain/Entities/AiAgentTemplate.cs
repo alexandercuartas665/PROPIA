@@ -42,6 +42,16 @@ public class AiAgentTemplate : BaseEntity
     /// </summary>
     public bool IncludeInOnboarding { get; set; }
 
+    /// <summary>
+    /// Marca de AGENTE DE PLATAFORMA: si tiene valor (ej. "bienvenida"), la plantilla NO es un
+    /// blueprint para tenants sino un agente que la plataforma ejecuta directamente (el Super
+    /// Admin es dueno del prompt y de sus tools). NUNCA se despliega a tenants, aunque tenga
+    /// IncludeInOnboarding=true. La clave identifica al consumidor (BienvenidaKey = onboarding).
+    /// </summary>
+    public string? PlatformKey { get; set; }
+
+    public const string BienvenidaKey = "bienvenida";
+
     public int SortOrder { get; set; }
 
     public ICollection<AiAgentTemplateMcpTool> McpTools { get; set; } = new List<AiAgentTemplateMcpTool>();
