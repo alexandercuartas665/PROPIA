@@ -14,7 +14,8 @@ public sealed record AiAgentTemplateDto(
     bool IsActive,
     bool IncludeInOnboarding,
     int SortOrder,
-    List<AiAgentTemplateToolDto> Tools);
+    List<AiAgentTemplateToolDto> Tools,
+    string? PlatformKey = null);
 
 public sealed record AiAgentTemplateToolDto(string ConnectionCode, string ToolName);
 

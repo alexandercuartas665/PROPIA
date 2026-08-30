@@ -1,13 +1,16 @@
 namespace Propia.Application.Bienvenida;
 
 /// <summary>
-/// Asistente del onboarding de bienvenida (/bienvenida). Es un agente de PLATAFORMA: vive en la
-/// configuracion global del Super Admin (AiProviderConfigs), no en un tenant - el usuario que lo
-/// usa todavia no tiene copropiedad. Solo conversa y redacta; no ejecuta tools.
+/// Asistente del onboarding de bienvenida (/bienvenida). Es un agente de PLATAFORMA: su
+/// definicion vive en una AiAgentTemplate con PlatformKey="bienvenida" (prompt, proveedor,
+/// modelo y tools editables por el Super Admin en Plantillas de agentes IA) y las credenciales
+/// salen de la config global AiProviderConfigs - nunca de un tenant. Sus tools MCP van por la
+/// conexion "plataforma" (PlatformOnly), invisible para los agentes de los tenants.
+/// bearerToken: JWT del usuario (puede no tener tenant); habilita la ejecucion de tools.
 /// </summary>
 public interface IAsistenteBienvenidaService
 {
-    Task<BienvenidaChatDto> ResponderAsync(BienvenidaChatRequest req, CancellationToken ct);
+    Task<BienvenidaChatDto> ResponderAsync(BienvenidaChatRequest req, string? bearerToken, CancellationToken ct);
     Task<BienvenidaChatDto> GenerarDescripcionAsync(BienvenidaDescripcionRequest req, CancellationToken ct);
 }
 

@@ -114,9 +114,13 @@ public sealed class AdminAiAgentTemplatesController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        var (actorId, email) = Actor();
-        var ok = await _svc.DeleteAsync(id, actorId, email, Ip(), ct);
-        return ok ? NoContent() : NotFound();
+        try
+        {
+            var (actorId, email) = Actor();
+            var ok = await _svc.DeleteAsync(id, actorId, email, Ip(), ct);
+            return ok ? NoContent() : NotFound();
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
     /// <summary>Lista todos los agentes existentes (de todos los tenants) que pueden importarse como plantilla.</summary>

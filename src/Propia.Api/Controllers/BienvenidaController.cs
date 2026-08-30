@@ -42,6 +42,13 @@ public class BienvenidaController : ControllerBase
         return Guid.TryParse(raw, out var id) ? id : null;
     }
 
+    private string? BearerToken()
+    {
+        var raw = Request.Headers.Authorization.ToString();
+        const string prefix = "Bearer ";
+        return raw.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? raw[prefix.Length..].Trim() : null;
+    }
+
     /// <summary>Crea la copropiedad (y la organizacion si el usuario no tiene ninguna).</summary>
     [HttpPost("crear")]
     public async Task<IActionResult> Crear([FromBody] CrearPrimeraCopropiedadRequest req, CancellationToken ct)
@@ -51,10 +58,10 @@ public class BienvenidaController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
-    /// <summary>Turno de chat con el asistente de plataforma.</summary>
+    /// <summary>Turno de chat con el asistente de plataforma (con tools, via el bearer del usuario).</summary>
     [HttpPost("asistente")]
     public async Task<IActionResult> Asistente([FromBody] BienvenidaChatRequest req, CancellationToken ct)
-        => Ok(await _asistente.ResponderAsync(req, ct));
+        => Ok(await _asistente.ResponderAsync(req, BearerToken(), ct));
 
     /// <summary>Redacta la descripcion breve de la copropiedad con IA.</summary>
     [HttpPost("generar-descripcion")]

@@ -54,7 +54,13 @@ else
                     @foreach (var t in _templates)
                     {
                         <tr>
-                            <td><strong>@t.Name</strong>@(string.IsNullOrEmpty(t.Role) ? null : (MarkupString)$" <small class=\"text-muted\">{t.Role}</small>")</td>
+                            <td>
+                                <strong>@t.Name</strong>@(string.IsNullOrEmpty(t.Role) ? null : (MarkupString)$" <small class=\"text-muted\">{t.Role}</small>")
+                                @if (t.PlatformKey is not null)
+                                {
+                                    <span class="badge ms-1" style="background:#5955D1" title="Agente que la plataforma ejecuta directamente (@t.PlatformKey). Nunca se despliega a tenants.">Plataforma</span>
+                                }
+                            </td>
                             <td>@t.Provider <small class="text-muted">@(t.Model ?? "default")</small></td>
                             <td>@t.Tools.Count</td>
                             <td>
@@ -62,12 +68,16 @@ else
                                 else { <span class="badge bg-secondary">Inactiva</span> }
                             </td>
                             <td>
-                                @if (t.IncludeInOnboarding) { <span class="badge bg-primary">Si</span> }
+                                @if (t.PlatformKey is not null) { <span class="badge bg-light text-dark" title="Los agentes de plataforma no se copian a tenants">N/A</span> }
+                                else if (t.IncludeInOnboarding) { <span class="badge bg-primary">Si</span> }
                                 else { <span class="badge bg-light text-dark">No</span> }
                             </td>
                             <td class="text-end">
                                 <button class="btn btn-sm btn-outline-dark" @onclick="() => Editar(t)">Editar</button>
-                                <button class="btn btn-sm btn-outline-danger ms-1" @onclick="() => Borrar(t)">Borrar</button>
+                                @if (t.PlatformKey is null)
+                                {
+                                    <button class="btn btn-sm btn-outline-danger ms-1" @onclick="() => Borrar(t)">Borrar</button>
+                                }
                             </td>
                         </tr>
                     }
@@ -191,8 +201,16 @@ else
                             <label class="form-check-label" for="active">Activa</label>
                         </div>
                         <div class="col-6 form-check">
-                            <input type="checkbox" class="form-check-input" id="onb" @bind="_form.IncludeInOnboarding" />
-                            <label class="form-check-label" for="onb">Incluir en onboarding (desplegar a tenants nuevos)</label>
+                            @if (_editandoPlatformKey is not null)
+                            {
+                                <span class="badge" style="background:#5955D1">Agente de plataforma · @_editandoPlatformKey</span>
+                                <div class="form-text">La plataforma lo ejecuta directamente (ej. el onboarding de bienvenida). Nunca se despliega a tenants y sus tools van por la conexión "MCP Plataforma".</div>
+                            }
+                            else
+                            {
+                                <input type="checkbox" class="form-check-input" id="onb" @bind="_form.IncludeInOnboarding" />
+                                <label class="form-check-label" for="onb">Incluir en onboarding (desplegar a tenants nuevos)</label>
+                            }
                         </div>
                         <div class="col-12">
                             <h6 class="mt-2">Tools MCP habilitadas</h6>
@@ -202,7 +220,9 @@ else
                             }
                             else
                             {
-                                @foreach (var con in _catalogo)
+                                @* La conexion "plataforma" solo aplica a agentes de plataforma (y es la UNICA
+                                   que ellos ejecutan); las plantillas normales ven el resto del catalogo. *@
+                                @foreach (var con in _catalogo.Where(c => _editandoPlatformKey is not null ? c.Code == "plataforma" : c.Code != "plataforma"))
                                 {
                                     <div class="card mb-2">
                                         <div class="card-header bg-white py-2">
@@ -258,6 +278,7 @@ else
     private List<TemplateMcpConnectionCatalogItem>? _catalogo;
 
     private Guid? _editando;
+    private string? _editandoPlatformKey;
     private Form? _form;
     private HashSet<string> _toolsSeleccionadas = new();
 
@@ -318,6 +339,7 @@ else
     private async Task NuevaPlantilla()
     {
         _editando = Guid.Empty;
+        _editandoPlatformKey = null;
         _form = new Form { SystemPrompt = "Eres el asistente IA de la copropiedad {COPROPIEDAD_NOMBRE}. Ayuda al equipo administrativo a consultar datos y ejecutar acciones rapidas." };
         _toolsSeleccionadas = new();
         _msg = null;
@@ -328,6 +350,7 @@ else
     private async Task Editar(AiAgentTemplateDto t)
     {
         _editando = t.Id;
+        _editandoPlatformKey = t.PlatformKey;
         _form = new Form
         {
             Name = t.Name, Role = t.Role, Description = t.Description,
@@ -344,6 +367,7 @@ else
     private void CancelarEdicion()
     {
         _editando = null;
+        _editandoPlatformKey = null;
         _form = null;
         _toolsSeleccionadas = new();
         _msg = null;

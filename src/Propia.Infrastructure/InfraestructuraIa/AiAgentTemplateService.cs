@@ -118,6 +118,9 @@ public sealed class AiAgentTemplateService : IAiAgentTemplateService
     {
         var t = await _db.AiAgentTemplates.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (t is null) return false;
+        if (t.PlatformKey is not null)
+            throw new InvalidOperationException(
+                "Esta plantilla es un agente de PLATAFORMA (la usa el sistema directamente); no se puede eliminar. Puedes desactivarla o editar su prompt.");
         _db.AiAgentTemplates.Remove(t);
 
         _db.SuperAdminLogs.Add(new SuperAdminLog
@@ -136,9 +139,11 @@ public sealed class AiAgentTemplateService : IAiAgentTemplateService
 
     public async Task<int> DeployToTenantAsync(Guid tenantId, string copropiedadNombre, string? organizacionNombre, CancellationToken ct = default)
     {
+        // Las plantillas con PlatformKey son agentes de PLATAFORMA (ej. bienvenida): jamas se
+        // despliegan a tenants, aunque alguien marque IncludeInOnboarding.
         var templates = await _db.AiAgentTemplates
             .Include(t => t.McpTools)
-            .Where(t => t.IsActive && t.IncludeInOnboarding)
+            .Where(t => t.IsActive && t.IncludeInOnboarding && t.PlatformKey == null)
             .OrderBy(t => t.SortOrder).ThenBy(t => t.Name)
             .ToListAsync(ct);
 
@@ -164,7 +169,8 @@ public sealed class AiAgentTemplateService : IAiAgentTemplateService
                 };
                 _db.AiAgents.Add(agent);
 
-                foreach (var tool in template.McpTools)
+                foreach (var tool in template.McpTools.Where(x =>
+                    McpConnectionCatalog.Find(x.ConnectionCode)?.PlatformOnly != true))
                 {
                     _db.AiAgentMcpTools.Add(new AiAgentMcpTool
                     {
@@ -367,5 +373,6 @@ public sealed class AiAgentTemplateService : IAiAgentTemplateService
         t.Id, t.Name, t.Role, t.Description, t.Provider, t.Model, t.SystemPrompt,
         t.IsActive, t.IncludeInOnboarding, t.SortOrder,
         t.McpTools.OrderBy(x => x.ConnectionCode).ThenBy(x => x.ToolName)
-            .Select(x => new AiAgentTemplateToolDto(x.ConnectionCode, x.ToolName)).ToList());
+            .Select(x => new AiAgentTemplateToolDto(x.ConnectionCode, x.ToolName)).ToList(),
+        t.PlatformKey);
 }
