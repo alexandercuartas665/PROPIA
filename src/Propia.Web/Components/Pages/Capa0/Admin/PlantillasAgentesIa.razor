@@ -214,6 +214,14 @@ else
                         </div>
                         <div class="col-12">
                             <h6 class="mt-2">Tools MCP habilitadas</h6>
+                            @if (_editandoPlatformKey is null)
+                            {
+                                <p class="text-muted small mb-2">Aquí solo se <b>siembran</b>: al desplegar la plantilla se copian al agente del tenant y se ejecutan allá, con la copropiedad y los permisos del usuario del tenant. No son ejecutables desde el Super Admin.</p>
+                            }
+                            else
+                            {
+                                <p class="text-muted small mb-2">Herramientas de plataforma: el asistente las ejecuta directamente, sin copropiedad. Pruébalas abajo en el chat.</p>
+                            }
                             @if (_catalogo is null)
                             {
                                 <div class="text-muted small">Cargando catalogo MCP...</div>
@@ -256,6 +264,38 @@ else
                             }
                         </div>
                     </div>
+                    @if (_editandoPlatformKey is not null && _editando != Guid.Empty)
+                    {
+                        <div class="mt-3">
+                            <h6>Probar agente</h6>
+                            <p class="text-muted small mb-2">Conversa con la versión <b>guardada</b> de la plantilla (prompt y tools). Si acabas de editar el prompt, guarda primero.</p>
+                            <div class="tpl-test">
+                                <div class="tpl-test-body" id="tplTestBody">
+                                    @if (_chat.Count == 0)
+                                    {
+                                        <div class="tpl-test-empty">Escribe un mensaje para probar al agente de plataforma.</div>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var m in _chat)
+                                        {
+                                            <div class="tpl-bubble @(m.Rol == "model" ? "bot" : "me")">@m.Texto</div>
+                                        }
+                                    }
+                                    @if (_chatBusy) { <div class="tpl-bubble bot tpl-typing">Escribiendo...</div> }
+                                </div>
+                                @if (!string.IsNullOrEmpty(_chatError)) { <div class="text-danger small" style="padding:6px 10px;">@_chatError</div> }
+                                <form class="tpl-test-input" @onsubmit="ProbarChatAsync" @onsubmit:preventDefault>
+                                    <input class="form-control" placeholder="Mensaje del usuario en bienvenida..." @bind="_chatInput" @bind:event="oninput" disabled="@_chatBusy" />
+                                    <button type="submit" class="btn btn-dark" disabled="@(_chatBusy || string.IsNullOrWhiteSpace(_chatInput))">Enviar</button>
+                                </form>
+                            </div>
+                            @if (_chat.Count > 0)
+                            {
+                                <button type="button" class="btn btn-sm btn-link mt-1 p-0" @onclick="LimpiarChat" disabled="@_chatBusy">Limpiar conversación</button>
+                            }
+                        </div>
+                    }
                 </div>
                 <div class="modal-footer">
                     @if (!string.IsNullOrEmpty(_msg)) { <span class="me-auto @_msgCls">@_msg</span> }
@@ -285,6 +325,52 @@ else
     private bool _mostrandoImportar;
     private List<ImportableAgentDto>? _importSources;
     private Guid? _importandoId;
+
+    // ----- Playground del agente de plataforma (solo PlatformKey != null) -----
+    private sealed record ChatTurno(string Rol, string Texto);
+    private readonly List<ChatTurno> _chat = new();
+    private string _chatInput = "";
+    private bool _chatBusy;
+    private string? _chatError;
+    private sealed record ProbarResp(bool Ok, string? Texto, string? Error);
+
+    private void LimpiarChat() { _chat.Clear(); _chatError = null; }
+
+    private async Task ProbarChatAsync()
+    {
+        var t = _chatInput.Trim();
+        if (_editando is null || _editando == Guid.Empty || t.Length == 0 || _chatBusy) return;
+        _chatInput = "";
+        _chatError = null;
+        _chat.Add(new ChatTurno("user", t));
+        _chatBusy = true;
+        StateHasChanged();
+        await ScrollChatAsync();
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/admin/ai-agent-templates/{_editando}/probar",
+                new { Conversacion = _chat.Select(m => new { m.Rol, m.Texto }).ToList() });
+            var r = resp.IsSuccessStatusCode ? await resp.Content.ReadFromJsonAsync<ProbarResp>() : null;
+            if (r?.Ok == true && !string.IsNullOrWhiteSpace(r.Texto)) _chat.Add(new ChatTurno("model", r.Texto!));
+            else _chatError = MapChatError(r?.Error);
+        }
+        catch (Exception ex) { _chatError = ex.Message; }
+        finally { _chatBusy = false; StateHasChanged(); await ScrollChatAsync(); }
+    }
+
+    private static string MapChatError(string? e) => e switch
+    {
+        "ia_no_configurada" => "Ningun proveedor de IA global esta habilitado (configuralo en Servidores de IA).",
+        "solo_agentes_de_plataforma" => "Solo los agentes de plataforma se pueden probar aqui.",
+        "plantilla_no_encontrada" => "La plantilla ya no existe. Recarga la pagina.",
+        null or "" => "No se pudo obtener respuesta.",
+        _ => e
+    };
+
+    private async Task ScrollChatAsync()
+    {
+        try { await Js.InvokeVoidAsync("eval", "var b=document.getElementById('tplTestBody'); if(b) b.scrollTop=b.scrollHeight;"); } catch { }
+    }
 
     private class Form
     {
@@ -340,6 +426,7 @@ else
     {
         _editando = Guid.Empty;
         _editandoPlatformKey = null;
+        LimpiarChat();
         _form = new Form { SystemPrompt = "Eres el asistente IA de la copropiedad {COPROPIEDAD_NOMBRE}. Ayuda al equipo administrativo a consultar datos y ejecutar acciones rapidas." };
         _toolsSeleccionadas = new();
         _msg = null;
@@ -351,6 +438,7 @@ else
     {
         _editando = t.Id;
         _editandoPlatformKey = t.PlatformKey;
+        LimpiarChat();
         _form = new Form
         {
             Name = t.Name, Role = t.Role, Description = t.Description,
@@ -368,6 +456,7 @@ else
     {
         _editando = null;
         _editandoPlatformKey = null;
+        LimpiarChat();
         _form = null;
         _toolsSeleccionadas = new();
         _msg = null;
@@ -489,3 +578,16 @@ else
         return http;
     }
 }
+
+<style>
+    /* Playground del agente de plataforma (clonado del probador de agentes del tenant) */
+    .tpl-test { border: 1px solid var(--bs-border-color, #e3e3ec); border-radius: 12px; overflow: hidden; }
+    .tpl-test-body { max-height: 300px; min-height: 140px; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--bs-tertiary-bg, #f5f6fa); }
+    .tpl-test-empty { color: #8a8a9a; font-size: 12.5px; text-align: center; margin: auto; font-style: italic; }
+    .tpl-bubble { max-width: 85%; padding: 8px 12px; border-radius: 12px; font-size: 13px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word; }
+    .tpl-bubble.me { align-self: flex-end; background: #5955D1; color: #fff; border-bottom-right-radius: 4px; }
+    .tpl-bubble.bot { align-self: flex-start; background: var(--bs-body-bg, #fff); border: 1px solid var(--bs-border-color, #e3e3ec); border-bottom-left-radius: 4px; }
+    .tpl-typing { color: #8a8a9a; font-style: italic; }
+    .tpl-test-input { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--bs-border-color, #e3e3ec); background: var(--bs-body-bg, #fff); margin: 0; }
+    .tpl-test-input input { flex: 1; }
+</style>

@@ -73,6 +73,42 @@ public class AsistenteBienvenidaService : IAsistenteBienvenidaService
         if (turns.Count == 0)
             return new BienvenidaChatDto(false, null, "conversacion_vacia");
 
+        return await CompletarAsync(template, provider, apiKey, baseUrl, model, system, turns, bearerToken, ct);
+    }
+
+    public async Task<BienvenidaChatDto> ProbarAsync(Guid templateId, List<BienvenidaTurno> conversacion, string? bearerToken, CancellationToken ct)
+    {
+        var template = await _db.AiAgentTemplates.AsNoTracking()
+            .Include(x => x.McpTools)
+            .FirstOrDefaultAsync(x => x.Id == templateId, ct);
+        if (template is null)
+            return new BienvenidaChatDto(false, null, "plantilla_no_encontrada");
+        if (template.PlatformKey is null)
+            return new BienvenidaChatDto(false, null, "solo_agentes_de_plataforma");
+
+        var turns = (conversacion ?? new List<BienvenidaTurno>())
+            .Where(t => !string.IsNullOrWhiteSpace(t.Texto))
+            .TakeLast(16)
+            .Select(t => new AiChatTurn(t.Rol == "model" ? "model" : "user", t.Texto.Trim()))
+            .ToList();
+        if (turns.Count == 0)
+            return new BienvenidaChatDto(false, null, "conversacion_vacia");
+
+        var credenciales = await ResolverProveedorAsync(template, ct);
+        if (credenciales is null)
+            return new BienvenidaChatDto(false, null, "ia_no_configurada");
+        var (provider, apiKey, baseUrl, model) = credenciales.Value;
+
+        var system = (string.IsNullOrWhiteSpace(template.SystemPrompt) ? BienvenidaPrompts.Sistema : template.SystemPrompt)
+            + "\n\nContexto: modo PRUEBA desde la consola del Super Admin (no es un usuario real del onboarding).";
+        return await CompletarAsync(template, provider, apiKey, baseUrl, model, system, turns, bearerToken, ct);
+    }
+
+    /// <summary>Nucleo comun: tools de la plantilla (si hay bearer) o completado directo.</summary>
+    private async Task<BienvenidaChatDto> CompletarAsync(
+        AiAgentTemplate? template, Domain.Enums.AiProvider provider, string apiKey, string? baseUrl, string model,
+        string system, List<AiChatTurn> turns, string? bearerToken, CancellationToken ct)
+    {
         try
         {
             var toolSpecs = await BuildToolSpecsAsync(template, bearerToken, ct);

@@ -12,6 +12,13 @@ public interface IAsistenteBienvenidaService
 {
     Task<BienvenidaChatDto> ResponderAsync(BienvenidaChatRequest req, string? bearerToken, CancellationToken ct);
     Task<BienvenidaChatDto> GenerarDescripcionAsync(BienvenidaDescripcionRequest req, CancellationToken ct);
+
+    /// <summary>
+    /// Playground del Super Admin: conversa con una plantilla de PLATAFORMA por id (prompt y
+    /// tools tal como estan GUARDADOS). Rechaza plantillas normales (no son ejecutables sin
+    /// tenant: sus tools solo se siembran al desplegar). Funciona aunque este inactiva.
+    /// </summary>
+    Task<BienvenidaChatDto> ProbarAsync(Guid templateId, List<BienvenidaTurno> conversacion, string? bearerToken, CancellationToken ct);
 }
 
 /// <summary>Un turno de la conversacion. Rol: "user" o "model".</summary>
