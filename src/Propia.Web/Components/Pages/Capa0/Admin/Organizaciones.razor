@@ -53,6 +53,19 @@
     </div>
 }
 
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <button class="nav-link @(_tab == Tab.Activas ? "active" : "")" @onclick="() => _tab = Tab.Activas">
+            Activas <span class="badge bg-secondary ms-1">@_organizaciones.Count(o => o.Estado != EstadoOrganizacion.Archivada)</span>
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link @(_tab == Tab.Archivados ? "active" : "")" @onclick="() => _tab = Tab.Archivados">
+            Archivados <span class="badge bg-secondary ms-1">@_organizaciones.Count(o => o.Estado == EstadoOrganizacion.Archivada)</span>
+        </button>
+    </li>
+</ul>
+
 @if (_jwt is null || _cargando)
 {
     <div class="text-center py-5"><div class="spinner-border"></div></div>
@@ -61,25 +74,45 @@ else
 {
     <div class="card border-0 shadow-sm">
         <div class="table-responsive">
-            <table class="table table-hover mb-0">
+            <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
-                    <tr><th>Nombre</th><th>Tipo</th><th>NIT</th><th>Email</th><th>Copropiedades</th><th>Creada</th></tr>
+                    <tr><th>Nombre</th><th>Tipo</th><th>NIT</th><th>Email</th><th>Estado</th><th>Copropiedades</th><th>Creada</th><th class="text-end">Acciones</th></tr>
                 </thead>
                 <tbody>
-                    @foreach (var o in _organizaciones)
+                    @foreach (var o in Filtradas())
                     {
                         <tr>
                             <td><strong>@o.Nombre</strong></td>
                             <td><span class="badge bg-secondary">@o.Tipo</span></td>
                             <td>@o.Nit</td>
                             <td>@o.Email</td>
+                            <td>@EstadoBadge(o.Estado)</td>
                             <td>@o.CopropiedadesCount</td>
                             <td><small>@o.CreatedAt.ToString("yyyy-MM-dd")</small></td>
+                            <td class="text-end">
+                                @if (o.Estado == EstadoOrganizacion.Activa)
+                                {
+                                    <button class="btn btn-sm btn-primary me-1" @onclick="() => AbrirCrearAdmin(o)">+ Admin</button>
+                                    <button class="btn btn-sm btn-outline-warning me-1" disabled="@_busy" @onclick="() => CambiarEstadoAsync(o, EstadoOrganizacion.Inactiva)">Inactivar</button>
+                                    <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="() => CambiarEstadoAsync(o, EstadoOrganizacion.Archivada)">Archivar</button>
+                                }
+                                else if (o.Estado == EstadoOrganizacion.Inactiva)
+                                {
+                                    <button class="btn btn-sm btn-outline-success me-1" disabled="@_busy" @onclick="() => CambiarEstadoAsync(o, EstadoOrganizacion.Activa)">Reactivar</button>
+                                    <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="() => CambiarEstadoAsync(o, EstadoOrganizacion.Archivada)">Archivar</button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-sm btn-outline-success" disabled="@_busy" @onclick="() => CambiarEstadoAsync(o, EstadoOrganizacion.Activa)">Restaurar</button>
+                                }
+                            </td>
                         </tr>
                     }
-                    @if (_organizaciones.Count == 0)
+                    @if (!Filtradas().Any())
                     {
-                        <tr><td colspan="6" class="text-center text-muted py-4">Sin organizaciones aun. Crea la primera con el boton de arriba.</td></tr>
+                        <tr><td colspan="8" class="text-center text-muted py-4">
+                            @(_tab == Tab.Archivados ? "No hay organizaciones archivadas." : "Sin organizaciones aun. Crea la primera con el boton de arriba.")
+                        </td></tr>
                     }
                 </tbody>
             </table>
@@ -87,14 +120,80 @@ else
     </div>
 }
 
+@if (_adminOrg is not null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background:rgba(0,0,0,.5)">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Crear usuario administrador</h5>
+                    <button type="button" class="btn-close" @onclick="() => _adminOrg = null"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small mb-3">
+                        Organizacion: <strong>@_adminOrg.Nombre</strong>. Este usuario podra iniciar sesion y administrar
+                        las @_adminOrg.CopropiedadesCount copropiedad(es) de la organizacion.
+                    </p>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Nombres</label>
+                            <input class="form-control" @bind="_admin.Nombres" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Apellidos</label>
+                            <input class="form-control" @bind="_admin.Apellidos" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Tipo doc.</label>
+                            <select class="form-select" @bind="_admin.TipoDocumento">
+                                <option value="@TipoDocumento.CC">CC</option>
+                                <option value="@TipoDocumento.CE">CE</option>
+                                <option value="@TipoDocumento.PA">PA</option>
+                                <option value="@TipoDocumento.NIT">NIT</option>
+                            </select>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">Documento</label>
+                            <input class="form-control" @bind="_admin.Documento" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Email (usuario)</label>
+                            <input class="form-control" @bind="_admin.Email" placeholder="admin@empresa.com" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Password inicial</label>
+                            <input class="form-control" type="text" @bind="_admin.Password" placeholder="Minimo 8 caracteres" />
+                        </div>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_adminError)) { <div class="alert alert-danger py-2 mt-3 mb-0">@_adminError</div> }
+                    @if (!string.IsNullOrEmpty(_adminOk)) { <div class="alert alert-success py-2 mt-3 mb-0">@_adminOk</div> }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" @onclick="() => _adminOrg = null">Cerrar</button>
+                    <button class="btn btn-dark" disabled="@_adminBusy" @onclick="CrearAdminAsync">@(_adminBusy ? "Creando..." : "Crear administrador")</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
+    private enum Tab { Activas, Archivados }
+
     private string? _jwt;
     private bool _cargando = true;
     private bool _mostrarForm;
     private bool _busy;
     private string? _error;
+    private Tab _tab = Tab.Activas;
     private List<OrganizacionDto> _organizaciones = new();
     private OrgForm _nuevo = new();
+
+    private OrganizacionDto? _adminOrg;
+    private AdminForm _admin = new();
+    private bool _adminBusy;
+    private string? _adminError;
+    private string? _adminOk;
 
     private class OrgForm
     {
@@ -104,6 +203,27 @@ else
         public string? Email { get; set; }
         public string? Telefono { get; set; }
     }
+
+    private class AdminForm
+    {
+        public string Nombres { get; set; } = string.Empty;
+        public string Apellidos { get; set; } = string.Empty;
+        public TipoDocumento TipoDocumento { get; set; } = TipoDocumento.CC;
+        public string Documento { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+    }
+
+    private IEnumerable<OrganizacionDto> Filtradas() => _tab == Tab.Archivados
+        ? _organizaciones.Where(o => o.Estado == EstadoOrganizacion.Archivada)
+        : _organizaciones.Where(o => o.Estado != EstadoOrganizacion.Archivada);
+
+    private static RenderFragment EstadoBadge(EstadoOrganizacion estado) => estado switch
+    {
+        EstadoOrganizacion.Activa => (builder => { builder.AddMarkupContent(0, "<span class=\"badge bg-success\">Activa</span>"); }),
+        EstadoOrganizacion.Inactiva => (builder => { builder.AddMarkupContent(0, "<span class=\"badge bg-warning text-dark\">Inactiva</span>"); }),
+        _ => (builder => { builder.AddMarkupContent(0, "<span class=\"badge bg-secondary\">Archivada</span>"); }),
+    };
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -135,12 +255,77 @@ else
         try
         {
             var req = new CrearOrganizacionRequest(_nuevo.Nombre, _nuevo.Tipo, _nuevo.Nit, _nuevo.Email, _nuevo.Telefono);
-            var resp = await Auth().PostAsJsonAsync("/admin/organizaciones", req);
-            if (!resp.IsSuccessStatusCode) { _error = $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}"; return; }
+            var resp = await Auth().PostAsJsonAsync("/api/admin/organizaciones", req);
+            if (!resp.IsSuccessStatusCode) { _error = await ExtraerErrorAsync(resp); return; }
             _mostrarForm = false;
             await CargarAsync();
         }
         finally { _busy = false; }
+    }
+
+    private async Task CambiarEstadoAsync(OrganizacionDto org, EstadoOrganizacion nuevo)
+    {
+        _busy = true; _error = null;
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/admin/organizaciones/{org.Id}/estado", new CambiarEstadoOrganizacionRequest(nuevo));
+            if (!resp.IsSuccessStatusCode) { _error = await ExtraerErrorAsync(resp); return; }
+            await CargarAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private void AbrirCrearAdmin(OrganizacionDto org)
+    {
+        _adminOrg = org;
+        _admin = new AdminForm();
+        _adminError = null;
+        _adminOk = null;
+    }
+
+    private async Task CrearAdminAsync()
+    {
+        if (_adminOrg is null) return;
+        if (string.IsNullOrWhiteSpace(_admin.Nombres) || string.IsNullOrWhiteSpace(_admin.Apellidos))
+        { _adminError = "Nombres y apellidos son obligatorios."; return; }
+        if (string.IsNullOrWhiteSpace(_admin.Email)) { _adminError = "El email es obligatorio."; return; }
+        if (string.IsNullOrWhiteSpace(_admin.Password) || _admin.Password.Length < 8)
+        { _adminError = "El password debe tener al menos 8 caracteres."; return; }
+
+        _adminBusy = true; _adminError = null; _adminOk = null;
+        try
+        {
+            var req = new CrearAdminOrganizacionRequest(
+                _admin.Nombres, _admin.Apellidos, _admin.Documento, _admin.Email, _admin.Password, _admin.TipoDocumento);
+            var resp = await Auth().PostAsJsonAsync($"/api/admin/organizaciones/{_adminOrg.Id}/admin", req);
+            if (!resp.IsSuccessStatusCode) { _adminError = await ExtraerErrorAsync(resp); return; }
+            var creado = await resp.Content.ReadFromJsonAsync<AdminOrganizacionDto>();
+            _adminOk = creado is null
+                ? "Administrador creado."
+                : $"Administrador creado: {creado.Nombre} ({creado.Email}). Acceso a {creado.CopropiedadesAsignadas} copropiedad(es).";
+        }
+        finally { _adminBusy = false; }
+    }
+
+    private static async Task<string> ExtraerErrorAsync(HttpResponseMessage resp)
+    {
+        try
+        {
+            var body = await resp.Content.ReadAsStringAsync();
+            if (!string.IsNullOrWhiteSpace(body))
+            {
+                try
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(body);
+                    if (doc.RootElement.TryGetProperty("error", out var err))
+                        return err.GetString() ?? body;
+                }
+                catch { /* no era JSON */ }
+                return body;
+            }
+        }
+        catch { /* ignore */ }
+        return $"Error {(int)resp.StatusCode}.";
     }
 
     private HttpClient Auth()

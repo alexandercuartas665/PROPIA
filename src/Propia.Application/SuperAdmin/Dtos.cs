@@ -22,7 +22,16 @@ public record SuperAdminLoginResponse(
     DateTimeOffset? MfaTicketExpiresAt);
 
 // ----- Organizaciones -----
-public record OrganizacionDto(Guid Id, string Nombre, TipoOrganizacion Tipo, string? Nit, string? Email, int CopropiedadesCount, DateTimeOffset CreatedAt);
+public record OrganizacionDto(Guid Id, string Nombre, TipoOrganizacion Tipo, string? Nit, string? Email, int CopropiedadesCount, DateTimeOffset CreatedAt, EstadoOrganizacion Estado = EstadoOrganizacion.Activa);
+
+public record CambiarEstadoOrganizacionRequest(EstadoOrganizacion Estado);
+
+/// <summary>Crea el usuario administrador de una organizacion (login + acceso a sus copropiedades).</summary>
+public record CrearAdminOrganizacionRequest(
+    string Nombres, string Apellidos, string Documento, string Email, string Password,
+    TipoDocumento TipoDocumento = TipoDocumento.CC);
+
+public record AdminOrganizacionDto(Guid UsuarioId, Guid PersonaId, string Nombre, string Email, int CopropiedadesAsignadas);
 public record CrearOrganizacionRequest(string Nombre, TipoOrganizacion Tipo, string? Nit, string? Email, string? Telefono);
 
 // ----- Tenants (Copropiedades) -----

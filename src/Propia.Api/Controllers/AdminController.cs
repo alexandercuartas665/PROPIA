@@ -96,13 +96,39 @@ public class AdminController : ControllerBase
     public async Task<IActionResult> ListOrganizaciones(CancellationToken ct)
         => Ok(await _svc.ListOrganizacionesAsync(ct));
 
-    [HttpPost("organizaciones")]
+    [HttpPost("~/api/admin/organizaciones")]
     [Authorize(Policy = SuperAdminPolicy)]
     public async Task<IActionResult> CrearOrganizacion([FromBody] CrearOrganizacionRequest req, CancellationToken ct)
     {
         var (id, email) = Actor();
-        var org = await _svc.CrearOrganizacionAsync(req, id, email, Ip(), ct);
-        return CreatedAtAction(nameof(ListOrganizaciones), new { }, org);
+        try
+        {
+            var org = await _svc.CrearOrganizacionAsync(req, id, email, Ip(), ct);
+            return CreatedAtAction(nameof(ListOrganizaciones), new { }, org);
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpPut("~/api/admin/organizaciones/{orgId:guid}/estado")]
+    [Authorize(Policy = SuperAdminPolicy)]
+    public async Task<IActionResult> CambiarEstadoOrganizacion(Guid orgId, [FromBody] CambiarEstadoOrganizacionRequest req, CancellationToken ct)
+    {
+        var (id, email) = Actor();
+        var org = await _svc.CambiarEstadoOrganizacionAsync(orgId, req, id, email, Ip(), ct);
+        return org is null ? NotFound() : Ok(org);
+    }
+
+    [HttpPost("~/api/admin/organizaciones/{orgId:guid}/admin")]
+    [Authorize(Policy = SuperAdminPolicy)]
+    public async Task<IActionResult> CrearAdminOrganizacion(Guid orgId, [FromBody] CrearAdminOrganizacionRequest req, CancellationToken ct)
+    {
+        var (id, email) = Actor();
+        try
+        {
+            var admin = await _svc.CrearAdminOrganizacionAsync(orgId, req, id, email, Ip(), ct);
+            return Ok(admin);
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
     // -------------------- Tenants --------------------

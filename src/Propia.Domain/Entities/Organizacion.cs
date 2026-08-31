@@ -18,6 +18,9 @@ public class Organizacion : BaseEntity
     public string? Telefono { get; set; }
     public DateTimeOffset? FechaActivacion { get; set; }
 
+    /// <summary>Estado operativo (Activa por defecto). Inactiva/Archivada la sacan de la vista principal.</summary>
+    public EstadoOrganizacion Estado { get; set; } = EstadoOrganizacion.Activa;
+
     // Navegacion - todas las Copropiedades que administra esta Organizacion
     public ICollection<Tenant> Copropiedades { get; set; } = new List<Tenant>();
 }

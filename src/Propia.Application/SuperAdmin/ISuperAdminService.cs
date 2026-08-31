@@ -12,6 +12,8 @@ public interface ISuperAdminService
     // Organizaciones
     Task<IReadOnlyList<OrganizacionDto>> ListOrganizacionesAsync(CancellationToken ct);
     Task<OrganizacionDto> CrearOrganizacionAsync(CrearOrganizacionRequest req, Guid actorId, string actorEmail, string? ip, CancellationToken ct);
+    Task<OrganizacionDto?> CambiarEstadoOrganizacionAsync(Guid orgId, CambiarEstadoOrganizacionRequest req, Guid actorId, string actorEmail, string? ip, CancellationToken ct);
+    Task<AdminOrganizacionDto> CrearAdminOrganizacionAsync(Guid orgId, CrearAdminOrganizacionRequest req, Guid actorId, string actorEmail, string? ip, CancellationToken ct);
 
     // Tenants (Copropiedades)
     Task<IReadOnlyList<TenantDto>> ListTenantsAsync(CancellationToken ct);

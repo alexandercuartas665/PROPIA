@@ -388,6 +388,7 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.Nombre).IsRequired().HasMaxLength(200);
             b.Property(x => x.Nit).HasMaxLength(20);
             b.Property(x => x.Email).HasMaxLength(200).HasColumnType("citext");
+            b.Property(x => x.Estado).HasConversion<int>().HasDefaultValue(EstadoOrganizacion.Activa);
             b.HasIndex(x => x.Nit).IsUnique().HasFilter("nit IS NOT NULL");
         });
 
