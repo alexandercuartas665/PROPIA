@@ -16,8 +16,26 @@ namespace Propia.Api.Controllers;
 public class ReportesController : ControllerBase
 {
     private readonly IReportesService _svc;
+    private readonly IContratosPorVencerReporteService _contratosPorVencer;
 
-    public ReportesController(IReportesService svc) => _svc = svc;
+    public ReportesController(IReportesService svc, IContratosPorVencerReporteService contratosPorVencer)
+    {
+        _svc = svc;
+        _contratosPorVencer = contratosPorVencer;
+    }
+
+    // ----- Reporte "Contratos proximos a vencer" (multi-copropiedad, con graficos + Excel) -----
+
+    [HttpPost("contratos-por-vencer")]
+    public async Task<IActionResult> ContratosPorVencer([FromBody] ContratosPorVencerFiltro filtro, CancellationToken ct)
+        => Ok(await _contratosPorVencer.GetAsync(filtro?.TenantIds, ct));
+
+    [HttpPost("contratos-por-vencer/excel")]
+    public async Task<IActionResult> ContratosPorVencerExcel([FromBody] ContratosPorVencerFiltro filtro, CancellationToken ct)
+    {
+        var (bytes, nombre) = await _contratosPorVencer.ExportarExcelAsync(filtro?.TenantIds, ct);
+        return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", nombre);
+    }
 
     // ----- Catalogo -----
 

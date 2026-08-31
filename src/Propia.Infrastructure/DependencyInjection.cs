@@ -239,6 +239,7 @@ public static class DependencyInjection
         // Modulo 2.16 Reportes e Indicadores (consumidor puro - depende de IndicadoresService cross-modulo)
         services.AddScoped<Application.Reportes.IIndicadoresService, Reportes.IndicadoresService>();
         services.AddScoped<Application.Reportes.IReportesService, Reportes.ReportesService>();
+        services.AddScoped<Application.Reportes.IContratosPorVencerReporteService, Reportes.ContratosPorVencerReporteService>();
 
         // Modulo 2.12 Porteria y Control de Acceso
         services.AddScoped<Application.Porteria.IPorteriaService, Porteria.PorteriaService>();

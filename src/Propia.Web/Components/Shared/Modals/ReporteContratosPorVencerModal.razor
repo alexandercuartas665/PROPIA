@@ -1,0 +1,481 @@
+@inherits ModalBase<bool>
+@using System.Net.Http.Json
+@using System.Globalization
+@using Propia.Application.Reportes
+@using Propia.Shared.Auth
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+
+@* Reporte "Contratos proximos a vencer" (2.16). Multi-copropiedad: pildoras para elegir las
+   copropiedades del usuario, graficos (dona de semaforo + barras por copropiedad), tabla y
+   export a Excel. Se abre fullscreen desde la tarjeta "Generar" del catalogo de reportes. *@
+
+<div class="cpv">
+    <div class="cpv-head">
+        <div>
+            <div class="cpv-title">Contratos proximos a vencer</div>
+            <div class="cpv-sub">Semaforo por % de dias transcurridos: amarillo (&le;20% restante), rojo (&le;10% o vencido). Consolidado de tus copropiedades.</div>
+        </div>
+        <button class="cpv-x" @onclick="() => Cancel()" aria-label="Cerrar">&times;</button>
+    </div>
+
+    @* ---------- Filtros ---------- *@
+    <div class="cpv-filters">
+        <div class="cpv-pills">
+            <span class="cpv-pills-lbl">Copropiedades:</span>
+            <button class="cpv-pill @(_todas ? "on" : "")" @onclick="ToggleTodas">Todas</button>
+            @foreach (var t in _copros)
+            {
+                var id = t.TenantId;
+                <button class="cpv-pill @(_sel.Contains(id) ? "on" : "")" @onclick="() => TogglePill(id)" title="@t.Nombre">
+                    @t.Nombre
+                    @if (!string.IsNullOrWhiteSpace(t.CodigoCorto)) { <span class="cpv-pill-cod">@t.CodigoCorto</span> }
+                </button>
+            }
+        </div>
+        <div class="cpv-filters-row">
+            <div class="cpv-seg">
+                @foreach (var (k, txt) in _semOpts)
+                {
+                    <button class="cpv-seg-b @(_semFilter == k ? "on" : "")" @onclick="() => _semFilter = k">@txt</button>
+                }
+            </div>
+            <div class="cpv-search">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                <input placeholder="Buscar proveedor, contrato, categoria..." @bind="_q" @bind:event="oninput" />
+            </div>
+            <div class="cpv-spacer"></div>
+            <button class="cpv-btn-soft" @onclick="CargarAsync" disabled="@_loading" title="Actualizar">
+                @(_loading ? "Cargando..." : "Actualizar")
+            </button>
+            <button class="cpv-btn-brand" @onclick="ExportarAsync" disabled="@(_exporting || _data is null || _data.Filas.Count == 0)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>
+                @(_exporting ? "Exportando..." : "Exportar Excel")
+            </button>
+        </div>
+    </div>
+
+    @if (_error is not null)
+    {
+        <div class="cpv-error">@_error</div>
+    }
+
+    @if (_loading && _data is null)
+    {
+        <div class="cpv-loading"><div class="spinner-border" style="color:#6D4FE3;"></div></div>
+    }
+    else if (_data is not null)
+    {
+        var R = _data.Resumen;
+        var A2 = _data.Analitica;
+
+        @* ---------- KPIs ---------- *@
+        <div class="cpv-kpis">
+            <div class="cpv-kpi"><div class="cpv-kpi-v">@R.Total</div><div class="cpv-kpi-l">Por vencer</div></div>
+            <div class="cpv-kpi cpv-kpi--am"><div class="cpv-kpi-v">@R.Amarillo</div><div class="cpv-kpi-l">Amarillo</div></div>
+            <div class="cpv-kpi cpv-kpi--ro"><div class="cpv-kpi-v">@R.Rojo</div><div class="cpv-kpi-l">Rojo</div></div>
+            <div class="cpv-kpi cpv-kpi--ve"><div class="cpv-kpi-v">@R.Vencidos</div><div class="cpv-kpi-l">Vencidos</div></div>
+            <div class="cpv-kpi cpv-kpi--val"><div class="cpv-kpi-v">$@R.ValorTotal.ToString("N0", _co)</div><div class="cpv-kpi-l">Valor total</div></div>
+        </div>
+
+        @* ---------- Graficos ---------- *@
+        <div class="cpv-charts">
+            <div class="cpv-card">
+                <div class="cpv-card-t">Distribucion por semaforo</div>
+                @{
+                    var segs = new List<(string L, int V, string C)>
+                    {
+                        ("Amarillo", R.Amarillo, "#E8A13C"),
+                        ("Rojo", R.Rojo, "#EF4444"),
+                        ("Vencidos", R.Vencidos, "#B42318"),
+                    };
+                    var tot = segs.Sum(s => s.V);
+                }
+                @if (tot == 0)
+                {
+                    <div class="cpv-empty-s">Sin contratos por vencer.</div>
+                }
+                else
+                {
+                    <div class="cpv-donut-wrap">
+                        <svg viewBox="0 0 100 100" class="cpv-donut">
+                            <circle cx="50" cy="50" r="40" fill="none" stroke="#EFECFB" stroke-width="14" />
+                            @{ double acc = 0; var C = 2 * Math.PI * 40; var gap = tot > 1 ? 6.0 : 0.0; }
+                            @foreach (var s in segs.Where(x => x.V > 0))
+                            {
+                                var len = (double)s.V / tot * C;
+                                var vis = Math.Max(len - gap, 0.1);
+                                <circle cx="50" cy="50" r="40" fill="none" stroke="@s.C" stroke-width="14" stroke-linecap="round"
+                                        stroke-dasharray="@vis.ToString("0.##", _inv) @((C - vis).ToString("0.##", _inv))"
+                                        stroke-dashoffset="@((-acc).ToString("0.##", _inv))"
+                                        transform="rotate(-90 50 50)" />
+                                acc += len;
+                            }
+                            <text x="50" y="47" text-anchor="middle" class="cpv-donut-n">@tot</text>
+                            <text x="50" y="61" text-anchor="middle" class="cpv-donut-c">contratos</text>
+                        </svg>
+                        <div class="cpv-legend">
+                            @foreach (var s in segs)
+                            {
+                                <div class="cpv-leg-item">
+                                    <span class="cpv-leg-dot" style="background:@s.C"></span>
+                                    <span class="cpv-leg-l">@s.L</span>
+                                    <span class="cpv-leg-v">@s.V</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="cpv-card cpv-card--bars">
+                <div class="cpv-card-t">Contratos por copropiedad</div>
+                @if (R.PorCopropiedad.Count == 0)
+                {
+                    <div class="cpv-empty-s">Sin datos.</div>
+                }
+                else
+                {
+                    var maxc = R.PorCopropiedad.Max(x => x.Cantidad);
+                    <div class="cpv-bars">
+                        @foreach (var c in R.PorCopropiedad)
+                        {
+                            <div class="cpv-bar-row">
+                                <div class="cpv-bar-lbl" title="@c.Copropiedad">@c.Copropiedad</div>
+                                <div class="cpv-bar-track">
+                                    @{ var wRo = maxc == 0 ? 0 : 100.0 * c.Rojo / maxc; }
+                                    @{ var wAm = maxc == 0 ? 0 : 100.0 * c.Amarillo / maxc; }
+                                    @{ var wVe = maxc == 0 ? 0 : 100.0 * c.Vencidos / maxc; }
+                                    <span class="cpv-bar-seg" style="width:@wVe.ToString("0.##", _inv)%;background:#B42318"></span>
+                                    <span class="cpv-bar-seg" style="width:@wRo.ToString("0.##", _inv)%;background:#EF4444"></span>
+                                    <span class="cpv-bar-seg" style="width:@wAm.ToString("0.##", _inv)%;background:#E8A13C"></span>
+                                </div>
+                                <div class="cpv-bar-val">@c.Cantidad</div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        @* ---------- Analitica de costos ---------- *@
+        <div class="cpv-kpis cpv-kpis--cost">
+            <div class="cpv-kpi cpv-kpi--brand"><div class="cpv-kpi-v">@A2.ContratosActivos</div><div class="cpv-kpi-l">Contratos activos</div></div>
+            <div class="cpv-kpi cpv-kpi--brand"><div class="cpv-kpi-v cpv-kpi-v--money">$@A2.CostoMensual.ToString("N0", _co)</div><div class="cpv-kpi-l">Costo mensual</div></div>
+            <div class="cpv-kpi cpv-kpi--brand"><div class="cpv-kpi-v cpv-kpi-v--money">$@A2.CostoAnualProyectado.ToString("N0", _co)</div><div class="cpv-kpi-l">Costo anual proyectado</div></div>
+            <div class="cpv-kpi cpv-kpi--brand"><div class="cpv-kpi-v cpv-kpi-v--money">$@A2.ValorContratado.ToString("N0", _co)</div><div class="cpv-kpi-l">Valor contratado</div></div>
+        </div>
+
+        <div class="cpv-charts cpv-charts--2">
+            <div class="cpv-card">
+                <div class="cpv-card-t">Proyeccion de costo mensual (12 meses)</div>
+                @if (A2.ProyeccionMensual.All(m => m.Costo == 0))
+                {
+                    <div class="cpv-empty-s">Sin costos mensuales registrados en los contratos.</div>
+                }
+                else
+                {
+                    var maxm = (double)A2.ProyeccionMensual.Max(m => m.Costo); if (maxm <= 0) maxm = 1;
+                    <div class="cpv-vbars">
+                        @foreach (var mc in A2.ProyeccionMensual)
+                        {
+                            var h = 100.0 * (double)mc.Costo / maxm;
+                            <div class="cpv-vbar" title="@mc.Mes @mc.Anio: $@mc.Costo.ToString("N0", _co)">
+                                <div class="cpv-vbar-track"><span style="height:@h.ToString("0.##", _inv)%"></span></div>
+                                <div class="cpv-vbar-lbl">@mc.Mes</div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="cpv-card cpv-card--bars">
+                <div class="cpv-card-t">Costo por categoria (mensual)</div>
+                @if (A2.PorCategoria.Count == 0)
+                {
+                    <div class="cpv-empty-s">Sin datos.</div>
+                }
+                else
+                {
+                    var maxc = (double)A2.PorCategoria.Max(x => x.ValorMensual); if (maxc <= 0) maxc = 1;
+                    var pal = new[] { "#6D4FE3", "#1D63D8", "#12A5BC", "#E8A13C", "#E23A8E", "#94A3B8" };
+                    var ci = 0;
+                    <div class="cpv-bars cpv-bars--cost">
+                        @foreach (var cat in A2.PorCategoria)
+                        {
+                            var w = 100.0 * (double)cat.ValorMensual / maxc;
+                            var col = pal[ci % pal.Length]; ci++;
+                            <div class="cpv-bar-row">
+                                <div class="cpv-bar-lbl" title="@cat.Categoria (@cat.Cantidad contrato(s))">@cat.Categoria</div>
+                                <div class="cpv-bar-track"><span class="cpv-bar-seg" style="width:@w.ToString("0.##", _inv)%;background:@col"></span></div>
+                                <div class="cpv-bar-val">$@cat.ValorMensual.ToString("N0", _co)</div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        @* ---------- Tabla ---------- *@
+        <div class="cpv-tablewrap">
+            <table class="cpv-tbl">
+                <thead>
+                    <tr>
+                        <th>Copropiedad</th><th>Contrato / Proveedor</th><th>Categoria</th><th>Tipo</th>
+                        <th>Inicio</th><th>Fin</th><th>Transcurrido</th><th>Dias</th><th class="cpv-r">Valor</th><th>Semaforo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var f in Filtradas())
+                    {
+                        <tr>
+                            <td><span class="cpv-cop">@f.Copropiedad</span></td>
+                            <td>
+                                <div class="cpv-prov">@f.Proveedor</div>
+                                @if (!string.IsNullOrWhiteSpace(f.NumeroContrato)) { <div class="cpv-num">@f.NumeroContrato</div> }
+                            </td>
+                            <td>@(f.Categoria ?? "-")</td>
+                            <td>@(f.TipoContrato ?? "-")</td>
+                            <td>@(f.FechaInicio?.ToString("yyyy-MM-dd") ?? "-")</td>
+                            <td>@(f.FechaFin?.ToString("yyyy-MM-dd") ?? "-")</td>
+                            <td>
+                                <div class="cpv-pct"><span style="width:@f.PctTranscurrido%;background:@SemHex(f)"></span></div>
+                                <span class="cpv-pct-n">@f.PctTranscurrido%</span>
+                            </td>
+                            <td>
+                                @if (f.Vencido) { <span class="cpv-dias cpv-dias--ve">Vencido</span> }
+                                else { <span class="cpv-dias">@(f.DiasRestantes?.ToString() ?? "-")</span> }
+                            </td>
+                            <td class="cpv-r">@(f.Valor is { } v ? "$" + v.ToString("N0", _co) : "-")</td>
+                            <td><span class="cpv-badge cpv-badge--@(f.Vencido ? "ve" : f.Semaforo)">@(f.Vencido ? "Vencido" : (f.Semaforo == "rojo" ? "Rojo" : "Amarillo"))</span></td>
+                        </tr>
+                    }
+                    @if (!Filtradas().Any())
+                    {
+                        <tr><td colspan="10" class="cpv-none">No hay contratos que coincidan con el filtro.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="cpv-foot">Mostrando @Filtradas().Count() de @_data.Filas.Count contratos.</div>
+    }
+</div>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+
+    private static readonly CultureInfo _co = CultureInfo.GetCultureInfo("es-CO");
+    private static readonly CultureInfo _inv = CultureInfo.InvariantCulture;
+
+    private List<TenantInfoDto> _copros = new();
+    private readonly HashSet<Guid> _sel = new();
+    private ContratosPorVencerReporteDto? _data;
+    private bool _loading, _exporting;
+    private string? _error;
+    private string _semFilter = "todos";
+    private string _q = string.Empty;
+
+    private bool _todas => _copros.Count > 0 && _sel.Count == _copros.Count;
+
+    private readonly (string, string)[] _semOpts =
+    {
+        ("todos", "Todos"), ("amarillo", "Amarillo"), ("rojo", "Rojo"), ("vencidos", "Vencidos"),
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var me = await Auth().GetFromJsonAsync<MeResponseDto>("/connect/me");
+            _copros = me?.AvailableTenants?.ToList() ?? new();
+            foreach (var t in _copros) _sel.Add(t.TenantId);
+            await CargarAsync();
+        }
+        catch (Exception ex) { _error = "No se pudo cargar las copropiedades: " + ex.Message; }
+    }
+
+    private void ToggleTodas()
+    {
+        if (_todas) _sel.Clear();
+        else { _sel.Clear(); foreach (var t in _copros) _sel.Add(t.TenantId); }
+    }
+
+    private void TogglePill(Guid id)
+    {
+        if (!_sel.Remove(id)) _sel.Add(id);
+    }
+
+    private async Task CargarAsync()
+    {
+        _loading = true; _error = null;
+        try
+        {
+            var req = new ContratosPorVencerFiltro(_sel.ToList());
+            var resp = await Auth().PostAsJsonAsync("/api/reportes/contratos-por-vencer", req);
+            if (resp.IsSuccessStatusCode)
+                _data = await resp.Content.ReadFromJsonAsync<ContratosPorVencerReporteDto>();
+            else
+                _error = $"Error {(int)resp.StatusCode} al generar el reporte.";
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private IEnumerable<ContratoPorVencerFila> Filtradas()
+    {
+        if (_data is null) return Enumerable.Empty<ContratoPorVencerFila>();
+        IEnumerable<ContratoPorVencerFila> q = _data.Filas;
+        q = _semFilter switch
+        {
+            "amarillo" => q.Where(f => !f.Vencido && f.Semaforo == "amarillo"),
+            "rojo" => q.Where(f => !f.Vencido && f.Semaforo == "rojo"),
+            "vencidos" => q.Where(f => f.Vencido),
+            _ => q,
+        };
+        if (!string.IsNullOrWhiteSpace(_q))
+        {
+            var s = _q.Trim().ToLowerInvariant();
+            q = q.Where(f =>
+                (f.Proveedor?.ToLowerInvariant().Contains(s) ?? false) ||
+                (f.NumeroContrato?.ToLowerInvariant().Contains(s) ?? false) ||
+                (f.Categoria?.ToLowerInvariant().Contains(s) ?? false) ||
+                (f.Copropiedad?.ToLowerInvariant().Contains(s) ?? false));
+        }
+        return q;
+    }
+
+    private static string SemHex(ContratoPorVencerFila f)
+        => f.Vencido ? "#B42318" : (f.Semaforo == "rojo" ? "#EF4444" : "#E8A13C");
+
+    private async Task ExportarAsync()
+    {
+        _exporting = true;
+        try
+        {
+            var req = new ContratosPorVencerFiltro(_sel.ToList());
+            var resp = await Auth().PostAsJsonAsync("/api/reportes/contratos-por-vencer/excel", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                var bytes = await resp.Content.ReadAsByteArrayAsync();
+                var b64 = Convert.ToBase64String(bytes);
+                await Js.InvokeVoidAsync("propiaUI.downloadBase64",
+                    $"Contratos por vencer {DateTime.Now:yyyy-MM-dd}.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", b64);
+            }
+            else { _error = "No se pudo exportar el Excel."; }
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _exporting = false; }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt!);
+        return http;
+    }
+}
+
+<style>
+    .cpv { display: flex; flex-direction: column; height: 100%; box-sizing: border-box; padding: 28px 34px; font-size: 13px; color: #33475B; }
+    .cpv-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 0 0 14px; border-bottom: 1px solid #EEF2F6; }
+    .cpv-title { font-size: 18px; font-weight: 700; color: #1B2A3A; }
+    .cpv-sub { font-size: 12.5px; color: #6B7C8F; margin-top: 2px; max-width: 760px; }
+    .cpv-x { background: none; border: 0; font-size: 26px; line-height: 1; color: #90A4B7; cursor: pointer; }
+    .cpv-x:hover { color: #33475B; }
+
+    .cpv-filters { padding: 12px 0; display: flex; flex-direction: column; gap: 10px; }
+    .cpv-pills { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .cpv-pills-lbl { font-size: 12px; font-weight: 700; color: #A6B7C8; text-transform: uppercase; letter-spacing: .4px; margin-right: 4px; }
+    .cpv-pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #E1E8EE; background: #fff; color: #516F90; border-radius: 999px; padding: 5px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: all .12s; }
+    .cpv-pill:hover { border-color: #6D4FE3; }
+    .cpv-pill.on { background: #6D4FE3; border-color: #6D4FE3; color: #fff; }
+    .cpv-pill-cod { font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; font-weight: 700; opacity: .8; }
+    .cpv-pill.on .cpv-pill-cod { opacity: .9; }
+
+    .cpv-filters-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .cpv-seg { display: inline-flex; border: 1px solid #E1E8EE; border-radius: 9px; overflow: hidden; }
+    .cpv-seg-b { border: 0; background: #fff; color: #516F90; padding: 7px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer; border-right: 1px solid #EEF2F6; }
+    .cpv-seg-b:last-child { border-right: 0; }
+    .cpv-seg-b.on { background: #F1ECFD; color: #6D4FE3; }
+    .cpv-search { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #E1E8EE; border-radius: 9px; padding: 6px 10px; color: #90A4B7; min-width: 260px; }
+    .cpv-search input { border: 0; outline: 0; font-size: 12.5px; color: #33475B; width: 100%; font-family: inherit; }
+    .cpv-spacer { flex: 1; }
+    .cpv-btn-soft { border: 1px solid #E1E8EE; background: #fff; color: #516F90; border-radius: 9px; padding: 7px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+    .cpv-btn-brand { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #6D4FE3; background: #6D4FE3; color: #fff; border-radius: 9px; padding: 7px 14px; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+    .cpv-btn-brand:disabled, .cpv-btn-soft:disabled { opacity: .55; cursor: default; }
+
+    .cpv-error { background: #FDECEC; border: 1px solid #F5C2C2; color: #B4232A; border-radius: 9px; padding: 8px 12px; font-size: 12.5px; margin-bottom: 8px; }
+    .cpv-loading { display: flex; justify-content: center; padding: 48px; }
+
+    .cpv-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 6px 0 14px; }
+    .cpv-kpi { background: #fff; border: 1px solid #EEF2F6; border-radius: 14px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(27,42,58,.05); }
+    .cpv-kpi-v { font-size: 22px; font-weight: 800; color: #1B2A3A; }
+    .cpv-kpi-l { font-size: 11.5px; color: #90A4B7; text-transform: uppercase; letter-spacing: .3px; }
+    .cpv-kpi--am { border-top: 3px solid #E8A13C; }
+    .cpv-kpi--ro { border-top: 3px solid #EF4444; }
+    .cpv-kpi--ve { border-top: 3px solid #B42318; }
+    .cpv-kpi--val { border-top: 3px solid #6D4FE3; }
+    .cpv-kpi--val .cpv-kpi-v { font-size: 18px; }
+
+    .cpv-charts { display: grid; grid-template-columns: 320px 1fr; gap: 14px; margin-bottom: 14px; }
+    .cpv-card { background: #fff; border: 1px solid #EEF2F6; border-radius: 14px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(27,42,58,.05); }
+    .cpv-card-t { font-size: 12.5px; font-weight: 700; color: #516F90; margin-bottom: 10px; }
+    .cpv-empty-s { color: #90A4B7; font-size: 12.5px; padding: 20px 0; text-align: center; }
+
+    .cpv-donut-wrap { display: flex; align-items: center; gap: 14px; }
+    .cpv-donut { width: 150px; height: 150px; flex: 0 0 150px; }
+    .cpv-donut-n { font-size: 22px; font-weight: 800; fill: #1B2A3A; }
+    .cpv-donut-c { font-size: 7.5px; fill: #90A4B7; text-transform: uppercase; letter-spacing: .4px; }
+    .cpv-legend { display: flex; flex-direction: column; gap: 8px; }
+    .cpv-leg-item { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+    .cpv-leg-dot { width: 12px; height: 12px; border-radius: 3px; }
+    .cpv-leg-l { color: #516F90; min-width: 70px; }
+    .cpv-leg-v { font-weight: 700; color: #1B2A3A; }
+
+    .cpv-bars { display: flex; flex-direction: column; gap: 8px; max-height: 200px; overflow-y: auto; }
+    .cpv-bar-row { display: grid; grid-template-columns: 170px 1fr 34px; align-items: center; gap: 10px; }
+    .cpv-bar-lbl { font-size: 12px; color: #516F90; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cpv-bar-track { display: flex; height: 16px; background: #F3F6F9; border-radius: 5px; overflow: hidden; }
+    .cpv-bar-seg { height: 100%; }
+    .cpv-bar-val { font-size: 12.5px; font-weight: 700; color: #1B2A3A; text-align: right; }
+
+    /* Analitica de costos */
+    .cpv-kpis--cost { grid-template-columns: repeat(4, 1fr); margin-top: 2px; }
+    .cpv-kpi--brand { border-top: 3px solid #6D4FE3; }
+    .cpv-kpi-v--money { font-size: 17px; }
+    .cpv-charts--2 { grid-template-columns: 1fr 1fr; }
+    .cpv-vbars { display: flex; align-items: flex-end; gap: 6px; height: 150px; padding-top: 6px; }
+    .cpv-vbar { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; }
+    .cpv-vbar-track { flex: 1; width: 100%; display: flex; align-items: flex-end; }
+    .cpv-vbar-track span { width: 100%; background: linear-gradient(180deg, #7A77E0, #6D4FE3); border-radius: 5px 5px 0 0; min-height: 2px; }
+    .cpv-vbar-lbl { font-size: 10px; color: #90A4B7; }
+    .cpv-bars--cost .cpv-bar-row { grid-template-columns: 150px 1fr 108px; }
+    .cpv-bars--cost .cpv-bar-val { font-size: 12px; }
+
+    .cpv-tablewrap { flex: 1; overflow: auto; border: 1px solid #EEF2F6; border-radius: 12px; }
+    .cpv-tbl { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; }
+    .cpv-tbl thead th { position: sticky; top: 0; background: #FAFBFC; text-align: left; font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: #A6B7C8; text-transform: uppercase; padding: 9px 12px; border-bottom: 1px solid #EEF2F6; z-index: 2; }
+    .cpv-tbl td { padding: 9px 12px; border-bottom: 1px solid #F3F6F9; vertical-align: top; }
+    .cpv-tbl .cpv-r { text-align: right; }
+    .cpv-cop { font-weight: 600; color: #6D4FE3; }
+    .cpv-prov { font-weight: 600; color: #33475B; }
+    .cpv-num { font-size: 11px; color: #90A4B7; }
+    .cpv-pct { height: 7px; background: #F3F6F9; border-radius: 4px; overflow: hidden; margin-bottom: 2px; min-width: 80px; }
+    .cpv-pct span { display: block; height: 100%; }
+    .cpv-pct-n { font-size: 11px; color: #90A4B7; }
+    .cpv-dias { font-weight: 700; color: #33475B; }
+    .cpv-dias--ve { color: #B42318; }
+    .cpv-badge { font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 10px; }
+    .cpv-badge--amarillo { background: #FFF4E0; color: #B45309; }
+    .cpv-badge--rojo { background: #FDE8E8; color: #EF4444; }
+    .cpv-badge--ve { background: #FBE1E1; color: #B42318; }
+    .cpv-none { text-align: center; color: #90A4B7; padding: 24px; }
+    .cpv-foot { padding: 8px 2px; font-size: 12px; color: #6B7C8F; }
+
+    @@media (max-width: 900px) {
+        .cpv-kpis { grid-template-columns: repeat(2, 1fr); }
+        .cpv-charts { grid-template-columns: 1fr; }
+    }
+</style>
