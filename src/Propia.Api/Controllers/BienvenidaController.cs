@@ -23,17 +23,20 @@ public class BienvenidaController : ControllerBase
     private readonly IAsistenteBienvenidaService _asistente;
     private readonly IDistribucionImportService _distribucion;
     private readonly IPlantillasService _plantillas;
+    private readonly IUnidadesPlantillaService _plantillaCarga;
 
     public BienvenidaController(
         IMisCopropiedadesService mis,
         IAsistenteBienvenidaService asistente,
         IDistribucionImportService distribucion,
-        IPlantillasService plantillas)
+        IPlantillasService plantillas,
+        IUnidadesPlantillaService plantillaCarga)
     {
         _mis = mis;
         _asistente = asistente;
         _distribucion = distribucion;
         _plantillas = plantillas;
+        _plantillaCarga = plantillaCarga;
     }
 
     private Guid? UserId()
@@ -68,10 +71,22 @@ public class BienvenidaController : ControllerBase
     public async Task<IActionResult> GenerarDescripcion([FromBody] BienvenidaDescripcionRequest req, CancellationToken ct)
         => Ok(await _asistente.GenerarDescripcionAsync(req, ct));
 
-    /// <summary>Plantilla de torres y unidades (estatica: no requiere tenant activo).</summary>
+    /// <summary>Plantilla de torres y unidades (estatica: no requiere tenant activo). [Legacy]</summary>
     [HttpGet("plantilla-distribucion")]
     public IActionResult PlantillaDistribucion()
         => File(_distribucion.GenerarPlantilla(), XlsxMime, "plantilla-unidades-propia.xlsx");
+
+    /// <summary>
+    /// Plantilla UNICA de carga: la MISMA del modulo de copropiedades (unidades + personas +
+    /// vehiculos + mascotas + zonas + equipos). Se sirve aqui para no exigir tenant activo,
+    /// ya que en el onboarding la copropiedad aun no existe al descargar.
+    /// </summary>
+    [HttpGet("plantilla-carga")]
+    public async Task<IActionResult> PlantillaCarga(CancellationToken ct)
+    {
+        var (bytes, nombre) = await _plantillaCarga.GenerarPlantillaCargaAsync(ct);
+        return File(bytes, XlsxMime, nombre);
+    }
 
     /// <summary>Plantilla del directorio de personas.</summary>
     [HttpGet("plantilla-directorio")]

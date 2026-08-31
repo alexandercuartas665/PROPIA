@@ -33,7 +33,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
         _porteria = porteria;
     }
 
-    public async Task<ResultadoCargaUnidades> ImportarAsync(Stream contenidoXlsx, CancellationToken ct)
+    public async Task<ResultadoCargaUnidades> ImportarAsync(Stream contenidoXlsx, CancellationToken ct, bool forzarTenantActual = false)
     {
         var errores = new List<CargaUnidadesError>();
         using var wb = new XLWorkbook(contenidoXlsx);
@@ -55,13 +55,29 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
 
         int nCopro = 0, nUni = 0, nAnexo = 0, nPer = 0, nVeh = 0, nMas = 0, nZon = 0, nEqu = 0;
 
-        foreach (var nombre in nombresCopro)
+        // Grupos a procesar. Modo normal: un grupo por cada nombre de COPROPIEDAD de la plantilla
+        // (resuelto contra las copropiedades del cliente). Modo onboarding (forzarTenantActual):
+        // un solo grupo con el tenant activo, tomando TODAS las filas sin mirar la columna COPROPIEDAD.
+        var grupos = new List<(string Nombre, Guid Tid, bool Todas)>();
+        if (forzarTenantActual && _tenant.CurrentTenantId is { } actual)
         {
-            if (!copros.TryGetValue(nombre.ToLowerInvariant(), out var tid))
+            grupos.Add(("", actual, true));
+        }
+        else
+        {
+            foreach (var nombre in nombresCopro)
             {
-                errores.Add(new("GENERAL", 0, $"Copropiedad '{nombre}' no existe o no la administras."));
-                continue;
+                if (!copros.TryGetValue(nombre.ToLowerInvariant(), out var tid))
+                {
+                    errores.Add(new("GENERAL", 0, $"Copropiedad '{nombre}' no existe o no la administras."));
+                    continue;
+                }
+                grupos.Add((nombre, tid, false));
             }
+        }
+
+        foreach (var (nombre, tid, todas) in grupos)
+        {
             await SetTenantSqlAsync(tid, ct);   // fija tenant en EF y en la sesion SQL (RLS)
             nCopro++;
 
@@ -69,7 +85,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             var anexosPend = new List<(int Fila, string Principal, string Asociada)>();
 
             // ---- Unidades ----
-            foreach (var (row, fila) in unidades.Where(r => Eq(Val(r.Row, "COPROPIEDAD"), nombre)))
+            foreach (var (row, fila) in unidades.Where(r => todas || Eq(Val(r.Row, "COPROPIEDAD"), nombre)))
             {
                 try
                 {
@@ -110,7 +126,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             }
 
             // ---- Personas ----
-            foreach (var (row, fila) in personas.Where(r => Eq(Val(r.Row, "COPROPIEDAD"), nombre)))
+            foreach (var (row, fila) in personas.Where(r => todas || Eq(Val(r.Row, "COPROPIEDAD"), nombre)))
             {
                 try
                 {
@@ -129,7 +145,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             }
 
             // ---- Vehiculos ----
-            foreach (var (row, fila) in vehiculos.Where(r => Eq(Val(r.Row, "COPROPIEDAD"), nombre)))
+            foreach (var (row, fila) in vehiculos.Where(r => todas || Eq(Val(r.Row, "COPROPIEDAD"), nombre)))
             {
                 try
                 {
@@ -146,7 +162,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             }
 
             // ---- Mascotas ----
-            foreach (var (row, fila) in mascotas.Where(r => Eq(Val(r.Row, "COPROPIEDAD"), nombre)))
+            foreach (var (row, fila) in mascotas.Where(r => todas || Eq(Val(r.Row, "COPROPIEDAD"), nombre)))
             {
                 try
                 {
@@ -161,7 +177,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             }
 
             // ---- Zonas comunes ----
-            foreach (var (row, fila) in zonas.Where(r => Eq(Val(r.Row, "COPROPIEDAD"), nombre)))
+            foreach (var (row, fila) in zonas.Where(r => todas || Eq(Val(r.Row, "COPROPIEDAD"), nombre)))
             {
                 try
                 {
@@ -182,7 +198,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             }
 
             // ---- Equipos y activos ----
-            foreach (var (row, fila) in equipos.Where(r => Eq(Val(r.Row, "COPROPIEDAD"), nombre)))
+            foreach (var (row, fila) in equipos.Where(r => todas || Eq(Val(r.Row, "COPROPIEDAD"), nombre)))
             {
                 try
                 {

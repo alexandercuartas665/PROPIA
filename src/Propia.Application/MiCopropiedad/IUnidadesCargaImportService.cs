@@ -23,5 +23,10 @@ public record ResultadoCargaUnidades(
 /// </summary>
 public interface IUnidadesCargaImportService
 {
-    Task<ResultadoCargaUnidades> ImportarAsync(Stream contenidoXlsx, CancellationToken ct);
+    /// <param name="forzarTenantActual">
+    /// Si es true, ignora la columna COPROPIEDAD y carga TODAS las filas en el tenant activo.
+    /// Se usa en el onboarding (una sola copropiedad recien creada, cuyo nombre puede no coincidir
+    /// con lo que el usuario escribio en la plantilla). Default false = comportamiento multi-copropiedad.
+    /// </param>
+    Task<ResultadoCargaUnidades> ImportarAsync(Stream contenidoXlsx, CancellationToken ct, bool forzarTenantActual = false);
 }
