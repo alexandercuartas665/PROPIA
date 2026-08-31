@@ -107,6 +107,7 @@ public class AdminController : ControllerBase
             return CreatedAtAction(nameof(ListOrganizaciones), new { }, org);
         }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.GetBaseException().Message }); }
     }
 
     [HttpPut("~/api/admin/organizaciones/{orgId:guid}/estado")]
@@ -114,8 +115,13 @@ public class AdminController : ControllerBase
     public async Task<IActionResult> CambiarEstadoOrganizacion(Guid orgId, [FromBody] CambiarEstadoOrganizacionRequest req, CancellationToken ct)
     {
         var (id, email) = Actor();
-        var org = await _svc.CambiarEstadoOrganizacionAsync(orgId, req, id, email, Ip(), ct);
-        return org is null ? NotFound() : Ok(org);
+        try
+        {
+            var org = await _svc.CambiarEstadoOrganizacionAsync(orgId, req, id, email, Ip(), ct);
+            return org is null ? NotFound() : Ok(org);
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.GetBaseException().Message }); }
     }
 
     [HttpPost("~/api/admin/organizaciones/{orgId:guid}/admin")]
@@ -129,6 +135,7 @@ public class AdminController : ControllerBase
             return Ok(admin);
         }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.GetBaseException().Message }); }
     }
 
     // -------------------- Tenants --------------------
