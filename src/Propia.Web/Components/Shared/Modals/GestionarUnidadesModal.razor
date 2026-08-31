@@ -27,49 +27,63 @@
     </button>
 </div>
 
-@* ====== 2 PANELES ====== *@
+@* ====== FICHA (panel unico) ======
+   La creacion y la edicion usan la MISMA ficha: al crear, se abre en modo "nueva unidad"
+   con el codigo mascara (A1-202) editable; al guardar se crea y se pasa a la ficha completa. *@
 <div class="gum-body">
-
-    @* ===== Panel IZQ - arbol torres > pisos > unidades =====
-       Se oculta cuando el modal se abre directamente sobre una unidad (desde la tabla de
-       Unidades Privadas): ahi el arbol de torres es redundante porque ya se eligio la unidad.
-       La condicion depende SOLO de _arbolVisible (que ya viene resuelto antes del primer
-       render): agregarle un "|| _selected is null" hacia que el arbol se pintara durante la
-       carga inicial y desapareciera al seleccionar la unidad, causando un parpadeo. Los casos
-       sin seleccion (unidad no encontrada, unidad eliminada) reponen _arbolVisible por codigo. *@
-    @if (_arbolVisible)
-    {
-    @* Panel de creacion: solo el alta por codigo (se quito el arbol/CTAs/generador). *@
-    <div class="gum-panel-left">
-        <div class="gum-card-soft">
-            <div class="gum-card-title">Crear unidad por codigo</div>
-            <div class="gum-card-sub">
-                Un solo codigo con el formato <b>@AgrupacionLabelSingular.ToUpperInvariant()-APARTAMENTO</b>
-                (ej. <b>A1-202</b>): @(AgrupacionLabelSingular.ToLower()) A1, apartamento 202.
-                Si la @(AgrupacionLabelSingular.ToLower()) no existe, se crea sola; el @(PisoLabelSingular.ToLower()) se infiere del numero de apto.
-            </div>
-            <div class="gum-form-row">
-                <input class="gum-input gum-grow gum-code" @bind="_manCodigo" @bind:event="oninput" placeholder="A1-202" />
-                <select class="gum-input" @bind="_manTipo">
-                    @foreach (var t in Enum.GetValues<TipoUnidad>()) { <option value="@t">@t</option> }
-                </select>
-                <button class="gum-btn-brand" @onclick="AgregarUnidadPorCodigoAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_manCodigo))">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-                    Agregar
-                </button>
-            </div>
-            @if (!string.IsNullOrEmpty(_msg))
-            {
-                <div class="gum-msg @(_msgError ? "gum-msg--err" : "gum-msg--ok")" style="margin-top:12px;">@_msg</div>
-            }
-        </div>
-    </div>
-    }
-
 
     @* ===== Panel DER - ficha unidad ===== *@
     <div class="gum-panel-right">
-        @if (_selected is null)
+        @if (_nuevaUnidad)
+        {
+            @* --- Modo NUEVA UNIDAD: misma ficha, vacia, con el codigo editable --- *@
+            <div class="gum-fhead">
+                <div class="gum-fhead-main">
+                    <div class="gum-unit-avatar">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18M5 21V7l7-4 7 4v14M10 21v-4h4v4"/></svg>
+                    </div>
+                    <div class="gum-unit-id">
+                        <div class="gum-unit-title">Nueva unidad</div>
+                        <div class="gum-unit-meta">Escribe el codigo <b>@AgrupacionLabelSingular.ToUpperInvariant()-APARTAMENTO</b> (ej. A1-202) y completa la ficha. La @(AgrupacionLabelSingular.ToLower()) sale del codigo y el @(PisoLabelSingular.ToLower()) se infiere del numero.</div>
+                    </div>
+                    <div class="gum-fhead-actions">
+                        <button class="gum-unit-save" type="button" @onclick="GuardarUnidad" disabled="@_busy" title="Crear unidad">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>
+                            @(_busy ? "Creando..." : "Crear")
+                        </button>
+                        <button class="gum-unit-cancel" type="button" @onclick="CancelarEdicion">Cancelar</button>
+                    </div>
+                </div>
+                <div class="gum-fmeta">
+                    <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">ID UNIDAD</div>
+                        <input class="gum-fmeta-inp gum-code" @bind="_edit.Codigo" @bind:event="oninput" placeholder="A1-202" />
+                    </div>
+                    <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">TIPO</div>
+                        <select class="gum-fmeta-inp" @bind="_edit.Tipo">@foreach (var t in Enum.GetValues<TipoUnidad>()) { <option value="@t">@t</option> }</select>
+                    </div>
+                    <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">COEFICIENTE</div>
+                        <input type="number" step="0.0001" class="gum-fmeta-inp" @bind="_edit.CoeficientePropiedad" />
+                    </div>
+                    <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">AREA</div>
+                        <input type="number" step="0.01" class="gum-fmeta-inp" @bind="_edit.AreaM2" />
+                    </div>
+                    <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">ESTADO</div>
+                        <input class="gum-fmeta-inp" @bind="_edit.Estado" placeholder="Habitada / Vacia" />
+                    </div>
+                    <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">MATRICULA</div>
+                        <input class="gum-fmeta-inp" @bind="_edit.MatriculaInmobiliaria" />
+                    </div>
+                </div>
+                <div class="gum-fcustom">
+                    <div class="gum-fcustom-empty">Guarda la unidad para agregar personas, vehiculos, mascotas y documentos.</div>
+                    @if (!string.IsNullOrEmpty(_msg))
+                    {
+                        <div class="gum-msg @(_msgError ? "gum-msg--err" : "gum-msg--ok")" style="margin-top:12px;">@_msg</div>
+                    }
+                </div>
+            </div>
+        }
+        else if (_selected is null)
         {
             <div class="gum-empty">
                 <div class="gum-empty-icon">
@@ -123,23 +137,11 @@
                 @* Franja de datos de la unidad: informativa; se vuelve editable en el sitio con "Editar ficha". *@
                 <div class="gum-fmeta">
                     <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">ID UNIDAD</div><div class="gum-fmeta-val">@IdUnidad</div></div>
-                    <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">NUMERO</div>
-                        @if (_editMode) { <input class="gum-fmeta-inp" @bind="_edit.Numero" /> } else { <div class="gum-fmeta-val">@_selected.Numero</div> }
-                    </div>
                     <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">TIPO</div>
                         @if (_editMode) { <select class="gum-fmeta-inp" @bind="_edit.Tipo">@foreach (var t in Enum.GetValues<TipoUnidad>()) { <option value="@t">@t</option> }</select> } else { <div class="gum-fmeta-val">@_selected.Tipo</div> }
                     </div>
-                    <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">@AgrupacionLabelSingular.ToUpperInvariant()</div>
-                        @if (_editMode) { <select class="gum-fmeta-inp" @bind="_edit.TorreId"><option value="">-</option>@foreach (var t in _torres) { <option value="@t.Id">@t.Nombre</option> }</select> } else { <div class="gum-fmeta-val">@(_selected.TorreNombre ?? "-")</div> }
-                    </div>
-                    <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">@PisoLabelSingular.ToUpperInvariant()</div>
-                        @if (_editMode) { <input type="number" class="gum-fmeta-inp" @bind="_edit.Piso" /> } else { <div class="gum-fmeta-val">@(_selected.Piso?.ToString() ?? "-")</div> }
-                    </div>
                     <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">COEFICIENTE</div>
                         @if (_editMode) { <input type="number" step="0.0001" class="gum-fmeta-inp" @bind="_edit.CoeficientePropiedad" /> } else { <div class="gum-fmeta-val">@_selected.CoeficientePropiedad.ToString("0.####")%</div> }
-                    </div>
-                    <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">CUOTA MENSUAL</div>
-                        @if (_editMode) { <input type="number" step="1" class="gum-fmeta-inp" @bind="_edit.CuotaMensual" placeholder="Auto" /> } else { <div class="gum-fmeta-val">@(_selected.CuotaMensual.HasValue ? "$ " + _selected.CuotaMensual.Value.ToString("N0") : "-")</div> }
                     </div>
                     <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">AREA</div>
                         @if (_editMode) { <input type="number" step="0.01" class="gum-fmeta-inp" @bind="_edit.AreaM2" /> } else { <div class="gum-fmeta-val">@(_selected.AreaM2.HasValue ? $"{_selected.AreaM2.Value:0.##} m2" : "-")</div> }
@@ -1271,9 +1273,6 @@
     /// </summary>
     [Parameter] public bool OcultarArbol { get; set; }
 
-    /// <summary>Estado en vivo del panel izquierdo (el usuario puede alternarlo desde la ficha).</summary>
-    private bool _arbolVisible = true;
-
     private List<TorreDto> _torres = new();
     private List<UnidadDto> _unidades = new();
     private UnidadDto? _selected;
@@ -1281,6 +1280,7 @@
     private CuotaConsolidadaDto? _cuota;
     private HashSet<Guid> _torresAbiertas = new();
     private bool _editMode;
+    private bool _nuevaUnidad;   // ficha en modo alta (crear = editar, misma ficha)
     private EditUnidadForm _edit = new();
 
     // Inmuebles vinculados - form para agregar
@@ -1496,6 +1496,7 @@
 
     private class EditUnidadForm
     {
+        public string Codigo { get; set; } = "";   // solo en modo "nueva unidad": mascara TORRE-APARTAMENTO (A1-202)
         public string Numero { get; set; } = "";
         public TipoUnidad Tipo { get; set; } = TipoUnidad.Apartamento;
         public Guid? TorreId { get; set; }
@@ -1558,15 +1559,28 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _arbolVisible = !OcultarArbol;
         await CargarAsync();
-        // Entrada desde la tabla de Distribucion: se abre en la ficha de la unidad pedida.
+        // Entrada desde la tabla de Distribucion: con UnidadInicialId abre la ficha de esa unidad;
+        // sin ella (o si no se encuentra), abre en modo "nueva unidad" (misma ficha, vacia).
         if (UnidadInicialId is Guid id)
         {
             var u = _unidades.FirstOrDefault(x => x.Id == id);
             if (u is not null) await SeleccionarUnidad(u);
-            else _arbolVisible = true;   // no se encontro: deja el arbol para poder navegar
+            else IniciarNuevaUnidad();
         }
+        else
+        {
+            IniciarNuevaUnidad();
+        }
+    }
+
+    private void IniciarNuevaUnidad()
+    {
+        _nuevaUnidad = true;
+        _selected = null;
+        _editMode = true;
+        _edit = new EditUnidadForm();
+        _msg = "";
     }
 
     private HttpClient Auth()
@@ -1615,6 +1629,7 @@
     private async Task SeleccionarUnidad(UnidadDto u)
     {
         _selected = u;
+        _nuevaUnidad = false;
         _editMode = false;
         _vinculos.Clear();
         _personas.Clear();
@@ -2098,6 +2113,8 @@
 
     private void CancelarEdicion()
     {
+        // En modo alta, Cancelar cierra el modal (no hay ficha previa a la que volver).
+        if (_nuevaUnidad) { Close(_huboCambios); return; }
         _editMode = false;
         _formRol = null;
         _editPersonaId = null;
@@ -2106,6 +2123,7 @@
 
     private async Task GuardarUnidad()
     {
+        if (_nuevaUnidad) { await CrearUnidadDesdeFichaAsync(); return; }
         if (_selected is null) return;
         if (string.IsNullOrWhiteSpace(_edit.Numero)) { ShowMsg("Numero obligatorio.", true); return; }
         _busy = true;
@@ -2136,6 +2154,60 @@
             ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true);
         }
         _busy = false;
+    }
+
+    // Crea la unidad desde la ficha (modo alta). El codigo mascara TORRE-APARTAMENTO (A1-202)
+    // resuelve/crea la torre y el piso se infiere del numero; luego se crea con los campos de la ficha.
+    private async Task CrearUnidadDesdeFichaAsync()
+    {
+        var raw = (_edit.Codigo ?? "").Trim();
+        if (raw.Length == 0) { ShowMsg($"Escribe el codigo {AgrupacionLabelSingular.ToUpperInvariant()}-APARTAMENTO (ej. A1-202).", true); return; }
+
+        var parts = raw.Split(new[] { '-', '/' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length < 2) { ShowMsg("Usa el formato TORRE-APARTAMENTO, por ejemplo A1-202.", true); return; }
+        var torreToken = parts[0];
+        var numero = string.Join("-", parts.Skip(1)).Trim();
+        if (numero.Length == 0) { ShowMsg("Falta el numero del apartamento. Ejemplo: A1-202.", true); return; }
+        // El piso se infiere del numero de apto (202 -> 2, 1502 -> 15) cuando es numerico de 3+ digitos.
+        int? piso = (numero.Length >= 3 && numero.All(char.IsDigit) && int.TryParse(numero[..^2], out var f) && f > 0) ? f : (int?)null;
+
+        _busy = true;
+        // Resolver torre por nombre exacto, por "Torre X" o por la ultima palabra del nombre; si no existe, crearla.
+        var existe = _torres.FirstOrDefault(t =>
+            t.Nombre.Equals(torreToken, StringComparison.OrdinalIgnoreCase)
+            || t.Nombre.Equals($"{AgrupacionLabelSingular} {torreToken}", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(t.Nombre.Split(' ').LastOrDefault(), torreToken, StringComparison.OrdinalIgnoreCase));
+        Guid torreId;
+        if (existe is not null) { torreId = existe.Id; }
+        else
+        {
+            var nombreTorre = torreToken.Length <= 4 ? $"{AgrupacionLabelSingular} {torreToken}" : torreToken;
+            var respTorre = await Auth().PostAsJsonAsync("/api/mi-copropiedad/torres", new CrearTorreRequest(nombreTorre, null, null));
+            if (!respTorre.IsSuccessStatusCode) { ShowMsg($"Error al crear {AgrupacionLabelSingular.ToLower()}: " + await respTorre.Content.ReadAsStringAsync(), true); _busy = false; return; }
+            var nuevaTorre = await respTorre.Content.ReadFromJsonAsync<TorreDto>();
+            if (nuevaTorre is null) { ShowMsg($"Respuesta inesperada al crear {AgrupacionLabelSingular.ToLower()}.", true); _busy = false; return; }
+            _torres.Add(nuevaTorre);
+            torreId = nuevaTorre.Id;
+            _huboCambios = true;
+        }
+
+        var req = new CrearUnidadRequest(
+            numero, _edit.Tipo, torreId, piso,
+            _edit.CoeficientePropiedad, _edit.AreaM2,
+            null, null, null,
+            string.IsNullOrWhiteSpace(_edit.Estado) ? null : _edit.Estado, null,
+            string.IsNullOrWhiteSpace(_edit.MatriculaInmobiliaria) ? null : _edit.MatriculaInmobiliaria);
+        var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/unidades", req);
+        if (!resp.IsSuccessStatusCode) { ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true); _busy = false; return; }
+        var creada = await resp.Content.ReadFromJsonAsync<UnidadDto>();
+        _huboCambios = true;
+        await CargarAsync();
+        _busy = false;
+        if (creada is not null)
+        {
+            await SeleccionarUnidad(creada);   // pasa a la ficha completa de la unidad creada
+            ShowMsg($"Unidad {creada.Numero} creada.", false);
+        }
     }
 
     // Alta por codigo unico TORRE-PISO-UNIDAD (ej. A-3-101). Si la torre no existe, se crea.
@@ -2507,14 +2579,10 @@
             var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades/{_selected.Id}");
             if (resp.IsSuccessStatusCode)
             {
+                // La unidad ya no existe: cierra el modal y deja que la tabla se refresque.
                 _huboCambios = true;
-                _selected = null;
-                _editMode = false;
-                // Sin ficha ya no hay cabecera (ni boton de lista): se repone el arbol para
-                // no dejar el modal sin navegacion cuando se abrio en modo unidad-unica.
-                _arbolVisible = true;
-                ShowMsg("Unidad eliminada.", false);
-                await CargarAsync();
+                Close(_huboCambios);
+                return;
             }
             else
             {
