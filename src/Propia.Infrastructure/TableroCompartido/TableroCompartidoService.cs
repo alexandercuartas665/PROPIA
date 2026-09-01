@@ -37,6 +37,99 @@ public class TableroCompartidoService : ITableroCompartidoService
         _logger = logger;
     }
 
+    public async Task<Propia.Application.Tareas.TableroBoardDto?> ObtenerBoardVirtualAsync(Guid userId, CancellationToken ct)
+    {
+        var tenantIds = await TenantsAdministradosAsync(userId, ct);
+        if (tenantIds.Count == 0) return null;
+
+        var copros = await _db.Tenants.AsNoTracking()
+            .Where(t => tenantIds.Contains(t.Id))
+            .Select(t => new { t.Id, t.Nombre })
+            .OrderBy(t => t.Nombre)
+            .ToListAsync(ct);
+
+        // Estados virtuales unificados por NOMBRE (guid determinista por nombre normalizado).
+        var estadosVirtuales = new Dictionary<string, EstadoTareaDto>(StringComparer.OrdinalIgnoreCase);
+        var tareas = new List<TareaListaDto>();
+        var original = _tenant.CurrentTenantId;
+        try
+        {
+            foreach (var copro in copros)
+            {
+                await ImpersonarAsync(copro.Id, ct);
+                try
+                {
+                    var tableros = await _tareas.ListarTablerosAsync(ct);
+                    foreach (var tb in tableros)
+                    {
+                        // El board REAL de cada tablero: mismas proyecciones (etiquetas, subtareas,
+                        // responsables, campos) que ve el tenant.
+                        var board = await _tareas.GetTableroBoardAsync(tb.Id, ct, verCerradas: false);
+                        if (board is null) continue;
+
+                        var mapaEstado = new Dictionary<Guid, EstadoTareaDto>();
+                        foreach (var est in board.Estados)
+                        {
+                            var clave = est.Nombre.Trim();
+                            if (!estadosVirtuales.TryGetValue(clave, out var v))
+                            {
+                                v = new EstadoTareaDto(GuidPorNombre(clave), clave, est.Color, est.Orden,
+                                    est.EsTerminal, EsBase: true, Activo: true);
+                                estadosVirtuales[clave] = v;
+                            }
+                            else if (est.Orden < v.Orden)
+                            {
+                                v = v with { Orden = est.Orden };
+                                estadosVirtuales[clave] = v;
+                            }
+                            mapaEstado[est.Id] = estadosVirtuales[clave];
+                        }
+
+                        foreach (var t in board.Tareas)
+                        {
+                            if (!mapaEstado.TryGetValue(t.EstadoId, out var v)) continue;
+                            tareas.Add(t with
+                            {
+                                EstadoId = v.Id,
+                                EstadoNombre = v.Nombre,
+                                EstadoColor = v.Color,
+                                TenantId = copro.Id,
+                                TenantNombre = copro.Nombre
+                            });
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Tablero compartido: fallo armando el board del tenant {TenantId}", copro.Id);
+                }
+            }
+        }
+        finally
+        {
+            await RestaurarAsync(original, ct);
+        }
+
+        var estados = estadosVirtuales.Values
+            .OrderBy(e => e.EsTerminal ? 1 : 0).ThenBy(e => e.Orden).ThenBy(e => e.Nombre, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var tablero = new TableroDto(
+            TableroCompartidoConstantes.BoardId,
+            TableroCompartidoConstantes.BoardNombre,
+            "Espejo de las tareas reales de las copropiedades que administras.",
+            "#5955D1", 999, tareas.Count,
+            Array.Empty<TableroUsuarioDto>(), null);
+        return new Propia.Application.Tareas.TableroBoardDto(tablero, estados, tareas);
+    }
+
+    /// <summary>Guid determinista por nombre de etapa (MD5): estable entre requests y tenants.</summary>
+    private static Guid GuidPorNombre(string nombre)
+    {
+        using var md5 = System.Security.Cryptography.MD5.Create();
+        var bytes = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes("tablero-compartido:" + nombre.Trim().ToLowerInvariant()));
+        return new Guid(bytes);
+    }
+
     public async Task<TableroCompartidoDto?> ObtenerAsync(Guid userId, CancellationToken ct)
     {
         var tenantIds = await TenantsAdministradosAsync(userId, ct);
@@ -139,14 +232,17 @@ public class TableroCompartidoService : ITableroCompartidoService
             // La etapa destino se resuelve POR NOMBRE dentro del tablero de la tarea. Solo etapas
             // activas y no terminales (cerrar con motivo se hace en el tenant, no desde aqui).
             var candidatas = await _db.TareasEstados.AsNoTracking()
-                .Where(e => e.Activo && !e.EsTerminal && e.TableroId == tarea.TableroId)
-                .Select(e => new { e.Id, e.Nombre })
+                .Where(e => e.Activo && e.TableroId == tarea.TableroId)
+                .Select(e => new { e.Id, e.Nombre, e.EsTerminal })
                 .ToListAsync(ct);
             var destino = candidatas.FirstOrDefault(e =>
                 string.Equals(e.Nombre.Trim(), destinoNombre, StringComparison.OrdinalIgnoreCase));
             if (destino is null)
                 return new MoverTarjetaCompartidaResultado(false,
                     $"Esa copropiedad no tiene la etapa '{destinoNombre}' en el tablero de la tarea.");
+            if (destino.EsTerminal)
+                return new MoverTarjetaCompartidaResultado(false,
+                    "Cerrar la tarea (etapa terminal) pide motivo: abrela en su copropiedad para cerrarla.");
 
             if (destino.Id == tarea.EstadoId)
                 return new MoverTarjetaCompartidaResultado(true, null);

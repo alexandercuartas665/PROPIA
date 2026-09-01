@@ -10,8 +10,23 @@ namespace Propia.Application.TableroCompartido;
 /// SIEMPRE se deriva en el servidor de get_tenants_for_persona (rol Administrador) - jamas del
 /// cliente. Mover una tarjeta ejecuta el CambiarEstadoAsync REAL del tenant (historial intacto).
 /// </summary>
+/// <summary>Identidad fija del tablero virtual "Todas mis copropiedades" (compartida API/UI).</summary>
+public static class TableroCompartidoConstantes
+{
+    public static readonly Guid BoardId = Guid.Parse("c0417a5d-0000-4000-8000-7ab1e0c09a77");
+    public const string BoardNombre = "Todas mis copropiedades";
+}
+
 public interface ITableroCompartidoService
 {
+    /// <summary>
+    /// Board VIRTUAL con el mismo contrato de un tablero normal (TableroBoardDto): por cada
+    /// copropiedad administrada se llama el GetTableroBoardAsync REAL bajo impersonacion y se
+    /// fusionan estados (por nombre) y tareas (con TenantId/TenantNombre). Asi la pagina de
+    /// Tareas lo renderiza con sus vistas existentes sin codigo nuevo. Null = sin acceso.
+    /// </summary>
+    Task<Propia.Application.Tareas.TableroBoardDto?> ObtenerBoardVirtualAsync(Guid userId, CancellationToken ct);
+
     /// <summary>Null cuando el usuario no administra ninguna copropiedad (sin acceso).</summary>
     Task<TableroCompartidoDto?> ObtenerAsync(Guid userId, CancellationToken ct);
 

@@ -25,6 +25,18 @@ public class TableroCompartidoController : ControllerBase
         return Guid.TryParse(raw, out var id) ? id : null;
     }
 
+    /// <summary>Board VIRTUAL con el contrato de un tablero normal (lo renderizan las vistas
+    /// existentes del modulo de Tareas sin codigo nuevo).</summary>
+    [HttpGet("board")]
+    public async Task<IActionResult> ObtenerBoard(CancellationToken ct)
+    {
+        if (UserId() is not Guid userId) return Unauthorized();
+        var dto = await _svc.ObtenerBoardVirtualAsync(userId, ct);
+        return dto is null
+            ? StatusCode(403, new { error = "Solo los administradores de copropiedades pueden ver el tablero compartido." })
+            : Ok(dto);
+    }
+
     [HttpGet]
     public async Task<IActionResult> Obtener(CancellationToken ct)
     {
