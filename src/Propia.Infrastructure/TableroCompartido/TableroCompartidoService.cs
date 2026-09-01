@@ -184,7 +184,7 @@ public class TableroCompartidoService : ITableroCompartidoService
         var original = _tenant.CurrentTenantId;
         copros = copros.OrderBy(c => c.Id == original ? 0 : 1).ThenBy(c => c.Nombre).ToList();
 
-        var resultado = new List<PersonaCrossTenantDto>();
+        var candidatos = new List<PersonaCrossTenantDto>();
         var vistos = new HashSet<Guid>();
         try
         {
@@ -197,7 +197,7 @@ public class TableroCompartidoService : ITableroCompartidoService
                     foreach (var p in personas)
                     {
                         if (!vistos.Add(p.Id)) continue;
-                        resultado.Add(new PersonaCrossTenantDto(
+                        candidatos.Add(new PersonaCrossTenantDto(
                             p.Id, p.Nombres, p.Apellidos, p.Documento, p.FotoUrl, copro.Id, copro.Nombre));
                     }
                 }
@@ -205,14 +205,25 @@ public class TableroCompartidoService : ITableroCompartidoService
                 {
                     _logger.LogError(ex, "Tablero compartido: fallo buscando personas en el tenant {TenantId}", copro.Id);
                 }
-                if (resultado.Count >= 30) break;
+                if (candidatos.Count >= 80) break;
             }
         }
         finally
         {
             await RestaurarAsync(original, ct);
         }
-        return resultado.Take(30).ToList();
+
+        // Regla del producto: por ahora solo USUARIOS DEL SISTEMA (personas con cuenta/login)
+        // pueden trabajar en un tablero. El directorio trae residentes y terceros sin cuenta;
+        // aqui se filtran contra la tabla global de usuarios.
+        if (candidatos.Count == 0) return candidatos;
+        var candidatoIds = candidatos.Select(c => c.Id).ToList();
+        var conCuenta = await _db.Users.AsNoTracking()
+            .Where(u => u.PersonaId != null && candidatoIds.Contains(u.PersonaId.Value))
+            .Select(u => u.PersonaId!.Value)
+            .ToListAsync(ct);
+        var conCuentaSet = conCuenta.ToHashSet();
+        return candidatos.Where(c => conCuentaSet.Contains(c.Id)).Take(30).ToList();
     }
 
     // ---------- impersonacion (patron Admin Agent API) ----------

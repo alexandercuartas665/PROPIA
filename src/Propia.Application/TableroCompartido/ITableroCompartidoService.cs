@@ -19,8 +19,10 @@ public interface ITableroCompartidoService
 
     /// <summary>
     /// Busca personas en el directorio de TODAS las copropiedades que el usuario administra
-    /// (para invitar usuarios cross-tenant a un tablero de Tareas). Deduplica por persona
-    /// priorizando la copropiedad activa; vacio si el usuario no administra ninguna.
+    /// (para invitar usuarios cross-tenant a un tablero de Tareas). Solo devuelve USUARIOS DEL
+    /// SISTEMA (personas con cuenta/login): por ahora es la regla del producto para trabajar en
+    /// tableros. Deduplica por persona priorizando la copropiedad activa; vacio si el usuario
+    /// no administra ninguna.
     /// </summary>
     Task<IReadOnlyList<PersonaCrossTenantDto>> BuscarPersonasAsync(Guid userId, string q, CancellationToken ct);
 }
