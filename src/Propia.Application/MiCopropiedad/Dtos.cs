@@ -88,6 +88,14 @@ public record UnidadPersonaDto(
     Guid? EmpresaId = null,
     bool Activo = true);
 
+// ----- Residentes: vista agregada de TODAS las personas de las unidades del tenant.
+//       Cada fila es un UnidadPersona (persona o empresa) con el codigo de su unidad. -----
+public record ResidenteResumenDto(
+    Guid UnidadPersonaId, Guid UnidadId, string UnidadNumero, string UnidadCodigo, string? TorreNombre,
+    EntidadDirectorio EntidadTipo, Guid? PersonaId, Guid? EmpresaId,
+    string Nombre, string Documento, string? Email, string? Telefono,
+    RolUnidadPersona Rol, bool Habita, string? Parentesco, bool Activo);
+
 // PersonaId llega cuando la persona se eligio con el SelectorPersona (ya existe y ya quedo
 // vinculada a la copropiedad). En ese caso Documento/Nombres/Apellidos van vacios y no se
 // usan: el selector solo devuelve el documento enmascarado, asi que no hay con que buscarla.

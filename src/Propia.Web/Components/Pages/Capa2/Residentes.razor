@@ -1,0 +1,642 @@
+@page "/residentes"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.MiCopropiedad
+@using Propia.Application.Directorio
+@using Propia.Domain.Enums
+@using Propia.Web.Components.Shared
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<PageTitle>Residentes - PROPIA</PageTitle>
+
+@* Residentes: vista agregada de TODAS las personas de las unidades (propietarios, residentes,
+   arrendatarios, familiares, apoderados). Misma vista tabla estandar del sistema: barra de
+   filtros + agrupacion + columnas, expander por fila, alta inline al pie y footer con paginacion.
+   Toda alta reutiliza el endpoint de Unidades Privadas, que ya asegura el registro en Directorio. *@
+
+<div class="res-pagehead">
+    <h1 class="res-pagetitle">Residentes</h1>
+    <p class="res-pagesub">Todas las personas de las unidades de @(_copNombre ?? "la copropiedad"). Cada registro queda tambien en el Directorio.</p>
+</div>
+
+@if (!_authChecked || _jwt is null)
+{
+    <div class="res-loading"><div class="spinner-border" style="color: var(--propia-brand, #6D4FE3);"></div></div>
+}
+else
+{
+    @* ===== Barra estandar: Filtros + buscador + Agrupar + Columnas ===== *@
+    <div class="res-filtros">
+        <FiltroDinamico @ref="_fd" Campos="CamposFiltro" OnChanged="@(() => { _pagina = 1; StateHasChanged(); })" />
+        <div class="res-search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input class="res-search-inp" placeholder="Buscar por nombre, documento o unidad..."
+                   @oninput="@(e => { _q = e.Value?.ToString() ?? string.Empty; _pagina = 1; })" />
+        </div>
+        <div class="res-filtros-spacer"></div>
+
+        @* Agrupar *@
+        <div class="res-menu-wrap">
+            <button type="button" class="res-fbtn @(_agruparPor != "" ? "on" : "")" @onclick="() => _showAgrupar = !_showAgrupar" title="Agrupar residentes">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+            <span>Agrupar@(_agruparPor != "" ? ": " + AgruparLabel(_agruparPor) : "")</span>
+            </button>
+            @if (_showAgrupar)
+            {
+                <div class="res-menu-bd" @onclick="() => _showAgrupar = false"></div>
+                <div class="res-menu">
+                    @foreach (var g in new[] { ("", "Sin agrupar"), ("rol", "Rol"), ("unidad", "Unidad"), ("torre", "Torre") })
+                    {
+                        var gk = g.Item1;
+                        <button class="res-menu-it @(_agruparPor == gk ? "on" : "")" @onclick="() => SetAgrupar(gk)">@g.Item2</button>
+                    }
+                </div>
+            }
+        </div>
+
+        @* Columnas *@
+        <div class="res-menu-wrap">
+            <button type="button" class="res-fbtn @(_showCols ? "on" : "")" @onclick="() => _showCols = !_showCols" title="Campos y columnas de la tabla">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
+                <span>Columnas</span>
+            </button>
+            @if (_showCols)
+            {
+                <div class="res-menu-bd" @onclick="() => _showCols = false"></div>
+                <div class="res-colsmenu">
+                    <div class="res-colsmenu-h">COLUMNAS (orden, visibilidad y nombre)</div>
+                    @for (int i = 0; i < _colOrder.Count; i++)
+                    {
+                        var idx = i;
+                        var col = Catalogo.First(c => c.Key == _colOrder[idx]);
+                        var pref = PrefDe(col.Key);
+                        var key = col.Key;
+                        <div class="res-colsmenu-i">
+                            <div class="res-colsmenu-ord">
+                                <button class="res-colsmenu-mv" disabled="@(idx == 0)" @onclick="() => MoverCol(idx, -1)" title="Subir">&#9650;</button>
+                                <button class="res-colsmenu-mv" disabled="@(idx == _colOrder.Count - 1)" @onclick="() => MoverCol(idx, 1)" title="Bajar">&#9660;</button>
+                            </div>
+                            <label class="res-cfg-vis" title="@(col.Hideable ? "Mostrar u ocultar" : "Columna requerida, siempre visible")">
+                                <input type="checkbox" checked="@pref.Visible" disabled="@(!col.Hideable)" @onchange="@(e => SetColVisible(key, (bool)(e.Value ?? false)))" />
+                            </label>
+                            <input class="res-cfg-inp" value="@(string.IsNullOrWhiteSpace(pref.Label) ? col.DefLabel : pref.Label)" placeholder="@col.DefLabel" @onchange="@(e => SetColLabel(key, e.Value?.ToString()))" />
+                            @if (!col.Hideable) { <span class="res-cfg-req">fija</span> }
+                        </div>
+                    }
+                    <div class="res-colsmenu-acts">
+                        <button type="button" class="res-colsmenu-act" @onclick="RestablecerCols">Restablecer</button>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_msg)) { <div class="res-msg @(_msgError ? "err" : "ok")">@_msg</div> }
+
+    @* ===== Tabla ===== *@
+    <div class="res-table">
+        <div class="res-scroll">
+            <div class="res-head res-grid" style="grid-template-columns:@GridCols">
+                <div></div>
+                @foreach (var c in ColsVisibles) { <div class="@(c.Center ? "res-c" : "")">@Etiqueta(c)</div> }
+                <div></div>
+            </div>
+
+            @foreach (var item in FilasRender())
+            {
+                if (item.EsGrupo)
+                {
+                    <div class="res-group">
+                        <span class="res-group-chip">@item.GrupoTitulo</span>
+                        <span class="res-group-n">@item.GrupoCount</span>
+                    </div>
+                    continue;
+                }
+                var r = item.Fila!;
+                <div class="res-row res-grid" style="grid-template-columns:@GridCols">
+                    <div class="res-exp-col">
+                        <button type="button" class="res-exp" title="Abrir la ficha en el Directorio" @onclick="() => AbrirFicha(r)">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                        </button>
+                    </div>
+                    @foreach (var c in ColsVisibles)
+                    {
+                        switch (c.Key)
+                        {
+                            case "unidad": <div class="res-c-cell"><span class="res-cod">@r.UnidadCodigo</span></div>; break;
+                            case "nombre": <div class="res-c-cell res-nom">@r.Nombre @if (r.EntidadTipo == EntidadDirectorio.Empresa) { <span class="res-tag">Empresa</span> }</div>; break;
+                            case "documento": <div class="res-c-cell">@r.Documento</div>; break;
+                            case "rol": <div class="res-c-cell res-c">@RolBadge(r.Rol)</div>; break;
+                            case "telefono": <div class="res-c-cell res-mut">@(string.IsNullOrWhiteSpace(r.Telefono) ? "-" : r.Telefono)</div>; break;
+                            case "email": <div class="res-c-cell res-mut">@(string.IsNullOrWhiteSpace(r.Email) ? "-" : r.Email)</div>; break;
+                            case "habita": <div class="res-c-cell res-c">@(r.Habita ? "Si" : "No")</div>; break;
+                        }
+                    }
+                    <div></div>
+                </div>
+            }
+
+            @* Alta inline al pie, alineada a las columnas (misma logica que el modal de Unidades
+               Privadas: se escribe la persona y se hace buscar-o-crear por documento; asi tambien
+               queda en el Directorio). El expander crea y abre la ficha; "+ Agregar" solo crea. *@
+            <div class="res-newrow res-grid" style="grid-template-columns:@GridCols">
+                <div class="res-exp-col">
+                    <button type="button" class="res-exp res-exp-nf" tabindex="-1" title="Agregar y abrir la ficha" @onclick="() => AgregarAsync(true)" disabled="@(_busy || !AltaValida)">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                    </button>
+                </div>
+                @foreach (var c in ColsVisibles)
+                {
+                    switch (c.Key)
+                    {
+                        case "unidad":
+                            <div class="res-nf-unidad">
+                                <input class="res-nf-inp" placeholder="Ej. A1-101" @bind="_unidadQuery" @bind:event="oninput" @onfocus="() => _unidadDrop = true" autocomplete="off" />
+                                @if (_unidadDrop && UnidadesFiltradas().Any())
+                                {
+                                    <div class="res-drop">
+                                        @foreach (var u in UnidadesFiltradas())
+                                        {
+                                            <button type="button" class="res-drop-it" @onclick="() => ElegirUnidad(u)">
+                                                <span class="res-drop-cod">@CodigoUnidad(u)</span>
+                                                <span class="res-drop-meta">@u.Tipo@(u.PropietarioNombre is { Length: > 0 } pn ? " - " + pn : "")</span>
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            break;
+                        case "nombre":
+                            @* Control de terceros: busca en el Directorio de la organizacion y, si no
+                               existe, lo crea ahi mismo. El panel FLOTA (position:fixed) para no
+                               deformar la celda. Toda persona nace del Directorio por esta via. *@
+                            <div class="res-nf-persona">
+                                <SelectorPersona @bind-Seleccionada="_personaSel" Jwt="@_jwt" PermiteEmpresa="true" Flotante="true" Placeholder="Buscar o crear tercero..." />
+                            </div>
+                            break;
+                        case "documento":
+                            <div class="res-nf-ro">@(_personaSel is null ? "" : $"{_personaSel.TipoDocumento} {_personaSel.DocumentoEnmascarado}")</div>
+                            break;
+                        case "rol":
+                            <select class="res-nf-inp" @bind="_rolNuevo">
+                                @foreach (var r in Enum.GetValues<RolUnidadPersona>()) { <option value="@r">@RolLabel(r)</option> }
+                            </select>
+                            break;
+                        case "telefono":
+                            <div class="res-nf-ro"></div>
+                            break;
+                        case "email":
+                            <div class="res-nf-ro"></div>
+                            break;
+                        case "habita":
+                            <label class="res-nf-habchk" title="Reside en la unidad"><input type="checkbox" @bind="_habitaNuevo" /> <span>Si</span></label>
+                            break;
+                    }
+                }
+                <div class="res-nf-act">
+                    <button type="button" class="res-nf-add" @onclick="() => AgregarAsync(false)" disabled="@(_busy || !AltaValida)">@(_busy ? "..." : "+ Agregar")</button>
+                </div>
+            </div>
+
+            @if (_residentes.Count > 0 && Filtrados.Count == 0)
+            {
+                <div class="res-empty">Ningun registro coincide con el filtro.</div>
+            }
+            else if (_residentes.Count == 0)
+            {
+                <div class="res-empty">Aun no hay personas en las unidades. Agrega la primera en la fila de arriba.</div>
+            }
+        </div>
+
+        @* Footer canonico (solo sin agrupacion: agrupar y paginar juntos confunde). *@
+        @if (_agruparPor == "")
+        {
+            <TablaPager Total="Filtrados.Count" Pagina="_pagina" PorPagina="_porPagina" Entidad="residentes"
+                        PaginaChanged="p => { _pagina = p; }"
+                        PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
+        }
+    </div>
+}
+
+@code {
+    private bool _authChecked;
+    private string? _jwt;
+    private string? _copNombre;
+    private bool _busy;
+    private string _msg = "";
+    private bool _msgError;
+
+    private List<ResidenteResumenDto> _residentes = new();
+    private List<UnidadDto> _unidades = new();
+
+    // Filtros
+    private FiltroDinamico? _fd;
+    private string _q = "";
+
+    // Agrupacion
+    private string _agruparPor = "";
+    private bool _showAgrupar;
+    private const string AgruparKey = "propia_residentes_group";
+
+    // Paginacion
+    private int _porPagina = 25;
+    private int _pagina = 1;
+
+    // Columnas
+    private bool _showCols;
+    private const string ColsKey = "propia_residentes_cols";
+
+    // Alta: la unidad por codigo (autocompletado) + la persona por el control de terceros
+    // (SelectorPersona), que la busca/crea en el Directorio. El backend asegura el vinculo.
+    private string _unidadQuery = "";
+    private bool _unidadDrop;
+    private PersonaCandidatoDto? _personaSel;
+    private RolUnidadPersona _rolNuevo = RolUnidadPersona.Residente;
+    private bool _habitaNuevo = true;
+
+    // La unidad se resuelve por el codigo escrito (o elegido del desplegable): el boton se activa
+    // aunque no se haya hecho clic en la sugerencia, siempre que el codigo exista.
+    private UnidadDto? UnidadElegida =>
+        _unidades.FirstOrDefault(u => string.Equals(CodigoUnidad(u), _unidadQuery.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private bool AltaValida => UnidadElegida is not null && _personaSel is not null;
+
+    // ---------- Catalogo de columnas ----------
+    private sealed record ColDef(string Key, string DefLabel, string Width, bool Hideable, bool Center = false);
+    private static readonly ColDef[] Catalogo =
+    {
+        new("unidad", "UNIDAD", "150px", false),
+        new("nombre", "NOMBRE", "1.4fr", false),
+        new("documento", "DOCUMENTO", "1.1fr", false),
+        new("rol", "ROL", "128px", false, true),
+        new("telefono", "TELEFONO", "1.1fr", true),
+        new("email", "EMAIL", "1.6fr", true),
+        new("habita", "HABITA", "80px", true, true),
+    };
+    private sealed class ColPref { public bool Visible { get; set; } = true; public string? Label { get; set; } }
+    private Dictionary<string, ColPref> _colPrefs = new();
+    private List<string> _colOrder = Catalogo.Select(c => c.Key).ToList();
+
+    private ColPref PrefDe(string key) => _colPrefs.TryGetValue(key, out var p) ? p : (_colPrefs[key] = new ColPref());
+    private bool EsVisible(ColDef c) => !c.Hideable || !_colPrefs.TryGetValue(c.Key, out var p) || p.Visible;
+    private string Etiqueta(ColDef c) => (_colPrefs.TryGetValue(c.Key, out var p) && !string.IsNullOrWhiteSpace(p.Label)) ? p.Label! : c.DefLabel;
+    private IEnumerable<ColDef> ColsVisibles
+    {
+        get
+        {
+            var byKey = Catalogo.ToDictionary(c => c.Key);
+            return _colOrder.Where(byKey.ContainsKey).Select(k => byKey[k]).Where(EsVisible);
+        }
+    }
+    private string GridCols => "34px " + string.Join(" ", ColsVisibles.Select(c => c.Width)) + " 116px";
+
+    private async Task SetColVisible(string key, bool vis) { PrefDe(key).Visible = vis; await GuardarColsAsync(); }
+    private async Task SetColLabel(string key, string? label) { PrefDe(key).Label = string.IsNullOrWhiteSpace(label) ? null : label!.Trim(); await GuardarColsAsync(); }
+    private async Task MoverCol(int idx, int dir)
+    {
+        var j = idx + dir;
+        if (j < 0 || j >= _colOrder.Count) return;
+        (_colOrder[idx], _colOrder[j]) = (_colOrder[j], _colOrder[idx]);
+        await GuardarColsAsync();
+    }
+    private async Task RestablecerCols()
+    {
+        _colPrefs = new();
+        _colOrder = Catalogo.Select(c => c.Key).ToList();
+        await GuardarColsAsync();
+    }
+    private async Task GuardarColsAsync()
+    {
+        try
+        {
+            var data = new { order = _colOrder, prefs = _colPrefs.ToDictionary(k => k.Key, v => new { v.Value.Visible, v.Value.Label }) };
+            await Js.InvokeVoidAsync("localStorage.setItem", ColsKey, System.Text.Json.JsonSerializer.Serialize(data));
+        }
+        catch { }
+    }
+    private async Task RestaurarColsAsync()
+    {
+        try
+        {
+            var raw = await Js.InvokeAsync<string?>("localStorage.getItem", ColsKey);
+            if (string.IsNullOrWhiteSpace(raw)) return;
+            using var doc = System.Text.Json.JsonDocument.Parse(raw);
+            if (doc.RootElement.TryGetProperty("order", out var ord) && ord.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                var keys = ord.EnumerateArray().Select(e => e.GetString()).Where(s => s is not null).Cast<string>().ToList();
+                var valid = Catalogo.Select(c => c.Key).ToHashSet();
+                _colOrder = keys.Where(valid.Contains).Concat(Catalogo.Select(c => c.Key).Where(k => !keys.Contains(k))).ToList();
+            }
+            if (doc.RootElement.TryGetProperty("prefs", out var pr) && pr.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                foreach (var p in pr.EnumerateObject())
+                {
+                    var cp = new ColPref();
+                    if (p.Value.TryGetProperty("Visible", out var v)) cp.Visible = v.GetBoolean();
+                    if (p.Value.TryGetProperty("Label", out var l) && l.ValueKind == System.Text.Json.JsonValueKind.String) cp.Label = l.GetString();
+                    _colPrefs[p.Name] = cp;
+                }
+            }
+        }
+        catch { }
+    }
+
+    // ---------- Carga / auth ----------
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            _authChecked = true;
+            if (string.IsNullOrWhiteSpace(stored)) { Nav.NavigateTo("/login?returnUrl=%2Fresidentes", true); return; }
+            _jwt = stored;
+            await RestaurarColsAsync();
+            try { var g = await Js.InvokeAsync<string?>("localStorage.getItem", AgruparKey); if (g is "rol" or "unidad" or "torre") _agruparPor = g; } catch { }
+            await CargarAsync();
+            StateHasChanged();
+        }
+        catch { /* prerender */ }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(_jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
+        return http;
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = Auth();
+            var resp = await http.GetAsync("/api/mi-copropiedad/residentes");
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                var nuevoJwt = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+                if (string.IsNullOrEmpty(nuevoJwt)) return;
+                _jwt = nuevoJwt; http = Auth();
+                resp = await http.GetAsync("/api/mi-copropiedad/residentes");
+            }
+            resp.EnsureSuccessStatusCode();
+            _residentes = await resp.Content.ReadFromJsonAsync<List<ResidenteResumenDto>>() ?? new();
+            _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
+            try { _copNombre = (await http.GetFromJsonAsync<ResumenMiCopropiedadDto>("/api/mi-copropiedad/resumen"))?.Identidad?.Nombre; } catch { }
+        }
+        catch (Exception ex) { _msg = "No se pudo cargar: " + ex.Message; _msgError = true; }
+    }
+
+    // ---------- Filtro dinamico de la tabla ----------
+    private List<FiltroDinamico.CampoDef> CamposFiltro => new()
+    {
+        new() { Key = "rol", Label = "Rol", Kind = "sel",
+                Opciones = Enum.GetValues<RolUnidadPersona>().Select(r => (r.ToString(), RolLabel(r))).ToList() },
+        new() { Key = "unidad", Label = "Unidad", Kind = "texto" },
+        new() { Key = "torre", Label = "Torre", Kind = "sel",
+                Opciones = TorresDistintas().Select(t => (t, t)).ToList() },
+        new() { Key = "habita", Label = "Habita", Kind = "sel",
+                Opciones = new List<(string, string)> { ("si", "Si"), ("no", "No") } },
+    };
+
+    private IEnumerable<string> TorresDistintas() =>
+        _residentes.Where(r => !string.IsNullOrWhiteSpace(r.TorreNombre)).Select(r => r.TorreNombre!).Distinct().OrderBy(x => x);
+
+    private string? ValorFiltro(ResidenteResumenDto r, string key) => key switch
+    {
+        "rol" => r.Rol.ToString(),
+        "unidad" => r.UnidadCodigo,
+        "torre" => r.TorreNombre,
+        "habita" => r.Habita ? "si" : "no",
+        _ => null
+    };
+
+    private List<ResidenteResumenDto> Filtrados
+    {
+        get
+        {
+            var seq = _residentes.AsEnumerable();
+            if (_fd is not null && _fd.Hay)
+                seq = seq.Where(r => _fd.Pasa(k => ValorFiltro(r, k)));
+            var q = _q.Trim();
+            if (q.Length > 0)
+                seq = seq.Where(r =>
+                    r.Nombre.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || r.Documento.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || r.UnidadCodigo.Contains(q, StringComparison.OrdinalIgnoreCase));
+            return seq.ToList();
+        }
+    }
+
+    private int TotalPaginas => Filtrados.Count == 0 ? 1 : (int)Math.Ceiling(Filtrados.Count / (double)_porPagina);
+    private IEnumerable<ResidenteResumenDto> Pagina => Filtrados.Skip((_pagina - 1) * _porPagina).Take(_porPagina);
+
+    // ---------- Agrupacion ----------
+    private async Task SetAgrupar(string v)
+    {
+        _agruparPor = v; _pagina = 1; _showAgrupar = false;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, v); } catch { }
+    }
+    private string AgruparLabel(string k) => k switch { "rol" => "Rol", "unidad" => "Unidad", "torre" => "Torre", _ => "" };
+
+    private readonly record struct FilaR(bool EsGrupo, string? GrupoTitulo, int GrupoCount, ResidenteResumenDto? Fila);
+
+    private IEnumerable<FilaR> FilasRender()
+    {
+        if (_agruparPor == "")
+        {
+            foreach (var r in Pagina) yield return new FilaR(false, null, 0, r);
+            yield break;
+        }
+        // Agrupacion sobre la lista filtrada completa (sin paginar).
+        Func<ResidenteResumenDto, string> clave = _agruparPor switch
+        {
+            "rol" => r => RolLabel(r.Rol),
+            "unidad" => r => r.UnidadCodigo,
+            "torre" => r => string.IsNullOrWhiteSpace(r.TorreNombre) ? "Sin torre" : r.TorreNombre!,
+            _ => r => ""
+        };
+        foreach (var g in Filtrados.GroupBy(clave).OrderBy(g => g.Key))
+        {
+            yield return new FilaR(true, g.Key, g.Count(), null);
+            foreach (var r in g) yield return new FilaR(false, null, 0, r);
+        }
+    }
+
+    // ---------- Autocompletado de unidad ----------
+    private static string CodigoUnidad(UnidadDto u)
+    {
+        var torreShort = string.IsNullOrWhiteSpace(u.TorreNombre) ? "" : u.TorreNombre!.Split(' ').Last();
+        return torreShort.Length > 0 ? $"{torreShort}-{u.Numero}" : u.Numero;
+    }
+    private IEnumerable<UnidadDto> UnidadesFiltradas()
+    {
+        var q = _unidadQuery.Trim();
+        var seq = _unidades.AsEnumerable();
+        if (q.Length > 0)
+            seq = seq.Where(u => CodigoUnidad(u).Contains(q, StringComparison.OrdinalIgnoreCase)
+                                 || u.Numero.Contains(q, StringComparison.OrdinalIgnoreCase));
+        return seq.OrderBy(CodigoUnidad).Take(8);
+    }
+    private void ElegirUnidad(UnidadDto u) { _unidadQuery = CodigoUnidad(u); _unidadDrop = false; }
+
+    // ---------- Alta ----------
+    private async Task AgregarAsync(bool abrir)
+    {
+        if (_busy || UnidadElegida is not { } unidad || _personaSel is not { } sel) return;
+        _busy = true; _msg = ""; _msgError = false;
+        try
+        {
+            var esEmpresa = sel.EntidadTipo == EntidadDirectorio.Empresa;
+            var req = new AgregarPersonaUnidadRequest(
+                "", "", "", null, null,
+                _rolNuevo, _habitaNuevo, null,
+                PersonaId: esEmpresa ? null : sel.PersonaId,
+                EntidadTipo: sel.EntidadTipo,
+                EmpresaId: esEmpresa ? sel.PersonaId : null);
+            var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{unidad.Id}/personas", req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _msg = "No se pudo agregar: " + await resp.Content.ReadAsStringAsync(); _msgError = true; return;
+            }
+            var creada = await resp.Content.ReadFromJsonAsync<UnidadPersonaDto>();
+            _msg = $"{sel.NombreCompleto} agregado a {_unidadQuery}."; _msgError = false;
+            _personaSel = null; _rolNuevo = RolUnidadPersona.Residente; _habitaNuevo = true; _unidadQuery = ""; _unidadDrop = false;
+            await CargarAsync();
+            if (abrir && creada is not null)
+            {
+                if (creada.EntidadTipo == EntidadDirectorio.Empresa && creada.EmpresaId is Guid eid) Nav.NavigateTo($"/directorio/empresas/{eid}");
+                else if (creada.PersonaId != Guid.Empty) Nav.NavigateTo($"/directorio/personas/{creada.PersonaId}");
+            }
+        }
+        catch (Exception ex) { _msg = "Error: " + ex.Message; _msgError = true; }
+        finally { _busy = false; }
+    }
+
+    private void AbrirFicha(ResidenteResumenDto r)
+    {
+        if (r.EntidadTipo == EntidadDirectorio.Empresa && r.EmpresaId is Guid eid) Nav.NavigateTo($"/directorio/empresas/{eid}");
+        else if (r.PersonaId is Guid pid) Nav.NavigateTo($"/directorio/personas/{pid}");
+    }
+
+    private static string RolLabel(RolUnidadPersona r) => r switch
+    {
+        RolUnidadPersona.Propietario => "Propietario",
+        RolUnidadPersona.Residente => "Residente",
+        RolUnidadPersona.Familiar => "Familiar",
+        RolUnidadPersona.Arrendatario => "Arrendatario",
+        RolUnidadPersona.Apoderado => "Apoderado",
+        _ => r.ToString()
+    };
+
+    private RenderFragment RolBadge(RolUnidadPersona r) => builder =>
+    {
+        var cls = r switch
+        {
+            RolUnidadPersona.Propietario => "res-rol res-rol-prop",
+            RolUnidadPersona.Residente => "res-rol res-rol-resi",
+            RolUnidadPersona.Arrendatario => "res-rol res-rol-arr",
+            _ => "res-rol res-rol-otro"
+        };
+        builder.AddMarkupContent(0, $"<span class=\"{cls}\">{RolLabel(r)}</span>");
+    };
+}
+
+<style>
+    .res-pagehead { margin-bottom: 18px; }
+    .res-pagetitle { font-size: 30px; font-weight: 800; color: #1B2A3A; margin: 0 0 4px; letter-spacing: -.5px; }
+    .res-pagesub { font-size: 14px; color: #6B7C8F; margin: 0; }
+    .res-loading { display: flex; justify-content: center; padding: 60px 0; }
+
+    /* ---- Barra de filtros ---- */
+    .res-filtros { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+    .res-search { display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid #E1E8EE; border-radius: 10px; padding: 8px 12px; min-width: 240px; flex: 1; color: #90A4B7; }
+    .res-search-inp { border: 0; outline: none; font-size: 13.5px; color: #1B2A3A; width: 100%; background: transparent; }
+    .res-filtros-spacer { flex: 1; }
+    .res-fbtn { display: inline-flex; align-items: center; gap: 7px; background: #fff; border: 1px solid #E1E8EE; border-radius: 10px; padding: 8px 12px; font-size: 13px; font-weight: 600; color: #47586A; cursor: pointer; white-space: nowrap; }
+    .res-fbtn:hover { border-color: #C9CFE8; }
+    .res-fbtn.on { border-color: var(--propia-brand, #6D4FE3); color: var(--propia-brand, #6D4FE3); background: #F7F5FE; }
+
+    .res-menu-wrap { position: relative; }
+    .res-menu-bd { position: fixed; inset: 0; z-index: 20; }
+    .res-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 21; background: #fff; border: 1px solid #E1E8EE; border-radius: 11px; box-shadow: 0 12px 30px rgba(16,32,52,.14); padding: 6px; min-width: 180px; }
+    .res-menu-it { display: block; width: 100%; text-align: left; background: none; border: 0; border-radius: 8px; padding: 8px 12px; font-size: 13px; color: #35485B; cursor: pointer; }
+    .res-menu-it:hover { background: #F3EFFE; }
+    .res-menu-it.on { color: var(--propia-brand, #6D4FE3); font-weight: 700; background: #F3EFFE; }
+
+    .res-colsmenu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 21; background: #fff; border: 1px solid #E1E8EE; border-radius: 11px; box-shadow: 0 12px 30px rgba(16,32,52,.14); padding: 10px; min-width: 320px; }
+    .res-colsmenu-h { font-size: 10.5px; font-weight: 700; color: #90A4B7; letter-spacing: .4px; padding: 2px 4px 8px; }
+    .res-colsmenu-i { display: flex; align-items: center; gap: 8px; padding: 3px 2px; }
+    .res-colsmenu-ord { display: flex; flex-direction: column; gap: 1px; }
+    .res-colsmenu-mv { width: 18px; height: 14px; line-height: 1; border: 1px solid #E1E8EE; border-radius: 4px; background: #fff; color: #7C8B9A; font-size: 8px; cursor: pointer; padding: 0; }
+    .res-colsmenu-mv:disabled { opacity: .3; cursor: default; }
+    .res-cfg-vis { display: flex; align-items: center; margin: 0; }
+    .res-cfg-inp { flex: 1; border: 1px solid #E1E8EE; border-radius: 7px; padding: 5px 8px; font-size: 12.5px; color: #33475B; outline: none; }
+    .res-cfg-inp:focus { border-color: var(--propia-brand, #6D4FE3); }
+    .res-cfg-req { font-size: 10px; font-weight: 700; color: #B0BAC6; }
+    .res-colsmenu-acts { display: flex; justify-content: flex-end; padding-top: 8px; }
+    .res-colsmenu-act { background: none; border: 0; color: var(--propia-brand, #6D4FE3); font-size: 12px; font-weight: 700; cursor: pointer; }
+
+    .res-msg { margin-bottom: 12px; font-size: 13px; padding: 8px 12px; border-radius: 9px; }
+    .res-msg.ok { background: #EAF7EF; color: #15703F; }
+    .res-msg.err { background: #FDECEC; color: #C0392B; }
+
+    /* ---- Tabla ---- */
+    .res-table { background: #fff; border: 1px solid #E1E8EE; border-radius: 14px; box-shadow: 0 1px 2px rgba(16,32,52,.04); overflow: hidden; }
+    .res-scroll { overflow: auto; max-height: calc(100vh - 320px); }
+    .res-grid { display: grid; align-items: center; gap: 8px; padding: 6px 14px; min-width: 900px; }
+    .res-head { position: sticky; top: 0; z-index: 6; background: #F7F9FB; font-size: 10.5px; font-weight: 700; color: #90A4B7; letter-spacing: .4px; border-bottom: 1px solid #E1E8EE; }
+    .res-head .res-c { text-align: center; }
+    .res-row { border-bottom: 1px solid #EEF2F6; font-size: 13.5px; }
+    .res-row:hover { background: #FAFBFD; }
+    .res-c-cell { color: #35485B; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .res-c-cell.res-c { text-align: center; }
+    .res-cod { font-weight: 700; color: #4B2BB0; }
+    .res-nom { font-weight: 600; color: #1B2A3A; }
+    .res-mut { color: #6B7C8F; }
+    .res-tag { font-size: 10px; font-weight: 700; color: #6B7C8F; background: #EEF2F6; border-radius: 6px; padding: 1px 6px; margin-left: 6px; }
+    .res-empty { text-align: center; color: #90A4B7; padding: 30px 0; }
+
+    .res-exp-col { display: flex; align-items: center; justify-content: center; }
+    .res-exp { width: 26px; height: 26px; border: 0; border-radius: 7px; background: #F1ECFD; color: var(--propia-brand, #6D4FE3); display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s; }
+    .res-row:hover .res-exp { opacity: 1; }
+    .res-exp:hover { background: #E4DBFB; }
+
+    /* Alta inline al pie: misma grilla que las filas, un input por columna (como el modal). */
+    .res-newrow { border-top: 1px solid #E1E8EE; background: #FCFCFE; }
+    .res-newrow .res-exp.res-exp-nf { opacity: .4; }
+    .res-newrow:focus-within .res-exp.res-exp-nf, .res-newrow:hover .res-exp.res-exp-nf { opacity: 1; }
+    .res-newrow .res-exp.res-exp-nf:disabled { opacity: .2; cursor: default; }
+    .res-nf-inp { width: 100%; box-sizing: border-box; border: 1px solid #D8E0E8; border-radius: 8px; padding: 6px 9px; font-size: 12.5px; color: #1B2A3A; background: #fff; outline: none; font-family: inherit; }
+    .res-nf-inp:focus { border-color: #6D4FE3; box-shadow: 0 0 0 3px rgba(109,79,227,.12); }
+    .res-nf-unidad { position: relative; }
+    .res-nf-persona { min-width: 0; }
+    /* El selector de terceros trae su propio input; que ocupe el ancho de la celda del nombre. */
+    .res-nf-persona .sp, .res-nf-persona .sp-search, .res-nf-persona .sp-chip { width: 100%; }
+    .res-nf-ro { font-size: 12px; color: #90A4B7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .res-nf-habchk { display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 12px; color: #47586A; }
+    .res-nf-act { display: flex; justify-content: flex-end; }
+    .res-nf-add { background: #6D4FE3; color: #fff; border: 0; border-radius: 8px; padding: 7px 12px; font-size: 12.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    .res-nf-add:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* Abre HACIA ARRIBA: la fila de alta va al fondo del contenedor con overflow, y un dropdown
+       hacia abajo quedaria recortado. Hacia arriba se muestra sobre las filas, sin recorte. */
+    .res-drop { position: absolute; bottom: calc(100% + 4px); left: 0; min-width: 220px; z-index: 30; background: #fff; border: 1px solid #D8E0E8; border-radius: 10px; box-shadow: 0 -8px 28px rgba(16,32,52,.16); overflow: hidden; max-height: 260px; overflow-y: auto; }
+    .res-drop-it { display: flex; align-items: baseline; gap: 10px; width: 100%; text-align: left; background: none; border: 0; padding: 8px 12px; cursor: pointer; }
+    .res-drop-it:hover { background: #F3EFFE; }
+    .res-drop-cod { font-weight: 700; color: #4B2BB0; font-size: 13px; }
+    .res-drop-meta { font-size: 12px; color: #7C8B9A; }
+
+    .res-group { display: flex; align-items: center; gap: 10px; padding: 10px 16px 6px; border-top: 1px solid #EEF2F6; }
+    .res-group:first-of-type { border-top: 0; }
+    .res-group-chip { font-size: 12px; font-weight: 700; color: var(--propia-brand, #6D4FE3); background: #F3EFFE; border-radius: 8px; padding: 3px 11px; }
+    .res-group-n { font-size: 11.5px; font-weight: 700; color: #90A4B7; background: #F1F4F7; border-radius: 10px; padding: 1px 9px; }
+
+    .res-rol { font-size: 11px; font-weight: 700; border-radius: 8px; padding: 2px 9px; }
+    .res-rol-prop { background: #EAF1FE; color: #2857C4; }
+    .res-rol-resi { background: #E9F7EF; color: #15804A; }
+    .res-rol-arr { background: #FEF3E6; color: #B7651B; }
+    .res-rol-otro { background: #F1F4F7; color: #6B7C8F; }
+</style>

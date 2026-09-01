@@ -31,6 +31,8 @@ public interface IMiCopropiedadService
 
     // Personas vinculadas a una unidad (Propietario/Residente/Familiar)
     Task<IReadOnlyList<UnidadPersonaDto>> ListPersonasUnidadAsync(Guid unidadId, CancellationToken ct);
+    // Modulo Residentes: TODAS las personas/empresas de las unidades del tenant (con el codigo de unidad).
+    Task<IReadOnlyList<ResidenteResumenDto>> ListResidentesAsync(CancellationToken ct);
     Task<UnidadPersonaDto> AgregarPersonaUnidadAsync(Guid unidadId, AgregarPersonaUnidadRequest req, CancellationToken ct);
     Task<UnidadPersonaDto?> EditarPersonaUnidadAsync(Guid unidadPersonaId, AgregarPersonaUnidadRequest req, CancellationToken ct);
     Task<bool> EliminarPersonaUnidadAsync(Guid unidadPersonaId, CancellationToken ct);

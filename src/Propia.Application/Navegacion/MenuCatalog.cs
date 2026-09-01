@@ -40,10 +40,11 @@ public static class MenuCatalog
         // Mi copropiedad
         new MenuItemDef("mi-copropiedad", "tabMiPH", "Mi copropiedad", "/mi-copropiedad", "fi-rr-building", 1),
         new MenuItemDef("mi-distribucion", "tabMiPH", "Unidades Privadas", "/distribucion", "fi-rr-apps", 2),
-        new MenuItemDef("mi-zonas", "tabMiPH", "Zonas Comunes", "/zonas-comunes", "fi-rr-trees", 3),
-        new MenuItemDef("mi-equipos", "tabMiPH", "Equipos y Activos", "/equipos-activos", "fi-rr-settings", 4),
-        new MenuItemDef("mi-directorio", "tabMiPH", "Directorio", "/directorio", "fi-rr-address-book", 5),
-        new MenuItemDef("mi-usuarios", "tabMiPH", "Usuarios y roles", "/usuarios", "fi-rr-users-alt", 6),
+        new MenuItemDef("mi-residentes", "tabMiPH", "Residentes", "/residentes", "fi-rr-users", 3),
+        new MenuItemDef("mi-zonas", "tabMiPH", "Zonas Comunes", "/zonas-comunes", "fi-rr-trees", 4),
+        new MenuItemDef("mi-equipos", "tabMiPH", "Equipos y Activos", "/equipos-activos", "fi-rr-settings", 5),
+        new MenuItemDef("mi-directorio", "tabMiPH", "Directorio", "/directorio", "fi-rr-address-book", 6),
+        new MenuItemDef("mi-usuarios", "tabMiPH", "Usuarios y roles", "/usuarios", "fi-rr-users-alt", 7),
 
         // Finanzas
         new MenuItemDef("fin-presupuesto", "tabFinanzas", "Presupuesto y cuotas", "/presupuesto", "fi-rr-money-bill-wave", 1),

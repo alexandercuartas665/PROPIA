@@ -161,6 +161,8 @@ public class MiCopropiedadController : ControllerBase
 
     // ---------- Seccion 2: Distribucion - Unidades ----------
     [HttpGet("unidades")] public async Task<IActionResult> ListUnidades(CancellationToken ct) => Ok(await _svc.ListUnidadesAsync(ct));
+    // Modulo Residentes: todas las personas/empresas de las unidades del tenant.
+    [HttpGet("residentes")] public async Task<IActionResult> ListResidentes(CancellationToken ct) => Ok(await _svc.ListResidentesAsync(ct));
     [HttpGet("unidades/{id:guid}")]
     public async Task<IActionResult> ObtenerUnidad(Guid id, CancellationToken ct)
     {

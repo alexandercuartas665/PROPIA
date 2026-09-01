@@ -362,6 +362,50 @@ public class MiCopropiedadService : IMiCopropiedadService
             .ToList();
     }
 
+    // Modulo Residentes: TODAS las personas/empresas de TODAS las unidades del tenant (RLS ya
+    // acota al tenant activo), cada una con el codigo de su unidad (TORRE-NUMERO, ej. A1-101).
+    public async Task<IReadOnlyList<ResidenteResumenDto>> ListResidentesAsync(CancellationToken ct)
+    {
+        var rows = await _db.UnidadPersonas.AsNoTracking().ToListAsync(ct);
+        if (rows.Count == 0) return Array.Empty<ResidenteResumenDto>();
+
+        var (personas, empresas) = await ResolverEntidadesAsync(rows, ct);
+
+        var unidadIds = rows.Select(r => r.UnidadId).Distinct().ToList();
+        var unidades = await _db.UnidadesPrivadas.AsNoTracking().Include(u => u.Torre)
+            .Where(u => unidadIds.Contains(u.Id))
+            .Select(u => new { u.Id, u.Numero, TorreNombre = u.Torre != null ? u.Torre.Nombre : null })
+            .ToDictionaryAsync(u => u.Id, ct);
+
+        var lista = new List<ResidenteResumenDto>(rows.Count);
+        foreach (var up in rows)
+        {
+            unidades.TryGetValue(up.UnidadId, out var u);
+            var numero = u?.Numero ?? "";
+            var torre = u?.TorreNombre;
+            var torreShort = string.IsNullOrWhiteSpace(torre) ? "" : torre!.Split(' ').Last();
+            var codigo = torreShort.Length > 0 ? $"{torreShort}-{numero}" : numero;
+
+            string nombre, documento; string? email, tel; Guid? personaId = null, empresaId = null;
+            if (up.EntidadTipo == EntidadDirectorio.Empresa && up.EmpresaId is Guid eid && empresas.TryGetValue(eid, out var e))
+            {
+                nombre = e.RazonSocial; documento = NitConDv(e); email = e.Email; tel = e.Telefono; empresaId = e.Id;
+            }
+            else if (up.PersonaId is Guid pid && personas.TryGetValue(pid, out var p))
+            {
+                nombre = ($"{p.Nombres} {p.Apellidos}").Trim(); documento = p.Documento; email = p.Email; tel = p.Telefono; personaId = p.Id;
+            }
+            else { nombre = "(desconocido)"; documento = ""; email = null; tel = null; }
+
+            lista.Add(new ResidenteResumenDto(
+                up.Id, up.UnidadId, numero, codigo, torre,
+                up.EntidadTipo, personaId, empresaId,
+                nombre, documento, email, tel,
+                up.Rol, up.Habita, up.Parentesco, up.Activo));
+        }
+        return lista.OrderBy(r => r.UnidadCodigo).ThenBy(r => r.Rol).ThenBy(r => r.Nombre).ToList();
+    }
+
     private async Task<(Dictionary<Guid, Persona> Personas, Dictionary<Guid, Empresa> Empresas)>
         ResolverEntidadesAsync(List<UnidadPersona> rows, CancellationToken ct)
     {
