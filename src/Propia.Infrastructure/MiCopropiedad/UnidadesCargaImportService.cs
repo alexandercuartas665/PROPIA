@@ -3,9 +3,11 @@ using ClosedXML.Excel;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Propia.Application.Common;
+using Propia.Application.Directorio;
 using Propia.Application.MiCopropiedad;
 using Propia.Application.Porteria;
 using Propia.Domain.Enums;
+using Propia.Infrastructure.Directorio;
 using Propia.Infrastructure.Persistence;
 
 namespace Propia.Infrastructure.MiCopropiedad;
@@ -22,15 +24,17 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
     private readonly IHttpContextAccessor _http;
     private readonly IMiCopropiedadService _mi;
     private readonly IPorteriaService _porteria;
+    private readonly IDirectorioService _dir;
 
     public UnidadesCargaImportService(PropiaDbContext db, ITenantContext tenant, IHttpContextAccessor http,
-        IMiCopropiedadService mi, IPorteriaService porteria)
+        IMiCopropiedadService mi, IPorteriaService porteria, IDirectorioService dir)
     {
         _db = db;
         _tenant = tenant;
         _http = http;
         _mi = mi;
         _porteria = porteria;
+        _dir = dir;
     }
 
     public async Task<ResultadoCargaUnidades> ImportarAsync(Stream contenidoXlsx, CancellationToken ct, bool forzarTenantActual = false, bool reemplazarDependientes = false)
@@ -47,13 +51,16 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
         var mascotas = LeerHoja(wb, "MASCOTAS");
         var zonas = LeerHoja(wb, "ZONAS COMUNES");
         var equipos = LeerHoja(wb, "EQUIPOS");
+        // Terceros se procesan aparte (no por grupo de copropiedad): un tercero puede ir a "Todas las
+        // copropiedades" o a una sola, y su columna COPROPIEDAD NO debe crear grupos en el loop.
+        var terceros = LeerHoja(wb, "TERCEROS");
 
         var nombresCopro = unidades.Concat(personas).Concat(vehiculos).Concat(mascotas).Concat(zonas).Concat(equipos)
             .Select(r => Val(r.Row, "COPROPIEDAD"))
             .Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
-        int nCopro = 0, nUni = 0, nUniAct = 0, nAnexo = 0, nPer = 0, nVeh = 0, nMas = 0, nZon = 0, nEqu = 0;
+        int nCopro = 0, nUni = 0, nUniAct = 0, nAnexo = 0, nPer = 0, nVeh = 0, nMas = 0, nZon = 0, nEqu = 0, nTer = 0;
 
         // Grupos a procesar. Modo normal: un grupo por cada nombre de COPROPIEDAD de la plantilla
         // (resuelto contra las copropiedades del cliente). Modo onboarding (forzarTenantActual):
@@ -278,9 +285,69 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             }
         }
 
+        // ---- Terceros (Directorio) ----
+        // Un tercero NO se relaciona con una unidad; solo con la copropiedad. La Persona/Empresa es
+        // GLOBAL (se busca por documento/NIT para no duplicar) y se ASEGURA un vinculo en cada
+        // copropiedad destino. "Todas las copropiedades" -> todas las del cliente (visible en todas).
+        foreach (var (row, fila) in terceros)
+        {
+            try
+            {
+                var cop = Val(row, "COPROPIEDAD").Trim();
+                if (cop.Length == 0) { errores.Add(new("TERCEROS", fila, "Falta COPROPIEDAD")); continue; }
+
+                List<Guid> destinos;
+                if (forzarTenantActual && _tenant.CurrentTenantId is { } actualT)
+                    destinos = new List<Guid> { actualT };   // onboarding: solo la copropiedad recien creada
+                else if (Eq(cop, UnidadesPlantillaService.TodasLasCopropiedades))
+                    destinos = copros.Values.Distinct().ToList();
+                else if (copros.TryGetValue(cop.ToLowerInvariant(), out var tid))
+                    destinos = new List<Guid> { tid };
+                else { errores.Add(new("TERCEROS", fila, $"Copropiedad '{cop}' no existe o no la administras.")); continue; }
+                if (destinos.Count == 0) { errores.Add(new("TERCEROS", fila, "No hay copropiedades destino.")); continue; }
+
+                var doc = Val(row, "IDENTIFICACION").Trim();
+                if (doc.Length == 0) { errores.Add(new("TERCEROS", fila, "Falta IDENTIFICACION")); continue; }
+                var nombre = Val(row, "NOMBRE").Trim();
+                var email = NullIfEmpty(Val(row, "EMAIL"));
+                var tel = NullIfEmpty(Val(row, "TELEFONO"));
+                var tipoId = Val(row, "TIPO ID").Trim();
+
+                await SetTenantSqlAsync(destinos[0], ct);   // el alta global auto-vincula a esta primera
+
+                if (string.Equals(tipoId, "NIT", StringComparison.OrdinalIgnoreCase))
+                {
+                    var emp = await _dir.BuscarEmpresaPorNitAsync(doc, ct);
+                    var empId = emp?.Id ?? (await _dir.CrearEmpresaAsync(new CrearEmpresaRequest(
+                        doc, null, string.IsNullOrWhiteSpace(nombre) ? doc : nombre, null, email, tel, null, null, null, null, null), ct)).Id;
+                    foreach (var tid in destinos)
+                    {
+                        await SetTenantSqlAsync(tid, ct);
+                        await VinculoDirectorio.AsegurarEmpresaAsync(_db, _tenant, empId, ct);
+                    }
+                }
+                else
+                {
+                    var tipoDoc = ParseTipoDocumento(tipoId);
+                    var (nombres, apellidos) = SplitNombre(nombre);
+                    if (apellidos.Length == 0) apellidos = "-";   // el alta de persona exige apellidos
+                    var per = await _dir.BuscarPersonaPorDocumentoAsync(new BuscarPorDocumentoRequest(tipoDoc, doc), ct);
+                    var perId = per?.Id ?? (await _dir.CrearPersonaAsync(new CrearPersonaRequest(
+                        tipoDoc, doc, string.IsNullOrWhiteSpace(nombres) ? doc : nombres, apellidos, email, tel, null, null), ct)).Id;
+                    foreach (var tid in destinos)
+                    {
+                        await SetTenantSqlAsync(tid, ct);
+                        await VinculoDirectorio.AsegurarPersonaAsync(_db, _tenant, perId, ct);
+                    }
+                }
+                nTer++;
+            }
+            catch (Exception ex) { errores.Add(new("TERCEROS", fila, Fallo(ex))); }
+        }
+
         // Restaura el contexto de tenant original de la sesion.
         if (tenantOriginal is { } to) await SetTenantSqlAsync(to, ct);
-        return new ResultadoCargaUnidades(nCopro, nUni, nAnexo, nPer, nVeh, nMas, nZon, nEqu, errores, nUniAct);
+        return new ResultadoCargaUnidades(nCopro, nUni, nAnexo, nPer, nVeh, nMas, nZon, nEqu, errores, nUniAct, nTer);
     }
 
     // Fija el tenant en EF (ITenantContext, para HasQueryFilter + TenantId al guardar) y en la
@@ -418,6 +485,17 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
         var parts = nombre.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
         return parts.Length == 2 ? (parts[0], parts[1]) : (parts[0], "");
     }
+
+    // Mapea el TIPO ID de la plantilla de terceros (CC/CE/Pasaporte/NIT/Otro) al enum TipoDocumento.
+    private static TipoDocumento ParseTipoDocumento(string s) => (s ?? "").Trim().ToUpperInvariant() switch
+    {
+        "CC" => TipoDocumento.CC,
+        "CE" => TipoDocumento.CE,
+        "PASAPORTE" or "PA" => TipoDocumento.PA,
+        "TI" => TipoDocumento.TI,
+        "NIT" => TipoDocumento.NIT,
+        _ => TipoDocumento.CC   // "Otro" y desconocidos -> CC por defecto
+    };
 
     private static TEnum ParseEnum<TEnum>(string s, TEnum fallback) where TEnum : struct, Enum
     {

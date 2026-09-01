@@ -18,6 +18,11 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     private const int DataStart = 4;      // fila 1 = banner, fila 2 = encabezado, fila 3 = ayuda, datos desde la 4
     private const int MaxRows = 1000;     // hasta donde se aplican los dropdowns
 
+    /// <summary>Opcion especial de la columna COPROPIEDAD en la hoja TERCEROS: el tercero queda visible
+    /// en TODAS las copropiedades del cliente. La reusa el importador para saber que debe crear el
+    /// vinculo en cada copropiedad.</summary>
+    public const string TodasLasCopropiedades = "Todas las copropiedades";
+
     // Paleta PROPIA (para que la plantilla se vea como salida del sistema).
     private static readonly XLColor Brand = XLColor.FromHtml("#6D4FE3");
     private static readonly XLColor Ink = XLColor.FromHtml("#1B2A3A");
@@ -50,13 +55,15 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         // libre (sin dropdown) en vez de romper la validacion.
         var coproList = InlineList(copros.Select(c => c.Nombre));
         var rolesList = InlineList(roles);
+        // Terceros: la lista arranca con "Todas las copropiedades" (visible en todas) + las del cliente.
+        var coproTercerosList = InlineList(new[] { TodasLasCopropiedades }.Concat(copros.Select(c => c.Nombre)));
 
         // ---- Hojas de datos ----
         HojaUnidades(wb, coproList, camposUnidad);
         HojaPersonas(wb, coproList, rolesList);
         HojaVehiculos(wb, coproList);
         HojaMascotas(wb, coproList);
-        HojaTerceros(wb, coproList);
+        HojaTerceros(wb, coproTercerosList);
         HojaZonasComunes(wb, coproList);
         HojaEquipos(wb, coproList);
 
@@ -162,23 +169,24 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         Ajustar(ws, cols.Count);
     }
 
-    private static void HojaTerceros(XLWorkbook wb, string? coproRange)
+    // Un tercero NO se relaciona con una unidad; solo con la copropiedad. Con "Todas las copropiedades"
+    // el tercero queda visible en TODAS las copropiedades del cliente (se crea global + un vinculo en cada
+    // una). Por eso no hay columnas ALCANCE ni UNIDAD PRIVADA.
+    private static void HojaTerceros(XLWorkbook wb, string? coproTercerosRange)
     {
         var cols = new List<(string H, string Ayuda)>
         {
-            ("COPROPIEDAD", "Elige de la lista"),
-            ("ALCANCE", "TODAS = todas las unidades; ESPECIFICA = una"),
-            ("UNIDAD PRIVADA", "Solo si ALCANCE = ESPECIFICA"),
+            ("COPROPIEDAD", "Elige de la lista. 'Todas las copropiedades' = visible en todas."),
             ("TIPO ID", "Elige de la lista"),
             ("NOMBRE", "Nombre completo / razon social"),
             ("IDENTIFICACION", "Documento/NIT"),
             ("EMAIL", ""), ("TELEFONO", ""),
         };
         var ws = Encabezado(wb, "TERCEROS", cols);
-        Dropdown(ws, 1, coproRange);
-        DropdownInline(ws, 2, "TODAS,ESPECIFICA");
-        DropdownInline(ws, 4, "CC,CE,Pasaporte,NIT,Otro");
-        Ejemplo(ws, EjemploCopro, "ESPECIFICA", "A1-203", "CC", "Maria Lopez", "987654321", "maria@correo.com", "3009876543");
+        Dropdown(ws, 1, coproTercerosRange);
+        DropdownInline(ws, 2, "CC,CE,Pasaporte,NIT,Otro");
+        // El ejemplo usa EjemploCopro para que el importador lo omita; la ayuda ya explica "Todas...".
+        Ejemplo(ws, EjemploCopro, "CC", "Maria Lopez", "987654321", "maria@correo.com", "3009876543");
         Ajustar(ws, cols.Count);
     }
 

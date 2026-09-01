@@ -16,7 +16,10 @@ public record ResultadoCargaUnidades(
     IReadOnlyList<CargaUnidadesError> Errores,
     // Unidades que ya existian y se ACTUALIZARON al recargar (modulo Unidades Privadas). En onboarding
     // siempre es 0: ahi toda unidad es nueva. Opcional para no romper construcciones existentes.
-    int UnidadesActualizadas = 0);
+    int UnidadesActualizadas = 0,
+    // Terceros (personas/empresas del Directorio) cargados desde la hoja TERCEROS. Con "Todas las
+    // copropiedades" el tercero queda vinculado a todas las copropiedades del cliente.
+    int Terceros = 0);
 
 /// <summary>
 /// Importa la plantilla Excel multi-hoja (Unidades/Personas/Vehiculos/Mascotas) y alimenta el
