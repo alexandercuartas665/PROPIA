@@ -13,7 +13,10 @@ public record ResultadoCargaUnidades(
     int Mascotas,
     int Zonas,
     int Equipos,
-    IReadOnlyList<CargaUnidadesError> Errores);
+    IReadOnlyList<CargaUnidadesError> Errores,
+    // Unidades que ya existian y se ACTUALIZARON al recargar (modulo Unidades Privadas). En onboarding
+    // siempre es 0: ahi toda unidad es nueva. Opcional para no romper construcciones existentes.
+    int UnidadesActualizadas = 0);
 
 /// <summary>
 /// Importa la plantilla Excel multi-hoja (Unidades/Personas/Vehiculos/Mascotas) y alimenta el
@@ -28,5 +31,11 @@ public interface IUnidadesCargaImportService
     /// Se usa en el onboarding (una sola copropiedad recien creada, cuyo nombre puede no coincidir
     /// con lo que el usuario escribio en la plantilla). Default false = comportamiento multi-copropiedad.
     /// </param>
-    Task<ResultadoCargaUnidades> ImportarAsync(Stream contenidoXlsx, CancellationToken ct, bool forzarTenantActual = false);
+    /// <param name="reemplazarDependientes">
+    /// Si es true (recarga desde el modulo Unidades Privadas, previa confirmacion del usuario), para las
+    /// categorias DEPENDIENTES que traiga el archivo (personas, vehiculos, mascotas, zonas comunes,
+    /// equipos) se BORRAN primero las existentes de esa copropiedad y se cargan de nuevo (reemplazo). Las
+    /// UNIDADES nunca se borran: se actualizan (upsert) para conservar sus vinculos. Default false.
+    /// </param>
+    Task<ResultadoCargaUnidades> ImportarAsync(Stream contenidoXlsx, CancellationToken ct, bool forzarTenantActual = false, bool reemplazarDependientes = false);
 }

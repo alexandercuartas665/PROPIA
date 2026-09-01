@@ -104,13 +104,13 @@ public class MiCopropiedadController : ControllerBase
     /// una o varias copropiedades del cliente. Devuelve el resumen + errores por fila.</summary>
     [HttpPost("distribucion/importar-carga")]
     [RequestSizeLimit(15 * 1024 * 1024)]
-    public async Task<IActionResult> ImportarCarga([FromForm] IFormFile? file, CancellationToken ct, [FromQuery] bool tenantActual = false)
+    public async Task<IActionResult> ImportarCarga([FromForm] IFormFile? file, CancellationToken ct, [FromQuery] bool tenantActual = false, [FromQuery] bool reemplazar = false)
     {
         if (file is null || file.Length == 0) return BadRequest(new { error = "archivo_vacio" });
         try
         {
             await using var s = file.OpenReadStream();
-            var res = await _cargaImport.ImportarAsync(s, ct, tenantActual);
+            var res = await _cargaImport.ImportarAsync(s, ct, tenantActual, reemplazar);
             return Ok(res);
         }
         catch (Exception ex) { return BadRequest(new { error = "archivo_invalido", detalle = ex.Message }); }

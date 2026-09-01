@@ -69,7 +69,7 @@
             </div>
 
             <div class="cg-body">
-                @if (_cargaResult is null)
+                @if (_cargaResult is null && !_confirmCarga)
                 {
                     @* Paso 1: seleccionar archivo *@
                     <label class="cg-drop">
@@ -78,11 +78,45 @@
                         <span class="cg-drop-h">Usa la plantilla descargada. Formato .xlsx</span>
                         <InputFile OnChange="OnFileSelected" accept=".xlsx" style="display:none" disabled="@_cargaBusy" />
                     </label>
+                    <div class="cg-note">
+                        Al procesar: las <b>unidades</b> existentes se <b>actualizan</b>; personas, vehiculos,
+                        mascotas, zonas comunes y equipos que traiga el archivo se <b>reemplazan</b> por los del
+                        archivo (los actuales de esta copropiedad se retiran; los vehiculos con historial de
+                        porteria se conservan como inactivos).
+                    </div>
                     <div class="cg-actions">
                         <button class="cg-btn-ghost" type="button" @onclick="CerrarCargaModal" disabled="@_cargaBusy">Cancelar</button>
-                        <button class="cg-btn-brand" type="button" @onclick="EjecutarCargaAsync" disabled="@(_cargaBusy || _cargaFile is null)">
-                            @(_cargaBusy ? "Procesando..." : "Cargar y procesar")
+                        <button class="cg-btn-brand" type="button" @onclick="PedirConfirmacionCarga" disabled="@(_cargaBusy || _cargaBytes is null)">
+                            Continuar
                         </button>
+                    </div>
+                }
+                else if (_cargaResult is null && _confirmCarga)
+                {
+                    @* Paso 1b: confirmacion (reemplazo destructivo de dependientes) *@
+                    <div class="cg-confirm">
+                        <div class="cg-confirm-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+                        </div>
+                        <div class="cg-confirm-title">Confirmar carga con reemplazo</div>
+                        <div class="cg-confirm-sub">
+                            Vas a procesar <b>@_cargaFileName</b>. Las <b>unidades</b> se actualizan (sin borrar),
+                            pero <b>personas, vehiculos, mascotas, zonas comunes y equipos</b> que incluya el archivo
+                            <b>reemplazan</b> a los actuales de esta copropiedad: los registros vigentes se retiran y
+                            se cargan los del archivo (los vehiculos con historial de porteria quedan inactivos).
+                            Esta accion <b>no se puede deshacer</b>.
+                        </div>
+                        <label class="cg-confirm-chk">
+                            <input type="checkbox" checked="@_confirmChecked"
+                                   @onchange="@(e => _confirmChecked = (bool)(e.Value ?? false))" disabled="@_cargaBusy" />
+                            <span>Entiendo que se reemplazaran esas categorias y confirmo la carga.</span>
+                        </label>
+                        <div class="cg-actions">
+                            <button class="cg-btn-ghost" type="button" @onclick="VolverSeleccion" disabled="@_cargaBusy">Volver</button>
+                            <button class="cg-btn-danger" type="button" @onclick="EjecutarCargaAsync" disabled="@(_cargaBusy || !_confirmChecked)">
+                                @(_cargaBusy ? "Procesando..." : "Reemplazar y cargar")
+                            </button>
+                        </div>
                     </div>
                 }
                 else
@@ -96,13 +130,14 @@
                     </div>
 
                     <table class="cg-tbl">
-                        <thead><tr><th>Hoja</th><th>Creados</th><th>Errores</th></tr></thead>
+                        <thead><tr><th>Hoja</th><th>Creados</th><th>Actualizados</th><th>Errores</th></tr></thead>
                         <tbody>
                             @foreach (var f in ResumenHojas())
                             {
                                 <tr class="@(f.Errores > 0 ? "cg-row-warn" : "")">
                                     <td>@f.Hoja</td>
                                     <td>@f.Creados</td>
+                                    <td>@(f.Actualizados > 0 ? f.Actualizados.ToString() : "-")</td>
                                     <td>@(f.Errores > 0 ? f.Errores.ToString() : "-")</td>
                                 </tr>
                             }
@@ -1019,37 +1054,68 @@ else
     private bool _showCargaModal;
     private IBrowserFile? _cargaFile;
     private string? _cargaFileName;
+    // Bytes del archivo, leidos al seleccionarlo (mientras el <InputFile> sigue montado). Necesario porque
+    // al pasar al paso de confirmacion el <InputFile> se desmonta del DOM: leer el stream despues fallaria
+    // con "_blazorFilesById is null". Se envian estos bytes al procesar.
+    private byte[]? _cargaBytes;
+
+    private bool _confirmCarga;      // paso de confirmacion del reemplazo (antes de procesar)
+    private bool _confirmChecked;    // el usuario marco "entiendo que se reemplazaran..."
 
     private void AbrirCargaModal()
     {
-        _cargaFile = null; _cargaFileName = null; _cargaResult = null; _showCargaModal = true;
+        _cargaFile = null; _cargaFileName = null; _cargaBytes = null; _cargaResult = null;
+        _confirmCarga = false; _confirmChecked = false; _showCargaModal = true;
     }
     private void CerrarCargaModal() { if (!_cargaBusy) _showCargaModal = false; }
-    private void ReiniciarCarga() { _cargaResult = null; _cargaFile = null; _cargaFileName = null; }
+    private void ReiniciarCarga()
+    {
+        _cargaResult = null; _cargaFile = null; _cargaFileName = null; _cargaBytes = null;
+        _confirmCarga = false; _confirmChecked = false;
+    }
 
-    private void OnFileSelected(InputFileChangeEventArgs e)
+    // Abre el paso de confirmacion (la carga reemplaza categorias dependientes; no procesar sin avisar).
+    private void PedirConfirmacionCarga()
+    {
+        if (_cargaBytes is null) return;
+        _confirmChecked = false; _confirmCarga = true;
+    }
+    private void VolverSeleccion() { _confirmCarga = false; _confirmChecked = false; }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
     {
         _cargaFile = e.File;
         _cargaFileName = e.File?.Name;
+        _cargaBytes = null;
+        if (e.File is not null)
+        {
+            // Bufferiza YA (el InputFile esta montado). Asi el procesado no depende del elemento del DOM.
+            using var ms = new MemoryStream();
+            await e.File.OpenReadStream(15_000_000).CopyToAsync(ms);
+            _cargaBytes = ms.ToArray();
+        }
     }
 
     // Sube el archivo seleccionado y guarda el resultado para el log detallado.
     private async Task EjecutarCargaAsync()
     {
-        if (_cargaFile is null) return;
+        if (_cargaBytes is null) return;
         _cargaBusy = true; _cargaResult = null;
         try
         {
             using var content = new MultipartFormDataContent();
-            var sc = new StreamContent(_cargaFile.OpenReadStream(15_000_000));
+            // Se envian los bytes ya bufferizados (no se relee el <InputFile>, que puede estar desmontado).
+            var sc = new ByteArrayContent(_cargaBytes);
             sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            content.Add(sc, "file", _cargaFile.Name);
-            var resp = await Auth().PostAsync("/api/mi-copropiedad/distribucion/importar-carga", content);
+            content.Add(sc, "file", _cargaFileName ?? "carga.xlsx");
+            // reemplazar=true: el usuario confirmo el reemplazo de las categorias dependientes.
+            var resp = await Auth().PostAsync("/api/mi-copropiedad/distribucion/importar-carga?reemplazar=true", content);
             if (resp.IsSuccessStatusCode)
             {
                 _cargaResult = await resp.Content.ReadFromJsonAsync<Propia.Application.MiCopropiedad.ResultadoCargaUnidades>();
-                await CargarAsync();   // refresca la vista con las unidades creadas
+                _confirmCarga = false;
+                await CargarAsync();   // refresca la vista con las unidades creadas/actualizadas
             }
             else
             {
@@ -1065,20 +1131,20 @@ else
         finally { _cargaBusy = false; }
     }
 
-    // Resumen por hoja para el log del modal: creados (contadores del backend) + errores de esa hoja.
-    private readonly record struct ResumenHoja(string Hoja, int Creados, int Errores);
+    // Resumen por hoja para el log del modal: creados + actualizados (contadores del backend) + errores.
+    private readonly record struct ResumenHoja(string Hoja, int Creados, int Actualizados, int Errores);
     private IEnumerable<ResumenHoja> ResumenHojas()
     {
         if (_cargaResult is null) yield break;
         int Err(string h) => _cargaResult.Errores.Count(e => string.Equals(e.Hoja, h, StringComparison.OrdinalIgnoreCase));
-        yield return new("UNIDADES PRIVADAS", _cargaResult.Unidades + _cargaResult.Anexos, Err("UNIDADES PRIVADAS"));
-        yield return new("PERSONAS", _cargaResult.Personas, Err("PERSONAS"));
-        yield return new("VEHICULOS", _cargaResult.Vehiculos, Err("VEHICULOS"));
-        yield return new("MASCOTAS", _cargaResult.Mascotas, Err("MASCOTAS"));
-        yield return new("ZONAS COMUNES", _cargaResult.Zonas, Err("ZONAS COMUNES"));
-        yield return new("EQUIPOS", _cargaResult.Equipos, Err("EQUIPOS"));
+        yield return new("UNIDADES PRIVADAS", _cargaResult.Unidades + _cargaResult.Anexos, _cargaResult.UnidadesActualizadas, Err("UNIDADES PRIVADAS"));
+        yield return new("PERSONAS", _cargaResult.Personas, 0, Err("PERSONAS"));
+        yield return new("VEHICULOS", _cargaResult.Vehiculos, 0, Err("VEHICULOS"));
+        yield return new("MASCOTAS", _cargaResult.Mascotas, 0, Err("MASCOTAS"));
+        yield return new("ZONAS COMUNES", _cargaResult.Zonas, 0, Err("ZONAS COMUNES"));
+        yield return new("EQUIPOS", _cargaResult.Equipos, 0, Err("EQUIPOS"));
         var gen = Err("GENERAL");
-        if (gen > 0) yield return new("GENERAL", 0, gen);
+        if (gen > 0) yield return new("GENERAL", 0, 0, gen);
     }
 
     // Plantilla Excel multi-hoja generada por el backend (con datos de referencia + dropdowns).
@@ -1209,6 +1275,22 @@ else
     .cg-btn-ghost { height: 36px; padding: 0 14px; border-radius: 9px; border: 1px solid #E1E8EE; background: #fff; color: #516F90; font-size: 13px; font-weight: 600; cursor: pointer; }
     .cg-btn-brand { height: 36px; padding: 0 16px; border-radius: 9px; border: 1px solid var(--propia-brand, #6D4FE3); background: var(--propia-brand, #6D4FE3); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; }
     .cg-btn-brand:disabled { opacity: .55; cursor: default; }
+    .cg-btn-danger { height: 36px; padding: 0 16px; border-radius: 9px; border: 0; background: #E5484D; color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; }
+    .cg-btn-danger:hover:not(:disabled) { background: #D13438; }
+    .cg-btn-danger:disabled { opacity: .45; cursor: not-allowed; }
+    /* Nota informativa del paso 1 + panel de confirmacion del reemplazo */
+    .cg-note { margin-top: 12px; font-size: 12px; line-height: 1.5; color: #516F90; background: #F5F7FA; border: 1px solid #E7EDF3; border-radius: 8px; padding: 9px 11px; }
+    .cg-note b { color: #33475B; }
+    .cg-confirm { text-align: center; padding: 4px 2px; }
+    .cg-confirm-icon { width: 50px; height: 50px; margin: 0 auto 12px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: #FDECEC; color: #E5484D; }
+    .cg-confirm-title { font-size: 16px; font-weight: 800; color: #1B2A3A; margin-bottom: 8px; }
+    .cg-confirm-sub { font-size: 12.5px; line-height: 1.55; color: #516F90; margin-bottom: 14px; text-align: left; }
+    .cg-confirm-sub b { color: #33475B; }
+    .cg-confirm-chk { display: flex; align-items: flex-start; gap: 8px; text-align: left; font-size: 12.5px; color: #33475B; background: #FEF6E7; border: 1px solid #F6E2B8; border-radius: 8px; padding: 9px 11px; cursor: pointer; }
+    .cg-confirm-chk input { margin-top: 2px; }
+    [data-bs-theme="dark"] .cg-note { background: #1B2233; border-color: #2D3650; color: #C7CEDB; }
+    [data-bs-theme="dark"] .cg-confirm-title { color: #E4E8F0; }
+    [data-bs-theme="dark"] .cg-confirm-sub b { color: #E4E8F0; }
     .cg-summary { border-radius: 10px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
     .cg-summary.ok { background: #E6F6EE; border: 1px solid #BFE8D2; color: #0F8A4F; }
     .cg-summary.warn { background: #FFF6E6; border: 1px solid #F5DDA8; color: #A8720C; }

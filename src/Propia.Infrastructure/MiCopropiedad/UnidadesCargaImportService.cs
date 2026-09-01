@@ -33,7 +33,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
         _porteria = porteria;
     }
 
-    public async Task<ResultadoCargaUnidades> ImportarAsync(Stream contenidoXlsx, CancellationToken ct, bool forzarTenantActual = false)
+    public async Task<ResultadoCargaUnidades> ImportarAsync(Stream contenidoXlsx, CancellationToken ct, bool forzarTenantActual = false, bool reemplazarDependientes = false)
     {
         var errores = new List<CargaUnidadesError>();
         using var wb = new XLWorkbook(contenidoXlsx);
@@ -53,7 +53,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             .Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
-        int nCopro = 0, nUni = 0, nAnexo = 0, nPer = 0, nVeh = 0, nMas = 0, nZon = 0, nEqu = 0;
+        int nCopro = 0, nUni = 0, nUniAct = 0, nAnexo = 0, nPer = 0, nVeh = 0, nMas = 0, nZon = 0, nEqu = 0;
 
         // Grupos a procesar. Modo normal: un grupo por cada nombre de COPROPIEDAD de la plantilla
         // (resuelto contra las copropiedades del cliente). Modo onboarding (forzarTenantActual):
@@ -92,13 +92,40 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                 {
                     var numero = Val(row, "UNIDAD PRIVADA").Trim();
                     if (numero.Length == 0) { errores.Add(new("UNIDADES PRIVADAS", fila, "Falta UNIDAD PRIVADA")); continue; }
-                    var req = new CrearUnidadRequest(
-                        numero, ParseEnum(Val(row, "TIPO"), TipoUnidad.Apartamento), null, null,
-                        ParseDecimal(Val(row, "COEFICIENTE")), null, null, null, null, null, null,
-                        NullIfEmpty(Val(row, "MATRICULA")), true, null, NullIfEmpty(Val(row, "REF PAGO")));
-                    var creada = await _mi.CrearUnidadAsync(req, ct);
-                    numeroToId[numero] = creada.Id;
-                    nUni++;
+                    var tipo = ParseEnum(Val(row, "TIPO"), TipoUnidad.Apartamento);
+                    var coef = ParseDecimal(Val(row, "COEFICIENTE"));
+                    var matricula = NullIfEmpty(Val(row, "MATRICULA"));
+                    var refPago = NullIfEmpty(Val(row, "REF PAGO"));
+
+                    // Modo MODULO (recarga desde Unidades Privadas): si la unidad ya existe (por su
+                    // numero exacto), se ACTUALIZA en vez de crear. Solo se pisan los campos que trae la
+                    // plantilla (tipo, coeficiente, matricula, ref pago); torre, piso, area, etc. se
+                    // conservan. Modo ONBOARDING (todas): siempre crea (la copropiedad es nueva).
+                    var existente = todas
+                        ? null
+                        : await _db.UnidadesPrivadas.FirstOrDefaultAsync(x => x.Numero == numero, ct);
+                    if (existente is not null)
+                    {
+                        var upd = new ActualizarUnidadRequest(
+                            existente.Numero, tipo, existente.TorreId, existente.Piso,
+                            coef, existente.AreaM2, existente.Habitaciones, existente.Banos, existente.Parqueaderos,
+                            existente.Estado, existente.Observaciones,
+                            matricula ?? existente.MatriculaInmobiliaria, existente.PagaAdministracion,
+                            existente.CuotaMensual, refPago ?? existente.ReferenciaPago);
+                        await _mi.ActualizarUnidadAsync(existente.Id, upd, ct);
+                        numeroToId[numero] = existente.Id;
+                        nUniAct++;
+                    }
+                    else
+                    {
+                        var req = new CrearUnidadRequest(
+                            numero, tipo, null, null,
+                            coef, null, null, null, null, null, null,
+                            matricula, true, null, refPago);
+                        var creada = await _mi.CrearUnidadAsync(req, ct);
+                        numeroToId[numero] = creada.Id;
+                        nUni++;
+                    }
 
                     var agr = Val(row, "AGRUPACION").Trim();
                     var principal = Val(row, "PRINCIPAL").Trim();
@@ -126,8 +153,11 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                 catch (Exception ex) { errores.Add(new("UNIDADES PRIVADAS", fila, Fallo(ex))); }
             }
 
-            // ---- Personas ----
-            foreach (var (row, fila) in personas.Where(r => todas || Eq(Val(r.Row, "COPROPIEDAD"), nombre)))
+            // ---- Personas (reemplazo si aplica) ----
+            var personasGrp = personas.Where(r => todas || Eq(Val(r.Row, "COPROPIEDAD"), nombre)).ToList();
+            if (await ReemplazarSiAplicaAsync("PERSONAS", personasGrp.Count > 0, reemplazarDependientes,
+                    c => _db.UnidadPersonas.ExecuteDeleteAsync(c), errores, ct))
+            foreach (var (row, fila) in personasGrp)
             {
                 try
                 {
@@ -145,8 +175,14 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                 catch (Exception ex) { errores.Add(new("PERSONAS", fila, Fallo(ex))); }
             }
 
-            // ---- Vehiculos ----
-            foreach (var (row, fila) in vehiculos.Where(r => todas || Eq(Val(r.Row, "COPROPIEDAD"), nombre)))
+            // ---- Vehiculos (reemplazo si aplica) ----
+            // Los vehiculos NO se borran (su historial de porteria en registros_vehiculo es append-only,
+            // RN-10, y un DELETE dispararia un UPDATE prohibido por el FK SET NULL). Se DESACTIVAN los
+            // activos (soft-delete): eso preserva la auditoria y libera la placa para los nuevos.
+            var vehiculosGrp = vehiculos.Where(r => todas || Eq(Val(r.Row, "COPROPIEDAD"), nombre)).ToList();
+            if (await ReemplazarSiAplicaAsync("VEHICULOS", vehiculosGrp.Count > 0, reemplazarDependientes,
+                    c => _db.VehiculosAutorizados.Where(v => v.Activo).ExecuteUpdateAsync(s => s.SetProperty(v => v.Activo, false), c), errores, ct))
+            foreach (var (row, fila) in vehiculosGrp)
             {
                 try
                 {
@@ -162,8 +198,11 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                 catch (Exception ex) { errores.Add(new("VEHICULOS", fila, Fallo(ex))); }
             }
 
-            // ---- Mascotas ----
-            foreach (var (row, fila) in mascotas.Where(r => todas || Eq(Val(r.Row, "COPROPIEDAD"), nombre)))
+            // ---- Mascotas (reemplazo si aplica) ----
+            var mascotasGrp = mascotas.Where(r => todas || Eq(Val(r.Row, "COPROPIEDAD"), nombre)).ToList();
+            if (await ReemplazarSiAplicaAsync("MASCOTAS", mascotasGrp.Count > 0, reemplazarDependientes,
+                    c => _db.UnidadMascotas.ExecuteDeleteAsync(c), errores, ct))
+            foreach (var (row, fila) in mascotasGrp)
             {
                 try
                 {
@@ -177,8 +216,11 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                 catch (Exception ex) { errores.Add(new("MASCOTAS", fila, Fallo(ex))); }
             }
 
-            // ---- Zonas comunes ----
-            foreach (var (row, fila) in zonas.Where(r => todas || Eq(Val(r.Row, "COPROPIEDAD"), nombre)))
+            // ---- Zonas comunes (reemplazo si aplica) ----
+            var zonasGrp = zonas.Where(r => todas || Eq(Val(r.Row, "COPROPIEDAD"), nombre)).ToList();
+            if (await ReemplazarSiAplicaAsync("ZONAS COMUNES", zonasGrp.Count > 0, reemplazarDependientes,
+                    c => _db.ZonasComunes.ExecuteDeleteAsync(c), errores, ct))
+            foreach (var (row, fila) in zonasGrp)
             {
                 try
                 {
@@ -198,8 +240,11 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                 catch (Exception ex) { errores.Add(new("ZONAS COMUNES", fila, Fallo(ex))); }
             }
 
-            // ---- Equipos y activos ----
-            foreach (var (row, fila) in equipos.Where(r => todas || Eq(Val(r.Row, "COPROPIEDAD"), nombre)))
+            // ---- Equipos y activos (reemplazo si aplica) ----
+            var equiposGrp = equipos.Where(r => todas || Eq(Val(r.Row, "COPROPIEDAD"), nombre)).ToList();
+            if (await ReemplazarSiAplicaAsync("EQUIPOS", equiposGrp.Count > 0, reemplazarDependientes,
+                    c => _db.EquiposActivos.ExecuteDeleteAsync(c), errores, ct))
+            foreach (var (row, fila) in equiposGrp)
             {
                 try
                 {
@@ -235,7 +280,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
 
         // Restaura el contexto de tenant original de la sesion.
         if (tenantOriginal is { } to) await SetTenantSqlAsync(to, ct);
-        return new ResultadoCargaUnidades(nCopro, nUni, nAnexo, nPer, nVeh, nMas, nZon, nEqu, errores);
+        return new ResultadoCargaUnidades(nCopro, nUni, nAnexo, nPer, nVeh, nMas, nZon, nEqu, errores, nUniAct);
     }
 
     // Fija el tenant en EF (ITenantContext, para HasQueryFilter + TenantId al guardar) y en la
@@ -252,6 +297,23 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
     }
 
     // ===================== Helpers =====================
+    // Reemplazo de una categoria dependiente (personas/vehiculos/mascotas/zonas/equipos): si el archivo
+    // trae filas de esa hoja para la copropiedad y el usuario confirmo el reemplazo, borra primero las
+    // existentes del tenant (RLS + filtro EF ya acotan) y luego se recargan. Si el borrado falla (p.ej.
+    // una zona comun con reservas: FK RESTRICT), reporta el motivo y OMITE la carga de esa hoja para no
+    // duplicar ni dejar la copropiedad a medias. Las UNIDADES nunca pasan por aqui (se hace upsert).
+    private async Task<bool> ReemplazarSiAplicaAsync(string hoja, bool hayFilas, bool reemplazar,
+        Func<CancellationToken, Task<int>> borrar, List<CargaUnidadesError> errores, CancellationToken ct)
+    {
+        if (!reemplazar || !hayFilas) return true;
+        try { await borrar(ct); return true; }
+        catch (Exception ex)
+        {
+            errores.Add(new(hoja, 0, "No se pudo reemplazar (se omitio la carga de esta hoja): " + Fallo(ex)));
+            return false;
+        }
+    }
+
     // Resuelve una referencia de unidad de la plantilla (columna UNIDAD PRIVADA). La plantilla pide el
     // "Codigo de la unidad" (TORRE-NUMERO, ej. B-101), pero las unidades guardan Numero suelto ("101") con
     // su torre aparte. Por eso el indice mapea AMBAS claves: el Numero crudo y el codigo TORRE-NUMERO.
