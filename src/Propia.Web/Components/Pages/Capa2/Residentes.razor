@@ -128,8 +128,8 @@ else
                             case "nombre": <div class="res-c-cell res-nom">@r.Nombre @if (r.EntidadTipo == EntidadDirectorio.Empresa) { <span class="res-tag">Empresa</span> }</div>; break;
                             case "documento": <div class="res-c-cell">@r.Documento</div>; break;
                             case "rol": <div class="res-c-cell res-c">@RolBadge(r.Rol)</div>; break;
-                            case "telefono": <div class="res-c-cell res-mut">@(string.IsNullOrWhiteSpace(r.Telefono) ? "-" : r.Telefono)</div>; break;
-                            case "email": <div class="res-c-cell res-mut">@(string.IsNullOrWhiteSpace(r.Email) ? "-" : r.Email)</div>; break;
+                            case "telefono": <input class="res-editcell" value="@r.Telefono" placeholder="-" @onchange="e => EditarContactoAsync(r, TipoContacto.Telefono, e.Value?.ToString())" />; break;
+                            case "email": <input class="res-editcell" value="@r.Email" placeholder="-" @onchange="e => EditarContactoAsync(r, TipoContacto.Email, e.Value?.ToString())" />; break;
                             case "habita": <div class="res-c-cell res-c">@(r.Habita ? "Si" : "No")</div>; break;
                         }
                     }
@@ -168,15 +168,28 @@ else
                             </div>
                             break;
                         case "nombre":
-                            @* Control de terceros: busca en el Directorio de la organizacion y, si no
-                               existe, lo crea ahi mismo. El panel FLOTA (position:fixed) para no
-                               deformar la celda. Toda persona nace del Directorio por esta via. *@
+                            @* Control de terceros: busca en el Directorio y, si no existe, lo crea ahi
+                               mismo. Al elegirlo, la celda muestra SOLO el nombre (no deforma) y se
+                               llenan documento/telefono/email con la ultima info del tercero. *@
                             <div class="res-nf-persona">
-                                <SelectorPersona @bind-Seleccionada="_personaSel" Jwt="@_jwt" PermiteEmpresa="true" Flotante="true" Placeholder="Buscar o crear tercero..." />
+                                @if (_personaSel is null)
+                                {
+                                    <SelectorPersona Seleccionada="_personaSel" SeleccionadaChanged="OnPersonaSel" Jwt="@_jwt" PermiteEmpresa="true" Flotante="true" Placeholder="Buscar o crear..." />
+                                }
+                                else
+                                {
+                                    <div class="res-nf-selname" title="@_personaSel.NombreCompleto">
+                                        <span>@_personaSel.NombreCompleto</span>
+                                        <button type="button" class="res-nf-selx" title="Cambiar tercero" @onclick="LimpiarPersonaSel">&times;</button>
+                                    </div>
+                                }
                             </div>
                             break;
                         case "documento":
-                            <div class="res-nf-ro">@(_personaSel is null ? "" : $"{_personaSel.TipoDocumento} {_personaSel.DocumentoEnmascarado}")</div>
+                            @* Documento del tercero: campo con caja (fila homogenea) pero NO editable
+                               -> la identidad la resuelve el control de terceros, no se escribe aqui. *@
+                            <input class="res-nf-inp res-nf-ro-inp" readonly tabindex="-1" placeholder="Documento"
+                                   value="@(_personaSel is null ? "" : $"{_personaSel.TipoDocumento} {_personaSel.DocumentoEnmascarado}")" />
                             break;
                         case "rol":
                             <select class="res-nf-inp" @bind="_rolNuevo">
@@ -184,10 +197,10 @@ else
                             </select>
                             break;
                         case "telefono":
-                            <div class="res-nf-ro"></div>
+                            <input class="res-nf-inp" placeholder="Telefono" @bind="_ptTel" @bind:event="oninput" />
                             break;
                         case "email":
-                            <div class="res-nf-ro"></div>
+                            <input class="res-nf-inp" placeholder="Email" @bind="_ptEmail" @bind:event="oninput" />
                             break;
                         case "habita":
                             <label class="res-nf-habchk" title="Reside en la unidad"><input type="checkbox" @bind="_habitaNuevo" /> <span>Si</span></label>
@@ -252,6 +265,10 @@ else
     private string _unidadQuery = "";
     private bool _unidadDrop;
     private PersonaCandidatoDto? _personaSel;
+    private string _ptTel = "";       // se precarga con el telefono del tercero elegido (editable)
+    private string _ptEmail = "";      // idem correo
+    private string _ptTelOrig = "";    // valor original del tercero, para sincronizar solo si cambio
+    private string _ptEmailOrig = "";
     private RolUnidadPersona _rolNuevo = RolUnidadPersona.Residente;
     private bool _habitaNuevo = true;
 
@@ -267,11 +284,11 @@ else
     private static readonly ColDef[] Catalogo =
     {
         new("unidad", "UNIDAD", "150px", false),
-        new("nombre", "NOMBRE", "1.4fr", false),
-        new("documento", "DOCUMENTO", "1.1fr", false),
+        new("nombre", "NOMBRE", "2fr", false),
+        new("documento", "DOCUMENTO", "150px", false),
         new("rol", "ROL", "128px", false, true),
         new("telefono", "TELEFONO", "1.1fr", true),
-        new("email", "EMAIL", "1.6fr", true),
+        new("email", "EMAIL", "1.5fr", true),
         new("habita", "HABITA", "80px", true, true),
     };
     private sealed class ColPref { public bool Visible { get; set; } = true; public string? Label { get; set; } }
@@ -482,6 +499,92 @@ else
     }
     private void ElegirUnidad(UnidadDto u) { _unidadQuery = CodigoUnidad(u); _unidadDrop = false; }
 
+    // ---------- Tercero (control del Directorio) ----------
+    private async Task OnPersonaSel(PersonaCandidatoDto? p)
+    {
+        _personaSel = p;
+        _ptTel = _ptEmail = _ptTelOrig = _ptEmailOrig = "";
+        if (p is not null)
+        {
+            // El selector trae los contactos (filas de directorio). Si la persona no tiene filas
+            // (ej. datos semilla), se trae el detalle para el correo/telefono denormalizado (ultima info).
+            var tel = TelDe(p); var email = EmailDe(p);
+            if (tel is null || email is null)
+            {
+                try
+                {
+                    var url = p.EntidadTipo == EntidadDirectorio.Empresa
+                        ? $"/api/directorio/empresas/{p.PersonaId}"
+                        : $"/api/directorio/personas/{p.PersonaId}";
+                    var resp = await Auth().GetAsync(url);
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        using var doc = System.Text.Json.JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+                        // El detalle 360 anida la entidad bajo "persona"/"empresa"; leemos de ahi o de la raiz.
+                        var obj = doc.RootElement;
+                        if (obj.TryGetProperty("persona", out var pe)) obj = pe;
+                        else if (obj.TryGetProperty("empresa", out var ee)) obj = ee;
+                        if (tel is null && obj.TryGetProperty("telefono", out var te) && te.ValueKind == System.Text.Json.JsonValueKind.String) tel = te.GetString();
+                        if (email is null && obj.TryGetProperty("email", out var em) && em.ValueKind == System.Text.Json.JsonValueKind.String) email = em.GetString();
+                    }
+                }
+                catch { }
+            }
+            _ptTel = _ptTelOrig = tel ?? "";
+            _ptEmail = _ptEmailOrig = email ?? "";
+        }
+        StateHasChanged();
+    }
+
+    private void LimpiarPersonaSel()
+    {
+        _personaSel = null;
+        _ptTel = _ptEmail = _ptTelOrig = _ptEmailOrig = "";
+    }
+
+    private static string? TelDe(PersonaCandidatoDto? p) => ContactoDe(p, TipoContacto.Telefono);
+    private static string? EmailDe(PersonaCandidatoDto? p) => ContactoDe(p, TipoContacto.Email);
+    private static string? ContactoDe(PersonaCandidatoDto? p, TipoContacto tipo)
+    {
+        if (p?.Contactos is null) return null;
+        return p.Contactos.FirstOrDefault(c => c.Tipo == tipo && c.Principal)?.Valor
+            ?? p.Contactos.FirstOrDefault(c => c.Tipo == tipo)?.Valor;
+    }
+
+    // Sincroniza un contacto (correo/telefono) en el Directorio SIN perder los demas: trae los
+    // actuales, reemplaza los de ese tipo y reenvia el set completo (reemplazar borra todos los
+    // tipos gestionados, por eso hay que reenviarlos).
+    private async Task<bool> SincronizarContactoAsync(EntidadDirectorio tipo, Guid entidadId, TipoContacto cual, string? valor)
+    {
+        try
+        {
+            var http = Auth();
+            var actuales = await http.GetFromJsonAsync<List<ContactoRapidoDto>>(
+                $"/api/directorio/contactos-rapidos?tipo={tipo}&id={entidadId}") ?? new();
+            var nuevos = actuales.Where(c => c.Tipo != cual).ToList();
+            if (!string.IsNullOrWhiteSpace(valor))
+                nuevos.Add(new ContactoRapidoDto(cual, valor.Trim(), "Principal", null, true));
+            var resp = await http.PutAsJsonAsync("/api/directorio/contactos-rapidos",
+                new ReemplazarContactosRequest(tipo, entidadId, nuevos));
+            return resp.IsSuccessStatusCode;
+        }
+        catch { return false; }
+    }
+
+    // Edicion inline de un contacto en una fila existente -> sincroniza al Directorio (global).
+    private async Task EditarContactoAsync(ResidenteResumenDto r, TipoContacto cual, string? valor)
+    {
+        var actual = cual == TipoContacto.Email ? r.Email : r.Telefono;
+        if (string.Equals((valor ?? "").Trim(), (actual ?? "").Trim(), StringComparison.OrdinalIgnoreCase)) return;
+        var entidadId = r.EntidadTipo == EntidadDirectorio.Empresa ? r.EmpresaId : r.PersonaId;
+        if (entidadId is not Guid id) return;
+        _busy = true; _msg = ""; _msgError = false;
+        var ok = await SincronizarContactoAsync(r.EntidadTipo, id, cual, valor);
+        _busy = false;
+        if (ok) { _msg = $"Contacto de {r.Nombre} actualizado en el Directorio."; _msgError = false; await CargarAsync(); }
+        else { _msg = "No se pudo actualizar el contacto (correo en uso u otro error)."; _msgError = true; }
+    }
+
     // ---------- Alta ----------
     private async Task AgregarAsync(bool abrir)
     {
@@ -502,8 +605,11 @@ else
                 _msg = "No se pudo agregar: " + await resp.Content.ReadAsStringAsync(); _msgError = true; return;
             }
             var creada = await resp.Content.ReadFromJsonAsync<UnidadPersonaDto>();
+            // Si el usuario ajusto correo/telefono del tercero, se sincroniza al Directorio.
+            if (_ptTel.Trim() != _ptTelOrig.Trim()) await SincronizarContactoAsync(sel.EntidadTipo, sel.PersonaId, TipoContacto.Telefono, _ptTel);
+            if (_ptEmail.Trim() != _ptEmailOrig.Trim()) await SincronizarContactoAsync(sel.EntidadTipo, sel.PersonaId, TipoContacto.Email, _ptEmail);
             _msg = $"{sel.NombreCompleto} agregado a {_unidadQuery}."; _msgError = false;
-            _personaSel = null; _rolNuevo = RolUnidadPersona.Residente; _habitaNuevo = true; _unidadQuery = ""; _unidadDrop = false;
+            LimpiarPersonaSel(); _rolNuevo = RolUnidadPersona.Residente; _habitaNuevo = true; _unidadQuery = ""; _unidadDrop = false;
             await CargarAsync();
             if (abrir && creada is not null)
             {
@@ -609,16 +715,36 @@ else
     .res-newrow .res-exp.res-exp-nf { opacity: .4; }
     .res-newrow:focus-within .res-exp.res-exp-nf, .res-newrow:hover .res-exp.res-exp-nf { opacity: 1; }
     .res-newrow .res-exp.res-exp-nf:disabled { opacity: .2; cursor: default; }
-    .res-nf-inp { width: 100%; box-sizing: border-box; border: 1px solid #D8E0E8; border-radius: 8px; padding: 6px 9px; font-size: 12.5px; color: #1B2A3A; background: #fff; outline: none; font-family: inherit; }
-    .res-nf-inp:focus { border-color: #6D4FE3; box-shadow: 0 0 0 3px rgba(109,79,227,.12); }
+    /* Canon (skill homogenizar-vista-tabla, 9-A): inputs de la fila de alta PUNTEADOS en reposo,
+       solidos + glow violeta al focus. */
+    .res-nf-inp { width: 100%; box-sizing: border-box; border: 1px dashed #D7E0EA; border-radius: 7px; padding: 5px 8px; font-size: 12.5px; color: #33475B; background: #fff; outline: none; font-family: inherit; }
+    .res-nf-inp:focus { border-style: solid; border-color: #6D4FE3; box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
     .res-nf-unidad { position: relative; }
     .res-nf-persona { min-width: 0; }
     /* El selector de terceros trae su propio input; que ocupe el ancho de la celda del nombre. */
-    .res-nf-persona .sp, .res-nf-persona .sp-search, .res-nf-persona .sp-chip { width: 100%; }
+    .res-nf-persona .sp, .res-nf-persona .sp-search, .res-nf-persona .sp-chip { width: 100%; min-width: 0; }
+    /* Buscador de terceros: misma altura y mismo borde punteado que los demas inputs de la fila. */
+    .res-nf-persona .sp-search { border: 1px dashed #D7E0EA; border-radius: 7px; }
+    .res-nf-persona .sp-search:focus-within { border-style: solid; border-color: #6D4FE3; box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
+    .res-nf-persona .sp-search-inp { min-width: 0; padding: 5px 0; font-size: 12.5px; }
     .res-nf-ro { font-size: 12px; color: #90A4B7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* Documento del tercero: misma caja que los demas inputs pero no editable (atenuado). */
+    .res-nf-ro-inp { background: #F5F7FA; color: #7C8B9A; cursor: default; }
+    .res-nf-ro-inp:focus { border-color: #D8E0E8; box-shadow: none; }
+    /* Tercero elegido: solo el nombre (no deforma la celda) + boton para cambiarlo. */
+    .res-nf-selname { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; font-weight: 600; color: #1B2A3A; }
+    .res-nf-selname > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .res-nf-selx { flex: 0 0 auto; width: 18px; height: 18px; line-height: 1; border: 0; border-radius: 5px; background: #F1ECFD; color: #6D4FE3; font-size: 14px; cursor: pointer; }
+    .res-nf-selx:hover { background: #E4DBFB; }
+    /* Celda editable en filas existentes (correo/telefono): se lee como texto y se marca al hover/foco. */
+    .res-editcell { width: 100%; box-sizing: border-box; border: 1px solid transparent; border-radius: 7px; padding: 5px 8px; font-size: 13px; color: #6B7C8F; background: transparent; outline: none; font-family: inherit; }
+    .res-editcell:hover { border-color: #E1E8EE; background: #FBFCFD; }
+    .res-editcell:focus { border-color: var(--propia-brand, #6D4FE3); background: #fff; color: #35485B; }
     .res-nf-habchk { display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 12px; color: #47586A; }
     .res-nf-act { display: flex; justify-content: flex-end; }
-    .res-nf-add { background: #6D4FE3; color: #fff; border: 0; border-radius: 8px; padding: 7px 12px; font-size: 12.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    /* Canon (skill 9-D): "+ Agregar" violeta SUAVE (no relleno solido). */
+    .res-nf-add { background: #F1ECFD; color: #6D4FE3; border: 1px solid #DCD2F8; border-radius: 7px; padding: 6px 10px; font-size: 11.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    .res-nf-add:hover { background: #E4DBFB; }
     .res-nf-add:disabled { opacity: .5; cursor: not-allowed; }
 
     /* Abre HACIA ARRIBA: la fila de alta va al fondo del contenedor con overflow, y un dropdown

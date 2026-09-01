@@ -221,7 +221,7 @@
                     </div>
                     <div class="gum-ptbl">
                         <div class="gum-ptbl-head">
-                            <span>Nombre</span><span>Identificacion</span><span>Telefono</span><span>Email</span><span>Rol</span><span>Estado</span><span></span>
+                            <span>Nombre</span><span>Identificacion</span><span>Telefono</span><span>Email</span><span>Rol</span><span>Habita</span><span></span>
                         </div>
                         @foreach (var p in _personas)
                         {
@@ -240,9 +240,9 @@
                                     </select>
                                 </div>
                                 <div class="gum-ptbl-c">
-                                    <select class="gum-ptbl-sel gum-ptbl-estado @(p.Activo ? "on" : "off")" value="@(p.Activo ? "1" : "0")" @onchange="(e) => CambiarEstadoPersonaAsync(pp, e)">
-                                        <option value="1">Activa</option>
-                                        <option value="0">Inactiva</option>
+                                    <select class="gum-ptbl-sel" value="@(p.Habita ? "1" : "0")" @onchange="(e) => CambiarHabitaPersonaAsync(pp, e)">
+                                        <option value="1">Si</option>
+                                        <option value="0">No</option>
                                     </select>
                                 </div>
                                 <div class="gum-ptbl-c gum-ptbl-c--act">
@@ -254,8 +254,17 @@
                         }
                         @* Fila de trabajo (alta inline) *@
                         <div class="gum-ptbl-row gum-ptbl-row--new">
-                            <div class="gum-ptbl-nom"><input class="gum-ptbl-inp" placeholder="Nombre y apellido" @bind="_ptNombre" @bind:event="oninput" /></div>
-                            <div class="gum-ptbl-c"><input class="gum-ptbl-inp" placeholder="Identificacion" @bind="_ptDoc" @bind:event="oninput" /></div>
+                            <div class="gum-ptbl-nom">
+                                @if (_ptPersonaSel is null)
+                                {
+                                    <SelectorPersona Seleccionada="_ptPersonaSel" SeleccionadaChanged="OnPtPersonaSel" Jwt="@Jwt" PermiteEmpresa="true" Flotante="true" Placeholder="Buscar o crear..." />
+                                }
+                                else
+                                {
+                                    <div class="gum-ptbl-selname" title="@_ptPersonaSel.NombreCompleto"><span>@_ptPersonaSel.NombreCompleto</span><button type="button" class="gum-ptbl-selx" title="Cambiar tercero" @onclick="LimpiarPtPersona">&times;</button></div>
+                                }
+                            </div>
+                            <div class="gum-ptbl-c"><input class="gum-ptbl-inp gum-ptbl-ro" readonly tabindex="-1" placeholder="Identificacion" value="@(_ptPersonaSel is null ? "" : $"{_ptPersonaSel.TipoDocumento} {_ptPersonaSel.DocumentoEnmascarado}")" /></div>
                             <div class="gum-ptbl-c"><input class="gum-ptbl-inp" placeholder="Telefono" @bind="_ptTel" @bind:event="oninput" /></div>
                             <div class="gum-ptbl-c"><input class="gum-ptbl-inp" placeholder="Email" @bind="_ptEmail" @bind:event="oninput" /></div>
                             <div class="gum-ptbl-c">
@@ -264,13 +273,13 @@
                                 </select>
                             </div>
                             <div class="gum-ptbl-c">
-                                <select class="gum-ptbl-inp" @bind="_ptActivo">
-                                    <option value="true">Activa</option>
-                                    <option value="false">Inactiva</option>
+                                <select class="gum-ptbl-inp" value="@(_ptHabita ? "1" : "0")" @onchange="OnPtHabitaChange">
+                                    <option value="1">Si</option>
+                                    <option value="0">No</option>
                                 </select>
                             </div>
                             <div class="gum-ptbl-c gum-ptbl-c--act">
-                                <button class="gum-ptbl-add" type="button" @onclick="AgregarPersonaTablaAsync" disabled="@(_agregandoPersona || string.IsNullOrWhiteSpace(_ptNombre) || string.IsNullOrWhiteSpace(_ptDoc))">@(_agregandoPersona ? "..." : "+ Agregar")</button>
+                                <button class="gum-ptbl-add" type="button" @onclick="AgregarPersonaTablaAsync" disabled="@(_agregandoPersona || _ptPersonaSel is null)">@(_agregandoPersona ? "..." : "+ Agregar")</button>
                             </div>
                         </div>
                     </div>
@@ -1227,7 +1236,7 @@
 
     /* Tabla de personas */
     .gum-ptbl { border: 1px solid #E9EEF3; border-radius: 12px; overflow: hidden; }
-    .gum-ptbl-head, .gum-ptbl-row { display: grid; grid-template-columns: 2fr 1.1fr 1.1fr 1.6fr 1.1fr 1fr 44px; align-items: center; gap: 10px; padding: 9px 14px; }
+    .gum-ptbl-head, .gum-ptbl-row { display: grid; grid-template-columns: 2fr 1.1fr 1.1fr 1.6fr 1.1fr 84px 100px; align-items: center; gap: 10px; padding: 9px 14px; }
     .gum-ptbl-head { background: #FAFBFC; border-bottom: 1px solid #EEF3F8; font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: #A6B7C8; text-transform: uppercase; }
     .gum-ptbl-row { border-bottom: 1px solid #F2F5F8; }
     .gum-ptbl-row:hover { background: #FBFAFE; }
@@ -1243,8 +1252,9 @@
     .gum-ptbl-c--act { display: flex; justify-content: flex-end; }
     .gum-ptbl-sel, .gum-ptbl-inp { width: 100%; border: 1px solid #DCE3EB; border-radius: 8px; padding: 6px 8px; font-size: 12.5px; color: #33475B; background: #fff; outline: none; font-family: inherit; box-sizing: border-box; }
     .gum-ptbl-sel:focus, .gum-ptbl-inp:focus { border-color: var(--propia-brand, #6D4FE3); }
-    .gum-ptbl-row--new .gum-ptbl-inp { border-style: dashed; border-color: #D7E0EA; }
-    .gum-ptbl-row--new .gum-ptbl-inp:focus { border-style: solid; border-color: var(--propia-brand, #6D4FE3); }
+    /* Canon (skill 9-A): fila de alta con inputs PUNTEADOS en reposo, solidos + glow al focus. */
+    .gum-ptbl-row--new .gum-ptbl-inp { border: 1px dashed #D7E0EA; border-radius: 7px; padding: 5px 8px; }
+    .gum-ptbl-row--new .gum-ptbl-inp:focus { border-style: solid; border-color: #6D4FE3; box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
     .gum-ptbl-estado.on { color: #1A8754; font-weight: 700; }
     .gum-ptbl-estado.off { color: #C0392B; font-weight: 700; }
     .gum-ptbl-del { width: 30px; height: 30px; border: 0; background: transparent; color: #A6B7C8; border-radius: 7px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
@@ -1252,6 +1262,17 @@
     .gum-ptbl-add { padding: 6px 12px; border: 1px solid #DCD2F8; border-radius: 8px; background: #F1ECFD; color: var(--propia-brand, #6D4FE3); font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; }
     .gum-ptbl-add:hover { background: #E7DEFB; }
     .gum-ptbl-add:disabled { opacity: .5; cursor: not-allowed; }
+    /* Ingreso del tercero en la fila de alta del modal (igual que Residentes). */
+    .gum-ptbl-nom .sp, .gum-ptbl-nom .sp-search, .gum-ptbl-nom .sp-chip { width: 100%; min-width: 0; }
+    /* Buscador de terceros: misma altura y borde punteado que los demas inputs de la fila (canon). */
+    .gum-ptbl-nom .sp-search { border: 1px dashed #D7E0EA; border-radius: 7px; }
+    .gum-ptbl-nom .sp-search:focus-within { border-style: solid; border-color: #6D4FE3; box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
+    .gum-ptbl-nom .sp-search-inp { min-width: 0; padding: 5px 0; font-size: 12.5px; }
+    .gum-ptbl-selname { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12.5px; font-weight: 700; color: #33475B; }
+    .gum-ptbl-selname > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .gum-ptbl-selx { flex: 0 0 auto; width: 18px; height: 18px; line-height: 1; border: 0; border-radius: 5px; background: #F1ECFD; color: #6D4FE3; font-size: 14px; cursor: pointer; }
+    .gum-ptbl-selx:hover { background: #E4DBFB; }
+    .gum-ptbl-ro { background: #F5F7FA; color: #7C8B9A; cursor: default; }
     [data-bs-theme="dark"] .gum-fmeta-val { color: #E4E8F0; }
     [data-bs-theme="dark"] .gum-ptbl { border-color: #2D3650; }
     [data-bs-theme="dark"] .gum-ptbl-head { background: #232B40; }
@@ -1339,10 +1360,74 @@
         ((_selected.TorreNombre is { Length: > 0 } tn ? tn.Split(' ').Last() + "-" : "") + _selected.Numero);
 
     // Fila de trabajo (alta inline) de la tabla de personas.
-    private string _ptNombre = "", _ptDoc = "", _ptTel = "", _ptEmail = "";
+    private string _ptTel = "", _ptEmail = "", _ptTelOrig = "", _ptEmailOrig = "";
+    private PersonaCandidatoDto? _ptPersonaSel;
     private RolUnidadPersona _ptRol = RolUnidadPersona.Propietario;
-    private bool _ptActivo = true;
+    private bool _ptHabita = true;
     private bool _agregandoPersona;
+
+    // Ingreso del tercero (igual que el modulo Residentes): el nombre se busca/crea en el Directorio
+    // y al elegirlo se llenan documento/telefono/email con la ultima info del tercero.
+    private async Task OnPtPersonaSel(PersonaCandidatoDto? p)
+    {
+        _ptPersonaSel = p;
+        _ptTel = _ptEmail = _ptTelOrig = _ptEmailOrig = "";
+        if (p is not null)
+        {
+            string? tel = ContactoPtDe(p, TipoContacto.Telefono);
+            string? email = ContactoPtDe(p, TipoContacto.Email);
+            if (tel is null || email is null)
+            {
+                try
+                {
+                    var url = p.EntidadTipo == EntidadDirectorio.Empresa
+                        ? $"/api/directorio/empresas/{p.PersonaId}"
+                        : $"/api/directorio/personas/{p.PersonaId}";
+                    var resp = await Auth().GetAsync(url);
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        using var doc = System.Text.Json.JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+                        var obj = doc.RootElement;
+                        if (obj.TryGetProperty("persona", out var pe)) obj = pe;
+                        else if (obj.TryGetProperty("empresa", out var ee)) obj = ee;
+                        if (tel is null && obj.TryGetProperty("telefono", out var te) && te.ValueKind == System.Text.Json.JsonValueKind.String) tel = te.GetString();
+                        if (email is null && obj.TryGetProperty("email", out var em) && em.ValueKind == System.Text.Json.JsonValueKind.String) email = em.GetString();
+                    }
+                }
+                catch { }
+            }
+            _ptTel = _ptTelOrig = tel ?? "";
+            _ptEmail = _ptEmailOrig = email ?? "";
+        }
+        StateHasChanged();
+    }
+
+    private void LimpiarPtPersona() { _ptPersonaSel = null; _ptTel = _ptEmail = _ptTelOrig = _ptEmailOrig = ""; }
+
+    private void OnPtHabitaChange(ChangeEventArgs e) => _ptHabita = e.Value?.ToString() == "1";
+
+    private static string? ContactoPtDe(PersonaCandidatoDto? p, TipoContacto tipo)
+    {
+        if (p?.Contactos is null) return null;
+        return p.Contactos.FirstOrDefault(c => c.Tipo == tipo && c.Principal)?.Valor
+            ?? p.Contactos.FirstOrDefault(c => c.Tipo == tipo)?.Valor;
+    }
+
+    // Sincroniza correo/telefono en el Directorio sin perder los demas contactos.
+    private async Task SincronizarContactoPtAsync(EntidadDirectorio tipo, Guid entidadId, TipoContacto cual, string? valor)
+    {
+        try
+        {
+            var http = Auth();
+            var actuales = await http.GetFromJsonAsync<List<ContactoRapidoDto>>(
+                $"/api/directorio/contactos-rapidos?tipo={tipo}&id={entidadId}") ?? new();
+            var nuevos = actuales.Where(c => c.Tipo != cual).ToList();
+            if (!string.IsNullOrWhiteSpace(valor))
+                nuevos.Add(new ContactoRapidoDto(cual, valor.Trim(), "Principal", null, true));
+            await http.PutAsJsonAsync("/api/directorio/contactos-rapidos", new ReemplazarContactosRequest(tipo, entidadId, nuevos));
+        }
+        catch { }
+    }
 
     private static string Ini(string? nombre)
     {
@@ -1371,24 +1456,23 @@
 
     private async Task AgregarPersonaTablaAsync()
     {
-        if (_selected is null || _agregandoPersona) return;
-        var nombre = (_ptNombre ?? "").Trim();
-        if (nombre.Length == 0 || string.IsNullOrWhiteSpace(_ptDoc)) return;
-        var parts = nombre.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length < 2) { ShowMsg("Escribe nombre y apellido.", true); return; }
-        var apellidos = parts[^1];
-        var nombres = string.Join(" ", parts[..^1]);
+        if (_selected is null || _agregandoPersona || _ptPersonaSel is not { } sel) return;
         _agregandoPersona = true;
         try
         {
-            var req = new AgregarPersonaUnidadRequest(_ptDoc.Trim(), nombres, apellidos,
-                string.IsNullOrWhiteSpace(_ptEmail) ? null : _ptEmail.Trim(),
-                string.IsNullOrWhiteSpace(_ptTel) ? null : _ptTel.Trim(),
-                _ptRol, Activo: _ptActivo);
+            var esEmpresa = sel.EntidadTipo == EntidadDirectorio.Empresa;
+            var req = new AgregarPersonaUnidadRequest(
+                "", "", "", null, null, _ptRol, Habita: _ptHabita,
+                PersonaId: esEmpresa ? null : sel.PersonaId,
+                EntidadTipo: sel.EntidadTipo,
+                EmpresaId: esEmpresa ? sel.PersonaId : null);
             var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{_selected.Id}/personas", req);
             if (resp.IsSuccessStatusCode)
             {
-                _ptNombre = _ptDoc = _ptTel = _ptEmail = ""; _ptRol = RolUnidadPersona.Propietario; _ptActivo = true;
+                // Sincroniza correo/telefono al Directorio si el usuario los ajusto.
+                if (_ptTel.Trim() != _ptTelOrig.Trim()) await SincronizarContactoPtAsync(sel.EntidadTipo, sel.PersonaId, TipoContacto.Telefono, _ptTel);
+                if (_ptEmail.Trim() != _ptEmailOrig.Trim()) await SincronizarContactoPtAsync(sel.EntidadTipo, sel.PersonaId, TipoContacto.Email, _ptEmail);
+                LimpiarPtPersona(); _ptRol = RolUnidadPersona.Propietario; _ptHabita = true;
                 _huboCambios = true;
                 await RecargarPersonasAsync();
                 ShowMsg("Persona vinculada.", false);
@@ -1405,20 +1489,20 @@
         await EditarVinculoPersonaAsync(p, rol, p.Activo);
     }
 
-    private async Task CambiarEstadoPersonaAsync(UnidadPersonaDto p, ChangeEventArgs e)
+    private async Task CambiarHabitaPersonaAsync(UnidadPersonaDto p, ChangeEventArgs e)
     {
-        var activo = e.Value?.ToString() == "1";
-        if (activo == p.Activo) return;
-        await EditarVinculoPersonaAsync(p, p.Rol, activo);
+        var habita = e.Value?.ToString() == "1";
+        if (habita == p.Habita) return;
+        await EditarVinculoPersonaAsync(p, p.Rol, p.Activo, habita);
     }
 
-    private async Task EditarVinculoPersonaAsync(UnidadPersonaDto p, RolUnidadPersona rol, bool activo)
+    private async Task EditarVinculoPersonaAsync(UnidadPersonaDto p, RolUnidadPersona rol, bool activo, bool? habita = null)
     {
         try
         {
             var req = new AgregarPersonaUnidadRequest(
                 p.PersonaDocumento, p.PersonaNombres, p.PersonaApellidos, p.PersonaEmail, p.PersonaTelefono,
-                rol, Habita: p.Habita, Parentesco: p.Parentesco,
+                rol, Habita: habita ?? p.Habita, Parentesco: p.Parentesco,
                 PersonaId: p.EntidadTipo == EntidadDirectorio.Persona ? p.PersonaId : null,
                 EntidadTipo: p.EntidadTipo, EmpresaId: p.EmpresaId, Activo: activo);
             var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades-personas/{p.Id}", req);
