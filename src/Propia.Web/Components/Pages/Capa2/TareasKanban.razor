@@ -1273,6 +1273,64 @@ else
                         <button class="tb-btn tb-btn-primary" @onclick="AgregarMotivoTarea" disabled="@string.IsNullOrWhiteSpace(_nuevoMotivoTareaNombre)">Agregar motivo</button>
                     </div>
                 </div>
+                <div class="tbcfg-sec">
+                    <div class="tbcfg-h">USUARIOS DEL TABLERO (INVITAR)</div>
+                    <div class="tbcfg-help">Invita personas a trabajar en este tablero — también de tus otras copropiedades (solo usuarios del sistema). Los cambios se aplican al instante.</div>
+                    @if (_board.Tablero.Usuarios.Count > 0)
+                    {
+                        <div class="tb-chips" style="margin-bottom:10px;">
+                            @foreach (var u in _board.Tablero.Usuarios)
+                            {
+                                var usr = u;
+                                <span class="tb-chip">
+                                    <span class="tb-ava tb-ava-sm">@u.Iniciales</span>
+                                    <span class="tb-chip-nom">@u.Nombre</span>
+                                    <button type="button" class="tb-chip-x" @onclick="() => QuitarUsuarioConfigAsync(usr.PersonaId)" title="Quitar del tablero">&times;</button>
+                                </span>
+                            }
+                        </div>
+                    }
+                    <div class="tb-search-wrap">
+                        @if (_tenants.Count > 1)
+                        {
+                            <label class="tbcfg-cross">
+                                <input type="checkbox" checked="@_tbCross" @onchange="e => { _tbCross = (bool)e.Value!; _tbResultados.Clear(); _tbResultCopro.Clear(); }" />
+                                <span>Buscar tambien en mis otras copropiedades (solo usuarios del sistema)</span>
+                            </label>
+                        }
+                        <input class="tb-input" placeholder="Buscar persona para invitar..." @bind="_tbBuscar" @bind:event="oninput" @onkeyup="BuscarPersonasTb" autocomplete="off" />
+                        @if (_tbResultados.Count > 0)
+                        {
+                            <div class="tb-search-drop">
+                                @foreach (var p in _tbResultados.Where(x => _board.Tablero.Usuarios.All(u => u.PersonaId != x.Id)))
+                                {
+                                    var per = p;
+                                    var nombreCfg = $"{p.Nombres} {p.Apellidos}".Trim();
+                                    <button type="button" class="tb-search-item" @onclick="() => InvitarDesdeConfigAsync(per)">
+                                        @if (!string.IsNullOrEmpty(p.FotoUrl))
+                                        {
+                                            <img class="tb-chip-ava" src="@p.FotoUrl" alt="" />
+                                        }
+                                        else
+                                        {
+                                            <span class="tb-ava tb-ava-sm">@Iniciales(nombreCfg)</span>
+                                        }
+                                        <span class="tb-search-nom">@nombreCfg</span>
+                                        @if (_tbResultCopro.TryGetValue(p.Id, out var coproOrigenCfg))
+                                        {
+                                            <span class="tbcfg-copro-chip">@coproOrigenCfg</span>
+                                        }
+                                        <span class="tb-search-doc">@p.Documento</span>
+                                    </button>
+                                }
+                            </div>
+                        }
+                        else if (!string.IsNullOrWhiteSpace(_tbBuscar) && _tbBuscar.Trim().Length >= 2)
+                        {
+                            <div class="tb-search-empty">Sin resultados@(_tbCross ? " (usuarios del sistema en tus copropiedades)" : " en el directorio").</div>
+                        }
+                    </div>
+                </div>
             </div>
             <div class="tb-modal-foot">
                 <div class="tb-flex"></div>
@@ -5589,6 +5647,34 @@ else
         _tbSelInfo.Remove(pid);
     }
 
+    // ---- Invitar/quitar desde "Configurar tablero" (aplican al instante, sin draft) ----
+    private async Task InvitarDesdeConfigAsync(PersonaResumenDto p)
+    {
+        if (_board is null) return;
+        try
+        {
+            var resp = await Auth().PostAsync($"/api/tareas/tableros/{_board.Tablero.Id}/usuarios/{p.Id}", null);
+            if (!resp.IsSuccessStatusCode) { _msg = "No se pudo invitar a la persona."; _msgClass = "alert-danger"; return; }
+            _tbBuscar = "";
+            _tbResultados.Clear();
+            _tbResultCopro.Clear();
+            await RecargarBoard();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task QuitarUsuarioConfigAsync(Guid personaId)
+    {
+        if (_board is null) return;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/tareas/tableros/{_board.Tablero.Id}/usuarios/{personaId}");
+            if (!resp.IsSuccessStatusCode) { _msg = "No se pudo quitar a la persona."; _msgClass = "alert-danger"; return; }
+            await RecargarBoard();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
     // ===================== Tablero compartido (board VIRTUAL en el pipeline real) =====================
     // El tablero "Todas mis copropiedades" usa el MISMO _board y las MISMAS vistas que cualquier
     // tablero (tarjetas, tabla, agrupaciones, filtros). Solo cambian: la carga (endpoint del board
@@ -5872,7 +5958,7 @@ else
     }
 
     // ----- Configurar tablero (estados + campos) -----
-    private async Task AbrirConfigBoard() { _cfgOpen = true; _cfgEstadoNew = ""; _cfgCampoNew = ""; await CargarCamposArchivados(); await CargarMotivosTareasAsync(); }
+    private async Task AbrirConfigBoard() { _cfgOpen = true; _cfgEstadoNew = ""; _cfgCampoNew = ""; _tbBuscar = ""; _tbResultados.Clear(); _tbResultCopro.Clear(); await CargarCamposArchivados(); await CargarMotivosTareasAsync(); }
     private void CerrarConfigBoard() { _cfgOpen = false; }
 
     // ---- Config de motivos de cierre (modulo tareas) ----
