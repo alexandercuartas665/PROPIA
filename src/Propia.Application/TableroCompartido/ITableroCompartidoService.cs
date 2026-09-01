@@ -27,6 +27,25 @@ public interface ITableroCompartidoService
     /// </summary>
     Task<Propia.Application.Tareas.TableroBoardDto?> ObtenerBoardVirtualAsync(Guid userId, CancellationToken ct);
 
+    /// <summary>
+    /// Tableros de OTRAS copropiedades donde la persona del usuario fue invitada
+    /// (tablero_usuarios, via get_tableros_invitado SECURITY DEFINER). Excluye la copropiedad
+    /// activa (esos tableros ya se ven en la galeria) y las que el usuario administra (esas las
+    /// cubre "Todas mis copropiedades").
+    /// </summary>
+    Task<IReadOnlyList<TableroInvitacionDto>> InvitacionesAsync(Guid userId, CancellationToken ct);
+
+    /// <summary>
+    /// Board REAL de un tablero donde el usuario fue invitado (aunque no tenga vinculo en esa
+    /// copropiedad): valida la invitacion y sirve el GetTableroBoardAsync del tenant bajo
+    /// impersonacion, con TenantId/TenantNombre en las tareas. Null si no esta invitado.
+    /// </summary>
+    Task<Propia.Application.Tareas.TableroBoardDto?> ObtenerBoardInvitadoAsync(Guid userId, Guid tenantId, Guid tableroId, CancellationToken ct);
+
+    /// <summary>Mueve una tarea de un tablero donde el usuario fue invitado (estado REAL por id;
+    /// terminales rechazadas: cerrar con motivo se hace en la copropiedad).</summary>
+    Task<MoverTarjetaCompartidaResultado> MoverInvitadoAsync(Guid userId, Guid tenantId, Guid tableroId, Guid tareaId, Guid estadoId, CancellationToken ct);
+
     /// <summary>Null cuando el usuario no administra ninguna copropiedad (sin acceso).</summary>
     Task<TableroCompartidoDto?> ObtenerAsync(Guid userId, CancellationToken ct);
 
@@ -46,6 +65,13 @@ public interface ITableroCompartidoService
 public sealed record PersonaCrossTenantDto(
     Guid Id, string Nombres, string Apellidos, string Documento, string? FotoUrl,
     Guid TenantId, string TenantNombre);
+
+/// <summary>Tablero de otra copropiedad donde la persona fue invitada.</summary>
+public sealed record TableroInvitacionDto(
+    Guid TenantId, string TenantNombre, Guid TableroId, string TableroNombre,
+    string? TableroColor, string? TableroDescripcion);
+
+public sealed record MoverTarjetaInvitadoRequest(Guid TenantId, Guid TableroId, Guid TareaId, Guid EstadoId);
 
 /// <summary>Una tarea real de un tenant, proyectada como tarjeta del tablero compartido.</summary>
 public sealed record TarjetaCompartidaDto(

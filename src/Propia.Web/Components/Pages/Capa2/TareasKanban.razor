@@ -113,6 +113,25 @@ else
                         </div>
                     </div>
                 }
+                @foreach (var invGal in _invitaciones)
+                {
+                    var invit = invGal;
+                    <div class="tb-card">
+                        <div class="tb-card-bar" style="background:@(invit.TableroColor ?? "#6D4FE3")"></div>
+                        <div class="tb-card-body">
+                            <div class="tb-card-top">
+                                <div class="tb-card-id">
+                                    <div class="tb-card-nom">@invit.TableroNombre</div>
+                                    <div class="tb-card-desc">@(string.IsNullOrWhiteSpace(invit.TableroDescripcion) ? "Te invitaron a trabajar en este tablero." : invit.TableroDescripcion)</div>
+                                </div>
+                            </div>
+                            <div class="tb-card-foot">
+                                <span class="tb-copro-chip">Invitado · @invit.TenantNombre</span>
+                            </div>
+                            <button class="tb-card-open" @onclick="() => AbrirBoardInvitadoAsync(invit)">Abrir tablero<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18l6-6-6-6"/></svg></button>
+                        </div>
+                    </div>
+                }
                 <button class="tb-card-new" @onclick="() => AbrirTableroDraft(null)">
                     <div class="tb-card-new-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg></div>
                     <span>Crear tablero</span>
@@ -152,12 +171,12 @@ else
                         </div>
                     }
                     @SelectorCopropiedad
-                    @if (!_verCerradas && !EsBoardCompartido)
+                    @if (!_verCerradas && !EsBoardForaneo)
                     {
                         <button class="tb-btn tb-btn-soft" @onclick="AbrirConfigBoard"><i class="fi fi-rr-settings"></i>Configurar</button>
                     }
                 </div>
-                @if (!_verCerradas && !EsBoardCompartido)
+                @if (!_verCerradas && !EsBoardForaneo)
                 {
                     <button class="tb-cta-brand" @onclick="() => AbrirCardDraft(null, _board.Estados.FirstOrDefault()?.Id)">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
@@ -170,7 +189,7 @@ else
         @* Pestanas Activos / Cerrados + buscador (las tareas cerradas desaparecen del tablero activo). *@
         <div class="tb-board-tabs">
             <button class="tb-btab @(!_verCerradas ? "on" : "")" @onclick="() => CambiarTabCerradas(false)">Activos</button>
-            @if (!EsBoardCompartido)
+            @if (!EsBoardForaneo)
             {
                 <button class="tb-btab @(_verCerradas ? "on" : "")" @onclick="() => CambiarTabCerradas(true)">Cerrados</button>
             }
@@ -430,7 +449,7 @@ else
                             }
                             else
                             {
-                                @if (!EsBoardCompartido)
+                                @if (!EsBoardForaneo)
                                 {
                                     <button class="tb-col-add" @onclick="() => AbrirComposer(estado.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Agregar</button>
                                 }
@@ -4110,6 +4129,7 @@ else
         try
         {
             _tableros = await Auth().GetFromJsonAsync<List<TableroDto>>("/api/tareas/tableros") ?? new();
+            try { _invitaciones = await Auth().GetFromJsonAsync<List<InvitacionMini>>("/api/tablero-compartido/invitaciones") ?? new(); } catch { _invitaciones = new(); }
             try { _resumen = await Auth().GetFromJsonAsync<ResumenTareasDto>("/api/tareas/resumen"); } catch { _resumen = null; }
             try { _etiquetasCat = await Auth().GetFromJsonAsync<List<EtiquetaTareaDto>>("/api/tareas/etiquetas") ?? new(); } catch { _etiquetasCat = new(); }
             if (_tenants.Count == 0)
@@ -4339,13 +4359,20 @@ else
         PatchLocal(tareaId, t => t with { OrigenReferencia = refv });
         await Auth().PatchAsJsonAsync($"/api/tareas/{tareaId}/inline", new InlineUpdateTareaRequest("origen", tipo, null, null, null, refv));
     }
-    private void CerrarBoard() { _board = null; _tareas = new(); }
+    private void CerrarBoard() { _board = null; _tareas = new(); _invitadoActual = null; }
     private async Task RecargarBoard()
     {
         if (_board is null) return;
         if (EsBoardCompartido)
         {
             _board = await Auth().GetFromJsonAsync<TableroBoardDto>("/api/tablero-compartido/board");
+            SyncTareas();
+            ReconciliarOrden();
+            return;
+        }
+        if (_invitadoActual is InvitacionMini invAct)
+        {
+            _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tablero-compartido/invitaciones/{invAct.TenantId}/{invAct.TableroId}/board");
             SyncTareas();
             ReconciliarOrden();
             return;
@@ -5105,7 +5132,7 @@ else
 
     private async Task GuardarEd(Guid id, string campo)
     {
-        if (EsBoardCompartido) { AvisoSoloLecturaCompartido(); return; }
+        if (EsBoardForaneo) { AvisoSoloLecturaCompartido(); return; }
         if (_editKey != id + ":" + campo || _editBusy) return;
         _editBusy = true;
         try
@@ -5153,7 +5180,7 @@ else
 
     private async Task CambiarPrioridadFila(Guid id, ChangeEventArgs e)
     {
-        if (EsBoardCompartido) { AvisoSoloLecturaCompartido(); return; }
+        if (EsBoardForaneo) { AvisoSoloLecturaCompartido(); return; }
         if (!Enum.TryParse<PrioridadTarea>(e.Value?.ToString(), out var pr)) return;
         PatchLocal(id, t => t with { Prioridad = pr });
         var resp = await Auth().PatchAsJsonAsync($"/api/tareas/{id}/inline", new { Campo = "prioridad", Texto = pr.ToString() });
@@ -5203,7 +5230,7 @@ else
     private string NombreMiembro(Guid pid) => _personas?.FirstOrDefault(p => p.Id == pid)?.Nombre ?? PersonaNombre(pid);
     private async Task ToggleAsig(Guid tareaId, Guid personaId)
     {
-        if (EsBoardCompartido) { AvisoSoloLecturaCompartido(); return; }
+        if (EsBoardForaneo) { AvisoSoloLecturaCompartido(); return; }
         if (!_asigSel.Add(personaId)) _asigSel.Remove(personaId);
         var ids = _asigSel.ToList();
         PatchLocal(tareaId, t =>
@@ -5253,7 +5280,7 @@ else
     }
     private async Task CrearDesdeNuevaFila(Guid estadoId)
     {
-        if (EsBoardCompartido) { AvisoSoloLecturaCompartido(); return; }
+        if (EsBoardForaneo) { AvisoSoloLecturaCompartido(); return; }
         var d = NuevaFilaDe(estadoId);
         if (string.IsNullOrWhiteSpace(d.Titulo) || _board is null) return;
         var camposValores = d.Campos.Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
@@ -5416,6 +5443,7 @@ else
     private async Task CambiarEstadoOCerrar(Guid tareaId, Guid estadoId)
     {
         if (EsBoardCompartido) { await CambiarEstadoCompartidoAsync(tareaId, estadoId); return; }
+        if (_invitadoActual is not null) { await CambiarEstadoInvitadoAsync(tareaId, estadoId); return; }
         if (EstadoEsTerminal(estadoId))
         {
             if (_motivosTareas.Count == 0) await CargarMotivosTareasAsync();
@@ -5475,7 +5503,7 @@ else
     }
     private async Task CambiarProgresoFila(Guid tareaId, ChangeEventArgs e)
     {
-        if (EsBoardCompartido) { AvisoSoloLecturaCompartido(); return; }
+        if (EsBoardForaneo) { AvisoSoloLecturaCompartido(); return; }
         if (!int.TryParse(e.Value?.ToString(), out var p)) return;
         await Auth().PutAsJsonAsync($"/api/tareas/{tareaId}/progreso", new ActualizarProgresoRequest(p));
         await RecargarBoard();
@@ -5569,6 +5597,7 @@ else
 
     private async Task AbrirBoardCompartidoAsync()
     {
+        _invitadoActual = null;
         try
         {
             _board = await Auth().GetFromJsonAsync<TableroBoardDto>("/api/tablero-compartido/board");
@@ -5631,7 +5660,7 @@ else
         try
         {
             var resp = await Auth().PostAsJsonAsync("/connect/switch-tenant", new { tenantId = tid });
-            if (!resp.IsSuccessStatusCode) { _msg = "No se pudo cambiar a esa copropiedad."; _msgClass = "alert-danger"; return; }
+            if (!resp.IsSuccessStatusCode) { _msg = _invitadoActual is not null ? "No tienes acceso a esa copropiedad: desde la invitacion puedes ver y mover las tarjetas; para abrir el detalle pide acceso al administrador." : "No se pudo cambiar a esa copropiedad."; _msgClass = "alert-warning"; return; }
             var dto = await resp.Content.ReadFromJsonAsync<CompartidoSwitchResp>();
             if (string.IsNullOrWhiteSpace(dto?.AccessToken)) { _msg = "Respuesta inesperada del servidor."; _msgClass = "alert-danger"; return; }
             await Js.InvokeVoidAsync("propiaAuth.save", dto!.AccessToken, tid.ToString(), t.TenantNombre ?? "");
@@ -5644,6 +5673,66 @@ else
     {
         _msg = "En el tablero compartido la tarea se edita en su copropiedad (haz clic en la tarjeta para abrirla). Aqui puedes moverla de etapa y consultarla.";
         _msgClass = "alert-warning";
+    }
+
+    // ---- Tableros donde me invitaron (otra copropiedad, con o sin vinculo alli) ----
+    private sealed record InvitacionMini(Guid TenantId, string TenantNombre, Guid TableroId, string TableroNombre, string? TableroColor, string? TableroDescripcion);
+    private List<InvitacionMini> _invitaciones = new();
+    private InvitacionMini? _invitadoActual;
+
+    private bool EsBoardForaneo => EsBoardCompartido || _invitadoActual is not null;
+
+    private async Task AbrirBoardInvitadoAsync(InvitacionMini inv)
+    {
+        try
+        {
+            _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tablero-compartido/invitaciones/{inv.TenantId}/{inv.TableroId}/board");
+        }
+        catch (Exception ex)
+        {
+            _msg = "No se pudo abrir el tablero: " + ex.Message;
+            _msgClass = "alert-danger";
+            return;
+        }
+        if (_board is null) { _msg = "No se pudo abrir el tablero al que te invitaron."; _msgClass = "alert-danger"; return; }
+        _invitadoActual = inv;
+        _verCerradas = false;
+        _etiquetasCat = new();
+        SyncTareas();
+        await RestaurarColsAsync();
+        ReconciliarOrden();
+        await RestaurarAggGroupAsync();
+        _boardMode = await LeerVistaGuardadaAsync();
+        _expandidas.Clear();
+        _nuevaFilas.Clear();
+        LimpiarFiltros();
+    }
+
+    private async Task CambiarEstadoInvitadoAsync(Guid tareaId, Guid estadoId)
+    {
+        if (_invitadoActual is not InvitacionMini inv) return;
+        var destino = _board?.Estados.FirstOrDefault(e => e.Id == estadoId);
+        if (destino is null) return;
+        if (destino.EsTerminal)
+        {
+            _msg = "Cerrar la tarea (etapa terminal) pide motivo: se hace dentro de la copropiedad.";
+            _msgClass = "alert-warning";
+            return;
+        }
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/api/tablero-compartido/invitaciones/mover",
+                new { TenantId = inv.TenantId, TableroId = inv.TableroId, TareaId = tareaId, EstadoId = estadoId });
+            if (!resp.IsSuccessStatusCode)
+            {
+                CompartidoMoverResp? r = null;
+                try { r = await resp.Content.ReadFromJsonAsync<CompartidoMoverResp>(); } catch { }
+                _msg = r?.Error ?? "No se pudo mover la tarea.";
+                _msgClass = "alert-danger";
+            }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        await RecargarBoard();
     }
 
     private sealed record CompartidoMoverResp(bool Ok, string? Error);
@@ -6054,7 +6143,7 @@ else
 
     private async Task AbrirCardDraft(TareaListaDto? t, Guid? estadoIdDefault)
     {
-        if (EsBoardCompartido)
+        if (EsBoardForaneo)
         {
             if (t is not null) await AbrirTareaCompartidaAsync(t);
             return;

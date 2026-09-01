@@ -264,6 +264,144 @@ public class TableroCompartidoService : ITableroCompartidoService
         }
     }
 
+    // ===================== Invitados sin vinculo (tableros donde me invitaron) =====================
+
+    private sealed record InvitacionRaw(Guid TenantId, string TenantNombre, Guid TableroId, string TableroNombre, string? Color, string? Descripcion);
+
+    /// <summary>Filas crudas de get_tableros_invitado (SECURITY DEFINER) para la persona.</summary>
+    private async Task<List<InvitacionRaw>> InvitacionesRawAsync(Guid personaId, CancellationToken ct)
+    {
+        var filas = new List<InvitacionRaw>();
+        var conn = _db.Database.GetDbConnection();
+        var abiertaAqui = conn.State != System.Data.ConnectionState.Open;
+        if (abiertaAqui) await conn.OpenAsync(ct);
+        try
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT tenant_id, tenant_nombre, tablero_id, tablero_nombre, tablero_color, tablero_descripcion FROM get_tableros_invitado(@p_persona_id)";
+            var p = cmd.CreateParameter();
+            p.ParameterName = "@p_persona_id";
+            p.Value = personaId;
+            cmd.Parameters.Add(p);
+
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                filas.Add(new InvitacionRaw(
+                    reader.GetGuid(0),
+                    reader.IsDBNull(1) ? "" : reader.GetString(1),
+                    reader.GetGuid(2),
+                    reader.IsDBNull(3) ? "" : reader.GetString(3),
+                    reader.IsDBNull(4) ? null : reader.GetString(4),
+                    reader.IsDBNull(5) ? null : reader.GetString(5)));
+            }
+        }
+        finally
+        {
+            if (abiertaAqui) await conn.CloseAsync();
+        }
+        return filas;
+    }
+
+    private async Task<Guid?> PersonaDelUsuarioAsync(Guid userId, CancellationToken ct)
+        => await _db.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => u.PersonaId).FirstOrDefaultAsync(ct);
+
+    public async Task<IReadOnlyList<TableroInvitacionDto>> InvitacionesAsync(Guid userId, CancellationToken ct)
+    {
+        if (await PersonaDelUsuarioAsync(userId, ct) is not Guid personaId)
+            return Array.Empty<TableroInvitacionDto>();
+
+        var filas = await InvitacionesRawAsync(personaId, ct);
+        if (filas.Count == 0) return Array.Empty<TableroInvitacionDto>();
+
+        // El tenant activo ya muestra sus tableros en la galeria, y los administrados los cubre
+        // "Todas mis copropiedades": aqui solo van las invitaciones de OTRAS copropiedades.
+        var activo = _tenant.CurrentTenantId;
+        var administrados = (await TenantsAdministradosAsync(userId, ct)).ToHashSet();
+
+        return filas
+            .Where(f => f.TenantId != activo && !administrados.Contains(f.TenantId))
+            .OrderBy(f => f.TenantNombre).ThenBy(f => f.TableroNombre)
+            .Select(f => new TableroInvitacionDto(f.TenantId, f.TenantNombre, f.TableroId, f.TableroNombre, f.Color, f.Descripcion))
+            .ToList();
+    }
+
+    public async Task<Propia.Application.Tareas.TableroBoardDto?> ObtenerBoardInvitadoAsync(Guid userId, Guid tenantId, Guid tableroId, CancellationToken ct)
+    {
+        if (await PersonaDelUsuarioAsync(userId, ct) is not Guid personaId) return null;
+
+        // La autorizacion ES la invitacion: sin fila en tablero_usuarios no hay board.
+        var filas = await InvitacionesRawAsync(personaId, ct);
+        var inv = filas.FirstOrDefault(f => f.TenantId == tenantId && f.TableroId == tableroId);
+        if (inv is null) return null;
+
+        var original = _tenant.CurrentTenantId;
+        try
+        {
+            await ImpersonarAsync(tenantId, ct);
+            var board = await _tareas.GetTableroBoardAsync(tableroId, ct, verCerradas: false);
+            if (board is null) return null;
+            // Estados REALES tal cual; solo se estampa la copropiedad en cada tarea (chip + mover).
+            var tareas = board.Tareas
+                .Select(t => t with { TenantId = tenantId, TenantNombre = inv.TenantNombre })
+                .ToList();
+            return board with { Tareas = tareas };
+        }
+        finally
+        {
+            await RestaurarAsync(original, ct);
+        }
+    }
+
+    public async Task<MoverTarjetaCompartidaResultado> MoverInvitadoAsync(Guid userId, Guid tenantId, Guid tableroId, Guid tareaId, Guid estadoId, CancellationToken ct)
+    {
+        if (await PersonaDelUsuarioAsync(userId, ct) is not Guid personaId)
+            return new MoverTarjetaCompartidaResultado(false, "Usuario sin persona asociada.");
+
+        var filas = await InvitacionesRawAsync(personaId, ct);
+        if (!filas.Any(f => f.TenantId == tenantId && f.TableroId == tableroId))
+            return new MoverTarjetaCompartidaResultado(false, "No estas invitado a ese tablero.");
+
+        var original = _tenant.CurrentTenantId;
+        try
+        {
+            await ImpersonarAsync(tenantId, ct);
+
+            var tarea = await _db.Tareas.AsNoTracking()
+                .Where(t => t.Id == tareaId && t.TableroId == tableroId && !t.Eliminada && !t.Cerrada)
+                .Select(t => new { t.Id, t.EstadoId })
+                .FirstOrDefaultAsync(ct);
+            if (tarea is null)
+                return new MoverTarjetaCompartidaResultado(false, "La tarea ya no existe en ese tablero o esta cerrada.");
+
+            var destino = await _db.TareasEstados.AsNoTracking()
+                .Where(e => e.Id == estadoId && e.Activo && e.TableroId == tableroId)
+                .Select(e => new { e.Id, e.EsTerminal })
+                .FirstOrDefaultAsync(ct);
+            if (destino is null)
+                return new MoverTarjetaCompartidaResultado(false, "La etapa destino no existe en ese tablero.");
+            if (destino.EsTerminal)
+                return new MoverTarjetaCompartidaResultado(false,
+                    "Cerrar la tarea (etapa terminal) pide motivo: se hace dentro de la copropiedad.");
+            if (destino.Id == tarea.EstadoId)
+                return new MoverTarjetaCompartidaResultado(true, null);
+
+            var ok = await _tareas.CambiarEstadoAsync(tareaId, new CambiarEstadoRequest(estadoId, null), ct);
+            return ok
+                ? new MoverTarjetaCompartidaResultado(true, null)
+                : new MoverTarjetaCompartidaResultado(false, "No se pudo mover la tarea.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Tablero invitado: fallo moviendo la tarea {TareaId} del tenant {TenantId}", tareaId, tenantId);
+            return new MoverTarjetaCompartidaResultado(false, "Error moviendo la tarea. Intenta de nuevo.");
+        }
+        finally
+        {
+            await RestaurarAsync(original, ct);
+        }
+    }
+
     public async Task<IReadOnlyList<PersonaCrossTenantDto>> BuscarPersonasAsync(Guid userId, string q, CancellationToken ct)
     {
         q = (q ?? "").Trim();

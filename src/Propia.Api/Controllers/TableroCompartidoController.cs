@@ -55,6 +55,33 @@ public class TableroCompartidoController : ControllerBase
         return r.Ok ? Ok(r) : BadRequest(r);
     }
 
+    /// <summary>Tableros de otras copropiedades donde fui invitado (aunque no tenga vinculo).</summary>
+    [HttpGet("invitaciones")]
+    public async Task<IActionResult> Invitaciones(CancellationToken ct)
+    {
+        if (UserId() is not Guid userId) return Unauthorized();
+        return Ok(await _svc.InvitacionesAsync(userId, ct));
+    }
+
+    /// <summary>Board REAL de un tablero donde fui invitado (la invitacion ES la autorizacion).</summary>
+    [HttpGet("invitaciones/{tenantId:guid}/{tableroId:guid}/board")]
+    public async Task<IActionResult> BoardInvitado(Guid tenantId, Guid tableroId, CancellationToken ct)
+    {
+        if (UserId() is not Guid userId) return Unauthorized();
+        var dto = await _svc.ObtenerBoardInvitadoAsync(userId, tenantId, tableroId, ct);
+        return dto is null
+            ? StatusCode(403, new { error = "No estas invitado a ese tablero." })
+            : Ok(dto);
+    }
+
+    [HttpPost("invitaciones/mover")]
+    public async Task<IActionResult> MoverInvitado([FromBody] MoverTarjetaInvitadoRequest req, CancellationToken ct)
+    {
+        if (UserId() is not Guid userId) return Unauthorized();
+        var r = await _svc.MoverInvitadoAsync(userId, req.TenantId, req.TableroId, req.TareaId, req.EstadoId, ct);
+        return r.Ok ? Ok(r) : BadRequest(r);
+    }
+
     /// <summary>Personas de los directorios de TODAS mis copropiedades administradas (para
     /// invitar usuarios cross-tenant a un tablero de Tareas).</summary>
     [HttpGet("personas")]
