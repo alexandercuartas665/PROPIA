@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Propia.Application.Common;
+using Propia.Application.Directorio;
 using Propia.Application.TableroCompartido;
 using Propia.Application.Tareas;
 using Propia.Infrastructure.Persistence;
@@ -19,17 +20,20 @@ public class TableroCompartidoService : ITableroCompartidoService
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenant;
     private readonly ITareasService _tareas;
+    private readonly IDirectorioService _directorio;
     private readonly ILogger<TableroCompartidoService> _logger;
 
     public TableroCompartidoService(
         PropiaDbContext db,
         ITenantContext tenant,
         ITareasService tareas,
+        IDirectorioService directorio,
         ILogger<TableroCompartidoService> logger)
     {
         _db = db;
         _tenant = tenant;
         _tareas = tareas;
+        _directorio = directorio;
         _logger = logger;
     }
 
@@ -162,6 +166,53 @@ public class TableroCompartidoService : ITableroCompartidoService
         {
             await RestaurarAsync(original, ct);
         }
+    }
+
+    public async Task<IReadOnlyList<PersonaCrossTenantDto>> BuscarPersonasAsync(Guid userId, string q, CancellationToken ct)
+    {
+        q = (q ?? "").Trim();
+        if (q.Length < 2) return Array.Empty<PersonaCrossTenantDto>();
+
+        var tenantIds = await TenantsAdministradosAsync(userId, ct);
+        if (tenantIds.Count == 0) return Array.Empty<PersonaCrossTenantDto>();
+
+        var copros = await _db.Tenants.AsNoTracking()
+            .Where(t => tenantIds.Contains(t.Id))
+            .Select(t => new { t.Id, t.Nombre })
+            .ToListAsync(ct);
+        // La copropiedad activa primero: en el dedup gana su etiqueta.
+        var original = _tenant.CurrentTenantId;
+        copros = copros.OrderBy(c => c.Id == original ? 0 : 1).ThenBy(c => c.Nombre).ToList();
+
+        var resultado = new List<PersonaCrossTenantDto>();
+        var vistos = new HashSet<Guid>();
+        try
+        {
+            foreach (var copro in copros)
+            {
+                await ImpersonarAsync(copro.Id, ct);
+                try
+                {
+                    var personas = await _directorio.ListarPersonasDelTenantAsync(q, ct);
+                    foreach (var p in personas)
+                    {
+                        if (!vistos.Add(p.Id)) continue;
+                        resultado.Add(new PersonaCrossTenantDto(
+                            p.Id, p.Nombres, p.Apellidos, p.Documento, p.FotoUrl, copro.Id, copro.Nombre));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Tablero compartido: fallo buscando personas en el tenant {TenantId}", copro.Id);
+                }
+                if (resultado.Count >= 30) break;
+            }
+        }
+        finally
+        {
+            await RestaurarAsync(original, ct);
+        }
+        return resultado.Take(30).ToList();
     }
 
     // ---------- impersonacion (patron Admin Agent API) ----------

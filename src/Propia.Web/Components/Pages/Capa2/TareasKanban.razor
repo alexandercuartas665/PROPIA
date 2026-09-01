@@ -28,8 +28,92 @@ else
 
     @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
 
+    @* ===================== TABLERO COMPARTIDO (espejo cross-tenant) ===================== *@
+    @if (_board is null && _modoCompartido)
+    {
+        <div class="tb-board-head">
+            <button class="tb-icon-btn" title="Volver" @onclick="CerrarEspejo"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
+            <div class="tb-board-color" style="background:linear-gradient(135deg,#7A77E0,#5955D1)"></div>
+            <div class="tb-board-id">
+                <h1 class="tb-board-nom">Todas mis copropiedades</h1>
+                <p class="tb-board-desc">Espejo de las tareas reales de las copropiedades que administras. Arrastra para cambiar de estado; abre una tarjeta para trabajarla completa en su copropiedad.</p>
+            </div>
+            <div class="tb-board-actions">
+                <button class="tb-btn tb-btn-soft" @onclick="CargarEspejoAsync" disabled="@_espejoBusy"><i class="fi fi-rr-refresh"></i>@(_espejoBusy ? "Cargando..." : "Actualizar")</button>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_espejoError)) { <div class="alert alert-danger py-2 small">@_espejoError</div> }
+
+        @if (_espejo is null)
+        {
+            <div class="text-center py-5"><div class="spinner-border" style="color:#6D4FE3"></div></div>
+        }
+        else
+        {
+            <div class="tb-board-tabs">
+                @foreach (var c in _espejo.Copropiedades)
+                {
+                    var copro = c;
+                    <button class="tb-btab @(_espejoFiltro.Count == 0 || _espejoFiltro.Contains(c.TenantId) ? "on" : "")" @onclick="() => ToggleEspejoFiltro(copro.TenantId)">@c.Nombre (@c.Tarjetas)</button>
+                }
+                <div class="tb-flex"></div>
+                <input class="tb-search" @bind="_espejoBuscar" @bind:event="oninput" placeholder="Buscar por titulo o numero..." />
+            </div>
+
+            var colsEspejo = EspejoColumnas();
+            @if (colsEspejo.Count == 0)
+            {
+                <div class="tb-cerr-empty">No hay tareas activas en tus copropiedades@(string.IsNullOrWhiteSpace(_espejoBuscar) ? "" : " para esa busqueda").</div>
+            }
+            else
+            {
+                <div class="tb-kanban" style="grid-template-columns:repeat(@colsEspejo.Count, minmax(260px, 1fr))">
+                    @foreach (var col in colsEspejo)
+                    {
+                        var columna = col;
+                        <div class="tb-col @(_dragEspejo is not null ? "tb-col-drop" : "")"
+                             ondragover="event.preventDefault()"
+                             @ondrop="() => SoltarEspejoAsync(columna.Nombre)">
+                            <div class="tb-col-head">
+                                <span class="tb-col-dot" style="background:@(col.Color ?? "#94a3b8")"></span>
+                                <span class="tb-col-nom">@col.Nombre</span>
+                                <span class="tb-col-count">@col.Tarjetas.Count</span>
+                            </div>
+                            <div class="tb-col-body">
+                                @foreach (var t in col.Tarjetas)
+                                {
+                                    var tarjeta = t;
+                                    <button class="tb-tcard" draggable="true"
+                                            @ondragstart="() => _dragEspejo = tarjeta"
+                                            @ondragend="() => _dragEspejo = null"
+                                            style="border-left-color:@(t.EstadoColor ?? "#6D4FE3")"
+                                            @onclick="() => AbrirTareaEspejoAsync(tarjeta)"
+                                            title="Abrir en @t.TenantNombre">
+                                        <div class="tb-tcard-meta" style="margin-bottom:4px;">
+                                            <span class="tb-prio" style="color:@EspejoColorTenant(t.TenantId);background:@(EspejoColorTenant(t.TenantId))1A">@t.TenantNombre</span>
+                                            <span class="tb-tcard-age">@t.NumeroTarea</span>
+                                        </div>
+                                        <div class="tb-tcard-tit">@t.Titulo</div>
+                                        <div class="tb-tcard-meta">
+                                            <span class="tb-prio" style="color:@EspejoPrioFg(t.Prioridad);background:@EspejoPrioBg(t.Prioridad)">@t.Prioridad</span>
+                                            @if (t.FechaVencimiento.HasValue) { <span class="tb-due @(t.FechaVencimiento.Value < DateOnly.FromDateTime(DateTime.Today) ? "venc" : "")">@FechaCorta(t.FechaVencimiento.Value)</span> }
+                                        </div>
+                                        <div class="tb-tcard-foot">
+                                            <span class="tb-tcard-resp">@(string.IsNullOrWhiteSpace(t.ResponsableNombre) ? "Sin asignar" : t.ResponsableNombre)</span>
+                                            @if (!string.IsNullOrEmpty(t.TableroNombre)) { <span class="tb-chip">@t.TableroNombre</span> }
+                                        </div>
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        }
+    }
     @* ===================== LISTA DE TABLEROS ===================== *@
-    @if (_board is null)
+    else if (_board is null)
     {
         <div class="tb-head">
             <div>
@@ -91,6 +175,24 @@ else
                                 <span class="tb-card-count">@b.NCards tarjetas</span>
                             </div>
                             <button class="tb-card-open" @onclick="() => AbrirBoardAsync(board.Id)">Abrir tablero<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18l6-6-6-6"/></svg></button>
+                        </div>
+                    </div>
+                }
+                @if (_tenants.Count > 1)
+                {
+                    <div class="tb-card">
+                        <div class="tb-card-bar" style="background:linear-gradient(90deg,#7A77E0,#5955D1)"></div>
+                        <div class="tb-card-body">
+                            <div class="tb-card-top">
+                                <div class="tb-card-id">
+                                    <div class="tb-card-nom">Todas mis copropiedades</div>
+                                    <div class="tb-card-desc">Tablero compartido: espejo de las tareas de todas tus copropiedades.</div>
+                                </div>
+                            </div>
+                            <div class="tb-card-foot">
+                                <span class="tb-card-count">@(_espejo is null ? "cross-tenant" : $"{_espejo.Tarjetas.Count} tarjetas")</span>
+                            </div>
+                            <button class="tb-card-open" @onclick="AbrirEspejoAsync">Abrir tablero compartido<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18l6-6-6-6"/></svg></button>
                         </div>
                     </div>
                 }
@@ -897,7 +999,14 @@ else
                             </div>
                         }
                         <div class="tb-search-wrap">
-                            <input class="tb-input" placeholder="Buscar persona por nombre, documento o correo..." @bind="_tbBuscar" @bind:event="oninput" @onkeyup="BuscarPersonasTb" autocomplete="off" />
+                            @if (_tenants.Count > 1)
+                            {
+                                <label class="tbcfg-cross">
+                                    <input type="checkbox" checked="@_tbCross" @onchange="e => { _tbCross = (bool)e.Value!; _tbResultados.Clear(); _tbResultCopro.Clear(); }" />
+                                    <span>Buscar tambien en mis otras copropiedades (invitacion cross-tenant)</span>
+                                </label>
+                            }
+                            <input class="tb-input" placeholder="@(_tbCross ? "Buscar persona en todas mis copropiedades..." : "Buscar persona por nombre, documento o correo...")" @bind="_tbBuscar" @bind:event="oninput" @onkeyup="BuscarPersonasTb" autocomplete="off" />
                             @if (_tbResultados.Count > 0)
                             {
                                 <div class="tb-search-drop">
@@ -915,6 +1024,10 @@ else
                                                 <span class="tb-ava tb-ava-sm">@Iniciales(nombre)</span>
                                             }
                                             <span class="tb-search-nom">@nombre</span>
+                                            @if (_tbResultCopro.TryGetValue(p.Id, out var coproOrigen))
+                                            {
+                                                <span class="tbcfg-copro-chip">@coproOrigen</span>
+                                            }
                                             <span class="tb-search-doc">@p.Documento</span>
                                         </button>
                                     }
@@ -1007,15 +1120,41 @@ else
             <div class="tb-modal-body">
                 <div>
                     <div class="tbcfg-h">ESTADOS (COLUMNAS)</div>
+                    <div class="tbcfg-help">Click en el nombre para renombrar, en el punto para cambiar el color, y usa las flechas para reordenar.</div>
                     <div class="tbcfg-list">
-                        @foreach (var e in _board.Estados)
+                        @for (var iEst = 0; iEst < _board.Estados.Count; iEst++)
                         {
-                            var est = e;
+                            var est = _board.Estados[iEst];
+                            var idxEst = iEst;
                             <div class="tbcfg-est">
-                                <span class="tbcfg-dot" style="background:@(e.Color ?? "#94a3b8")"></span>
-                                <span class="tbcfg-est-nom">@e.Nombre</span>
-                                <span class="tbcfg-est-cnt">@CountEstado(e.Id) tarjetas</span>
-                                @if (!e.EsBase && !e.EsTerminal)
+                                <span style="position:relative;display:inline-flex;">
+                                    <button type="button" class="tbcfg-dot tbcfg-dot-btn" style="background:@(est.Color ?? "#94a3b8")" title="Cambiar color" @onclick="() => _estColorId = _estColorId == est.Id ? null : est.Id"></button>
+                                    @if (_estColorId == est.Id)
+                                    {
+                                        <div class="tb-tagpop-bd" @onclick="() => _estColorId = null"></div>
+                                        <div class="tb-tag-colors" @onclick:stopPropagation="true">
+                                            @foreach (var c in _colores)
+                                            {
+                                                var cc = c;
+                                                <button type="button" class="tb-tag-copt @(string.Equals(est.Color, cc, StringComparison.OrdinalIgnoreCase) ? "on" : "")" style="background:@cc" @onclick="() => GuardarEstadoColorAsync(est, cc)"></button>
+                                            }
+                                        </div>
+                                    }
+                                </span>
+                                @if (_estEditId == est.Id)
+                                {
+                                    <input class="tbcfg-est-inp" @bind="_estEditVal" @bind:event="oninput" @onblur="() => GuardarEstadoNombreAsync(est)" @onkeydown="(e) => EstadoEditKeydown(e, est)" />
+                                }
+                                else
+                                {
+                                    <span class="tbcfg-est-nom tbcfg-est-nom-edit" title="Click para renombrar" @onclick="() => { _estEditId = est.Id; _estEditVal = est.Nombre; }">@est.Nombre</span>
+                                }
+                                <span class="tbcfg-est-cnt">@CountEstado(est.Id) tarjetas</span>
+                                <span class="tbcfg-ord">
+                                    <button type="button" class="tbcfg-ordbtn" title="Subir" disabled="@(idxEst == 0 || _busy)" @onclick="() => MoverEstadoAsync(idxEst, -1)">&#9650;</button>
+                                    <button type="button" class="tbcfg-ordbtn" title="Bajar" disabled="@(idxEst == _board.Estados.Count - 1 || _busy)" @onclick="() => MoverEstadoAsync(idxEst, 1)">&#9660;</button>
+                                </span>
+                                @if (!est.EsBase && !est.EsTerminal)
                                 {
                                     <button class="tbcfg-del" title="Quitar estado" @onclick="() => CfgRemoveEstado(est.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
                                 }
@@ -5421,14 +5560,35 @@ else
     private (string Nombre, string? Foto) SelInfo(Guid pid)
         => _tbSelInfo.TryGetValue(pid, out var v) ? v : (PersonaNombre(pid), (string?)null);
 
+    // Modo cross-tenant del picker: busca en el directorio de TODAS mis copropiedades
+    // administradas (invitacion de usuarios de otras copros al tablero). Los ids de persona
+    // son globales, asi que TableroUsuario los acepta sin cambios de esquema.
+    private bool _tbCross;
+    private readonly Dictionary<Guid, string> _tbResultCopro = new();
+    private sealed record PersonaCrossMini(Guid Id, string Nombres, string Apellidos, string Documento, string? FotoUrl, Guid TenantId, string TenantNombre);
+
     private async Task BuscarPersonasTb()
     {
         var q = _tbBuscar?.Trim() ?? "";
-        if (q.Length < 2) { _tbResultados.Clear(); return; }
+        if (q.Length < 2) { _tbResultados.Clear(); _tbResultCopro.Clear(); return; }
         try
         {
-            _tbResultados = await Auth().GetFromJsonAsync<List<PersonaResumenDto>>(
-                $"/api/directorio/personas?q={Uri.EscapeDataString(q)}") ?? new();
+            if (_tbCross)
+            {
+                var cross = await Auth().GetFromJsonAsync<List<PersonaCrossMini>>(
+                    $"/api/tablero-compartido/personas?q={Uri.EscapeDataString(q)}") ?? new();
+                _tbResultCopro.Clear();
+                foreach (var p in cross) { _tbResultCopro[p.Id] = p.TenantNombre; }
+                _tbResultados = cross
+                    .Select(p => new PersonaResumenDto(p.Id, TipoDocumento.CC, p.Documento, p.Nombres, p.Apellidos, null, null, p.FotoUrl, false, EstadoDirectorio.Activo))
+                    .ToList();
+            }
+            else
+            {
+                _tbResultCopro.Clear();
+                _tbResultados = await Auth().GetFromJsonAsync<List<PersonaResumenDto>>(
+                    $"/api/directorio/personas?q={Uri.EscapeDataString(q)}") ?? new();
+            }
         }
         catch { _tbResultados.Clear(); }
     }
@@ -5445,6 +5605,182 @@ else
     {
         _tableroDraft?.UsuarioIds.Remove(pid);
         _tbSelInfo.Remove(pid);
+    }
+
+    // ===================== Tablero compartido (espejo cross-tenant) =====================
+    private bool _modoCompartido;
+    private bool _espejoBusy;
+    private string? _espejoError;
+    private string _espejoBuscar = "";
+    private EspejoDto? _espejo;
+    private readonly HashSet<Guid> _espejoFiltro = new();
+    private EspejoTarjeta? _dragEspejo;
+
+    private sealed record EspejoCopro(Guid TenantId, string Nombre, string? LogoUrl, int Tarjetas);
+    private sealed record EspejoTarjeta(Guid TareaId, Guid TenantId, string TenantNombre, string NumeroTarea, string Titulo, string? Color,
+        Guid EstadoId, string EstadoNombre, string? EstadoColor, int EstadoOrden, string? TableroNombre,
+        string? ResponsableNombre, DateOnly? FechaVencimiento, int Progreso, string Prioridad, bool EsProyecto);
+    private sealed record EspejoDto(List<EspejoCopro> Copropiedades, List<EspejoTarjeta> Tarjetas);
+    private sealed record EspejoColumnaVm(string Nombre, string? Color, int Orden, List<EspejoTarjeta> Tarjetas);
+    private sealed record EspejoMoverResp(bool Ok, string? Error);
+    private sealed record EspejoSwitchResp(string? AccessToken);
+
+    private async Task AbrirEspejoAsync()
+    {
+        _modoCompartido = true;
+        _espejoError = null;
+        if (_espejo is null) { await CargarEspejoAsync(); } else { StateHasChanged(); }
+    }
+
+    private void CerrarEspejo() => _modoCompartido = false;
+
+    private async Task CargarEspejoAsync()
+    {
+        _espejoBusy = true; _espejoError = null; StateHasChanged();
+        try
+        {
+            var resp = await Auth().GetAsync("/api/tablero-compartido");
+            if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            {
+                _espejoError = "El tablero compartido es solo para administradores de copropiedades.";
+                _espejo = new EspejoDto(new(), new());
+                return;
+            }
+            if (resp.IsSuccessStatusCode) { _espejo = await resp.Content.ReadFromJsonAsync<EspejoDto>(); }
+            else { _espejoError = "No se pudo cargar el tablero compartido. Intenta de nuevo."; }
+        }
+        catch (Exception ex) { _espejoError = ex.Message; }
+        finally { _espejoBusy = false; StateHasChanged(); }
+    }
+
+    private void ToggleEspejoFiltro(Guid tenantId) { if (!_espejoFiltro.Add(tenantId)) { _espejoFiltro.Remove(tenantId); } }
+
+    private List<EspejoColumnaVm> EspejoColumnas()
+    {
+        if (_espejo is null) return new();
+        var q = (_espejoBuscar ?? "").Trim();
+        IEnumerable<EspejoTarjeta> src = _espejo.Tarjetas;
+        if (_espejoFiltro.Count > 0) src = src.Where(t => _espejoFiltro.Contains(t.TenantId));
+        if (q.Length > 0)
+            src = src.Where(t => t.Titulo.Contains(q, StringComparison.OrdinalIgnoreCase) || t.NumeroTarea.Contains(q, StringComparison.OrdinalIgnoreCase));
+        return src
+            .GroupBy(t => t.EstadoNombre.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => new EspejoColumnaVm(
+                g.First().EstadoNombre.Trim(),
+                g.Select(t => t.EstadoColor).FirstOrDefault(c => !string.IsNullOrEmpty(c)),
+                g.Min(t => t.EstadoOrden),
+                g.OrderBy(t => t.FechaVencimiento ?? DateOnly.MaxValue).ThenBy(t => t.TenantNombre).ToList()))
+            .OrderBy(c => c.Orden).ThenBy(c => c.Nombre, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static readonly string[] _espejoPaleta = { "#5955D1", "#1D63D8", "#16794C", "#A16207", "#C2410C", "#9D174D", "#0E7490", "#6D28D9" };
+
+    private string EspejoColorTenant(Guid tenantId)
+    {
+        var i = _espejo?.Copropiedades.FindIndex(c => c.TenantId == tenantId) ?? 0;
+        return _espejoPaleta[Math.Max(0, i) % _espejoPaleta.Length];
+    }
+
+    private string EspejoPrioFg(string prio) => Enum.TryParse<PrioridadTarea>(prio, out var pr) ? PrioFg(pr) : "#64748b";
+    private string EspejoPrioBg(string prio) => Enum.TryParse<PrioridadTarea>(prio, out var pr) ? PrioBg(pr) : "#f1f5f9";
+
+    private async Task SoltarEspejoAsync(string estadoDestino)
+    {
+        var t = _dragEspejo;
+        _dragEspejo = null;
+        if (t is null || _espejo is null) return;
+        if (string.Equals(t.EstadoNombre.Trim(), estadoDestino, StringComparison.OrdinalIgnoreCase)) return;
+        _espejoError = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/api/tablero-compartido/mover",
+                new { TenantId = t.TenantId, TareaId = t.TareaId, EstadoNombreDestino = estadoDestino });
+            if (resp.IsSuccessStatusCode)
+            {
+                var idx = _espejo.Tarjetas.FindIndex(x => x.TareaId == t.TareaId && x.TenantId == t.TenantId);
+                if (idx >= 0) { _espejo.Tarjetas[idx] = _espejo.Tarjetas[idx] with { EstadoNombre = estadoDestino }; }
+            }
+            else
+            {
+                var r = await resp.Content.ReadFromJsonAsync<EspejoMoverResp>();
+                _espejoError = r?.Error ?? "No se pudo mover la tarea.";
+            }
+        }
+        catch (Exception ex) { _espejoError = ex.Message; }
+        StateHasChanged();
+    }
+
+    private async Task AbrirTareaEspejoAsync(EspejoTarjeta t)
+    {
+        if (t.TenantId == _activeTenantId)
+        {
+            Nav.NavigateTo($"/tareas?abrir={t.TareaId}", forceLoad: true);
+            return;
+        }
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/connect/switch-tenant", new { tenantId = t.TenantId });
+            if (!resp.IsSuccessStatusCode) { _espejoError = "No se pudo cambiar a esa copropiedad."; return; }
+            var dto = await resp.Content.ReadFromJsonAsync<EspejoSwitchResp>();
+            if (string.IsNullOrWhiteSpace(dto?.AccessToken)) { _espejoError = "Respuesta inesperada del servidor."; return; }
+            await Js.InvokeVoidAsync("propiaAuth.save", dto!.AccessToken, t.TenantId.ToString(), t.TenantNombre);
+            Nav.NavigateTo($"/tareas?abrir={t.TareaId}", forceLoad: true);
+        }
+        catch (Exception ex) { _espejoError = ex.Message; }
+    }
+
+    // ---- Edicion de estados (columnas): renombrar, color y orden (el PUT ya existia) ----
+    private Guid? _estColorId;
+    private Guid? _estEditId;
+    private string _estEditVal = "";
+
+    private async Task PutEstadoAsync(EstadoTareaDto est, string nombre, string? color, int orden)
+    {
+        var resp = await Auth().PutAsJsonAsync($"/api/tareas/estados/{est.Id}", new ActualizarEstadoRequest(nombre, color, orden, true));
+        if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+    }
+
+    private async Task GuardarEstadoColorAsync(EstadoTareaDto est, string color)
+    {
+        _estColorId = null;
+        await PutEstadoAsync(est, est.Nombre, color, est.Orden);
+        await RecargarBoard();
+    }
+
+    private async Task GuardarEstadoNombreAsync(EstadoTareaDto est)
+    {
+        var v = (_estEditVal ?? "").Trim();
+        _estEditId = null;
+        if (v.Length == 0 || v == est.Nombre) return;
+        await PutEstadoAsync(est, v, est.Color, est.Orden);
+        await RecargarBoard();
+    }
+
+    private async Task EstadoEditKeydown(KeyboardEventArgs e, EstadoTareaDto est)
+    {
+        if (e.Key == "Enter") { await GuardarEstadoNombreAsync(est); }
+        else if (e.Key == "Escape") { _estEditId = null; }
+    }
+
+    private async Task MoverEstadoAsync(int idx, int dir)
+    {
+        if (_board is null) return;
+        var j = idx + dir;
+        if (j < 0 || j >= _board.Estados.Count) return;
+        var a = _board.Estados[idx];
+        var b = _board.Estados[j];
+        // Si los ordenes empatan (catalogos viejos con Orden 0), el indice desempata.
+        var ordA = a.Orden; var ordB = b.Orden;
+        if (ordA == ordB) { ordA = idx; ordB = j; }
+        _busy = true;
+        try
+        {
+            await PutEstadoAsync(a, a.Nombre, a.Color, ordB);
+            await PutEstadoAsync(b, b.Nombre, b.Color, ordA);
+            await RecargarBoard();
+        }
+        finally { _busy = false; }
     }
 
     // ---- Invitar externo al tablero (crea cuenta + acceso, envia correo) ----
@@ -6217,3 +6553,18 @@ else
     private static string PrioFg(PrioridadTarea p) => p switch { PrioridadTarea.Urgente => "#C0383C", PrioridadTarea.Alta => "#B45309", PrioridadTarea.Normal => "#2563EB", _ => "#516F90" };
     private static string PrioBg(PrioridadTarea p) => p switch { PrioridadTarea.Urgente => "#FDE7E7", PrioridadTarea.Alta => "#FEF3DC", PrioridadTarea.Normal => "#E6F2FB", _ => "#EEF3F8" };
 }
+
+<style>
+    /* Config de columnas editable + invitacion cross-tenant + espejo */
+    .tbcfg-dot-btn { border: 0; cursor: pointer; padding: 0; width: 14px; height: 14px; border-radius: 50%; }
+    .tbcfg-est-nom-edit { cursor: pointer; }
+    .tbcfg-est-nom-edit:hover { text-decoration: underline dotted; }
+    .tbcfg-est-inp { border: 1px solid #D9D2F6; border-radius: 7px; padding: 3px 8px; font-size: 13px; min-width: 140px; }
+    .tbcfg-ord { display: inline-flex; gap: 2px; margin-left: 6px; }
+    .tbcfg-ordbtn { border: 0; background: transparent; color: #9AABBE; cursor: pointer; font-size: 10px; padding: 2px 4px; border-radius: 5px; line-height: 1; }
+    .tbcfg-ordbtn:hover { background: #F1ECFD; color: #5955D1; }
+    .tbcfg-ordbtn:disabled { opacity: .3; cursor: default; }
+    .tbcfg-cross { display: flex; align-items: center; gap: 7px; font-size: 12px; color: #7C98B6; margin-bottom: 6px; cursor: pointer; }
+    .tbcfg-cross input { accent-color: #5955D1; }
+    .tbcfg-copro-chip { margin-left: auto; font-size: 10.5px; font-weight: 700; background: #F1ECFD; color: #5955D1; border-radius: 10px; padding: 2px 8px; white-space: nowrap; }
+</style>

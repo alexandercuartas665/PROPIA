@@ -42,4 +42,13 @@ public class TableroCompartidoController : ControllerBase
         var r = await _svc.MoverAsync(userId, req, ct);
         return r.Ok ? Ok(r) : BadRequest(r);
     }
+
+    /// <summary>Personas de los directorios de TODAS mis copropiedades administradas (para
+    /// invitar usuarios cross-tenant a un tablero de Tareas).</summary>
+    [HttpGet("personas")]
+    public async Task<IActionResult> BuscarPersonas([FromQuery] string? q, CancellationToken ct)
+    {
+        if (UserId() is not Guid userId) return Unauthorized();
+        return Ok(await _svc.BuscarPersonasAsync(userId, q ?? "", ct));
+    }
 }

@@ -16,7 +16,19 @@ public interface ITableroCompartidoService
     Task<TableroCompartidoDto?> ObtenerAsync(Guid userId, CancellationToken ct);
 
     Task<MoverTarjetaCompartidaResultado> MoverAsync(Guid userId, MoverTarjetaCompartidaRequest req, CancellationToken ct);
+
+    /// <summary>
+    /// Busca personas en el directorio de TODAS las copropiedades que el usuario administra
+    /// (para invitar usuarios cross-tenant a un tablero de Tareas). Deduplica por persona
+    /// priorizando la copropiedad activa; vacio si el usuario no administra ninguna.
+    /// </summary>
+    Task<IReadOnlyList<PersonaCrossTenantDto>> BuscarPersonasAsync(Guid userId, string q, CancellationToken ct);
 }
+
+/// <summary>Persona encontrada en el directorio de una de mis copropiedades administradas.</summary>
+public sealed record PersonaCrossTenantDto(
+    Guid Id, string Nombres, string Apellidos, string Documento, string? FotoUrl,
+    Guid TenantId, string TenantNombre);
 
 /// <summary>Una tarea real de un tenant, proyectada como tarjeta del tablero compartido.</summary>
 public sealed record TarjetaCompartidaDto(
