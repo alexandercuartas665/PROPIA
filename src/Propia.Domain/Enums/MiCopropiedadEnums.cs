@@ -24,7 +24,22 @@ public enum TipoUnidad
     Oficina = 4,
     Bodega = 5,
     Parqueadero = 6,
-    UtilCuarto = 7
+    UtilCuarto = 7,
+    // Ampliacion de tipos. IMPORTANTE: solo AGREGAR al final; no renumerar los existentes (hay
+    // datos guardados con estos valores). Los nombres son ASCII; la etiqueta legible se resuelve
+    // en la UI (ej. ZonaComun -> "Zona comun", ParqueaderoDeposito -> "Parqueadero + deposito").
+    Deposito = 8,
+    ZonaComun = 9,
+    Area = 10,
+    Lote = 11,
+    Piso = 12,
+    Individuo = 13,
+    Consultorio = 14,
+    Habitacion = 15,
+    Empresa = 16,
+    Cabana = 17,
+    Cama = 18,
+    ParqueaderoDeposito = 19   // combinado, se ofrece como anexo "parqueadero + deposito"
 }
 
 /// <summary>Categoria operativa de una zona comun (para reservas y mantenimiento).</summary>

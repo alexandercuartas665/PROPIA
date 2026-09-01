@@ -97,7 +97,7 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
 
         var ws = Encabezado(wb, "UNIDADES PRIVADAS", cols);
         Dropdown(ws, 1, coproRange);
-        DropdownInline(ws, 3, "Apartamento,Local,Casa,Oficina,Bodega,Parqueadero,UtilCuarto");
+        DropdownInline(ws, 3, EnumCsv<TipoUnidad>());   // todos los tipos de unidad (auto desde el enum)
         DropdownInline(ws, 4, "1,2,3");
         Ejemplo(ws, EjemploCopro, "A1-203", "Apartamento", "2", "", "", "1.25", "");
         Ajustar(ws, cols.Count);
