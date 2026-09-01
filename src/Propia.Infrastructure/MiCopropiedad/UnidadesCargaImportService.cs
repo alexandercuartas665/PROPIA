@@ -6,6 +6,7 @@ using Propia.Application.Common;
 using Propia.Application.Directorio;
 using Propia.Application.MiCopropiedad;
 using Propia.Application.Porteria;
+using Propia.Domain.Entities;
 using Propia.Domain.Enums;
 using Propia.Infrastructure.Directorio;
 using Propia.Infrastructure.Persistence;
@@ -65,10 +66,12 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
         // Grupos a procesar. Modo normal: un grupo por cada nombre de COPROPIEDAD de la plantilla
         // (resuelto contra las copropiedades del cliente). Modo onboarding (forzarTenantActual):
         // un solo grupo con el tenant activo, tomando TODAS las filas sin mirar la columna COPROPIEDAD.
-        var grupos = new List<(string Nombre, Guid Tid, bool Todas)>();
+        // SoloVacias: grupo del tenant activo que recoge las filas SIN COPROPIEDAD (archivos de una sola
+        // copropiedad, o plantillas antiguas sin esa columna) para que se carguen en la copropiedad activa.
+        var grupos = new List<(string Nombre, Guid Tid, bool Todas, bool SoloVacias)>();
         if (forzarTenantActual && _tenant.CurrentTenantId is { } actual)
         {
-            grupos.Add(("", actual, true));
+            grupos.Add(("", actual, true, false));
         }
         else
         {
@@ -79,24 +82,33 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                     errores.Add(new("GENERAL", 0, $"Copropiedad '{nombre}' no existe o no la administras."));
                     continue;
                 }
-                grupos.Add((nombre, tid, false));
+                grupos.Add((nombre, tid, false, false));
             }
+            // Filas sin COPROPIEDAD -> a la copropiedad ACTIVA (si hay una y no es ya un grupo).
+            var hayVacias = unidades.Concat(personas).Concat(vehiculos).Concat(mascotas).Concat(zonas).Concat(equipos)
+                .Any(r => string.IsNullOrWhiteSpace(Val(r.Row, "COPROPIEDAD")));
+            if (hayVacias && _tenant.CurrentTenantId is { } act2 && grupos.All(g => g.Tid != act2))
+                grupos.Add(("(copropiedad activa)", act2, false, true));
         }
 
-        foreach (var (nombre, tid, todas) in grupos)
+        foreach (var (nombre, tid, todas, soloVacias) in grupos)
         {
             await SetTenantSqlAsync(tid, ct);   // fija tenant en EF y en la sesion SQL (RLS)
             nCopro++;
+            // Predicado de pertenencia de una fila a este grupo (por nombre, todas, o solo vacias).
+            bool Coincide(Dictionary<string, string> row) => todas
+                || (soloVacias ? string.IsNullOrWhiteSpace(Val(row, "COPROPIEDAD")) : Eq(Val(row, "COPROPIEDAD"), nombre));
 
             var numeroToId = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
             var idxCodigo = await BuildUnidadIndexAsync(ct);   // unidades existentes por Numero y por codigo TORRE-NUMERO
             var anexosPend = new List<(int Fila, string Principal, string Asociada)>();
 
             // ---- Unidades ----
-            foreach (var (row, fila) in unidades.Where(r => todas || Eq(Val(r.Row, "COPROPIEDAD"), nombre)))
+            foreach (var (row, fila) in unidades.Where(r => Coincide(r.Row)))
             {
                 try
                 {
+                    _db.ChangeTracker.Clear();   // evita que el tracker crezca (DetectChanges O(n^2))
                     var numero = Val(row, "UNIDAD PRIVADA").Trim();
                     if (numero.Length == 0) { errores.Add(new("UNIDADES PRIVADAS", fila, "Falta UNIDAD PRIVADA")); continue; }
                     var tipo = ParseEnum(Val(row, "TIPO"), TipoUnidad.Apartamento);
@@ -147,6 +159,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             {
                 try
                 {
+                    _db.ChangeTracker.Clear();
                     var pid = numeroToId.GetValueOrDefault(principal);
                     if (pid == Guid.Empty) idxCodigo.TryGetValue(principal, out pid);
                     var aid = numeroToId.GetValueOrDefault(asociada);
@@ -161,13 +174,14 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             }
 
             // ---- Personas (reemplazo si aplica) ----
-            var personasGrp = personas.Where(r => todas || Eq(Val(r.Row, "COPROPIEDAD"), nombre)).ToList();
+            var personasGrp = personas.Where(r => Coincide(r.Row)).ToList();
             if (await ReemplazarSiAplicaAsync("PERSONAS", personasGrp.Count > 0, reemplazarDependientes,
                     c => _db.UnidadPersonas.ExecuteDeleteAsync(c), errores, ct))
             foreach (var (row, fila) in personasGrp)
             {
                 try
                 {
+                    _db.ChangeTracker.Clear();
                     var uid = ResolverUnidad(Val(row, "UNIDAD PRIVADA"), numeroToId, idxCodigo);
                     if (uid == Guid.Empty) { errores.Add(new("PERSONAS", fila, $"Unidad '{Val(row, "UNIDAD PRIVADA")}' no encontrada")); continue; }
                     var doc = Val(row, "IDENTIFICACION").Trim();
@@ -186,13 +200,14 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             // Los vehiculos NO se borran (su historial de porteria en registros_vehiculo es append-only,
             // RN-10, y un DELETE dispararia un UPDATE prohibido por el FK SET NULL). Se DESACTIVAN los
             // activos (soft-delete): eso preserva la auditoria y libera la placa para los nuevos.
-            var vehiculosGrp = vehiculos.Where(r => todas || Eq(Val(r.Row, "COPROPIEDAD"), nombre)).ToList();
+            var vehiculosGrp = vehiculos.Where(r => Coincide(r.Row)).ToList();
             if (await ReemplazarSiAplicaAsync("VEHICULOS", vehiculosGrp.Count > 0, reemplazarDependientes,
                     c => _db.VehiculosAutorizados.Where(v => v.Activo).ExecuteUpdateAsync(s => s.SetProperty(v => v.Activo, false), c), errores, ct))
             foreach (var (row, fila) in vehiculosGrp)
             {
                 try
                 {
+                    _db.ChangeTracker.Clear();
                     var uid = ResolverUnidad(Val(row, "UNIDAD PRIVADA"), numeroToId, idxCodigo);
                     if (uid == Guid.Empty) { errores.Add(new("VEHICULOS", fila, $"Unidad '{Val(row, "UNIDAD PRIVADA")}' no encontrada")); continue; }
                     var placa = Val(row, "PLACA").Trim();
@@ -206,13 +221,14 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             }
 
             // ---- Mascotas (reemplazo si aplica) ----
-            var mascotasGrp = mascotas.Where(r => todas || Eq(Val(r.Row, "COPROPIEDAD"), nombre)).ToList();
+            var mascotasGrp = mascotas.Where(r => Coincide(r.Row)).ToList();
             if (await ReemplazarSiAplicaAsync("MASCOTAS", mascotasGrp.Count > 0, reemplazarDependientes,
                     c => _db.UnidadMascotas.ExecuteDeleteAsync(c), errores, ct))
             foreach (var (row, fila) in mascotasGrp)
             {
                 try
                 {
+                    _db.ChangeTracker.Clear();
                     var uid = ResolverUnidad(Val(row, "UNIDAD PRIVADA"), numeroToId, idxCodigo);
                     if (uid == Guid.Empty) { errores.Add(new("MASCOTAS", fila, $"Unidad '{Val(row, "UNIDAD PRIVADA")}' no encontrada")); continue; }
                     var nom = NullIfEmpty(Val(row, "NOMBRE")) ?? "Mascota";
@@ -224,13 +240,14 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             }
 
             // ---- Zonas comunes (reemplazo si aplica) ----
-            var zonasGrp = zonas.Where(r => todas || Eq(Val(r.Row, "COPROPIEDAD"), nombre)).ToList();
+            var zonasGrp = zonas.Where(r => Coincide(r.Row)).ToList();
             if (await ReemplazarSiAplicaAsync("ZONAS COMUNES", zonasGrp.Count > 0, reemplazarDependientes,
                     c => _db.ZonasComunes.ExecuteDeleteAsync(c), errores, ct))
             foreach (var (row, fila) in zonasGrp)
             {
                 try
                 {
+                    _db.ChangeTracker.Clear();
                     var nom = Val(row, "NOMBRE").Trim();
                     if (nom.Length == 0) { errores.Add(new("ZONAS COMUNES", fila, "Falta NOMBRE")); continue; }
                     var req = new CrearZonaComunRequest(
@@ -248,13 +265,14 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             }
 
             // ---- Equipos y activos (reemplazo si aplica) ----
-            var equiposGrp = equipos.Where(r => todas || Eq(Val(r.Row, "COPROPIEDAD"), nombre)).ToList();
+            var equiposGrp = equipos.Where(r => Coincide(r.Row)).ToList();
             if (await ReemplazarSiAplicaAsync("EQUIPOS", equiposGrp.Count > 0, reemplazarDependientes,
                     c => _db.EquiposActivos.ExecuteDeleteAsync(c), errores, ct))
             foreach (var (row, fila) in equiposGrp)
             {
                 try
                 {
+                    _db.ChangeTracker.Clear();
                     var nom = Val(row, "NOMBRE").Trim();
                     if (nom.Length == 0) { errores.Add(new("EQUIPOS", fila, "Falta NOMBRE")); continue; }
                     var cat = ParseEnum(Val(row, "CATEGORIA"), CategoriaEquipo.Otros);
@@ -287,62 +305,111 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
 
         // ---- Terceros (Directorio) ----
         // Un tercero NO se relaciona con una unidad; solo con la copropiedad. La Persona/Empresa es
-        // GLOBAL (se busca por documento/NIT para no duplicar) y se ASEGURA un vinculo en cada
-        // copropiedad destino. "Todas las copropiedades" -> todas las del cliente (visible en todas).
-        foreach (var (row, fila) in terceros)
+        // GLOBAL (dedup por documento/NIT) y se ASEGURA un vinculo en cada copropiedad destino
+        // ("Todas las copropiedades" -> todas las del cliente). Las EMPRESAS se cargan por LOTES (NIT
+        // es la unica restriccion unica, no hay email unico), evitando miles de round-trips. Las
+        // PERSONAS van por fila porque su email es UNICO y un lote fallaria entero con un duplicado.
         {
-            try
+            // 1) Parsear filas validas.
+            var filasTer = new List<(int Fila, List<Guid> Destinos, bool EsEmpresa, string Doc, TipoDocumento TipoDoc, string Nombre, string? Email, string? Tel)>();
+            foreach (var (row, fila) in terceros)
             {
                 var cop = Val(row, "COPROPIEDAD").Trim();
-                if (cop.Length == 0) { errores.Add(new("TERCEROS", fila, "Falta COPROPIEDAD")); continue; }
-
                 List<Guid> destinos;
-                if (forzarTenantActual && _tenant.CurrentTenantId is { } actualT)
-                    destinos = new List<Guid> { actualT };   // onboarding: solo la copropiedad recien creada
-                else if (Eq(cop, UnidadesPlantillaService.TodasLasCopropiedades))
-                    destinos = copros.Values.Distinct().ToList();
-                else if (copros.TryGetValue(cop.ToLowerInvariant(), out var tid))
-                    destinos = new List<Guid> { tid };
+                if (forzarTenantActual && _tenant.CurrentTenantId is { } a1) destinos = new() { a1 };
+                else if (cop.Length == 0 && _tenant.CurrentTenantId is { } a2) destinos = new() { a2 };
+                else if (cop.Length == 0) { errores.Add(new("TERCEROS", fila, "Falta COPROPIEDAD")); continue; }
+                else if (Eq(cop, UnidadesPlantillaService.TodasLasCopropiedades)) destinos = copros.Values.Distinct().ToList();
+                else if (copros.TryGetValue(cop.ToLowerInvariant(), out var tidc)) destinos = new() { tidc };
                 else { errores.Add(new("TERCEROS", fila, $"Copropiedad '{cop}' no existe o no la administras.")); continue; }
                 if (destinos.Count == 0) { errores.Add(new("TERCEROS", fila, "No hay copropiedades destino.")); continue; }
-
                 var doc = Val(row, "IDENTIFICACION").Trim();
                 if (doc.Length == 0) { errores.Add(new("TERCEROS", fila, "Falta IDENTIFICACION")); continue; }
-                var nombre = Val(row, "NOMBRE").Trim();
-                var email = NullIfEmpty(Val(row, "EMAIL"));
-                var tel = NullIfEmpty(Val(row, "TELEFONO"));
                 var tipoId = Val(row, "TIPO ID").Trim();
+                filasTer.Add((fila, destinos, string.Equals(tipoId, "NIT", StringComparison.OrdinalIgnoreCase),
+                    doc, ParseTipoDocumento(tipoId), Val(row, "NOMBRE").Trim(),
+                    NullIfEmpty(Val(row, "EMAIL")), NullIfEmpty(Val(row, "TELEFONO"))));
+            }
 
-                await SetTenantSqlAsync(destinos[0], ct);   // el alta global auto-vincula a esta primera
-
-                if (string.Equals(tipoId, "NIT", StringComparison.OrdinalIgnoreCase))
+            // 2) EMPRESAS por LOTES (dedup por NIT).
+            var empRows = filasTer.Where(f => f.EsEmpresa).ToList();
+            if (empRows.Count > 0)
+            {
+                try
                 {
-                    var emp = await _dir.BuscarEmpresaPorNitAsync(doc, ct);
-                    var empId = emp?.Id ?? (await _dir.CrearEmpresaAsync(new CrearEmpresaRequest(
-                        doc, null, string.IsNullOrWhiteSpace(nombre) ? doc : nombre, null, email, tel, null, null, null, null, null), ct)).Id;
-                    foreach (var tid in destinos)
+                    static string NitDe(string d) => d.Replace(".", "").Replace("-", "").Trim();
+                    var nits = empRows.Select(f => NitDe(f.Doc)).Where(n => n.Length > 0).Distinct().ToList();
+                    var empPorNit = await _db.Empresas.IgnoreQueryFilters()
+                        .Where(e => nits.Contains(e.Nit)).Select(e => new { e.Nit, e.Id })
+                        .ToDictionaryAsync(x => x.Nit, x => x.Id, StringComparer.OrdinalIgnoreCase, ct);
+                    var nuevasEmp = new List<Empresa>();
+                    foreach (var f in empRows)
+                    {
+                        var nit = NitDe(f.Doc);
+                        if (nit.Length == 0 || empPorNit.ContainsKey(nit)) continue;
+                        var e = new Empresa
+                        {
+                            Nit = nit,
+                            RazonSocial = string.IsNullOrWhiteSpace(f.Nombre) ? nit : f.Nombre,
+                            Email = f.Email, Telefono = f.Tel,
+                            EstadoDirectorio = EstadoDirectorio.Activo,
+                            PerfilIncompleto = string.IsNullOrEmpty(f.Email)
+                        };
+                        empPorNit[nit] = e.Id; nuevasEmp.Add(e);
+                    }
+                    if (nuevasEmp.Count > 0) { _db.Empresas.AddRange(nuevasEmp); await _db.SaveChangesAsync(ct); }
+
+                    // Vinculos por copropiedad destino, en lote.
+                    var empPorTenant = new Dictionary<Guid, HashSet<Guid>>();
+                    foreach (var f in empRows)
+                    {
+                        var nit = NitDe(f.Doc);
+                        if (!empPorNit.TryGetValue(nit, out var id)) continue;
+                        foreach (var tid in f.Destinos)
+                        {
+                            if (!empPorTenant.TryGetValue(tid, out var set)) { set = new(); empPorTenant[tid] = set; }
+                            set.Add(id);
+                        }
+                    }
+                    foreach (var (tid, ids) in empPorTenant)
                     {
                         await SetTenantSqlAsync(tid, ct);
-                        await VinculoDirectorio.AsegurarEmpresaAsync(_db, _tenant, empId, ct);
+                        var idList = ids.ToList();
+                        var yaVinc = (await _db.DirectorioVinculos
+                            .Where(v => v.EntidadTipo == EntidadDirectorio.Empresa && v.Estado == EstadoVinculo.Activo && idList.Contains(v.EntidadId))
+                            .Select(v => v.EntidadId).ToListAsync(ct)).ToHashSet();
+                        var nuevosV = ids.Where(id => !yaVinc.Contains(id)).Select(id => new DirectorioVinculo
+                        {
+                            EntidadTipo = EntidadDirectorio.Empresa, EntidadId = id,
+                            FechaDesde = DateOnly.FromDateTime(DateTime.UtcNow), Estado = EstadoVinculo.Activo
+                        }).ToList();
+                        if (nuevosV.Count > 0) { _db.DirectorioVinculos.AddRange(nuevosV); await _db.SaveChangesAsync(ct); }
                     }
+                    nTer += empRows.Count;
                 }
-                else
+                catch (Exception ex) { errores.Add(new("TERCEROS", 0, "Empresas: " + Fallo(ex))); }
+            }
+
+            // 3) PERSONAS (tercero natural) por fila — su email es unico.
+            foreach (var f in filasTer.Where(f => !f.EsEmpresa))
+            {
+                try
                 {
-                    var tipoDoc = ParseTipoDocumento(tipoId);
-                    var (nombres, apellidos) = SplitNombre(nombre);
-                    if (apellidos.Length == 0) apellidos = "-";   // el alta de persona exige apellidos
-                    var per = await _dir.BuscarPersonaPorDocumentoAsync(new BuscarPorDocumentoRequest(tipoDoc, doc), ct);
+                    await SetTenantSqlAsync(f.Destinos[0], ct);
+                    var (nombres, apellidos) = SplitNombre(f.Nombre);
+                    if (apellidos.Length == 0) apellidos = "-";
+                    var per = await _dir.BuscarPersonaPorDocumentoAsync(new BuscarPorDocumentoRequest(f.TipoDoc, f.Doc), ct);
                     var perId = per?.Id ?? (await _dir.CrearPersonaAsync(new CrearPersonaRequest(
-                        tipoDoc, doc, string.IsNullOrWhiteSpace(nombres) ? doc : nombres, apellidos, email, tel, null, null), ct)).Id;
-                    foreach (var tid in destinos)
+                        f.TipoDoc, f.Doc, string.IsNullOrWhiteSpace(nombres) ? f.Doc : nombres, apellidos, f.Email, f.Tel, null, null), ct)).Id;
+                    foreach (var tid in f.Destinos)
                     {
                         await SetTenantSqlAsync(tid, ct);
                         await VinculoDirectorio.AsegurarPersonaAsync(_db, _tenant, perId, ct);
                     }
+                    nTer++;
                 }
-                nTer++;
+                catch (Exception ex) { errores.Add(new("TERCEROS", f.Fila, Fallo(ex))); }
             }
-            catch (Exception ex) { errores.Add(new("TERCEROS", fila, Fallo(ex))); }
         }
 
         // Restaura el contexto de tenant original de la sesion.
@@ -350,17 +417,26 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
         return new ResultadoCargaUnidades(nCopro, nUni, nAnexo, nPer, nVeh, nMas, nZon, nEqu, errores, nUniAct, nTer);
     }
 
+    // Ultimo tenant fijado en la sesion SQL. Evita repetir el set_config (un round-trip) cuando ya
+    // estamos en ese tenant: en archivos de una sola copropiedad esto ahorra miles de round-trips.
+    private Guid? _ultimoTenantSql;
+
     // Fija el tenant en EF (ITenantContext, para HasQueryFilter + TenantId al guardar) y en la
     // sesion SQL (app.tenant_id, para que RLS acepte los INSERT del tenant destino).
     private async Task SetTenantSqlAsync(Guid tenantId, CancellationToken ct)
     {
         _tenant.SetTenant(tenantId);
         var conn = _db.Database.GetDbConnection();
-        if (conn.State != System.Data.ConnectionState.Open) await conn.OpenAsync(ct);
+        var abierta = conn.State == System.Data.ConnectionState.Open;
+        // Salta el set_config solo si seguimos en el MISMO tenant Y la conexion sigue viva (el
+        // set_config es a nivel de sesion: si la conexion se cerro, app.tenant_id se perdio).
+        if (abierta && _ultimoTenantSql == tenantId) return;
+        if (!abierta) await conn.OpenAsync(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT set_config('app.tenant_id', @t, false)";
         var p = cmd.CreateParameter(); p.ParameterName = "@t"; p.Value = tenantId.ToString(); cmd.Parameters.Add(p);
         await cmd.ExecuteNonQueryAsync(ct);
+        _ultimoTenantSql = tenantId;
     }
 
     // ===================== Helpers =====================
