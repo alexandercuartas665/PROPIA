@@ -111,6 +111,11 @@
                                    @onchange="@(e => _confirmChecked = (bool)(e.Value ?? false))" disabled="@_cargaBusy" />
                             <span>Entiendo que se reemplazaran esas categorias y confirmo la carga.</span>
                         </label>
+                        @if (_cargaBusy)
+                        {
+                            <div class="cg-progress" role="progressbar" aria-label="Procesando la plantilla"><div class="cg-progress-bar"></div></div>
+                            <div class="cg-progress-txt">Procesando la plantilla, no cierres esta ventana...</div>
+                        }
                         <div class="cg-actions">
                             <button class="cg-btn-ghost" type="button" @onclick="VolverSeleccion" disabled="@_cargaBusy">Volver</button>
                             <button class="cg-btn-danger" type="button" @onclick="EjecutarCargaAsync" disabled="@(_cargaBusy || !_confirmChecked)">
@@ -1017,6 +1022,15 @@ else
         return http;
     }
 
+    // Cliente para la CARGA MASIVA: el import de una plantilla grande (cientos de unidades/personas)
+    // puede tardar minutos; el timeout de 30s de "PropiaApi" la cancelaria. Se amplia a 10 min.
+    private HttpClient AuthLarga()
+    {
+        var http = Auth();
+        http.Timeout = TimeSpan.FromMinutes(10);
+        return http;
+    }
+
     private async Task CargarAsync()
     {
         try
@@ -1105,14 +1119,30 @@ else
         _cargaBusy = true; _cargaResult = null;
         try
         {
-            using var content = new MultipartFormDataContent();
+            // Contenido nuevo por intento (un HttpContent no se puede reenviar tras enviarse).
             // Se envian los bytes ya bufferizados (no se relee el <InputFile>, que puede estar desmontado).
-            var sc = new ByteArrayContent(_cargaBytes);
-            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            content.Add(sc, "file", _cargaFileName ?? "carga.xlsx");
+            MultipartFormDataContent Contenido()
+            {
+                var c = new MultipartFormDataContent();
+                var sc = new ByteArrayContent(_cargaBytes!);
+                sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+                c.Add(sc, "file", _cargaFileName ?? "carga.xlsx");
+                return c;
+            }
             // reemplazar=true: el usuario confirmo el reemplazo de las categorias dependientes.
-            var resp = await Auth().PostAsync("/api/mi-copropiedad/distribucion/importar-carga?reemplazar=true", content);
+            const string url = "/api/mi-copropiedad/distribucion/importar-carga?reemplazar=true";
+            var resp = await AuthLarga().PostAsync(url, Contenido());
+            // Si el token expiro (401), refresca la sesion y reintenta una vez (como CargarAsync).
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                var nuevoJwt = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+                if (!string.IsNullOrEmpty(nuevoJwt))
+                {
+                    _jwt = nuevoJwt;
+                    resp = await AuthLarga().PostAsync(url, Contenido());
+                }
+            }
             if (resp.IsSuccessStatusCode)
             {
                 _cargaResult = await resp.Content.ReadFromJsonAsync<Propia.Application.MiCopropiedad.ResultadoCargaUnidades>();
@@ -1121,8 +1151,11 @@ else
             }
             else
             {
+                var motivo = resp.StatusCode == System.Net.HttpStatusCode.Unauthorized
+                    ? "Tu sesion expiro. Vuelve a iniciar sesion y reintenta la carga."
+                    : $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}";
                 _cargaResult = new Propia.Application.MiCopropiedad.ResultadoCargaUnidades(0, 0, 0, 0, 0, 0, 0, 0,
-                    new List<Propia.Application.MiCopropiedad.CargaUnidadesError> { new("GENERAL", 0, $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}") });
+                    new List<Propia.Application.MiCopropiedad.CargaUnidadesError> { new("GENERAL", 0, motivo) });
             }
         }
         catch (Exception ex)
@@ -1295,6 +1328,12 @@ else
     .cg-confirm-sub b { color: #33475B; }
     .cg-confirm-chk { display: flex; align-items: flex-start; gap: 8px; text-align: left; font-size: 12.5px; color: #33475B; background: #FEF6E7; border: 1px solid #F6E2B8; border-radius: 8px; padding: 9px 11px; cursor: pointer; }
     .cg-confirm-chk input { margin-top: 2px; }
+    /* Barra de progreso indeterminada (el backend procesa en un solo POST, sin porcentaje real). */
+    .cg-progress { position: relative; height: 6px; margin-top: 14px; border-radius: 6px; background: #ECE6FB; overflow: hidden; }
+    .cg-progress-bar { position: absolute; top: 0; left: 0; height: 100%; width: 40%; border-radius: 6px; background: var(--propia-brand, #6D4FE3); animation: cgIndet 1.15s ease-in-out infinite; }
+    .cg-progress-txt { margin-top: 7px; font-size: 12px; color: #6D4FE3; font-weight: 600; text-align: center; }
+    @@keyframes cgIndet { 0% { left: -40%; } 100% { left: 100%; } }
+    [data-bs-theme="dark"] .cg-progress { background: #2D2A45; }
     [data-bs-theme="dark"] .cg-note { background: #1B2233; border-color: #2D3650; color: #C7CEDB; }
     [data-bs-theme="dark"] .cg-confirm-title { color: #E4E8F0; }
     [data-bs-theme="dark"] .cg-confirm-sub b { color: #E4E8F0; }

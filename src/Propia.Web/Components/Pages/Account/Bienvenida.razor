@@ -275,6 +275,10 @@
                                         }
                                         <span>@l.Texto</span>
                                     </div>
+                                    @if (l.Barra && l.Estado == "run")
+                                    {
+                                        <div class="ob-progress" role="progressbar" aria-label="Procesando la plantilla"><div class="ob-progress-bar"></div></div>
+                                    }
                                 }
                             </div>
                             @if (_crearError is not null)
@@ -536,6 +540,10 @@
     .ob-final-item .mk.warn { background: var(--ob-warn-bg); color: var(--ob-warn-fg); }
     .ob-final-item .mk.err { background: var(--ob-err-bg); color: var(--ob-err-fg); }
     .ob-final-item .mk.run { border: 3px solid var(--ob-brand-soft); border-top-color: var(--ob-brand); animation: obSpin .8s linear infinite; }
+    /* Barra de progreso indeterminada bajo la linea de carga de la plantilla (sin porcentaje real). */
+    .ob-progress { position: relative; height: 6px; margin: 2px 0 2px 32px; border-radius: 6px; background: var(--ob-brand-soft); overflow: hidden; }
+    .ob-progress-bar { position: absolute; top: 0; left: 0; height: 100%; width: 40%; border-radius: 6px; background: var(--ob-brand); animation: obIndet 1.15s ease-in-out infinite; }
+    @@keyframes obIndet { 0% { left: -40%; } 100% { left: 100%; } }
     .ob-final-error { background: var(--ob-err-bg); color: var(--ob-err-fg); border-radius: 10px; padding: 10px 14px; font-size: 13px; margin-bottom: 14px; text-align: left; }
     .ob-spin {
         width: 26px; height: 26px; border-radius: 50%; border: 3px solid var(--ob-brand-soft); border-top-color: var(--ob-brand);
@@ -660,7 +668,7 @@
     // cierre
     private bool _finalizando;
     private string? _crearError;
-    private sealed class FinalLinea { public string Texto = ""; public string Estado = "run"; }
+    private sealed class FinalLinea { public string Texto = ""; public string Estado = "run"; public bool Barra; }
     private readonly List<FinalLinea> _finalLineas = new();
     private readonly List<string> _confetti = new();
 
@@ -1011,6 +1019,7 @@
         if (_estructuraFile is { } ef)
         {
             linea = AddFinal("Cargando unidades, personas y más...");
+            linea.Barra = true;   // muestra barra de progreso indeterminada mientras procesa la plantilla
             StateHasChanged();
             var ok = await SubirExcelAsync("/api/mi-copropiedad/distribucion/importar-carga?tenantActual=true", ef.Nombre, ef.Bytes);
             Marcar(linea, ok ? "ok" : "warn", ok
@@ -1034,7 +1043,10 @@
         {
             using var content = new MultipartFormDataContent();
             content.Add(new ByteArrayContent(bytes), "file", nombre);
-            var resp = await Auth().PostAsync(url, content);
+            // La carga de una plantilla grande puede tardar minutos: timeout amplio (el de "PropiaApi" es 30s).
+            var http = Auth();
+            http.Timeout = TimeSpan.FromMinutes(10);
+            var resp = await http.PostAsync(url, content);
             return resp.IsSuccessStatusCode;
         }
         catch { return false; }
