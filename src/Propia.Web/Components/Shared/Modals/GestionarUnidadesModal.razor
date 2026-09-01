@@ -122,7 +122,7 @@
                         }
                         else
                         {
-                            <button class="gum-unit-del" type="button" @onclick="EliminarUnidad" disabled="@_busy" title="Eliminar unidad">
+                            <button class="gum-unit-del" type="button" @onclick="AbrirConfirmEliminar" disabled="@_busy" title="Eliminar unidad">
                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M10 11v6M14 11v6"/></svg>
                                 Eliminar
                             </button>
@@ -601,6 +601,46 @@
         }
     </div>
 </div>
+
+@* ====== CONFIRMACION DE BORRADO (doble comprobacion) ======
+   Accion destructiva e irreversible: exige escribir el codigo EXACTO de la unidad para habilitar
+   el boton final. Asi un clic accidental no basta para borrar. *@
+@if (_confirmDel && _selected is not null)
+{
+    <div class="gum-cdel-overlay" @onclick="CerrarConfirmEliminar">
+        <div class="gum-cdel-card" @onclick:stopPropagation="true">
+            <div class="gum-cdel-icon">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M10 11v6M14 11v6"/></svg>
+            </div>
+            <div class="gum-cdel-title">Eliminar unidad</div>
+            <div class="gum-cdel-sub">
+                Vas a eliminar <b>@_selected.Tipo @_selected.Numero</b>@(string.IsNullOrWhiteSpace(_selected.TorreNombre) ? "" : $" ({_selected.TorreNombre})").
+                Esta accion es <b>permanente y no se puede deshacer</b>. Se perderan sus datos de ficha,
+                personas vinculadas, vehiculos, mascotas y documentos de esta unidad.
+            </div>
+            <div class="gum-cdel-warn">
+                Si la unidad tiene movimientos de cartera, PQRSD o reservas, el sistema NO la eliminara
+                (primero hay que desvincular esos registros).
+            </div>
+            <div class="gum-cdel-confirm">
+                <label class="gum-cdel-lbl">Para confirmar, escribe el codigo de la unidad: <b>@_selected.Numero</b></label>
+                <input class="gum-cdel-inp" @bind="_confirmText" @bind:event="oninput"
+                       placeholder="@_selected.Numero" autocomplete="off" disabled="@_busy" />
+            </div>
+            @if (!string.IsNullOrEmpty(_msg) && _msgError)
+            {
+                <div class="gum-cdel-err">@_msg</div>
+            }
+            <div class="gum-cdel-actions">
+                <button class="gum-cdel-cancel" type="button" @onclick="CerrarConfirmEliminar" disabled="@_busy">Cancelar</button>
+                <button class="gum-cdel-go" type="button" @onclick="ConfirmarEliminarUnidad"
+                        disabled="@(_busy || !ConfirmCoincide)" title="@(ConfirmCoincide ? "Eliminar definitivamente" : "Escribe el codigo exacto para habilitar")">
+                    @(_busy ? "Eliminando..." : "Eliminar definitivamente")
+                </button>
+            </div>
+        </div>
+    </div>
+}
 
 <style>
     .gum-header {
@@ -1277,6 +1317,33 @@
     [data-bs-theme="dark"] .gum-ptbl { border-color: #2D3650; }
     [data-bs-theme="dark"] .gum-ptbl-head { background: #232B40; }
     [data-bs-theme="dark"] .gum-ptbl-nom-n { color: #E4E8F0; }
+
+    /* ===== Confirmacion de borrado (doble comprobacion) ===== */
+    .gum-cdel-overlay { position: fixed; inset: 0; z-index: 6000; display: flex; align-items: center; justify-content: center; background: rgba(27, 42, 58, .55); padding: 20px; }
+    .gum-cdel-card { width: 100%; max-width: 460px; background: #fff; border-radius: 14px; padding: 26px 26px 22px; box-shadow: 0 24px 60px -12px rgba(27, 42, 58, .4); text-align: center; }
+    .gum-cdel-icon { width: 54px; height: 54px; margin: 0 auto 14px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: #FDECEC; color: #E5484D; }
+    .gum-cdel-title { font-size: 18px; font-weight: 800; color: #1B2A3A; margin-bottom: 8px; }
+    .gum-cdel-sub { font-size: 13px; line-height: 1.55; color: #516F90; margin-bottom: 12px; }
+    .gum-cdel-sub b { color: #33475B; }
+    .gum-cdel-warn { font-size: 12px; line-height: 1.5; color: #92610A; background: #FEF6E7; border: 1px solid #F6E2B8; border-radius: 8px; padding: 8px 11px; margin-bottom: 16px; text-align: left; }
+    .gum-cdel-confirm { text-align: left; margin-bottom: 14px; }
+    .gum-cdel-lbl { display: block; font-size: 12.5px; color: #516F90; margin-bottom: 6px; }
+    .gum-cdel-lbl b { color: #E5484D; font-weight: 800; }
+    .gum-cdel-inp { width: 100%; box-sizing: border-box; border: 1px solid #E1E8EE; border-radius: 8px; padding: 9px 11px; font-size: 13.5px; color: #33475B; font-family: inherit; outline: none; }
+    .gum-cdel-inp:focus { border-color: #E5484D; box-shadow: 0 0 0 2px rgba(229, 72, 77, .14); }
+    .gum-cdel-err { font-size: 12.5px; color: #E5484D; background: #FDECEC; border: 1px solid #F5C6C7; border-radius: 8px; padding: 8px 11px; margin-bottom: 14px; text-align: left; }
+    .gum-cdel-actions { display: flex; gap: 10px; justify-content: flex-end; }
+    .gum-cdel-cancel { border: 1px solid #E1E8EE; background: #fff; color: #516F90; border-radius: 9px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .gum-cdel-cancel:hover:not(:disabled) { background: #F5F7FA; }
+    .gum-cdel-go { border: 0; background: #E5484D; color: #fff; border-radius: 9px; padding: 9px 18px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .gum-cdel-go:hover:not(:disabled) { background: #D13438; }
+    .gum-cdel-go:disabled { opacity: .45; cursor: not-allowed; }
+    .gum-cdel-cancel:disabled { opacity: .55; cursor: not-allowed; }
+    [data-bs-theme="dark"] .gum-cdel-card { background: #1B2233; }
+    [data-bs-theme="dark"] .gum-cdel-title { color: #E4E8F0; }
+    [data-bs-theme="dark"] .gum-cdel-sub b { color: #E4E8F0; }
+    [data-bs-theme="dark"] .gum-cdel-inp { background: #232B40; border-color: #2D3650; color: #E4E8F0; }
+    [data-bs-theme="dark"] .gum-cdel-cancel { background: #232B40; border-color: #2D3650; color: #C7CEDB; }
 </style>
 
 @code {
@@ -1600,6 +1667,8 @@
     private bool _busy;
     private string _msg = "";
     private bool _msgError;
+    private bool _confirmDel;         // panel de confirmacion de borrado abierto (doble comprobacion)
+    private string _confirmText = ""; // texto tecleado; debe coincidir con el numero de la unidad
 
     private string AgrupacionLabelPlural => AgrupacionLabelSingular + "s";
 
@@ -2651,12 +2720,33 @@
     }
 
     // El backend bloquea si la unidad tiene registros asociados (guarda) y devuelve el motivo.
-    private async Task EliminarUnidad()
+    // --- Borrado con doble comprobacion ---
+    // Paso 1: abre el panel de confirmacion (no borra nada todavia).
+    private void AbrirConfirmEliminar()
     {
         if (_selected is null) return;
-        var ok = await Js.InvokeAsync<bool>("confirm",
-            $"Eliminar {_selected.Tipo} {_selected.Numero}? Esta accion no se puede deshacer.");
-        if (!ok) return;
+        _confirmText = "";
+        _msg = ""; _msgError = false;
+        _confirmDel = true;
+    }
+
+    private void CerrarConfirmEliminar()
+    {
+        _confirmDel = false;
+        _confirmText = "";
+        _msg = ""; _msgError = false;
+    }
+
+    // El boton final solo se habilita si lo escrito coincide EXACTO con el numero de la unidad.
+    private bool ConfirmCoincide =>
+        _selected is not null &&
+        string.Equals(_confirmText?.Trim(), _selected.Numero?.Trim(), StringComparison.Ordinal);
+
+    // Paso 2: ejecuta el borrado real. Requiere que la confirmacion coincida (defensa en el cliente;
+    // el backend igual valida integridad y bloquea si la unidad tiene registros asociados).
+    private async Task ConfirmarEliminarUnidad()
+    {
+        if (_selected is null || !ConfirmCoincide) return;
         _busy = true;
         try
         {
@@ -2664,6 +2754,7 @@
             if (resp.IsSuccessStatusCode)
             {
                 // La unidad ya no existe: cierra el modal y deja que la tabla se refresque.
+                _confirmDel = false;
                 _huboCambios = true;
                 Close(_huboCambios);
                 return;
