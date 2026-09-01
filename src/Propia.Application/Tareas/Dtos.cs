@@ -35,7 +35,10 @@ public record TareaListaDto(
     DateTimeOffset? EstadoDesde = null,
     // ----- Cierre (para la bandeja "Cerrados") -----
     string? MotivoCierre = null,
-    DateTimeOffset? CerradaAt = null);
+    DateTimeOffset? CerradaAt = null,
+    // ----- Tablero compartido: copropiedad duena de la tarea (solo el board virtual los llena) -----
+    Guid? TenantId = null,
+    string? TenantNombre = null);
 
 // Responsable de una tarea (asignado principal + colaboradores) con foto para la vista tabla.
 public record ResponsableMiniDto(Guid PersonaId, string Nombre, string? FotoUrl);

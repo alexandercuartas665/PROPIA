@@ -403,7 +403,8 @@ public class TareasService : ITareasService
                 c.Id, c.NumeroTarea, c.Titulo, c.Prioridad, c.EstadoId, e.Nombre, e.Color, e.EsTerminal,
                 c.AsignadoPersonaId, null, c.FechaVencimiento, false, c.PadreId, 0, 0,
                 new List<EtiquetaTareaDto>(), c.Progreso, c.Color, c.EsProyecto, c.Valor, c.FechaInicio,
-                null, null, null, c.OrigenTipo, c.OrigenReferencia, c.EstadoDesde, c.MotivoCancelacion, c.CerradaAt)
+                null, null, null, c.OrigenTipo, c.OrigenReferencia, c.EstadoDesde, c.MotivoCancelacion, c.CerradaAt,
+                null, null)
         ).ToListAsync(ct);
 
         var asigNombre = t.AsignadoPersona is null ? null

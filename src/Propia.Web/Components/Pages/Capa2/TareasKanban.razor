@@ -2,6 +2,7 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using System.Globalization
 @using Propia.Application.Tareas
+@using Propia.Application.TableroCompartido
 @using Propia.Application.Directorio
 @using Propia.Application.Cierre
 @using Propia.Domain.Enums
@@ -94,6 +95,43 @@ else
                         </div>
                     </div>
                 }
+                @if (_tenants.Count > 1)
+                {
+                    <div class="tb-card">
+                        <div class="tb-card-bar" style="background:linear-gradient(90deg,#7A77E0,#5955D1)"></div>
+                        <div class="tb-card-body">
+                            <div class="tb-card-top">
+                                <div class="tb-card-id">
+                                    <div class="tb-card-nom">Todas mis copropiedades</div>
+                                    <div class="tb-card-desc">Tablero compartido: espejo de las tareas de todas tus copropiedades.</div>
+                                </div>
+                            </div>
+                            <div class="tb-card-foot">
+                                <span class="tb-card-count">cross-tenant</span>
+                            </div>
+                            <button class="tb-card-open" @onclick="AbrirBoardCompartidoAsync">Abrir tablero compartido<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18l6-6-6-6"/></svg></button>
+                        </div>
+                    </div>
+                }
+                @foreach (var invGal in _invitaciones)
+                {
+                    var invit = invGal;
+                    <div class="tb-card">
+                        <div class="tb-card-bar" style="background:@(invit.TableroColor ?? "#6D4FE3")"></div>
+                        <div class="tb-card-body">
+                            <div class="tb-card-top">
+                                <div class="tb-card-id">
+                                    <div class="tb-card-nom">@invit.TableroNombre</div>
+                                    <div class="tb-card-desc">@(string.IsNullOrWhiteSpace(invit.TableroDescripcion) ? "Te invitaron a trabajar en este tablero." : invit.TableroDescripcion)</div>
+                                </div>
+                            </div>
+                            <div class="tb-card-foot">
+                                <span class="tb-copro-chip">Invitado · @invit.TenantNombre</span>
+                            </div>
+                            <button class="tb-card-open" @onclick="() => AbrirBoardInvitadoAsync(invit)">Abrir tablero<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18l6-6-6-6"/></svg></button>
+                        </div>
+                    </div>
+                }
                 <button class="tb-card-new" @onclick="() => AbrirTableroDraft(null)">
                     <div class="tb-card-new-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg></div>
                     <span>Crear tablero</span>
@@ -133,12 +171,12 @@ else
                         </div>
                     }
                     @SelectorCopropiedad
-                    @if (!_verCerradas)
+                    @if (!_verCerradas && !EsBoardForaneo)
                     {
                         <button class="tb-btn tb-btn-soft" @onclick="AbrirConfigBoard"><i class="fi fi-rr-settings"></i>Configurar</button>
                     }
                 </div>
-                @if (!_verCerradas)
+                @if (!_verCerradas && !EsBoardForaneo)
                 {
                     <button class="tb-cta-brand" @onclick="() => AbrirCardDraft(null, _board.Estados.FirstOrDefault()?.Id)">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
@@ -151,7 +189,10 @@ else
         @* Pestanas Activos / Cerrados + buscador (las tareas cerradas desaparecen del tablero activo). *@
         <div class="tb-board-tabs">
             <button class="tb-btab @(!_verCerradas ? "on" : "")" @onclick="() => CambiarTabCerradas(false)">Activos</button>
-            <button class="tb-btab @(_verCerradas ? "on" : "")" @onclick="() => CambiarTabCerradas(true)">Cerrados</button>
+            @if (!EsBoardForaneo)
+            {
+                <button class="tb-btab @(_verCerradas ? "on" : "")" @onclick="() => CambiarTabCerradas(true)">Cerrados</button>
+            }
             <div class="tb-flex"></div>
             @* En vista Lista el buscador va junto a "Filtros" (como en PQRSD); aqui se oculta para no duplicarlo. *@
             @* En Tarjetas y Tabla el buscador va junto al boton Filtros (toolbar); aqui solo
@@ -304,6 +345,10 @@ else
                                         @ondragend="() => _dragTareaId = null"
                                         style="border-left-color:@(t.Color ?? est.Color ?? "#6D4FE3")" @onclick="() => AbrirCardDraft(tarea, null)">
                                     <span class="tb-tcard-copy" title="Copiar tarea" @onclick:stopPropagation="true" @onclick="() => AbrirCopiaDialog(tarea.Id, tarea.Titulo, tarea.EstadoId)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg></span>
+                                    @if (t.TenantNombre is not null)
+                                    {
+                                        <span class="tb-copro-chip">@t.TenantNombre</span>
+                                    }
                                     <div class="tb-tcard-tit">@t.Titulo</div>
                                     <div class="tb-tcard-meta">
                                         <span class="tb-prio" style="color:@PrioFg(t.Prioridad);background:@PrioBg(t.Prioridad)">@t.Prioridad</span>
@@ -404,7 +449,10 @@ else
                             }
                             else
                             {
-                                <button class="tb-col-add" @onclick="() => AbrirComposer(estado.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Agregar</button>
+                                @if (!EsBoardForaneo)
+                                {
+                                    <button class="tb-col-add" @onclick="() => AbrirComposer(estado.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Agregar</button>
+                                }
                             }
                         </div>
                     </div>
@@ -437,7 +485,11 @@ else
                                     var tarea = t;
                                     <button class="tb-tcard" style="border-left-color:@(t.Color ?? "#6D4FE3")" @onclick="() => AbrirCardDraft(tarea, null)">
                                         <span class="tb-tcard-copy" title="Copiar tarea" @onclick:stopPropagation="true" @onclick="() => AbrirCopiaDialog(tarea.Id, tarea.Titulo, tarea.EstadoId)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg></span>
-                                        <div class="tb-tcard-tit">@t.Titulo</div>
+                                        @if (t.TenantNombre is not null)
+                                    {
+                                        <span class="tb-copro-chip">@t.TenantNombre</span>
+                                    }
+                                    <div class="tb-tcard-tit">@t.Titulo</div>
                                         <div class="tb-tcard-meta">
                                             <span class="tb-etapa-dot" style="background:@(t.EstadoColor ?? "#94a3b8")" title="@t.EstadoNombre"></span>
                                             <span class="tb-prio" style="color:@PrioFg(t.Prioridad);background:@PrioBg(t.Prioridad)">@t.Prioridad</span>
@@ -897,7 +949,14 @@ else
                             </div>
                         }
                         <div class="tb-search-wrap">
-                            <input class="tb-input" placeholder="Buscar persona por nombre, documento o correo..." @bind="_tbBuscar" @bind:event="oninput" @onkeyup="BuscarPersonasTb" autocomplete="off" />
+                            @if (_tenants.Count > 1)
+                            {
+                                <label class="tbcfg-cross">
+                                    <input type="checkbox" checked="@_tbCross" @onchange="e => { _tbCross = (bool)e.Value!; _tbResultados.Clear(); _tbResultCopro.Clear(); }" />
+                                    <span>Buscar tambien en mis otras copropiedades (solo usuarios del sistema)</span>
+                                </label>
+                            }
+                            <input class="tb-input" placeholder="@(_tbCross ? "Buscar persona en todas mis copropiedades..." : "Buscar persona por nombre, documento o correo...")" @bind="_tbBuscar" @bind:event="oninput" @onkeyup="BuscarPersonasTb" autocomplete="off" />
                             @if (_tbResultados.Count > 0)
                             {
                                 <div class="tb-search-drop">
@@ -915,6 +974,10 @@ else
                                                 <span class="tb-ava tb-ava-sm">@Iniciales(nombre)</span>
                                             }
                                             <span class="tb-search-nom">@nombre</span>
+                                            @if (_tbResultCopro.TryGetValue(p.Id, out var coproOrigen))
+                                            {
+                                                <span class="tbcfg-copro-chip">@coproOrigen</span>
+                                            }
                                             <span class="tb-search-doc">@p.Documento</span>
                                         </button>
                                     }
@@ -1007,15 +1070,41 @@ else
             <div class="tb-modal-body">
                 <div>
                     <div class="tbcfg-h">ESTADOS (COLUMNAS)</div>
+                    <div class="tbcfg-help">Click en el nombre para renombrar, en el punto para cambiar el color, y usa las flechas para reordenar.</div>
                     <div class="tbcfg-list">
-                        @foreach (var e in _board.Estados)
+                        @for (var iEst = 0; iEst < _board.Estados.Count; iEst++)
                         {
-                            var est = e;
+                            var est = _board.Estados[iEst];
+                            var idxEst = iEst;
                             <div class="tbcfg-est">
-                                <span class="tbcfg-dot" style="background:@(e.Color ?? "#94a3b8")"></span>
-                                <span class="tbcfg-est-nom">@e.Nombre</span>
-                                <span class="tbcfg-est-cnt">@CountEstado(e.Id) tarjetas</span>
-                                @if (!e.EsBase && !e.EsTerminal)
+                                <span style="position:relative;display:inline-flex;">
+                                    <button type="button" class="tbcfg-dot tbcfg-dot-btn" style="background:@(est.Color ?? "#94a3b8")" title="Cambiar color" @onclick="() => _estColorId = _estColorId == est.Id ? null : est.Id"></button>
+                                    @if (_estColorId == est.Id)
+                                    {
+                                        <div class="tb-tagpop-bd" @onclick="() => _estColorId = null"></div>
+                                        <div class="tb-tag-colors" @onclick:stopPropagation="true">
+                                            @foreach (var c in _colores)
+                                            {
+                                                var cc = c;
+                                                <button type="button" class="tb-tag-copt @(string.Equals(est.Color, cc, StringComparison.OrdinalIgnoreCase) ? "on" : "")" style="background:@cc" @onclick="() => GuardarEstadoColorAsync(est, cc)"></button>
+                                            }
+                                        </div>
+                                    }
+                                </span>
+                                @if (_estEditId == est.Id)
+                                {
+                                    <input class="tbcfg-est-inp" @bind="_estEditVal" @bind:event="oninput" @onblur="() => GuardarEstadoNombreAsync(est)" @onkeydown="(e) => EstadoEditKeydown(e, est)" />
+                                }
+                                else
+                                {
+                                    <span class="tbcfg-est-nom tbcfg-est-nom-edit" title="Click para renombrar" @onclick="() => { _estEditId = est.Id; _estEditVal = est.Nombre; }">@est.Nombre</span>
+                                }
+                                <span class="tbcfg-est-cnt">@CountEstado(est.Id) tarjetas</span>
+                                <span class="tbcfg-ord">
+                                    <button type="button" class="tbcfg-ordbtn" title="Subir" disabled="@(idxEst == 0 || _busy)" @onclick="() => MoverEstadoAsync(idxEst, -1)">&#9650;</button>
+                                    <button type="button" class="tbcfg-ordbtn" title="Bajar" disabled="@(idxEst == _board.Estados.Count - 1 || _busy)" @onclick="() => MoverEstadoAsync(idxEst, 1)">&#9660;</button>
+                                </span>
+                                @if (!est.EsBase && !est.EsTerminal)
                                 {
                                     <button class="tbcfg-del" title="Quitar estado" @onclick="() => CfgRemoveEstado(est.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
                                 }
@@ -3174,6 +3263,8 @@ else
             var raw = await Js.InvokeAsync<string?>("localStorage.getItem", TbLastKey);
             if (Guid.TryParse(raw, out var id) && _tableros.Any(t => t.Id == id))
                 await AbrirBoardAsync(id);
+            else if (Guid.TryParse(raw, out var idc) && idc == TableroCompartidoConstantes.BoardId && _tenants.Count > 1)
+                await AbrirBoardCompartidoAsync();
         }
         catch { }
     }
@@ -3265,6 +3356,7 @@ else
         yield return ("torre", "Torre");
         yield return ("unidad", "Unidad privada");
         yield return ("relacionado", "Relacionado con");
+        if (EsBoardCompartido) yield return ("copropiedad", "Copropiedad");
     }
     private string GrupoLabel(string k) => OpcionesGrupo().FirstOrDefault(o => o.Key == k).Label ?? k;
 
@@ -3523,6 +3615,7 @@ else
         "torre" => t => TorreDeTarea(t),
         "unidad" => t => (t.OrigenTipo == "inmueble" && !string.IsNullOrWhiteSpace(t.OrigenReferencia)) ? t.OrigenReferencia! : "Sin unidad",
         "relacionado" => t => string.IsNullOrWhiteSpace(t.OrigenReferencia) ? "Sin relacion" : t.OrigenReferencia!,
+        "copropiedad" => t => string.IsNullOrWhiteSpace(t.TenantNombre) ? "Sin copropiedad" : t.TenantNombre!,
         _ => t => t.EstadoNombre
     };
     // Tablero (tarjetas): agrupa las raices aplicando los mismos filtros que la vista Lista.
@@ -4036,6 +4129,7 @@ else
         try
         {
             _tableros = await Auth().GetFromJsonAsync<List<TableroDto>>("/api/tareas/tableros") ?? new();
+            try { _invitaciones = await Auth().GetFromJsonAsync<List<InvitacionMini>>("/api/tablero-compartido/invitaciones") ?? new(); } catch { _invitaciones = new(); }
             try { _resumen = await Auth().GetFromJsonAsync<ResumenTareasDto>("/api/tareas/resumen"); } catch { _resumen = null; }
             try { _etiquetasCat = await Auth().GetFromJsonAsync<List<EtiquetaTareaDto>>("/api/tareas/etiquetas") ?? new(); } catch { _etiquetasCat = new(); }
             if (_tenants.Count == 0)
@@ -4265,8 +4359,28 @@ else
         PatchLocal(tareaId, t => t with { OrigenReferencia = refv });
         await Auth().PatchAsJsonAsync($"/api/tareas/{tareaId}/inline", new InlineUpdateTareaRequest("origen", tipo, null, null, null, refv));
     }
-    private void CerrarBoard() { _board = null; _tareas = new(); }
-    private async Task RecargarBoard() { if (_board is not null) { _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tareas/tableros/{_board.Tablero.Id}/board?verCerradas={(_verCerradas ? "true" : "false")}"); SyncTareas(); ReconciliarOrden(); } }
+    private void CerrarBoard() { _board = null; _tareas = new(); _invitadoActual = null; }
+    private async Task RecargarBoard()
+    {
+        if (_board is null) return;
+        if (EsBoardCompartido)
+        {
+            _board = await Auth().GetFromJsonAsync<TableroBoardDto>("/api/tablero-compartido/board");
+            SyncTareas();
+            ReconciliarOrden();
+            return;
+        }
+        if (_invitadoActual is InvitacionMini invAct)
+        {
+            _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tablero-compartido/invitaciones/{invAct.TenantId}/{invAct.TableroId}/board");
+            SyncTareas();
+            ReconciliarOrden();
+            return;
+        }
+        _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tareas/tableros/{_board.Tablero.Id}/board?verCerradas={(_verCerradas ? "true" : "false")}");
+        SyncTareas();
+        ReconciliarOrden();
+    }
 
     private List<TareaListaDto> RaicesPorEstado(Guid estadoId) =>
         _tareas.Where(t => t.PadreId == null && t.EstadoId == estadoId).ToList();
@@ -5018,6 +5132,7 @@ else
 
     private async Task GuardarEd(Guid id, string campo)
     {
+        if (EsBoardForaneo) { AvisoSoloLecturaCompartido(); return; }
         if (_editKey != id + ":" + campo || _editBusy) return;
         _editBusy = true;
         try
@@ -5065,6 +5180,7 @@ else
 
     private async Task CambiarPrioridadFila(Guid id, ChangeEventArgs e)
     {
+        if (EsBoardForaneo) { AvisoSoloLecturaCompartido(); return; }
         if (!Enum.TryParse<PrioridadTarea>(e.Value?.ToString(), out var pr)) return;
         PatchLocal(id, t => t with { Prioridad = pr });
         var resp = await Auth().PatchAsJsonAsync($"/api/tareas/{id}/inline", new { Campo = "prioridad", Texto = pr.ToString() });
@@ -5114,6 +5230,7 @@ else
     private string NombreMiembro(Guid pid) => _personas?.FirstOrDefault(p => p.Id == pid)?.Nombre ?? PersonaNombre(pid);
     private async Task ToggleAsig(Guid tareaId, Guid personaId)
     {
+        if (EsBoardForaneo) { AvisoSoloLecturaCompartido(); return; }
         if (!_asigSel.Add(personaId)) _asigSel.Remove(personaId);
         var ids = _asigSel.ToList();
         PatchLocal(tareaId, t =>
@@ -5163,6 +5280,7 @@ else
     }
     private async Task CrearDesdeNuevaFila(Guid estadoId)
     {
+        if (EsBoardForaneo) { AvisoSoloLecturaCompartido(); return; }
         var d = NuevaFilaDe(estadoId);
         if (string.IsNullOrWhiteSpace(d.Titulo) || _board is null) return;
         var camposValores = d.Campos.Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
@@ -5324,6 +5442,8 @@ else
     // Si la columna destino es terminal, se pide motivo de cierre (la tarea se cierra y desaparece).
     private async Task CambiarEstadoOCerrar(Guid tareaId, Guid estadoId)
     {
+        if (EsBoardCompartido) { await CambiarEstadoCompartidoAsync(tareaId, estadoId); return; }
+        if (_invitadoActual is not null) { await CambiarEstadoInvitadoAsync(tareaId, estadoId); return; }
         if (EstadoEsTerminal(estadoId))
         {
             if (_motivosTareas.Count == 0) await CargarMotivosTareasAsync();
@@ -5383,6 +5503,7 @@ else
     }
     private async Task CambiarProgresoFila(Guid tareaId, ChangeEventArgs e)
     {
+        if (EsBoardForaneo) { AvisoSoloLecturaCompartido(); return; }
         if (!int.TryParse(e.Value?.ToString(), out var p)) return;
         await Auth().PutAsJsonAsync($"/api/tareas/{tareaId}/progreso", new ActualizarProgresoRequest(p));
         await RecargarBoard();
@@ -5421,14 +5542,35 @@ else
     private (string Nombre, string? Foto) SelInfo(Guid pid)
         => _tbSelInfo.TryGetValue(pid, out var v) ? v : (PersonaNombre(pid), (string?)null);
 
+    // Modo cross-tenant del picker: busca en el directorio de TODAS mis copropiedades
+    // administradas (invitacion de usuarios de otras copros al tablero). Los ids de persona
+    // son globales, asi que TableroUsuario los acepta sin cambios de esquema.
+    private bool _tbCross;
+    private readonly Dictionary<Guid, string> _tbResultCopro = new();
+    private sealed record PersonaCrossMini(Guid Id, string Nombres, string Apellidos, string Documento, string? FotoUrl, Guid TenantId, string TenantNombre);
+
     private async Task BuscarPersonasTb()
     {
         var q = _tbBuscar?.Trim() ?? "";
-        if (q.Length < 2) { _tbResultados.Clear(); return; }
+        if (q.Length < 2) { _tbResultados.Clear(); _tbResultCopro.Clear(); return; }
         try
         {
-            _tbResultados = await Auth().GetFromJsonAsync<List<PersonaResumenDto>>(
-                $"/api/directorio/personas?q={Uri.EscapeDataString(q)}") ?? new();
+            if (_tbCross)
+            {
+                var cross = await Auth().GetFromJsonAsync<List<PersonaCrossMini>>(
+                    $"/api/tablero-compartido/personas?q={Uri.EscapeDataString(q)}") ?? new();
+                _tbResultCopro.Clear();
+                foreach (var p in cross) { _tbResultCopro[p.Id] = p.TenantNombre; }
+                _tbResultados = cross
+                    .Select(p => new PersonaResumenDto(p.Id, TipoDocumento.CC, p.Documento, p.Nombres, p.Apellidos, null, null, p.FotoUrl, false, EstadoDirectorio.Activo))
+                    .ToList();
+            }
+            else
+            {
+                _tbResultCopro.Clear();
+                _tbResultados = await Auth().GetFromJsonAsync<List<PersonaResumenDto>>(
+                    $"/api/directorio/personas?q={Uri.EscapeDataString(q)}") ?? new();
+            }
         }
         catch { _tbResultados.Clear(); }
     }
@@ -5445,6 +5587,208 @@ else
     {
         _tableroDraft?.UsuarioIds.Remove(pid);
         _tbSelInfo.Remove(pid);
+    }
+
+    // ===================== Tablero compartido (board VIRTUAL en el pipeline real) =====================
+    // El tablero "Todas mis copropiedades" usa el MISMO _board y las MISMAS vistas que cualquier
+    // tablero (tarjetas, tabla, agrupaciones, filtros). Solo cambian: la carga (endpoint del board
+    // virtual), mover de etapa (se rutea al tenant dueno) y abrir tarjeta (la tarea real en su copro).
+    private bool EsBoardCompartido => _board is not null && _board.Tablero.Id == TableroCompartidoConstantes.BoardId;
+
+    private async Task AbrirBoardCompartidoAsync()
+    {
+        _invitadoActual = null;
+        try
+        {
+            _board = await Auth().GetFromJsonAsync<TableroBoardDto>("/api/tablero-compartido/board");
+        }
+        catch (Exception ex)
+        {
+            _msg = "No se pudo cargar el tablero compartido: " + ex.Message;
+            _msgClass = "alert-danger";
+            return;
+        }
+        if (_board is null) { _msg = "No se pudo cargar el tablero compartido."; _msgClass = "alert-danger"; return; }
+        _verCerradas = false;
+        _etiquetasCat = new();
+        SyncTareas();
+        await RestaurarColsAsync();
+        ReconciliarOrden();
+        await RestaurarAggGroupAsync();
+        _boardMode = await LeerVistaGuardadaAsync();
+        try { await Js.InvokeVoidAsync("localStorage.setItem", TbLastKey, _board.Tablero.Id.ToString()); } catch { }
+        _expandidas.Clear();
+        _nuevaFilas.Clear();
+        LimpiarFiltros();
+    }
+
+    private async Task CambiarEstadoCompartidoAsync(Guid tareaId, Guid estadoId)
+    {
+        var tarea = _tareas.FirstOrDefault(t => t.Id == tareaId);
+        var destino = _board?.Estados.FirstOrDefault(e => e.Id == estadoId);
+        if (tarea?.TenantId is not Guid tid || destino is null) return;
+        if (destino.EsTerminal)
+        {
+            _msg = "Cerrar la tarea (etapa terminal) pide motivo: abrela en su copropiedad para cerrarla.";
+            _msgClass = "alert-warning";
+            return;
+        }
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/api/tablero-compartido/mover",
+                new { TenantId = tid, TareaId = tareaId, EstadoNombreDestino = destino.Nombre });
+            if (!resp.IsSuccessStatusCode)
+            {
+                CompartidoMoverResp? r = null;
+                try { r = await resp.Content.ReadFromJsonAsync<CompartidoMoverResp>(); } catch { }
+                _msg = r?.Error ?? "No se pudo mover la tarea.";
+                _msgClass = "alert-danger";
+            }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        await RecargarBoard();
+    }
+
+    private async Task AbrirTareaCompartidaAsync(TareaListaDto t)
+    {
+        if (t.TenantId is not Guid tid) return;
+        if (tid == _activeTenantId)
+        {
+            Nav.NavigateTo($"/tareas?abrir={t.Id}", forceLoad: true);
+            return;
+        }
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/connect/switch-tenant", new { tenantId = tid });
+            if (!resp.IsSuccessStatusCode) { _msg = _invitadoActual is not null ? "No tienes acceso a esa copropiedad: desde la invitacion puedes ver y mover las tarjetas; para abrir el detalle pide acceso al administrador." : "No se pudo cambiar a esa copropiedad."; _msgClass = "alert-warning"; return; }
+            var dto = await resp.Content.ReadFromJsonAsync<CompartidoSwitchResp>();
+            if (string.IsNullOrWhiteSpace(dto?.AccessToken)) { _msg = "Respuesta inesperada del servidor."; _msgClass = "alert-danger"; return; }
+            await Js.InvokeVoidAsync("propiaAuth.save", dto!.AccessToken, tid.ToString(), t.TenantNombre ?? "");
+            Nav.NavigateTo($"/tareas?abrir={t.Id}", forceLoad: true);
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private void AvisoSoloLecturaCompartido()
+    {
+        _msg = "En el tablero compartido la tarea se edita en su copropiedad (haz clic en la tarjeta para abrirla). Aqui puedes moverla de etapa y consultarla.";
+        _msgClass = "alert-warning";
+    }
+
+    // ---- Tableros donde me invitaron (otra copropiedad, con o sin vinculo alli) ----
+    private sealed record InvitacionMini(Guid TenantId, string TenantNombre, Guid TableroId, string TableroNombre, string? TableroColor, string? TableroDescripcion);
+    private List<InvitacionMini> _invitaciones = new();
+    private InvitacionMini? _invitadoActual;
+
+    private bool EsBoardForaneo => EsBoardCompartido || _invitadoActual is not null;
+
+    private async Task AbrirBoardInvitadoAsync(InvitacionMini inv)
+    {
+        try
+        {
+            _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tablero-compartido/invitaciones/{inv.TenantId}/{inv.TableroId}/board");
+        }
+        catch (Exception ex)
+        {
+            _msg = "No se pudo abrir el tablero: " + ex.Message;
+            _msgClass = "alert-danger";
+            return;
+        }
+        if (_board is null) { _msg = "No se pudo abrir el tablero al que te invitaron."; _msgClass = "alert-danger"; return; }
+        _invitadoActual = inv;
+        _verCerradas = false;
+        _etiquetasCat = new();
+        SyncTareas();
+        await RestaurarColsAsync();
+        ReconciliarOrden();
+        await RestaurarAggGroupAsync();
+        _boardMode = await LeerVistaGuardadaAsync();
+        _expandidas.Clear();
+        _nuevaFilas.Clear();
+        LimpiarFiltros();
+    }
+
+    private async Task CambiarEstadoInvitadoAsync(Guid tareaId, Guid estadoId)
+    {
+        if (_invitadoActual is not InvitacionMini inv) return;
+        var destino = _board?.Estados.FirstOrDefault(e => e.Id == estadoId);
+        if (destino is null) return;
+        if (destino.EsTerminal)
+        {
+            _msg = "Cerrar la tarea (etapa terminal) pide motivo: se hace dentro de la copropiedad.";
+            _msgClass = "alert-warning";
+            return;
+        }
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/api/tablero-compartido/invitaciones/mover",
+                new { TenantId = inv.TenantId, TableroId = inv.TableroId, TareaId = tareaId, EstadoId = estadoId });
+            if (!resp.IsSuccessStatusCode)
+            {
+                CompartidoMoverResp? r = null;
+                try { r = await resp.Content.ReadFromJsonAsync<CompartidoMoverResp>(); } catch { }
+                _msg = r?.Error ?? "No se pudo mover la tarea.";
+                _msgClass = "alert-danger";
+            }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        await RecargarBoard();
+    }
+
+    private sealed record CompartidoMoverResp(bool Ok, string? Error);
+    private sealed record CompartidoSwitchResp(string? AccessToken);
+
+    // ---- Edicion de estados (columnas): renombrar, color y orden (el PUT ya existia) ----
+    private Guid? _estColorId;
+    private Guid? _estEditId;
+    private string _estEditVal = "";
+
+    private async Task PutEstadoAsync(EstadoTareaDto est, string nombre, string? color, int orden)
+    {
+        var resp = await Auth().PutAsJsonAsync($"/api/tareas/estados/{est.Id}", new ActualizarEstadoRequest(nombre, color, orden, true));
+        if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+    }
+
+    private async Task GuardarEstadoColorAsync(EstadoTareaDto est, string color)
+    {
+        _estColorId = null;
+        await PutEstadoAsync(est, est.Nombre, color, est.Orden);
+        await RecargarBoard();
+    }
+
+    private async Task GuardarEstadoNombreAsync(EstadoTareaDto est)
+    {
+        var v = (_estEditVal ?? "").Trim();
+        _estEditId = null;
+        if (v.Length == 0 || v == est.Nombre) return;
+        await PutEstadoAsync(est, v, est.Color, est.Orden);
+        await RecargarBoard();
+    }
+
+    private async Task EstadoEditKeydown(KeyboardEventArgs e, EstadoTareaDto est)
+    {
+        if (e.Key == "Enter") { await GuardarEstadoNombreAsync(est); }
+        else if (e.Key == "Escape") { _estEditId = null; }
+    }
+
+    private async Task MoverEstadoAsync(int idx, int dir)
+    {
+        if (_board is null) return;
+        var j = idx + dir;
+        if (j < 0 || j >= _board.Estados.Count) return;
+        var a = _board.Estados[idx];
+        var b = _board.Estados[j];
+        // Si los ordenes empatan (catalogos viejos con Orden 0), el indice desempata.
+        var ordA = a.Orden; var ordB = b.Orden;
+        if (ordA == ordB) { ordA = idx; ordB = j; }
+        _busy = true;
+        try
+        {
+            await PutEstadoAsync(a, a.Nombre, a.Color, ordB);
+            await PutEstadoAsync(b, b.Nombre, b.Color, ordA);
+            await RecargarBoard();
+        }
+        finally { _busy = false; }
     }
 
     // ---- Invitar externo al tablero (crea cuenta + acceso, envia correo) ----
@@ -5799,6 +6143,11 @@ else
 
     private async Task AbrirCardDraft(TareaListaDto? t, Guid? estadoIdDefault)
     {
+        if (EsBoardForaneo)
+        {
+            if (t is not null) await AbrirTareaCompartidaAsync(t);
+            return;
+        }
         _subNew = ""; _respPick = ""; _cardMsg = null;
         _cardTab = "detalle"; _adjSel = null; _nuevoComentario = ""; _solicitanteSel = null;
         if (t is null)
@@ -6217,3 +6566,19 @@ else
     private static string PrioFg(PrioridadTarea p) => p switch { PrioridadTarea.Urgente => "#C0383C", PrioridadTarea.Alta => "#B45309", PrioridadTarea.Normal => "#2563EB", _ => "#516F90" };
     private static string PrioBg(PrioridadTarea p) => p switch { PrioridadTarea.Urgente => "#FDE7E7", PrioridadTarea.Alta => "#FEF3DC", PrioridadTarea.Normal => "#E6F2FB", _ => "#EEF3F8" };
 }
+
+<style>
+    /* Config de columnas editable + invitacion cross-tenant + espejo */
+    .tbcfg-dot-btn { border: 0; cursor: pointer; padding: 0; width: 14px; height: 14px; border-radius: 50%; }
+    .tbcfg-est-nom-edit { cursor: pointer; }
+    .tbcfg-est-nom-edit:hover { text-decoration: underline dotted; }
+    .tbcfg-est-inp { border: 1px solid #D9D2F6; border-radius: 7px; padding: 3px 8px; font-size: 13px; min-width: 140px; }
+    .tbcfg-ord { display: inline-flex; gap: 2px; margin-left: 6px; }
+    .tbcfg-ordbtn { border: 0; background: transparent; color: #9AABBE; cursor: pointer; font-size: 10px; padding: 2px 4px; border-radius: 5px; line-height: 1; }
+    .tbcfg-ordbtn:hover { background: #F1ECFD; color: #5955D1; }
+    .tbcfg-ordbtn:disabled { opacity: .3; cursor: default; }
+    .tbcfg-cross { display: flex; align-items: center; gap: 7px; font-size: 12px; color: #7C98B6; margin-bottom: 6px; cursor: pointer; }
+    .tbcfg-cross input { accent-color: #5955D1; }
+    .tb-copro-chip { display: inline-flex; align-items: center; font-size: 10px; font-weight: 800; background: #F1ECFD; color: #5955D1; border-radius: 9px; padding: 1px 8px; margin-bottom: 5px; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+    .tbcfg-copro-chip { margin-left: auto; font-size: 10.5px; font-weight: 700; background: #F1ECFD; color: #5955D1; border-radius: 10px; padding: 2px 8px; white-space: nowrap; }
+</style>

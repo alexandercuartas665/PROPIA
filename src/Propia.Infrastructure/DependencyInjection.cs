@@ -156,6 +156,9 @@ public static class DependencyInjection
         // Onboarding de bienvenida (/bienvenida): asistente de plataforma (config global de IA)
         services.AddScoped<Application.Bienvenida.IAsistenteBienvenidaService, Bienvenida.AsistenteBienvenidaService>();
 
+        // Tablero compartido (Capa 1): espejo cross-tenant de Tareas para administradores
+        services.AddScoped<Application.TableroCompartido.ITableroCompartidoService, TableroCompartido.TableroCompartidoService>();
+
         // Modulo 2.17 Servicios publicos
         services.AddScoped<Application.ServiciosPublicos.IServiciosPublicosService, ServiciosPublicos.ServiciosPublicosService>();
 
