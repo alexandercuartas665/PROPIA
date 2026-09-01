@@ -82,6 +82,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             nCopro++;
 
             var numeroToId = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+            var idxCodigo = await BuildUnidadIndexAsync(ct);   // unidades existentes por Numero y por codigo TORRE-NUMERO
             var anexosPend = new List<(int Fila, string Principal, string Asociada)>();
 
             // ---- Unidades ----
@@ -113,7 +114,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                 try
                 {
                     var pid = numeroToId.GetValueOrDefault(principal);
-                    if (pid == Guid.Empty) pid = await BuscarUnidadIdAsync(principal, ct) ?? Guid.Empty;
+                    if (pid == Guid.Empty) idxCodigo.TryGetValue(principal, out pid);
                     var aid = numeroToId.GetValueOrDefault(asociada);
                     if (pid == Guid.Empty || aid == Guid.Empty)
                     {
@@ -130,7 +131,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             {
                 try
                 {
-                    var uid = await ResolverUnidadAsync(Val(row, "UNIDAD PRIVADA"), numeroToId, ct);
+                    var uid = ResolverUnidad(Val(row, "UNIDAD PRIVADA"), numeroToId, idxCodigo);
                     if (uid == Guid.Empty) { errores.Add(new("PERSONAS", fila, $"Unidad '{Val(row, "UNIDAD PRIVADA")}' no encontrada")); continue; }
                     var doc = Val(row, "IDENTIFICACION").Trim();
                     if (doc.Length == 0) { errores.Add(new("PERSONAS", fila, "Falta IDENTIFICACION")); continue; }
@@ -149,8 +150,8 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             {
                 try
                 {
-                    var uid = await ResolverUnidadAsync(Val(row, "UNIDAD PRIVADA"), numeroToId, ct);
-                    if (uid == Guid.Empty) { errores.Add(new("VEHICULOS", fila, "Unidad no encontrada")); continue; }
+                    var uid = ResolverUnidad(Val(row, "UNIDAD PRIVADA"), numeroToId, idxCodigo);
+                    if (uid == Guid.Empty) { errores.Add(new("VEHICULOS", fila, $"Unidad '{Val(row, "UNIDAD PRIVADA")}' no encontrada")); continue; }
                     var placa = Val(row, "PLACA").Trim();
                     if (placa.Length == 0) { errores.Add(new("VEHICULOS", fila, "Falta PLACA")); continue; }
                     await _porteria.CrearVehiculoAutorizadoAsync(new CrearVehiculoRequest(
@@ -166,8 +167,8 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             {
                 try
                 {
-                    var uid = await ResolverUnidadAsync(Val(row, "UNIDAD PRIVADA"), numeroToId, ct);
-                    if (uid == Guid.Empty) { errores.Add(new("MASCOTAS", fila, "Unidad no encontrada")); continue; }
+                    var uid = ResolverUnidad(Val(row, "UNIDAD PRIVADA"), numeroToId, idxCodigo);
+                    if (uid == Guid.Empty) { errores.Add(new("MASCOTAS", fila, $"Unidad '{Val(row, "UNIDAD PRIVADA")}' no encontrada")); continue; }
                     var nom = NullIfEmpty(Val(row, "NOMBRE")) ?? "Mascota";
                     await _mi.AgregarMascotaUnidadAsync(uid, new CrearUnidadMascotaRequest(
                         nom, ParseEnum(Val(row, "TIPO MASCOTA"), TipoMascota.Perro), NullIfEmpty(Val(row, "RAZA"))), ct);
@@ -251,19 +252,42 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
     }
 
     // ===================== Helpers =====================
-    private async Task<Guid> ResolverUnidadAsync(string numero, Dictionary<string, Guid> mapa, CancellationToken ct)
+    // Resuelve una referencia de unidad de la plantilla (columna UNIDAD PRIVADA). La plantilla pide el
+    // "Codigo de la unidad" (TORRE-NUMERO, ej. B-101), pero las unidades guardan Numero suelto ("101") con
+    // su torre aparte. Por eso el indice mapea AMBAS claves: el Numero crudo y el codigo TORRE-NUMERO.
+    // Prioridad: 1) unidades creadas en esta misma carga (numeroToId), 2) indice de existentes.
+    private static Guid ResolverUnidad(string numero, Dictionary<string, Guid> numeroToId, Dictionary<string, Guid> idxCodigo)
     {
         numero = numero.Trim();
         if (numero.Length == 0) return Guid.Empty;
-        if (mapa.TryGetValue(numero, out var id)) return id;
-        return await BuscarUnidadIdAsync(numero, ct) ?? Guid.Empty;
+        if (numeroToId.TryGetValue(numero, out var id)) return id;
+        if (idxCodigo.TryGetValue(numero, out var id2)) return id2;
+        return Guid.Empty;
     }
 
-    private async Task<Guid?> BuscarUnidadIdAsync(string numero, CancellationToken ct)
+    // Indice de las unidades YA existentes del tenant activo (RLS ya acota). Cada unidad se indexa por su
+    // Numero crudo y por su codigo TORRE-NUMERO (mismo calculo que Residentes/Distribucion), sin pisar un
+    // match por Numero (el match exacto tiene prioridad).
+    private async Task<Dictionary<string, Guid>> BuildUnidadIndexAsync(CancellationToken ct)
     {
-        var u = await _db.UnidadesPrivadas.AsNoTracking()
-            .Where(x => x.Numero == numero).Select(x => (Guid?)x.Id).FirstOrDefaultAsync(ct);
-        return u;
+        var idx = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+        var unis = await _db.UnidadesPrivadas.AsNoTracking()
+            .Select(u => new { u.Id, u.Numero, Torre = u.Torre != null ? u.Torre.Nombre : null })
+            .ToListAsync(ct);
+        foreach (var u in unis)
+        {
+            var n = (u.Numero ?? "").Trim();
+            if (n.Length > 0) idx[n] = u.Id;   // 1a pasada: Numero crudo
+        }
+        foreach (var u in unis)
+        {
+            var n = (u.Numero ?? "").Trim();
+            if (n.Length == 0) continue;
+            var torreShort = string.IsNullOrWhiteSpace(u.Torre) ? "" : u.Torre!.Split(' ').Last();
+            if (torreShort.Length == 0) continue;
+            idx.TryAdd($"{torreShort}-{n}", u.Id);   // 2a pasada: codigo TORRE-NUMERO, sin pisar
+        }
+        return idx;
     }
 
     private static List<(Dictionary<string, string> Row, int Fila)> LeerHoja(XLWorkbook wb, string nombre)
