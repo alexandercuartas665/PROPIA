@@ -6,20 +6,24 @@
    ============================================================================ *@
 @using Propia.Application.MiCopropiedad
 
-<div class="suc @(Inline ? "suc--inline" : "")">
-    <div class="suc-fld">
-        @if (MostrarLabels) { <label class="suc-lbl">Torre@(Requerido ? " *" : "")</label> }
-        <select class="@SelClass" value="@_torreSel" @onchange="OnTorreChanged" disabled="@Disabled">
-            <option value="">@PlaceholderTorre</option>
-            @foreach (var t in _torres) { <option value="@t.Key">@t.Nombre</option> }
-        </select>
-    </div>
+<div class="suc @((Inline && !SoloUnidad) ? "suc--inline" : "")">
+    @* Modo SoloUnidad: se oculta la Torre y la unidad se elige directo (id de la unidad privada). *@
+    @if (!SoloUnidad)
+    {
+        <div class="suc-fld">
+            @if (MostrarLabels) { <label class="suc-lbl">Torre@(Requerido ? " *" : "")</label> }
+            <select class="@SelClass" value="@_torreSel" @onchange="OnTorreChanged" disabled="@Disabled">
+                <option value="">@PlaceholderTorre</option>
+                @foreach (var t in _torres) { <option value="@t.Key">@t.Nombre</option> }
+            </select>
+        </div>
+    }
     <div class="suc-fld">
         @if (MostrarLabels) { <label class="suc-lbl">Unidad@(Requerido ? " *" : "")</label> }
         <select class="@SelClass" value="@(UnidadId?.ToString() ?? "")" @onchange="OnUnidadChanged"
-                disabled="@(Disabled || string.IsNullOrEmpty(_torreSel))">
-            <option value="">@(string.IsNullOrEmpty(_torreSel) ? "Elige torre primero" : PlaceholderUnidad)</option>
-            @foreach (var u in UnidadesDeTorre) { <option value="@u.Id">@u.Numero</option> }
+                disabled="@(Disabled || (!SoloUnidad && string.IsNullOrEmpty(_torreSel)))">
+            <option value="">@((!SoloUnidad && string.IsNullOrEmpty(_torreSel)) ? "Elige torre primero" : PlaceholderUnidad)</option>
+            @foreach (var u in (SoloUnidad ? UnidadesTodas : UnidadesDeTorre)) { <option value="@u.Id">@u.Numero</option> }
         </select>
     </div>
 </div>
@@ -35,6 +39,8 @@
     [Parameter] public bool Inline { get; set; } = true;
     [Parameter] public string PlaceholderTorre { get; set; } = "Torre...";
     [Parameter] public string PlaceholderUnidad { get; set; } = "Unidad...";
+    /// <summary>Oculta la Torre y permite elegir la unidad (id de la unidad privada) directamente.</summary>
+    [Parameter] public bool SoloUnidad { get; set; }
 
     private const string SinTorre = "__sin__";
     private string _torreSel = "";
@@ -50,6 +56,12 @@
     private List<UnidadDto> UnidadesDeTorre =>
         (Unidades ?? new List<UnidadDto>())
             .Where(u => TorreKey(u) == _torreSel)
+            .OrderBy(u => u.Numero, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    // Todas las unidades (modo SoloUnidad, sin filtrar por torre).
+    private List<UnidadDto> UnidadesTodas =>
+        (Unidades ?? new List<UnidadDto>())
             .OrderBy(u => u.Numero, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
