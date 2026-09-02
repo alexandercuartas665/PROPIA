@@ -3,6 +3,9 @@ using Propia.Domain.Enums;
 namespace Propia.Application.Tareas;
 
 public record EstadoTareaDto(Guid Id, string Nombre, string? Color, int Orden, bool EsTerminal, bool EsBase, bool Activo);
+
+/// <summary>Resultado de invitar al tablero un usuario del sistema por correo exacto.</summary>
+public record AgregarPorCorreoResultado(bool Ok, string? Error, string? Nombre, bool YaEstaba);
 public record EtiquetaTareaDto(Guid Id, string Nombre, string? Color, bool Activo, int CantidadTareas, Guid? TableroId = null);
 
 public record TareaListaDto(

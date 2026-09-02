@@ -238,6 +238,17 @@ public class TareasController : ControllerBase
     public async Task<IActionResult> QuitarUsuarioTablero(Guid id, Guid personaId, CancellationToken ct)
         => await _svc.QuitarUsuarioTableroAsync(id, personaId, ct) ? NoContent() : NotFound();
 
+    // Invitar al tablero un USUARIO DEL SISTEMA por su correo EXACTO, aunque sea de otro cliente/tenant.
+    // Lo agrega de inmediato (el tablero le queda compartido). No expone el directorio de otros clientes.
+    [HttpPost("tableros/{id:guid}/usuarios/por-correo")]
+    public async Task<IActionResult> AgregarUsuarioTableroPorCorreo(Guid id, [FromBody] AgregarPorCorreoBody body, CancellationToken ct)
+    {
+        var r = await _svc.AgregarUsuarioTableroPorCorreoAsync(id, body.Email ?? "", ct);
+        return r.Ok ? Ok(r) : BadRequest(r);
+    }
+
+    public record AgregarPorCorreoBody(string Email);
+
     // Invitar a un externo (por email) a colaborar en el tablero: crea la persona si no existe,
     // genera el link de aceptacion y envia el correo. Devuelve la invitacion (con LinkAceptacion).
     [HttpPost("tableros/{id:guid}/invitar-externo")]

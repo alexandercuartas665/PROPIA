@@ -68,6 +68,12 @@ public interface ITareasService
     Task<bool> AgregarUsuarioTableroAsync(Guid tableroId, Guid personaId, CancellationToken ct);
     Task<bool> QuitarUsuarioTableroAsync(Guid tableroId, Guid personaId, CancellationToken ct);
 
+    /// <summary>Agrega al tablero un USUARIO DEL SISTEMA (cuenta con login) buscado por su correo
+    /// EXACTO, aunque sea de otra copropiedad/cliente (Persona/usuarios son globales). El tablero le
+    /// queda compartido de inmediato (aparece en get_tableros_invitado en su tenant). No expone el
+    /// directorio de otros clientes: hay que conocer el correo exacto.</summary>
+    Task<AgregarPorCorreoResultado> AgregarUsuarioTableroPorCorreoAsync(Guid tableroId, string email, CancellationToken ct);
+
     /// <summary>Vista completa de un tablero (tablero + estados + tarjetas).</summary>
     Task<TableroBoardDto?> GetTableroBoardAsync(Guid tableroId, CancellationToken ct, bool verCerradas = false);
     Task<bool> ActualizarProgresoAsync(Guid tareaId, int progreso, CancellationToken ct);

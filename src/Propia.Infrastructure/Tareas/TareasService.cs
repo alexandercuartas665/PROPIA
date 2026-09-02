@@ -1559,6 +1559,39 @@ public class TareasService : ITareasService
         return true;
     }
 
+    public async Task<AgregarPorCorreoResultado> AgregarUsuarioTableroPorCorreoAsync(Guid tableroId, string email, CancellationToken ct)
+    {
+        email = (email ?? "").Trim();
+        if (email.Length == 0 || !email.Contains('@'))
+            return new AgregarPorCorreoResultado(false, "Escribe un correo valido.", null, false);
+        if (!await _db.Tableros.AnyAsync(t => t.Id == tableroId, ct))
+            return new AgregarPorCorreoResultado(false, "Tablero no encontrado.", null, false);
+
+        // Usuario del sistema = cuenta con login (asp_net_users) con persona asociada. Es GLOBAL
+        // (sin tenant): se busca por el correo normalizado exacto, aunque sea de otro cliente.
+        var norm = email.ToUpperInvariant();
+        var personaId = await _db.Users.IgnoreQueryFilters()
+            .Where(u => u.NormalizedEmail == norm && u.PersonaId != null)
+            .Select(u => u.PersonaId)
+            .FirstOrDefaultAsync(ct);
+        if (personaId is not Guid pid)
+            return new AgregarPorCorreoResultado(false,
+                "No hay un usuario del sistema con ese correo (debe tener cuenta activa en la plataforma).", null, false);
+
+        var nombre = await _db.Personas.IgnoreQueryFilters()
+            .Where(p => p.Id == pid)
+            .Select(p => (p.Nombres + " " + p.Apellidos).Trim())
+            .FirstOrDefaultAsync(ct);
+
+        var ya = await _db.TableroUsuarios.AnyAsync(u => u.TableroId == tableroId && u.PersonaId == pid, ct);
+        if (!ya)
+        {
+            _db.TableroUsuarios.Add(new TableroUsuario { TableroId = tableroId, PersonaId = pid });
+            await _db.SaveChangesAsync(ct);
+        }
+        return new AgregarPorCorreoResultado(true, null, string.IsNullOrWhiteSpace(nombre) ? email : nombre, ya);
+    }
+
     public async Task<bool> QuitarUsuarioTableroAsync(Guid tableroId, Guid personaId, CancellationToken ct)
     {
         var n = await _db.TableroUsuarios.Where(u => u.TableroId == tableroId && u.PersonaId == personaId).ExecuteDeleteAsync(ct);
