@@ -4,6 +4,7 @@ using Propia.Application.Common;
 using Propia.Application.Directorio;
 using Propia.Application.TableroCompartido;
 using Propia.Application.Tareas;
+using Propia.Domain.Enums;
 using Propia.Infrastructure.Persistence;
 
 namespace Propia.Infrastructure.TableroCompartido;
@@ -407,7 +408,10 @@ public class TableroCompartidoService : ITableroCompartidoService
         q = (q ?? "").Trim();
         if (q.Length < 2) return Array.Empty<PersonaCrossTenantDto>();
 
-        var tenantIds = await TenantsAdministradosAsync(userId, ct);
+        // Alcance del buscador = TODAS las copropiedades del usuario (mismo criterio que el check de la
+        // UI, que se muestra por acceso, no solo por rol Administrador). El resto del tablero compartido
+        // sigue restringido a las administradas; aqui solo buscamos a quien invitar.
+        var tenantIds = await TenantsDelUsuarioAsync(userId, soloAdmin: false, ct);
         if (tenantIds.Count == 0) return Array.Empty<PersonaCrossTenantDto>();
 
         var copros = await _db.Tenants.AsNoTracking()
@@ -417,6 +421,7 @@ public class TableroCompartidoService : ITableroCompartidoService
         // La copropiedad activa primero: en el dedup gana su etiqueta.
         var original = _tenant.CurrentTenantId;
         copros = copros.OrderBy(c => c.Id == original ? 0 : 1).ThenBy(c => c.Nombre).ToList();
+        var qLower = q.ToLowerInvariant();
 
         var candidatos = new List<PersonaCrossTenantDto>();
         var vistos = new HashSet<Guid>();
@@ -427,8 +432,26 @@ public class TableroCompartidoService : ITableroCompartidoService
                 await ImpersonarAsync(copro.Id, ct);
                 try
                 {
+                    // 1) Personas del DIRECTORIO de la copropiedad que casan la busqueda.
                     var personas = await _directorio.ListarPersonasDelTenantAsync(q, ct);
                     foreach (var p in personas)
+                    {
+                        if (!vistos.Add(p.Id)) continue;
+                        candidatos.Add(new PersonaCrossTenantDto(
+                            p.Id, p.Nombres, p.Apellidos, p.Documento, p.FotoUrl, copro.Id, copro.Nombre));
+                    }
+
+                    // 2) USUARIOS DEL SISTEMA de la copropiedad (miembros activos en usuarios_tenant).
+                    // Un usuario con login de otra copropiedad puede NO estar en su directorio; aun asi
+                    // debe poder invitarse a un tablero. El filtro de cuenta de mas abajo confirma el login.
+                    var usuariosSis = await _db.UsuariosTenant.AsNoTracking()
+                        .Where(ut => ut.Estado == EstadoUsuarioTenant.Activo)
+                        .Join(_db.Personas.IgnoreQueryFilters(), ut => ut.PersonaId, p => p.Id, (ut, p) => p)
+                        .Where(p => p.Nombres.ToLower().Contains(qLower) || p.Apellidos.ToLower().Contains(qLower)
+                                 || p.Documento.Contains(q) || (p.Email != null && p.Email.ToLower().Contains(qLower)))
+                        .Select(p => new { p.Id, p.Nombres, p.Apellidos, p.Documento, p.FotoUrl })
+                        .Take(60).ToListAsync(ct);
+                    foreach (var p in usuariosSis)
                     {
                         if (!vistos.Add(p.Id)) continue;
                         candidatos.Add(new PersonaCrossTenantDto(
@@ -488,8 +511,14 @@ public class TableroCompartidoService : ITableroCompartidoService
     }
 
     /// <summary>Copropiedades donde la persona del usuario es Administrador (SECURITY DEFINER,
-    /// mismo criterio de MisCopropiedadesService).</summary>
-    private async Task<List<Guid>> TenantsAdministradosAsync(Guid userId, CancellationToken ct)
+    /// mismo criterio de MisCopropiedadesService). Usada por el espejo/movimiento del tablero compartido.</summary>
+    private Task<List<Guid>> TenantsAdministradosAsync(Guid userId, CancellationToken ct)
+        => TenantsDelUsuarioAsync(userId, soloAdmin: true, ct);
+
+    /// <summary>Copropiedades del usuario (SECURITY DEFINER get_tenants_for_persona). Con
+    /// <paramref name="soloAdmin"/> = true solo las que administra; = false TODAS a las que pertenece
+    /// (mismo criterio que el selector/check de la UI). El buscador de invitados usa el conjunto amplio.</summary>
+    private async Task<List<Guid>> TenantsDelUsuarioAsync(Guid userId, bool soloAdmin, CancellationToken ct)
     {
         var personaId = await _db.Users.AsNoTracking()
             .Where(u => u.Id == userId)
@@ -514,7 +543,7 @@ public class TableroCompartidoService : ITableroCompartidoService
             while (await reader.ReadAsync(ct))
             {
                 var rol = reader.IsDBNull(1) ? string.Empty : reader.GetString(1);
-                if (string.Equals(rol, RolAdministrador, StringComparison.OrdinalIgnoreCase))
+                if (!soloAdmin || string.Equals(rol, RolAdministrador, StringComparison.OrdinalIgnoreCase))
                     ids.Add(reader.GetGuid(0));
             }
         }
