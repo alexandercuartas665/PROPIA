@@ -142,6 +142,26 @@ public class DirectorioController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    // Foto de la persona (ficha de residente): sube y persiste Persona.FotoUrl por personaId.
+    [HttpPost("personas/{id:guid}/foto")]
+    [RequestSizeLimit(5_500_000)]
+    public async Task<IActionResult> SubirFotoPersona(Guid id, IFormFile? file, CancellationToken ct)
+    {
+        if (file is null || file.Length == 0) return BadRequest(new { error = "Archivo vacio." });
+        if (file.Length > 5_000_000) return BadRequest(new { error = "Maximo 5 MB." });
+        var ext = file.ContentType switch
+        {
+            "image/jpeg" => ".jpg",
+            "image/png" => ".png",
+            "image/webp" => ".webp",
+            _ => null
+        };
+        if (ext is null) return BadRequest(new { error = "Formato no soportado. Usa JPG, PNG o WEBP." });
+        await using var stream = file.OpenReadStream();
+        var url = await _svc.SubirFotoPersonaAsync(id, stream, file.ContentType, ext, ct);
+        return url is null ? NotFound() : Ok(new { url });
+    }
+
     // ---------- Empresas ----------
     [HttpGet("empresas")]
     public async Task<IActionResult> ListarEmpresas([FromQuery] string? q, CancellationToken ct)

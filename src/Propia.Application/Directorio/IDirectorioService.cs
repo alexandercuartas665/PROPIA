@@ -17,6 +17,9 @@ public interface IDirectorioService
     Task<PersonaDetalleDto> CrearPersonaAsync(CrearPersonaRequest req, CancellationToken ct);
     Task<PersonaDetalleDto?> ActualizarPersonaAsync(Guid id, ActualizarPersonaRequest req, CancellationToken ct);
 
+    /// <summary>Sube la foto de la persona al blob y persiste Persona.FotoUrl. Devuelve la URL resuelta.</summary>
+    Task<string?> SubirFotoPersonaAsync(Guid personaId, Stream contenido, string contentType, string ext, CancellationToken ct);
+
     // --- Busqueda y CRUD de Empresas (global) ---
     Task<EmpresaDetalleDto?> BuscarEmpresaPorNitAsync(string nit, CancellationToken ct);
     Task<EmpresaDetalleDto?> ObtenerEmpresaAsync(Guid id, CancellationToken ct);

@@ -4,8 +4,10 @@
 @using Propia.Application.Directorio
 @using Propia.Domain.Enums
 @using Propia.Web.Components.Shared
+@using Propia.Web.Components.Shared.Modals
 @inject IHttpClientFactory HttpFactory
 @inject NavigationManager Nav
+@inject IModalService Modals
 @inject IJSRuntime Js
 
 <PageTitle>Residentes - PROPIA</PageTitle>
@@ -116,7 +118,7 @@ else
                 var r = item.Fila!;
                 <div class="res-row res-grid" style="grid-template-columns:@GridCols">
                     <div class="res-exp-col">
-                        <button type="button" class="res-exp" title="Abrir la ficha en el Directorio" @onclick="() => AbrirFicha(r)">
+                        <button type="button" class="res-exp" title="Abrir ficha del residente" @onclick="() => AbrirFicha(r)">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                         </button>
                     </div>
@@ -231,6 +233,9 @@ else
         }
     </div>
 }
+
+@* IModalService es scoped por circuito: el host debe declararse en la pagina para renderizar el modal. *@
+<ModalHost />
 
 @code {
     private bool _authChecked;
@@ -613,18 +618,35 @@ else
             await CargarAsync();
             if (abrir && creada is not null)
             {
+                // Empresa: sigue en el Directorio (aun no tiene ficha rapida). Persona: modal en sitio.
                 if (creada.EntidadTipo == EntidadDirectorio.Empresa && creada.EmpresaId is Guid eid) Nav.NavigateTo($"/directorio/empresas/{eid}");
-                else if (creada.PersonaId != Guid.Empty) Nav.NavigateTo($"/directorio/personas/{creada.PersonaId}");
+                else if (creada.PersonaId != Guid.Empty) await AbrirFichaPersonaAsync(creada.PersonaId, sel.NombreCompleto);
             }
         }
         catch (Exception ex) { _msg = "Error: " + ex.Message; _msgError = true; }
         finally { _busy = false; }
     }
 
-    private void AbrirFicha(ResidenteResumenDto r)
+    // El expander abre una ficha RAPIDA en un modal (editar datos, foto, documentos) SIN salir de
+    // Residentes. Empresas siguen al Directorio (no tienen ficha rapida todavia).
+    private async Task AbrirFicha(ResidenteResumenDto r)
     {
-        if (r.EntidadTipo == EntidadDirectorio.Empresa && r.EmpresaId is Guid eid) Nav.NavigateTo($"/directorio/empresas/{eid}");
-        else if (r.PersonaId is Guid pid) Nav.NavigateTo($"/directorio/personas/{pid}");
+        if (r.EntidadTipo == EntidadDirectorio.Empresa)
+        {
+            if (r.EmpresaId is Guid eid) Nav.NavigateTo($"/directorio/empresas/{eid}");
+            return;
+        }
+        if (r.PersonaId is Guid pid) await AbrirFichaPersonaAsync(pid, r.Nombre);
+    }
+
+    private async Task AbrirFichaPersonaAsync(Guid personaId, string? nombre)
+    {
+        var parameters = new ModalParameters()
+            .Set("Jwt", _jwt).Set("PersonaId", personaId).Set("NombreInicial", nombre);
+        var options = new ModalOptions { Width = "720px", Height = "auto" };
+        var cambio = await Modals.OpenAsync<FichaResidenteModal, bool>(parameters, options);
+        // Si se edito algo (datos/foto/documentos) se refresca la tabla para reflejar el cambio global.
+        if (cambio == true) await CargarAsync();
     }
 
     private static string RolLabel(RolUnidadPersona r) => r switch

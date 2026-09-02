@@ -1,0 +1,354 @@
+@* FichaResidenteModal - ficha rapida del residente (modulo Residentes). Reemplaza la navegacion
+   al Directorio: edita datos basicos de la persona, sube su foto y adjunta documentos de identidad
+   (cedula, RUT, etc.). Reutiliza los endpoints globales de Directorio (personas + adjuntos). *@
+
+@inherits ModalBase<bool>
+@using Propia.Application.Directorio
+@using Propia.Domain.Enums
+@using Microsoft.AspNetCore.Components.Forms
+@inject IHttpClientFactory HttpFactory
+
+@if (_cargando)
+{
+    <div class="fr-loading"><div class="spinner-border" style="color:#6D4FE3"></div></div>
+}
+else
+{
+<div class="fr-head">
+    <div class="fr-head-ic">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+    </div>
+    <div class="fr-head-tt">
+        <div class="fr-head-h">@_nombres @_apellidos</div>
+        <div class="fr-head-s">@DocLabel(_tipoDoc) @_documento</div>
+    </div>
+    <button class="fr-x" @onclick="Cerrar"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+</div>
+
+<div class="fr-body">
+    @* ---------- Columna izquierda: foto ---------- *@
+    <div class="fr-left">
+        <div class="fr-sectlbl">FOTO DE LA PERSONA</div>
+        @if (!string.IsNullOrWhiteSpace(_fotoUrl))
+        {
+            <div class="fr-avatar" style="background-image:url('@_fotoUrl')" role="button" title="Ver foto completa" @onclick="() => _verImagen = _fotoUrl"></div>
+            <label class="fr-img-change">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>@(_subiendoFoto ? "Subiendo..." : "Cambiar foto")
+                <InputFile OnChange="SubirFoto" accept="image/png,image/jpeg,image/webp" hidden disabled="@_subiendoFoto" />
+            </label>
+        }
+        else
+        {
+            <label class="fr-avatar-drop">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+                <span>@(_subiendoFoto ? "Subiendo..." : "Cargar foto")</span>
+                <InputFile OnChange="SubirFoto" accept="image/png,image/jpeg,image/webp" hidden disabled="@_subiendoFoto" />
+            </label>
+        }
+    </div>
+
+    @* ---------- Columna derecha: datos + documentos ---------- *@
+    <div class="fr-right">
+        <div class="fr-sectlbl">DATOS DE LA PERSONA</div>
+        <div class="fr-grid">
+            <div class="fr-fld">
+                <label>Nombres</label>
+                <input class="fr-in" @bind="_nombres" />
+            </div>
+            <div class="fr-fld">
+                <label>Apellidos</label>
+                <input class="fr-in" @bind="_apellidos" />
+            </div>
+            <div class="fr-fld">
+                <label>Correo</label>
+                <input class="fr-in" type="email" @bind="_email" placeholder="correo@ejemplo.com" />
+            </div>
+            <div class="fr-fld">
+                <label>Telefono</label>
+                <input class="fr-in" @bind="_telefono" placeholder="Opcional" />
+            </div>
+            <div class="fr-fld">
+                <label>Fecha de nacimiento</label>
+                <input class="fr-in" type="date" value="@(_fechaNac?.ToString("yyyy-MM-dd"))" @onchange="OnFechaNac" />
+            </div>
+            <div class="fr-fld">
+                <label>Genero</label>
+                <select class="fr-in" @bind="_genero">
+                    <option value="">Sin especificar</option>
+                    <option value="@GeneroPersona.Masculino">Masculino</option>
+                    <option value="@GeneroPersona.Femenino">Femenino</option>
+                    <option value="@GeneroPersona.NoBinario">No binario</option>
+                    <option value="@GeneroPersona.NoIdentificado">Prefiere no decir</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="fr-sectlbl fr-sectlbl--sep">DOCUMENTOS (CEDULA, RUT, ETC.)</div>
+        @if (_adjuntos.Count == 0)
+        {
+            <div class="fr-empty">Sin documentos adjuntos.</div>
+        }
+        else
+        {
+            <div class="fr-doclist">
+                @foreach (var a in _adjuntos)
+                {
+                    var adj = a;
+                    <div class="fr-doc">
+                        <div class="fr-doc-ic">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+                        </div>
+                        <div class="fr-doc-txt">
+                            <a class="fr-doc-nom" href="@adj.Url" target="_blank" rel="noopener" title="Abrir">@adj.Nombre</a>
+                            <div class="fr-doc-meta">@FmtTam(adj.TamanoBytes) &middot; @adj.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy")</div>
+                        </div>
+                        <button class="fr-doc-del" type="button" title="Quitar" @onclick="() => EliminarAdjunto(adj.Id)">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                        </button>
+                    </div>
+                }
+            </div>
+        }
+        <label class="fr-doc-add">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>@(_subiendoDoc ? "Subiendo..." : "Adjuntar documento")
+            <InputFile OnChange="SubirDocumento" accept=".pdf,.png,.jpg,.jpeg,.webp" hidden disabled="@_subiendoDoc" />
+        </label>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(_msg))
+{
+    <div class="fr-msg @(_msgError ? "err" : "ok")">@_msg</div>
+}
+
+<div class="fr-foot">
+    <button class="fr-btn" type="button" @onclick="Cerrar">Cerrar</button>
+    <button class="fr-btn fr-btn-primary" type="button" @onclick="GuardarAsync" disabled="@_guardando">@(_guardando ? "Guardando..." : "Guardar cambios")</button>
+</div>
+
+@* Lightbox de la foto completa (sin recorte). *@
+@if (!string.IsNullOrWhiteSpace(_verImagen))
+{
+    <div class="fr-lb" @onclick="() => _verImagen = null">
+        <button class="fr-lb-x" type="button" title="Cerrar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+        <img src="@_verImagen" alt="Foto de la persona" />
+    </div>
+}
+}
+
+<style>
+    .fr-loading { min-height: 220px; display: flex; align-items: center; justify-content: center; }
+    .fr-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid #EEF3F8; }
+    .fr-head-ic { width: 40px; height: 40px; border-radius: 11px; background: #F1ECFD; color: #6D4FE3; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .fr-head-tt { flex: 1; min-width: 0; }
+    .fr-head-h { font-size: 16px; font-weight: 800; color: #1B2A3A; }
+    .fr-head-s { font-size: 12px; color: #7C98B6; margin-top: 1px; }
+    .fr-x { width: 32px; height: 32px; border-radius: 9px; border: 0; background: transparent; color: #90A4B7; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .fr-x:hover { background: #F1F5F9; color: #33475B; }
+
+    .fr-body { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); gap: 18px; padding: 18px 20px; }
+    .fr-left { display: flex; flex-direction: column; align-items: center; gap: 9px; }
+    .fr-left .fr-sectlbl { align-self: stretch; }
+    .fr-right { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+    .fr-sectlbl { font-size: 11px; letter-spacing: .5px; color: #A6B7C8; font-weight: 700; }
+    .fr-sectlbl--sep { margin-top: 8px; padding-top: 12px; border-top: 1px dashed #E1E8EE; }
+
+    /* Foto tipo avatar de perfil: circulo centrado; la imagen se recorta a "cover" sin importar
+       su tamano original. Clic para verla completa (lightbox). */
+    .fr-avatar { width: 150px; height: 150px; border-radius: 50%; background-size: cover; background-position: center; background-repeat: no-repeat; background-color: #EEF2F6; border: 3px solid #fff; box-shadow: 0 2px 10px rgba(27,42,58,.14), 0 0 0 1px #E1E8EE; cursor: zoom-in; margin-top: 4px; }
+    .fr-img-change { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: #6D4FE3; cursor: pointer; }
+    .fr-avatar-drop { width: 150px; height: 150px; border-radius: 50%; border: 1.5px dashed #C3D0DD; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; cursor: pointer; color: #6D4FE3; font-size: 11.5px; font-weight: 700; text-align: center; margin-top: 4px; }
+    .fr-avatar-drop:hover { border-color: #6D4FE3; background: #F5F1FE; }
+
+    .fr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .fr-fld { display: flex; flex-direction: column; gap: 4px; }
+    .fr-fld label { font-size: 11px; color: #7C98B6; font-weight: 700; }
+    .fr-in { width: 100%; border: 1px solid #E1E8EE; border-radius: 9px; padding: 8px 10px; font-size: 12.5px; color: #33475B; outline: none; background: #fff; box-sizing: border-box; }
+    .fr-in:focus { border-color: #6D4FE3; box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
+
+    .fr-empty { font-size: 12px; color: #90A4B7; padding: 6px 0; }
+    .fr-doclist { display: flex; flex-direction: column; gap: 7px; }
+    .fr-doc { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid #EEF3F8; border-radius: 10px; background: #FBFCFD; }
+    .fr-doc-ic { width: 30px; height: 30px; border-radius: 8px; background: #E6F2FB; color: #2563EB; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .fr-doc-txt { flex: 1; min-width: 0; }
+    .fr-doc-nom { font-size: 12.5px; font-weight: 700; color: #33475B; text-decoration: none; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .fr-doc-nom:hover { color: #6D4FE3; text-decoration: underline; }
+    .fr-doc-meta { font-size: 10.5px; color: #A6B7C8; }
+    .fr-doc-del { width: 26px; height: 26px; border-radius: 7px; border: 0; background: transparent; color: #C3D0DD; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+    .fr-doc-del:hover { background: #FDE7E7; color: #D7263D; }
+    .fr-doc-add { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; font-weight: 700; color: #6D4FE3; background: #F1ECFD; border: 1px solid #DCD2F8; border-radius: 8px; padding: 7px 12px; cursor: pointer; align-self: flex-start; }
+    .fr-doc-add:hover { background: #E4DBFB; }
+
+    .fr-msg { margin: 0 20px; padding: 8px 12px; border-radius: 9px; font-size: 12px; }
+    .fr-msg.ok { background: #ECFBF2; color: #1B7A44; }
+    .fr-msg.err { background: #FDE7E7; color: #B02121; }
+
+    .fr-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid #EEF3F8; }
+    .fr-btn { border: 1px solid #E1E8EE; background: #fff; color: #516F90; border-radius: 9px; padding: 9px 16px; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+    .fr-btn:hover { background: #F5F7FA; }
+    .fr-btn-primary { background: #6D4FE3; border-color: #6D4FE3; color: #fff; }
+    .fr-btn-primary:hover { background: #5B3FD1; }
+    .fr-btn-primary:disabled { opacity: .6; cursor: default; }
+
+    .fr-lb { position: fixed; inset: 0; z-index: 5000; background: rgba(12,20,32,.82); display: flex; align-items: center; justify-content: center; padding: 32px; cursor: zoom-out; }
+    .fr-lb img { max-width: 92vw; max-height: 92vh; object-fit: contain; border-radius: 10px; box-shadow: 0 12px 48px rgba(0,0,0,.5); }
+    .fr-lb-x { position: absolute; top: 18px; right: 22px; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255,255,255,.16); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .fr-lb-x:hover { background: rgba(255,255,255,.28); }
+</style>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+    [Parameter] public Guid PersonaId { get; set; }
+    [Parameter] public string? NombreInicial { get; set; }
+
+    private bool _cargando = true;
+    private bool _guardando;
+    private bool _subiendoFoto;
+    private bool _subiendoDoc;
+    private string? _msg;
+    private bool _msgError;
+    private bool _dirty;
+
+    private TipoDocumento _tipoDoc = TipoDocumento.CC;
+    private string _documento = "";
+    private string _nombres = "";
+    private string _apellidos = "";
+    private string? _email;
+    private string? _telefono;
+    private string? _fotoUrl;
+    private DateOnly? _fechaNac;
+    private GeneroPersona? _genero;
+    private string? _verImagen;
+
+    private List<DirectorioAdjuntoDto> _adjuntos = new();
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var dto = await Auth().GetFromJsonAsync<Persona360Dto>($"/api/directorio/personas/{PersonaId}");
+            if (dto is not null)
+            {
+                var p = dto.Persona;
+                _tipoDoc = p.TipoDocumento; _documento = p.Documento;
+                _nombres = p.Nombres; _apellidos = p.Apellidos;
+                _email = p.Email; _telefono = p.Telefono;
+                _fotoUrl = p.FotoUrl; _fechaNac = p.FechaNacimiento; _genero = p.Genero;
+            }
+            await CargarAdjuntosAsync();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
+        finally { _cargando = false; }
+    }
+
+    private async Task CargarAdjuntosAsync()
+    {
+        try { _adjuntos = await Auth().GetFromJsonAsync<List<DirectorioAdjuntoDto>>($"/api/directorio/adjuntos/Persona/{PersonaId}") ?? new(); }
+        catch { _adjuntos = new(); }
+    }
+
+    private void OnFechaNac(ChangeEventArgs e)
+        => _fechaNac = DateOnly.TryParse(e.Value?.ToString(), out var d) ? d : null;
+
+    private async Task GuardarAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nombres) || string.IsNullOrWhiteSpace(_apellidos))
+        { _msg = "Nombres y apellidos son obligatorios."; _msgError = true; return; }
+        _guardando = true; _msg = "";
+        try
+        {
+            var req = new ActualizarPersonaRequest(_nombres.Trim(), _apellidos.Trim(),
+                string.IsNullOrWhiteSpace(_email) ? null : _email!.Trim(),
+                string.IsNullOrWhiteSpace(_telefono) ? null : _telefono!.Trim(),
+                _fotoUrl, _fechaNac, _genero);
+            var resp = await Auth().PutAsJsonAsync($"/api/directorio/personas/{PersonaId}", req);
+            if (resp.IsSuccessStatusCode) { _dirty = true; _msg = "Datos guardados."; _msgError = false; }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgError = true; }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
+        finally { _guardando = false; }
+    }
+
+    private async Task SubirFoto(InputFileChangeEventArgs e)
+    {
+        if (e.File is null) return;
+        _subiendoFoto = true; _msg = "";
+        try
+        {
+            // Bufferizar de una vez (evita "_blazorFilesById is null" si el input se desmonta).
+            using var ms = new MemoryStream();
+            await e.File.OpenReadStream(5_500_000).CopyToAsync(ms);
+            ms.Position = 0;
+            using var content = new MultipartFormDataContent();
+            var sc = new StreamContent(ms);
+            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(e.File.ContentType);
+            content.Add(sc, "file", e.File.Name);
+            var resp = await Auth().PostAsync($"/api/directorio/personas/{PersonaId}/foto", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                var dto = await resp.Content.ReadFromJsonAsync<UrlResp>();
+                _fotoUrl = dto?.url; _dirty = true; _msg = "Foto actualizada."; _msgError = false;
+            }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgError = true; }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
+        finally { _subiendoFoto = false; }
+    }
+
+    private async Task SubirDocumento(InputFileChangeEventArgs e)
+    {
+        if (e.File is null) return;
+        _subiendoDoc = true; _msg = "";
+        try
+        {
+            using var ms = new MemoryStream();
+            await e.File.OpenReadStream(10_500_000).CopyToAsync(ms);
+            ms.Position = 0;
+            using var content = new MultipartFormDataContent();
+            var sc = new StreamContent(ms);
+            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                string.IsNullOrWhiteSpace(e.File.ContentType) ? "application/octet-stream" : e.File.ContentType);
+            content.Add(sc, "file", e.File.Name);
+            var resp = await Auth().PostAsync($"/api/directorio/adjuntos/Persona/{PersonaId}", content);
+            if (resp.IsSuccessStatusCode) { _dirty = true; _msg = "Documento adjuntado."; _msgError = false; await CargarAdjuntosAsync(); }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgError = true; }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
+        finally { _subiendoDoc = false; }
+    }
+
+    private async Task EliminarAdjunto(Guid id)
+    {
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/directorio/adjuntos/{id}");
+            if (resp.IsSuccessStatusCode) { _dirty = true; _adjuntos.RemoveAll(a => a.Id == id); }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
+    }
+
+    private void Cerrar() => Close(_dirty);
+
+    private static string DocLabel(TipoDocumento t) => t switch
+    {
+        TipoDocumento.CC => "CC",
+        TipoDocumento.CE => "CE",
+        TipoDocumento.PA => "Pasaporte",
+        TipoDocumento.TI => "TI",
+        TipoDocumento.NIT => "NIT",
+        _ => ""
+    };
+
+    private static string FmtTam(long b)
+        => b >= 1_048_576 ? $"{b / 1_048_576.0:0.0} MB" : $"{b / 1024.0:0} KB";
+
+    private record UrlResp(string? url);
+}

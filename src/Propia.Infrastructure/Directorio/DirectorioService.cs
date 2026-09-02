@@ -95,6 +95,19 @@ public class DirectorioService : IDirectorioService
         return ToPersonaDetalle(p);
     }
 
+    public async Task<string?> SubirFotoPersonaAsync(Guid personaId, Stream contenido, string contentType, string ext, CancellationToken ct)
+    {
+        // Persona es global (sin tenant): se ubica ignorando el filtro de tenant.
+        var p = await _db.Personas.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == personaId, ct);
+        if (p is null) return null;
+        var key = $"directorio/persona/{personaId:N}/foto/{Guid.NewGuid():N}{ext}";
+        // UploadAsync devuelve una ruta "/uploads/...?v=..." estable (ResolveUrl la deja igual).
+        var url = await _blob.UploadAsync(key, contenido, string.IsNullOrWhiteSpace(contentType) ? "image/jpeg" : contentType, ct);
+        p.FotoUrl = url;
+        await _db.SaveChangesAsync(ct);
+        return _blob.ResolveUrl(url);
+    }
+
     public async Task<IReadOnlyList<PersonaResumenDto>> ListarPersonasDelTenantAsync(string? query, CancellationToken ct)
     {
         // Personas con al menos un vinculo en el tenant activo
