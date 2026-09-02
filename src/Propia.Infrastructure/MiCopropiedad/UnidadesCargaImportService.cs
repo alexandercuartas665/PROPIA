@@ -200,24 +200,49 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             // Los vehiculos NO se borran (su historial de porteria en registros_vehiculo es append-only,
             // RN-10, y un DELETE dispararia un UPDATE prohibido por el FK SET NULL). Se DESACTIVAN los
             // activos (soft-delete): eso preserva la auditoria y libera la placa para los nuevos.
+            // En la recarga (reemplazar) se DESACTIVAN los vehiculos de porteria (soft-delete, RN-10) y
+            // ADEMAS se limpian las placas habilitadas de la unidad (unidad_placas), que es lo que muestra
+            // el modal de consulta de la unidad; asi la recarga las repone sin duplicar.
             var vehiculosGrp = vehiculos.Where(r => Coincide(r.Row)).ToList();
             if (await ReemplazarSiAplicaAsync("VEHICULOS", vehiculosGrp.Count > 0, reemplazarDependientes,
-                    c => _db.VehiculosAutorizados.Where(v => v.Activo).ExecuteUpdateAsync(s => s.SetProperty(v => v.Activo, false), c), errores, ct))
-            foreach (var (row, fila) in vehiculosGrp)
+                    async c =>
+                    {
+                        var n = await _db.VehiculosAutorizados.Where(v => v.Activo)
+                            .ExecuteUpdateAsync(s => s.SetProperty(v => v.Activo, false), c);
+                        await _db.UnidadPlacas.ExecuteDeleteAsync(c);
+                        return n;
+                    }, errores, ct))
             {
-                try
+                // Espejo de las placas ya existentes para no duplicar (no hay unique en unidad+placa).
+                var placasVistas = (await _db.UnidadPlacas.AsNoTracking()
+                        .Select(p => new { p.UnidadId, p.Placa }).ToListAsync(ct))
+                    .Select(p => p.UnidadId + "|" + p.Placa).ToHashSet();
+                foreach (var (row, fila) in vehiculosGrp)
                 {
-                    _db.ChangeTracker.Clear();
-                    var uid = ResolverUnidad(Val(row, "UNIDAD PRIVADA"), numeroToId, idxCodigo);
-                    if (uid == Guid.Empty) { errores.Add(new("VEHICULOS", fila, $"Unidad '{Val(row, "UNIDAD PRIVADA")}' no encontrada")); continue; }
-                    var placa = Val(row, "PLACA").Trim();
-                    if (placa.Length == 0) { errores.Add(new("VEHICULOS", fila, "Falta PLACA")); continue; }
-                    await _porteria.CrearVehiculoAutorizadoAsync(new CrearVehiculoRequest(
-                        uid, placa, ParseEnum(Val(row, "TIPO DE VEHICULO"), TipoVehiculo.Automovil),
-                        NullIfEmpty(Val(row, "MARCA")), NullIfEmpty(Val(row, "MODELO")), NullIfEmpty(Val(row, "COLOR")), null), ct);
-                    nVeh++;
+                    try
+                    {
+                        _db.ChangeTracker.Clear();
+                        var uid = ResolverUnidad(Val(row, "UNIDAD PRIVADA"), numeroToId, idxCodigo);
+                        if (uid == Guid.Empty) { errores.Add(new("VEHICULOS", fila, $"Unidad '{Val(row, "UNIDAD PRIVADA")}' no encontrada")); continue; }
+                        var placa = Val(row, "PLACA").Trim();
+                        if (placa.Length == 0) { errores.Add(new("VEHICULOS", fila, "Falta PLACA")); continue; }
+                        var tipoVeh = ParseEnum(Val(row, "TIPO DE VEHICULO"), TipoVehiculo.Automovil);
+                        await _porteria.CrearVehiculoAutorizadoAsync(new CrearVehiculoRequest(
+                            uid, placa, tipoVeh,
+                            NullIfEmpty(Val(row, "MARCA")), NullIfEmpty(Val(row, "MODELO")), NullIfEmpty(Val(row, "COLOR")), null), ct);
+                        nVeh++;
+                        // Placa habilitada de la unidad (lo que lee la ficha/modal de la unidad). Igual que
+                        // agregar a mano en el modal: placa en mayusculas, max 15, mismo enum de tipo.
+                        var placaUp = placa.ToUpperInvariant();
+                        if (placaUp.Length > 15) placaUp = placaUp[..15];
+                        if (placasVistas.Add(uid + "|" + placaUp))
+                        {
+                            _db.UnidadPlacas.Add(new UnidadPlaca { UnidadId = uid, Placa = placaUp, TipoVehiculo = tipoVeh });
+                            await _db.SaveChangesAsync(ct);
+                        }
+                    }
+                    catch (Exception ex) { errores.Add(new("VEHICULOS", fila, Fallo(ex))); }
                 }
-                catch (Exception ex) { errores.Add(new("VEHICULOS", fila, Fallo(ex))); }
             }
 
             // ---- Mascotas (reemplazo si aplica) ----
