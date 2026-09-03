@@ -6,7 +6,8 @@ namespace Propia.Web.Components.Pages.Capa2;
 // recolecta estos datos y los emite; la pagina Directorio hace el POST con su propio Auth().
 public record NuevaPersonaDir(
     TipoDocumento TipoDocumento, string Documento,
-    string Nombres, string Apellidos, string? Email, string? Telefono);
+    string Nombres, string Apellidos, string? Email, string? Telefono,
+    Guid? EtiquetaId = null);
 
 public record NuevaEmpresaDir(
     string Nit, string? Dv, string RazonSocial,

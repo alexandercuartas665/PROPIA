@@ -181,7 +181,20 @@ else
                             <div class="dtab-nf-mut">Activo</div>
                             break;
                         case "etiquetas":
-                            <div class="dtab-nf-mut"></div>
+                            @if (EtiquetasPersona.Count > 0)
+                            {
+                                <select class="dtab-inp" @bind="_draft.EtiquetaId">
+                                    <option value="">- Etiqueta -</option>
+                                    @foreach (var et in EtiquetasPersona)
+                                    {
+                                        <option value="@et.Id">@et.Nombre</option>
+                                    }
+                                </select>
+                            }
+                            else
+                            {
+                                <div class="dtab-nf-mut"></div>
+                            }
                             break;
                     }
                 }
@@ -208,6 +221,14 @@ else
     [Parameter] public EventCallback<NuevaPersonaDir> OnCrearAbrir { get; set; }
     /// <summary>Edicion inline de una celda: la pagina persiste (tiene el DTO completo y Auth).</summary>
     [Parameter] public EventCallback<EdicionCampoDir> OnEditarCampo { get; set; }
+
+    /// <summary>Catalogo de etiquetas del directorio; se ofrece un select en el alta inline para
+    /// asignarle una etiqueta a la persona al crearla (ej. Propietario).</summary>
+    [Parameter] public List<EtiquetaCatalogoDto>? Etiquetas { get; set; }
+
+    // Etiquetas aplicables a personas (Persona o Ambos), activas, para el select del alta.
+    private List<EtiquetaCatalogoDto> EtiquetasPersona =>
+        Etiquetas?.Where(e => e.Activo && e.AplicaA != AplicaEtiqueta.Empresa).ToList() ?? new();
 
     /// <summary>Edicion inline emitida al padre (Id de la persona, campo y nuevo valor).</summary>
     public sealed record EdicionCampoDir(Guid Id, string Campo, string? Valor);
@@ -320,7 +341,8 @@ else
         public string Apellidos = "";
         public string? Email;
         public string? Telefono;
-        public void Reset() { TipoDocumento = TipoDocumento.CC; Documento = ""; Nombres = ""; Apellidos = ""; Email = null; Telefono = null; }
+        public string EtiquetaId = "";   // id de la etiqueta seleccionada en el alta (vacio = sin etiqueta)
+        public void Reset() { TipoDocumento = TipoDocumento.CC; Documento = ""; Nombres = ""; Apellidos = ""; Email = null; Telefono = null; EtiquetaId = ""; }
     }
 
     private async Task RowKeydown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
@@ -358,7 +380,8 @@ else
         _draft.TipoDocumento, _draft.Documento.Trim(),
         _draft.Nombres.Trim(), _draft.Apellidos.Trim(),
         string.IsNullOrWhiteSpace(_draft.Email) ? null : _draft.Email.Trim(),
-        string.IsNullOrWhiteSpace(_draft.Telefono) ? null : _draft.Telefono.Trim());
+        string.IsNullOrWhiteSpace(_draft.Telefono) ? null : _draft.Telefono.Trim(),
+        Guid.TryParse(_draft.EtiquetaId, out var etId) ? etId : null);
 
     private static string ChipStyle(string? color)
         => string.IsNullOrWhiteSpace(color) ? "" : $"background:{color}1A;color:{color};border-color:{color}55;";
