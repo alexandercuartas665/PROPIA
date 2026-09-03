@@ -23,7 +23,8 @@ public sealed record MenuOverrideData(string NodeKey, string? Label, string? Par
 // ---------- Resuelto (base + overrides) para render y editor ----------
 
 public sealed record ResolvedMenuItem(string Key, string SectionKey, string Label, string Href, string Icon, int Order,
-    string? Subheading, bool DividerBefore, bool IsCustom = false, bool Hidden = false);
+    string? Subheading, bool DividerBefore, bool IsCustom = false, bool Hidden = false,
+    IReadOnlyList<ResolvedMenuItem>? Children = null);
 
 /// <summary>Items de una seccion agrupados por subheading (el grupo con Heading=null va bajo el titulo de la seccion).</summary>
 public sealed record ResolvedMenuItemGroup(string? Heading, bool DividerBefore, IReadOnlyList<ResolvedMenuItem> Items);
@@ -36,7 +37,8 @@ public sealed record ResolvedMenu(IReadOnlyList<ResolvedMenuSection> Sections);
 // ---------- Guardar arreglo (desde el editor) ----------
 
 public sealed record MenuItemArrangement(string Key, string? Label, int Order,
-    bool IsCustom = false, string? Icon = null, string? Href = null, bool Hidden = false);
+    bool IsCustom = false, string? Icon = null, string? Href = null, bool Hidden = false,
+    IReadOnlyList<MenuItemArrangement>? Children = null);
 public sealed record MenuSectionArrangement(string Key, string? Label, int Order, IReadOnlyList<MenuItemArrangement> Items,
     bool IsCustom = false, string? Icon = null, bool Hidden = false);
 

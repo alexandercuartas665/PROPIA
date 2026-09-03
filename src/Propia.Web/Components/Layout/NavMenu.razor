@@ -65,10 +65,34 @@
                                 }
                                 @foreach (var it in g.Items.Where(x => !x.Hidden))
                                 {
-                                    <NavLink class="pnav-item" href="@it.Href" Match="NavLinkMatch.Prefix" title="@it.Label">
-                                        <span class="pnav-item-ico"><i class="fi @it.Icon"></i></span>
-                                        <span class="pnav-item-lbl">@it.Label</span>
-                                    </NavLink>
+                                    var hijos = it.Children?.Where(c => !c.Hidden).ToList();
+                                    @if (hijos is { Count: > 0 })
+                                    {
+                                        @* Item con SUB-ITEMS (3er nivel): despliega sus hijos. *@
+                                        <details class="pnav-subgroup" open="@HijoActivo(hijos)">
+                                            <summary class="pnav-item pnav-item--parent" title="@it.Label">
+                                                <span class="pnav-item-ico"><i class="fi @it.Icon"></i></span>
+                                                <span class="pnav-item-lbl">@it.Label</span>
+                                                <i class="fi fi-rr-angle-small-down pnav-subchev"></i>
+                                            </summary>
+                                            <div class="pnav-children">
+                                                @foreach (var ch in hijos)
+                                                {
+                                                    <NavLink class="pnav-item pnav-item--child" href="@ch.Href" Match="NavLinkMatch.Prefix" title="@ch.Label">
+                                                        <span class="pnav-item-ico"><i class="fi @ch.Icon"></i></span>
+                                                        <span class="pnav-item-lbl">@ch.Label</span>
+                                                    </NavLink>
+                                                }
+                                            </div>
+                                        </details>
+                                    }
+                                    else
+                                    {
+                                        <NavLink class="pnav-item" href="@it.Href" Match="NavLinkMatch.Prefix" title="@it.Label">
+                                            <span class="pnav-item-ico"><i class="fi @it.Icon"></i></span>
+                                            <span class="pnav-item-lbl">@it.Label</span>
+                                        </NavLink>
+                                    }
                                 }
                             }
                         </div>
@@ -248,6 +272,19 @@
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         opacity: .85;
     }
+
+    /* ===== Sub-items (3er nivel): un item que despliega hijos ===== */
+    .pnav-subgroup { margin: 0; }
+    .pnav-subgroup > summary { list-style: none; cursor: pointer; }
+    .pnav-subgroup > summary::-webkit-details-marker { display: none; }
+    .pnav-item--parent { user-select: none; }
+    .pnav-subchev { font-size: 12px; color: var(--bs-secondary-color, #9aa4b2); transition: transform .18s; margin-left: 2px; }
+    .pnav-subgroup[open] > .pnav-item--parent .pnav-subchev { transform: rotate(180deg); }
+    .pnav-children { margin: 1px 0 3px; }
+    /* El hijo va mas indentado que el item de primer nivel; la guia vertical se corre a la derecha. */
+    .pnav-item--child { padding-left: 46px; }
+    .pnav-item--child .pnav-item-lbl { font-size: 12.5px; }
+    .pnav-children .pnav-item--child::before { left: 30px; }
 </style>
 
 @code {
@@ -286,6 +323,17 @@
 
     /// <summary>La seccion cuya ruta esta activa arranca expandida.</summary>
     private bool EstaActiva(string key) => string.Equals(key, _activeTab, StringComparison.Ordinal);
+
+    /// <summary>Un item con sub-items arranca abierto si alguna de sus sub-rutas esta activa.</summary>
+    private bool HijoActivo(IEnumerable<ResolvedMenuItem> hijos)
+    {
+        string path;
+        try { path = new Uri(Nav.Uri).AbsolutePath.ToLowerInvariant(); }
+        catch { path = Nav.Uri.ToLowerInvariant(); }
+        return hijos.Any(c => !string.IsNullOrEmpty(c.Href)
+            && (string.Equals(path, c.Href.ToLowerInvariant(), StringComparison.Ordinal)
+                || path.StartsWith(c.Href.ToLowerInvariant() + "/", StringComparison.Ordinal)));
+    }
 
     /// <summary>
     /// Mapea la ruta actual a la seccion que debe quedar activa/expandida. Data-driven (match exacto

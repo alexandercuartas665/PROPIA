@@ -41,8 +41,9 @@ public static class MenuCatalog
         new MenuItemDef("mi-copropiedad", "tabMiPH", "Mi copropiedad", "/mi-copropiedad", "fi-rr-building", 1),
         new MenuItemDef("mi-distribucion", "tabMiPH", "Unidades Privadas", "/distribucion", "fi-rr-apps", 2),
         new MenuItemDef("mi-residentes", "tabMiPH", "Residentes", "/residentes", "fi-rr-users", 3),
-        new MenuItemDef("mi-zonas", "tabMiPH", "Zonas Comunes", "/zonas-comunes", "fi-rr-trees", 4),
-        new MenuItemDef("mi-equipos", "tabMiPH", "Equipos y Activos", "/equipos-activos", "fi-rr-settings", 5),
+        // Union de Zonas Comunes + Equipos y Activos en una sola pagina con dos tabs (/espacios).
+        // Las rutas /zonas-comunes y /equipos-activos siguen existiendo (sus wrappers) pero salen del menu.
+        new MenuItemDef("mi-espacios", "tabMiPH", "Equipos y Zonas Comunes", "/espacios", "fi-rr-trees", 4),
         new MenuItemDef("mi-directorio", "tabMiPH", "Directorio", "/directorio", "fi-rr-address-book", 6),
         new MenuItemDef("mi-usuarios", "tabMiPH", "Usuarios y roles", "/usuarios", "fi-rr-users-alt", 7),
 
@@ -121,32 +122,65 @@ public static class MenuCatalog
             .ToList();
         var sectionKeys = sections.Select(x => x.Key).ToHashSet(StringComparer.Ordinal);
 
-        // Items: base (con override de nombre/orden/ubicacion) + custom.
-        var baseItems = Items.Select(i =>
+        // Items: base + custom. ParentKey de un item puede apuntar a una SECCION (mover de ubicacion)
+        // o a OTRO ITEM (anidarlo como sub-item = 3er nivel del menu). Se soporta UN nivel de hijos.
+        var itemKeys = Items.Select(i => i.Key)
+            .Concat(all.Where(o => o.IsCustom && string.Equals(o.NodeType, "item", StringComparison.OrdinalIgnoreCase)).Select(o => o.NodeKey))
+            .ToHashSet(StringComparer.Ordinal);
+
+        // Cada item resuelto junto con su item padre (null = item de primer nivel bajo una seccion).
+        var shaped = new List<(ResolvedMenuItem Item, string? ParentItemKey)>();
+
+        foreach (var i in Items)
         {
             ov.TryGetValue(i.Key, out var o);
-            var section = !string.IsNullOrWhiteSpace(o?.ParentKey) && sectionKeys.Contains(o!.ParentKey!)
-                ? o.ParentKey! : i.SectionKey;
+            var pk = o?.ParentKey;
+            string? parentItem = null;
+            var section = i.SectionKey;
+            if (!string.IsNullOrWhiteSpace(pk) && !string.Equals(pk, i.Key, StringComparison.Ordinal))
+            {
+                if (itemKeys.Contains(pk!)) parentItem = pk;        // anidado bajo otro item
+                else if (sectionKeys.Contains(pk!)) section = pk!;  // movido a otra seccion
+            }
             var label = string.IsNullOrWhiteSpace(o?.Label) ? i.Label : o!.Label!;
             var order = o?.SortOrder ?? i.Order;
             var icon = string.IsNullOrWhiteSpace(o?.Icon) ? i.Icon : o!.Icon!;
-            return new ResolvedMenuItem(i.Key, section, label, i.Href, icon, order, i.Subheading, i.DividerBefore, false, o?.Hidden ?? false);
-        });
-        var customItems = all
-            .Where(o => o.IsCustom && string.Equals(o.NodeType, "item", StringComparison.OrdinalIgnoreCase))
-            .Select(o =>
+            shaped.Add((new ResolvedMenuItem(i.Key, section, label, i.Href, icon, order, i.Subheading, i.DividerBefore, false, o?.Hidden ?? false), parentItem));
+        }
+        foreach (var o in all.Where(x => x.IsCustom && string.Equals(x.NodeType, "item", StringComparison.OrdinalIgnoreCase)))
+        {
+            var pk = o.ParentKey;
+            string? parentItem = null;
+            var section = sections.Count > 0 ? sections[0].Key : string.Empty;
+            if (!string.IsNullOrWhiteSpace(pk) && !string.Equals(pk, o.NodeKey, StringComparison.Ordinal))
             {
-                var section = !string.IsNullOrWhiteSpace(o.ParentKey) && sectionKeys.Contains(o.ParentKey!)
-                    ? o.ParentKey! : (sections.Count > 0 ? sections[0].Key : string.Empty);
-                return new ResolvedMenuItem(
-                    o.NodeKey, section,
-                    string.IsNullOrWhiteSpace(o.Label) ? "Item" : o.Label!,
-                    string.IsNullOrWhiteSpace(o.Href) ? "/proximamente" : o.Href!,
-                    string.IsNullOrWhiteSpace(o.Icon) ? "fi-rr-clock-three" : o.Icon!,
-                    o.SortOrder ?? 999, null, false, true, o.Hidden);
-            });
+                if (itemKeys.Contains(pk!)) parentItem = pk;
+                else if (sectionKeys.Contains(pk!)) section = pk!;
+            }
+            var it = new ResolvedMenuItem(
+                o.NodeKey, section,
+                string.IsNullOrWhiteSpace(o.Label) ? "Item" : o.Label!,
+                string.IsNullOrWhiteSpace(o.Href) ? "/proximamente" : o.Href!,
+                string.IsNullOrWhiteSpace(o.Icon) ? "fi-rr-clock-three" : o.Icon!,
+                o.SortOrder ?? 999, null, false, true, o.Hidden);
+            shaped.Add((it, parentItem));
+        }
 
-        var items = baseItems.Concat(customItems).ToList();
+        // Hijos agrupados por item padre (un solo nivel).
+        var childrenByParent = shaped
+            .Where(x => x.ParentItemKey is not null)
+            .GroupBy(x => x.ParentItemKey!, StringComparer.Ordinal)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<ResolvedMenuItem>)g.Select(x => x.Item)
+                    .OrderBy(i => i.Order).ThenBy(i => i.Label, StringComparer.Ordinal).ToList(),
+                StringComparer.Ordinal);
+
+        // Items de primer nivel (padre = seccion), con sus hijos adjuntos.
+        var items = shaped
+            .Where(x => x.ParentItemKey is null)
+            .Select(x => childrenByParent.TryGetValue(x.Item.Key, out var ch) ? x.Item with { Children = ch } : x.Item)
+            .ToList();
 
         var resolved = new List<ResolvedMenuSection>(sections.Count);
         foreach (var s in sections)

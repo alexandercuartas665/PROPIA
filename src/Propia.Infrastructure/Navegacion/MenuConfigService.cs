@@ -111,6 +111,36 @@ public sealed class MenuConfigService : IMenuConfigService
                         rows.Add(new MenuOverride { NodeKey = it.Key, Label = labelDelta, ParentKey = parentDelta, SortOrder = orderDelta, Icon = iconDelta, Hidden = it.Hidden });
                     }
                 }
+
+                // Sub-items (3er nivel): cuelgan del item padre. Se guardan con ParentKey = KEY DEL ITEM
+                // (no de la seccion); el resolver interpreta eso como anidamiento (submenu desplegable).
+                foreach (var ch in it.Children ?? Array.Empty<MenuItemArrangement>())
+                {
+                    if (ch.IsCustom)
+                    {
+                        rows.Add(new MenuOverride
+                        {
+                            NodeKey = ch.Key,
+                            IsCustom = true,
+                            NodeType = "item",
+                            Label = Clean(ch.Label) ?? "Item",
+                            ParentKey = it.Key,
+                            SortOrder = ch.Order,
+                            Icon = Clean(ch.Icon) ?? "fi-rr-clock-three",
+                            Href = Clean(ch.Href) ?? "/proximamente",
+                            Hidden = ch.Hidden
+                        });
+                    }
+                    else if (itemBase.TryGetValue(ch.Key, out var chb))
+                    {
+                        // Item base anidado bajo otro item: guardar ParentKey (item) + deltas de nombre/icono.
+                        var chLabel = Clean(ch.Label);
+                        var chLabelDelta = chLabel is not null && chLabel != chb.Label ? chLabel : null;
+                        var chIcon = Clean(ch.Icon);
+                        var chIconDelta = chIcon is not null && chIcon != chb.Icon ? chIcon : null;
+                        rows.Add(new MenuOverride { NodeKey = ch.Key, Label = chLabelDelta, ParentKey = it.Key, SortOrder = ch.Order, Icon = chIconDelta, Hidden = ch.Hidden });
+                    }
+                }
             }
         }
 

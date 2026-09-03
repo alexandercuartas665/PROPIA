@@ -51,9 +51,8 @@ else
                             <button class="btn btn-outline-secondary" title="Subir seccion" disabled="@(sIdx == 0)" @onclick="() => MoverSeccion(sIdx, -1)"><i class="fi fi-rr-angle-up"></i></button>
                             <button class="btn btn-outline-secondary" title="Bajar seccion" disabled="@(sIdx == _sections.Count - 1)" @onclick="() => MoverSeccion(sIdx, 1)"><i class="fi fi-rr-angle-down"></i></button>
                         </div>
-                        @* El icono es editable en TODAS las secciones (base y nuevas). *@
-                        <i class="fi @sec.Icon text-muted"></i>
-                        <input class="form-control form-control-sm" style="max-width:120px" @bind="sec.Icon" placeholder="fi-rr-apps" title="Clase de icono (fi-rr-*)" />
+                        @* Icono editable con selector visual (grilla de iconos; tambien deja escribir la clase). *@
+                        <button type="button" class="mnu-ico-pick" title="Elegir icono" @onclick="() => AbrirPickerIcono(sec.Icon, v => sec.Icon = v)"><i class="fi @sec.Icon"></i></button>
                         <input class="form-control form-control-sm fw-semibold @(sec.Hidden ? "text-decoration-line-through text-muted" : "")" style="max-width:280px" @bind="sec.Label" />
                         @if (sec.IsCustom)
                         {
@@ -87,9 +86,8 @@ else
                                         <button class="btn btn-outline-secondary" title="Subir" disabled="@(iIdx == 0)" @onclick="() => MoverItem(sec, iIdx, -1)"><i class="fi fi-rr-angle-up"></i></button>
                                         <button class="btn btn-outline-secondary" title="Bajar" disabled="@(iIdx == sec.Items.Count - 1)" @onclick="() => MoverItem(sec, iIdx, 1)"><i class="fi fi-rr-angle-down"></i></button>
                                     </div>
-                                    @* El icono es editable en TODOS los items (base y nuevos). *@
-                                    <i class="fi @it.Icon text-muted"></i>
-                                    <input class="form-control form-control-sm" style="max-width:110px" @bind="it.Icon" placeholder="fi-rr-*" title="Icono (fi-rr-*)" />
+                                    @* Icono editable con selector visual. *@
+                                    <button type="button" class="mnu-ico-pick" title="Elegir icono" @onclick="() => AbrirPickerIcono(it.Icon, v => it.Icon = v)"><i class="fi @it.Icon"></i></button>
                                     <input class="form-control form-control-sm @(it.Hidden ? "text-decoration-line-through text-muted" : "")" style="max-width:300px" @bind="it.Label" />
                                     <code class="small text-muted d-none d-md-inline">@it.Href</code>
                                     @if (!string.IsNullOrWhiteSpace(it.Subheading))
@@ -108,12 +106,28 @@ else
                                         <button class="btn btn-sm @(it.Hidden ? "btn-secondary" : "btn-outline-secondary")" title="@(it.Hidden ? "Mostrar en el menu" : "Ocultar del menu")" @onclick="() => it.Hidden = !it.Hidden">
                                             <i class="fi @(it.Hidden ? "fi-rr-eye-crossed" : "fi-rr-eye")"></i>
                                         </button>
+                                        <button class="btn btn-sm btn-outline-primary" title="Agregar sub-item (submenu desplegable)" @onclick="() => AgregarSubItem(it)"><i class="fi fi-rr-plus"></i><i class="fi fi-rr-angle-small-down"></i></button>
                                         @if (it.IsCustom)
                                         {
                                             <button class="btn btn-sm btn-outline-danger" title="Eliminar item" @onclick="() => EliminarItem(sec, it)"><i class="fi fi-rr-trash"></i></button>
                                         }
                                     </div>
                                 </li>
+                                @* Sub-items (3er nivel): cuelgan del item de arriba y forman un submenu desplegable. *@
+                                @foreach (var ch in it.Children)
+                                {
+                                    var child = ch;
+                                    <li class="list-group-item d-flex align-items-center gap-2 px-2 mnu-subitem">
+                                        <span class="mnu-sub-guide">&#8627;</span>
+                                        <button type="button" class="mnu-ico-pick" title="Elegir icono" @onclick="() => AbrirPickerIcono(child.Icon, v => child.Icon = v)"><i class="fi @child.Icon"></i></button>
+                                        <input class="form-control form-control-sm @(child.Hidden ? "text-decoration-line-through text-muted" : "")" style="max-width:280px" @bind="child.Label" />
+                                        @if (child.IsCustom) { <span class="badge bg-primary-subtle text-primary-emphasis">nuevo</span> }
+                                        <div class="ms-auto d-flex align-items-center gap-1">
+                                            <button class="btn btn-sm @(child.Hidden ? "btn-secondary" : "btn-outline-secondary")" title="@(child.Hidden ? "Mostrar" : "Ocultar")" @onclick="() => child.Hidden = !child.Hidden"><i class="fi @(child.Hidden ? "fi-rr-eye-crossed" : "fi-rr-eye")"></i></button>
+                                            <button class="btn btn-sm btn-outline-danger" title="Eliminar sub-item" @onclick="() => it.Children.Remove(child)"><i class="fi fi-rr-trash"></i></button>
+                                        </div>
+                                    </li>
+                                }
                             }
                         </ul>
                         <button class="btn btn-sm btn-outline-primary mt-2" @onclick="() => AgregarItem(sec)"><i class="fi fi-rr-plus"></i> Agregar item</button>
@@ -124,12 +138,94 @@ else
     </div>
 }
 
+@* ===== Selector visual de iconos (grilla fi-rr-*) ===== *@
+@if (_pickerSet is not null)
+{
+    <div class="mnu-ico-bd" @onclick="CerrarPickerIcono">
+        <div class="mnu-ico-modal" @onclick:stopPropagation="true">
+            <div class="mnu-ico-head">
+                <div>
+                    <div class="mnu-ico-title">Elegir icono</div>
+                    <div class="mnu-ico-sub">Haz clic en un icono, o escribe la clase (fi-rr-*) abajo.</div>
+                </div>
+                <button type="button" class="mnu-ico-x" @onclick="CerrarPickerIcono">&times;</button>
+            </div>
+            <div class="mnu-ico-search">
+                <input class="form-control form-control-sm" placeholder="Buscar icono..." @bind="_pickerQuery" @bind:event="oninput" />
+                <div class="mnu-ico-current" title="Icono actual"><i class="fi @(_pickerActual)"></i></div>
+            </div>
+            <div class="mnu-ico-grid">
+                @foreach (var ic in IconosFiltrados())
+                {
+                    var icon = ic;
+                    <button type="button" class="mnu-ico-cell @(_pickerActual == icon ? "on" : "")" title="@icon" @onclick="() => ElegirIcono(icon)">
+                        <i class="fi @icon"></i>
+                    </button>
+                }
+            </div>
+            <div class="mnu-ico-foot">
+                <input class="form-control form-control-sm" placeholder="fi-rr-clase-personalizada" @bind="_pickerActual" @bind:event="oninput" />
+                <button type="button" class="btn btn-sm btn-primary" @onclick="() => ElegirIcono(_pickerActual)">Usar esta clase</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private string? _jwt;
     private bool _busy;
     private string? _msg;
     private string _msgCls = "alert-info";
     private List<EdSection>? _sections;
+
+    // ----- Selector visual de iconos -----
+    private Action<string>? _pickerSet;   // callback que fija el icono en el nodo (seccion o item)
+    private string _pickerActual = "";    // clase actualmente elegida (se refleja en vivo)
+    private string _pickerQuery = "";
+
+    private void AbrirPickerIcono(string actual, Action<string> set)
+    {
+        _pickerActual = actual ?? "";
+        _pickerQuery = "";
+        _pickerSet = set;
+    }
+
+    private void ElegirIcono(string icon)
+    {
+        if (string.IsNullOrWhiteSpace(icon)) return;
+        _pickerSet?.Invoke(icon.Trim());
+        CerrarPickerIcono();
+    }
+
+    private void CerrarPickerIcono() { _pickerSet = null; _pickerQuery = ""; }
+
+    private IEnumerable<string> IconosFiltrados()
+    {
+        var q = _pickerQuery?.Trim().ToLowerInvariant();
+        return string.IsNullOrEmpty(q) ? IconosMenu : IconosMenu.Where(i => i.Contains(q));
+    }
+
+    // Catalogo curado de iconos fi-rr-* (Flaticon uicons) para el menu. Cubre los que ya usa el
+    // menu base + un set general util. Se puede escribir una clase fuera de esta lista en el picker.
+    private static readonly string[] IconosMenu =
+    {
+        "fi-rr-house-blank","fi-rr-home","fi-rr-building","fi-rr-apartment","fi-rr-city",
+        "fi-rr-apps","fi-rr-apps-add","fi-rr-dashboard","fi-rr-chart-line-up","fi-rr-chart-pie",
+        "fi-rr-chart-histogram","fi-rr-stats","fi-rr-users","fi-rr-users-alt","fi-rr-user",
+        "fi-rr-user-add","fi-rr-users-medical","fi-rr-address-book","fi-rr-id-badge","fi-rr-portrait",
+        "fi-rr-usd-circle","fi-rr-money-bill-wave","fi-rr-credit-card","fi-rr-bank","fi-rr-receipt",
+        "fi-rr-calculator","fi-rr-briefcase","fi-rr-file-signature","fi-rr-shield","fi-rr-shield-check",
+        "fi-rr-podium-star","fi-rr-megaphone","fi-rr-comment-alt","fi-rr-comments","fi-rr-comments-question",
+        "fi-rr-list-check","fi-rr-list","fi-rr-checkbox","fi-rr-clipboard-list","fi-rr-screwdriver",
+        "fi-rr-settings","fi-rr-settings-sliders","fi-rr-tools","fi-rr-wrench-simple","fi-rr-trees",
+        "fi-rr-tree","fi-rr-leaf","fi-rr-swimming-pool","fi-rr-calendar","fi-rr-calendar-check",
+        "fi-rr-calendar-clock","fi-rr-clock","fi-rr-time-past","fi-rr-folder","fi-rr-folder-open",
+        "fi-rr-document","fi-rr-file","fi-rr-file-invoice","fi-rr-hashtag","fi-rr-network",
+        "fi-rr-site-map","fi-rr-robot","fi-rr-bolt","fi-rr-ban","fi-rr-key","fi-rr-lock",
+        "fi-rr-bell","fi-rr-envelope","fi-rr-phone-call","fi-rr-map-marker","fi-rr-truck-side",
+        "fi-rr-box","fi-rr-tags","fi-rr-star","fi-rr-heart","fi-rr-flag","fi-rr-bookmark",
+        "fi-rr-search","fi-rr-filter","fi-rr-arrows-repeat","fi-rr-refresh","fi-rr-plus","fi-rr-menu-burger",
+    };
 
     private sealed class EdItem
     {
@@ -140,6 +236,7 @@ else
         public string? Subheading { get; set; }
         public bool IsCustom { get; set; }
         public bool Hidden { get; set; }
+        public List<EdItem> Children { get; set; } = new();   // sub-items (3er nivel)
     }
 
     private sealed class EdSection
@@ -177,7 +274,12 @@ else
                 Icon = s.Icon,
                 IsCustom = s.IsCustom,
                 Hidden = s.Hidden,
-                Items = s.Items.Select(i => new EdItem { Key = i.Key, Label = i.Label, Href = i.Href, Icon = i.Icon, Subheading = i.Subheading, IsCustom = i.IsCustom, Hidden = i.Hidden }).ToList()
+                Items = s.Items.Select(i => new EdItem
+                {
+                    Key = i.Key, Label = i.Label, Href = i.Href, Icon = i.Icon, Subheading = i.Subheading, IsCustom = i.IsCustom, Hidden = i.Hidden,
+                    Children = (i.Children ?? Array.Empty<ResolvedMenuItem>())
+                        .Select(c => new EdItem { Key = c.Key, Label = c.Label, Href = c.Href, Icon = c.Icon, Subheading = c.Subheading, IsCustom = c.IsCustom, Hidden = c.Hidden }).ToList()
+                }).ToList()
             })
             .ToList();
     }
@@ -245,6 +347,12 @@ else
         sec.Items.Add(new EdItem { Key = $"custom-item-{Guid.NewGuid():N}", Label = "Nuevo item", Icon = "fi-rr-clock-three", Href = "/proximamente", IsCustom = true });
     }
 
+    // Sub-item (3er nivel): cuelga del item padre y forma un submenu desplegable en el menu del cliente.
+    private void AgregarSubItem(EdItem parent)
+    {
+        parent.Children.Add(new EdItem { Key = $"custom-item-{Guid.NewGuid():N}", Label = "Nuevo sub-item", Icon = "fi-rr-clock-three", Href = "/proximamente", IsCustom = true });
+    }
+
     private void EliminarSeccion(EdSection sec)
     {
         if (_sections is null || !sec.IsCustom) { return; }
@@ -266,7 +374,8 @@ else
             var req = new SaveMenuArrangementRequest(
                 _sections.Select((s, si) => new MenuSectionArrangement(
                     s.Key, s.Label, si + 1,
-                    s.Items.Select((it, ii) => new MenuItemArrangement(it.Key, it.Label, ii + 1, it.IsCustom, it.Icon, it.Href, it.Hidden)).ToList(),
+                    s.Items.Select((it, ii) => new MenuItemArrangement(it.Key, it.Label, ii + 1, it.IsCustom, it.Icon, it.Href, it.Hidden,
+                        it.Children.Select((ch, ci) => new MenuItemArrangement(ch.Key, ch.Label, ci + 1, ch.IsCustom, ch.Icon, ch.Href, ch.Hidden)).ToList())).ToList(),
                     s.IsCustom, s.Icon, s.Hidden)).ToList());
 
             var resp = await Auth().PutAsJsonAsync("/admin/menu", req);
@@ -304,3 +413,45 @@ else
         return http;
     }
 }
+
+<style>
+    /* Boton que muestra el icono actual y abre el selector visual. */
+    .mnu-ico-pick {
+        width: 34px; height: 34px; flex: 0 0 34px;
+        border: 1px solid #E1E8EE; border-radius: 8px; background: #fff;
+        color: #516F90; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+        transition: border-color .12s, background .12s, color .12s;
+    }
+    .mnu-ico-pick:hover { border-color: var(--propia-primary, #5955D1); color: var(--propia-primary, #5955D1); background: rgba(89,85,209,.06); }
+    .mnu-ico-pick i { font-size: 16px; }
+
+    /* Modal del selector de iconos. */
+    .mnu-ico-bd {
+        position: fixed; inset: 0; z-index: 1090; background: rgba(15,15,30,.45);
+        display: flex; align-items: flex-start; justify-content: center; padding-top: 10vh; pointer-events: auto;
+    }
+    .mnu-ico-modal {
+        width: 560px; max-width: calc(100vw - 32px); background: #fff;
+        border: 1px solid #E1E8EE; border-radius: 14px; box-shadow: 0 18px 48px rgba(0,0,0,.28); overflow: hidden;
+    }
+    .mnu-ico-head { display: flex; align-items: flex-start; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #EEF2F6; }
+    .mnu-ico-title { font-weight: 700; color: #33475B; }
+    .mnu-ico-sub { font-size: 12.5px; color: #6B7C8F; }
+    .mnu-ico-x { background: none; border: none; font-size: 22px; line-height: 1; color: #90A4B7; cursor: pointer; }
+    .mnu-ico-search { display: flex; align-items: center; gap: 10px; padding: 12px 16px 4px; }
+    .mnu-ico-current { width: 38px; height: 38px; flex: 0 0 38px; border: 1px solid #E1E8EE; border-radius: 9px; display: flex; align-items: center; justify-content: center; color: var(--propia-primary, #5955D1); }
+    .mnu-ico-current i { font-size: 18px; }
+    .mnu-ico-grid { display: grid; grid-template-columns: repeat(9, 1fr); gap: 6px; padding: 10px 16px; max-height: 46vh; overflow-y: auto; }
+    .mnu-ico-cell {
+        aspect-ratio: 1; border: 1px solid #EEF2F6; border-radius: 9px; background: #fff; color: #516F90;
+        cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .1s;
+    }
+    .mnu-ico-cell:hover { border-color: var(--propia-primary, #5955D1); color: var(--propia-primary, #5955D1); background: rgba(89,85,209,.06); }
+    .mnu-ico-cell.on { border-color: var(--propia-primary, #5955D1); background: rgba(89,85,209,.12); color: var(--propia-primary, #5955D1); }
+    .mnu-ico-cell i { font-size: 17px; }
+    .mnu-ico-foot { display: flex; gap: 8px; padding: 10px 16px 14px; border-top: 1px solid #EEF2F6; }
+
+    /* Sub-item (3er nivel) en el editor: indentado, con una guia a la izquierda. */
+    .mnu-subitem { padding-left: 34px !important; background: #FBFCFD; }
+    .mnu-sub-guide { color: #B0BECD; font-size: 15px; margin-right: 2px; }
+</style>
