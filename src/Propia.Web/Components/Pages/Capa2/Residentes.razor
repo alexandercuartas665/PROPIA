@@ -283,6 +283,7 @@ else
         _unidades.FirstOrDefault(u => string.Equals(CodigoUnidad(u), _unidadQuery.Trim(), StringComparison.OrdinalIgnoreCase));
 
     private bool AltaValida => UnidadElegida is not null && _personaSel is not null;
+    private bool _sinUnidades => _unidades.Count == 0;   // V-02: guia cuando el tenant no tiene unidades
 
     // ---------- Catalogo de columnas ----------
     private sealed record ColDef(string Key, string DefLabel, string Width, bool Hideable, bool Center = false);
@@ -593,7 +594,19 @@ else
     // ---------- Alta ----------
     private async Task AgregarAsync(bool abrir)
     {
-        if (_busy || UnidadElegida is not { } unidad || _personaSel is not { } sel) return;
+        if (_busy) return;
+        // V-02: validar minimos al clic con mensaje (canon regla 8), en vez de un retorno mudo.
+        if (UnidadElegida is not { } unidad)
+        {
+            _msg = _sinUnidades
+                ? "Primero crea las unidades privadas (en Unidades Privadas). Luego escribe su codigo aqui."
+                : "Selecciona una unidad existente: escribe su codigo en el campo Unidad y elige de la lista.";
+            _msgError = true; return;
+        }
+        if (_personaSel is not { } sel)
+        {
+            _msg = "Busca o crea la persona (residente/propietario) antes de agregar."; _msgError = true; return;
+        }
         _busy = true; _msg = ""; _msgError = false;
         try
         {
