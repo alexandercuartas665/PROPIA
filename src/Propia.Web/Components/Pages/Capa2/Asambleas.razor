@@ -34,82 +34,176 @@
     return;
 }
 
-@* KPIs *@
-<div class="row g-3 mb-3">
-    <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
-        <div class="text-muted small">Total</div><h4 class="mb-0">@_b.Kpis.Total</h4>
-    </div></div></div>
-    <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
-        <div class="text-muted small">Borradores</div><h4 class="mb-0">@_b.Kpis.Borradores</h4>
-    </div></div></div>
-    <div class="col-md-3"><div class="card kpi-mini @(_b.Kpis.EnCurso > 0 ? "border-info" : "")"><div class="card-body py-3">
-        <div class="text-muted small">En curso</div><h4 class="mb-0 text-info">@_b.Kpis.EnCurso</h4>
-    </div></div></div>
-    <div class="col-md-3"><div class="card kpi-mini @(_b.Kpis.Proximas > 0 ? "border-warning" : "")"><div class="card-body py-3">
-        <div class="text-muted small">Proximas (7 dias)</div><h4 class="mb-0">@_b.Kpis.Proximas</h4>
-        <small class="text-muted">Cerradas: @_b.Kpis.Cerradas &middot; Fallidas: @_b.Kpis.QuorumFallido</small>
-    </div></div></div>
-</div>
-
-@* Filtros *@
-<div class="row g-2 mb-3">
-    <div class="col-md-6">
-        <select class="form-select form-select-sm" @bind="_filtroEstado" @bind:after="CargarAsync">
-            <option value="">Todos los estados</option>
-            @foreach (var e in Enum.GetValues<EstadoSesion>()) { <option value="@e">@e</option> }
-        </select>
-    </div>
-    <div class="col-md-6">
-        <select class="form-select form-select-sm" @bind="_filtroTipo" @bind:after="CargarAsync">
-            <option value="">Todos los tipos</option>
-            @foreach (var t in Enum.GetValues<TipoSesion>()) { <option value="@t">@t</option> }
-        </select>
-    </div>
-</div>
-
 @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
 
-@if (_b.Items.Count == 0)
-{
-    <div class="card p-5 text-center text-muted">
-        Sin sesiones registradas. <a href="/asambleas/nueva">Crear la primera</a>
+@* === Barra de herramientas canonica: [Filtros] [Buscar] ... spacer ... [Agrupar] [Campos] === *@
+<div class="asa-tool">
+    <FiltroDinamico @ref="_fd" Campos="CamposFiltro" OnChanged="@(() => { _pagina = 1; StateHasChanged(); })" />
+    <div class="asa-search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input class="asa-search-inp" placeholder="Buscar por titulo..." value="@_q"
+               @oninput="@(e => { _q = e.Value?.ToString() ?? string.Empty; _pagina = 1; })" />
     </div>
-}
-else
-{
-    <div class="card table-responsive">
-        <table class="table table-hover mb-0 align-middle">
-            <thead class="bg-light small text-muted">
-                <tr><th>Titulo</th><th>Tipo</th><th>Modalidad</th><th>Fecha</th><th>Estado</th><th class="text-end">Puntos</th><th class="text-end">Participantes</th><th></th></tr>
-            </thead>
-            <tbody class="small">
-                @foreach (var s in _b.Items)
+    <div class="asa-tool-spacer"></div>
+    <div class="asa-menu-wrap">
+        <button type="button" class="asa-fbtn @(_agruparPor != "" ? "on" : "")" @onclick="() => _showAgrupar = !_showAgrupar" title="Agrupar asambleas">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+            <span>Agrupar@(_agruparPor != "" ? ": " + AgruparLabel(_agruparPor) : "")</span>
+        </button>
+        @if (_showAgrupar)
+        {
+            <div class="asa-menu-bd" @onclick="() => _showAgrupar = false"></div>
+            <div class="asa-menu">
+                @foreach (var (gk, gl) in AgruparOpciones)
                 {
-                    var sid = s.Id;
-                    <tr style="cursor:pointer;" @onclick="() => Ir(sid)">
-                        <td>
-                            <strong>@s.Titulo</strong>
-                            @if (s.SegundaConvocatoria) { <span class="badge bg-warning text-dark ms-1">2da convocatoria</span> }
-                            @if (s.ActaPublicada) { <span class="badge bg-success ms-1">Acta publicada</span> }
-                        </td>
-                        <td><span class="badge bg-light text-dark border">@s.Tipo</span></td>
-                        <td>@s.Modalidad</td>
-                        <td>@s.FechaSesion.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>
-                        <td>@RenderEstado(s.Estado)</td>
-                        <td class="text-end">@s.CantidadPuntos</td>
-                        <td class="text-end">@s.CantidadParticipantes</td>
-                        <td class="text-end">
-                            <a class="btn btn-sm btn-outline-dark" href="@($"/asambleas/{s.Id}")">Ver</a>
-                        </td>
-                    </tr>
+                    var key = gk;
+                    <button class="asa-menu-it @(_agruparPor == key ? "on" : "")" @onclick="() => SetAgrupar(key)">@gl</button>
+                }
+            </div>
+        }
+    </div>
+    <div class="asa-menu-wrap">
+        <button type="button" class="asa-fbtn @(_showCampos ? "on" : "")" @onclick="() => _showCampos = !_showCampos" title="Campos y columnas de la tabla">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
+            <span>Campos</span>
+        </button>
+        @if (_showCampos)
+        {
+            <div class="asa-menu-bd" @onclick="() => _showCampos = false"></div>
+            <div class="asa-colsmenu">
+                <div class="asa-colsmenu-h">COLUMNAS (orden y visibilidad)</div>
+                @for (int i = 0; i < _colOrder.Count; i++)
+                {
+                    var idx = i;
+                    var col = Catalogo.First(c => c.Key == _colOrder[idx]);
+                    var key = col.Key;
+                    <div class="asa-colsmenu-i">
+                        <div class="asa-colsmenu-ord">
+                            <button class="asa-colsmenu-mv" disabled="@(idx == 0)" @onclick="() => MoverCol(idx, -1)" title="Subir">&#9650;</button>
+                            <button class="asa-colsmenu-mv" disabled="@(idx == _colOrder.Count - 1)" @onclick="() => MoverCol(idx, 1)" title="Bajar">&#9660;</button>
+                        </div>
+                        <label class="asa-cfg-vis" title="@(col.Hideable ? "Mostrar u ocultar" : "Columna requerida, siempre visible")">
+                            <input type="checkbox" checked="@(!_colHidden.Contains(key))" disabled="@(!col.Hideable)" @onchange="@(e => SetColVisible(key, (bool)(e.Value ?? false)))" />
+                        </label>
+                        <span class="asa-colsmenu-lbl">@col.Label</span>
+                        @if (!col.Hideable) { <span class="asa-cfg-req">fija</span> }
+                    </div>
+                }
+                <div class="asa-colsmenu-acts">
+                    <button type="button" class="asa-colsmenu-act" @onclick="MostrarTodo">Mostrar todo</button>
+                    <button type="button" class="asa-colsmenu-act" @onclick="OcultarTodo">Ocultar todo</button>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@* === Tabla (header sticky opaco; las filas pasan por debajo) === *@
+<div class="asa-box">
+    <div class="asa-table-wrap">
+        <table class="asa-table">
+            <thead>
+                <tr>
+                    <th class="asa-th-exp"></th>
+                    @foreach (var key in ColsVisibles)
+                    {
+                        var k = key;
+                        <th class="@(EsNum(k) ? "asa-th-num" : "")" @onclick="() => Ordenar(k)" title="Ordenar">
+                            <span class="asa-th-lbl">@ColLabel(k)@(_sortCol == k ? (_sortAsc ? " ▲" : " ▼") : "")</span>
+                        </th>
+                    }
+                    <th class="asa-th-act"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (_agruparPor == "")
+                {
+                    @foreach (var s in Pagina)
+                    {
+                        @RenderFila(s)
+                    }
+                }
+                else
+                {
+                    @foreach (var g in Grupos)
+                    {
+                        <tr class="asa-grp-row">
+                            <td class="asa-grp-cell" colspan="@(ColsVisibles.Count() + 2)">@g.Key <span class="asa-grp-count">@g.Count()</span></td>
+                        </tr>
+                        @foreach (var s in g)
+                        {
+                            @RenderFila(s)
+                        }
+                    }
                 }
             </tbody>
         </table>
     </div>
-}
+
+    @* Footer canonico: siempre visible sin agrupacion, incluso con 0 filas. Con agrupacion no se pagina. *@
+    @if (_agruparPor == "")
+    {
+        <TablaPager Total="Filtrados.Count" Pagina="_pagina" PorPagina="_porPagina" Entidad="asambleas"
+                    PaginaChanged="p => { _pagina = p; }"
+                    PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
+    }
+</div>
 
 <style>
-    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
+    .asa-tool { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+    .asa-tool-spacer { flex: 1; }
+    .asa-search { display: flex; align-items: center; gap: 7px; border: 1px solid #E1E8EE; border-radius: 9px; padding: 0 11px; background: #fff; }
+    .asa-search svg { color: #A6B7C8; flex-shrink: 0; }
+    .asa-search:focus-within { border-color: var(--propia-brand, #6D4FE3); }
+    .asa-search-inp { border: 0; outline: none; padding: 8px 0; font-size: 12.5px; color: #33475B; font-family: inherit; width: 210px; background: transparent; }
+
+    .asa-fbtn { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 8px 12px; border-radius: 9px; border: 1px solid #E1E8EE; background: #fff; color: #516F90; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .asa-fbtn:hover { border-color: #CBD6E2; }
+    .asa-fbtn.on { background: #F1ECFD; border-color: #DCD2F8; color: var(--propia-brand, #6D4FE3); }
+
+    .asa-menu-wrap { position: relative; }
+    .asa-menu-bd { position: fixed; inset: 0; z-index: 40; }
+    .asa-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; min-width: 180px; background: #fff; border: 1px solid #E6ECF2; border-radius: 12px; box-shadow: 0 12px 30px rgba(30,40,60,.18); padding: 6px; }
+    .asa-menu-it { display: block; width: 100%; text-align: left; border: 0; background: transparent; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; font-weight: 600; color: #33475B; cursor: pointer; font-family: inherit; }
+    .asa-menu-it:hover { background: #F1ECFD; }
+    .asa-menu-it.on { background: #F1ECFD; color: var(--propia-brand, #6D4FE3); }
+
+    .asa-colsmenu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; min-width: 240px; background: #fff; border: 1px solid #E6ECF2; border-radius: 12px; box-shadow: 0 12px 30px rgba(30,40,60,.18); padding: 8px; }
+    .asa-colsmenu-h { font-size: 10px; font-weight: 700; letter-spacing: .4px; color: #A6B7C8; padding: 4px 6px 8px; }
+    .asa-colsmenu-i { display: flex; align-items: center; gap: 8px; padding: 4px 6px; }
+    .asa-colsmenu-ord { display: flex; flex-direction: column; }
+    .asa-colsmenu-mv { border: 0; background: transparent; color: #8A9BAD; cursor: pointer; font-size: 9px; line-height: 1; padding: 1px; }
+    .asa-colsmenu-mv:disabled { opacity: .3; cursor: default; }
+    .asa-colsmenu-lbl { flex: 1; font-size: 12.5px; font-weight: 600; color: #33475B; }
+    .asa-cfg-req { font-size: 10px; color: #A6B7C8; font-weight: 700; }
+    .asa-colsmenu-acts { display: flex; gap: 6px; border-top: 1px solid #EEF2F6; margin-top: 6px; padding-top: 8px; }
+    .asa-colsmenu-act { flex: 1; border: 1px solid #E1E8EE; background: #fff; border-radius: 7px; padding: 6px 8px; font-size: 11.5px; font-weight: 600; color: #516F90; cursor: pointer; font-family: inherit; }
+    .asa-colsmenu-act:hover { background: #F1ECFD; border-color: #DCD2F8; color: var(--propia-brand, #6D4FE3); }
+
+    .asa-box { border: 1px solid #E1E8EE; border-radius: 12px; overflow: hidden; background: #fff; }
+    .asa-table-wrap { overflow: auto; max-height: calc(100vh - 260px); }
+    .asa-table { width: 100%; border-collapse: separate; border-spacing: 0; min-width: max-content; }
+    .asa-table thead th { position: sticky; top: 0; z-index: 8; background: #FAFBFC; border-bottom: 1px solid #EEF3F8; padding: 10px 14px; text-align: left; font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: #A6B7C8; text-transform: uppercase; white-space: nowrap; cursor: pointer; user-select: none; box-shadow: 0 2px 4px -2px rgba(27,42,58,.12); }
+    .asa-table thead th.asa-th-num { text-align: right; }
+    .asa-table thead th.asa-th-exp, .asa-table thead th.asa-th-act { cursor: default; }
+    .asa-th-exp { width: 34px; }
+    .asa-th-act { width: 70px; }
+    .asa-table tbody td { padding: 9px 14px; border-bottom: 1px solid #EEF2F6; font-size: 13px; color: #33475B; vertical-align: middle; }
+    .asa-table tbody tr:hover td { background: #FAFBFD; }
+    .asa-td-exp { width: 34px; text-align: center; padding: 0 4px; }
+    .asa-exp { border: 0; background: transparent; color: #B0BECC; cursor: pointer; opacity: 0; padding: 4px; }
+    .asa-table tbody tr:hover .asa-exp { opacity: 1; }
+    .asa-td-num { text-align: right; }
+    .asa-td-titulo strong { font-weight: 600; color: #1B2A3A; }
+
+    .asa-grp-row td { background: #F6F8FB; }
+    .asa-grp-cell { font-size: 12px; font-weight: 700; color: #516F90; text-transform: uppercase; letter-spacing: .3px; }
+    .asa-grp-count { display: inline-flex; min-width: 20px; justify-content: center; margin-left: 8px; background: #E1E8EE; color: #516F90; border-radius: 10px; padding: 0 7px; font-size: 11px; }
+
+    [data-bs-theme="dark"] .asa-box { background: #1B2233; border-color: #2D3650; }
+    [data-bs-theme="dark"] .asa-table thead th { background: #202A3D; color: #7C8BA0; }
+    [data-bs-theme="dark"] .asa-table tbody td { color: #C7D0DC; border-color: #2A3346; }
+    [data-bs-theme="dark"] .asa-table tbody tr:hover td { background: #202A3D; }
 </style>
 
 @code {
@@ -117,8 +211,216 @@ else
     private bool _authChecked;
     private string? _msg; private string _msgClass = "alert-info";
     private SesionBandejaDto? _b;
-    private string _filtroEstado = "";
-    private string _filtroTipo = "";
+
+    // Barra / vista tabla canonica
+    private FiltroDinamico? _fd;
+    private string _q = "";
+    private bool _showAgrupar; private bool _showCampos;
+    private string _agruparPor = "";
+    private string _sortCol = "fecha"; private bool _sortAsc = false;   // fecha desc por defecto
+    private int _pagina = 1; private int _porPagina = 25;
+
+    private sealed record ColDef(string Key, string Label, bool Hideable, bool Numeric);
+    private static readonly ColDef[] Catalogo =
+    {
+        new("titulo", "Titulo", false, false),
+        new("tipo", "Tipo", true, false),
+        new("modalidad", "Modalidad", true, false),
+        new("fecha", "Fecha", true, false),
+        new("estado", "Estado", true, false),
+        new("puntos", "Puntos", true, true),
+        new("participantes", "Participantes", true, true),
+    };
+    private List<string> _colOrder = Catalogo.Select(c => c.Key).ToList();
+    private readonly HashSet<string> _colHidden = new();
+
+    private IEnumerable<string> ColsVisibles => _colOrder.Where(k => !_colHidden.Contains(k));
+    private static string ColLabel(string k) => Catalogo.First(c => c.Key == k).Label;
+    private static bool EsNum(string k) => Catalogo.First(c => c.Key == k).Numeric;
+
+    private List<FiltroDinamico.CampoDef> CamposFiltro => new()
+    {
+        new() { Key = "titulo", Label = "Titulo", Kind = "texto" },
+        new() { Key = "tipo", Label = "Tipo", Kind = "sel",
+                Opciones = Enum.GetValues<TipoSesion>().Select(t => (t.ToString(), t.ToString())).ToList() },
+        new() { Key = "modalidad", Label = "Modalidad", Kind = "sel",
+                Opciones = Enum.GetValues<ModalidadSesion>().Select(m => (m.ToString(), m.ToString())).ToList() },
+        new() { Key = "estado", Label = "Estado", Kind = "sel",
+                Opciones = Enum.GetValues<EstadoSesion>().Select(e => (e.ToString(), e.ToString())).ToList() },
+        new() { Key = "fecha", Label = "Fecha", Kind = "fecha" },
+        new() { Key = "puntos", Label = "Puntos", Kind = "num" },
+        new() { Key = "participantes", Label = "Participantes", Kind = "num" },
+    };
+
+    private static readonly (string, string)[] AgruparOpciones =
+    {
+        ("", "Sin agrupar"), ("estado", "Estado"), ("tipo", "Tipo"), ("modalidad", "Modalidad"),
+    };
+    private static string AgruparLabel(string v) => v switch
+    { "estado" => "Estado", "tipo" => "Tipo", "modalidad" => "Modalidad", _ => "" };
+
+    // ===== Pipeline: filtrar -> ordenar -> (agrupar | paginar) =====
+    private IReadOnlyList<SesionListaDto> Items => _b?.Items ?? Array.Empty<SesionListaDto>();
+
+    private string? ValorCrudo(SesionListaDto s, string key) => key switch
+    {
+        "titulo" => s.Titulo,
+        "tipo" => s.Tipo.ToString(),
+        "modalidad" => s.Modalidad.ToString(),
+        "estado" => s.Estado.ToString(),
+        "fecha" => s.FechaSesion.LocalDateTime.ToString("yyyy-MM-dd"),
+        "puntos" => s.CantidadPuntos.ToString(),
+        "participantes" => s.CantidadParticipantes.ToString(),
+        _ => null,
+    };
+
+    private List<SesionListaDto> Filtrados
+    {
+        get
+        {
+            var q = Items.AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(_q))
+                q = q.Where(s => s.Titulo.Contains(_q, StringComparison.OrdinalIgnoreCase));
+            if (_fd is not null)
+                q = q.Where(s => _fd.Pasa(key => ValorCrudo(s, key)));
+            return Ordenar(q).ToList();
+        }
+    }
+
+    private IEnumerable<SesionListaDto> Ordenar(IEnumerable<SesionListaDto> src) => _sortCol switch
+    {
+        "titulo" => _sortAsc ? src.OrderBy(s => s.Titulo) : src.OrderByDescending(s => s.Titulo),
+        "tipo" => _sortAsc ? src.OrderBy(s => s.Tipo.ToString()) : src.OrderByDescending(s => s.Tipo.ToString()),
+        "modalidad" => _sortAsc ? src.OrderBy(s => s.Modalidad.ToString()) : src.OrderByDescending(s => s.Modalidad.ToString()),
+        "estado" => _sortAsc ? src.OrderBy(s => s.Estado.ToString()) : src.OrderByDescending(s => s.Estado.ToString()),
+        "puntos" => _sortAsc ? src.OrderBy(s => s.CantidadPuntos) : src.OrderByDescending(s => s.CantidadPuntos),
+        "participantes" => _sortAsc ? src.OrderBy(s => s.CantidadParticipantes) : src.OrderByDescending(s => s.CantidadParticipantes),
+        _ => _sortAsc ? src.OrderBy(s => s.FechaSesion) : src.OrderByDescending(s => s.FechaSesion),
+    };
+
+    private IEnumerable<IGrouping<string, SesionListaDto>> Grupos =>
+        Filtrados.GroupBy(GrupoClave).OrderBy(g => g.Key);
+
+    private string GrupoClave(SesionListaDto s) => _agruparPor switch
+    {
+        "estado" => s.Estado.ToString(),
+        "tipo" => s.Tipo.ToString(),
+        "modalidad" => s.Modalidad.ToString(),
+        _ => "",
+    };
+
+    private IEnumerable<SesionListaDto> Pagina =>
+        Filtrados.Skip((_pagina - 1) * _porPagina).Take(_porPagina);
+
+    // ===== Interacciones de la barra =====
+    private void Ordenar(string k)
+    {
+        if (_sortCol == k) _sortAsc = !_sortAsc;
+        else { _sortCol = k; _sortAsc = true; }
+    }
+
+    private void SetAgrupar(string v) { _agruparPor = v; _showAgrupar = false; _pagina = 1; }
+
+    private void MoverCol(int idx, int delta)
+    {
+        var j = idx + delta;
+        if (j < 0 || j >= _colOrder.Count) return;
+        (_colOrder[idx], _colOrder[j]) = (_colOrder[j], _colOrder[idx]);
+    }
+
+    private void SetColVisible(string key, bool visible)
+    {
+        if (!Catalogo.First(c => c.Key == key).Hideable) return;
+        if (visible) _colHidden.Remove(key); else _colHidden.Add(key);
+    }
+
+    private void MostrarTodo() => _colHidden.Clear();
+    private void OcultarTodo()
+    {
+        _colHidden.Clear();
+        foreach (var c in Catalogo.Where(c => c.Hideable)) _colHidden.Add(c.Key);
+    }
+
+    // ===== Render de fila (columnas dinamicas segun orden/visibilidad) =====
+    private RenderFragment RenderFila(SesionListaDto s) => builder =>
+    {
+        var seq = 0;
+        builder.OpenElement(seq++, "tr");
+        builder.AddAttribute(seq++, "class", "asa-row");
+
+        // Expander (abre la sesion)
+        builder.OpenElement(seq++, "td");
+        builder.AddAttribute(seq++, "class", "asa-td-exp");
+        builder.OpenElement(seq++, "button");
+        builder.AddAttribute(seq++, "type", "button");
+        builder.AddAttribute(seq++, "class", "asa-exp");
+        builder.AddAttribute(seq++, "title", "Abrir la asamblea");
+        builder.AddAttribute(seq++, "onclick", EventCallback.Factory.Create(this, () => Ir(s.Id)));
+        builder.AddMarkupContent(seq++, "<svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7\"/></svg>");
+        builder.CloseElement();
+        builder.CloseElement();
+
+        foreach (var key in ColsVisibles)
+        {
+            builder.OpenElement(seq++, "td");
+            builder.AddAttribute(seq++, "class", CeldaClase(key));
+            builder.AddAttribute(seq++, "style", "cursor:pointer;");
+            builder.AddAttribute(seq++, "onclick", EventCallback.Factory.Create(this, () => Ir(s.Id)));
+            builder.AddContent(seq++, CeldaContenido(s, key));
+            builder.CloseElement();
+        }
+
+        // Acciones
+        builder.OpenElement(seq++, "td");
+        builder.AddAttribute(seq++, "class", "asa-td-act");
+        builder.OpenElement(seq++, "a");
+        builder.AddAttribute(seq++, "class", "btn btn-sm btn-outline-dark");
+        builder.AddAttribute(seq++, "href", $"/asambleas/{s.Id}");
+        builder.AddContent(seq++, "Ver");
+        builder.CloseElement();
+        builder.CloseElement();
+
+        builder.CloseElement();
+    };
+
+    private static string CeldaClase(string key) => key switch
+    {
+        "titulo" => "asa-td-titulo",
+        "puntos" or "participantes" => "asa-td-num",
+        _ => "",
+    };
+
+    private RenderFragment CeldaContenido(SesionListaDto s, string key) => builder =>
+    {
+        switch (key)
+        {
+            case "titulo":
+                builder.OpenElement(0, "strong");
+                builder.AddContent(1, s.Titulo);
+                builder.CloseElement();
+                if (s.SegundaConvocatoria) builder.AddMarkupContent(2, " <span class=\"badge bg-warning text-dark ms-1\">2da convocatoria</span>");
+                if (s.ActaPublicada) builder.AddMarkupContent(3, " <span class=\"badge bg-success ms-1\">Acta publicada</span>");
+                break;
+            case "tipo":
+                builder.AddMarkupContent(0, $"<span class=\"badge bg-light text-dark border\">{s.Tipo}</span>");
+                break;
+            case "modalidad":
+                builder.AddContent(0, s.Modalidad.ToString());
+                break;
+            case "fecha":
+                builder.AddContent(0, s.FechaSesion.LocalDateTime.ToString("yyyy-MM-dd HH:mm"));
+                break;
+            case "estado":
+                builder.AddContent(0, RenderEstado(s.Estado));
+                break;
+            case "puntos":
+                builder.AddContent(0, s.CantidadPuntos);
+                break;
+            case "participantes":
+                builder.AddContent(0, s.CantidadParticipantes);
+                break;
+        }
+    };
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -133,21 +435,14 @@ else
                 await CargarAsync();
                 StateHasChanged();
             }
+            else { StateHasChanged(); }
         }
         catch { }
     }
 
     private async Task CargarAsync()
     {
-        try
-        {
-            var url = "/api/asambleas";
-            var qs = new List<string>();
-            if (!string.IsNullOrEmpty(_filtroEstado)) qs.Add($"estado={_filtroEstado}");
-            if (!string.IsNullOrEmpty(_filtroTipo)) qs.Add($"tipo={_filtroTipo}");
-            if (qs.Any()) url += "?" + string.Join("&", qs);
-            _b = await Auth().GetFromJsonAsync<SesionBandejaDto>(url);
-        }
+        try { _b = await Auth().GetFromJsonAsync<SesionBandejaDto>("/api/asambleas"); }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
     }
 
