@@ -158,7 +158,9 @@ public sealed class AiAgentTemplateService : IAiAgentTemplateService
                 {
                     Id = Guid.NewGuid(),
                     TenantId = tenantId,
-                    Name = template.Name,
+                    // El nombre admite placeholders (ej. "Asistente de {COPROPIEDAD_NOMBRE}") para que el
+                    // agente clonado quede rotulado con la copropiedad, como el demo.
+                    Name = ReplacePlaceholders(template.Name, copropiedadNombre, organizacionNombre),
                     Role = template.Role,
                     Provider = template.Provider,
                     Model = template.Model,
