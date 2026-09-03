@@ -28,87 +28,115 @@
     return;
 }
 
-@if (_resumen is not null)
-{
-    <div class="row g-3 mb-3">
-        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
-            <div class="text-muted small">Borradores</div><h3 class="mb-0">@_resumen.Borradores</h3>
-        </div></div></div>
-        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
-            <div class="text-muted small">Programados</div><h3 class="mb-0 text-info">@_resumen.Programados</h3>
-        </div></div></div>
-        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
-            <div class="text-muted small">Enviados este mes</div><h3 class="mb-0 text-success">@_resumen.EnviadosMes</h3>
-        </div></div></div>
-        <div class="col-md-3"><div class="card kpi-mini"><div class="card-body py-3">
-            <div class="text-muted small">Tasa apertura promedio</div>
-            <h3 class="mb-0">@(_resumen.TasaAperturaPromedioMes?.ToString("0.0") ?? "-")%</h3>
-        </div></div></div>
-    </div>
-}
+@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
 
-<div class="row g-2 mb-3">
-    <div class="col-md-6">
-        <input class="form-control form-control-sm" placeholder="Buscar por asunto..." @bind="_query" @bind:event="oninput" @onkeyup="CargarAsync" />
+@* === Barra canonica: [Filtros] [Buscar] ... spacer ... [Agrupar] [Campos] === *@
+<div class="com-tool">
+    <FiltroDinamico @ref="_fd" Campos="CamposFiltro" OnChanged="@(() => { _pagina = 1; StateHasChanged(); })" />
+    <div class="com-search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input class="com-search-inp" placeholder="Buscar por asunto..." value="@_query"
+               @oninput="@(e => { _query = e.Value?.ToString() ?? string.Empty; _pagina = 1; })" />
     </div>
-    <div class="col-md-3">
-        <select class="form-select form-select-sm" @bind="_filtroEstado" @bind:after="CargarAsync">
-            <option value="">Todos los estados</option>
-            @foreach (var e in Enum.GetValues<EstadoComunicado>()) { <option value="@e">@e</option> }
-        </select>
+    <div class="com-tool-spacer"></div>
+    <div class="com-menu-wrap">
+        <button type="button" class="com-fbtn @(_agruparPor != "" ? "on" : "")" @onclick="() => _showAgrupar = !_showAgrupar" title="Agrupar comunicados">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+            <span>Agrupar@(_agruparPor != "" ? ": " + AgruparLabel(_agruparPor) : "")</span>
+        </button>
+        @if (_showAgrupar)
+        {
+            <div class="com-menu-bd" @onclick="() => _showAgrupar = false"></div>
+            <div class="com-menu">
+                @foreach (var (gk, gl) in AgruparOpciones)
+                {
+                    var key = gk;
+                    <button class="com-menu-it @(_agruparPor == key ? "on" : "")" @onclick="() => SetAgrupar(key)">@gl</button>
+                }
+            </div>
+        }
     </div>
-    <div class="col-md-3">
-        <select class="form-select form-select-sm" @bind="_filtroTipo" @bind:after="CargarAsync">
-            <option value="">Todos los tipos</option>
-            @foreach (var t in Enum.GetValues<TipoComunicadoBase>()) { <option value="@t">@t</option> }
-        </select>
+    <div class="com-menu-wrap">
+        <button type="button" class="com-fbtn @(_showCampos ? "on" : "")" @onclick="() => _showCampos = !_showCampos" title="Campos y columnas de la tabla">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
+            <span>Campos</span>
+        </button>
+        @if (_showCampos)
+        {
+            <div class="com-menu-bd" @onclick="() => _showCampos = false"></div>
+            <div class="com-colsmenu">
+                <div class="com-colsmenu-h">COLUMNAS (orden y visibilidad)</div>
+                @for (int i = 0; i < _colOrder.Count; i++)
+                {
+                    var idx = i;
+                    var col = Catalogo.First(c => c.Key == _colOrder[idx]);
+                    var key = col.Key;
+                    <div class="com-colsmenu-i">
+                        <div class="com-colsmenu-ord">
+                            <button class="com-colsmenu-mv" disabled="@(idx == 0)" @onclick="() => MoverCol(idx, -1)" title="Subir">&#9650;</button>
+                            <button class="com-colsmenu-mv" disabled="@(idx == _colOrder.Count - 1)" @onclick="() => MoverCol(idx, 1)" title="Bajar">&#9660;</button>
+                        </div>
+                        <label class="com-cfg-vis" title="@(col.Hideable ? "Mostrar u ocultar" : "Columna requerida, siempre visible")">
+                            <input type="checkbox" checked="@(!_colHidden.Contains(key))" disabled="@(!col.Hideable)" @onchange="@(e => SetColVisible(key, (bool)(e.Value ?? false)))" />
+                        </label>
+                        <span class="com-colsmenu-lbl">@col.Label</span>
+                        @if (!col.Hideable) { <span class="com-cfg-req">fija</span> }
+                    </div>
+                }
+                <div class="com-colsmenu-acts">
+                    <button type="button" class="com-colsmenu-act" @onclick="MostrarTodo">Mostrar todo</button>
+                    <button type="button" class="com-colsmenu-act" @onclick="OcultarTodo">Ocultar todo</button>
+                </div>
+            </div>
+        }
     </div>
 </div>
-
-@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
 
 @if (_lista is null)
 {
     <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
 }
-else if (_lista.Count == 0)
-{
-    <div class="card p-4 text-center text-muted">Sin comunicados.</div>
-}
 else
 {
-    <div class="card table-responsive">
-        <table class="table table-hover mb-0 align-middle">
-            <thead class="bg-light small text-muted">
-                <tr>
-                    <th>Asunto</th><th>Tipo</th><th>Segmento</th><th>Fecha</th><th>Estado</th><th>Acuse</th>
-                </tr>
-            </thead>
-            <tbody class="small">
-                @foreach (var c in _lista)
-                {
-                    var cid = c.Id;
-                    <tr style="cursor:pointer;" @onclick="() => AbrirFicha(cid)">
-                        <td><strong>@c.Asunto</strong></td>
-                        <td>@RenderTipo(c.TipoComunicado)</td>
-                        <td><small class="text-muted">@c.SegmentoResumen</small></td>
-                        <td><small>@(c.FechaEnvio?.LocalDateTime.ToString("yyyy-MM-dd HH:mm") ?? c.FechaProgramada?.LocalDateTime.ToString("yyyy-MM-dd HH:mm") ?? c.CreadoAt.LocalDateTime.ToString("yyyy-MM-dd"))</small></td>
-                        <td>@RenderEstado(c.Estado)</td>
-                        <td>
-                            @if (c.RequiereAcuse && c.Estado == EstadoComunicado.Enviado && c.TotalDestinatarios > 0)
-                            {
-                                var pct = c.TasaApertura ?? 0m;
-                                <div class="progress" style="height: 6px; width: 100px;">
-                                    <div class="progress-bar bg-success" style="width: @(pct)%"></div>
-                                </div>
-                                <small class="text-muted">@(c.TotalAbiertos)/@(c.TotalDestinatarios) (@(pct.ToString("0.0"))%)</small>
-                            }
-                            else { <small class="text-muted">-</small> }
-                        </td>
+    <div class="com-box">
+        <div class="com-table-wrap">
+            <table class="com-table">
+                <thead>
+                    <tr>
+                        <th class="com-th-exp"></th>
+                        @foreach (var key in ColsVisibles)
+                        {
+                            var k = key;
+                            <th @onclick="() => Ordenar(k)" title="Ordenar">
+                                <span class="com-th-lbl">@ColLabel(k)@(_sortCol == k ? (_sortAsc ? " ▲" : " ▼") : "")</span>
+                            </th>
+                        }
                     </tr>
-                }
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    @if (_agruparPor == "")
+                    {
+                        @foreach (var c in Pagina) { @RenderFila(c) }
+                    }
+                    else
+                    {
+                        @foreach (var g in Grupos)
+                        {
+                            <tr class="com-grp-row">
+                                <td class="com-grp-cell" colspan="@(ColsVisibles.Count() + 1)">@g.Key <span class="com-grp-count">@g.Count()</span></td>
+                            </tr>
+                            @foreach (var c in g) { @RenderFila(c) }
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (_agruparPor == "")
+        {
+            <TablaPager Total="Filtrados.Count" Pagina="_pagina" PorPagina="_porPagina" Entidad="comunicados"
+                        PaginaChanged="p => { _pagina = p; }"
+                        PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
+        }
     </div>
 }
 
@@ -332,7 +360,56 @@ else
 }
 
 <style>
-    .kpi-mini { border-radius: 12px; border: 1px solid #e6e6ee; }
+    .com-tool { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+    .com-tool-spacer { flex: 1; }
+    .com-search { display: flex; align-items: center; gap: 7px; border: 1px solid #E1E8EE; border-radius: 9px; padding: 0 11px; background: #fff; }
+    .com-search svg { color: #A6B7C8; flex-shrink: 0; }
+    .com-search:focus-within { border-color: var(--propia-brand, #6D4FE3); }
+    .com-search-inp { border: 0; outline: none; padding: 8px 0; font-size: 12.5px; color: #33475B; font-family: inherit; width: 240px; background: transparent; }
+
+    .com-fbtn { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 8px 12px; border-radius: 9px; border: 1px solid #E1E8EE; background: #fff; color: #516F90; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .com-fbtn:hover { border-color: #CBD6E2; }
+    .com-fbtn.on { background: #F1ECFD; border-color: #DCD2F8; color: var(--propia-brand, #6D4FE3); }
+
+    .com-menu-wrap { position: relative; }
+    .com-menu-bd { position: fixed; inset: 0; z-index: 40; }
+    .com-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; min-width: 180px; background: #fff; border: 1px solid #E6ECF2; border-radius: 12px; box-shadow: 0 12px 30px rgba(30,40,60,.18); padding: 6px; }
+    .com-menu-it { display: block; width: 100%; text-align: left; border: 0; background: transparent; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; font-weight: 600; color: #33475B; cursor: pointer; font-family: inherit; }
+    .com-menu-it:hover { background: #F1ECFD; }
+    .com-menu-it.on { background: #F1ECFD; color: var(--propia-brand, #6D4FE3); }
+
+    .com-colsmenu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; min-width: 240px; background: #fff; border: 1px solid #E6ECF2; border-radius: 12px; box-shadow: 0 12px 30px rgba(30,40,60,.18); padding: 8px; }
+    .com-colsmenu-h { font-size: 10px; font-weight: 700; letter-spacing: .4px; color: #A6B7C8; padding: 4px 6px 8px; }
+    .com-colsmenu-i { display: flex; align-items: center; gap: 8px; padding: 4px 6px; }
+    .com-colsmenu-ord { display: flex; flex-direction: column; }
+    .com-colsmenu-mv { border: 0; background: transparent; color: #8A9BAD; cursor: pointer; font-size: 9px; line-height: 1; padding: 1px; }
+    .com-colsmenu-mv:disabled { opacity: .3; cursor: default; }
+    .com-colsmenu-lbl { flex: 1; font-size: 12.5px; font-weight: 600; color: #33475B; }
+    .com-cfg-req { font-size: 10px; color: #A6B7C8; font-weight: 700; }
+    .com-colsmenu-acts { display: flex; gap: 6px; border-top: 1px solid #EEF2F6; margin-top: 6px; padding-top: 8px; }
+    .com-colsmenu-act { flex: 1; border: 1px solid #E1E8EE; background: #fff; border-radius: 7px; padding: 6px 8px; font-size: 11.5px; font-weight: 600; color: #516F90; cursor: pointer; font-family: inherit; }
+    .com-colsmenu-act:hover { background: #F1ECFD; border-color: #DCD2F8; color: var(--propia-brand, #6D4FE3); }
+
+    .com-box { border: 1px solid #E1E8EE; border-radius: 12px; overflow: hidden; background: #fff; }
+    .com-table-wrap { overflow: auto; max-height: calc(100vh - 260px); }
+    .com-table { width: 100%; border-collapse: separate; border-spacing: 0; min-width: max-content; }
+    .com-table thead th { position: sticky; top: 0; z-index: 8; background: #FAFBFC; border-bottom: 1px solid #EEF3F8; padding: 10px 14px; text-align: left; font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: #A6B7C8; text-transform: uppercase; white-space: nowrap; cursor: pointer; user-select: none; box-shadow: 0 2px 4px -2px rgba(27,42,58,.12); }
+    .com-table thead th.com-th-exp { cursor: default; width: 34px; }
+    .com-table tbody td { padding: 9px 14px; border-bottom: 1px solid #EEF2F6; font-size: 13px; color: #33475B; vertical-align: middle; }
+    .com-table tbody tr:hover td { background: #FAFBFD; }
+    .com-td-exp { width: 34px; text-align: center; padding: 0 4px; }
+    .com-exp { border: 0; background: transparent; color: #B0BECC; cursor: pointer; opacity: 0; padding: 4px; }
+    .com-table tbody tr:hover .com-exp { opacity: 1; }
+    .com-td-asunto strong { font-weight: 600; color: #1B2A3A; }
+
+    .com-grp-row td { background: #F6F8FB; }
+    .com-grp-cell { font-size: 12px; font-weight: 700; color: #516F90; text-transform: uppercase; letter-spacing: .3px; }
+    .com-grp-count { display: inline-flex; min-width: 20px; justify-content: center; margin-left: 8px; background: #E1E8EE; color: #516F90; border-radius: 10px; padding: 0 7px; font-size: 11px; }
+
+    [data-bs-theme="dark"] .com-box { background: #1B2233; border-color: #2D3650; }
+    [data-bs-theme="dark"] .com-table thead th { background: #202A3D; color: #7C8BA0; }
+    [data-bs-theme="dark"] .com-table tbody td { color: #C7D0DC; border-color: #2A3346; }
+    [data-bs-theme="dark"] .com-table tbody tr:hover td { background: #202A3D; }
 </style>
 
 @code {
@@ -349,8 +426,184 @@ else
     private AcuseListaDto? _acuses;
 
     private string _query = "";
-    private string _filtroEstado = "";
-    private string _filtroTipo = "";
+
+    // ===== Barra / vista tabla canonica =====
+    private FiltroDinamico? _fd;
+    private bool _showAgrupar; private bool _showCampos;
+    private string _agruparPor = "";
+    private string _sortCol = "fecha"; private bool _sortAsc = false;   // fecha desc por defecto
+    private int _pagina = 1; private int _porPagina = 25;
+
+    private sealed record ColDef(string Key, string Label, bool Hideable);
+    private static readonly ColDef[] Catalogo =
+    {
+        new("asunto", "Asunto", false),
+        new("tipo", "Tipo", true),
+        new("segmento", "Segmento", true),
+        new("fecha", "Fecha", true),
+        new("estado", "Estado", true),
+        new("acuse", "Acuse", true),
+    };
+    private List<string> _colOrder = Catalogo.Select(c => c.Key).ToList();
+    private readonly HashSet<string> _colHidden = new();
+
+    private IEnumerable<string> ColsVisibles => _colOrder.Where(k => !_colHidden.Contains(k));
+    private static string ColLabel(string k) => Catalogo.First(c => c.Key == k).Label;
+
+    private List<FiltroDinamico.CampoDef> CamposFiltro => new()
+    {
+        new() { Key = "asunto", Label = "Asunto", Kind = "texto" },
+        new() { Key = "tipo", Label = "Tipo", Kind = "sel",
+                Opciones = Enum.GetValues<TipoComunicadoBase>().Select(t => (t.ToString(), t.ToString())).ToList() },
+        new() { Key = "estado", Label = "Estado", Kind = "sel",
+                Opciones = Enum.GetValues<EstadoComunicado>().Select(e => (e.ToString(), e.ToString())).ToList() },
+        new() { Key = "segmento", Label = "Segmento", Kind = "texto" },
+        new() { Key = "fecha", Label = "Fecha", Kind = "fecha" },
+    };
+
+    private static readonly (string, string)[] AgruparOpciones =
+    {
+        ("", "Sin agrupar"), ("estado", "Estado"), ("tipo", "Tipo"),
+    };
+    private static string AgruparLabel(string v) => v switch { "estado" => "Estado", "tipo" => "Tipo", _ => "" };
+
+    private IReadOnlyList<ComunicadoListaDto> Items => _lista ?? (IReadOnlyList<ComunicadoListaDto>)Array.Empty<ComunicadoListaDto>();
+
+    private static DateTimeOffset FechaDe(ComunicadoListaDto c) => c.FechaEnvio ?? c.FechaProgramada ?? c.CreadoAt;
+
+    private string? ValorCrudo(ComunicadoListaDto c, string key) => key switch
+    {
+        "asunto" => c.Asunto,
+        "tipo" => c.TipoComunicado.ToString(),
+        "segmento" => c.SegmentoResumen,
+        "estado" => c.Estado.ToString(),
+        "fecha" => FechaDe(c).LocalDateTime.ToString("yyyy-MM-dd"),
+        _ => null,
+    };
+
+    private List<ComunicadoListaDto> Filtrados
+    {
+        get
+        {
+            var q = Items.AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(_query))
+                q = q.Where(c => c.Asunto.Contains(_query, StringComparison.OrdinalIgnoreCase));
+            if (_fd is not null)
+                q = q.Where(c => _fd.Pasa(key => ValorCrudo(c, key)));
+            return Ordenar(q).ToList();
+        }
+    }
+
+    private IEnumerable<ComunicadoListaDto> Ordenar(IEnumerable<ComunicadoListaDto> src) => _sortCol switch
+    {
+        "asunto" => _sortAsc ? src.OrderBy(c => c.Asunto) : src.OrderByDescending(c => c.Asunto),
+        "tipo" => _sortAsc ? src.OrderBy(c => c.TipoComunicado.ToString()) : src.OrderByDescending(c => c.TipoComunicado.ToString()),
+        "segmento" => _sortAsc ? src.OrderBy(c => c.SegmentoResumen) : src.OrderByDescending(c => c.SegmentoResumen),
+        "estado" => _sortAsc ? src.OrderBy(c => c.Estado.ToString()) : src.OrderByDescending(c => c.Estado.ToString()),
+        "acuse" => _sortAsc ? src.OrderBy(c => c.TasaApertura ?? -1m) : src.OrderByDescending(c => c.TasaApertura ?? -1m),
+        _ => _sortAsc ? src.OrderBy(FechaDe) : src.OrderByDescending(FechaDe),
+    };
+
+    private IEnumerable<IGrouping<string, ComunicadoListaDto>> Grupos =>
+        Filtrados.GroupBy(GrupoClave).OrderBy(g => g.Key);
+
+    private string GrupoClave(ComunicadoListaDto c) => _agruparPor switch
+    {
+        "estado" => c.Estado.ToString(),
+        "tipo" => c.TipoComunicado.ToString(),
+        _ => "",
+    };
+
+    private IEnumerable<ComunicadoListaDto> Pagina =>
+        Filtrados.Skip((_pagina - 1) * _porPagina).Take(_porPagina);
+
+    private void Ordenar(string k)
+    {
+        if (_sortCol == k) _sortAsc = !_sortAsc;
+        else { _sortCol = k; _sortAsc = true; }
+    }
+
+    private void SetAgrupar(string v) { _agruparPor = v; _showAgrupar = false; _pagina = 1; }
+
+    private void MoverCol(int idx, int delta)
+    {
+        var j = idx + delta;
+        if (j < 0 || j >= _colOrder.Count) return;
+        (_colOrder[idx], _colOrder[j]) = (_colOrder[j], _colOrder[idx]);
+    }
+
+    private void SetColVisible(string key, bool visible)
+    {
+        if (!Catalogo.First(c => c.Key == key).Hideable) return;
+        if (visible) _colHidden.Remove(key); else _colHidden.Add(key);
+    }
+
+    private void MostrarTodo() => _colHidden.Clear();
+    private void OcultarTodo()
+    {
+        _colHidden.Clear();
+        foreach (var c in Catalogo.Where(c => c.Hideable)) _colHidden.Add(c.Key);
+    }
+
+    private RenderFragment RenderFila(ComunicadoListaDto c) => builder =>
+    {
+        var seq = 0;
+        builder.OpenElement(seq++, "tr");
+        // Expander (abre la ficha)
+        builder.OpenElement(seq++, "td");
+        builder.AddAttribute(seq++, "class", "com-td-exp");
+        builder.OpenElement(seq++, "button");
+        builder.AddAttribute(seq++, "type", "button");
+        builder.AddAttribute(seq++, "class", "com-exp");
+        builder.AddAttribute(seq++, "title", "Abrir el comunicado");
+        builder.AddAttribute(seq++, "onclick", EventCallback.Factory.Create(this, () => AbrirFicha(c.Id)));
+        builder.AddMarkupContent(seq++, "<svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7\"/></svg>");
+        builder.CloseElement();
+        builder.CloseElement();
+
+        foreach (var key in ColsVisibles)
+        {
+            builder.OpenElement(seq++, "td");
+            builder.AddAttribute(seq++, "class", key == "asunto" ? "com-td-asunto" : "");
+            builder.AddAttribute(seq++, "style", "cursor:pointer;");
+            builder.AddAttribute(seq++, "onclick", EventCallback.Factory.Create(this, () => AbrirFicha(c.Id)));
+            builder.AddContent(seq++, CeldaContenido(c, key));
+            builder.CloseElement();
+        }
+        builder.CloseElement();
+    };
+
+    private RenderFragment CeldaContenido(ComunicadoListaDto c, string key) => builder =>
+    {
+        switch (key)
+        {
+            case "asunto":
+                builder.OpenElement(0, "strong");
+                builder.AddContent(1, c.Asunto);
+                builder.CloseElement();
+                break;
+            case "tipo":
+                builder.AddContent(0, RenderTipo(c.TipoComunicado));
+                break;
+            case "segmento":
+                builder.AddContent(0, c.SegmentoResumen);
+                break;
+            case "fecha":
+                builder.AddContent(0, FechaDe(c).LocalDateTime.ToString("yyyy-MM-dd HH:mm"));
+                break;
+            case "estado":
+                builder.AddContent(0, RenderEstado(c.Estado));
+                break;
+            case "acuse":
+                if (c.RequiereAcuse && c.Estado == EstadoComunicado.Enviado && c.TotalDestinatarios > 0)
+                {
+                    var pct = c.TasaApertura ?? 0m;
+                    builder.AddMarkupContent(0, $"<div class=\"progress\" style=\"height:6px;width:100px;\"><div class=\"progress-bar bg-success\" style=\"width:{pct}%\"></div></div><small class=\"text-muted\">{c.TotalAbiertos}/{c.TotalDestinatarios} ({pct:0.0}%)</small>");
+                }
+                else { builder.AddMarkupContent(0, "<small class=\"text-muted\">-</small>"); }
+                break;
+        }
+    };
 
     private bool _showCrear;
     private int _paso = 1;
@@ -389,13 +642,8 @@ else
         {
             var http = Auth();
             _resumen = await http.GetFromJsonAsync<ResumenComunicacionesDto>("/api/comunicaciones/resumen");
-            var url = "/api/comunicaciones";
-            var qp = new List<string>();
-            if (!string.IsNullOrEmpty(_filtroEstado)) qp.Add($"estado={_filtroEstado}");
-            if (!string.IsNullOrEmpty(_filtroTipo)) qp.Add($"tipo={_filtroTipo}");
-            if (!string.IsNullOrEmpty(_query)) qp.Add($"q={Uri.EscapeDataString(_query)}");
-            if (qp.Count > 0) url += "?" + string.Join("&", qp);
-            _lista = await http.GetFromJsonAsync<List<ComunicadoListaDto>>(url) ?? new();
+            // Carga completa: el filtrado/busqueda/orden/agrupacion se hacen client-side (canon vista tabla).
+            _lista = await http.GetFromJsonAsync<List<ComunicadoListaDto>>("/api/comunicaciones") ?? new();
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
     }
