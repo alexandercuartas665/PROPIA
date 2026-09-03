@@ -167,6 +167,22 @@ public class TransferenciaCustodiaService : ITransferenciaCustodiaService
         return t;
     }
 
+    /// <summary>Autorizacion (S-01): el actor debe ser PARTE de la transferencia. Es parte si su
+    /// organizacion actual es la saliente o la entrante, o si su tenant activo es la copropiedad
+    /// objeto (escenario C). Evita que un tercero ajeno lea/opere (subir acta, ejecutar corte,
+    /// cancelar) una transferencia de una copropiedad que no le pertenece. Mismo estandar de
+    /// pertenencia de organizacion que ya aplican Iniciar/Reclamar/Aprobar/Rechazar.</summary>
+    private async Task RequireParteDeTransferenciaAsync(TransferenciaCustodia t, CancellationToken ct)
+    {
+        var orgActual = await GetOrganizacionIdActualAsync(ct);
+        var tenantActual = _tenantContext.CurrentTenantId;
+        var esParte =
+            (orgActual is not null && (orgActual == t.OrganizacionSalienteId || orgActual == t.OrganizacionEntranteId))
+            || (tenantActual is not null && tenantActual == t.CopropiedadId);
+        if (!esParte)
+            throw new InvalidOperationException("No tiene autorizacion sobre esta transferencia de custodia.");
+    }
+
     // ===========================================================================
     // Busqueda y listado
     // ===========================================================================
@@ -236,6 +252,7 @@ public class TransferenciaCustodiaService : ITransferenciaCustodiaService
     {
         var t = await _db.TransferenciasCustodia.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
         if (t is null) return null;
+        await RequireParteDeTransferenciaAsync(t, ct);
         var dtos = await ProyectarAsync(new List<TransferenciaCustodia> { t }, ct);
         return dtos.FirstOrDefault();
     }
@@ -244,6 +261,7 @@ public class TransferenciaCustodiaService : ITransferenciaCustodiaService
     {
         var t = await _db.TransferenciasCustodia.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
         if (t is null) return null;
+        await RequireParteDeTransferenciaAsync(t, ct);
 
         var dtoLista = await ProyectarAsync(new List<TransferenciaCustodia> { t }, ct);
         var dto = dtoLista.First();
@@ -427,6 +445,14 @@ public class TransferenciaCustodiaService : ITransferenciaCustodiaService
     public async Task<TransferenciaDto> IniciarPorCopropiedadAsync(
         IniciarPorCopropiedadRequest req, CancellationToken ct)
     {
+        // Autorizacion (S-01): escenario C = "la copropiedad gestiona su cambio de administrador".
+        // Solo se puede iniciar desde la propia copropiedad (tenant activo == copropiedad objeto),
+        // no desde un tenant ajeno. Sin esto, cualquier usuario de cualquier tenant podia iniciar la
+        // transferencia de una copropiedad que no le pertenece hacia otra organizacion.
+        if (_tenantContext.CurrentTenantId is null || _tenantContext.CurrentTenantId != req.CopropiedadId)
+            throw new InvalidOperationException(
+                "El cambio de administrador solo puede gestionarse desde la propia copropiedad.");
+
         await ValidarNoTransferenciaActivaAsync(req.CopropiedadId, ct);
 
         var cop = await _db.Tenants.FirstOrDefaultAsync(t => t.Id == req.CopropiedadId, ct)
@@ -476,6 +502,7 @@ public class TransferenciaCustodiaService : ITransferenciaCustodiaService
         if (req.TamanioBytes <= 0) throw new InvalidOperationException("Tamanio invalido.");
 
         var t = await RequireAsync(transferenciaId, ct);
+        await RequireParteDeTransferenciaAsync(t, ct);
         if (t.Estado != EstadoTransferencia.PendienteAprobacion
             && t.Estado != EstadoTransferencia.ActaEnValidacion
             && t.Estado != EstadoTransferencia.AlertasActivas)
@@ -605,6 +632,7 @@ public class TransferenciaCustodiaService : ITransferenciaCustodiaService
             throw new InvalidOperationException("Motivo de cancelacion obligatorio.");
 
         var t = await RequireAsync(transferenciaId, ct);
+        await RequireParteDeTransferenciaAsync(t, ct);
         if (t.Estado == EstadoTransferencia.Ejecutado || t.Estado == EstadoTransferencia.Cancelado)
             throw new InvalidOperationException(
                 $"No se puede cancelar una transferencia en estado {t.Estado}.");
@@ -635,6 +663,7 @@ public class TransferenciaCustodiaService : ITransferenciaCustodiaService
     public async Task<TransferenciaDto> EjecutarCorteAsync(Guid transferenciaId, CancellationToken ct)
     {
         var t = await RequireAsync(transferenciaId, ct);
+        await RequireParteDeTransferenciaAsync(t, ct);
         if (t.Estado != EstadoTransferencia.ActaEnValidacion
             && t.Estado != EstadoTransferencia.AlertasActivas)
             throw new InvalidOperationException(

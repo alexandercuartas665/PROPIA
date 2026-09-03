@@ -85,7 +85,12 @@ public class DirectorioService : IDirectorioService
             throw new InvalidOperationException("Nombres y apellidos obligatorios.");
         p.Nombres = req.Nombres.Trim();
         p.Apellidos = req.Apellidos.Trim();
-        p.Email = string.IsNullOrWhiteSpace(req.Email) ? null : req.Email.Trim();
+        // S-02: el email de una persona con cuenta de login es su identidad de acceso. No se permite
+        // cambiarlo desde el directorio ni desde el importador (evitaria redirigir la identidad hacia un
+        // correo controlado por un atacante). Solo se edita el email de personas sin cuenta.
+        var tieneCuenta = await _db.Users.AnyAsync(u => u.PersonaId == p.Id, ct);
+        if (!tieneCuenta)
+            p.Email = string.IsNullOrWhiteSpace(req.Email) ? null : req.Email.Trim();
         p.Telefono = req.Telefono;
         p.FotoUrl = req.FotoUrl;
         p.FechaNacimiento = req.FechaNacimiento;
@@ -161,10 +166,17 @@ public class DirectorioService : IDirectorioService
                   .Select(x => new EtiquetaChipDto(x.Id, x.Nombre, x.Grupo, x.Icono, x.Color)).ToList());
     }
 
+    // S-08: la Persona/Empresa es global (sin RLS), pero solo debe verse su ficha completa (PII: documento,
+    // email, telefono, nacimiento) desde un tenant que tenga un vinculo ACTIVO con ella. DirectorioVinculos
+    // es TenantEntity (HasQueryFilter), asi que esta consulta ya queda acotada al tenant actual.
+    private Task<bool> TieneVinculoEnTenantAsync(EntidadDirectorio tipo, Guid entidadId, CancellationToken ct)
+        => _db.DirectorioVinculos.AnyAsync(v => v.EntidadTipo == tipo && v.EntidadId == entidadId, ct);
+
     public async Task<Persona360Dto?> GetPersona360Async(Guid personaId, CancellationToken ct)
     {
         var p = await _db.Personas.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == personaId, ct);
         if (p is null) return null;
+        if (!await TieneVinculoEnTenantAsync(EntidadDirectorio.Persona, personaId, ct)) return null;  // S-08
 
         var vinculos = await GetVinculosAsync(EntidadDirectorio.Persona, personaId, ct);
         var contactos = await GetContactosAsync(EntidadDirectorio.Persona, personaId, ct);
@@ -307,6 +319,7 @@ public class DirectorioService : IDirectorioService
             .Include(x => x.RepresentanteLegal)
             .FirstOrDefaultAsync(x => x.Id == empresaId, ct);
         if (e is null) return null;
+        if (!await TieneVinculoEnTenantAsync(EntidadDirectorio.Empresa, empresaId, ct)) return null;  // S-08
 
         var vinculos = await GetVinculosAsync(EntidadDirectorio.Empresa, empresaId, ct);
         var contactos = await GetContactosAsync(EntidadDirectorio.Empresa, empresaId, ct);

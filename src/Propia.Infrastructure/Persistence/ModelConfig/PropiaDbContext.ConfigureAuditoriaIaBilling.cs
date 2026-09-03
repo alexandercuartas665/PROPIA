@@ -265,7 +265,10 @@ public partial class PropiaDbContext
                 .WithMany()
                 .HasForeignKey(x => x.PersonaId)
                 .OnDelete(DeleteBehavior.SetNull);
-            b.HasIndex(x => x.PersonaId);
+            // S-02: una Persona tiene UNA sola cuenta de login. Indice unico parcial (persona_id NOT NULL)
+            // para que dos ApplicationUser no puedan compartir persona_id; de lo contrario una cuenta creada
+            // bajo otro correo heredaria los tenants/roles de la persona via get_tenants_for_persona.
+            b.HasIndex(x => x.PersonaId).IsUnique().HasFilter("persona_id IS NOT NULL");
         });
 
         // -------------------- Infraestructura IA (Capa 2, tenant-scoped) --------------------

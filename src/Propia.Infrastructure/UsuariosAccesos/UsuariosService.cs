@@ -577,6 +577,15 @@ public class UsuariosService : IUsuariosService
         var email = inv.Persona!.Email
             ?? throw new InvalidOperationException("La persona no tiene email registrado. Pide al admin que lo agregue.");
 
+        // S-02: una persona tiene UNA sola cuenta. Si ya existe una cuenta ligada a esta persona (bajo
+        // cualquier correo), NO se crea otra: evita que una invitacion -aun si el correo de la persona fue
+        // alterado desde el directorio- genere una segunda cuenta que herede sus tenants/roles via
+        // get_tenants_for_persona (secuestro de identidad hacia otro tenant).
+        var cuentaPersona = await _db.Users.FirstOrDefaultAsync(u => u.PersonaId == personaId, ct);
+        if (cuentaPersona is not null && !string.Equals(cuentaPersona.Email, email, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "Esta persona ya tiene una cuenta registrada. Inicia sesion con esa cuenta para aceptar la invitacion.");
+
         // Crea ApplicationUser si no existe (idempotente)
         var appUser = await _userManager.FindByEmailAsync(email);
         if (appUser is null)

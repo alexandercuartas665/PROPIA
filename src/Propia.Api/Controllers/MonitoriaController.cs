@@ -7,13 +7,14 @@ namespace Propia.Api.Controllers;
 
 /// <summary>
 /// Modulo 0.3 Monitoria y Auditoria Global - endpoints SuperAdmin (MVP).
-/// Acceso restringido a operadores de A&D GROUP (roles Identity SuperAdmin).
-/// El cableado de [Authorize(Roles = "...")] queda para Fase 2 cuando se modele
-/// claim de SuperAdmin via Identity. Por ahora requiere autenticacion estandar.
+/// Acceso restringido a operadores de A&D GROUP: policy SuperAdmin (claim is_super_admin=true),
+/// el mismo estandar que el resto de la consola de Capa 0 (AdminController y afines).
+/// S-05: antes estaba solo con [Authorize] y quedaba abierto a cualquier usuario autenticado de
+/// cualquier tenant (logs de TODA la plataforma + ejecutar jobs).
 /// </summary>
 [ApiController]
 [Route("api/admin/monitoria")]
-[Authorize]
+[Authorize(Policy = AdminController.SuperAdminPolicy)]
 public class MonitoriaController : ControllerBase
 {
     private readonly IMonitoriaService _svc;
