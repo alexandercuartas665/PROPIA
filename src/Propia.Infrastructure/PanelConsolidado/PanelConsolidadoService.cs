@@ -38,6 +38,19 @@ public class PanelConsolidadoService : IPanelConsolidadoService
             ?? throw new InvalidOperationException("La copropiedad no tiene organizacion vinculada.");
     }
 
+    /// <summary>Fija app.tenant_id en la conexion que usa EF, para que la RLS de PostgreSQL deje LEER las
+    /// tablas operativas del tenant indicado. Se usa en el recalculo cross-tenant del panel (Capa 1).</summary>
+    private async Task SetTenantConfigAsync(Guid? tenantId, CancellationToken ct)
+    {
+        var conn = _db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open) await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT set_config('app.tenant_id', @tid, false)";
+        var p = cmd.CreateParameter(); p.ParameterName = "tid"; p.Value = tenantId?.ToString() ?? string.Empty;
+        cmd.Parameters.Add(p);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     public async Task<PanelResumenDto> GetPanelAsync(CancellationToken ct)
     {
         var orgId = await GetOrganizacionActivaAsync(ct);
@@ -53,18 +66,13 @@ public class PanelConsolidadoService : IPanelConsolidadoService
             .OrderBy(s => s.EstadoSalud).ThenBy(s => s.Tenant!.Nombre)
             .ToListAsync(ct);
 
-        var tenantIds = snapshots.Select(s => s.TenantId).ToList();
-        var unidadesPorTenant = await _db.UnidadesPrivadas.IgnoreQueryFilters().AsNoTracking()
-            .Where(u => tenantIds.Contains(u.TenantId))
-            .GroupBy(u => u.TenantId)
-            .Select(g => new { g.Key, Cant = g.Count() })
-            .ToDictionaryAsync(x => x.Key, x => x.Cant, ct);
-
+        // V-01: la cantidad de unidades ya viene materializada en el snapshot (calculada bajo el
+        // contexto de cada tenant en el recalculo). El panel NO consulta tablas operativas en vivo.
         var tarjetas = snapshots.Select(s => new PanelTarjetaDto(
             s.TenantId, s.Tenant!.Nombre, s.Tenant.Ciudad,
             s.Tenant.TipoCopropiedad?.ToString(),
             s.Tenant.FotoFachadaUrl, s.Tenant.LogoUrl,
-            unidadesPorTenant.GetValueOrDefault(s.TenantId, 0),
+            s.CantidadUnidades,
             s.EstadoSalud, s.AlertasCriticas, s.TareasVencidas, s.PqrsdSinResponder,
             s.RecaudoMesPorcentaje, s.CarteraVencidaCop,
             s.ProximoEventoFecha, s.ProximoEventoLabel,
@@ -120,15 +128,25 @@ public class PanelConsolidadoService : IPanelConsolidadoService
             .ToDictionaryAsync(s => s.TenantId, ct);
 
         int actualizadas = 0;
+        var tenantOriginal = _tenantContext.CurrentTenantId;
+        try
+        {
         foreach (var t in tenants)
         {
-            // Lee de tablas operativas (bypass query filter porque snapshot agrega cross-tenant)
+            // V-01: fijar app.tenant_id = t.Id para que la RLS de PostgreSQL deje LEER las tablas
+            // operativas de ESTE tenant. IgnoreQueryFilters solo quita el filtro de EF, no la RLS; sin
+            // esto las metricas de las demas copropiedades de la org salian silenciosamente en 0.
+            await SetTenantConfigAsync(t.Id, ct);
+
+            // Lee de tablas operativas (bajo el contexto RLS de t.Id)
             var tareasVencidas = await _db.Tareas.IgnoreQueryFilters()
                 .CountAsync(x => x.TenantId == t.Id
                     && !x.Estado!.EsTerminal
                     && x.FechaVencimiento.HasValue && x.FechaVencimiento.Value < DateOnly.FromDateTime(DateTime.UtcNow), ct);
             var alertasActivas = await _db.AlertasCopropiedad.IgnoreQueryFilters()
                 .CountAsync(x => x.TenantId == t.Id && x.Activa, ct);
+            var unidades = await _db.UnidadesPrivadas.IgnoreQueryFilters()
+                .CountAsync(x => x.TenantId == t.Id, ct);
             // PQRSD: en MVP usamos tareas con prefijo "PQRSD" o tipo etiqueta - placeholder simple
             var pqrsd = 0;
 
@@ -149,6 +167,7 @@ public class PanelConsolidadoService : IPanelConsolidadoService
                 snap.AlertasCriticas = alertasActivas;
                 snap.TareasVencidas = tareasVencidas;
                 snap.PqrsdSinResponder = pqrsd;
+                snap.CantidadUnidades = unidades;
                 snap.RecaudoMesPorcentaje = recaudoPct;
                 snap.CarteraVencidaCop = null;
                 snap.CalculadoAt = DateTimeOffset.UtcNow;
@@ -164,11 +183,18 @@ public class PanelConsolidadoService : IPanelConsolidadoService
                     AlertasCriticas = alertasActivas,
                     TareasVencidas = tareasVencidas,
                     PqrsdSinResponder = pqrsd,
+                    CantidadUnidades = unidades,
                     RecaudoMesPorcentaje = recaudoPct,
                     CalculadoAt = DateTimeOffset.UtcNow
                 });
             }
             actualizadas++;
+        }
+        }
+        finally
+        {
+            // Restaurar el contexto del tenant activo para el resto del request.
+            await SetTenantConfigAsync(tenantOriginal, ct);
         }
 
         // Eliminar snapshots de PHs que ya no estan vinculadas a la org

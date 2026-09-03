@@ -25,7 +25,17 @@
 
 @if (_resumen is null)
 {
-    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    @if (!_cargado)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
+    else
+    {
+        <div class="text-center py-5">
+            <div class="alert alert-danger d-inline-block mb-3">@(_msg ?? "No se pudo cargar el panel consolidado.")</div>
+            <div><button class="btn btn-outline-primary" @onclick="CargarAsync"><i class="fi fi-rr-refresh"></i> Reintentar</button></div>
+        </div>
+    }
     return;
 }
 
@@ -126,6 +136,7 @@ else
     private bool _busy;
     private string? _msg; private string _msgClass = "alert-info";
     private PanelResumenDto? _resumen;
+    private bool _cargado;   // true tras el primer intento de carga (exito o error)
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -145,8 +156,10 @@ else
 
     private async Task CargarAsync()
     {
+        _msg = null;
         try { _resumen = await Auth().GetFromJsonAsync<PanelResumenDto>("/api/panel"); }
-        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        catch (Exception ex) { _resumen = null; _msg = "No se pudo cargar el panel consolidado: " + ex.Message; _msgClass = "alert-danger"; }
+        finally { _cargado = true; }
     }
 
     private async Task Recalcular()

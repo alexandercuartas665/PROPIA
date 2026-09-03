@@ -6,7 +6,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Propia.Application.Calendario;
 using Propia.Application.Common;
+using Propia.Application.PanelConsolidado;
 using Propia.Application.ReportesConsolidados;
+using Propia.Infrastructure.PanelConsolidado;
 using Propia.Application.TransferenciaCustodia;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
@@ -331,6 +333,52 @@ public class CapaUnoCierreFlowTests : IAsyncLifetime
 
         await ctx.SaveChangesAsync();
         return (org.Id, tenant.Id);
+    }
+
+    // ---------- V-01: Panel Consolidado (Capa 1) no revienta por RLS y cuenta ambas copropiedades ----------
+    [Fact]
+    public async Task V01_Panel_no_revienta_por_rls_y_cuenta_ambas_copropiedades()
+    {
+        // Org con 2 copropiedades, cada una con distinto numero de unidades.
+        var (orgId, t1) = await SeedOrgYTenantAsync("Org Panel V01 " + Guid.NewGuid().ToString("N")[..6], "Cop Uno");
+        var t2 = await AgregarTenantAsync(orgId, "Cop Dos");
+        await SeedUnidadesAsync(t1, 2);
+        await SeedUnidadesAsync(t2, 3);
+
+        // Usuario con tenant activo = t1, rol propia_app (RLS activa). Antes del fix, el recalculo
+        // cross-tenant lanzaba PostgresException 42501 al insertar el snapshot del otro tenant.
+        using var scope = _services.CreateScope();
+        var tenantCtx = scope.ServiceProvider.GetRequiredService<ITenantContext>();
+        tenantCtx.SetTenant(t1);
+        var db = scope.ServiceProvider.GetRequiredService<PropiaDbContext>();
+        var http = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
+        var svc = new PanelConsolidadoService(db, tenantCtx, http);
+
+        var panel = await svc.GetPanelAsync(CancellationToken.None);
+
+        Assert.Equal(2, panel.Tarjetas.Count);
+        Assert.Equal(2, panel.Tarjetas.First(x => x.TenantId == t1).TotalUnidades);
+        // Sin el fix (se leia bajo la RLS del tenant activo t1), esta copropiedad saldria en 0.
+        Assert.Equal(3, panel.Tarjetas.First(x => x.TenantId == t2).TotalUnidades);
+    }
+
+    private async Task<Guid> AgregarTenantAsync(Guid orgId, string nombre)
+    {
+        var opts = new DbContextOptionsBuilder<PropiaDbContext>().UseNpgsql(_fx.OwnerConnectionString).Options;
+        await using var ctx = new PropiaDbContext(opts, new TenantContext());
+        var t = new Tenant { Nombre = nombre, Estado = EstadoCopropiedad.Activa, EstadoCustodia = EstadoCustodia.ConAdmin, OrganizacionId = orgId };
+        ctx.Tenants.Add(t);
+        await ctx.SaveChangesAsync();
+        return t.Id;
+    }
+
+    private async Task SeedUnidadesAsync(Guid tenantId, int cantidad)
+    {
+        var opts = new DbContextOptionsBuilder<PropiaDbContext>().UseNpgsql(_fx.OwnerConnectionString).Options;
+        await using var ctx = new PropiaDbContext(opts, new TenantContext());
+        for (var i = 1; i <= cantidad; i++)
+            ctx.UnidadesPrivadas.Add(new UnidadPrivada { TenantId = tenantId, Numero = $"{tenantId.ToString("N")[..4]}-{i:000}", Tipo = TipoUnidad.Apartamento });
+        await ctx.SaveChangesAsync();
     }
 
     private async Task<Guid> SeedOrganizacionAsync(string nombre)

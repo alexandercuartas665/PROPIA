@@ -23,6 +23,10 @@ public class PanelSnapshotCopropiedad : BaseEntity
     public int TareasVencidas { get; set; }
     public int PqrsdSinResponder { get; set; }
 
+    /// <summary>Unidades privadas de la copropiedad, materializado en el recalculo (bajo el contexto de
+    /// cada tenant). Asi el panel NO consulta tablas operativas de Capa 2 en vivo (evita el 0 por RLS).</summary>
+    public int CantidadUnidades { get; set; }
+
     /// <summary>% recaudo del mes en curso (0-100).</summary>
     public decimal? RecaudoMesPorcentaje { get; set; }
 
