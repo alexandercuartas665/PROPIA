@@ -540,6 +540,73 @@ else
     </SeccionCard>
     }
 
+    @* Recaudo: link de pago en linea + cuentas bancarias de la copropiedad (al final del modulo). *@
+    <SeccionCard Titulo="Recaudo y cuentas bancarias" Subtitulo="Como pagan los residentes" Completa="@CompRecaudo" SinAcordeon="true">
+        @* ----- Link de pago ----- *@
+        <label class="form-label small mb-1 fw-semibold">Link de pago en linea</label>
+        <div class="d-flex gap-2 align-items-center flex-wrap" style="max-width:680px">
+            <input class="form-control form-control-sm" type="url" style="min-width:340px;flex:1" placeholder="https://pasarela.com/pagar/..." @bind="_linkPago" @bind:event="oninput" />
+            <button class="btn btn-sm" style="background: var(--propia-primary); color:#fff; white-space:nowrap;" @onclick="GuardarLinkPago" disabled="@_linkBusy">@(_linkBusy ? "Guardando..." : "Guardar link")</button>
+            @if (!string.IsNullOrWhiteSpace(_linkPago))
+            {
+                <a class="btn btn-sm btn-outline-secondary" href="@_linkPago" target="_blank" rel="noopener" title="Abrir el link">Abrir &#8599;</a>
+            }
+        </div>
+        <div class="form-text small mb-3">La URL de la pasarela/portal de recaudo que se comparte con los residentes para pagar la administracion.</div>
+
+        <hr />
+
+        @* ----- Cuentas bancarias (varias) ----- *@
+        <div class="d-flex align-items-center justify-content-between mb-2">
+            <h6 class="mb-0">Cuentas bancarias</h6>
+            <span class="small text-muted">Marca "En factura" para incluirlas en la factura del residente.</span>
+        </div>
+        @if (_cuentas is null)
+        {
+            <p class="text-muted small mb-0">Cargando...</p>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-1">
+                    <thead>
+                        <tr class="small text-muted"><th>Banco</th><th>Numero de cuenta</th><th>Tipo</th><th class="text-center">En factura</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in _cuentas)
+                        {
+                            var cta = c;
+                            <tr>
+                                <td>@cta.Banco</td>
+                                <td><code>@cta.NumeroCuenta</code></td>
+                                <td>@TipoCuentaLabel(cta.TipoCuenta)</td>
+                                <td class="text-center"><input type="checkbox" checked="@cta.VerEnFactura" @onchange="e => ToggleVerEnFactura(cta, (bool)e.Value!)" /></td>
+                                <td class="text-end"><button class="btn btn-sm btn-outline-danger" title="Eliminar cuenta" @onclick="() => EliminarCuenta(cta)"><i class="fi fi-rr-trash"></i></button></td>
+                            </tr>
+                        }
+                        <tr>
+                            <td><input class="form-control form-control-sm" placeholder="Banco" @bind="_nvBanco" @bind:event="oninput" /></td>
+                            <td><input class="form-control form-control-sm" placeholder="Numero de cuenta" @bind="_nvNumero" @bind:event="oninput" /></td>
+                            <td>
+                                <select class="form-select form-select-sm" @bind="_nvTipo">
+                                    <option value="@TipoCuentaBancaria.Ahorros">Ahorros</option>
+                                    <option value="@TipoCuentaBancaria.Corriente">Corriente</option>
+                                    <option value="@TipoCuentaBancaria.EncargoFiduciario">Encargo fiduciario</option>
+                                </select>
+                            </td>
+                            <td class="text-center"><input type="checkbox" @bind="_nvVerEnFactura" /></td>
+                            <td class="text-end"><button class="btn btn-sm" style="background:#F1ECFD;color:var(--propia-primary);border:1px solid #DCD2F8;white-space:nowrap;" @onclick="CrearCuenta" disabled="@_ctaBusy">+ Agregar</button></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            @if (_cuentas.Count == 0)
+            {
+                <p class="text-muted small mb-0">Aun no hay cuentas registradas. Agrega la primera en la fila de arriba.</p>
+            }
+        }
+    </SeccionCard>
+
     @* Bitacora de cambios (RN-06): ahora vive en BitacoraCambiosModal, accesible desde
        el boton "Bitacora" al lado de "Editar datos" en la seccion 1 (Identidad). *@
 
@@ -1020,6 +1087,17 @@ else
     private int _diaCorteOriginal = 1;
     private bool _finConfirmMoneda;
 
+    // ---------- Recaudo: link de pago + cuentas bancarias ----------
+    private string? _linkPago;
+    private bool _linkBusy;
+    private List<CuentaBancariaDto>? _cuentas;
+    private string _nvBanco = "";
+    private string _nvNumero = "";
+    private TipoCuentaBancaria _nvTipo = TipoCuentaBancaria.Ahorros;
+    private bool _nvVerEnFactura;
+    private bool _ctaBusy;
+    private bool CompRecaudo => !string.IsNullOrWhiteSpace(_linkPago) || (_cuentas?.Any(c => !c.Cancelada) ?? false);
+
     private NuevaTorre _nuevaTorre = new();
     private NuevaUnidad _nuevaUnidad = new();
     private NuevoContrato _nuevoContrato = new() { FechaInicio = DateTime.Today };
@@ -1153,7 +1231,11 @@ else
                 _monedaOriginal = p.Moneda;
                 _diaCorteOriginal = p.DiaCorte;
                 _finConfirmMoneda = false;
+                _linkPago = p.LinkPago;
             }
+
+            // Recaudo: cuentas bancarias de la copropiedad (varias).
+            _cuentas = await http.GetFromJsonAsync<List<CuentaBancariaDto>>("/api/mi-copropiedad/finanzas/cuentas-bancarias") ?? new();
 
             // Bitacora: se carga bajo demanda en BitacoraCambiosModal (boton al lado de "Editar datos").
 
@@ -1212,6 +1294,96 @@ else
     }
 
     private record ApiError(string? Error);
+
+    // ---------- Recaudo: link de pago + cuentas bancarias ----------
+    private static string TipoCuentaLabel(TipoCuentaBancaria t) => t switch
+    {
+        TipoCuentaBancaria.Ahorros => "Ahorros",
+        TipoCuentaBancaria.Corriente => "Corriente",
+        TipoCuentaBancaria.EncargoFiduciario => "Encargo fiduciario",
+        _ => t.ToString()
+    };
+
+    private async Task GuardarLinkPago()
+    {
+        _linkBusy = true;
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync("/api/mi-copropiedad/link-pago", new ActualizarLinkPagoRequest(string.IsNullOrWhiteSpace(_linkPago) ? null : _linkPago.Trim()));
+            if (resp.IsSuccessStatusCode)
+            {
+                var p = await resp.Content.ReadFromJsonAsync<FinanzasParametrosDto>();
+                _linkPago = p?.LinkPago;
+                Msg("Link de pago guardado.", true);
+            }
+            else
+            {
+                var err = await resp.Content.ReadFromJsonAsync<ApiError>();
+                Msg(err?.Error ?? "No se pudo guardar el link.", false);
+            }
+        }
+        catch (Exception ex) { Msg(ex.Message, false); }
+        finally { _linkBusy = false; }
+    }
+
+    private async Task CrearCuenta()
+    {
+        if (string.IsNullOrWhiteSpace(_nvBanco) || string.IsNullOrWhiteSpace(_nvNumero))
+        {
+            Msg("Banco y numero de cuenta son obligatorios.", false);
+            return;
+        }
+        _ctaBusy = true;
+        try
+        {
+            var req = new CrearCuentaBancariaRequest(_nvNumero.Trim(), _nvTipo, _nvBanco.Trim(), _nvVerEnFactura);
+            var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/finanzas/cuentas-bancarias", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                _nvBanco = ""; _nvNumero = ""; _nvTipo = TipoCuentaBancaria.Ahorros; _nvVerEnFactura = false;
+                _cuentas = await Auth().GetFromJsonAsync<List<CuentaBancariaDto>>("/api/mi-copropiedad/finanzas/cuentas-bancarias") ?? new();
+                Msg("Cuenta bancaria agregada.", true);
+            }
+            else
+            {
+                var err = await resp.Content.ReadFromJsonAsync<ApiError>();
+                Msg(err?.Error ?? "No se pudo agregar la cuenta.", false);
+            }
+        }
+        catch (Exception ex) { Msg(ex.Message, false); }
+        finally { _ctaBusy = false; }
+    }
+
+    private async Task EliminarCuenta(CuentaBancariaDto c)
+    {
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/finanzas/cuentas-bancarias/{c.Id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                _cuentas?.Remove(c);
+                Msg("Cuenta eliminada.", true);
+            }
+            else { Msg("No se pudo eliminar la cuenta.", false); }
+        }
+        catch (Exception ex) { Msg(ex.Message, false); }
+    }
+
+    private async Task ToggleVerEnFactura(CuentaBancariaDto c, bool valor)
+    {
+        try
+        {
+            var req = new ActualizarCuentaBancariaRequest(c.NumeroCuenta, c.TipoCuenta, c.Banco, valor, c.Cancelada);
+            var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/finanzas/cuentas-bancarias/{c.Id}", req);
+            if (resp.IsSuccessStatusCode && _cuentas is not null)
+            {
+                var i = _cuentas.FindIndex(x => x.Id == c.Id);
+                if (i >= 0) { _cuentas[i] = c with { VerEnFactura = valor }; }
+            }
+            else { Msg("No se pudo actualizar la cuenta.", false); }
+        }
+        catch (Exception ex) { Msg(ex.Message, false); }
+    }
 
     // Bindeo string del modo de mora (evita el problema de bindear <select> a bool).
     private string MoraModo

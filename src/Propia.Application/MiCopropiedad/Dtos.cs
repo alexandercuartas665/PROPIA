@@ -451,7 +451,11 @@ public record FinanzasParametrosDto(
     decimal? TasaMoraValor,
     int PeriodoGraciaDias,
     bool Configuradas,
-    decimal TasaMoraMaximaLegal);  // maximo legal vigente para validar la tasa fija
+    decimal TasaMoraMaximaLegal,   // maximo legal vigente para validar la tasa fija
+    string? LinkPago = null);      // URL de pago en linea de la copropiedad
+
+/// <summary>Guarda solo el link de pago en linea (recaudo) de la copropiedad.</summary>
+public record ActualizarLinkPagoRequest(string? LinkPago);
 
 /// <summary>Resumen financiero en tiempo real (se nutre de 2.6 Presupuesto y 2.7 Cartera).</summary>
 public record ResumenFinancieroDto(

@@ -329,7 +329,24 @@ public partial class MiCopropiedadService
 
     private static FinanzasParametrosDto ToFinanzasParametros(Tenant t) =>
         new(t.Moneda, t.DiaCorte, t.TasaMoraEsLegal, t.TasaMoraValor, t.PeriodoGraciaDias,
-            t.FinanzasConfiguradas, TasaMoraMaximaLegalMensual);
+            t.FinanzasConfiguradas, TasaMoraMaximaLegalMensual, t.LinkPago);
+
+    /// <summary>Guarda solo el link de pago en linea (recaudo) de la copropiedad. Valida que sea una URL http/https.</summary>
+    public async Task<FinanzasParametrosDto> ActualizarLinkPagoAsync(Guid tenantId, ActualizarLinkPagoRequest req, CancellationToken ct)
+    {
+        var t = await _db.Tenants.FirstOrDefaultAsync(x => x.Id == tenantId, ct)
+            ?? throw new InvalidOperationException("Copropiedad no encontrada.");
+
+        var link = req.LinkPago?.Trim();
+        if (!string.IsNullOrEmpty(link))
+        {
+            if (!Uri.TryCreate(link, UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+                throw new InvalidOperationException("El link de pago debe ser una URL valida (http:// o https://).");
+        }
+        t.LinkPago = string.IsNullOrEmpty(link) ? null : link;
+        await _db.SaveChangesAsync(ct);
+        return ToFinanzasParametros(t);
+    }
 
     // ----------------------------- Configuracion avanzada de Finanzas -----------------------------
 

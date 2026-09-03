@@ -54,6 +54,10 @@ public class Tenant : BaseEntity
     public int PeriodoGraciaDias { get; set; }           // 0..30
     public bool FinanzasConfiguradas { get; set; }       // true una vez el admin guarda la seccion
 
+    /// <summary>Link de pago en linea de la copropiedad (URL de la pasarela/portal de recaudo) que se
+    /// comparte con los residentes para pagar la administracion. Opcional.</summary>
+    public string? LinkPago { get; set; }
+
     // Configuracion avanzada de Finanzas (modulo 2.3 seccion 2 "Mas informacion" del modal).
     public MultiploRedondeo MultiploRedondeo { get; set; } = MultiploRedondeo.NoRedondear;
     public MultiploRedondeo MultiploRedondeoCuotaExtra { get; set; } = MultiploRedondeo.NoRedondear;

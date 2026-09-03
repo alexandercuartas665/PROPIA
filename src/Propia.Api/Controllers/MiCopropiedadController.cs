@@ -66,6 +66,16 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    // Link de pago en linea (recaudo) de la copropiedad.
+    [HttpPut("link-pago")]
+    public async Task<IActionResult> ActualizarLinkPago([FromBody] ActualizarLinkPagoRequest req, CancellationToken ct)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
+        try { return Ok(await _svc.ActualizarLinkPagoAsync(tenantId.Value, req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     // ---------- Seccion 2: Distribucion - Torres ----------
     [HttpGet("torres")] public async Task<IActionResult> ListTorres(CancellationToken ct) => Ok(await _svc.ListTorresAsync(ct));
     [HttpPost("torres")]

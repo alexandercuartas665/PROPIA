@@ -201,6 +201,7 @@ public interface IMiCopropiedadService
     IReadOnlyList<MonedaDto> ListMonedas();
     Task<FinanzasParametrosDto> GetFinanzasParametrosAsync(Guid tenantId, CancellationToken ct);
     Task<FinanzasParametrosDto> ActualizarFinanzasAsync(Guid tenantId, ActualizarFinanzasRequest req, CancellationToken ct);
+    Task<FinanzasParametrosDto> ActualizarLinkPagoAsync(Guid tenantId, ActualizarLinkPagoRequest req, CancellationToken ct);
 
     // Configuracion avanzada de Finanzas (RN: bloque "Mas informacion" del modal).
     Task<ConfiguracionFinanzasDto> GetConfiguracionFinanzasAsync(Guid tenantId, CancellationToken ct);
