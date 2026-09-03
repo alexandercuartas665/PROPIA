@@ -63,6 +63,17 @@ public class PqrsdExpediente : TenantEntity
     /// <summary>Progreso de gestion 0-100 (port de Tareas). No altera la logica legal (plazos/semaforo).</summary>
     public int Progreso { get; set; }
 
+    // ----- Datos de recepcion (bitacora legal): como/donde/quien recibio y cuando. Todos opcionales. -----
+    /// <summary>Medio por el que se recibio (correo, fisico, telefonico, ...).</summary>
+    public MedioRecepcionPqrsd? MedioRecepcion { get; set; }
+    /// <summary>Seccional / regional que recibio (texto libre, ej. "Valle").</summary>
+    public string? Seccional { get; set; }
+    /// <summary>Administrador de la copropiedad asociado al caso (texto libre).</summary>
+    public string? Administrador { get; set; }
+    /// <summary>Fecha real de recibido (puede ser anterior a la radicacion en el sistema). Si viene, el
+    /// plazo legal se calcula desde aqui; si no, se usa la fecha de radicacion.</summary>
+    public DateOnly? FechaRecibido { get; set; }
+
     /// <summary>
     /// Si es true, el expediente esta ARCHIVADO: sale del tablero/tabla activa y aparece en el tab
     /// "Archivados". Reversible; conserva todos los datos. Es distinto de cerrar (que es estado legal).

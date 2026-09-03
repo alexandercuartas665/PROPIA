@@ -116,7 +116,12 @@ public record PqrsdExpedienteDetalleDto(
     int ProrrogaDias = 0,
     /// <summary>Correo del radicador (tercero) para responderle. Null si reserva de identidad o sin correo.</summary>
     string? RadicadorCorreo = null,
-    string? RadicadorTelefono = null);
+    string? RadicadorTelefono = null,
+    // ----- Datos de recepcion (bitacora legal) -----
+    MedioRecepcionPqrsd? MedioRecepcion = null,
+    string? Seccional = null,
+    string? Administrador = null,
+    DateOnly? FechaRecibido = null);
 
 public record PqrsdComentarioDto(Guid Id, string Texto, string? AutorNombre, DateTimeOffset CreatedAt, Guid? AutorUsuarioId = null);
 
@@ -294,7 +299,13 @@ public record RadicarPqrsdRequest(
     Guid? RadicadorPersonaId = null,
     IReadOnlyList<PqrsdCampoValorDto>? Campos = null,
     /// <summary>Tipo configurable elegido. Si viene, define el nombre + plazo (y su Legal fija el enum Tipo).</summary>
-    Guid? TipoId = null);
+    Guid? TipoId = null,
+    // ----- Datos de recepcion (bitacora legal), todos opcionales -----
+    MedioRecepcionPqrsd? MedioRecepcion = null,
+    string? Seccional = null,
+    string? Administrador = null,
+    /// <summary>Fecha real de recibido; si viene, el plazo legal se calcula desde aqui.</summary>
+    DateOnly? FechaRecibido = null);
 
 /// <summary>Actualiza datos editables del expediente desde el modal de detalle (unidad, radicador, campos dinamicos).</summary>
 public record ActualizarExpedienteRequest(
@@ -303,7 +314,14 @@ public record ActualizarExpedienteRequest(
     string? Descripcion,
     IReadOnlyList<PqrsdCampoValorDto>? Campos,
     Guid? AsignadoPersonaId = null,
-    int? Progreso = null);
+    int? Progreso = null,
+    // ----- Datos de recepcion (bitacora legal). Editables desde el modal de gestion. -----
+    // Se usa un flag por campo para poder distinguir "no tocar" de "limpiar".
+    bool ActualizarRecepcion = false,
+    MedioRecepcionPqrsd? MedioRecepcion = null,
+    string? Seccional = null,
+    string? Administrador = null,
+    DateOnly? FechaRecibido = null);
 
 public record ReportarActividadPqrsdRequest(string Texto);
 

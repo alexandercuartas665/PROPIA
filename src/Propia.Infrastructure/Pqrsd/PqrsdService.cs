@@ -703,7 +703,8 @@ public class PqrsdService : IPqrsdService
             x.EstadoId, x.UnidadPrivadaId, x.Archivado, camposValores, x.TipoId, tipoNombre,
             x.AsignadoPersonaId, asignadoNombre, x.Progreso, comentarios, x.ProrrogaDias,
             x.IdentidadReservada ? null : rad?.Email,
-            x.IdentidadReservada ? null : rad?.Telefono);
+            x.IdentidadReservada ? null : rad?.Telefono,
+            x.MedioRecepcion, x.Seccional, x.Administrador, x.FechaRecibido);
     }
 
     // ===================== Radicacion =====================
@@ -756,7 +757,9 @@ public class PqrsdService : IPqrsdService
         }
 
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
-        var fechaVencimiento = SumarDiasHabiles(hoy, diasHabiles);
+        // El plazo legal cuenta desde la FECHA DE RECIBIDO real si se informa (bitacora legal); si no, desde hoy.
+        var fechaBasePlazo = req.FechaRecibido ?? hoy;
+        var fechaVencimiento = SumarDiasHabiles(fechaBasePlazo, diasHabiles);
         var numero = await GenerarNumeroRadicadoAsync(ct);
 
         var columnaRecibida = await _db.PqrsdEstados.AsNoTracking()
@@ -774,7 +777,12 @@ public class PqrsdService : IPqrsdService
             RadicadorPersonaId = personaId,
             UnidadPrivadaId = req.UnidadPrivadaId,
             IdentidadReservada = req.IdentidadReservada,
-            FechaVencimiento = fechaVencimiento
+            FechaVencimiento = fechaVencimiento,
+            // Datos de recepcion (bitacora legal).
+            MedioRecepcion = req.MedioRecepcion,
+            Seccional = string.IsNullOrWhiteSpace(req.Seccional) ? null : req.Seccional.Trim(),
+            Administrador = string.IsNullOrWhiteSpace(req.Administrador) ? null : req.Administrador.Trim(),
+            FechaRecibido = req.FechaRecibido
         };
         _db.PqrsdExpedientes.Add(exp);
 
@@ -2273,6 +2281,26 @@ public class PqrsdService : IPqrsdService
             var desc = req.Descripcion.Trim();
             if (desc.Length > 2000) throw new InvalidOperationException("Descripcion maxima 2000 caracteres.");
             x.Descripcion = desc;
+        }
+
+        // Datos de recepcion (bitacora legal). Solo si el modal lo pide explicitamente.
+        if (req.ActualizarRecepcion)
+        {
+            x.MedioRecepcion = req.MedioRecepcion;
+            x.Seccional = string.IsNullOrWhiteSpace(req.Seccional) ? null : req.Seccional.Trim();
+            x.Administrador = string.IsNullOrWhiteSpace(req.Administrador) ? null : req.Administrador.Trim();
+            if (req.FechaRecibido != x.FechaRecibido)
+            {
+                x.FechaRecibido = req.FechaRecibido;
+                // Recalcular el plazo legal desde la nueva fecha de recibido (o desde la radicacion si se limpia).
+                int diasHabiles = 0;
+                if (x.TipoId is { } tid)
+                    diasHabiles = await _db.PqrsdTipos.AsNoTracking().Where(t => t.Id == tid).Select(t => t.DiasHabiles).FirstOrDefaultAsync(ct);
+                if (diasHabiles == 0)
+                    diasHabiles = (await _db.PqrsdConfiguracionPlazos.AsNoTracking().FirstOrDefaultAsync(p => p.Tipo == x.Tipo, ct))?.DiasHabiles ?? 15;
+                var baseDate = req.FechaRecibido ?? DateOnly.FromDateTime(x.CreatedAt.UtcDateTime);
+                x.FechaVencimiento = SumarDiasHabiles(baseDate, diasHabiles + x.ProrrogaDias);
+            }
         }
 
         // Upsert de campos dinamicos.

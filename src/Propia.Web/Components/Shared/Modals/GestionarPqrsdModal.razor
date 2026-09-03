@@ -197,6 +197,39 @@
                 <div class="gpq-desc">@_detalle.Descripcion</div>
             </div>
 
+            @* Datos de recepcion (bitacora legal): editables. Se guardan con "Guardar cambios" (abajo). *@
+            <div class="gpq-card">
+                <div class="gpq-card-eyebrow">DATOS DE RECEPCION</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                    <div>
+                        <label style="font-size:11px;color:#7C98B6;font-weight:600;display:block;margin-bottom:3px;">Medio de recibido</label>
+                        <select class="gpq-input" @bind="_medioRec">
+                            <option value="">Sin especificar</option>
+                            <option value="@MedioRecepcionPqrsd.CorreoElectronico">Correo electronico</option>
+                            <option value="@MedioRecepcionPqrsd.Fisico">Fisico</option>
+                            <option value="@MedioRecepcionPqrsd.Telefonico">Telefonico</option>
+                            <option value="@MedioRecepcionPqrsd.Presencial">Presencial</option>
+                            <option value="@MedioRecepcionPqrsd.WhatsApp">WhatsApp</option>
+                            <option value="@MedioRecepcionPqrsd.PortalWeb">Portal web</option>
+                            <option value="@MedioRecepcionPqrsd.Otro">Otro</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-size:11px;color:#7C98B6;font-weight:600;display:block;margin-bottom:3px;">Fecha de recibido</label>
+                        <input type="date" class="gpq-input" @bind="_fechaRecibidoRec" />
+                    </div>
+                    <div>
+                        <label style="font-size:11px;color:#7C98B6;font-weight:600;display:block;margin-bottom:3px;">Seccional</label>
+                        <input class="gpq-input" @bind="_seccionalRec" placeholder="Ej. Valle" maxlength="120" />
+                    </div>
+                    <div>
+                        <label style="font-size:11px;color:#7C98B6;font-weight:600;display:block;margin-bottom:3px;">Administrador</label>
+                        <input class="gpq-input" @bind="_administradorRec" placeholder="Nombre del administrador" maxlength="160" />
+                    </div>
+                </div>
+                <div class="gpq-mini-hint">Si cambias la fecha de recibido, se recalcula el plazo legal. Se guarda con "Guardar cambios".</div>
+            </div>
+
             @* Solicitante (contacto) y Plazo legal lado a lado (estilo referencia) *@
             <div class="gpq-subrow">
             @* Contacto humano + cambiar solicitante (unificado: antes eran 2 cajas separadas) *@
@@ -1655,6 +1688,12 @@
     private bool _editResp;     // tarjeta flotante: elegir responsable (usuarios del sistema)
     private List<UsuarioListaDto>? _usuariosSistema;   // usuarios ACTIVOS del sistema (2.5), asignables como responsable
     private int _progreso;
+
+    // Datos de recepcion (bitacora legal), editables.
+    private MedioRecepcionPqrsd? _medioRec;
+    private string? _seccionalRec;
+    private string? _administradorRec;
+    private DateOnly? _fechaRecibidoRec;
     private bool _reportando;
     private bool _guardandoRel;
 
@@ -1894,6 +1933,10 @@
         {
             _unidadIdStr = _detalle.UnidadPrivadaId?.ToString() ?? "";
             _progreso = _detalle.Progreso;
+            _medioRec = _detalle.MedioRecepcion;
+            _seccionalRec = _detalle.Seccional;
+            _administradorRec = _detalle.Administrador;
+            _fechaRecibidoRec = _detalle.FechaRecibido;
             _campoValores.Clear();
             if (_detalle.Campos is not null)
                 foreach (var v in _detalle.Campos) _campoValores[v.CampoId] = v.Valor ?? "";
@@ -1950,7 +1993,12 @@
         Guid? radId = _personaSel?.PersonaId;
         var campos = _campoValores.Select(kv => new PqrsdCampoValorDto(kv.Key, kv.Value)).ToList();
         // El responsable se gestiona aparte (tarjeta flotante de usuarios); null = no tocar responsable aqui.
-        var req = new ActualizarExpedienteRequest(unidadId, radId, null, campos, null, _progreso);
+        var req = new ActualizarExpedienteRequest(unidadId, radId, null, campos, null, _progreso,
+            ActualizarRecepcion: true,
+            MedioRecepcion: _medioRec,
+            Seccional: string.IsNullOrWhiteSpace(_seccionalRec) ? null : _seccionalRec!.Trim(),
+            Administrador: string.IsNullOrWhiteSpace(_administradorRec) ? null : _administradorRec!.Trim(),
+            FechaRecibido: _fechaRecibidoRec);
         try
         {
             var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{ExpedienteId}/actualizar", req);

@@ -1593,6 +1593,8 @@ public class PropiaDbContext : IdentityDbContext<ApplicationUser, IdentityRole<G
             b.Property(x => x.RespuestaAdmin).HasMaxLength(4000);
             b.Property(x => x.InconformidadTexto).HasMaxLength(2000);
             b.Property(x => x.RespuestaDefinitiva).HasMaxLength(4000);
+            b.Property(x => x.Seccional).HasMaxLength(120);
+            b.Property(x => x.Administrador).HasMaxLength(160);
             b.HasOne(x => x.Categoria).WithMany().HasForeignKey(x => x.CategoriaId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(x => x.RadicadorPersona).WithMany().HasForeignKey(x => x.RadicadorPersonaId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(x => x.EstadoColumna).WithMany().HasForeignKey(x => x.EstadoId).OnDelete(DeleteBehavior.SetNull);

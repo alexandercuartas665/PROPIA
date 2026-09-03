@@ -13,6 +13,18 @@ public enum TipoPqrsd
     Felicitacion = 8
 }
 
+/// <summary>Medio por el que se recibio la PQRSD (bitacora legal). Opcional.</summary>
+public enum MedioRecepcionPqrsd
+{
+    CorreoElectronico = 1,
+    Fisico = 2,
+    Telefonico = 3,
+    Presencial = 4,
+    WhatsApp = 5,
+    PortalWeb = 6,
+    Otro = 7
+}
+
 /// <summary>Estado del expediente. Spec 2.9 v1.0 seccion 8.</summary>
 public enum EstadoPqrsd
 {

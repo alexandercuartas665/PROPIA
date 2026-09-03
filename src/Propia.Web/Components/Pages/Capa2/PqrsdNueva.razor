@@ -65,6 +65,28 @@
             <div class="col-md-12"><label class="form-label small">Descripcion * (minimo 20 caracteres)</label>
                 <textarea class="form-control form-control-sm" rows="6" @bind="_descripcion" @bind:event="oninput" placeholder="Describe tu solicitud con el mayor detalle posible..."></textarea>
                 <small class="text-muted">@(_descripcion?.Length ?? 0) / 2000 caracteres</small></div>
+
+            @* Datos de recepcion (bitacora legal) - opcionales *@
+            <div class="col-md-12"><label class="form-label small text-muted mt-2">Datos de recepcion (opcional)</label></div>
+            <div class="col-md-6"><label class="form-label small">Medio de recibido</label>
+                <select class="form-select form-select-sm" @bind="_medio">
+                    <option value="">Sin especificar</option>
+                    <option value="@MedioRecepcionPqrsd.CorreoElectronico">Correo electronico</option>
+                    <option value="@MedioRecepcionPqrsd.Fisico">Fisico</option>
+                    <option value="@MedioRecepcionPqrsd.Telefonico">Telefonico</option>
+                    <option value="@MedioRecepcionPqrsd.Presencial">Presencial</option>
+                    <option value="@MedioRecepcionPqrsd.WhatsApp">WhatsApp</option>
+                    <option value="@MedioRecepcionPqrsd.PortalWeb">Portal web</option>
+                    <option value="@MedioRecepcionPqrsd.Otro">Otro</option>
+                </select></div>
+            <div class="col-md-6"><label class="form-label small">Fecha de recibido</label>
+                <input type="date" class="form-control form-control-sm" @bind="_fechaRecibido" />
+                <small class="text-muted">Si es anterior a hoy, el plazo legal se cuenta desde esta fecha.</small></div>
+            <div class="col-md-6"><label class="form-label small">Seccional</label>
+                <input class="form-control form-control-sm" @bind="_seccional" placeholder="Ej. Valle" maxlength="120" /></div>
+            <div class="col-md-6"><label class="form-label small">Administrador</label>
+                <input class="form-control form-control-sm" @bind="_administrador" placeholder="Nombre del administrador" maxlength="160" /></div>
+
             @if (_tipo == TipoPqrsd.Denuncia)
             {
                 <div class="col-md-12">
@@ -88,6 +110,10 @@
         <div class="card bg-light"><div class="card-body small">
             <div><strong>Tipo:</strong> @_tipo</div>
             <div><strong>Categoria:</strong> @(_categorias?.FirstOrDefault(c => c.Id.ToString() == _categoriaId)?.Nombre ?? "-")</div>
+            @if (_medio is not null) { <div><strong>Medio de recibido:</strong> @MedioLabel(_medio.Value)</div> }
+            @if (!string.IsNullOrWhiteSpace(_seccional)) { <div><strong>Seccional:</strong> @_seccional</div> }
+            @if (!string.IsNullOrWhiteSpace(_administrador)) { <div><strong>Administrador:</strong> @_administrador</div> }
+            @if (_fechaRecibido is not null) { <div><strong>Fecha de recibido:</strong> @_fechaRecibido.Value.ToString("yyyy-MM-dd")</div> }
             <div class="mt-2"><strong>Descripcion:</strong></div>
             <p class="mb-0">@_descripcion</p>
             @if (_tipo == TipoPqrsd.Denuncia && _reserva)
@@ -127,6 +153,12 @@
     private string? _descripcion;
     private bool _reserva;
 
+    // Datos de recepcion (bitacora legal) - opcionales.
+    private MedioRecepcionPqrsd? _medio;
+    private string? _seccional;
+    private string? _administrador;
+    private DateOnly? _fechaRecibido;
+
     private List<PqrsdCategoriaDto>? _categorias;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -163,7 +195,11 @@
         _busy = true; _msg = null;
         try
         {
-            var req = new RadicarPqrsdRequest(_tipo, catId, _descripcion!.Trim(), _tipo == TipoPqrsd.Denuncia && _reserva, null);
+            var req = new RadicarPqrsdRequest(_tipo, catId, _descripcion!.Trim(), _tipo == TipoPqrsd.Denuncia && _reserva, null,
+                MedioRecepcion: _medio,
+                Seccional: string.IsNullOrWhiteSpace(_seccional) ? null : _seccional!.Trim(),
+                Administrador: string.IsNullOrWhiteSpace(_administrador) ? null : _administrador!.Trim(),
+                FechaRecibido: _fechaRecibido);
             var resp = await Auth().PostAsJsonAsync("/api/pqrsd", req);
             if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
             var dto = await resp.Content.ReadFromJsonAsync<PqrsdExpedienteDetalleDto>();
@@ -171,6 +207,17 @@
         }
         finally { _busy = false; }
     }
+
+    private static string MedioLabel(MedioRecepcionPqrsd m) => m switch
+    {
+        MedioRecepcionPqrsd.CorreoElectronico => "Correo electronico",
+        MedioRecepcionPqrsd.Fisico => "Fisico",
+        MedioRecepcionPqrsd.Telefonico => "Telefonico",
+        MedioRecepcionPqrsd.Presencial => "Presencial",
+        MedioRecepcionPqrsd.WhatsApp => "WhatsApp",
+        MedioRecepcionPqrsd.PortalWeb => "Portal web",
+        _ => "Otro"
+    };
 
     private static string RenderTipoTitulo(TipoPqrsd t) => t switch
     {
