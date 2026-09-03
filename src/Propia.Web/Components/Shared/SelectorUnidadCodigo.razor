@@ -1,0 +1,126 @@
+@using Propia.Application.MiCopropiedad
+
+@* Selector de unidad por CODIGO con autocompletado. Reemplaza el filtro en cascada
+   Torre -> Piso -> Apartamento: se escribe el codigo de la unidad (UnidadPrivada.Numero,
+   ej. 101, A-203) y se elige de la lista de coincidencias. Reutilizable en todo el sistema.
+   Emite el Id de la unidad privada seleccionada (UnidadId / UnidadIdChanged). *@
+
+<div class="suc2" @onfocusout="OnBlur">
+    <div class="suc2-inwrap">
+        <input class="@InputClass" type="text" autocomplete="off"
+               placeholder="@Placeholder" disabled="@Disabled"
+               value="@_query" @oninput="OnInput" @onfocus="OnFocus" />
+        @if (_seleccionada is not null && !Disabled)
+        {
+            <button type="button" class="suc2-x" title="Quitar unidad" @onclick="Limpiar">&times;</button>
+        }
+    </div>
+    @if (_open && _filtradas.Count > 0)
+    {
+        <div class="suc2-drop">
+            @foreach (var u in _filtradas)
+            {
+                var uni = u;
+                <button type="button" class="suc2-item @(UnidadId == uni.Id ? "on" : "")" @onmousedown="() => Elegir(uni)">
+                    <span class="suc2-cod">@uni.Numero</span>
+                    @if (!string.IsNullOrWhiteSpace(uni.TorreNombre)) { <span class="suc2-meta">@uni.TorreNombre</span> }
+                    @if (uni.Tipo != default) { <span class="suc2-meta">@uni.Tipo</span> }
+                </button>
+            }
+        </div>
+    }
+    else if (_open && !string.IsNullOrWhiteSpace(_query))
+    {
+        <div class="suc2-drop"><div class="suc2-empty">Sin unidades con ese codigo.</div></div>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<UnidadDto>? Unidades { get; set; }
+    [Parameter] public Guid? UnidadId { get; set; }
+    [Parameter] public EventCallback<Guid?> UnidadIdChanged { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Codigo de unidad (ej. 101, A-203)...";
+    [Parameter] public bool Disabled { get; set; }
+
+    private string _query = "";
+    private bool _open;
+    private bool _editando;   // el usuario esta escribiendo: no re-sincronizar desde UnidadId
+    private List<UnidadDto> _filtradas = new();
+
+    private string InputClass => string.IsNullOrWhiteSpace(Class) ? "suc2-input" : Class;
+    private UnidadDto? _seleccionada => UnidadId is Guid id ? Unidades?.FirstOrDefault(u => u.Id == id) : null;
+
+    protected override void OnParametersSet()
+    {
+        // Sincroniza el texto con la unidad seleccionada cuando no se esta escribiendo.
+        if (!_editando)
+            _query = _seleccionada?.Numero ?? "";
+    }
+
+    private void OnFocus()
+    {
+        _open = true;
+        _editando = true;
+        Filtrar();
+    }
+
+    private void OnInput(ChangeEventArgs e)
+    {
+        _query = e.Value?.ToString() ?? "";
+        _editando = true;
+        _open = true;
+        Filtrar();
+    }
+
+    private void Filtrar()
+    {
+        var q = _query.Trim();
+        var todas = Unidades ?? new List<UnidadDto>();
+        _filtradas = (string.IsNullOrEmpty(q)
+                ? todas.OrderBy(u => u.Numero, StringComparer.OrdinalIgnoreCase)
+                : todas.Where(u => u.Numero.Contains(q, StringComparison.OrdinalIgnoreCase))
+                       .OrderBy(u => u.Numero, StringComparer.OrdinalIgnoreCase))
+            .Take(15).ToList();
+    }
+
+    private async Task Elegir(UnidadDto u)
+    {
+        _editando = false;
+        _query = u.Numero;
+        _open = false;
+        if (UnidadId != u.Id) { UnidadId = u.Id; await UnidadIdChanged.InvokeAsync(u.Id); }
+    }
+
+    private async Task Limpiar()
+    {
+        _editando = false;
+        _query = "";
+        _open = false;
+        if (UnidadId is not null) { UnidadId = null; await UnidadIdChanged.InvokeAsync(null); }
+    }
+
+    private void OnBlur()
+    {
+        // Al salir del componente: cierra el dropdown y vuelve a mostrar el codigo seleccionado.
+        _open = false;
+        _editando = false;
+        _query = _seleccionada?.Numero ?? "";
+    }
+}
+
+<style>
+    .suc2 { position: relative; }
+    .suc2-inwrap { position: relative; }
+    .suc2-x { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); border: none; background: none; color: #90A4B7; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px; }
+    .suc2-x:hover { color: #B91C1C; }
+    .suc2-input { width: 100%; box-sizing: border-box; padding: 8px 26px 8px 10px; border: 1px solid #E1E8EE; border-radius: 9px; font-size: 13px; color: #33475B; background: #fff; outline: none; font-family: inherit; }
+    .suc2-input:focus { border-color: var(--propia-primary, #5955D1); box-shadow: 0 0 0 2px rgba(89,85,209,.12); }
+    .suc2-drop { position: absolute; z-index: 4000; top: calc(100% + 3px); left: 0; right: 0; max-height: 260px; overflow-y: auto; background: #fff; border: 1px solid #E1E8EE; border-radius: 10px; box-shadow: 0 12px 30px rgba(27,42,58,.18); padding: 4px; }
+    .suc2-item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: none; background: none; padding: 7px 9px; border-radius: 7px; cursor: pointer; font-family: inherit; }
+    .suc2-item:hover { background: #F5F2FE; }
+    .suc2-item.on { background: #F1ECFD; }
+    .suc2-cod { font-weight: 700; color: #33475B; font-size: 13px; }
+    .suc2-meta { font-size: 11.5px; color: #90A4B7; }
+    .suc2-empty { padding: 8px 9px; font-size: 12.5px; color: #90A4B7; }
+</style>

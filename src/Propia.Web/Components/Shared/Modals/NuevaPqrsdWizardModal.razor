@@ -74,17 +74,41 @@
             </div>
 
             <div class="npq-field">
-                <label class="npq-lbl">Propiedad relacionada</label>
-                <SelectorUnidadCascada Unidades="_unidades" UnidadId="_unidadSel"
-                                       UnidadIdChanged="@(v => _unidadSel = v)"
-                                       Class="npq-input" MostrarLabels="false" />
+                <label class="npq-lbl">Propiedad relacionada (codigo de unidad)</label>
+                <SelectorUnidadCodigo Unidades="_unidades" UnidadId="_unidadSel"
+                                      UnidadIdChanged="OnUnidadChanged"
+                                      Class="npq-input" Placeholder="Escribe el codigo de la unidad (ej. 101, A-203)..." />
             </div>
 
             <div class="npq-field">
-                <label class="npq-lbl">Solicitante (persona del directorio)</label>
-                <SelectorPersona Jwt="@Jwt" @bind-Seleccionada="_personaSel"
-                                 Placeholder="Buscar por nombre o documento (o crear nueva)..." />
-                <span class="npq-helper-muted">Si no la encuentras, puedes crearla desde el buscador. Si lo dejas vacio, el radicador seras tu.</span>
+                <label class="npq-lbl">Solicitante (persona asignada a la unidad)</label>
+                @if (_unidadSel is null)
+                {
+                    <select class="npq-input" disabled><option>Elige primero la unidad</option></select>
+                    <span class="npq-helper-muted">Selecciona la unidad para elegir a su propietario/residente.</span>
+                }
+                else if (_cargandoPersonas)
+                {
+                    <select class="npq-input" disabled><option>Cargando personas de la unidad...</option></select>
+                }
+                else
+                {
+                    <select class="npq-input" @bind="_solicitanteIdStr">
+                        <option value="">- El radicador seras tu -</option>
+                        @foreach (var p in _unidadPersonas)
+                        {
+                            <option value="@p.PersonaId">@p.PersonaNombre@(string.IsNullOrEmpty(RolTxt(p)) ? "" : $" ({RolTxt(p)})")</option>
+                        }
+                    </select>
+                    @if (_unidadPersonas.Count == 0)
+                    {
+                        <span class="npq-helper-muted">Esta unidad no tiene personas asignadas. Asignalas en Unidades Privadas, o deja vacio y el radicador seras tu.</span>
+                    }
+                    else
+                    {
+                        <span class="npq-helper-muted">Solo personas asignadas a esta unidad. Si lo dejas vacio, el radicador seras tu.</span>
+                    }
+                }
             </div>
 
             <div class="npq-field npq-field--full">
@@ -260,7 +284,10 @@
         get => Guid.TryParse(_unidadIdStr, out var g) && g != Guid.Empty ? g : (Guid?)null;
         set => _unidadIdStr = value?.ToString() ?? "";
     }
-    private PersonaCandidatoDto? _personaSel;
+    // Solicitante: una persona ASIGNADA a la unidad seleccionada (ya no el directorio completo).
+    private List<UnidadPersonaDto> _unidadPersonas = new();
+    private bool _cargandoPersonas;
+    private string _solicitanteIdStr = "";
     private string _asunto = "";
     private string _descripcion = "";
     private bool _identidadReservada = false;
@@ -302,6 +329,26 @@
         }
         catch (Exception ex) { _msg = "No se pudo cargar el catalogo: " + ex.Message; _msgError = true; }
     }
+
+    // Al elegir la unidad (por codigo): carga sus personas asignadas para el solicitante.
+    private async Task OnUnidadChanged(Guid? id)
+    {
+        _unidadIdStr = id?.ToString() ?? "";
+        _solicitanteIdStr = "";
+        _unidadPersonas = new();
+        if (id is null) return;
+        _cargandoPersonas = true;
+        try
+        {
+            var todas = await Auth().GetFromJsonAsync<List<UnidadPersonaDto>>($"/api/mi-copropiedad/unidades/{id}/personas") ?? new();
+            // Solo personas naturales activas (el radicador/solicitante es una persona, no una empresa).
+            _unidadPersonas = todas.Where(p => p.Activo && p.PersonaId != Guid.Empty).ToList();
+        }
+        catch { _unidadPersonas = new(); }
+        finally { _cargandoPersonas = false; }
+    }
+
+    private static string RolTxt(UnidadPersonaDto p) => p.Rol.ToString();
 
     private void OnTipoChange()
     {
@@ -396,7 +443,8 @@
                 : $"Asunto: {_asunto.Trim()}\n\n{_descripcion.Trim()}";
 
             Guid? unidadId = Guid.TryParse(_unidadIdStr, out var uid) ? uid : null;
-            Guid? radId = _personaSel?.PersonaId;
+            // Solicitante: la persona asignada a la unidad que se eligio (o null = el radicador seras tu).
+            Guid? radId = Guid.TryParse(_solicitanteIdStr, out var sp) && sp != Guid.Empty ? sp : (Guid?)null;
             var campos = _campoValores.Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
                 .Select(kv => new PqrsdCampoValorDto(kv.Key, kv.Value)).ToList();
 
