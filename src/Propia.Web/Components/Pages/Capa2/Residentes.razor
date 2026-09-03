@@ -116,7 +116,7 @@ else
                     continue;
                 }
                 var r = item.Fila!;
-                <div class="res-row res-grid" style="grid-template-columns:@GridCols">
+                <div class="res-row res-grid @(_resRecienCreados.Contains(r.UnidadPersonaId) ? "res-row-nuevo" : "")" style="grid-template-columns:@GridCols">
                     <div class="res-exp-col">
                         <button type="button" class="res-exp" title="Abrir ficha del residente" @onclick="() => AbrirFicha(r)">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -176,7 +176,7 @@ else
                             <div class="res-nf-persona">
                                 @if (_personaSel is null)
                                 {
-                                    <SelectorPersona Seleccionada="_personaSel" SeleccionadaChanged="OnPersonaSel" Jwt="@_jwt" PermiteEmpresa="true" Flotante="true" Placeholder="Buscar o crear..." />
+                                    <SelectorPersona Seleccionada="_personaSel" SeleccionadaChanged="OnPersonaSel" Jwt="@_jwt" PermiteEmpresa="true" Flotante="true" Placeholder="Buscar o crear..." EmailInicial="@_ptEmail" TelefonoInicial="@_ptTel" />
                                 }
                                 else
                                 {
@@ -210,7 +210,7 @@ else
                     }
                 }
                 <div class="res-nf-act">
-                    <button type="button" class="res-nf-add" @onclick="() => AgregarAsync(false)" disabled="@(_busy || !AltaValida)">@(_busy ? "..." : "+ Agregar")</button>
+                    <button type="button" class="res-nf-add" @onclick="() => AgregarAsync(false)" disabled="@_busy">@(_busy ? "Creando..." : "+ Agregar")</button>
                 </div>
             </div>
 
@@ -276,6 +276,7 @@ else
     private string _ptEmailOrig = "";
     private RolUnidadPersona _rolNuevo = RolUnidadPersona.Residente;
     private bool _habitaNuevo = true;
+    private readonly HashSet<Guid> _resRecienCreados = new();   // V-09: ids de filas recien creadas (resaltado)
 
     // La unidad se resuelve por el codigo escrito (o elegido del desplegable): el boton se activa
     // aunque no se haya hecho clic en la sugerencia, siempre que el codigo exista.
@@ -623,6 +624,7 @@ else
                 _msg = "No se pudo agregar: " + await resp.Content.ReadAsStringAsync(); _msgError = true; return;
             }
             var creada = await resp.Content.ReadFromJsonAsync<UnidadPersonaDto>();
+            if (creada is not null) _resRecienCreados.Add(creada.Id);   // V-09: resalta la fila hasta el proximo refresco
             // Si el usuario ajusto correo/telefono del tercero, se sincroniza al Directorio.
             if (_ptTel.Trim() != _ptTelOrig.Trim()) await SincronizarContactoAsync(sel.EntidadTipo, sel.PersonaId, TipoContacto.Telefono, _ptTel);
             if (_ptEmail.Trim() != _ptEmailOrig.Trim()) await SincronizarContactoAsync(sel.EntidadTipo, sel.PersonaId, TipoContacto.Email, _ptEmail);
@@ -732,6 +734,7 @@ else
     .res-head .res-c { text-align: center; }
     .res-row { border-bottom: 1px solid #EEF2F6; font-size: 13.5px; }
     .res-row:hover { background: #FAFBFD; }
+    .res-row-nuevo { background: #ECFBF2 !important; box-shadow: inset 3px 0 0 #34C759; }   /* V-09: fila recien creada */
     .res-c-cell { color: #35485B; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .res-c-cell.res-c { text-align: center; }
     .res-cod { font-weight: 700; color: #4B2BB0; }
