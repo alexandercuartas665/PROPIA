@@ -32,4 +32,15 @@ public sealed class FakeNotificacionDispatcher : INotificacionDispatcher
         foreach (var r in requests) list.Add(await EnviarAsync(r, ct));
         return list;
     }
+
+    public List<(Guid PersonaId, string Asunto, string Modulo)> EventosUsuario { get; } = new();
+
+    public Task EnviarEventoUsuarioAsync(
+        Guid personaId, string asunto, string cuerpo, string moduloOrigen, Guid? entidadOrigenId,
+        Guid? tenantId = null, PrioridadNotificacion prioridad = PrioridadNotificacion.Normal,
+        CancellationToken ct = default)
+    {
+        EventosUsuario.Add((personaId, asunto, moduloOrigen));
+        return Task.CompletedTask;
+    }
 }
