@@ -1,0 +1,89 @@
+@* R-01: tarjeta de tarea del Kanban, extraida de TareasKanban para aislar el re-render por
+   tarjeta y deduplicar el markup (vista por columnas y vista agrupada). Los estilos viven en
+   css/modules/tareas.css (globales), asi que extraer el markup no cambia el aspecto. *@
+@using System.Globalization
+@using Propia.Application.Tareas
+@using Propia.Domain.Enums
+
+<button class="tb-tcard" draggable="@Draggable"
+        @ondragstart="OnDragStartHandler" @ondragend="OnDragEndHandler"
+        style="border-left-color:@(Tarea.Color ?? ColorFallback ?? "#6D4FE3")"
+        @onclick="() => OnAbrir.InvokeAsync(Tarea)">
+    <span class="tb-tcard-copy" title="Copiar tarea" @onclick:stopPropagation="true" @onclick="() => OnCopiar.InvokeAsync(Tarea)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg></span>
+    @if (Tarea.TenantNombre is not null)
+    {
+        <span class="tb-copro-chip">@Tarea.TenantNombre</span>
+    }
+    <div class="tb-tcard-tit">@Tarea.Titulo</div>
+    <div class="tb-tcard-meta">
+        @if (MostrarEtapa)
+        {
+            <span class="tb-etapa-dot" style="background:@(Tarea.EstadoColor ?? "#94a3b8")" title="@Tarea.EstadoNombre"></span>
+        }
+        <span class="tb-prio" style="color:@PrioFg(Tarea.Prioridad);background:@PrioBg(Tarea.Prioridad)">@Tarea.Prioridad</span>
+        @if (Tarea.FechaVencimiento.HasValue) { <span class="tb-due @(Tarea.Vencida ? "venc" : "")">@FechaCorta(Tarea.FechaVencimiento.Value)</span> }
+    </div>
+    <div class="tb-tcard-foot">
+        <span class="tb-tcard-resp">@(string.IsNullOrWhiteSpace(Tarea.AsignadoNombre) ? "Sin asignar" : Tarea.AsignadoNombre)</span>
+        @if (Tarea.CantidadSubtareas > 0) { <span class="tb-chip">@Tarea.CantidadSubtareas sub</span> }
+        <span class="tb-tcard-age" title="@TooltipEstado(Tarea)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>@TiempoEnEstado(Tarea)</span>
+    </div>
+</button>
+
+@code {
+    [Parameter, EditorRequired] public TareaListaDto Tarea { get; set; } = default!;
+    /// <summary>Color de borde si la tarea no trae Color propio (p.ej. el color del estado en la vista por columnas).</summary>
+    [Parameter] public string? ColorFallback { get; set; }
+    /// <summary>La vista por columnas permite arrastrar; la agrupada no.</summary>
+    [Parameter] public bool Draggable { get; set; }
+    /// <summary>La vista agrupada muestra el punto de etapa (mezcla estados); la de columnas no.</summary>
+    [Parameter] public bool MostrarEtapa { get; set; }
+
+    [Parameter] public EventCallback<TareaListaDto> OnAbrir { get; set; }
+    [Parameter] public EventCallback<TareaListaDto> OnCopiar { get; set; }
+    [Parameter] public EventCallback OnDragStart { get; set; }
+    [Parameter] public EventCallback OnDragEnd { get; set; }
+
+    private Task OnDragStartHandler() => Draggable ? OnDragStart.InvokeAsync() : Task.CompletedTask;
+    private Task OnDragEndHandler() => Draggable ? OnDragEnd.InvokeAsync() : Task.CompletedTask;
+
+    // Helpers de formato (puros, identicos a los de TareasKanban).
+    private static readonly CultureInfo Es = CultureInfo.GetCultureInfo("es-CO");
+
+    private static string PrioFg(PrioridadTarea p) => p switch { PrioridadTarea.Urgente => "#C0383C", PrioridadTarea.Alta => "#B45309", PrioridadTarea.Normal => "#2563EB", _ => "#516F90" };
+    private static string PrioBg(PrioridadTarea p) => p switch { PrioridadTarea.Urgente => "#FDE7E7", PrioridadTarea.Alta => "#FEF3DC", PrioridadTarea.Normal => "#E6F2FB", _ => "#EEF3F8" };
+
+    private static string FechaCorta(DateOnly d)
+    {
+        var dia = d.ToString("ddd", Es);
+        dia = char.ToUpper(dia[0]) + dia.Substring(1);
+        return dia + " " + d.Day + " " + d.ToString("MMM", Es);
+    }
+
+    private static string TiempoRelativo(DateTimeOffset? desde)
+    {
+        if (desde is null) return "";
+        var span = DateTimeOffset.UtcNow - desde.Value;
+        if (span < TimeSpan.Zero) span = TimeSpan.Zero;
+        int dias = (int)span.TotalDays;
+        if (dias >= 365) { int y = dias / 365; return y + (y == 1 ? " ano" : " anos"); }
+        if (dias >= 30) { int m = dias / 30; return m + (m == 1 ? " mes" : " meses"); }
+        if (dias >= 7) { int w = dias / 7; return w + " sem"; }
+        if (dias >= 1) return dias + (dias == 1 ? " dia" : " dias");
+        int horas = (int)span.TotalHours;
+        if (horas >= 1) return horas + " h";
+        int min = (int)span.TotalMinutes;
+        if (min >= 1) return min + " min";
+        return "ahora";
+    }
+
+    private static string TiempoEnEstado(TareaListaDto t) => TiempoRelativo(t.EstadoDesde);
+
+    private static string TooltipEstado(TareaListaDto t)
+    {
+        var rel = TiempoEnEstado(t);
+        if (string.IsNullOrEmpty(rel)) return $"En \"{t.EstadoNombre}\"";
+        var frase = rel == "ahora" ? "hace un momento" : $"hace {rel}";
+        return $"En \"{t.EstadoNombre}\" {frase}";
+    }
+}
