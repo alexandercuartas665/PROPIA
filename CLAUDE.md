@@ -71,6 +71,11 @@ Archivos clave:
 - **IDs en `Guid`** salvo justificacion explicita.
 - **Enums** en `Propia.Domain.Enums` o anidados en la entidad cuando son especificos.
 - **DTOs** en `Propia.Shared` con sufijo `Dto` o `Request`/`Response`.
+- **Colores SOLO por tokens (modo oscuro, D-01).** En `.razor` NO se escriben hex (`#RRGGBB`) ni `white`
+  para colores: todo color va por `var(--propia-*)` de `wwwroot/css/propia-tokens.css` (que define claro y
+  dark en un solo lugar). Prohibido `style="...#..."` inline para colores en el markup. Al cambiar
+  `propia-tokens.css`, subir `?v=N` en `App.razor`. Regla de verificacion: `grep -rE "#[0-9A-Fa-f]{6}"
+  Components --include=*.razor` no debe crecer.
 
 ## Reglas de testing
 
