@@ -24,8 +24,8 @@
     function getPreferredTheme() {
         var stored = getStoredTheme();
         if (stored === 'dark' || stored === 'light') return stored;
-        return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-            ? 'dark' : 'light';
+        // D-01: sin preferencia guardada -> 'light' (no se hereda el tema del SO).
+        return 'light';
     }
 
     function applyTheme(theme) {
