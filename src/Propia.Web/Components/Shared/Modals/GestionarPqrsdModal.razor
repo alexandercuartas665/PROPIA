@@ -848,111 +848,7 @@
 
     @* ===== Tab Tareas (enlazadas al PQR, tablero "PQRSD" del modulo Tareas) ===== *@
     <div class="gpq-pane" style="@(_detalle is not null && _tab == "tareas" ? "" : "display:none")">
-        <div class="gpq-tk-new">
-            @* Agregar abre el modal COMPLETO de tarea (todos los campos) sin salir de PQRSD; la tarea
-               queda vinculada a este PQR. Ver/editar tambien abre ese modal en el sitio. *@
-            <button class="gpq-btn-brand" type="button" @onclick="AgregarTareaCompletaAsync" disabled="@_pqrBusy">
-                + Agregar tarea
-            </button>
-            <div class="gpq-tk-vsw" role="tablist" aria-label="Vista de tareas">
-                <button type="button" class="gpq-tk-vbtn @(_pqrVista == "tarjetas" ? "on" : "")" @onclick='() => _pqrVista = "tarjetas"'>Tarjetas</button>
-                <button type="button" class="gpq-tk-vbtn @(_pqrVista == "lista" ? "on" : "")" @onclick='() => _pqrVista = "lista"'>Tabla</button>
-            </div>
-        </div>
-
-        @if (_pqrTareas is null)
-        {
-            <div class="gpq-tk-empty">Cargando tareas...</div>
-        }
-        else
-        {
-            <div class="gpq-tk-prog">
-                <div class="gpq-tk-prog-top"><span>Avance</span><span class="gpq-tk-prog-pct">@_pqrTareas.Porcentaje%</span></div>
-                <div class="gpq-tk-prog-bar"><div class="gpq-tk-prog-fill" style="width:@(_pqrTareas.Porcentaje)%"></div></div>
-                <div class="gpq-tk-prog-sub">@_pqrTareas.Tareas.Count(t => t.EstadoEsTerminal) de @_pqrTareas.Tareas.Count completadas</div>
-            </div>
-
-            @if (_pqrTareas.Tareas.Count == 0)
-            {
-                <div class="gpq-tk-empty">Aun no hay tareas. Crea la primera arriba.</div>
-            }
-            else if (_pqrVista == "lista")
-            {
-                @* ---- Vista LISTA: tabla plana con el codigo como primer elemento ---- *@
-                <div class="gpq-tk-table">
-                    <div class="gpq-tk-tr gpq-tk-thead">
-                        <span>CODIGO</span><span>TITULO</span><span>ETAPA</span><span>ASIGNADO</span><span>VENCE</span><span>%</span><span></span>
-                    </div>
-                    @foreach (var t in _pqrTareas.Tareas)
-                    {
-                        var tt = t;
-                        <div class="gpq-tk-tr">
-                            <span class="gpq-tk-num">@t.NumeroTarea</span>
-                            <span class="gpq-tk-td-tit">@t.Titulo</span>
-                            <span><span class="gpq-tk-etpill" style="background:@(t.EstadoColor ?? "#94A3B8")">@t.EstadoNombre</span></span>
-                            <span class="gpq-tk-td-asig">
-                                @if (!string.IsNullOrWhiteSpace(t.AsignadoNombre)) { <span class="gpq-tk-ava">@IniPqr(t.AsignadoNombre)</span> @t.AsignadoNombre }
-                                else { <span class="gpq-tk-mut">Sin asignar</span> }
-                            </span>
-                            <span class="@(TareaVencida(t) ? "gpq-tk-venc" : "")">@(t.FechaVencimiento?.ToString("dd MMM") ?? "-")</span>
-                            <span class="gpq-tk-td-pct">@t.Progreso%</span>
-                            <button type="button" class="gpq-tk-exp" title="Abrir el modal completo en Tareas" @onclick="() => AbrirTareaCompleta(tt.Id)">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                            </button>
-                        </div>
-                    }
-                </div>
-            }
-            else
-            {
-                @* ---- Vista TABLERO: mini-Kanban con tarjetas ricas (estilo modulo Tareas) ---- *@
-                <div class="gpq-tk-kanban">
-                    @foreach (var et in _pqrTareas.Etapas)
-                    {
-                        var enEt = _pqrTareas.Tareas.Where(t => t.EstadoId == et.Id).ToList();
-                        <div class="gpq-tk-col">
-                            <div class="gpq-tk-col-h">
-                                <span class="gpq-tk-dot" style="background:@(et.Color ?? "#94A3B8")"></span>
-                                <span class="gpq-tk-col-t">@et.Nombre</span>
-                                <span class="gpq-tk-col-n">@enEt.Count</span>
-                            </div>
-                            <div class="gpq-tk-col-body">
-                                @foreach (var t in enEt)
-                                {
-                                    var tt = t;
-                                    <div class="gpq-tk-card" style="border-left:3px solid @(et.Color ?? "#94A3B8")">
-                                        <div class="gpq-tk-card-top">
-                                            <span class="gpq-tk-num">@t.NumeroTarea</span>
-                                            <button type="button" class="gpq-tk-exp" title="Abrir el modal completo en Tareas" @onclick="() => AbrirTareaCompleta(tt.Id)">
-                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                                            </button>
-                                        </div>
-                                        <div class="gpq-tk-card-t">@t.Titulo</div>
-                                        <div class="gpq-tk-card-m">
-                                            <span class="gpq-tk-prio" style="color:@PrioPqrFg(t.Prioridad);background:@PrioPqrBg(t.Prioridad)">@t.Prioridad</span>
-                                            @if (t.FechaVencimiento is not null)
-                                            {
-                                                <span class="gpq-tk-due @(TareaVencida(t) ? "gpq-tk-venc" : "")">@t.FechaVencimiento?.ToString("dd MMM")</span>
-                                            }
-                                        </div>
-                                        @if (!string.IsNullOrWhiteSpace(t.AsignadoNombre))
-                                        {
-                                            <div class="gpq-tk-card-asig"><span class="gpq-tk-ava">@IniPqr(t.AsignadoNombre)</span><span class="gpq-tk-asig-n">@t.AsignadoNombre</span></div>
-                                        }
-                                        <div class="gpq-tk-card-prog">
-                                            <div class="gpq-tk-cprog-bar"><div class="gpq-tk-cprog-fill" style="width:@(t.Progreso)%;background:@(t.Progreso >= 100 ? "#1A8754" : "#6D4FE3")"></div></div>
-                                            <span class="gpq-tk-cprog-v">@t.Progreso%</span>
-                                        </div>
-                                    </div>
-                                }
-                                @if (enEt.Count == 0) { <div class="gpq-tk-col-empty">-</div> }
-                            </div>
-                        </div>
-                    }
-                </div>
-            }
-            <div class="gpq-tk-foot">Las tareas se gestionan en el modulo <strong>Tareas</strong> (tablero "PQRSD"); el expander abre alli su modal completo.</div>
-        }
+        <PqrsdTareasTab Tareas="_pqrTareas" Busy="_pqrBusy" OnAgregar="AgregarTareaCompletaAsync" OnAbrirTarea="AbrirTareaCompleta" />
     </div>
 </div>
 </div>
@@ -1014,9 +910,6 @@
         StateHasChanged();
     }
 
-    // Vista del tab Tareas: mini-Kanban (tarjetas ricas) o tabla plana.
-    private string _pqrVista = "tarjetas";
-
     /// <summary>Ver/editar: abre el modal COMPLETO de la tarea (GestionarTareaModal) EN EL SITIO,
     /// sin salir del modulo PQRSD. Al cerrar, refresca la lista.</summary>
     private async Task AbrirTareaCompleta(Guid tareaId)
@@ -1048,25 +941,6 @@
     }
 
     private sealed record CrearPqrTareaResp(Guid Id);
-
-    private bool TareaVencida(PqrTareaDto t)
-        => t.FechaVencimiento is { } f && !t.EstadoEsTerminal && f < DateOnly.FromDateTime(DateTime.Today);
-
-    private static string IniPqr(string? nombre)
-    {
-        var p = (nombre ?? "").Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (p.Length == 0) return "?";
-        return (p.Length >= 2 ? $"{p[0][0]}{p[1][0]}" : p[0][..Math.Min(2, p[0].Length)]).ToUpperInvariant();
-    }
-
-    private static string PrioPqrBg(string prioridad) => prioridad switch
-    {
-        "Urgente" => "#FDE8E8", "Alta" => "#FFF3E0", "Baja" => "#EEF3F8", _ => "#EEF2FF"
-    };
-    private static string PrioPqrFg(string prioridad) => prioridad switch
-    {
-        "Urgente" => "#C81E1E", "Alta" => "#B45309", "Baja" => "#64748B", _ => "#4F46E5"
-    };
 
     // Edicion de propiedad + solicitante + campos dinamicos
     private List<UnidadDto> _unidades = new();
