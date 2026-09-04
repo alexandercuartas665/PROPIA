@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
 using Propia.Application.Porteria;
 using Propia.Domain.Enums;
 
@@ -10,6 +11,7 @@ namespace Propia.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/porteria")]
+
 [Authorize]
 public class PorteriaController : ControllerBase
 {
@@ -30,6 +32,7 @@ public class PorteriaController : ControllerBase
     public async Task<IActionResult> ListarTurnos([FromQuery] DateOnly? desde, [FromQuery] DateOnly? hasta, CancellationToken ct)
         => Ok(await _svc.ListarTurnosAsync(desde, hasta, ct));
 
+    [RequierePermiso(ModuloCodigo.Porteria, AccionPermiso.Crear)]
     [HttpPost("turnos/abrir")]
     public async Task<IActionResult> AbrirTurno([FromBody] AbrirTurnoRequest req, CancellationToken ct)
     {
@@ -37,6 +40,7 @@ public class PorteriaController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Porteria, AccionPermiso.Aprobar)]
     [HttpPost("turnos/{id:guid}/cerrar")]
     public async Task<IActionResult> CerrarTurno(Guid id, [FromBody] CerrarTurnoRequest req, CancellationToken ct)
     {
@@ -67,6 +71,7 @@ public class PorteriaController : ControllerBase
         return a is null ? NotFound() : Ok(a);
     }
 
+    [RequierePermiso(ModuloCodigo.Porteria, AccionPermiso.Crear)]
     [HttpPost("autorizaciones")]
     public async Task<IActionResult> CrearAutorizacion([FromBody] CrearAutorizacionRequest req, CancellationToken ct)
     {
@@ -74,16 +79,19 @@ public class PorteriaController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Porteria, AccionPermiso.Eliminar)]
     [HttpDelete("autorizaciones/{id:guid}")]
     public async Task<IActionResult> RevocarAutorizacion(Guid id, CancellationToken ct)
         => await _svc.RevocarAutorizacionAsync(id, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Porteria, AccionPermiso.Crear)]
     [HttpPost("autorizaciones/validar")]
     public async Task<IActionResult> ValidarCodigo([FromBody] ValidarCodigoRequest req, CancellationToken ct)
         => Ok(await _svc.ValidarCodigoAsync(req, ct));
 
     // ----- Registro visitas -----
 
+    [RequierePermiso(ModuloCodigo.Porteria, AccionPermiso.Crear)]
     [HttpPost("turnos/{turnoId:guid}/visitas")]
     public async Task<IActionResult> RegistrarVisita(Guid turnoId, [FromBody] RegistrarVisitaRequest req, CancellationToken ct)
     {
@@ -101,6 +109,7 @@ public class PorteriaController : ControllerBase
     public async Task<IActionResult> ListarVehiculos([FromQuery] Guid? unidadId, CancellationToken ct)
         => Ok(await _svc.ListarVehiculosAutorizadosAsync(unidadId, ct));
 
+    [RequierePermiso(ModuloCodigo.Porteria, AccionPermiso.Crear)]
     [HttpPost("vehiculos")]
     public async Task<IActionResult> CrearVehiculo([FromBody] CrearVehiculoRequest req, CancellationToken ct)
     {
@@ -108,6 +117,7 @@ public class PorteriaController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Porteria, AccionPermiso.Editar)]
     [HttpPut("vehiculos/{id:guid}")]
     public async Task<IActionResult> ActualizarVehiculo(Guid id, [FromBody] ActualizarVehiculoRequest req, CancellationToken ct)
     {
@@ -115,10 +125,12 @@ public class PorteriaController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Porteria, AccionPermiso.Eliminar)]
     [HttpDelete("vehiculos/{id:guid}")]
     public async Task<IActionResult> DesactivarVehiculo(Guid id, CancellationToken ct)
         => await _svc.DesactivarVehiculoAsync(id, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Porteria, AccionPermiso.Crear)]
     [HttpPost("turnos/{turnoId:guid}/vehiculos")]
     public async Task<IActionResult> RegistrarVehiculo(Guid turnoId, [FromBody] RegistrarVehiculoRequest req, CancellationToken ct)
     {
@@ -136,6 +148,7 @@ public class PorteriaController : ControllerBase
     public async Task<IActionResult> ListarCorrespondencia([FromQuery] EstadoCorrespondencia? estado, [FromQuery] Guid? unidadId, CancellationToken ct)
         => Ok(await _svc.ListarCorrespondenciaAsync(estado, unidadId, ct));
 
+    [RequierePermiso(ModuloCodigo.Porteria, AccionPermiso.Crear)]
     [HttpPost("turnos/{turnoId:guid}/correspondencia")]
     public async Task<IActionResult> RegistrarCorrespondencia(Guid turnoId, [FromBody] RegistrarCorrespondenciaRequest req, CancellationToken ct)
     {
@@ -143,6 +156,7 @@ public class PorteriaController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Porteria, AccionPermiso.Editar)]
     [HttpPut("correspondencia/{id:guid}/entregar")]
     public async Task<IActionResult> EntregarCorrespondencia(Guid id, [FromBody] EntregarCorrespondenciaRequest req, CancellationToken ct)
     {
@@ -150,6 +164,7 @@ public class PorteriaController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Porteria, AccionPermiso.Editar)]
     [HttpPut("correspondencia/{id:guid}/devolver")]
     public async Task<IActionResult> DevolverCorrespondencia(Guid id, [FromBody] DevolverCorrespondenciaRequest req, CancellationToken ct)
     {
@@ -159,6 +174,7 @@ public class PorteriaController : ControllerBase
 
     // ----- Novedades -----
 
+    [RequierePermiso(ModuloCodigo.Porteria, AccionPermiso.Crear)]
     [HttpPost("turnos/{turnoId:guid}/novedades")]
     public async Task<IActionResult> CrearNovedad(Guid turnoId, [FromBody] CrearNovedadRequest req, CancellationToken ct)
     {
@@ -178,6 +194,7 @@ public class PorteriaController : ControllerBase
     [HttpGet("configuracion")]
     public async Task<IActionResult> GetConfig(CancellationToken ct) => Ok(await _svc.GetConfiguracionAsync(ct));
 
+    [RequierePermiso(ModuloCodigo.Porteria, AccionPermiso.Editar)]
     [HttpPut("configuracion")]
     public async Task<IActionResult> SetConfig([FromBody] ActualizarConfiguracionRequest req, CancellationToken ct)
     {
@@ -190,6 +207,7 @@ public class PorteriaController : ControllerBase
     [HttpGet("campos")]
     public async Task<IActionResult> ListarCampos(CancellationToken ct) => Ok(await _svc.ListarCamposAsync(ct));
 
+    [RequierePermiso(ModuloCodigo.Porteria, AccionPermiso.Crear)]
     [HttpPost("campos")]
     public async Task<IActionResult> CrearCampo([FromBody] GuardarPorteriaCampoRequest req, CancellationToken ct)
     {
@@ -197,6 +215,7 @@ public class PorteriaController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Porteria, AccionPermiso.Editar)]
     [HttpPut("campos/{id:guid}")]
     public async Task<IActionResult> ActualizarCampo(Guid id, [FromBody] GuardarPorteriaCampoRequest req, CancellationToken ct)
     {
@@ -204,6 +223,7 @@ public class PorteriaController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Porteria, AccionPermiso.Eliminar)]
     [HttpDelete("campos/{id:guid}")]
     public async Task<IActionResult> EliminarCampo(Guid id, CancellationToken ct)
         => await _svc.EliminarCampoAsync(id, ct) ? NoContent() : NotFound();

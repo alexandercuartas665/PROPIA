@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
 using Propia.Application.Asambleas;
 using Propia.Domain.Enums;
 
@@ -7,6 +8,7 @@ namespace Propia.Api.Controllers;
 
 [ApiController]
 [Route("api/asambleas")]
+
 [Authorize]
 public class AsambleaController : ControllerBase
 {
@@ -26,6 +28,7 @@ public class AsambleaController : ControllerBase
     }
 
     // Creacion + edicion
+    [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Crear)]
     [HttpPost]
     public async Task<IActionResult> Crear([FromBody] CrearSesionRequest req, CancellationToken ct)
     {
@@ -33,6 +36,7 @@ public class AsambleaController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Editar)]
     [HttpPut("puntos/{id:guid}")]
     public async Task<IActionResult> ActualizarPunto(Guid id, [FromBody] ActualizarPuntoRequest req, CancellationToken ct)
     {
@@ -40,10 +44,12 @@ public class AsambleaController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/documentos")]
     public async Task<IActionResult> AgregarDocumento(Guid id, [FromBody] AgregarDocumentoRequest req, CancellationToken ct)
         => Created("", await _svc.AgregarDocumentoAsync(id, req, ct));
 
+    [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Eliminar)]
     [HttpDelete("documentos/{id:guid}")]
     public async Task<IActionResult> EliminarDocumento(Guid id, CancellationToken ct)
     {
@@ -52,6 +58,7 @@ public class AsambleaController : ControllerBase
     }
 
     // Citacion
+    [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/citar")]
     public async Task<IActionResult> Citar(Guid id, [FromBody] EnviarCitacionRequest req, CancellationToken ct)
     {
@@ -60,6 +67,7 @@ public class AsambleaController : ControllerBase
     }
 
     // Poderes
+    [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/poderes")]
     public async Task<IActionResult> OtorgarPoder(Guid id, [FromBody] OtorgarPoderRequest req, CancellationToken ct)
     {
@@ -67,6 +75,7 @@ public class AsambleaController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Editar)]
     [HttpPut("poderes/{id:guid}/decidir")]
     public async Task<IActionResult> DecidirPoder(Guid id, [FromBody] DecidirPoderRequest req, CancellationToken ct)
     {
@@ -75,6 +84,7 @@ public class AsambleaController : ControllerBase
     }
 
     // Sala
+    [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/abrir-sala")]
     public async Task<IActionResult> AbrirSala(Guid id, CancellationToken ct)
     {
@@ -82,6 +92,7 @@ public class AsambleaController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/check-in")]
     public async Task<IActionResult> CheckIn(Guid id, [FromBody] CheckInParticipanteRequest req, CancellationToken ct)
     {
@@ -90,6 +101,7 @@ public class AsambleaController : ControllerBase
     }
 
     // Votaciones
+    [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/votaciones")]
     public async Task<IActionResult> AbrirVotacion(Guid id, [FromBody] AbrirVotacionRequest req, CancellationToken ct)
     {
@@ -97,6 +109,7 @@ public class AsambleaController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Crear)]
     [HttpPost("votaciones/{id:guid}/votar")]
     public async Task<IActionResult> Votar(Guid id, [FromBody] EmitirVotoRequest req, CancellationToken ct)
     {
@@ -104,6 +117,7 @@ public class AsambleaController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Aprobar)]
     [HttpPut("votaciones/{id:guid}/cerrar")]
     public async Task<IActionResult> CerrarVotacion(Guid id, CancellationToken ct)
     {
@@ -112,6 +126,7 @@ public class AsambleaController : ControllerBase
     }
 
     // Cierre
+    [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Aprobar)]
     [HttpPut("{id:guid}/cerrar")]
     public async Task<IActionResult> CerrarSesion(Guid id, [FromBody] CerrarSesionRequest req, CancellationToken ct)
     {
@@ -120,6 +135,7 @@ public class AsambleaController : ControllerBase
     }
 
     // Acta
+    [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/acta")]
     public async Task<IActionResult> GenerarActa(Guid id, CancellationToken ct)
     {
@@ -127,6 +143,7 @@ public class AsambleaController : ControllerBase
         return dto is null ? NotFound() : Ok(dto);
     }
 
+    [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Editar)]
     [HttpPut("actas/{id:guid}/firmar")]
     public async Task<IActionResult> FirmarActa(Guid id, [FromBody] FirmarActaRequest req, CancellationToken ct)
     {
@@ -134,6 +151,7 @@ public class AsambleaController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Aprobar)]
     [HttpPut("actas/{id:guid}/publicar")]
     public async Task<IActionResult> PublicarActa(Guid id, CancellationToken ct)
     {
@@ -145,6 +163,7 @@ public class AsambleaController : ControllerBase
     [HttpGet("config")]
     public async Task<IActionResult> GetConfig(CancellationToken ct) => Ok(await _svc.GetConfigAsync(ct));
 
+    [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Editar)]
     [HttpPut("config")]
     public async Task<IActionResult> ActualizarConfig([FromBody] AsambleaConfigDto req, CancellationToken ct)
         => await _svc.ActualizarConfigAsync(req, ct) ? NoContent() : NotFound();

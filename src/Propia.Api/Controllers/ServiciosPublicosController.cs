@@ -1,12 +1,16 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
+using Propia.Domain.Enums;
 using Propia.Application.ServiciosPublicos;
 
 namespace Propia.Api.Controllers;
 
 [ApiController]
 [Route("api/servicios-publicos")]
+
 [Authorize]
+[RequiereRol("Administrador")]  // S-06: gestion sensible, admin
 public class ServiciosPublicosController : ControllerBase
 {
     private readonly IServiciosPublicosService _svc;

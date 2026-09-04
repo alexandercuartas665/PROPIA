@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
 using Propia.Application.InfraestructuraIa;
 using Propia.Domain.Enums;
 
@@ -11,7 +12,9 @@ namespace Propia.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/ia")]
+
 [Authorize]
+[RequiereRol("Administrador")]  // S-06: gestion sensible, admin
 public class IaController : ControllerBase
 {
     private readonly IWhatsAppLineService _lines;

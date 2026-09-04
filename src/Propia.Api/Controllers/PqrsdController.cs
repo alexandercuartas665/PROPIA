@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Propia.Application.Pqrsd;
 using Propia.Domain.Entities;
@@ -13,6 +14,7 @@ namespace Propia.Api.Controllers;
 /// <summary>Endpoints del modulo 2.9 PQRSD y Convivencia (spec v1.0).</summary>
 [ApiController]
 [Route("api/pqrsd")]
+
 [Authorize]
 public class PqrsdController : ControllerBase
 {
@@ -36,6 +38,7 @@ public class PqrsdController : ControllerBase
     [HttpGet("categorias")]
     public async Task<IActionResult> ListarCategorias(CancellationToken ct) => Ok(await _svc.ListarCategoriasAsync(ct));
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
     [HttpPost("categorias")]
     public async Task<IActionResult> CrearCategoria([FromBody] CrearCategoriaRequest req, CancellationToken ct)
     {
@@ -43,14 +46,17 @@ public class PqrsdController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("categorias/{id:guid}")]
     public async Task<IActionResult> ActualizarCategoria(Guid id, [FromBody] ActualizarCategoriaRequest req, CancellationToken ct)
         => await _svc.ActualizarCategoriaAsync(id, req, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Eliminar)]
     [HttpDelete("categorias/{id:guid}")]
     public async Task<IActionResult> EliminarCategoria(Guid id, CancellationToken ct)
         => await _svc.EliminarCategoriaAsync(id, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
     [HttpPost("categorias/restablecer")]
     public async Task<IActionResult> RestablecerCategorias(CancellationToken ct)
         => Ok(new { restablecidas = await _svc.RestablecerCategoriasBaseAsync(ct) });
@@ -58,6 +64,7 @@ public class PqrsdController : ControllerBase
     [HttpGet("plazos")]
     public async Task<IActionResult> ListarPlazos(CancellationToken ct) => Ok(await _svc.ListarPlazosAsync(ct));
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("plazos/{tipo}")]
     public async Task<IActionResult> ActualizarPlazo(TipoPqrsd tipo, [FromBody] ActualizarPlazoRequest req, CancellationToken ct)
         => await _svc.ActualizarPlazoAsync(tipo, req, ct) ? NoContent() : NotFound();
@@ -67,6 +74,7 @@ public class PqrsdController : ControllerBase
     public async Task<IActionResult> ListarTipos([FromQuery] bool incluirInactivos, CancellationToken ct)
         => Ok(await _svc.ListarTiposAsync(incluirInactivos, ct));
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
     [HttpPost("tipos")]
     public async Task<IActionResult> CrearTipo([FromBody] GuardarTipoPqrsdRequest req, CancellationToken ct)
     {
@@ -74,6 +82,7 @@ public class PqrsdController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("tipos/{id:guid}")]
     public async Task<IActionResult> ActualizarTipo(Guid id, [FromBody] GuardarTipoPqrsdRequest req, CancellationToken ct)
     {
@@ -81,6 +90,7 @@ public class PqrsdController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Eliminar)]
     [HttpDelete("tipos/{id:guid}")]
     public async Task<IActionResult> EliminarTipo(Guid id, CancellationToken ct)
     {
@@ -100,6 +110,7 @@ public class PqrsdController : ControllerBase
     [HttpGet("estados")]
     public async Task<IActionResult> ListarEstados(CancellationToken ct) => Ok(await _svc.ListarEstadosAsync(ct));
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
     [HttpPost("estados")]
     public async Task<IActionResult> CrearEstado([FromBody] CrearEstadoPqrsdRequest req, CancellationToken ct)
     {
@@ -107,6 +118,7 @@ public class PqrsdController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("estados/{id:guid}")]
     public async Task<IActionResult> ActualizarEstado(Guid id, [FromBody] ActualizarEstadoPqrsdRequest req, CancellationToken ct)
     {
@@ -114,6 +126,7 @@ public class PqrsdController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Eliminar)]
     [HttpDelete("estados/{id:guid}")]
     public async Task<IActionResult> EliminarEstado(Guid id, CancellationToken ct)
     {
@@ -121,10 +134,12 @@ public class PqrsdController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("estados/{id:guid}/orden")]
     public async Task<IActionResult> ReordenarEstado(Guid id, [FromQuery] string direccion, CancellationToken ct)
         => await _svc.ReordenarEstadoAsync(id, direccion, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/mover")]
     public async Task<IActionResult> MoverAEstado(Guid id, [FromBody] MoverExpedienteEstadoRequest req, CancellationToken ct)
     {
@@ -139,6 +154,7 @@ public class PqrsdController : ControllerBase
     [HttpGet("campos-archivados")]
     public async Task<IActionResult> ListarCamposArchivados(CancellationToken ct) => Ok(await _svc.ListarCamposArchivadosAsync(ct));
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
     [HttpPost("campos")]
     public async Task<IActionResult> CrearCampo([FromBody] GuardarCampoPqrsdRequest req, CancellationToken ct)
     {
@@ -146,6 +162,7 @@ public class PqrsdController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("campos/{id:guid}")]
     public async Task<IActionResult> ActualizarCampo(Guid id, [FromBody] GuardarCampoPqrsdRequest req, CancellationToken ct)
     {
@@ -153,10 +170,12 @@ public class PqrsdController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Eliminar)]
     [HttpDelete("campos/{id:guid}")]
     public async Task<IActionResult> EliminarCampo(Guid id, CancellationToken ct)
         => await _svc.EliminarCampoAsync(id, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("campos/{id:guid}/archivar")]
     public async Task<IActionResult> ArchivarCampo(Guid id, [FromQuery] bool archivar, CancellationToken ct)
     {
@@ -164,10 +183,12 @@ public class PqrsdController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("campos/{id:guid}/orden")]
     public async Task<IActionResult> ReordenarCampo(Guid id, [FromQuery] string direccion, CancellationToken ct)
         => await _svc.ReordenarCampoAsync(id, direccion, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("campos/{id:guid}/publico")]
     public async Task<IActionResult> SetCampoPublico(Guid id, [FromQuery] bool mostrar, CancellationToken ct)
         => await _svc.SetCampoPublicoAsync(id, mostrar, ct) ? NoContent() : NotFound();
@@ -176,6 +197,7 @@ public class PqrsdController : ControllerBase
     [HttpGet("formulario-config")]
     public async Task<IActionResult> GetFormularioConfig(CancellationToken ct) => Ok(await _svc.GetFormularioPublicoConfigAsync(ct));
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("formulario-config")]
     public async Task<IActionResult> GuardarFormularioConfig([FromBody] PqrsdFormularioPublicoConfigDto req, CancellationToken ct)
     {
@@ -193,6 +215,7 @@ public class PqrsdController : ControllerBase
     // --- Tareas enlazadas al PQR (tablero "PQRSD") ---
     [HttpGet("{id:guid}/tareas")]
     public async Task<IActionResult> ListTareasDePqr(Guid id, CancellationToken ct) => Ok(await _svc.ListTareasDePqrAsync(id, ct));
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/tareas")]
     public async Task<IActionResult> CrearTareaDePqr(Guid id, [FromBody] CrearPqrTareaRequest req, CancellationToken ct)
     {
@@ -205,6 +228,7 @@ public class PqrsdController : ControllerBase
     public async Task<IActionResult> ObtenerTableroTareas(CancellationToken ct)
         => Ok(new { tableroId = await _svc.ObtenerTableroTareasConfigAsync(ct) });
     public record GuardarTableroTareasRequest(Guid? TableroId);
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("config/tablero-tareas")]
     public async Task<IActionResult> GuardarTableroTareas([FromBody] GuardarTableroTareasRequest req, CancellationToken ct)
     {
@@ -213,6 +237,7 @@ public class PqrsdController : ControllerBase
     }
 
     // --- Radicacion ---
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
     [HttpPost]
     public async Task<IActionResult> Radicar([FromBody] RadicarPqrsdRequest req, CancellationToken ct)
     {
@@ -225,10 +250,12 @@ public class PqrsdController : ControllerBase
     public async Task<IActionResult> MisPqrsd(CancellationToken ct) => Ok(await _svc.ListarMisPqrsdAsync(ct));
 
     // --- Ciclo de gestion ---
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/tomar")]
     public async Task<IActionResult> Tomar(Guid id, [FromBody] TomarExpedienteRequest req, CancellationToken ct)
         => await _svc.TomarExpedienteAsync(id, req, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/responder")]
     public async Task<IActionResult> Responder(Guid id, [FromBody] ResponderExpedienteRequest req, CancellationToken ct)
     {
@@ -275,6 +302,7 @@ public class PqrsdController : ControllerBase
         catch { /* best-effort: el PDF es un complemento, no debe tumbar la respuesta */ }
     }
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/inconformidad")]
     public async Task<IActionResult> Inconformidad(Guid id, [FromBody] ManifestarInconformidadRequest req, CancellationToken ct)
     {
@@ -282,6 +310,7 @@ public class PqrsdController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Aprobar)]
     [HttpPut("{id:guid}/cerrar")]
     public async Task<IActionResult> Cerrar(Guid id, [FromBody] CerrarDefinitivoRequest req, CancellationToken ct)
     {
@@ -290,6 +319,7 @@ public class PqrsdController : ControllerBase
     }
 
     // --- Tutela ---
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/tutela")]
     public async Task<IActionResult> ActivarTutela(Guid id, [FromBody] ActivarTutelaRequest req, CancellationToken ct)
     {
@@ -298,6 +328,7 @@ public class PqrsdController : ControllerBase
     }
 
     // --- Prorroga (ampliacion de plazo con motivo, queda en la traza) ---
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/prorroga")]
     public async Task<IActionResult> Prorrogar(Guid id, [FromBody] AmpliarPlazoRequest req, CancellationToken ct)
     {
@@ -306,10 +337,12 @@ public class PqrsdController : ControllerBase
     }
 
     // --- Archivar / actualizar expediente ---
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/archivar")]
     public async Task<IActionResult> Archivar(Guid id, [FromQuery] bool archivar, CancellationToken ct)
         => await _svc.ArchivarExpedienteAsync(id, archivar, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/actualizar")]
     public async Task<IActionResult> Actualizar(Guid id, [FromBody] ActualizarExpedienteRequest req, CancellationToken ct)
     {
@@ -317,6 +350,7 @@ public class PqrsdController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/actividad")]
     public async Task<IActionResult> ReportarActividad(Guid id, [FromBody] ReportarActividadPqrsdRequest req, CancellationToken ct)
     {
@@ -324,6 +358,7 @@ public class PqrsdController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/generar-tarea")]
     public async Task<IActionResult> GenerarTarea(Guid id, CancellationToken ct)
     {
@@ -332,6 +367,7 @@ public class PqrsdController : ControllerBase
     }
 
     // --- Comite ---
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/comite")]
     public async Task<IActionResult> EscalarAComite(Guid id, [FromBody] EscalarAComiteRequest req, CancellationToken ct)
     {
@@ -339,6 +375,7 @@ public class PqrsdController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("comite/{sesionId:guid}/registrar")]
     public async Task<IActionResult> RegistrarSesionComite(Guid sesionId, [FromBody] RegistrarSesionComiteRequest req, CancellationToken ct)
     {
@@ -403,6 +440,7 @@ public class PqrsdController : ControllerBase
     }
 
     // --- Agregar adjunto despues de la radicacion (admin adjunta evidencias/documentos) ---
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/adjuntos")]
     public async Task<IActionResult> AgregarAdjunto(Guid id, [FromBody] AgregarAdjuntoPqrsdRequest req, CancellationToken ct)
     {
@@ -428,6 +466,7 @@ public class PqrsdController : ControllerBase
 
     // --- Subir el binario de un adjunto (documentos e imagenes) y registrarlo ---
     // Acepta un caption opcional 'texto' para el chat de actividad (burbuja con imagen/archivo + texto).
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/adjuntos/upload")]
     [RequestSizeLimit(52_500_000)]
     public async Task<IActionResult> SubirAdjuntoBinario(Guid id, IFormFile file, [FromForm] string? texto, [FromForm] Guid? respuestaId, CancellationToken ct)
@@ -467,6 +506,7 @@ public class PqrsdController : ControllerBase
     }
 
     // --- Eliminar un adjunto ---
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Eliminar)]
     [HttpDelete("{id:guid}/adjuntos/{adjuntoId:guid}")]
     public async Task<IActionResult> EliminarAdjunto(Guid id, Guid adjuntoId, CancellationToken ct)
     {
@@ -478,11 +518,13 @@ public class PqrsdController : ControllerBase
     }
 
     // --- Marcar/desmarcar un adjunto como compartido en el link publico de seguimiento ---
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/adjuntos/{adjuntoId:guid}/compartir")]
     public async Task<IActionResult> CompartirAdjunto(Guid id, Guid adjuntoId, [FromBody] CompartirAdjuntoRequest req, CancellationToken ct)
         => await _svc.SetAdjuntoCompartidoAsync(id, adjuntoId, req.Compartido, ct) ? NoContent() : NotFound();
 
     // --- Obtener/crear el token del link publico de seguimiento del expediente ---
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/compartir")]
     public async Task<IActionResult> CompartirSeguimiento(Guid id, CancellationToken ct)
     {
@@ -495,6 +537,7 @@ public class PqrsdController : ControllerBase
     public async Task<IActionResult> ListarRespuestas(Guid id, CancellationToken ct)
         => Ok(await _svc.ListarRespuestasAsync(id, ct));
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/respuestas")]
     public async Task<IActionResult> CrearRespuesta(Guid id, [FromBody] CrearRespuestaBorradorRequest req, CancellationToken ct)
     {
@@ -502,6 +545,7 @@ public class PqrsdController : ControllerBase
         return dto is null ? NotFound() : Created("", dto);
     }
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/respuestas/{respuestaId:guid}")]
     public async Task<IActionResult> ActualizarRespuesta(Guid id, Guid respuestaId, [FromBody] CrearRespuestaBorradorRequest req, CancellationToken ct)
     {
@@ -510,6 +554,7 @@ public class PqrsdController : ControllerBase
     }
 
     // Archiva/desarchiva una respuesta.
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/respuestas/{respuestaId:guid}/archivar")]
     public async Task<IActionResult> ArchivarRespuesta(Guid id, Guid respuestaId, [FromBody] ArchivarRespuestaRequest req, CancellationToken ct)
         => await _svc.ArchivarRespuestaAsync(id, respuestaId, req.Archivar, ct) ? NoContent() : NotFound();
@@ -520,6 +565,7 @@ public class PqrsdController : ControllerBase
         => Ok(await _svc.ListarVersionesRespuestaAsync(id, respuestaId, ct));
 
     // Vista previa del documento oficial (membrete + cuerpo) como HTML. El mismo HTML se renderiza luego a PDF.
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/respuestas/documento-preview")]
     public async Task<IActionResult> PreviewDocumento(Guid id, [FromBody] CrearRespuestaBorradorRequest req, CancellationToken ct)
     {
@@ -528,6 +574,7 @@ public class PqrsdController : ControllerBase
     }
 
     // Genera el PDF oficial (membrete + cuerpo) de una respuesta con Chromium y lo adjunta (compartido).
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/respuestas/{respuestaId:guid}/pdf")]
     public async Task<IActionResult> GenerarPdfRespuesta(Guid id, Guid respuestaId, CancellationToken ct)
     {
@@ -568,6 +615,7 @@ public class PqrsdController : ControllerBase
 
     // Envia la respuesta por Gmail a sus destinatarios: compone el documento, genera el PDF (Chromium),
     // lo adjunta al correo (y al expediente) y marca la respuesta como Enviada.
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/respuestas/{respuestaId:guid}/enviar")]
     public async Task<IActionResult> EnviarRespuesta(Guid id, Guid respuestaId, CancellationToken ct)
     {
@@ -635,14 +683,17 @@ public class PqrsdController : ControllerBase
     [HttpGet("plantillas")]
     public async Task<IActionResult> ListarPlantillas(CancellationToken ct) => Ok(await _svc.ListarPlantillasAsync(ct));
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
     [HttpPost("plantillas")]
     public async Task<IActionResult> CrearPlantilla([FromBody] GuardarPlantillaRequest req, CancellationToken ct)
         => Ok(await _svc.CrearPlantillaAsync(req, ct));
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("plantillas/{plantillaId:guid}")]
     public async Task<IActionResult> ActualizarPlantilla(Guid plantillaId, [FromBody] GuardarPlantillaRequest req, CancellationToken ct)
         => await _svc.ActualizarPlantillaAsync(plantillaId, req, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Eliminar)]
     [HttpDelete("plantillas/{plantillaId:guid}")]
     public async Task<IActionResult> EliminarPlantilla(Guid plantillaId, CancellationToken ct)
         => await _svc.EliminarPlantillaAsync(plantillaId, ct) ? NoContent() : NotFound();

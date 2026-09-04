@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
+using Propia.Domain.Enums;
 using Propia.Application.Prestamos;
 
 namespace Propia.Api.Controllers;
@@ -7,7 +9,9 @@ namespace Propia.Api.Controllers;
 /// <summary>Prestamos de equipos/activos reservables + trazabilidad de entrega/devolucion con fotos.</summary>
 [ApiController]
 [Route("api/prestamos-equipo")]
+
 [Authorize]
+[RequiereRol("Administrador")]  // S-06: gestion sensible, admin
 public class PrestamosController : ControllerBase
 {
     private readonly IPrestamosService _svc;

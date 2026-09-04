@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
 using Propia.Application.Documentos;
 using Propia.Domain.Enums;
 
@@ -11,6 +12,7 @@ namespace Propia.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/documentos")]
+
 [Authorize]
 public class DocumentosController : ControllerBase
 {
@@ -31,6 +33,7 @@ public class DocumentosController : ControllerBase
         return c is null ? NotFound() : Ok(c);
     }
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Crear)]
     [HttpPost("categorias")]
     public async Task<IActionResult> CrearCategoria([FromBody] CrearCategoriaRequest req, CancellationToken ct)
     {
@@ -42,6 +45,7 @@ public class DocumentosController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Editar)]
     [HttpPut("categorias/{id:guid}")]
     public async Task<IActionResult> ActualizarCategoria(Guid id, [FromBody] ActualizarCategoriaRequest req, CancellationToken ct)
     {
@@ -53,6 +57,7 @@ public class DocumentosController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Eliminar)]
     [HttpDelete("categorias/{id:guid}")]
     public async Task<IActionResult> DesactivarCategoria(Guid id, CancellationToken ct)
     {
@@ -70,6 +75,7 @@ public class DocumentosController : ControllerBase
     public async Task<IActionResult> ListarCarpetas(Guid categoriaId, CancellationToken ct)
         => Ok(await _svc.ListarCarpetasAsync(categoriaId, ct));
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Crear)]
     [HttpPost("carpetas")]
     public async Task<IActionResult> CrearCarpeta([FromBody] CrearCarpetaRequest req, CancellationToken ct)
     {
@@ -81,6 +87,7 @@ public class DocumentosController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Editar)]
     [HttpPut("carpetas/{id:guid}")]
     public async Task<IActionResult> RenombrarCarpeta(Guid id, [FromBody] RenombrarCarpetaRequest req, CancellationToken ct)
     {
@@ -88,6 +95,7 @@ public class DocumentosController : ControllerBase
         return ok ? NoContent() : NotFound();
     }
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Eliminar)]
     [HttpDelete("carpetas/{id:guid}")]
     public async Task<IActionResult> DesactivarCarpeta(Guid id, CancellationToken ct)
     {
@@ -105,6 +113,7 @@ public class DocumentosController : ControllerBase
     public async Task<IActionResult> ListarEtiquetas(CancellationToken ct)
         => Ok(await _svc.ListarEtiquetasAsync(ct));
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Crear)]
     [HttpPost("etiquetas")]
     public async Task<IActionResult> CrearEtiqueta([FromBody] CrearEtiquetaRequest req, CancellationToken ct)
     {
@@ -116,6 +125,7 @@ public class DocumentosController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Editar)]
     [HttpPut("etiquetas/{id:guid}")]
     public async Task<IActionResult> ActualizarEtiqueta(Guid id, [FromBody] ActualizarEtiquetaRequest req, CancellationToken ct)
     {
@@ -127,6 +137,7 @@ public class DocumentosController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Eliminar)]
     [HttpDelete("etiquetas/{id:guid}")]
     public async Task<IActionResult> DesactivarEtiqueta(Guid id, CancellationToken ct)
     {
@@ -165,6 +176,7 @@ public class DocumentosController : ControllerBase
         return d is null ? NotFound() : Ok(d);
     }
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Crear)]
     [HttpPost]
     public async Task<IActionResult> Subir([FromBody] SubirDocumentoRequest req, CancellationToken ct)
     {
@@ -177,6 +189,7 @@ public class DocumentosController : ControllerBase
         catch (FormatException ex) { return BadRequest(new { error = "Contenido base64 invalido: " + ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/versiones")]
     public async Task<IActionResult> NuevaVersion(Guid id, [FromBody] NuevaVersionRequest req, CancellationToken ct)
     {
@@ -189,6 +202,7 @@ public class DocumentosController : ControllerBase
         catch (FormatException ex) { return BadRequest(new { error = "Contenido base64 invalido: " + ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Editar)]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> ActualizarMetadatos(Guid id, [FromBody] ActualizarMetadatosRequest req, CancellationToken ct)
     {
@@ -196,6 +210,7 @@ public class DocumentosController : ControllerBase
         return ok ? NoContent() : NotFound();
     }
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/estado")]
     public async Task<IActionResult> CambiarEstado(Guid id, [FromBody] CambiarEstadoRequest req, CancellationToken ct)
     {
@@ -207,6 +222,7 @@ public class DocumentosController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Eliminar)]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Eliminar(Guid id, CancellationToken ct)
     {
@@ -216,14 +232,17 @@ public class DocumentosController : ControllerBase
 
     // ----- Destacados -----
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/destacado-personal")]
     public async Task<IActionResult> MarcarDestacadoPersonal(Guid id, CancellationToken ct)
         => await _svc.MarcarDestacadoPersonalAsync(id, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Eliminar)]
     [HttpDelete("{id:guid}/destacado-personal")]
     public async Task<IActionResult> QuitarDestacadoPersonal(Guid id, CancellationToken ct)
         => await _svc.QuitarDestacadoPersonalAsync(id, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/destacado")]
     public async Task<IActionResult> MarcarDestacadoCopropiedad(Guid id, [FromQuery] bool destacar, CancellationToken ct)
         => await _svc.MarcarDestacadoCopropiedadAsync(id, destacar, ct) ? NoContent() : NotFound();
@@ -237,6 +256,7 @@ public class DocumentosController : ControllerBase
         return dto is null ? NotFound() : Ok(dto);
     }
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/vistas")]
     public async Task<IActionResult> RegistrarVista(Guid id, [FromQuery] DispositivoConsumo dispositivo = DispositivoConsumo.Unknown, CancellationToken ct = default)
     {

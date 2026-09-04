@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
 using Propia.Application.Directorio;
 using Propia.Application.MiCopropiedad;
 using Propia.Domain.Enums;
@@ -14,6 +15,7 @@ namespace Propia.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/directorio")]
+
 [Authorize]
 public class DirectorioController : ControllerBase
 {
@@ -33,6 +35,7 @@ public class DirectorioController : ControllerBase
     public async Task<IActionResult> DescargarPlantilla(CancellationToken ct)
         => File(await _plantillas.GenerarPlantillaDirectorioAsync(ct), XlsxMime, "plantilla-directorio-propia.xlsx");
 
+    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Crear)]
     [HttpPost("importar")]
     [RequestSizeLimit(10 * 1024 * 1024)]
     public async Task<IActionResult> Importar([FromForm] IFormFile? file, CancellationToken ct)
@@ -47,6 +50,7 @@ public class DirectorioController : ControllerBase
     public async Task<IActionResult> ListarAdjuntos(EntidadDirectorio tipo, Guid entidadId, CancellationToken ct)
         => Ok(await _svc.ListarAdjuntosAsync(tipo, entidadId, ct));
 
+    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Crear)]
     [HttpPost("adjuntos/{tipo}/{entidadId:guid}")]
     [RequestSizeLimit(15 * 1024 * 1024)]
     public async Task<IActionResult> SubirAdjunto(EntidadDirectorio tipo, Guid entidadId, [FromForm] IFormFile? file, CancellationToken ct)
@@ -58,6 +62,7 @@ public class DirectorioController : ControllerBase
         return Ok(dto);
     }
 
+    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Eliminar)]
     [HttpDelete("adjuntos/{adjuntoId:guid}")]
     public async Task<IActionResult> EliminarAdjunto(Guid adjuntoId, CancellationToken ct)
         => await _svc.EliminarAdjuntoAsync(adjuntoId, ct) ? NoContent() : NotFound();
@@ -80,6 +85,7 @@ public class DirectorioController : ControllerBase
         => Ok(await _svc.BuscarCandidatosAsync(q ?? "", ct));
 
     /// <summary>Trae a la copropiedad activa una persona que ya existe en la organizacion.</summary>
+    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Crear)]
     [HttpPost("personas/{id:guid}/vincular")]
     public async Task<IActionResult> VincularCandidato(Guid id, CancellationToken ct)
     {
@@ -88,6 +94,7 @@ public class DirectorioController : ControllerBase
     }
 
     /// <summary>Gemelo del anterior para empresas (dueno/tercero juridico).</summary>
+    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Crear)]
     [HttpPost("empresas/{id:guid}/vincular")]
     public async Task<IActionResult> VincularCandidatoEmpresa(Guid id, CancellationToken ct)
     {
@@ -103,6 +110,7 @@ public class DirectorioController : ControllerBase
         => Ok(await _svc.ObtenerContactosRapidosAsync(tipo, id, ct));
 
     /// <summary>Reemplaza en bloque los contactos de una entidad (lo que captura la ficha).</summary>
+    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Editar)]
     [HttpPut("contactos-rapidos")]
     public async Task<IActionResult> ReemplazarContactos([FromBody] ReemplazarContactosRequest req, CancellationToken ct)
     {
@@ -117,6 +125,7 @@ public class DirectorioController : ControllerBase
         return dto is null ? NotFound() : Ok(dto);
     }
 
+    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Crear)]
     [HttpPost("personas/buscar")]
     public async Task<IActionResult> BuscarPersona([FromBody] BuscarPorDocumentoRequest req, CancellationToken ct)
     {
@@ -124,6 +133,7 @@ public class DirectorioController : ControllerBase
         return p is null ? NoContent() : Ok(p);
     }
 
+    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Crear)]
     [HttpPost("personas")]
     public async Task<IActionResult> CrearPersona([FromBody] CrearPersonaRequest req, CancellationToken ct)
     {
@@ -131,6 +141,7 @@ public class DirectorioController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Editar)]
     [HttpPut("personas/{id:guid}")]
     public async Task<IActionResult> ActualizarPersona(Guid id, [FromBody] ActualizarPersonaRequest req, CancellationToken ct)
     {
@@ -143,6 +154,7 @@ public class DirectorioController : ControllerBase
     }
 
     // Foto de la persona (ficha de residente): sube y persiste Persona.FotoUrl por personaId.
+    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Crear)]
     [HttpPost("personas/{id:guid}/foto")]
     [RequestSizeLimit(5_500_000)]
     public async Task<IActionResult> SubirFotoPersona(Guid id, IFormFile? file, CancellationToken ct)
@@ -181,6 +193,7 @@ public class DirectorioController : ControllerBase
         return e is null ? NoContent() : Ok(e);
     }
 
+    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Crear)]
     [HttpPost("empresas")]
     public async Task<IActionResult> CrearEmpresa([FromBody] CrearEmpresaRequest req, CancellationToken ct)
     {
@@ -188,6 +201,7 @@ public class DirectorioController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Editar)]
     [HttpPut("empresas/{id:guid}")]
     public async Task<IActionResult> ActualizarEmpresa(Guid id, [FromBody] ActualizarEmpresaRequest req, CancellationToken ct)
     {
@@ -207,6 +221,7 @@ public class DirectorioController : ControllerBase
     }
 
     // ---------- Vinculos ----------
+    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Crear)]
     [HttpPost("vinculos")]
     public async Task<IActionResult> CrearVinculo([FromBody] CrearVinculoRequest req, CancellationToken ct)
     {
@@ -214,10 +229,12 @@ public class DirectorioController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Aprobar)]
     [HttpPut("vinculos/{id:guid}/inactivar")]
     public async Task<IActionResult> InactivarVinculo(Guid id, [FromQuery] string? motivo, CancellationToken ct)
         => await _svc.InactivarVinculoAsync(id, motivo, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Crear)]
     [HttpPost("vinculos/etiquetas")]
     public async Task<IActionResult> AsignarEtiqueta([FromBody] AsignarEtiquetaRequest req, CancellationToken ct)
     {
@@ -225,11 +242,13 @@ public class DirectorioController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Eliminar)]
     [HttpDelete("vinculos/etiquetas/{id:guid}")]
     public async Task<IActionResult> QuitarEtiqueta(Guid id, CancellationToken ct)
         => await _svc.QuitarEtiquetaAsync(id, ct) ? NoContent() : NotFound();
 
     // ---------- Contactos ----------
+    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Crear)]
     [HttpPost("contactos")]
     public async Task<IActionResult> AgregarContacto([FromBody] AgregarContactoRequest req, CancellationToken ct)
     {
@@ -237,6 +256,7 @@ public class DirectorioController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Eliminar)]
     [HttpDelete("contactos/{id:guid}")]
     public async Task<IActionResult> EliminarContacto(Guid id, CancellationToken ct)
         => await _svc.EliminarContactoAsync(id, ct) ? NoContent() : NotFound();
@@ -246,6 +266,7 @@ public class DirectorioController : ControllerBase
     public async Task<IActionResult> ListarEtiquetas([FromQuery] AplicaEtiqueta? aplicaA, [FromQuery] GrupoEtiqueta? grupo, CancellationToken ct)
         => Ok(await _svc.ListarEtiquetasAsync(aplicaA, grupo, ct));
 
+    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Crear)]
     [HttpPost("etiquetas")]
     public async Task<IActionResult> CrearEtiquetaCustom([FromBody] CrearEtiquetaCustomRequest req, CancellationToken ct)
     {
@@ -253,6 +274,7 @@ public class DirectorioController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Editar)]
     [HttpPut("etiquetas/{id:guid}")]
     public async Task<IActionResult> ActualizarEtiqueta(Guid id, [FromBody] EditarEtiquetaRequest req, CancellationToken ct)
     {
@@ -260,6 +282,7 @@ public class DirectorioController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Eliminar)]
     [HttpDelete("etiquetas/{id:guid}")]
     public async Task<IActionResult> EliminarEtiquetaCustom(Guid id, CancellationToken ct)
     {

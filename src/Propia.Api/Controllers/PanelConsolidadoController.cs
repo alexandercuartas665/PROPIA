@@ -1,12 +1,16 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
+using Propia.Domain.Enums;
 using Propia.Application.PanelConsolidado;
 
 namespace Propia.Api.Controllers;
 
 [ApiController]
 [Route("api/panel")]
+
 [Authorize]
+[RequiereRol("Administrador")]  // S-06: gestion sensible, admin
 public class PanelConsolidadoController : ControllerBase
 {
     private readonly IPanelConsolidadoService _svc;

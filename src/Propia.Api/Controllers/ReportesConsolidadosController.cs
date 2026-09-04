@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
+using Propia.Domain.Enums;
 using Propia.Application.ReportesConsolidados;
 
 namespace Propia.Api.Controllers;
@@ -11,7 +13,9 @@ namespace Propia.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/reportes-org")]
+
 [Authorize]
+[RequiereRol("Administrador")]  // S-06: gestion sensible, admin
 public class ReportesConsolidadosController : ControllerBase
 {
     private readonly IReportesConsolidadosService _svc;

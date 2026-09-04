@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
 using Propia.Application.Reportes;
 using Propia.Domain.Enums;
 
@@ -12,6 +13,7 @@ namespace Propia.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/reportes")]
+
 [Authorize]
 public class ReportesController : ControllerBase
 {
@@ -26,10 +28,12 @@ public class ReportesController : ControllerBase
 
     // ----- Reporte "Contratos proximos a vencer" (multi-copropiedad, con graficos + Excel) -----
 
+    [RequierePermiso(ModuloCodigo.Reportes, AccionPermiso.Crear)]
     [HttpPost("contratos-por-vencer")]
     public async Task<IActionResult> ContratosPorVencer([FromBody] ContratosPorVencerFiltro filtro, CancellationToken ct)
         => Ok(await _contratosPorVencer.GetAsync(filtro?.TenantIds, ct));
 
+    [RequierePermiso(ModuloCodigo.Reportes, AccionPermiso.Crear)]
     [HttpPost("contratos-por-vencer/excel")]
     public async Task<IActionResult> ContratosPorVencerExcel([FromBody] ContratosPorVencerFiltro filtro, CancellationToken ct)
     {
@@ -59,6 +63,7 @@ public class ReportesController : ControllerBase
 
     // ----- Generacion + historial -----
 
+    [RequierePermiso(ModuloCodigo.Reportes, AccionPermiso.Crear)]
     [HttpPost("generar")]
     public async Task<IActionResult> Generar([FromBody] GenerarReporteRequest req, CancellationToken ct)
     {
@@ -86,6 +91,7 @@ public class ReportesController : ControllerBase
         return r is null ? NotFound() : Ok(r);
     }
 
+    [RequierePermiso(ModuloCodigo.Reportes, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/regenerar")]
     public async Task<IActionResult> Regenerar(Guid id, CancellationToken ct)
     {
@@ -97,6 +103,7 @@ public class ReportesController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Reportes, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/compartir")]
     public async Task<IActionResult> Compartir(Guid id, [FromQuery] bool compartir, CancellationToken ct)
     {
@@ -121,6 +128,7 @@ public class ReportesController : ControllerBase
         return p is null ? NotFound() : Ok(p);
     }
 
+    [RequierePermiso(ModuloCodigo.Reportes, AccionPermiso.Crear)]
     [HttpPost("programaciones")]
     public async Task<IActionResult> CrearProgramacion([FromBody] CrearProgramacionRequest req, CancellationToken ct)
     {
@@ -132,6 +140,7 @@ public class ReportesController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Reportes, AccionPermiso.Editar)]
     [HttpPut("programaciones/{id:guid}")]
     public async Task<IActionResult> ActualizarProgramacion(Guid id, [FromBody] ActualizarProgramacionRequest req, CancellationToken ct)
     {
@@ -143,10 +152,12 @@ public class ReportesController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Reportes, AccionPermiso.Editar)]
     [HttpPut("programaciones/{id:guid}/pausar")]
     public async Task<IActionResult> Pausar(Guid id, [FromQuery] bool pausar, CancellationToken ct)
         => await _svc.PausarProgramacionAsync(id, pausar, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Reportes, AccionPermiso.Eliminar)]
     [HttpDelete("programaciones/{id:guid}")]
     public async Task<IActionResult> EliminarProgramacion(Guid id, CancellationToken ct)
         => await _svc.EliminarProgramacionAsync(id, ct) ? NoContent() : NotFound();
@@ -157,6 +168,7 @@ public class ReportesController : ControllerBase
     public async Task<IActionResult> ListarSemaforos(CancellationToken ct)
         => Ok(await _svc.ListarSemaforosAsync(ct));
 
+    [RequierePermiso(ModuloCodigo.Reportes, AccionPermiso.Editar)]
     [HttpPut("semaforos/{indicadorKey}")]
     public async Task<IActionResult> GuardarSemaforo(string indicadorKey, [FromBody] GuardarSemaforoRequest req, CancellationToken ct)
         => Ok(await _svc.GuardarSemaforoAsync(indicadorKey, req, ct));

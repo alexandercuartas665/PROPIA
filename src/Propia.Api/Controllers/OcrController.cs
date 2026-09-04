@@ -2,6 +2,8 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
+using Propia.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Propia.Application.InfraestructuraIa;
 using Propia.Application.Ocr;
@@ -17,7 +19,9 @@ namespace Propia.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/ocr")]
+
 [Authorize]
+[RequiereRol("Administrador")]  // S-06: gestion sensible, admin
 public class OcrController : ControllerBase
 {
     private readonly IDocumentExtractionService _ocr;

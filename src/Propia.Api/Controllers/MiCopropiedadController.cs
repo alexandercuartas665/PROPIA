@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
 using Propia.Application.MiCopropiedad;
 using Propia.Application.Presupuesto;
 using Propia.Application.Cartera;
@@ -16,6 +17,7 @@ namespace Propia.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/mi-copropiedad")]
+
 [Authorize]
 public class MiCopropiedadController : ControllerBase
 {
@@ -53,6 +55,7 @@ public class MiCopropiedadController : ControllerBase
     }
 
     // ---------- Seccion 1: Identidad ----------
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("identidad")]
     public async Task<IActionResult> ActualizarIdentidad([FromBody] ActualizarIdentidadRequest req, CancellationToken ct)
     {
@@ -67,6 +70,7 @@ public class MiCopropiedadController : ControllerBase
     }
 
     // Link de pago en linea (recaudo) de la copropiedad.
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("link-pago")]
     public async Task<IActionResult> ActualizarLinkPago([FromBody] ActualizarLinkPagoRequest req, CancellationToken ct)
     {
@@ -78,12 +82,14 @@ public class MiCopropiedadController : ControllerBase
 
     // ---------- Seccion 2: Distribucion - Torres ----------
     [HttpGet("torres")] public async Task<IActionResult> ListTorres(CancellationToken ct) => Ok(await _svc.ListTorresAsync(ct));
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("torres")]
     public async Task<IActionResult> CrearTorre([FromBody] CrearTorreRequest req, CancellationToken ct)
     {
         try { return Created("", await _svc.CrearTorreAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("torres/{id:guid}")]
     public async Task<IActionResult> EliminarTorre(Guid id, CancellationToken ct)
     {
@@ -112,6 +118,7 @@ public class MiCopropiedadController : ControllerBase
 
     /// <summary>Procesa la plantilla Excel multi-hoja: carga unidades/personas/vehiculos/mascotas en
     /// una o varias copropiedades del cliente. Devuelve el resumen + errores por fila.</summary>
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("distribucion/importar-carga")]
     [RequestSizeLimit(15 * 1024 * 1024)]
     public async Task<IActionResult> ImportarCarga([FromForm] IFormFile? file, CancellationToken ct, [FromQuery] bool tenantActual = false, [FromQuery] bool reemplazar = false)
@@ -127,6 +134,7 @@ public class MiCopropiedadController : ControllerBase
     }
 
     /// <summary>Procesa la plantilla subida: crea torres y unidades del tenant. Devuelve el resumen + errores por fila.</summary>
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("distribucion/importar")]
     [RequestSizeLimit(10 * 1024 * 1024)]
     public async Task<IActionResult> ImportarDistribucion([FromForm] IFormFile? file, CancellationToken ct)
@@ -146,6 +154,7 @@ public class MiCopropiedadController : ControllerBase
     public async Task<IActionResult> DescargarPlantillaZonas(CancellationToken ct)
         => File(await _plantillas.GenerarPlantillaZonasAsync(ct), XlsxMime, "plantilla-zonas-propia.xlsx");
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("zonas/importar")]
     [RequestSizeLimit(10 * 1024 * 1024)]
     public async Task<IActionResult> ImportarZonas([FromForm] IFormFile? file, CancellationToken ct)
@@ -160,6 +169,7 @@ public class MiCopropiedadController : ControllerBase
     public async Task<IActionResult> DescargarPlantillaEquipos(CancellationToken ct)
         => File(await _plantillas.GenerarPlantillaEquiposAsync(ct), XlsxMime, "plantilla-equipos-propia.xlsx");
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("equipos/importar")]
     [RequestSizeLimit(10 * 1024 * 1024)]
     public async Task<IActionResult> ImportarEquipos([FromForm] IFormFile? file, CancellationToken ct)
@@ -179,12 +189,14 @@ public class MiCopropiedadController : ControllerBase
         var u = await _svc.ObtenerUnidadAsync(id, ct);
         return u is null ? NotFound() : Ok(u);
     }
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("unidades")]
     public async Task<IActionResult> CrearUnidad([FromBody] CrearUnidadRequest req, CancellationToken ct)
     {
         try { return Created("", await _svc.CrearUnidadAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("unidades/{id:guid}")]
     public async Task<IActionResult> ActualizarUnidad(Guid id, [FromBody] ActualizarUnidadRequest req, CancellationToken ct)
     {
@@ -195,6 +207,7 @@ public class MiCopropiedadController : ControllerBase
         }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("unidades/{id:guid}")]
     public async Task<IActionResult> EliminarUnidad(Guid id, CancellationToken ct)
     {
@@ -210,12 +223,14 @@ public class MiCopropiedadController : ControllerBase
     // ---------- Vinculos entre unidades (RN-09) ----------
     [HttpGet("unidades/{id:guid}/vinculos")]
     public async Task<IActionResult> ListVinculos(Guid id, CancellationToken ct) => Ok(await _svc.ListVinculosAsync(id, ct));
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("unidades/{id:guid}/vinculos")]
     public async Task<IActionResult> CrearVinculo(Guid id, [FromBody] CrearVinculoUnidadRequest req, CancellationToken ct)
     {
         try { return Created("", await _svc.CrearVinculoAsync(id, req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("vinculos/{id:guid}")]
     public async Task<IActionResult> EliminarVinculo(Guid id, CancellationToken ct)
         => await _svc.EliminarVinculoAsync(id, ct) ? NoContent() : NotFound();
@@ -225,6 +240,7 @@ public class MiCopropiedadController : ControllerBase
     public async Task<IActionResult> ListPersonasUnidad(Guid id, CancellationToken ct)
         => Ok(await _svc.ListPersonasUnidadAsync(id, ct));
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("unidades/{id:guid}/personas")]
     public async Task<IActionResult> AgregarPersonaUnidad(Guid id, [FromBody] AgregarPersonaUnidadRequest req, CancellationToken ct)
     {
@@ -232,6 +248,7 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("unidades-personas/{id:guid}")]
     public async Task<IActionResult> EditarPersonaUnidad(Guid id, [FromBody] AgregarPersonaUnidadRequest req, CancellationToken ct)
     {
@@ -239,6 +256,7 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("unidades-personas/{id:guid}")]
     public async Task<IActionResult> EliminarPersonaUnidad(Guid id, CancellationToken ct)
         => await _svc.EliminarPersonaUnidadAsync(id, ct) ? NoContent() : NotFound();
@@ -247,6 +265,7 @@ public class MiCopropiedadController : ControllerBase
     [HttpGet("unidades-campos")]
     public async Task<IActionResult> ListCamposDefinicion(CancellationToken ct) => Ok(await _svc.ListCamposDefinicionAsync(ct));
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("unidades-campos")]
     public async Task<IActionResult> CrearCampoDefinicion([FromBody] CrearCampoDefinicionRequest req, CancellationToken ct)
     {
@@ -254,6 +273,7 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("unidades-campos/{definicionId:guid}")]
     public async Task<IActionResult> EliminarCampoDefinicion(Guid definicionId, CancellationToken ct)
         => await _svc.EliminarCampoDefinicionAsync(definicionId, ct) ? NoContent() : NotFound();
@@ -261,6 +281,7 @@ public class MiCopropiedadController : ControllerBase
     [HttpGet("unidades/{id:guid}/campos")]
     public async Task<IActionResult> ListCamposUnidad(Guid id, CancellationToken ct) => Ok(await _svc.ListCamposUnidadAsync(id, ct));
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("unidades/{id:guid}/campos/{definicionId:guid}")]
     public async Task<IActionResult> SetCampoValor(Guid id, Guid definicionId, [FromBody] SetCampoValorRequest req, CancellationToken ct)
     {
@@ -272,6 +293,7 @@ public class MiCopropiedadController : ControllerBase
     [HttpGet("unidades/{id:guid}/documentos")]
     public async Task<IActionResult> ListDocumentosUnidad(Guid id, CancellationToken ct) => Ok(await _svc.ListDocumentosUnidadAsync(id, ct));
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("unidades/{id:guid}/documentos")]
     [RequestSizeLimit(11_000_000)]
     public async Task<IActionResult> SubirDocumentoUnidad(Guid id, IFormFile file, CancellationToken ct)
@@ -288,6 +310,7 @@ public class MiCopropiedadController : ControllerBase
         return dto is null ? BadRequest(new { error = "No se pudo registrar el documento." }) : Ok(dto);
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("unidades-documentos/{docId:guid}")]
     public async Task<IActionResult> EliminarDocumentoUnidad(Guid docId, CancellationToken ct)
         => await _svc.EliminarDocumentoUnidadAsync(docId, ct) ? NoContent() : NotFound();
@@ -297,6 +320,7 @@ public class MiCopropiedadController : ControllerBase
     [HttpGet("unidades/{id:guid}/placas")]
     public async Task<IActionResult> ListPlacasUnidad(Guid id, CancellationToken ct) => Ok(await _svc.ListPlacasUnidadAsync(id, ct));
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("unidades/{id:guid}/placas")]
     public async Task<IActionResult> AgregarPlacaUnidad(Guid id, [FromBody] CrearUnidadPlacaRequest req, CancellationToken ct)
     {
@@ -304,6 +328,7 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("unidades-placas/{placaId:guid}")]
     public async Task<IActionResult> EliminarPlacaUnidad(Guid placaId, CancellationToken ct)
         => await _svc.EliminarPlacaUnidadAsync(placaId, ct) ? NoContent() : NotFound();
@@ -312,6 +337,7 @@ public class MiCopropiedadController : ControllerBase
     [HttpGet("unidades/{id:guid}/arriendos")]
     public async Task<IActionResult> ListArriendosUnidad(Guid id, CancellationToken ct) => Ok(await _svc.ListArriendosUnidadAsync(id, ct));
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("unidades/{id:guid}/arriendos")]
     public async Task<IActionResult> AgregarArriendoUnidad(Guid id, [FromBody] CrearUnidadArriendoRequest req, CancellationToken ct)
     {
@@ -319,6 +345,7 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("unidades-arriendos/{arriendoId:guid}")]
     public async Task<IActionResult> EliminarArriendoUnidad(Guid arriendoId, CancellationToken ct)
         => await _svc.EliminarArriendoUnidadAsync(arriendoId, ct) ? NoContent() : NotFound();
@@ -327,6 +354,7 @@ public class MiCopropiedadController : ControllerBase
     [HttpGet("unidades/{id:guid}/mascotas")]
     public async Task<IActionResult> ListMascotasUnidad(Guid id, CancellationToken ct) => Ok(await _svc.ListMascotasUnidadAsync(id, ct));
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("unidades/{id:guid}/mascotas")]
     public async Task<IActionResult> AgregarMascotaUnidad(Guid id, [FromBody] CrearUnidadMascotaRequest req, CancellationToken ct)
     {
@@ -334,6 +362,7 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("unidades-mascotas/{mascotaId:guid}")]
     public async Task<IActionResult> EliminarMascotaUnidad(Guid mascotaId, CancellationToken ct)
         => await _svc.EliminarMascotaUnidadAsync(mascotaId, ct) ? NoContent() : NotFound();
@@ -342,6 +371,7 @@ public class MiCopropiedadController : ControllerBase
     [HttpGet("unidades/{id:guid}/empleadas")]
     public async Task<IActionResult> ListEmpleadasUnidad(Guid id, CancellationToken ct) => Ok(await _svc.ListEmpleadasUnidadAsync(id, ct));
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("unidades/{id:guid}/empleadas")]
     public async Task<IActionResult> AgregarEmpleadaUnidad(Guid id, [FromBody] CrearUnidadEmpleadaRequest req, CancellationToken ct)
     {
@@ -349,6 +379,7 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("unidades-empleadas/{empleadaId:guid}")]
     public async Task<IActionResult> EliminarEmpleadaUnidad(Guid empleadaId, CancellationToken ct)
         => await _svc.EliminarEmpleadaUnidadAsync(empleadaId, ct) ? NoContent() : NotFound();
@@ -357,6 +388,7 @@ public class MiCopropiedadController : ControllerBase
     [HttpGet("unidades/{id:guid}/titularidad")]
     public async Task<IActionResult> ListTitularidadUnidad(Guid id, CancellationToken ct) => Ok(await _svc.ListTitularidadUnidadAsync(id, ct));
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("unidades/{id:guid}/titularidad")]
     public async Task<IActionResult> AgregarTitularidadUnidad(Guid id, [FromBody] CrearUnidadTitularidadRequest req, CancellationToken ct)
     {
@@ -364,6 +396,7 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("unidades-titularidad/{titularidadId:guid}")]
     public async Task<IActionResult> EliminarTitularidadUnidad(Guid titularidadId, CancellationToken ct)
         => await _svc.EliminarTitularidadUnidadAsync(titularidadId, ct) ? NoContent() : NotFound();
@@ -372,6 +405,7 @@ public class MiCopropiedadController : ControllerBase
     [HttpGet("unidades-personas/{id:guid}/campos")]
     public async Task<IActionResult> ListCamposPersona(Guid id, CancellationToken ct) => Ok(await _svc.ListCamposPersonaAsync(id, ct));
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("unidades-personas/{id:guid}/campos")]
     public async Task<IActionResult> AgregarCampoPersona(Guid id, [FromBody] CrearUnidadPersonaCampoRequest req, CancellationToken ct)
     {
@@ -379,6 +413,7 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("unidades-personas-campos/{campoId:guid}")]
     public async Task<IActionResult> EliminarCampoPersona(Guid campoId, CancellationToken ct)
         => await _svc.EliminarCampoPersonaAsync(campoId, ct) ? NoContent() : NotFound();
@@ -390,30 +425,35 @@ public class MiCopropiedadController : ControllerBase
         return c is null ? NotFound() : Ok(c);
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("unidades/rebalancear-coeficientes")]
     public async Task<IActionResult> RebalancearCoeficientes(CancellationToken ct)
         => Ok(await _svc.RebalancearCoeficientesAsync(ct));
 
     // ---------- Seccion 2: Tipos personalizados de unidad ----------
     [HttpGet("tipos-unidad")] public async Task<IActionResult> ListTiposUnidad(CancellationToken ct) => Ok(await _svc.ListTiposUnidadCustomAsync(ct));
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("tipos-unidad")]
     public async Task<IActionResult> CrearTipoUnidad([FromBody] CrearTipoUnidadCustomRequest req, CancellationToken ct)
     {
         try { return Created("", await _svc.CrearTipoUnidadCustomAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("tipos-unidad/{id:guid}")]
     public async Task<IActionResult> EliminarTipoUnidad(Guid id, CancellationToken ct)
         => await _svc.EliminarTipoUnidadCustomAsync(id, ct) ? NoContent() : NotFound();
 
     // ---------- Seccion 2: Tipos de coeficiente PH (RN-02) ----------
     [HttpGet("tipos-coeficiente")] public async Task<IActionResult> ListTiposCoef(CancellationToken ct) => Ok(await _svc.ListTiposCoeficienteAsync(ct));
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("tipos-coeficiente")]
     public async Task<IActionResult> CrearTipoCoef([FromBody] CrearTipoCoeficienteRequest req, CancellationToken ct)
     {
         try { return Created("", await _svc.CrearTipoCoeficienteAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("tipos-coeficiente/{id:guid}")]
     public async Task<IActionResult> EliminarTipoCoef(Guid id, CancellationToken ct)
     {
@@ -423,6 +463,7 @@ public class MiCopropiedadController : ControllerBase
     [HttpGet("unidades/{unidadId:guid}/coeficientes")]
     public async Task<IActionResult> ListCoefUnidad(Guid unidadId, CancellationToken ct)
         => Ok(await _svc.ListCoeficientesUnidadAsync(unidadId, ct));
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("unidades/{unidadId:guid}/coeficientes")]
     public async Task<IActionResult> SetCoefUnidad(Guid unidadId, [FromBody] SetCoeficienteUnidadRequest req, CancellationToken ct)
     {
@@ -431,12 +472,14 @@ public class MiCopropiedadController : ControllerBase
     }
 
     // ---------- Seccion 2: Generador inteligente + Import CSV ----------
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("unidades/generar")]
     public async Task<IActionResult> GenerarUnidades([FromBody] GenerarUnidadesRequest req, CancellationToken ct)
     {
         try { return Created("", await _svc.GenerarUnidadesAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("unidades/importar-csv")]
     public async Task<IActionResult> ImportarUnidadesCsv([FromBody] ImportarUnidadesRequest req, CancellationToken ct)
     {
@@ -446,36 +489,42 @@ public class MiCopropiedadController : ControllerBase
 
     // ---------- Seccion 4: Gobierno - Consejo ----------
     [HttpGet("consejo")] public async Task<IActionResult> ListConsejo(CancellationToken ct) => Ok(await _svc.ListMiembrosConsejoAsync(ct));
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("consejo")]
     public async Task<IActionResult> AgregarMiembro([FromBody] AgregarMiembroConsejoRequest req, CancellationToken ct)
     {
         try { return Created("", await _svc.AgregarMiembroConsejoAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Aprobar)]
     [HttpPut("consejo/{id:guid}/desactivar")]
     public async Task<IActionResult> DesactivarMiembro(Guid id, CancellationToken ct)
         => await _svc.DesactivarMiembroConsejoAsync(id, ct) ? NoContent() : NotFound();
 
     // ---------- Seccion 4: Comites ----------
     [HttpGet("comites")] public async Task<IActionResult> ListComites(CancellationToken ct) => Ok(await _svc.ListComitesAsync(ct));
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("comites")]
     public async Task<IActionResult> CrearComite([FromBody] CrearComiteRequest req, CancellationToken ct)
     {
         try { return Created("", await _svc.CrearComiteAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Aprobar)]
     [HttpPut("comites/{id:guid}/desactivar")]
     public async Task<IActionResult> DesactivarComite(Guid id, CancellationToken ct)
         => await _svc.DesactivarComiteAsync(id, ct) ? NoContent() : NotFound();
     [HttpGet("comites/{id:guid}/miembros")]
     public async Task<IActionResult> ListMiembrosComite(Guid id, CancellationToken ct)
         => Ok(await _svc.ListMiembrosComiteAsync(id, ct));
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("comites/miembros")]
     public async Task<IActionResult> AgregarMiembroComite([FromBody] AgregarComiteMiembroRequest req, CancellationToken ct)
     {
         try { return Created("", await _svc.AgregarMiembroComiteAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("comites/miembros/{id:guid}")]
     public async Task<IActionResult> RetirarMiembroComite(Guid id, CancellationToken ct)
         => await _svc.RetirarMiembroComiteAsync(id, ct) ? NoContent() : NotFound();
@@ -487,24 +536,28 @@ public class MiCopropiedadController : ControllerBase
         var r = await _svc.GetRevisorFiscalActivoAsync(ct);
         return r is null ? NoContent() : Ok(r);
     }
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("revisor-fiscal")]
     public async Task<IActionResult> DesignarRevisorFiscal([FromBody] DesignarRevisorFiscalRequest req, CancellationToken ct)
     {
         try { return Created("", await _svc.DesignarRevisorFiscalAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("revisor-fiscal/{id:guid}")]
     public async Task<IActionResult> RetirarRevisorFiscal(Guid id, CancellationToken ct)
         => await _svc.RetirarRevisorFiscalAsync(id, ct) ? NoContent() : NotFound();
 
     // ---------- Seccion 3: Equipo de trabajo ----------
     [HttpGet("equipo")] public async Task<IActionResult> ListEquipo(CancellationToken ct) => Ok(await _svc.ListEquipoAsync(ct));
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("equipo")]
     public async Task<IActionResult> AgregarMiembroEquipo([FromBody] AgregarMiembroEquipoRequest req, CancellationToken ct)
     {
         try { return Created("", await _svc.AgregarMiembroEquipoAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("equipo/{id:guid}")]
     public async Task<IActionResult> DesactivarMiembroEquipo(Guid id, CancellationToken ct)
         => await _svc.DesactivarMiembroEquipoAsync(id, ct) ? NoContent() : NotFound();
@@ -513,6 +566,7 @@ public class MiCopropiedadController : ControllerBase
     [HttpGet("gobierno/persona/{personaId:guid}")]
     public async Task<IActionResult> GetGobiernoPersona(Guid personaId, CancellationToken ct)
         => Ok(await _svc.GetGobiernoPersonaAsync(personaId, ct));
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("vincular-persona")]
     public async Task<IActionResult> VincularPersona([FromBody] VincularPersonaPorDocumentoRequest req, CancellationToken ct)
     {
@@ -522,15 +576,18 @@ public class MiCopropiedadController : ControllerBase
 
     // ---------- Seccion 5: Servicios ----------
     [HttpGet("contratos")] public async Task<IActionResult> ListContratos(CancellationToken ct) => Ok(await _svc.ListContratosAsync(ct));
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("contratos")]
     public async Task<IActionResult> CrearContrato([FromBody] CrearContratoServicioRequest req, CancellationToken ct)
     {
         try { return Created("", await _svc.CrearContratoAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("contratos/{id:guid}")]
     public async Task<IActionResult> ActualizarContrato(Guid id, [FromBody] ActualizarContratoRequest req, CancellationToken ct)
         => await _svc.ActualizarContratoAsync(id, req, ct) ? NoContent() : NotFound();
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("contratos/{id:guid}")]
     public async Task<IActionResult> EliminarContrato(Guid id, CancellationToken ct)
         => await _svc.EliminarContratoAsync(id, ct) ? NoContent() : NotFound();
@@ -539,9 +596,11 @@ public class MiCopropiedadController : ControllerBase
     [HttpGet("contratos/{id:guid}/expedientes")]
     public async Task<IActionResult> ListExpedientesContrato(Guid id, CancellationToken ct)
         => Ok(await _svc.ListExpedientesContratoAsync(id, ct));
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("contratos/{id:guid}/expedientes/{expedienteId:guid}")]
     public async Task<IActionResult> VincularExpedienteContrato(Guid id, Guid expedienteId, CancellationToken ct)
         => await _svc.VincularExpedienteContratoAsync(id, expedienteId, ct) ? NoContent() : NotFound();
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("contratos/{id:guid}/expedientes/{expedienteId:guid}")]
     public async Task<IActionResult> DesvincularExpedienteContrato(Guid id, Guid expedienteId, CancellationToken ct)
         => await _svc.DesvincularExpedienteContratoAsync(id, expedienteId, ct) ? NoContent() : NotFound();
@@ -553,51 +612,62 @@ public class MiCopropiedadController : ControllerBase
 
     // Campos personalizados (EAV) de contratos
     [HttpGet("contratos/campos")] public async Task<IActionResult> ListContratoCampos(CancellationToken ct) => Ok(await _svc.ListContratoCamposAsync(ct));
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("contratos/campos")]
     public async Task<IActionResult> CrearContratoCampo([FromBody] CrearContratoCampoRequest req, CancellationToken ct)
     {
         try { return Created("", await _svc.CrearContratoCampoAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("contratos/campos/{campoId:guid}")]
     public async Task<IActionResult> ActualizarContratoCampo(Guid campoId, [FromBody] ActualizarContratoCampoRequest req, CancellationToken ct)
         => await _svc.ActualizarContratoCampoAsync(campoId, req, ct) ? NoContent() : NotFound();
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("contratos/campos/{campoId:guid}")]
     public async Task<IActionResult> EliminarContratoCampo(Guid campoId, CancellationToken ct)
         => await _svc.EliminarContratoCampoAsync(campoId, ct) ? NoContent() : NotFound();
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("contratos/{id:guid}/campo-valor/{campoId:guid}")]
     public async Task<IActionResult> GuardarContratoCampoValor(Guid id, Guid campoId, [FromBody] GuardarContratoCampoValorRequest req, CancellationToken ct)
         => await _svc.GuardarContratoCampoValorAsync(id, campoId, req, ct) ? NoContent() : NotFound();
 
     // Etapas de flujo (Kanban) de contratos
     [HttpGet("contratos/etapas")] public async Task<IActionResult> ListContratoEtapas(CancellationToken ct) => Ok(await _svc.ListContratoEtapasAsync(ct));
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("contratos/etapas")]
     public async Task<IActionResult> CrearContratoEtapa([FromBody] CrearContratoEtapaRequest req, CancellationToken ct)
     {
         try { return Created("", await _svc.CrearContratoEtapaAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("contratos/etapas/reordenar")]
     public async Task<IActionResult> ReordenarContratoEtapas([FromBody] ReordenarContratoEtapasRequest req, CancellationToken ct)
     { await _svc.ReordenarContratoEtapasAsync(req, ct); return NoContent(); }
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("contratos/etapas/{etapaId:guid}")]
     public async Task<IActionResult> ActualizarContratoEtapa(Guid etapaId, [FromBody] ActualizarContratoEtapaRequest req, CancellationToken ct)
         => await _svc.ActualizarContratoEtapaAsync(etapaId, req, ct) ? NoContent() : NotFound();
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("contratos/etapas/{etapaId:guid}")]
     public async Task<IActionResult> EliminarContratoEtapa(Guid etapaId, CancellationToken ct)
         => await _svc.EliminarContratoEtapaAsync(etapaId, ct) ? NoContent() : NotFound();
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("contratos/{id:guid}/etapa")]
     public async Task<IActionResult> CambiarEtapaContrato(Guid id, [FromBody] CambiarEtapaContratoRequest req, CancellationToken ct)
         => await _svc.CambiarEtapaContratoAsync(id, req, ct) ? NoContent() : NotFound();
 
     // ---------- Seccion 6: Zonas Comunes ----------
     [HttpGet("zonas")] public async Task<IActionResult> ListZonas(CancellationToken ct) => Ok(await _svc.ListZonasComunesAsync(ct));
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("zonas")]
     public async Task<IActionResult> CrearZona([FromBody] CrearZonaComunRequest req, CancellationToken ct)
     {
         try { return Created("", await _svc.CrearZonaComunAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("zonas/{id:guid}")]
     public async Task<IActionResult> ActualizarZona(Guid id, [FromBody] ActualizarZonaComunRequest req, CancellationToken ct)
     {
@@ -608,9 +678,11 @@ public class MiCopropiedadController : ControllerBase
         }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("zonas/{id:guid}/estado")]
     public async Task<IActionResult> CambiarEstadoZona(Guid id, [FromBody] CambiarEstadoZonaRequest req, CancellationToken ct)
         => await _svc.CambiarEstadoZonaAsync(id, req, ct) ? NoContent() : NotFound();
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("zonas/{id:guid}")]
     public async Task<IActionResult> EliminarZona(Guid id, CancellationToken ct)
     {
@@ -620,15 +692,18 @@ public class MiCopropiedadController : ControllerBase
 
     // ---------- Seccion 7: Equipos ----------
     [HttpGet("equipos")] public async Task<IActionResult> ListEquipos(CancellationToken ct) => Ok(await _svc.ListEquiposAsync(ct));
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("equipos")]
     public async Task<IActionResult> CrearEquipo([FromBody] CrearEquipoActivoRequest req, CancellationToken ct)
     {
         try { return Created("", await _svc.CrearEquipoAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("equipos/{id:guid}/estado")]
     public async Task<IActionResult> CambiarEstadoEquipo(Guid id, [FromBody] CambiarEstadoEquipoRequest req, CancellationToken ct)
         => await _svc.CambiarEstadoEquipoAsync(id, req, ct) ? NoContent() : NotFound();
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("equipos/{id:guid}")]
     public async Task<IActionResult> ActualizarEquipo(Guid id, [FromBody] ActualizarEquipoActivoRequest req, CancellationToken ct)
     {
@@ -639,6 +714,7 @@ public class MiCopropiedadController : ControllerBase
         }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("equipos/{id:guid}")]
     public async Task<IActionResult> EliminarEquipo(Guid id, CancellationToken ct)
     {
@@ -654,6 +730,7 @@ public class MiCopropiedadController : ControllerBase
         return ficha is null ? NotFound() : Ok(ficha);
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("equipos/{id:guid}/fotos")]
     [RequestSizeLimit(6_000_000)]
     public async Task<IActionResult> SubirFotoEquipo(Guid id, IFormFile file, CancellationToken ct)
@@ -671,10 +748,12 @@ public class MiCopropiedadController : ControllerBase
         return dto is null ? BadRequest(new { error = "No se pudo registrar la foto." }) : Ok(dto);
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("equipos/fotos/{fotoId:guid}")]
     public async Task<IActionResult> EliminarFotoEquipo(Guid fotoId, CancellationToken ct)
         => await _svc.EliminarFotoEquipoAsync(fotoId, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("equipos/{id:guid}/mejoras")]
     public async Task<IActionResult> AgregarMejora(Guid id, [FromBody] AgregarMejoraRequest req, CancellationToken ct)
     {
@@ -686,10 +765,12 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("equipos/mejoras/{mejoraId:guid}")]
     public async Task<IActionResult> EliminarMejora(Guid mejoraId, CancellationToken ct)
         => await _svc.EliminarMejoraEquipoAsync(mejoraId, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("equipos/{id:guid}/activos-vinculados")]
     public async Task<IActionResult> ToggleActivoVinculado(Guid id, [FromBody] ToggleVinculoRequest req, CancellationToken ct)
     {
@@ -697,6 +778,7 @@ public class MiCopropiedadController : ControllerBase
         return NoContent();
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("equipos/{id:guid}/contratos-vinculados")]
     public async Task<IActionResult> ToggleContratoVinculado(Guid id, [FromBody] ToggleVinculoRequest req, CancellationToken ct)
     {
@@ -704,6 +786,7 @@ public class MiCopropiedadController : ControllerBase
         return NoContent();
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("equipos/{id:guid}/campos")]
     public async Task<IActionResult> AgregarCampo(Guid id, [FromBody] AgregarCampoRequest req, CancellationToken ct)
     {
@@ -715,6 +798,7 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("equipos/campos/{campoId:guid}")]
     public async Task<IActionResult> EliminarCampo(Guid campoId, CancellationToken ct)
         => await _svc.EliminarCampoEquipoAsync(campoId, ct) ? NoContent() : NotFound();
@@ -726,6 +810,7 @@ public class MiCopropiedadController : ControllerBase
         [FromQuery] Guid entidadId, CancellationToken ct)
         => Ok(await _svc.ListVentanasAsync(tipo, entidadId, ct));
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("disponibilidad")]
     public async Task<IActionResult> GuardarVentanas([FromBody] GuardarVentanasRequest req, CancellationToken ct)
     {
@@ -741,10 +826,12 @@ public class MiCopropiedadController : ControllerBase
         return ficha is null ? NotFound() : Ok(ficha);
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("zonas/{id:guid}/ficha")]
     public async Task<IActionResult> GuardarZonaFicha(Guid id, [FromBody] GuardarZonaFichaRequest req, CancellationToken ct)
         => await _svc.GuardarZonaFichaAsync(id, req, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("zonas/{id:guid}/imagen")]
     [RequestSizeLimit(6_000_000)]
     public async Task<IActionResult> SubirImagenZona(Guid id, IFormFile file, CancellationToken ct)
@@ -762,6 +849,7 @@ public class MiCopropiedadController : ControllerBase
         return saved is null ? NotFound() : Ok(new { url = saved });
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("zonas/{id:guid}/facturas")]
     public async Task<IActionResult> AgregarZonaFactura(Guid id, [FromBody] AgregarZonaFacturaRequest req, CancellationToken ct)
     {
@@ -769,10 +857,12 @@ public class MiCopropiedadController : ControllerBase
         return dto is null ? BadRequest(new { error = "no_active_tenant" }) : Ok(dto);
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("zonas/facturas/{facturaId:guid}")]
     public async Task<IActionResult> EliminarZonaFactura(Guid facturaId, CancellationToken ct)
         => await _svc.EliminarZonaFacturaAsync(facturaId, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("zonas/{id:guid}/documentos")]
     [RequestSizeLimit(11_000_000)]
     public async Task<IActionResult> SubirZonaDocumento(Guid id, IFormFile file, CancellationToken ct)
@@ -789,10 +879,12 @@ public class MiCopropiedadController : ControllerBase
         return dto is null ? BadRequest(new { error = "No se pudo registrar el documento." }) : Ok(dto);
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("zonas/documentos/{docId:guid}")]
     public async Task<IActionResult> EliminarZonaDocumento(Guid docId, CancellationToken ct)
         => await _svc.EliminarZonaDocumentoAsync(docId, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("zonas/{id:guid}/campos")]
     public async Task<IActionResult> AgregarZonaCampo(Guid id, [FromBody] AgregarZonaCampoRequest req, CancellationToken ct)
     {
@@ -800,6 +892,7 @@ public class MiCopropiedadController : ControllerBase
         return dto is null ? BadRequest(new { error = "no_se_pudo" }) : Ok(dto);
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("zonas/campos/{campoId:guid}")]
     public async Task<IActionResult> EliminarZonaCampo(Guid campoId, CancellationToken ct)
         => await _svc.EliminarZonaCampoAsync(campoId, ct) ? NoContent() : NotFound();
@@ -822,6 +915,7 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("finanzas")]
     public async Task<IActionResult> ActualizarFinanzas([FromBody] ActualizarFinanzasRequest req, CancellationToken ct)
     {
@@ -847,6 +941,7 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("finanzas/configuracion")]
     public async Task<IActionResult> ActualizarConfigFinanzas([FromBody] ActualizarConfiguracionFinanzasRequest req, CancellationToken ct)
     {
@@ -862,6 +957,7 @@ public class MiCopropiedadController : ControllerBase
     public async Task<IActionResult> ListCuentasBancarias(CancellationToken ct)
         => Ok(await _svc.ListCuentasBancariasAsync(ct));
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("finanzas/cuentas-bancarias")]
     public async Task<IActionResult> CrearCuentaBancaria([FromBody] CrearCuentaBancariaRequest req, CancellationToken ct)
     {
@@ -869,6 +965,7 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("finanzas/cuentas-bancarias/{id:guid}")]
     public async Task<IActionResult> ActualizarCuentaBancaria(Guid id, [FromBody] ActualizarCuentaBancariaRequest req, CancellationToken ct)
     {
@@ -880,6 +977,7 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("finanzas/cuentas-bancarias/{id:guid}")]
     public async Task<IActionResult> EliminarCuentaBancaria(Guid id, CancellationToken ct)
         => await _svc.EliminarCuentaBancariaAsync(id, ct) ? NoContent() : NotFound();

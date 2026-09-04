@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
+using Propia.Domain.Enums;
 using Propia.Application.Informes;
 
 namespace Propia.Api.Controllers;
@@ -10,7 +12,9 @@ namespace Propia.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/informes")]
+
 [Authorize]
+[RequiereRol("Administrador")]  // S-06: gestion sensible, admin
 public class InformesController : ControllerBase
 {
     private readonly IInformesService _svc;

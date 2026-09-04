@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Propia.Application.Comunicaciones;
 using Propia.Domain.Enums;
+using Propia.Api.Authorization;
 
 namespace Propia.Api.Controllers;
 
@@ -32,6 +33,7 @@ public class ComunicacionesController : ControllerBase
         return p is null ? NotFound() : Ok(p);
     }
 
+    [RequierePermiso(ModuloCodigo.Comunicaciones, AccionPermiso.Crear)]  // S-06 fase 2/3
     [HttpPost("plantillas")]
     public async Task<IActionResult> CrearPlantilla([FromBody] CrearPlantillaRequest req, CancellationToken ct)
     {
@@ -43,6 +45,7 @@ public class ComunicacionesController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Comunicaciones, AccionPermiso.Editar)]  // S-06 fase 2/3
     [HttpPut("plantillas/{id:guid}")]
     public async Task<IActionResult> ActualizarPlantilla(Guid id, [FromBody] ActualizarPlantillaRequest req, CancellationToken ct)
     {
@@ -54,6 +57,7 @@ public class ComunicacionesController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Comunicaciones, AccionPermiso.Eliminar)]  // S-06 fase 2/3
     [HttpDelete("plantillas/{id:guid}")]
     public async Task<IActionResult> DesactivarPlantilla(Guid id, CancellationToken ct)
     {
@@ -82,6 +86,7 @@ public class ComunicacionesController : ControllerBase
         return c is null ? NotFound() : Ok(c);
     }
 
+    [RequierePermiso(ModuloCodigo.Comunicaciones, AccionPermiso.Crear)]  // S-06 fase 2/3
     [HttpPost]
     public async Task<IActionResult> Crear([FromBody] CrearBorradorRequest req, CancellationToken ct)
     {
@@ -93,6 +98,7 @@ public class ComunicacionesController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Comunicaciones, AccionPermiso.Editar)]  // S-06 fase 2/3
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Actualizar(Guid id, [FromBody] ActualizarBorradorRequest req, CancellationToken ct)
     {
@@ -106,6 +112,7 @@ public class ComunicacionesController : ControllerBase
 
     // ----- Segmentos -----
 
+    [RequierePermiso(ModuloCodigo.Comunicaciones, AccionPermiso.Crear)]  // S-06 fase 2/3
     [HttpPost("{id:guid}/segmentos")]
     public async Task<IActionResult> AgregarSegmento(Guid id, [FromBody] AgregarSegmentoRequest req, CancellationToken ct)
     {
@@ -117,6 +124,7 @@ public class ComunicacionesController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Comunicaciones, AccionPermiso.Eliminar)]  // S-06 fase 2/3
     [HttpDelete("{id:guid}/segmentos/{segmentoId:guid}")]
     public async Task<IActionResult> RemoverSegmento(Guid id, Guid segmentoId, CancellationToken ct)
     {
@@ -134,6 +142,7 @@ public class ComunicacionesController : ControllerBase
 
     // ----- Adjuntos -----
 
+    [RequierePermiso(ModuloCodigo.Comunicaciones, AccionPermiso.Crear)]  // S-06 fase 2/3
     [HttpPost("{id:guid}/adjuntos")]
     public async Task<IActionResult> AgregarAdjunto(Guid id, [FromBody] CrearAdjuntoRequest req, CancellationToken ct)
     {
@@ -145,6 +154,7 @@ public class ComunicacionesController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Comunicaciones, AccionPermiso.Eliminar)]  // S-06 fase 2/3
     [HttpDelete("{id:guid}/adjuntos/{adjuntoId:guid}")]
     public async Task<IActionResult> RemoverAdjunto(Guid id, Guid adjuntoId, CancellationToken ct)
     {
@@ -158,6 +168,7 @@ public class ComunicacionesController : ControllerBase
 
     // ----- Envio / Cancelacion -----
 
+    [RequierePermiso(ModuloCodigo.Comunicaciones, AccionPermiso.Aprobar)]  // S-06 fase 2/3
     [HttpPost("{id:guid}/enviar")]
     public async Task<IActionResult> Enviar(Guid id, [FromBody] EnviarRequest req, CancellationToken ct)
     {
@@ -169,6 +180,7 @@ public class ComunicacionesController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Comunicaciones, AccionPermiso.Aprobar)]  // S-06 fase 2/3
     [HttpPost("{id:guid}/cancelar")]
     public async Task<IActionResult> Cancelar(Guid id, [FromBody] CancelarRequest req, CancellationToken ct)
     {
@@ -180,6 +192,7 @@ public class ComunicacionesController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Comunicaciones, AccionPermiso.Aprobar)]  // S-06 fase 2/3
     [HttpPost("{id:guid}/reenviar-pendientes")]
     public async Task<IActionResult> Reenviar(Guid id, CancellationToken ct)
     {

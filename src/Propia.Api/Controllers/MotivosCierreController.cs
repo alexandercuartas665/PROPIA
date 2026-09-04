@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
+using Propia.Domain.Enums;
 using Propia.Application.Cierre;
 
 namespace Propia.Api.Controllers;
@@ -7,7 +9,9 @@ namespace Propia.Api.Controllers;
 /// <summary>Catalogo configurable de motivos de cierre por copropiedad, separado por modulo (tareas/pqrsd).</summary>
 [ApiController]
 [Route("api/cierre/motivos")]
+
 [Authorize]
+[RequiereRol("Administrador")]  // S-06: gestion sensible, admin
 public class MotivosCierreController : ControllerBase
 {
     private readonly IMotivosCierreService _svc;

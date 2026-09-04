@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
 using Propia.Application.Reservas;
 using Propia.Application.Prestamos;
 using Propia.Domain.Enums;
@@ -11,6 +12,7 @@ namespace Propia.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/reservas")]
+
 [Authorize]
 public class ReservasController : ControllerBase
 {
@@ -25,6 +27,7 @@ public class ReservasController : ControllerBase
 
     // ----- Entrega / devolucion del prestamo de la zona (trazabilidad con foto) -----
 
+    [RequierePermiso(ModuloCodigo.Reservas, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/entregar")]
     public async Task<IActionResult> Entregar(Guid id, [FromBody] RegistrarEntregaRequest req, CancellationToken ct)
     {
@@ -32,6 +35,7 @@ public class ReservasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Reservas, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/devolver")]
     public async Task<IActionResult> Devolver(Guid id, [FromBody] RegistrarEntregaRequest req, CancellationToken ct)
     {
@@ -55,6 +59,7 @@ public class ReservasController : ControllerBase
         return c is null ? NotFound() : Ok(c);
     }
 
+    [RequierePermiso(ModuloCodigo.Reservas, AccionPermiso.Editar)]
     [HttpPut("configs")]
     public async Task<IActionResult> GuardarConfig([FromBody] GuardarConfigRequest req, CancellationToken ct)
     {
@@ -94,6 +99,7 @@ public class ReservasController : ControllerBase
         return r is null ? NotFound() : Ok(r);
     }
 
+    [RequierePermiso(ModuloCodigo.Reservas, AccionPermiso.Crear)]
     [HttpPost]
     public async Task<IActionResult> Crear([FromBody] CrearReservaRequest req, CancellationToken ct)
     {
@@ -101,6 +107,7 @@ public class ReservasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Reservas, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/cancelar-residente")]
     public async Task<IActionResult> CancelarResidente(Guid id, [FromBody] CancelarReservaRequest req, CancellationToken ct)
     {
@@ -108,6 +115,7 @@ public class ReservasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Reservas, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/cancelar-admin")]
     public async Task<IActionResult> CancelarAdmin(Guid id, [FromBody] CancelarReservaRequest req, CancellationToken ct)
     {
@@ -115,6 +123,7 @@ public class ReservasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Reservas, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/reprogramar")]
     public async Task<IActionResult> Reprogramar(Guid id, [FromBody] ReprogramarReservaRequest req, CancellationToken ct)
     {
@@ -122,6 +131,7 @@ public class ReservasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Reservas, AccionPermiso.Aprobar)]
     [HttpPost("{id:guid}/aprobar")]
     public async Task<IActionResult> Aprobar(Guid id, CancellationToken ct)
     {
@@ -135,6 +145,7 @@ public class ReservasController : ControllerBase
     public async Task<IActionResult> ListarBloqueos([FromQuery] Guid? zonaId, [FromQuery] DateOnly? desde, [FromQuery] DateOnly? hasta, CancellationToken ct)
         => Ok(await _svc.ListarBloqueosAsync(zonaId, desde, hasta, ct));
 
+    [RequierePermiso(ModuloCodigo.Reservas, AccionPermiso.Crear)]
     [HttpPost("bloqueos")]
     public async Task<IActionResult> CrearBloqueo([FromBody] CrearBloqueoRequest req, CancellationToken ct)
     {
@@ -142,6 +153,7 @@ public class ReservasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Reservas, AccionPermiso.Eliminar)]
     [HttpDelete("bloqueos/{id:guid}")]
     public async Task<IActionResult> EliminarBloqueo(Guid id, CancellationToken ct)
         => await _svc.EliminarBloqueoAsync(id, ct) ? NoContent() : NotFound();

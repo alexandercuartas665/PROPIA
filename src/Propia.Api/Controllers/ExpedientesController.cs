@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
+using Propia.Domain.Enums;
 using Propia.Application.Documentos;
 
 namespace Propia.Api.Controllers;
@@ -10,6 +12,7 @@ namespace Propia.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/expedientes")]
+
 [Authorize]
 public class ExpedientesController : ControllerBase
 {
@@ -21,6 +24,7 @@ public class ExpedientesController : ControllerBase
     [HttpGet("trd")]
     public async Task<IActionResult> Trd(CancellationToken ct) => Ok(await _svc.ListarTrdAsync(ct));
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Crear)]
     [HttpPost("trd/series")]
     public async Task<IActionResult> CrearSerie([FromBody] CrearSerieRequest req, CancellationToken ct)
     {
@@ -28,10 +32,12 @@ public class ExpedientesController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Eliminar)]
     [HttpDelete("trd/series/{id:guid}")]
     public async Task<IActionResult> EliminarSerie(Guid id, CancellationToken ct)
         => await _svc.EliminarSerieAsync(id, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Crear)]
     [HttpPost("trd/subseries")]
     public async Task<IActionResult> CrearSubserie([FromBody] CrearSubserieRequest req, CancellationToken ct)
     {
@@ -39,10 +45,12 @@ public class ExpedientesController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Eliminar)]
     [HttpDelete("trd/subseries/{id:guid}")]
     public async Task<IActionResult> EliminarSubserie(Guid id, CancellationToken ct)
         => await _svc.EliminarSubserieAsync(id, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Crear)]
     [HttpPost("trd/tipologias")]
     public async Task<IActionResult> CrearTipologiaCfg([FromBody] CrearTipologiaCfgRequest req, CancellationToken ct)
     {
@@ -50,10 +58,12 @@ public class ExpedientesController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Eliminar)]
     [HttpDelete("trd/tipologias/{id:guid}")]
     public async Task<IActionResult> EliminarTipologiaCfg(Guid id, CancellationToken ct)
         => await _svc.EliminarTipologiaCfgAsync(id, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Crear)]
     [HttpPost("trd/campos")]
     public async Task<IActionResult> CrearCampoCfg([FromBody] CrearCampoCfgRequest req, CancellationToken ct)
     {
@@ -61,6 +71,7 @@ public class ExpedientesController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Eliminar)]
     [HttpDelete("trd/campos/{id:guid}")]
     public async Task<IActionResult> EliminarCampoCfg(Guid id, CancellationToken ct)
         => await _svc.EliminarCampoCfgAsync(id, ct) ? NoContent() : NotFound();
@@ -76,6 +87,7 @@ public class ExpedientesController : ControllerBase
         return e is null ? NotFound() : Ok(e);
     }
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Crear)]
     [HttpPost]
     public async Task<IActionResult> Crear([FromBody] CrearExpedienteRequest req, CancellationToken ct)
     {
@@ -87,6 +99,7 @@ public class ExpedientesController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/tipologias")]
     public async Task<IActionResult> AgregarTipologia(Guid id, [FromBody] AgregarTipologiaExpRequest req, CancellationToken ct)
     {
@@ -94,10 +107,12 @@ public class ExpedientesController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Eliminar)]
     [HttpDelete("tipologias/{tipologiaId:guid}")]
     public async Task<IActionResult> EliminarTipologia(Guid tipologiaId, CancellationToken ct)
         => await _svc.EliminarTipologiaAsync(tipologiaId, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/campos")]
     public async Task<IActionResult> AgregarCampo(Guid id, [FromBody] AgregarCampoExpRequest req, CancellationToken ct)
     {
@@ -105,10 +120,12 @@ public class ExpedientesController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Eliminar)]
     [HttpDelete("campos/{campoId:guid}")]
     public async Task<IActionResult> EliminarCampo(Guid campoId, CancellationToken ct)
         => await _svc.EliminarCampoAsync(campoId, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Crear)]
     [HttpPost("tipologias/{tipologiaId:guid}/cargar")]
     public async Task<IActionResult> Cargar(Guid tipologiaId, [FromBody] CargarTipologiaRequest req, CancellationToken ct)
     {
@@ -117,6 +134,7 @@ public class ExpedientesController : ControllerBase
         catch (FormatException) { return BadRequest(new { error = "Contenido base64 invalido." }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Eliminar)]
     [HttpDelete("tipologias/{tipologiaId:guid}/archivo")]
     public async Task<IActionResult> QuitarArchivo(Guid tipologiaId, CancellationToken ct)
         => await _svc.QuitarArchivoAsync(tipologiaId, ct) ? NoContent() : NotFound();
@@ -153,6 +171,7 @@ public class ExpedientesController : ControllerBase
         return dto is null ? NotFound() : Ok(dto);
     }
 
+    [RequierePermiso(ModuloCodigo.Documentos, AccionPermiso.Crear)]
     [HttpPost("tipologias/{tipologiaId:guid}/duplicar")]
     public async Task<IActionResult> Duplicar(Guid tipologiaId, CancellationToken ct)
         => await _svc.DuplicarTipologiaAsync(tipologiaId, ct) ? NoContent() : NotFound();

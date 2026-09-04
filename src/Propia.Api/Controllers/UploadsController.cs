@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
+using Propia.Domain.Enums;
 using Propia.Infrastructure.Storage;
 
 namespace Propia.Api.Controllers;
@@ -21,7 +23,9 @@ namespace Propia.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/uploads")]
+
 [Authorize]
+[RequiereRol("Administrador")]  // S-06: gestion sensible, admin
 public class UploadsController : ControllerBase
 {
     private readonly IBlobStorage _storage;

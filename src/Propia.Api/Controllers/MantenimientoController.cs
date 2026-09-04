@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
 using Propia.Application.Mantenimiento;
 using Propia.Domain.Enums;
 
@@ -11,6 +12,7 @@ namespace Propia.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/mantenimiento")]
+
 [Authorize]
 public class MantenimientoController : ControllerBase
 {
@@ -49,6 +51,7 @@ public class MantenimientoController : ControllerBase
         return p is null ? NotFound() : Ok(p);
     }
 
+    [RequierePermiso(ModuloCodigo.Mantenimiento, AccionPermiso.Crear)]
     [HttpPost("planes")]
     public async Task<IActionResult> CrearPlan([FromBody] CrearPlanRequest req, CancellationToken ct)
     {
@@ -60,6 +63,7 @@ public class MantenimientoController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Mantenimiento, AccionPermiso.Editar)]
     [HttpPut("planes/{id:guid}")]
     public async Task<IActionResult> ActualizarPlan(Guid id, [FromBody] ActualizarPlanRequest req, CancellationToken ct)
     {
@@ -71,6 +75,7 @@ public class MantenimientoController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Mantenimiento, AccionPermiso.Eliminar)]
     [HttpDelete("planes/{id:guid}")]
     public async Task<IActionResult> DesactivarPlan(Guid id, CancellationToken ct)
     {
@@ -78,6 +83,7 @@ public class MantenimientoController : ControllerBase
         return ok ? NoContent() : NotFound();
     }
 
+    [RequierePermiso(ModuloCodigo.Mantenimiento, AccionPermiso.Aprobar)]
     [HttpPost("planes/{id:guid}/reactivar")]
     public async Task<IActionResult> ReactivarPlan(Guid id, CancellationToken ct)
     {
@@ -105,6 +111,7 @@ public class MantenimientoController : ControllerBase
         return i is null ? NotFound() : Ok(i);
     }
 
+    [RequierePermiso(ModuloCodigo.Mantenimiento, AccionPermiso.Crear)]
     [HttpPost("intervenciones")]
     public async Task<IActionResult> CrearIntervencion([FromBody] CrearIntervencionRequest req, CancellationToken ct)
     {
@@ -116,6 +123,7 @@ public class MantenimientoController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Mantenimiento, AccionPermiso.Editar)]
     [HttpPut("intervenciones/{id:guid}")]
     public async Task<IActionResult> ActualizarIntervencion(Guid id, [FromBody] ActualizarIntervencionRequest req, CancellationToken ct)
     {
@@ -127,6 +135,7 @@ public class MantenimientoController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Mantenimiento, AccionPermiso.Crear)]
     [HttpPost("intervenciones/{id:guid}/estado")]
     public async Task<IActionResult> CambiarEstadoIntervencion(Guid id, [FromBody] CambiarEstadoIntervencionRequest req, CancellationToken ct)
     {
@@ -138,6 +147,7 @@ public class MantenimientoController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Mantenimiento, AccionPermiso.Aprobar)]
     [HttpPost("intervenciones/{id:guid}/cerrar")]
     public async Task<IActionResult> CerrarIntervencion(Guid id, [FromBody] CerrarIntervencionRequest req, CancellationToken ct)
     {
@@ -149,6 +159,7 @@ public class MantenimientoController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Mantenimiento, AccionPermiso.Crear)]
     [HttpPost("intervenciones/{id:guid}/cancelar")]
     public async Task<IActionResult> CancelarIntervencion(Guid id, [FromBody] CancelarIntervencionRequest req, CancellationToken ct)
     {
@@ -166,6 +177,7 @@ public class MantenimientoController : ControllerBase
     public async Task<IActionResult> ListarBitacora(Guid id, CancellationToken ct)
         => Ok(await _svc.ListarBitacoraAsync(id, ct));
 
+    [RequierePermiso(ModuloCodigo.Mantenimiento, AccionPermiso.Crear)]
     [HttpPost("intervenciones/{id:guid}/bitacora")]
     public async Task<IActionResult> AgregarBitacora(Guid id, [FromBody] AgregarBitacoraRequest req, CancellationToken ct)
     {
@@ -179,6 +191,7 @@ public class MantenimientoController : ControllerBase
 
     // ----- Cambio de estado del activo -----
 
+    [RequierePermiso(ModuloCodigo.Mantenimiento, AccionPermiso.Crear)]
     [HttpPost("activos/estado")]
     public async Task<IActionResult> CambiarEstadoActivo([FromBody] CambioEstadoActivoRequest req, CancellationToken ct)
     {
