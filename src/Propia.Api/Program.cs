@@ -54,6 +54,27 @@ builder.Host.UseSerilog((ctx, lc) =>
 // ---- Servicios ----
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
+
+// S-03: rate limiting en endpoints anonimos sensibles (login, token, mfa, OTP, invitacion, PQRSD publico).
+// Politica "auth" particionada por IP real (normalizada por UseForwardedHeaders). Complementa el lockout
+// por cuenta: frena fuerza bruta distribuida y enumeracion. 429 al exceder.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    // Limite configurable (alto en pruebas de integracion para no interferir): RateLimit:AuthPermitPerMinute.
+    var authPermit = int.TryParse(builder.Configuration["RateLimit:AuthPermitPerMinute"], out var lim) ? lim : 15;
+    options.AddPolicy("auth", httpContext =>
+    {
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(ip, _ =>
+            new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                PermitLimit = authPermit,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            });
+    });
+});
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddSignalR();
 builder.Services.AddScoped<Propia.Application.InfraestructuraIa.IChatBroadcaster, Propia.Api.Hubs.ChatBroadcaster>();
@@ -233,6 +254,9 @@ else
 // para capturar nombre de ruta normalizada (en vez de URLs con UUIDs como series).
 app.UseRouting();
 app.UseHttpMetrics();
+
+// S-03: el limitador va despues de UseRouting (necesita el endpoint) y antes de Auth.
+app.UseRateLimiter();
 
 // CORS antes de Authentication para preflight OPTIONS.
 app.UseCors();

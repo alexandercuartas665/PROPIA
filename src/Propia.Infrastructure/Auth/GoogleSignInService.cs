@@ -104,7 +104,20 @@ public sealed class GoogleSignInService : IGoogleSignInService
             return await AutoRegistrarAsync(identity, email, cancellationToken);
         }
 
-        // Camino 1 o 2: usuario existente
+        // S-04 (pre-hijacking): si el usuario se encontro SOLO por correo (no por GoogleSubject) y su
+        // email NO esta confirmado, es una cuenta pre-creada por un tercero (registro por onboarding sin
+        // verificar OTP). No se adopta ni se confirma: se elimina la cuenta pendiente (nunca verificada) y
+        // se crea una nueva via Google, invalidando la clave que el atacante hubiera puesto.
+        var encontradaPorGoogle = !string.IsNullOrEmpty(user.GoogleSubject) && user.GoogleSubject == identity.Subject;
+        if (!encontradaPorGoogle && !user.EmailConfirmed)
+        {
+            var del = await _userManager.DeleteAsync(user);
+            if (!del.Succeeded)
+                return new GoogleSignInResult(false, "No se pudo iniciar sesion con Google para este correo. Usa correo y clave o contacta soporte.");
+            return await AutoRegistrarAsync(identity, email, cancellationToken);
+        }
+
+        // Camino 1 o 2: usuario existente (confirmado o ya vinculado a Google)
         var dirty = false;
         if (string.IsNullOrEmpty(user.GoogleSubject))
         {

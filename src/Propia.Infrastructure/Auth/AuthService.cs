@@ -39,8 +39,22 @@ public class AuthService : IAuthService
         var user = await _userManager.FindByEmailAsync(request.Email);
         if (user is null) return null;
 
+        // S-04: no permitir login de cuentas con email sin confirmar (cierra el pre-hijacking:
+        // el atacante pre-registra el correo de la victima pero nunca confirma; su cuenta no entra).
+        if (!user.EmailConfirmed) return null;
+
+        // S-03: lockout efectivo. Si la cuenta esta bloqueada por intentos fallidos, no se evalua la clave.
+        if (await _userManager.IsLockedOutAsync(user)) return null;
+
         var ok = await _userManager.CheckPasswordAsync(user, request.Password);
-        if (!ok) return null;
+        if (!ok)
+        {
+            // Incrementa AccessFailedCount y bloquea al alcanzar el maximo (config en DependencyInjection).
+            await _userManager.AccessFailedAsync(user);
+            return null;
+        }
+        // Login correcto: se limpia el contador de fallos.
+        await _userManager.ResetAccessFailedCountAsync(user);
 
         var tenants = await LoadAvailableTenantsAsync(user.Id, ct);
         // Si solo hay una copropiedad vinculada, se selecciona auto. Caso comun para residentes.

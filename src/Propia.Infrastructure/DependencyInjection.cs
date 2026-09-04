@@ -53,6 +53,7 @@ public static class DependencyInjection
                 opts.SignIn.RequireConfirmedEmail = false;  // Para MVP - habilitar en Fase 2 con email service
                 opts.Lockout.MaxFailedAccessAttempts = 5;
                 opts.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
+                opts.Lockout.AllowedForNewUsers = true;  // S-03: el lockout aplica a cuentas nuevas
             })
             .AddRoles<IdentityRole<Guid>>()
             .AddEntityFrameworkStores<PropiaDbContext>()

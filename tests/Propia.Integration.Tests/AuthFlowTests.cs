@@ -184,7 +184,9 @@ public class AuthFlowTests : IAsyncLifetime
                     ["Jwt:SigningKey"] = "DEV-ONLY-PropIA-Jwt-SigningKey-Min32CharsForHS256-AuthTest",
                     ["Jwt:Issuer"] = "propia-api",
                     ["Jwt:Audience"] = "propia-clients",
-                    ["Jwt:AccessTokenMinutes"] = "60"
+                    ["Jwt:AccessTokenMinutes"] = "60",
+                    // El rate limiter no debe interferir en las pruebas de integracion (misma IP).
+                    ["RateLimit:AuthPermitPerMinute"] = "100000"
                 });
             });
         }

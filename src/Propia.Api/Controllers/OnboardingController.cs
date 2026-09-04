@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Propia.Application.Onboarding;
 
 namespace Propia.Api.Controllers;
@@ -12,6 +13,7 @@ namespace Propia.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/onboarding")]
+[EnableRateLimiting("auth")]
 public class OnboardingController : ControllerBase
 {
     private readonly IOnboardingService _svc;

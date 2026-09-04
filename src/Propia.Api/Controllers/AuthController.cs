@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Propia.Application.Auth;
 using Propia.Application.SuperAdmin;
 
@@ -13,6 +14,7 @@ namespace Propia.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("connect")]
+[EnableRateLimiting("auth")]
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _auth;

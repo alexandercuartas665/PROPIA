@@ -18,15 +18,25 @@ public class WebhooksController : ControllerBase
     private readonly IChatIngestService _chatIngest;
     private readonly IMetaWebhookService _meta;
     private readonly IConfiguration _config;
+    private readonly IWebHostEnvironment _env;
     private readonly ILogger<WebhooksController> _logger;
 
-    public WebhooksController(IWompiWebhookService wompi, IChatIngestService chatIngest, IMetaWebhookService meta, IConfiguration config, ILogger<WebhooksController> logger)
+    public WebhooksController(IWompiWebhookService wompi, IChatIngestService chatIngest, IMetaWebhookService meta, IConfiguration config, IWebHostEnvironment env, ILogger<WebhooksController> logger)
     {
         _wompi = wompi;
         _chatIngest = chatIngest;
         _meta = meta;
         _config = config;
+        _env = env;
         _logger = logger;
+    }
+
+    // S-07: comparacion en tiempo constante para tokens/firmas de webhook.
+    private static bool ComparacionSegura(string a, string b)
+    {
+        var ba = System.Text.Encoding.UTF8.GetBytes(a);
+        var bb = System.Text.Encoding.UTF8.GetBytes(b);
+        return System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(ba, bb);
     }
 
     /// <summary>
@@ -54,15 +64,18 @@ public class WebhooksController : ControllerBase
     [HttpPost("evolution/{tenantId:guid}")]
     public async Task<IActionResult> EvolutionInbound(Guid tenantId, CancellationToken ct)
     {
-        // Token compartido (config global por ahora; en proxima oleada se hara por-tenant).
+        // S-07: token OBLIGATORIO. Si no esta configurado, se rechaza (en Production siempre; en Development
+        // solo si viene sin token, para permitir pruebas locales configurando Propia:WebhookToken).
         var configured = _config["Propia:WebhookToken"];
-        if (!string.IsNullOrWhiteSpace(configured))
+        var provided = Request.Headers["X-Webhook-Token"].ToString();
+        if (string.IsNullOrWhiteSpace(configured))
         {
-            var provided = Request.Headers["X-Webhook-Token"].ToString();
-            if (!string.Equals(provided, configured, StringComparison.Ordinal))
-            {
-                return Unauthorized(new { error = "invalid_token" });
-            }
+            _logger.LogWarning("Webhook Evolution rechazado: Propia:WebhookToken no configurado (tenant {Tenant}).", tenantId);
+            return Unauthorized(new { error = "webhook_not_configured" });
+        }
+        if (string.IsNullOrEmpty(provided) || !ComparacionSegura(provided, configured))
+        {
+            return Unauthorized(new { error = "invalid_token" });
         }
 
         // Evolution envia su envelope NATIVO (messages.upsert), no un IngestMessageRequest plano.
@@ -130,6 +143,28 @@ public class WebhooksController : ControllerBase
         var rawJson = await reader.ReadToEndAsync(ct);
         if (string.IsNullOrWhiteSpace(rawJson)) { return Ok(new { status = "empty" }); }
 
+        // S-07: validar la firma HMAC-SHA256 (X-Hub-Signature-256) con el app secret de Meta. Cierra la
+        // inyeccion de mensajes "desde" el telefono de un residente real. Estricto en Production; en
+        // Development solo se valida si el app secret esta configurado (para permitir pruebas locales).
+        var appSecret = _config["Meta:AppSecret"];
+        if (string.IsNullOrWhiteSpace(appSecret))
+        {
+            if (!_env.IsDevelopment())
+            {
+                _logger.LogWarning("Webhook Meta rechazado: Meta:AppSecret no configurado (tenant {Tenant}).", tenantId);
+                return Unauthorized(new { error = "webhook_not_configured" });
+            }
+        }
+        else
+        {
+            var firma = Request.Headers["X-Hub-Signature-256"].ToString();
+            if (!VerificarFirmaMeta(rawJson, appSecret, firma))
+            {
+                _logger.LogWarning("Webhook Meta rechazado: firma X-Hub-Signature-256 invalida (tenant {Tenant}).", tenantId);
+                return Unauthorized(new { error = "invalid_signature" });
+            }
+        }
+
         System.Text.Json.JsonDocument doc;
         try { doc = System.Text.Json.JsonDocument.Parse(rawJson); }
         catch { return Ok(new { status = "invalid_json" }); }
@@ -141,5 +176,16 @@ public class WebhooksController : ControllerBase
             var result = await _meta.IngestAsync(tenantId, parsed.PhoneNumberId, parsed.Payload, ct);
             return Ok(new { status = result.ToString().ToLowerInvariant() });
         }
+    }
+
+    // S-07: HMAC-SHA256 del cuerpo crudo con el app secret; el header viene como "sha256=<hex>".
+    private static bool VerificarFirmaMeta(string rawBody, string appSecret, string header)
+    {
+        if (string.IsNullOrWhiteSpace(header)) return false;
+        var esperado = header.StartsWith("sha256=", StringComparison.OrdinalIgnoreCase) ? header[7..] : header;
+        using var hmac = new System.Security.Cryptography.HMACSHA256(System.Text.Encoding.UTF8.GetBytes(appSecret));
+        var hash = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(rawBody));
+        var calculado = Convert.ToHexString(hash).ToLowerInvariant();
+        return ComparacionSegura(calculado, esperado.ToLowerInvariant());
     }
 }

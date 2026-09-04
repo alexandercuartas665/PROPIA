@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Caching.Memory;
 using Propia.Application.Pqrsd;
 
@@ -14,6 +15,7 @@ namespace Propia.Api.Controllers;
 [ApiController]
 [Route("api/publico/pqrsd")]
 [AllowAnonymous]
+[EnableRateLimiting("auth")]
 public class PublicPqrsdController : ControllerBase
 {
     private readonly IPqrsdService _svc;
