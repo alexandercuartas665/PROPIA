@@ -26,6 +26,7 @@ namespace Propia.Infrastructure.Onboarding;
 public class OnboardingService : IOnboardingService
 {
     private const int OtpTtlMinutes = 15;
+    private const int MaxOtpIntentos = 5;  // S-03b: limite de intentos del OTP por sesion
 
     // Estado del wizard por session - singleton del proceso (Fase 2: persistir)
     private static readonly ConcurrentDictionary<Guid, OnboardingState> _sessions = new();
@@ -66,8 +67,26 @@ public class OnboardingService : IOnboardingService
         if (req.Password.Length < 10)
             throw new InvalidOperationException("Password minimo 10 caracteres.");
 
+        // S-04b: respuesta NEUTRA ante correo ya registrado. No se revela la existencia por el
+        // mensaje/estado (antes lanzaba "Ya existe un usuario con ese email"). En su lugar se
+        // notifica al dueno real por correo (best-effort) y se devuelve una respuesta con la misma
+        // forma; como no se crea sesion, el paso de OTP no puede completarse. Un usuario legitimo
+        // que ya tiene cuenta recibe el aviso para ingresar/recuperar clave.
         var existe = await _userManager.FindByEmailAsync(req.Email);
-        if (existe is not null) throw new InvalidOperationException("Ya existe un usuario con ese email.");
+        if (existe is not null)
+        {
+            try
+            {
+                var (subject, body) = OnboardingEmailTemplates.CuentaYaExiste(req.NombreCompleto);
+                await _emailSender.SendAsync(req.Email, subject, body, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "S-04b: no se pudo enviar aviso de cuenta existente");
+            }
+            _logger.LogInformation("Registro con correo ya existente (respuesta neutra)");
+            return new RegistroResponse(Guid.NewGuid(), Guid.Empty, req.Email);
+        }
 
         // 1. Crear Persona (perfil humano) - documento sintetico hasta capturar el real
         var partes = req.NombreCompleto.Trim().Split(' ', 2);
@@ -153,13 +172,23 @@ public class OnboardingService : IOnboardingService
             throw new InvalidOperationException("El codigo expiro. Solicita uno nuevo.");
         if (string.IsNullOrEmpty(st.OtpHash))
             throw new InvalidOperationException("No hay codigo pendiente en esta sesion.");
+        // S-03b: limite de intentos del OTP (6 digitos). Sin esto se podia forzar el codigo por
+        // fuerza bruta dentro del TTL. Al 5o fallo se invalida el codigo y hay que pedir uno nuevo.
+        if (st.OtpIntentos >= MaxOtpIntentos)
+        {
+            st.OtpHash = null;
+            throw new InvalidOperationException("Demasiados intentos. Solicita un codigo nuevo.");
+        }
 
         var hash = HashOtp(req.Codigo.Trim(), req.OnboardingSessionId);
         if (!CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(hash), Encoding.UTF8.GetBytes(st.OtpHash)))
         {
+            st.OtpIntentos++;
+            if (st.OtpIntentos >= MaxOtpIntentos) st.OtpHash = null;  // agota el codigo
             throw new InvalidOperationException("Codigo invalido.");
         }
+        st.OtpIntentos = 0;
 
         if (st.UserId is not Guid uid) throw new InvalidOperationException("La sesion no tiene usuario.");
         var user = await _userManager.FindByIdAsync(uid.ToString())
@@ -426,6 +455,7 @@ public class OnboardingService : IOnboardingService
         public bool EmailConfirmado { get; set; }
         public string? OtpHash { get; set; }
         public DateTimeOffset? OtpExpiresAt { get; set; }
+        public int OtpIntentos { get; set; }  // S-03b: intentos fallidos del OTP en esta sesion
         // Paso 2
         public TipoPerfilCliente? Perfil { get; set; }
         // Paso 3

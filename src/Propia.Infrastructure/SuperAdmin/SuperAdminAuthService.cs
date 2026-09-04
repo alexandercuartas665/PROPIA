@@ -18,6 +18,8 @@ public class SuperAdminAuthService : ISuperAdminAuthService
     private const string MfaAudience = "propia-mfa-challenge";
     private const string Issuer = "propia-api";
     private const string AuthIssuer = "PROPIA Super Admin";
+    private const int MaxAccessFailed = 5;          // S-03b
+    private const int LockoutMinutes = 15;          // S-03b
 
     private readonly PropiaDbContext _db;
     private readonly IPasswordHasher<SuperAdminUsuario> _hasher;
@@ -36,6 +38,32 @@ public class SuperAdminAuthService : ISuperAdminAuthService
         _jwt = jwt.Value;
     }
 
+    // S-03b: helpers de lockout persistente (password + MFA).
+    private static bool EstaBloqueado(SuperAdminUsuario user)
+        => user.LockoutEnd is { } end && end > DateTimeOffset.UtcNow;
+
+    private async Task RegistrarFalloAsync(SuperAdminUsuario user, string? ip, CancellationToken ct)
+    {
+        user.AccessFailedCount++;
+        if (user.AccessFailedCount >= MaxAccessFailed)
+        {
+            user.LockoutEnd = DateTimeOffset.UtcNow.AddMinutes(LockoutMinutes);
+            user.AccessFailedCount = 0;  // reinicia el contador para el proximo ciclo tras el lockout
+            await LogAsync(user, "SUPER_ADMIN_LOCKOUT", ip, ct);
+        }
+        await _db.SaveChangesAsync(ct);
+    }
+
+    private async Task ResetFallosAsync(SuperAdminUsuario user, CancellationToken ct)
+    {
+        if (user.AccessFailedCount != 0 || user.LockoutEnd is not null)
+        {
+            user.AccessFailedCount = 0;
+            user.LockoutEnd = null;
+            await _db.SaveChangesAsync(ct);
+        }
+    }
+
     // ----------------------------------- LOGIN -----------------------------------
 
     public async Task<SuperAdminLoginResponse?> LoginAsync(SuperAdminLoginRequest request, string? ip, CancellationToken ct)
@@ -44,13 +72,21 @@ public class SuperAdminAuthService : ISuperAdminAuthService
             .FirstOrDefaultAsync(u => u.Email == request.Email && u.Activo, ct);
         if (user is null) return null;
 
+        // S-03b: cuenta bloqueada por intentos fallidos -> rechazar sin verificar la clave.
+        if (EstaBloqueado(user)) { await LogAsync(user, "SUPER_ADMIN_LOGIN_BLOQUEADO", ip, ct); return null; }
+
         var verify = _hasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
-        if (verify == PasswordVerificationResult.Failed) return null;
+        if (verify == PasswordVerificationResult.Failed)
+        {
+            await RegistrarFalloAsync(user, ip, ct);
+            return null;
+        }
 
         if (verify == PasswordVerificationResult.SuccessRehashNeeded)
         {
             user.PasswordHash = _hasher.HashPassword(user, request.Password);
         }
+        await ResetFallosAsync(user, ct);
 
         // Si tiene MFA configurado: devolver MfaTicket en lugar de JWT
         if (user.MfaConfigurado && !string.IsNullOrEmpty(user.MfaSecret))
@@ -75,11 +111,16 @@ public class SuperAdminAuthService : ISuperAdminAuthService
         var user = await _db.SuperAdminUsuarios.FirstOrDefaultAsync(u => u.Id == userId.Value && u.Activo, ct);
         if (user is null || !user.MfaConfigurado || string.IsNullOrEmpty(user.MfaSecret)) return null;
 
+        // S-03b: mismo lockout aplica al segundo factor (evita fuerza bruta del TOTP dentro del ticket).
+        if (EstaBloqueado(user)) { await LogAsync(user, "SUPER_ADMIN_LOGIN_BLOQUEADO", ip, ct); return null; }
+
         if (!_totp.VerifyCode(user.MfaSecret, request.Code))
         {
+            await RegistrarFalloAsync(user, ip, ct);
             await LogAsync(user, "SUPER_ADMIN_LOGIN_MFA_FAILED", ip, ct);
             return null;
         }
+        await ResetFallosAsync(user, ct);
 
         return await FinalizarLoginAsync(user, ip, "SUPER_ADMIN_LOGIN_MFA_OK", ct);
     }

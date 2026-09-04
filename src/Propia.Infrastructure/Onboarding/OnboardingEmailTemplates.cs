@@ -42,6 +42,39 @@ internal static class OnboardingEmailTemplates
         return (subject, html);
     }
 
+    /// <summary>
+    /// S-04b: aviso al dueno del correo cuando alguien intenta registrarse con un email que YA tiene
+    /// cuenta. Se envia en lugar de revelar la existencia en la respuesta del registro.
+    /// </summary>
+    public static (string Subject, string HtmlBody) CuentaYaExiste(string nombre)
+    {
+        var subject = "Intento de registro con tu correo en PROPIA";
+        var html = $@"<!doctype html>
+<html lang=""es"">
+  <body style=""margin:0;padding:0;background:#f3f1fc;font-family:Arial,Helvetica,sans-serif;color:#2d2d44"">
+    <table role=""presentation"" cellpadding=""0"" cellspacing=""0"" border=""0"" width=""100%"" style=""background:#f3f1fc;padding:40px 0"">
+      <tr><td align=""center"">
+        <table role=""presentation"" cellpadding=""0"" cellspacing=""0"" border=""0"" width=""480"" style=""background:#ffffff;border-radius:14px;box-shadow:0 10px 40px rgba(89,85,209,0.08);padding:36px 32px"">
+          <tr><td align=""center"" style=""padding-bottom:24px"">
+            <span style=""font-size:22px;font-weight:700;letter-spacing:1px;color:#5955D1"">PROPIA</span>
+          </td></tr>
+          <tr><td style=""padding-bottom:8px"">
+            <h2 style=""margin:0;font-size:20px;font-weight:600;color:#2d2d44"">Hola, {EscapeHtml(nombre)}</h2>
+          </td></tr>
+          <tr><td style=""padding-bottom:20px"">
+            <p style=""margin:0;font-size:14px;line-height:1.5;color:#5b5b6e"">Alguien intento crear una cuenta en PROPIA con este correo, pero ya tienes una. Si fuiste tu, simplemente inicia sesion; si olvidaste tu clave, puedes restablecerla desde la pantalla de ingreso. Si no fuiste tu, puedes ignorar este mensaje: no se creo ninguna cuenta nueva.</p>
+          </td></tr>
+          <tr><td style=""padding-top:24px;border-top:1px solid #eef0f5;text-align:center"">
+            <p style=""margin:0;font-size:11px;color:#8a8a9a"">&copy; A&amp;D GROUP S.A.S &middot; PROPIA</p>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>";
+        return (subject, html);
+    }
+
     /// <summary>Correo enviado en Paso5Activar: copropiedad activa.</summary>
     public static (string Subject, string HtmlBody) CopropiedadActivada(string nombre, string copropiedadNombre)
     {

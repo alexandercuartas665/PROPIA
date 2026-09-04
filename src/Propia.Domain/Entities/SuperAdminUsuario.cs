@@ -23,4 +23,9 @@ public class SuperAdminUsuario : BaseEntity
     public bool Activo { get; set; } = true;
     public DateTimeOffset? UltimoAcceso { get; set; }
     public string? UltimaIp { get; set; }
+
+    // S-03b: lockout por fuerza bruta (password y MFA). /admin/login no esta tras el rate limiter,
+    // asi que el bloqueo por cuenta es la defensa. Se resetea al autenticar con exito.
+    public int AccessFailedCount { get; set; }
+    public DateTimeOffset? LockoutEnd { get; set; }
 }
