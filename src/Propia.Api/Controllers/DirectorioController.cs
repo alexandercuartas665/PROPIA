@@ -42,7 +42,7 @@ public class DirectorioController : ControllerBase
     {
         if (file is null || file.Length == 0) return BadRequest(new { error = "archivo_vacio" });
         try { await using var s = file.OpenReadStream(); return Ok(await _plantillas.ImportarDirectorioAsync(s, ct)); }
-        catch (Exception ex) { return BadRequest(new { error = "archivo_invalido", detalle = ex.Message }); }
+        catch (Exception) { return BadRequest(new { error = "archivo_invalido", detalle = "No se pudo procesar el archivo. Verifica el formato y las columnas." }); }
     }
 
     // ---------- Adjuntos (documentos de la identidad: RUT, camara, certificados) ----------

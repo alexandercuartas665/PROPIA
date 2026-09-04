@@ -107,7 +107,6 @@ public class OnboardingService : IOnboardingService
         _sessions[sessionId] = new OnboardingState
         {
             Email = req.Email,
-            Password = req.Password,
             NombreCompleto = req.NombreCompleto,
             UserId = user.Id,
             PersonaId = persona.Id,
@@ -419,7 +418,8 @@ public class OnboardingService : IOnboardingService
     {
         // Paso 1 (ya persistido en BD: User+Persona)
         public string? Email { get; set; }
-        public string? Password { get; set; }
+        // S-16: NO se guarda el password en claro. El hash ya quedo en Identity al CreateAsync; el
+        // JWT posterior a la verificacion del OTP se emite por IssueAccessToken(user), sin password.
         public string? NombreCompleto { get; set; }
         public Guid? UserId { get; set; }
         public Guid? PersonaId { get; set; }

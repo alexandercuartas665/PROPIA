@@ -32,7 +32,11 @@ public class TokenService : ITokenService
             new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
-            new("user_id", user.Id.ToString())
+            new("user_id", user.Id.ToString()),
+            // S-11: sello de seguridad de Identity. El refresh lo compara contra el valor actual del
+            // usuario; al cambiar clave/rol o revocar (UpdateSecurityStampAsync) los tokens viejos
+            // dejan de poder refrescarse.
+            new("sstamp", user.SecurityStamp ?? string.Empty)
         };
 
         if (user.PersonaId.HasValue)

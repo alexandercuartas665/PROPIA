@@ -171,6 +171,15 @@ public class AuthService : IAuthService
         var user = await _userManager.FindByIdAsync(userId.ToString());
         if (user is null) return null;
 
+        // S-11: revocacion. El token solo puede refrescarse si su sello coincide con el actual del
+        // usuario (cambia al resetear clave/rol o al revocar) y el usuario no esta bloqueado ni sin
+        // confirmar. Tokens emitidos antes de este cambio no traen sstamp -> se fuerza re-login.
+        var stampToken = principal.FindFirstValue("sstamp");
+        if (string.IsNullOrEmpty(stampToken) || !string.Equals(stampToken, user.SecurityStamp, StringComparison.Ordinal))
+            return null;
+        if (!user.EmailConfirmed) return null;
+        if (await _userManager.IsLockedOutAsync(user)) return null;
+
         Guid? activeTenant = null;
         var t = principal.FindFirstValue("tenant_id");
         if (Guid.TryParse(t, out var parsedTenant)) activeTenant = parsedTenant;

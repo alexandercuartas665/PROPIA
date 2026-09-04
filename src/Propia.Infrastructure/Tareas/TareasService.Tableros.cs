@@ -305,18 +305,17 @@ public partial class TareasService
             return new AgregarPorCorreoResultado(false,
                 "No hay un usuario del sistema con ese correo (debe tener cuenta activa en la plataforma).", null, false);
 
-        var nombre = await _db.Personas.IgnoreQueryFilters()
-            .Where(p => p.Id == pid)
-            .Select(p => (p.Nombres + " " + p.Apellidos).Trim())
-            .FirstOrDefaultAsync(ct);
-
+        // S-20: NO devolvemos el nombre real de la persona (seria una fuga de PII de cuentas de
+        // otros tenants al invitador). Usamos el propio correo como etiqueta de confirmacion. La
+        // existencia de la cuenta sigue siendo inferible (es inherente al alta-por-correo); un flujo
+        // por token de invitacion enviado al invitado eliminaria tambien ese residual.
         var ya = await _db.TableroUsuarios.AnyAsync(u => u.TableroId == tableroId && u.PersonaId == pid, ct);
         if (!ya)
         {
             _db.TableroUsuarios.Add(new TableroUsuario { TableroId = tableroId, PersonaId = pid });
             await _db.SaveChangesAsync(ct);
         }
-        return new AgregarPorCorreoResultado(true, null, string.IsNullOrWhiteSpace(nombre) ? email : nombre, ya);
+        return new AgregarPorCorreoResultado(true, null, email, ya);
     }
 
     public async Task<bool> QuitarUsuarioTableroAsync(Guid tableroId, Guid personaId, CancellationToken ct)

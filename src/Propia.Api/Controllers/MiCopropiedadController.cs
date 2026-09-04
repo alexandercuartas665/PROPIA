@@ -130,7 +130,7 @@ public class MiCopropiedadController : ControllerBase
             var res = await _cargaImport.ImportarAsync(s, ct, tenantActual, reemplazar);
             return Ok(res);
         }
-        catch (Exception ex) { return BadRequest(new { error = "archivo_invalido", detalle = ex.Message }); }
+        catch (Exception) { return BadRequest(new { error = "archivo_invalido", detalle = "No se pudo procesar el archivo. Verifica el formato y las columnas." }); }
     }
 
     /// <summary>Procesa la plantilla subida: crea torres y unidades del tenant. Devuelve el resumen + errores por fila.</summary>
@@ -146,7 +146,7 @@ public class MiCopropiedadController : ControllerBase
             var res = await _import.ImportarAsync(s, ct);
             return Ok(res);
         }
-        catch (Exception ex) { return BadRequest(new { error = "archivo_invalido", detalle = ex.Message }); }
+        catch (Exception) { return BadRequest(new { error = "archivo_invalido", detalle = "No se pudo procesar el archivo. Verifica el formato y las columnas." }); }
     }
 
     // ---------- Zonas Comunes - Carga masiva por plantilla ----------
@@ -161,7 +161,7 @@ public class MiCopropiedadController : ControllerBase
     {
         if (file is null || file.Length == 0) return BadRequest(new { error = "archivo_vacio" });
         try { await using var s = file.OpenReadStream(); return Ok(await _plantillas.ImportarZonasAsync(s, ct)); }
-        catch (Exception ex) { return BadRequest(new { error = "archivo_invalido", detalle = ex.Message }); }
+        catch (Exception) { return BadRequest(new { error = "archivo_invalido", detalle = "No se pudo procesar el archivo. Verifica el formato y las columnas." }); }
     }
 
     // ---------- Equipos y Activos - Carga masiva por plantilla ----------
@@ -176,7 +176,7 @@ public class MiCopropiedadController : ControllerBase
     {
         if (file is null || file.Length == 0) return BadRequest(new { error = "archivo_vacio" });
         try { await using var s = file.OpenReadStream(); return Ok(await _plantillas.ImportarEquiposAsync(s, ct)); }
-        catch (Exception ex) { return BadRequest(new { error = "archivo_invalido", detalle = ex.Message }); }
+        catch (Exception) { return BadRequest(new { error = "archivo_invalido", detalle = "No se pudo procesar el archivo. Verifica el formato y las columnas." }); }
     }
 
     // ---------- Seccion 2: Distribucion - Unidades ----------

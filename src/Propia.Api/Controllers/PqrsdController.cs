@@ -589,7 +589,7 @@ public class PqrsdController : ControllerBase
 
         byte[] pdf;
         try { pdf = await _htmlToPdf.RenderAsync(html, ct); }
-        catch (Exception ex) { return StatusCode(500, new { error = "No se pudo generar el PDF: " + ex.Message }); }
+        catch (Exception) { return StatusCode(500, new { error = "No se pudo generar el PDF." }); }
 
         var key = $"tenants/{tenantId:N}/pqrsd/{id:N}/{Guid.NewGuid():N}.pdf";
         await using var stream = new System.IO.MemoryStream(pdf);
@@ -637,7 +637,7 @@ public class PqrsdController : ControllerBase
 
         byte[] pdf;
         try { pdf = await _htmlToPdf.RenderAsync(html, ct); }
-        catch (Exception ex) { return StatusCode(500, new { error = "No se pudo generar el PDF: " + ex.Message }); }
+        catch (Exception) { return StatusCode(500, new { error = "No se pudo generar el PDF." }); }
 
         var asunto = string.IsNullOrWhiteSpace(r.Asunto) ? $"Respuesta a su PQRSD {radicado}".Trim() : r.Asunto!;
         var cuerpo = "<html><body style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1B2A3A;line-height:1.6\">"

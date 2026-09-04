@@ -148,12 +148,18 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(policy =>
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer();
 
+var isDevelopmentEnv = builder.Environment.IsDevelopment();
 builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
     .Configure<IOptions<JwtSettings>>((bearer, jwtOpts) =>
     {
         var jwt = jwtOpts.Value;
         if (string.IsNullOrWhiteSpace(jwt.SigningKey) || jwt.SigningKey.Length < 32)
             throw new InvalidOperationException("Jwt:SigningKey ausente o muy corta (min 32 chars).");
+        // S-15: fuera de Development NO se admite la clave de firma de dev (versionada). Fail-fast
+        // para no arrancar prod con una clave publica que permitiria forjar JWT.
+        if (!isDevelopmentEnv && jwt.SigningKey.Contains("DEV-ONLY", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "Jwt:SigningKey es la clave de DEV. Configura una clave secreta por variable de entorno en este entorno.");
 
         bearer.TokenValidationParameters = new TokenValidationParameters
         {
@@ -238,6 +244,20 @@ app.Use(async (ctx, next) =>
     await next();
 });
 
+// S-18: en entornos no-Development, cualquier excepcion NO controlada se loguea completa en el
+// servidor pero al cliente se le responde un mensaje generico (sin stack ni detalles internos).
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler(errApp => errApp.Run(async ctx =>
+    {
+        var ex = ctx.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
+        app.Logger.LogError(ex, "Excepcion no controlada en {Method} {Path}", ctx.Request.Method, ctx.Request.Path);
+        ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        ctx.Response.ContentType = "application/json";
+        await ctx.Response.WriteAsJsonAsync(new { error = "Ocurrio un error procesando la solicitud." });
+    }));
+}
+
 // Bootstrap del founder SuperAdmin para PRODUCCION (idempotente, desde env vars
 // SuperAdmin__BootstrapEmail / SuperAdmin__BootstrapPassword). No-op si no estan configuradas.
 // En Development el founder dev se crea abajo; en prod este es el unico camino de aprovisionamiento.
@@ -300,6 +320,31 @@ app.MapMcp("/mcp").RequireAuthorization();
 
 // Endpoint /metrics expone counters/histograms en formato Prometheus.
 // En Railway: configurar scrape externo apuntando a /metrics (Grafana Cloud free tier OK).
+// S-17: si se configura Metrics:ScrapeToken, /metrics exige ese token (header X-Metrics-Token o
+// Authorization: Bearer <token>); comparacion en tiempo constante. Sin token configurado el
+// endpoint queda abierto (comportamiento previo) - en produccion DEBE configurarse.
+var metricsToken = app.Configuration["Metrics:ScrapeToken"];
+if (!string.IsNullOrEmpty(metricsToken))
+{
+    var tokenBytes = Encoding.UTF8.GetBytes(metricsToken);
+    app.Use(async (ctx, next) =>
+    {
+        if (ctx.Request.Path.StartsWithSegments("/metrics"))
+        {
+            var provided = ctx.Request.Headers["X-Metrics-Token"].FirstOrDefault();
+            if (string.IsNullOrEmpty(provided))
+            {
+                var auth = ctx.Request.Headers.Authorization.FirstOrDefault();
+                if (auth is not null && auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                    provided = auth.Substring("Bearer ".Length);
+            }
+            var ok = !string.IsNullOrEmpty(provided) && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(provided), tokenBytes);
+            if (!ok) { ctx.Response.StatusCode = StatusCodes.Status401Unauthorized; return; }
+        }
+        await next();
+    });
+}
 app.MapMetrics("/metrics");
 
 // ---- Health checks ----
