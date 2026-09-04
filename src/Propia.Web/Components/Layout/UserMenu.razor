@@ -61,18 +61,22 @@
                         <span>Mi perfil</span>
                     </a>
 
-                    @* Tema del sistema *@
-                    <button class="um-item" type="button" @onclick="ToggleTema">
-                        @if (_temaOscuro)
+                    @* Tema: cicla Automatico -> Claro -> Oscuro *@
+                    <button class="um-item" type="button" @onclick="CicloTema" title="Cambiar tema (Automatico / Claro / Oscuro)">
+                        @switch (_temaPref)
                         {
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
+                            case "dark":
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
+                                break;
+                            case "auto":
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" /></svg>
+                                break;
+                            default:
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /></svg>
+                                break;
                         }
-                        else
-                        {
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /></svg>
-                        }
-                        <span>Tema @(_temaOscuro ? "oscuro" : "claro")</span>
-                        <span class="um-switch @(_temaOscuro ? "on" : "")"><span class="um-switch-knob"></span></span>
+                        <span>Tema</span>
+                        <span class="um-thememode">@TemaLabel</span>
                     </button>
 
                     <div class="um-sep"></div>
@@ -98,7 +102,8 @@
     private string? _jwt;
     private bool _ready;
     private bool _open;
-    private bool _temaOscuro;
+    private string _temaPref = "light";   // "auto" | "light" | "dark"
+    private string TemaLabel => _temaPref switch { "dark" => "Oscuro", "auto" => "Automatico", _ => "Claro" };
     private MeResponse? _me;
 
     private string Iniciales
@@ -122,7 +127,7 @@
         try
         {
             _jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
-            try { var t = await Js.InvokeAsync<string?>("propiaUI.getTheme"); _temaOscuro = t == "dark"; } catch { }
+            try { _temaPref = await Js.InvokeAsync<string?>("propiaUI.getThemePref") ?? "light"; } catch { }
             if (!string.IsNullOrWhiteSpace(_jwt)) await CargarAsync();
         }
         catch { _me = null; }
@@ -150,12 +155,12 @@
     private void Toggle() => _open = !_open;
     private void Cerrar() => _open = false;
 
-    private async Task ToggleTema()
+    private async Task CicloTema()
     {
         try
         {
-            var nuevo = await Js.InvokeAsync<string>("propiaUI.toggleTheme");
-            _temaOscuro = nuevo == "dark";
+            // Cicla Automatico -> Claro -> Oscuro -> Automatico (no cierra el menu para poder ver el cambio).
+            _temaPref = await Js.InvokeAsync<string>("propiaUI.cycleTheme") ?? _temaPref;
         }
         catch { }
     }
@@ -231,6 +236,7 @@
     .um-item--danger:hover { background: rgba(220,53,69,.09); color: #dc3545; }
     .um-item--danger:hover svg { color: #dc3545; }
 
+    .um-thememode { margin-left: auto; flex: 0 0 auto; font-size: 11px; font-weight: 700; color: var(--propia-brand-text-on-soft); background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 999px; padding: 2px 9px; }
     .um-switch { margin-left: auto; width: 34px; height: 19px; border-radius: 11px; background: var(--bs-border-color); position: relative; transition: background .15s; flex: 0 0 auto; }
     .um-switch.on { background: var(--propia-primary, var(--propia-brand)); }
     .um-switch-knob { position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: var(--propia-bg-card); transition: left .15s; box-shadow: 0 1px 3px rgba(0,0,0,.25); }

@@ -13,20 +13,33 @@
 
     // ---------- Theme ----------
 
-    function getStoredTheme() {
-        try { return localStorage.getItem(STORAGE_KEY); } catch (e) { return null; }
+    // Preferencia del usuario: 'auto' | 'light' | 'dark'. 'auto' sigue al SO (opcion explicita);
+    // sin preferencia guardada -> 'light' (NO se hereda el SO por defecto).
+    function getStoredPref() {
+        try {
+            var s = localStorage.getItem(STORAGE_KEY);
+            return (s === 'dark' || s === 'light' || s === 'auto') ? s : 'light';
+        } catch (e) { return 'light'; }
     }
 
-    function setStoredTheme(theme) {
-        try { localStorage.setItem(STORAGE_KEY, theme); } catch (e) { /* ignore */ }
+    function systemTheme() {
+        return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
     }
 
-    function getPreferredTheme() {
-        var stored = getStoredTheme();
-        if (stored === 'dark' || stored === 'light') return stored;
-        // D-01: sin preferencia guardada -> 'light' (no se hereda el tema del SO).
-        return 'light';
+    // Resuelve la preferencia a un tema concreto (lo que se pinta).
+    function resolvePref(pref) {
+        return pref === 'auto' ? systemTheme() : (pref === 'dark' ? 'dark' : 'light');
     }
+
+    // D-01: persiste la preferencia en localStorage + COOKIE (para que el HTML del servidor ya salga
+    // con el tema correcto y no haya flash claro->oscuro en cargas completas).
+    function setStoredTheme(pref) {
+        try { localStorage.setItem(STORAGE_KEY, pref); } catch (e) { /* ignore */ }
+        try { document.cookie = 'propia_theme=' + pref + '; path=/; max-age=31536000; SameSite=Lax'; } catch (e) { /* ignore */ }
+    }
+
+    // Compat: getPreferredTheme devuelve el tema RESUELTO (claro/oscuro).
+    function getPreferredTheme() { return resolvePref(getStoredPref()); }
 
     function applyTheme(theme) {
         docEl.setAttribute('data-bs-theme', theme);
@@ -36,6 +49,16 @@
             else btns[i].classList.remove('active');
         }
     }
+
+    // Si la preferencia es 'auto', re-aplicar cuando cambie el tema del SO.
+    try {
+        var mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+        if (mq && mq.addEventListener) {
+            mq.addEventListener('change', function () {
+                if (getStoredPref() === 'auto') applyTheme(systemTheme());
+            });
+        }
+    } catch (e) { /* ignore */ }
 
     // Persistencia en backend (si hay sesion). No bloqueante - localStorage es el cache local.
     function persistThemeServer(theme) {
@@ -63,6 +86,8 @@
             if (!jwt) return;
             var meta = document.querySelector('meta[name="propia-api-base"]');
             var base = meta ? meta.getAttribute('content') : '';
+            // Si en este dispositivo la preferencia es 'auto', se respeta (no se pisa con el server).
+            if (getStoredPref() === 'auto') return;
             var url = (base || '') + '/api/preferencias/ui-theme';
             fetch(url, { headers: { 'Authorization': 'Bearer ' + jwt } })
                 .then(function (r) { return r.ok ? r.json() : null; })
@@ -81,15 +106,28 @@
     window.propiaUI.getTheme = function () {
         return docEl.getAttribute('data-bs-theme') || getPreferredTheme();
     };
-    window.propiaUI.setTheme = function (theme) {
-        if (theme !== 'dark' && theme !== 'light') return;
-        applyTheme(theme);
-        setStoredTheme(theme);
-        persistThemeServer(theme);
+    // Devuelve la PREFERENCIA (auto/light/dark) para la UI del toggle.
+    window.propiaUI.getThemePref = function () { return getStoredPref(); };
+    // setTheme acepta 'auto' | 'light' | 'dark'. Persiste al servidor solo el tema explicito
+    // (el endpoint valida light/dark); 'auto' es una eleccion local del dispositivo.
+    window.propiaUI.setTheme = function (pref) {
+        if (pref !== 'dark' && pref !== 'light' && pref !== 'auto') return;
+        setStoredTheme(pref);
+        applyTheme(resolvePref(pref));
+        if (pref === 'light' || pref === 'dark') persistThemeServer(pref);
+        return pref;
     };
     window.propiaUI.toggleTheme = function () {
-        var current = window.propiaUI.getTheme();
-        var next = current === 'dark' ? 'light' : 'dark';
+        // Alterna claro/oscuro tomando el tema RESUELTO actual como base.
+        var next = getPreferredTheme() === 'dark' ? 'light' : 'dark';
+        window.propiaUI.setTheme(next);
+        return next;
+    };
+    // Cicla la preferencia: Automatico -> Claro -> Oscuro -> Automatico.
+    window.propiaUI.cycleTheme = function () {
+        var order = ['auto', 'light', 'dark'];
+        var idx = order.indexOf(getStoredPref());
+        var next = order[(idx + 1) % order.length];
         window.propiaUI.setTheme(next);
         return next;
     };
