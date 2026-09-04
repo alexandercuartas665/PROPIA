@@ -217,11 +217,28 @@ var app = builder.Build();
 // ==================== Pipeline ====================
 app.UseForwardedHeaders();
 
-// S-09: X-Content-Type-Options: nosniff en TODAS las respuestas (incluye /uploads/* servido mas
-// abajo). Evita el MIME sniffing del navegador sobre binarios subidos por usuarios.
+// S-09/S-19: cabeceras de seguridad en TODAS las respuestas.
+// - nosniff: evita el MIME sniffing sobre binarios subidos por usuarios.
+// - CSP: limita de donde se cargan scripts/estilos/fuentes/imagenes y bloquea el embebido en
+//   iframes de terceros (clickjacking). Se permite 'unsafe-inline' en script/style porque Blazor
+//   y la plantilla usan scripts/estilos inline, y los CDNs que la app carga de verdad (SignalR en
+//   unpkg, TinyMCE en jsdelivr, fuentes de Google). Aun con eso, object-src 'none', base-uri 'self'
+//   y frame-ancestors 'self' cierran vectores reales.
+const string Csp =
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; " +
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; " +
+    "font-src 'self' https://fonts.gstatic.com data:; " +
+    "img-src 'self' data: blob: https:; " +
+    "connect-src 'self' https: wss: ws:; " +
+    "frame-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'";
 app.Use(async (ctx, next) =>
 {
-    ctx.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    var h = ctx.Response.Headers;
+    h["X-Content-Type-Options"] = "nosniff";
+    h["X-Frame-Options"] = "SAMEORIGIN";
+    h["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    h["Content-Security-Policy"] = Csp;
     await next();
 });
 
@@ -244,9 +261,35 @@ else
     app.UseHsts();  // TLS lo termina el proxy de Railway; el contenedor escucha HTTP.
 }
 
-// Servir imagenes subidas via /uploads/* en TODOS los entornos (la Web unificada las sirve).
-Directory.CreateDirectory(Path.Combine(app.Environment.ContentRootPath, "wwwroot", "uploads"));
-app.UseStaticFiles();
+// S-09: en produccion los archivos van por R2 (URLs propias del bucket), NO por /uploads de la app;
+// se bloquea la ruta /uploads/* para no exponer un directorio local. En Development el storage es
+// local (wwwroot/uploads) y si se sirve.
+if (app.Environment.IsDevelopment())
+{
+    Directory.CreateDirectory(Path.Combine(app.Environment.ContentRootPath, "wwwroot", "uploads"));
+}
+else
+{
+    app.Use(async (ctx, next) =>
+    {
+        if (ctx.Request.Path.StartsWithSegments("/uploads")) { ctx.Response.StatusCode = StatusCodes.Status404NotFound; return; }
+        await next();
+    });
+}
+app.UseStaticFiles(new StaticFileOptions
+{
+    // S-09: los adjuntos que NO sean imagen se descargan (Content-Disposition: attachment) en vez de
+    // abrirse inline, para que un HTML/SVG malicioso subido como "archivo" no se ejecute en el origen.
+    OnPrepareResponse = ctx =>
+    {
+        if (ctx.Context.Request.Path.StartsWithSegments("/uploads"))
+        {
+            var ct = ctx.Context.Response.ContentType ?? string.Empty;
+            if (!ct.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+                ctx.Context.Response.Headers["Content-Disposition"] = "attachment";
+        }
+    }
+});
 
 // Routing explicito antes de metricas/auth.
 app.UseRouting();
