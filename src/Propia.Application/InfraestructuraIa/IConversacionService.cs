@@ -40,6 +40,13 @@ public interface IConversacionService
     Task<ConversacionDto?> ObtenerAsync(Guid id, CancellationToken ct = default);
     Task<IReadOnlyList<MensajeDto>> ListarMensajesAsync(Guid conversationId, CancellationToken ct = default);
 
+    /// <summary>
+    /// S-10: verifica (RLS + filtro de tenant) que la conversacion existe y pertenece al tenant
+    /// activo. Lo usa ChatHub antes de unir un cliente al grupo SignalR de la conversacion, para
+    /// impedir que un usuario de otro tenant se suscriba a un conv-{guid} ajeno.
+    /// </summary>
+    Task<bool> PerteneceAlTenantActualAsync(Guid conversationId, CancellationToken ct = default);
+
     /// <summary>El operador envia un mensaje texto via la linea WhatsApp asociada.</summary>
     Task<MensajeDto?> EnviarTextoAsync(Guid conversationId, EnviarMensajeRequest req, CancellationToken ct = default);
 

@@ -217,6 +217,14 @@ var app = builder.Build();
 // ==================== Pipeline ====================
 app.UseForwardedHeaders();
 
+// S-09: X-Content-Type-Options: nosniff en TODAS las respuestas (incluye /uploads/* servido mas
+// abajo). Evita el MIME sniffing del navegador sobre binarios subidos por usuarios.
+app.Use(async (ctx, next) =>
+{
+    ctx.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    await next();
+});
+
 // Bootstrap del founder SuperAdmin (prod, idempotente desde env vars). No-op si no estan.
 await SuperAdminSeeder.EnsureBootstrapFounderAsync(app.Services, app.Configuration);
 

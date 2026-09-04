@@ -68,6 +68,11 @@ public sealed class ConversacionService : IConversacionService
             .FirstOrDefaultAsync(ct);
     }
 
+    // S-10: chequeo liviano de pertenencia (RLS + HasQueryFilter por tenant). Devuelve false si la
+    // conversacion no existe o es de otro tenant, sin exponer datos.
+    public Task<bool> PerteneceAlTenantActualAsync(Guid conversationId, CancellationToken ct = default)
+        => _db.Conversations.AsNoTracking().AnyAsync(c => c.Id == conversationId, ct);
+
     public async Task<IReadOnlyList<MensajeDto>> ListarMensajesAsync(Guid conversationId, CancellationToken ct = default)
     {
         return await _db.Messages.AsNoTracking()

@@ -170,6 +170,9 @@ public class DirectorioController : ControllerBase
         };
         if (ext is null) return BadRequest(new { error = "Formato no soportado. Usa JPG, PNG o WEBP." });
         await using var stream = file.OpenReadStream();
+        // S-09: validar firma real del binario (no confiar en el Content-Type declarado).
+        if (!await Security.ImageValidation.EsImagenValidaAsync(stream, file.ContentType, ct))
+            return BadRequest(new { error = "El archivo no es una imagen valida (JPG, PNG o WEBP)." });
         var url = await _svc.SubirFotoPersonaAsync(id, stream, file.ContentType, ext, ct);
         return url is null ? NotFound() : Ok(new { url });
     }

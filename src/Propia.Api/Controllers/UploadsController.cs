@@ -65,6 +65,9 @@ public class UploadsController : ControllerBase
 
         var key = $"tenants/{tenantId}/{tipo}{ext}";
         await using var stream = file.OpenReadStream();
+        // S-09: el binario debe ser una imagen real y concordar con el Content-Type declarado.
+        if (!await Security.ImageValidation.EsImagenValidaAsync(stream, file.ContentType, ct))
+            return BadRequest(new { error = "El archivo no es una imagen valida (JPG, PNG o WEBP)." });
         var url = await _storage.UploadAsync(key, stream, file.ContentType, ct);
 
         _logger.LogInformation("Imagen {Tipo} subida para tenant {Tenant}: {Url}", tipo, tenantId, url);

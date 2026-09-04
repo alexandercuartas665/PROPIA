@@ -306,11 +306,12 @@ public class PorteriaService : IPorteriaService
 
     private async Task<string> GenerarCodigoUnicoAsync(Guid tenantId, CancellationToken ct)
     {
-        var rnd = new Random();
+        // S-14: codigo de ingreso con RNG criptografico (no System.Random, predecible). La busqueda
+        // de unicidad va acotada por tenant_id (RLS ya filtra, pero se explicita para claridad).
         for (int i = 0; i < 30; i++)
         {
-            var c = rnd.Next(10_000_000, 99_999_999).ToString();
-            var ya = await _db.CodigosIngreso.AnyAsync(x => x.CodigoNumerico == c, ct);
+            var c = System.Security.Cryptography.RandomNumberGenerator.GetInt32(10_000_000, 100_000_000).ToString();
+            var ya = await _db.CodigosIngreso.AnyAsync(x => x.TenantId == tenantId && x.CodigoNumerico == c, ct);
             if (!ya) return c;
         }
         throw new InvalidOperationException("No se pudo generar codigo unico.");

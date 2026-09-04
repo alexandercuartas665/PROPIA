@@ -107,6 +107,10 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     // y confiamos en todos los proxies (terminacion TLS del PaaS).
     options.KnownNetworks.Clear();
     options.KnownProxies.Clear();
+    // S-12: solo honramos el ULTIMO salto del proxy (el load balancer del PaaS). Sin este limite
+    // un cliente podia falsificar su IP inyectando entradas a la izquierda de X-Forwarded-For y
+    // evadir el rate limiting/lockout por IP. Configurable por si hay mas de un proxy encadenado.
+    options.ForwardLimit = builder.Configuration.GetValue<int?>("ForwardedHeaders:ForwardLimit") ?? 1;
 });
 
 // ---- CORS para el frontend Web (Blazor Web App) ----
@@ -223,6 +227,16 @@ var app = builder.Build();
 
 // ForwardedHeaders DEBE ir antes de cualquier middleware que use HttpContext.Request.Scheme
 app.UseForwardedHeaders();
+
+// S-09: X-Content-Type-Options: nosniff en TODAS las respuestas. Evita que el navegador infiera
+// (sniff) un tipo distinto al declarado al servir binarios subidos por usuarios (defensa contra
+// un archivo malicioso que se hace pasar por imagen). Se complementa con la validacion de magic
+// bytes en las subidas.
+app.Use(async (ctx, next) =>
+{
+    ctx.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    await next();
+});
 
 // Bootstrap del founder SuperAdmin para PRODUCCION (idempotente, desde env vars
 // SuperAdmin__BootstrapEmail / SuperAdmin__BootstrapPassword). No-op si no estan configuradas.

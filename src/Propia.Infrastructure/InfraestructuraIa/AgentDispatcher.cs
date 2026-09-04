@@ -31,7 +31,7 @@ public sealed class AgentDispatcher : IAgentDispatcher
     /// JWT que habilita el runtime de tools MCP en el chat real. No es una fila real de Identity (la
     /// validacion del JWT no consulta BD); solo aporta un id estable y el claim tenant_id para la RLS.
     /// </summary>
-    private static readonly Guid DispatcherServiceUserId = new("00000000-0000-0000-0000-0000a9e17d15");
+    public static readonly Guid DispatcherServiceUserId = new("00000000-0000-0000-0000-0000a9e17d15");
 
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenant;
