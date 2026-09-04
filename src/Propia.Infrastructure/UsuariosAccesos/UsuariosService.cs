@@ -300,8 +300,21 @@ public class UsuariosService : IUsuariosService
         var persona = await _db.Personas.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == req.PersonaId, ct)
             ?? throw new InvalidOperationException("Persona no existe en el Directorio. Crea primero su identidad (RN-02).");
 
+        // S-02b: solo se puede invitar a una persona con vinculo ACTIVO en el tenant actual (DirectorioVinculos
+        // tiene HasQueryFilter -> ya acotado al tenant). Cierra el vector de invitar por Guid a cualquier
+        // persona de otra copropiedad para heredar sus roles.
+        var vinculadaAlTenant = await _db.DirectorioVinculos
+            .AnyAsync(v => v.EntidadTipo == EntidadDirectorio.Persona && v.EntidadId == req.PersonaId, ct);
+        if (!vinculadaAlTenant)
+            throw new InvalidOperationException("Solo puedes invitar a personas del directorio de esta copropiedad. Vincula primero a la persona.");
+
         var rol = await _db.RolesCopropiedad.FirstOrDefaultAsync(r => r.Id == req.RolId, ct)
             ?? throw new InvalidOperationException("Rol no encontrado.");
+
+        // S-02b: si ademas es miembro de OTRO tenant, no se expone el token/link al invitador.
+        var esMiembroDeOtroTenant = await _db.DirectorioVinculos.IgnoreQueryFilters()
+            .AnyAsync(v => v.EntidadTipo == EntidadDirectorio.Persona && v.EntidadId == req.PersonaId
+                        && v.TenantId != tenantId, ct);
 
         // Cancelo invitaciones pendientes previas para esta persona
         var pendientes = await _db.UsuarioInvitaciones
@@ -328,7 +341,7 @@ public class UsuariosService : IUsuariosService
 
         await RegistrarAuditoriaAsync(TipoEventoAuditoria.InvitacionEnviada, tenantId, inv.Id, persona.Email, ct);
 
-        return ArmarInvitacionDto(inv, persona, rol);
+        return ArmarInvitacionDto(inv, persona, rol, exponerToken: !esMiembroDeOtroTenant);
     }
 
     public async Task<InvitacionDto> InvitarExternoTableroAsync(InvitarExternoTableroRequest req, CancellationToken ct)
@@ -766,10 +779,11 @@ public class UsuariosService : IUsuariosService
 
     // ===================== Helpers =====================
 
-    private InvitacionDto ArmarInvitacionDto(UsuarioInvitacion inv, Persona p, Rol r)
+    private InvitacionDto ArmarInvitacionDto(UsuarioInvitacion inv, Persona p, Rol r, bool exponerToken = true)
         => new(inv.Id, inv.PersonaId, $"{p.Nombres} {p.Apellidos}", p.Documento,
-            inv.RolId, r.Nombre, inv.Token, inv.Estado, inv.ExpiraAt, inv.CanalEnvio,
-            $"/invitacion/{inv.Token}");
+            inv.RolId, r.Nombre,
+            exponerToken ? inv.Token : null, inv.Estado, inv.ExpiraAt, inv.CanalEnvio,
+            exponerToken ? $"/invitacion/{inv.Token}" : null);
 
     private static string GenerarTokenSeguro()
     {

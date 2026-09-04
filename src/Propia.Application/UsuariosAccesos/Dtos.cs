@@ -86,9 +86,11 @@ public record ActualizarEtiquetaUsuarioRequest(string Nombre, string? Color, boo
 public record InvitacionDto(
     Guid Id, Guid PersonaId, string PersonaNombre, string PersonaDocumento,
     Guid RolId, string RolNombre,
-    string Token, EstadoInvitacion Estado,
+    // S-02b: Token/LinkAceptacion pueden venir null cuando el destinatario es miembro de otro tenant
+    // (no se expone el link al invitador; el token viaja solo al destinatario por correo/WhatsApp).
+    string? Token, EstadoInvitacion Estado,
     DateTimeOffset ExpiraAt, CanalEnvioInvitacion CanalEnvio,
-    string LinkAceptacion);
+    string? LinkAceptacion);
 
 public record CrearInvitacionRequest(
     Guid PersonaId, Guid RolId, CanalEnvioInvitacion Canal);

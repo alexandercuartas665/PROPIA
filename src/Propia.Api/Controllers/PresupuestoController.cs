@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Propia.Application.Presupuesto;
+using Propia.Api.Authorization;
 using Propia.Domain.Enums;
 
 namespace Propia.Api.Controllers;
@@ -11,6 +12,8 @@ namespace Propia.Api.Controllers;
 [ApiController]
 [Route("api/presupuesto")]
 [Authorize]
+// S-06 (auditoria): RBAC por accion sobre la matriz de permisos (Administrador siempre pasa).
+[RequierePermiso(ModuloCodigo.Presupuesto, AccionPermiso.Ver)]
 public class PresupuestoController : ControllerBase
 {
     private readonly IPresupuestoService _svc;
@@ -28,6 +31,7 @@ public class PresupuestoController : ControllerBase
         return dto is null ? NotFound() : Ok(dto);
     }
 
+    [RequierePermiso(ModuloCodigo.Presupuesto, AccionPermiso.Crear)]
     [HttpPost]
     public async Task<IActionResult> Crear([FromBody] CrearPresupuestoRequest req, CancellationToken ct)
     {
@@ -35,6 +39,7 @@ public class PresupuestoController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Presupuesto, AccionPermiso.Editar)]
     [HttpPut("rubros/{id:guid}")]
     public async Task<IActionResult> ActualizarRubro(Guid id, [FromBody] ActualizarRubroRequest req, CancellationToken ct)
     {
@@ -42,6 +47,7 @@ public class PresupuestoController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Presupuesto, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/rubros")]
     public async Task<IActionResult> AgregarRubro(Guid id, [FromBody] AgregarRubroPersonalizadoRequest req, CancellationToken ct)
     {
@@ -49,6 +55,7 @@ public class PresupuestoController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Presupuesto, AccionPermiso.Eliminar)]
     [HttpDelete("rubros/{id:guid}")]
     public async Task<IActionResult> EliminarRubro(Guid id, CancellationToken ct)
     {
@@ -56,6 +63,7 @@ public class PresupuestoController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Presupuesto, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/enviar-aprobacion")]
     public async Task<IActionResult> EnviarAprobacion(Guid id, CancellationToken ct)
     {
@@ -63,6 +71,7 @@ public class PresupuestoController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Presupuesto, AccionPermiso.Aprobar)]
     [HttpPut("{id:guid}/aprobar")]
     public async Task<IActionResult> Aprobar(Guid id, [FromBody] AprobarPresupuestoRequest req, CancellationToken ct)
     {
@@ -70,6 +79,7 @@ public class PresupuestoController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Presupuesto, AccionPermiso.Aprobar)]
     [HttpPut("{id:guid}/activar")]
     public async Task<IActionResult> Activar(Guid id, CancellationToken ct)
     {
@@ -77,10 +87,12 @@ public class PresupuestoController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Presupuesto, AccionPermiso.Aprobar)]
     [HttpPut("{id:guid}/cerrar")]
     public async Task<IActionResult> Cerrar(Guid id, CancellationToken ct)
         => await _svc.CerrarVigenciaAsync(id, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Presupuesto, AccionPermiso.Eliminar)]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> EliminarBorrador(Guid id, CancellationToken ct)
     {
@@ -89,6 +101,7 @@ public class PresupuestoController : ControllerBase
     }
 
     // --- Liquidacion ---
+    [RequierePermiso(ModuloCodigo.Presupuesto, AccionPermiso.Crear)]
     [HttpPost("liquidaciones")]
     public async Task<IActionResult> EmitirLiquidacion([FromBody] EmitirLiquidacionRequest req, CancellationToken ct)
     {
@@ -117,6 +130,7 @@ public class PresupuestoController : ControllerBase
         => Ok(await _svc.ListarUnidadesRecaudoAsync(periodo, estado, ct));
 
     // --- Pagos ---
+    [RequierePermiso(ModuloCodigo.Presupuesto, AccionPermiso.Crear)]
     [HttpPost("pagos/manual")]
     public async Task<IActionResult> RegistrarPagoManual([FromBody] RegistrarPagoManualRequest req, CancellationToken ct)
     {
@@ -133,6 +147,7 @@ public class PresupuestoController : ControllerBase
     public async Task<IActionResult> ListarCuotasExtra(CancellationToken ct)
         => Ok(await _svc.ListarCuotasExtraordinariasAsync(ct));
 
+    [RequierePermiso(ModuloCodigo.Presupuesto, AccionPermiso.Crear)]
     [HttpPost("cuotas-extraordinarias")]
     public async Task<IActionResult> CrearCuotaExtra([FromBody] CrearCuotaExtraordinariaRequest req, CancellationToken ct)
     {
@@ -140,6 +155,7 @@ public class PresupuestoController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Presupuesto, AccionPermiso.Aprobar)]
     [HttpPut("cuotas-extraordinarias/{id:guid}/aprobar")]
     public async Task<IActionResult> AprobarCuotaExtra(Guid id, [FromBody] AprobarCuotaExtraordinariaRequest req, CancellationToken ct)
     {
@@ -169,6 +185,7 @@ public class PresupuestoController : ControllerBase
     public async Task<IActionResult> ListarGastos(Guid id, CancellationToken ct)
         => Ok(await _svc.ListarGastosAsync(id, ct));
 
+    [RequierePermiso(ModuloCodigo.Presupuesto, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/gastos")]
     public async Task<IActionResult> RegistrarGasto(Guid id, [FromBody] RegistrarGastoRequest req, CancellationToken ct)
     {
@@ -176,6 +193,7 @@ public class PresupuestoController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Presupuesto, AccionPermiso.Eliminar)]
     [HttpDelete("gastos/{gastoId:guid}")]
     public async Task<IActionResult> EliminarGasto(Guid gastoId, CancellationToken ct)
         => await _svc.EliminarGastoAsync(gastoId, ct) ? NoContent() : NotFound();

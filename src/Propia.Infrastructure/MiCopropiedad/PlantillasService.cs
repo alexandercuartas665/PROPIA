@@ -1,10 +1,12 @@
 using System.Globalization;
 using ClosedXML.Excel;
 using Microsoft.EntityFrameworkCore;
+using Propia.Application.Common;
 using Propia.Application.Directorio;
 using Propia.Application.MiCopropiedad;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
+using Propia.Infrastructure.Directorio;
 using Propia.Infrastructure.Persistence;
 
 namespace Propia.Infrastructure.MiCopropiedad;
@@ -21,10 +23,11 @@ public class PlantillasService : IPlantillasService
     private readonly IMiCopropiedadService _mc;
     private readonly IDirectorioService _dir;
     private readonly PropiaDbContext _db;
+    private readonly ITenantContext _tenant;
 
-    public PlantillasService(IMiCopropiedadService mc, IDirectorioService dir, PropiaDbContext db)
+    public PlantillasService(IMiCopropiedadService mc, IDirectorioService dir, PropiaDbContext db, ITenantContext tenant)
     {
-        _mc = mc; _dir = dir; _db = db;
+        _mc = mc; _dir = dir; _db = db; _tenant = tenant;
     }
 
     // Paleta PROPIA (consistente con la plantilla de unidades y la app).
@@ -318,6 +321,10 @@ public class PlantillasService : IPlantillasService
                 var existe = await _dir.BuscarPersonaPorDocumentoAsync(new BuscarPorDocumentoRequest(tipoDoc, doc), ct);
                 if (existe is not null)
                 {
+                    // S-08b: el importador actua sobre el tenant activo. Asegura el vinculo de la persona
+                    // con esta copropiedad ANTES de actualizar, para que el gate por vinculo no lo bloquee
+                    // (y para que aparezca en los selectores del tenant).
+                    await VinculoDirectorio.AsegurarPersonaAsync(_db, _tenant, existe.Id, ct);
                     await _dir.ActualizarPersonaAsync(existe.Id, new ActualizarPersonaRequest(
                         nombres, apellidos, email, telefono, existe.FotoUrl, existe.FechaNacimiento, genero ?? existe.Genero), ct);
                     actualizados++;

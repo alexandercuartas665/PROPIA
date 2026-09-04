@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Propia.Application.Cartera;
+using Propia.Api.Authorization;
 using Propia.Domain.Enums;
 
 namespace Propia.Api.Controllers;
@@ -9,6 +10,8 @@ namespace Propia.Api.Controllers;
 [ApiController]
 [Route("api/cartera")]
 [Authorize]
+// S-06 (auditoria): RBAC por accion sobre la matriz de permisos (Administrador siempre pasa).
+[RequierePermiso(ModuloCodigo.Cartera, AccionPermiso.Ver)]
 public class CarteraController : ControllerBase
 {
     private readonly ICarteraService _svc;
@@ -32,6 +35,7 @@ public class CarteraController : ControllerBase
     }
 
     // --- Sincronizacion + tablero ---
+    [RequierePermiso(ModuloCodigo.Cartera, AccionPermiso.Editar)]
     [HttpPost("sincronizar")]
     public async Task<IActionResult> Sincronizar(CancellationToken ct)
         => Ok(new { sincronizadas = await _svc.SincronizarDesdePresupuestoAsync(ct) });
@@ -57,6 +61,7 @@ public class CarteraController : ControllerBase
     [HttpGet("estados")]
     public async Task<IActionResult> ListarEstados(CancellationToken ct) => Ok(await _svc.ListarEstadosAsync(ct));
 
+    [RequierePermiso(ModuloCodigo.Cartera, AccionPermiso.Editar)]
     [HttpPut("unidades/{id:guid}/estado")]
     public async Task<IActionResult> CambiarEstado(Guid id, [FromBody] CambiarEstadoUnidadRequest req, CancellationToken ct)
     {
@@ -76,6 +81,7 @@ public class CarteraController : ControllerBase
         return dto is null ? NotFound() : Ok(dto);
     }
 
+    [RequierePermiso(ModuloCodigo.Cartera, AccionPermiso.Crear)]
     [HttpPost("acuerdos")]
     public async Task<IActionResult> CrearAcuerdo([FromBody] CrearAcuerdoRequest req, CancellationToken ct)
     {
@@ -83,6 +89,7 @@ public class CarteraController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Cartera, AccionPermiso.Editar)]
     [HttpPut("acuerdos/{id:guid}/enviar")]
     public async Task<IActionResult> EnviarParaAceptacion(Guid id, CancellationToken ct)
     {
@@ -90,6 +97,7 @@ public class CarteraController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Cartera, AccionPermiso.Editar)]
     [HttpPut("acuerdos/{id:guid}/aceptar")]
     public async Task<IActionResult> AceptarAcuerdo(Guid id, [FromBody] AceptarAcuerdoRequest req, CancellationToken ct)
     {
@@ -110,6 +118,7 @@ public class CarteraController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Cartera, AccionPermiso.Editar)]
     [HttpPut("acuerdos/{id:guid}/cancelar")]
     public async Task<IActionResult> CancelarAcuerdo(Guid id, [FromBody] CancelarAcuerdoRequest req, CancellationToken ct)
     {
@@ -117,6 +126,7 @@ public class CarteraController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Cartera, AccionPermiso.Crear)]
     [HttpPost("acuerdos/pago")]
     public async Task<IActionResult> RegistrarPagoAcuerdo([FromBody] RegistrarPagoAcuerdoRequest req, CancellationToken ct)
         => await _svc.RegistrarPagoAcuerdoAsync(req, ct) ? NoContent() : NotFound();
@@ -126,6 +136,7 @@ public class CarteraController : ControllerBase
     public async Task<IActionResult> ListarCondonaciones([FromQuery] Guid? unidadId, CancellationToken ct)
         => Ok(await _svc.ListarCondonacionesAsync(unidadId, ct));
 
+    [RequierePermiso(ModuloCodigo.Cartera, AccionPermiso.Aprobar)]
     [HttpPost("condonaciones")]
     public async Task<IActionResult> AplicarCondonacion([FromBody] AplicarCondonacionRequest req, CancellationToken ct)
     {
@@ -138,6 +149,7 @@ public class CarteraController : ControllerBase
     public async Task<IActionResult> ListarPazSalvos([FromQuery] Guid? unidadId, CancellationToken ct)
         => Ok(await _svc.ListarPazSalvosAsync(unidadId, ct));
 
+    [RequierePermiso(ModuloCodigo.Cartera, AccionPermiso.Crear)]
     [HttpPost("paz-salvos")]
     public async Task<IActionResult> EmitirPazSalvo([FromBody] EmitirPazSalvoRequest req, CancellationToken ct)
     {
@@ -145,6 +157,7 @@ public class CarteraController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Cartera, AccionPermiso.Editar)]
     [HttpPut("paz-salvos/{id:guid}/anular")]
     public async Task<IActionResult> AnularPazSalvo(Guid id, [FromBody] AnularPazSalvoRequest req, CancellationToken ct)
     {
@@ -156,6 +169,7 @@ public class CarteraController : ControllerBase
     [HttpGet("config")]
     public async Task<IActionResult> GetConfig(CancellationToken ct) => Ok(await _svc.GetConfigAsync(ct));
 
+    [RequierePermiso(ModuloCodigo.Cartera, AccionPermiso.Editar)]
     [HttpPut("config")]
     public async Task<IActionResult> ActualizarConfig([FromBody] CarteraConfigDto req, CancellationToken ct)
         => await _svc.ActualizarConfigAsync(req, ct) ? NoContent() : NotFound();

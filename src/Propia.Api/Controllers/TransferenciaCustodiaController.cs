@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
 using Propia.Application.TransferenciaCustodia;
 
 namespace Propia.Api.Controllers;
@@ -8,9 +9,13 @@ namespace Propia.Api.Controllers;
 /// Modulo 1.5 Transferencia de Custodia. Spec v1.0 MVP.
 /// Implementa los 3 escenarios + acta + aprobacion/rechazo + corte + expediente.
 /// </summary>
+// S-01b (auditoria): transferir/aprobar/cortar la custodia de un edificio es una accion de
+// Administrador. Ademas de la pertenencia (parte saliente/entrante) que valida el servicio, se
+// exige rol Administrador en el tenant activo en TODOS los endpoints de custodia.
 [ApiController]
 [Route("api/custodia")]
 [Authorize]
+[RequiereRol("Administrador")]
 public class TransferenciaCustodiaController : ControllerBase
 {
     private readonly ITransferenciaCustodiaService _svc;

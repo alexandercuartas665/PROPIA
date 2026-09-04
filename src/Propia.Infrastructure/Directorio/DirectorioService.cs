@@ -37,7 +37,9 @@ public class DirectorioService : IDirectorioService
     public async Task<PersonaDetalleDto?> ObtenerPersonaAsync(Guid id, CancellationToken ct)
     {
         var p = await _db.Personas.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == id, ct);
-        return p is null ? null : ToPersonaDetalle(p);
+        if (p is null) return null;
+        if (!await TieneVinculoEnTenantAsync(EntidadDirectorio.Persona, id, ct)) return null;  // S-08b
+        return ToPersonaDetalle(p);
     }
 
     public async Task<PersonaDetalleDto> CrearPersonaAsync(CrearPersonaRequest req, CancellationToken ct)
@@ -81,15 +83,23 @@ public class DirectorioService : IDirectorioService
     {
         var p = await _db.Personas.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == id, ct);
         if (p is null) return null;
+        // S-08b: solo se puede editar una persona con vinculo ACTIVO en el tenant actual (el importador
+        // asegura el vinculo antes de actualizar, ver ImportacionService).
+        if (!await TieneVinculoEnTenantAsync(EntidadDirectorio.Persona, id, ct)) return null;
         if (string.IsNullOrWhiteSpace(req.Nombres) || string.IsNullOrWhiteSpace(req.Apellidos))
             throw new InvalidOperationException("Nombres y apellidos obligatorios.");
         p.Nombres = req.Nombres.Trim();
         p.Apellidos = req.Apellidos.Trim();
-        // S-02: el email de una persona con cuenta de login es su identidad de acceso. No se permite
-        // cambiarlo desde el directorio ni desde el importador (evitaria redirigir la identidad hacia un
-        // correo controlado por un atacante). Solo se edita el email de personas sin cuenta.
+        // S-02 / S-02b: el email de una persona es su identidad. No se permite cambiarlo si (a) ya tiene
+        // cuenta de login, o (b) es miembro (vinculo) de OTRO tenant distinto al actual, aunque no tenga
+        // cuenta: un atacante podria redirigir su email -> invitarla -> crear SU cuenta y heredar los roles
+        // de esa persona en el otro tenant. Solo se edita el email de personas sin cuenta y sin vinculo ajeno.
         var tieneCuenta = await _db.Users.AnyAsync(u => u.PersonaId == p.Id, ct);
-        if (!tieneCuenta)
+        var currentTenant = _tenantContext.CurrentTenantId;
+        var miembroDeOtroTenant = await _db.DirectorioVinculos.IgnoreQueryFilters()
+            .AnyAsync(v => v.EntidadTipo == EntidadDirectorio.Persona && v.EntidadId == p.Id
+                        && v.TenantId != currentTenant, ct);
+        if (!tieneCuenta && !miembroDeOtroTenant)
             p.Email = string.IsNullOrWhiteSpace(req.Email) ? null : req.Email.Trim();
         p.Telefono = req.Telefono;
         p.FotoUrl = req.FotoUrl;
@@ -105,6 +115,7 @@ public class DirectorioService : IDirectorioService
         // Persona es global (sin tenant): se ubica ignorando el filtro de tenant.
         var p = await _db.Personas.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == personaId, ct);
         if (p is null) return null;
+        if (!await TieneVinculoEnTenantAsync(EntidadDirectorio.Persona, personaId, ct)) return null;  // S-08b
         var key = $"directorio/persona/{personaId:N}/foto/{Guid.NewGuid():N}{ext}";
         // UploadAsync devuelve una ruta "/uploads/...?v=..." estable (ResolveUrl la deja igual).
         var url = await _blob.UploadAsync(key, contenido, string.IsNullOrWhiteSpace(contentType) ? "image/jpeg" : contentType, ct);
@@ -201,7 +212,9 @@ public class DirectorioService : IDirectorioService
         var e = await _db.Empresas.IgnoreQueryFilters()
             .Include(x => x.RepresentanteLegal)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
-        return e is null ? null : ToEmpresaDetalle(e);
+        if (e is null) return null;
+        if (!await TieneVinculoEnTenantAsync(EntidadDirectorio.Empresa, id, ct)) return null;  // S-08b
+        return ToEmpresaDetalle(e);
     }
 
     public async Task<EmpresaDetalleDto> CrearEmpresaAsync(CrearEmpresaRequest req, CancellationToken ct)
@@ -255,6 +268,7 @@ public class DirectorioService : IDirectorioService
             .Include(x => x.RepresentanteLegal)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (e is null) return null;
+        if (!await TieneVinculoEnTenantAsync(EntidadDirectorio.Empresa, id, ct)) return null;  // S-08b
         if (string.IsNullOrWhiteSpace(req.RazonSocial) || req.RazonSocial.Trim().Length < 3)
             throw new InvalidOperationException("Razon social minimo 3 caracteres.");
 
@@ -911,6 +925,9 @@ public class DirectorioService : IDirectorioService
 
     public async Task<IReadOnlyList<ContactoRapidoDto>> ObtenerContactosRapidosAsync(EntidadDirectorio tipo, Guid entidadId, CancellationToken ct)
     {
+        // S-08b: los contactos (email/telefono/direccion) son PII global; solo se exponen si la entidad
+        // tiene vinculo ACTIVO en el tenant actual.
+        if (!await TieneVinculoEnTenantAsync(tipo, entidadId, ct)) return Array.Empty<ContactoRapidoDto>();
         // DirectorioContacto es global (sin RLS ni filtro por tenant): se lee por (tipo, id).
         return await _db.DirectorioContactos.AsNoTracking()
             .Where(c => c.EntidadTipo == tipo && c.EntidadId == entidadId && c.Activo &&

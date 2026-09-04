@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
 using Propia.Application.EquipoOrg;
 using Propia.Domain.Enums;
 
@@ -31,6 +32,7 @@ public class EquipoOrgController : ControllerBase
         return dto is null ? NotFound() : Ok(dto);
     }
 
+    [RequiereRol("Administrador")]
     [HttpPost("cargos")]
     public async Task<IActionResult> CrearCargo([FromBody] CrearCargoRequest req, CancellationToken ct)
     {
@@ -38,6 +40,7 @@ public class EquipoOrgController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequiereRol("Administrador")]
     [HttpPut("cargos/{id:guid}")]
     public async Task<IActionResult> ActualizarCargo(Guid id, [FromBody] ActualizarCargoRequest req, CancellationToken ct)
     {
@@ -45,6 +48,7 @@ public class EquipoOrgController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequiereRol("Administrador")]
     [HttpDelete("cargos/{id:guid}")]
     public async Task<IActionResult> EliminarCargo(Guid id, CancellationToken ct)
     {
@@ -52,6 +56,7 @@ public class EquipoOrgController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequiereRol("Administrador")]
     [HttpPut("cargos/{id:guid}/permisos")]
     public async Task<IActionResult> AjustarPermisoCargo(Guid id,
         [FromBody] AjustarPermisoCargoRequest req, CancellationToken ct)
@@ -79,6 +84,7 @@ public class EquipoOrgController : ControllerBase
         return dto is null ? NotFound() : Ok(dto);
     }
 
+    [RequiereRol("Administrador")]
     [HttpPost("colaboradores")]
     public async Task<IActionResult> AgregarColaborador(
         [FromBody] AgregarColaboradorRequest req, CancellationToken ct)
@@ -87,6 +93,7 @@ public class EquipoOrgController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequiereRol("Administrador")]
     [HttpPut("colaboradores/{id:guid}/cargo")]
     public async Task<IActionResult> CambiarCargo(Guid id, [FromBody] CambiarCargoRequest req, CancellationToken ct)
     {
@@ -94,15 +101,18 @@ public class EquipoOrgController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequiereRol("Administrador")]
     [HttpPut("colaboradores/{id:guid}/permisos")]
     public async Task<IActionResult> AjustarPermisoColaborador(Guid id,
         [FromBody] AjustarPermisoColaboradorRequest req, CancellationToken ct)
         => await _svc.AjustarPermisoColaboradorAsync(id, req, ct) ? NoContent() : NotFound();
 
+    [RequiereRol("Administrador")]
     [HttpPut("colaboradores/{id:guid}/permisos/reset")]
     public async Task<IActionResult> ResetearPermisos(Guid id, CancellationToken ct)
         => await _svc.ResetearPermisosColaboradorAsync(id, ct) ? NoContent() : NotFound();
 
+    [RequiereRol("Administrador")]
     [HttpPut("colaboradores/{id:guid}/desactivar")]
     public async Task<IActionResult> Desactivar(Guid id,
         [FromBody] DesactivarColaboradorRequest req, CancellationToken ct)
@@ -111,11 +121,13 @@ public class EquipoOrgController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequiereRol("Administrador")]
     [HttpPut("colaboradores/{id:guid}/reactivar")]
     public async Task<IActionResult> Reactivar(Guid id, CancellationToken ct)
         => await _svc.ReactivarColaboradorAsync(id, ct) ? NoContent() : NotFound();
 
     // ---------- Asignaciones a PHs ----------
+    [RequiereRol("Administrador")]
     [HttpPost("colaboradores/{id:guid}/asignaciones")]
     public async Task<IActionResult> AgregarAsignacion(Guid id,
         [FromBody] AgregarAsignacionRequest req, CancellationToken ct)
@@ -124,6 +136,7 @@ public class EquipoOrgController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequiereRol("Administrador")]
     [HttpPut("asignaciones/{id:guid}/rol")]
     public async Task<IActionResult> CambiarRolPh(Guid id,
         [FromBody] CambiarRolPhRequest req, CancellationToken ct)
@@ -132,6 +145,7 @@ public class EquipoOrgController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequiereRol("Administrador")]
     [HttpDelete("asignaciones/{id:guid}")]
     public async Task<IActionResult> QuitarAsignacion(Guid id, CancellationToken ct)
         => await _svc.QuitarAsignacionAsync(id, ct) ? NoContent() : NotFound();

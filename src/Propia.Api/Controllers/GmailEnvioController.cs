@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
 using Propia.Application.Integraciones;
 
 namespace Propia.Api.Controllers;
@@ -9,9 +10,11 @@ namespace Propia.Api.Controllers;
 /// El OAuth client (client_id/secret) lo configura el Super Admin; aqui la copropiedad
 /// conecta/desconecta su cuenta Gmail y consulta el estado.
 /// </summary>
+// S-06 (auditoria): conectar/desconectar el Gmail de la PH es accion de Administrador.
 [ApiController]
 [Route("api/gmail-envio")]
 [Authorize]
+[RequiereRol("Administrador")]
 public class GmailEnvioController : ControllerBase
 {
     private readonly IGmailEnvioService _svc;
