@@ -55,7 +55,7 @@ public sealed class GoogleOAuthClient : IGoogleOAuthClient
             var idToken = idTokenEl.GetString();
             if (string.IsNullOrEmpty(idToken)) return null;
 
-            return DecodeIdToken(idToken);
+            return DecodeIdToken(idToken, clientId);
         }
         catch (Exception ex)
         {
@@ -65,11 +65,14 @@ public sealed class GoogleOAuthClient : IGoogleOAuthClient
     }
 
     /// <summary>
-    /// Decodifica el payload del id_token (JWT). No valida firma - asumimos confianza en TLS hacia
-    /// el endpoint /token de Google. El payload del id_token es base64url-encoded JSON con sub,
-    /// email, email_verified, name, picture.
+    /// Decodifica y valida el id_token (JWT). El token llega server-to-server desde el endpoint
+    /// /token de Google sobre TLS (con nuestro client_secret), por lo que su autenticidad ya es alta.
+    /// S-21: ademas validamos iss (accounts.google.com), aud (== nuestro clientId, evita substitucion
+    /// de token de otra app) y exp (no expirado); email_verified debe ser true. La verificacion de
+    /// firma contra el JWKS de Google (https://www.googleapis.com/oauth2/v3/certs) queda como
+    /// hardening adicional (residual bajo, dado el canal TLS directo).
     /// </summary>
-    private static GoogleIdentity? DecodeIdToken(string idToken)
+    private GoogleIdentity? DecodeIdToken(string idToken, string expectedAudience)
     {
         var parts = idToken.Split('.');
         if (parts.Length < 2) return null;
@@ -77,6 +80,31 @@ public sealed class GoogleOAuthClient : IGoogleOAuthClient
         var payloadJson = Base64UrlDecode(parts[1]);
         using var doc = JsonDocument.Parse(payloadJson);
         var root = doc.RootElement;
+
+        // iss
+        var iss = root.TryGetProperty("iss", out var issEl) ? issEl.GetString() : null;
+        if (iss is not ("accounts.google.com" or "https://accounts.google.com"))
+        {
+            _logger.LogWarning("id_token de Google con iss inesperado: {Iss}", iss);
+            return null;
+        }
+        // aud == nuestro clientId
+        var aud = root.TryGetProperty("aud", out var audEl) ? audEl.GetString() : null;
+        if (string.IsNullOrEmpty(aud) || !string.Equals(aud, expectedAudience, StringComparison.Ordinal))
+        {
+            _logger.LogWarning("id_token de Google con aud que no concuerda con el clientId.");
+            return null;
+        }
+        // exp (segundos epoch)
+        if (root.TryGetProperty("exp", out var expEl) && expEl.TryGetInt64(out var expUnix))
+        {
+            if (DateTimeOffset.FromUnixTimeSeconds(expUnix) < DateTimeOffset.UtcNow.AddSeconds(-30))
+            {
+                _logger.LogWarning("id_token de Google expirado.");
+                return null;
+            }
+        }
+        else return null;
 
         var sub = root.TryGetProperty("sub", out var subEl) ? subEl.GetString() : null;
         var email = root.TryGetProperty("email", out var emEl) ? emEl.GetString() : null;

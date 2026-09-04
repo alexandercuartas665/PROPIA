@@ -100,17 +100,28 @@ builder.Services.AddHostedService(sp =>
 
 // ---- Forwarded Headers (proxy de Railway o cualquier reverse proxy) ----
 // Necesario para que el HTTPS redirect y los esquemas de URL respeten el origen.
+// S-12/S-03b: ForwardedHeaders SOLO se aplica cuando hay un proxy de confianza (por defecto fuera
+// de Development). En Development/tests no se aplica: RemoteIpAddress es el peer TCP real y un
+// X-Forwarded-For inyectado NO puede mover la particion del rate limiter (antes esto lo evadia).
+var forwardedHeadersEnabled = builder.Configuration.GetValue<bool?>("ForwardedHeaders:Enabled") ?? !builder.Environment.IsDevelopment();
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-    // En PaaS no conocemos el rango de IP del proxy, asi que limpiamos los defaults
-    // y confiamos en todos los proxies (terminacion TLS del PaaS).
     options.KnownNetworks.Clear();
     options.KnownProxies.Clear();
-    // S-12: solo honramos el ULTIMO salto del proxy (el load balancer del PaaS). Sin este limite
-    // un cliente podia falsificar su IP inyectando entradas a la izquierda de X-Forwarded-For y
-    // evadir el rate limiting/lockout por IP. Configurable por si hay mas de un proxy encadenado.
+    // Solo se honra el ULTIMO salto (el proxy del PaaS): sin esto un cliente falsifica su IP con
+    // entradas a la izquierda de X-Forwarded-For. Configurable si hay mas de un proxy encadenado.
     options.ForwardLimit = builder.Configuration.GetValue<int?>("ForwardedHeaders:ForwardLimit") ?? 1;
+    // Endurecimiento opcional para prod: rangos/proxies de confianza (CIDR). Si se configuran, el
+    // XFF solo se honra cuando la conexion viene de ellos.
+    foreach (var cidr in builder.Configuration.GetSection("ForwardedHeaders:KnownNetworks").Get<string[]>() ?? Array.Empty<string>())
+    {
+        var partes = cidr.Split('/', 2);
+        if (partes.Length == 2 && System.Net.IPAddress.TryParse(partes[0], out var ip) && int.TryParse(partes[1], out var prefix))
+            options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(ip, prefix));
+    }
+    foreach (var proxy in builder.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() ?? Array.Empty<string>())
+        if (System.Net.IPAddress.TryParse(proxy, out var ip)) options.KnownProxies.Add(ip);
 });
 
 // ---- CORS para el frontend Web (Blazor Web App) ----
@@ -231,8 +242,11 @@ var app = builder.Build();
 
 // ---- Pipeline ----
 
-// ForwardedHeaders DEBE ir antes de cualquier middleware que use HttpContext.Request.Scheme
-app.UseForwardedHeaders();
+// ForwardedHeaders DEBE ir antes de cualquier middleware que use HttpContext.Request.Scheme.
+// S-12/S-03b: solo si hay proxy de confianza (por defecto fuera de Development). Asi el rate
+// limiter particiona por la IP real y no por un X-Forwarded-For falsificable.
+if (forwardedHeadersEnabled)
+    app.UseForwardedHeaders();
 
 // S-09: X-Content-Type-Options: nosniff en TODAS las respuestas. Evita que el navegador infiera
 // (sniff) un tipo distinto al declarado al servir binarios subidos por usuarios (defensa contra

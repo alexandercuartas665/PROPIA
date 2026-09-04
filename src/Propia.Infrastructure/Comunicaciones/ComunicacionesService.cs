@@ -217,7 +217,7 @@ public class ComunicacionesService : IComunicacionesService
             PlantillaId = req.PlantillaId,
             TipoComunicado = req.TipoComunicado,
             Asunto = req.Asunto.Trim(),
-            CuerpoHtml = req.CuerpoHtml,
+            CuerpoHtml = Common.HtmlSanitization.Clean(req.CuerpoHtml)!,  // S-19: sanear al guardar
             CuerpoTextoPlano = string.IsNullOrWhiteSpace(req.CuerpoTextoPlano)
                 ? GenerarResumenWhatsApp(req.Asunto, req.CuerpoHtml)
                 : req.CuerpoTextoPlano!.Trim(),
@@ -243,7 +243,7 @@ public class ComunicacionesService : IComunicacionesService
 
         c.TipoComunicado = req.TipoComunicado;
         c.Asunto = req.Asunto.Trim();
-        c.CuerpoHtml = req.CuerpoHtml;
+        c.CuerpoHtml = Common.HtmlSanitization.Clean(req.CuerpoHtml)!;  // S-19: sanear al guardar
         c.CuerpoTextoPlano = string.IsNullOrWhiteSpace(req.CuerpoTextoPlano)
             ? GenerarResumenWhatsApp(req.Asunto, req.CuerpoHtml)
             : req.CuerpoTextoPlano!.Trim();

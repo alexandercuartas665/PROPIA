@@ -119,7 +119,7 @@ public partial class PqrsdService
         {
             ExpedienteId = expedienteId,
             Asunto = string.IsNullOrWhiteSpace(req.Asunto) ? null : req.Asunto.Trim(),
-            CuerpoHtml = req.CuerpoHtml,
+            CuerpoHtml = Common.HtmlSanitization.Clean(req.CuerpoHtml)!,  // S-19: sanear al guardar
             AutorUsuarioId = uid ?? Guid.Empty,
             AutorNombre = nombre
         };
@@ -154,7 +154,7 @@ public partial class PqrsdService
         var oldAsunto = r.Asunto;
 
         r.Asunto = string.IsNullOrWhiteSpace(req.Asunto) ? null : req.Asunto.Trim();
-        r.CuerpoHtml = req.CuerpoHtml;
+        r.CuerpoHtml = Common.HtmlSanitization.Clean(req.CuerpoHtml)!;  // S-19: sanear al guardar
 
         var existentes = await _db.PqrsdRespuestaVersiones
             .Where(v => v.RespuestaId == r.Id).Select(v => v.Numero).ToListAsync(ct);
@@ -323,7 +323,7 @@ public partial class PqrsdService
     public async Task<PqrsdPlantillaDto> CrearPlantillaAsync(GuardarPlantillaRequest req, CancellationToken ct)
     {
         var count = await _db.PqrsdPlantillasRespuesta.CountAsync(ct);
-        var p = new PqrsdPlantillaRespuesta { Nombre = (req.Nombre ?? "Plantilla").Trim(), CuerpoHtml = req.CuerpoHtml ?? "", Activa = true, Orden = count };
+        var p = new PqrsdPlantillaRespuesta { Nombre = (req.Nombre ?? "Plantilla").Trim(), CuerpoHtml = Common.HtmlSanitization.Clean(req.CuerpoHtml) ?? "", Activa = true, Orden = count };  // S-19
         _db.PqrsdPlantillasRespuesta.Add(p);
         await _db.SaveChangesAsync(ct);
         return new PqrsdPlantillaDto(p.Id, p.Nombre, p.CuerpoHtml);
@@ -334,7 +334,7 @@ public partial class PqrsdService
         var p = await _db.PqrsdPlantillasRespuesta.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (p is null) return false;
         p.Nombre = (req.Nombre ?? p.Nombre).Trim();
-        p.CuerpoHtml = req.CuerpoHtml ?? "";
+        p.CuerpoHtml = Common.HtmlSanitization.Clean(req.CuerpoHtml) ?? "";  // S-19
         await _db.SaveChangesAsync(ct);
         return true;
     }

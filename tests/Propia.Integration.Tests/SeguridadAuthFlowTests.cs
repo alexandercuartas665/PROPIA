@@ -61,6 +61,9 @@ public class SeguridadAuthFlowTests : IAsyncLifetime
         var ok = await client.PostAsJsonAsync("/connect/token", new LoginRequest(email, "Password1234!"));
         Assert.Equal(HttpStatusCode.Unauthorized, ok.StatusCode);
 
+        // El login corre en su propio scope/DbContext; limpiamos el tracker de ESTE scope para releer
+        // el usuario con el LockoutEnd ya persistido (si no, EF devuelve la entidad cacheada sin lockout).
+        db.ChangeTracker.Clear();
         var reloaded = await userManager.FindByIdAsync(user.Id.ToString());
         Assert.True(await userManager.IsLockedOutAsync(reloaded!));
 

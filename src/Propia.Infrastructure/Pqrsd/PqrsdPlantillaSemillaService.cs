@@ -32,7 +32,7 @@ public sealed class PqrsdPlantillaSemillaService : IPqrsdPlantillaSemillaService
         var p = new PqrsdPlantillaSemilla
         {
             Nombre = (req.Nombre ?? "Plantilla").Trim(),
-            CuerpoHtml = req.CuerpoHtml ?? "",
+            CuerpoHtml = Common.HtmlSanitization.Clean(req.CuerpoHtml) ?? "",  // S-19
             Activa = req.Activa,
             Orden = orden
         };
@@ -46,7 +46,7 @@ public sealed class PqrsdPlantillaSemillaService : IPqrsdPlantillaSemillaService
         var p = await _db.PqrsdPlantillasSemilla.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (p is null) return null;
         p.Nombre = (req.Nombre ?? p.Nombre).Trim();
-        p.CuerpoHtml = req.CuerpoHtml ?? "";
+        p.CuerpoHtml = Common.HtmlSanitization.Clean(req.CuerpoHtml) ?? "";  // S-19
         p.Activa = req.Activa;
         p.Orden = req.Orden;
         await _db.SaveChangesAsync(ct);
