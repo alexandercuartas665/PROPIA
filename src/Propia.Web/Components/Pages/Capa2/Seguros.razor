@@ -1210,23 +1210,72 @@
         try
         {
             var file = e.File;
-            using var content = new MultipartFormDataContent();
-            var fc = new StreamContent(file.OpenReadStream(15 * 1024 * 1024));
-            fc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType);
-            content.Add(fc, "file", file.Name);
-            var resp = await Auth().PostAsync("/api/ocr/extraer", content);
-            if (!resp.IsSuccessStatusCode) { _ocrMsg = "No se pudo leer el documento (" + (int)resp.StatusCode + ")."; return; }
-            var r = await resp.Content.ReadFromJsonAsync<OcrResp>();
-            if (r is null) { _ocrMsg = "Sin datos."; return; }
-            // Prefill best-effort: fecha y valor sugeridos + numero de poliza desde campos/texto.
-            if (r.ValorSugerido is { } v && _f.ValorPoliza is null) _f.ValorPoliza = v;
-            if (!string.IsNullOrWhiteSpace(r.FechaSugerida) && DateTime.TryParse(r.FechaSugerida, out var fs) && _f.Inicio == DateTime.Today) _f.Inicio = fs;
-            var num = r.Campos?.FirstOrDefault(c => c.Nombre.Contains("Policy", StringComparison.OrdinalIgnoreCase) || c.Nombre.Contains("Poliza", StringComparison.OrdinalIgnoreCase))?.Valor;
-            if (!string.IsNullOrWhiteSpace(num) && string.IsNullOrWhiteSpace(_f.NumeroPoliza)) _f.NumeroPoliza = num;
-            _ocrMsg = $"Documento leido ({r.Proveedor}). Revisa y completa los campos.";
+            // Bufferizamos a bytes UNA vez (InputFile solo se abre una vez; ademas permite 2 intentos).
+            byte[] bytes;
+            await using (var s = file.OpenReadStream(15 * 1024 * 1024))
+            {
+                using var msb = new MemoryStream();
+                await s.CopyToAsync(msb);
+                bytes = msb.ToArray();
+            }
+            var mime = string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType;
+
+            MultipartFormDataContent Build(bool conPerfil)
+            {
+                var c = new MultipartFormDataContent();
+                var bc = new ByteArrayContent(bytes);
+                bc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mime);
+                c.Add(bc, "file", file.Name);
+                if (conPerfil) c.Add(new StringContent("poliza"), "perfil");
+                return c;
+            }
+
+            // 1) Extraccion con IA (precisa, campos de poliza) si el motor configurado es de IA.
+            using (var content = Build(conPerfil: true))
+            {
+                var iaResp = await Auth().PostAsync("/api/ocr/extraer-ia", content);
+                if (iaResp.IsSuccessStatusCode)
+                {
+                    var ir = await iaResp.Content.ReadFromJsonAsync<OcrResp>();
+                    if (ir?.Campos is not null)
+                    {
+                        AplicarCamposPoliza(ir.Campos);
+                        _ocrMsg = $"Documento leido con IA ({ir.Proveedor}). Revisa y confirma los campos.";
+                        return;
+                    }
+                }
+                // 400 = el motor configurado no es IA -> caemos al OCR clasico.
+            }
+
+            // 2) Fallback: OCR clasico (Azure) best-effort.
+            using (var content = Build(conPerfil: false))
+            {
+                var resp = await Auth().PostAsync("/api/ocr/extraer", content);
+                if (!resp.IsSuccessStatusCode) { _ocrMsg = "No se pudo leer el documento (" + (int)resp.StatusCode + ")."; return; }
+                var r = await resp.Content.ReadFromJsonAsync<OcrResp>();
+                if (r is null) { _ocrMsg = "Sin datos."; return; }
+                if (r.ValorSugerido is { } v && _f.ValorPoliza is null) _f.ValorPoliza = v;
+                if (!string.IsNullOrWhiteSpace(r.FechaSugerida) && DateTime.TryParse(r.FechaSugerida, out var fs) && _f.Inicio == DateTime.Today) _f.Inicio = fs;
+                var num = r.Campos?.FirstOrDefault(c => c.Nombre.Contains("Policy", StringComparison.OrdinalIgnoreCase) || c.Nombre.Contains("Poliza", StringComparison.OrdinalIgnoreCase))?.Valor;
+                if (!string.IsNullOrWhiteSpace(num) && string.IsNullOrWhiteSpace(_f.NumeroPoliza)) _f.NumeroPoliza = num;
+                _ocrMsg = $"Documento leido ({r.Proveedor}). Revisa y completa los campos.";
+            }
         }
         catch (Exception ex) { _ocrMsg = "Error: " + ex.Message; }
         finally { _ocrBusy = false; }
+    }
+
+    // Mapea los campos del perfil "poliza" (extraccion IA) al formulario. best-effort; el humano confirma.
+    private void AplicarCamposPoliza(List<OcrCampo> campos)
+    {
+        string? Val(string nombre) => campos.FirstOrDefault(c => string.Equals(c.Nombre, nombre, StringComparison.OrdinalIgnoreCase))?.Valor;
+        var aseg = Val("aseguradora"); if (!string.IsNullOrWhiteSpace(aseg)) _f.Aseguradora = aseg!;
+        var corr = Val("corredor"); if (!string.IsNullOrWhiteSpace(corr)) _f.Corredor = corr;
+        var num = Val("numero_poliza"); if (!string.IsNullOrWhiteSpace(num)) _f.NumeroPoliza = num;
+        var valor = Val("valor_poliza");
+        if (!string.IsNullOrWhiteSpace(valor) && decimal.TryParse(valor, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var vv)) _f.ValorPoliza = vv;
+        var fi = Val("fecha_inicio"); if (!string.IsNullOrWhiteSpace(fi) && DateTime.TryParse(fi, out var fdi)) _f.Inicio = fdi;
+        var ff = Val("fecha_fin"); if (!string.IsNullOrWhiteSpace(ff) && DateTime.TryParse(ff, out var fdf)) _f.Fin = fdf;
     }
     private sealed record OcrCampo(string Nombre, string? Valor, double? Confianza);
     private sealed record OcrResp(bool Ok, string? Proveedor, string? Modelo, decimal? ValorSugerido, string? FechaSugerida, List<OcrCampo>? Campos, string? TextoCompleto);

@@ -175,4 +175,13 @@ public interface IAiProviderClient
     /// </summary>
     Task<AiCompletion> CompleteWithToolsAsync(AiProvider provider, string apiKey, string? baseUrl, string model,
         string systemPrompt, IReadOnlyList<AiToolMessage> messages, IReadOnlyList<AiToolSpec> tools, CancellationToken ct = default);
+
+    /// <summary>
+    /// Extrae datos estructurados de un DOCUMENTO (PDF/imagen) mandandolo NATIVO al modelo, con un
+    /// JSON schema de salida (el modelo debe responder JSON que cumpla el schema). Hoy soporta Gemini
+    /// (inline_data + response_schema). Devuelve el JSON en Text, o Ok=false con el error. La API key
+    /// llega descifrada; el documento no se persiste ni se loggea aqui.
+    /// </summary>
+    Task<AiChatResult> ExtractFromDocumentAsync(AiProvider provider, string apiKey, string? baseUrl, string model,
+        string instruction, byte[] documentBytes, string mimeType, string jsonSchema, CancellationToken ct = default);
 }

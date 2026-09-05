@@ -90,6 +90,7 @@ public static class DependencyInjection
         services.AddScoped<Application.Integraciones.IOcrServerConfigService, Integraciones.OcrServerConfigService>();
         services.AddScoped<Ocr.AzureDocumentExtractionService>();
         services.AddScoped<Ocr.AzureComputerVisionExtractionService>();
+        services.AddScoped<Application.Ocr.IAiDocumentExtractor, Ocr.GeminiDocumentExtractionService>();
         services.AddScoped<Application.Ocr.IDocumentExtractionService, Ocr.OcrDispatcherService>();
         services.AddScoped<Application.Integraciones.IWompiConfigService, Integraciones.WompiConfigService>();
         services.AddScoped<Application.Integraciones.IWompiWebhookService, Integraciones.WompiWebhookService>();

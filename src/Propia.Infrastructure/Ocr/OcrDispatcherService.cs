@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Propia.Application.Integraciones;
 using Propia.Application.Ocr;
 using Propia.Domain.Enums;
 using Propia.Infrastructure.Persistence;
@@ -16,15 +17,18 @@ public sealed class OcrDispatcherService : IDocumentExtractionService
     private readonly PropiaDbContext _db;
     private readonly AzureDocumentExtractionService _documentIntelligence;
     private readonly AzureComputerVisionExtractionService _computerVision;
+    private readonly Propia.Application.Ocr.IAiDocumentExtractor _aiExtractor;
 
     public OcrDispatcherService(
         PropiaDbContext db,
         AzureDocumentExtractionService documentIntelligence,
-        AzureComputerVisionExtractionService computerVision)
+        AzureComputerVisionExtractionService computerVision,
+        Propia.Application.Ocr.IAiDocumentExtractor aiExtractor)
     {
         _db = db;
         _documentIntelligence = documentIntelligence;
         _computerVision = computerVision;
+        _aiExtractor = aiExtractor;
     }
 
     public async Task<DocumentExtractionResult> ExtraerAsync(Stream contenido, string contentType, string? modeloOverride, CancellationToken ct = default)
@@ -40,6 +44,11 @@ public sealed class OcrDispatcherService : IDocumentExtractionService
         using var ms = new MemoryStream();
         await contenido.CopyToAsync(ms, ct);
         var bytes = ms.ToArray();
+
+        // Motor de IA (Gemini): manda el documento NATIVO al modelo (extraccion abierta para el flujo
+        // generico; los modulos con campos objetivo usan IAiDocumentExtractor directamente).
+        if (OcrProviderCatalog.EsIa(cfg.Provider))
+            return await _aiExtractor.ExtraerAsync(bytes, contentType, null, Array.Empty<Propia.Application.Ocr.CampoObjetivo>(), "ocr-generico", ct);
 
         // Computer Vision (Image Analysis) NO procesa PDF -> si llega un PDF, lo rasterizamos a imagenes
         // y hacemos OCR por pagina, concatenando el texto. Document Intelligence si maneja PDF nativo.

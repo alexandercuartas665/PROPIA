@@ -7,5 +7,11 @@ public enum OcrProvider
     AzureDocumentIntelligence = 1,
 
     /// <summary>Azure AI Vision (Computer Vision 4.0, feature "read"): devuelve el texto crudo del documento.</summary>
-    AzureComputerVision = 2
+    AzureComputerVision = 2,
+
+    /// <summary>
+    /// Extraccion con IA (Google Gemini): manda el PDF nativo al modelo y pide salida estructurada
+    /// (JSON schema). Lee texto + layout + visión; robusto ante formatos heterogeneos (p.ej. polizas).
+    /// </summary>
+    GeminiDocument = 3
 }

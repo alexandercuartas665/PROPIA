@@ -26,14 +26,62 @@ public class OcrController : ControllerBase
 {
     private readonly IDocumentExtractionService _ocr;
     private readonly IAiInferenceService _ai;
+    private readonly IAiDocumentExtractor _aiExtractor;
     private readonly PropiaDbContext _db;
 
-    public OcrController(IDocumentExtractionService ocr, IAiInferenceService ai, PropiaDbContext db)
+    public OcrController(IDocumentExtractionService ocr, IAiInferenceService ai, IAiDocumentExtractor aiExtractor, PropiaDbContext db)
     {
         _ocr = ocr;
         _ai = ai;
+        _aiExtractor = aiExtractor;
         _db = db;
     }
+
+    /// <summary>
+    /// Extraccion con IA (arnes IAiDocumentExtractor) por PERFIL: manda el PDF/imagen nativo al motor
+    /// de IA configurado (p.ej. Gemini) y devuelve exactamente los campos del perfil, con confianza.
+    /// Si el motor configurado no es de IA, responde 400 con guia. Reutilizable por modulo via 'perfil'.
+    /// </summary>
+    [HttpPost("extraer-ia")]
+    [RequestSizeLimit(15 * 1024 * 1024)]
+    public async Task<IActionResult> ExtraerIa([FromForm] IFormFile? file, [FromForm] string? perfil, CancellationToken ct)
+    {
+        if (file is null || file.Length == 0) return BadRequest(new { error = "archivo_requerido" });
+        if (!await _aiExtractor.DisponibleAsync(ct))
+            return BadRequest(new { error = "El motor configurado no es de IA. Configura 'IA - Google Gemini' en Super Admin > OCR / Documentos." });
+
+        using var ms = new MemoryStream();
+        await using (var s = file.OpenReadStream()) await s.CopyToAsync(ms, ct);
+        var bytes = ms.ToArray();
+
+        var campos = PerfilCampos(perfil);
+        var r = await _aiExtractor.ExtraerAsync(bytes, file.ContentType ?? "application/pdf", file.FileName, campos, perfil ?? "generico", ct);
+        if (!r.Ok) return BadRequest(new { error = r.Error });
+
+        return Ok(new
+        {
+            ok = true,
+            proveedor = r.Proveedor,
+            modelo = r.Modelo,
+            campos = r.Campos.Select(c => new { c.Nombre, c.Valor, c.Confianza })
+        });
+    }
+
+    /// <summary>Campos objetivo por perfil (server-side; el cliente no define el schema).</summary>
+    private static IReadOnlyList<CampoObjetivo> PerfilCampos(string? perfil) => (perfil ?? "").Trim().ToLowerInvariant() switch
+    {
+        "poliza" => new[]
+        {
+            new CampoObjetivo("aseguradora", "Nombre de la compania aseguradora", "texto"),
+            new CampoObjetivo("corredor", "Nombre del corredor o intermediario de seguros, si aparece", "texto"),
+            new CampoObjetivo("numero_poliza", "Numero de la poliza tal cual figura", "texto"),
+            new CampoObjetivo("ramo", "Ramo o tipo de seguro (ej. RCE, Todo Riesgo, Incendio, Manejo)", "texto"),
+            new CampoObjetivo("valor_poliza", "Valor asegurado o prima, solo el numero", "moneda"),
+            new CampoObjetivo("fecha_inicio", "Fecha de inicio de vigencia", "fecha"),
+            new CampoObjetivo("fecha_fin", "Fecha de fin de vigencia", "fecha"),
+        },
+        _ => Array.Empty<CampoObjetivo>()
+    };
 
     [HttpPost("extraer")]
     [RequestSizeLimit(15 * 1024 * 1024)]

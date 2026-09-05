@@ -40,7 +40,8 @@ public static class OcrProviderCatalog
     public static readonly IReadOnlyList<OcrProvider> Todos = new[]
     {
         OcrProvider.AzureDocumentIntelligence,
-        OcrProvider.AzureComputerVision
+        OcrProvider.AzureComputerVision,
+        OcrProvider.GeminiDocument
     };
 
     public static Meta For(OcrProvider p) => p switch
@@ -49,6 +50,11 @@ public static class OcrProviderCatalog
             new[] { "prebuilt-invoice", "prebuilt-receipt", "prebuilt-document", "prebuilt-read" }),
         OcrProvider.AzureComputerVision => new("Azure AI Vision (Computer Vision)", "read",
             new[] { "read" }),
+        OcrProvider.GeminiDocument => new("IA - Google Gemini (PDF nativo)", "gemini-2.0-flash",
+            new[] { "gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-pro" }),
         _ => new(p.ToString(), "", Array.Empty<string>())
     };
+
+    /// <summary>True si el proveedor es un motor de IA (no OCR clasico): manda el documento al LLM.</summary>
+    public static bool EsIa(OcrProvider p) => p == OcrProvider.GeminiDocument;
 }

@@ -211,6 +211,82 @@ public sealed class AiProviderClient : IAiProviderClient
         return new AiCompletion(true, string.IsNullOrEmpty(txt) ? null : txt, null, inTok, outTok, calls);
     }
 
+    // ---------- Extraccion de documento (PDF/imagen nativo -> JSON estructurado) ----------
+    public async Task<AiChatResult> ExtractFromDocumentAsync(AiProvider provider, string apiKey, string? baseUrl, string model,
+        string instruction, byte[] documentBytes, string mimeType, string jsonSchema, CancellationToken ct = default)
+    {
+        try
+        {
+            return provider switch
+            {
+                AiProvider.Gemini => await GeminiExtract(apiKey, baseUrl, model, instruction, documentBytes, mimeType, jsonSchema, ct),
+                _ => new AiChatResult(false, null, $"El proveedor {provider} no soporta extraccion de documentos con IA todavia.")
+            };
+        }
+        catch (Exception ex)
+        {
+            return new AiChatResult(false, null, $"No se pudo contactar al proveedor: {ex.Message}");
+        }
+    }
+
+    private async Task<AiChatResult> GeminiExtract(string apiKey, string? baseUrl, string model, string instruction,
+        byte[] documentBytes, string mimeType, string jsonSchema, CancellationToken ct)
+    {
+        var url = $"{Base(baseUrl, "https://generativelanguage.googleapis.com")}/v1beta/models/{model}:generateContent?key={apiKey}";
+        var b64 = Convert.ToBase64String(documentBytes);
+        var body = new
+        {
+            contents = new[]
+            {
+                new
+                {
+                    role = "user",
+                    parts = new object[]
+                    {
+                        new { inline_data = new { mime_type = mimeType, data = b64 } },
+                        new { text = instruction }
+                    }
+                }
+            },
+            generationConfig = new
+            {
+                response_mime_type = "application/json",
+                response_schema = ParseSchema(jsonSchema),
+                temperature = 0.0
+            }
+        };
+
+        using var resp = await _http.PostAsync(url, JsonBody(body), ct);
+        var raw = await resp.Content.ReadAsStringAsync(ct);
+        if (!resp.IsSuccessStatusCode)
+        {
+            var snip = raw.Length > 400 ? raw[..400] : raw;
+            return new AiChatResult(false, null, $"Gemini respondio HTTP {(int)resp.StatusCode}. {snip}");
+        }
+
+        using var doc = JsonDocument.Parse(raw);
+        var root = doc.RootElement;
+        string? text = null;
+        if (root.TryGetProperty("candidates", out var cands) && cands.ValueKind == JsonValueKind.Array && cands.GetArrayLength() > 0)
+        {
+            var cand = cands[0];
+            if (cand.TryGetProperty("content", out var content) && content.TryGetProperty("parts", out var parts)
+                && parts.ValueKind == JsonValueKind.Array && parts.GetArrayLength() > 0
+                && parts[0].TryGetProperty("text", out var t))
+                text = t.GetString();
+        }
+        if (string.IsNullOrWhiteSpace(text))
+            return new AiChatResult(false, null, "Gemini no devolvio contenido (posible bloqueo de seguridad o documento ilegible).");
+
+        var (inTok, outTok) = (0, 0);
+        if (root.TryGetProperty("usageMetadata", out var um))
+        {
+            inTok = um.TryGetProperty("promptTokenCount", out var p) ? p.GetInt32() : 0;
+            outTok = um.TryGetProperty("candidatesTokenCount", out var c) ? c.GetInt32() : 0;
+        }
+        return new AiChatResult(true, text, null, inTok, outTok);
+    }
+
     private static JsonElement ParseSchema(string? json)
     {
         try

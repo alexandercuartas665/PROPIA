@@ -52,6 +52,7 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<PlatformBranding> PlatformBrandings => Set<PlatformBranding>();
     public DbSet<AiProviderConfig> AiProviderConfigs => Set<AiProviderConfig>();
     public DbSet<OcrProviderConfig> OcrProviderConfigs => Set<OcrProviderConfig>();
+    public DbSet<DocumentExtractionLog> DocumentExtractionLogs => Set<DocumentExtractionLog>();
 
     // Menu de navegacion configurable (global plataforma): overrides de nombre/orden/ubicacion.
     public DbSet<MenuOverride> MenuOverrides => Set<MenuOverride>();
