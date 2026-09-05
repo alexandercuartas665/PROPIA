@@ -203,7 +203,7 @@
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
                     <div>
                         <label style="font-size:11px;color:var(--propia-text-muted);font-weight:600;display:block;margin-bottom:3px;">Medio de recibido</label>
-                        <select class="gpq-input" @bind="_medioRec">
+                        <select class="gpq-input" @bind="_medioRec" @bind:after="GuardarLigero">
                             <option value="">Sin especificar</option>
                             <option value="@MedioRecepcionPqrsd.CorreoElectronico">Correo electronico</option>
                             <option value="@MedioRecepcionPqrsd.Fisico">Fisico</option>
@@ -216,18 +216,18 @@
                     </div>
                     <div>
                         <label style="font-size:11px;color:var(--propia-text-muted);font-weight:600;display:block;margin-bottom:3px;">Fecha de recibido</label>
-                        <input type="date" class="gpq-input" @bind="_fechaRecibidoRec" />
+                        <input type="date" class="gpq-input" @bind="_fechaRecibidoRec" @bind:after="GuardarConRecarga" />
                     </div>
                     <div>
                         <label style="font-size:11px;color:var(--propia-text-muted);font-weight:600;display:block;margin-bottom:3px;">Seccional</label>
-                        <input class="gpq-input" @bind="_seccionalRec" placeholder="Ej. Valle" maxlength="120" />
+                        <input class="gpq-input" @bind="_seccionalRec" @bind:after="GuardarLigero" placeholder="Ej. Valle" maxlength="120" />
                     </div>
                     <div>
                         <label style="font-size:11px;color:var(--propia-text-muted);font-weight:600;display:block;margin-bottom:3px;">Administrador</label>
-                        <input class="gpq-input" @bind="_administradorRec" placeholder="Nombre del administrador" maxlength="160" />
+                        <input class="gpq-input" @bind="_administradorRec" @bind:after="GuardarLigero" placeholder="Nombre del administrador" maxlength="160" />
                     </div>
                 </div>
-                <div class="gpq-mini-hint">Si cambias la fecha de recibido, se recalcula el plazo legal. Se guarda con "Guardar cambios".</div>
+                <div class="gpq-mini-hint">Si cambias la fecha de recibido, se recalcula el plazo legal. Se guarda solo.</div>
             </div>
 
             @* Solicitante (contacto) y Plazo legal lado a lado (estilo referencia) *@
@@ -272,8 +272,8 @@
                     <div class="gpq-noref" style="margin-bottom:8px;">Sin personas asociadas todavia.</div>
                 }
                 <label class="gpq-mini-lbl" style="margin-top:8px;">Cambiar solicitante (directorio - se puede crear)</label>
-                <SelectorPersona Jwt="@Jwt" @bind-Seleccionada="_personaSel" Placeholder="Buscar o crear persona..." />
-                <div class="gpq-mini-hint">Se guarda con "Guardar cambios" (en Campos dinamicos).</div>
+                <SelectorPersona Jwt="@Jwt" @bind-Seleccionada="_personaSel" @bind-Seleccionada:after="GuardarConRecarga" Placeholder="Buscar o crear persona..." />
+                <div class="gpq-mini-hint">Se guarda solo al seleccionar.</div>
             </div>
 
             @* Plazo (SLA visual, estilo Tareas): barra de tiempo transcurrido + cuanto queda para responder *@
@@ -345,9 +345,9 @@
 
             </div>
 
-            @* Campos dinamicos + guardado. La unidad y el responsable se guardan solos desde los
-               accesos rapidos de arriba; aqui se persisten el solicitante y los campos. *@
-            <div class="gpq-card">
+            @* Campos dinamicos: se ven como campos naturales del modulo (sin marco) y se guardan SOLOS
+               al salir de cada campo (auto-guardado). La unidad/responsable/solicitante tambien auto-guardan. *@
+            <div class="gpq-plainsec">
                 <div class="gpq-card-eyebrow">CAMPOS DINAMICOS</div>
                 @if (_campos.Count > 0)
                 {
@@ -378,9 +378,6 @@
                 {
                     <div class="gpq-actividad-empty">Sin campos configurados. Se administran en Configurar PQRSD &gt; Campos dinamicos.</div>
                 }
-                <button class="gpq-btn-brand" style="margin-top:12px;" type="button" @onclick="GuardarDatos" disabled="@_guardandoRel">
-                    @(_guardandoRel ? "Guardando..." : "Guardar cambios")
-                </button>
             </div>
 
             </div>@* fin col 2 *@
@@ -1242,7 +1239,11 @@
         }
     }
 
-    private void SetCampo(Guid id, string? valor) => _campoValores[id] = valor ?? "";
+    private async Task SetCampo(Guid id, string? valor)
+    {
+        _campoValores[id] = valor ?? "";
+        await GuardarDatos(recargar: false);  // auto-guardado al salir del campo
+    }
 
     private static string CampoInputType(TipoCampoTablero t) => t switch
     {
@@ -1255,8 +1256,15 @@
         _ => "text"
     };
 
-    private async Task GuardarDatos()
+    // Atajos de auto-guardado para @bind:after (recepcion / solicitante).
+    private Task GuardarLigero() => GuardarDatos(recargar: false);
+    private Task GuardarConRecarga() => GuardarDatos(recargar: true);
+
+    // Auto-guardado. recargar=true refresca el detalle (para SLA al cambiar fecha, o contacto al cambiar
+    // solicitante); recargar=false persiste sin recargar (campos/recepcion) para no perder foco.
+    private async Task GuardarDatos(bool recargar = true)
     {
+        if (_guardandoRel) return;
         _guardandoRel = true;
         Guid? unidadId = Guid.TryParse(_unidadIdStr, out var uid) ? uid : null;
         Guid? radId = _personaSel?.PersonaId;
@@ -1274,9 +1282,8 @@
             if (resp.IsSuccessStatusCode)
             {
                 _huboCambios = true;
-                _personaSel = null;
-                await CargarAsync();
-                ShowMsg("Cambios guardados.", false);
+                if (recargar) { _personaSel = null; await CargarAsync(); }
+                ShowMsg("Guardado.", false);
             }
             else { ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true); }
         }
