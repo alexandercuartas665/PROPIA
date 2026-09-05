@@ -49,6 +49,10 @@ public sealed class GeminiDocumentExtractionService : IAiDocumentExtractor
         if (cfg is null)
             return DocumentExtractionResult.Falla("El motor de extraccion configurado en Super Admin no es de IA (Gemini).");
 
+        // Gate: un PDF cifrado no lo puede leer ni la IA ni el OCR. Mensaje claro en vez de un fallo opaco.
+        if (EsPdf(mimeType) && PdfPareceCifrado(documento))
+            return DocumentExtractionResult.Falla("El PDF esta protegido con clave. Quitale la contrasena (o exporta uno sin proteger) y vuelve a subirlo.", cfg.Provider.ToString());
+
         string apiKey;
         try { apiKey = _secret.Unprotect(cfg.ApiKeyEncrypted!); }
         catch { return DocumentExtractionResult.Falla("No se pudo descifrar la API key del proveedor de IA.", cfg.Provider.ToString()); }
@@ -80,6 +84,20 @@ public sealed class GeminiDocumentExtractionService : IAiDocumentExtractor
             return DocumentExtractionResult.Falla(error ?? "Fallo la extraccion con IA.", cfg.Provider.ToString());
 
         return new DocumentExtractionResult(true, null, cfg.Provider.ToString(), model, parsed, null);
+    }
+
+    private static bool EsPdf(string? mime) => (mime ?? "").Contains("pdf", StringComparison.OrdinalIgnoreCase);
+
+    // Heuristica: un PDF cifrado trae un diccionario /Encrypt en el trailer. Buscamos el marcador en
+    // el binario (suficiente para gatear con un mensaje claro; no intentamos descifrar).
+    private static bool PdfPareceCifrado(byte[] bytes)
+    {
+        if (bytes.Length < 5) return false;
+        // Solo tiene sentido en PDF (empieza con %PDF).
+        if (!(bytes[0] == 0x25 && bytes[1] == 0x50 && bytes[2] == 0x44 && bytes[3] == 0x46)) return false;
+        ReadOnlySpan<byte> marker = "/Encrypt"u8;
+        var span = bytes.AsSpan();
+        return span.IndexOf(marker) >= 0;
     }
 
     // La IA se considera "el motor" solo si el proveedor habilitado es de IA.

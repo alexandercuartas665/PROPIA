@@ -48,6 +48,10 @@ public class Poliza : TenantEntity
     /// <summary>Expediente (modulo 2.15) conectado con los documentos de la poliza.</summary>
     public Guid? ExpedienteId { get; set; }
 
+    /// <summary>Key en el blob storage (R2) del PDF ORIGEN del que se extrajeron los datos con IA/OCR.
+    /// Se descarga via endpoint gateado (no URL publica). Null si la poliza no se creo desde un PDF.</summary>
+    public string? PdfOrigenKey { get; set; }
+
     /// <summary>Ultimo umbral de vencimiento ya notificado por el job (20 o 10). Null = ninguno.</summary>
     public int? AlertaVencimientoPctNotificado { get; set; }
 

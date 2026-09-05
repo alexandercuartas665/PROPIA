@@ -97,6 +97,54 @@ else if (_p is not null)
             </div>
         </div>
     </div>
+
+    @* Log de extracciones con IA (para afinar prompt/schema). *@
+    <div class="card mt-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <strong>Ultimas extracciones (IA)</strong>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="() => CargarLogsAsync()">Refrescar</button>
+        </div>
+        <div class="card-body p-0">
+            @if (_logs is null || _logs.Count == 0)
+            {
+                <div class="p-3 text-muted small">Aun no hay extracciones registradas.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0 small align-middle">
+                        <thead><tr>
+                            <th>Fecha</th><th>Modulo</th><th>Proveedor / modelo</th><th>Archivo</th>
+                            <th>Estado</th><th class="text-end">ms</th><th class="text-end">tokens</th><th></th>
+                        </tr></thead>
+                        <tbody>
+                            @foreach (var l in _logs)
+                            {
+                                <tr>
+                                    <td>@l.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm")</td>
+                                    <td>@l.Modulo</td>
+                                    <td>@l.Provider<br /><span class="text-muted">@l.Model</span></td>
+                                    <td class="text-truncate" style="max-width:160px;" title="@l.NombreArchivo">@l.NombreArchivo</td>
+                                    <td>@(l.Ok ? (MarkupString)"<span class='badge bg-success'>OK</span>" : (MarkupString)$"<span class='badge bg-danger' title='{System.Net.WebUtility.HtmlEncode(l.Error)}'>Error</span>")</td>
+                                    <td class="text-end">@l.LatencyMs</td>
+                                    <td class="text-end">@(l.InputTokens + l.OutputTokens)</td>
+                                    <td><button class="btn btn-link btn-sm p-0" @onclick="() => _logExp = _logExp == l.Id ? null : l.Id">@(_logExp == l.Id ? "ocultar" : "ver")</button></td>
+                                </tr>
+                                @if (_logExp == l.Id)
+                                {
+                                    <tr><td colspan="8">
+                                        @if (!string.IsNullOrWhiteSpace(l.Error)) { <div class="text-danger mb-1">@l.Error</div> }
+                                        @if (!string.IsNullOrWhiteSpace(l.CamposJson)) { <div class="mb-1"><strong>Campos:</strong> <code class="d-block" style="white-space:pre-wrap;">@l.CamposJson</code></div> }
+                                        @if (!string.IsNullOrWhiteSpace(l.RawResponse)) { <div><strong>Respuesta cruda:</strong> <code class="d-block" style="white-space:pre-wrap;max-height:240px;overflow:auto;">@l.RawResponse</code></div> }
+                                    </td></tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
 }
 
 @code {
@@ -108,6 +156,14 @@ else if (_p is not null)
     private Row? _p;
     private OcrProvider _provSel = OcrProvider.AzureDocumentIntelligence;
     private bool _esVision => _provSel == OcrProvider.AzureComputerVision;
+    private List<ExtractionLogDto>? _logs;
+    private Guid? _logExp;
+
+    private async Task CargarLogsAsync()
+    {
+        try { _logs = await Auth().GetFromJsonAsync<List<ExtractionLogDto>>("/admin/extraccion-logs?limit=50"); }
+        catch { _logs = new(); }
+    }
 
     private class Row
     {
@@ -132,6 +188,7 @@ else if (_p is not null)
             if (string.IsNullOrWhiteSpace(jwt)) { Nav.NavigateTo("/login", forceLoad: true); return; }
             _jwt = jwt;
             await CargarAsync();
+            await CargarLogsAsync();
             StateHasChanged();
         }
         catch { /* prerender */ }

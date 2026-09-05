@@ -10,6 +10,9 @@ public interface ISegurosService
     Task<bool> ActualizarPolizaAsync(Guid id, ActualizarPolizaRequest req, CancellationToken ct);
     Task<bool> EliminarPolizaAsync(Guid id, CancellationToken ct);
 
+    /// <summary>Descarga el PDF ORIGEN (blob R2) de la poliza. Null si no tiene o no existe. Gateado por el controller.</summary>
+    Task<PdfOrigenDescarga?> DescargarPdfOrigenAsync(Guid polizaId, CancellationToken ct);
+
     // Campos personalizados (EAV)
     Task<IReadOnlyList<PolizaCampoDto>> ListCamposAsync(CancellationToken ct);
     Task<PolizaCampoDto> CrearCampoAsync(CrearPolizaCampoRequest req, CancellationToken ct);

@@ -29,7 +29,16 @@ public interface IOcrServerConfigService
     /// <summary>Devuelve la config de un proveedor. Si provider es null, devuelve el habilitado (o el default).</summary>
     Task<OcrProviderDto> GetAsync(OcrProvider? provider = null, CancellationToken ct = default);
     Task<OcrProviderDto> SaveAsync(SaveOcrProviderRequest request, Guid actorId, string actorEmail, string? ip, CancellationToken ct = default);
+
+    /// <summary>Ultimas corridas de extraccion con IA (para afinar prompt/schema). Global, SuperAdmin.</summary>
+    Task<IReadOnlyList<ExtractionLogDto>> GetExtractionLogsAsync(int limit = 50, CancellationToken ct = default);
 }
+
+/// <summary>Fila del log de extraccion de documentos con IA (visor SuperAdmin).</summary>
+public sealed record ExtractionLogDto(
+    Guid Id, DateTimeOffset CreatedAt, string Modulo, string Provider, string? Model,
+    string? NombreArchivo, long SizeBytes, bool Ok, string? Error,
+    int LatencyMs, int InputTokens, int OutputTokens, string? CamposJson, string? RawResponse);
 
 /// <summary>Metadata estatica de cada proveedor OCR.</summary>
 public static class OcrProviderCatalog

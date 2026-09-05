@@ -328,10 +328,17 @@
                 <div class="seg-ocr">
                     <label class="seg-ocr-btn @(_ocrBusy ? "busy" : "")">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
-                        @(_ocrBusy ? "Leyendo poliza..." : "Cargar PDF y extraer con OCR")
+                        @(_ocrBusy ? "Leyendo poliza..." : "Cargar PDF y extraer (IA)")
                         <InputFile OnChange="OnOcrFile" accept=".pdf,image/*" hidden disabled="@_ocrBusy" />
                     </label>
                     @if (_ocrMsg is not null) { <span class="seg-ocr-msg">@_ocrMsg</span> }
+                    @if (_editId is not null && _f.TienePdfOrigen)
+                    {
+                        <button type="button" class="seg-ocr-btn" style="margin-left:auto;" @onclick="DescargarPdfOrigen">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5 5 5-5M5 20h14"/></svg>
+                            Ver PDF origen
+                        </button>
+                    }
                 </div>
 
                 <div class="seg-grid-form">
@@ -727,6 +734,8 @@
         public string? ValoresAgregados;
         public string? Observaciones;
         public string? ExpedienteId;
+        public string? PdfOrigenKey;      // key R2 del PDF origen (se persiste al guardar)
+        public bool TienePdfOrigen;       // la poliza cargada ya tiene PDF origen (para el link de descarga)
     }
 
     public sealed record ExpedienteLite(Guid Id, string Codigo, string Nombre);
@@ -1122,6 +1131,7 @@
         _f.ValorPoliza = p.ValorPoliza; _f.FormaPagoCuotas = p.FormaPagoCuotas; _f.PagoMensual = p.PagoMensual;
         _f.Cobertura = p.Cobertura; _f.IncluyeZonasUnidades = p.IncluyeZonasUnidades; _f.ValoresAgregados = p.ValoresAgregados;
         _f.Observaciones = p.Observaciones; _f.ExpedienteId = p.ExpedienteId?.ToString();
+        _f.TienePdfOrigen = p.TienePdfOrigen; _f.PdfOrigenKey = null;
         _aseguradoraSel = p.AseguradoraEmpresaId is { } ae ? Cand(ae, p.Aseguradora, EntidadDirectorio.Empresa)
             : p.AseguradoraPersonaId is { } ap ? Cand(ap, p.Aseguradora, EntidadDirectorio.Persona) : null;
         _corredorSel = p.CorredorEmpresaId is { } ce ? Cand(ce, p.Corredor ?? "", EntidadDirectorio.Empresa)
@@ -1169,7 +1179,7 @@
                     _f.Aseguradora.Trim(), _f.NumeroPoliza, _f.AseguradoraPersonaId, _f.AseguradoraEmpresaId,
                     _f.Corredor, _f.CorredorPersonaId, _f.CorredorEmpresaId, ini, fin,
                     _f.ValorPoliza, _f.FormaPagoCuotas, _f.PagoMensual, _f.Cobertura, _f.IncluyeZonasUnidades,
-                    _f.ValoresAgregados, _f.Observaciones, exp));
+                    _f.ValoresAgregados, _f.Observaciones, exp, _f.PdfOrigenKey));
             }
             else
             {
@@ -1177,7 +1187,7 @@
                     _f.Aseguradora.Trim(), _f.NumeroPoliza, _f.AseguradoraPersonaId, _f.AseguradoraEmpresaId,
                     _f.Corredor, _f.CorredorPersonaId, _f.CorredorEmpresaId, ini, fin,
                     _f.ValorPoliza, _f.FormaPagoCuotas, _f.PagoMensual, _f.Cobertura, _f.IncluyeZonasUnidades,
-                    _f.ValoresAgregados, _f.Observaciones, exp, LimpiarExpediente: exp is null));
+                    _f.ValoresAgregados, _f.Observaciones, exp, LimpiarExpediente: exp is null, PdfOrigenKey: _f.PdfOrigenKey));
             }
             if (!resp.IsSuccessStatusCode) { _modalError = await resp.Content.ReadAsStringAsync(); return; }
 
@@ -1240,6 +1250,7 @@
                     if (ir?.Campos is not null)
                     {
                         AplicarCamposPoliza(ir.Campos);
+                        if (!string.IsNullOrEmpty(ir.PdfOrigenKey)) { _f.PdfOrigenKey = ir.PdfOrigenKey; _f.TienePdfOrigen = true; }
                         _ocrMsg = $"Documento leido con IA ({ir.Proveedor}). Revisa y confirma los campos.";
                         return;
                     }
@@ -1265,6 +1276,18 @@
         finally { _ocrBusy = false; }
     }
 
+    private async Task DescargarPdfOrigen()
+    {
+        if (_editId is not { } id) return;
+        try
+        {
+            var dto = await Auth().GetFromJsonAsync<PdfOrigenResp>($"/api/seguros/polizas/{id}/pdf-origen");
+            if (dto is not null) await Js.InvokeVoidAsync("propiaUI.downloadBase64", dto.NombreArchivo, dto.TipoMime, dto.ContenidoBase64);
+        }
+        catch (Exception ex) { _ocrMsg = "No se pudo descargar el PDF origen: " + ex.Message; }
+    }
+    private sealed record PdfOrigenResp(string NombreArchivo, string TipoMime, string ContenidoBase64);
+
     // Mapea los campos del perfil "poliza" (extraccion IA) al formulario. best-effort; el humano confirma.
     private void AplicarCamposPoliza(List<OcrCampo> campos)
     {
@@ -1278,7 +1301,7 @@
         var ff = Val("fecha_fin"); if (!string.IsNullOrWhiteSpace(ff) && DateTime.TryParse(ff, out var fdf)) _f.Fin = fdf;
     }
     private sealed record OcrCampo(string Nombre, string? Valor, double? Confianza);
-    private sealed record OcrResp(bool Ok, string? Proveedor, string? Modelo, decimal? ValorSugerido, string? FechaSugerida, List<OcrCampo>? Campos, string? TextoCompleto);
+    private sealed record OcrResp(bool Ok, string? Proveedor, string? Modelo, decimal? ValorSugerido, string? FechaSugerida, List<OcrCampo>? Campos, string? TextoCompleto, string? PdfOrigenKey = null);
 
     // ---- Reclamaciones ----
     private async Task AbrirReclamacionesTab()

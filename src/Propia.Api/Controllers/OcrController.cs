@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Claims;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -27,13 +28,16 @@ public class OcrController : ControllerBase
     private readonly IDocumentExtractionService _ocr;
     private readonly IAiInferenceService _ai;
     private readonly IAiDocumentExtractor _aiExtractor;
+    private readonly Propia.Infrastructure.Storage.IBlobStorage _blob;
     private readonly PropiaDbContext _db;
 
-    public OcrController(IDocumentExtractionService ocr, IAiInferenceService ai, IAiDocumentExtractor aiExtractor, PropiaDbContext db)
+    public OcrController(IDocumentExtractionService ocr, IAiInferenceService ai, IAiDocumentExtractor aiExtractor,
+        Propia.Infrastructure.Storage.IBlobStorage blob, PropiaDbContext db)
     {
         _ocr = ocr;
         _ai = ai;
         _aiExtractor = aiExtractor;
+        _blob = blob;
         _db = db;
     }
 
@@ -58,11 +62,29 @@ public class OcrController : ControllerBase
         var r = await _aiExtractor.ExtraerAsync(bytes, file.ContentType ?? "application/pdf", file.FileName, campos, perfil ?? "generico", ct);
         if (!r.Ok) return BadRequest(new { error = r.Error });
 
+        // Guardamos el PDF ORIGEN en R2 (tenant-scoped) y devolvemos la key para que el modulo la
+        // persista al guardar (descarga gateada, no URL publica). Best-effort: si falla, seguimos.
+        string? pdfOrigenKey = null;
+        var tenantId = User.FindFirstValue("tenant_id");
+        if (!string.IsNullOrEmpty(tenantId))
+        {
+            try
+            {
+                var ext = (file.ContentType ?? "").Contains("pdf", StringComparison.OrdinalIgnoreCase) ? "pdf" : "bin";
+                var key = $"tenants/{tenantId}/extracciones/{Guid.NewGuid():N}.{ext}";
+                using var up = new MemoryStream(bytes);
+                await _blob.UploadAsync(key, up, file.ContentType ?? "application/octet-stream", ct);
+                pdfOrigenKey = key;
+            }
+            catch { /* el guardado del origen no debe romper la extraccion */ }
+        }
+
         return Ok(new
         {
             ok = true,
             proveedor = r.Proveedor,
             modelo = r.Modelo,
+            pdfOrigenKey,
             campos = r.Campos.Select(c => new { c.Nombre, c.Valor, c.Confianza })
         });
     }

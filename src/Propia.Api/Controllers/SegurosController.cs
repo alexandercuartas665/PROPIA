@@ -42,6 +42,16 @@ public class SegurosController : ControllerBase
     public async Task<IActionResult> Eliminar(Guid id, CancellationToken ct)
         => await _svc.EliminarPolizaAsync(id, ct) ? NoContent() : NotFound();
 
+    /// <summary>Descarga gateada del PDF ORIGEN de la poliza (base64, para propiaUI.downloadBase64).</summary>
+    [HttpGet("polizas/{id:guid}/pdf-origen")]
+    public async Task<IActionResult> DescargarPdfOrigen(Guid id, CancellationToken ct)
+    {
+        var d = await _svc.DescargarPdfOrigenAsync(id, ct);
+        return d is null
+            ? NotFound()
+            : Ok(new { nombreArchivo = d.NombreArchivo, tipoMime = d.ContentType, contenidoBase64 = Convert.ToBase64String(d.Contenido) });
+    }
+
     // ---- Campos personalizados (EAV) ----
     [HttpGet("campos")] public async Task<IActionResult> ListCampos(CancellationToken ct) => Ok(await _svc.ListCamposAsync(ct));
 

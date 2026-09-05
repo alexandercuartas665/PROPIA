@@ -12,7 +12,8 @@ namespace Propia.Infrastructure.Seguros;
 public class SegurosService : ISegurosService
 {
     private readonly PropiaDbContext _db;
-    public SegurosService(PropiaDbContext db) => _db = db;
+    private readonly Storage.IBlobStorage _blob;
+    public SegurosService(PropiaDbContext db, Storage.IBlobStorage blob) { _db = db; _blob = blob; }
 
     // ----------------------------- Polizas -----------------------------
     public async Task<IReadOnlyList<PolizaDto>> ListPolizasAsync(CancellationToken ct)
@@ -60,7 +61,8 @@ public class SegurosService : ISegurosService
             IncluyeZonasUnidades = req.IncluyeZonasUnidades,
             ValoresAgregados = Limpio(req.ValoresAgregados),
             Observaciones = Limpio(req.Observaciones),
-            ExpedienteId = req.ExpedienteId
+            ExpedienteId = req.ExpedienteId,
+            PdfOrigenKey = Limpio(req.PdfOrigenKey)
         };
         _db.Polizas.Add(p);
         await _db.SaveChangesAsync(ct);
@@ -91,6 +93,7 @@ public class SegurosService : ISegurosService
         p.Observaciones = Limpio(req.Observaciones);
         if (req.LimpiarExpediente) p.ExpedienteId = null;
         else if (req.ExpedienteId.HasValue) p.ExpedienteId = req.ExpedienteId;
+        if (!string.IsNullOrWhiteSpace(req.PdfOrigenKey)) p.PdfOrigenKey = req.PdfOrigenKey;  // MERGE: no borrar si no viene
         // Vigencia cambiada: reinicia el control de alerta para que el job reevalue.
         p.AlertaVencimientoPctNotificado = null;
         await _db.SaveChangesAsync(ct);
@@ -108,6 +111,16 @@ public class SegurosService : ISegurosService
         return true;
     }
 
+    public async Task<PdfOrigenDescarga?> DescargarPdfOrigenAsync(Guid polizaId, CancellationToken ct)
+    {
+        var p = await _db.Polizas.AsNoTracking().FirstOrDefaultAsync(x => x.Id == polizaId, ct);
+        if (p is null || string.IsNullOrWhiteSpace(p.PdfOrigenKey)) return null;
+        var bytes = await _blob.DownloadAsync(p.PdfOrigenKey, ct);
+        if (bytes is null) return null;
+        var nombre = $"poliza-{(string.IsNullOrWhiteSpace(p.NumeroPoliza) ? p.Id.ToString("N")[..8] : p.NumeroPoliza)}-origen.pdf";
+        return new PdfOrigenDescarga(bytes, "application/pdf", nombre);
+    }
+
     private static PolizaDto ToDto(Poliza p, IReadOnlyList<PolizaCampoValorDto>? valores = null, int reclCount = 0)
     {
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -118,7 +131,7 @@ public class SegurosService : ISegurosService
             p.Corredor, p.CorredorPersonaId, p.CorredorEmpresaId,
             p.FechaInicio, p.FechaFin, p.ValorPoliza, p.FormaPagoCuotas, p.PagoMensual,
             p.Cobertura, p.IncluyeZonasUnidades, p.ValoresAgregados, p.Observaciones,
-            p.ExpedienteId, dias, sem, reclCount, valores);
+            p.ExpedienteId, dias, sem, reclCount, valores, !string.IsNullOrEmpty(p.PdfOrigenKey));
     }
 
     // ----------------------------- Campos EAV -----------------------------

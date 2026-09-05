@@ -110,4 +110,17 @@ public sealed class OcrServerConfigService : IOcrServerConfigService
         catch { return "(re-ingresar)"; }
         return value.Length <= 4 ? "****" : $"{new string('*', Math.Min(value.Length - 4, 8))}{value[^4..]}";
     }
+
+    public async Task<IReadOnlyList<ExtractionLogDto>> GetExtractionLogsAsync(int limit = 50, CancellationToken ct = default)
+    {
+        limit = Math.Clamp(limit, 1, 200);
+        return await _db.DocumentExtractionLogs.AsNoTracking()
+            .OrderByDescending(l => l.CreatedAt)
+            .Take(limit)
+            .Select(l => new ExtractionLogDto(
+                l.Id, l.CreatedAt, l.Modulo, l.Provider, l.Model,
+                l.NombreArchivo, l.SizeBytes, l.Ok, l.Error,
+                l.LatencyMs, l.InputTokens, l.OutputTokens, l.CamposJson, l.RawResponse))
+            .ToListAsync(ct);
+    }
 }

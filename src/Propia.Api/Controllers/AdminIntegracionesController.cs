@@ -167,6 +167,11 @@ public class AdminIntegracionesController : ControllerBase
         return Ok(await _ocr.SaveAsync(req, id, email, Ip(), ct));
     }
 
+    /// <summary>Log de las ultimas extracciones de documentos con IA (para afinar prompt/schema).</summary>
+    [HttpGet("extraccion-logs")]
+    public async Task<IActionResult> GetExtractionLogs([FromQuery] int limit, CancellationToken ct)
+        => Ok(await _ocr.GetExtractionLogsAsync(limit <= 0 ? 50 : limit, ct));
+
     // -------------------- Wompi (config maestra) --------------------
 
     [HttpGet("wompi-config")]

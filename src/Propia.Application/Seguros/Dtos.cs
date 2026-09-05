@@ -3,6 +3,9 @@ using Propia.Domain.Enums;
 namespace Propia.Application.Seguros;
 
 // ----- Poliza -----
+/// <summary>PDF origen de una poliza para descarga gateada (bytes + tipo + nombre sugerido).</summary>
+public record PdfOrigenDescarga(byte[] Contenido, string ContentType, string NombreArchivo);
+
 public record PolizaDto(
     Guid Id,
     string? NumeroPoliza,
@@ -14,7 +17,8 @@ public record PolizaDto(
     Guid? ExpedienteId,
     int? DiasParaVencer, SemaforoContrato Semaforo,
     int ReclamacionesCount = 0,
-    IReadOnlyList<PolizaCampoValorDto>? CamposValores = null);
+    IReadOnlyList<PolizaCampoValorDto>? CamposValores = null,
+    bool TienePdfOrigen = false);
 
 public record CrearPolizaRequest(
     string Aseguradora,
@@ -24,7 +28,8 @@ public record CrearPolizaRequest(
     DateOnly? FechaInicio = null, DateOnly? FechaFin = null,
     decimal? ValorPoliza = null, int? FormaPagoCuotas = null, bool PagoMensual = false,
     string? Cobertura = null, bool IncluyeZonasUnidades = false,
-    string? ValoresAgregados = null, string? Observaciones = null, Guid? ExpedienteId = null);
+    string? ValoresAgregados = null, string? Observaciones = null, Guid? ExpedienteId = null,
+    string? PdfOrigenKey = null);
 
 /// <summary>Actualiza la poliza (MERGE: se aplica lo provisto). LimpiarExpediente desconecta el expediente.</summary>
 public record ActualizarPolizaRequest(
@@ -36,7 +41,8 @@ public record ActualizarPolizaRequest(
     decimal? ValorPoliza = null, int? FormaPagoCuotas = null, bool PagoMensual = false,
     string? Cobertura = null, bool IncluyeZonasUnidades = false,
     string? ValoresAgregados = null, string? Observaciones = null,
-    Guid? ExpedienteId = null, bool LimpiarExpediente = false);
+    Guid? ExpedienteId = null, bool LimpiarExpediente = false,
+    string? PdfOrigenKey = null);
 
 // ----- Campos personalizados (EAV) de polizas -----
 public record PolizaCampoDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones, string? Descripcion, bool Activo);
