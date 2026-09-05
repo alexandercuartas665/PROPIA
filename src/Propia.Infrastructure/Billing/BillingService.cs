@@ -27,7 +27,7 @@ public class BillingService : IBillingService
                 p.LimiteLineasWhatsapp, p.LimiteLlamadasIaMensual,
                 p.DiasTrial, p.Estado,
                 _db.Suscripciones.Count(s => s.PlanId == p.Id && s.Estado != EstadoSuscripcion.Cancelada && s.Estado != EstadoSuscripcion.Archivada),
-                p.CreatedAt))
+                p.CreatedAt, p.LimiteCopropiedades, p.EsPromocional))
             .ToListAsync(ct);
     }
 
@@ -49,7 +49,9 @@ public class BillingService : IBillingService
             LimiteStorageGb = req.LimiteStorageGb,
             LimiteLineasWhatsapp = req.LimiteLineasWhatsapp,
             LimiteLlamadasIaMensual = req.LimiteLlamadasIaMensual,
+            LimiteCopropiedades = req.LimiteCopropiedades,
             DiasTrial = req.DiasTrial,
+            EsPromocional = req.EsPromocional,
             Estado = EstadoPlan.Activo
         };
         _db.Planes.Add(plan);
@@ -89,7 +91,9 @@ public class BillingService : IBillingService
         plan.LimiteStorageGb = req.LimiteStorageGb;
         plan.LimiteLineasWhatsapp = req.LimiteLineasWhatsapp;
         plan.LimiteLlamadasIaMensual = req.LimiteLlamadasIaMensual;
+        plan.LimiteCopropiedades = req.LimiteCopropiedades;
         plan.DiasTrial = req.DiasTrial;
+        plan.EsPromocional = req.EsPromocional;
         plan.Estado = req.Estado;
 
         _db.SuperAdminLogs.Add(SuperLog(actorId, actorEmail, "UPDATE_PLAN", $"Plan:{plan.Id}", $"Estado={req.Estado}", ip));
@@ -439,7 +443,7 @@ public class BillingService : IBillingService
             p.CicloMensual, p.CicloAnual, p.DescuentoAnualPct,
             p.LimiteUnidades, p.LimiteUsuarios, p.LimiteStorageGb,
             p.LimiteLineasWhatsapp, p.LimiteLlamadasIaMensual,
-            p.DiasTrial, p.Estado, suscripcionesActivas, p.CreatedAt);
+            p.DiasTrial, p.Estado, suscripcionesActivas, p.CreatedAt, p.LimiteCopropiedades, p.EsPromocional);
 
     private static FacturaDto ToFacturaDto(Factura f) =>
         new(f.Id, f.SuscripcionId, f.NumeroFactura, f.Cufe,

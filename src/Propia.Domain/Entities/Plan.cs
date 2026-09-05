@@ -24,6 +24,9 @@ public class Plan : BaseEntity
     /// <summary>Porcentaje de descuento sobre el total cuando se paga anual.</summary>
     public decimal DescuentoAnualPct { get; set; }
 
+    /// <summary>Maximo de COPROPIEDADES que puede administrar la organizacion. null = ilimitado.</summary>
+    public int? LimiteCopropiedades { get; set; }
+
     /// <summary>Maximo de unidades privadas. null = ilimitado.</summary>
     public int? LimiteUnidades { get; set; }
 
@@ -46,4 +49,10 @@ public class Plan : BaseEntity
     public string ModulosIncluidos { get; set; } = "[]";
 
     public EstadoPlan Estado { get; set; } = EstadoPlan.Activo;
+
+    /// <summary>
+    /// Plan PROMOCIONAL / de cortesia: lo asigna el operador (A&D GROUP) a clientes especiales. El job de
+    /// cobro no genera factura para suscripciones en un plan promocional. Se muestra con distintivo.
+    /// </summary>
+    public bool EsPromocional { get; set; }
 }

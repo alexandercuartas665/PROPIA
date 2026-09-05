@@ -9,7 +9,8 @@ public record PlanDto(
     bool CicloMensual, bool CicloAnual, decimal DescuentoAnualPct,
     int? LimiteUnidades, int? LimiteUsuarios, int? LimiteStorageGb,
     int? LimiteLineasWhatsapp, int? LimiteLlamadasIaMensual,
-    int DiasTrial, EstadoPlan Estado, int SuscripcionesActivas, DateTimeOffset CreatedAt);
+    int DiasTrial, EstadoPlan Estado, int SuscripcionesActivas, DateTimeOffset CreatedAt,
+    int? LimiteCopropiedades = null, bool EsPromocional = false);
 
 public record CrearPlanRequest(
     string Nombre, string? Descripcion,
@@ -17,7 +18,7 @@ public record CrearPlanRequest(
     bool CicloMensual, bool CicloAnual, decimal DescuentoAnualPct,
     int? LimiteUnidades, int? LimiteUsuarios, int? LimiteStorageGb,
     int? LimiteLineasWhatsapp, int? LimiteLlamadasIaMensual,
-    int DiasTrial);
+    int DiasTrial, int? LimiteCopropiedades = null, bool EsPromocional = false);
 
 public record ActualizarPlanRequest(
     string Nombre, string? Descripcion,
@@ -25,7 +26,7 @@ public record ActualizarPlanRequest(
     bool CicloMensual, bool CicloAnual, decimal DescuentoAnualPct,
     int? LimiteUnidades, int? LimiteUsuarios, int? LimiteStorageGb,
     int? LimiteLineasWhatsapp, int? LimiteLlamadasIaMensual,
-    int DiasTrial, EstadoPlan Estado);
+    int DiasTrial, EstadoPlan Estado, int? LimiteCopropiedades = null, bool EsPromocional = false);
 
 // ----- Suscripciones -----
 public record SuscripcionDto(

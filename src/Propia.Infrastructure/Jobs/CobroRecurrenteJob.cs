@@ -32,7 +32,8 @@ public class CobroRecurrenteJob : IBackgroundJob
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
 
         var pendientes = await _db.Suscripciones
-            .Where(s => s.Estado == EstadoSuscripcion.Activa && s.FechaProximoCobro <= hoy)
+            .Where(s => s.Estado == EstadoSuscripcion.Activa && s.FechaProximoCobro <= hoy
+                        && !s.Plan!.EsPromocional)  // planes promocionales/cortesia no se facturan
             .OrderBy(s => s.FechaProximoCobro)
             .Take(500) // cota por tick para no saturar
             .ToListAsync(ct);
