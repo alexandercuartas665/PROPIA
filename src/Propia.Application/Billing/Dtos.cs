@@ -43,7 +43,7 @@ public record CrearSuscripcionRequest(
     Guid? OrganizacionId, Guid? CopropiedadId,
     Guid PlanId, CicloFacturacion Ciclo);
 
-public record CambiarPlanRequest(Guid NuevoPlanId, string Justificacion);
+public record CambiarPlanRequest(Guid NuevoPlanId, string Justificacion, bool Forzar = false);
 
 public record CambiarEstadoSuscripcionRequest(EstadoSuscripcion NuevoEstado, string Justificacion);
 

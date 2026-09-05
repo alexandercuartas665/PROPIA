@@ -205,13 +205,21 @@ public class BillingService : IBillingService
     {
         var s = await _db.Suscripciones.FirstOrDefaultAsync(x => x.Id == suscripcionId, ct);
         if (s is null) return null;
+
+        var planAnteriorId = s.PlanId;
+        var planAnterior = await _db.Planes.FirstOrDefaultAsync(p => p.Id == planAnteriorId, ct);
+
+        // Un plan PROMOCIONAL/especial (cortesia asignada por el operador) no se cambia por el flujo
+        // normal: hay que retirarlo primero (cancelar/archivar la suscripcion) o usar Forzar=true.
+        if (planAnterior?.EsPromocional == true && !req.Forzar)
+            throw new InvalidOperationException(
+                "Esta suscripcion esta en un plan promocional/especial y no se puede cambiar directamente. " +
+                "Retira el plan promocional (cancela o archiva la suscripcion) antes de asignar otro, o confirma el cambio forzado.");
+
         var planNuevo = await _db.Planes.FirstOrDefaultAsync(p => p.Id == req.NuevoPlanId, ct);
         if (planNuevo is null) throw new InvalidOperationException("Plan destino no encontrado.");
         if (planNuevo.Estado != EstadoPlan.Activo) throw new InvalidOperationException("El plan destino no esta activo.");
         if (string.IsNullOrWhiteSpace(req.Justificacion)) throw new InvalidOperationException("Justificacion obligatoria.");
-
-        var planAnteriorId = s.PlanId;
-        var planAnterior = await _db.Planes.FirstOrDefaultAsync(p => p.Id == planAnteriorId, ct);
         var feeAnterior = planAnterior?.FeeBase ?? 0;
         var feeNuevo = planNuevo.FeeBase;
         var tipo = feeNuevo > feeAnterior ? TipoEventoSuscripcion.Upgrade : TipoEventoSuscripcion.Downgrade;
