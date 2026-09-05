@@ -694,6 +694,11 @@
                         <div class="pk-cfg-row">
                             <input class="pk-cfg-name" value="@c.Label" @onchange="(ev) => RenombrarCampoCfg(cc, ev)" />
                             <span class="pk-cfg-badge" title="Tipo del campo">@c.Tipo</span>
+                            <select class="pk-cfg-clasif" title="Ancho del campo en el modal" @onchange="(ev) => CambiarAnchoCampoCfg(cc, ev)">
+                                <option value="3" selected="@(c.Columna == 3)">Un tercio</option>
+                                <option value="1" selected="@(c.Columna == 1)">Media</option>
+                                <option value="2" selected="@(c.Columna == 2)">Completo</option>
+                            </select>
                             <label class="pk-cfg-chk"><input type="checkbox" checked="@c.Requerido" @onchange="(ev) => ToggleReqCampoCfg(cc, ev)" />Requerido</label>
                             <label class="pk-cfg-chk" title="Pedir tambien en el formulario publico"><input type="checkbox" checked="@c.MostrarEnPublico" @onchange="(ev) => ToggleCampoPublicoCfg(cc, ev)" />Publico</label>
                             <div class="pk-cfg-ord">
@@ -708,6 +713,11 @@
                         <input class="pk-cfg-name" placeholder="Nombre del campo..." @bind="_nuevoCampoLabel" />
                         <select class="pk-cfg-clasif" @bind="_nuevoCampoTipo">
                             @foreach (var t in Enum.GetValues<TipoCampoTablero>()) { <option value="@t">@t</option> }
+                        </select>
+                        <select class="pk-cfg-clasif" title="Ancho del campo en el modal" @bind="_nuevoCampoAncho">
+                            <option value="3">Un tercio</option>
+                            <option value="1">Media</option>
+                            <option value="2">Completo</option>
                         </select>
                         <button class="pk-comp-ok" @onclick="AgregarCampoCfg" disabled="@string.IsNullOrWhiteSpace(_nuevoCampoLabel)">Agregar campo</button>
                     </div>
@@ -841,6 +851,7 @@
     private string _nuevoCampoLabel = "";
     private TipoCampoTablero _nuevoCampoTipo = TipoCampoTablero.Texto;
     private string _nuevoCampoOpciones = "";
+    private int _nuevoCampoAncho = 1;   // 1 = media, 2 = completo, 3 = un tercio
     // Tab Formulario publico (toggles de campos opcionales + textos + orden de campos fijos)
     private bool _formTorre = true, _formCorreo = true, _formTelefono = true;
     private string _formEncabezado = "", _formPie = "";
@@ -1573,10 +1584,18 @@
     {
         if (string.IsNullOrWhiteSpace(_nuevoCampoLabel)) return;
         var opciones = _nuevoCampoTipo == TipoCampoTablero.Seleccion && !string.IsNullOrWhiteSpace(_nuevoCampoOpciones) ? _nuevoCampoOpciones.Trim() : null;
-        var req = new GuardarCampoPqrsdRequest(_nuevoCampoLabel.Trim(), _nuevoCampoTipo, opciones, false, _campos.Count, null, false, null, false, null);
+        var req = new GuardarCampoPqrsdRequest(_nuevoCampoLabel.Trim(), _nuevoCampoTipo, opciones, false, _nuevoCampoAncho, null, false, null, false, null);
         var resp = await Auth().PostAsJsonAsync("/api/pqrsd/campos", req);
-        if (resp.IsSuccessStatusCode) { _nuevoCampoLabel = ""; _nuevoCampoOpciones = ""; _cfgMsg = ""; await RecargarCamposAsync(); }
+        if (resp.IsSuccessStatusCode) { _nuevoCampoLabel = ""; _nuevoCampoOpciones = ""; _nuevoCampoAncho = 1; _cfgMsg = ""; await RecargarCamposAsync(); }
         else { _cfgMsg = await LeerError(resp); }
+    }
+
+    private async Task CambiarAnchoCampoCfg(PqrsdCampoDto c, ChangeEventArgs e)
+    {
+        var ancho = int.TryParse(e.Value?.ToString(), out var a) ? a : c.Columna;
+        await Auth().PutAsJsonAsync($"/api/pqrsd/campos/{c.Id}", new GuardarCampoPqrsdRequest(
+            c.Label, c.Tipo, c.Opciones, c.MostrarEnFiltro, ancho, c.Descripcion, c.Requerido, c.ValorPorDefecto, c.PermiteVarios, c.CamposSuma));
+        await RecargarCamposAsync();
     }
 
     private async Task RenombrarCampoCfg(PqrsdCampoDto c, ChangeEventArgs e)

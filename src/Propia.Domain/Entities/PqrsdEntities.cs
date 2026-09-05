@@ -306,7 +306,7 @@ public class PqrsdCampo : TenantEntity
     /// <summary>Si es true, el campo tambien se pide en el formulario publico de radicacion (/pqr).</summary>
     public bool MostrarEnPublico { get; set; }
 
-    /// <summary>Ancho en el modal: 1 = normal (media columna), 2 = ancho completo.</summary>
+    /// <summary>Ancho del campo en el modal: 1 = media (50%), 2 = completo (100%), 3 = un tercio (33%).</summary>
     public int Columna { get; set; } = 1;
 
     /// <summary>Ayuda/contexto del campo para el usuario.</summary>

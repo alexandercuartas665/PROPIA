@@ -164,7 +164,7 @@ public partial class PqrsdService
             Tipo = req.Tipo,
             Opciones = req.Opciones,
             MostrarEnFiltro = req.MostrarEnFiltro,
-            Columna = Math.Clamp(req.Columna, 1, 2),
+            Columna = Math.Clamp(req.Columna, 1, 3),
             Descripcion = req.Descripcion,
             Requerido = req.Requerido,
             ValorPorDefecto = req.ValorPorDefecto,
@@ -189,7 +189,7 @@ public partial class PqrsdService
         c.Tipo = req.Tipo;
         c.Opciones = req.Opciones;
         c.MostrarEnFiltro = req.MostrarEnFiltro;
-        c.Columna = Math.Clamp(req.Columna, 1, 2);
+        c.Columna = Math.Clamp(req.Columna, 1, 3);
         c.Descripcion = req.Descripcion;
         c.Requerido = req.Requerido;
         c.ValorPorDefecto = req.ValorPorDefecto;

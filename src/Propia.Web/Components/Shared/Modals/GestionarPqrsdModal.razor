@@ -351,8 +351,10 @@
                 <div class="gpq-card-eyebrow">CAMPOS DINAMICOS</div>
                 @if (_campos.Count > 0)
                 {
+                    <div class="gpq-din-grid">
                     @foreach (var c in _campos.OrderBy(c => c.Orden))
                     {
+                        <div class="gpq-fld @AnchoClass(c.Columna)">
                         <label class="gpq-mini-lbl">@c.Label</label>
                         @if (c.Tipo == TipoCampoTablero.Seleccion)
                         {
@@ -368,11 +370,20 @@
                         {
                             <textarea class="gpq-input" rows="2" value="@_campoValores.GetValueOrDefault(c.Id, "")" @onchange="(e) => SetCampo(c.Id, e.Value?.ToString())"></textarea>
                         }
+                        else if (c.Tipo == TipoCampoTablero.Moneda)
+                        {
+                            <div class="gpq-money">
+                                <span class="gpq-money-pfx">$</span>
+                                <input class="gpq-input" type="number" inputmode="decimal" min="0" step="any" value="@_campoValores.GetValueOrDefault(c.Id, "")" @onchange="(e) => SetCampo(c.Id, e.Value?.ToString())" />
+                            </div>
+                        }
                         else
                         {
                             <input class="gpq-input" type="@CampoInputType(c.Tipo)" value="@_campoValores.GetValueOrDefault(c.Id, "")" @onchange="(e) => SetCampo(c.Id, e.Value?.ToString())" />
                         }
+                        </div>
                     }
+                    </div>
                 }
                 else
                 {
@@ -962,6 +973,8 @@
     private DateOnly? _fechaRecibidoRec;
     private bool _reportando;
     private bool _guardandoRel;
+    private bool _guardarPendiente;         // hubo un cambio mientras un guardado estaba en vuelo (coalescing)
+    private bool _guardarPendienteRecarga;  // alguno de los cambios encolados pidio recargar el detalle
 
     // ---- Tab Responder: respuestas tipo correo (borradores con editor enriquecido) ----
     private List<PqrsdRespuestaDto> _respuestas = new();
@@ -1245,6 +1258,14 @@
         await GuardarDatos(recargar: false);  // auto-guardado al salir del campo
     }
 
+    // Ancho del campo dinamico en el modal: 1 = media (50%), 2 = completo (100%), 3 = un tercio (33%).
+    private static string AnchoClass(int columna) => columna switch
+    {
+        2 => "gpq-fw-full",
+        3 => "gpq-fw-third",
+        _ => "gpq-fw-half"
+    };
+
     private static string CampoInputType(TipoCampoTablero t) => t switch
     {
         TipoCampoTablero.Numero or TipoCampoTablero.Moneda => "number",
@@ -1264,31 +1285,51 @@
     // solicitante); recargar=false persiste sin recargar (campos/recepcion) para no perder foco.
     private async Task GuardarDatos(bool recargar = true)
     {
-        if (_guardandoRel) return;
+        // Coalescing: si ya hay un guardado en vuelo, no lo descartamos (perderia el ultimo cambio al
+        // editar varios campos seguidos); lo encolamos para que el guardado en curso lo persista al drenar.
+        if (_guardandoRel)
+        {
+            _guardarPendiente = true;
+            if (recargar) _guardarPendienteRecarga = true;
+            return;
+        }
         _guardandoRel = true;
-        Guid? unidadId = Guid.TryParse(_unidadIdStr, out var uid) ? uid : null;
-        Guid? radId = _personaSel?.PersonaId;
-        var campos = _campoValores.Select(kv => new PqrsdCampoValorDto(kv.Key, kv.Value)).ToList();
-        // El responsable se gestiona aparte (tarjeta flotante de usuarios); null = no tocar responsable aqui.
-        var req = new ActualizarExpedienteRequest(unidadId, radId, null, campos, null, _progreso,
-            ActualizarRecepcion: true,
-            MedioRecepcion: _medioRec,
-            Seccional: string.IsNullOrWhiteSpace(_seccionalRec) ? null : _seccionalRec!.Trim(),
-            Administrador: string.IsNullOrWhiteSpace(_administradorRec) ? null : _administradorRec!.Trim(),
-            FechaRecibido: _fechaRecibidoRec);
+        var recargarFinal = recargar;
+        var ok = true;
         try
         {
-            var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{ExpedienteId}/actualizar", req);
-            if (resp.IsSuccessStatusCode)
+            do
             {
-                _huboCambios = true;
-                if (recargar) { _personaSel = null; await CargarAsync(); }
+                _guardarPendiente = false;
+                Guid? unidadId = Guid.TryParse(_unidadIdStr, out var uid) ? uid : null;
+                Guid? radId = _personaSel?.PersonaId;
+                // Se releen los valores ACTUALES en cada vuelta: recoge los cambios que llegaron mientras se guardaba.
+                var campos = _campoValores.Select(kv => new PqrsdCampoValorDto(kv.Key, kv.Value)).ToList();
+                // El responsable se gestiona aparte (tarjeta flotante de usuarios); null = no tocar responsable aqui.
+                var req = new ActualizarExpedienteRequest(unidadId, radId, null, campos, null, _progreso,
+                    ActualizarRecepcion: true,
+                    MedioRecepcion: _medioRec,
+                    Seccional: string.IsNullOrWhiteSpace(_seccionalRec) ? null : _seccionalRec!.Trim(),
+                    Administrador: string.IsNullOrWhiteSpace(_administradorRec) ? null : _administradorRec!.Trim(),
+                    FechaRecibido: _fechaRecibidoRec);
+                try
+                {
+                    var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{ExpedienteId}/actualizar", req);
+                    if (resp.IsSuccessStatusCode) { _huboCambios = true; }
+                    else { ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true); ok = false; }
+                }
+                catch (Exception ex) { ShowMsg(ex.Message, true); ok = false; }
+                if (_guardarPendienteRecarga) { recargarFinal = true; _guardarPendienteRecarga = false; }
+            }
+            while (_guardarPendiente && ok);
+
+            if (ok)
+            {
+                if (recargarFinal) { _personaSel = null; await CargarAsync(); }
                 ShowMsg("Guardado.", false);
             }
-            else { ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true); }
         }
-        catch (Exception ex) { ShowMsg(ex.Message, true); }
-        _guardandoRel = false;
+        finally { _guardandoRel = false; }
     }
 
     // Abre/cierra la tarjeta flotante de unidad.
