@@ -47,7 +47,8 @@ public partial class PqrsdService
                 a.Id, a.NombreArchivo, a.TipoMime, a.TamanioBytes, a.UrlStorage, a.CreatedAt,
                 null, a.SubidoPorUsuarioId == Guid.Empty ? null : a.SubidoPorUsuarioId, a.Texto, a.Compartido)).ToList(),
             r.Archivada, r.ArchivadaAt, verMax.GetValueOrDefault(r.Id, 1),
-            r.Destinatarios.Select(d => new DestinatarioRespuestaDto(d.PersonaId, d.Nombre, d.Email)).ToList()))
+            r.Destinatarios.Select(d => new DestinatarioRespuestaDto(d.PersonaId, d.Nombre, d.Email)).ToList(),
+            r.NumeroRadicado))
             .ToList();
     }
 
@@ -115,9 +116,11 @@ public partial class PqrsdService
         if (exp is null) return null;
         var (uid, _) = ActorActual();
         var nombre = await ResolverNombreActorAsync(ct);
+        var numeroRadicado = await GenerarNumeroRadicadoRespuestaAsync(ct);   // consecutivo propio de la respuesta
         var r = new PqrsdRespuesta
         {
             ExpedienteId = expedienteId,
+            NumeroRadicado = numeroRadicado,
             Asunto = string.IsNullOrWhiteSpace(req.Asunto) ? null : req.Asunto.Trim(),
             CuerpoHtml = Common.HtmlSanitization.Clean(req.CuerpoHtml)!,  // S-19: sanear al guardar
             AutorUsuarioId = uid ?? Guid.Empty,
@@ -137,7 +140,8 @@ public partial class PqrsdService
         await _db.SaveChangesAsync(ct);
         return new PqrsdRespuestaDto(r.Id, r.Asunto, r.CuerpoHtml, r.AutorNombre, r.CreatedAt,
             r.Enviada, r.EnviadaAt, new List<PqrsdAdjuntoDto>(), false, null, 1,
-            r.Destinatarios.Select(d => new DestinatarioRespuestaDto(d.PersonaId, d.Nombre, d.Email)).ToList());
+            r.Destinatarios.Select(d => new DestinatarioRespuestaDto(d.PersonaId, d.Nombre, d.Email)).ToList(),
+            r.NumeroRadicado);
     }
 
     public async Task<PqrsdRespuestaDto?> ActualizarRespuestaBorradorAsync(Guid expedienteId, Guid respuestaId, CrearRespuestaBorradorRequest req, CancellationToken ct)
@@ -201,7 +205,8 @@ public partial class PqrsdService
                 a.Id, a.NombreArchivo, a.TipoMime, a.TamanioBytes, a.UrlStorage, a.CreatedAt,
                 null, a.SubidoPorUsuarioId == Guid.Empty ? null : a.SubidoPorUsuarioId, a.Texto, a.Compartido)).ToList(),
             r.Archivada, r.ArchivadaAt, nextNum,
-            r.Destinatarios.Select(d => new DestinatarioRespuestaDto(d.PersonaId, d.Nombre, d.Email)).ToList());
+            r.Destinatarios.Select(d => new DestinatarioRespuestaDto(d.PersonaId, d.Nombre, d.Email)).ToList(),
+            r.NumeroRadicado);
     }
 
     // Lista el historial de versiones de una respuesta (mas reciente primero).
@@ -591,22 +596,111 @@ public partial class PqrsdService
         return new RadicarPublicoResultDto(detalle.NumeroRadicado);
     }
 
-    private async Task<string> GenerarNumeroRadicadoAsync(CancellationToken ct)
+    // ===== Consecutivos de radicado (expediente y respuesta), configurables por copropiedad =====
+
+    private static string FormatRadicado(string prefijo, bool incluirAnio, int padding, int seq, int year)
     {
+        var num = seq.ToString().PadLeft(Math.Clamp(padding, 1, 10), '0');
+        return incluirAnio ? $"{prefijo}-{year}-{num}" : $"{prefijo}-{num}";
+    }
+
+    /// <summary>Devuelve la config de consecutivos, creandola con valores por defecto si aun no existe.
+    /// Al crearla, siembra el proximo consecutivo del EXPEDIENTE continuando el maximo ya emitido este
+    /// anio (para no reiniciar en copropiedades con radicados previos).</summary>
+    private async Task<PqrsdConsecutivoConfig> EnsureConsecutivoConfigAsync(CancellationToken ct)
+    {
+        var cfg = await _db.PqrsdConsecutivoConfigs.FirstOrDefaultAsync(ct);
+        if (cfg is not null) return cfg;
+
+        var tenantId = _tenantContext.CurrentTenantId ?? throw new InvalidOperationException("No hay copropiedad activa.");
         var year = DateTime.UtcNow.Year;
-        var prefijo = $"PQRSD-{year}-";
-        var prefijoLegacy = $"PQRS-{year}-";   // radicados emitidos antes del cambio de sigla; no se reescriben
+        var maxExp = await MaxRadicadoExpedienteDelAnioAsync(year, ct);
+        cfg = new PqrsdConsecutivoConfig
+        {
+            TenantId = tenantId,
+            ExpedienteAnio = year,
+            ExpedienteProximo = maxExp + 1,
+            RespuestaAnio = year,
+            RespuestaProximo = 1
+        };
+        _db.PqrsdConsecutivoConfigs.Add(cfg);
+        await _db.SaveChangesAsync(ct);
+        return cfg;
+    }
+
+    /// <summary>Maximo consecutivo de radicado de expediente ya emitido en el anio (prefijos PQRSD-/PQRS- legacy).</summary>
+    private async Task<int> MaxRadicadoExpedienteDelAnioAsync(int year, CancellationToken ct)
+    {
+        var pref = $"PQRSD-{year}-";
+        var prefLegacy = $"PQRS-{year}-";
         var ultimos = await _db.PqrsdExpedientes.AsNoTracking()
-            .Where(x => x.NumeroRadicado.StartsWith(prefijo) || x.NumeroRadicado.StartsWith(prefijoLegacy))
+            .Where(x => x.NumeroRadicado.StartsWith(pref) || x.NumeroRadicado.StartsWith(prefLegacy))
             .Select(x => x.NumeroRadicado)
             .ToListAsync(ct);
         int max = 0;
         foreach (var n in ultimos)
-        {
-            // El consecutivo son los digitos tras el ultimo guion, valga cual valga el prefijo.
             if (int.TryParse(n[(n.LastIndexOf('-') + 1)..], out var s) && s > max) max = s;
+        return max;
+    }
+
+    private async Task<string> GenerarNumeroRadicadoAsync(CancellationToken ct)
+    {
+        var cfg = await EnsureConsecutivoConfigAsync(ct);
+        var year = DateTime.UtcNow.Year;
+        if (cfg.ExpedienteReinicioAnual && cfg.ExpedienteAnio != year)
+        {
+            cfg.ExpedienteAnio = year;
+            cfg.ExpedienteProximo = 1;
         }
-        return $"{prefijo}{(max + 1):D4}";
+        var seq = cfg.ExpedienteProximo;
+        cfg.ExpedienteProximo = seq + 1;   // se persiste en el SaveChanges del llamador (radicacion)
+        return FormatRadicado(cfg.ExpedientePrefijo, cfg.ExpedienteIncluirAnio, cfg.ExpedientePadding, seq, year);
+    }
+
+    private async Task<string> GenerarNumeroRadicadoRespuestaAsync(CancellationToken ct)
+    {
+        var cfg = await EnsureConsecutivoConfigAsync(ct);
+        var year = DateTime.UtcNow.Year;
+        if (cfg.RespuestaReinicioAnual && cfg.RespuestaAnio != year)
+        {
+            cfg.RespuestaAnio = year;
+            cfg.RespuestaProximo = 1;
+        }
+        var seq = cfg.RespuestaProximo;
+        cfg.RespuestaProximo = seq + 1;
+        return FormatRadicado(cfg.RespuestaPrefijo, cfg.RespuestaIncluirAnio, cfg.RespuestaPadding, seq, year);
+    }
+
+    public async Task<PqrsdConsecutivoConfigDto> GetConsecutivoConfigAsync(CancellationToken ct)
+    {
+        var c = await EnsureConsecutivoConfigAsync(ct);
+        return new PqrsdConsecutivoConfigDto(
+            c.ExpedientePrefijo, c.ExpedienteIncluirAnio, c.ExpedientePadding, c.ExpedienteReinicioAnual, c.ExpedienteProximo,
+            c.RespuestaPrefijo, c.RespuestaIncluirAnio, c.RespuestaPadding, c.RespuestaReinicioAnual, c.RespuestaProximo);
+    }
+
+    public async Task<bool> GuardarConsecutivoConfigAsync(PqrsdConsecutivoConfigDto req, CancellationToken ct)
+    {
+        var c = await EnsureConsecutivoConfigAsync(ct);
+        static string Pref(string? p, string def)
+        {
+            var v = (p ?? "").Trim().ToUpperInvariant();
+            // Solo letras/numeros/guion; sin espacios. Si queda vacio, usa el default.
+            v = new string(v.Where(ch => char.IsLetterOrDigit(ch) || ch == '-').ToArray());
+            return string.IsNullOrWhiteSpace(v) ? def : (v.Length > 20 ? v[..20] : v);
+        }
+        c.ExpedientePrefijo = Pref(req.ExpedientePrefijo, "PQRSD");
+        c.ExpedienteIncluirAnio = req.ExpedienteIncluirAnio;
+        c.ExpedientePadding = Math.Clamp(req.ExpedientePadding, 1, 10);
+        c.ExpedienteReinicioAnual = req.ExpedienteReinicioAnual;
+        c.ExpedienteProximo = Math.Max(1, req.ExpedienteProximo);
+        c.RespuestaPrefijo = Pref(req.RespuestaPrefijo, "RESP");
+        c.RespuestaIncluirAnio = req.RespuestaIncluirAnio;
+        c.RespuestaPadding = Math.Clamp(req.RespuestaPadding, 1, 10);
+        c.RespuestaReinicioAnual = req.RespuestaReinicioAnual;
+        c.RespuestaProximo = Math.Max(1, req.RespuestaProximo);
+        await _db.SaveChangesAsync(ct);
+        return true;
     }
 
 }

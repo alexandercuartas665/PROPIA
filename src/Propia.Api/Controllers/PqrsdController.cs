@@ -205,6 +205,18 @@ public class PqrsdController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    // --- Config: consecutivos de radicado (expediente y respuesta) ---
+    [HttpGet("config/consecutivos")]
+    public async Task<IActionResult> GetConsecutivos(CancellationToken ct) => Ok(await _svc.GetConsecutivoConfigAsync(ct));
+
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
+    [HttpPut("config/consecutivos")]
+    public async Task<IActionResult> GuardarConsecutivos([FromBody] PqrsdConsecutivoConfigDto req, CancellationToken ct)
+    {
+        try { return await _svc.GuardarConsecutivoConfigAsync(req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetExpediente(Guid id, CancellationToken ct)
     {

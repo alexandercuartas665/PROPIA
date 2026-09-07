@@ -584,6 +584,7 @@
                     <button type="button" class="pk-cfg-tab @(_cfgTab == "categorias" ? "on" : "")" @onclick='() => _cfgTab = "categorias"'>Categorias</button>
                     <button type="button" class="pk-cfg-tab @(_cfgTab == "campos" ? "on" : "")" @onclick='() => _cfgTab = "campos"'>Campos dinamicos</button>
                     <button type="button" class="pk-cfg-tab @(_cfgTab == "formulario" ? "on" : "")" @onclick='CambiarATabFormulario'>Formulario publico</button>
+                    <button type="button" class="pk-cfg-tab @(_cfgTab == "consecutivos" ? "on" : "")" @onclick='CambiarATabConsecutivos'>Consecutivos</button>
                     <button type="button" class="pk-cfg-tab @(_cfgTab == "tareas" ? "on" : "")" @onclick='CambiarATabTareasCfg'>Tareas</button>
                 </div>
                 <div class="pk-cfg-body">
@@ -760,6 +761,37 @@
                     </div>
                     <div class="pk-cfg-sec-hint" style="margin-top:10px;">Tipo, Categoria, Unidad, Documento, Nombres y Descripcion siempre se piden. Para agregar campos propios, marca "Publico" en la pestana Campos dinamicos.</div>
                     @if (_formGuardado) { <div class="pk-cfg-msg">Cambios guardados.</div> }
+                  }
+                  @if (_cfgTab == "consecutivos")
+                  {
+                    <div class="pk-cfg-sec-hint">Formato y numeracion de los radicados. El numero se compone como <code>Prefijo-Anio-Consecutivo</code> (ej. <code>@VistaPreviaExp()</code>). El "proximo numero" se puede ajustar manualmente.</div>
+
+                    <div class="pk-cfg-sec-t" style="margin-top:12px;">Radicado del expediente</div>
+                    <div class="pk-cons-grid">
+                        <div><label class="pk-cfg-formlbl">Prefijo</label>
+                            <input class="pk-cfg-name" style="width:100%;" @bind="_cons.ExpedientePrefijo" @bind:after="GuardarConsecutivos" /></div>
+                        <div><label class="pk-cfg-formlbl">Digitos (ceros)</label>
+                            <input class="pk-cfg-name" style="width:100%;" type="number" min="1" max="10" @bind="_cons.ExpedientePadding" @bind:after="GuardarConsecutivos" /></div>
+                        <div><label class="pk-cfg-formlbl">Proximo numero</label>
+                            <input class="pk-cfg-name" style="width:100%;" type="number" min="1" @bind="_cons.ExpedienteProximo" @bind:after="GuardarConsecutivos" /></div>
+                    </div>
+                    <label class="pk-cfg-chk pk-cfg-chk--row"><input type="checkbox" @bind="_cons.ExpedienteIncluirAnio" @bind:after="GuardarConsecutivos" />Incluir el anio en el radicado</label>
+                    <label class="pk-cfg-chk pk-cfg-chk--row"><input type="checkbox" @bind="_cons.ExpedienteReinicioAnual" @bind:after="GuardarConsecutivos" />Reiniciar el consecutivo cada anio</label>
+
+                    <div class="pk-cfg-sec-t" style="margin-top:16px;">Radicado de la respuesta</div>
+                    <div class="pk-cfg-sec-hint">Cada respuesta que se crea recibe su propio radicado (ej. <code>@VistaPreviaResp()</code>).</div>
+                    <div class="pk-cons-grid">
+                        <div><label class="pk-cfg-formlbl">Prefijo</label>
+                            <input class="pk-cfg-name" style="width:100%;" @bind="_cons.RespuestaPrefijo" @bind:after="GuardarConsecutivos" /></div>
+                        <div><label class="pk-cfg-formlbl">Digitos (ceros)</label>
+                            <input class="pk-cfg-name" style="width:100%;" type="number" min="1" max="10" @bind="_cons.RespuestaPadding" @bind:after="GuardarConsecutivos" /></div>
+                        <div><label class="pk-cfg-formlbl">Proximo numero</label>
+                            <input class="pk-cfg-name" style="width:100%;" type="number" min="1" @bind="_cons.RespuestaProximo" @bind:after="GuardarConsecutivos" /></div>
+                    </div>
+                    <label class="pk-cfg-chk pk-cfg-chk--row"><input type="checkbox" @bind="_cons.RespuestaIncluirAnio" @bind:after="GuardarConsecutivos" />Incluir el anio en el radicado</label>
+                    <label class="pk-cfg-chk pk-cfg-chk--row"><input type="checkbox" @bind="_cons.RespuestaReinicioAnual" @bind:after="GuardarConsecutivos" />Reiniciar el consecutivo cada anio</label>
+
+                    @if (_consGuardado) { <div class="pk-cfg-msg">Cambios guardados.</div> }
                   }
                   @if (_cfgTab == "tareas")
                   {
@@ -1650,6 +1682,63 @@
         _cfgTableroTareas = Guid.TryParse(e.Value?.ToString(), out var g) ? g : null;
         var resp = await Auth().PutAsJsonAsync("/api/pqrsd/config/tablero-tareas", new { tableroId = _cfgTableroTareas });
         _cfgTareasGuardado = resp.IsSuccessStatusCode;
+    }
+
+    // ----- Config: consecutivos de radicado (expediente y respuesta) -----
+    private sealed class ConsModel
+    {
+        public string ExpedientePrefijo { get; set; } = "PQRSD";
+        public bool ExpedienteIncluirAnio { get; set; } = true;
+        public int ExpedientePadding { get; set; } = 4;
+        public bool ExpedienteReinicioAnual { get; set; } = true;
+        public int ExpedienteProximo { get; set; } = 1;
+        public string RespuestaPrefijo { get; set; } = "RESP";
+        public bool RespuestaIncluirAnio { get; set; } = true;
+        public int RespuestaPadding { get; set; } = 4;
+        public bool RespuestaReinicioAnual { get; set; } = true;
+        public int RespuestaProximo { get; set; } = 1;
+    }
+    private ConsModel _cons = new();
+    private bool _consGuardado;
+
+    private static string PreviewRad(string prefijo, bool incluirAnio, int padding, int seq)
+    {
+        var num = seq.ToString().PadLeft(Math.Clamp(padding, 1, 10), '0');
+        var pref = string.IsNullOrWhiteSpace(prefijo) ? "PQRSD" : prefijo.Trim().ToUpperInvariant();
+        return incluirAnio ? $"{pref}-{DateTime.UtcNow.Year}-{num}" : $"{pref}-{num}";
+    }
+    private string VistaPreviaExp() => PreviewRad(_cons.ExpedientePrefijo, _cons.ExpedienteIncluirAnio, _cons.ExpedientePadding, _cons.ExpedienteProximo);
+    private string VistaPreviaResp() => PreviewRad(_cons.RespuestaPrefijo, _cons.RespuestaIncluirAnio, _cons.RespuestaPadding, _cons.RespuestaProximo);
+
+    private async Task CambiarATabConsecutivos()
+    {
+        _cfgTab = "consecutivos"; _consGuardado = false;
+        try
+        {
+            var c = await Auth().GetFromJsonAsync<PqrsdConsecutivoConfigDto>("/api/pqrsd/config/consecutivos");
+            if (c is not null)
+                _cons = new ConsModel
+                {
+                    ExpedientePrefijo = c.ExpedientePrefijo, ExpedienteIncluirAnio = c.ExpedienteIncluirAnio,
+                    ExpedientePadding = c.ExpedientePadding, ExpedienteReinicioAnual = c.ExpedienteReinicioAnual,
+                    ExpedienteProximo = c.ExpedienteProximo,
+                    RespuestaPrefijo = c.RespuestaPrefijo, RespuestaIncluirAnio = c.RespuestaIncluirAnio,
+                    RespuestaPadding = c.RespuestaPadding, RespuestaReinicioAnual = c.RespuestaReinicioAnual,
+                    RespuestaProximo = c.RespuestaProximo
+                };
+        }
+        catch { }
+    }
+
+    private async Task GuardarConsecutivos()
+    {
+        _consGuardado = false;
+        var req = new PqrsdConsecutivoConfigDto(
+            _cons.ExpedientePrefijo, _cons.ExpedienteIncluirAnio, _cons.ExpedientePadding, _cons.ExpedienteReinicioAnual, _cons.ExpedienteProximo,
+            _cons.RespuestaPrefijo, _cons.RespuestaIncluirAnio, _cons.RespuestaPadding, _cons.RespuestaReinicioAnual, _cons.RespuestaProximo);
+        var resp = await Auth().PutAsJsonAsync("/api/pqrsd/config/consecutivos", req);
+        _consGuardado = resp.IsSuccessStatusCode;
+        if (!resp.IsSuccessStatusCode) _cfgMsg = await LeerError(resp);
     }
 
     private async Task CambiarATabFormulario()

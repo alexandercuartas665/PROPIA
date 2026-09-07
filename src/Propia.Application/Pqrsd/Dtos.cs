@@ -254,10 +254,18 @@ public record PqrsdRespuestaDto(
     bool Archivada = false,
     DateTimeOffset? ArchivadaAt = null,
     int Versiones = 1,
-    IReadOnlyList<DestinatarioRespuestaDto>? Destinatarios = null);
+    IReadOnlyList<DestinatarioRespuestaDto>? Destinatarios = null,
+    string? NumeroRadicado = null);
 
 /// <summary>Destinatario de una respuesta: tercero del directorio (PersonaId) o correo suelto.</summary>
 public record DestinatarioRespuestaDto(Guid? PersonaId, string? Nombre, string Email);
+
+/// <summary>Configuracion de consecutivos de radicado (expediente y respuesta) por copropiedad.</summary>
+public record PqrsdConsecutivoConfigDto(
+    string ExpedientePrefijo, bool ExpedienteIncluirAnio, int ExpedientePadding,
+    bool ExpedienteReinicioAnual, int ExpedienteProximo,
+    string RespuestaPrefijo, bool RespuestaIncluirAnio, int RespuestaPadding,
+    bool RespuestaReinicioAnual, int RespuestaProximo);
 
 /// <summary>Una version historica del documento de respuesta.</summary>
 public record PqrsdRespuestaVersionDto(

@@ -68,6 +68,11 @@ public interface IPqrsdService
     Task<PqrsdFormularioPublicoConfigDto> GetFormularioPublicoConfigAsync(CancellationToken ct);
     /// <summary>Guarda (upsert) la config del formulario publico para la copropiedad activa.</summary>
     Task<bool> GuardarFormularioPublicoConfigAsync(PqrsdFormularioPublicoConfigDto req, CancellationToken ct);
+
+    /// <summary>Config de consecutivos de radicado (expediente y respuesta). Crea la fila con valores por defecto si no existe.</summary>
+    Task<PqrsdConsecutivoConfigDto> GetConsecutivoConfigAsync(CancellationToken ct);
+    /// <summary>Guarda (upsert) la config de consecutivos para la copropiedad activa.</summary>
+    Task<bool> GuardarConsecutivoConfigAsync(PqrsdConsecutivoConfigDto req, CancellationToken ct);
     /// <summary>Marca/desmarca un campo dinamico para que se pida en el formulario publico.</summary>
     Task<bool> SetCampoPublicoAsync(Guid campoId, bool mostrar, CancellationToken ct);
 

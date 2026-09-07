@@ -150,6 +150,10 @@ public class PqrsdRespuesta : TenantEntity
     public Guid ExpedienteId { get; set; }
     public PqrsdExpediente? Expediente { get; set; }
 
+    /// <summary>Numero de radicado propio de la respuesta (consecutivo configurable, ej. RESP-2026-0001).
+    /// Se asigna al crear la respuesta. Null en respuestas creadas antes de esta funcionalidad.</summary>
+    public string? NumeroRadicado { get; set; }
+
     /// <summary>Cuerpo de la respuesta en HTML (editor enriquecido). Se sanitiza al mostrarse en publico.</summary>
     public string CuerpoHtml { get; set; } = string.Empty;
 
@@ -403,6 +407,34 @@ public class PqrsdConfiguracionPlazo : TenantEntity
 public class PqrsdTareasConfig : TenantEntity
 {
     public Guid? TableroId { get; set; }
+}
+
+/// <summary>
+/// Configuracion de los consecutivos de radicado (una fila por copropiedad). Controla el formato y el
+/// proximo numero, por separado, del radicado del EXPEDIENTE y del radicado de cada RESPUESTA.
+/// El numero se compone como {Prefijo}-{Anio?}-{Proximo con padding} (ej. PQRSD-2026-0018, RESP-2026-0001).
+/// </summary>
+public class PqrsdConsecutivoConfig : TenantEntity
+{
+    // --- Radicado del EXPEDIENTE ---
+    public string ExpedientePrefijo { get; set; } = "PQRSD";
+    public bool ExpedienteIncluirAnio { get; set; } = true;
+    /// <summary>Cantidad de digitos con relleno de ceros (ej. 4 -> 0018).</summary>
+    public int ExpedientePadding { get; set; } = 4;
+    /// <summary>Si es true, el contador reinicia en 1 cada anio.</summary>
+    public bool ExpedienteReinicioAnual { get; set; } = true;
+    /// <summary>Proximo numero a asignar.</summary>
+    public int ExpedienteProximo { get; set; } = 1;
+    /// <summary>Anio del contador vigente (para detectar el reinicio anual).</summary>
+    public int? ExpedienteAnio { get; set; }
+
+    // --- Radicado de la RESPUESTA ---
+    public string RespuestaPrefijo { get; set; } = "RESP";
+    public bool RespuestaIncluirAnio { get; set; } = true;
+    public int RespuestaPadding { get; set; } = 4;
+    public bool RespuestaReinicioAnual { get; set; } = true;
+    public int RespuestaProximo { get; set; } = 1;
+    public int? RespuestaAnio { get; set; }
 }
 
 /// <summary>Config del formulario publico de radicacion (que campos opcionales se muestran + textos). Una fila por copropiedad.</summary>

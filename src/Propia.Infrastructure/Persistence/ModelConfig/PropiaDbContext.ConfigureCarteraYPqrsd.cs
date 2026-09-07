@@ -259,6 +259,7 @@ public partial class PropiaDbContext
         modelBuilder.Entity<PqrsdRespuesta>(b =>
         {
             b.ToTable("pqrsd_respuestas");
+            b.Property(x => x.NumeroRadicado).HasMaxLength(40);
             b.Property(x => x.CuerpoHtml).IsRequired().HasColumnType("text");
             b.Property(x => x.Asunto).HasMaxLength(300);
             b.Property(x => x.AutorNombre).HasMaxLength(200);
@@ -288,6 +289,15 @@ public partial class PropiaDbContext
             b.HasOne(x => x.Respuesta).WithMany(r => r.Versiones).HasForeignKey(x => x.RespuestaId).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.RespuestaId, x.Numero });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PqrsdConsecutivoConfig>(b =>
+        {
+            b.ToTable("pqrsd_consecutivo_configs");
+            b.Property(x => x.ExpedientePrefijo).IsRequired().HasMaxLength(20);
+            b.Property(x => x.RespuestaPrefijo).IsRequired().HasMaxLength(20);
+            b.HasIndex(x => x.TenantId);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
