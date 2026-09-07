@@ -139,7 +139,11 @@ public record CrearTareaRequest(
     IReadOnlyList<SubtareaCheckItem>? Checklist = null,
     IReadOnlyList<TareaCampoValorDto>? CamposValores = null,
     Guid? SolicitantePersonaId = null,
-    Guid? OrigenEntidadId = null);
+    Guid? OrigenEntidadId = null,
+    // Vinculo de modulo (ej. tarea creada DESDE un PQRSD): cuando vienen, la tarea nace vinculada
+    // (Origen = ModuloExterno) y se lista con el filtro por origen del board.
+    string? ModuloOrigenCodigo = null,
+    Guid? ModuloOrigenEntidadId = null);
 
 public record ActualizarTareaRequest(
     string Titulo,

@@ -265,9 +265,10 @@ public class TareasController : ControllerBase
     public record InvitarExternoTableroBody(string Email, string Nombre, Guid RolId);
 
     [HttpGet("tableros/{id:guid}/board")]
-    public async Task<IActionResult> GetTableroBoard(Guid id, [FromQuery] bool verCerradas, CancellationToken ct)
+    public async Task<IActionResult> GetTableroBoard(Guid id, [FromQuery] bool verCerradas,
+        [FromQuery] string? origenCodigo, [FromQuery] Guid? origenEntidadId, CancellationToken ct)
     {
-        var b = await _svc.GetTableroBoardAsync(id, ct, verCerradas);
+        var b = await _svc.GetTableroBoardAsync(id, ct, verCerradas, origenCodigo, origenEntidadId);
         return b is null ? NotFound() : Ok(b);
     }
 

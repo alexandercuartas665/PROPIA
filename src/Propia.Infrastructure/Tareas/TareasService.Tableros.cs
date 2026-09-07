@@ -335,7 +335,8 @@ public partial class TareasService
         return true;
     }
 
-    public async Task<TableroBoardDto?> GetTableroBoardAsync(Guid tableroId, CancellationToken ct, bool verCerradas = false)
+    public async Task<TableroBoardDto?> GetTableroBoardAsync(Guid tableroId, CancellationToken ct, bool verCerradas = false,
+        string? origenCodigo = null, Guid? origenEntidadId = null)
     {
         await AsegurarTableroDefaultAsync(ct);
         var t = await _db.Tableros.AsNoTracking().FirstOrDefaultAsync(x => x.Id == tableroId && x.Activo, ct);
@@ -345,7 +346,7 @@ public partial class TareasService
             .OrderBy(e => e.Orden).ThenBy(e => e.Nombre)
             .Select(e => new EstadoTareaDto(e.Id, e.Nombre, e.Color, e.Orden, e.EsTerminal, e.EsBase, e.Activo))
             .ToListAsync(ct);
-        var tareas = await ListarTareasAsync(null, null, null, null, null, null, ct, tableroId, verCerradas);
+        var tareas = await ListarTareasAsync(null, null, null, null, null, null, ct, tableroId, verCerradas, origenCodigo, origenEntidadId);
         return new TableroBoardDto(dto, estados, tareas);
     }
 

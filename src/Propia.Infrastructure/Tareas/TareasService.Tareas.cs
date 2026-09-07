@@ -19,12 +19,16 @@ public partial class TareasService
 
     public async Task<IReadOnlyList<TareaListaDto>> ListarTareasAsync(
         Guid? estadoId, PrioridadTarea? prioridad, Guid? asignadoPersonaId, Guid? padreId, bool? soloRaiz, string? query,
-        CancellationToken ct, Guid? tableroId = null, bool verCerradas = false)
+        CancellationToken ct, Guid? tableroId = null, bool verCerradas = false,
+        string? origenCodigo = null, Guid? origenEntidadId = null)
     {
         await AsegurarEstadosBaseAsync(ct);
         // Las tareas CERRADAS desaparecen del tablero activo; solo se ven en la pestana "Cerrados".
         IQueryable<Tarea> q = _db.Tareas.AsNoTracking().Where(t => !t.Eliminada && t.Cerrada == verCerradas);
         if (tableroId.HasValue) q = q.Where(t => t.TableroId == tableroId.Value);
+        // Filtro por vinculo de modulo (ej. solo las tareas de un PQRSD concreto).
+        if (!string.IsNullOrWhiteSpace(origenCodigo)) q = q.Where(t => t.ModuloOrigenCodigo == origenCodigo);
+        if (origenEntidadId.HasValue) q = q.Where(t => t.ModuloOrigenEntidadId == origenEntidadId.Value);
         if (estadoId.HasValue) q = q.Where(t => t.EstadoId == estadoId.Value);
         if (prioridad.HasValue) q = q.Where(t => t.Prioridad == prioridad.Value);
         if (asignadoPersonaId.HasValue) q = q.Where(t => t.AsignadoPersonaId == asignadoPersonaId.Value);
@@ -325,7 +329,8 @@ public partial class TareasService
             FechaInicio = req.FechaInicio,
             FechaVencimiento = req.FechaVencimiento,
             PadreId = req.PadreId,
-            Origen = OrigenTarea.Manual,
+            // Si el request trae vinculo de modulo (ej. creada desde un PQRSD), nace como ModuloExterno.
+            Origen = string.IsNullOrWhiteSpace(req.ModuloOrigenCodigo) ? OrigenTarea.Manual : OrigenTarea.ModuloExterno,
             Color = req.Color,
             EsProyecto = req.EsProyecto,
             Valor = req.Valor,
@@ -334,6 +339,8 @@ public partial class TareasService
             OrigenTipo = string.IsNullOrWhiteSpace(req.OrigenTipo) ? null : req.OrigenTipo,
             OrigenReferencia = string.IsNullOrWhiteSpace(req.OrigenReferencia) ? null : req.OrigenReferencia,
             OrigenEntidadId = req.OrigenEntidadId,
+            ModuloOrigenCodigo = string.IsNullOrWhiteSpace(req.ModuloOrigenCodigo) ? null : req.ModuloOrigenCodigo,
+            ModuloOrigenEntidadId = req.ModuloOrigenEntidadId,
             CreadoPorUsuarioId = GetUsuarioActualId()
         };
         _db.Tareas.Add(t);
