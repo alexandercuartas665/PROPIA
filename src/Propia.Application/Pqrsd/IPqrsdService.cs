@@ -131,11 +131,6 @@ public interface IPqrsdService
     Task<PqrsdComiteSesionDto> EscalarAComiteAsync(Guid expedienteId, EscalarAComiteRequest req, CancellationToken ct);
     Task<bool> RegistrarSesionComiteAsync(Guid sesionId, RegistrarSesionComiteRequest req, CancellationToken ct);
 
-    // Tareas enlazadas al PQR (tablero "PQRSD" del modulo Tareas)
-    Task<PqrTareasDto> ListTareasDePqrAsync(Guid pqrId, CancellationToken ct);
-    /// <summary>Crea la tarea enlazada y devuelve su Id (null si el PQR no existe o el titulo esta vacio).</summary>
-    Task<Guid?> CrearTareaDePqrAsync(Guid pqrId, CrearPqrTareaRequest req, CancellationToken ct);
-
     /// <summary>Tablero del modulo Tareas donde caen las tareas creadas desde un PQR (null = "PQRSD" por defecto).</summary>
     Task<Guid?> ObtenerTableroTareasConfigAsync(CancellationToken ct);
     /// <summary>Id del tablero de Tareas que usa PQRSD (garantizado; crea el default si no existe).</summary>

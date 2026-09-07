@@ -290,6 +290,60 @@ public class TareasFlowTests : IAsyncLifetime
         await CleanTenant(tenantId);
     }
 
+    // ===================== Origen de modulo (PQRSD hospeda el tablero) =====================
+
+    // Criterio 9 del handoff "Tareas dentro de PQRSD": crear via el unico contrato de tareas
+    // (CrearTareaAsync/POST /api/tareas) con origen PQRSD y leer por el board con el filtro por origen.
+    // Reemplaza al viejo par ListTareasDePqrAsync/CrearTareaDePqrAsync (ya retirado).
+    [Fact]
+    public async Task Crear_tarea_con_origen_PQRSD_persiste_vinculo_y_board_filtra_por_entidad()
+    {
+        var tenantId = await SeedTenantAsync("Tareas Origen PQRSD");
+        var (svc, db, _) = Build(tenantId);
+
+        var tablero = await svc.CrearTableroAsync(
+            new GuardarTableroRequest("PQRSD", "Tareas generadas desde PQRSD", "#7C5CFA", new List<Guid>()),
+            CancellationToken.None);
+
+        var expedienteA = Guid.NewGuid();
+        var expedienteB = Guid.NewGuid();
+
+        var tA = await svc.CrearTareaAsync(new CrearTareaRequest(
+            "Visita tecnica", null, PrioridadTarea.Normal, null, null, null, null, null, null,
+            TableroId: tablero.Id, ModuloOrigenCodigo: "PQRSD", ModuloOrigenEntidadId: expedienteA), CancellationToken.None);
+        await svc.CrearTareaAsync(new CrearTareaRequest(
+            "Cotizar reparacion", null, PrioridadTarea.Normal, null, null, null, null, null, null,
+            TableroId: tablero.Id, ModuloOrigenCodigo: "PQRSD", ModuloOrigenEntidadId: expedienteB), CancellationToken.None);
+        await svc.CrearTareaAsync(new CrearTareaRequest(
+            "Tarea manual del tablero", null, PrioridadTarea.Normal, null, null, null, null, null, null,
+            TableroId: tablero.Id), CancellationToken.None);
+
+        // El vinculo de modulo se persiste y la tarea nace como ModuloExterno (no Manual).
+        var dbTA = await db.Tareas.AsNoTracking().FirstAsync(x => x.Id == tA.Id);
+        Assert.Equal(OrigenTarea.ModuloExterno, dbTA.Origen);
+        Assert.Equal("PQRSD", dbTA.ModuloOrigenCodigo);
+        Assert.Equal(expedienteA, dbTA.ModuloOrigenEntidadId);
+
+        // El board filtrado por (origen PQRSD, expediente A) solo trae la tarea de ese expediente.
+        var boardA = await svc.GetTableroBoardAsync(tablero.Id, CancellationToken.None, false, "PQRSD", expedienteA);
+        Assert.NotNull(boardA);
+        Assert.Single(boardA!.Tareas);
+        Assert.Equal(tA.Id, boardA.Tareas[0].Id);
+
+        // Otro expediente no ve esa tarea (aislamiento por OrigenEntidadId).
+        var boardB = await svc.GetTableroBoardAsync(tablero.Id, CancellationToken.None, false, "PQRSD", expedienteB);
+        Assert.NotNull(boardB);
+        Assert.Single(boardB!.Tareas);
+        Assert.NotEqual(tA.Id, boardB.Tareas[0].Id);
+
+        // Sin filtro, el board trae las 3 tareas del tablero (regresion cero para /tareas).
+        var boardTodo = await svc.GetTableroBoardAsync(tablero.Id, CancellationToken.None);
+        Assert.NotNull(boardTodo);
+        Assert.Equal(3, boardTodo!.Tareas.Count);
+
+        await CleanTenant(tenantId);
+    }
+
     // ===================== Helpers =====================
 
     private (ITareasService svc, PropiaDbContext db, IServiceScope scope) Build(Guid tenantId)
