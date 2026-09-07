@@ -1,23 +1,68 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.Notificaciones
+@using Propia.Domain.Enums
 @inject IJSRuntime Js
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@implements IDisposable
 
-@* Isla interactiva del header: notificaciones del sistema.
-   Por ahora solo el icono (placeholder); el panel de notificaciones se cablea luego. *@
+@* Isla interactiva del header: campana de notificaciones (InApp). Contador de no leidas + panel;
+   al hacer clic en una mencion se marca leida y se abre la referencia (ej. el PQRSD). *@
 
 @if (_jwt is not null)
 {
     <div class="ht-wrap">
-        <button class="ht-icon-btn" type="button" title="Notificaciones" aria-label="Notificaciones">
+        <button class="ht-icon-btn" type="button" title="Notificaciones" aria-label="Notificaciones" @onclick="TogglePanel">
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
                 <path d="M13.73 21a2 2 0 0 1-3.46 0" />
             </svg>
+            @if (_noLeidas > 0)
+            {
+                <span class="ht-badge">@(_noLeidas > 99 ? "99+" : _noLeidas.ToString())</span>
+            }
         </button>
+
+        @if (_abierto)
+        {
+            <div class="ht-backdrop" @onclick="() => _abierto = false"></div>
+            <div class="ht-panel">
+                <div class="ht-panel-head">
+                    <span>Notificaciones</span>
+                    @if (_noLeidas > 0) { <button type="button" class="ht-mark-all" @onclick="MarcarTodasAsync">Marcar todas leidas</button> }
+                </div>
+                <div class="ht-panel-list">
+                    @if (_cargando) { <div class="ht-empty">Cargando...</div> }
+                    else if (_items.Count == 0) { <div class="ht-empty">No tienes notificaciones.</div> }
+                    else
+                    {
+                        @foreach (var n in _items)
+                        {
+                            var nn = n;
+                            var leida = n.FechaLeido is not null;
+                            <button type="button" class="ht-item @(leida ? "" : "unread")" @onclick="() => AbrirAsync(nn)">
+                                @if (!leida) { <span class="ht-item-dot"></span> }
+                                <span class="ht-item-body">
+                                    @if (!string.IsNullOrWhiteSpace(n.Asunto)) { <span class="ht-item-title">@n.Asunto</span> }
+                                    <span class="ht-item-txt">@n.Cuerpo</span>
+                                    <span class="ht-item-time">@Relativo(n.CreadoAt)</span>
+                                </span>
+                            </button>
+                        }
+                    }
+                </div>
+            </div>
+        }
     </div>
 }
 
 @code {
     private string? _jwt;
+    private bool _abierto;
+    private bool _cargando;
+    private int _noLeidas;
+    private List<NotificacionDto> _items = new();
+    private System.Threading.Timer? _timer;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -28,13 +73,94 @@
             if (string.IsNullOrWhiteSpace(jwt)) return;
             _jwt = jwt;
             StateHasChanged();
+            await RefrescarResumenAsync();
+            // Poll ligero del contador cada 45s.
+            _timer = new System.Threading.Timer(async _ => await InvokeAsync(RefrescarResumenAsync), null,
+                TimeSpan.FromSeconds(45), TimeSpan.FromSeconds(45));
         }
         catch { /* sin sesion / API caida: no renderiza las herramientas */ }
     }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(_jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
+        return http;
+    }
+
+    private async Task RefrescarResumenAsync()
+    {
+        try
+        {
+            var r = await Auth().GetFromJsonAsync<ResumenNotificacionesDto>("/api/notificaciones/resumen");
+            if (r is not null) { _noLeidas = r.InAppNoLeidas; StateHasChanged(); }
+        }
+        catch { }
+    }
+
+    private async Task TogglePanel()
+    {
+        _abierto = !_abierto;
+        if (_abierto) await CargarItemsAsync();
+    }
+
+    private async Task CargarItemsAsync()
+    {
+        _cargando = true; StateHasChanged();
+        try
+        {
+            _items = await Auth().GetFromJsonAsync<List<NotificacionDto>>(
+                $"/api/notificaciones?canal={CanalNotificacion.InApp}&limite=25") ?? new();
+        }
+        catch { _items = new(); }
+        finally { _cargando = false; StateHasChanged(); }
+    }
+
+    // Marca la notificacion leida y navega a la referencia (por ahora PQRSD modulo 2.9).
+    private async Task AbrirAsync(NotificacionDto n)
+    {
+        try { await Auth().PostAsync($"/api/notificaciones/{n.Id}/leido", null); } catch { }
+        _abierto = false;
+        await RefrescarResumenAsync();
+
+        if (n.EntidadOrigenId is { } entidad)
+        {
+            var modulo = n.ModuloOrigenCodigo ?? "";
+            if (modulo.StartsWith("2.9"))
+            {
+                Nav.NavigateTo($"/pqrs?abrir={entidad}");
+                return;
+            }
+            // Otros modulos se cablean a medida que se agreguen sus deep-links.
+        }
+    }
+
+    private async Task MarcarTodasAsync()
+    {
+        foreach (var n in _items.Where(x => x.FechaLeido is null).ToList())
+        {
+            try { await Auth().PostAsync($"/api/notificaciones/{n.Id}/leido", null); } catch { }
+        }
+        await CargarItemsAsync();
+        await RefrescarResumenAsync();
+    }
+
+    private static string Relativo(DateTimeOffset t)
+    {
+        var d = DateTimeOffset.UtcNow - t.ToUniversalTime();
+        if (d.TotalMinutes < 1) return "ahora";
+        if (d.TotalMinutes < 60) return $"hace {(int)d.TotalMinutes} min";
+        if (d.TotalHours < 24) return $"hace {(int)d.TotalHours} h";
+        if (d.TotalDays < 7) return $"hace {(int)d.TotalDays} d";
+        return t.ToLocalTime().ToString("dd MMM");
+    }
+
+    public void Dispose() => _timer?.Dispose();
 }
 
 <style>
-    .ht-wrap { display: flex; align-items: center; gap: 8px; }
+    .ht-wrap { display: flex; align-items: center; gap: 8px; position: relative; }
 
     /* Boton de icono (notificaciones) */
     .ht-icon-btn {
@@ -49,4 +175,41 @@
         transition: border-color .15s, background .15s, color .15s;
     }
     .ht-icon-btn:hover { border-color: var(--propia-primary, var(--propia-brand)); color: var(--propia-primary, var(--propia-brand)); background: rgba(109,79,227,.06); }
+    .ht-badge {
+        position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; padding: 0 5px;
+        display: inline-flex; align-items: center; justify-content: center;
+        background: var(--propia-danger); color: var(--propia-text-inverse);
+        font-size: 10.5px; font-weight: 800; border-radius: 10px; line-height: 1;
+        border: 2px solid var(--bs-body-bg);
+    }
+
+    .ht-backdrop { position: fixed; inset: 0; z-index: 4000; }
+    .ht-panel {
+        position: absolute; top: calc(100% + 8px); right: 0; z-index: 4001;
+        width: 360px; max-width: 92vw; max-height: 72vh; display: flex; flex-direction: column;
+        background: var(--propia-bg-card); border: 1px solid var(--propia-border-card);
+        border-radius: 12px; box-shadow: 0 12px 32px -8px rgba(27,42,58,.28); overflow: hidden;
+    }
+    .ht-panel-head {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 11px 14px; border-bottom: 1px solid var(--propia-border-divider);
+        font-size: 13px; font-weight: 800; color: var(--propia-text-h1);
+    }
+    .ht-mark-all { border: 0; background: transparent; color: var(--propia-brand); font-size: 11.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .ht-mark-all:hover { text-decoration: underline; }
+    .ht-panel-list { overflow-y: auto; display: flex; flex-direction: column; }
+    .ht-empty { padding: 22px 14px; text-align: center; font-size: 12.5px; color: var(--propia-text-muted); }
+    .ht-item {
+        display: flex; gap: 9px; align-items: flex-start; text-align: left; width: 100%;
+        padding: 11px 14px; border: 0; border-bottom: 1px solid var(--propia-border-divider);
+        background: transparent; cursor: pointer; font-family: inherit;
+    }
+    .ht-item:hover { background: var(--propia-bg-hover); }
+    .ht-item.unread { background: var(--propia-brand-soft); }
+    .ht-item.unread:hover { background: var(--propia-brand-soft); }
+    .ht-item-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--propia-brand); margin-top: 5px; }
+    .ht-item-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .ht-item-title { font-size: 12.5px; font-weight: 700; color: var(--propia-text-h1); }
+    .ht-item-txt { font-size: 12px; color: var(--propia-text-body); line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .ht-item-time { font-size: 10.5px; color: var(--propia-text-muted); margin-top: 1px; }
 </style>

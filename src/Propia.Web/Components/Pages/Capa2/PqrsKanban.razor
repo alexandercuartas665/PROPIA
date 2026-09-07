@@ -1308,7 +1308,7 @@
             try { _jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt"); _authChecked = true; }
             catch { _jwt = null; }
             await RestaurarPrefsAsync();
-            if (!string.IsNullOrEmpty(_jwt)) { await CargarAsync(); }
+            if (!string.IsNullOrEmpty(_jwt)) { await CargarAsync(); await AbrirDesdeQueryAsync(); }
             StateHasChanged();
         }
         // Doble scroll horizontal (barra superior espejo) para la vista Tabla, igual que en Tareas.
@@ -1882,6 +1882,22 @@
         var options = new ModalOptions { Width = "880px" };
         var radicada = await Modals.OpenAsync<NuevaPqrsdWizardModal, bool>(parameters, options);
         if (radicada == true) { await CargarAsync(); Toast("PQRSD radicada correctamente.", false); }
+    }
+
+    // Deep-link: /pqrs?abrir={expedienteId} abre directo el modal del expediente (desde notificaciones).
+    private async Task AbrirDesdeQueryAsync()
+    {
+        try
+        {
+            var uri = new Uri(Nav.Uri);
+            var q = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+            if (q.TryGetValue("abrir", out var v) && Guid.TryParse(v, out var id))
+            {
+                Nav.NavigateTo(uri.GetLeftPart(UriPartial.Path), replace: true);  // limpia el query
+                await IrA(id);
+            }
+        }
+        catch { }
     }
 
     private async Task IrA(Guid id)

@@ -90,7 +90,33 @@
                 </div>
                 <div class="gpq-meta-f">
                     <div class="gpq-meta-lbl">ESTADO OPERATIVO</div>
-                    <div class="gpq-meta-val"><span class="gpq-estado-pill @EstadoClass(_detalle.Estado)">@EstadoLabel(_detalle.Estado)</span></div>
+                    <div class="gpq-meta-val gpq-pop-anchor">
+                        <button class="gpq-qf-chip" type="button" title="Cambiar de estado (columna del tablero)" @onclick="ToggleEstado">
+                            <span class="gpq-estado-pill @EstadoClass(_detalle.Estado)">@(EstadoColNombre() ?? EstadoLabel(_detalle.Estado))</span>
+                            <svg class="gpq-qf-pen" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                        </button>
+                        @if (_editEstado)
+                        {
+                            <div class="gpq-pop">
+                                <div class="gpq-pop-head"><span>Mover a estado</span><button class="gpq-qf-x" type="button" @onclick="() => _editEstado = false"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+                                @if (_estadosCols is null) { <div class="gpq-pop-loading">Cargando estados...</div> }
+                                else
+                                {
+                                    <div class="gpq-pop-list">
+                                        @foreach (var e in _estadosCols.Where(e => e.Activo).OrderBy(e => e.Orden))
+                                        {
+                                            var ee = e;
+                                            <button type="button" class="gpq-pop-it @(_detalle.EstadoId == e.Id ? "on" : "")" @onclick="() => MoverAEstadoAsync(ee.Id)">
+                                                <span class="gpq-pop-dot" style="background:@(e.Color ?? "var(--propia-brand)")"></span>
+                                                <span>@e.Nombre</span>
+                                                @if (_detalle.EstadoId == e.Id) { <span class="gpq-pop-check">&#10003;</span> }
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
                 </div>
                 @* Unidad afectada: editable como tarjeta flotante (no autocompletado) *@
                 <div class="gpq-meta-f gpq-meta-f--act">
@@ -1202,9 +1228,13 @@
             _unidades = (await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades")) ?? new();
             _campos = (await http.GetFromJsonAsync<List<PqrsdCampoDto>>("/api/pqrsd/campos")) ?? new();
             _motivos = (await http.GetFromJsonAsync<List<Propia.Application.Cierre.MotivoCierreDto>>("/api/cierre/motivos?modulo=pqrsd")) ?? new();
-            var personas = await http.GetFromJsonAsync<List<PersonaResumenDto>>("/api/directorio/personas");
-            if (personas is not null)
-                _personas = personas.Select(p => new PersonaMini(p.Id, $"{p.Nombres} {p.Apellidos}".Trim())).ToList();
+            // Fuente de @menciones: SOLO usuarios del sistema (con cuenta), para que la mencion llegue
+            // como notificacion. No se mencionan personas del directorio sin cuenta.
+            var usuarios = await http.GetFromJsonAsync<List<UsuarioListaDto>>("/api/usuarios?estado=Activo");
+            if (usuarios is not null)
+                _personas = usuarios.Where(u => u.TieneCuentaPropia)
+                    .Select(u => new PersonaMini(u.PersonaId, u.NombreCompleto))
+                    .ToList();
         }
         catch { }
 
@@ -1337,6 +1367,44 @@
     {
         _editUnidad = !_editUnidad;
         if (_editUnidad) _editResp = false;
+    }
+
+    // ---- Cambiar de estado (columna del tablero) desde el modal ----
+    private List<PqrsdEstadoDto>? _estadosCols;
+    private bool _editEstado;
+
+    private string? EstadoColNombre()
+        => _estadosCols?.FirstOrDefault(e => e.Id == _detalle?.EstadoId)?.Nombre;
+
+    private async Task ToggleEstado()
+    {
+        _editEstado = !_editEstado;
+        if (_editEstado)
+        {
+            _editUnidad = false; _editResp = false;
+            if (_estadosCols is null)
+            {
+                try { _estadosCols = await Auth().GetFromJsonAsync<List<PqrsdEstadoDto>>("/api/pqrsd/estados") ?? new(); }
+                catch { _estadosCols = new(); }
+            }
+        }
+    }
+
+    private async Task MoverAEstadoAsync(Guid estadoId)
+    {
+        if (_detalle is null || _detalle.EstadoId == estadoId) { _editEstado = false; return; }
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{ExpedienteId}/mover", new { estadoId });
+            if (resp.IsSuccessStatusCode)
+            {
+                _editEstado = false; _huboCambios = true;
+                await CargarAsync();   // refresca estado + SLA + timeline
+                ShowMsg("Estado actualizado.", false);
+            }
+            else ShowMsg("No se pudo cambiar el estado: " + await resp.Content.ReadAsStringAsync(), true);
+        }
+        catch (Exception ex) { ShowMsg(ex.Message, true); }
     }
 
     // Abre/cierra la tarjeta flotante de responsable; carga los usuarios del sistema la primera vez.
