@@ -59,8 +59,8 @@ public static class OcrProviderCatalog
             new[] { "prebuilt-invoice", "prebuilt-receipt", "prebuilt-document", "prebuilt-read" }),
         OcrProvider.AzureComputerVision => new("Azure AI Vision (Computer Vision)", "read",
             new[] { "read" }),
-        OcrProvider.GeminiDocument => new("IA - Google Gemini (PDF nativo)", "gemini-2.0-flash",
-            new[] { "gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-pro" }),
+        OcrProvider.GeminiDocument => new("IA - Google Gemini (PDF nativo)", "gemini-3.6-flash",
+            new[] { "gemini-3.6-flash", "gemini-2.5-flash", "gemini-2.5-pro" }),
         _ => new(p.ToString(), "", Array.Empty<string>())
     };
 
