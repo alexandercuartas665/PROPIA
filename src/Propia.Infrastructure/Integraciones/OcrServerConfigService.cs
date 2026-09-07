@@ -59,7 +59,12 @@ public sealed class OcrServerConfigService : IOcrServerConfigService
 
         config.Endpoint = string.IsNullOrWhiteSpace(request.Endpoint) ? null : request.Endpoint.Trim().TrimEnd('/');
         config.ModelId = string.IsNullOrWhiteSpace(request.ModelId) ? null : request.ModelId.Trim();
-        config.IsEnabled = request.IsEnabled && config.ApiKeyEncrypted is not null && config.Endpoint is not null;
+        // Los proveedores de IA (ej. Gemini) NO requieren endpoint: usan el endpoint fijo del proveedor
+        // (Google) por defecto. Solo el OCR clasico de Azure exige endpoint para poder habilitarse.
+        var requiereEndpoint = !OcrProviderCatalog.EsIa(config.Provider);
+        config.IsEnabled = request.IsEnabled
+            && config.ApiKeyEncrypted is not null
+            && (!requiereEndpoint || config.Endpoint is not null);
 
         // Solo un proveedor OCR activo a la vez: al habilitar uno se deshabilitan los demas.
         if (config.IsEnabled)
