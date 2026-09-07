@@ -42,43 +42,54 @@
     @if (_modo != "ver")
     {
         <div class="rrp-body">
-        <div class="rrp-dests">
-            <div class="rrp-dests-top">
+        <div class="rrp-dests @(_paraAbierto ? "" : "closed")">
+            <button type="button" class="rrp-dests-top" @onclick="() => _paraAbierto = !_paraAbierto">
                 <span class="rrp-para-lbl">PARA</span>
-                @if (!string.IsNullOrEmpty(_dstMsg)) { <span class="rrp-dests-msg">@_dstMsg</span> }
-            </div>
-
-            @* Una TARJETA por contacto: en cada una eliges correo, WhatsApp o AMBOS. *@
-            <div class="rrp-cards">
-                @foreach (var c in _dests)
+                <span class="rrp-para-count">@_dests.Count @(_dests.Count == 1 ? "contacto" : "contactos")</span>
+                @if (!_paraAbierto && _dests.Count > 0)
                 {
-                    var cc = c;
-                    <div class="rrp-card">
-                        <div class="rrp-card-head">
-                            <span class="rrp-card-nm">@(string.IsNullOrWhiteSpace(c.Nombre) ? "Contacto" : c.Nombre)</span>
-                            <button type="button" class="rrp-card-x" title="Quitar contacto" @onclick="() => QuitarDest(cc)">&times;</button>
-                        </div>
-                        <label class="rrp-canal-row @(c.EnviarCorreo ? "on" : "")">
-                            <input type="checkbox" @bind="cc.EnviarCorreo" />
-                            <span class="rrp-canal-tag mail">Correo</span>
-                            <input class="rrp-canal-in" placeholder="correo@@ejemplo.com" @bind="cc.Email" @bind:event="oninput" />
-                        </label>
-                        <label class="rrp-canal-row @(c.EnviarWhatsApp ? "on" : "")">
-                            <input type="checkbox" @bind="cc.EnviarWhatsApp" />
-                            <span class="rrp-canal-tag wa">WhatsApp</span>
-                            <input class="rrp-canal-in" placeholder="Telefono con indicativo (57300...)" @bind="cc.Telefono" @bind:event="oninput" />
-                        </label>
-                    </div>
+                    <span class="rrp-para-resumen">@string.Join(", ", _dests.Select(d => string.IsNullOrWhiteSpace(d.Nombre) ? (string.IsNullOrWhiteSpace(d.Email) ? d.Telefono : d.Email) : d.Nombre).Where(x => !string.IsNullOrWhiteSpace(x)))</span>
                 }
-                @if (_dests.Count == 0) { <span class="rrp-dests-empty">Agrega contactos: busca un tercero del directorio o agrega uno manual. En cada tarjeta activas correo, WhatsApp o ambos.</span> }
-            </div>
+                @if (!string.IsNullOrEmpty(_dstMsg)) { <span class="rrp-dests-msg">@_dstMsg</span> }
+                <svg class="rrp-para-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
 
-            <div class="rrp-dests-add">
-                <div class="rrp-dests-buscar">
-                    <SelectorPersona Jwt="@Jwt" Seleccionada="null" SeleccionadaChanged="OnTerceroElegido" Placeholder="Buscar tercero por nombre/documento..." Flotante="true" />
+            @if (_paraAbierto)
+            {
+                @* Una TARJETA por contacto: en cada una eliges correo, WhatsApp o AMBOS. *@
+                <div class="rrp-cards">
+                    @foreach (var c in _dests)
+                    {
+                        var cc = c;
+                        var ini = (string.IsNullOrWhiteSpace(c.Nombre) ? "?" : c.Nombre!.Trim()[..1]).ToUpperInvariant();
+                        <div class="rrp-card">
+                            <div class="rrp-card-head">
+                                <span class="rrp-card-ini">@ini</span>
+                                <span class="rrp-card-nm">@(string.IsNullOrWhiteSpace(c.Nombre) ? "Contacto sin nombre" : c.Nombre)</span>
+                                <button type="button" class="rrp-card-x" title="Quitar contacto" @onclick="() => QuitarDest(cc)">&times;</button>
+                            </div>
+                            <label class="rrp-canal-row @(c.EnviarCorreo ? "on" : "")">
+                                <input type="checkbox" @bind="cc.EnviarCorreo" />
+                                <span class="rrp-canal-tag mail">Correo</span>
+                                <input class="rrp-canal-in" placeholder="correo@@ejemplo.com" @bind="cc.Email" @bind:event="oninput" />
+                            </label>
+                            <label class="rrp-canal-row @(c.EnviarWhatsApp ? "on" : "")">
+                                <input type="checkbox" @bind="cc.EnviarWhatsApp" />
+                                <span class="rrp-canal-tag wa">WhatsApp</span>
+                                <input class="rrp-canal-in" placeholder="Telefono con indicativo (57300...)" @bind="cc.Telefono" @bind:event="oninput" />
+                            </label>
+                        </div>
+                    }
+                    @if (_dests.Count == 0) { <span class="rrp-dests-empty">Agrega contactos: busca un tercero del directorio o agrega uno manual. En cada tarjeta activas correo, WhatsApp o ambos.</span> }
                 </div>
-                <button type="button" class="rrp-btn-ghost" @onclick="AgregarManual">+ Contacto manual</button>
-            </div>
+
+                <div class="rrp-dests-add">
+                    <div class="rrp-dests-buscar">
+                        <SelectorPersona Jwt="@Jwt" Seleccionada="null" SeleccionadaChanged="OnTerceroElegido" Placeholder="Buscar tercero por nombre/documento..." Flotante="true" />
+                    </div>
+                    <button type="button" class="rrp-btn-ghost" @onclick="AgregarManual">+ Contacto manual</button>
+                </div>
+            }
         </div>
         <input class="rrp-asunto" placeholder="Asunto (opcional)" @bind="_asunto" @bind:event="oninput" />
 
@@ -306,7 +317,12 @@
     .rrp-para-tel { color: #63748A; }
     /* Editor de destinatarios */
     .rrp-dests { display: flex; flex-direction: column; gap: 9px; padding: 11px 13px; background: var(--propia-bg-hover); border: 1px solid #E7EDF3; border-radius: 10px; }
-    .rrp-dests-top { display: flex; align-items: center; gap: 10px; }
+    .rrp-dests.closed { gap: 0; }
+    .rrp-dests-top { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: transparent; padding: 0; cursor: pointer; font-family: inherit; text-align: left; }
+    .rrp-para-count { font-size: 11px; font-weight: 700; color: var(--propia-text-secondary); background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 20px; padding: 1px 9px; flex: 0 0 auto; }
+    .rrp-para-resumen { font-size: 12px; color: var(--propia-text-muted); flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rrp-para-chev { color: var(--propia-text-muted); margin-left: auto; flex: 0 0 auto; transition: transform .18s ease; }
+    .rrp-dests:not(.closed) .rrp-para-chev { transform: rotate(180deg); }
     .rrp-dests-msg { font-size: 11px; font-weight: 600; color: #B0392F; }
     .rrp-dests-chips { display: flex; flex-wrap: wrap; gap: 6px; }
     .rrp-dests-empty { font-size: 11.5px; color: #94A3B8; font-style: italic; }
@@ -314,14 +330,18 @@
     .rrp-chip.anon { background: #EFF3F7; border-color: #DAE3EC; }
     .rrp-chip b { font-weight: 700; }
     .rrp-chip-mail { color: var(--propia-text-secondary); }
-    .rrp-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin-bottom: 10px; }
-    .rrp-card { border: 1px solid var(--propia-border-card); border-radius: 10px; background: var(--propia-bg-card); padding: 10px 12px; }
-    .rrp-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .rrp-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 11px; margin-bottom: 10px; }
+    .rrp-card { border: 1px solid var(--propia-border-card); border-radius: 12px; background: var(--propia-bg-card); padding: 12px 13px; box-shadow: 0 1px 2px rgba(27,42,58,.05); transition: box-shadow .15s ease, border-color .15s ease; }
+    .rrp-card:hover { box-shadow: 0 4px 12px -6px rgba(27,42,58,.18); border-color: var(--propia-brand-border); }
+    .rrp-card-head { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; padding-bottom: 9px; border-bottom: 1px solid var(--propia-border-divider); }
+    .rrp-card-ini { flex: 0 0 auto; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; color: var(--propia-brand); background: var(--propia-brand-soft); }
     .rrp-card-nm { font-size: 13px; font-weight: 700; color: var(--propia-text-h1); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .rrp-card-x { border: 0; background: transparent; color: var(--propia-text-muted); font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px; }
-    .rrp-canal-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
-    .rrp-canal-row input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; flex: 0 0 auto; }
-    .rrp-canal-tag { font-size: 9.5px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; border-radius: 5px; padding: 2px 6px; flex: 0 0 auto; opacity: .55; }
+    .rrp-card-x { border: 0; background: transparent; color: var(--propia-text-muted); font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px; border-radius: 6px; }
+    .rrp-card-x:hover { color: var(--propia-danger); background: var(--propia-danger-soft); }
+    .rrp-canal-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; margin: 0 -6px; border-radius: 8px; }
+    .rrp-canal-row.on { background: var(--propia-bg-hover); }
+    .rrp-canal-row input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; flex: 0 0 auto; accent-color: var(--propia-brand); }
+    .rrp-canal-tag { font-size: 9.5px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; border-radius: 5px; padding: 2px 6px; flex: 0 0 62px; text-align: center; opacity: .5; }
     .rrp-canal-row.on .rrp-canal-tag { opacity: 1; }
     .rrp-canal-tag.mail { color: var(--propia-brand); background: var(--propia-brand-soft); }
     .rrp-canal-tag.wa { color: var(--propia-ok); background: var(--propia-ok-soft); }
@@ -329,8 +349,9 @@
     .rrp-canal-in:focus { border-color: var(--propia-brand); }
     .rrp-chip-x { width: 18px; height: 18px; border-radius: 50%; border: 0; background: rgba(27,42,58,.08); color: var(--propia-text-secondary); font-size: 14px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
     .rrp-chip-x:hover { background: #F0C9C9; color: #C0383C; }
-    .rrp-dests-add { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-    .rrp-dests-buscar { flex: 1 1 260px; min-width: 220px; }
+    .rrp-dests-add { display: flex; gap: 10px; align-items: center; }
+    .rrp-dests-buscar { flex: 0 1 75%; min-width: 0; }
+    @@media (max-width: 560px) { .rrp-dests-add { flex-wrap: wrap; } .rrp-dests-buscar { flex: 1 1 100%; } }
     .rrp-dests-email { display: flex; gap: 6px; align-items: center; flex: 1 1 260px; }
     .rrp-dests-email-in { flex: 1 1 auto; border: 1px solid var(--propia-border-card); border-radius: 8px; padding: 8px 11px; font-size: 12.5px; outline: none; font-family: inherit; }
     .rrp-dests-email-in:focus { border-color: var(--propia-brand, var(--propia-brand)); }
@@ -419,6 +440,7 @@
     // Destinatarios editables: una TARJETA por contacto (correo y/o WhatsApp).
     private readonly List<DestCard> _dests = new();
     private string? _dstMsg;
+    private bool _paraAbierto = true;   // acordeon PARA: abierto al cargar, colapsable para enfocarse en el documento
 
     protected override async Task OnInitializedAsync()
     {
