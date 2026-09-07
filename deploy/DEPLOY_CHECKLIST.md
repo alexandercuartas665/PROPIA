@@ -1,7 +1,12 @@
 # PROPIA - Checklist de deploy
 
-> Generado al cerrar los ciclos de seguridad y rendimiento. Version visible: **0.0.60**
+> Actualizado 2026-09-07. Version visible: **0.0.61**
 > (`src/Propia.Web/Propia.Web.csproj` `<Version>`). Bumpear en cada deploy.
+>
+> **Nuevo desde 0.0.60:** Planes (limite de copropiedades por organizacion, default 1; plan promocional
+> no facturable y no cambiable directamente), extraccion de documentos con IA (Gemini como proveedor de OCR),
+> y PQRSD campos dinamicos (autoguardado con coalescing, sin marco, 3 anchos configurables, VENCIDO con
+> colores semaforo). El bloque PQRSD es **solo codigo** (reusa `pqrsd_campos.columna`, sin migracion nueva).
 
 ## 1. Variables de entorno OBLIGATORIAS en produccion
 
@@ -35,15 +40,25 @@ cd src/Propia.Api
 dotnet ef database update --project ../Propia.Infrastructure --startup-project .
 ```
 
-Ultimas migraciones del repo (verificar que esten aplicadas):
-- `20260904173502_AddSuperAdminLockout`  (S-03b: lockout de SuperAdmin)  <-- NUEVA
+Ultimas migraciones del repo (verificar que esten aplicadas). `ef database update` aplica SOLO las que
+falten en ese entorno, comparando contra `__EFMigrationsHistory`:
+- `20260905150507_AddPlanLimiteCopropiedades`  (Planes: `planes` +`limite_copropiedades` int null, +`es_promocional` bool)  <-- NUEVA
+- `20260905143647_AddPolizaPdfOrigen`  (Seguros: `polizas` +`pdf_origen_key` text null)  <-- NUEVA
+- `20260905135921_AddDocumentExtractionLog`  (IA: tabla nueva `document_extraction_logs`, global sin RLS)  <-- NUEVA
+- `20260904173502_AddSuperAdminLockout`  (S-03b: lockout de SuperAdmin)
 - `20260903210728_V01PanelSnapshotSinRlsMasUnidades`
 - `20260903171507_AddTenantLinkPago`
 - `20260903154017_S02UniquePersonaIdEnUsuarios`
 
+> El increment de campos dinamicos PQRSD (0.0.61) **no agrega migracion**: usa `pqrsd_campos.columna` ya
+> existente. Todas las migraciones nuevas son **aditivas** (columnas nullable / tabla nueva) -> seguras.
+
 ## 4. Post-deploy (verificacion)
 
-- [ ] Login OK; el footer muestra `v0.0.60`.
+- [ ] Login OK; el footer muestra `v0.0.61`.
+- [ ] Planes: crear una 2a copropiedad con plan que permite 1 -> bloqueo con mensaje; un plan promocional
+      no se puede cambiar de plan directamente.
+- [ ] PQRSD: editar un campo dinamico -> se guarda solo (sin boton); 3 anchos alinean en linea; VENCIDO en rojo.
 - [ ] `/health` = 200; `/metrics` exige token (si se configuro).
 - [ ] Webhooks Evolution/Meta responden (no 401) con los secretos puestos.
 - [ ] Cabeceras de seguridad presentes (`Content-Security-Policy`, `X-Content-Type-Options`,
