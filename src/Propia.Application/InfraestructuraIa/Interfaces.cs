@@ -48,6 +48,13 @@ public interface IWhatsAppConnectorService
     /// Usado por el saludo del agente (logo de la copropiedad + menu como caption).
     /// </summary>
     Task<LineSendResult> SendMediaAsync(Guid lineId, string phone, string imageUrl, string? caption, CancellationToken ct = default);
+
+    /// <summary>
+    /// Envia una plantilla aprobada de Meta (canal Cloud) con sus variables de cuerpo. En lineas Evolution
+    /// (no-Cloud), que no estan atadas a plantillas de Meta, envia <paramref name="fallbackText"/> como texto.
+    /// </summary>
+    Task<LineSendResult> SendTemplateAsync(Guid lineId, string phone, string templateName, string languageCode,
+        IReadOnlyList<string> bodyParams, string fallbackText, CancellationToken ct = default);
 }
 
 /// <summary>Gestion de agentes de IA de la copropiedad: proveedor, prompt, encendido, recursos y prompts enrutados.</summary>
@@ -159,6 +166,8 @@ public interface IWhatsAppCloudClient
     Task<WhatsAppCloudCheckResult> CheckAsync(WhatsAppCloudCredentials credentials, CancellationToken ct = default);
     Task<WhatsAppCloudSendResult> SendTextAsync(WhatsAppCloudCredentials credentials, string toPhone, string text, CancellationToken ct = default);
     Task<WhatsAppCloudSendResult> SendMediaAsync(WhatsAppCloudCredentials credentials, string toPhone, WhatsAppCloudMediaKind kind, string mediaUrl, string? caption, string? fileName, CancellationToken ct = default);
+    /// <summary>Envia una plantilla (template) aprobada de Meta. bodyParams son los valores {{1}},{{2}}... del cuerpo.</summary>
+    Task<WhatsAppCloudSendResult> SendTemplateAsync(WhatsAppCloudCredentials credentials, string toPhone, string templateName, string languageCode, IReadOnlyList<string> bodyParams, CancellationToken ct = default);
 }
 
 /// <summary>Cliente HTTP de inferencia para los proveedores de IA (Claude, Gemini, OpenAI, DeepSeek).</summary>

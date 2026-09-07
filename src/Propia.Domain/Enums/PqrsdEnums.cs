@@ -78,6 +78,13 @@ public enum OrigenCambioEstado
     Prorroga = 4
 }
 
+/// <summary>Canal por el que se le envia una respuesta PQRSD a un destinatario.</summary>
+public enum CanalRespuesta
+{
+    Correo = 0,
+    WhatsApp = 1
+}
+
 /// <summary>Catalogo base de categorias y plazos por defecto. Spec 2.9 v1.0 seccion 3 y 4.</summary>
 public static class PqrsdCatalogo
 {

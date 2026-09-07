@@ -220,6 +220,32 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
         return new LineSendResult(result.Ok, result.Error);
     }
 
+    public async Task<LineSendResult> SendTemplateAsync(Guid lineId, string phone, string templateName, string languageCode,
+        IReadOnlyList<string> bodyParams, string fallbackText, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(phone)) return new LineSendResult(false, "Indica el numero.");
+        var line = await _db.WhatsAppLines.FirstOrDefaultAsync(l => l.Id == lineId, ct);
+        if (line is null) { return new LineSendResult(false, "La linea no existe."); }
+        if (line.Status != WhatsAppLineStatus.Connected) { return new LineSendResult(false, "La linea de WhatsApp no esta conectada."); }
+        var digits = new string(phone.Where(char.IsDigit).ToArray());
+
+        if (line.Provider == WhatsAppProvider.Cloud)
+        {
+            var creds = CloudCreds(line);
+            if (creds is null) { return new LineSendResult(false, "Faltan credenciales Cloud."); }
+            if (string.IsNullOrWhiteSpace(templateName)) return new LineSendResult(false, "Falta el nombre de la plantilla aprobada de Meta.");
+            var rc = await _cloud.SendTemplateAsync(creds, digits, templateName.Trim(), languageCode, bodyParams, ct);
+            return new LineSendResult(rc.Ok, rc.Error);
+        }
+
+        // Evolution/baileys no usa plantillas de Meta: se envia el link como texto plano.
+        var server = await ResolveServerAsync(ct);
+        if (server is null) { return new LineSendResult(false, "No hay servidor Evolution maestro configurado."); }
+        var (baseUrl, apiKey) = server.Value;
+        var result = await _client.SendTextAsync(baseUrl, apiKey, EvoInstance(line), digits, (fallbackText ?? "").Trim(), ct);
+        return new LineSendResult(result.Ok, result.Error);
+    }
+
     public async Task<LineSendResult> SendMediaAsync(Guid lineId, string phone, string imageUrl, string? caption, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(phone) || string.IsNullOrWhiteSpace(imageUrl))

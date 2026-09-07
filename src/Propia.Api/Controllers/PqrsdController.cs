@@ -24,9 +24,11 @@ public class PqrsdController : ControllerBase
     private readonly IPqrsdRespuestaPdfService _respuestaPdf;
     private readonly Propia.Application.Documents.IHtmlToPdfService _htmlToPdf;
     private readonly Propia.Application.Common.IGmailSender _gmail;
+    private readonly Propia.Application.InfraestructuraIa.IWhatsAppConnectorService _whatsapp;
     public PqrsdController(IPqrsdService svc, PropiaDbContext db, IBlobStorage storage, IPqrsdRespuestaPdfService respuestaPdf,
-        Propia.Application.Documents.IHtmlToPdfService htmlToPdf, Propia.Application.Common.IGmailSender gmail)
-    { _svc = svc; _db = db; _storage = storage; _respuestaPdf = respuestaPdf; _htmlToPdf = htmlToPdf; _gmail = gmail; }
+        Propia.Application.Documents.IHtmlToPdfService htmlToPdf, Propia.Application.Common.IGmailSender gmail,
+        Propia.Application.InfraestructuraIa.IWhatsAppConnectorService whatsapp)
+    { _svc = svc; _db = db; _storage = storage; _respuestaPdf = respuestaPdf; _htmlToPdf = htmlToPdf; _gmail = gmail; _whatsapp = whatsapp; }
 
     private Guid? GetTenantId()
     {
@@ -204,6 +206,26 @@ public class PqrsdController : ControllerBase
         try { return await _svc.GuardarFormularioPublicoConfigAsync(req, ct) ? NoContent() : NotFound(); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+
+    // --- Config: envio de respuestas por WhatsApp (plantilla aprobada + linea) ---
+    [HttpGet("config/whatsapp")]
+    public async Task<IActionResult> GetWhatsAppCfg(CancellationToken ct) => Ok(await _svc.GetWhatsAppConfigAsync(ct));
+
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
+    [HttpPut("config/whatsapp")]
+    public async Task<IActionResult> GuardarWhatsAppCfg([FromBody] PqrsdWhatsAppConfigDto req, CancellationToken ct)
+    {
+        try { return await _svc.GuardarWhatsAppConfigAsync(req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    // Lineas WhatsApp conectadas de la copropiedad (para elegir desde donde enviar).
+    [HttpGet("config/whatsapp/lineas")]
+    public async Task<IActionResult> GetWhatsAppLineas(CancellationToken ct)
+        => Ok(await _db.WhatsAppLines.AsNoTracking()
+            .OrderBy(l => l.InstanceName)
+            .Select(l => new { id = l.Id, nombre = l.InstanceName, telefono = l.PhoneNumber, conectada = l.Status == Propia.Domain.Enums.WhatsAppLineStatus.Connected })
+            .ToListAsync(ct));
 
     // --- Config: consecutivos de radicado (expediente y respuesta) ---
     [HttpGet("config/consecutivos")]
@@ -625,11 +647,15 @@ public class PqrsdController : ControllerBase
         return Ok(new { url, nombre });
     }
 
-    // Envia la respuesta por Gmail a sus destinatarios: compone el documento, genera el PDF (Chromium),
-    // lo adjunta al correo (y al expediente) y marca la respuesta como Enviada.
+    public record EnviarRespuestaRequest(string? SeguimientoBaseUrl);
+
+    // Envia la respuesta a sus destinatarios segun el CANAL de cada uno:
+    //  - Correo: compone el documento, genera el PDF (Chromium), lo adjunta al correo (Gmail) y al expediente.
+    //  - WhatsApp: envia la plantilla aprobada de Meta con el LINK de seguimiento como variable (o texto en Evolution).
+    // Marca la respuesta como Enviada si al menos un canal tuvo exito.
     [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/respuestas/{respuestaId:guid}/enviar")]
-    public async Task<IActionResult> EnviarRespuesta(Guid id, Guid respuestaId, CancellationToken ct)
+    public async Task<IActionResult> EnviarRespuesta(Guid id, Guid respuestaId, [FromBody] EnviarRespuestaRequest? req, CancellationToken ct)
     {
         var tenantId = GetTenantId();
         if (tenantId is null) return Unauthorized();
@@ -638,54 +664,99 @@ public class PqrsdController : ControllerBase
             .FirstOrDefaultAsync(x => x.Id == respuestaId && x.ExpedienteId == id, ct);
         if (r is null) return NotFound();
 
-        var emails = r.Destinatarios.Select(d => d.Email).Where(e => !string.IsNullOrWhiteSpace(e)).Distinct().ToList();
-        if (emails.Count == 0) return BadRequest(new { error = "Agrega al menos un destinatario con correo." });
+        var emails = r.Destinatarios.Where(d => d.Canal == Propia.Domain.Enums.CanalRespuesta.Correo)
+            .Select(d => d.Email).Where(e => !string.IsNullOrWhiteSpace(e)).Distinct().ToList();
+        var wapp = r.Destinatarios.Where(d => d.Canal == Propia.Domain.Enums.CanalRespuesta.WhatsApp
+            && !string.IsNullOrWhiteSpace(d.Telefono)).ToList();
+        if (emails.Count == 0 && wapp.Count == 0)
+            return BadRequest(new { error = "Agrega al menos un destinatario (correo o WhatsApp)." });
 
         var exp = await _db.PqrsdExpedientes.AsNoTracking().FirstOrDefaultAsync(e => e.Id == id, ct);
         var radicado = exp?.NumeroRadicado ?? "";
+        var uid = Guid.TryParse(User.FindFirstValue("user_id"), out var u) ? u : Guid.Empty;
 
-        var html = await _svc.ComponerDocumentoRespuestaAsync(id, r.CuerpoHtml, ct);
-        if (html is null) return NotFound();
+        var errores = new List<string>();
+        int enviadosCorreo = 0, enviadosWa = 0;
 
-        byte[] pdf;
-        try { pdf = await _htmlToPdf.RenderAsync(html, ct); }
-        catch (Exception) { return StatusCode(500, new { error = "No se pudo generar el PDF." }); }
-
-        var asunto = string.IsNullOrWhiteSpace(r.Asunto) ? $"Respuesta a su PQRSD {radicado}".Trim() : r.Asunto!;
-        var cuerpo = "<html><body style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1B2A3A;line-height:1.6\">"
-                     + r.CuerpoHtml
-                     + "<hr style=\"border:0;border-top:1px solid #E4E9EF;margin:18px 0\">"
-                     + "<p style=\"font-size:12px;color:#63748A\">Se adjunta el documento oficial en PDF.</p>"
-                     + "</body></html>";
-        var adjPdf = new Propia.Application.Common.CorreoAdjunto($"respuesta-{radicado}.pdf", "application/pdf", pdf);
-
-        var envio = await _gmail.SendAsync(tenantId.Value, emails, asunto, cuerpo, new[] { adjPdf }, ct);
-        if (!envio.Success) return BadRequest(new { error = envio.Error ?? "No se pudo enviar el correo." });
-
-        // Guarda el PDF como adjunto oficial del expediente y marca la respuesta enviada.
-        var key = $"tenants/{tenantId:N}/pqrsd/{id:N}/{Guid.NewGuid():N}.pdf";
-        await using (var stream = new System.IO.MemoryStream(pdf))
+        // ----- Canal correo (Gmail + PDF) -----
+        if (emails.Count > 0)
         {
-            var url = await _storage.UploadAsync(key, stream, "application/pdf", ct);
-            var uid = Guid.TryParse(User.FindFirstValue("user_id"), out var u) ? u : Guid.Empty;
-            _db.PqrsdAdjuntos.Add(new PqrsdAdjunto
+            var html = await _svc.ComponerDocumentoRespuestaAsync(id, r.CuerpoHtml, ct);
+            if (html is null) return NotFound();
+            byte[] pdf;
+            try { pdf = await _htmlToPdf.RenderAsync(html, ct); }
+            catch (Exception) { return StatusCode(500, new { error = "No se pudo generar el PDF." }); }
+
+            var asunto = string.IsNullOrWhiteSpace(r.Asunto) ? $"Respuesta a su PQRSD {radicado}".Trim() : r.Asunto!;
+            var cuerpo = "<html><body style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1B2A3A;line-height:1.6\">"
+                         + r.CuerpoHtml
+                         + "<hr style=\"border:0;border-top:1px solid #E4E9EF;margin:18px 0\">"
+                         + "<p style=\"font-size:12px;color:#63748A\">Se adjunta el documento oficial en PDF.</p>"
+                         + "</body></html>";
+            var adjPdf = new Propia.Application.Common.CorreoAdjunto($"respuesta-{radicado}.pdf", "application/pdf", pdf);
+
+            var envio = await _gmail.SendAsync(tenantId.Value, emails, asunto, cuerpo, new[] { adjPdf }, ct);
+            if (envio.Success)
             {
-                ExpedienteId = id,
-                RespuestaId = respuestaId,
-                NombreArchivo = $"respuesta-{radicado}.pdf",
-                TipoMime = "application/pdf",
-                TamanioBytes = pdf.LongLength,
-                UrlStorage = url,
-                SubidoPorUsuarioId = uid,
-                Texto = "Respuesta enviada por correo (PDF)",
-                Compartido = true
-            });
+                enviadosCorreo = emails.Count;
+                var key = $"tenants/{tenantId:N}/pqrsd/{id:N}/{Guid.NewGuid():N}.pdf";
+                await using var stream = new System.IO.MemoryStream(pdf);
+                var url = await _storage.UploadAsync(key, stream, "application/pdf", ct);
+                _db.PqrsdAdjuntos.Add(new PqrsdAdjunto
+                {
+                    ExpedienteId = id, RespuestaId = respuestaId,
+                    NombreArchivo = $"respuesta-{radicado}.pdf", TipoMime = "application/pdf",
+                    TamanioBytes = pdf.LongLength, UrlStorage = url, SubidoPorUsuarioId = uid,
+                    Texto = "Respuesta enviada por correo (PDF)", Compartido = true
+                });
+            }
+            else errores.Add("Correo: " + (envio.Error ?? "no se pudo enviar."));
         }
+
+        // ----- Canal WhatsApp (plantilla aprobada con el link de seguimiento) -----
+        // Todo el bloque es tolerante a fallos: un problema de WhatsApp NO debe tumbar el envio por correo.
+        if (wapp.Count > 0)
+        {
+            try
+            {
+                var waCfg = await _svc.GetWhatsAppConfigAsync(ct);
+                var lineId = waCfg.LineaId ?? await _db.WhatsAppLines.AsNoTracking()
+                    .Where(l => l.Status == Propia.Domain.Enums.WhatsAppLineStatus.Connected)
+                    .Select(l => (Guid?)l.Id).FirstOrDefaultAsync(ct);
+                if (lineId is null)
+                    errores.Add("WhatsApp: no hay una linea de WhatsApp conectada (o configurala en Configurar PQRSD > WhatsApp).");
+                else
+                {
+                    // Link publico de seguimiento (la Web pasa su base URL; fallback a la del request).
+                    var token = await _svc.ObtenerOCrearShareTokenAsync(id, ct);
+                    var baseUrl = (req?.SeguimientoBaseUrl ?? $"{Request.Scheme}://{Request.Host}").TrimEnd('/');
+                    var link = token is null ? baseUrl : $"{baseUrl}/pqr-seguimiento/{tenantId}/{token}";
+                    var fallback = $"Respuesta a su PQRSD {radicado}. Consulte el detalle aqui: {link}";
+
+                    foreach (var d in wapp)
+                    {
+                        try
+                        {
+                            var res = await _whatsapp.SendTemplateAsync(lineId.Value, d.Telefono!, waCfg.PlantillaNombre ?? "",
+                                waCfg.PlantillaIdioma, new[] { link }, fallback, ct);
+                            if (res.Ok) enviadosWa++;
+                            else errores.Add($"WhatsApp ({d.Telefono}): {res.Error ?? "no se pudo enviar."}");
+                        }
+                        catch (Exception ex) { errores.Add($"WhatsApp ({d.Telefono}): {ex.Message}"); }
+                    }
+                }
+            }
+            catch (Exception ex) { errores.Add("WhatsApp: " + ex.Message); }
+        }
+
+        if (enviadosCorreo == 0 && enviadosWa == 0)
+            return BadRequest(new { error = string.Join(" | ", errores.DefaultIfEmpty("No se pudo enviar la respuesta.")) });
+
         r.Enviada = true;
         r.EnviadaAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
 
-        return Ok(new { enviados = emails.Count });
+        return Ok(new { enviadosCorreo, enviadosWhatsapp = enviadosWa, errores });
     }
 
     // --- Plantillas de respuesta (combinacion de correspondencia) ---

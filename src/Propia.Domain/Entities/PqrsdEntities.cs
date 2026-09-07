@@ -193,6 +193,11 @@ public class PqrsdRespuestaDestinatario : TenantEntity
     public Guid? PersonaId { get; set; }        // null = correo suelto sin tercero
     public string? Nombre { get; set; }
     public string Email { get; set; } = string.Empty;
+
+    /// <summary>Telefono (con indicativo) para el canal WhatsApp. Opcional si el canal es Correo.</summary>
+    public string? Telefono { get; set; }
+    /// <summary>Canal de envio para este destinatario: Correo (Gmail) o WhatsApp (plantilla/texto con el link).</summary>
+    public CanalRespuesta Canal { get; set; } = CanalRespuesta.Correo;
 }
 
 /// <summary>
@@ -435,6 +440,21 @@ public class PqrsdConsecutivoConfig : TenantEntity
     public bool RespuestaReinicioAnual { get; set; } = true;
     public int RespuestaProximo { get; set; } = 1;
     public int? RespuestaAnio { get; set; }
+}
+
+/// <summary>
+/// Config del envio de respuestas por WhatsApp (una fila por copropiedad). Meta exige una plantilla
+/// aprobada para mensajes iniciados por el negocio; la plantilla debe tener UNA variable de cuerpo
+/// (el link de seguimiento). Para lineas Evolution (no-Cloud) se envia el link como texto plano.
+/// </summary>
+public class PqrsdWhatsAppConfig : TenantEntity
+{
+    /// <summary>Nombre EXACTO de la plantilla aprobada en Meta (WhatsApp Business). Null = no configurada.</summary>
+    public string? PlantillaNombre { get; set; }
+    /// <summary>Codigo de idioma de la plantilla (ej. es, es_CO, en_US).</summary>
+    public string PlantillaIdioma { get; set; } = "es";
+    /// <summary>Linea WhatsApp desde la que se envia. Null = primera linea conectada de la copropiedad.</summary>
+    public Guid? LineaId { get; set; }
 }
 
 /// <summary>Config del formulario publico de radicacion (que campos opcionales se muestran + textos). Una fila por copropiedad.</summary>

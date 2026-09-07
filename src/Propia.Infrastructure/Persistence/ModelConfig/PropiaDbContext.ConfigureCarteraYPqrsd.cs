@@ -274,6 +274,7 @@ public partial class PropiaDbContext
             b.ToTable("pqrsd_respuesta_destinatarios");
             b.Property(x => x.Email).IsRequired().HasMaxLength(320);
             b.Property(x => x.Nombre).HasMaxLength(200);
+            b.Property(x => x.Telefono).HasMaxLength(30);
             b.HasOne(x => x.Respuesta).WithMany(r => r.Destinatarios).HasForeignKey(x => x.RespuestaId).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => x.RespuestaId);
@@ -297,6 +298,15 @@ public partial class PropiaDbContext
             b.ToTable("pqrsd_consecutivo_configs");
             b.Property(x => x.ExpedientePrefijo).IsRequired().HasMaxLength(20);
             b.Property(x => x.RespuestaPrefijo).IsRequired().HasMaxLength(20);
+            b.HasIndex(x => x.TenantId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PqrsdWhatsAppConfig>(b =>
+        {
+            b.ToTable("pqrsd_whatsapp_configs");
+            b.Property(x => x.PlantillaNombre).HasMaxLength(200);
+            b.Property(x => x.PlantillaIdioma).IsRequired().HasMaxLength(10);
             b.HasIndex(x => x.TenantId);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });

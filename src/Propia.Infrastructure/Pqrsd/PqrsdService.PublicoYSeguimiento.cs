@@ -110,10 +110,19 @@ public partial class PqrsdService
             .Select(a => new PqrsdSeguimientoAdjuntoDto(a.Id, a.NombreArchivo, a.TipoMime, a.TamanioBytes, a.UrlStorage, a.CreatedAt))
             .ToList();
 
+        // Respuestas enviadas al radicador (las "correo" ya enviadas), con su radicado propio.
+        // El cuerpo se saneo al guardarse (S-19), asi que es seguro mostrarlo en el link publico.
+        var respuestas = await _db.PqrsdRespuestas.AsNoTracking()
+            .Where(r => r.ExpedienteId == exp.Id && r.Enviada && !r.Archivada)
+            .OrderBy(r => r.EnviadaAt)
+            .Select(r => new PqrsdSeguimientoRespuestaDto(r.NumeroRadicado, r.Asunto, r.CuerpoHtml, r.EnviadaAt ?? r.CreatedAt))
+            .ToListAsync(ct);
+
         return new PqrsdSeguimientoPublicoDto(
             tenant.Nombre, tenant.LogoUrl,
             exp.NumeroRadicado, tipoNombre, exp.Categoria?.Nombre ?? "-", estadoNombre,
-            exp.CreatedAt, exp.RespuestaAdmin, exp.RespuestaAdminAt, adjuntos);
+            exp.CreatedAt, exp.RespuestaAdmin, exp.RespuestaAdminAt, adjuntos,
+            exp.Descripcion, respuestas);
     }
 
 }

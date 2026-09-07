@@ -585,6 +585,7 @@
                     <button type="button" class="pk-cfg-tab @(_cfgTab == "campos" ? "on" : "")" @onclick='() => _cfgTab = "campos"'>Campos dinamicos</button>
                     <button type="button" class="pk-cfg-tab @(_cfgTab == "formulario" ? "on" : "")" @onclick='CambiarATabFormulario'>Formulario publico</button>
                     <button type="button" class="pk-cfg-tab @(_cfgTab == "consecutivos" ? "on" : "")" @onclick='CambiarATabConsecutivos'>Consecutivos</button>
+                    <button type="button" class="pk-cfg-tab @(_cfgTab == "whatsapp" ? "on" : "")" @onclick='CambiarATabWhatsApp'>WhatsApp</button>
                     <button type="button" class="pk-cfg-tab @(_cfgTab == "tareas" ? "on" : "")" @onclick='CambiarATabTareasCfg'>Tareas</button>
                 </div>
                 <div class="pk-cfg-body">
@@ -792,6 +793,24 @@
                     <label class="pk-cfg-chk pk-cfg-chk--row"><input type="checkbox" @bind="_cons.RespuestaReinicioAnual" @bind:after="GuardarConsecutivos" />Reiniciar el consecutivo cada anio</label>
 
                     @if (_consGuardado) { <div class="pk-cfg-msg">Cambios guardados.</div> }
+                  }
+                  @if (_cfgTab == "whatsapp")
+                  {
+                    <div class="pk-cfg-sec-hint">Para responder por WhatsApp, Meta exige una <b>plantilla aprobada</b> en tu WhatsApp Business. La plantilla debe tener <b>una variable de cuerpo</b> <code>&#123;&#123;1&#125;&#125;</code> donde ira el <b>link de seguimiento</b> del PQRSD. En lineas conectadas por QR (Evolution) se envia el link como texto.</div>
+
+                    <label class="pk-cfg-formlbl">Nombre de la plantilla aprobada (Meta)</label>
+                    <input class="pk-cfg-name" style="width:100%;" placeholder="ej. respuesta_pqrsd" @bind="_wa.PlantillaNombre" @bind:after="GuardarWhatsAppCfg" />
+                    <div class="pk-cons-grid" style="grid-template-columns:1fr 1fr; margin-top:8px;">
+                        <div><label class="pk-cfg-formlbl">Idioma de la plantilla</label>
+                            <input class="pk-cfg-name" style="width:100%;" placeholder="es / es_CO / en_US" @bind="_wa.PlantillaIdioma" @bind:after="GuardarWhatsAppCfg" /></div>
+                        <div><label class="pk-cfg-formlbl">Linea de envio</label>
+                            <select class="pk-cfg-name" style="width:100%;" value="@(_wa.LineaId?.ToString() ?? "")" @onchange="CambiarLineaWhatsApp">
+                                <option value="">Primera linea conectada</option>
+                                @foreach (var l in _waLineas) { <option value="@l.Id">@l.Nombre @(l.Conectada ? "" : "(desconectada)")</option> }
+                            </select></div>
+                    </div>
+                    @if (_waLineas.Count == 0) { <div class="pk-cfg-sec-hint" style="margin-top:8px;">No hay lineas de WhatsApp. Crealas en Infraestructura &amp; IA &gt; Lineas WhatsApp.</div> }
+                    @if (_waGuardado) { <div class="pk-cfg-msg">Cambios guardados.</div> }
                   }
                   @if (_cfgTab == "tareas")
                   {
@@ -1738,6 +1757,40 @@
             _cons.RespuestaPrefijo, _cons.RespuestaIncluirAnio, _cons.RespuestaPadding, _cons.RespuestaReinicioAnual, _cons.RespuestaProximo);
         var resp = await Auth().PutAsJsonAsync("/api/pqrsd/config/consecutivos", req);
         _consGuardado = resp.IsSuccessStatusCode;
+        if (!resp.IsSuccessStatusCode) _cfgMsg = await LeerError(resp);
+    }
+
+    // ----- Config: envio de respuestas por WhatsApp (plantilla aprobada + linea) -----
+    private sealed class WaModel { public string? PlantillaNombre { get; set; } public string PlantillaIdioma { get; set; } = "es"; public Guid? LineaId { get; set; } }
+    private WaModel _wa = new();
+    private bool _waGuardado;
+    private sealed record WaLineaDto(Guid Id, string Nombre, string? Telefono, bool Conectada);
+    private List<WaLineaDto> _waLineas = new();
+
+    private async Task CambiarATabWhatsApp()
+    {
+        _cfgTab = "whatsapp"; _waGuardado = false;
+        try
+        {
+            _waLineas = await Auth().GetFromJsonAsync<List<WaLineaDto>>("/api/pqrsd/config/whatsapp/lineas") ?? new();
+            var c = await Auth().GetFromJsonAsync<PqrsdWhatsAppConfigDto>("/api/pqrsd/config/whatsapp");
+            if (c is not null) _wa = new WaModel { PlantillaNombre = c.PlantillaNombre, PlantillaIdioma = string.IsNullOrWhiteSpace(c.PlantillaIdioma) ? "es" : c.PlantillaIdioma, LineaId = c.LineaId };
+        }
+        catch { }
+    }
+
+    private async Task CambiarLineaWhatsApp(ChangeEventArgs e)
+    {
+        _wa.LineaId = Guid.TryParse(e.Value?.ToString(), out var g) ? g : (Guid?)null;
+        await GuardarWhatsAppCfg();
+    }
+
+    private async Task GuardarWhatsAppCfg()
+    {
+        _waGuardado = false;
+        var req = new PqrsdWhatsAppConfigDto(_wa.PlantillaNombre, _wa.PlantillaIdioma, _wa.LineaId);
+        var resp = await Auth().PutAsJsonAsync("/api/pqrsd/config/whatsapp", req);
+        _waGuardado = resp.IsSuccessStatusCode;
         if (!resp.IsSuccessStatusCode) _cfgMsg = await LeerError(resp);
     }
 

@@ -74,6 +74,36 @@ internal sealed class WhatsAppCloudClient : IWhatsAppCloudClient
         return SendMessageAsync(credentials, payload, ct);
     }
 
+    public Task<WhatsAppCloudSendResult> SendTemplateAsync(WhatsAppCloudCredentials credentials, string toPhone, string templateName, string languageCode, IReadOnlyList<string> bodyParams, CancellationToken ct = default)
+    {
+        var template = new Dictionary<string, object?>
+        {
+            ["name"] = templateName,
+            ["language"] = new { code = string.IsNullOrWhiteSpace(languageCode) ? "es" : languageCode }
+        };
+        // Solo se agregan componentes si la plantilla tiene variables de cuerpo ({{1}}, {{2}}...).
+        if (bodyParams is { Count: > 0 })
+        {
+            template["components"] = new object[]
+            {
+                new
+                {
+                    type = "body",
+                    parameters = bodyParams.Select(p => new { type = "text", text = p ?? "" }).ToArray()
+                }
+            };
+        }
+        var payload = new Dictionary<string, object?>
+        {
+            ["messaging_product"] = "whatsapp",
+            ["recipient_type"] = "individual",
+            ["to"] = toPhone,
+            ["type"] = "template",
+            ["template"] = template
+        };
+        return SendMessageAsync(credentials, payload, ct);
+    }
+
     private async Task<WhatsAppCloudSendResult> SendMessageAsync(WhatsAppCloudCredentials credentials, object payload, CancellationToken ct)
     {
         using var req = new HttpRequestMessage(HttpMethod.Post, $"{GraphBase}/{credentials.PhoneNumberId}/messages");

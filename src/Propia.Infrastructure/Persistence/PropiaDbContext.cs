@@ -201,6 +201,7 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<PqrsdFormularioPublicoConfig> PqrsdFormularioPublicoConfigs => Set<PqrsdFormularioPublicoConfig>();
     public DbSet<PqrsdTareasConfig> PqrsdTareasConfigs => Set<PqrsdTareasConfig>();
     public DbSet<PqrsdConsecutivoConfig> PqrsdConsecutivoConfigs => Set<PqrsdConsecutivoConfig>();
+    public DbSet<PqrsdWhatsAppConfig> PqrsdWhatsAppConfigs => Set<PqrsdWhatsAppConfig>();
     public DbSet<PqrsdComiteSesion> PqrsdComiteSesiones => Set<PqrsdComiteSesion>();
     public DbSet<PqrsdComiteMiembroSesion> PqrsdComiteMiembros => Set<PqrsdComiteMiembroSesion>();
     public DbSet<PqrsdEstado> PqrsdEstados => Set<PqrsdEstado>();

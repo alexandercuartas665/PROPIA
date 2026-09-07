@@ -73,6 +73,11 @@ public interface IPqrsdService
     Task<PqrsdConsecutivoConfigDto> GetConsecutivoConfigAsync(CancellationToken ct);
     /// <summary>Guarda (upsert) la config de consecutivos para la copropiedad activa.</summary>
     Task<bool> GuardarConsecutivoConfigAsync(PqrsdConsecutivoConfigDto req, CancellationToken ct);
+
+    /// <summary>Config del envio de respuestas por WhatsApp (plantilla aprobada + linea).</summary>
+    Task<PqrsdWhatsAppConfigDto> GetWhatsAppConfigAsync(CancellationToken ct);
+    /// <summary>Guarda (upsert) la config de WhatsApp para la copropiedad activa.</summary>
+    Task<bool> GuardarWhatsAppConfigAsync(PqrsdWhatsAppConfigDto req, CancellationToken ct);
     /// <summary>Marca/desmarca un campo dinamico para que se pida en el formulario publico.</summary>
     Task<bool> SetCampoPublicoAsync(Guid campoId, bool mostrar, CancellationToken ct);
 

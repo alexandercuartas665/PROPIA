@@ -220,9 +220,12 @@ public record RadicarPublicoResultDto(string NumeroRadicado);
 /// <summary>Adjunto compartido tal como lo ve el radicador en el link publico de seguimiento.</summary>
 public record PqrsdSeguimientoAdjuntoDto(Guid Id, string NombreArchivo, string TipoMime, long TamanioBytes, string Url, DateTimeOffset CreatedAt);
 
+/// <summary>Respuesta enviada al radicador, visible en el link publico (con su radicado propio).</summary>
+public record PqrsdSeguimientoRespuestaDto(string? NumeroRadicado, string? Asunto, string CuerpoHtml, DateTimeOffset EnviadaAt);
+
 /// <summary>
 /// Vista publica del seguimiento de un expediente para el radicador (sin login), resuelta por token.
-/// Solo expone datos que el radicador ya conoce + la respuesta + los adjuntos marcados como compartidos.
+/// Solo expone datos que el radicador ya conoce + la(s) respuesta(s) + los adjuntos marcados como compartidos.
 /// </summary>
 public record PqrsdSeguimientoPublicoDto(
     string CopropiedadNombre,
@@ -234,7 +237,9 @@ public record PqrsdSeguimientoPublicoDto(
     DateTimeOffset RadicadoAt,
     string? RespuestaAdmin,
     DateTimeOffset? RespuestaAdminAt,
-    IReadOnlyList<PqrsdSeguimientoAdjuntoDto> Adjuntos);
+    IReadOnlyList<PqrsdSeguimientoAdjuntoDto> Adjuntos,
+    string? Descripcion = null,
+    IReadOnlyList<PqrsdSeguimientoRespuestaDto>? Respuestas = null);
 
 /// <summary>Resultado de generar/obtener el link publico de seguimiento (token por-expediente).</summary>
 public record PqrsdShareLinkDto(Guid Token);
@@ -257,8 +262,10 @@ public record PqrsdRespuestaDto(
     IReadOnlyList<DestinatarioRespuestaDto>? Destinatarios = null,
     string? NumeroRadicado = null);
 
-/// <summary>Destinatario de una respuesta: tercero del directorio (PersonaId) o correo suelto.</summary>
-public record DestinatarioRespuestaDto(Guid? PersonaId, string? Nombre, string Email);
+/// <summary>Destinatario de una respuesta: tercero del directorio (PersonaId) o correo/telefono suelto.
+/// El canal decide el envio: Correo (Gmail) usa Email; WhatsApp usa Telefono.</summary>
+public record DestinatarioRespuestaDto(Guid? PersonaId, string? Nombre, string Email,
+    string? Telefono = null, CanalRespuesta Canal = CanalRespuesta.Correo);
 
 /// <summary>Configuracion de consecutivos de radicado (expediente y respuesta) por copropiedad.</summary>
 public record PqrsdConsecutivoConfigDto(
@@ -266,6 +273,9 @@ public record PqrsdConsecutivoConfigDto(
     bool ExpedienteReinicioAnual, int ExpedienteProximo,
     string RespuestaPrefijo, bool RespuestaIncluirAnio, int RespuestaPadding,
     bool RespuestaReinicioAnual, int RespuestaProximo);
+
+/// <summary>Config del envio de respuestas por WhatsApp (plantilla aprobada de Meta + linea).</summary>
+public record PqrsdWhatsAppConfigDto(string? PlantillaNombre, string PlantillaIdioma, Guid? LineaId);
 
 /// <summary>Una version historica del documento de respuesta.</summary>
 public record PqrsdRespuestaVersionDto(

@@ -47,27 +47,50 @@ public partial class PqrsdService
                 a.Id, a.NombreArchivo, a.TipoMime, a.TamanioBytes, a.UrlStorage, a.CreatedAt,
                 null, a.SubidoPorUsuarioId == Guid.Empty ? null : a.SubidoPorUsuarioId, a.Texto, a.Compartido)).ToList(),
             r.Archivada, r.ArchivadaAt, verMax.GetValueOrDefault(r.Id, 1),
-            r.Destinatarios.Select(d => new DestinatarioRespuestaDto(d.PersonaId, d.Nombre, d.Email)).ToList(),
+            r.Destinatarios.Select(d => new DestinatarioRespuestaDto(d.PersonaId, d.Nombre, d.Email, d.Telefono, d.Canal)).ToList(),
             r.NumeroRadicado))
             .ToList();
     }
 
-    // Mapea los destinatarios del request a entidades (dedup por email, descarta emails invalidos).
+    // Mapea los destinatarios del request a entidades. Por canal:
+    //  - Correo: exige email valido (con '@'); dedup por email.
+    //  - WhatsApp: exige telefono (>= 7 digitos); dedup por telefono. El email puede ir vacio.
     private static IEnumerable<PqrsdRespuestaDestinatario> MapDestinatarios(IEnumerable<DestinatarioRespuestaDto>? dtos)
     {
         if (dtos is null) yield break;
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenEmail = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenTel = new HashSet<string>();
         foreach (var d in dtos)
         {
             var email = d.Email?.Trim();
-            if (string.IsNullOrWhiteSpace(email) || !email.Contains('@')) continue;
-            if (!seen.Add(email)) continue;
-            yield return new PqrsdRespuestaDestinatario
+            var tel = d.Telefono?.Trim();
+            if (d.Canal == CanalRespuesta.WhatsApp)
             {
-                PersonaId = d.PersonaId,
-                Nombre = string.IsNullOrWhiteSpace(d.Nombre) ? null : d.Nombre.Trim(),
-                Email = email
-            };
+                var digits = new string((tel ?? "").Where(char.IsDigit).ToArray());
+                if (digits.Length < 7) continue;              // telefono invalido
+                if (!seenTel.Add(digits)) continue;
+                yield return new PqrsdRespuestaDestinatario
+                {
+                    PersonaId = d.PersonaId,
+                    Nombre = string.IsNullOrWhiteSpace(d.Nombre) ? null : d.Nombre.Trim(),
+                    Email = string.IsNullOrWhiteSpace(email) || !email.Contains('@') ? "" : email,
+                    Telefono = digits,
+                    Canal = CanalRespuesta.WhatsApp
+                };
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(email) || !email.Contains('@')) continue;
+                if (!seenEmail.Add(email)) continue;
+                yield return new PqrsdRespuestaDestinatario
+                {
+                    PersonaId = d.PersonaId,
+                    Nombre = string.IsNullOrWhiteSpace(d.Nombre) ? null : d.Nombre.Trim(),
+                    Email = email,
+                    Telefono = string.IsNullOrWhiteSpace(tel) ? null : tel.Trim(),
+                    Canal = CanalRespuesta.Correo
+                };
+            }
         }
     }
 
@@ -140,7 +163,7 @@ public partial class PqrsdService
         await _db.SaveChangesAsync(ct);
         return new PqrsdRespuestaDto(r.Id, r.Asunto, r.CuerpoHtml, r.AutorNombre, r.CreatedAt,
             r.Enviada, r.EnviadaAt, new List<PqrsdAdjuntoDto>(), false, null, 1,
-            r.Destinatarios.Select(d => new DestinatarioRespuestaDto(d.PersonaId, d.Nombre, d.Email)).ToList(),
+            r.Destinatarios.Select(d => new DestinatarioRespuestaDto(d.PersonaId, d.Nombre, d.Email, d.Telefono, d.Canal)).ToList(),
             r.NumeroRadicado);
     }
 
@@ -205,7 +228,7 @@ public partial class PqrsdService
                 a.Id, a.NombreArchivo, a.TipoMime, a.TamanioBytes, a.UrlStorage, a.CreatedAt,
                 null, a.SubidoPorUsuarioId == Guid.Empty ? null : a.SubidoPorUsuarioId, a.Texto, a.Compartido)).ToList(),
             r.Archivada, r.ArchivadaAt, nextNum,
-            r.Destinatarios.Select(d => new DestinatarioRespuestaDto(d.PersonaId, d.Nombre, d.Email)).ToList(),
+            r.Destinatarios.Select(d => new DestinatarioRespuestaDto(d.PersonaId, d.Nombre, d.Email, d.Telefono, d.Canal)).ToList(),
             r.NumeroRadicado);
     }
 
@@ -699,6 +722,26 @@ public partial class PqrsdService
         c.RespuestaPadding = Math.Clamp(req.RespuestaPadding, 1, 10);
         c.RespuestaReinicioAnual = req.RespuestaReinicioAnual;
         c.RespuestaProximo = Math.Max(1, req.RespuestaProximo);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    // ===== Config de envio por WhatsApp (plantilla aprobada de Meta + linea) =====
+
+    public async Task<PqrsdWhatsAppConfigDto> GetWhatsAppConfigAsync(CancellationToken ct)
+    {
+        var c = await _db.PqrsdWhatsAppConfigs.AsNoTracking().FirstOrDefaultAsync(ct);
+        return new PqrsdWhatsAppConfigDto(c?.PlantillaNombre, c?.PlantillaIdioma ?? "es", c?.LineaId);
+    }
+
+    public async Task<bool> GuardarWhatsAppConfigAsync(PqrsdWhatsAppConfigDto req, CancellationToken ct)
+    {
+        var tenantId = _tenantContext.CurrentTenantId ?? throw new InvalidOperationException("No hay copropiedad activa.");
+        var c = await _db.PqrsdWhatsAppConfigs.FirstOrDefaultAsync(ct);
+        if (c is null) { c = new PqrsdWhatsAppConfig { TenantId = tenantId }; _db.PqrsdWhatsAppConfigs.Add(c); }
+        c.PlantillaNombre = string.IsNullOrWhiteSpace(req.PlantillaNombre) ? null : req.PlantillaNombre.Trim();
+        c.PlantillaIdioma = string.IsNullOrWhiteSpace(req.PlantillaIdioma) ? "es" : req.PlantillaIdioma.Trim();
+        c.LineaId = req.LineaId;
         await _db.SaveChangesAsync(ct);
         return true;
     }

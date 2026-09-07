@@ -51,22 +51,38 @@
                 @foreach (var d in _dests)
                 {
                     var dd = d;
+                    var esWa = d.Canal == CanalRespuesta.WhatsApp;
                     <span class="rrp-chip @(d.PersonaId is null ? "anon" : "")">
+                        <span class="rrp-chip-canal @(esWa ? "wa" : "mail")" title="@(esWa ? "Se envia por WhatsApp" : "Se envia por correo")">@(esWa ? "WhatsApp" : "Correo")</span>
                         @if (!string.IsNullOrWhiteSpace(d.Nombre)) { <b>@d.Nombre</b> }
-                        <span class="rrp-chip-mail">@(string.IsNullOrWhiteSpace(d.Email) ? "sin correo" : d.Email)</span>
+                        <span class="rrp-chip-mail">@(esWa ? (string.IsNullOrWhiteSpace(d.Telefono) ? "sin telefono" : d.Telefono) : (string.IsNullOrWhiteSpace(d.Email) ? "sin correo" : d.Email))</span>
                         <button type="button" class="rrp-chip-x" title="Quitar" @onclick="() => QuitarDest(dd)">&times;</button>
                     </span>
                 }
-                @if (_dests.Count == 0) { <span class="rrp-dests-empty">Agrega destinatarios: busca un tercero o escribe un correo.</span> }
+                @if (_dests.Count == 0) { <span class="rrp-dests-empty">Agrega destinatarios: elige el canal (correo o WhatsApp), busca un tercero o escribe el dato.</span> }
+            </div>
+            <div class="rrp-canal-sel">
+                <button type="button" class="rrp-canal-btn @(_canalNuevo == CanalRespuesta.Correo ? "on" : "")" @onclick="() => _canalNuevo = CanalRespuesta.Correo">Correo</button>
+                <button type="button" class="rrp-canal-btn @(_canalNuevo == CanalRespuesta.WhatsApp ? "on" : "")" @onclick="() => _canalNuevo = CanalRespuesta.WhatsApp">WhatsApp</button>
             </div>
             <div class="rrp-dests-add">
                 <div class="rrp-dests-buscar">
                     <SelectorPersona Jwt="@Jwt" Seleccionada="null" SeleccionadaChanged="OnTerceroElegido" Placeholder="Buscar tercero por nombre/documento..." Flotante="true" />
                 </div>
-                <div class="rrp-dests-email">
-                    <input class="rrp-dests-email-in" placeholder="correo@@ejemplo.com" @bind="_emailNuevo" @bind:event="oninput" @onkeydown="OnEmailKey" />
-                    <button type="button" class="rrp-btn-ghost" @onclick="AgregarEmail">Agregar correo</button>
-                </div>
+                @if (_canalNuevo == CanalRespuesta.WhatsApp)
+                {
+                    <div class="rrp-dests-email">
+                        <input class="rrp-dests-email-in" placeholder="Telefono con indicativo (ej. 57300...)" @bind="_telNuevo" @bind:event="oninput" @onkeydown="OnTelKey" />
+                        <button type="button" class="rrp-btn-ghost" @onclick="AgregarTelefono">Agregar WhatsApp</button>
+                    </div>
+                }
+                else
+                {
+                    <div class="rrp-dests-email">
+                        <input class="rrp-dests-email-in" placeholder="correo@@ejemplo.com" @bind="_emailNuevo" @bind:event="oninput" @onkeydown="OnEmailKey" />
+                        <button type="button" class="rrp-btn-ghost" @onclick="AgregarEmail">Agregar correo</button>
+                    </div>
+                }
             </div>
         </div>
         <input class="rrp-asunto" placeholder="Asunto (opcional)" @bind="_asunto" @bind:event="oninput" />
@@ -207,7 +223,7 @@
                     <button type="button" class="rrp-btn-ghost" @onclick="Editar" disabled="@(_busy || _generandoPdf || _enviando)">Editar</button>
                 }
                 <button type="button" class="rrp-btn-ghost" @onclick="GenerarPdfAsync" disabled="@(_generandoPdf || _enviando)">@(_generandoPdf ? "Generando PDF..." : "Generar PDF")</button>
-                <button type="button" class="rrp-btn-brand" @onclick="EnviarPorCorreoAsync" disabled="@(_enviando || (_dto.Destinatarios is null or { Count: 0 }))">@(_enviando ? "Enviando..." : "Enviar por correo")</button>
+                <button type="button" class="rrp-btn-brand" @onclick="EnviarRespuestaAsync" disabled="@(_enviando || (_dto.Destinatarios is null or { Count: 0 }))">@(_enviando ? "Enviando..." : "Enviar respuesta")</button>
                 <button type="button" class="rrp-btn-ghost" @onclick="Cerrar">Cerrar</button>
             </div>
         </div>
@@ -303,6 +319,12 @@
     .rrp-chip.anon { background: #EFF3F7; border-color: #DAE3EC; }
     .rrp-chip b { font-weight: 700; }
     .rrp-chip-mail { color: var(--propia-text-secondary); }
+    .rrp-chip-canal { font-size: 9.5px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; border-radius: 5px; padding: 1px 5px; }
+    .rrp-chip-canal.mail { color: var(--propia-brand); background: var(--propia-brand-soft); }
+    .rrp-chip-canal.wa { color: var(--propia-ok); background: var(--propia-ok-soft); }
+    .rrp-canal-sel { display: inline-flex; gap: 0; border: 1px solid var(--propia-border-card); border-radius: 8px; overflow: hidden; margin-bottom: 8px; }
+    .rrp-canal-btn { border: 0; background: var(--propia-bg-card); color: var(--propia-text-secondary); font-size: 12.5px; font-weight: 700; padding: 6px 14px; cursor: pointer; font-family: inherit; }
+    .rrp-canal-btn.on { background: var(--propia-brand); color: var(--propia-text-inverse); }
     .rrp-chip-x { width: 18px; height: 18px; border-radius: 50%; border: 0; background: rgba(27,42,58,.08); color: var(--propia-text-secondary); font-size: 14px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
     .rrp-chip-x:hover { background: #F0C9C9; color: #C0383C; }
     .rrp-dests-add { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
@@ -467,10 +489,37 @@
     }
 
     // ---- Destinatarios ----
+    private CanalRespuesta _canalNuevo = CanalRespuesta.Correo;   // canal activo para lo que se agregue
+    private string? _telNuevo;
+
     private void OnTerceroElegido(PersonaCandidatoDto? p)
     {
         _dstMsg = null;
         if (p is null) return;
+
+        if (_canalNuevo == CanalRespuesta.WhatsApp)
+        {
+            // Prefiere un contacto Whatsapp; si no, un Telefono.
+            var tel = p.Contactos?
+                .Where(c => (c.Tipo == TipoContacto.Whatsapp || c.Tipo == TipoContacto.Telefono) && !string.IsNullOrWhiteSpace(c.Valor))
+                .OrderByDescending(c => c.Tipo == TipoContacto.Whatsapp)
+                .ThenByDescending(c => c.Principal)
+                .Select(c => c.Valor.Trim())
+                .FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(tel))
+            {
+                _dstMsg = $"{p.NombreCompleto} no tiene telefono/WhatsApp en el directorio; agregalo manualmente.";
+                return;
+            }
+            var digits = new string(tel.Where(char.IsDigit).ToArray());
+            if (_dests.Any(d => d.Canal == CanalRespuesta.WhatsApp && new string((d.Telefono ?? "").Where(char.IsDigit).ToArray()) == digits))
+            {
+                _dstMsg = "Ese numero ya esta en la lista."; return;
+            }
+            _dests.Add(new DestinatarioRespuestaDto(p.PersonaId, p.NombreCompleto, "", tel, CanalRespuesta.WhatsApp));
+            return;
+        }
+
         var email = p.Contactos?
             .Where(c => c.Tipo == TipoContacto.Email && !string.IsNullOrWhiteSpace(c.Valor))
             .OrderByDescending(c => c.Principal)
@@ -481,7 +530,7 @@
             _dstMsg = $"{p.NombreCompleto} no tiene correo en el directorio; agregalo manualmente.";
             return;
         }
-        if (_dests.Any(d => string.Equals(d.Email, email, StringComparison.OrdinalIgnoreCase)))
+        if (_dests.Any(d => d.Canal == CanalRespuesta.Correo && string.Equals(d.Email, email, StringComparison.OrdinalIgnoreCase)))
         {
             _dstMsg = "Ese correo ya esta en la lista.";
             return;
@@ -498,12 +547,35 @@
             _dstMsg = "Correo invalido.";
             return;
         }
-        if (_dests.Any(d => string.Equals(d.Email, email, StringComparison.OrdinalIgnoreCase)))
+        if (_dests.Any(d => d.Canal == CanalRespuesta.Correo && string.Equals(d.Email, email, StringComparison.OrdinalIgnoreCase)))
         {
             _dstMsg = "Ese correo ya esta en la lista."; _emailNuevo = ""; return;
         }
         _dests.Add(new DestinatarioRespuestaDto(null, null, email));
         _emailNuevo = "";
+    }
+
+    private void AgregarTelefono()
+    {
+        _dstMsg = null;
+        var tel = _telNuevo?.Trim() ?? "";
+        var digits = new string(tel.Where(char.IsDigit).ToArray());
+        if (digits.Length < 7)
+        {
+            _dstMsg = "Telefono invalido. Incluye el indicativo del pais (ej. 57...).";
+            return;
+        }
+        if (_dests.Any(d => d.Canal == CanalRespuesta.WhatsApp && new string((d.Telefono ?? "").Where(char.IsDigit).ToArray()) == digits))
+        {
+            _dstMsg = "Ese numero ya esta en la lista."; _telNuevo = ""; return;
+        }
+        _dests.Add(new DestinatarioRespuestaDto(null, null, "", tel, CanalRespuesta.WhatsApp));
+        _telNuevo = "";
+    }
+
+    private void OnTelKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") AgregarTelefono();
     }
 
     private void OnEmailKey(KeyboardEventArgs e)
@@ -585,37 +657,51 @@
         _verVersiones = false;
     }
 
-    // ---- Envio por correo (Gmail) ----
+    // ---- Envio de la respuesta (correo Gmail y/o WhatsApp por plantilla) ----
     private sealed record GmailEstadoResp(bool AppConfigurada, bool Conectada, string? Email);
+    private sealed record EnviarResultado(int EnviadosCorreo, int EnviadosWhatsapp, List<string>? Errores);
 
-    private async Task EnviarPorCorreoAsync()
+    private async Task EnviarRespuestaAsync()
     {
         if (_dto is null) return;
         _msg = null; _err = false; _verConectar = false;
         _enviando = true;
         try
         {
-            // 1) Verifica que la copropiedad tenga Gmail conectado.
-            GmailEstadoResp? estado = null;
-            try { estado = await Auth().GetFromJsonAsync<GmailEstadoResp>("/api/gmail-envio/estado"); } catch { }
-            if (estado is null || !estado.Conectada)
+            var dests = _dto.Destinatarios ?? new List<DestinatarioRespuestaDto>();
+            var hayCorreo = dests.Any(d => d.Canal == CanalRespuesta.Correo && !string.IsNullOrWhiteSpace(d.Email));
+
+            // Gmail solo se exige si hay destinatarios por correo.
+            if (hayCorreo)
             {
-                _gmailAppOk = estado?.AppConfigurada ?? false;
-                _verConectar = true;
-                _err = true;
-                _msg = _gmailAppOk ? "Primero conecta el Gmail de la copropiedad." : "El envio por Gmail no esta configurado por el operador.";
-                return;
+                GmailEstadoResp? estado = null;
+                try { estado = await Auth().GetFromJsonAsync<GmailEstadoResp>("/api/gmail-envio/estado"); } catch { }
+                if (estado is null || !estado.Conectada)
+                {
+                    _gmailAppOk = estado?.AppConfigurada ?? false;
+                    _verConectar = true; _err = true;
+                    _msg = _gmailAppOk ? "Primero conecta el Gmail de la copropiedad (hay destinatarios por correo)." : "El envio por Gmail no esta configurado por el operador.";
+                    return;
+                }
             }
 
-            // 2) Envia.
-            var resp = await Auth().PostAsync($"/api/pqrsd/{ExpedienteId}/respuestas/{_dto.Id}/enviar", null);
+            // Envia. Se pasa la base URL publica para armar el link de seguimiento del WhatsApp.
+            var baseUrl = Nav.BaseUri.TrimEnd('/');
+            var resp = await Auth().PostAsJsonAsync($"/api/pqrsd/{ExpedienteId}/respuestas/{_dto.Id}/enviar",
+                new { seguimientoBaseUrl = baseUrl });
             if (!resp.IsSuccessStatusCode)
             {
                 _err = true; _msg = "No se pudo enviar: " + await resp.Content.ReadAsStringAsync();
                 return;
             }
+            var res = await resp.Content.ReadFromJsonAsync<EnviarResultado>();
             await RecargarDtoAsync();
-            _err = false; _msg = $"Respuesta enviada desde {estado.Email}.";
+            _err = false;
+            var partes = new List<string>();
+            if ((res?.EnviadosCorreo ?? 0) > 0) partes.Add($"{res!.EnviadosCorreo} por correo");
+            if ((res?.EnviadosWhatsapp ?? 0) > 0) partes.Add($"{res!.EnviadosWhatsapp} por WhatsApp");
+            _msg = "Respuesta enviada: " + (partes.Count > 0 ? string.Join(" y ", partes) + "." : "ok.");
+            if (res?.Errores is { Count: > 0 }) { _err = true; _msg += " Con avisos: " + string.Join(" | ", res.Errores); }
         }
         catch (Exception ex) { _err = true; _msg = ex.Message; }
         finally { _enviando = false; }
