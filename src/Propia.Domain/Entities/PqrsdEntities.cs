@@ -190,14 +190,16 @@ public class PqrsdRespuestaDestinatario : TenantEntity
     public Guid RespuestaId { get; set; }
     public PqrsdRespuesta? Respuesta { get; set; }
 
-    public Guid? PersonaId { get; set; }        // null = correo suelto sin tercero
+    public Guid? PersonaId { get; set; }        // null = contacto suelto sin tercero
     public string? Nombre { get; set; }
     public string Email { get; set; } = string.Empty;
 
-    /// <summary>Telefono (con indicativo) para el canal WhatsApp. Opcional si el canal es Correo.</summary>
+    /// <summary>Telefono (con indicativo) para el canal WhatsApp. Opcional.</summary>
     public string? Telefono { get; set; }
-    /// <summary>Canal de envio para este destinatario: Correo (Gmail) o WhatsApp (plantilla/texto con el link).</summary>
-    public CanalRespuesta Canal { get; set; } = CanalRespuesta.Correo;
+
+    /// <summary>Un mismo contacto puede recibir por AMBOS canales. Cada flag exige su dato (email/telefono).</summary>
+    public bool EnviarCorreo { get; set; } = true;
+    public bool EnviarWhatsApp { get; set; }
 }
 
 /// <summary>

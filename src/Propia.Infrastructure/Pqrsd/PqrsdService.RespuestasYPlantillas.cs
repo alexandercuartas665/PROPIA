@@ -47,50 +47,37 @@ public partial class PqrsdService
                 a.Id, a.NombreArchivo, a.TipoMime, a.TamanioBytes, a.UrlStorage, a.CreatedAt,
                 null, a.SubidoPorUsuarioId == Guid.Empty ? null : a.SubidoPorUsuarioId, a.Texto, a.Compartido)).ToList(),
             r.Archivada, r.ArchivadaAt, verMax.GetValueOrDefault(r.Id, 1),
-            r.Destinatarios.Select(d => new DestinatarioRespuestaDto(d.PersonaId, d.Nombre, d.Email, d.Telefono, d.Canal)).ToList(),
+            r.Destinatarios.Select(d => new DestinatarioRespuestaDto(d.PersonaId, d.Nombre, d.Email, d.Telefono, d.EnviarCorreo, d.EnviarWhatsApp)).ToList(),
             r.NumeroRadicado))
             .ToList();
     }
 
-    // Mapea los destinatarios del request a entidades. Por canal:
-    //  - Correo: exige email valido (con '@'); dedup por email.
-    //  - WhatsApp: exige telefono (>= 7 digitos); dedup por telefono. El email puede ir vacio.
+    // Mapea las tarjetas de contacto del request a entidades. Un contacto puede llevar ambos canales.
+    // Se conserva la tarjeta si al menos un canal activo tiene un dato valido (correo con '@' / telefono >=7 digitos).
     private static IEnumerable<PqrsdRespuestaDestinatario> MapDestinatarios(IEnumerable<DestinatarioRespuestaDto>? dtos)
     {
         if (dtos is null) yield break;
-        var seenEmail = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var seenTel = new HashSet<string>();
         foreach (var d in dtos)
         {
             var email = d.Email?.Trim();
             var tel = d.Telefono?.Trim();
-            if (d.Canal == CanalRespuesta.WhatsApp)
+            var digits = new string((tel ?? "").Where(char.IsDigit).ToArray());
+            var emailOk = !string.IsNullOrWhiteSpace(email) && email.Contains('@');
+            var telOk = digits.Length >= 7;
+
+            var enviarCorreo = d.EnviarCorreo && emailOk;
+            var enviarWa = d.EnviarWhatsApp && telOk;
+            if (!enviarCorreo && !enviarWa) continue;   // tarjeta sin ningun canal utilizable
+
+            yield return new PqrsdRespuestaDestinatario
             {
-                var digits = new string((tel ?? "").Where(char.IsDigit).ToArray());
-                if (digits.Length < 7) continue;              // telefono invalido
-                if (!seenTel.Add(digits)) continue;
-                yield return new PqrsdRespuestaDestinatario
-                {
-                    PersonaId = d.PersonaId,
-                    Nombre = string.IsNullOrWhiteSpace(d.Nombre) ? null : d.Nombre.Trim(),
-                    Email = string.IsNullOrWhiteSpace(email) || !email.Contains('@') ? "" : email,
-                    Telefono = digits,
-                    Canal = CanalRespuesta.WhatsApp
-                };
-            }
-            else
-            {
-                if (string.IsNullOrWhiteSpace(email) || !email.Contains('@')) continue;
-                if (!seenEmail.Add(email)) continue;
-                yield return new PqrsdRespuestaDestinatario
-                {
-                    PersonaId = d.PersonaId,
-                    Nombre = string.IsNullOrWhiteSpace(d.Nombre) ? null : d.Nombre.Trim(),
-                    Email = email,
-                    Telefono = string.IsNullOrWhiteSpace(tel) ? null : tel.Trim(),
-                    Canal = CanalRespuesta.Correo
-                };
-            }
+                PersonaId = d.PersonaId,
+                Nombre = string.IsNullOrWhiteSpace(d.Nombre) ? null : d.Nombre.Trim(),
+                Email = emailOk ? email! : "",
+                Telefono = telOk ? digits : null,
+                EnviarCorreo = enviarCorreo,
+                EnviarWhatsApp = enviarWa
+            };
         }
     }
 
@@ -163,7 +150,7 @@ public partial class PqrsdService
         await _db.SaveChangesAsync(ct);
         return new PqrsdRespuestaDto(r.Id, r.Asunto, r.CuerpoHtml, r.AutorNombre, r.CreatedAt,
             r.Enviada, r.EnviadaAt, new List<PqrsdAdjuntoDto>(), false, null, 1,
-            r.Destinatarios.Select(d => new DestinatarioRespuestaDto(d.PersonaId, d.Nombre, d.Email, d.Telefono, d.Canal)).ToList(),
+            r.Destinatarios.Select(d => new DestinatarioRespuestaDto(d.PersonaId, d.Nombre, d.Email, d.Telefono, d.EnviarCorreo, d.EnviarWhatsApp)).ToList(),
             r.NumeroRadicado);
     }
 
@@ -228,7 +215,7 @@ public partial class PqrsdService
                 a.Id, a.NombreArchivo, a.TipoMime, a.TamanioBytes, a.UrlStorage, a.CreatedAt,
                 null, a.SubidoPorUsuarioId == Guid.Empty ? null : a.SubidoPorUsuarioId, a.Texto, a.Compartido)).ToList(),
             r.Archivada, r.ArchivadaAt, nextNum,
-            r.Destinatarios.Select(d => new DestinatarioRespuestaDto(d.PersonaId, d.Nombre, d.Email, d.Telefono, d.Canal)).ToList(),
+            r.Destinatarios.Select(d => new DestinatarioRespuestaDto(d.PersonaId, d.Nombre, d.Email, d.Telefono, d.EnviarCorreo, d.EnviarWhatsApp)).ToList(),
             r.NumeroRadicado);
     }
 

@@ -664,10 +664,9 @@ public class PqrsdController : ControllerBase
             .FirstOrDefaultAsync(x => x.Id == respuestaId && x.ExpedienteId == id, ct);
         if (r is null) return NotFound();
 
-        var emails = r.Destinatarios.Where(d => d.Canal == Propia.Domain.Enums.CanalRespuesta.Correo)
-            .Select(d => d.Email).Where(e => !string.IsNullOrWhiteSpace(e)).Distinct().ToList();
-        var wapp = r.Destinatarios.Where(d => d.Canal == Propia.Domain.Enums.CanalRespuesta.WhatsApp
-            && !string.IsNullOrWhiteSpace(d.Telefono)).ToList();
+        var emails = r.Destinatarios.Where(d => d.EnviarCorreo && !string.IsNullOrWhiteSpace(d.Email))
+            .Select(d => d.Email).Distinct().ToList();
+        var wapp = r.Destinatarios.Where(d => d.EnviarWhatsApp && !string.IsNullOrWhiteSpace(d.Telefono)).ToList();
         if (emails.Count == 0 && wapp.Count == 0)
             return BadRequest(new { error = "Agrega al menos un destinatario (correo o WhatsApp)." });
 

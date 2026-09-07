@@ -262,10 +262,11 @@ public record PqrsdRespuestaDto(
     IReadOnlyList<DestinatarioRespuestaDto>? Destinatarios = null,
     string? NumeroRadicado = null);
 
-/// <summary>Destinatario de una respuesta: tercero del directorio (PersonaId) o correo/telefono suelto.
-/// El canal decide el envio: Correo (Gmail) usa Email; WhatsApp usa Telefono.</summary>
+/// <summary>Destinatario (tarjeta de contacto) de una respuesta: tercero del directorio (PersonaId) o
+/// contacto suelto. Un mismo contacto puede enviarse por AMBOS canales: EnviarCorreo usa Email,
+/// EnviarWhatsApp usa Telefono.</summary>
 public record DestinatarioRespuestaDto(Guid? PersonaId, string? Nombre, string Email,
-    string? Telefono = null, CanalRespuesta Canal = CanalRespuesta.Correo);
+    string? Telefono = null, bool EnviarCorreo = true, bool EnviarWhatsApp = false);
 
 /// <summary>Configuracion de consecutivos de radicado (expediente y respuesta) por copropiedad.</summary>
 public record PqrsdConsecutivoConfigDto(
