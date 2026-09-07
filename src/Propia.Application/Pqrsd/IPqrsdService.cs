@@ -138,5 +138,7 @@ public interface IPqrsdService
 
     /// <summary>Tablero del modulo Tareas donde caen las tareas creadas desde un PQR (null = "PQRSD" por defecto).</summary>
     Task<Guid?> ObtenerTableroTareasConfigAsync(CancellationToken ct);
+    /// <summary>Id del tablero de Tareas que usa PQRSD (garantizado; crea el default si no existe).</summary>
+    Task<Guid> ObtenerTableroPqrsdIdAsync(CancellationToken ct);
     Task GuardarTableroTareasConfigAsync(Guid? tableroId, CancellationToken ct);
 }

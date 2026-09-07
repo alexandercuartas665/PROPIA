@@ -11,7 +11,7 @@
 @inject IJSRuntime Js
 @inject NavigationManager Nav
 
-<PageTitle>Tareas y proyectos - PROPIA</PageTitle>
+@if (!Compacto) { <PageTitle>Tareas y proyectos - PROPIA</PageTitle> }
 
 @if (!_authChecked)
 {
@@ -30,7 +30,9 @@ else
     @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
 
     @* ===================== LISTA DE TABLEROS ===================== *@
-    @if (_board is null)
+    @* En modo Compacto (embebido en un modal) nunca se muestra la lista de tableros: el host abre un
+       tablero concreto por TableroId. *@
+    @if (_board is null && !Compacto)
     {
         <div class="tb-head">
             <div>
@@ -125,10 +127,18 @@ else
     }
 
     @* ===================== VISTA DE TABLERO ===================== *@
+    else if (_board is null)
+    {
+        @* Compacto: el tablero aun no carga (o no se encontro). *@
+        <div class="text-center py-4"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
     else
     {
         <div class="tb-board-head">
-            <button class="tb-icon-btn" title="Volver" @onclick="CerrarBoard"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
+            @if (!Compacto)
+            {
+                <button class="tb-icon-btn" title="Volver" @onclick="CerrarBoard"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
+            }
             <div class="tb-board-color" style="background:@_board.Tablero.Color"></div>
             <div class="tb-board-id">
                 <h1 class="tb-board-nom">@_board.Tablero.Nombre</h1>
@@ -154,7 +164,7 @@ else
                             }
                         </div>
                     }
-                    @SelectorCopropiedad
+                    @if (!Compacto) { @SelectorCopropiedad }
                     @if (!_verCerradas && !EsBoardForaneo)
                     {
                         <button class="tb-btn tb-btn-soft" @onclick="AbrirConfigBoard"><i class="fi fi-rr-settings"></i>Configurar</button>
@@ -2048,6 +2058,30 @@ else
     /// <summary>El host refresca (ej. barra de avance del PQRSD) cuando cambia algo.</summary>
     [Parameter] public EventCallback OnCambio { get; set; }
 
+    // ===== Hospedaje embebido (modo Compacto): init una sola vez + filtro/origen por modulo =====
+    private bool _embInit;
+    // Sufijo de query para filtrar el board por vinculo de modulo (solo cuando el host lo pasa).
+    private string OrigenQs() =>
+        (string.IsNullOrWhiteSpace(OrigenCodigo) ? "" : $"&origenCodigo={Uri.EscapeDataString(OrigenCodigo)}")
+        + (OrigenEntidadId is { } oe ? $"&origenEntidadId={oe}" : "");
+    // Inyecta el vinculo de modulo en una tarea creada desde el componente (asi nace ligada al PQRSD).
+    private CrearTareaRequest ConOrigen(CrearTareaRequest req) =>
+        string.IsNullOrWhiteSpace(OrigenCodigo) ? req
+            : req with { ModuloOrigenCodigo = OrigenCodigo, ModuloOrigenEntidadId = OrigenEntidadId };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Embebido: el host pasa Jwt + TableroId. Se abre ese tablero directo (sin lista) una sola vez.
+        if (_embInit || string.IsNullOrEmpty(Jwt) || TableroId is not { } tid) return;
+        _embInit = true;
+        _jwt = Jwt;
+        _authChecked = true;
+        _miUsuarioId = LeerUsuarioIdDeJwt(Jwt);
+        await AbrirBoardAsync(tid);
+        _boardMode = VistaInicial == "lista" ? "lista" : "tablero";   // VistaInicial manda sobre la guardada
+        StateHasChanged();
+    }
+
     private static readonly CultureInfo Es = CultureInfo.GetCultureInfo("es-CO");
     private string? _jwt;
     private Guid _miUsuarioId;   // usuario actual (del JWT) para alinear "mis" mensajes a la derecha en el chat
@@ -2728,7 +2762,7 @@ else
                 null, null, null, padreId, new List<Guid>(), _board.Tablero.Id,
                 null, false, null, null, null, null, null,
                 new List<Guid>(), new List<SubtareaCheckItem>(), new List<TareaCampoValorDto>());
-            var resp = await Auth().PostAsJsonAsync("/api/tareas", req);
+            var resp = await Auth().PostAsJsonAsync("/api/tareas", ConOrigen(req));
             if (resp.IsSuccessStatusCode)
             {
                 _subtareaNew = "";
@@ -3117,7 +3151,7 @@ else
 
     private async Task AbrirBoardAsync(Guid id)
     {
-        _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tareas/tableros/{id}/board?verCerradas={(_verCerradas ? "true" : "false")}");
+        _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tareas/tableros/{id}/board?verCerradas={(_verCerradas ? "true" : "false")}{OrigenQs()}");
         // Etiquetas de ESTE tablero (+ las globales). Se gestionan en "Configurar tablero".
         try { _etiquetasCat = await Auth().GetFromJsonAsync<List<EtiquetaTareaDto>>($"/api/tareas/etiquetas?tableroId={id}") ?? _etiquetasCat; } catch { }
         SyncTareas();
@@ -3202,9 +3236,10 @@ else
             ReconciliarOrden();
             return;
         }
-        _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tareas/tableros/{_board.Tablero.Id}/board?verCerradas={(_verCerradas ? "true" : "false")}");
+        _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tareas/tableros/{_board.Tablero.Id}/board?verCerradas={(_verCerradas ? "true" : "false")}{OrigenQs()}");
         SyncTareas();
         ReconciliarOrden();
+        if (OnCambio.HasDelegate) await OnCambio.InvokeAsync();   // el host (ej. avance del PQRSD) se refresca
     }
 
     private List<TareaListaDto> RaicesPorEstado(Guid estadoId) =>
@@ -4115,7 +4150,7 @@ else
         var req = new CrearTareaRequest(d.Titulo.Trim(), string.IsNullOrWhiteSpace(d.Descripcion) ? null : d.Descripcion.Trim(),
             d.Prioridad, d.EstadoId, null, null, d.FechaVencimiento, null, new List<Guid>(), _board.Tablero.Id,
             null, false, d.Valor, null, null, oTipo, oRef, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores);
-        var resp = await Auth().PostAsJsonAsync("/api/tareas", req);
+        var resp = await Auth().PostAsJsonAsync("/api/tareas", ConOrigen(req));
         if (resp.IsSuccessStatusCode) { _nuevaFilas[estadoId] = new NuevaFilaDraft { EstadoId = estadoId }; _nfFocusEstado = estadoId; await RecargarBoard(); }
         else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
     }
@@ -4135,7 +4170,7 @@ else
         var req = new CrearTareaRequest(d.Titulo.Trim(), string.IsNullOrWhiteSpace(d.Descripcion) ? null : d.Descripcion.Trim(),
             d.Prioridad, d.EstadoId, null, null, d.FechaVencimiento, null, new List<Guid>(), _board.Tablero.Id,
             null, false, d.Valor, null, null, oTipo, oRef, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores);
-        var resp = await Auth().PostAsJsonAsync("/api/tareas", req);
+        var resp = await Auth().PostAsJsonAsync("/api/tareas", ConOrigen(req));
         if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
         _nuevaFilas[estadoId] = new NuevaFilaDraft { EstadoId = estadoId };
         await RecargarBoard();
@@ -4236,7 +4271,7 @@ else
         var req = new CrearTareaRequest(d.Titulo.Trim(), string.IsNullOrWhiteSpace(d.Descripcion) ? null : d.Descripcion.Trim(),
             d.Prioridad, estadoId, null, null, d.FechaVencimiento, null, new List<Guid>(), _board.Tablero.Id,
             null, false, d.Valor, null, null, oTipo, oRef, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores);
-        var resp = await Auth().PostAsJsonAsync("/api/tareas", req);
+        var resp = await Auth().PostAsJsonAsync("/api/tareas", ConOrigen(req));
         if (resp.IsSuccessStatusCode) { _composerDraft = new NuevaFilaDraft { EstadoId = estadoId }; _composerReveal = 0; _composerNonce++; _composerFocusPending = true; await RecargarBoard(); }
         else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
     }
@@ -5133,7 +5168,7 @@ else
                     null, ini, venc, d.PadreId, d.EtiquetaIds.ToList(), _board.Tablero.Id,
                     d.Color, d.EsProyecto, d.Valor, d.HoraInicio, d.HoraFin,
                     origenTipo, origenRef, responsables, checklist, camposValores, d.SolicitantePersonaId);
-                resp = await Auth().PostAsJsonAsync("/api/tareas", req);
+                resp = await Auth().PostAsJsonAsync("/api/tareas", ConOrigen(req));
             }
             else
             {

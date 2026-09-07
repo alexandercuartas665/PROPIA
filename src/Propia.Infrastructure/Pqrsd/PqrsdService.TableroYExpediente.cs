@@ -450,6 +450,10 @@ public partial class PqrsdService
     public async Task<Guid?> ObtenerTableroTareasConfigAsync(CancellationToken ct)
         => (await _db.PqrsdTareasConfigs.AsNoTracking().FirstOrDefaultAsync(ct))?.TableroId;
 
+    // Id del tablero de Tareas que usa PQRSD (garantizado: crea el default si no existe). Lo consume el
+    // componente TableroTareas embebido en el modal del PQRSD.
+    public Task<Guid> ObtenerTableroPqrsdIdAsync(CancellationToken ct) => AsegurarTableroPqrsdAsync(ct);
+
     public async Task GuardarTableroTareasConfigAsync(Guid? tableroId, CancellationToken ct)
     {
         if (tableroId is Guid tid && !await _db.Tableros.AnyAsync(t => t.Id == tid, ct))

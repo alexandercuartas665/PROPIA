@@ -53,7 +53,7 @@
         {
             <button type="button" class="gpq-tab @(_tab == "responder" ? "active" : "")" @onclick="AbrirTabResponder">Responder</button>
         }
-        <button type="button" class="gpq-tab @(_tab == "tareas" ? "active" : "")" @onclick="AbrirTabTareas">Tareas@(_pqrTareas is not null && _pqrTareas.Tareas.Count > 0 ? $" ({_pqrTareas.Tareas.Count})" : "")</button>
+        <button type="button" class="gpq-tab @(_tab == "tareas" ? "active" : "")" @onclick="AbrirTabTareas">Tareas</button>
         <button type="button" class="gpq-tab @(_tab == "historial" ? "active" : "")" @onclick='@(() => _tab = "historial")'>Historial@(_detalle.Historial.Count > 0 ? $" ({_detalle.Historial.Count})" : "")</button>
         <button type="button" class="gpq-tab @(_tab == "adjuntos" ? "active" : "")" @onclick='@(() => _tab = "adjuntos")'>Adjuntos@(_detalle.Adjuntos.Count > 0 ? $" ({_detalle.Adjuntos.Count})" : "")</button>
     </div>
@@ -862,9 +862,19 @@
         }
     </div>
 
-    @* ===== Tab Tareas (enlazadas al PQR, tablero "PQRSD" del modulo Tareas) ===== *@
-    <div class="gpq-pane" style="@(_detalle is not null && _tab == "tareas" ? "" : "display:none")">
-        <PqrsdTareasTab Tareas="_pqrTareas" Busy="_pqrBusy" OnAgregar="AgregarTareaCompletaAsync" OnAbrirTarea="AbrirTareaCompleta" />
+    @* ===== Tab Tareas: hospeda el modulo Tareas REAL (componente TableroTareas) filtrado a este PQRSD =====
+         Las tareas creadas aqui nacen vinculadas (OrigenCodigo=PQRSD, OrigenEntidadId=expediente) y se ven
+         igual en /tareas. Mismo editor flotante, DnD, filtros, campos, etc. *@
+    <div class="gpq-pane gpq-pane--tareas" style="@(_detalle is not null && _tab == "tareas" ? "" : "display:none")">
+        @if (_tableroPqrsdId is Guid tbid)
+        {
+            <TableroTareas Jwt="@Jwt" TableroId="tbid" OrigenCodigo="PQRSD" OrigenEntidadId="@ExpedienteId"
+                           Compacto="true" VistaInicial="tablero" OnCambio="OnTareasCambio" />
+        }
+        else if (_tab == "tareas")
+        {
+            <div class="gpq-actividad-empty">Cargando tareas...</div>
+        }
     </div>
 </div>
 </div>
@@ -908,55 +918,22 @@
     private bool _huboCambios;
     private string _tab = "detalle";
 
-    // ---- Tab Tareas (enlazadas al PQR, tablero "PQRSD") ----
-    private PqrTareasDto? _pqrTareas;
-    // Asignables: solo usuarios ACTIVOS del modulo Usuarios (2.5), no todo el directorio.
-    private bool _pqrBusy;
+    // ---- Tab Tareas: hospeda el componente TableroTareas (modulo Tareas real), filtrado por este PQRSD ----
+    private Guid? _tableroPqrsdId;
+    private sealed record TableroIdResp(Guid TableroId);
 
     private async Task AbrirTabTareas()
     {
         _tab = "tareas";
-        if (_pqrTareas is null) await CargarPqrTareasAsync();
-    }
-
-    private async Task CargarPqrTareasAsync()
-    {
-        try { _pqrTareas = await Auth().GetFromJsonAsync<PqrTareasDto>($"/api/pqrsd/{ExpedienteId}/tareas"); }
-        catch { _pqrTareas = new PqrTareasDto(new List<PqrEtapaDto>(), new List<PqrTareaDto>(), 0); }
-        StateHasChanged();
-    }
-
-    /// <summary>Ver/editar: abre el modal COMPLETO de la tarea (GestionarTareaModal) EN EL SITIO,
-    /// sin salir del modulo PQRSD. Al cerrar, refresca la lista.</summary>
-    private async Task AbrirTareaCompleta(Guid tareaId)
-    {
-        var parameters = new ModalParameters().Set("Jwt", Jwt).Set("TareaId", tareaId);
-        var options = new ModalOptions { Width = "1200px" };
-        await Modals.OpenAsync<GestionarTareaModal, bool>(parameters, options);
-        _huboCambios = true;
-        await CargarPqrTareasAsync();
-    }
-
-    /// <summary>Agregar: crea una tarea VINCULADA a este PQR (endpoint que setea el origen del modulo)
-    /// y abre de inmediato su modal COMPLETO para terminar de llenar todos los campos, sin salir de PQRSD.</summary>
-    private async Task AgregarTareaCompletaAsync()
-    {
-        if (_pqrBusy) return;
-        _pqrBusy = true;
-        try
+        if (_tableroPqrsdId is null)
         {
-            var resp = await Auth().PostAsJsonAsync($"/api/pqrsd/{ExpedienteId}/tareas",
-                new CrearPqrTareaRequest("Nueva tarea", null));
-            if (!resp.IsSuccessStatusCode) { ShowMsg("No se pudo crear la tarea.", true); return; }
-            var creada = await resp.Content.ReadFromJsonAsync<CrearPqrTareaResp>();
-            _pqrBusy = false;
-            if (creada is not null) await AbrirTareaCompleta(creada.Id);
+            try { var r = await Auth().GetFromJsonAsync<TableroIdResp>("/api/pqrsd/tablero-tareas-id"); _tableroPqrsdId = r?.TableroId; }
+            catch { }
+            StateHasChanged();
         }
-        catch (Exception ex) { ShowMsg(ex.Message, true); }
-        finally { _pqrBusy = false; }
     }
 
-    private sealed record CrearPqrTareaResp(Guid Id);
+    private void OnTareasCambio() => _huboCambios = true;
 
     // Edicion de propiedad + solicitante + campos dinamicos
     private List<UnidadDto> _unidades = new();

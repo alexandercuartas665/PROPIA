@@ -261,6 +261,12 @@ public class PqrsdController : ControllerBase
     [HttpGet("config/tablero-tareas")]
     public async Task<IActionResult> ObtenerTableroTareas(CancellationToken ct)
         => Ok(new { tableroId = await _svc.ObtenerTableroTareasConfigAsync(ct) });
+
+    // Id del tablero PQRSD garantizado (crea el default si hace falta). Lo usa el componente TableroTareas
+    // embebido en el modal para cargar las tareas del expediente.
+    [HttpGet("tablero-tareas-id")]
+    public async Task<IActionResult> ObtenerTableroPqrsdId(CancellationToken ct)
+        => Ok(new { tableroId = await _svc.ObtenerTableroPqrsdIdAsync(ct) });
     public record GuardarTableroTareasRequest(Guid? TableroId);
     [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("config/tablero-tareas")]
