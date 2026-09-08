@@ -1,7 +1,27 @@
 # PROPIA - Checklist de deploy
 
-> Actualizado 2026-09-08. Version visible: **0.0.63**
+> Actualizado 2026-09-08. Version visible: **0.0.64**
 > (`src/Propia.Web/Propia.Web.csproj` `<Version>`). Bumpear en cada deploy.
+>
+> **Nuevo desde 0.0.63:**
+> - **HOTFIX (critico, ya en produccion antes de este deploy):** el modulo **Seguros** devolvia **403** al
+>   solo VER la lista de polizas. El `[RequiereRol("Administrador")]` estaba a nivel de CLASE y gateaba
+>   tambien los GET (polizas/campos/reclamaciones/pdf-origen). `RequiereRolFilter` hace match exacto de rol
+>   SIN bypass, asi que cualquier usuario del tenant cuyo rol no sea literalmente "Administrador" recibia 403.
+>   Se retiro el gate de clase (queda `[Authorize]`) y se movio `[RequiereRol("Administrador")]` a los
+>   endpoints de ESCRITURA (POST/PUT/DELETE). GET abiertos al tenant (convencion RBAC). **Solo codigo.**
+> - **Seguros + Contratos: cargar PDF y prellenar con IA.** El modal de Contratos (`/contratos`) ahora tiene
+>   "Cargar PDF y extraer (IA)" igual que Seguros. Nuevo perfil "contrato" en `OcrController.PerfilCampos`
+>   (contratista, nit, numero_contrato, objeto, valor_total, valor_mensual, contacto, fecha_inicio, fecha_fin).
+>   Manda el documento nativo a Gemini (`/api/ocr/extraer-ia`) y mapea al formulario. En Seguros: mensaje
+>   honesto cuando la IA no encuentra datos de poliza (antes decia "documento leido" aunque no llenara nada)
+>   y mensaje amable ante un 404 de "Ver PDF origen" (poliza sin PDF cargado). **Solo codigo.**
+> - **Auditoria PQRSD (Parte A/B + Parte C G-01/G-02/G-05):** alertas automaticas de plazo (job diario
+>   `PqrsdAlertaPlazoJob` al 80%/vencido, notifica al responsable o admins + alerta de dashboard + historial;
+>   idempotente por umbral), notificaciones al radicador/administracion en el ciclo (radicado, cambio de
+>   estado, cierre, inconformidad), validaciones de adjuntos (lista blanca de formatos + 25MB + 5 por
+>   expediente + magic bytes, S-09), feedback por fila en Configurar PQRSD (recarga ligera) y config en 3 tabs
+>   primarios. **1 migracion nueva** (`AddPqrsdAlertaPlazoNotificada`, columna aditiva -> ver seccion 3).
 >
 > **Nuevo desde 0.0.62:** Super Admin - registro de ingresos por organizacion (logins exitosos y fallidos,
 > con copropiedad/IP/navegador; tabla `login_audit_events`). Cuenta de correo saliente por copropiedad
@@ -60,6 +80,7 @@ dotnet ef database update --project ../Propia.Infrastructure --startup-project .
 
 Ultimas migraciones del repo (verificar que esten aplicadas). `ef database update` aplica SOLO las que
 falten en ese entorno, comparando contra `__EFMigrationsHistory`:
+- `20260908120902_AddPqrsdAlertaPlazoNotificada`  (PQRSD: `pqrsd_expedientes` +`alerta_plazo_notificada` int null; idempotencia de las alertas de plazo del job diario)  <-- NUEVA (0.0.64)
 - `20260908023154_AddTenantEmailConfig`  (Correo: tabla nueva `tenant_email_configs` con RLS; SMTP host/puerto/usuario/from + clave de aplicacion cifrada)  <-- NUEVA (0.0.63)
 - `20260908021743_AddLoginAuditEvents`  (Super Admin: tabla nueva `login_audit_events`, GLOBAL sin RLS; ingresos exitosos y fallidos)  <-- NUEVA (0.0.63)
 - `20260907154737_PqrsdDestinatarioCanalesFlags`  (PQRSD: `pqrsd_respuesta_destinatarios` -`canal`, +`enviar_correo` bool, +`enviar_whats_app` bool)  <-- (0.0.62)
@@ -83,7 +104,17 @@ falten en ese entorno, comparando contra `__EFMigrationsHistory`:
 
 ## 4. Post-deploy (verificacion)
 
-- [ ] Login OK; el footer muestra `v0.0.63`.
+- [ ] Login OK; el footer muestra `v0.0.64`.
+- [ ] **Seguros (hotfix 403):** un usuario del tenant que NO sea Administrador entra a Juridico > Seguros y
+      VE la lista de polizas (antes -> 403). Crear/editar/eliminar una poliza sigue exigiendo Administrador.
+- [ ] **Contratos IA:** Juridico > Contratos > "Nuevo contrato" > "Cargar PDF y extraer (IA)" con un PDF de
+      contrato -> prellena contratista/NIT/valor/vigencia/objeto y muestra "N campos prellenados". Con un
+      documento que no es contrato -> mensaje honesto de que no encontro datos.
+- [ ] **Seguros IA:** "Cargar PDF y extraer (IA)" con una poliza -> prellena; con otro documento -> aviso
+      claro (no el optimista de antes). "Ver PDF origen" sin archivo -> mensaje amable (no el 404 crudo).
+- [ ] **PQRSD alertas de plazo:** el job `PqrsdAlertaPlazoJob` corre (ver `job_ejecuciones`); un expediente
+      al 80%/vencido genera alerta de dashboard + notificacion al responsable/admins + entrada de historial,
+      sin re-alertar en la siguiente corrida (columna `alerta_plazo_notificada`).
 - [ ] Super Admin > Organizaciones > "Ingresos": lista los logins (exitosos y fallidos) de la organizacion.
       Un login fallido y uno exitoso quedan registrados con copropiedad/IP.
 - [ ] Configurar PQRSD > Correo: guardar una cuenta SMTP (Gmail app-password) y "Probar" envia un correo real.
