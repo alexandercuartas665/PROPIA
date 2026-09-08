@@ -10,8 +10,7 @@ namespace Propia.Api.Controllers;
 [ApiController]
 [Route("api/seguros")]
 
-[Authorize]
-[RequiereRol("Administrador")]  // S-06: gestion sensible, admin
+[Authorize]  // S-06: GET abiertos al tenant; escrituras gateadas a Administrador (ver metodos)
 public class SegurosController : ControllerBase
 {
     private readonly ISegurosService _svc;
@@ -25,6 +24,7 @@ public class SegurosController : ControllerBase
         => await _svc.ObtenerPolizaAsync(id, ct) is { } p ? Ok(p) : NotFound();
 
     [HttpPost("polizas")]
+    [RequiereRol("Administrador")]  // S-06: escritura sensible
     public async Task<IActionResult> Crear([FromBody] CrearPolizaRequest req, CancellationToken ct)
     {
         try { return Created("", await _svc.CrearPolizaAsync(req, ct)); }
@@ -32,6 +32,7 @@ public class SegurosController : ControllerBase
     }
 
     [HttpPut("polizas/{id:guid}")]
+    [RequiereRol("Administrador")]  // S-06: escritura sensible
     public async Task<IActionResult> Actualizar(Guid id, [FromBody] ActualizarPolizaRequest req, CancellationToken ct)
     {
         try { return await _svc.ActualizarPolizaAsync(id, req, ct) ? NoContent() : NotFound(); }
@@ -39,6 +40,7 @@ public class SegurosController : ControllerBase
     }
 
     [HttpDelete("polizas/{id:guid}")]
+    [RequiereRol("Administrador")]  // S-06: escritura sensible
     public async Task<IActionResult> Eliminar(Guid id, CancellationToken ct)
         => await _svc.EliminarPolizaAsync(id, ct) ? NoContent() : NotFound();
 
@@ -56,6 +58,7 @@ public class SegurosController : ControllerBase
     [HttpGet("campos")] public async Task<IActionResult> ListCampos(CancellationToken ct) => Ok(await _svc.ListCamposAsync(ct));
 
     [HttpPost("campos")]
+    [RequiereRol("Administrador")]  // S-06: escritura sensible
     public async Task<IActionResult> CrearCampo([FromBody] CrearPolizaCampoRequest req, CancellationToken ct)
     {
         try { return Created("", await _svc.CrearCampoAsync(req, ct)); }
@@ -63,14 +66,17 @@ public class SegurosController : ControllerBase
     }
 
     [HttpPut("campos/{campoId:guid}")]
+    [RequiereRol("Administrador")]  // S-06: escritura sensible
     public async Task<IActionResult> ActualizarCampo(Guid campoId, [FromBody] ActualizarPolizaCampoRequest req, CancellationToken ct)
         => await _svc.ActualizarCampoAsync(campoId, req, ct) ? NoContent() : NotFound();
 
     [HttpDelete("campos/{campoId:guid}")]
+    [RequiereRol("Administrador")]  // S-06: escritura sensible
     public async Task<IActionResult> EliminarCampo(Guid campoId, CancellationToken ct)
         => await _svc.EliminarCampoAsync(campoId, ct) ? NoContent() : NotFound();
 
     [HttpPut("polizas/{id:guid}/campo-valor/{campoId:guid}")]
+    [RequiereRol("Administrador")]  // S-06: escritura sensible
     public async Task<IActionResult> GuardarCampoValor(Guid id, Guid campoId, [FromBody] GuardarPolizaCampoValorRequest req, CancellationToken ct)
         => await _svc.GuardarCampoValorAsync(id, campoId, req, ct) ? NoContent() : NotFound();
 
@@ -79,6 +85,7 @@ public class SegurosController : ControllerBase
     public async Task<IActionResult> ListReclamaciones(Guid id, CancellationToken ct) => Ok(await _svc.ListReclamacionesAsync(id, ct));
 
     [HttpPost("polizas/{id:guid}/reclamaciones")]
+    [RequiereRol("Administrador")]  // S-06: escritura sensible
     public async Task<IActionResult> CrearReclamacion(Guid id, [FromBody] CrearReclamacionRequest req, CancellationToken ct)
     {
         try { return Created("", await _svc.CrearReclamacionAsync(id, req, ct)); }
@@ -86,6 +93,7 @@ public class SegurosController : ControllerBase
     }
 
     [HttpPut("reclamaciones/{reclamacionId:guid}/cerrar")]
+    [RequiereRol("Administrador")]  // S-06: escritura sensible
     public async Task<IActionResult> CerrarReclamacion(Guid reclamacionId, [FromBody] CerrarReclamacionRequest req, CancellationToken ct)
         => await _svc.CerrarReclamacionAsync(reclamacionId, req, ct) ? NoContent() : NotFound();
 }
