@@ -1,7 +1,13 @@
 # PROPIA - Checklist de deploy
 
-> Actualizado 2026-09-08. Version visible: **0.0.68**
+> Actualizado 2026-09-08. Version visible: **0.0.69**
 > (`src/Propia.Web/Propia.Web.csproj` `<Version>`). Bumpear en cada deploy.
+>
+> **Nuevo desde 0.0.68:**
+> - **Unidades: campos dinamicos como COLUMNAS de la tabla** (header + valor por fila + input en la fila de
+>   alta), no como tira suelta. Nuevo endpoint `GET /api/mi-copropiedad/unidades-campos-valores` (bulk).
+>   Se **retira "Zona comun"** del selector de tipo de unidad (el valor del enum se conserva por datos
+>   historicos). **Sin migracion.**
 >
 > **Nuevo desde 0.0.67:**
 > - **Unidades Privadas: Estado como lista + campos dinamicos tipados.** El campo Estado de la unidad pasa
