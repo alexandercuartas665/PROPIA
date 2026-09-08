@@ -843,6 +843,14 @@ else
             }
             @if (_editId is null || _modalTab == "detalle")
             {
+            <div class="sp-ocr" style="margin-bottom:12px;">
+                <label class="sp-ocr-up">
+                    <i class="fi fi-rr-upload"></i>
+                    <span>@(_ocrCBusy ? "Leyendo contrato con IA..." : "Cargar PDF y extraer (IA)")</span>
+                    <InputFile OnChange="OnOcrContrato" accept=".pdf,image/*" disabled="@_ocrCBusy" />
+                </label>
+                @if (!string.IsNullOrEmpty(_ocrCMsg)) { <div class="sp-ocr-msg @_ocrCMsgCls">@_ocrCMsg</div> }
+            </div>
             <div class="srv-grid">
                 <div class="srv-col-full">
                     <label class="srv-lbl">Contratista * <span style="font-weight:400;color:#8fa0b3;">(busca en el Directorio o crea uno nuevo)</span></label>
@@ -2200,6 +2208,84 @@ else
 
     private void AbrirCargarRecibo() { _fr = new(); _spError = null; _ocrMsg = null; _spReciboModal = true; }
 
+    // ---- OCR IA: cargar el PDF del contrato y prellenar el formulario (perfil "contrato") ----
+    private bool _ocrCBusy;
+    private string? _ocrCMsg; private string _ocrCMsgCls = "ok";
+
+    private async Task OnOcrContrato(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null) return;
+        _ocrCBusy = true; _ocrCMsg = null;
+        try
+        {
+            // Bufferizamos a bytes UNA vez (InputFile solo se abre una vez de forma fiable).
+            byte[] bytes;
+            await using (var s = file.OpenReadStream(15 * 1024 * 1024))
+            {
+                using var msb = new MemoryStream();
+                await s.CopyToAsync(msb);
+                bytes = msb.ToArray();
+            }
+            var mime = string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType;
+            using var content = new MultipartFormDataContent();
+            var bc = new ByteArrayContent(bytes);
+            bc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mime);
+            content.Add(bc, "file", file.Name);
+            content.Add(new StringContent("contrato"), "perfil");
+
+            var resp = await Auth().PostAsync("/api/ocr/extraer-ia", content);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var err = await resp.Content.ReadFromJsonAsync<OcrError>();
+                _ocrCMsg = "No se pudo leer el documento: " + (err?.Error ?? resp.StatusCode.ToString());
+                _ocrCMsgCls = "err";
+                return;
+            }
+            var r = await resp.Content.ReadFromJsonAsync<OcrIaResp>();
+            if (r?.Campos is null)
+            {
+                _ocrCMsg = "La IA no devolvio datos. Completa los campos manualmente.";
+                _ocrCMsgCls = "err";
+                return;
+            }
+            var aplicados = AplicarCamposContrato(r.Campos);
+            _ocrCMsg = aplicados > 0
+                ? $"Documento leido con IA ({r.Proveedor}): {aplicados} campo(s) prellenado(s). Revisa y confirma."
+                : $"La IA leyo el documento ({r.Proveedor}) pero no encontro datos de contrato (contratista, NIT, valor, vigencia). Completa los campos manualmente.";
+            _ocrCMsgCls = aplicados > 0 ? "ok" : "err";
+        }
+        catch (Exception ex) { _ocrCMsg = "Error leyendo el documento: " + ex.Message; _ocrCMsgCls = "err"; }
+        finally { _ocrCBusy = false; }
+    }
+
+    // Mapea los campos del perfil "contrato" (extraccion IA) al formulario. best-effort; el humano confirma.
+    // Devuelve cuantos campos se prellenaron realmente (0 = la IA no encontro datos de contrato).
+    private int AplicarCamposContrato(List<OcrIaCampo> campos)
+    {
+        var n = 0;
+        string? Val(string nombre) => campos.FirstOrDefault(c => string.Equals(c.Nombre, nombre, StringComparison.OrdinalIgnoreCase))?.Valor;
+        var contratista = Val("contratista"); if (!string.IsNullOrWhiteSpace(contratista)) { _f.Proveedor = contratista!; n++; }
+        var nit = Val("nit"); if (!string.IsNullOrWhiteSpace(nit)) { _f.Nit = nit; n++; }
+        var num = Val("numero_contrato"); if (!string.IsNullOrWhiteSpace(num)) { _f.NumeroContrato = num; n++; }
+        var contacto = Val("contacto"); if (!string.IsNullOrWhiteSpace(contacto)) { _f.Contacto = contacto; n++; }
+        var vt = Val("valor_total");
+        if (!string.IsNullOrWhiteSpace(vt) && decimal.TryParse(vt, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var vvt)) { _f.ValorTotal = vvt; n++; }
+        var vm = Val("valor_mensual");
+        if (!string.IsNullOrWhiteSpace(vm) && decimal.TryParse(vm, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var vvm)) { _f.Valor = vvm; n++; }
+        var fi = Val("fecha_inicio"); if (!string.IsNullOrWhiteSpace(fi) && DateTime.TryParse(fi, out var fdi)) { _f.Inicio = fdi; n++; }
+        var ff = Val("fecha_fin"); if (!string.IsNullOrWhiteSpace(ff) && DateTime.TryParse(ff, out var fdf)) { _f.Fin = fdf; n++; }
+        var objeto = Val("objeto");
+        if (!string.IsNullOrWhiteSpace(objeto))
+        {
+            _f.Observaciones = string.IsNullOrWhiteSpace(_f.Observaciones) ? objeto : $"{objeto}\n{_f.Observaciones}";
+            n++;
+        }
+        return n;
+    }
+    private sealed record OcrIaResp(bool Ok, string? Proveedor, string? Modelo, List<OcrIaCampo>? Campos, string? PdfOrigenKey = null);
+    private sealed record OcrIaCampo(string Nombre, string? Valor, double? Confianza);
+
     // ---- OCR: cargar recibo y prefilar valor/periodo con el proveedor configurado en SuperAdmin ----
     private bool _ocrBusy;
     private string? _ocrMsg; private string _ocrMsgCls = "ok";
@@ -2422,6 +2508,7 @@ else
     private async Task AbrirModal(ContratoServicioDto? c)
     {
         _modalError = null;
+        _ocrCMsg = null;
         _contratoAdjuntos = new();
         _modalTab = "detalle";
         await CargarDropdownsAsync();

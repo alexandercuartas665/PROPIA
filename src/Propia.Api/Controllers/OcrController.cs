@@ -102,6 +102,18 @@ public class OcrController : ControllerBase
             new CampoObjetivo("fecha_inicio", "Fecha de inicio de vigencia", "fecha"),
             new CampoObjetivo("fecha_fin", "Fecha de fin de vigencia", "fecha"),
         },
+        "contrato" => new[]
+        {
+            new CampoObjetivo("contratista", "Nombre del contratista o proveedor (la empresa o persona que presta el servicio o ejecuta la obra, NO la copropiedad contratante)", "texto"),
+            new CampoObjetivo("nit", "NIT o documento de identificacion del contratista", "texto"),
+            new CampoObjetivo("numero_contrato", "Numero o consecutivo del contrato, si aparece", "texto"),
+            new CampoObjetivo("objeto", "Objeto del contrato: resumen breve de que se contrata (obra, servicio, suministro)", "texto"),
+            new CampoObjetivo("valor_total", "Valor total del contrato, solo el numero", "moneda"),
+            new CampoObjetivo("valor_mensual", "Valor mensual o periodico, solo el numero, si el contrato lo indica", "moneda"),
+            new CampoObjetivo("contacto", "Telefono o correo de contacto del contratista, si aparece", "texto"),
+            new CampoObjetivo("fecha_inicio", "Fecha de inicio de vigencia del contrato", "fecha"),
+            new CampoObjetivo("fecha_fin", "Fecha de fin o terminacion del contrato", "fecha"),
+        },
         _ => Array.Empty<CampoObjetivo>()
     };
 
