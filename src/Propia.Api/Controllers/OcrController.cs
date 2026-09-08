@@ -21,8 +21,7 @@ namespace Propia.Api.Controllers;
 [ApiController]
 [Route("api/ocr")]
 
-[Authorize]
-[RequiereRol("Administrador")]  // S-06: gestion sensible, admin
+[Authorize]  // S-06: extraccion (lectura) abierta al tenant; el agente documental que persiste va gateado (ver metodos)
 public class OcrController : ControllerBase
 {
     private readonly IDocumentExtractionService _ocr;
@@ -157,6 +156,7 @@ public class OcrController : ControllerBase
     /// Documental" creado en el tenant (lo siembra AgenteDocumentalSeeder).
     /// </summary>
     [HttpPost("analizar")]
+    [RequiereRol("Administrador")]  // S-06: el agente documental propone/persiste en Servicios/Cartera
     [RequestSizeLimit(15 * 1024 * 1024)]
     public async Task<IActionResult> Analizar([FromForm] IFormFile? file, [FromForm] string? instruccion, CancellationToken ct)
     {
@@ -222,6 +222,7 @@ public class OcrController : ControllerBase
     /// tools MCP con dryRun=false para persistir lo propuesto. El token del usuario se reusa (RLS).
     /// </summary>
     [HttpPost("analizar/continuar")]
+    [RequiereRol("Administrador")]  // S-06: paso de confirmacion que persiste (dryRun=false) via MCP
     public async Task<IActionResult> Continuar([FromBody] ContinuarAnalisisRequest req, CancellationToken ct)
     {
         if (req?.Conversacion is null || req.Conversacion.Count == 0)

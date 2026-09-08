@@ -1,7 +1,17 @@
 # PROPIA - Checklist de deploy
 
-> Actualizado 2026-09-08. Version visible: **0.0.64**
+> Actualizado 2026-09-08. Version visible: **0.0.65**
 > (`src/Propia.Web/Propia.Web.csproj` `<Version>`). Bumpear en cada deploy.
+>
+> **Nuevo desde 0.0.64:**
+> - **HOTFIX 403 en el extractor de IA (OCR).** Mismo bug de RBAC que 0.0.64 corrigio en Seguros, pero en
+>   `OcrController.cs`: el `[RequiereRol("Administrador")]` estaba a nivel de CLASE y gateaba tambien
+>   `POST /api/ocr/extraer-ia` y `/api/ocr/extraer` (lectura), por lo que un usuario no-Administrador recibia
+>   403 al pulsar "Cargar PDF y extraer (IA)" en Seguros/Contratos. Se retiro el gate de clase (queda
+>   `[Authorize]`); `extraer-ia` y `extraer` quedan abiertos al tenant (son LECTURA: devuelven JSON de campos
+>   detectados, no persisten) y `analizar` + `analizar/continuar` (agente documental que SI persiste en
+>   Servicios/Cartera con dryRun=false) quedan gateados a Administrador por metodo. **Solo codigo, sin migracion.**
+>   Verificado local con un usuario rol "Propietario": `extraer-ia` responde 200 (antes 403).
 >
 > **Nuevo desde 0.0.63:**
 > - **HOTFIX (critico, ya en produccion antes de este deploy):** el modulo **Seguros** devolvia **403** al
@@ -104,7 +114,10 @@ falten en ese entorno, comparando contra `__EFMigrationsHistory`:
 
 ## 4. Post-deploy (verificacion)
 
-- [ ] Login OK; el footer muestra `v0.0.64`.
+- [ ] Login OK; el footer muestra `v0.0.65`.
+- [ ] **Extractor IA (hotfix 403):** un usuario NO-Administrador pulsa "Cargar PDF y extraer (IA)" en
+      Seguros y en Contratos -> prellena (antes -> "forbidden"/403). El agente documental de Servicios
+      Publicos ("Analizar con el Agente Documental") sigue exigiendo Administrador.
 - [ ] **Seguros (hotfix 403):** un usuario del tenant que NO sea Administrador entra a Juridico > Seguros y
       VE la lista de polizas (antes -> 403). Crear/editar/eliminar una poliza sigue exigiendo Administrador.
 - [ ] **Contratos IA:** Juridico > Contratos > "Nuevo contrato" > "Cargar PDF y extraer (IA)" con un PDF de
