@@ -1,7 +1,17 @@
 # PROPIA - Checklist de deploy
 
-> Actualizado 2026-09-08. Version visible: **0.0.65**
+> Actualizado 2026-09-08. Version visible: **0.0.66**
 > (`src/Propia.Web/Propia.Web.csproj` `<Version>`). Bumpear en cada deploy.
+>
+> **Nuevo desde 0.0.65:**
+> - **BUILD FIX (NU1605/NU1603 tras .NET 10 GA).** El build de Railway (restore fresh, `-warnaserror`)
+>   fallaba: el servicing 9.0.20 de Identity exige `Microsoft.Extensions.* >= 9.0.20`, versiones base que
+>   no se publicaron (saltaron a 10.0.x). Se agrego `Directory.Build.props` en la raiz que fija
+>   `Microsoft.Extensions.DependencyInjection(.Abstractions)`, `Microsoft.Extensions.Options` y
+>   `Microsoft.AspNetCore.Cryptography.KeyDerivation` a `10.0.*` (retrocompatibles con net9.0), y se quito
+>   el ref flotante `9.0.*` de `Propia.Application`. Verificado: restore fresh aislado `-warnaserror` sin
+>   NU1603/NU1605, build de solucion OK y API arranca sin errores de binding. 0.0.65 nunca llego a prod
+>   (build roto); **este es el artefacto que si compila** e incluye el hotfix 403 de OCR de 0.0.65.
 >
 > **Nuevo desde 0.0.64:**
 > - **HOTFIX 403 en el extractor de IA (OCR).** Mismo bug de RBAC que 0.0.64 corrigio en Seguros, pero en
@@ -114,7 +124,7 @@ falten en ese entorno, comparando contra `__EFMigrationsHistory`:
 
 ## 4. Post-deploy (verificacion)
 
-- [ ] Login OK; el footer muestra `v0.0.65`.
+- [ ] Login OK; el footer muestra `v0.0.66`.
 - [ ] **Extractor IA (hotfix 403):** un usuario NO-Administrador pulsa "Cargar PDF y extraer (IA)" en
       Seguros y en Contratos -> prellena (antes -> "forbidden"/403). El agente documental de Servicios
       Publicos ("Analizar con el Agente Documental") sigue exigiendo Administrador.
