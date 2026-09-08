@@ -1,7 +1,17 @@
 # PROPIA - Checklist de deploy
 
-> Actualizado 2026-09-07. Version visible: **0.0.62**
+> Actualizado 2026-09-08. Version visible: **0.0.63**
 > (`src/Propia.Web/Propia.Web.csproj` `<Version>`). Bumpear en cada deploy.
+>
+> **Nuevo desde 0.0.62:** Super Admin - registro de ingresos por organizacion (logins exitosos y fallidos,
+> con copropiedad/IP/navegador; tabla `login_audit_events`). Cuenta de correo saliente por copropiedad
+> (SMTP/Gmail con contrasena de aplicacion cifrada; tabla `tenant_email_configs`; tab "Correo" en Configurar
+> PQRSD con envio de prueba). PQRSD respuesta: modal en 3 columnas (contactos | documento | plantillas),
+> gestion de plantillas movida a Configurar PQRSD > Plantillas, modal mas ancho y editor mas alto, chat de
+> Actividad a alto completo (compositor siempre visible). Adjuntos PQRSD: previsualizacion inline de PDF
+> (S-09 ahora sirve application/pdf inline, seguro) + tarjetas con trazabilidad. Configurar PQRSD reorganizado
+> en 3 tabs primarios (Flujo / Radicacion / Respuestas). **2 migraciones nuevas** (`login_audit_events`,
+> `tenant_email_configs`) -> aditivas/seguras (ver seccion 3).
 >
 > **Nuevo desde 0.0.61:** PQRSD respuestas al ciudadano (consecutivo de radicado de salida por respuesta;
 > canal por destinatario correo/WhatsApp; envio por plantilla de WhatsApp con link compartido enriquecido;
@@ -50,9 +60,11 @@ dotnet ef database update --project ../Propia.Infrastructure --startup-project .
 
 Ultimas migraciones del repo (verificar que esten aplicadas). `ef database update` aplica SOLO las que
 falten en ese entorno, comparando contra `__EFMigrationsHistory`:
-- `20260907154737_PqrsdDestinatarioCanalesFlags`  (PQRSD: `pqrsd_respuesta_destinatarios` -`canal`, +`enviar_correo` bool, +`enviar_whats_app` bool)  <-- NUEVA
-- `20260907151436_AddPqrsdCanalYWhatsAppConfig`  (PQRSD: tabla nueva `pqrsd_whatsapp_configs` con RLS; `pqrsd_respuesta_destinatarios` +`canal` int (luego retirada), +`telefono` varchar(30))  <-- NUEVA
-- `20260907143804_AddPqrsdConsecutivos`  (PQRSD: tabla nueva `pqrsd_consecutivo_configs` con RLS; `pqrsd_respuestas` +`numero_radicado` varchar(40) null)  <-- NUEVA
+- `20260908023154_AddTenantEmailConfig`  (Correo: tabla nueva `tenant_email_configs` con RLS; SMTP host/puerto/usuario/from + clave de aplicacion cifrada)  <-- NUEVA (0.0.63)
+- `20260908021743_AddLoginAuditEvents`  (Super Admin: tabla nueva `login_audit_events`, GLOBAL sin RLS; ingresos exitosos y fallidos)  <-- NUEVA (0.0.63)
+- `20260907154737_PqrsdDestinatarioCanalesFlags`  (PQRSD: `pqrsd_respuesta_destinatarios` -`canal`, +`enviar_correo` bool, +`enviar_whats_app` bool)  <-- (0.0.62)
+- `20260907151436_AddPqrsdCanalYWhatsAppConfig`  (PQRSD: tabla nueva `pqrsd_whatsapp_configs` con RLS; `pqrsd_respuesta_destinatarios` +`canal` int (luego retirada), +`telefono` varchar(30))  <-- (0.0.62)
+- `20260907143804_AddPqrsdConsecutivos`  (PQRSD: tabla nueva `pqrsd_consecutivo_configs` con RLS; `pqrsd_respuestas` +`numero_radicado` varchar(40) null)  <-- (0.0.62)
 - `20260905150507_AddPlanLimiteCopropiedades`  (Planes: `planes` +`limite_copropiedades` int null, +`es_promocional` bool)
 - `20260905143647_AddPolizaPdfOrigen`  (Seguros: `polizas` +`pdf_origen_key` text null)
 - `20260905135921_AddDocumentExtractionLog`  (IA: tabla nueva `document_extraction_logs`, global sin RLS)
@@ -61,21 +73,28 @@ falten en ese entorno, comparando contra `__EFMigrationsHistory`:
 - `20260903171507_AddTenantLinkPago`
 - `20260903154017_S02UniquePersonaIdEnUsuarios`
 
-> Las 3 migraciones nuevas son **seguras**: dos tablas nuevas (`pqrsd_consecutivo_configs`,
-> `pqrsd_whatsapp_configs`, ambas con RLS + GRANT a `propia_app` dentro de la propia migracion) y columnas
-> nuevas. La columna `canal` la agrega `151436` y la retira `154737` en la MISMA tanda: en un entorno donde
-> ninguna de las dos estaba aplicada (prod), `canal` es transitoria y no hay perdida de datos. `enviar_correo`
-> y `enviar_whats_app` entran con `default false`. Aplicar las 3 en orden (lo hace `ef database update`).
+> Todas son **seguras** (aditivas). Las nuevas de 0.0.63: `tenant_email_configs` (TenantEntity, con RLS +
+> GRANT a `propia_app` en la propia migracion) y `login_audit_events` (GLOBAL, sin RLS, como
+> `document_extraction_logs` - la lee el Super Admin). Las de 0.0.62: dos tablas nuevas
+> (`pqrsd_consecutivo_configs`, `pqrsd_whatsapp_configs`, ambas con RLS) + columnas; la columna `canal` la
+> agrega `151436` y la retira `154737` en la MISMA tanda (transitoria, sin perdida de datos), y
+> `enviar_correo`/`enviar_whats_app` entran con `default false`. Aplicar en orden (lo hace `ef database update`).
 > El increment de campos dinamicos PQRSD (0.0.61) no agregaba migracion (usa `pqrsd_campos.columna`).
 
 ## 4. Post-deploy (verificacion)
 
-- [ ] Login OK; el footer muestra `v0.0.62`.
+- [ ] Login OK; el footer muestra `v0.0.63`.
+- [ ] Super Admin > Organizaciones > "Ingresos": lista los logins (exitosos y fallidos) de la organizacion.
+      Un login fallido y uno exitoso quedan registrados con copropiedad/IP.
+- [ ] Configurar PQRSD > Correo: guardar una cuenta SMTP (Gmail app-password) y "Probar" envia un correo real.
+      La clave queda cifrada (no se ve). Configurar PQRSD se ve en 3 tabs (Flujo/Radicacion/Respuestas).
+- [ ] PQRSD adjuntos: al seleccionar un PDF se previsualiza inline en el visor (no descarga); tarjetas con
+      trazabilidad (subido por / fecha / tipo). Un archivo NO-imagen/NO-pdf (docx) sigue descargando.
+- [ ] PQRSD respuesta: modal en 3 columnas (contactos | documento | plantillas); las plantillas se crean en
+      Configurar PQRSD > Plantillas. Chat de Actividad: el compositor queda siempre visible (no requiere scroll).
 - [ ] Planes: crear una 2a copropiedad con plan que permite 1 -> bloqueo con mensaje; un plan promocional
       no se puede cambiar de plan directamente.
 - [ ] PQRSD: editar un campo dinamico -> se guarda solo (sin boton); 3 anchos alinean en linea; VENCIDO en rojo.
-- [ ] PQRSD: abrir el modal de un expediente con PDF adjunto -> NO se descarga nada solo (el visor muestra
-      tarjeta con "Abrir / descargar", la descarga es a clic).
 - [ ] PQRSD: mover un expediente a la columna "Cerrada" (chip del modal o drag en el tablero) -> pide motivo
       de cierre -> al confirmar queda Cerrada + archivada (sale del tablero activo, pasa a "Cerrados").
 - [ ] PQRSD: la pestana "Tareas" del modal muestra el tablero real (crear/mover/editar/subtarea) y esas
