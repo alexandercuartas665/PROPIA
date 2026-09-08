@@ -278,14 +278,19 @@ else
 }
 app.UseStaticFiles(new StaticFileOptions
 {
-    // S-09: los adjuntos que NO sean imagen se descargan (Content-Disposition: attachment) en vez de
-    // abrirse inline, para que un HTML/SVG malicioso subido como "archivo" no se ejecute en el origen.
+    // S-09: los adjuntos que NO sean visualizables de forma segura se descargan (Content-Disposition:
+    // attachment) en vez de abrirse inline, para que un HTML/SVG malicioso subido como "archivo" no se
+    // ejecute en el origen. Las imagenes y los PDF SI se sirven inline: ambos los renderiza el navegador
+    // en un visor aislado (no ejecutan scripts en el origen), lo que habilita la previsualizacion en el
+    // modal de PQRSD. Todo lo demas (HTML, SVG, docx, ...) sigue forzado a descarga.
     OnPrepareResponse = ctx =>
     {
         if (ctx.Context.Request.Path.StartsWithSegments("/uploads"))
         {
             var ct = ctx.Context.Response.ContentType ?? string.Empty;
-            if (!ct.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            var inlineSeguro = ct.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+                || ct.Equals("application/pdf", StringComparison.OrdinalIgnoreCase);
+            if (!inlineSeguro)
                 ctx.Context.Response.Headers["Content-Disposition"] = "attachment";
         }
     }

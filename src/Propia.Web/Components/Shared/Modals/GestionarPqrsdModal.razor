@@ -773,19 +773,28 @@
                             var aa = a;
                             var hayImg = EsImagen(a.TipoMime, a.NombreArchivo) && !string.IsNullOrEmpty(a.UrlStorage) && !a.UrlStorage.StartsWith("/pendiente");
                             var titAdj = string.IsNullOrWhiteSpace(a.SubidoPorNombre) ? a.NombreArchivo : $"{a.NombreArchivo} - subido por {a.SubidoPorNombre}";
+                            var esOficial = a.NombreArchivo.StartsWith("documento-oficial", StringComparison.OrdinalIgnoreCase);
                             <div class="gpq-thumb @(selAdj is not null && selAdj.Id == a.Id ? "on" : "")" @onclick="@(() => _adjSel = aa.Id)" title="@titAdj">
                                 <div class="gpq-thumb-ic @ThumbClass(a.TipoMime, a.NombreArchivo)">
                                     @if (hayImg) { <img src="@a.UrlStorage" alt="@a.NombreArchivo" /> }
                                     else { <span class="gpq-thumb-ext">@Extension(a.NombreArchivo)</span> }
                                 </div>
                                 <div class="gpq-thumb-meta">
-                                    <span class="gpq-thumb-nm">@a.NombreArchivo</span>
-                                    <span class="gpq-thumb-sz">@FormatSize(a.TamanioBytes)@(string.IsNullOrWhiteSpace(a.SubidoPorNombre) ? "" : " - " + a.SubidoPorNombre)</span>
-                                    <label class="gpq-thumb-share" @onclick:stopPropagation="true" title="Mostrar este archivo en el link de seguimiento del solicitante">
-                                        <input type="checkbox" checked="@aa.Compartido" @onchange="@(e => ToggleCompartirAdjunto(aa, (bool)(e.Value ?? false)))" />
-                                        <span>Compartir</span>
-                                    </label>
+                                    <span class="gpq-thumb-nm">@NombreAdjuntoDisplay(a.NombreArchivo)</span>
+                                    <span class="gpq-thumb-sub">@FormatSize(a.TamanioBytes) &middot; @Extension(a.NombreArchivo)</span>
+                                    <span class="gpq-thumb-sub gpq-thumb-by" title="Subido por @(string.IsNullOrWhiteSpace(a.SubidoPorNombre) ? "el sistema" : a.SubidoPorNombre)">
+                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg>
+                                        @(string.IsNullOrWhiteSpace(a.SubidoPorNombre) ? "Sistema" : a.SubidoPorNombre) &middot; @a.CreatedAt.ToCo().ToString("dd MMM")
+                                    </span>
+                                    <div class="gpq-thumb-tags">
+                                        @if (esOficial) { <span class="gpq-thumb-tag gpq-thumb-tag--of">Respuesta oficial</span> }
+                                        <label class="gpq-thumb-share" @onclick:stopPropagation="true" title="Mostrar este archivo en el link de seguimiento del solicitante">
+                                            <input type="checkbox" checked="@aa.Compartido" @onchange="@(e => ToggleCompartirAdjunto(aa, (bool)(e.Value ?? false)))" />
+                                            <span>Compartir</span>
+                                        </label>
+                                    </div>
                                 </div>
+                                @if (a.Compartido) { <span class="gpq-thumb-dot" title="Compartido con el solicitante"></span> }
                             </div>
                         }
                         <label class="gpq-thumb-up @(_subiendo ? "gpq-thumb-up--busy" : "")">
@@ -835,15 +844,22 @@
                         }
                         else if (EsPdf(selAdj.TipoMime, selAdj.NombreArchivo))
                         {
-                            @* El storage sirve los PDF como adjunto (Content-Disposition: attachment, regla S-09),
-                               asi que un <iframe src> los descargaba solo con montarse (incluso en el tab oculto,
-                               cada vez que se abria el modal). Se muestra una tarjeta y la descarga queda a accion
-                               explicita del usuario con "Abrir / descargar". *@
-                            <div class="gpq-viewer-file">
-                                <svg width="54" height="54" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h4"/></svg>
-                                <p class="gpq-viewer-nm">@selAdj.NombreArchivo</p>
-                                <p class="gpq-viewer-by">@FormatSize(selAdj.TamanioBytes) - PDF</p>
-                                <a class="gpq-viewer-open" href="@selAdj.UrlStorage" target="_blank" rel="noopener">Abrir / descargar</a>
+                            @* Previsualizacion inline del PDF. El storage ahora sirve los PDF con
+                               Content-Disposition: inline (seguro: el visor del navegador no ejecuta scripts),
+                               asi que el iframe los muestra sin descargarlos. Se monta SOLO en el tab Adjuntos
+                               para no cargarlo oculto al abrir el modal. *@
+                            @if (_tab == "adjuntos")
+                            {
+                                <div class="gpq-viewer-pdfwrap">
+                                    <iframe class="gpq-viewer-pdf" src="@selAdj.UrlStorage" title="@selAdj.NombreArchivo"></iframe>
+                                </div>
+                            }
+                            <div class="gpq-viewer-bar">
+                                <div class="gpq-viewer-meta">
+                                    <span class="gpq-viewer-nm">@NombreAdjuntoDisplay(selAdj.NombreArchivo)</span>
+                                    <span class="gpq-viewer-by">@FormatSize(selAdj.TamanioBytes) &middot; PDF@(string.IsNullOrWhiteSpace(selAdj.SubidoPorNombre) ? "" : " · " + selAdj.SubidoPorNombre) &middot; @selAdj.CreatedAt.ToCo().ToString("dd MMM yyyy")</span>
+                                </div>
+                                <a class="gpq-viewer-open" href="@selAdj.UrlStorage" target="_blank" rel="noopener">Abrir en pestana</a>
                             </div>
                         }
                         else
@@ -1799,6 +1815,13 @@
         var ext = System.IO.Path.GetExtension(nombre);
         return string.IsNullOrEmpty(ext) ? "FILE" : ext.TrimStart('.').ToUpperInvariant();
     }
+
+    // Nombre legible para la tarjeta: los PDF oficiales tienen nombre tecnico (documento-oficial-<guid>.pdf);
+    // se muestran como "Respuesta oficial.pdf". El resto conserva su nombre real.
+    private static string NombreAdjuntoDisplay(string nombre)
+        => nombre.StartsWith("documento-oficial", StringComparison.OrdinalIgnoreCase)
+            ? "Respuesta oficial.pdf"
+            : nombre;
 
     private static bool EsImagen(string mime, string nombre)
     {
