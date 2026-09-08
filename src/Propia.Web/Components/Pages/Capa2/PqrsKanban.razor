@@ -499,11 +499,11 @@
     @* ===================== CONFIG DE COLUMNAS ===================== *@
     @if (_cfgOpen)
     {
-        <div class="pk-cfg-backdrop" @onclick="() => _cfgOpen = false">
+        <div class="pk-cfg-backdrop" @onclick="CerrarConfig">
             <div class="pk-cfg" @onclick:stopPropagation="true">
                 <div class="pk-cfg-head">
                     <h3>Configurar PQRSD</h3>
-                    <button class="npq-close" @onclick="() => _cfgOpen = false">&times;</button>
+                    <button class="npq-close" @onclick="CerrarConfig">&times;</button>
                 </div>
                 @* Tabs primarios: agrupan las secciones para que no se vea todo apeñuscado. *@
                 <div class="pk-cfg-grupos">
@@ -544,6 +544,7 @@
                             <input type="color" class="pk-cfg-color" value="@(e.Color ?? "#6D4FE3")" @onchange="(ev) => CambiarColor(e, ev)" />
                             <input class="pk-cfg-name" value="@e.Nombre" @onchange="(ev) => RenombrarEstado(e, ev)" />
                             @if (e.SemanticaLegal is not null) { <span class="pk-cfg-badge" title="Columna legal - maneja plazos">legal</span> }
+                            @if (_colGuardadoId == e.Id) { <span class="pk-cfg-ok">Guardado</span> }
                             <div class="pk-cfg-ord">
                                 <button class="pk-icon-btn" @onclick='() => ReordenarEstado(e.Id, "arriba")'>&#8593;</button>
                                 <button class="pk-icon-btn" @onclick='() => ReordenarEstado(e.Id, "abajo")'>&#8595;</button>
@@ -803,7 +804,12 @@
                     </div>
                     <div class="pk-cfg-grid3" style="margin-top:10px;">
                         <div><label class="pk-cfg-formlbl">Contrasena de aplicacion</label>
-                            <input class="pk-cfg-name" style="width:100%;" type="password" @bind="_correoPassword" placeholder="@(_correo.TienePassword ? "•••••••• (guardada; escribe para cambiar)" : "16 caracteres de Google")" autocomplete="new-password" /></div>
+                            <input class="pk-cfg-name" style="width:100%;" type="password" @bind="_correoPassword" placeholder="@(_correo.TienePassword ? "•••••••• (guardada; escribe para cambiar)" : "16 caracteres de Google")" autocomplete="new-password" />
+                            @if (_correo.TienePassword && string.IsNullOrEmpty(_correoPassword))
+                            {
+                                <span class="pk-cfg-ok" style="display:inline-block;margin-top:6px;">Contrasena guardada@(_correo.LastValidatedAt is { } lvp ? $" · validada {lvp.ToLocalTime():dd MMM yyyy}" : "")</span>
+                            }
+                        </div>
                         <div><label class="pk-cfg-formlbl">Nombre remitente</label>
                             <input class="pk-cfg-name" style="width:100%;" @bind="_correo.FromName" placeholder="Conjunto Altos del Bosque" /></div>
                         <div><label class="pk-cfg-formlbl">Correo remitente (From)</label>
@@ -1549,7 +1555,7 @@
     private async Task AgregarColumna()
     {
         var resp = await Auth().PostAsJsonAsync("/api/pqrsd/estados", new CrearEstadoPqrsdRequest(_nuevaColNombre.Trim(), _nuevaColColor));
-        if (resp.IsSuccessStatusCode) { _nuevaColNombre = ""; _cfgMsg = ""; await CargarAsync(); }
+        if (resp.IsSuccessStatusCode) { _nuevaColNombre = ""; _cfgMsg = ""; _estadosCambiaron = true; await CargarEstadosAsync(); }
         else { _cfgMsg = await LeerError(resp); }
     }
 
@@ -1966,23 +1972,46 @@
     {
         var nombre = ev.Value?.ToString() ?? e.Nombre;
         var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/estados/{e.Id}", new ActualizarEstadoPqrsdRequest(nombre, e.Color, e.Orden));
-        if (resp.IsSuccessStatusCode) { _cfgMsg = ""; await CargarAsync(); } else { _cfgMsg = await LeerError(resp); }
+        if (resp.IsSuccessStatusCode) { _cfgMsg = ""; await CargarEstadosAsync(); await MarcarFilaGuardadaAsync(e.Id); } else { _cfgMsg = await LeerError(resp); }
     }
     private async Task CambiarColor(PqrsdEstadoDto e, ChangeEventArgs ev)
     {
         var color = ev.Value?.ToString() ?? e.Color;
         var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/estados/{e.Id}", new ActualizarEstadoPqrsdRequest(e.Nombre, color, e.Orden));
-        if (resp.IsSuccessStatusCode) { await CargarAsync(); }
+        if (resp.IsSuccessStatusCode) { await CargarEstadosAsync(); await MarcarFilaGuardadaAsync(e.Id); }
     }
     private async Task ReordenarEstado(Guid id, string dir)
     {
         var resp = await Auth().PutAsync($"/api/pqrsd/estados/{id}/orden?direccion={dir}", null);
-        if (resp.IsSuccessStatusCode) await CargarAsync();
+        if (resp.IsSuccessStatusCode) { await CargarEstadosAsync(); await MarcarFilaGuardadaAsync(id); }
     }
     private async Task EliminarEstado(Guid id)
     {
         var resp = await Auth().DeleteAsync($"/api/pqrsd/estados/{id}");
-        if (resp.IsSuccessStatusCode) { _cfgMsg = ""; await CargarAsync(); } else { _cfgMsg = await LeerError(resp); }
+        if (resp.IsSuccessStatusCode) { _cfgMsg = ""; _estadosCambiaron = true; await CargarEstadosAsync(); } else { _cfgMsg = await LeerError(resp); }
+    }
+
+    // C-02: recarga SOLO las columnas (no toda la bandeja) al editar por fila; el tablero se refresca al cerrar.
+    private async Task CargarEstadosAsync()
+    {
+        try { _estados = (await Auth().GetFromJsonAsync<List<PqrsdEstadoDto>>("/api/pqrsd/estados")) ?? new(); }
+        catch { }
+    }
+    private Guid? _colGuardadoId;
+    private bool _estadosCambiaron;
+    private async Task MarcarFilaGuardadaAsync(Guid id)
+    {
+        _estadosCambiaron = true;
+        _colGuardadoId = id;
+        StateHasChanged();
+        await Task.Delay(1800);
+        if (_colGuardadoId == id) { _colGuardadoId = null; StateHasChanged(); }
+    }
+    // Al cerrar el panel de configuracion, refresca el tablero solo si cambiaron las columnas.
+    private async Task CerrarConfig()
+    {
+        _cfgOpen = false;
+        if (_estadosCambiaron) { _estadosCambiaron = false; await CargarAsync(); }
     }
     private static async Task<string> LeerError(HttpResponseMessage resp)
     {
