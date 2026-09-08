@@ -42,6 +42,11 @@ public class PqrsdExpediente : TenantEntity
     /// <summary>Dias habiles de prorroga acumulados (Ley 1755): ya sumados a FechaVencimiento. Solo informativo/traza.</summary>
     public int ProrrogaDias { get; set; }
 
+    /// <summary>Ultimo umbral de plazo ya alertado por el job (G-01): 80 (por vencer) o 100 (vencido).
+    /// null = sin alertar. Idempotencia: una alerta por umbral; se resetea si el plazo vuelve a estar holgado
+    /// (ej. tras una prorroga).</summary>
+    public int? AlertaPlazoNotificada { get; set; }
+
     /// <summary>FK a la tarea interna en modulo 2.10 (opcional, invisible para el radicador - RN-10).</summary>
     public Guid? TareaId { get; set; }
 
