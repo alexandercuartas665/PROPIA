@@ -337,6 +337,19 @@ public partial class PqrsdService
             exp.Tipo == TipoPqrsd.Denuncia ? Domain.Enums.PrioridadNotificacion.Alta : Domain.Enums.PrioridadNotificacion.Normal,
             ct);
 
+        // G-02: confirmacion de radicado al radicador (spec 11 - obligatorio). Por todos sus canales.
+        if (personaId != Guid.Empty)
+        {
+            try
+            {
+                await _noti.EnviarEventoUsuarioAsync(personaId,
+                    $"Radicado recibido: {numero}",
+                    $"Tu solicitud fue radicada con el numero {numero} el {DateTime.UtcNow:dd MMM yyyy}. El plazo legal de respuesta vence el {fechaVencimiento:dd MMM yyyy}. Te avisaremos cuando cambie de estado o tengas respuesta.",
+                    "2.9", exp.Id, _tenantContext.CurrentTenantId, Domain.Enums.PrioridadNotificacion.Normal, ct);
+            }
+            catch { /* la confirmacion no debe tumbar la radicacion */ }
+        }
+
         return (await GetExpedienteAsync(exp.Id, ct))!;
     }
 

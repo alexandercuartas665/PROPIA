@@ -177,6 +177,12 @@ public partial class PqrsdService
             Nota = "Radicador manifesto inconformidad"
         });
         await _db.SaveChangesAsync(ct);
+
+        // G-02: avisar a la administracion que el radicador manifesto inconformidad (reabre gestion).
+        await NotificarAdminsTenantAsync("2.9", id,
+            $"Inconformidad en PQRSD {x.NumeroRadicado}",
+            $"El radicador manifesto inconformidad sobre la respuesta de {x.NumeroRadicado}. El expediente volvio a En gestion; revisa y responde.",
+            Domain.Enums.PrioridadNotificacion.Alta, ct);
         return true;
     }
 
@@ -220,6 +226,19 @@ public partial class PqrsdService
             Nota = $"Cierre por admin - motivo: {motivo.Nombre}"
         });
         await _db.SaveChangesAsync(ct);
+
+        // G-02: avisar al radicador que su PQRSD fue cerrada.
+        if (x.RadicadorPersonaId != Guid.Empty)
+        {
+            try
+            {
+                await _noti.EnviarEventoUsuarioAsync(x.RadicadorPersonaId,
+                    $"Tu PQRSD {x.NumeroRadicado} fue cerrada",
+                    $"Tu solicitud {x.NumeroRadicado} fue cerrada. Puedes consultar la respuesta y el detalle desde el seguimiento.",
+                    "2.9", x.Id, _tenantContext.CurrentTenantId, Domain.Enums.PrioridadNotificacion.Normal, ct);
+            }
+            catch { /* no bloquear el cierre */ }
+        }
         return true;
     }
 

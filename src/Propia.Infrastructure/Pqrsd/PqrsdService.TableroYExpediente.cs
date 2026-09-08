@@ -101,6 +101,7 @@ public partial class PqrsdService
         var col = await _db.PqrsdEstados.FirstOrDefaultAsync(e => e.Id == estadoId, ct)
             ?? throw new InvalidOperationException("Columna no encontrada.");
         x.EstadoId = col.Id;
+        bool huboCambioLegal = false;
         // Si la columna arrastrada tiene semantica legal, sincronizar el enum legal (plazos/semaforo).
         if (col.SemanticaLegal is { } sem && sem != x.Estado)
         {
@@ -120,9 +121,23 @@ public partial class PqrsdService
                 Origen = OrigenCambioEstado.Manual,
                 Nota = $"Movido a columna '{col.Nombre}'"
             });
+            huboCambioLegal = true;
         }
         x.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
+
+        // G-02: avisar al radicador cuando su PQRSD cambia de estado legal.
+        if (huboCambioLegal && x.RadicadorPersonaId != Guid.Empty)
+        {
+            try
+            {
+                await _noti.EnviarEventoUsuarioAsync(x.RadicadorPersonaId,
+                    $"Tu PQRSD {x.NumeroRadicado} cambio de estado",
+                    $"Tu solicitud {x.NumeroRadicado} paso a la etapa '{col.Nombre}'.",
+                    "2.9", x.Id, _tenantContext.CurrentTenantId, Domain.Enums.PrioridadNotificacion.Normal, ct);
+            }
+            catch { /* no bloquear el cambio de estado */ }
+        }
         return true;
     }
 
