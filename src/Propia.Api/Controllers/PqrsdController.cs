@@ -497,15 +497,24 @@ public class PqrsdController : ControllerBase
     // Acepta un caption opcional 'texto' para el chat de actividad (burbuja con imagen/archivo + texto).
     [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/adjuntos/upload")]
-    [RequestSizeLimit(52_500_000)]
+    [RequestSizeLimit(27_000_000)]
     public async Task<IActionResult> SubirAdjuntoBinario(Guid id, IFormFile file, [FromForm] string? texto, [FromForm] Guid? respuestaId, CancellationToken ct)
     {
         var tenantId = GetTenantId();
         if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
         var exp = await _db.PqrsdExpedientes.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (exp is null) return NotFound();
-        if (file is null || file.Length == 0) return BadRequest(new { error = "Archivo vacio." });
-        if (file.Length > 52_428_800) return BadRequest(new { error = "Maximo 50 MB." });
+
+        // G-05 / spec 14 + S-09: formato (lista blanca) + 25 MB por archivo + firma real (magic bytes).
+        var errAdj = await Propia.Api.Security.AdjuntoPqrsdValidation.ValidarAsync(file, ct);
+        if (errAdj is not null) return BadRequest(new { error = errAdj });
+        // spec 14: maximo 5 adjuntos propios del expediente (los de una respuesta oficial no cuentan).
+        if (respuestaId is null)
+        {
+            var actuales = await _db.PqrsdAdjuntos.CountAsync(a => a.ExpedienteId == id && a.RespuestaId == null, ct);
+            if (actuales >= Propia.Api.Security.AdjuntoPqrsdValidation.MaxPorExpediente)
+                return BadRequest(new { error = "Maximo 5 archivos por PQRSD. Elimina alguno para poder subir otro." });
+        }
 
         var ext = System.IO.Path.GetExtension(file.FileName);
         var key = $"tenants/{tenantId:N}/pqrsd/{id:N}/{Guid.NewGuid():N}{ext}";

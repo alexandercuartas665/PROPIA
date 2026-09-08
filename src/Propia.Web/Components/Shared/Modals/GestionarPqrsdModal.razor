@@ -1614,10 +1614,23 @@
                 _pendingFile = null; _pendingFileName = null; _nuevoComentario = ""; _huboCambios = true;
                 await CargarAsync();   // recarga el detalle (Adjuntos/Comentarios son inmutables en el DTO)
             }
-            else { ShowMsg("No se pudo subir el archivo.", true); }
+            else { ShowMsg(await LeerErrorAdjuntoAsync(resp), true); }
         }
         catch (Exception ex) { ShowMsg(ex.Message, true); }
         finally { _subiendo = false; }
+    }
+
+    // Extrae el mensaje de error del API ({ error: "..." }) para que el usuario vea el motivo
+    // (formato no permitido, supera 25 MB, maximo 5 archivos...). Fallback generico si no se puede leer.
+    private static async Task<string> LeerErrorAdjuntoAsync(HttpResponseMessage resp)
+    {
+        try
+        {
+            var d = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+            if (d is not null && d.TryGetValue("error", out var msg) && !string.IsNullOrWhiteSpace(msg)) return msg;
+        }
+        catch { }
+        return "No se pudo subir el archivo.";
     }
 
     private async Task AgregarComentario()
@@ -1668,6 +1681,7 @@
     private async Task OnArchivosSeleccionados(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs e)
     {
         _subiendo = true;
+        _ultimoErrorAdj = null;
         var subidos = 0;
         foreach (var archivo in e.GetMultipleFiles(maximumFileCount: 10))
         {
@@ -1683,8 +1697,9 @@
                 content.Add(sc, "file", archivo.Name);
                 var resp = await Auth().PostAsync($"/api/pqrsd/{ExpedienteId}/adjuntos/upload", content);
                 if (resp.IsSuccessStatusCode) subidos++;
+                else _ultimoErrorAdj = await LeerErrorAdjuntoAsync(resp);
             }
-            catch { }
+            catch (Exception ex) { _ultimoErrorAdj = ex.Message; }
         }
         _subiendo = false;
         _subiendoNombre = "";
@@ -1692,10 +1707,11 @@
         {
             _huboCambios = true;
             await CargarAsync();
-            ShowMsg($"{subidos} archivo(s) subido(s).", false);
+            ShowMsg(_ultimoErrorAdj is null ? $"{subidos} archivo(s) subido(s)." : $"{subidos} subido(s). {_ultimoErrorAdj}", _ultimoErrorAdj is not null);
         }
-        else { ShowMsg("No se pudo subir ningun archivo.", true); }
+        else { ShowMsg(_ultimoErrorAdj ?? "No se pudo subir ningun archivo.", true); }
     }
+    private string? _ultimoErrorAdj;
 
     private static string PersonaAvatar(string rol) => rol switch
     {

@@ -139,8 +139,9 @@
                     <InputFile OnChange="OnArchivos" multiple class="npq-drop-input" />
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
                     <span class="npq-drop-main">Arrastra aqui tus archivos</span>
-                    <span class="npq-drop-hint">o haz clic para seleccionarlos &middot; hasta 50 MB c/u</span>
+                    <span class="npq-drop-hint">JPG, PNG, MP4, PDF o DOCX &middot; maximo 5 archivos &middot; hasta 25 MB c/u</span>
                 </label>
+                @if (!string.IsNullOrEmpty(_archMsg)) { <div class="npq-adj-msg">@_archMsg</div> }
                 @if (_archivos.Count > 0)
                 {
                     <div class="npq-files">
@@ -223,6 +224,7 @@
     .npq-drop svg { width: 32px; height: 32px; opacity: .85; }
     .npq-drop-main { font-size: 13.5px; font-weight: 700; }
     .npq-drop-hint { font-size: 11.5px; color: #9FB2C4; }
+    .npq-adj-msg { font-size: 12px; font-weight: 600; color: #C0383C; margin-top: 6px; }
     /* El input real cubre toda la caja (transparente) para que el drag-and-drop funcione sobre el area completa. */
     .npq-drop-input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
     .npq-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
@@ -415,12 +417,23 @@
 
     private void SetCampo(Guid id, string? valor) => _campoValores[id] = valor ?? "";
 
+    private string? _archMsg;
+    private static readonly string[] _extAdjOk = { ".jpg", ".jpeg", ".png", ".mp4", ".pdf", ".docx" };
+    // G-05 / spec 14: lista blanca de formatos, 25 MB por archivo y maximo 5 archivos por radicacion.
     private void OnArchivos(InputFileChangeEventArgs e)
     {
+        _archMsg = null;
         foreach (var f in e.GetMultipleFiles(20))
+        {
+            if (_archivos.Count >= 5) { _archMsg = "Maximo 5 archivos por PQRSD."; break; }
+            var ext = System.IO.Path.GetExtension(f.Name);
+            if (string.IsNullOrEmpty(ext) || !_extAdjOk.Contains(ext, StringComparer.OrdinalIgnoreCase))
+            { _archMsg = $"Formato no permitido: {f.Name}. Se aceptan JPG, PNG, MP4, PDF y DOCX."; continue; }
+            if (f.Size > 25L * 1024 * 1024) { _archMsg = $"\"{f.Name}\" supera el maximo de 25 MB."; continue; }
             if (_archivos.All(a => a.Name != f.Name)) _archivos.Add(f);
+        }
     }
-    private void QuitarArchivo(IBrowserFile f) => _archivos.Remove(f);
+    private void QuitarArchivo(IBrowserFile f) { _archivos.Remove(f); _archMsg = null; }
 
     private async Task Radicar()
     {
