@@ -34,23 +34,36 @@ public class AuthService : IAuthService
         _blob = blob;
     }
 
-    public async Task<LoginResponse?> LoginAsync(LoginRequest request, CancellationToken ct)
+    public async Task<LoginResponse?> LoginAsync(LoginRequest request, CancellationToken ct, string? ip = null, string? userAgent = null)
     {
         var user = await _userManager.FindByEmailAsync(request.Email);
-        if (user is null) return null;
+        if (user is null)
+        {
+            await RegistrarIngresoAsync(request.Email, null, null, null, false, "usuario_no_existe", ip, userAgent, ct);
+            return null;
+        }
 
         // S-04: no permitir login de cuentas con email sin confirmar (cierra el pre-hijacking:
         // el atacante pre-registra el correo de la victima pero nunca confirma; su cuenta no entra).
-        if (!user.EmailConfirmed) return null;
+        if (!user.EmailConfirmed)
+        {
+            await RegistrarIngresoAsync(request.Email, user.Id, user.PersonaId, null, false, "email_no_confirmado", ip, userAgent, ct);
+            return null;
+        }
 
         // S-03: lockout efectivo. Si la cuenta esta bloqueada por intentos fallidos, no se evalua la clave.
-        if (await _userManager.IsLockedOutAsync(user)) return null;
+        if (await _userManager.IsLockedOutAsync(user))
+        {
+            await RegistrarIngresoAsync(request.Email, user.Id, user.PersonaId, null, false, "cuenta_bloqueada", ip, userAgent, ct);
+            return null;
+        }
 
         var ok = await _userManager.CheckPasswordAsync(user, request.Password);
         if (!ok)
         {
             // Incrementa AccessFailedCount y bloquea al alcanzar el maximo (config en DependencyInjection).
             await _userManager.AccessFailedAsync(user);
+            await RegistrarIngresoAsync(request.Email, user.Id, user.PersonaId, null, false, "clave_incorrecta", ip, userAgent, ct);
             return null;
         }
         // Login correcto: se limpia el contador de fallos.
@@ -68,7 +81,49 @@ public class AuthService : IAuthService
             await UpdateUltimoAccesoAsync(user.PersonaId, activeTenant.Value, ct);
         }
 
+        // Registro de ingreso exitoso. Si hay varias copropiedades y ninguna activa aun, se toma la primera
+        // solo para agrupar el evento por copropiedad en el Super Admin.
+        var tenantParaRegistro = activeTenant ?? (tenants.Count > 0 ? tenants[0].TenantId : (Guid?)null);
+        await RegistrarIngresoAsync(request.Email, user.Id, user.PersonaId, tenantParaRegistro, true, null, ip, userAgent, ct);
+
         return new LoginResponse(token, expires, user.Id, user.Email!, activeTenant, tenants);
+    }
+
+    // Escribe un evento en el registro de ingresos (auditoria global, sin RLS). No debe tumbar el login
+    // si algo falla, por eso captura y descarta cualquier excepcion. La copropiedad determina la organizacion.
+    private async Task RegistrarIngresoAsync(string email, Guid? usuarioId, Guid? personaId, Guid? tenantId,
+        bool exito, string? motivo, string? ip, string? userAgent, CancellationToken ct)
+    {
+        try
+        {
+            // Si no viene una copropiedad resuelta pero el usuario existe (ej. clave incorrecta), se toma su
+            // copropiedad (la unica, o la primera) para que el evento agrupe bajo la organizacion en el Super Admin.
+            if (tenantId is null && usuarioId is Guid uid)
+            {
+                var tenants = await LoadAvailableTenantsAsync(uid, ct);
+                if (tenants.Count > 0) tenantId = tenants[0].TenantId;
+            }
+            Guid? orgId = null;
+            if (tenantId is Guid tid)
+                orgId = await _db.Tenants.AsNoTracking().Where(t => t.Id == tid).Select(t => t.OrganizacionId).FirstOrDefaultAsync(ct);
+
+            _db.LoginAuditEvents.Add(new Propia.Domain.Entities.LoginAuditEvent
+            {
+                Email = (email ?? string.Empty).Trim().ToLowerInvariant(),
+                UsuarioId = usuarioId,
+                PersonaId = personaId,
+                TenantId = tenantId,
+                OrganizacionId = orgId,
+                Exito = exito,
+                Motivo = motivo,
+                Ip = string.IsNullOrWhiteSpace(ip) ? null : ip.Trim(),
+                UserAgent = string.IsNullOrWhiteSpace(userAgent) ? null : userAgent.Trim()[..Math.Min(userAgent.Trim().Length, 400)],
+                TipoCuenta = "client",
+                CreatedAt = DateTimeOffset.UtcNow
+            });
+            await _db.SaveChangesAsync(ct);
+        }
+        catch { /* la auditoria nunca bloquea el login */ }
     }
 
     public async Task<MeResponse?> GetMeAsync(Guid userId, Guid? activeTenantId, CancellationToken ct)

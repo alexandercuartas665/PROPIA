@@ -96,6 +96,12 @@ public class AdminController : ControllerBase
     public async Task<IActionResult> ListOrganizaciones(CancellationToken ct)
         => Ok(await _svc.ListOrganizacionesAsync(ct));
 
+    // Registro de ingresos (logins exitosos y fallidos) de la organizacion.
+    [HttpGet("~/api/admin/organizaciones/{orgId:guid}/logins")]
+    [Authorize(Policy = SuperAdminPolicy)]
+    public async Task<IActionResult> ListLoginEventsOrg(Guid orgId, [FromQuery] int take = 100, CancellationToken ct = default)
+        => Ok(await _svc.ListLoginEventsByOrgAsync(orgId, Math.Clamp(take, 1, 500), ct));
+
     [HttpPost("~/api/admin/organizaciones")]
     [Authorize(Policy = SuperAdminPolicy)]
     public async Task<IActionResult> CrearOrganizacion([FromBody] CrearOrganizacionRequest req, CancellationToken ct)

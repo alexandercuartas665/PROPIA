@@ -32,4 +32,7 @@ public interface ISuperAdminService
 
     // Logs (lectura)
     Task<IReadOnlyList<SuperAdminLogDto>> ListLogsAsync(int take, CancellationToken ct);
+
+    /// <summary>Registro de ingresos (logins exitosos y fallidos) de una organizacion, mas recientes primero.</summary>
+    Task<IReadOnlyList<LoginEventoDto>> ListLoginEventsByOrgAsync(Guid orgId, int take, CancellationToken ct);
 }

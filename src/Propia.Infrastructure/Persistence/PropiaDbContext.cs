@@ -53,6 +53,8 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<AiProviderConfig> AiProviderConfigs => Set<AiProviderConfig>();
     public DbSet<OcrProviderConfig> OcrProviderConfigs => Set<OcrProviderConfig>();
     public DbSet<DocumentExtractionLog> DocumentExtractionLogs => Set<DocumentExtractionLog>();
+    // Registro de ingresos (logins) de usuarios de copropiedad. GLOBAL, sin RLS (lo lee el Super Admin).
+    public DbSet<LoginAuditEvent> LoginAuditEvents => Set<LoginAuditEvent>();
 
     // Menu de navegacion configurable (global plataforma): overrides de nombre/orden/ubicacion.
     public DbSet<MenuOverride> MenuOverrides => Set<MenuOverride>();

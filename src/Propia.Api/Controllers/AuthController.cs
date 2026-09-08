@@ -31,7 +31,7 @@ public class AuthController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> Token([FromBody] LoginRequest request, CancellationToken ct)
     {
-        var result = await _auth.LoginAsync(request, ct);
+        var result = await _auth.LoginAsync(request, ct, Ip(), UserAgent());
         if (result is null) return Unauthorized(new { error = "credenciales_invalidas" });
         return Ok(result);
     }
@@ -63,7 +63,7 @@ public class AuthController : ControllerBase
         }
 
         // 2) Cuenta de copropiedad (cliente).
-        var cl = await _auth.LoginAsync(request, ct);
+        var cl = await _auth.LoginAsync(request, ct, Ip(), UserAgent());
         if (cl is not null)
         {
             return Ok(new UnifiedLoginResponse(
@@ -119,6 +119,7 @@ public class AuthController : ControllerBase
     }
 
     private string? Ip() => HttpContext.Connection.RemoteIpAddress?.ToString();
+    private string? UserAgent() => Request.Headers.UserAgent.ToString() is { Length: > 0 } ua ? ua : null;
 
     /// <summary>Info del usuario autenticado + lista de copropiedades accesibles.</summary>
     [HttpGet("me")]

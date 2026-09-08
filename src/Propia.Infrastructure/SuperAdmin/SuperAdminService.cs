@@ -338,6 +338,33 @@ public class SuperAdminService : ISuperAdminService
             .ToListAsync(ct);
     }
 
+    public async Task<IReadOnlyList<LoginEventoDto>> ListLoginEventsByOrgAsync(Guid orgId, int take, CancellationToken ct)
+    {
+        var rows = await _db.LoginAuditEvents.AsNoTracking()
+            .Where(e => e.OrganizacionId == orgId)
+            .OrderByDescending(e => e.CreatedAt)
+            .Take(take)
+            .Select(e => new { e.Id, e.CreatedAt, e.Email, e.PersonaId, e.TenantId, e.Exito, e.Motivo, e.Ip, e.UserAgent })
+            .ToListAsync(ct);
+
+        // Nombres (persona + copropiedad) resueltos en un segundo paso (tablas globales, sin RLS).
+        var personaIds = rows.Where(r => r.PersonaId != null).Select(r => r.PersonaId!.Value).Distinct().ToList();
+        var tenantIds = rows.Where(r => r.TenantId != null).Select(r => r.TenantId!.Value).Distinct().ToList();
+        var personas = await _db.Personas.AsNoTracking().Where(p => personaIds.Contains(p.Id))
+            .Select(p => new { p.Id, Nombre = (p.Nombres + " " + p.Apellidos).Trim() })
+            .ToDictionaryAsync(x => x.Id, x => x.Nombre, ct);
+        var tenants = await _db.Tenants.AsNoTracking().Where(t => tenantIds.Contains(t.Id))
+            .Select(t => new { t.Id, t.Nombre })
+            .ToDictionaryAsync(x => x.Id, x => x.Nombre, ct);
+
+        return rows.Select(r => new LoginEventoDto(
+            r.Id, r.CreatedAt, r.Email,
+            r.PersonaId is Guid pid && personas.TryGetValue(pid, out var pn) ? pn : null,
+            r.TenantId,
+            r.TenantId is Guid tid && tenants.TryGetValue(tid, out var tn) ? tn : null,
+            r.Exito, r.Motivo, r.Ip, r.UserAgent)).ToList();
+    }
+
     // ---------------------------------- Helpers ----------------------------------
 
     private static SuperAdminLog NewLog(Guid actorId, string actorEmail, string accion, string? entidad, string? justificacion, string? ip) =>

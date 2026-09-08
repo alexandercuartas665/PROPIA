@@ -8,7 +8,8 @@ namespace Propia.Application.Auth;
 /// </summary>
 public interface IAuthService
 {
-    Task<LoginResponse?> LoginAsync(LoginRequest request, CancellationToken ct);
+    /// <summary>Login de copropiedad. `ip`/`userAgent` se guardan en el registro de ingresos (auditoria).</summary>
+    Task<LoginResponse?> LoginAsync(LoginRequest request, CancellationToken ct, string? ip = null, string? userAgent = null);
     Task<MeResponse?> GetMeAsync(Guid userId, Guid? activeTenantId, CancellationToken ct);
     Task<LoginResponse?> SwitchTenantAsync(Guid userId, Guid newTenantId, CancellationToken ct);
     /// <summary>

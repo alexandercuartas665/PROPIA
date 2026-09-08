@@ -45,3 +45,7 @@ public record CrearSuperAdminUsuarioRequest(string Email, string Password, RolSu
 
 // ----- Logs -----
 public record SuperAdminLogDto(Guid Id, string ActorEmail, string Accion, string? EntidadAfectada, string? Justificacion, string? Ip, DateTimeOffset CreatedAt);
+
+// Registro de ingresos (logins) de usuarios de copropiedad, para el Super Admin (por organizacion).
+public record LoginEventoDto(Guid Id, DateTimeOffset CreatedAt, string Email, string? UsuarioNombre,
+    Guid? TenantId, string? CopropiedadNombre, bool Exito, string? Motivo, string? Ip, string? UserAgent);
