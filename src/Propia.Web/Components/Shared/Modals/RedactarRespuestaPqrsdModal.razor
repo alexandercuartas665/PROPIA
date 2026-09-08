@@ -42,22 +42,22 @@
     @if (_modo != "ver")
     {
         <div class="rrp-body">
-        <div class="rrp-dests @(_paraAbierto ? "" : "closed")">
-            <button type="button" class="rrp-dests-top" @onclick="() => _paraAbierto = !_paraAbierto">
+        <div class="rrp-3col">
+        @* IZQUIERDA: contactos (busqueda + tarjeta por contacto) *@
+        <div class="rrp-col rrp-col-dests">
+            <div class="rrp-col-h">
                 <span class="rrp-para-lbl">PARA</span>
                 <span class="rrp-para-count">@_dests.Count @(_dests.Count == 1 ? "contacto" : "contactos")</span>
-                @if (!_paraAbierto && _dests.Count > 0)
-                {
-                    <span class="rrp-para-resumen">@string.Join(", ", _dests.Select(d => string.IsNullOrWhiteSpace(d.Nombre) ? (string.IsNullOrWhiteSpace(d.Email) ? d.Telefono : d.Email) : d.Nombre).Where(x => !string.IsNullOrWhiteSpace(x)))</span>
-                }
                 @if (!string.IsNullOrEmpty(_dstMsg)) { <span class="rrp-dests-msg">@_dstMsg</span> }
-                <svg class="rrp-para-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 9l6 6 6-6"/></svg>
-            </button>
-
-            @if (_paraAbierto)
-            {
-                @* Una TARJETA por contacto: en cada una eliges correo, WhatsApp o AMBOS. *@
-                <div class="rrp-cards">
+            </div>
+            <div class="rrp-dests-add rrp-dests-add--col">
+                <div class="rrp-dests-buscar">
+                    <SelectorPersona Jwt="@Jwt" Seleccionada="null" SeleccionadaChanged="OnTerceroElegido" Placeholder="Buscar contactos..." Flotante="true" />
+                </div>
+                <button type="button" class="rrp-btn-ghost" @onclick="AgregarManual">+ Contacto manual</button>
+            </div>
+            @* Una TARJETA por contacto: en cada una eliges correo, WhatsApp o AMBOS. *@
+            <div class="rrp-cards rrp-cards--col">
                     @foreach (var c in _dests)
                     {
                         var cc = c;
@@ -81,16 +81,11 @@
                         </div>
                     }
                     @if (_dests.Count == 0) { <span class="rrp-dests-empty">Agrega contactos: busca un tercero del directorio o agrega uno manual. En cada tarjeta activas correo, WhatsApp o ambos.</span> }
-                </div>
-
-                <div class="rrp-dests-add">
-                    <div class="rrp-dests-buscar">
-                        <SelectorPersona Jwt="@Jwt" Seleccionada="null" SeleccionadaChanged="OnTerceroElegido" Placeholder="Buscar tercero por nombre/documento..." Flotante="true" />
-                    </div>
-                    <button type="button" class="rrp-btn-ghost" @onclick="AgregarManual">+ Contacto manual</button>
-                </div>
-            }
+            </div>
         </div>
+
+        @* CENTRO: asunto + adjuntos + editor del documento *@
+        <div class="rrp-col rrp-col-doc">
         <input class="rrp-asunto" placeholder="Asunto (opcional)" @bind="_asunto" @bind:event="oninput" />
 
         @* Adjuntos ARRIBA (pendientes: se suben al guardar) *@
@@ -114,38 +109,36 @@
             </div>
         </div>
 
-        @* Editor (documento) + panel de plantillas al lado *@
-        <div class="rrp-compose">
-            <div class="rrp-doc">
-                <textarea id="pqr-resp-ed"></textarea>
-            </div>
-            <div class="rrp-tpl">
-                <div class="rrp-tpl-h">
-                    <span>PLANTILLAS</span>
-                    <button type="button" class="rrp-tpl-gear" title="Crear/editar plantillas" @onclick="GestionarPlantillas">Gestionar</button>
-                </div>
-                <div class="rrp-tpl-hint">Al usar una plantilla, los datos ({unidad}, {copropiedad}...) se reemplazan por los reales.</div>
-                <div class="rrp-tpl-list">
-                    @foreach (var p in _plantillas)
-                    {
-                        var pp = p;
-                        <div class="rrp-tpl-item" title="@p.Nombre">
-                            @* Minivista del documento: se pinta el cuerpo de la plantilla en pequeño (clip). *@
-                            <div class="rrp-tpl-thumb" aria-hidden="true">
-                                <div class="rrp-tpl-thumb-page">@((MarkupString)p.CuerpoHtml)</div>
-                            </div>
-                            <div class="rrp-tpl-cardfoot">
-                                <span class="rrp-tpl-nm">@p.Nombre</span>
-                                <button type="button" class="rrp-tpl-use" @onclick="() => UsarPlantilla(pp)" disabled="@_busy">Usar</button>
-                            </div>
-                        </div>
-                    }
-                    @if (_plantillas.Count == 0) { <div class="rrp-tpl-empty">Sin plantillas. Crea una con "Gestionar".</div> }
-                </div>
-            </div>
+        @* Editor (documento) *@
+        <div class="rrp-doc">
+            <textarea id="pqr-resp-ed"></textarea>
+        </div>
+        @if (!string.IsNullOrEmpty(_msg)) { <div class="rrp-msg @(_err ? "err" : "ok")">@_msg</div> }
         </div>
 
-        @if (!string.IsNullOrEmpty(_msg)) { <div class="rrp-msg @(_err ? "err" : "ok")">@_msg</div> }
+        @* DERECHA: plantillas (solo usar; se crean/editan en Configurar PQRSD > Plantillas) *@
+        <div class="rrp-col rrp-col-tpl">
+            <div class="rrp-tpl-h"><span>PLANTILLAS</span></div>
+            <div class="rrp-tpl-hint">Al usar una plantilla, los datos ({unidad}, {copropiedad}...) se reemplazan por los reales. Se crean y editan en Configurar PQRSD &rsaquo; Plantillas.</div>
+            <div class="rrp-tpl-list">
+                @foreach (var p in _plantillas)
+                {
+                    var pp = p;
+                    <div class="rrp-tpl-item" title="@p.Nombre">
+                        @* Minivista del documento: se pinta el cuerpo de la plantilla en pequeño (clip). *@
+                        <div class="rrp-tpl-thumb" aria-hidden="true">
+                            <div class="rrp-tpl-thumb-page">@((MarkupString)p.CuerpoHtml)</div>
+                        </div>
+                        <div class="rrp-tpl-cardfoot">
+                            <span class="rrp-tpl-nm">@p.Nombre</span>
+                            <button type="button" class="rrp-tpl-use" @onclick="() => UsarPlantilla(pp)" disabled="@_busy">Usar</button>
+                        </div>
+                    </div>
+                }
+                @if (_plantillas.Count == 0) { <div class="rrp-tpl-empty">Sin plantillas. Se crean en Configurar PQRSD &rsaquo; Plantillas.</div> }
+            </div>
+        </div>
+        </div>
         </div>
         <div class="rrp-foot">
             <span class="rrp-hint">Se guarda como borrador con trazabilidad. El envio al radicador se hara despues.</span>
@@ -389,7 +382,17 @@
     .rrp-adj--top .rrp-gal { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
     .rrp-gal-add--sm { min-height: 70px; }
 
-    /* Layout redaccion: editor (documento) + panel de plantillas al lado */
+    /* Layout redaccion en 3 columnas: contactos | documento | plantillas */
+    .rrp-3col { display: grid; grid-template-columns: 290px minmax(0, 1fr) 300px; gap: 14px; align-items: start; }
+    .rrp-col { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+    .rrp-col-dests, .rrp-col-tpl { border: 1px solid #E7EDF3; border-radius: 12px; padding: 12px; background: var(--propia-bg-hover); }
+    .rrp-col-h { display: flex; align-items: center; gap: 8px; }
+    .rrp-dests-add--col { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+    .rrp-dests-add--col .rrp-dests-buscar { flex: 1 1 auto; width: 100%; }
+    .rrp-cards--col { display: flex; flex-direction: column; gap: 10px; margin-bottom: 0; }
+    .rrp-col-doc .rrp-doc { min-height: 460px; }
+    @@media (max-width: 980px) { .rrp-3col { grid-template-columns: 1fr; } .rrp-col-doc .rrp-doc { min-height: 340px; } }
+    /* Layout redaccion (legacy): editor + panel de plantillas al lado */
     .rrp-compose { display: grid; grid-template-columns: 1fr 300px; gap: 14px; align-items: start; }
     .rrp-tpl { border: 1px solid #E7EDF3; border-radius: 12px; padding: 12px; background: var(--propia-bg-hover); display: flex; flex-direction: column; gap: 8px; }
     .rrp-tpl-h { display: flex; align-items: center; justify-content: space-between; font-size: 10.5px; font-weight: 800; letter-spacing: .05em; color: var(--propia-text-muted); }
@@ -440,7 +443,6 @@
     // Destinatarios editables: una TARJETA por contacto (correo y/o WhatsApp).
     private readonly List<DestCard> _dests = new();
     private string? _dstMsg;
-    private bool _paraAbierto = true;   // acordeon PARA: abierto al cargar, colapsable para enfocarse en el documento
 
     protected override async Task OnInitializedAsync()
     {
@@ -483,14 +485,6 @@
             if (res?.Html is not null) await Js.InvokeVoidAsync("propiaTiny.setContent", EdSel, res.Html);
         }
         catch (Exception ex) { _err = true; _msg = ex.Message; }
-    }
-
-    private async Task GestionarPlantillas()
-    {
-        var parameters = new ModalParameters().Set("Jwt", Jwt);
-        var options = new ModalOptions { Width = "980px" };
-        await Modals.OpenAsync<GestionarPlantillasPqrsdModal, bool>(parameters, options);
-        await CargarPlantillasAsync();
     }
 
     private sealed record HtmlResp(string Html);

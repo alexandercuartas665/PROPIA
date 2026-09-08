@@ -514,6 +514,7 @@
                     <button type="button" class="pk-cfg-tab @(_cfgTab == "consecutivos" ? "on" : "")" @onclick='CambiarATabConsecutivos'>Consecutivos</button>
                     <button type="button" class="pk-cfg-tab @(_cfgTab == "whatsapp" ? "on" : "")" @onclick='CambiarATabWhatsApp'>WhatsApp</button>
                     <button type="button" class="pk-cfg-tab @(_cfgTab == "tareas" ? "on" : "")" @onclick='CambiarATabTareasCfg'>Tareas</button>
+                    <button type="button" class="pk-cfg-tab @(_cfgTab == "plantillas" ? "on" : "")" @onclick='CambiarATabPlantillas'>Plantillas</button>
                 </div>
                 <div class="pk-cfg-body">
                   @if (_cfgTab == "columnas")
@@ -749,6 +750,26 @@
                     </select>
                     <div class="pk-cfg-sec-hint" style="margin-top:10px;">Las tareas ya creadas no se mueven; el cambio aplica a las nuevas.</div>
                     @if (_cfgTareasGuardado) { <div class="pk-cfg-msg">Cambios guardados.</div> }
+                  }
+
+                  @if (_cfgTab == "plantillas")
+                  {
+                    <div class="pk-cfg-plt-top">
+                        <div class="pk-cfg-sec-hint">Plantillas de respuesta al ciudadano. Al usarlas en una respuesta, los datos ({unidad}, {copropiedad}, {radicado.numero}...) se reemplazan por los reales.</div>
+                        <button type="button" class="pk-cfg-plt-manage" @onclick="GestionarPlantillasCfg">Crear / editar plantillas</button>
+                    </div>
+                    <div class="pk-cfg-plt-grid">
+                        @foreach (var p in _cfgPlantillas)
+                        {
+                            <div class="pk-cfg-plt-card" title="@p.Nombre">
+                                <div class="pk-cfg-plt-thumb" aria-hidden="true">
+                                    <div class="pk-cfg-plt-page">@((MarkupString)p.CuerpoHtml)</div>
+                                </div>
+                                <div class="pk-cfg-plt-nm">@p.Nombre</div>
+                            </div>
+                        }
+                        @if (_cfgPlantillas.Count == 0) { <div class="pk-cfg-sec-hint">Aun no hay plantillas. Crea la primera con "Crear / editar plantillas".</div> }
+                    </div>
                   }
 
                     @if (!string.IsNullOrEmpty(_cfgMsg)) { <div class="pk-cfg-msg">@_cfgMsg</div> }
@@ -1615,6 +1636,30 @@
     private List<Propia.Application.Tareas.TableroDto> _cfgTableros = new();
     private bool _cfgTareasGuardado;
     private sealed record TableroTareasCfgDto(Guid? TableroId);
+
+    // Tab Plantillas de la configuracion PQRSD: se ven como mini tarjetas y se gestionan aqui
+    // (antes la gestion vivia en el modal de respuesta).
+    private List<PqrsdPlantillaDto> _cfgPlantillas = new();
+
+    private async Task CambiarATabPlantillas()
+    {
+        _cfgTab = "plantillas";
+        await CargarCfgPlantillasAsync();
+    }
+
+    private async Task CargarCfgPlantillasAsync()
+    {
+        try { _cfgPlantillas = await Auth().GetFromJsonAsync<List<PqrsdPlantillaDto>>("/api/pqrsd/plantillas") ?? new(); }
+        catch { _cfgPlantillas = new(); }
+    }
+
+    private async Task GestionarPlantillasCfg()
+    {
+        var parameters = new ModalParameters().Set("Jwt", _jwt);
+        var options = new ModalOptions { Width = "980px" };
+        await Modals.OpenAsync<GestionarPlantillasPqrsdModal, bool>(parameters, options);
+        await CargarCfgPlantillasAsync();
+    }
 
     private async Task CambiarATabTareasCfg()
     {
