@@ -85,6 +85,7 @@ public static class DependencyInjection
         services.AddSingleton<Application.Common.ISecretProtector, Security.SecretProtector>();
         services.AddScoped<Application.Common.IEmailSender, Email.SmtpEmailSender>();
         services.AddScoped<Application.Integraciones.IEmailConfigService, Integraciones.EmailConfigService>();
+        services.AddScoped<Application.Integraciones.ITenantEmailConfigService, Integraciones.TenantEmailConfigService>();
         services.AddScoped<Application.Integraciones.IPlatformBrandingService, Integraciones.PlatformBrandingService>();
         services.AddScoped<Application.Integraciones.IAiServerConfigService, Integraciones.AiServerConfigService>();
         services.AddScoped<Application.Integraciones.IOcrServerConfigService, Integraciones.OcrServerConfigService>();

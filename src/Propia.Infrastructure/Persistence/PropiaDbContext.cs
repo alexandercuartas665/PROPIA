@@ -204,6 +204,8 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<PqrsdTareasConfig> PqrsdTareasConfigs => Set<PqrsdTareasConfig>();
     public DbSet<PqrsdConsecutivoConfig> PqrsdConsecutivoConfigs => Set<PqrsdConsecutivoConfig>();
     public DbSet<PqrsdWhatsAppConfig> PqrsdWhatsAppConfigs => Set<PqrsdWhatsAppConfig>();
+    // Cuenta de correo saliente (SMTP) por copropiedad. Tenant + RLS.
+    public DbSet<TenantEmailConfig> TenantEmailConfigs => Set<TenantEmailConfig>();
     public DbSet<PqrsdComiteSesion> PqrsdComiteSesiones => Set<PqrsdComiteSesion>();
     public DbSet<PqrsdComiteMiembroSesion> PqrsdComiteMiembros => Set<PqrsdComiteMiembroSesion>();
     public DbSet<PqrsdEstado> PqrsdEstados => Set<PqrsdEstado>();
