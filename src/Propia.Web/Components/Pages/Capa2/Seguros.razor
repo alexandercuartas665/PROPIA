@@ -1249,9 +1249,11 @@
                     var ir = await iaResp.Content.ReadFromJsonAsync<OcrResp>();
                     if (ir?.Campos is not null)
                     {
-                        AplicarCamposPoliza(ir.Campos);
+                        var aplicados = AplicarCamposPoliza(ir.Campos);
                         if (!string.IsNullOrEmpty(ir.PdfOrigenKey)) { _f.PdfOrigenKey = ir.PdfOrigenKey; _f.TienePdfOrigen = true; }
-                        _ocrMsg = $"Documento leido con IA ({ir.Proveedor}). Revisa y confirma los campos.";
+                        _ocrMsg = aplicados > 0
+                            ? $"Documento leido con IA ({ir.Proveedor}): {aplicados} campo(s) prellenado(s). Revisa y confirma."
+                            : $"La IA leyo el documento ({ir.Proveedor}) pero no encontro datos de poliza (aseguradora, numero, vigencia o valor). Verifica que sea una poliza de seguro y no otro documento (p.ej. un contrato); si lo es, completa los campos manualmente.";
                         return;
                     }
                 }
@@ -1284,21 +1286,28 @@
             var dto = await Auth().GetFromJsonAsync<PdfOrigenResp>($"/api/seguros/polizas/{id}/pdf-origen");
             if (dto is not null) await Js.InvokeVoidAsync("propiaUI.downloadBase64", dto.NombreArchivo, dto.TipoMime, dto.ContenidoBase64);
         }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            _ocrMsg = "El PDF origen no esta disponible: esta poliza no tiene un PDF cargado (o el archivo fue removido del almacenamiento).";
+        }
         catch (Exception ex) { _ocrMsg = "No se pudo descargar el PDF origen: " + ex.Message; }
     }
     private sealed record PdfOrigenResp(string NombreArchivo, string TipoMime, string ContenidoBase64);
 
     // Mapea los campos del perfil "poliza" (extraccion IA) al formulario. best-effort; el humano confirma.
-    private void AplicarCamposPoliza(List<OcrCampo> campos)
+    // Devuelve cuantos campos se prellenaron realmente (0 = la IA no encontro datos de poliza).
+    private int AplicarCamposPoliza(List<OcrCampo> campos)
     {
+        var n = 0;
         string? Val(string nombre) => campos.FirstOrDefault(c => string.Equals(c.Nombre, nombre, StringComparison.OrdinalIgnoreCase))?.Valor;
-        var aseg = Val("aseguradora"); if (!string.IsNullOrWhiteSpace(aseg)) _f.Aseguradora = aseg!;
-        var corr = Val("corredor"); if (!string.IsNullOrWhiteSpace(corr)) _f.Corredor = corr;
-        var num = Val("numero_poliza"); if (!string.IsNullOrWhiteSpace(num)) _f.NumeroPoliza = num;
+        var aseg = Val("aseguradora"); if (!string.IsNullOrWhiteSpace(aseg)) { _f.Aseguradora = aseg!; n++; }
+        var corr = Val("corredor"); if (!string.IsNullOrWhiteSpace(corr)) { _f.Corredor = corr; n++; }
+        var num = Val("numero_poliza"); if (!string.IsNullOrWhiteSpace(num)) { _f.NumeroPoliza = num; n++; }
         var valor = Val("valor_poliza");
-        if (!string.IsNullOrWhiteSpace(valor) && decimal.TryParse(valor, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var vv)) _f.ValorPoliza = vv;
-        var fi = Val("fecha_inicio"); if (!string.IsNullOrWhiteSpace(fi) && DateTime.TryParse(fi, out var fdi)) _f.Inicio = fdi;
-        var ff = Val("fecha_fin"); if (!string.IsNullOrWhiteSpace(ff) && DateTime.TryParse(ff, out var fdf)) _f.Fin = fdf;
+        if (!string.IsNullOrWhiteSpace(valor) && decimal.TryParse(valor, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var vv)) { _f.ValorPoliza = vv; n++; }
+        var fi = Val("fecha_inicio"); if (!string.IsNullOrWhiteSpace(fi) && DateTime.TryParse(fi, out var fdi)) { _f.Inicio = fdi; n++; }
+        var ff = Val("fecha_fin"); if (!string.IsNullOrWhiteSpace(ff) && DateTime.TryParse(ff, out var fdf)) { _f.Fin = fdf; n++; }
+        return n;
     }
     private sealed record OcrCampo(string Nombre, string? Valor, double? Confianza);
     private sealed record OcrResp(bool Ok, string? Proveedor, string? Modelo, decimal? ValorSugerido, string? FechaSugerida, List<OcrCampo>? Campos, string? TextoCompleto, string? PdfOrigenKey = null);
