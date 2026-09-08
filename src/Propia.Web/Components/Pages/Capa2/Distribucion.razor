@@ -374,6 +374,7 @@ else
                     <div class="dst-head dst-grid2" style="grid-template-columns:@GridCols">
                         <div></div>
                         @foreach (var c in ColsVisibles) { <div>@Etiqueta(c)</div> }
+                        @foreach (var cd in _camposDef) { <div title="Campo personalizado">@cd.Label</div> }
                         <div></div>
                     </div>
                     @foreach (var item in FilasRender())
@@ -417,7 +418,7 @@ else
                                         break;
                                     case "tipo":
                                         <select class="dst-cell" @onchange="@(e => Inline(uu, "tipo", e))">
-                                            @foreach (var t in Enum.GetValues<TipoUnidad>())
+                                            @foreach (var t in TiposUnidadSel)
                                             {
                                                 <option value="@t" selected="@(uu.Tipo == t)">@Etiqueta(t)</option>
                                             }
@@ -452,6 +453,11 @@ else
                                         </div>
                                         break;
                                 }
+                            }
+                            @foreach (var cd in _camposDef)
+                            {
+                                var vv = ValorCampo(uu.Id, cd.Id);
+                                <div class="dst-td-campo" title="@cd.Label">@(string.IsNullOrWhiteSpace(vv) ? "-" : vv)</div>
                             }
                             <div class="dst-anx-cell">
                                 @if (!esAnexo)
@@ -507,7 +513,7 @@ else
                                     break;
                                 case "tipo":
                                     <select class="dst-nf-inp" @bind="_nuTipo">
-                                        @foreach (var t in Enum.GetValues<TipoUnidad>()) { <option value="@t">@Etiqueta(t)</option> }
+                                        @foreach (var t in TiposUnidadSel) { <option value="@t">@Etiqueta(t)</option> }
                                     </select>
                                     break;
                                 case "area":
@@ -530,50 +536,41 @@ else
                                     break;
                             }
                         }
+                        @foreach (var cd in _camposDef)
+                        {
+                            var cdd = cd;
+                            var val = _nuCampos.GetValueOrDefault(cd.Id);
+                            @switch (cd.Tipo)
+                            {
+                                case TipoCampoTablero.Seleccion:
+                                    <select class="dst-nf-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
+                                        <option value="">- elegir -</option>
+                                        @foreach (var op in OpcionesDe(cd)) { <option value="@op">@op</option> }
+                                    </select>
+                                    break;
+                                case TipoCampoTablero.Numero:
+                                case TipoCampoTablero.Moneda:
+                                    <input class="dst-nf-inp" type="number" step="any" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cd.Label" />
+                                    break;
+                                case TipoCampoTablero.Fecha:
+                                    <input class="dst-nf-inp" type="date" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" />
+                                    break;
+                                case TipoCampoTablero.Booleano:
+                                    <select class="dst-nf-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
+                                        <option value="">- elegir -</option>
+                                        <option value="Si">Si</option>
+                                        <option value="No">No</option>
+                                    </select>
+                                    break;
+                                default:
+                                    <input class="dst-nf-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cd.Label" />
+                                    break;
+                            }
+                        }
                         <div class="dst-act dst-act-nf">
                             <button type="button" class="dst-row-add" @onclick="() => CrearUnidadDesdeAltaAsync(false)" disabled="@_creandoUnidad">@(_creandoUnidad ? "Creando..." : "+ Agregar")</button>
                         </div>
                     </div>
-                    @* Campos dinamicos de la unidad en la fila de alta (definidos en "Configurar"). *@
-                    @if (_camposDef.Count > 0)
-                    {
-                        <div class="dst-newrow-campos">
-                            @foreach (var cd in _camposDef)
-                            {
-                                var cdd = cd;
-                                var val = _nuCampos.GetValueOrDefault(cd.Id);
-                                <div class="dst-nfc-f">
-                                    <label class="dst-nfc-lbl">@cd.Label</label>
-                                    @switch (cd.Tipo)
-                                    {
-                                        case TipoCampoTablero.Seleccion:
-                                            <select class="dst-nf-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
-                                                <option value="">- elegir -</option>
-                                                @foreach (var op in OpcionesDe(cd)) { <option value="@op">@op</option> }
-                                            </select>
-                                            break;
-                                        case TipoCampoTablero.Numero:
-                                        case TipoCampoTablero.Moneda:
-                                            <input class="dst-nf-inp" type="number" step="any" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" />
-                                            break;
-                                        case TipoCampoTablero.Fecha:
-                                            <input class="dst-nf-inp" type="date" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" />
-                                            break;
-                                        case TipoCampoTablero.Booleano:
-                                            <select class="dst-nf-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
-                                                <option value="">- elegir -</option>
-                                                <option value="Si">Si</option>
-                                                <option value="No">No</option>
-                                            </select>
-                                            break;
-                                        default:
-                                            <input class="dst-nf-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cd.Label" />
-                                            break;
-                                    }
-                                </div>
-                            }
-                        </div>
-                    }
                 </div>
                 @if (!string.IsNullOrEmpty(_inlineMsgU)) { <div class="dst-toast" @onclick="() => _inlineMsgU = null">@_inlineMsgU</div> }
             }
@@ -686,6 +683,10 @@ else
     // Campos dinamicos: definiciones (catalogo del tenant) + valores capturados en la fila de alta.
     private List<UnidadCampoDefinicionDto> _camposDef = new();
     private readonly Dictionary<Guid, string?> _nuCampos = new();
+    // Valores por unidad (para pintar los campos dinamicos como columnas): unidadId -> (definicionId -> valor).
+    private Dictionary<Guid, Dictionary<Guid, string?>> _camposValores = new();
+    private string? ValorCampo(Guid unidadId, Guid defId)
+        => _camposValores.TryGetValue(unidadId, out var m) && m.TryGetValue(defId, out var v) ? v : null;
     // Config de campos dinamicos (modal "Configurar").
     private bool _configCamposAbierto;
     private bool _cfgBusy;
@@ -729,7 +730,7 @@ else
     {
         new() { Key = "numero", Label = "Unidad", Kind = "texto" },
         new() { Key = "tipo", Label = "Tipo", Kind = "sel",
-                Opciones = Enum.GetValues<TipoUnidad>().Select(t => (t.ToString(), Etiqueta(t))).ToList() },
+                Opciones = TiposUnidadSel.Select(t => (t.ToString(), Etiqueta(t))).ToList() },
         new() { Key = "torre", Label = LabelAgrupacionSingular, Kind = "sel",
                 Opciones = _torres.OrderBy(x => x.Nombre).Select(t => (t.Id.ToString(), t.Nombre)).ToList() },
         new() { Key = "piso", Label = LabelPisoSingular, Kind = "num" },
@@ -944,7 +945,8 @@ else
         }
     }
     private IEnumerable<ColDef> ColsVisibles => CatalogoOrdenado.Where(EsVisible);
-    private string GridCols => "34px " + string.Join(" ", ColsVisibles.Select(c => c.Width)) + " 120px";
+    private string GridCols => "34px " + string.Join(" ", ColsVisibles.Select(c => c.Width))
+        + (_camposDef.Count == 0 ? "" : " " + string.Join(" ", _camposDef.Select(_ => "minmax(140px,170px)"))) + " 120px";
 
     private ColPref PrefDe(string key)
     {
@@ -1077,11 +1079,13 @@ else
                 if (creada is not null)
                 {
                     // Persistir los valores de campos dinamicos capturados en la fila de alta.
+                    var valsNuevos = new Dictionary<Guid, string?>();
                     foreach (var kv in _nuCampos)
                     {
                         if (string.IsNullOrWhiteSpace(kv.Value)) continue;
-                        try { await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades/{creada.Id}/campos/{kv.Key}", new SetCampoValorRequest(kv.Value)); } catch { }
+                        try { await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades/{creada.Id}/campos/{kv.Key}", new SetCampoValorRequest(kv.Value)); valsNuevos[kv.Key] = kv.Value; } catch { }
                     }
+                    if (valsNuevos.Count > 0) _camposValores[creada.Id] = valsNuevos;  // que las columnas muestren el valor sin recargar
                     _unidades.Add(creada);
                     _uniRecienCreados.Add(creada.Id);
                     _inlineMsgU = $"Unidad {creada.Numero} creada.";
@@ -1280,6 +1284,12 @@ else
             _torres = await http.GetFromJsonAsync<List<TorreDto>>("/api/mi-copropiedad/torres") ?? new();
             _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
             try { _camposDef = await http.GetFromJsonAsync<List<UnidadCampoDefinicionDto>>("/api/mi-copropiedad/unidades-campos") ?? new(); } catch { _camposDef = new(); }
+            try
+            {
+                var flat = await http.GetFromJsonAsync<List<UnidadCampoValorFlatDto>>("/api/mi-copropiedad/unidades-campos-valores") ?? new();
+                _camposValores = flat.GroupBy(v => v.UnidadId).ToDictionary(g => g.Key, g => g.ToDictionary(x => x.DefinicionId, x => x.Valor));
+            }
+            catch { _camposValores = new(); }
             // Si en el modal se borraron unidades, la pagina en la que estabamos puede ya no existir.
             if (_pagina > TotalPaginas) _pagina = TotalPaginas;
         }
@@ -1494,6 +1504,10 @@ else
         var hubo = await Modals.OpenAsync<GestionarUnidadesModal, bool>(parameters, new ModalOptions { Width = "80vw" });
         if (hubo == true) await CargarAsync();
     }
+
+    // Tipos de unidad ofrecidos en los selectores (se excluye ZonaComun: las zonas comunes son otro modulo).
+    // El valor del enum se conserva por compatibilidad de datos historicos.
+    private static IEnumerable<TipoUnidad> TiposUnidadSel => Enum.GetValues<TipoUnidad>().Where(t => t != TipoUnidad.ZonaComun);
 
     private static string Etiqueta(TipoUnidad t) => t switch
     {
@@ -1743,7 +1757,8 @@ else
     .dst-colsmenu-act { flex: 1; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 7px; padding: 6px 8px; font-size: 11.5px; font-weight: 700; color: var(--propia-text-secondary); cursor: pointer; font-family: inherit; }
     .dst-colsmenu-act:hover { border-color: var(--propia-brand, var(--propia-brand)); color: var(--propia-brand, var(--propia-brand)); }
 
-    /* Campos dinamicos: tira bajo la fila de alta + modal Configurar */
+    /* Campos dinamicos: celda de valor en la tabla + modal Configurar */
+    .dst-td-campo { font-size: 13px; color: var(--propia-text-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .dst-newrow-campos { display: flex; flex-wrap: wrap; gap: 10px 14px; padding: 8px 12px 10px 46px; border-bottom: 1px solid var(--propia-border-divider); background: var(--propia-bg-subtle, transparent); }
     .dst-nfc-f { display: flex; flex-direction: column; gap: 3px; min-width: 150px; }
     .dst-nfc-lbl { font-size: 10.5px; font-weight: 700; letter-spacing: .3px; color: var(--propia-text-faint); text-transform: uppercase; }

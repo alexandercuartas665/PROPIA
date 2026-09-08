@@ -141,7 +141,7 @@ falten en ese entorno, comparando contra `__EFMigrationsHistory`:
 
 ## 4. Post-deploy (verificacion)
 
-- [ ] Login OK; el footer muestra `v0.0.68`.
+- [ ] Login OK; el footer muestra `v0.0.69`.
 - [ ] **Extractor IA (hotfix 403):** un usuario NO-Administrador pulsa "Cargar PDF y extraer (IA)" en
       Seguros y en Contratos -> prellena (antes -> "forbidden"/403). El agente documental de Servicios
       Publicos ("Analizar con el Agente Documental") sigue exigiendo Administrador.

@@ -289,6 +289,9 @@ public class MiCopropiedadController : ControllerBase
     [HttpGet("unidades/{id:guid}/campos")]
     public async Task<IActionResult> ListCamposUnidad(Guid id, CancellationToken ct) => Ok(await _svc.ListCamposUnidadAsync(id, ct));
 
+    [HttpGet("unidades-campos-valores")]
+    public async Task<IActionResult> ListTodosCamposValores(CancellationToken ct) => Ok(await _svc.ListTodosCamposValoresAsync(ct));
+
     [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("unidades/{id:guid}/campos/{definicionId:guid}")]
     public async Task<IActionResult> SetCampoValor(Guid id, Guid definicionId, [FromBody] SetCampoValorRequest req, CancellationToken ct)

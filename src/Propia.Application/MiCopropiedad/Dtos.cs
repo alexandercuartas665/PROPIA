@@ -118,6 +118,8 @@ public record CrearCampoDefinicionRequest(string Label, TipoCampoTablero Tipo = 
 public record ActualizarCampoDefinicionRequest(string Label, TipoCampoTablero Tipo, string? Opciones, int Orden);
 public record UnidadCampoDto(Guid DefinicionId, string Label, int Orden, string? Valor, TipoCampoTablero Tipo, string? Opciones);
 public record SetCampoValorRequest(string? Valor);
+// Valor plano (unidad+definicion) para pintar los campos dinamicos como columnas de la tabla sin N+1.
+public record UnidadCampoValorFlatDto(Guid UnidadId, Guid DefinicionId, string? Valor);
 
 // ----- Documentos / anexos de una unidad (archivo en blob + nombre) -----
 public record UnidadDocumentoDto(Guid Id, string Nombre, string Url, long Tamano);

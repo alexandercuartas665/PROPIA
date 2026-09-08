@@ -43,6 +43,7 @@ public interface IMiCopropiedadService
     Task<bool> ActualizarCampoDefinicionAsync(Guid definicionId, ActualizarCampoDefinicionRequest req, CancellationToken ct);
     Task<bool> EliminarCampoDefinicionAsync(Guid definicionId, CancellationToken ct);
     Task<IReadOnlyList<UnidadCampoDto>> ListCamposUnidadAsync(Guid unidadId, CancellationToken ct);
+    Task<IReadOnlyList<UnidadCampoValorFlatDto>> ListTodosCamposValoresAsync(CancellationToken ct);
     Task SetCampoValorUnidadAsync(Guid unidadId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct);
 
     // Documentos / anexos de una unidad

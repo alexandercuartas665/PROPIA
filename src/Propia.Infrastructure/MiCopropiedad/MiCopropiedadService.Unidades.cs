@@ -672,6 +672,12 @@ public partial class MiCopropiedadService
             d.Tipo, d.Opciones)).ToList();
     }
 
+    public async Task<IReadOnlyList<UnidadCampoValorFlatDto>> ListTodosCamposValoresAsync(CancellationToken ct)
+        => await _db.UnidadCamposValores.AsNoTracking()
+            .Where(v => v.Valor != null && v.Valor != "")
+            .Select(v => new UnidadCampoValorFlatDto(v.UnidadId, v.DefinicionId, v.Valor))
+            .ToListAsync(ct);
+
     public async Task SetCampoValorUnidadAsync(Guid unidadId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct)
     {
         if (_tenant.CurrentTenantId is not Guid tid) throw new InvalidOperationException("Sin copropiedad activa.");
