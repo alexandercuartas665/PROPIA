@@ -1,7 +1,15 @@
 # PROPIA - Checklist de deploy
 
-> Actualizado 2026-09-07. Version visible: **0.0.61**
+> Actualizado 2026-09-07. Version visible: **0.0.62**
 > (`src/Propia.Web/Propia.Web.csproj` `<Version>`). Bumpear en cada deploy.
+>
+> **Nuevo desde 0.0.61:** PQRSD respuestas al ciudadano (consecutivo de radicado de salida por respuesta;
+> canal por destinatario correo/WhatsApp; envio por plantilla de WhatsApp con link compartido enriquecido;
+> consecutivos de expediente y de respuesta configurables). PQRSD cierre con motivo al mover a columna
+> terminal (pide motivo -> define estado legal -> archiva). Tareas dentro de PQRSD ahora reusa el modulo
+> Tareas real (componente `Shared/Tareas/TableroTareas.razor`, hospedado en el modal). Fix OCR IA (Gemini
+> se habilita sin endpoint; modelo default `gemini-3.6-flash`). Fix auto-descarga de PDF al abrir el modal
+> PQRSD. **3 migraciones nuevas** (ver seccion 3) -> todas aditivas/seguras.
 >
 > **Nuevo desde 0.0.60:** Planes (limite de copropiedades por organizacion, default 1; plan promocional
 > no facturable y no cambiable directamente), extraccion de documentos con IA (Gemini como proveedor de OCR),
@@ -42,23 +50,36 @@ dotnet ef database update --project ../Propia.Infrastructure --startup-project .
 
 Ultimas migraciones del repo (verificar que esten aplicadas). `ef database update` aplica SOLO las que
 falten en ese entorno, comparando contra `__EFMigrationsHistory`:
-- `20260905150507_AddPlanLimiteCopropiedades`  (Planes: `planes` +`limite_copropiedades` int null, +`es_promocional` bool)  <-- NUEVA
-- `20260905143647_AddPolizaPdfOrigen`  (Seguros: `polizas` +`pdf_origen_key` text null)  <-- NUEVA
-- `20260905135921_AddDocumentExtractionLog`  (IA: tabla nueva `document_extraction_logs`, global sin RLS)  <-- NUEVA
+- `20260907154737_PqrsdDestinatarioCanalesFlags`  (PQRSD: `pqrsd_respuesta_destinatarios` -`canal`, +`enviar_correo` bool, +`enviar_whats_app` bool)  <-- NUEVA
+- `20260907151436_AddPqrsdCanalYWhatsAppConfig`  (PQRSD: tabla nueva `pqrsd_whatsapp_configs` con RLS; `pqrsd_respuesta_destinatarios` +`canal` int (luego retirada), +`telefono` varchar(30))  <-- NUEVA
+- `20260907143804_AddPqrsdConsecutivos`  (PQRSD: tabla nueva `pqrsd_consecutivo_configs` con RLS; `pqrsd_respuestas` +`numero_radicado` varchar(40) null)  <-- NUEVA
+- `20260905150507_AddPlanLimiteCopropiedades`  (Planes: `planes` +`limite_copropiedades` int null, +`es_promocional` bool)
+- `20260905143647_AddPolizaPdfOrigen`  (Seguros: `polizas` +`pdf_origen_key` text null)
+- `20260905135921_AddDocumentExtractionLog`  (IA: tabla nueva `document_extraction_logs`, global sin RLS)
 - `20260904173502_AddSuperAdminLockout`  (S-03b: lockout de SuperAdmin)
 - `20260903210728_V01PanelSnapshotSinRlsMasUnidades`
 - `20260903171507_AddTenantLinkPago`
 - `20260903154017_S02UniquePersonaIdEnUsuarios`
 
-> El increment de campos dinamicos PQRSD (0.0.61) **no agrega migracion**: usa `pqrsd_campos.columna` ya
-> existente. Todas las migraciones nuevas son **aditivas** (columnas nullable / tabla nueva) -> seguras.
+> Las 3 migraciones nuevas son **seguras**: dos tablas nuevas (`pqrsd_consecutivo_configs`,
+> `pqrsd_whatsapp_configs`, ambas con RLS + GRANT a `propia_app` dentro de la propia migracion) y columnas
+> nuevas. La columna `canal` la agrega `151436` y la retira `154737` en la MISMA tanda: en un entorno donde
+> ninguna de las dos estaba aplicada (prod), `canal` es transitoria y no hay perdida de datos. `enviar_correo`
+> y `enviar_whats_app` entran con `default false`. Aplicar las 3 en orden (lo hace `ef database update`).
+> El increment de campos dinamicos PQRSD (0.0.61) no agregaba migracion (usa `pqrsd_campos.columna`).
 
 ## 4. Post-deploy (verificacion)
 
-- [ ] Login OK; el footer muestra `v0.0.61`.
+- [ ] Login OK; el footer muestra `v0.0.62`.
 - [ ] Planes: crear una 2a copropiedad con plan que permite 1 -> bloqueo con mensaje; un plan promocional
       no se puede cambiar de plan directamente.
 - [ ] PQRSD: editar un campo dinamico -> se guarda solo (sin boton); 3 anchos alinean en linea; VENCIDO en rojo.
+- [ ] PQRSD: abrir el modal de un expediente con PDF adjunto -> NO se descarga nada solo (el visor muestra
+      tarjeta con "Abrir / descargar", la descarga es a clic).
+- [ ] PQRSD: mover un expediente a la columna "Cerrada" (chip del modal o drag en el tablero) -> pide motivo
+      de cierre -> al confirmar queda Cerrada + archivada (sale del tablero activo, pasa a "Cerrados").
+- [ ] PQRSD: la pestana "Tareas" del modal muestra el tablero real (crear/mover/editar/subtarea) y esas
+      tareas aparecen en /tareas (tablero "PQRSD"). Configurar consecutivos de expediente y de respuesta.
 - [ ] `/health` = 200; `/metrics` exige token (si se configuro).
 - [ ] Webhooks Evolution/Meta responden (no 401) con los secretos puestos.
 - [ ] Cabeceras de seguridad presentes (`Content-Security-Policy`, `X-Content-Type-Options`,
