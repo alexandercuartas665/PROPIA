@@ -2,15 +2,20 @@
 // Build self-hosted (GPL) cargado por CDN; license_key:'gpl' evita el aviso de licencia.
 // Aspecto tipo "documento/carta": la hoja blanca centrada sobre un lienzo gris.
 window.propiaTiny = {
-    async init(selector, initialHtml) {
+    async init(selector, initialHtml, height) {
         if (!window.tinymce) return false;
         const id = selector.replace('#', '');
         try { const prev = tinymce.get(id); if (prev) prev.remove(); } catch (e) { }
+        // Alto del editor: 620 por defecto; 'fit' lo ajusta al alto de la ventana (mas alto en pantallas
+        // grandes) para que la columna del documento aproveche el modal; un numero fija el alto exacto.
+        let edH = 620;
+        if (height === 'fit') edH = Math.max(700, Math.min(980, Math.round((window.innerHeight || 800) * 0.80)));
+        else if (typeof height === 'number' && height > 0) edH = height;
         try {
             await tinymce.init({
                 selector: selector,
                 menubar: false,
-                height: 620,
+                height: edH,
                 plugins: 'lists link autolink table image charmap code fullscreen hr searchreplace wordcount visualblocks',
                 toolbar: 'undo redo | blocks fontfamily fontsize | bold italic underline strikethrough | forecolor backcolor | ' +
                     'alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | ' +
