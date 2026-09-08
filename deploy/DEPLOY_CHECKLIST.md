@@ -1,17 +1,23 @@
 # PROPIA - Checklist de deploy
 
-> Actualizado 2026-09-08. Version visible: **0.0.66**
+> Actualizado 2026-09-08. Version visible: **0.0.67**
 > (`src/Propia.Web/Propia.Web.csproj` `<Version>`). Bumpear en cada deploy.
 >
-> **Nuevo desde 0.0.65:**
-> - **BUILD FIX (NU1605/NU1603 tras .NET 10 GA).** El build de Railway (restore fresh, `-warnaserror`)
->   fallaba: el servicing 9.0.20 de Identity exige `Microsoft.Extensions.* >= 9.0.20`, versiones base que
->   no se publicaron (saltaron a 10.0.x). Se agrego `Directory.Build.props` en la raiz que fija
->   `Microsoft.Extensions.DependencyInjection(.Abstractions)`, `Microsoft.Extensions.Options` y
->   `Microsoft.AspNetCore.Cryptography.KeyDerivation` a `10.0.*` (retrocompatibles con net9.0), y se quito
->   el ref flotante `9.0.*` de `Propia.Application`. Verificado: restore fresh aislado `-warnaserror` sin
->   NU1603/NU1605, build de solucion OK y API arranca sin errores de binding. 0.0.65 nunca llego a prod
->   (build roto); **este es el artefacto que si compila** e incluye el hotfix 403 de OCR de 0.0.65.
+> **Nuevo desde 0.0.66 (CORRECCION del build fix):**
+> - **CRIPTOGRAFIA se queda en 9.x (0.0.66 rompio el login en prod).** El fix de 0.0.66 fijaba tambien
+>   `Microsoft.AspNetCore.Cryptography.KeyDerivation` a `10.0.*`. Eso mezclo cripto 10.x con DataProtection
+>   9.x en la instancia desplegada y **rompio el login** (el formulario no completaba: antiforgery/cripto).
+>   Correccion (Opcion A): se retiro `KeyDerivation` del `Directory.Build.props` (solo queda plumbing
+>   NO-cripto DI/Options en `10.0.*`) y se pineo la familia Identity **hacia abajo** para que la cripto se
+>   quede en 9.x: `Microsoft.Extensions.Identity.Stores` y `Microsoft.AspNetCore.Identity.EntityFrameworkCore`
+>   a `9.0.19`, y `Microsoft.AspNetCore.Identity` a `2.3.11` (asi nadie exige el inexistente 9.0.20 que
+>   arrastraba la cripto a 10.x). **DataProtection intacto en 9.0.x** (mismo key ring; los secretos
+>   Gemini/SMTP siguen descifrables). Verificado: restore fresh `-warnaserror` sin NU1603/NU1605; toda la
+>   cripto resuelta en 9.x (KeyDerivation 9.0.19, DataProtection 9.0.20, cero 10.x); build OK; circuito
+>   Blazor (`/_blazor/negotiate` 200) y `/connect/login` (401 con creds invalidas) OK en navegador.
+>   **REGLA:** nunca subir KeyDerivation ni DataProtection a 10.x sin migrar prod deliberadamente.
+> - Incluye el **hotfix 403 de OCR** (0.0.65) y el resto de 0.0.64-0.0.66. 0.0.65/0.0.66 nunca quedaron en
+>   prod estables; **0.0.67 es el artefacto bueno**.
 >
 > **Nuevo desde 0.0.64:**
 > - **HOTFIX 403 en el extractor de IA (OCR).** Mismo bug de RBAC que 0.0.64 corrigio en Seguros, pero en
@@ -124,7 +130,7 @@ falten en ese entorno, comparando contra `__EFMigrationsHistory`:
 
 ## 4. Post-deploy (verificacion)
 
-- [ ] Login OK; el footer muestra `v0.0.66`.
+- [ ] Login OK; el footer muestra `v0.0.67`.
 - [ ] **Extractor IA (hotfix 403):** un usuario NO-Administrador pulsa "Cargar PDF y extraer (IA)" en
       Seguros y en Contratos -> prellena (antes -> "forbidden"/403). El agente documental de Servicios
       Publicos ("Analizar con el Agente Documental") sigue exigiendo Administrador.
