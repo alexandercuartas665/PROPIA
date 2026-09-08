@@ -835,15 +835,15 @@
                         }
                         else if (EsPdf(selAdj.TipoMime, selAdj.NombreArchivo))
                         {
-                            <div class="gpq-viewer-pdfwrap">
-                                <iframe class="gpq-viewer-pdf" src="@selAdj.UrlStorage" title="@selAdj.NombreArchivo"></iframe>
-                            </div>
-                            <div class="gpq-viewer-bar">
-                                <div class="gpq-viewer-meta">
-                                    <span class="gpq-viewer-nm">@selAdj.NombreArchivo</span>
-                                    <span class="gpq-viewer-by">@FormatSize(selAdj.TamanioBytes)</span>
-                                </div>
-                                <a class="gpq-viewer-open" href="@selAdj.UrlStorage" target="_blank" rel="noopener">Abrir en pestana</a>
+                            @* El storage sirve los PDF como adjunto (Content-Disposition: attachment, regla S-09),
+                               asi que un <iframe src> los descargaba solo con montarse (incluso en el tab oculto,
+                               cada vez que se abria el modal). Se muestra una tarjeta y la descarga queda a accion
+                               explicita del usuario con "Abrir / descargar". *@
+                            <div class="gpq-viewer-file">
+                                <svg width="54" height="54" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h4"/></svg>
+                                <p class="gpq-viewer-nm">@selAdj.NombreArchivo</p>
+                                <p class="gpq-viewer-by">@FormatSize(selAdj.TamanioBytes) - PDF</p>
+                                <a class="gpq-viewer-open" href="@selAdj.UrlStorage" target="_blank" rel="noopener">Abrir / descargar</a>
                             </div>
                         }
                         else
@@ -890,16 +890,46 @@
     </div>
 }
 
+@* Prompt de cierre disparado al mover la PQRSD a una columna terminal (como en Tareas): pide el motivo
+   de cierre; al confirmar, el cierre define el estado legal (Cerrada / Via interna agotada segun el motivo)
+   y archiva el expediente. *@
+@if (_cierrePrompt && _detalle is not null)
+{
+    <div class="gpq-cierre-ov" @onclick="() => _cierrePrompt = false">
+        <div class="gpq-cierre-box" @onclick:stopPropagation="true">
+            <div class="gpq-cierre-tit">Cerrar y archivar PQRSD</div>
+            <div class="gpq-cierre-sub">Al cerrar, el expediente pasa a la pestana "Cerrados" y sale del tablero activo.</div>
+            <label class="gpq-form-lbl">Motivo de cierre *</label>
+            <select class="gpq-input" @bind="_motivoCierreId">
+                <option value="">Elige un motivo...</option>
+                @foreach (var m in _motivos)
+                {
+                    <option value="@m.Id">@m.Nombre (@ClasifTexto(m.Clasificacion))</option>
+                }
+            </select>
+            <label class="gpq-form-lbl">Respuesta definitiva *</label>
+            <textarea class="gpq-input" rows="4" @bind="_textoAccion" @bind:event="oninput" placeholder="Respuesta o nota de cierre que queda en el expediente"></textarea>
+            <div class="gpq-form-foot">
+                <button class="gpq-btn-ghost" type="button" @onclick="() => _cierrePrompt = false">Cancelar</button>
+                <button class="gpq-btn-brand" type="button" @onclick="ConfirmarCierreKanban" disabled="@(_busy || string.IsNullOrEmpty(_motivoCierreId) || string.IsNullOrWhiteSpace(_textoAccion))">@(_busy ? "Cerrando..." : "Cerrar y archivar")</button>
+            </div>
+        </div>
+    </div>
+}
+
 
 @code {
     [Parameter] public string? Jwt { get; set; }
     [Parameter] public Guid ExpedienteId { get; set; }
+    // Cuando el board arrastra la tarjeta a la columna terminal, abre el modal con el prompt de cierre listo.
+    [Parameter] public bool AbrirCierre { get; set; }
 
     private PqrsdExpedienteDetalleDto? _detalle;
     private PqrsdContextoDto? _contexto;
     private string? _accion;
     private string _textoAccion = "";
     private string _motivoCierreId = "";
+    private bool _cierrePrompt;   // prompt de motivo de cierre al mover a una columna terminal
     private int _prorrogaDias = 0;
     private string _prorrogaMotivo = "";
     private bool _prorrogaAbierta = false;
@@ -1053,6 +1083,14 @@
     {
         if (!string.IsNullOrEmpty(Jwt)) _miUsuarioId = LeerUsuarioIdDeJwt(Jwt);
         await CargarAsync();
+        // Abierto desde el board al soltar en la columna terminal: pide el motivo de cierre de una vez.
+        if (AbrirCierre && _detalle is not null
+            && _detalle.Estado != EstadoPqrsd.Cerrada && _detalle.Estado != EstadoPqrsd.ViaInternaAgotada)
+        {
+            _motivoCierreId = "";
+            _textoAccion = "";
+            _cierrePrompt = true;
+        }
     }
 
     // Lee el claim user_id (o sub) del payload del JWT sin dependencias externas (para "los mios a la derecha").
@@ -1352,6 +1390,18 @@
     private async Task MoverAEstadoAsync(Guid estadoId)
     {
         if (_detalle is null || _detalle.EstadoId == estadoId) { _editEstado = false; return; }
+        // Si la columna destino es terminal (cierre), no se mueve directo: se pide el motivo de cierre
+        // (como en Tareas). El cierre define el estado legal (Cerrada / Via interna agotada segun el motivo)
+        // y archiva el expediente. Ver ConfirmarCierreKanban.
+        var destino = _estadosCols?.FirstOrDefault(e => e.Id == estadoId);
+        if (destino is not null && destino.EsTerminal)
+        {
+            _editEstado = false;
+            _motivoCierreId = "";
+            _textoAccion = "";
+            _cierrePrompt = true;
+            return;
+        }
         try
         {
             var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{ExpedienteId}/mover", new { estadoId });
@@ -1364,6 +1414,23 @@
             else ShowMsg("No se pudo cambiar el estado: " + await resp.Content.ReadAsStringAsync(), true);
         }
         catch (Exception ex) { ShowMsg(ex.Message, true); }
+    }
+
+    // Confirma el cierre disparado desde el mover-a-columna-terminal: exige motivo + respuesta definitiva,
+    // llama al endpoint /cerrar (define el estado legal y archiva) y cierra el prompt si todo sale bien.
+    private async Task ConfirmarCierreKanban()
+    {
+        if (!Guid.TryParse(_motivoCierreId, out var motivoId)) { ShowMsg("Elige un motivo de cierre.", true); return; }
+        if (string.IsNullOrWhiteSpace(_textoAccion)) { ShowMsg("Escribe la respuesta definitiva.", true); return; }
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{ExpedienteId}/cerrar",
+                new CerrarDefinitivoRequest(_textoAccion.Trim(), motivoId));
+            if (resp.IsSuccessStatusCode) _cierrePrompt = false;
+            await TrasAccion(resp, "Expediente cerrado y archivado.");
+        }
+        catch (Exception ex) { ShowMsg(ex.Message, true); _busy = false; }
     }
 
     // Abre/cierra la tarjeta flotante de responsable; carga los usuarios del sistema la primera vez.

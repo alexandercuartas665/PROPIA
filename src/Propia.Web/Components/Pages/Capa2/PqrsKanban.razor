@@ -1316,6 +1316,9 @@
     {
         if (_draggingId is null) return;
         var id = _draggingId.Value; _draggingId = null;
+        // Columna terminal (cierre): no se mueve directo; se abre el modal con el prompt de motivo de cierre,
+        // que define el estado legal y archiva el expediente (mismo flujo que en Tareas).
+        if (_estados.FirstOrDefault(e => e.Id == targetCol)?.EsTerminal == true) { await IrA(id, abrirCierre: true); return; }
         var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{id}/mover", new MoverExpedienteEstadoRequest(targetCol));
         if (resp.IsSuccessStatusCode) { await CargarAsync(); }
         else { Toast("No se pudo mover: " + await resp.Content.ReadAsStringAsync(), true); }
@@ -1327,6 +1330,8 @@
         if (idx < 0) return;
         var j = idx + dir;
         if (j < 0 || j >= orden.Count) return;
+        // Columna terminal: mismo desvio al prompt de cierre que en el drag&drop.
+        if (orden[j].EsTerminal) { await IrA(it.Id, abrirCierre: true); return; }
         var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{it.Id}/mover", new MoverExpedienteEstadoRequest(orden[j].Id));
         if (resp.IsSuccessStatusCode) { await CargarAsync(); Toast($"Movida a '{orden[j].Nombre}'.", false); }
         else { Toast("No se pudo mover.", true); }
@@ -1827,9 +1832,9 @@
         catch { }
     }
 
-    private async Task IrA(Guid id)
+    private async Task IrA(Guid id, bool abrirCierre = false)
     {
-        var parameters = new ModalParameters().Set("Jwt", _jwt).Set("ExpedienteId", id);
+        var parameters = new ModalParameters().Set("Jwt", _jwt).Set("ExpedienteId", id).Set("AbrirCierre", abrirCierre);
         var options = new ModalOptions { Width = "1360px" };
         var hubo = await Modals.OpenAsync<GestionarPqrsdModal, bool>(parameters, options);
         if (hubo == true) { await CargarAsync(); Toast("Expediente actualizado.", false); }
