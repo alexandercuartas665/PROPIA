@@ -68,7 +68,10 @@
                         <input type="number" step="0.01" class="gum-fmeta-inp" @bind="_edit.AreaM2" />
                     </div>
                     <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">ESTADO</div>
-                        <input class="gum-fmeta-inp" @bind="_edit.Estado" placeholder="Habitada / Vacia" />
+                        <select class="gum-fmeta-inp" @bind="_edit.Estado">
+                            <option value="">- Sin definir -</option>
+                            @foreach (var eo in EstadoOpciones) { <option value="@eo">@eo</option> }
+                        </select>
                     </div>
                     <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">MATRICULA</div>
                         <input class="gum-fmeta-inp" @bind="_edit.MatriculaInmobiliaria" />
@@ -147,7 +150,10 @@
                         @if (_editMode) { <input type="number" step="0.01" class="gum-fmeta-inp" @bind="_edit.AreaM2" /> } else { <div class="gum-fmeta-val">@(_selected.AreaM2.HasValue ? $"{_selected.AreaM2.Value:0.##} m2" : "-")</div> }
                     </div>
                     <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">ESTADO</div>
-                        @if (_editMode) { <input class="gum-fmeta-inp" @bind="_edit.Estado" placeholder="Habitada / Vacia" /> } else { <div class="gum-fmeta-val">@(string.IsNullOrWhiteSpace(_selected.Estado) ? "-" : _selected.Estado)</div> }
+                        @if (_editMode) { <select class="gum-fmeta-inp" @bind="_edit.Estado">
+                            <option value="">- Sin definir -</option>
+                            @foreach (var eo in EstadoOpciones) { <option value="@eo">@eo</option> }
+                        </select> } else { <div class="gum-fmeta-val">@(string.IsNullOrWhiteSpace(_selected.Estado) ? "-" : _selected.Estado)</div> }
                     </div>
                     <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">MATRICULA</div>
                         @if (_editMode) { <input class="gum-fmeta-inp" @bind="_edit.MatriculaInmobiliaria" /> } else { <div class="gum-fmeta-val">@(string.IsNullOrWhiteSpace(_selected.MatriculaInmobiliaria) ? "-" : _selected.MatriculaInmobiliaria)</div> }
@@ -177,7 +183,35 @@
                                     <div class="gum-fmeta-lbl">@c.Label</div>
                                     @if (_editMode)
                                     {
-                                        <input class="gum-fmeta-inp" value="@c.Valor" @onchange="(e) => GuardarValorCampo(cc, e.Value?.ToString())" placeholder="Sin dato" />
+                                        @switch (c.Tipo)
+                                        {
+                                            case TipoCampoTablero.Seleccion:
+                                                <select class="gum-fmeta-inp" value="@c.Valor" @onchange="(e) => GuardarValorCampo(cc, e.Value?.ToString())">
+                                                    <option value="">- elegir -</option>
+                                                    @foreach (var op in c.OpcionesLista) { <option value="@op">@op</option> }
+                                                </select>
+                                                break;
+                                            case TipoCampoTablero.Numero:
+                                            case TipoCampoTablero.Moneda:
+                                                <input class="gum-fmeta-inp" type="number" step="any" value="@c.Valor" @onchange="(e) => GuardarValorCampo(cc, e.Value?.ToString())" placeholder="Sin dato" />
+                                                break;
+                                            case TipoCampoTablero.Fecha:
+                                                <input class="gum-fmeta-inp" type="date" value="@c.Valor" @onchange="(e) => GuardarValorCampo(cc, e.Value?.ToString())" />
+                                                break;
+                                            case TipoCampoTablero.AreaTexto:
+                                                <textarea class="gum-fmeta-inp" rows="2" @onchange="(e) => GuardarValorCampo(cc, e.Value?.ToString())" placeholder="Sin dato">@c.Valor</textarea>
+                                                break;
+                                            case TipoCampoTablero.Booleano:
+                                                <select class="gum-fmeta-inp" value="@c.Valor" @onchange="(e) => GuardarValorCampo(cc, e.Value?.ToString())">
+                                                    <option value="">- elegir -</option>
+                                                    <option value="Si">Si</option>
+                                                    <option value="No">No</option>
+                                                </select>
+                                                break;
+                                            default:
+                                                <input class="gum-fmeta-inp" value="@c.Valor" @onchange="(e) => GuardarValorCampo(cc, e.Value?.ToString())" placeholder="Sin dato" />
+                                                break;
+                                        }
                                     }
                                     else
                                     {
@@ -712,7 +746,15 @@
         public string Label { get; set; } = "";
         public int Orden { get; set; }
         public string? Valor { get; set; }
+        public TipoCampoTablero Tipo { get; set; } = TipoCampoTablero.Texto;
+        public string? Opciones { get; set; }
+        public string[] OpcionesLista => string.IsNullOrWhiteSpace(Opciones)
+            ? System.Array.Empty<string>()
+            : Opciones.Split('\n', System.StringSplitOptions.RemoveEmptyEntries | System.StringSplitOptions.TrimEntries);
     }
+
+    // Estados posibles de una unidad (lista fija). Se muestra como dropdown en la ficha.
+    private static readonly string[] EstadoOpciones = new[] { "Habitada", "Desocupada", "Arrendada" };
 
     // Personas vinculadas a la unidad
     private List<UnidadPersonaDto> _personas = new();
@@ -1172,7 +1214,7 @@
         try
         {
             var dtos = await Auth().GetFromJsonAsync<List<UnidadCampoDto>>($"/api/mi-copropiedad/unidades/{_selected.Id}/campos") ?? new();
-            _campos = dtos.Select(d => new CampoVM { DefinicionId = d.DefinicionId, Label = d.Label, Orden = d.Orden, Valor = d.Valor }).ToList();
+            _campos = dtos.Select(d => new CampoVM { DefinicionId = d.DefinicionId, Label = d.Label, Orden = d.Orden, Valor = d.Valor, Tipo = d.Tipo, Opciones = d.Opciones }).ToList();
         }
         catch { _campos = new(); }
     }

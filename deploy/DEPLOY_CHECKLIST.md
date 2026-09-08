@@ -1,7 +1,17 @@
 # PROPIA - Checklist de deploy
 
-> Actualizado 2026-09-08. Version visible: **0.0.67**
+> Actualizado 2026-09-08. Version visible: **0.0.68**
 > (`src/Propia.Web/Propia.Web.csproj` `<Version>`). Bumpear en cada deploy.
+>
+> **Nuevo desde 0.0.67:**
+> - **Unidades Privadas: Estado como lista + campos dinamicos tipados.** El campo Estado de la unidad pasa
+>   de texto libre a **dropdown** (Habitada / Desocupada / Arrendada) en la ficha (modal). Nuevo boton
+>   **"Configurar"** en la barra del modulo (junto a la plantilla) para administrar campos dinamicos con
+>   TIPO (Texto / Texto largo / Numero / Fecha / Lista de opciones / Si-No) + opciones para listas. Los
+>   campos dinamicos ahora salen en la **fila de alta inline** y en el **modal crear/editar**, renderizados
+>   por tipo. **1 migracion nueva** (`AddUnidadCampoTipoOpciones`: `unidad_campos_definiciones` +`tipo` int
+>   default 0, +`opciones` text null; aditiva/segura -> ver seccion 3). Verificado local end-to-end
+>   (crear campo lista, alta inline con valor, persistencia, edicion en ficha).
 >
 > **Nuevo desde 0.0.66 (CORRECCION del build fix):**
 > - **CRIPTOGRAFIA se queda en 9.x (0.0.66 rompio el login en prod).** El fix de 0.0.66 fijaba tambien
@@ -106,6 +116,7 @@ dotnet ef database update --project ../Propia.Infrastructure --startup-project .
 
 Ultimas migraciones del repo (verificar que esten aplicadas). `ef database update` aplica SOLO las que
 falten en ese entorno, comparando contra `__EFMigrationsHistory`:
+- `20260908220459_AddUnidadCampoTipoOpciones`  (Unidades: `unidad_campos_definiciones` +`tipo` int default 0, +`opciones` text null; campos dinamicos tipados)  <-- NUEVA (0.0.68)
 - `20260908120902_AddPqrsdAlertaPlazoNotificada`  (PQRSD: `pqrsd_expedientes` +`alerta_plazo_notificada` int null; idempotencia de las alertas de plazo del job diario)  <-- NUEVA (0.0.64)
 - `20260908023154_AddTenantEmailConfig`  (Correo: tabla nueva `tenant_email_configs` con RLS; SMTP host/puerto/usuario/from + clave de aplicacion cifrada)  <-- NUEVA (0.0.63)
 - `20260908021743_AddLoginAuditEvents`  (Super Admin: tabla nueva `login_audit_events`, GLOBAL sin RLS; ingresos exitosos y fallidos)  <-- NUEVA (0.0.63)
@@ -130,7 +141,7 @@ falten en ese entorno, comparando contra `__EFMigrationsHistory`:
 
 ## 4. Post-deploy (verificacion)
 
-- [ ] Login OK; el footer muestra `v0.0.67`.
+- [ ] Login OK; el footer muestra `v0.0.68`.
 - [ ] **Extractor IA (hotfix 403):** un usuario NO-Administrador pulsa "Cargar PDF y extraer (IA)" en
       Seguros y en Contratos -> prellena (antes -> "forbidden"/403). El agente documental de Servicios
       Publicos ("Analizar con el Agente Documental") sigue exigiendo Administrador.

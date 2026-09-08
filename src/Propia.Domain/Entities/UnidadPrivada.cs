@@ -113,6 +113,13 @@ public class UnidadCampoDefinicion : TenantEntity
 
     /// <summary>Orden de presentacion en la ficha.</summary>
     public int Orden { get; set; }
+
+    /// <summary>Tipo de dato del campo (texto/numero/fecha/seleccion/...). Default Texto.
+    /// Reutiliza el enum del modulo Tareas para homogeneidad con PQRSD/Contratos/Seguros.</summary>
+    public TipoCampoTablero Tipo { get; set; } = TipoCampoTablero.Texto;
+
+    /// <summary>Opciones para el tipo Seleccion (una por linea). Null para los demas tipos.</summary>
+    public string? Opciones { get; set; }
 }
 
 /// <summary>

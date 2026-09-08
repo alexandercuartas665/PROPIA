@@ -273,6 +273,14 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpPut("unidades-campos/{definicionId:guid}")]
+    public async Task<IActionResult> ActualizarCampoDefinicion(Guid definicionId, [FromBody] ActualizarCampoDefinicionRequest req, CancellationToken ct)
+    {
+        try { return await _svc.ActualizarCampoDefinicionAsync(definicionId, req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("unidades-campos/{definicionId:guid}")]
     public async Task<IActionResult> EliminarCampoDefinicion(Guid definicionId, CancellationToken ct)

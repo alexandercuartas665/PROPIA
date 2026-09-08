@@ -35,6 +35,10 @@
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21V9m0 0l-4 4m4-4l4 4M4 3h16"/></svg>
                 Cargar plantilla (Excel)
             </button>
+            <button class="dst-btn-soft" type="button" @onclick="AbrirConfigCampos" title="Configurar los campos dinamicos de las unidades (aparecen en la fila de alta y en la ficha)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                Configurar
+            </button>
         </div>
     }
 </div>
@@ -169,6 +173,88 @@
                         <button class="cg-btn-brand" type="button" @onclick="CerrarCargaModal">Cerrar</button>
                     </div>
                 }
+            </div>
+        </div>
+    </div>
+}
+
+@if (_configCamposAbierto)
+{
+    <div class="cg-back" @onclick="() => _configCamposAbierto = false">
+        <div class="cg-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+            <div class="cg-head">
+                <div>
+                    <div class="cg-title">Configurar campos de unidades</div>
+                    <div class="cg-sub">Campos dinamicos que apareceran en la fila de alta y en la ficha de cada unidad.</div>
+                </div>
+                <button class="cg-x" type="button" @onclick="() => _configCamposAbierto = false" aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="cg-body">
+                @if (_camposDef.Count == 0)
+                {
+                    <div class="dst-nfc-empty">Aun no hay campos personalizados. Crea el primero abajo.</div>
+                }
+                else
+                {
+                    <div class="dst-cfg-list">
+                        @foreach (var d in _camposDef)
+                        {
+                            var dd = d;
+                            <div class="dst-cfg-item">
+                                <div class="dst-cfg-item-main">
+                                    <span class="dst-cfg-item-lbl">@d.Label</span>
+                                    <span class="dst-cfg-item-tipo">@TipoLabel(d.Tipo)</span>
+                                    @if (d.Tipo == TipoCampoTablero.Seleccion && !string.IsNullOrWhiteSpace(d.Opciones))
+                                    {
+                                        <span class="dst-cfg-item-op">@string.Join(", ", OpcionesDe(d))</span>
+                                    }
+                                </div>
+                                <div class="dst-cfg-item-act">
+                                    <button class="dst-btn-soft" type="button" @onclick="() => EditarCampoDef(dd)" disabled="@_cfgBusy">Editar</button>
+                                    <button class="dst-btn-soft" type="button" @onclick="() => EliminarCampoDefAsync(dd)" disabled="@_cfgBusy">Eliminar</button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <div class="dst-cfg-form">
+                    <div class="dst-cfg-form-title">@(_cfgEditId is null ? "Nuevo campo" : "Editar campo")</div>
+                    <div class="dst-cfg-form-grid">
+                        <div>
+                            <label class="dst-nfc-lbl">Nombre</label>
+                            <input class="dst-nf-inp" @bind="_cfgLabel" @bind:event="oninput" placeholder="Ej. N de medidor, Color de fachada" />
+                        </div>
+                        <div>
+                            <label class="dst-nfc-lbl">Tipo</label>
+                            <select class="dst-nf-inp" @bind="_cfgTipo">
+                                <option value="@TipoCampoTablero.Texto">Texto</option>
+                                <option value="@TipoCampoTablero.AreaTexto">Texto largo</option>
+                                <option value="@TipoCampoTablero.Numero">Numero</option>
+                                <option value="@TipoCampoTablero.Fecha">Fecha</option>
+                                <option value="@TipoCampoTablero.Seleccion">Lista de opciones</option>
+                                <option value="@TipoCampoTablero.Booleano">Si / No</option>
+                            </select>
+                        </div>
+                    </div>
+                    @if (_cfgTipo == TipoCampoTablero.Seleccion)
+                    {
+                        <div style="margin-top:8px;">
+                            <label class="dst-nfc-lbl">Opciones (una por linea)</label>
+                            <textarea class="dst-nf-inp" rows="4" @bind="_cfgOpciones" @bind:event="oninput" placeholder="Habitada&#10;Desocupada&#10;Arrendada"></textarea>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(_cfgMsg)) { <div class="dst-cfg-msg">@_cfgMsg</div> }
+                    <div class="dst-cfg-form-foot">
+                        @if (_cfgEditId is not null)
+                        {
+                            <button class="dst-btn-soft" type="button" @onclick="CancelarEdicionCampo" disabled="@_cfgBusy">Cancelar</button>
+                        }
+                        <button class="propia-btn-brand" type="button" @onclick="GuardarCampoDefAsync" disabled="@(_cfgBusy || string.IsNullOrWhiteSpace(_cfgLabel))">
+                            @(_cfgBusy ? "Guardando..." : (_cfgEditId is null ? "Crear campo" : "Guardar cambios"))
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -448,6 +534,46 @@ else
                             <button type="button" class="dst-row-add" @onclick="() => CrearUnidadDesdeAltaAsync(false)" disabled="@_creandoUnidad">@(_creandoUnidad ? "Creando..." : "+ Agregar")</button>
                         </div>
                     </div>
+                    @* Campos dinamicos de la unidad en la fila de alta (definidos en "Configurar"). *@
+                    @if (_camposDef.Count > 0)
+                    {
+                        <div class="dst-newrow-campos">
+                            @foreach (var cd in _camposDef)
+                            {
+                                var cdd = cd;
+                                var val = _nuCampos.GetValueOrDefault(cd.Id);
+                                <div class="dst-nfc-f">
+                                    <label class="dst-nfc-lbl">@cd.Label</label>
+                                    @switch (cd.Tipo)
+                                    {
+                                        case TipoCampoTablero.Seleccion:
+                                            <select class="dst-nf-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
+                                                <option value="">- elegir -</option>
+                                                @foreach (var op in OpcionesDe(cd)) { <option value="@op">@op</option> }
+                                            </select>
+                                            break;
+                                        case TipoCampoTablero.Numero:
+                                        case TipoCampoTablero.Moneda:
+                                            <input class="dst-nf-inp" type="number" step="any" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" />
+                                            break;
+                                        case TipoCampoTablero.Fecha:
+                                            <input class="dst-nf-inp" type="date" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" />
+                                            break;
+                                        case TipoCampoTablero.Booleano:
+                                            <select class="dst-nf-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
+                                                <option value="">- elegir -</option>
+                                                <option value="Si">Si</option>
+                                                <option value="No">No</option>
+                                            </select>
+                                            break;
+                                        default:
+                                            <input class="dst-nf-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cd.Label" />
+                                            break;
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
                 </div>
                 @if (!string.IsNullOrEmpty(_inlineMsgU)) { <div class="dst-toast" @onclick="() => _inlineMsgU = null">@_inlineMsgU</div> }
             }
@@ -557,6 +683,17 @@ else
     private string _nuCoef = "";
     private string _nuMatricula = "";
     private string _nuRefPago = "";
+    // Campos dinamicos: definiciones (catalogo del tenant) + valores capturados en la fila de alta.
+    private List<UnidadCampoDefinicionDto> _camposDef = new();
+    private readonly Dictionary<Guid, string?> _nuCampos = new();
+    // Config de campos dinamicos (modal "Configurar").
+    private bool _configCamposAbierto;
+    private bool _cfgBusy;
+    private string? _cfgMsg;
+    private Guid? _cfgEditId;
+    private string _cfgLabel = "";
+    private TipoCampoTablero _cfgTipo = TipoCampoTablero.Texto;
+    private string _cfgOpciones = "";
 
     // Agrupacion derivada: Anexo (es hija), Principal (tiene hijas) o Individual.
     private string AgrupacionDe(UnidadDto u)
@@ -939,10 +1076,16 @@ else
                 try { creada = await resp.Content.ReadFromJsonAsync<UnidadDto>(); } catch { }
                 if (creada is not null)
                 {
+                    // Persistir los valores de campos dinamicos capturados en la fila de alta.
+                    foreach (var kv in _nuCampos)
+                    {
+                        if (string.IsNullOrWhiteSpace(kv.Value)) continue;
+                        try { await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades/{creada.Id}/campos/{kv.Key}", new SetCampoValorRequest(kv.Value)); } catch { }
+                    }
                     _unidades.Add(creada);
                     _uniRecienCreados.Add(creada.Id);
                     _inlineMsgU = $"Unidad {creada.Numero} creada.";
-                    _nuNum = ""; _nuTorreId = ""; _nuPiso = ""; _nuArea = ""; _nuCoef = ""; _nuTipo = default; _nuMatricula = ""; _nuRefPago = "";
+                    _nuNum = ""; _nuTorreId = ""; _nuPiso = ""; _nuArea = ""; _nuCoef = ""; _nuTipo = default; _nuMatricula = ""; _nuRefPago = ""; _nuCampos.Clear();
                     if (abrir) await AbrirModalAsync(creada.Id);
                 }
                 else { await CargarAsync(); }
@@ -1013,6 +1156,92 @@ else
         catch { /* prerender */ }
     }
 
+    // ===== Configurar campos dinamicos de unidades =====
+    private void AbrirConfigCampos()
+    {
+        _cfgMsg = null; _cfgEditId = null; _cfgLabel = ""; _cfgTipo = TipoCampoTablero.Texto; _cfgOpciones = "";
+        _configCamposAbierto = true;
+    }
+
+    private void EditarCampoDef(UnidadCampoDefinicionDto d)
+    {
+        _cfgEditId = d.Id; _cfgLabel = d.Label; _cfgTipo = d.Tipo; _cfgOpciones = d.Opciones ?? ""; _cfgMsg = null;
+    }
+
+    private void CancelarEdicionCampo()
+    {
+        _cfgEditId = null; _cfgLabel = ""; _cfgTipo = TipoCampoTablero.Texto; _cfgOpciones = "";
+    }
+
+    private async Task GuardarCampoDefAsync()
+    {
+        if (_cfgBusy) return;
+        if (string.IsNullOrWhiteSpace(_cfgLabel)) { _cfgMsg = "El nombre del campo es obligatorio."; return; }
+        if (_cfgTipo == TipoCampoTablero.Seleccion && string.IsNullOrWhiteSpace(_cfgOpciones))
+        { _cfgMsg = "Un campo de tipo Lista necesita al menos una opcion (una por linea)."; return; }
+        _cfgBusy = true; _cfgMsg = null;
+        try
+        {
+            var opciones = _cfgTipo == TipoCampoTablero.Seleccion ? _cfgOpciones : null;
+            if (_cfgEditId is Guid id)
+            {
+                var orden = _camposDef.FirstOrDefault(c => c.Id == id)?.Orden ?? 0;
+                var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades-campos/{id}",
+                    new ActualizarCampoDefinicionRequest(_cfgLabel.Trim(), _cfgTipo, opciones, orden));
+                if (!resp.IsSuccessStatusCode) { _cfgMsg = "No se pudo actualizar el campo."; return; }
+            }
+            else
+            {
+                var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/unidades-campos",
+                    new CrearCampoDefinicionRequest(_cfgLabel.Trim(), _cfgTipo, opciones));
+                if (!resp.IsSuccessStatusCode) { _cfgMsg = "No se pudo crear el campo."; return; }
+            }
+            await RecargarCamposDefAsync();
+            CancelarEdicionCampo();
+        }
+        catch (Exception ex) { _cfgMsg = "Error: " + ex.Message; }
+        finally { _cfgBusy = false; }
+    }
+
+    private async Task EliminarCampoDefAsync(UnidadCampoDefinicionDto d)
+    {
+        if (_cfgBusy) return;
+        _cfgBusy = true; _cfgMsg = null;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades-campos/{d.Id}");
+            if (!resp.IsSuccessStatusCode) { _cfgMsg = "No se pudo eliminar el campo."; return; }
+            if (_cfgEditId == d.Id) CancelarEdicionCampo();
+            await RecargarCamposDefAsync();
+        }
+        catch (Exception ex) { _cfgMsg = "Error: " + ex.Message; }
+        finally { _cfgBusy = false; }
+    }
+
+    private async Task RecargarCamposDefAsync()
+    {
+        try { _camposDef = await Auth().GetFromJsonAsync<List<UnidadCampoDefinicionDto>>("/api/mi-copropiedad/unidades-campos") ?? new(); }
+        catch { }
+        // Limpia valores de alta de campos que ya no existen.
+        var vivos = _camposDef.Select(c => c.Id).ToHashSet();
+        foreach (var k in _nuCampos.Keys.Where(k => !vivos.Contains(k)).ToList()) _nuCampos.Remove(k);
+    }
+
+    private static string[] OpcionesDe(UnidadCampoDefinicionDto d) => string.IsNullOrWhiteSpace(d.Opciones)
+        ? System.Array.Empty<string>()
+        : d.Opciones.Split('\n', System.StringSplitOptions.RemoveEmptyEntries | System.StringSplitOptions.TrimEntries);
+
+    private static string TipoLabel(TipoCampoTablero t) => t switch
+    {
+        TipoCampoTablero.AreaTexto => "Texto largo",
+        TipoCampoTablero.Numero => "Numero",
+        TipoCampoTablero.Moneda => "Moneda",
+        TipoCampoTablero.Fecha => "Fecha",
+        TipoCampoTablero.Seleccion => "Lista",
+        TipoCampoTablero.Booleano => "Si / No",
+        _ => "Texto"
+    };
+
     private HttpClient Auth()
     {
         var http = HttpFactory.CreateClient("PropiaApi");
@@ -1050,6 +1279,7 @@ else
 
             _torres = await http.GetFromJsonAsync<List<TorreDto>>("/api/mi-copropiedad/torres") ?? new();
             _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
+            try { _camposDef = await http.GetFromJsonAsync<List<UnidadCampoDefinicionDto>>("/api/mi-copropiedad/unidades-campos") ?? new(); } catch { _camposDef = new(); }
             // Si en el modal se borraron unidades, la pagina en la que estabamos puede ya no existir.
             if (_pagina > TotalPaginas) _pagina = TotalPaginas;
         }
@@ -1512,4 +1742,22 @@ else
     .dst-colsmenu-acts { display: flex; gap: 8px; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--propia-border-divider); }
     .dst-colsmenu-act { flex: 1; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 7px; padding: 6px 8px; font-size: 11.5px; font-weight: 700; color: var(--propia-text-secondary); cursor: pointer; font-family: inherit; }
     .dst-colsmenu-act:hover { border-color: var(--propia-brand, var(--propia-brand)); color: var(--propia-brand, var(--propia-brand)); }
+
+    /* Campos dinamicos: tira bajo la fila de alta + modal Configurar */
+    .dst-newrow-campos { display: flex; flex-wrap: wrap; gap: 10px 14px; padding: 8px 12px 10px 46px; border-bottom: 1px solid var(--propia-border-divider); background: var(--propia-bg-subtle, transparent); }
+    .dst-nfc-f { display: flex; flex-direction: column; gap: 3px; min-width: 150px; }
+    .dst-nfc-lbl { font-size: 10.5px; font-weight: 700; letter-spacing: .3px; color: var(--propia-text-faint); text-transform: uppercase; }
+    .dst-nfc-empty { font-size: 13px; color: var(--propia-text-muted); padding: 6px 2px 14px; }
+    .dst-cfg-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
+    .dst-cfg-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border: 1px solid var(--propia-border-card); border-radius: 9px; background: var(--propia-bg-card); }
+    .dst-cfg-item-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+    .dst-cfg-item-lbl { font-size: 13px; font-weight: 600; color: var(--propia-text-body); }
+    .dst-cfg-item-tipo { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--propia-brand, var(--propia-brand)); background: var(--propia-brand-soft, transparent); border-radius: 6px; padding: 2px 7px; }
+    .dst-cfg-item-op { font-size: 12px; color: var(--propia-text-muted); }
+    .dst-cfg-item-act { display: flex; gap: 6px; flex: 0 0 auto; }
+    .dst-cfg-form { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--propia-border-divider); }
+    .dst-cfg-form-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--propia-text-secondary); margin-bottom: 10px; }
+    .dst-cfg-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .dst-cfg-form-foot { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+    .dst-cfg-msg { margin-top: 10px; font-size: 12.5px; color: var(--propia-danger, var(--propia-text-body)); }
 </style>

@@ -113,9 +113,10 @@ public record AgregarPersonaUnidadRequest(
 
 // ----- Campos personalizados de unidad: la DEFINICION es por copropiedad (catalogo compartido,
 //       aplica a todas las unidades) y el VALOR es por unidad. -----
-public record UnidadCampoDefinicionDto(Guid Id, string Label, int Orden);
-public record CrearCampoDefinicionRequest(string Label);
-public record UnidadCampoDto(Guid DefinicionId, string Label, int Orden, string? Valor);
+public record UnidadCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones);
+public record CrearCampoDefinicionRequest(string Label, TipoCampoTablero Tipo = TipoCampoTablero.Texto, string? Opciones = null);
+public record ActualizarCampoDefinicionRequest(string Label, TipoCampoTablero Tipo, string? Opciones, int Orden);
+public record UnidadCampoDto(Guid DefinicionId, string Label, int Orden, string? Valor, TipoCampoTablero Tipo, string? Opciones);
 public record SetCampoValorRequest(string? Valor);
 
 // ----- Documentos / anexos de una unidad (archivo en blob + nombre) -----

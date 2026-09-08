@@ -40,6 +40,7 @@ public interface IMiCopropiedadService
     // Campos personalizados de unidad (definicion compartida por copropiedad + valor por unidad)
     Task<IReadOnlyList<UnidadCampoDefinicionDto>> ListCamposDefinicionAsync(CancellationToken ct);
     Task<UnidadCampoDefinicionDto> CrearCampoDefinicionAsync(CrearCampoDefinicionRequest req, CancellationToken ct);
+    Task<bool> ActualizarCampoDefinicionAsync(Guid definicionId, ActualizarCampoDefinicionRequest req, CancellationToken ct);
     Task<bool> EliminarCampoDefinicionAsync(Guid definicionId, CancellationToken ct);
     Task<IReadOnlyList<UnidadCampoDto>> ListCamposUnidadAsync(Guid unidadId, CancellationToken ct);
     Task SetCampoValorUnidadAsync(Guid unidadId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct);

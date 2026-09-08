@@ -602,7 +602,7 @@ public partial class MiCopropiedadService
     public async Task<IReadOnlyList<UnidadCampoDefinicionDto>> ListCamposDefinicionAsync(CancellationToken ct)
         => await _db.UnidadCamposDefiniciones.AsNoTracking()
             .OrderBy(d => d.Orden).ThenBy(d => d.Label)
-            .Select(d => new UnidadCampoDefinicionDto(d.Id, d.Label, d.Orden))
+            .Select(d => new UnidadCampoDefinicionDto(d.Id, d.Label, d.Orden, d.Tipo, d.Opciones))
             .ToListAsync(ct);
 
     public async Task<UnidadCampoDefinicionDto> CrearCampoDefinicionAsync(CrearCampoDefinicionRequest req, CancellationToken ct)
@@ -611,18 +611,43 @@ public partial class MiCopropiedadService
         var label = (req.Label ?? "").Trim();
         if (string.IsNullOrWhiteSpace(label)) throw new InvalidOperationException("El nombre del campo es obligatorio.");
         if (label.Length > 80) label = label[..80];
+        var opciones = NormalizarOpciones(req.Tipo, req.Opciones);
 
         var existente = await _db.UnidadCamposDefiniciones.FirstOrDefaultAsync(d => d.Label.ToLower() == label.ToLower(), ct);
         if (existente is not null)
-            return new UnidadCampoDefinicionDto(existente.Id, existente.Label, existente.Orden);
+            return new UnidadCampoDefinicionDto(existente.Id, existente.Label, existente.Orden, existente.Tipo, existente.Opciones);
 
         var maxOrden = await _db.UnidadCamposDefiniciones.AnyAsync(ct)
             ? await _db.UnidadCamposDefiniciones.MaxAsync(d => d.Orden, ct) : 0;
-        var def = new UnidadCampoDefinicion { TenantId = tid, Label = label, Orden = maxOrden + 1 };
+        var def = new UnidadCampoDefinicion { TenantId = tid, Label = label, Orden = maxOrden + 1, Tipo = req.Tipo, Opciones = opciones };
         _db.UnidadCamposDefiniciones.Add(def);
         await _db.SaveChangesAsync(ct);
         await RegistrarBitacoraAsync("Unidad", $"Campo personalizado '{label}' agregado a todas las unidades.", ct);
-        return new UnidadCampoDefinicionDto(def.Id, def.Label, def.Orden);
+        return new UnidadCampoDefinicionDto(def.Id, def.Label, def.Orden, def.Tipo, def.Opciones);
+    }
+
+    public async Task<bool> ActualizarCampoDefinicionAsync(Guid definicionId, ActualizarCampoDefinicionRequest req, CancellationToken ct)
+    {
+        var def = await _db.UnidadCamposDefiniciones.FirstOrDefaultAsync(d => d.Id == definicionId, ct);
+        if (def is null) return false;
+        var label = (req.Label ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(label)) throw new InvalidOperationException("El nombre del campo es obligatorio.");
+        if (label.Length > 80) label = label[..80];
+        def.Label = label;
+        def.Tipo = req.Tipo;
+        def.Opciones = NormalizarOpciones(req.Tipo, req.Opciones);
+        def.Orden = req.Orden;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    // Deja Opciones solo para el tipo Seleccion; para el resto va null.
+    private static string? NormalizarOpciones(TipoCampoTablero tipo, string? opciones)
+    {
+        if (tipo != TipoCampoTablero.Seleccion) return null;
+        if (string.IsNullOrWhiteSpace(opciones)) return null;
+        var limpias = opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return limpias.Length == 0 ? null : string.Join('\n', limpias);
     }
 
     public async Task<bool> EliminarCampoDefinicionAsync(Guid definicionId, CancellationToken ct)
@@ -643,7 +668,8 @@ public partial class MiCopropiedadService
             .Where(v => v.UnidadId == unidadId).ToListAsync(ct);
         return defs.Select(d => new UnidadCampoDto(
             d.Id, d.Label, d.Orden,
-            valores.FirstOrDefault(v => v.DefinicionId == d.Id)?.Valor)).ToList();
+            valores.FirstOrDefault(v => v.DefinicionId == d.Id)?.Valor,
+            d.Tipo, d.Opciones)).ToList();
     }
 
     public async Task SetCampoValorUnidadAsync(Guid unidadId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct)
