@@ -184,12 +184,35 @@
         <div class="cg-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
             <div class="cg-head">
                 <div>
-                    <div class="cg-title">Configurar campos de unidades</div>
-                    <div class="cg-sub">Campos dinamicos que apareceran en la fila de alta y en la ficha de cada unidad.</div>
+                    <div class="cg-title">Configurar unidades</div>
+                    <div class="cg-sub">Tipos de unidad y campos dinamicos que apareceran en la fila de alta y en la ficha.</div>
                 </div>
                 <button class="cg-x" type="button" @onclick="() => _configCamposAbierto = false" aria-label="Cerrar">&times;</button>
             </div>
             <div class="cg-body">
+                @* --- Tipos de unidad: base (semilla, fijos) + propios del tenant (agregar/quitar) --- *@
+                <div class="dst-cfg-block">
+                    <div class="dst-cfg-form-title">Tipos de unidad</div>
+                    <div class="cg-sub" style="margin:2px 0 8px;">Los tipos base vienen por defecto. Agrega o quita los tipos propios de tu copropiedad.</div>
+                    <div class="dst-tipos-wrap">
+                        @foreach (var t in TiposUnidadSel)
+                        {
+                            <span class="dst-tipo-chip dst-tipo-chip--base" title="Tipo base (no se puede quitar)">@Etiqueta(t)</span>
+                        }
+                        @foreach (var tc in _tiposCustom)
+                        {
+                            var tcc = tc;
+                            <span class="dst-tipo-chip">@tc.Nombre<button type="button" class="dst-tipo-x" title="Quitar tipo" @onclick="() => EliminarTipoCustomAsync(tcc)" disabled="@_cfgBusy">&times;</button></span>
+                        }
+                    </div>
+                    <div class="dst-tipos-add">
+                        <input class="dst-nf-inp" placeholder="Nuevo tipo (ej. Cajeros, Kiosco...)" @bind="_nuevoTipoNombre" @bind:event="oninput" @onkeyup="OnNuevoTipoKeyUp" />
+                        <button class="propia-btn-brand" type="button" @onclick="AgregarTipoCustomAsync" disabled="@(_cfgBusy || string.IsNullOrWhiteSpace(_nuevoTipoNombre))">+ Agregar tipo</button>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_tipoMsg)) { <div class="dst-cfg-msg">@_tipoMsg</div> }
+                </div>
+                <div class="dst-cfg-sep"></div>
+                <div class="dst-cfg-form-title" style="margin-bottom:6px;">Campos dinamicos</div>
                 @if (_camposDef.Count == 0)
                 {
                     <div class="dst-nfc-empty">Aun no hay campos personalizados. Crea el primero abajo.</div>
@@ -420,7 +443,13 @@ else
                                         <select class="dst-cell" @onchange="@(e => Inline(uu, "tipo", e))">
                                             @foreach (var t in TiposUnidadSel)
                                             {
-                                                <option value="@t" selected="@(uu.Tipo == t)">@Etiqueta(t)</option>
+                                                <option value="@($"e:{t}")" selected="@(uu.TipoCustomId is null && uu.Tipo == t)">@Etiqueta(t)</option>
+                                            }
+                                            @if (_tiposCustom.Count > 0)
+                                            {
+                                                <optgroup label="Tipos propios">
+                                                    @foreach (var tc in _tiposCustom) { <option value="@($"c:{tc.Id}")" selected="@(uu.TipoCustomId == tc.Id)">@tc.Nombre</option> }
+                                                </optgroup>
                                             }
                                         </select>
                                         break;
@@ -512,8 +541,14 @@ else
                                     <div class="dst-nf-mut" title="Se infiere del numero de apto (ej. 202 = piso 2)">auto</div>
                                     break;
                                 case "tipo":
-                                    <select class="dst-nf-inp" @bind="_nuTipo">
-                                        @foreach (var t in TiposUnidadSel) { <option value="@t">@Etiqueta(t)</option> }
+                                    <select class="dst-nf-inp" @bind="_nuTipoKey">
+                                        @foreach (var t in TiposUnidadSel) { <option value="@($"e:{t}")">@Etiqueta(t)</option> }
+                                        @if (_tiposCustom.Count > 0)
+                                        {
+                                            <optgroup label="Tipos propios">
+                                                @foreach (var tc in _tiposCustom) { <option value="@($"c:{tc.Id}")">@tc.Nombre</option> }
+                                            </optgroup>
+                                        }
                                     </select>
                                     break;
                                 case "area":
@@ -595,7 +630,7 @@ else
                             </span>
                             <span class="dst-lmain">
                                 <span class="dst-lnum">@u.Numero</span>
-                                <span class="dst-lmeta">@(u.TorreNombre ?? "-")@(u.Piso is null ? "" : $" - {LabelPisoSingular} {u.Piso}") - @Etiqueta(u.Tipo)</span>
+                                <span class="dst-lmeta">@(u.TorreNombre ?? "-")@(u.Piso is null ? "" : $" - {LabelPisoSingular} {u.Piso}") - @EtiquetaU(u)</span>
                             </span>
                             <span class="dst-lprop">
                                 @if (string.IsNullOrWhiteSpace(u.PropietarioNombre))
@@ -670,12 +705,23 @@ else
     private ResumenMiCopropiedadDto? _resumen;
     private List<TorreDto> _torres = new();
     private List<UnidadDto> _unidades = new();
+    private List<TipoUnidadCustomDto> _tiposCustom = new();   // tipos propios del tenant (Configurar)
 
     // Alta inline (crear unidad desde la vista Tabla, como Zonas/Seguros).
     private string _nuNum = "";
     private string _nuTorreId = "";
     private string _nuPiso = "";
-    private TipoUnidad _nuTipo;
+    private string _nuTipoKey = "e:Apartamento";   // "e:<enum>" o "c:<guidCustom>"
+
+    // Etiqueta del tipo de una unidad: nombre propio si tiene TipoCustomId, si no el enum.
+    private string EtiquetaU(UnidadDto u) => u.TipoCustomNombre ?? Etiqueta(u.Tipo);
+    // Parsea la key del selector de tipo a (enum, customId).
+    private (TipoUnidad tipo, Guid? custom) ParseTipoKey(string? key)
+    {
+        if (!string.IsNullOrEmpty(key) && key.StartsWith("c:") && Guid.TryParse(key[2..], out var g)) return (TipoUnidad.Apartamento, g);
+        if (!string.IsNullOrEmpty(key) && key.StartsWith("e:") && Enum.TryParse<TipoUnidad>(key[2..], out var t)) return (t, null);
+        return (TipoUnidad.Apartamento, null);
+    }
     private string _nuArea = "";
     private string _nuCoef = "";
     private string _nuMatricula = "";
@@ -727,7 +773,8 @@ else
     {
         new() { Key = "numero", Label = "Unidad", Kind = "texto" },
         new() { Key = "tipo", Label = "Tipo", Kind = "sel",
-                Opciones = TiposUnidadSel.Select(t => (t.ToString(), Etiqueta(t))).ToList() },
+                Opciones = TiposUnidadSel.Select(t => (Etiqueta(t), Etiqueta(t)))
+                    .Concat(_tiposCustom.Select(tc => (tc.Nombre, tc.Nombre))).ToList() },
         new() { Key = "torre", Label = LabelAgrupacionSingular, Kind = "sel",
                 Opciones = _torres.OrderBy(x => x.Nombre).Select(t => (t.Id.ToString(), t.Nombre)).ToList() },
         new() { Key = "piso", Label = LabelPisoSingular, Kind = "num" },
@@ -773,7 +820,7 @@ else
                 .Where(u => _fd?.Pasa(campo => campo switch
                 {
                     "numero" => u.Numero,
-                    "tipo" => u.Tipo.ToString(),
+                    "tipo" => EtiquetaU(u),
                     "torre" => u.TorreId?.ToString() ?? "",
                     "piso" => u.Piso?.ToString() ?? "",
                     "area" => u.AreaM2?.ToString(ci) ?? "",
@@ -828,7 +875,7 @@ else
         {
             "torre" => items.GroupBy(u => u.TorreNombre ?? $"Sin {LabelAgrupacionSingular.ToLower()}"),
             "estado" => items.GroupBy(u => string.IsNullOrWhiteSpace(u.Estado) ? "Sin estado" : u.Estado!),
-            "tipo" => items.GroupBy(u => Etiqueta(u.Tipo)),
+            "tipo" => items.GroupBy(u => EtiquetaU(u)),
             "propietario" => items.GroupBy(u => string.IsNullOrWhiteSpace(u.PropietarioNombre) ? "Sin propietario" : u.PropietarioNombre!),
             _ => null
         };
@@ -1003,10 +1050,11 @@ else
         var numero = u.Numero; var tipo = u.Tipo; var torreId = u.TorreId; var piso = u.Piso;
         var coef = u.CoeficientePropiedad; var area = u.AreaM2;
         var matricula = u.MatriculaInmobiliaria; var refpago = u.ReferenciaPago;
+        var tipoCustom = u.TipoCustomId;
         switch (campo)
         {
             case "num": if (string.IsNullOrWhiteSpace(v) || v == u.Numero) return; numero = v; break;
-            case "tipo": if (!Enum.TryParse<TipoUnidad>(v, out var tp) || tp == u.Tipo) return; tipo = tp; break;
+            case "tipo": var (tp, tc) = ParseTipoKey(v); if (tp == u.Tipo && tc == u.TipoCustomId) return; tipo = tp; tipoCustom = tc; break;
             case "torre": var t = string.IsNullOrEmpty(v) ? (Guid?)null : (Guid.TryParse(v, out var g) ? g : u.TorreId); if (t == u.TorreId) return; torreId = t; break;
             case "piso": var pi = string.IsNullOrWhiteSpace(v) ? (int?)null : (int.TryParse(v, out var pp) ? pp : u.Piso); if (pi == u.Piso) return; piso = pi; break;
             case "coef": if (!decimal.TryParse(v, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var cf) || cf == u.CoeficientePropiedad) return; coef = cf; break;
@@ -1017,15 +1065,16 @@ else
         }
         var req = new ActualizarUnidadRequest(numero, tipo, torreId, piso, coef, area,
             u.Habitaciones, u.Banos, u.Parqueaderos, u.Estado, u.Observaciones,
-            matricula, u.PagaAdministracion, u.CuotaMensual, refpago);
+            matricula, u.PagaAdministracion, u.CuotaMensual, refpago, TipoCustomId: tipoCustom);
         try
         {
             var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades/{u.Id}", req);
             if (r.IsSuccessStatusCode)
             {
                 var nombreTorre = torreId is null ? null : _torres.FirstOrDefault(x => x.Id == torreId)?.Nombre ?? u.TorreNombre;
+                var nombreCustom = tipoCustom is { } cg ? _tiposCustom.FirstOrDefault(x => x.Id == cg)?.Nombre : null;
                 var i = _unidades.FindIndex(x => x.Id == u.Id);
-                if (i >= 0) _unidades[i] = u with { Numero = numero, Tipo = tipo, TorreId = torreId, TorreNombre = nombreTorre, Piso = piso, CoeficientePropiedad = coef, AreaM2 = area, MatriculaInmobiliaria = matricula, ReferenciaPago = refpago };
+                if (i >= 0) _unidades[i] = u with { Numero = numero, Tipo = tipo, TipoCustomId = tipoCustom, TipoCustomNombre = nombreCustom, TorreId = torreId, TorreNombre = nombreTorre, Piso = piso, CoeficientePropiedad = coef, AreaM2 = area, MatriculaInmobiliaria = matricula, ReferenciaPago = refpago };
             }
         }
         catch { }
@@ -1064,10 +1113,12 @@ else
 
             decimal? area = decimal.TryParse(_nuArea, System.Globalization.NumberStyles.Any, ci, out var aa) ? aa : null;
             decimal coef = decimal.TryParse(_nuCoef, System.Globalization.NumberStyles.Any, ci, out var cc) ? cc : 0m;
-            var req = new CrearUnidadRequest(numero, _nuTipo, torreId, piso, coef, area,
+            var (nuTipo, nuTipoCustom) = ParseTipoKey(_nuTipoKey);
+            var req = new CrearUnidadRequest(numero, nuTipo, torreId, piso, coef, area,
                 null, null, null, null, null,
                 MatriculaInmobiliaria: string.IsNullOrWhiteSpace(_nuMatricula) ? null : _nuMatricula.Trim(),
-                ReferenciaPago: string.IsNullOrWhiteSpace(_nuRefPago) ? null : _nuRefPago.Trim());
+                ReferenciaPago: string.IsNullOrWhiteSpace(_nuRefPago) ? null : _nuRefPago.Trim(),
+                TipoCustomId: nuTipoCustom);
             var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/unidades", req);
             if (resp.IsSuccessStatusCode)
             {
@@ -1086,7 +1137,7 @@ else
                     _unidades.Add(creada);
                     _uniRecienCreados.Add(creada.Id);
                     _inlineMsgU = $"Unidad {creada.Numero} creada.";
-                    _nuNum = ""; _nuTorreId = ""; _nuPiso = ""; _nuArea = ""; _nuCoef = ""; _nuTipo = default; _nuMatricula = ""; _nuRefPago = ""; _nuCampos.Clear();
+                    _nuNum = ""; _nuTorreId = ""; _nuPiso = ""; _nuArea = ""; _nuCoef = ""; _nuTipoKey = "e:Apartamento"; _nuMatricula = ""; _nuRefPago = ""; _nuCampos.Clear();
                     if (abrir) await AbrirModalAsync(creada.Id);
                 }
                 else { await CargarAsync(); }
@@ -1157,10 +1208,62 @@ else
         catch { /* prerender */ }
     }
 
+    // ===== Configurar: tipos de unidad propios (semilla = tipos base del enum) =====
+    private string _nuevoTipoNombre = "";
+    private string? _tipoMsg;
+
+    private async Task OnNuevoTipoKeyUp(KeyboardEventArgs e) { if (e.Key == "Enter") await AgregarTipoCustomAsync(); }
+
+    private async Task AgregarTipoCustomAsync()
+    {
+        var nombre = _nuevoTipoNombre.Trim();
+        if (string.IsNullOrWhiteSpace(nombre)) return;
+        // Evita duplicar un tipo base o uno propio ya existente.
+        if (TiposUnidadSel.Any(t => string.Equals(Etiqueta(t), nombre, StringComparison.OrdinalIgnoreCase))
+            || _tiposCustom.Any(t => string.Equals(t.Nombre, nombre, StringComparison.OrdinalIgnoreCase)))
+        { _tipoMsg = $"Ya existe un tipo '{nombre}'."; return; }
+        _cfgBusy = true; _tipoMsg = null;
+        try
+        {
+            var req = new CrearTipoUnidadCustomRequest(nombre, true, null);
+            var r = await Auth().PostAsJsonAsync("/api/mi-copropiedad/tipos-unidad", req);
+            if (r.IsSuccessStatusCode)
+            {
+                var creado = await r.Content.ReadFromJsonAsync<TipoUnidadCustomDto>();
+                if (creado is not null) _tiposCustom = _tiposCustom.Append(creado).OrderBy(t => t.Nombre).ToList();
+                _nuevoTipoNombre = "";
+            }
+            else { _tipoMsg = await MensajeError(r, "No se pudo agregar el tipo."); }
+        }
+        catch (Exception ex) { _tipoMsg = ex.Message; }
+        finally { _cfgBusy = false; }
+    }
+
+    private async Task EliminarTipoCustomAsync(TipoUnidadCustomDto tc)
+    {
+        _cfgBusy = true; _tipoMsg = null;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/tipos-unidad/{tc.Id}");
+            if (r.IsSuccessStatusCode) _tiposCustom = _tiposCustom.Where(t => t.Id != tc.Id).ToList();
+            else { _tipoMsg = "No se pudo quitar el tipo (puede tener unidades asignadas)."; }
+        }
+        catch (Exception ex) { _tipoMsg = ex.Message; }
+        finally { _cfgBusy = false; }
+    }
+
+    private static async Task<string> MensajeError(HttpResponseMessage resp, string porDefecto)
+    {
+        try { var err = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>(); if (err is not null && err.TryGetValue("error", out var m) && !string.IsNullOrWhiteSpace(m)) return m; }
+        catch { }
+        return porDefecto;
+    }
+
     // ===== Configurar campos dinamicos de unidades =====
     private void AbrirConfigCampos()
     {
         _cfgMsg = null; _cfgEditId = null; _cfgLabel = ""; _cfgTipo = TipoCampoTablero.Texto; _cfgOpciones = "";
+        _tipoMsg = null; _nuevoTipoNombre = "";
         _configCamposAbierto = true;
     }
 
@@ -1281,6 +1384,7 @@ else
             _torres = await http.GetFromJsonAsync<List<TorreDto>>("/api/mi-copropiedad/torres") ?? new();
             _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
             try { _camposDef = await http.GetFromJsonAsync<List<UnidadCampoDefinicionDto>>("/api/mi-copropiedad/unidades-campos") ?? new(); } catch { _camposDef = new(); }
+            try { _tiposCustom = await http.GetFromJsonAsync<List<TipoUnidadCustomDto>>("/api/mi-copropiedad/tipos-unidad") ?? new(); } catch { _tiposCustom = new(); }
             try
             {
                 var flat = await http.GetFromJsonAsync<List<UnidadCampoValorFlatDto>>("/api/mi-copropiedad/unidades-campos-valores") ?? new();
@@ -1772,4 +1876,14 @@ else
     .dst-cfg-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .dst-cfg-form-foot { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
     .dst-cfg-msg { margin-top: 10px; font-size: 12.5px; color: var(--propia-danger, var(--propia-text-body)); }
+    /* Configurar: tipos de unidad (chips base + propios) */
+    .dst-cfg-block { margin-bottom: 6px; }
+    .dst-cfg-sep { height: 1px; background: var(--propia-border-divider); margin: 16px 0; }
+    .dst-tipos-wrap { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .dst-tipo-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; color: var(--propia-brand); background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-soft); border-radius: 20px; padding: 4px 10px; }
+    .dst-tipo-chip--base { color: var(--propia-text-secondary); background: var(--propia-bg-app); border-color: var(--propia-border-card); }
+    .dst-tipo-x { border: 0; background: transparent; color: var(--propia-brand); cursor: pointer; font-size: 15px; line-height: 1; padding: 0 0 0 2px; }
+    .dst-tipo-x:hover { color: var(--propia-danger); }
+    .dst-tipos-add { display: flex; gap: 8px; align-items: center; }
+    .dst-tipos-add .dst-nf-inp { flex: 1; }
 </style>

@@ -15,6 +15,10 @@ public class UnidadPrivada : TenantEntity
     public string Numero { get; set; } = string.Empty;
     public TipoUnidad Tipo { get; set; } = TipoUnidad.Apartamento;
 
+    /// <summary>Si la unidad usa un tipo PERSONALIZADO del tenant (tipos_unidad_custom), su id.
+    /// Cuando no es null, prevalece sobre el enum Tipo para mostrar la etiqueta. Opcional.</summary>
+    public Guid? TipoCustomId { get; set; }
+
     public Guid? TorreId { get; set; }
     public Torre? Torre { get; set; }
 

@@ -39,7 +39,8 @@ public enum TipoUnidad
     Empresa = 16,
     Cabana = 17,
     Cama = 18,
-    ParqueaderoDeposito = 19   // combinado, se ofrece como anexo "parqueadero + deposito"
+    ParqueaderoDeposito = 19,  // combinado, se ofrece como anexo "parqueadero + deposito"
+    Cajeros = 20
 }
 
 /// <summary>Categoria operativa de una zona comun (para reservas y mantenimiento).</summary>

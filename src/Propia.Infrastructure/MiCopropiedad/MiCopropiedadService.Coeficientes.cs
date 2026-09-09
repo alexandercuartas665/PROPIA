@@ -106,7 +106,9 @@ public partial class MiCopropiedadService
                 ).FirstOrDefault(),
                 _db.UnidadPersonas.Count(up => up.UnidadId == u.Id && up.Rol == RolUnidadPersona.Propietario),
                 (from v in _db.UnidadVinculos where v.UnidadAsociadaId == u.Id select (Guid?)v.UnidadPrincipalId).FirstOrDefault(),
-                u.ReferenciaPago))
+                u.ReferenciaPago,
+                u.TipoCustomId,
+                u.TipoCustomId != null ? _db.TiposUnidadCustom.Where(t => t.Id == u.TipoCustomId).Select(t => t.Nombre).FirstOrDefault() : null))
             .FirstOrDefaultAsync(ct);
     }
 

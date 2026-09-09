@@ -50,7 +50,8 @@ public record UnidadDto(
     decimal? CuotaMensual = null,
     string? PropietarioNombre = null, int PropietariosCount = 0,
     Guid? PrincipalId = null,     // si es un anexo (parqueadero/cuarto util), la unidad principal a la que pertenece
-    string? ReferenciaPago = null);
+    string? ReferenciaPago = null,
+    Guid? TipoCustomId = null, string? TipoCustomNombre = null);
 
 public record CrearUnidadRequest(
     string Numero, TipoUnidad Tipo, Guid? TorreId, int? Piso,
@@ -58,7 +59,8 @@ public record CrearUnidadRequest(
     int? Habitaciones, int? Banos, int? Parqueaderos,
     string? Estado, string? Observaciones,
     string? MatriculaInmobiliaria = null, bool PagaAdministracion = true,
-    decimal? CuotaMensual = null, string? ReferenciaPago = null);
+    decimal? CuotaMensual = null, string? ReferenciaPago = null,
+    Guid? TipoCustomId = null);
 
 /// <summary>Actualiza la ficha completa de una unidad (todos los campos editables).</summary>
 public record ActualizarUnidadRequest(
@@ -67,7 +69,8 @@ public record ActualizarUnidadRequest(
     int? Habitaciones, int? Banos, int? Parqueaderos,
     string? Estado, string? Observaciones,
     string? MatriculaInmobiliaria, bool PagaAdministracion,
-    decimal? CuotaMensual = null, string? ReferenciaPago = null);
+    decimal? CuotaMensual = null, string? ReferenciaPago = null,
+    Guid? TipoCustomId = null);
 
 // ----- Vinculos entre unidades (seccion 2 - RN-09) -----
 public record UnidadVinculoDto(

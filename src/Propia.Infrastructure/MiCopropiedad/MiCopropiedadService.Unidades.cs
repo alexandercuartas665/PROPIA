@@ -170,7 +170,9 @@ public partial class MiCopropiedadService
                 _db.UnidadPersonas.Count(up => up.UnidadId == u.Id && up.Rol == RolUnidadPersona.Propietario),
                 // Si esta unidad es una asociada (anexo) de otra, su principal (para anidar como fila hija).
                 (from v in _db.UnidadVinculos where v.UnidadAsociadaId == u.Id select (Guid?)v.UnidadPrincipalId).FirstOrDefault(),
-                u.ReferenciaPago))
+                u.ReferenciaPago,
+                u.TipoCustomId,
+                u.TipoCustomId != null ? _db.TiposUnidadCustom.Where(t => t.Id == u.TipoCustomId).Select(t => t.Nombre).FirstOrDefault() : null))
             .ToListAsync(ct);
     }
 
@@ -185,6 +187,7 @@ public partial class MiCopropiedadService
         {
             Numero = req.Numero,
             Tipo = req.Tipo,
+            TipoCustomId = req.TipoCustomId,
             TorreId = req.TorreId,
             Piso = req.Piso,
             CoeficientePropiedad = req.CoeficientePropiedad,
@@ -209,7 +212,8 @@ public partial class MiCopropiedadService
             unidad.TorreId, torreNombre, unidad.Piso,
             unidad.CoeficientePropiedad, unidad.AreaM2,
             unidad.Habitaciones, unidad.Banos, unidad.Parqueaderos,
-            unidad.Estado, unidad.Observaciones, unidad.MatriculaInmobiliaria, unidad.PagaAdministracion, unidad.CuotaMensual);
+            unidad.Estado, unidad.Observaciones, unidad.MatriculaInmobiliaria, unidad.PagaAdministracion, unidad.CuotaMensual,
+            TipoCustomId: unidad.TipoCustomId);
     }
 
     public async Task<UnidadDto?> ActualizarUnidadAsync(Guid unidadId, ActualizarUnidadRequest req, CancellationToken ct)
@@ -250,6 +254,7 @@ public partial class MiCopropiedadService
 
         u.Numero = numeroTrim;
         u.Tipo = req.Tipo;
+        u.TipoCustomId = req.TipoCustomId;
         u.TorreId = req.TorreId;
         u.Piso = req.Piso;
         u.CoeficientePropiedad = req.CoeficientePropiedad;
@@ -277,7 +282,8 @@ public partial class MiCopropiedadService
             u.TorreId, torreNombre, u.Piso,
             u.CoeficientePropiedad, u.AreaM2,
             u.Habitaciones, u.Banos, u.Parqueaderos,
-            u.Estado, u.Observaciones, u.MatriculaInmobiliaria, u.PagaAdministracion, u.CuotaMensual);
+            u.Estado, u.Observaciones, u.MatriculaInmobiliaria, u.PagaAdministracion, u.CuotaMensual,
+            TipoCustomId: u.TipoCustomId);
     }
 
     // ----------------------------- Vinculos entre unidades (RN-09) -----------------------------
