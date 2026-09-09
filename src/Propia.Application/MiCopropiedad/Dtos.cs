@@ -121,6 +121,14 @@ public record SetCampoValorRequest(string? Valor);
 // Valor plano (unidad+definicion) para pintar los campos dinamicos como columnas de la tabla sin N+1.
 public record UnidadCampoValorFlatDto(Guid UnidadId, Guid DefinicionId, string? Valor);
 
+// --- Campos dinamicos tipados de Equipos y Zonas (mismo patron que Unidad; requests genericos reutilizados) ---
+public record EquipoCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones);
+public record EquipoCampoDinDto(Guid DefinicionId, string Label, int Orden, string? Valor, TipoCampoTablero Tipo, string? Opciones);
+public record EquipoCampoValorFlatDto(Guid EquipoActivoId, Guid DefinicionId, string? Valor);
+public record ZonaCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones);
+public record ZonaCampoDinDto(Guid DefinicionId, string Label, int Orden, string? Valor, TipoCampoTablero Tipo, string? Opciones);
+public record ZonaCampoValorFlatDto(Guid ZonaComunId, Guid DefinicionId, string? Valor);
+
 // ----- Documentos / anexos de una unidad (archivo en blob + nombre) -----
 public record UnidadDocumentoDto(Guid Id, string Nombre, string Url, long Tamano);
 

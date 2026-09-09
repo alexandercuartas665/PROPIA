@@ -395,4 +395,138 @@ public partial class MiCopropiedadService
         return true;
     }
 
+    // ===================== Campos dinamicos tipados (catalogo) - EQUIPOS =====================
+    private static string? NormalizarOpcionesCampo(TipoCampoTablero tipo, string? opciones)
+    {
+        if (tipo != TipoCampoTablero.Seleccion) return null;
+        if (string.IsNullOrWhiteSpace(opciones)) return null;
+        var limpias = opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return limpias.Length == 0 ? null : string.Join('\n', limpias);
+    }
+
+    public async Task<IReadOnlyList<EquipoCampoDefinicionDto>> ListCamposDefEquipoAsync(CancellationToken ct)
+        => await _db.EquipoCamposDefiniciones.AsNoTracking().OrderBy(d => d.Orden).ThenBy(d => d.Label)
+            .Select(d => new EquipoCampoDefinicionDto(d.Id, d.Label, d.Orden, d.Tipo, d.Opciones)).ToListAsync(ct);
+
+    public async Task<EquipoCampoDefinicionDto> CrearCampoDefEquipoAsync(CrearCampoDefinicionRequest req, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) throw new InvalidOperationException("Sin copropiedad activa.");
+        var label = (req.Label ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(label)) throw new InvalidOperationException("El nombre del campo es obligatorio.");
+        if (label.Length > 80) label = label[..80];
+        var existente = await _db.EquipoCamposDefiniciones.FirstOrDefaultAsync(d => d.Label.ToLower() == label.ToLower(), ct);
+        if (existente is not null) return new EquipoCampoDefinicionDto(existente.Id, existente.Label, existente.Orden, existente.Tipo, existente.Opciones);
+        var maxOrden = await _db.EquipoCamposDefiniciones.AnyAsync(ct) ? await _db.EquipoCamposDefiniciones.MaxAsync(d => d.Orden, ct) : 0;
+        var def = new EquipoCampoDefinicion { TenantId = tid, Label = label, Orden = maxOrden + 1, Tipo = req.Tipo, Opciones = NormalizarOpcionesCampo(req.Tipo, req.Opciones) };
+        _db.EquipoCamposDefiniciones.Add(def);
+        await _db.SaveChangesAsync(ct);
+        return new EquipoCampoDefinicionDto(def.Id, def.Label, def.Orden, def.Tipo, def.Opciones);
+    }
+
+    public async Task<bool> ActualizarCampoDefEquipoAsync(Guid definicionId, ActualizarCampoDefinicionRequest req, CancellationToken ct)
+    {
+        var def = await _db.EquipoCamposDefiniciones.FirstOrDefaultAsync(d => d.Id == definicionId, ct);
+        if (def is null) return false;
+        var label = (req.Label ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(label)) throw new InvalidOperationException("El nombre del campo es obligatorio.");
+        if (label.Length > 80) label = label[..80];
+        def.Label = label; def.Tipo = req.Tipo; def.Opciones = NormalizarOpcionesCampo(req.Tipo, req.Opciones); def.Orden = req.Orden;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> EliminarCampoDefEquipoAsync(Guid definicionId, CancellationToken ct)
+    {
+        var def = await _db.EquipoCamposDefiniciones.FirstOrDefaultAsync(d => d.Id == definicionId, ct);
+        if (def is null) return false;
+        _db.EquipoCamposDefiniciones.Remove(def);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task SetCampoValorEquipoDefAsync(Guid equipoId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) throw new InvalidOperationException("Sin copropiedad activa.");
+        var valor = string.IsNullOrWhiteSpace(req.Valor) ? null : req.Valor.Trim();
+        var existente = await _db.EquipoCamposValores.FirstOrDefaultAsync(v => v.DefinicionId == definicionId && v.EquipoActivoId == equipoId, ct);
+        if (existente is null)
+            _db.EquipoCamposValores.Add(new EquipoCampoValor { TenantId = tid, DefinicionId = definicionId, EquipoActivoId = equipoId, Valor = valor });
+        else existente.Valor = valor;
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<EquipoCampoValorFlatDto>> ListTodosCamposValoresEquipoAsync(CancellationToken ct)
+        => await _db.EquipoCamposValores.AsNoTracking().Where(v => v.Valor != null && v.Valor != "")
+            .Select(v => new EquipoCampoValorFlatDto(v.EquipoActivoId, v.DefinicionId, v.Valor)).ToListAsync(ct);
+
+    public async Task<IReadOnlyList<EquipoCampoDinDto>> ListCamposDinEquipoAsync(Guid equipoId, CancellationToken ct)
+    {
+        var defs = await _db.EquipoCamposDefiniciones.AsNoTracking().OrderBy(d => d.Orden).ThenBy(d => d.Label).ToListAsync(ct);
+        var vals = await _db.EquipoCamposValores.AsNoTracking().Where(v => v.EquipoActivoId == equipoId).ToListAsync(ct);
+        return defs.Select(d => new EquipoCampoDinDto(d.Id, d.Label, d.Orden, vals.FirstOrDefault(v => v.DefinicionId == d.Id)?.Valor, d.Tipo, d.Opciones)).ToList();
+    }
+
+    // ===================== Campos dinamicos tipados (catalogo) - ZONAS =====================
+    public async Task<IReadOnlyList<ZonaCampoDefinicionDto>> ListCamposDefZonaAsync(CancellationToken ct)
+        => await _db.ZonaCamposDefiniciones.AsNoTracking().OrderBy(d => d.Orden).ThenBy(d => d.Label)
+            .Select(d => new ZonaCampoDefinicionDto(d.Id, d.Label, d.Orden, d.Tipo, d.Opciones)).ToListAsync(ct);
+
+    public async Task<ZonaCampoDefinicionDto> CrearCampoDefZonaAsync(CrearCampoDefinicionRequest req, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) throw new InvalidOperationException("Sin copropiedad activa.");
+        var label = (req.Label ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(label)) throw new InvalidOperationException("El nombre del campo es obligatorio.");
+        if (label.Length > 80) label = label[..80];
+        var existente = await _db.ZonaCamposDefiniciones.FirstOrDefaultAsync(d => d.Label.ToLower() == label.ToLower(), ct);
+        if (existente is not null) return new ZonaCampoDefinicionDto(existente.Id, existente.Label, existente.Orden, existente.Tipo, existente.Opciones);
+        var maxOrden = await _db.ZonaCamposDefiniciones.AnyAsync(ct) ? await _db.ZonaCamposDefiniciones.MaxAsync(d => d.Orden, ct) : 0;
+        var def = new ZonaCampoDefinicion { TenantId = tid, Label = label, Orden = maxOrden + 1, Tipo = req.Tipo, Opciones = NormalizarOpcionesCampo(req.Tipo, req.Opciones) };
+        _db.ZonaCamposDefiniciones.Add(def);
+        await _db.SaveChangesAsync(ct);
+        return new ZonaCampoDefinicionDto(def.Id, def.Label, def.Orden, def.Tipo, def.Opciones);
+    }
+
+    public async Task<bool> ActualizarCampoDefZonaAsync(Guid definicionId, ActualizarCampoDefinicionRequest req, CancellationToken ct)
+    {
+        var def = await _db.ZonaCamposDefiniciones.FirstOrDefaultAsync(d => d.Id == definicionId, ct);
+        if (def is null) return false;
+        var label = (req.Label ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(label)) throw new InvalidOperationException("El nombre del campo es obligatorio.");
+        if (label.Length > 80) label = label[..80];
+        def.Label = label; def.Tipo = req.Tipo; def.Opciones = NormalizarOpcionesCampo(req.Tipo, req.Opciones); def.Orden = req.Orden;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> EliminarCampoDefZonaAsync(Guid definicionId, CancellationToken ct)
+    {
+        var def = await _db.ZonaCamposDefiniciones.FirstOrDefaultAsync(d => d.Id == definicionId, ct);
+        if (def is null) return false;
+        _db.ZonaCamposDefiniciones.Remove(def);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task SetCampoValorZonaDefAsync(Guid zonaId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) throw new InvalidOperationException("Sin copropiedad activa.");
+        var valor = string.IsNullOrWhiteSpace(req.Valor) ? null : req.Valor.Trim();
+        var existente = await _db.ZonaCamposValores.FirstOrDefaultAsync(v => v.DefinicionId == definicionId && v.ZonaComunId == zonaId, ct);
+        if (existente is null)
+            _db.ZonaCamposValores.Add(new ZonaCampoValor { TenantId = tid, DefinicionId = definicionId, ZonaComunId = zonaId, Valor = valor });
+        else existente.Valor = valor;
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<ZonaCampoValorFlatDto>> ListTodosCamposValoresZonaAsync(CancellationToken ct)
+        => await _db.ZonaCamposValores.AsNoTracking().Where(v => v.Valor != null && v.Valor != "")
+            .Select(v => new ZonaCampoValorFlatDto(v.ZonaComunId, v.DefinicionId, v.Valor)).ToListAsync(ct);
+
+    public async Task<IReadOnlyList<ZonaCampoDinDto>> ListCamposDinZonaAsync(Guid zonaId, CancellationToken ct)
+    {
+        var defs = await _db.ZonaCamposDefiniciones.AsNoTracking().OrderBy(d => d.Orden).ThenBy(d => d.Label).ToListAsync(ct);
+        var vals = await _db.ZonaCamposValores.AsNoTracking().Where(v => v.ZonaComunId == zonaId).ToListAsync(ct);
+        return defs.Select(d => new ZonaCampoDinDto(d.Id, d.Label, d.Orden, vals.FirstOrDefault(v => v.DefinicionId == d.Id)?.Valor, d.Tipo, d.Opciones)).ToList();
+    }
+
 }

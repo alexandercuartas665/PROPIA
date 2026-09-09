@@ -355,11 +355,15 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<EquipoVinculo> EquipoVinculos => Set<EquipoVinculo>();
     public DbSet<EquipoContratoVinculo> EquipoContratoVinculos => Set<EquipoContratoVinculo>();
     public DbSet<EquipoCampoPersonalizado> EquipoCamposPersonalizados => Set<EquipoCampoPersonalizado>();
+    public DbSet<EquipoCampoDefinicion> EquipoCamposDefiniciones => Set<EquipoCampoDefinicion>();
+    public DbSet<EquipoCampoValor> EquipoCamposValores => Set<EquipoCampoValor>();
 
     // Ficha de zona comun (2.3 seccion 4)
     public DbSet<ZonaFactura> ZonaFacturas => Set<ZonaFactura>();
     public DbSet<ZonaDocumento> ZonaDocumentos => Set<ZonaDocumento>();
     public DbSet<ZonaCampoPersonalizado> ZonaCamposPersonalizados => Set<ZonaCampoPersonalizado>();
+    public DbSet<ZonaCampoDefinicion> ZonaCamposDefiniciones => Set<ZonaCampoDefinicion>();
+    public DbSet<ZonaCampoValor> ZonaCamposValores => Set<ZonaCampoValor>();
     // Muro de novedades generico: cuelga de cualquier entidad via (EntidadTipo, EntidadId).
     public DbSet<Novedad> Novedades => Set<Novedad>();
     public DbSet<NovedadComentario> NovedadComentarios => Set<NovedadComentario>();

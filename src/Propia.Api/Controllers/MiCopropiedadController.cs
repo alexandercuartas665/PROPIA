@@ -292,6 +292,66 @@ public class MiCopropiedadController : ControllerBase
     [HttpGet("unidades-campos-valores")]
     public async Task<IActionResult> ListTodosCamposValores(CancellationToken ct) => Ok(await _svc.ListTodosCamposValoresAsync(ct));
 
+    // ---------- Campos dinamicos tipados de EQUIPOS ----------
+    [HttpGet("equipos-campos")]
+    public async Task<IActionResult> ListCamposDefEquipo(CancellationToken ct) => Ok(await _svc.ListCamposDefEquipoAsync(ct));
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
+    [HttpPost("equipos-campos")]
+    public async Task<IActionResult> CrearCampoDefEquipo([FromBody] CrearCampoDefinicionRequest req, CancellationToken ct)
+    { try { return Created("", await _svc.CrearCampoDefEquipoAsync(req, ct)); } catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); } }
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpPut("equipos-campos/{definicionId:guid}")]
+    public async Task<IActionResult> ActualizarCampoDefEquipo(Guid definicionId, [FromBody] ActualizarCampoDefinicionRequest req, CancellationToken ct)
+    { try { return await _svc.ActualizarCampoDefEquipoAsync(definicionId, req, ct) ? NoContent() : NotFound(); } catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); } }
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
+    [HttpDelete("equipos-campos/{definicionId:guid}")]
+    public async Task<IActionResult> EliminarCampoDefEquipo(Guid definicionId, CancellationToken ct)
+        => await _svc.EliminarCampoDefEquipoAsync(definicionId, ct) ? NoContent() : NotFound();
+
+    [HttpGet("equipos-campos-valores")]
+    public async Task<IActionResult> ListTodosCamposValoresEquipo(CancellationToken ct) => Ok(await _svc.ListTodosCamposValoresEquipoAsync(ct));
+
+    [HttpGet("equipos/{id:guid}/campos-din")]
+    public async Task<IActionResult> ListCamposDinEquipo(Guid id, CancellationToken ct) => Ok(await _svc.ListCamposDinEquipoAsync(id, ct));
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpPut("equipos/{id:guid}/campos/{definicionId:guid}")]
+    public async Task<IActionResult> SetCampoValorEquipo(Guid id, Guid definicionId, [FromBody] SetCampoValorRequest req, CancellationToken ct)
+    { try { await _svc.SetCampoValorEquipoDefAsync(id, definicionId, req, ct); return NoContent(); } catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); } }
+
+    // ---------- Campos dinamicos tipados de ZONAS ----------
+    [HttpGet("zonas-campos")]
+    public async Task<IActionResult> ListCamposDefZona(CancellationToken ct) => Ok(await _svc.ListCamposDefZonaAsync(ct));
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
+    [HttpPost("zonas-campos")]
+    public async Task<IActionResult> CrearCampoDefZona([FromBody] CrearCampoDefinicionRequest req, CancellationToken ct)
+    { try { return Created("", await _svc.CrearCampoDefZonaAsync(req, ct)); } catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); } }
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpPut("zonas-campos/{definicionId:guid}")]
+    public async Task<IActionResult> ActualizarCampoDefZona(Guid definicionId, [FromBody] ActualizarCampoDefinicionRequest req, CancellationToken ct)
+    { try { return await _svc.ActualizarCampoDefZonaAsync(definicionId, req, ct) ? NoContent() : NotFound(); } catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); } }
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
+    [HttpDelete("zonas-campos/{definicionId:guid}")]
+    public async Task<IActionResult> EliminarCampoDefZona(Guid definicionId, CancellationToken ct)
+        => await _svc.EliminarCampoDefZonaAsync(definicionId, ct) ? NoContent() : NotFound();
+
+    [HttpGet("zonas-campos-valores")]
+    public async Task<IActionResult> ListTodosCamposValoresZona(CancellationToken ct) => Ok(await _svc.ListTodosCamposValoresZonaAsync(ct));
+
+    [HttpGet("zonas/{id:guid}/campos-din")]
+    public async Task<IActionResult> ListCamposDinZona(Guid id, CancellationToken ct) => Ok(await _svc.ListCamposDinZonaAsync(id, ct));
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpPut("zonas/{id:guid}/campos/{definicionId:guid}")]
+    public async Task<IActionResult> SetCampoValorZona(Guid id, Guid definicionId, [FromBody] SetCampoValorRequest req, CancellationToken ct)
+    { try { await _svc.SetCampoValorZonaDefAsync(id, definicionId, req, ct); return NoContent(); } catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); } }
+
     [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("unidades/{id:guid}/campos/{definicionId:guid}")]
     public async Task<IActionResult> SetCampoValor(Guid id, Guid definicionId, [FromBody] SetCampoValorRequest req, CancellationToken ct)

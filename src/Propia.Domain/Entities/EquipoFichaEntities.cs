@@ -1,4 +1,5 @@
 using Propia.Domain.Common;
+using Propia.Domain.Enums;
 
 namespace Propia.Domain.Entities;
 
@@ -44,5 +45,26 @@ public class EquipoCampoPersonalizado : TenantEntity
 {
     public Guid EquipoActivoId { get; set; }
     public string Label { get; set; } = null!;
+    public string? Valor { get; set; }
+}
+
+/// <summary>
+/// Definicion de un campo dinamico de equipos a NIVEL de copropiedad (catalogo compartido, tipado).
+/// Aplica a TODOS los equipos y se muestra como columna en la tabla. Analogo a UnidadCampoDefinicion.
+/// </summary>
+public class EquipoCampoDefinicion : TenantEntity
+{
+    public string Label { get; set; } = string.Empty;
+    public int Orden { get; set; }
+    public TipoCampoTablero Tipo { get; set; } = TipoCampoTablero.Texto;
+    public string? Opciones { get; set; }
+}
+
+/// <summary>Valor de un campo dinamico (catalogo) para un equipo concreto (EAV con definicion compartida).</summary>
+public class EquipoCampoValor : TenantEntity
+{
+    public Guid DefinicionId { get; set; }
+    public EquipoCampoDefinicion? Definicion { get; set; }
+    public Guid EquipoActivoId { get; set; }
     public string? Valor { get; set; }
 }

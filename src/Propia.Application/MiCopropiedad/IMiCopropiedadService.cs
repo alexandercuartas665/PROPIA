@@ -198,6 +198,24 @@ public interface IMiCopropiedadService
     Task<ZonaCampoDto?> AgregarZonaCampoAsync(Guid zonaId, AgregarZonaCampoRequest req, CancellationToken ct);
     Task<bool> EliminarZonaCampoAsync(Guid campoId, CancellationToken ct);
 
+    // Campos dinamicos tipados (catalogo) de Equipos (analogo a Unidad).
+    Task<IReadOnlyList<EquipoCampoDefinicionDto>> ListCamposDefEquipoAsync(CancellationToken ct);
+    Task<EquipoCampoDefinicionDto> CrearCampoDefEquipoAsync(CrearCampoDefinicionRequest req, CancellationToken ct);
+    Task<bool> ActualizarCampoDefEquipoAsync(Guid definicionId, ActualizarCampoDefinicionRequest req, CancellationToken ct);
+    Task<bool> EliminarCampoDefEquipoAsync(Guid definicionId, CancellationToken ct);
+    Task SetCampoValorEquipoDefAsync(Guid equipoId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct);
+    Task<IReadOnlyList<EquipoCampoValorFlatDto>> ListTodosCamposValoresEquipoAsync(CancellationToken ct);
+    Task<IReadOnlyList<EquipoCampoDinDto>> ListCamposDinEquipoAsync(Guid equipoId, CancellationToken ct);
+
+    // Campos dinamicos tipados (catalogo) de Zonas comunes (analogo a Unidad).
+    Task<IReadOnlyList<ZonaCampoDefinicionDto>> ListCamposDefZonaAsync(CancellationToken ct);
+    Task<ZonaCampoDefinicionDto> CrearCampoDefZonaAsync(CrearCampoDefinicionRequest req, CancellationToken ct);
+    Task<bool> ActualizarCampoDefZonaAsync(Guid definicionId, ActualizarCampoDefinicionRequest req, CancellationToken ct);
+    Task<bool> EliminarCampoDefZonaAsync(Guid definicionId, CancellationToken ct);
+    Task SetCampoValorZonaDefAsync(Guid zonaId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct);
+    Task<IReadOnlyList<ZonaCampoValorFlatDto>> ListTodosCamposValoresZonaAsync(CancellationToken ct);
+    Task<IReadOnlyList<ZonaCampoDinDto>> ListCamposDinZonaAsync(Guid zonaId, CancellationToken ct);
+
     // Seccion 8 - Finanzas (parametros). El resumen en tiempo real lo orquesta el controller
     // combinando 2.6 Presupuesto + 2.7 Cartera.
     IReadOnlyList<MonedaDto> ListMonedas();

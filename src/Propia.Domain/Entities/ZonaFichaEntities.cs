@@ -29,6 +29,27 @@ public class ZonaCampoPersonalizado : TenantEntity
 }
 
 /// <summary>
+/// Definicion de un campo dinamico de zonas comunes a NIVEL de copropiedad (catalogo tipado compartido).
+/// Aplica a TODAS las zonas y se muestra como columna. Analogo a UnidadCampoDefinicion.
+/// </summary>
+public class ZonaCampoDefinicion : TenantEntity
+{
+    public string Label { get; set; } = string.Empty;
+    public int Orden { get; set; }
+    public TipoCampoTablero Tipo { get; set; } = TipoCampoTablero.Texto;
+    public string? Opciones { get; set; }
+}
+
+/// <summary>Valor de un campo dinamico (catalogo) para una zona concreta (EAV con definicion compartida).</summary>
+public class ZonaCampoValor : TenantEntity
+{
+    public Guid DefinicionId { get; set; }
+    public ZonaCampoDefinicion? Definicion { get; set; }
+    public Guid ZonaComunId { get; set; }
+    public string? Valor { get; set; }
+}
+
+/// <summary>
 /// Novedad publicada en el muro de una entidad. Nacio atada a las zonas comunes; ahora el
 /// muro es generico (EntidadTipo + EntidadId) para colgarlo tambien de equipos y de lo que
 /// venga despues sin duplicar tablas.
