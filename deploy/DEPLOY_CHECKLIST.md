@@ -1,7 +1,16 @@
 # PROPIA - Checklist de deploy
 
-> Actualizado 2026-09-08. Version visible: **0.0.69**
+> Actualizado 2026-09-09. Version visible: **0.0.71**
 > (`src/Propia.Web/Propia.Web.csproj` `<Version>`). Bumpear en cada deploy.
+>
+> **Nuevo desde 0.0.69:**
+> - **Campos dinamicos tipados en Zonas Comunes y Equipos** (misma feature que Unidades): boton "Configurar"
+>   por modulo (catalogo con Tipo/Opciones), campos como COLUMNAS editables inline en la tabla + input en la
+>   fila de alta. **1 migracion nueva** (`AddEquipoZonaCampoDefiniciones`: 4 tablas nuevas
+>   `equipo_campos_definiciones/valores` y `zona_campos_definiciones/valores`, con RLS FORCE + policy + GRANT;
+>   ver seccion 3).
+> - **Expansor de la fila de alta -> abre el modal de creacion** en Unidades, Zonas y Equipos (antes creaba
+>   desde el draft). Solo codigo.
 >
 > **Nuevo desde 0.0.68:**
 > - **Unidades: campos dinamicos como COLUMNAS de la tabla** (header + valor por fila + input en la fila de
@@ -122,6 +131,7 @@ dotnet ef database update --project ../Propia.Infrastructure --startup-project .
 
 Ultimas migraciones del repo (verificar que esten aplicadas). `ef database update` aplica SOLO las que
 falten en ese entorno, comparando contra `__EFMigrationsHistory`:
+- `20260909013856_AddEquipoZonaCampoDefiniciones`  (Zonas/Equipos: 4 tablas nuevas `equipo_campos_definiciones`, `equipo_campos_valores`, `zona_campos_definiciones`, `zona_campos_valores`, con RLS FORCE + policy tenant + GRANT propia_app; campos dinamicos tipados)  <-- NUEVA (0.0.71)
 - `20260908220459_AddUnidadCampoTipoOpciones`  (Unidades: `unidad_campos_definiciones` +`tipo` int default 0, +`opciones` text null; campos dinamicos tipados)  <-- NUEVA (0.0.68)
 - `20260908120902_AddPqrsdAlertaPlazoNotificada`  (PQRSD: `pqrsd_expedientes` +`alerta_plazo_notificada` int null; idempotencia de las alertas de plazo del job diario)  <-- NUEVA (0.0.64)
 - `20260908023154_AddTenantEmailConfig`  (Correo: tabla nueva `tenant_email_configs` con RLS; SMTP host/puerto/usuario/from + clave de aplicacion cifrada)  <-- NUEVA (0.0.63)
@@ -147,7 +157,7 @@ falten en ese entorno, comparando contra `__EFMigrationsHistory`:
 
 ## 4. Post-deploy (verificacion)
 
-- [ ] Login OK; el footer muestra `v0.0.69`.
+- [ ] Login OK; el footer muestra `v0.0.71`.
 - [ ] **Extractor IA (hotfix 403):** un usuario NO-Administrador pulsa "Cargar PDF y extraer (IA)" en
       Seguros y en Contratos -> prellena (antes -> "forbidden"/403). El agente documental de Servicios
       Publicos ("Analizar con el Agente Documental") sigue exigiendo Administrador.
