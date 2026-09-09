@@ -50,97 +50,49 @@
         </div>
     </div>
 
-    @* Dos formas de programar: la simple de siempre, o cron para horarios finos. *@
-    <div class="ptm-field">
-        <label class="ptm-lbl">Regla de disparo</label>
-        <div class="ptm-tipos">
-            <button type="button" class="ptm-tipo @(_tipo == TipoProgramacion.Periodicidad ? "on" : "")"
-                    @onclick="() => _tipo = TipoProgramacion.Periodicidad">Periodicidad</button>
-            <button type="button" class="ptm-tipo @(_tipo == TipoProgramacion.Cron ? "on" : "")"
-                    @onclick="ActivarCron">Cron (avanzado)</button>
+    @* Tercero (proveedor del Directorio) y Contrato: ambos OPCIONALES. Atan el mantenimiento
+       a quien lo ejecuta y al contrato que lo respalda. *@
+    <div class="ptm-row">
+        <div class="ptm-field ptm-grow">
+            <label class="ptm-lbl">Tercero / proveedor (opcional)</label>
+            <select class="ptm-input" @bind="_proveedorId">
+                <option value="">- Sin tercero -</option>
+                @foreach (var per in Personas) { <option value="@per.Id">@per.Nombre</option> }
+            </select>
+        </div>
+        <div class="ptm-field ptm-grow">
+            <label class="ptm-lbl">Contrato (opcional)</label>
+            <select class="ptm-input" @bind="_contratoId">
+                <option value="">- Sin contrato -</option>
+                @foreach (var c in Contratos) { <option value="@c.Id">@c.Nombre</option> }
+            </select>
         </div>
     </div>
 
-    @if (_tipo == TipoProgramacion.Periodicidad)
-    {
-        <div class="ptm-field">
-            <label class="ptm-lbl">Periodicidad</label>
-            <div class="ptm-chips">
-                @foreach (var p in _periodos)
-                {
-                    var pp = p;
-                    <button type="button" class="ptm-chip @(_periodicidad == pp ? "on" : "")" @onclick="() => _periodicidad = pp">@PeriodicidadLabel(pp)</button>
-                }
-            </div>
-        </div>
-
-        <div class="ptm-row">
-            <div class="ptm-field ptm-grow">
-                <label class="ptm-lbl">@(_periodicidad == PeriodicidadProgramacion.Unica ? "Fecha de ejecucion" : "Primera ejecucion") <span class="ptm-req">*</span></label>
-                <input class="ptm-input" type="date" @bind="_fecha" />
-            </div>
-            @if (_periodicidad != PeriodicidadProgramacion.Unica)
+    <div class="ptm-field">
+        <label class="ptm-lbl">Periodicidad</label>
+        <div class="ptm-chips">
+            @foreach (var p in _periodos)
             {
-                <div class="ptm-field ptm-grow">
-                    <label class="ptm-lbl">Hasta (opcional)</label>
-                    <input class="ptm-input" type="date" @bind="_fechaFin" />
-                </div>
+                var pp = p;
+                <button type="button" class="ptm-chip @(_periodicidad == pp ? "on" : "")" @onclick="() => _periodicidad = pp">@PeriodicidadLabel(pp)</button>
             }
         </div>
-    }
-    else
-    {
-        <div class="ptm-field">
-            <label class="ptm-lbl">Expresion cron <span class="ptm-req">*</span></label>
-            @* Sin value= a proposito: en Blazor Server reafirmar value en cada re-render
-               se come pulsaciones mientras se escribe. *@
-            @* value= solo mientras nadie ha escrito: al editar hay que mostrar el cron guardado,
-               pero reafirmarlo en cada re-render se come pulsaciones en Blazor Server. *@
-            @if (_cronTocado)
-            {
-                <input class="ptm-input ptm-cron" placeholder="minuto hora dia-del-mes mes dia-de-semana"
-                       @oninput="OnCronInput" />
-            }
-            else
-            {
-                <input class="ptm-input ptm-cron" placeholder="minuto hora dia-del-mes mes dia-de-semana"
-                       value="@_cron" @oninput="OnCronInput" />
-            }
-            <div class="ptm-cron-presets">
-                @foreach (var p in _presets)
-                {
-                    var pp = p;
-                    <button type="button" class="ptm-preset" @onclick="() => AplicarPreset(pp.Expr)">@pp.Label</button>
-                }
-            </div>
-        </div>
+    </div>
 
-        <div class="ptm-field">
-            <label class="ptm-lbl">Hasta (opcional)</label>
-            <input class="ptm-input" type="date" @bind="_fechaFin" />
+    <div class="ptm-row">
+        <div class="ptm-field ptm-grow">
+            <label class="ptm-lbl">@(_periodicidad == PeriodicidadProgramacion.Unica ? "Fecha de ejecucion" : "Primera ejecucion") <span class="ptm-req">*</span></label>
+            <input class="ptm-input" type="date" @bind="_fecha" />
         </div>
-
-        @* Previsualizacion: el usuario no deberia tener que adivinar que hace "0 8 * * 1". *@
-        @if (_cronPreview is not null)
+        @if (_periodicidad != PeriodicidadProgramacion.Unica)
         {
-            <div class="ptm-cron-box @(_cronPreview.Valida ? "ok" : "bad")">
-                @if (!_cronPreview.Valida)
-                {
-                    <div class="ptm-cron-err">@_cronPreview.Error</div>
-                }
-                else
-                {
-                    <div class="ptm-cron-t">Proximas ejecuciones (@_zonaHoraria)</div>
-                    <ul class="ptm-cron-list">
-                        @foreach (var f in _cronPreview.Proximas)
-                        {
-                            <li>@FechaLocal(f)</li>
-                        }
-                    </ul>
-                }
+            <div class="ptm-field ptm-grow">
+                <label class="ptm-lbl">Hasta (opcional)</label>
+                <input class="ptm-input" type="date" @bind="_fechaFin" />
             </div>
         }
-    }
+    </div>
 
     <div class="ptm-field">
         <label class="ptm-lbl">Usuarios afectados (responsables)</label>
@@ -167,7 +119,7 @@
     @* Cuando se MATERIALIZAN las tareas, que es distinto de cada cuanto se repiten. Con
        "al llegar la fecha" el tablero solo muestra la proxima; con un horizonte se adelantan
        todas las del periodo y el calendario queda completo desde ya. *@
-    @if (_periodicidad != PeriodicidadProgramacion.Unica || _tipo == TipoProgramacion.Cron)
+    @if (_periodicidad != PeriodicidadProgramacion.Unica)
     {
         <div class="ptm-field">
             <label class="ptm-lbl">Cuando se crean las tareas</label>
@@ -207,11 +159,7 @@
     <div class="ptm-callout">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="ptm-callout-ic"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
         <div class="ptm-callout-tx">
-            @if (_tipo == TipoProgramacion.Cron)
-            {
-                <text>Se creara una tarea <b>cada vez que corra el cron</b>@(_fechaFin.HasValue ? ", hasta el tope indicado." : ".")</text>
-            }
-            else if (_periodicidad == PeriodicidadProgramacion.Unica)
+            @if (_periodicidad == PeriodicidadProgramacion.Unica)
             {
                 <text>Se creara <b>una tarea</b> en la fecha indicada.</text>
             }
@@ -238,6 +186,8 @@
 @code {
     [Parameter] public List<TableroOpcion> Tableros { get; set; } = new();
     [Parameter] public List<PersonaOpcion> Personas { get; set; } = new();
+    /// <summary>Contratos del tenant para el selector "Contrato" (opcional). Vacio = sin opciones.</summary>
+    [Parameter] public List<ContratoOpcion> Contratos { get; set; } = new();
     [Parameter] public string? PrefillTitulo { get; set; }
     [Parameter] public string? PrefillDescripcion { get; set; }
     [Parameter] public DateOnly? PrefillFecha { get; set; }
@@ -254,6 +204,8 @@
     private string _titulo = "";
     private string? _descripcion;
     private string _tableroId = "";
+    private string _proveedorId = "";
+    private string _contratoId = "";
     private PrioridadTarea _prioridad = PrioridadTarea.Normal;
     private PeriodicidadProgramacion _periodicidad = PeriodicidadProgramacion.Unica;
     private DateTime? _fecha = DateTime.Today;
@@ -261,11 +213,6 @@
     private string _filtro = "";
     private readonly HashSet<Guid> _responsables = new();
 
-    private TipoProgramacion _tipo = TipoProgramacion.Periodicidad;
-    private string _cron = "";
-    private string _zonaHoraria = Propia.Infrastructure.Programaciones.CronHelper.ZonaHorariaPorDefecto;
-    private CronPreviewResult? _cronPreview;
-    private bool _cronTocado;
     private bool _notificarCorreo;
 
     /// <summary>
@@ -285,16 +232,6 @@
 
     private string HorizonteLabel() =>
         Horizontes.FirstOrDefault(h => h.Dias == _horizonteDias).Label?.ToLower() ?? $"{_horizonteDias} dias";
-
-    private readonly (string Label, string Expr)[] _presets =
-    {
-        ("Cada dia 8:00", "0 8 * * *"),
-        ("Lunes 8:00", "0 8 * * 1"),
-        ("Dia 1 del mes 8:00", "0 8 1 * *"),
-        ("Dia 15 del mes 8:00", "0 8 15 * *"),
-        ("Cada 6 horas", "0 */6 * * *"),
-        ("Trimestral (1 ene/abr/jul/oct)", "0 8 1 1,4,7,10 *")
-    };
 
     private readonly PeriodicidadProgramacion[] _periodos =
     {
@@ -318,61 +255,18 @@
             _descripcion = ex.Descripcion;
             _prioridad = ex.Prioridad;
             _tableroId = ex.TableroId?.ToString() ?? "";
-            _tipo = ex.Tipo;
+            _proveedorId = ex.ProveedorId?.ToString() ?? "";
+            _contratoId = ex.ContratoId?.ToString() ?? "";
             _periodicidad = ex.Periodicidad;
-            _cron = ex.CronExpresion ?? "";
-            _zonaHoraria = ex.ZonaHoraria;
             _fecha = ex.FechaProximaEjecucion.ToDateTime(TimeOnly.MinValue);
             _fechaFin = ex.FechaFin?.ToDateTime(TimeOnly.MinValue);
             _notificarCorreo = ex.NotificarPorCorreo;
             _horizonteDias = ex.HorizonteDias;
             foreach (var r in ex.Responsables) _responsables.Add(r.PersonaId);
-
-            // El preview valida el boton Guardar: sin esto una regla cron abre deshabilitada.
-            if (_tipo == TipoProgramacion.Cron && !string.IsNullOrWhiteSpace(_cron)) RefrescarPreview();
         }
     }
 
-    private bool IsValid => !string.IsNullOrWhiteSpace(_titulo) && (
-        _tipo == TipoProgramacion.Periodicidad
-            ? _fecha.HasValue
-            : _cronPreview is { Valida: true });
-
-    private void ActivarCron()
-    {
-        _tipo = TipoProgramacion.Cron;
-        if (string.IsNullOrWhiteSpace(_cron)) AplicarPreset(_presets[0].Expr);
-    }
-
-    private void OnCronInput(ChangeEventArgs e)
-    {
-        _cronTocado = true;
-        _cron = e.Value?.ToString() ?? string.Empty;
-        RefrescarPreview();
-    }
-
-    private void AplicarPreset(string expr)
-    {
-        _cron = expr;
-        RefrescarPreview();
-    }
-
-    // Blazor Server: el componente ya corre en el servidor, asi que la previsualizacion
-    // se calcula en proceso con el mismo helper que usa el job. Sin viaje HTTP.
-    private void RefrescarPreview()
-    {
-        if (string.IsNullOrWhiteSpace(_cron)) { _cronPreview = null; return; }
-        var helper = Propia.Infrastructure.Programaciones.CronHelper.Proximas(_cron, _zonaHoraria, DateTimeOffset.UtcNow, 4);
-        _cronPreview = helper.Count > 0
-            ? new CronPreviewResult(true, null, helper)
-            : new CronPreviewResult(false, "Expresion no valida. Formato: minuto hora dia-del-mes mes dia-de-semana (ej. 0 8 * * 1).", Array.Empty<DateTimeOffset>());
-    }
-
-    private string FechaLocal(DateTimeOffset utc)
-    {
-        var zona = Propia.Infrastructure.Programaciones.CronHelper.Zona(_zonaHoraria);
-        return TimeZoneInfo.ConvertTime(utc, zona).ToString("ddd dd MMM yyyy, HH:mm");
-    }
+    private bool IsValid => !string.IsNullOrWhiteSpace(_titulo) && _fecha.HasValue;
 
     private IEnumerable<PersonaOpcion> PersonasFiltradas()
         => string.IsNullOrWhiteSpace(_filtro)
@@ -390,6 +284,8 @@
         var responsables = Personas.Where(p => _responsables.Contains(p.Id))
             .Select(p => new ResponsableProgramacionDto(p.Id, p.Nombre)).ToList();
         Guid? tablero = Guid.TryParse(_tableroId, out var g) ? g : null;
+        Guid? proveedor = Guid.TryParse(_proveedorId, out var pv) ? pv : null;
+        Guid? contrato = Guid.TryParse(_contratoId, out var ct) ? ct : null;
         var req = new CrearProgramacionRequest(
             _titulo.Trim(),
             string.IsNullOrWhiteSpace(_descripcion) ? null : _descripcion!.Trim(),
@@ -402,11 +298,13 @@
             ModuloOrigenCodigo,
             EntidadOrigenId,
             OrigenReferencia,
-            _tipo,
-            _tipo == TipoProgramacion.Cron ? _cron.Trim() : null,
-            _zonaHoraria,
+            TipoProgramacion.Periodicidad,
+            null,
+            null,
             _notificarCorreo,
-            _horizonteDias);
+            _horizonteDias,
+            proveedor,
+            contrato);
         Close(req);
     }
 

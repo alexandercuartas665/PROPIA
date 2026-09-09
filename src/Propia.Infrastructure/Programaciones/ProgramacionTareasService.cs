@@ -60,6 +60,8 @@ public class ProgramacionTareasService : IProgramacionTareasService
             ModuloOrigenCodigo = string.IsNullOrWhiteSpace(req.ModuloOrigenCodigo) ? null : req.ModuloOrigenCodigo.Trim(),
             EntidadOrigenId = req.EntidadOrigenId,
             OrigenReferencia = string.IsNullOrWhiteSpace(req.OrigenReferencia) ? null : req.OrigenReferencia.Trim(),
+            ProveedorId = req.ProveedorId,
+            ContratoId = req.ContratoId,
             CreadoPorUsuarioId = usuarioId,
             HorizonteDias = Math.Clamp(req.HorizonteDias, 0, MaxHorizonteDias)
         };
@@ -117,6 +119,8 @@ public class ProgramacionTareasService : IProgramacionTareasService
         p.FechaProximaEjecucion = req.FechaProximaEjecucion;
         p.FechaFin = req.FechaFin;
         p.Activa = req.Activa;
+        p.ProveedorId = req.ProveedorId;
+        p.ContratoId = req.ContratoId;
 
         if (req.Tipo != TipoProgramacion.Cron) p.ProximaEjecucionUtc = null;
         else if (reglaCambio || p.ProximaEjecucionUtc is null)
@@ -277,7 +281,7 @@ public class ProgramacionTareasService : IProgramacionTareasService
             p.TareasGeneradas, p.UltimaEjecucion,
             p.Responsables.Select(r => new ResponsableProgramacionDto(r.PersonaId, r.NombreSnapshot)).ToList(),
             p.Tipo, p.CronExpresion, p.ZonaHoraria, p.ProximaEjecucionUtc, p.NotificarPorCorreo,
-            p.HorizonteDias);
+            p.HorizonteDias, p.ProveedorId, p.ContratoId);
 
     /// <summary>
     /// Tope del horizonte de generacion anticipada: 2 anios. Evita que un dedo de mas convierta

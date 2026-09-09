@@ -80,6 +80,7 @@
     private List<ProgramacionTareaDto> _progs = new();
     private List<TableroOpcion> _tableros = new();
     private List<PersonaOpcion> _personas = new();
+    private List<ContratoOpcion> _contratos = new();
     private bool _cargando = true, _busy;
     private string _msg = "";
     private bool _error;
@@ -126,6 +127,16 @@
                 .ToList();
         }
         catch { _personas = new(); }
+
+        try
+        {
+            var contratos = await Auth().GetFromJsonAsync<List<ContratoApi>>("/api/mi-copropiedad/contratos") ?? new();
+            _contratos = contratos
+                .Select(c => new ContratoOpcion { Id = c.Id, Nombre = string.IsNullOrWhiteSpace(c.NumeroContrato) ? c.Proveedor : $"{c.Proveedor} ({c.NumeroContrato})" })
+                .Where(c => !string.IsNullOrWhiteSpace(c.Nombre))
+                .ToList();
+        }
+        catch { _contratos = new(); }
     }
 
     private async Task NuevaAsync()
@@ -137,6 +148,7 @@
         var pars = new ModalParameters()
             .Set("Tableros", _tableros)
             .Set("Personas", _personas)
+            .Set("Contratos", _contratos)
             .Set("PrefillTitulo", PrefillTitulo)
             .Set("ModuloOrigenCodigo", ModuloOrigenCodigo)
             .Set("EntidadOrigenId", (Guid?)EntidadOrigenId)
@@ -169,6 +181,7 @@
         var pars = new ModalParameters()
             .Set("Tableros", _tableros)
             .Set("Personas", _personas)
+            .Set("Contratos", _contratos)
             .Set("ModuloOrigenCodigo", ModuloOrigenCodigo)
             .Set("EntidadOrigenId", (Guid?)EntidadOrigenId)
             .Set("OrigenReferencia", OrigenReferencia)
@@ -187,7 +200,8 @@
         var upd = new ActualizarProgramacionRequest(
             req.Titulo, req.Descripcion, req.Prioridad, req.TableroId, req.Periodicidad,
             req.FechaProximaEjecucion, req.FechaFin, p.Activa, req.Responsables,
-            req.Tipo, req.CronExpresion, req.ZonaHoraria, req.NotificarPorCorreo, req.HorizonteDias);
+            req.Tipo, req.CronExpresion, req.ZonaHoraria, req.NotificarPorCorreo, req.HorizonteDias,
+            req.ProveedorId, req.ContratoId);
 
         _busy = true;
         try
@@ -276,6 +290,7 @@
     // panel no se acopla a los DTOs completos de Tareas y Directorio.
     private sealed record TableroApi(Guid Id, string Nombre);
     private sealed record PersonaApi(Guid Id, string? Nombres, string? Apellidos);
+    private sealed record ContratoApi(Guid Id, string Proveedor, string? NumeroContrato);
 }
 
 <style>

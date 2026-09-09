@@ -102,7 +102,7 @@
     }
     else
     {
-        <div class="mtp-table">
+        <div class="mtp-table mtp-table--wide">
             <div class="mtp-head" style="@ProgGrid">
                 <div></div>
                 @foreach (var c in ProgColsVis) { <div>@c.Label</div> }
@@ -131,6 +131,8 @@
                                     <div class="mtp-nom" title="@(p.ModuloOrigenCodigo == "zona" ? "Zona comun" : "Equipo")">@(string.IsNullOrWhiteSpace(p.OrigenReferencia) ? "-" : p.OrigenReferencia)</div>
                                     break;
                                 case "titulo": <div>@p.Titulo</div> break;
+                                case "tercero": <div class="mtp-muted" title="@NombreTercero(p.ProveedorId)">@(p.ProveedorId is null ? "-" : NombreTercero(p.ProveedorId))</div> break;
+                                case "contrato": <div class="mtp-muted" title="@NombreContrato(p.ContratoId)">@(p.ContratoId is null ? "-" : NombreContrato(p.ContratoId))</div> break;
                                 case "tablero": <div>@(string.IsNullOrWhiteSpace(p.TableroNombre) ? "General" : p.TableroNombre)</div> break;
                                 case "prioridad": <div>@p.Prioridad</div> break;
                                 case "periodicidad": <div>@(p.Tipo == TipoProgramacion.Cron ? $"Cron: {p.CronExpresion}" : PeriodicidadProgLabel(p.Periodicidad))</div> break;
@@ -149,24 +151,83 @@
                     </div>
                 }
             }
-            @* Alta inline: elegir activo + "+ Programar" abre el modal completo con ese activo. *@
+            @* Alta inline (canon regla 8): un control por columna; "+ Agregar" crea directo.
+               El expansor de la fila de alta abre el formulario completo (cron, responsables, correo). *@
             <div class="mtp-newrow" style="@ProgGrid">
                 <div class="mtp-exp-col">
-                    <button type="button" class="mtp-exp mtp-exp-fijo" title="Programar mantenimiento del activo elegido" @onclick="AltaProgAsync" disabled="@(string.IsNullOrEmpty(_altaActivoKey))">
+                    <button type="button" class="mtp-exp mtp-exp-fijo" title="Abrir el formulario completo (cron, responsables, correo)" @onclick="AltaProgAsync" disabled="@(string.IsNullOrEmpty(_altaActivoKey))">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                     </button>
                 </div>
-                <div style="grid-column: 2 / -2;">
-                    <select class="mtp-nf-inp" @bind="_altaActivoKey">
-                        <option value="">Selecciona un activo o zona para programar...</option>
-                        @foreach (var a in (_activos ?? new()))
-                        {
-                            <option value="@($"{a.ActivoTipo}:{a.ActivoId}")">@a.Nombre (@ActivoTipoLabel(a.ActivoTipo))</option>
-                        }
-                    </select>
-                </div>
+                @foreach (var c in ProgColsVis)
+                {
+                    switch (c.Key)
+                    {
+                        case "activo":
+                            <div>
+                                <select class="mtp-nf-inp" @bind="_altaActivoKey">
+                                    <option value="">Activo o zona...</option>
+                                    @foreach (var a in (_activos ?? new()))
+                                    {
+                                        <option value="@($"{a.ActivoTipo}:{a.ActivoId}")">@a.Nombre (@ActivoTipoLabel(a.ActivoTipo))</option>
+                                    }
+                                </select>
+                            </div>
+                            break;
+                        case "titulo":
+                            <div><input class="mtp-nf-inp" placeholder="Titulo" @bind="_altaTitulo" @bind:event="oninput" /></div>
+                            break;
+                        case "tercero":
+                            <div>
+                                <select class="mtp-nf-inp" @bind="_altaProveedorKey">
+                                    <option value="">Sin tercero</option>
+                                    @foreach (var per in _personas) { <option value="@per.Id">@per.Nombre</option> }
+                                </select>
+                            </div>
+                            break;
+                        case "contrato":
+                            <div>
+                                <select class="mtp-nf-inp" @bind="_altaContratoKey">
+                                    <option value="">Sin contrato</option>
+                                    @foreach (var co in _contratos) { <option value="@co.Id">@co.Nombre</option> }
+                                </select>
+                            </div>
+                            break;
+                        case "tablero":
+                            <div>
+                                <select class="mtp-nf-inp" @bind="_altaTableroKey">
+                                    <option value="">General</option>
+                                    @foreach (var t in _tableros) { <option value="@t.Id">@t.Nombre</option> }
+                                </select>
+                            </div>
+                            break;
+                        case "prioridad":
+                            <div>
+                                <select class="mtp-nf-inp" @bind="_altaPrioridad">
+                                    @foreach (var p in Enum.GetValues<PrioridadTarea>()) { <option value="@p">@p</option> }
+                                </select>
+                            </div>
+                            break;
+                        case "periodicidad":
+                            <div>
+                                <select class="mtp-nf-inp" @bind="_altaPeriodicidad">
+                                    @foreach (var p in Enum.GetValues<PeriodicidadProgramacion>()) { <option value="@p">@PeriodicidadProgLabel(p)</option> }
+                                </select>
+                            </div>
+                            break;
+                        case "proxima":
+                            <div><input type="date" class="mtp-nf-inp" value="@(_altaFecha?.ToString("yyyy-MM-dd"))" @onchange="(e) => _altaFecha = string.IsNullOrEmpty(e.Value?.ToString()) ? null : DateOnly.Parse(e.Value!.ToString()!)" /></div>
+                            break;
+                        case "responsables":
+                            <div class="mtp-muted" style="font-size:11px;">en la ficha</div>
+                            break;
+                        case "activa":
+                            <div class="mtp-muted" style="font-size:11px;">(auto)</div>
+                            break;
+                    }
+                }
                 <div class="mtp-act">
-                    <button type="button" class="mtp-add" @onclick="AltaProgAsync" disabled="@(string.IsNullOrEmpty(_altaActivoKey))">+ Programar</button>
+                    <button type="button" class="mtp-add" @onclick="AltaProgInlineAsync" disabled="@_busy">+ Agregar</button>
                 </div>
             </div>
             <div class="mtp-footer">Mostrando @ProgFiltradas().Count() de @(_progs.Count) programaciones</div>
@@ -835,6 +896,10 @@ else if (_tab == "calendario")
     .mtp-add:disabled { opacity: .5; cursor: default; }
     .mtp-footer { display: flex; align-items: center; padding: 10px 16px; background: var(--propia-bg-app); border-top: 1px solid var(--propia-border-divider); font-size: 12.5px; color: var(--propia-text-muted); }
     @@media (max-width: 1000px) { .mtp-table { overflow-x: auto; } .mtp-head, .mtp-row, .mtp-newrow { min-width: 920px; } }
+    /* La tabla de Programacion tiene mas columnas (tercero/contrato): scroll horizontal propio. */
+    .mtp-table--wide { overflow-x: auto; }
+    .mtp-table--wide .mtp-head, .mtp-table--wide .mtp-row, .mtp-table--wide .mtp-newrow,
+    .mtp-table--wide .mtp-group, .mtp-table--wide .mtp-footer { min-width: 1240px; }
 
     /* === Movil (hasta 640px): colapsar la fila de 8 KPIs === */
     @@media (max-width: 640px) {
@@ -854,19 +919,28 @@ else if (_tab == "calendario")
     private List<ProgramacionTareaDto>? _progs;
     private List<TableroOpcion> _tableros = new();
     private List<PersonaOpcion> _personas = new();
+    private List<ContratoOpcion> _contratos = new();
     private bool _progOpcionesCargadas;
     private FiltroDinamico? _fdProg;
     private string _progQuery = "";
     private string _progAgrupar = "";
     private string _progMenu = "";
-    private string _altaActivoKey = "";
     private readonly HashSet<string> _progColsOcultas = new();
+    // Fila de alta inline de Programacion: un campo por columna (canon regla 8).
+    private string _altaActivoKey = "";
+    private string _altaTitulo = "";
+    private string _altaTableroKey = "";
+    private string _altaProveedorKey = "";
+    private string _altaContratoKey = "";
+    private PrioridadTarea _altaPrioridad = PrioridadTarea.Normal;
+    private PeriodicidadProgramacion _altaPeriodicidad = PeriodicidadProgramacion.Mensual;
+    private DateOnly? _altaFecha = DateOnly.FromDateTime(DateTime.Today);
 
     private sealed record ProgCol(string Key, string Label);
     private static readonly List<ProgCol> _progColsAll = new()
     {
-        new("activo", "Activo"), new("titulo", "Titulo"), new("tablero", "Tablero"),
-        new("prioridad", "Prioridad"), new("periodicidad", "Periodicidad"),
+        new("activo", "Activo"), new("titulo", "Titulo"), new("tercero", "Tercero"), new("contrato", "Contrato"),
+        new("tablero", "Tablero"), new("prioridad", "Prioridad"), new("periodicidad", "Periodicidad"),
         new("proxima", "Proxima ejecucion"), new("responsables", "Responsables"), new("activa", "Activa"),
     };
     private IEnumerable<ProgCol> ProgColsVis => _progColsAll.Where(c => !_progColsOcultas.Contains(c.Key));
@@ -881,7 +955,9 @@ else if (_tab == "calendario")
                 cols.Add(c.Key switch
                 {
                     "activo" => "minmax(150px,1.4fr)",
-                    "titulo" => "minmax(180px,1.6fr)",
+                    "titulo" => "minmax(160px,1.5fr)",
+                    "tercero" => "minmax(130px,1.1fr)",
+                    "contrato" => "minmax(130px,1.1fr)",
                     "tablero" => "minmax(110px,1fr)",
                     "prioridad" => "minmax(90px,.8fr)",
                     "periodicidad" => "minmax(120px,1.1fr)",
@@ -974,10 +1050,54 @@ else if (_tab == "calendario")
                 .Where(p => !string.IsNullOrWhiteSpace(p.Nombre)).ToList();
         }
         catch { _personas = new(); }
+        try
+        {
+            var contratos = await Auth().GetFromJsonAsync<List<ContratoApiMt>>("/api/mi-copropiedad/contratos") ?? new();
+            _contratos = contratos
+                .Select(c => new ContratoOpcion { Id = c.Id, Nombre = string.IsNullOrWhiteSpace(c.NumeroContrato) ? c.Proveedor : $"{c.Proveedor} ({c.NumeroContrato})" })
+                .Where(c => !string.IsNullOrWhiteSpace(c.Nombre)).ToList();
+        }
+        catch { _contratos = new(); }
         _progOpcionesCargadas = true;
     }
 
-    // Alta inline: abre el modal completo "Programar tarea" ya apuntando al activo elegido.
+    private string NombreTercero(Guid? id) => id is { } g ? (_personas.FirstOrDefault(p => p.Id == g)?.Nombre ?? "Tercero") : "-";
+    private string NombreContrato(Guid? id) => id is { } g ? (_contratos.FirstOrDefault(c => c.Id == g)?.Nombre ?? "Contrato") : "-";
+
+    // Alta inline directa (sin modal): crea la programacion con lo capturado por columna.
+    private async Task AltaProgInlineAsync()
+    {
+        if (string.IsNullOrEmpty(_altaActivoKey)) { _msg = "Elige un activo o zona."; _msgClass = "alert-danger"; return; }
+        if (string.IsNullOrWhiteSpace(_altaTitulo)) { _msg = "La programacion necesita un titulo."; _msgClass = "alert-danger"; return; }
+        if (_altaFecha is null) { _msg = "Indica la fecha de la proxima ejecucion."; _msgClass = "alert-danger"; return; }
+        var parts = _altaActivoKey.Split(':');
+        if (parts.Length != 2 || !Guid.TryParse(parts[1], out var activoId)) return;
+        var tipo = Enum.Parse<TipoActivoMantenimiento>(parts[0]);
+        var modulo = tipo == TipoActivoMantenimiento.ZonaComun ? "zona" : "equipo";
+        var referencia = _activos?.FirstOrDefault(a => a.ActivoTipo == tipo && a.ActivoId == activoId)?.Nombre;
+        Guid? tableroId = Guid.TryParse(_altaTableroKey, out var tid) ? tid : null;
+        Guid? proveedorId = Guid.TryParse(_altaProveedorKey, out var pv) ? pv : null;
+        Guid? contratoId = Guid.TryParse(_altaContratoKey, out var ct) ? ct : null;
+        _busy = true; _msg = null;
+        try
+        {
+            var req = new CrearProgramacionRequest(
+                _altaTitulo!, null, _altaPrioridad, tableroId, _altaPeriodicidad,
+                _altaFecha.Value, null, null, modulo, activoId, referencia,
+                ProveedorId: proveedorId, ContratoId: contratoId);
+            var r = await Auth().PostAsJsonAsync("/api/programaciones", req);
+            if (!r.IsSuccessStatusCode) { _msg = await r.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _msg = "Programacion creada."; _msgClass = "alert-success";
+            // Limpiar solo titulo/activo/tercero/contrato; se conservan prioridad/periodicidad/fecha para altas seguidas.
+            _altaTitulo = ""; _altaActivoKey = ""; _altaTableroKey = ""; _altaProveedorKey = ""; _altaContratoKey = "";
+            await CargarAsync();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _busy = false; }
+    }
+
+    // Alta por FORMULARIO COMPLETO: abre el modal "Programar tarea" ya apuntando al activo elegido
+    // (para cron, responsables, correo, horizonte). Es el camino avanzado, complementa el alta inline.
     private async Task AltaProgAsync()
     {
         if (string.IsNullOrEmpty(_altaActivoKey)) return;
@@ -988,10 +1108,18 @@ else if (_tab == "calendario")
         var referencia = _activos?.FirstOrDefault(a => a.ActivoTipo == tipo && a.ActivoId == activoId)?.Nombre;
 
         await CargarOpcionesProgAsync();
+        // Se arrastra al modal lo ya escrito en la fila de alta, por si el usuario prefiere terminar ahi.
+        Guid? tableroPre = Guid.TryParse(_altaTableroKey, out var tid) ? tid : null;
         var pars = new ModalParameters()
             .Set("Tableros", _tableros)
             .Set("Personas", _personas)
-            .Set("PrefillTitulo", string.IsNullOrWhiteSpace(referencia) ? "Mantenimiento" : $"Mantenimiento {referencia}")
+            .Set("Contratos", _contratos)
+            .Set("PrefillTitulo", string.IsNullOrWhiteSpace(_altaTitulo)
+                ? (string.IsNullOrWhiteSpace(referencia) ? "Mantenimiento" : $"Mantenimiento {referencia}")
+                : _altaTitulo)
+            .Set("PrefillTableroId", tableroPre)
+            .Set("PrefillPeriodicidad", _altaPeriodicidad)
+            .Set("PrefillFecha", _altaFecha)
             .Set("ModuloOrigenCodigo", modulo)
             .Set("EntidadOrigenId", (Guid?)activoId)
             .Set("OrigenReferencia", referencia);
@@ -1000,7 +1128,12 @@ else if (_tab == "calendario")
         try
         {
             var r = await Auth().PostAsJsonAsync("/api/programaciones", req);
-            if (r.IsSuccessStatusCode) { _msg = "Programacion creada."; _msgClass = "alert-success"; _altaActivoKey = ""; await CargarAsync(); }
+            if (r.IsSuccessStatusCode)
+            {
+                _msg = "Programacion creada."; _msgClass = "alert-success";
+                _altaActivoKey = ""; _altaTitulo = ""; _altaTableroKey = ""; _altaProveedorKey = ""; _altaContratoKey = "";
+                await CargarAsync();
+            }
             else { _msg = await r.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
@@ -1013,6 +1146,7 @@ else if (_tab == "calendario")
         var pars = new ModalParameters()
             .Set("Tableros", _tableros)
             .Set("Personas", _personas)
+            .Set("Contratos", _contratos)
             .Set("ModuloOrigenCodigo", p.ModuloOrigenCodigo ?? "equipo")
             .Set("EntidadOrigenId", p.EntidadOrigenId)
             .Set("OrigenReferencia", p.OrigenReferencia)
@@ -1022,7 +1156,8 @@ else if (_tab == "calendario")
         var upd = new ActualizarProgramacionRequest(
             req.Titulo, req.Descripcion, req.Prioridad, req.TableroId, req.Periodicidad,
             req.FechaProximaEjecucion, req.FechaFin, p.Activa, req.Responsables,
-            req.Tipo, req.CronExpresion, req.ZonaHoraria, req.NotificarPorCorreo, req.HorizonteDias);
+            req.Tipo, req.CronExpresion, req.ZonaHoraria, req.NotificarPorCorreo, req.HorizonteDias,
+            req.ProveedorId, req.ContratoId);
         try
         {
             var r = await Auth().PutAsJsonAsync($"/api/programaciones/{p.Id}", upd);
@@ -1059,6 +1194,7 @@ else if (_tab == "calendario")
 
     private sealed record TableroApiMt(Guid Id, string Nombre);
     private sealed record PersonaApiMt(Guid Id, string? Nombres, string? Apellidos);
+    private sealed record ContratoApiMt(Guid Id, string Proveedor, string? NumeroContrato);
 
     private List<ActivoPanelDto>? _activos;
     private List<IntervencionListaDto>? _intervenciones;
@@ -1191,6 +1327,8 @@ else if (_tab == "calendario")
             // Programaciones (tab por defecto): una fila por regla; se juntan las de equipos y zonas.
             if (_tab == "prog")
             {
+                // Tableros/personas para los dropdowns inline y el modal (se cargan una vez).
+                await CargarOpcionesProgAsync();
                 var eq = await http.GetFromJsonAsync<List<ProgramacionTareaDto>>("/api/programaciones?moduloOrigen=equipo") ?? new();
                 var zn = await http.GetFromJsonAsync<List<ProgramacionTareaDto>>("/api/programaciones?moduloOrigen=zona") ?? new();
                 _progs = eq.Concat(zn)

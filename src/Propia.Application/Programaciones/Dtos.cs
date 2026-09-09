@@ -17,7 +17,9 @@ public record ProgramacionTareaDto(
     string ZonaHoraria = "America/Bogota",
     DateTimeOffset? ProximaEjecucionUtc = null,
     bool NotificarPorCorreo = false,
-    int HorizonteDias = 0);
+    int HorizonteDias = 0,
+    Guid? ProveedorId = null,
+    Guid? ContratoId = null);
 
 public record CrearProgramacionRequest(
     string Titulo, string? Descripcion, PrioridadTarea Prioridad,
@@ -29,7 +31,9 @@ public record CrearProgramacionRequest(
     string? CronExpresion = null,
     string? ZonaHoraria = null,
     bool NotificarPorCorreo = false,
-    int HorizonteDias = 0);
+    int HorizonteDias = 0,
+    Guid? ProveedorId = null,
+    Guid? ContratoId = null);
 
 public record ActualizarProgramacionRequest(
     string Titulo, string? Descripcion, PrioridadTarea Prioridad,
@@ -40,7 +44,9 @@ public record ActualizarProgramacionRequest(
     string? CronExpresion = null,
     string? ZonaHoraria = null,
     bool NotificarPorCorreo = false,
-    int HorizonteDias = 0);
+    int HorizonteDias = 0,
+    Guid? ProveedorId = null,
+    Guid? ContratoId = null);
 
 /// <summary>Previsualizacion de una expresion cron: si es valida y cuando correria.</summary>
 public record CronPreviewRequest(string CronExpresion, string? ZonaHoraria = null, int Cuantas = 5);

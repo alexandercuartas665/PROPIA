@@ -15,3 +15,10 @@ public class PersonaOpcion
     public Guid Id { get; set; }
     public string Nombre { get; set; } = string.Empty;
 }
+
+/// <summary>Opcion de contrato para el selector "Contrato" (opcional) del ProgramadorTareaModal.</summary>
+public class ContratoOpcion
+{
+    public Guid Id { get; set; }
+    public string Nombre { get; set; } = string.Empty;
+}
