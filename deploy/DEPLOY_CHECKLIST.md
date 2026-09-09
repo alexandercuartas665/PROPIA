@@ -1,7 +1,22 @@
 # PROPIA - Checklist de deploy
 
-> Actualizado 2026-09-09. Version visible: **0.0.72**
+> Actualizado 2026-09-09. Version visible: **0.0.74**
 > (`src/Propia.Web/Propia.Web.csproj` `<Version>`). Bumpear en cada deploy.
+>
+> **Nuevo desde 0.0.73:**
+> - **Mantenimiento: pestana "Programacion" en tabla (patron vista-tabla).** `/mantenimiento` abre por
+>   defecto en la pestana **Programacion**: una tabla con **una fila por programacion** (`ProgramacionTarea`,
+>   el "programador de tareas" que antes solo vivia dentro de las fichas de equipo/zona). Cumple el skill
+>   `homogenizar-vista-tabla`: expansor en la 1a columna -> abre el `ProgramadorTareaModal` completo (editar,
+>   con Titulo/Descripcion/Tablero/Prioridad/Periodicidad-Cron/Fecha/Responsables/correo); alta inline
+>   (selector de activo equipos+zonas + "+ Programar" abre el modal apuntando a ese activo); Filtros
+>   (`FiltroDinamico`), Buscar, Agrupar (activo/tablero/periodicidad/prioridad), Campos (visibilidad de
+>   columnas); toggle Activa inline (`PUT /api/programaciones/{id}/activa`) y eliminar (`DELETE`); footer
+>   con conteo visible tambien con 0 filas. Carga fusionando
+>   `GET /api/programaciones?moduloOrigen=equipo|zona`. `<ModalHost />` declarado en la pagina.
+>   **Solo codigo, sin migracion.** Reusa los endpoints existentes de `ProgramacionesController`;
+>   no toca las fichas (`FichaEquipoModal`/`FichaZonaModal`) ni otros modulos. Verificado local
+>   end-to-end (crear/editar/toggle/eliminar, agrupar, campos, filtros; registro de prueba borrado).
 >
 > **Nuevo desde 0.0.71:**
 > - **Mantenimiento: cronograma en tabla inline.** La pestana "Activos" de `/mantenimiento` es una tabla con
@@ -163,7 +178,13 @@ falten en ese entorno, comparando contra `__EFMigrationsHistory`:
 
 ## 4. Post-deploy (verificacion)
 
-- [ ] Login OK; el footer muestra `v0.0.72`.
+- [ ] Login OK; el footer muestra `v0.0.74`.
+- [ ] **Mantenimiento > Programacion:** `/mantenimiento` abre en la pestana "Programacion" (tabla). En la
+      fila de alta, elegir un activo (equipo o zona) y "+ Programar" abre el modal "Programar tarea" ya
+      apuntando a ese activo; al guardar aparece una fila. El expansor de una fila reabre el modal con los
+      datos cargados (editar). Toggle Activa, eliminar, Filtros, Agrupar y Campos funcionan. Con 0
+      programaciones se ve la tabla + footer "Mostrando 0 de 0 programaciones" (no una tarjeta de vacio).
+      Las programaciones creadas desde las fichas de equipo/zona aparecen aqui y viceversa.
 - [ ] **Extractor IA (hotfix 403):** un usuario NO-Administrador pulsa "Cargar PDF y extraer (IA)" en
       Seguros y en Contratos -> prellena (antes -> "forbidden"/403). El agente documental de Servicios
       Publicos ("Analizar con el Agente Documental") sigue exigiendo Administrador.
