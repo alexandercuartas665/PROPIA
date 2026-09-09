@@ -128,8 +128,11 @@
                         {
                             switch (c.Key)
                             {
+                                case "tipo":
+                                    <div><span class="mtp-tag">@(p.ModuloOrigenCodigo == "zona" ? "Zona comun" : "Equipo")</span></div>
+                                    break;
                                 case "activo":
-                                    <div class="mtp-nom" title="@(p.ModuloOrigenCodigo == "zona" ? "Zona comun" : "Equipo")">@(string.IsNullOrWhiteSpace(p.OrigenReferencia) ? "-" : p.OrigenReferencia)</div>
+                                    <div class="mtp-nom" title="@(string.IsNullOrWhiteSpace(p.OrigenReferencia) ? "" : p.OrigenReferencia)">@(string.IsNullOrWhiteSpace(p.OrigenReferencia) ? "-" : p.OrigenReferencia)</div>
                                     break;
                                 case "titulo": <div>@p.Titulo</div> break;
                                 case "tercero": <div class="mtp-muted" title="@(p.ProveedorNombre ?? NombreTercero(p.ProveedorId))">@(p.ProveedorId is null ? "-" : (p.ProveedorNombre ?? NombreTercero(p.ProveedorId)))</div> break;
@@ -164,12 +167,16 @@
                 {
                     switch (c.Key)
                     {
-                        case "activo":
-                            <div style="display:flex; flex-direction:column; gap:4px;">
+                        case "tipo":
+                            <div>
                                 <select class="mtp-nf-inp" @bind="_altaTipo" @bind:after="OnAltaTipoChanged">
                                     <option value="Equipo">Equipo</option>
                                     <option value="ZonaComun">Zona comun</option>
                                 </select>
+                            </div>
+                            break;
+                        case "activo":
+                            <div>
                                 <select class="mtp-nf-inp" @bind="_altaActivoId">
                                     <option value="">@(_altaTipo == "ZonaComun" ? "Zona..." : "Activo...")</option>
                                     @foreach (var a in (_activos ?? new()).Where(x => x.ActivoTipo.ToString() == _altaTipo))
@@ -183,7 +190,7 @@
                             <div><input class="mtp-nf-inp" placeholder="Titulo" @bind="_altaTitulo" @bind:event="oninput" /></div>
                             break;
                         case "tercero":
-                            <div>
+                            <div class="mtp-terc">
                                 <SelectorPersona Jwt="@_jwt" PermiteEmpresa="true" Flotante="true"
                                                  Seleccionada="_altaProveedorSel"
                                                  SeleccionadaChanged="OnAltaTerceroSel"
@@ -901,10 +908,23 @@ else if (_tab == "calendario")
     .mtp-add:disabled { opacity: .5; cursor: default; }
     .mtp-footer { display: flex; align-items: center; padding: 10px 16px; background: var(--propia-bg-app); border-top: 1px solid var(--propia-border-divider); font-size: 12.5px; color: var(--propia-text-muted); }
     @@media (max-width: 1000px) { .mtp-table { overflow-x: auto; } .mtp-head, .mtp-row, .mtp-newrow { min-width: 920px; } }
-    /* La tabla de Programacion tiene mas columnas (tercero/contrato): scroll horizontal propio. */
+    /* La tabla de Programacion tiene mas columnas (tipo/tercero/contrato): scroll horizontal propio. */
     .mtp-table--wide { overflow-x: auto; }
     .mtp-table--wide .mtp-head, .mtp-table--wide .mtp-row, .mtp-table--wide .mtp-newrow,
-    .mtp-table--wide .mtp-group, .mtp-table--wide .mtp-footer { min-width: 1240px; }
+    .mtp-table--wide .mtp-group, .mtp-table--wide .mtp-footer { min-width: 1330px; }
+
+    /* Tercero en la fila de alta (SelectorPersona) compacto: que NO deforme la celda.
+       El panel de resultados ya flota (Flotante); aqui solo se compacta el input y el chip elegido. */
+    .mtp-terc { min-width: 0; }
+    .mtp-terc .sp { gap: 0; }
+    .mtp-terc .sp-search { border-style: dashed; border-color: var(--propia-border-input); border-radius: 7px; padding: 0 8px; }
+    .mtp-terc .sp-search:focus-within { border-style: solid; border-color: var(--propia-brand); box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
+    .mtp-terc .sp-search-inp { padding: 6px 0; font-size: 12.5px; }
+    /* Chip elegido: una sola linea a la altura del input (sin avatar ni documento). */
+    .mtp-terc .sp-chip { padding: 4px 6px 4px 9px; border-radius: 7px; gap: 6px; min-height: 32px; }
+    .mtp-terc .sp-chip-ava, .mtp-terc .sp-chip-doc { display: none; }
+    .mtp-terc .sp-chip-nom { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mtp-terc .sp-chip-x { width: 22px; height: 22px; }
 
     /* === Movil (hasta 640px): colapsar la fila de 8 KPIs === */
     @@media (max-width: 640px) {
@@ -967,7 +987,7 @@ else if (_tab == "calendario")
     private sealed record ProgCol(string Key, string Label);
     private static readonly List<ProgCol> _progColsAll = new()
     {
-        new("activo", "Activo"), new("titulo", "Titulo"), new("tercero", "Tercero"), new("contrato", "Contrato"),
+        new("tipo", "Tipo"), new("activo", "Activo"), new("titulo", "Titulo"), new("tercero", "Tercero"), new("contrato", "Contrato"),
         new("tablero", "Tablero"), new("prioridad", "Prioridad"), new("periodicidad", "Periodicidad"),
         new("proxima", "Proxima ejecucion"), new("responsables", "Responsables"), new("activa", "Activa"),
     };
@@ -982,6 +1002,7 @@ else if (_tab == "calendario")
             {
                 cols.Add(c.Key switch
                 {
+                    "tipo" => "minmax(96px,.8fr)",
                     "activo" => "minmax(150px,1.4fr)",
                     "titulo" => "minmax(160px,1.5fr)",
                     "tercero" => "minmax(130px,1.1fr)",
