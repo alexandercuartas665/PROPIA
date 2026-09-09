@@ -1,10 +1,13 @@
 @page "/mantenimiento"
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.Mantenimiento
+@using Propia.Application.Programaciones
 @using Propia.Domain.Enums
+@using Propia.Web.Components.Shared.Modals
 @inject IHttpClientFactory HttpFactory
 @inject NavigationManager Nav
 @inject IJSRuntime Js
+@inject IModalService Modals
 
 <PageTitle>Mantenimiento y Activos - PROPIA</PageTitle>
 
@@ -38,13 +41,138 @@
 
 @* Tabs estilo prototipo (pills brand) *@
 <div class="mt-tabs">
-    <button class="mt-tab @(_tab == "activos" ? "mt-tab--on" : "")" type="button" @onclick='() => SwitchTab("activos")'>Activos</button>
+    <button class="mt-tab @(_tab == "prog" ? "mt-tab--on" : "")" type="button" @onclick='() => SwitchTab("prog")'>Programacion</button>
     <button class="mt-tab @(_tab == "intervenciones" ? "mt-tab--on" : "")" type="button" @onclick='() => SwitchTab("intervenciones")'>Intervenciones</button>
     <button class="mt-tab @(_tab == "planes" ? "mt-tab--on" : "")" type="button" @onclick='() => SwitchTab("planes")'>Planes preventivos</button>
     <button class="mt-tab @(_tab == "calendario" ? "mt-tab--on" : "")" type="button" @onclick='() => SwitchTab("calendario")'>Calendario</button>
 </div>
 
 @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+@if (_tab == "prog")
+{
+    @* Configuracion de mantenimientos en TABLA (patron vista-tabla): una fila por programacion,
+       expansor en la 1a columna -> modal completo; Filtros / Agrupar / Campos; alta inline por activo. *@
+    <div class="mod-filtros" style="margin-bottom:14px; display:flex; align-items:center; gap:10px;">
+        <FiltroDinamico @ref="_fdProg" Campos="CamposFiltroProg" OnChanged="StateHasChanged" />
+        <div class="mod-search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input class="mod-search-inp" placeholder="Buscar programacion..." @bind="_progQuery" @bind:event="oninput" />
+        </div>
+        <div style="flex:1;"></div>
+        <div class="mtp-menuwrap">
+            <button type="button" class="mtp-fbtn @(_progAgrupar != "" ? "on" : "")" @onclick='() => _progMenu = _progMenu == "agr" ? "" : "agr"'>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+                <span>Agrupar@(_progAgrupar != "" ? ": " + ProgAgruparLabel(_progAgrupar) : "")</span>
+            </button>
+            @if (_progMenu == "agr")
+            {
+                <div class="mtp-menu-bd" @onclick='() => _progMenu = ""'></div>
+                <div class="mtp-menu">
+                    @foreach (var g in new[] { ("", "Sin agrupar"), ("activo", "Activo"), ("tablero", "Tablero"), ("periodicidad", "Periodicidad"), ("prioridad", "Prioridad") })
+                    {
+                        var gk = g.Item1;
+                        <button class="mtp-menu-it @(_progAgrupar == gk ? "on" : "")" @onclick='() => { _progAgrupar = gk; _progMenu = ""; }'>@g.Item2</button>
+                    }
+                </div>
+            }
+        </div>
+        <div class="mtp-menuwrap">
+            <button type="button" class="mtp-fbtn @(_progMenu == "cols" ? "on" : "")" @onclick='() => _progMenu = _progMenu == "cols" ? "" : "cols"'>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
+                <span>Campos</span>
+            </button>
+            @if (_progMenu == "cols")
+            {
+                <div class="mtp-menu-bd" @onclick='() => _progMenu = ""'></div>
+                <div class="mtp-menu">
+                    @foreach (var c in _progColsAll)
+                    {
+                        var ck = c.Key;
+                        <label class="mtp-menu-chk"><input type="checkbox" checked="@(!_progColsOcultas.Contains(ck))" @onchange="@(e => ToggleColProg(ck, (bool)(e.Value ?? false)))" /> @c.Label</label>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (_progs is null)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
+    else
+    {
+        <div class="mtp-table">
+            <div class="mtp-head" style="@ProgGrid">
+                <div></div>
+                @foreach (var c in ProgColsVis) { <div>@c.Label</div> }
+                <div></div>
+            </div>
+            @foreach (var grupo in ProgAgrupadas())
+            {
+                @if (_progAgrupar != "")
+                {
+                    <div class="mtp-group"><span>@grupo.Key</span><span class="mtp-group-n">@grupo.Count()</span></div>
+                }
+                @foreach (var p in grupo)
+                {
+                    var pp = p;
+                    <div class="mtp-row" style="@ProgGrid">
+                        <div class="mtp-exp-col">
+                            <button type="button" class="mtp-exp" title="Abrir la programacion completa" @onclick="() => AbrirEditarProgAsync(pp)">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                            </button>
+                        </div>
+                        @foreach (var c in ProgColsVis)
+                        {
+                            switch (c.Key)
+                            {
+                                case "activo":
+                                    <div class="mtp-nom" title="@(p.ModuloOrigenCodigo == "zona" ? "Zona comun" : "Equipo")">@(string.IsNullOrWhiteSpace(p.OrigenReferencia) ? "-" : p.OrigenReferencia)</div>
+                                    break;
+                                case "titulo": <div>@p.Titulo</div> break;
+                                case "tablero": <div>@(string.IsNullOrWhiteSpace(p.TableroNombre) ? "General" : p.TableroNombre)</div> break;
+                                case "prioridad": <div>@p.Prioridad</div> break;
+                                case "periodicidad": <div>@(p.Tipo == TipoProgramacion.Cron ? $"Cron: {p.CronExpresion}" : PeriodicidadProgLabel(p.Periodicidad))</div> break;
+                                case "proxima": <div>@p.FechaProximaEjecucion.ToString("yyyy-MM-dd")</div> break;
+                                case "responsables": <div title="@string.Join(", ", p.Responsables.Select(r => r.Nombre))">@(p.Responsables.Count == 0 ? "-" : $"{p.Responsables.Count} resp.")</div> break;
+                                case "activa":
+                                    <div><button type="button" class="mtp-toggle @(p.Activa ? "on" : "")" title="@(p.Activa ? "Activa" : "Pausada")" @onclick="() => ToggleActivaProgAsync(pp)"><span class="mtp-toggle-knob"></span></button></div>
+                                    break;
+                            }
+                        }
+                        <div class="mtp-act">
+                            <button type="button" class="mtp-del" title="Eliminar" @onclick="() => EliminarProgAsync(pp)">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                }
+            }
+            @* Alta inline: elegir activo + "+ Programar" abre el modal completo con ese activo. *@
+            <div class="mtp-newrow" style="@ProgGrid">
+                <div class="mtp-exp-col">
+                    <button type="button" class="mtp-exp mtp-exp-fijo" title="Programar mantenimiento del activo elegido" @onclick="AltaProgAsync" disabled="@(string.IsNullOrEmpty(_altaActivoKey))">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                    </button>
+                </div>
+                <div style="grid-column: 2 / -2;">
+                    <select class="mtp-nf-inp" @bind="_altaActivoKey">
+                        <option value="">Selecciona un activo o zona para programar...</option>
+                        @foreach (var a in (_activos ?? new()))
+                        {
+                            <option value="@($"{a.ActivoTipo}:{a.ActivoId}")">@a.Nombre (@ActivoTipoLabel(a.ActivoTipo))</option>
+                        }
+                    </select>
+                </div>
+                <div class="mtp-act">
+                    <button type="button" class="mtp-add" @onclick="AltaProgAsync" disabled="@(string.IsNullOrEmpty(_altaActivoKey))">+ Programar</button>
+                </div>
+            </div>
+            <div class="mtp-footer">Mostrando @ProgFiltradas().Count() de @(_progs.Count) programaciones</div>
+        </div>
+    }
+}
 
 @if (_tab == "activos")
 {
@@ -574,6 +702,9 @@ else if (_tab == "calendario")
     </div>
 }
 
+@* ModalHost DEBE vivir en la pagina (no en MainLayout): comparte instancia Scoped del IModalService. *@
+<ModalHost />
+
 <style>
     /* === Estilos base prototipo PROPIA.dc.html === */
     .mt-head, .mt-kpis, .mt-tabs, .mt-empty { font-family: var(--propia-font-base, 'Lexend', sans-serif); }
@@ -677,6 +808,49 @@ else if (_tab == "calendario")
     .mt-crono-inp.is-busy { opacity: .5; }
     @@media (max-width: 900px) { .mt-crono { overflow-x: auto; } .mt-crono-head, .mt-crono-row { min-width: 820px; } }
 
+    /* === Tabla de PROGRAMACIONES (patron vista-tabla; canon Tareas/Zonas) === */
+    /* Botones de la barra (Agrupar / Campos): mismo aspecto que el resto de modulos. */
+    .mtp-menuwrap { position: relative; }
+    .mtp-fbtn { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 8px 12px; border-radius: 9px; border: 1px solid var(--propia-border-input); background: var(--propia-bg-card); font-size: 13px; font-weight: 600; color: var(--propia-text-secondary); cursor: pointer; font-family: inherit; }
+    .mtp-fbtn:hover { border-color: var(--propia-brand); color: var(--propia-brand); }
+    .mtp-fbtn.on { background: var(--propia-brand-soft); color: var(--propia-brand); border-color: var(--propia-brand-soft); }
+    .mtp-menu-bd { position: fixed; inset: 0; z-index: 40; }
+    .mtp-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; min-width: 190px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 10px; box-shadow: 0 12px 30px rgba(27,42,58,.16); padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+    .mtp-menu-it { text-align: left; padding: 7px 10px; border: 0; background: transparent; border-radius: 7px; font-size: 12.5px; font-weight: 600; color: var(--propia-text-secondary); cursor: pointer; font-family: inherit; }
+    .mtp-menu-it:hover { background: var(--propia-bg-app); }
+    .mtp-menu-it.on { background: var(--propia-brand-soft); color: var(--propia-brand); }
+    .mtp-menu-chk { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 12.5px; color: var(--propia-text-secondary); cursor: pointer; }
+
+    .mtp-table { border: 1px solid var(--propia-border-card); border-radius: 12px; overflow: hidden; background: var(--propia-bg-card); }
+    .mtp-head { display: grid; padding: 10px 14px; background: var(--propia-bg-app); font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: var(--propia-text-faint); text-transform: uppercase; border-bottom: 1px solid var(--propia-border-divider); position: sticky; top: 0; z-index: 8; }
+    .mtp-group { display: flex; align-items: center; gap: 8px; padding: 7px 14px; background: var(--propia-bg-app); border-bottom: 1px solid var(--propia-border-divider); font-size: 12px; font-weight: 700; color: var(--propia-text-secondary); }
+    .mtp-group-n { font-size: 10.5px; font-weight: 700; color: var(--propia-brand); background: var(--propia-brand-soft); border-radius: 20px; padding: 1px 8px; }
+    .mtp-row { display: grid; padding: 8px 14px; border-bottom: 1px solid var(--propia-border-divider); font-size: 13px; color: var(--propia-text-body); }
+    .mtp-row:last-child { border-bottom: none; }
+    .mtp-exp-col { width: 34px; display: flex; align-items: center; justify-content: center; }
+    .mtp-exp { width: 26px; height: 26px; border-radius: 7px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-faint); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .mtp-exp:hover { color: var(--propia-brand); border-color: var(--propia-brand); }
+    .mtp-exp:disabled { opacity: .4; cursor: default; }
+    .mtp-exp-fijo { color: var(--propia-brand); border-color: var(--propia-brand-soft); background: var(--propia-brand-soft); }
+    .mtp-nom { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mtp-act { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+    .mtp-del { width: 26px; height: 26px; border-radius: 7px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-faint); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .mtp-del:hover { color: var(--propia-danger); border-color: var(--propia-danger); }
+    /* Toggle Activa (mismo patron que el switch del panel de programaciones). */
+    .mtp-toggle { position: relative; width: 30px; height: 17px; border-radius: 10px; border: 0; background: var(--propia-text-faint); cursor: pointer; padding: 0; }
+    .mtp-toggle.on { background: var(--propia-ok); }
+    .mtp-toggle-knob { position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: var(--propia-bg-card); transition: left .15s; }
+    .mtp-toggle.on .mtp-toggle-knob { left: 15px; }
+    /* Fila de alta: input "fantasma" punteado (canon regla 9-A), boton "+ Programar" violeta suave. */
+    .mtp-newrow { display: grid; padding: 9px 14px; border-top: 1px solid var(--propia-border-divider); background: var(--propia-bg-app); }
+    .mtp-nf-inp { width: 100%; box-sizing: border-box; border: 1px dashed var(--propia-border-input); border-radius: 7px; padding: 6px 9px; font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-bg-card); outline: none; font-family: inherit; }
+    .mtp-nf-inp:focus { border-style: solid; border-color: var(--propia-brand); box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
+    .mtp-add { border: 1px solid var(--propia-brand-soft); background: var(--propia-brand-soft); color: var(--propia-brand); border-radius: 7px; font-size: 11.5px; font-weight: 700; padding: 6px 12px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+    .mtp-add:hover { filter: brightness(.97); }
+    .mtp-add:disabled { opacity: .5; cursor: default; }
+    .mtp-footer { display: flex; align-items: center; padding: 10px 16px; background: var(--propia-bg-app); border-top: 1px solid var(--propia-border-divider); font-size: 12.5px; color: var(--propia-text-muted); }
+    @@media (max-width: 1000px) { .mtp-table { overflow-x: auto; } .mtp-head, .mtp-row, .mtp-newrow { min-width: 920px; } }
+
     /* === Movil (hasta 640px): colapsar la fila de 8 KPIs === */
     @@media (max-width: 640px) {
         .mt-kpis { grid-template-columns: repeat(2, 1fr); }
@@ -689,7 +863,217 @@ else if (_tab == "calendario")
     private bool _busy;
     private string? _msg;
     private string _msgClass = "alert-info";
-    private string _tab = "activos";
+    private string _tab = "prog";
+
+    // ===== Programaciones en tabla (patron vista-tabla; una fila por PROGRAMACION) =====
+    private List<ProgramacionTareaDto>? _progs;
+    private List<TableroOpcion> _tableros = new();
+    private List<PersonaOpcion> _personas = new();
+    private bool _progOpcionesCargadas;
+    private FiltroDinamico? _fdProg;
+    private string _progQuery = "";
+    private string _progAgrupar = "";
+    private string _progMenu = "";
+    private string _altaActivoKey = "";
+    private readonly HashSet<string> _progColsOcultas = new();
+
+    private sealed record ProgCol(string Key, string Label);
+    private static readonly List<ProgCol> _progColsAll = new()
+    {
+        new("activo", "Activo"), new("titulo", "Titulo"), new("tablero", "Tablero"),
+        new("prioridad", "Prioridad"), new("periodicidad", "Periodicidad"),
+        new("proxima", "Proxima ejecucion"), new("responsables", "Responsables"), new("activa", "Activa"),
+    };
+    private IEnumerable<ProgCol> ProgColsVis => _progColsAll.Where(c => !_progColsOcultas.Contains(c.Key));
+
+    private string ProgGrid
+    {
+        get
+        {
+            var cols = new List<string> { "34px" };
+            foreach (var c in ProgColsVis)
+            {
+                cols.Add(c.Key switch
+                {
+                    "activo" => "minmax(150px,1.4fr)",
+                    "titulo" => "minmax(180px,1.6fr)",
+                    "tablero" => "minmax(110px,1fr)",
+                    "prioridad" => "minmax(90px,.8fr)",
+                    "periodicidad" => "minmax(120px,1.1fr)",
+                    "proxima" => "minmax(120px,1fr)",
+                    "responsables" => "minmax(90px,.8fr)",
+                    "activa" => "70px",
+                    _ => "1fr"
+                });
+            }
+            cols.Add("60px");
+            return $"grid-template-columns: {string.Join(' ', cols)}; gap: 10px; align-items: center;";
+        }
+    }
+
+    private List<FiltroDinamico.CampoDef> CamposFiltroProg => new()
+    {
+        new() { Key = "activo", Label = "Activo", Kind = "texto" },
+        new() { Key = "titulo", Label = "Titulo", Kind = "texto" },
+        new() { Key = "tablero", Label = "Tablero", Kind = "texto" },
+        new() { Key = "prioridad", Label = "Prioridad", Kind = "sel",
+                Opciones = Enum.GetValues<PrioridadTarea>().Select(p => (p.ToString(), p.ToString())).ToList() },
+        new() { Key = "periodicidad", Label = "Periodicidad", Kind = "sel",
+                Opciones = Enum.GetValues<PeriodicidadProgramacion>().Select(p => (p.ToString(), p.ToString())).ToList() },
+        new() { Key = "activa", Label = "Activa", Kind = "sel",
+                Opciones = new() { ("true", "Activa"), ("false", "Pausada") } },
+    };
+
+    private IEnumerable<ProgramacionTareaDto> ProgFiltradas()
+    {
+        var q = (_progs ?? new()).AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(_progQuery))
+        {
+            var t = _progQuery.Trim();
+            q = q.Where(p => (p.Titulo ?? "").Contains(t, StringComparison.OrdinalIgnoreCase)
+                          || (p.OrigenReferencia ?? "").Contains(t, StringComparison.OrdinalIgnoreCase));
+        }
+        return q.Where(p => _fdProg?.Pasa(campo => campo switch
+        {
+            "activo" => p.OrigenReferencia ?? "",
+            "titulo" => p.Titulo ?? "",
+            "tablero" => p.TableroNombre ?? "",
+            "prioridad" => p.Prioridad.ToString(),
+            "periodicidad" => p.Periodicidad.ToString(),
+            "activa" => p.Activa.ToString().ToLower(),
+            _ => ""
+        }) ?? true);
+    }
+
+    private IEnumerable<IGrouping<string, ProgramacionTareaDto>> ProgAgrupadas()
+    {
+        Func<ProgramacionTareaDto, string> key = _progAgrupar switch
+        {
+            "activo" => p => string.IsNullOrWhiteSpace(p.OrigenReferencia) ? "(sin activo)" : p.OrigenReferencia!,
+            "tablero" => p => string.IsNullOrWhiteSpace(p.TableroNombre) ? "General" : p.TableroNombre!,
+            "periodicidad" => p => p.Tipo == TipoProgramacion.Cron ? "Cron" : PeriodicidadProgLabel(p.Periodicidad),
+            "prioridad" => p => p.Prioridad.ToString(),
+            _ => _ => ""
+        };
+        return ProgFiltradas().GroupBy(key);
+    }
+
+    private static string ProgAgruparLabel(string k) => k switch
+    {
+        "activo" => "Activo", "tablero" => "Tablero",
+        "periodicidad" => "Periodicidad", "prioridad" => "Prioridad", _ => ""
+    };
+    private static string PeriodicidadProgLabel(PeriodicidadProgramacion p) => p.ToString();
+
+    private void ToggleColProg(string key, bool visible)
+    {
+        if (visible) _progColsOcultas.Remove(key);
+        else _progColsOcultas.Add(key);
+    }
+
+    // Tableros/personas solo se piden una vez y al abrir el primer modal (igual que ProgramacionesPanel).
+    private async Task CargarOpcionesProgAsync()
+    {
+        if (_progOpcionesCargadas) return;
+        try
+        {
+            var tabs = await Auth().GetFromJsonAsync<List<TableroApiMt>>("/api/tareas/tableros") ?? new();
+            _tableros = tabs.Select(t => new TableroOpcion { Id = t.Id, Nombre = t.Nombre }).ToList();
+        }
+        catch { _tableros = new(); }
+        try
+        {
+            var personas = await Auth().GetFromJsonAsync<List<PersonaApiMt>>("/api/directorio/personas") ?? new();
+            _personas = personas
+                .Select(p => new PersonaOpcion { Id = p.Id, Nombre = $"{p.Nombres} {p.Apellidos}".Trim() })
+                .Where(p => !string.IsNullOrWhiteSpace(p.Nombre)).ToList();
+        }
+        catch { _personas = new(); }
+        _progOpcionesCargadas = true;
+    }
+
+    // Alta inline: abre el modal completo "Programar tarea" ya apuntando al activo elegido.
+    private async Task AltaProgAsync()
+    {
+        if (string.IsNullOrEmpty(_altaActivoKey)) return;
+        var parts = _altaActivoKey.Split(':');
+        if (parts.Length != 2 || !Guid.TryParse(parts[1], out var activoId)) return;
+        var tipo = Enum.Parse<TipoActivoMantenimiento>(parts[0]);
+        var modulo = tipo == TipoActivoMantenimiento.ZonaComun ? "zona" : "equipo";
+        var referencia = _activos?.FirstOrDefault(a => a.ActivoTipo == tipo && a.ActivoId == activoId)?.Nombre;
+
+        await CargarOpcionesProgAsync();
+        var pars = new ModalParameters()
+            .Set("Tableros", _tableros)
+            .Set("Personas", _personas)
+            .Set("PrefillTitulo", string.IsNullOrWhiteSpace(referencia) ? "Mantenimiento" : $"Mantenimiento {referencia}")
+            .Set("ModuloOrigenCodigo", modulo)
+            .Set("EntidadOrigenId", (Guid?)activoId)
+            .Set("OrigenReferencia", referencia);
+        var req = await Modals.OpenAsync<ProgramadorTareaModal, CrearProgramacionRequest>(pars, new ModalOptions { Width = "580px" });
+        if (req is null) return;
+        try
+        {
+            var r = await Auth().PostAsJsonAsync("/api/programaciones", req);
+            if (r.IsSuccessStatusCode) { _msg = "Programacion creada."; _msgClass = "alert-success"; _altaActivoKey = ""; await CargarAsync(); }
+            else { _msg = await r.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    // Expansor de fila: abre la programacion existente en el mismo modal y guarda con PUT.
+    private async Task AbrirEditarProgAsync(ProgramacionTareaDto p)
+    {
+        await CargarOpcionesProgAsync();
+        var pars = new ModalParameters()
+            .Set("Tableros", _tableros)
+            .Set("Personas", _personas)
+            .Set("ModuloOrigenCodigo", p.ModuloOrigenCodigo ?? "equipo")
+            .Set("EntidadOrigenId", p.EntidadOrigenId)
+            .Set("OrigenReferencia", p.OrigenReferencia)
+            .Set("Existente", p);
+        var req = await Modals.OpenAsync<ProgramadorTareaModal, CrearProgramacionRequest>(pars, new ModalOptions { Width = "580px" });
+        if (req is null) return;
+        var upd = new ActualizarProgramacionRequest(
+            req.Titulo, req.Descripcion, req.Prioridad, req.TableroId, req.Periodicidad,
+            req.FechaProximaEjecucion, req.FechaFin, p.Activa, req.Responsables,
+            req.Tipo, req.CronExpresion, req.ZonaHoraria, req.NotificarPorCorreo, req.HorizonteDias);
+        try
+        {
+            var r = await Auth().PutAsJsonAsync($"/api/programaciones/{p.Id}", upd);
+            if (r.IsSuccessStatusCode) { _msg = "Programacion actualizada."; _msgClass = "alert-success"; await CargarAsync(); }
+            else { _msg = await r.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task ToggleActivaProgAsync(ProgramacionTareaDto p)
+    {
+        try
+        {
+            var r = await Auth().PutAsync($"/api/programaciones/{p.Id}/activa?activa={(!p.Activa).ToString().ToLower()}", null);
+            if (r.IsSuccessStatusCode) await CargarAsync();
+            else { _msg = "No se pudo cambiar el estado de la programacion."; _msgClass = "alert-danger"; }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task EliminarProgAsync(ProgramacionTareaDto p)
+    {
+        var ok = await Js.InvokeAsync<bool>("confirm",
+            $"Eliminar la programacion \"{p.Titulo}\"? Las tareas ya generadas se conservan.");
+        if (!ok) return;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/programaciones/{p.Id}");
+            if (r.IsSuccessStatusCode) { _msg = "Programacion eliminada."; _msgClass = "alert-success"; await CargarAsync(); }
+            else { _msg = "No se pudo eliminar la programacion."; _msgClass = "alert-danger"; }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private sealed record TableroApiMt(Guid Id, string Nombre);
+    private sealed record PersonaApiMt(Guid Id, string? Nombres, string? Apellidos);
 
     private List<ActivoPanelDto>? _activos;
     private List<IntervencionListaDto>? _intervenciones;
@@ -842,6 +1226,17 @@ else if (_tab == "calendario")
             // Los planes se usan tambien en la tabla de Activos (programacion inline), no solo en su pestana.
             if (_tab is "planes" or "calendario" or "activos")
                 _planes = await http.GetFromJsonAsync<List<PlanDto>>("/api/mantenimiento/planes") ?? new();
+
+            // Programaciones (tab por defecto): una fila por regla; se juntan las de equipos y zonas.
+            if (_tab == "prog")
+            {
+                var eq = await http.GetFromJsonAsync<List<ProgramacionTareaDto>>("/api/programaciones?moduloOrigen=equipo") ?? new();
+                var zn = await http.GetFromJsonAsync<List<ProgramacionTareaDto>>("/api/programaciones?moduloOrigen=zona") ?? new();
+                _progs = eq.Concat(zn)
+                    .OrderBy(p => p.OrigenReferencia ?? "")
+                    .ThenBy(p => p.Titulo)
+                    .ToList();
+            }
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
     }
