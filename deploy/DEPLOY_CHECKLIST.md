@@ -1,7 +1,13 @@
 # PROPIA - Checklist de deploy
 
-> Actualizado 2026-09-09. Version visible: **0.0.71**
+> Actualizado 2026-09-09. Version visible: **0.0.72**
 > (`src/Propia.Web/Propia.Web.csproj` `<Version>`). Bumpear en cada deploy.
+>
+> **Nuevo desde 0.0.71:**
+> - **Mantenimiento: cronograma en tabla inline.** La pestana "Activos" de `/mantenimiento` es una tabla con
+>   una fila por activo (equipos + zonas unificados); la Frecuencia se programa inline (crea/actualiza/
+>   desactiva el plan preventivo reutilizando `/api/mantenimiento/planes`, que genera tareas + calendario).
+>   **Solo codigo, sin migracion.**
 >
 > **Nuevo desde 0.0.69:**
 > - **Campos dinamicos tipados en Zonas Comunes y Equipos** (misma feature que Unidades): boton "Configurar"
@@ -157,7 +163,7 @@ falten en ese entorno, comparando contra `__EFMigrationsHistory`:
 
 ## 4. Post-deploy (verificacion)
 
-- [ ] Login OK; el footer muestra `v0.0.71`.
+- [ ] Login OK; el footer muestra `v0.0.72`.
 - [ ] **Extractor IA (hotfix 403):** un usuario NO-Administrador pulsa "Cargar PDF y extraer (IA)" en
       Seguros y en Contratos -> prellena (antes -> "forbidden"/403). El agente documental de Servicios
       Publicos ("Analizar con el Agente Documental") sigue exigiendo Administrador.
