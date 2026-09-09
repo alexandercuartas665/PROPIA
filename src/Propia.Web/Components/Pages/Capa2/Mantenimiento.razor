@@ -2,6 +2,7 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.Mantenimiento
 @using Propia.Application.Programaciones
+@using Propia.Application.Directorio
 @using Propia.Domain.Enums
 @using Propia.Web.Components.Shared.Modals
 @inject IHttpClientFactory HttpFactory
@@ -131,7 +132,7 @@
                                     <div class="mtp-nom" title="@(p.ModuloOrigenCodigo == "zona" ? "Zona comun" : "Equipo")">@(string.IsNullOrWhiteSpace(p.OrigenReferencia) ? "-" : p.OrigenReferencia)</div>
                                     break;
                                 case "titulo": <div>@p.Titulo</div> break;
-                                case "tercero": <div class="mtp-muted" title="@NombreTercero(p.ProveedorId)">@(p.ProveedorId is null ? "-" : NombreTercero(p.ProveedorId))</div> break;
+                                case "tercero": <div class="mtp-muted" title="@(p.ProveedorNombre ?? NombreTercero(p.ProveedorId))">@(p.ProveedorId is null ? "-" : (p.ProveedorNombre ?? NombreTercero(p.ProveedorId)))</div> break;
                                 case "contrato": <div class="mtp-muted" title="@NombreContrato(p.ContratoId)">@(p.ContratoId is null ? "-" : NombreContrato(p.ContratoId))</div> break;
                                 case "tablero": <div>@(string.IsNullOrWhiteSpace(p.TableroNombre) ? "General" : p.TableroNombre)</div> break;
                                 case "prioridad": <div>@p.Prioridad</div> break;
@@ -155,7 +156,7 @@
                El expansor de la fila de alta abre el formulario completo (cron, responsables, correo). *@
             <div class="mtp-newrow" style="@ProgGrid">
                 <div class="mtp-exp-col">
-                    <button type="button" class="mtp-exp mtp-exp-fijo" title="Abrir el formulario completo (cron, responsables, correo)" @onclick="AltaProgAsync" disabled="@(string.IsNullOrEmpty(_altaActivoKey))">
+                    <button type="button" class="mtp-exp mtp-exp-fijo" title="Abrir el formulario completo para crear la programacion" @onclick="AltaProgAsync">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                     </button>
                 </div>
@@ -164,12 +165,16 @@
                     switch (c.Key)
                     {
                         case "activo":
-                            <div>
-                                <select class="mtp-nf-inp" @bind="_altaActivoKey">
-                                    <option value="">Activo o zona...</option>
-                                    @foreach (var a in (_activos ?? new()))
+                            <div style="display:flex; flex-direction:column; gap:4px;">
+                                <select class="mtp-nf-inp" @bind="_altaTipo" @bind:after="OnAltaTipoChanged">
+                                    <option value="Equipo">Equipo</option>
+                                    <option value="ZonaComun">Zona comun</option>
+                                </select>
+                                <select class="mtp-nf-inp" @bind="_altaActivoId">
+                                    <option value="">@(_altaTipo == "ZonaComun" ? "Zona..." : "Activo...")</option>
+                                    @foreach (var a in (_activos ?? new()).Where(x => x.ActivoTipo.ToString() == _altaTipo))
                                     {
-                                        <option value="@($"{a.ActivoTipo}:{a.ActivoId}")">@a.Nombre (@ActivoTipoLabel(a.ActivoTipo))</option>
+                                        <option value="@a.ActivoId">@a.Nombre</option>
                                     }
                                 </select>
                             </div>
@@ -179,17 +184,17 @@
                             break;
                         case "tercero":
                             <div>
-                                <select class="mtp-nf-inp" @bind="_altaProveedorKey">
-                                    <option value="">Sin tercero</option>
-                                    @foreach (var per in _personas) { <option value="@per.Id">@per.Nombre</option> }
-                                </select>
+                                <SelectorPersona Jwt="@_jwt" PermiteEmpresa="true" Flotante="true"
+                                                 Seleccionada="_altaProveedorSel"
+                                                 SeleccionadaChanged="OnAltaTerceroSel"
+                                                 Placeholder="Buscar o crear tercero..." />
                             </div>
                             break;
                         case "contrato":
                             <div>
                                 <select class="mtp-nf-inp" @bind="_altaContratoKey">
                                     <option value="">Sin contrato</option>
-                                    @foreach (var co in _contratos) { <option value="@co.Id">@co.Nombre</option> }
+                                    @foreach (var co in ContratosParaTercero()) { <option value="@co.Id">@co.Nombre</option> }
                                 </select>
                             </div>
                             break;
@@ -927,14 +932,37 @@ else if (_tab == "calendario")
     private string _progMenu = "";
     private readonly HashSet<string> _progColsOcultas = new();
     // Fila de alta inline de Programacion: un campo por columna (canon regla 8).
-    private string _altaActivoKey = "";
+    private string _altaTipo = "Equipo";          // Equipo | ZonaComun (selector antes del activo)
+    private string _altaActivoId = "";            // Guid del activo (filtrado por _altaTipo)
     private string _altaTitulo = "";
     private string _altaTableroKey = "";
-    private string _altaProveedorKey = "";
+    private PersonaCandidatoDto? _altaProveedorSel;   // tercero elegido con SelectorPersona (persona o empresa)
+    private Guid? _altaProveedorId;
+    private string? _altaProveedorNombre;
     private string _altaContratoKey = "";
     private PrioridadTarea _altaPrioridad = PrioridadTarea.Normal;
     private PeriodicidadProgramacion _altaPeriodicidad = PeriodicidadProgramacion.Mensual;
     private DateOnly? _altaFecha = DateOnly.FromDateTime(DateTime.Today);
+
+    // Contratos con sus ids de proveedor, para filtrar por el tercero elegido en la fila de alta.
+    private List<ContratoFull> _contratosFull = new();
+    private sealed record ContratoFull(Guid Id, string Nombre, Guid? ProvPersonaId, Guid? ProvEmpresaId);
+    private IEnumerable<ContratoFull> ContratosParaTercero() =>
+        _altaProveedorId is { } pid
+            ? _contratosFull.Where(c => c.ProvPersonaId == pid || c.ProvEmpresaId == pid)
+            : _contratosFull;
+
+    private void OnAltaTipoChanged() => _altaActivoId = "";   // al cambiar Equipo/Zona, limpiar el activo
+
+    private void OnAltaTerceroSel(PersonaCandidatoDto? sel)
+    {
+        _altaProveedorSel = sel;
+        _altaProveedorId = sel?.PersonaId;
+        _altaProveedorNombre = sel?.NombreCompleto;
+        // Si el contrato elegido ya no pertenece al nuevo tercero, se limpia.
+        if (!string.IsNullOrEmpty(_altaContratoKey) && Guid.TryParse(_altaContratoKey, out var cid)
+            && ContratosParaTercero().All(c => c.Id != cid)) _altaContratoKey = "";
+    }
 
     private sealed record ProgCol(string Key, string Label);
     private static readonly List<ProgCol> _progColsAll = new()
@@ -1053,30 +1081,32 @@ else if (_tab == "calendario")
         try
         {
             var contratos = await Auth().GetFromJsonAsync<List<ContratoApiMt>>("/api/mi-copropiedad/contratos") ?? new();
+            string Nombre(ContratoApiMt c) => string.IsNullOrWhiteSpace(c.NumeroContrato) ? c.Proveedor : $"{c.Proveedor} ({c.NumeroContrato})";
             _contratos = contratos
-                .Select(c => new ContratoOpcion { Id = c.Id, Nombre = string.IsNullOrWhiteSpace(c.NumeroContrato) ? c.Proveedor : $"{c.Proveedor} ({c.NumeroContrato})" })
+                .Select(c => new ContratoOpcion { Id = c.Id, Nombre = Nombre(c) })
+                .Where(c => !string.IsNullOrWhiteSpace(c.Nombre)).ToList();
+            _contratosFull = contratos
+                .Select(c => new ContratoFull(c.Id, Nombre(c), c.ProveedorPersonaId, c.ProveedorEmpresaId))
                 .Where(c => !string.IsNullOrWhiteSpace(c.Nombre)).ToList();
         }
-        catch { _contratos = new(); }
+        catch { _contratos = new(); _contratosFull = new(); }
         _progOpcionesCargadas = true;
     }
 
+    // El nombre del tercero se guarda como snapshot (puede ser persona o empresa); si falta, se resuelve.
     private string NombreTercero(Guid? id) => id is { } g ? (_personas.FirstOrDefault(p => p.Id == g)?.Nombre ?? "Tercero") : "-";
     private string NombreContrato(Guid? id) => id is { } g ? (_contratos.FirstOrDefault(c => c.Id == g)?.Nombre ?? "Contrato") : "-";
 
     // Alta inline directa (sin modal): crea la programacion con lo capturado por columna.
     private async Task AltaProgInlineAsync()
     {
-        if (string.IsNullOrEmpty(_altaActivoKey)) { _msg = "Elige un activo o zona."; _msgClass = "alert-danger"; return; }
+        if (string.IsNullOrEmpty(_altaActivoId) || !Guid.TryParse(_altaActivoId, out var activoId)) { _msg = "Elige un activo o zona."; _msgClass = "alert-danger"; return; }
         if (string.IsNullOrWhiteSpace(_altaTitulo)) { _msg = "La programacion necesita un titulo."; _msgClass = "alert-danger"; return; }
         if (_altaFecha is null) { _msg = "Indica la fecha de la proxima ejecucion."; _msgClass = "alert-danger"; return; }
-        var parts = _altaActivoKey.Split(':');
-        if (parts.Length != 2 || !Guid.TryParse(parts[1], out var activoId)) return;
-        var tipo = Enum.Parse<TipoActivoMantenimiento>(parts[0]);
+        var tipo = Enum.Parse<TipoActivoMantenimiento>(_altaTipo);
         var modulo = tipo == TipoActivoMantenimiento.ZonaComun ? "zona" : "equipo";
         var referencia = _activos?.FirstOrDefault(a => a.ActivoTipo == tipo && a.ActivoId == activoId)?.Nombre;
         Guid? tableroId = Guid.TryParse(_altaTableroKey, out var tid) ? tid : null;
-        Guid? proveedorId = Guid.TryParse(_altaProveedorKey, out var pv) ? pv : null;
         Guid? contratoId = Guid.TryParse(_altaContratoKey, out var ct) ? ct : null;
         _busy = true; _msg = null;
         try
@@ -1084,12 +1114,13 @@ else if (_tab == "calendario")
             var req = new CrearProgramacionRequest(
                 _altaTitulo!, null, _altaPrioridad, tableroId, _altaPeriodicidad,
                 _altaFecha.Value, null, null, modulo, activoId, referencia,
-                ProveedorId: proveedorId, ContratoId: contratoId);
+                ProveedorId: _altaProveedorId, ContratoId: contratoId, ProveedorNombre: _altaProveedorNombre);
             var r = await Auth().PostAsJsonAsync("/api/programaciones", req);
             if (!r.IsSuccessStatusCode) { _msg = await r.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
             _msg = "Programacion creada."; _msgClass = "alert-success";
-            // Limpiar solo titulo/activo/tercero/contrato; se conservan prioridad/periodicidad/fecha para altas seguidas.
-            _altaTitulo = ""; _altaActivoKey = ""; _altaTableroKey = ""; _altaProveedorKey = ""; _altaContratoKey = "";
+            // Limpiar activo/titulo/tercero/contrato; se conservan tipo/prioridad/periodicidad/fecha para altas seguidas.
+            _altaTitulo = ""; _altaActivoId = ""; _altaTableroKey = ""; _altaContratoKey = "";
+            _altaProveedorSel = null; _altaProveedorId = null; _altaProveedorNombre = null;
             await CargarAsync();
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
@@ -1100,10 +1131,12 @@ else if (_tab == "calendario")
     // (para cron, responsables, correo, horizonte). Es el camino avanzado, complementa el alta inline.
     private async Task AltaProgAsync()
     {
-        if (string.IsNullOrEmpty(_altaActivoKey)) return;
-        var parts = _altaActivoKey.Split(':');
-        if (parts.Length != 2 || !Guid.TryParse(parts[1], out var activoId)) return;
-        var tipo = Enum.Parse<TipoActivoMantenimiento>(parts[0]);
+        if (string.IsNullOrEmpty(_altaActivoId) || !Guid.TryParse(_altaActivoId, out var activoId))
+        {
+            _msg = "Elige primero el activo o zona (la lista de la izquierda) para abrir el formulario."; _msgClass = "alert-danger";
+            return;
+        }
+        var tipo = Enum.Parse<TipoActivoMantenimiento>(_altaTipo);
         var modulo = tipo == TipoActivoMantenimiento.ZonaComun ? "zona" : "equipo";
         var referencia = _activos?.FirstOrDefault(a => a.ActivoTipo == tipo && a.ActivoId == activoId)?.Nombre;
 
@@ -1131,7 +1164,8 @@ else if (_tab == "calendario")
             if (r.IsSuccessStatusCode)
             {
                 _msg = "Programacion creada."; _msgClass = "alert-success";
-                _altaActivoKey = ""; _altaTitulo = ""; _altaTableroKey = ""; _altaProveedorKey = ""; _altaContratoKey = "";
+                _altaActivoId = ""; _altaTitulo = ""; _altaTableroKey = ""; _altaContratoKey = "";
+                _altaProveedorSel = null; _altaProveedorId = null; _altaProveedorNombre = null;
                 await CargarAsync();
             }
             else { _msg = await r.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
@@ -1157,7 +1191,7 @@ else if (_tab == "calendario")
             req.Titulo, req.Descripcion, req.Prioridad, req.TableroId, req.Periodicidad,
             req.FechaProximaEjecucion, req.FechaFin, p.Activa, req.Responsables,
             req.Tipo, req.CronExpresion, req.ZonaHoraria, req.NotificarPorCorreo, req.HorizonteDias,
-            req.ProveedorId, req.ContratoId);
+            req.ProveedorId, req.ContratoId, req.ProveedorNombre);
         try
         {
             var r = await Auth().PutAsJsonAsync($"/api/programaciones/{p.Id}", upd);
@@ -1194,7 +1228,7 @@ else if (_tab == "calendario")
 
     private sealed record TableroApiMt(Guid Id, string Nombre);
     private sealed record PersonaApiMt(Guid Id, string? Nombres, string? Apellidos);
-    private sealed record ContratoApiMt(Guid Id, string Proveedor, string? NumeroContrato);
+    private sealed record ContratoApiMt(Guid Id, string Proveedor, string? NumeroContrato, Guid? ProveedorPersonaId, Guid? ProveedorEmpresaId);
 
     private List<ActivoPanelDto>? _activos;
     private List<IntervencionListaDto>? _intervenciones;

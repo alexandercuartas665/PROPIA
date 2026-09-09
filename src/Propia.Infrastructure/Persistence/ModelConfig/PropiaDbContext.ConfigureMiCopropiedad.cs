@@ -424,6 +424,7 @@ public partial class PropiaDbContext
             b.Property(x => x.Descripcion).HasMaxLength(2000);
             b.Property(x => x.ModuloOrigenCodigo).HasMaxLength(40);
             b.Property(x => x.OrigenReferencia).HasMaxLength(200);
+            b.Property(x => x.ProveedorNombre).HasMaxLength(200);
             b.Property(x => x.CronExpresion).HasMaxLength(120);
             b.Property(x => x.ZonaHoraria).IsRequired().HasMaxLength(60).HasDefaultValue("America/Bogota");
             b.HasIndex(x => x.TenantId);

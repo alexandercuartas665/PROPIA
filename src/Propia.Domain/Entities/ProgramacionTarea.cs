@@ -60,8 +60,11 @@ public class ProgramacionTarea : TenantEntity
     public Guid? EntidadOrigenId { get; set; }         // ej. ContratoServicio.Id
     public string? OrigenReferencia { get; set; }      // texto legible que se copia a la tarea creada
 
-    /// <summary>Tercero del Directorio (proveedor/contratista) responsable del mantenimiento. Opcional.</summary>
+    /// <summary>Tercero del Directorio (proveedor/contratista) responsable del mantenimiento. Opcional.
+    /// El id puede ser de una Persona o de una Empresa del Directorio.</summary>
     public Guid? ProveedorId { get; set; }
+    /// <summary>Nombre del tercero al momento de elegirlo (snapshot, para mostrar sin re-consultar el Directorio).</summary>
+    public string? ProveedorNombre { get; set; }
     /// <summary>Contrato (ContratoServicio) al que se ata el mantenimiento. Opcional.</summary>
     public Guid? ContratoId { get; set; }
 
