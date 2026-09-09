@@ -174,75 +174,7 @@
     }
 }
 
-@if (_tab == "activos")
-{
-    @* Fila de filtros estandar de los modulos (como Zonas Comunes): boton Filtros + buscador. *@
-    <div class="mod-filtros" style="margin-bottom:14px;">
-        <FiltroDinamico @ref="_fdAct" Campos="CamposFiltroActivos" OnChanged="StateHasChanged" />
-        <div class="mod-search">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-            <input class="mod-search-inp" placeholder="Buscar activo..." @bind="_query" @bind:event="oninput" @onkeyup="CargarAsync" />
-        </div>
-    </div>
-
-    @if (_activos is null)
-    {
-        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
-    }
-    else if (_activos.Count == 0)
-    {
-        <div class="card p-4 text-center text-muted">Sin activos.</div>
-    }
-    else
-    {
-        @* Cronograma de mantenimiento en formato TABLA: una fila por activo (equipos + zonas unificados).
-           La Frecuencia se programa INLINE (crea/actualiza el plan preventivo del activo). *@
-        <div class="mt-crono">
-            <div class="mt-crono-head" style="@MtCronoGrid">
-                <div>ACTIVO</div><div>TIPO</div><div>CATEGORIA</div><div>ESTADO</div>
-                <div>FRECUENCIA</div><div>PROXIMO MANTENIMIENTO</div><div>PROVEEDOR</div><div>INTERV.</div>
-            </div>
-            @foreach (var a in ActivosFiltrados())
-            {
-                var aa = a;
-                var plan = PlanDe(a);
-                <div class="mt-crono-row" style="@MtCronoGrid">
-                    <div class="mt-crono-nom">
-                        <span class="mt-crono-dot mt-sem-@a.Semaforo.ToString().ToLower()" title="Semaforo: @a.Semaforo"></span>
-                        @a.Nombre
-                    </div>
-                    <div>@ActivoTipoLabel(a.ActivoTipo)</div>
-                    <div>@(a.Categoria ?? "-")</div>
-                    <div>@a.EstadoActivo</div>
-                    <div>
-                        <select class="mt-crono-inp @(_planBusy == a.ActivoId ? "is-busy" : "")" disabled="@(_planBusy == a.ActivoId)"
-                                @onchange="(e) => SetFrecuenciaAsync(aa, plan, e.Value?.ToString())">
-                            <option value="" selected="@(plan is null)">Sin plan</option>
-                            @foreach (var f in Enum.GetValues<FrecuenciaMantenimiento>())
-                            {
-                                <option value="@f" selected="@(plan is not null && plan.Frecuencia == f)">@f</option>
-                            }
-                        </select>
-                    </div>
-                    <div>
-                        @if (a.ProximaEjecucion.HasValue)
-                        {
-                            <span>@a.ProximaEjecucion.Value.ToString("yyyy-MM-dd")</span>
-                            @if (a.DiasParaVencer.HasValue)
-                            {
-                                <span class="@(a.DiasParaVencer < 0 ? "mt-acard-venc" : a.DiasParaVencer < 7 ? "mt-acard-prox" : "")"> (@(a.DiasParaVencer < 0 ? $"vencio hace {-a.DiasParaVencer.Value}d" : $"en {a.DiasParaVencer.Value}d"))</span>
-                            }
-                        }
-                        else { <span class="mt-crono-muted">-</span> }
-                    </div>
-                    <div>@(string.IsNullOrWhiteSpace(a.ProveedorPreferido) ? "-" : a.ProveedorPreferido)</div>
-                    <div>@(a.IntervencionesAbiertas > 0 ? $"{a.IntervencionesAbiertas} abiertas" : "-")</div>
-                </div>
-            }
-        </div>
-    }
-}
-else if (_tab == "intervenciones")
+@if (_tab == "intervenciones")
 {
     @if (_intervenciones is null)
     {
@@ -301,50 +233,99 @@ else if (_tab == "planes")
     {
         <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
     }
-    else if (_planes.Count == 0)
-    {
-        <div class="card p-4 text-center text-muted">Sin planes preventivos configurados.</div>
-    }
     else
     {
-        <div class="card table-responsive">
-            <table class="table table-hover mb-0 align-middle">
-                <thead class="bg-light small text-muted">
-                    <tr><th>Activo</th><th>Plan</th><th>Frecuencia</th><th>Proxima ejecucion</th><th>Disparo</th><th>Proveedor</th><th>Estado</th></tr>
-                </thead>
-                <tbody class="small">
-                    @foreach (var p in _planes)
+        @* Planes preventivos en TABLA (patron vista-tabla): alta INLINE (sin modal) + edicion inline de la
+           Frecuencia sobre filas existentes. El modal "+ Plan preventivo" del header queda como via alterna. *@
+        <div class="mtp-table">
+            <div class="mtp-head" style="@PlanGrid">
+                <div>Activo</div><div>Plan</div><div>Frecuencia</div><div>Proxima ejecucion</div>
+                <div>Disparo</div><div>Proveedor</div><div>Estado</div><div></div>
+            </div>
+            @foreach (var p in _planes)
+            {
+                var pp = p;
+                <div class="mtp-row @(p.Id == _planRecienCreado ? "mtp-row--nuevo" : "")" style="@PlanGrid">
+                    <div class="mtp-nom" title="@p.ActivoNombre">@p.ActivoNombre <span class="mtp-tag">@ActivoTipoLabel(p.ActivoTipo)</span></div>
+                    <div title="@p.Nombre">@p.Nombre</div>
+                    <div>
+                        <select class="mtp-cell-inp @(_planBusy == p.Id ? "is-busy" : "")" disabled="@(_planBusy == p.Id || !p.Activo)"
+                                @onchange="(e) => CambiarFrecuenciaPlanAsync(pp, e.Value?.ToString())">
+                            @foreach (var f in Enum.GetValues<FrecuenciaMantenimiento>())
+                            {
+                                <option value="@f" selected="@(p.Frecuencia == f)">@f@(f == FrecuenciaMantenimiento.Personalizada && p.Frecuencia == f ? $" ({p.FrecuenciaDias}d)" : "")</option>
+                            }
+                        </select>
+                    </div>
+                    <div>
+                        <span class="mtp-dot mt-sem-@p.Semaforo.ToString().ToLower()"></span>
+                        <span>@p.ProximaEjecucion.ToString("yyyy-MM-dd")</span>
+                        @if (p.DiasParaVencer.HasValue && p.Activo)
+                        {
+                            <span class="@(p.DiasParaVencer < 0 ? "mt-acard-venc" : p.DiasParaVencer < 7 ? "mt-acard-prox" : "mtp-muted")"> (@(p.DiasParaVencer < 0 ? $"-{-p.DiasParaVencer}d" : $"+{p.DiasParaVencer}d"))</span>
+                        }
+                    </div>
+                    <div>@p.Disparo</div>
+                    <div>@(p.ProveedorPreferidoNombre ?? "-")</div>
+                    <div>
+                        @if (p.Activo)
+                        {
+                            <button type="button" class="mtp-estado-btn" @onclick="() => DesactivarPlan(p.Id)">Desactivar</button>
+                        }
+                        else
+                        {
+                            <button type="button" class="mtp-estado-btn on" @onclick="() => ReactivarPlan(p.Id)">Reactivar</button>
+                        }
+                    </div>
+                    <div></div>
+                </div>
+            }
+            @* Fila de alta inline: captura todos los campos del plan; "+ Agregar" lo crea sin modal. *@
+            <div class="mtp-newrow" style="@PlanGrid">
+                <div style="display:flex; flex-direction:column; gap:4px;">
+                    <select class="mtp-nf-inp" @bind="_planActivoTipo">
+                        <option value="Equipo">Equipo</option>
+                        <option value="ZonaComun">Zona comun</option>
+                    </select>
+                    <select class="mtp-nf-inp" @bind="_planActivoId">
+                        <option value="">Activo...</option>
+                        @if (_activos is not null)
+                        {
+                            @foreach (var a in _activos.Where(x => x.ActivoTipo.ToString() == _planActivoTipo))
+                            {
+                                <option value="@a.ActivoId">@a.Nombre</option>
+                            }
+                        }
+                    </select>
+                </div>
+                <div><input class="mtp-nf-inp" placeholder="Nombre del plan" @bind="_planNombre" @bind:event="oninput" /></div>
+                <div style="display:flex; flex-direction:column; gap:4px;">
+                    <select class="mtp-nf-inp" @bind="_planFrecuencia">
+                        @foreach (var f in Enum.GetValues<FrecuenciaMantenimiento>()) { <option value="@f">@f</option> }
+                    </select>
+                    @if (_planFrecuencia == FrecuenciaMantenimiento.Personalizada)
                     {
-                        <tr class="@(p.Activo ? "" : "text-muted")">
-                            <td><strong>@p.ActivoNombre</strong> <small class="text-muted">(@p.ActivoTipo)</small></td>
-                            <td>@p.Nombre</td>
-                            <td>@p.Frecuencia @(p.Frecuencia == FrecuenciaMantenimiento.Personalizada ? $"({p.FrecuenciaDias}d)" : "")</td>
-                            <td>
-                                @RenderSemaforoIcon(p.Semaforo)
-                                @p.ProximaEjecucion.ToString("yyyy-MM-dd")
-                                @if (p.DiasParaVencer.HasValue && p.Activo)
-                                {
-                                    <small class="ms-1 text-muted">
-                                        (@(p.DiasParaVencer < 0 ? $"-{-p.DiasParaVencer}d" : $"+{p.DiasParaVencer}d"))
-                                    </small>
-                                }
-                            </td>
-                            <td><small class="badge bg-light text-dark">@p.Disparo</small></td>
-                            <td>@(p.ProveedorPreferidoNombre ?? "-")</td>
-                            <td>
-                                @if (p.Activo)
-                                {
-                                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => DesactivarPlan(p.Id)">Desactivar</button>
-                                }
-                                else
-                                {
-                                    <button class="btn btn-sm btn-outline-success" @onclick="() => ReactivarPlan(p.Id)">Reactivar</button>
-                                }
-                            </td>
-                        </tr>
+                        <input type="number" min="1" max="365" class="mtp-nf-inp" placeholder="dias" @bind="_planFrecuenciaDias" />
                     }
-                </tbody>
-            </table>
+                </div>
+                <div><input type="date" class="mtp-nf-inp" value="@(_planFechaInicio?.ToString("yyyy-MM-dd"))" @onchange="(e) => _planFechaInicio = string.IsNullOrEmpty(e.Value?.ToString()) ? null : DateOnly.Parse(e.Value!.ToString()!)" /></div>
+                <div>
+                    <select class="mtp-nf-inp" @bind="_planDisparo">
+                        <option value="ConConfirmacion">Con confirmacion</option>
+                        <option value="Automatico">Automatico</option>
+                    </select>
+                </div>
+                <div><input type="number" min="0" max="90" class="mtp-nf-inp" placeholder="Dias alerta" @bind="_planDiasAlerta" /></div>
+                <div>
+                    <label class="mtp-nf-chk" title="Notificar residentes al ejecutar">
+                        <input type="checkbox" @bind="_planNotificarResidentes" /> Notif.
+                    </label>
+                </div>
+                <div class="mtp-act">
+                    <button type="button" class="mtp-add" @onclick="AltaPlanInlineAsync" disabled="@_busy">+ Agregar</button>
+                </div>
+            </div>
+            <div class="mtp-footer">Mostrando @_planes.Count de @_planes.Count planes</div>
         </div>
     }
 }
@@ -792,21 +773,25 @@ else if (_tab == "calendario")
     .mt-cal-ev--err { color: #B91C1C; background: #FEE2E2; }
     .mt-cal-ev--plan { color: var(--propia-brand, var(--propia-brand)); background: var(--propia-brand-soft); }
     .mt-cal-more { font-size: 10px; font-weight: 700; color: var(--propia-text-muted); padding: 1px 4px; }
-    /* === Cronograma en tabla (una fila por activo) === */
-    .mt-crono { border: 1px solid var(--propia-border-card); border-radius: 12px; overflow: hidden; background: var(--propia-bg-card); }
-    .mt-crono-head { display: grid; padding: 10px 14px; background: var(--propia-bg-app); font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: var(--propia-text-faint); text-transform: uppercase; border-bottom: 1px solid var(--propia-border-divider); }
-    .mt-crono-row { display: grid; padding: 8px 14px; border-bottom: 1px solid var(--propia-border-divider); font-size: 13px; color: var(--propia-text-body); }
-    .mt-crono-row:last-child { border-bottom: none; }
-    .mt-crono-nom { display: flex; align-items: center; gap: 8px; font-weight: 600; }
-    .mt-crono-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; background: var(--propia-text-faint); }
-    .mt-crono-dot.mt-sem-verde { background: var(--propia-ok); }
-    .mt-crono-dot.mt-sem-amarillo { background: var(--propia-warn); }
-    .mt-crono-dot.mt-sem-rojo { background: var(--propia-danger); }
-    .mt-crono-muted { color: var(--propia-text-faint); }
-    .mt-crono-inp { width: 100%; box-sizing: border-box; border: 1px dashed var(--propia-border-input); border-radius: 7px; padding: 5px 8px; font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-bg-card); outline: none; font-family: inherit; }
-    .mt-crono-inp:focus { border-style: solid; border-color: var(--propia-brand, var(--propia-brand)); box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
-    .mt-crono-inp.is-busy { opacity: .5; }
-    @@media (max-width: 900px) { .mt-crono { overflow-x: auto; } .mt-crono-head, .mt-crono-row { min-width: 820px; } }
+    /* === Celdas propias de la tabla de Planes preventivos (reusa .mtp-* de la tabla de Programacion) === */
+    .mtp-tag { font-size: 10px; font-weight: 700; color: var(--propia-text-faint); background: var(--propia-bg-app); border-radius: 6px; padding: 1px 6px; margin-left: 4px; }
+    .mtp-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; background: var(--propia-text-faint); margin-right: 5px; vertical-align: middle; }
+    .mtp-dot.mt-sem-verde { background: var(--propia-ok); }
+    .mtp-dot.mt-sem-amarillo { background: var(--propia-warn); }
+    .mtp-dot.mt-sem-rojo { background: var(--propia-danger); }
+    .mtp-dot.mt-sem-negro { background: var(--propia-text-faint); }
+    .mtp-muted { color: var(--propia-text-faint); }
+    /* Edicion inline de celda existente (violeta = edicion activa; canon regla 9-B). */
+    .mtp-cell-inp { width: 100%; box-sizing: border-box; border: 1px solid var(--propia-border-input); border-radius: 6px; padding: 4px 7px; font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-bg-card); outline: none; font-family: inherit; }
+    .mtp-cell-inp:focus { border-color: var(--propia-brand); box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
+    .mtp-cell-inp:disabled { opacity: .55; }
+    .mtp-cell-inp.is-busy { opacity: .5; }
+    .mtp-estado-btn { border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-secondary); border-radius: 7px; font-size: 11.5px; font-weight: 700; padding: 5px 10px; cursor: pointer; font-family: inherit; }
+    .mtp-estado-btn:hover { border-color: var(--propia-brand); color: var(--propia-brand); }
+    .mtp-estado-btn.on { border-color: var(--propia-ok); color: var(--propia-ok); }
+    .mtp-nf-chk { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--propia-text-secondary); cursor: pointer; }
+    /* Fila recien creada (canon regla 10-E): verde + marca en la 1a celda hasta el proximo refresco. */
+    .mtp-row--nuevo { background: var(--propia-ok-soft); box-shadow: inset 3px 0 0 var(--propia-ok); }
 
     /* === Tabla de PROGRAMACIONES (patron vista-tabla; canon Tareas/Zonas) === */
     /* Botones de la barra (Agrupar / Campos): mismo aspecto que el resto de modulos. */
@@ -1081,31 +1066,8 @@ else if (_tab == "calendario")
     private ResumenMantenimientoDto? _resumen;
     private IntervencionDetalleDto? _fichaIntervencion;
 
+    // Busqueda server-side de activos (se conserva: la usan los selectores de activo de los modales/alta).
     private string _query = "";
-    // Filtro dinamico unico del tab Activos (componente compartido, patron Tareas).
-    private FiltroDinamico? _fdAct;
-
-    private List<FiltroDinamico.CampoDef> CamposFiltroActivos => new()
-    {
-        new() { Key = "nombre", Label = "Nombre", Kind = "texto" },
-        new() { Key = "tipo", Label = "Tipo", Kind = "sel",
-                Opciones = new() { ("Equipo", "Equipo"), ("ZonaComun", "Zona comun") } },
-        new() { Key = "semaforo", Label = "Semaforo", Kind = "sel",
-                Opciones = new() { ("Verde", "Verde - al dia"), ("Amarillo", "Amarillo - proximo"), ("Rojo", "Rojo - vencido"), ("Negro", "Negro - sin plan") } },
-        new() { Key = "categoria", Label = "Categoria", Kind = "texto" },
-        new() { Key = "abiertas", Label = "Interv. abiertas", Kind = "num" },
-    };
-
-    private IEnumerable<ActivoPanelDto> ActivosFiltrados() =>
-        (_activos ?? new()).Where(a => _fdAct?.Pasa(campo => campo switch
-        {
-            "nombre" => a.Nombre,
-            "tipo" => a.ActivoTipo.ToString(),
-            "semaforo" => a.Semaforo.ToString(),
-            "categoria" => a.Categoria ?? "",
-            "abiertas" => a.IntervencionesAbiertas.ToString(),
-            _ => ""
-        }) ?? true);
 
     private bool _showCrearIntervencion;
     private string _crearTipo = "Correctivo";
@@ -1223,8 +1185,7 @@ else if (_tab == "calendario")
             // El calendario combina intervenciones (fecha programada) y planes (proxima ejecucion).
             if (_tab is "intervenciones" or "calendario")
                 _intervenciones = await http.GetFromJsonAsync<List<IntervencionListaDto>>("/api/mantenimiento/intervenciones") ?? new();
-            // Los planes se usan tambien en la tabla de Activos (programacion inline), no solo en su pestana.
-            if (_tab is "planes" or "calendario" or "activos")
+            if (_tab is "planes" or "calendario")
                 _planes = await http.GetFromJsonAsync<List<PlanDto>>("/api/mantenimiento/planes") ?? new();
 
             // Programaciones (tab por defecto): una fila por regla; se juntan las de equipos y zonas.
@@ -1241,45 +1202,56 @@ else if (_tab == "calendario")
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
     }
 
-    // ===== Cronograma inline (tabla de activos) =====
-    private const string MtCronoGrid = "grid-template-columns: 2fr 1fr 1.2fr 1fr 1.3fr 1.7fr 1.3fr .8fr; gap: 10px; align-items: center;";
+    // ===== Planes preventivos en tabla (vista-tabla; alta inline + edicion inline de frecuencia) =====
+    private const string PlanGrid = "grid-template-columns: minmax(190px,1.6fr) minmax(150px,1.4fr) 150px minmax(150px,1.2fr) 130px minmax(110px,1fr) 116px 96px; gap: 10px; align-items: center;";
     private Guid? _planBusy;
+    private Guid? _planRecienCreado;
     private static string ActivoTipoLabel(TipoActivoMantenimiento t) => t == TipoActivoMantenimiento.ZonaComun ? "Zona comun" : "Equipo";
-    private PlanDto? PlanDe(ActivoPanelDto a) => _planes?.FirstOrDefault(p => p.Activo && p.ActivoTipo == a.ActivoTipo && p.ActivoId == a.ActivoId);
 
-    // Programacion inline: crea, actualiza o desactiva el plan preventivo del activo segun la frecuencia elegida.
-    private async Task SetFrecuenciaAsync(ActivoPanelDto a, PlanDto? plan, string? valor)
+    // Edicion inline de la frecuencia de un plan existente (PUT MERGE: conserva el resto de campos).
+    private async Task CambiarFrecuenciaPlanAsync(PlanDto plan, string? valor)
     {
         if (_planBusy is not null) return;
-        _planBusy = a.ActivoId;
+        if (!Enum.TryParse<FrecuenciaMantenimiento>(valor, out var freq) || freq == plan.Frecuencia) return;
+        _planBusy = plan.Id;
         try
         {
-            FrecuenciaMantenimiento? freq = Enum.TryParse<FrecuenciaMantenimiento>(valor, out var f) ? f : null;
-            if (freq is null)
-            {
-                if (plan is not null) await Auth().DeleteAsync($"/api/mantenimiento/planes/{plan.Id}");
-            }
-            else
-            {
-                var dias = freq == FrecuenciaMantenimiento.Personalizada ? (plan?.FrecuenciaDias ?? 30) : (int?)null;
-                if (plan is null)
-                {
-                    var req = new CrearPlanRequest(a.ActivoTipo, a.ActivoId, "Mantenimiento preventivo", null,
-                        freq.Value, dias, DateOnly.FromDateTime(DateTime.UtcNow.Date), null,
-                        DisparoPlanMantenimiento.ConConfirmacion, 7, false);
-                    await Auth().PostAsJsonAsync("/api/mantenimiento/planes", req);
-                }
-                else
-                {
-                    var req = new ActualizarPlanRequest(plan.Nombre, plan.Descripcion, freq.Value, dias,
-                        plan.ProveedorPreferidoId, plan.Disparo, plan.DiasAlertaPrevio, plan.GeneraNotifResidentes);
-                    await Auth().PutAsJsonAsync($"/api/mantenimiento/planes/{plan.Id}", req);
-                }
-            }
-            await CargarAsync();
+            var dias = freq == FrecuenciaMantenimiento.Personalizada ? (plan.FrecuenciaDias ?? 30) : (int?)null;
+            var req = new ActualizarPlanRequest(plan.Nombre, plan.Descripcion, freq, dias,
+                plan.ProveedorPreferidoId, plan.Disparo, plan.DiasAlertaPrevio, plan.GeneraNotifResidentes);
+            var r = await Auth().PutAsJsonAsync($"/api/mantenimiento/planes/{plan.Id}", req);
+            if (r.IsSuccessStatusCode) { _msg = "Frecuencia del plan actualizada."; _msgClass = "alert-success"; await CargarAsync(); }
+            else { _msg = await r.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
         finally { _planBusy = null; }
+    }
+
+    // Alta inline de un plan preventivo (sin modal). Valida minimos al clic y resalta la fila creada.
+    private async Task AltaPlanInlineAsync()
+    {
+        if (!Guid.TryParse(_planActivoId, out var activoId)) { _msg = "Elige un activo para el plan."; _msgClass = "alert-danger"; return; }
+        if (string.IsNullOrWhiteSpace(_planNombre)) { _msg = "El plan necesita un nombre."; _msgClass = "alert-danger"; return; }
+        if (_planFechaInicio is null) { _msg = "Indica la fecha de inicio del plan."; _msgClass = "alert-danger"; return; }
+        _busy = true; _msg = null;
+        try
+        {
+            var dias = _planFrecuencia == FrecuenciaMantenimiento.Personalizada ? (_planFrecuenciaDias ?? 30) : (int?)null;
+            var req = new CrearPlanRequest(
+                Enum.Parse<TipoActivoMantenimiento>(_planActivoTipo), activoId,
+                _planNombre!, null, _planFrecuencia, dias, _planFechaInicio.Value, null,
+                Enum.Parse<DisparoPlanMantenimiento>(_planDisparo), _planDiasAlerta, _planNotificarResidentes);
+            var resp = await Auth().PostAsJsonAsync("/api/mantenimiento/planes", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            try { var creado = await resp.Content.ReadFromJsonAsync<PlanDto>(); _planRecienCreado = creado?.Id; } catch { }
+            _msg = "Plan preventivo creado."; _msgClass = "alert-success";
+            // Limpiar la fila de alta (deja el tipo/disparo/dias como venian para altas seguidas).
+            _planNombre = null; _planActivoId = ""; _planFechaInicio = null;
+            _planFrecuencia = FrecuenciaMantenimiento.Mensual; _planFrecuenciaDias = null; _planNotificarResidentes = false;
+            await CargarAsync();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _busy = false; }
     }
 
     private async Task MostrarFicha(Guid id)
@@ -1434,14 +1406,6 @@ else if (_tab == "calendario")
         }
         finally { _busy = false; }
     }
-
-    private MarkupString RenderSemaforoIcon(SemaforoMantenimiento s) => s switch
-    {
-        SemaforoMantenimiento.Verde => new MarkupString("<span style='color:#22c55e;'>&#9679;</span>"),
-        SemaforoMantenimiento.Amarillo => new MarkupString("<span style='color:#f59e0b;'>&#9679;</span>"),
-        SemaforoMantenimiento.Rojo => new MarkupString("<span style='color:#ef4444;'>&#9679;</span>"),
-        _ => new MarkupString("<span style='color:#6b7280;'>&#9679;</span>")
-    };
 
     private MarkupString RenderTipoBadge(TipoIntervencionMantenimiento t) => t switch
     {
