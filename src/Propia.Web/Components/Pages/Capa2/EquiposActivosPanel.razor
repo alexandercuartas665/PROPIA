@@ -33,6 +33,10 @@
                 @(_impBusy ? "Cargando..." : "Cargar plantilla")
                 <InputFile OnChange="OnPlantillaImport" accept=".xlsx" style="display:none" disabled="@_impBusy" />
             </label>
+            <button type="button" class="ea-btn-ghost" @onclick="() => _cfgAbierto = true" title="Configurar campos dinamicos de los equipos">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                Configurar
+            </button>
         </div>
     }
 </div>
@@ -173,14 +177,16 @@ else
         var pagE = Math.Clamp(_pagina, 1, totalPagE);
         var pageE = listaE.Skip((pagE - 1) * _porPagina).Take(_porPagina);
         <div class="ea-list">
-            <div class="ea-list-head ea-listgrid">
-                <div></div><div>NOMBRE</div><div>CATEGORIA</div><div>TIPO</div><div>CANT</div><div>ESTADO</div><div></div>
+            <div class="ea-list-head ea-listgrid" style="@EaGridStyle">
+                <div></div><div>NOMBRE</div><div>CATEGORIA</div><div>TIPO</div><div>CANT</div><div>ESTADO</div>
+                @foreach (var cd in _camposDef) { <div title="Campo personalizado">@cd.Label</div> }
+                <div></div>
             </div>
             @foreach (var e in pageE)
             {
                 var eq = e;
                 @* Datos editables inline; el expansor (primera columna, se ve al hover) abre la ficha. *@
-                <div class="ea-list-row ea-listgrid">
+                <div class="ea-list-row ea-listgrid" style="@EaGridStyle">
                     <div class="ea-col-exp">
                         <button type="button" class="ea-exp-fijo" title="Abrir la ficha para editar" @onclick="() => AbrirFichaEquipoAsync(eq)">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -198,6 +204,37 @@ else
                     <select class="ea-cell ea-cell-est" @onchange="@(ev => GuardarEquipoInline(eq, "estado", ev))">
                         @foreach (var s in Enum.GetValues<EstadoEquipoActivo>()) { <option value="@s" selected="@(e.Estado == s)">@EstadoTextoCorto(s)</option> }
                     </select>
+                    @foreach (var cd in _camposDef)
+                    {
+                        var cdd = cd;
+                        var vv = ValorCampo(eq.Id, cd.Id);
+                        @switch (cd.Tipo)
+                        {
+                            case TipoCampoTablero.Seleccion:
+                                <select class="ea-cell" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())">
+                                    <option value="">-</option>
+                                    @foreach (var op in OpcionesDe(cd)) { <option value="@op" selected="@(vv == op)">@op</option> }
+                                </select>
+                                break;
+                            case TipoCampoTablero.Numero:
+                            case TipoCampoTablero.Moneda:
+                                <input class="ea-cell" type="number" step="any" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())" />
+                                break;
+                            case TipoCampoTablero.Fecha:
+                                <input class="ea-cell" type="date" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())" />
+                                break;
+                            case TipoCampoTablero.Booleano:
+                                <select class="ea-cell" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())">
+                                    <option value="">-</option>
+                                    <option value="Si" selected="@(vv == "Si")">Si</option>
+                                    <option value="No" selected="@(vv == "No")">No</option>
+                                </select>
+                                break;
+                            default:
+                                <input class="ea-cell" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())" title="@cd.Label" />
+                                break;
+                        }
+                    }
                     <div class="ea-list-act">
                         <button type="button" class="ea-row-del" @onclick="() => EliminarEquipoAsync(eq.Id, eq.Nombre)" title="Eliminar">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
@@ -206,7 +243,7 @@ else
                 </div>
             }
             @* @@key limpia la fila al crear; @@oninput SIN value= evita perder pulsaciones. *@
-            <div class="ea-list-newrow ea-listgrid" @key="_nonce">
+            <div class="ea-list-newrow ea-listgrid" style="@EaGridStyle" @key="_nonce">
                 <div class="ea-col-exp">
                     <button type="button" class="ea-exp-fijo" tabindex="-1" title="Abrir el modal de creacion"
                             @onclick="AbrirGestionarEquiposAsync" disabled="@_busy">
@@ -224,6 +261,35 @@ else
                 </select>
                 <input type="number" min="1" class="ea-row-inp" @bind="_draft.Cantidad" disabled="@(_draft.Tipo == TipoElemento.Equipo)" />
                 <div class="ea-list-c">Operativo</div>
+                @foreach (var cd in _camposDef)
+                {
+                    var cdd = cd;
+                    var val = _nuCampos.GetValueOrDefault(cd.Id);
+                    @switch (cd.Tipo)
+                    {
+                        case TipoCampoTablero.Seleccion:
+                            <select class="ea-row-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
+                                <option value="">- elegir -</option>
+                                @foreach (var op in OpcionesDe(cd)) { <option value="@op">@op</option> }
+                            </select>
+                            break;
+                        case TipoCampoTablero.Numero:
+                        case TipoCampoTablero.Moneda:
+                            <input class="ea-row-inp" type="number" step="any" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cd.Label" />
+                            break;
+                        case TipoCampoTablero.Fecha:
+                            <input class="ea-row-inp" type="date" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" />
+                            break;
+                        case TipoCampoTablero.Booleano:
+                            <select class="ea-row-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
+                                <option value="">- elegir -</option><option value="Si">Si</option><option value="No">No</option>
+                            </select>
+                            break;
+                        default:
+                            <input class="ea-row-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cd.Label" />
+                            break;
+                    }
+                }
                 <div class="ea-list-act">
                     <button type="button" class="ea-row-add" @onclick="CrearDesdeDraftAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_draft.Nombre))">+ Agregar</button>
                 </div>
@@ -245,6 +311,76 @@ else
     }
 
     @if (!string.IsNullOrEmpty(_msg)) { <div class="ea-msg @(_msgOk ? "ok" : "bad")">@_msg</div> }
+}
+
+@if (_cfgAbierto)
+{
+    <div class="ea-cfg-back" @onclick="() => _cfgAbierto = false">
+        <div class="ea-cfg-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+            <div class="ea-cfg-head">
+                <div>
+                    <div class="ea-cfg-title">Configurar campos de equipos</div>
+                    <div class="ea-cfg-sub">Campos dinamicos que apareceran como columnas en la tabla y en la ficha de cada equipo.</div>
+                </div>
+                <button class="ea-cfg-x" type="button" @onclick="() => _cfgAbierto = false" aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="ea-cfg-body">
+                @if (_camposDef.Count == 0) { <div class="ea-cfg-empty">Aun no hay campos. Crea el primero abajo.</div> }
+                else
+                {
+                    <div class="ea-cfg-list">
+                        @foreach (var d in _camposDef)
+                        {
+                            var dd = d;
+                            <div class="ea-cfg-item">
+                                <div class="ea-cfg-item-main">
+                                    <span class="ea-cfg-item-lbl">@d.Label</span>
+                                    <span class="ea-cfg-item-tipo">@TipoLabelCampo(d.Tipo)</span>
+                                    @if (d.Tipo == TipoCampoTablero.Seleccion && !string.IsNullOrWhiteSpace(d.Opciones)) { <span class="ea-cfg-item-op">@string.Join(", ", OpcionesDe(d))</span> }
+                                </div>
+                                <div class="ea-cfg-item-act">
+                                    <button class="ea-btn-ghost" type="button" @onclick="() => CfgEditar(dd)" disabled="@_cfgBusy">Editar</button>
+                                    <button class="ea-btn-ghost" type="button" @onclick="() => CfgEliminarAsync(dd)" disabled="@_cfgBusy">Eliminar</button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+                <div class="ea-cfg-form">
+                    <div class="ea-cfg-form-title">@(_cfgEditId is null ? "Nuevo campo" : "Editar campo")</div>
+                    <div class="ea-cfg-form-grid">
+                        <div>
+                            <label class="ea-cfg-flbl">Nombre</label>
+                            <input class="ea-row-inp" @bind="_cfgLabel" @bind:event="oninput" placeholder="Ej. N de serie, Marca" />
+                        </div>
+                        <div>
+                            <label class="ea-cfg-flbl">Tipo</label>
+                            <select class="ea-row-inp" @bind="_cfgTipo">
+                                <option value="@TipoCampoTablero.Texto">Texto</option>
+                                <option value="@TipoCampoTablero.AreaTexto">Texto largo</option>
+                                <option value="@TipoCampoTablero.Numero">Numero</option>
+                                <option value="@TipoCampoTablero.Fecha">Fecha</option>
+                                <option value="@TipoCampoTablero.Seleccion">Lista de opciones</option>
+                                <option value="@TipoCampoTablero.Booleano">Si / No</option>
+                            </select>
+                        </div>
+                    </div>
+                    @if (_cfgTipo == TipoCampoTablero.Seleccion)
+                    {
+                        <div style="margin-top:8px;">
+                            <label class="ea-cfg-flbl">Opciones (una por linea)</label>
+                            <textarea class="ea-row-inp" rows="4" @bind="_cfgOpciones" @bind:event="oninput"></textarea>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(_cfgMsg)) { <div class="ea-cfg-msg">@_cfgMsg</div> }
+                    <div class="ea-cfg-form-foot">
+                        @if (_cfgEditId is not null) { <button class="ea-btn-ghost" type="button" @onclick="CfgReset" disabled="@_cfgBusy">Cancelar</button> }
+                        <button class="propia-btn-brand" type="button" @onclick="CfgGuardarAsync" disabled="@(_cfgBusy || string.IsNullOrWhiteSpace(_cfgLabel))">@(_cfgBusy ? "Guardando..." : (_cfgEditId is null ? "Crear campo" : "Guardar"))</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 }
 
 @* ModalHost debe declararse en CADA pagina: IModalService es scoped por circuito. *@
@@ -394,9 +530,94 @@ else
             }
             resp.EnsureSuccessStatusCode();
             _equipos = await resp.Content.ReadFromJsonAsync<List<EquipoActivoDto>>() ?? new();
+            try { _camposDef = await Auth().GetFromJsonAsync<List<EquipoCampoDefinicionDto>>("/api/mi-copropiedad/equipos-campos") ?? new(); } catch { _camposDef = new(); }
+            try
+            {
+                var flat = await Auth().GetFromJsonAsync<List<EquipoCampoValorFlatDto>>("/api/mi-copropiedad/equipos-campos-valores") ?? new();
+                _camposValores = flat.GroupBy(v => v.EquipoActivoId).ToDictionary(g => g.Key, g => g.ToDictionary(x => x.DefinicionId, x => x.Valor));
+            }
+            catch { _camposValores = new(); }
             _loadError = null;
         }
         catch (Exception ex) { _loadError = ex.Message; }
+    }
+
+    // ===== Campos dinamicos (columnas + config) =====
+    private List<EquipoCampoDefinicionDto> _camposDef = new();
+    private Dictionary<Guid, Dictionary<Guid, string?>> _camposValores = new();
+    private readonly Dictionary<Guid, string?> _nuCampos = new();
+    private string? ValorCampo(Guid equipoId, Guid defId) => _camposValores.TryGetValue(equipoId, out var m) && m.TryGetValue(defId, out var v) ? v : null;
+
+    private async Task GuardarCampoValorEquipo(EquipoActivoDto eq, EquipoCampoDefinicionDto cd, string? valor)
+    {
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos/{eq.Id}/campos/{cd.Id}", new SetCampoValorRequest(valor));
+            if (resp.IsSuccessStatusCode)
+            {
+                if (!_camposValores.TryGetValue(eq.Id, out var m)) { m = new(); _camposValores[eq.Id] = m; }
+                m[cd.Id] = string.IsNullOrWhiteSpace(valor) ? null : valor;
+            }
+        }
+        catch { }
+    }
+    private string EaGridStyle => "grid-template-columns: 34px 2fr 1.2fr 1fr .6fr 1.1fr"
+        + (_camposDef.Count == 0 ? "" : " " + string.Join(" ", _camposDef.Select(_ => "minmax(120px,150px)"))) + " 60px";
+    private static string[] OpcionesDe(EquipoCampoDefinicionDto d) => string.IsNullOrWhiteSpace(d.Opciones)
+        ? System.Array.Empty<string>() : d.Opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    private static string TipoLabelCampo(TipoCampoTablero t) => t switch
+    { TipoCampoTablero.AreaTexto => "Texto largo", TipoCampoTablero.Numero => "Numero", TipoCampoTablero.Fecha => "Fecha",
+      TipoCampoTablero.Seleccion => "Lista", TipoCampoTablero.Booleano => "Si / No", _ => "Texto" };
+
+    // Config modal state
+    private bool _cfgAbierto;
+    private bool _cfgBusy;
+    private string? _cfgMsg;
+    private Guid? _cfgEditId;
+    private string _cfgLabel = "";
+    private TipoCampoTablero _cfgTipo = TipoCampoTablero.Texto;
+    private string _cfgOpciones = "";
+
+    private void CfgReset() { _cfgEditId = null; _cfgLabel = ""; _cfgTipo = TipoCampoTablero.Texto; _cfgOpciones = ""; _cfgMsg = null; }
+    private void CfgEditar(EquipoCampoDefinicionDto d) { _cfgEditId = d.Id; _cfgLabel = d.Label; _cfgTipo = d.Tipo; _cfgOpciones = d.Opciones ?? ""; _cfgMsg = null; }
+
+    private async Task CfgGuardarAsync()
+    {
+        if (_cfgBusy) return;
+        if (string.IsNullOrWhiteSpace(_cfgLabel)) { _cfgMsg = "El nombre del campo es obligatorio."; return; }
+        if (_cfgTipo == TipoCampoTablero.Seleccion && string.IsNullOrWhiteSpace(_cfgOpciones)) { _cfgMsg = "Un campo Lista necesita al menos una opcion (una por linea)."; return; }
+        _cfgBusy = true; _cfgMsg = null;
+        try
+        {
+            var opciones = _cfgTipo == TipoCampoTablero.Seleccion ? _cfgOpciones : null;
+            HttpResponseMessage resp;
+            if (_cfgEditId is Guid id)
+            {
+                var orden = _camposDef.FirstOrDefault(c => c.Id == id)?.Orden ?? 0;
+                resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos-campos/{id}", new ActualizarCampoDefinicionRequest(_cfgLabel.Trim(), _cfgTipo, opciones, orden));
+            }
+            else resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/equipos-campos", new CrearCampoDefinicionRequest(_cfgLabel.Trim(), _cfgTipo, opciones));
+            if (!resp.IsSuccessStatusCode) { _cfgMsg = "No se pudo guardar el campo."; return; }
+            _camposDef = await Auth().GetFromJsonAsync<List<EquipoCampoDefinicionDto>>("/api/mi-copropiedad/equipos-campos") ?? new();
+            CfgReset();
+        }
+        catch (Exception ex) { _cfgMsg = "Error: " + ex.Message; }
+        finally { _cfgBusy = false; }
+    }
+
+    private async Task CfgEliminarAsync(EquipoCampoDefinicionDto d)
+    {
+        if (_cfgBusy) return;
+        _cfgBusy = true; _cfgMsg = null;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/equipos-campos/{d.Id}");
+            if (!resp.IsSuccessStatusCode) { _cfgMsg = "No se pudo eliminar."; return; }
+            if (_cfgEditId == d.Id) CfgReset();
+            _camposDef = await Auth().GetFromJsonAsync<List<EquipoCampoDefinicionDto>>("/api/mi-copropiedad/equipos-campos") ?? new();
+        }
+        catch (Exception ex) { _cfgMsg = "Error: " + ex.Message; }
+        finally { _cfgBusy = false; }
     }
 
     // ---- Plantilla Excel (descargar / cargar con upsert + campos dinamicos) ----
@@ -516,6 +737,20 @@ else
             var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/equipos", req);
             if (resp.IsSuccessStatusCode)
             {
+                // Persistir valores de campos dinamicos capturados en la fila de alta.
+                if (_nuCampos.Count > 0)
+                {
+                    try
+                    {
+                        var creado = await resp.Content.ReadFromJsonAsync<EquipoActivoDto>();
+                        if (creado is not null)
+                            foreach (var kv in _nuCampos)
+                                if (!string.IsNullOrWhiteSpace(kv.Value))
+                                    await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos/{creado.Id}/campos/{kv.Key}", new SetCampoValorRequest(kv.Value));
+                    }
+                    catch { }
+                    _nuCampos.Clear();
+                }
                 _draft.Reset(); _reveal = 0; _composerOpen = false; _nonce++; _focusPending = true;
                 await CargarAsync();
                 Msg("Equipo/activo creado. Haz clic en el para completar la ficha.", true);
@@ -705,4 +940,28 @@ else
         .ea-list { overflow-x: auto; }
         .ea-listgrid { min-width: 640px; }
     }
+
+    /* Campos dinamicos: celda de valor + modal Configurar */
+    .ea-td-campo { font-size: 12.5px; color: var(--propia-text-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ea-cfg-back { position: fixed; inset: 0; background: rgba(20,26,38,.45); display: flex; align-items: center; justify-content: center; z-index: 3000; padding: 20px; }
+    .ea-cfg-modal { background: var(--propia-bg-card); border-radius: 14px; width: min(680px, 96vw); max-height: 88vh; overflow: auto; box-shadow: 0 20px 60px rgba(20,30,50,.3); }
+    .ea-cfg-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 20px 12px; border-bottom: 1px solid var(--propia-border-divider); }
+    .ea-cfg-title { font-size: 16px; font-weight: 700; color: var(--propia-text-h1); }
+    .ea-cfg-sub { font-size: 12.5px; color: var(--propia-text-muted); margin-top: 2px; }
+    .ea-cfg-x { border: none; background: none; font-size: 24px; line-height: 1; color: var(--propia-text-faint); cursor: pointer; }
+    .ea-cfg-body { padding: 16px 20px 20px; }
+    .ea-cfg-empty { font-size: 13px; color: var(--propia-text-muted); padding: 6px 2px 14px; }
+    .ea-cfg-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
+    .ea-cfg-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border: 1px solid var(--propia-border-card); border-radius: 9px; }
+    .ea-cfg-item-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+    .ea-cfg-item-lbl { font-size: 13px; font-weight: 600; color: var(--propia-text-body); }
+    .ea-cfg-item-tipo { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--propia-brand, var(--propia-brand)); border: 1px solid var(--propia-border-card); border-radius: 6px; padding: 2px 7px; }
+    .ea-cfg-item-op { font-size: 12px; color: var(--propia-text-muted); }
+    .ea-cfg-item-act { display: flex; gap: 6px; flex: 0 0 auto; }
+    .ea-cfg-form { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--propia-border-divider); }
+    .ea-cfg-form-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--propia-text-secondary); margin-bottom: 10px; }
+    .ea-cfg-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .ea-cfg-flbl { font-size: 10.5px; font-weight: 700; letter-spacing: .3px; color: var(--propia-text-faint); text-transform: uppercase; }
+    .ea-cfg-form-foot { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+    .ea-cfg-msg { margin-top: 10px; font-size: 12.5px; color: var(--propia-danger, var(--propia-text-body)); }
 </style>
