@@ -15,14 +15,7 @@
 <div class="mt-head">
     <div>
         <h1 class="mt-title">Mantenimiento y activos</h1>
-        <p class="mt-sub">Planes preventivos, intervenciones correctivas y bitacora de equipos.</p>
-    </div>
-    <div class="mt-head-actions">
-        <button class="mt-btn-ghost" type="button" @onclick="() => _showCrearPlan = true">+ Plan preventivo</button>
-        <button class="mt-btn-brand" type="button" @onclick="() => _showCrearIntervencion = true">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-            Nueva intervencion
-        </button>
+        <p class="mt-sub">Programacion de mantenimientos de equipos y zonas comunes.</p>
     </div>
 </div>
 
@@ -43,8 +36,6 @@
 @* Tabs estilo prototipo (pills brand) *@
 <div class="mt-tabs">
     <button class="mt-tab @(_tab == "prog" ? "mt-tab--on" : "")" type="button" @onclick='() => SwitchTab("prog")'>Programacion</button>
-    <button class="mt-tab @(_tab == "intervenciones" ? "mt-tab--on" : "")" type="button" @onclick='() => SwitchTab("intervenciones")'>Intervenciones</button>
-    <button class="mt-tab @(_tab == "planes" ? "mt-tab--on" : "")" type="button" @onclick='() => SwitchTab("planes")'>Planes preventivos</button>
     <button class="mt-tab @(_tab == "calendario" ? "mt-tab--on" : "")" type="button" @onclick='() => SwitchTab("calendario")'>Calendario</button>
 </div>
 
@@ -404,37 +395,47 @@ else if (_tab == "planes")
 }
 else if (_tab == "calendario")
 {
-    @* Calendario mensual de programaciones (estilo Reservas/PQRSD): intervenciones por fecha
-       programada y planes preventivos por su proxima ejecucion. *@
-    <div class="mt-cal">
-        <div class="mt-cal-bar">
-            <button class="mt-cal-nav" type="button" @onclick="() => MtCalMover(-1)">&#8249;</button>
-            <span class="mt-cal-title">@MtCalTitulo</span>
-            <button class="mt-cal-nav" type="button" @onclick="() => MtCalMover(1)">&#8250;</button>
-            <button class="mt-cal-hoy" type="button" @onclick="MtCalHoy">Hoy</button>
-            <span class="mt-cal-hint">Intervenciones por fecha programada &middot; planes preventivos por proxima ejecucion.</span>
-        </div>
-        <div class="mt-cal-head">
-            @foreach (var dw in new[] { "LUN", "MAR", "MIE", "JUE", "VIE", "SAB", "DOM" }) { <div class="mt-cal-dow">@dw</div> }
-        </div>
-        <div class="mt-cal-grid">
-            @foreach (var celda in MtCalCeldas())
-            {
-                <div class="mt-cal-cell @(celda.EsHoy ? "mt-cal-cell--hoy" : "") @(celda.EsMes ? "" : "mt-cal-cell--off")">
-                    <div class="mt-cal-daynum">@celda.Dia</div>
-                    @foreach (var ev in celda.Items.Take(3))
-                    {
-                        var evLocal = ev;
-                        <div class="mt-cal-ev @ev.Clase" title="@ev.Titulo"
-                             @onclick="async () => { if (evLocal.IntervencionId is Guid iid) await MostrarFicha(iid); }">
-                            @ev.Texto
-                        </div>
-                    }
-                    @if (celda.Items.Count > 3) { <div class="mt-cal-more">+@(celda.Items.Count - 3) mas</div> }
+    @* Calendario de PROGRAMACIONES: cada regla se pinta en sus fechas de ejecucion (proxima +
+       recurrencias segun la periodicidad) dentro de la vista. Vista Mes o Semana. *@
+    @if (_progs is null)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    }
+    else
+    {
+        <div class="mt-cal">
+            <div class="mt-cal-bar">
+                <button class="mt-cal-nav" type="button" @onclick="() => MtCalMover(-1)">&#8249;</button>
+                <span class="mt-cal-title">@MtCalTitulo</span>
+                <button class="mt-cal-nav" type="button" @onclick="() => MtCalMover(1)">&#8250;</button>
+                <button class="mt-cal-hoy" type="button" @onclick="MtCalHoy">Hoy</button>
+                <div class="mt-cal-vistas">
+                    <button type="button" class="mt-cal-vbtn @(_calVista == "mes" ? "on" : "")" @onclick='() => _calVista = "mes"'>Mes</button>
+                    <button type="button" class="mt-cal-vbtn @(_calVista == "semana" ? "on" : "")" @onclick='() => _calVista = "semana"'>Semana</button>
                 </div>
-            }
+                <span class="mt-cal-hint">Cada programacion se pinta en sus fechas de ejecucion. Clic para editarla.</span>
+            </div>
+            <div class="mt-cal-head">
+                @foreach (var dw in new[] { "LUN", "MAR", "MIE", "JUE", "VIE", "SAB", "DOM" }) { <div class="mt-cal-dow">@dw</div> }
+            </div>
+            <div class="mt-cal-grid @(_calVista == "semana" ? "mt-cal-grid--wk" : "")">
+                @foreach (var celda in MtCalCeldas())
+                {
+                    <div class="mt-cal-cell @(celda.EsHoy ? "mt-cal-cell--hoy" : "") @(celda.EsMes ? "" : "mt-cal-cell--off")">
+                        <div class="mt-cal-daynum">@celda.Dia</div>
+                        @foreach (var ev in celda.Items.Take(_calVista == "semana" ? 20 : 3))
+                        {
+                            var evLocal = ev;
+                            <div class="mt-cal-ev @ev.Clase" title="@ev.Titulo" @onclick="() => AbrirEditarProgPorIdAsync(evLocal.ProgId)">
+                                @ev.Texto
+                            </div>
+                        }
+                        @if (_calVista == "mes" && celda.Items.Count > 3) { <div class="mt-cal-more">+@(celda.Items.Count - 3) mas</div> }
+                    </div>
+                }
+            </div>
         </div>
-    </div>
+    }
 }
 
 @* ===== Modal Crear Intervencion ===== *@
@@ -830,7 +831,13 @@ else if (_tab == "calendario")
     .mt-cal-nav { font-size: 18px; border: 1px solid var(--propia-border-card); border-radius: 8px; width: 30px; height: 30px; background: var(--propia-bg-card); color: var(--propia-text-secondary); cursor: pointer; }
     .mt-cal-title { font-size: 15px; font-weight: 800; color: var(--propia-text-h1); min-width: 150px; text-align: center; }
     .mt-cal-hoy { padding: 6px 12px; border: 1px solid var(--propia-border-card); border-radius: 8px; background: var(--propia-bg-card); color: var(--propia-text-secondary); font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    /* Toggle de vista Mes / Semana */
+    .mt-cal-vistas { display: inline-flex; border: 1px solid var(--propia-border-card); border-radius: 8px; overflow: hidden; }
+    .mt-cal-vbtn { padding: 6px 13px; border: 0; background: var(--propia-bg-card); color: var(--propia-text-secondary); font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .mt-cal-vbtn.on { background: var(--propia-brand); color: var(--propia-text-inverse); }
     .mt-cal-hint { margin-left: auto; font-size: 11.5px; color: var(--propia-text-faint); }
+    /* Vista Semana: una sola fila de 7 dias, celdas altas para ver muchas ejecuciones. */
+    .mt-cal-grid--wk .mt-cal-cell { min-height: 440px; }
     .mt-cal-head { display: grid; grid-template-columns: repeat(7, 1fr); background: var(--propia-bg-table-head); border-bottom: 1px solid var(--propia-border-divider); }
     .mt-cal-dow { padding: 8px 10px; font-size: 10px; font-weight: 800; letter-spacing: .4px; color: var(--propia-text-faint); }
     .mt-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: var(--propia-border-divider); }
@@ -1314,51 +1321,104 @@ else if (_tab == "calendario")
         await CargarAsync();
     }
 
-    // ---------- Calendario de programaciones (estilo Reservas/PQRSD) ----------
-    private int _mtCalYear; private int _mtCalMonth; private bool _mtCalInit;
-    private void MtCalEnsure() { if (!_mtCalInit) { var t = DateTime.Today; _mtCalYear = t.Year; _mtCalMonth = t.Month; _mtCalInit = true; } }
-    private string MtCalTitulo { get { MtCalEnsure(); var s = new DateTime(_mtCalYear, _mtCalMonth, 1).ToString("MMMM yyyy", new System.Globalization.CultureInfo("es-CO")); return char.ToUpper(s[0]) + s.Substring(1); } }
-    private void MtCalMover(int d) { MtCalEnsure(); var nf = new DateTime(_mtCalYear, _mtCalMonth, 1).AddMonths(d); _mtCalYear = nf.Year; _mtCalMonth = nf.Month; }
-    private void MtCalHoy() { var t = DateTime.Today; _mtCalYear = t.Year; _mtCalMonth = t.Month; _mtCalInit = true; }
+    // ---------- Calendario de programaciones (vista Mes / Semana) ----------
+    private string _calVista = "mes";                 // "mes" | "semana"
+    private DateTime _calAnchor = DateTime.Today;      // fecha de referencia de la vista
 
-    private sealed record MtCalItem(Guid? IntervencionId, string Texto, string Clase, string Titulo);
+    private string MtCalTitulo
+    {
+        get
+        {
+            var cul = new System.Globalization.CultureInfo("es-CO");
+            if (_calVista == "semana")
+            {
+                var (ini, fin) = SemanaRango(_calAnchor);
+                return $"{ini:dd MMM} - {fin:dd MMM yyyy}".ToLower(cul);
+            }
+            var s = new DateTime(_calAnchor.Year, _calAnchor.Month, 1).ToString("MMMM yyyy", cul);
+            return char.ToUpper(s[0]) + s.Substring(1);
+        }
+    }
+
+    private void MtCalMover(int d) => _calAnchor = _calVista == "semana" ? _calAnchor.AddDays(7 * d) : _calAnchor.AddMonths(d);
+    private void MtCalHoy() => _calAnchor = DateTime.Today;
+
+    // El lunes de la semana que contiene 'd', y el domingo.
+    private static (DateTime ini, DateTime fin) SemanaRango(DateTime d)
+    {
+        int off = ((int)d.DayOfWeek + 6) % 7; // lunes = inicio
+        var ini = d.Date.AddDays(-off);
+        return (ini, ini.AddDays(6));
+    }
+
+    private sealed record MtCalItem(Guid ProgId, string Texto, string Clase, string Titulo);
     private sealed record MtCalCelda(int Dia, bool EsMes, bool EsHoy, List<MtCalItem> Items);
+
+    // Avanza una fecha un paso segun la periodicidad (para proyectar recurrencias en la vista).
+    private static DateOnly PasoPeriodicidad(DateOnly f, PeriodicidadProgramacion p) => p switch
+    {
+        PeriodicidadProgramacion.Diaria => f.AddDays(1),
+        PeriodicidadProgramacion.Semanal => f.AddDays(7),
+        PeriodicidadProgramacion.Quincenal => f.AddDays(15),
+        PeriodicidadProgramacion.Mensual => f.AddMonths(1),
+        PeriodicidadProgramacion.Bimestral => f.AddMonths(2),
+        PeriodicidadProgramacion.Trimestral => f.AddMonths(3),
+        PeriodicidadProgramacion.Semestral => f.AddMonths(6),
+        PeriodicidadProgramacion.Anual => f.AddYears(1),
+        _ => DateOnly.MaxValue   // Unica: sin recurrencia
+    };
 
     private List<MtCalCelda> MtCalCeldas()
     {
-        MtCalEnsure();
-        var primero = new DateTime(_mtCalYear, _mtCalMonth, 1);
-        int offset = ((int)primero.DayOfWeek + 6) % 7; // la semana inicia el lunes
-        var inicio = primero.AddDays(-offset);
+        // Ventana visible: 6 semanas (mes) o 1 semana (semana), empezando en lunes.
+        DateTime inicio; int celdas;
+        if (_calVista == "semana") { inicio = SemanaRango(_calAnchor).ini; celdas = 7; }
+        else
+        {
+            var primero = new DateTime(_calAnchor.Year, _calAnchor.Month, 1);
+            inicio = primero.AddDays(-(((int)primero.DayOfWeek + 6) % 7));
+            celdas = 42;
+        }
+        var winIni = DateOnly.FromDateTime(inicio);
+        var winFin = DateOnly.FromDateTime(inicio.AddDays(celdas - 1));
         var hoy = DateOnly.FromDateTime(DateTime.Today);
 
-        // Intervenciones con fecha programada (excluye canceladas) + planes activos por proxima ejecucion.
         var porDia = new Dictionary<DateOnly, List<MtCalItem>>();
         void Add(DateOnly f, MtCalItem it) { if (!porDia.TryGetValue(f, out var l)) porDia[f] = l = new(); l.Add(it); }
 
-        foreach (var it in (_intervenciones ?? new()).Where(x => x.FechaProgramada is not null && x.Estado != EstadoIntervencion.Cancelada))
+        foreach (var p in (_progs ?? new()).Where(x => x.Activa))
         {
-            var clase = it.Estado == EstadoIntervencion.Completada ? "mt-cal-ev--ok"
-                      : it.Vencida ? "mt-cal-ev--err" : "";
-            Add(it.FechaProgramada!.Value, new MtCalItem(it.Id, $"{it.Codigo} {it.ActivoNombre}", clase,
-                $"{it.Codigo} - {it.Titulo} ({it.ActivoNombre}) - {it.Estado}"));
-        }
-        foreach (var p in (_planes ?? new()).Where(x => x.Activo))
-        {
-            var clase = p.ProximaEjecucion < hoy ? "mt-cal-ev--err" : "mt-cal-ev--plan";
-            Add(p.ProximaEjecucion, new MtCalItem(null, $"Plan: {p.Nombre}", clase,
-                $"Plan preventivo - {p.Nombre} ({p.ActivoNombre}) - {p.Frecuencia}"));
+            var clase = !p.Activa ? "" : (p.FechaProximaEjecucion < hoy ? "mt-cal-ev--err" : "mt-cal-ev--plan");
+            var texto = string.IsNullOrWhiteSpace(p.OrigenReferencia) ? p.Titulo : $"{p.OrigenReferencia}: {p.Titulo}";
+            var titulo = $"{p.Titulo} ({p.OrigenReferencia}) - {PeriodicidadProgLabel(p.Periodicidad)}";
+            // Proyecta ocurrencias desde la proxima ejecucion hasta el fin de la ventana (o FechaFin).
+            var f = p.FechaProximaEjecucion;
+            int guard = 0;
+            while (f <= winFin && guard++ < 400)
+            {
+                if (p.FechaFin is { } ff && f > ff) break;
+                if (f >= winIni) Add(f, new MtCalItem(p.Id, texto, clase, titulo));
+                var next = PasoPeriodicidad(f, p.Periodicidad);
+                if (next == DateOnly.MaxValue || next <= f) break; // Unica o sin avance
+                f = next;
+            }
         }
 
-        var res = new List<MtCalCelda>(42);
-        for (int i = 0; i < 42; i++)
+        var res = new List<MtCalCelda>(celdas);
+        for (int i = 0; i < celdas; i++)
         {
             var f = inicio.AddDays(i);
             var fd = DateOnly.FromDateTime(f);
-            res.Add(new MtCalCelda(f.Day, f.Month == _mtCalMonth, fd == hoy,
-                porDia.GetValueOrDefault(fd, new List<MtCalItem>())));
+            var esMes = _calVista == "semana" || f.Month == _calAnchor.Month;
+            res.Add(new MtCalCelda(f.Day, esMes, fd == hoy, porDia.GetValueOrDefault(fd, new List<MtCalItem>())));
         }
         return res;
+    }
+
+    private async Task AbrirEditarProgPorIdAsync(Guid id)
+    {
+        var p = _progs?.FirstOrDefault(x => x.Id == id);
+        if (p is not null) await AbrirEditarProgAsync(p);
     }
 
     private async Task CargarAsync()
@@ -1373,16 +1433,17 @@ else if (_tab == "calendario")
             if (!string.IsNullOrEmpty(_query)) activosUrl += $"?q={Uri.EscapeDataString(_query)}";
             _activos = await http.GetFromJsonAsync<List<ActivoPanelDto>>(activosUrl) ?? new();
 
-            // El calendario combina intervenciones (fecha programada) y planes (proxima ejecucion).
-            if (_tab is "intervenciones" or "calendario")
+            // Los tabs Intervenciones/Planes se retiraron del modulo; su codigo queda pero sin
+            // boton. Se cargan solo si por algun flujo se activara ese tab (defensivo).
+            if (_tab == "intervenciones")
                 _intervenciones = await http.GetFromJsonAsync<List<IntervencionListaDto>>("/api/mantenimiento/intervenciones") ?? new();
-            if (_tab is "planes" or "calendario")
+            if (_tab == "planes")
                 _planes = await http.GetFromJsonAsync<List<PlanDto>>("/api/mantenimiento/planes") ?? new();
 
-            // Programaciones (tab por defecto): una fila por regla; se juntan las de equipos y zonas.
-            if (_tab == "prog")
+            // Programaciones: alimentan tanto la tabla (tab "prog") como el calendario ("calendario").
+            if (_tab is "prog" or "calendario")
             {
-                // Tableros/personas para los dropdowns inline y el modal (se cargan una vez).
+                // Tableros/personas/contratos para los dropdowns inline y el modal (se cargan una vez).
                 await CargarOpcionesProgAsync();
                 var eq = await http.GetFromJsonAsync<List<ProgramacionTareaDto>>("/api/programaciones?moduloOrigen=equipo") ?? new();
                 var zn = await http.GetFromJsonAsync<List<ProgramacionTareaDto>>("/api/programaciones?moduloOrigen=zona") ?? new();

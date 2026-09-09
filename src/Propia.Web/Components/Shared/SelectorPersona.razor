@@ -179,7 +179,6 @@
     private ElementReference _anchorRef;
     private ElementReference _popRef;
     private string? _popStyle;
-    private bool _floatHelperReady;
 
     private string _q = "";
     private List<PersonaCandidatoDto> _candidatos = new();
@@ -216,19 +215,8 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!Flotante) return;
-        if (!_floatHelperReady)
-        {
-            try
-            {
-                // Calcula posicion fixed anclada al input, con FLIP hacia arriba si no cabe abajo,
-                // clamp horizontal al viewport y max-height para nunca salirse de pantalla.
-                await JS.InvokeVoidAsync("eval",
-                    "window.propiaFloatPos = window.propiaFloatPos || function(a, p){ if(!a) return null; var r = a.getBoundingClientRect(); var vw = window.innerWidth, vh = window.innerHeight, m = 8, gap = 4; var w = Math.max(r.width, 300); var left = r.left; if (left + w > vw - m) left = Math.max(m, vw - w - m); var ph = p ? p.scrollHeight : 0; var below = vh - r.bottom - m, above = r.top - m; var up = ph > below && above > below; var top, maxH; if (up) { maxH = above; top = Math.max(m, r.top - gap - Math.min(ph, maxH)); } else { maxH = below; top = r.bottom + gap; } return [Math.round(top), Math.round(left), Math.round(w), Math.round(maxH)]; };");
-                _floatHelperReady = true;
-            }
-            catch { return; }
-        }
-
+        // El helper window.propiaFloatPos vive en js/propia-ui.js (no via eval: la CSP del sitio
+        // no permite 'unsafe-eval', que antes dejaba el panel en flujo y deformaba la celda).
         if (Seleccionada is null && _q.Length > 0)
         {
             try
@@ -459,7 +447,9 @@
     /* Panel de resultados. En modo flotante (Flotante=true) se posiciona fixed via _popStyle y se
        presenta como tarjeta que flota por fuera del contenedor (escapa overflow de la tabla). */
     .sp-pop { display: flex; flex-direction: column; gap: 7px; }
-    .sp-pop--float { background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 12px; padding: 7px; box-shadow: 0 14px 38px rgba(27,42,58,.22); }
+    /* Fixed por defecto (defensa): aunque el JS aun no calcule top/left, el panel NUNCA queda en
+       flujo deformando la celda; propiaFloatPos ajusta enseguida top/left/width/max-height. */
+    .sp-pop--float { position: fixed; z-index: 4000; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 12px; padding: 7px; box-shadow: 0 14px 38px rgba(27,42,58,.22); }
     .sp-pop--float .sp-list { border: 0; padding: 0; max-height: none; overflow: visible; }
 
     .sp-list { display: flex; flex-direction: column; gap: 3px; border: 1px solid var(--propia-border-card); border-radius: 10px; padding: 6px; background: var(--propia-bg-card); max-height: 290px; overflow-y: auto; }
