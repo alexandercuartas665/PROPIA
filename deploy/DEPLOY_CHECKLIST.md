@@ -1,7 +1,35 @@
 # PROPIA - Checklist de deploy
 
-> Actualizado 2026-09-09. Version visible: **0.0.74**
+> Actualizado 2026-09-09. Version visible: **0.0.80**
 > (`src/Propia.Web/Propia.Web.csproj` `<Version>`). Bumpear en cada deploy.
+>
+> **Nuevo desde 0.0.74 (modulo Mantenimiento reelaborado, 0.0.75 -> 0.0.80):**
+> - **Programacion (tab principal) en tabla, con alta INLINE por columna.** Una fila por
+>   `ProgramacionTarea`. La fila de alta captura por columna: Tipo (Equipo/Zona), Activo (filtrado por
+>   tipo), Titulo, Tercero, Contrato, Tablero, Prioridad, Periodicidad, Proxima ejecucion; "+ Agregar"
+>   crea sin modal. El expansor de la fila de alta abre el formulario completo para crear.
+> - **Tercero (proveedor) y Contrato en la programacion, ambos OPCIONALES.**
+>   - Tercero = componente **SelectorPersona** (busca en el Directorio de la organizacion + crea
+>     persona/empresa al vuelo; panel flotante). Guarda id + snapshot de nombre.
+>   - Contrato = lista filtrada a los contratos del tercero elegido (match por
+>     `ProveedorPersonaId`/`ProveedorEmpresaId` del contrato).
+>   - Se muestran como columnas (ocultables por "Campos").
+> - **Se quito el "Cron (avanzado)"** del `ProgramadorTareaModal`: la programacion es siempre por
+>   Periodicidad. Afecta tambien las fichas de equipo/zona que comparten el modal.
+> - **FIX flotante del SelectorPersona (CSP):** el panel de resultados se posicionaba con un helper
+>   definido via `eval`, que la CSP del sitio bloquea (`script-src` sin `unsafe-eval`), dejando el panel
+>   en flujo y deformando la celda. El helper `window.propiaFloatPos` se movio a `wwwroot/js/propia-ui.js`
+>   (**subir `?v=` en App.razor si se toca ese archivo; ya en `?v=11`**) y `.sp-pop--float` es
+>   `position:fixed`. Corrige el flotante en TODO uso del componente (tambien Contratos/Servicios).
+> - **Planes preventivos** paso a vista-tabla con alta inline (0.0.75) y luego el **tab se retiro** junto
+>   con **Intervenciones** (0.0.80): el modulo queda en **Programacion + Calendario**. El codigo de esos
+>   bloques permanece pero sin boton (restaurable).
+> - **Calendario de programaciones** con vistas **Mes** y **Semana**: pinta cada programacion en sus
+>   fechas de ejecucion proyectando las recurrencias segun periodicidad (respeta FechaFin); clic en un
+>   evento abre la programacion para editar.
+> - **2 migraciones nuevas** (aditivas): `AddProgramacionProveedorContrato` (`programacion_tareas`
+>   +`proveedor_id` +`contrato_id` uuid null) y `AddProgramacionProveedorNombre` (+`proveedor_nombre`
+>   text null). RLS de la tabla ya cubre las columnas nuevas -> ver seccion 3.
 >
 > **Nuevo desde 0.0.73:**
 > - **Mantenimiento: pestana "Programacion" en tabla (patron vista-tabla).** `/mantenimiento` abre por
@@ -152,6 +180,8 @@ dotnet ef database update --project ../Propia.Infrastructure --startup-project .
 
 Ultimas migraciones del repo (verificar que esten aplicadas). `ef database update` aplica SOLO las que
 falten en ese entorno, comparando contra `__EFMigrationsHistory`:
+- `20260909203008_AddProgramacionProveedorNombre`  (Programacion: `programacion_tareas` +`proveedor_nombre` text null; snapshot del nombre del tercero)  <-- NUEVA (0.0.78)
+- `20260909195925_AddProgramacionProveedorContrato`  (Programacion: `programacion_tareas` +`proveedor_id` uuid null, +`contrato_id` uuid null; tercero + contrato opcionales)  <-- NUEVA (0.0.77)
 - `20260909013856_AddEquipoZonaCampoDefiniciones`  (Zonas/Equipos: 4 tablas nuevas `equipo_campos_definiciones`, `equipo_campos_valores`, `zona_campos_definiciones`, `zona_campos_valores`, con RLS FORCE + policy tenant + GRANT propia_app; campos dinamicos tipados)  <-- NUEVA (0.0.71)
 - `20260908220459_AddUnidadCampoTipoOpciones`  (Unidades: `unidad_campos_definiciones` +`tipo` int default 0, +`opciones` text null; campos dinamicos tipados)  <-- NUEVA (0.0.68)
 - `20260908120902_AddPqrsdAlertaPlazoNotificada`  (PQRSD: `pqrsd_expedientes` +`alerta_plazo_notificada` int null; idempotencia de las alertas de plazo del job diario)  <-- NUEVA (0.0.64)
@@ -178,13 +208,19 @@ falten en ese entorno, comparando contra `__EFMigrationsHistory`:
 
 ## 4. Post-deploy (verificacion)
 
-- [ ] Login OK; el footer muestra `v0.0.74`.
-- [ ] **Mantenimiento > Programacion:** `/mantenimiento` abre en la pestana "Programacion" (tabla). En la
-      fila de alta, elegir un activo (equipo o zona) y "+ Programar" abre el modal "Programar tarea" ya
-      apuntando a ese activo; al guardar aparece una fila. El expansor de una fila reabre el modal con los
-      datos cargados (editar). Toggle Activa, eliminar, Filtros, Agrupar y Campos funcionan. Con 0
-      programaciones se ve la tabla + footer "Mostrando 0 de 0 programaciones" (no una tarjeta de vacio).
-      Las programaciones creadas desde las fichas de equipo/zona aparecen aqui y viceversa.
+- [ ] Login OK; el footer muestra `v0.0.80`.
+- [ ] **Mantenimiento > Programacion:** `/mantenimiento` abre en "Programacion" (tabla) y solo hay 2 tabs:
+      Programacion y Calendario (sin Intervenciones ni Planes preventivos; sin botones de header). En la
+      fila de alta INLINE: elegir Tipo (Equipo/Zona) filtra el Activo; capturar Titulo; el Tercero busca en
+      el Directorio y permite crear persona/empresa (su panel FLOTA sin deformar la celda); el Contrato se
+      filtra a los del tercero elegido; "+ Agregar" crea sin modal. El expansor de la fila de alta abre el
+      formulario completo. El expansor de una fila existente reabre para editar. Toggle Activa, eliminar,
+      Filtros, Agrupar y Campos funcionan; footer "Mostrando N de N" visible con 0 filas.
+- [ ] **Mantenimiento > Calendario:** vistas **Mes** y **Semana**; cada programacion se pinta en sus fechas
+      de ejecucion con recurrencia por periodicidad; clic en un evento abre la programacion para editar.
+- [ ] **SelectorPersona (float):** al buscar un tercero en la fila de alta, el panel de resultados FLOTA
+      anclado al input (no empuja la fila). Verifica que `js/propia-ui.js` cargue `?v=11` (define
+      `window.propiaFloatPos`); la CSP del sitio NO permite `unsafe-eval`, por eso el helper vive en ese JS.
 - [ ] **Extractor IA (hotfix 403):** un usuario NO-Administrador pulsa "Cargar PDF y extraer (IA)" en
       Seguros y en Contratos -> prellena (antes -> "forbidden"/403). El agente documental de Servicios
       Publicos ("Analizar con el Agente Documental") sigue exigiendo Administrador.
