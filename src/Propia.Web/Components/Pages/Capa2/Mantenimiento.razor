@@ -67,43 +67,48 @@
     }
     else
     {
-        @* Tarjetas compactas al estilo Zonas Comunes: icono con el color del semaforo,
-           nombre + meta, plan proximo y chip de intervenciones abiertas. *@
-        <div class="mt-acards">
+        @* Cronograma de mantenimiento en formato TABLA: una fila por activo (equipos + zonas unificados).
+           La Frecuencia se programa INLINE (crea/actualiza el plan preventivo del activo). *@
+        <div class="mt-crono">
+            <div class="mt-crono-head" style="@MtCronoGrid">
+                <div>ACTIVO</div><div>TIPO</div><div>CATEGORIA</div><div>ESTADO</div>
+                <div>FRECUENCIA</div><div>PROXIMO MANTENIMIENTO</div><div>PROVEEDOR</div><div>INTERV.</div>
+            </div>
             @foreach (var a in ActivosFiltrados())
             {
-                <div class="mt-acard">
-                    <div class="mt-acard-ic mt-sem-@a.Semaforo.ToString().ToLower()" title="Semaforo: @a.Semaforo">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-2.4 2.6-2.6z"/></svg>
+                var aa = a;
+                var plan = PlanDe(a);
+                <div class="mt-crono-row" style="@MtCronoGrid">
+                    <div class="mt-crono-nom">
+                        <span class="mt-crono-dot mt-sem-@a.Semaforo.ToString().ToLower()" title="Semaforo: @a.Semaforo"></span>
+                        @a.Nombre
                     </div>
-                    <div class="mt-acard-id">
-                        <div class="mt-acard-nom">@a.Nombre</div>
-                        <div class="mt-acard-meta">@a.ActivoTipo &middot; @(a.Categoria ?? "-") &middot; @a.EstadoActivo</div>
-                        @if (a.PlanProximo is not null)
-                        {
-                            <div class="mt-acard-plan">
-                                @a.PlanProximo
-                                @if (a.ProximaEjecucion.HasValue)
-                                {
-                                    <span> &middot; @a.ProximaEjecucion.Value.ToString("yyyy-MM-dd")</span>
-                                    @if (a.DiasParaVencer.HasValue)
-                                    {
-                                        <span class="@(a.DiasParaVencer < 0 ? "mt-acard-venc" : a.DiasParaVencer < 7 ? "mt-acard-prox" : "")">
-                                            (@(a.DiasParaVencer < 0 ? $"vencio hace {-a.DiasParaVencer.Value}d" : $"en {a.DiasParaVencer.Value}d"))
-                                        </span>
-                                    }
-                                }
-                            </div>
-                        }
-                        else
-                        {
-                            <div class="mt-acard-plan mt-acard-plan--off">Sin plan preventivo configurado</div>
-                        }
+                    <div>@ActivoTipoLabel(a.ActivoTipo)</div>
+                    <div>@(a.Categoria ?? "-")</div>
+                    <div>@a.EstadoActivo</div>
+                    <div>
+                        <select class="mt-crono-inp @(_planBusy == a.ActivoId ? "is-busy" : "")" disabled="@(_planBusy == a.ActivoId)"
+                                @onchange="(e) => SetFrecuenciaAsync(aa, plan, e.Value?.ToString())">
+                            <option value="" selected="@(plan is null)">Sin plan</option>
+                            @foreach (var f in Enum.GetValues<FrecuenciaMantenimiento>())
+                            {
+                                <option value="@f" selected="@(plan is not null && plan.Frecuencia == f)">@f</option>
+                            }
+                        </select>
                     </div>
-                    @if (a.IntervencionesAbiertas > 0)
-                    {
-                        <span class="mt-acard-chip">@a.IntervencionesAbiertas abiertas</span>
-                    }
+                    <div>
+                        @if (a.ProximaEjecucion.HasValue)
+                        {
+                            <span>@a.ProximaEjecucion.Value.ToString("yyyy-MM-dd")</span>
+                            @if (a.DiasParaVencer.HasValue)
+                            {
+                                <span class="@(a.DiasParaVencer < 0 ? "mt-acard-venc" : a.DiasParaVencer < 7 ? "mt-acard-prox" : "")"> (@(a.DiasParaVencer < 0 ? $"vencio hace {-a.DiasParaVencer.Value}d" : $"en {a.DiasParaVencer.Value}d"))</span>
+                            }
+                        }
+                        else { <span class="mt-crono-muted">-</span> }
+                    </div>
+                    <div>@(string.IsNullOrWhiteSpace(a.ProveedorPreferido) ? "-" : a.ProveedorPreferido)</div>
+                    <div>@(a.IntervencionesAbiertas > 0 ? $"{a.IntervencionesAbiertas} abiertas" : "-")</div>
                 </div>
             }
         </div>
@@ -656,6 +661,22 @@ else if (_tab == "calendario")
     .mt-cal-ev--err { color: #B91C1C; background: #FEE2E2; }
     .mt-cal-ev--plan { color: var(--propia-brand, var(--propia-brand)); background: var(--propia-brand-soft); }
     .mt-cal-more { font-size: 10px; font-weight: 700; color: var(--propia-text-muted); padding: 1px 4px; }
+    /* === Cronograma en tabla (una fila por activo) === */
+    .mt-crono { border: 1px solid var(--propia-border-card); border-radius: 12px; overflow: hidden; background: var(--propia-bg-card); }
+    .mt-crono-head { display: grid; padding: 10px 14px; background: var(--propia-bg-app); font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: var(--propia-text-faint); text-transform: uppercase; border-bottom: 1px solid var(--propia-border-divider); }
+    .mt-crono-row { display: grid; padding: 8px 14px; border-bottom: 1px solid var(--propia-border-divider); font-size: 13px; color: var(--propia-text-body); }
+    .mt-crono-row:last-child { border-bottom: none; }
+    .mt-crono-nom { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+    .mt-crono-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; background: var(--propia-text-faint); }
+    .mt-crono-dot.mt-sem-verde { background: var(--propia-ok); }
+    .mt-crono-dot.mt-sem-amarillo { background: var(--propia-warn); }
+    .mt-crono-dot.mt-sem-rojo { background: var(--propia-danger); }
+    .mt-crono-muted { color: var(--propia-text-faint); }
+    .mt-crono-inp { width: 100%; box-sizing: border-box; border: 1px dashed var(--propia-border-input); border-radius: 7px; padding: 5px 8px; font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-bg-card); outline: none; font-family: inherit; }
+    .mt-crono-inp:focus { border-style: solid; border-color: var(--propia-brand, var(--propia-brand)); box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
+    .mt-crono-inp.is-busy { opacity: .5; }
+    @@media (max-width: 900px) { .mt-crono { overflow-x: auto; } .mt-crono-head, .mt-crono-row { min-width: 820px; } }
+
     /* === Movil (hasta 640px): colapsar la fila de 8 KPIs === */
     @@media (max-width: 640px) {
         .mt-kpis { grid-template-columns: repeat(2, 1fr); }
@@ -818,10 +839,52 @@ else if (_tab == "calendario")
             // El calendario combina intervenciones (fecha programada) y planes (proxima ejecucion).
             if (_tab is "intervenciones" or "calendario")
                 _intervenciones = await http.GetFromJsonAsync<List<IntervencionListaDto>>("/api/mantenimiento/intervenciones") ?? new();
-            if (_tab is "planes" or "calendario")
+            // Los planes se usan tambien en la tabla de Activos (programacion inline), no solo en su pestana.
+            if (_tab is "planes" or "calendario" or "activos")
                 _planes = await http.GetFromJsonAsync<List<PlanDto>>("/api/mantenimiento/planes") ?? new();
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    // ===== Cronograma inline (tabla de activos) =====
+    private const string MtCronoGrid = "grid-template-columns: 2fr 1fr 1.2fr 1fr 1.3fr 1.7fr 1.3fr .8fr; gap: 10px; align-items: center;";
+    private Guid? _planBusy;
+    private static string ActivoTipoLabel(TipoActivoMantenimiento t) => t == TipoActivoMantenimiento.ZonaComun ? "Zona comun" : "Equipo";
+    private PlanDto? PlanDe(ActivoPanelDto a) => _planes?.FirstOrDefault(p => p.Activo && p.ActivoTipo == a.ActivoTipo && p.ActivoId == a.ActivoId);
+
+    // Programacion inline: crea, actualiza o desactiva el plan preventivo del activo segun la frecuencia elegida.
+    private async Task SetFrecuenciaAsync(ActivoPanelDto a, PlanDto? plan, string? valor)
+    {
+        if (_planBusy is not null) return;
+        _planBusy = a.ActivoId;
+        try
+        {
+            FrecuenciaMantenimiento? freq = Enum.TryParse<FrecuenciaMantenimiento>(valor, out var f) ? f : null;
+            if (freq is null)
+            {
+                if (plan is not null) await Auth().DeleteAsync($"/api/mantenimiento/planes/{plan.Id}");
+            }
+            else
+            {
+                var dias = freq == FrecuenciaMantenimiento.Personalizada ? (plan?.FrecuenciaDias ?? 30) : (int?)null;
+                if (plan is null)
+                {
+                    var req = new CrearPlanRequest(a.ActivoTipo, a.ActivoId, "Mantenimiento preventivo", null,
+                        freq.Value, dias, DateOnly.FromDateTime(DateTime.UtcNow.Date), null,
+                        DisparoPlanMantenimiento.ConConfirmacion, 7, false);
+                    await Auth().PostAsJsonAsync("/api/mantenimiento/planes", req);
+                }
+                else
+                {
+                    var req = new ActualizarPlanRequest(plan.Nombre, plan.Descripcion, freq.Value, dias,
+                        plan.ProveedorPreferidoId, plan.Disparo, plan.DiasAlertaPrevio, plan.GeneraNotifResidentes);
+                    await Auth().PutAsJsonAsync($"/api/mantenimiento/planes/{plan.Id}", req);
+                }
+            }
+            await CargarAsync();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _planBusy = null; }
     }
 
     private async Task MostrarFicha(Guid id)
