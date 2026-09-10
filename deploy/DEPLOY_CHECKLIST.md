@@ -1,10 +1,27 @@
 # PROPIA - Checklist de deploy
 
-> Actualizado 2026-09-10. Version visible: **0.0.88**
+> Actualizado 2026-09-10. Version visible: **0.0.89**
 > (`src/Propia.Web/Propia.Web.csproj` `<Version>`). Bumpear en cada deploy.
 >
-> **ATENCION en esta tanda: 6 migraciones nuevas, una de ellas de SEGURIDAD (RLS).**
+> **ATENCION en esta tanda: 7 migraciones nuevas, una de ellas de SEGURIDAD (RLS).**
 > Ver seccion 3. Todas aditivas; ninguna borra datos.
+>
+> **Nuevo en 0.0.89 (5 modulos contributivos + la plantilla solo trae lo visible):**
+> - `unidades_privadas` +`modulo_contributivo_1..5` `numeric(7,4)` NULL (misma precision que
+>   `coeficiente_propiedad`: son el mismo tipo de dato). Aparecen en el gestor de campos justo debajo de
+>   Coeficiente y **ocultos por defecto**; se activan como cualquier columna y se editan inline.
+>   Migracion `AddModulosContributivosUnidad`.
+> - **Cambio de comportamiento en la plantilla:** la hoja UNIDADES ahora emite **solo las columnas de los
+>   campos VISIBLES** segun `unidad_campos_config` (incluidos los dinamicos `[Label]`). Es decir, si una
+>   copropiedad oculta un campo, ese campo **deja de salir en la plantilla de carga**.
+> - **GUARDA:** `COPROPIEDAD`, `UNIDAD PRIVADA` y `PRINCIPAL` no tienen clave de configuracion, asi que no
+>   se pueden ocultar ni por error. Si se pudieran, la plantilla quedaria inservible (las dos primeras
+>   identifican la fila y `PRINCIPAL` vincula los anexos).
+> - La fila de ejemplo y los dropdowns se ubican **por encabezado, no por posicion**: al filtrar columnas,
+>   con el esquema posicional anterior el ejemplo se habria corrido a la columna equivocada.
+> - El importador lee `MODULO CONTRIBUTIVO 1..5`; celda vacia no pisa el valor existente en una recarga.
+> - **Ojo (pendiente de producto):** estos 5 campos son libres, **sin validacion de que cada modulo sume
+>   100%**. El coeficiente principal si la tiene (RN-02). Ver seccion 5.
 >
 > **Nuevo en 0.0.88 (Carga por Excel: los campos dinamicos ya se guardan):**
 > - **Bug que se corrige:** la plantilla emitia las columnas de campos dinamicos de la hoja UNIDADES
@@ -260,6 +277,7 @@ dotnet ef database update --project ../Propia.Infrastructure --startup-project .
 
 Ultimas migraciones del repo (verificar que esten aplicadas). `ef database update` aplica SOLO las que
 falten en ese entorno, comparando contra `__EFMigrationsHistory`:
+- `20260910202226_AddModulosContributivosUnidad`  (Unidades: `unidades_privadas` +`modulo_contributivo_1..5` numeric(7,4) NULL. 5 AddColumn y nada mas)  <-- NUEVA (0.0.89)
 - `20260910140101_AddRlsTablasFaltantes`  (**SEGURIDAD**: activa RLS -ENABLE + FORCE + policy `tenant_isolation` + GRANT `propia_app`- en 18 tablas de tenant que no tenian ninguna: contrato_campos, contrato_campo_valores, contrato_etapas, contrato_expedientes, directorio_contactos, directorio_adjuntos, etiquetas_usuario, usuario_tenant_etiquetas, informes, informe_secciones, informe_plantillas, informe_plantilla_secciones, polizas, poliza_campos, poliza_campo_valores, poliza_reclamaciones, pqrsd_formulario_publico_configs, pqrsd_tareas_configs. **Solo SQL, sin cambios de esquema.** Idempotente. Ver la nota de riesgo del encabezado)  <-- NUEVA (0.0.87)
 - `20260910132959_AddEntidadAUnidadCampoConfig`  (`unidad_campos_config` +`entidad` varchar(20) NOT NULL default `'unidad'`; DROP del unico `(tenant_id, campo_clave)` y CREATE de `(tenant_id, entidad, campo_clave)`. Las filas existentes quedan con `'unidad'`)  <-- NUEVA (0.0.85)
 - `20260910120849_AddCamposEntidadesVinculadasUnidad`  (8 tablas nuevas de catalogo de campos para las entidades vinculadas a la unidad: `persona_campos_definiciones`/`_valores`, `vehiculo_*`, `mascota_*`, `tercero_*`. **Cada una con RLS FORCE + policy tenant_isolation + GRANT propia_app en la propia migracion**)  <-- NUEVA (0.0.84)
@@ -293,7 +311,12 @@ falten en ese entorno, comparando contra `__EFMigrationsHistory`:
 
 ## 4. Post-deploy (verificacion)
 
-- [ ] Login OK; el footer muestra `v0.0.88`.
+- [ ] Login OK; el footer muestra `v0.0.89`.
+- [ ] **Modulos contributivos:** en Unidades > Configurar aparecen "Modulo Contributivo 1..5" debajo de
+      Coeficiente y **ocultos**; al activar uno sale como columna y guarda decimales (ej. 12.3456).
+- [ ] **Plantilla filtrada:** con un modulo activo, la plantilla trae SOLO ese (no los otros 4); ocultar
+      un campo (ej. Matricula) lo saca de la plantilla, y la fila de EJEMPLO sigue alineada con sus
+      encabezados. `COPROPIEDAD`, `UNIDAD PRIVADA` y `PRINCIPAL` deben salir SIEMPRE.
 - [ ] **RLS (critico de esta tanda):** despues de aplicar las migraciones, entrar a **Directorio**,
       **Seguros** y **Contratos** y confirmar que **siguen listando datos**. Si alguno queda vacio, es que
       un lector corre sin tenant de sesion y el FORCE RLS lo dejo en cero filas: revisar logs por
@@ -370,6 +393,12 @@ falten en ese entorno, comparando contra `__EFMigrationsHistory`:
 
 ## 5. Pendientes NO bloqueantes (post-deploy)
 
+- **Modulos contributivos sin validacion de suma:** los 5 campos nuevos son libres. El coeficiente
+  principal si valida (RN-02: la suma de cada tipo debe dar 100%). Si un modulo debe cuadrar al 100% como
+  exige la Ley 675, hay que agregar esa validacion. Nota: el dominio YA tiene `TipoCoeficiente` +
+  `UnidadCoeficiente` con esa regla implementada y endpoints (`tipos-coeficiente`,
+  `unidades/{id}/coeficientes`), pero **sin ninguna UI que los consuma**. Decidir si los modulos deben
+  migrar a ese modelo (permite N modulos y valida la suma) o quedarse como columnas planas.
 - **RLS-08 (decision de producto, no plomeria):** quedan **8 tablas de tenant sin RLS** y el test
   `RlsCoverageTests.Toda_tabla_con_tenant_id_tiene_RLS_FORCE_y_politica` **falla a proposito** listandolas.
   No se les puede aplicar el patron tal cual:
