@@ -181,7 +181,7 @@
 @if (_configCamposAbierto)
 {
     <div class="cg-back" @onclick="() => _configCamposAbierto = false">
-        <div class="cg-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+        <div class="cg-modal cg-modal--wide" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
             <div class="cg-head">
                 <div>
                     <div class="cg-title">Configuracion avanzada de campos</div>
@@ -208,46 +208,74 @@
                     <div></div>
                 </div>
 
-                @* --- Campos FIJOS del sistema (candado; tipo bloqueado en esta fase) --- *@
-                @foreach (var cs in CamposSistema)
+                @* --- Grilla unificada: TODOS los campos (sistema + personalizados) en el ORDEN de la tabla.
+                       La 'ubicacion' de un campo = su posicion aqui = su columna en la tabla. Se reordena por
+                       drag & drop (manija) o con las flechas; el ojo muestra/oculta la columna. --- *@
+                @foreach (var it in ColumnasOrdenadas)
                 {
-                    var css = cs;
-                    var (tdato, fija) = TipoDato(cs.Clave);
-                    var col = Catalogo.FirstOrDefault(c => c.Key == cs.Clave);   // si es columna de la tabla, permite orden/visibilidad
-                    <div class="cga-grid cga-row">
+                    var key = it.Key;
+                    var esCustom = it.EsCustom;
+                    var cs = esCustom ? null : CamposSistema.FirstOrDefault(x => x.Clave == key);
+                    var (tdato, fija) = esCustom ? ("", false) : TipoDato(key);
+                    var vis = EsVisibleItem(it);
+                    var puedeOcultar = esCustom || it.Def!.Hideable;
+                    <div class="cga-grid cga-row @(_dragColKey == key ? "cga-row--drag" : "")"
+                         @ondragover:preventDefault="true" @ondrop="() => OnDropCol(key)">
                         <div class="cga-ctrl">
-                            @if (col is not null)
-                            {
-                                <button type="button" class="cga-mini" title="Subir" @onclick="() => MoverColU(col.Key, -1)">&#9650;</button>
-                                <button type="button" class="cga-mini" title="Bajar" @onclick="() => MoverColU(col.Key, 1)">&#9660;</button>
-                                <button type="button" class="cga-eye @(EsVisible(col) ? "on" : "")" title="@(EsVisible(col) ? "Visible" : "Oculta")" @onclick="() => SetColVisible(col.Key, !EsVisible(col))" disabled="@(!col.Hideable)">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
-                                </button>
-                            }
-                            else { <span class="cga-nocol" title="No es columna de la tabla; se ve en la ficha">ficha</span> }
+                            <span class="cga-grip" draggable="true" title="Arrastra para reubicar la columna"
+                                  @ondragstart="() => OnDragStartCol(key)" @ondragend="OnDragEndCol">
+                                <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor"><circle cx="3" cy="3" r="1.4"/><circle cx="9" cy="3" r="1.4"/><circle cx="3" cy="8" r="1.4"/><circle cx="9" cy="8" r="1.4"/><circle cx="3" cy="13" r="1.4"/><circle cx="9" cy="13" r="1.4"/></svg>
+                            </span>
+                            <button type="button" class="cga-mini" title="Subir" @onclick="() => MoverColU(key, -1)">&#9650;</button>
+                            <button type="button" class="cga-mini" title="Bajar" @onclick="() => MoverColU(key, 1)">&#9660;</button>
+                            <button type="button" class="cga-eye @(vis ? "on" : "")" title="@(vis ? "Visible en la tabla" : "Oculta")" @onclick="() => SetColVisible(key, !vis)" disabled="@(!puedeOcultar)">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                            </button>
                         </div>
                         <div>
-                            <input class="cga-inp" placeholder="@cs.DefLabel" value="@(AliasConfig(cs.Clave))" @onchange="@(e => GuardarAliasAsync(css.Clave, e.Value?.ToString()))" />
+                            @if (esCustom) { <span class="cga-custom-lbl">@it.Campo!.Label</span> }
+                            else { <input class="cga-inp" placeholder="@(cs?.DefLabel ?? it.Def!.DefLabel)" value="@(AliasConfig(key))" @onchange="@(e => GuardarAliasAsync(key, e.Value?.ToString()))" /> }
                         </div>
                         <div class="cga-tipo">
-                            <span class="cga-tipo-badge">@tdato</span>
-                            <svg class="cga-lock" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="Tipo fijo del sistema"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
-                            @if (fija) { <span class="cga-fija">FIJA</span> }
+                            @if (esCustom)
+                            {
+                                <span class="cga-tipo-badge cga-tipo-badge--edit">@TipoLabel(it.Campo!.Tipo)</span>
+                            }
+                            else
+                            {
+                                <span class="cga-tipo-badge">@tdato</span>
+                                <svg class="cga-lock" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="Tipo fijo del sistema"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                                @if (fija) { <span class="cga-fija">FIJA</span> }
+                            }
                         </div>
                         <div class="cga-cfg">
-                            @if (cs.Clave is "tipo" or "estado")
+                            @if (esCustom)
                             {
-                                <button class="dst-btn-soft" type="button" @onclick="() => ToggleLista(css.Clave)">@(_fldExpand == cs.Clave ? "Ocultar lista" : "Gestionar lista")</button>
-                                <span class="cga-cfg-hint" style="margin-left:6px;">@(cs.Clave == "tipo" ? TiposUnidadSel.Count() + _tiposCustom.Count : EstadosConfig().Count()) opciones</span>
+                                @if (it.Campo!.Tipo == TipoCampoTablero.Seleccion && !string.IsNullOrWhiteSpace(it.Campo!.Opciones))
+                                {
+                                    <span class="cga-cfg-hint">@string.Join(", ", OpcionesDe(it.Campo!))</span>
+                                }
                             }
-                            else { <span class="cga-cfg-hint">@ConfigHint(cs.Clave)</span> }
+                            else if (key is "tipo" or "estado")
+                            {
+                                <button class="dst-btn-soft" type="button" @onclick="() => ToggleLista(key)">@(_fldExpand == key ? "Ocultar lista" : "Gestionar lista")</button>
+                                <span class="cga-cfg-hint" style="margin-left:6px;">@(key == "tipo" ? TiposUnidadSel.Count() + _tiposCustom.Count : EstadosConfig().Count()) opciones</span>
+                            }
+                            else { <span class="cga-cfg-hint">@ConfigHint(key)</span> }
                         </div>
-                        <div></div>
+                        <div class="cga-row-act">
+                            @if (esCustom)
+                            {
+                                var dd = it.Campo!;
+                                <button class="dst-btn-soft" type="button" @onclick="() => EditarCampoDef(dd)" disabled="@_cfgBusy">Editar</button>
+                                <button class="dst-btn-soft" type="button" @onclick="() => EliminarCampoDefAsync(dd)" disabled="@_cfgBusy">Eliminar</button>
+                            }
+                        </div>
                     </div>
-                    @if (cs.Clave == _fldExpand && cs.Clave is "tipo" or "estado")
+                    @if (!esCustom && key == _fldExpand && key is "tipo" or "estado")
                     {
                         <div class="cga-opts">
-                            @if (cs.Clave == "tipo")
+                            @if (key == "tipo")
                             {
                                 <div class="cg-sub" style="margin-bottom:8px;">Los tipos base vienen por defecto (semilla, con candado). Agrega o quita los propios de tu copropiedad.</div>
                                 <div class="cga-opts-list">
@@ -299,27 +327,6 @@
                             }
                         </div>
                     }
-                }
-
-                @* --- Campos PERSONALIZADos (dinamicos): tipo editable, se pueden eliminar --- *@
-                @foreach (var d in _camposDef)
-                {
-                    var dd = d;
-                    <div class="cga-grid cga-row">
-                        <div class="cga-ctrl"><span class="cga-nocol" title="Se ve en la ficha y como columna">campo</span></div>
-                        <div><span class="cga-custom-lbl">@d.Label</span></div>
-                        <div class="cga-tipo"><span class="cga-tipo-badge cga-tipo-badge--edit">@TipoLabel(d.Tipo)</span></div>
-                        <div class="cga-cfg">
-                            @if (d.Tipo == TipoCampoTablero.Seleccion && !string.IsNullOrWhiteSpace(d.Opciones))
-                            {
-                                <span class="cga-cfg-hint">@string.Join(", ", OpcionesDe(d))</span>
-                            }
-                        </div>
-                        <div class="cga-row-act">
-                            <button class="dst-btn-soft" type="button" @onclick="() => EditarCampoDef(dd)" disabled="@_cfgBusy">Editar</button>
-                            <button class="dst-btn-soft" type="button" @onclick="() => EliminarCampoDefAsync(dd)" disabled="@_cfgBusy">Eliminar</button>
-                        </div>
-                    </div>
                 }
 
                 <div class="dst-cfg-sep"></div>
@@ -419,22 +426,22 @@ else
                     {
                         <div class="dst-menu-bd" @onclick="() => _cfgColsAbierto = false"></div>
                         <div class="dst-colsmenu">
-                            <div class="dst-colsmenu-h">COLUMNAS (orden, visibilidad y nombre)</div>
-                            @for (int i = 0; i < _colOrderU.Count; i++)
+                            <div class="dst-colsmenu-h">COLUMNAS (orden y visibilidad)</div>
+                            @{ var itemsSys = ColumnasOrdenadas.Where(x => !x.EsCustom).ToList(); }
+                            @for (int i = 0; i < itemsSys.Count; i++)
                             {
-                                var idx = i;
-                                var col = Catalogo.First(c => c.Key == _colOrderU[idx]);
-                                var pref = PrefDe(col.Key);
+                                var col = itemsSys[i].Def!;
                                 var key = col.Key;
+                                var vis = EsVisible(col);
                                 <div class="dst-colsmenu-i">
                                     <div class="dst-colsmenu-ord">
-                                        <button class="dst-colsmenu-mv" disabled="@(idx == 0)" @onclick="() => MoverColU(idx, -1)" title="Subir">&#9650;</button>
-                                        <button class="dst-colsmenu-mv" disabled="@(idx == _colOrderU.Count - 1)" @onclick="() => MoverColU(idx, 1)" title="Bajar">&#9660;</button>
+                                        <button class="dst-colsmenu-mv" @onclick="() => MoverColU(key, -1)" title="Subir">&#9650;</button>
+                                        <button class="dst-colsmenu-mv" @onclick="() => MoverColU(key, 1)" title="Bajar">&#9660;</button>
                                     </div>
                                     <label class="dst-cfg-vis" title="@(col.Hideable ? "Mostrar u ocultar" : "Columna requerida, siempre visible")">
-                                        <input type="checkbox" checked="@pref.Visible" disabled="@(!col.Hideable)" @onchange="@(e => SetColVisible(key, (bool)(e.Value ?? false)))" />
+                                        <input type="checkbox" checked="@vis" disabled="@(!col.Hideable)" @onchange="@(e => SetColVisible(key, (bool)(e.Value ?? false)))" />
                                     </label>
-                                    <input class="dst-cfg-inp" value="@(string.IsNullOrWhiteSpace(pref.Label) ? col.DefLabel : pref.Label)" placeholder="@col.DefLabel" @onchange="@(e => SetColLabel(key, e.Value?.ToString()))" />
+                                    <span class="dst-colsmenu-lbl">@Etiqueta(col)</span>
                                     @if (!col.Hideable) { <span class="dst-cfg-req">fija</span> }
                                 </div>
                             }
@@ -479,8 +486,11 @@ else
                 <div class="dst-scroll">
                     <div class="dst-head dst-grid2" style="grid-template-columns:@GridCols">
                         <div></div>
-                        @foreach (var c in ColsVisibles) { <div>@Etiqueta(c)</div> }
-                        @foreach (var cd in _camposDef) { <div title="Campo personalizado">@cd.Label</div> }
+                        @foreach (var it in ColumnasVisibles)
+                        {
+                            if (it.EsCustom) { <div title="Campo personalizado">@it.Campo!.Label</div> }
+                            else { <div>@Etiqueta(it.Def!)</div> }
+                        }
                         <div></div>
                     </div>
                     @foreach (var item in FilasRender())
@@ -500,9 +510,15 @@ else
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                                 </button>
                             </div>
-                            @foreach (var c in ColsVisibles)
+                            @foreach (var it in ColumnasVisibles)
                             {
-                                switch (c.Key)
+                                if (it.EsCustom)
+                                {
+                                    var vv = ValorCampo(uu.Id, it.Campo!.Id);
+                                    <div class="dst-td-campo" title="@it.Campo!.Label">@(string.IsNullOrWhiteSpace(vv) ? "-" : vv)</div>
+                                    continue;
+                                }
+                                switch (it.Def!.Key)
                                 {
                                     case "num":
                                         <div class="dst-numcell">
@@ -536,11 +552,40 @@ else
                                             }
                                         </select>
                                         break;
+                                    case "estado":
+                                        <select class="dst-cell" @onchange="@(e => Inline(uu, "estado", e))">
+                                            @foreach (var es in EstadosConfig())
+                                            {
+                                                <option value="@es" selected="@(string.Equals(uu.Estado, es, StringComparison.OrdinalIgnoreCase))">@es</option>
+                                            }
+                                        </select>
+                                        break;
                                     case "area":
                                         <input class="dst-cell" type="number" step="0.01" value="@(uu.AreaM2?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "area", e))" />
                                         break;
                                     case "coef":
                                         <input class="dst-cell" type="number" step="0.0001" value="@uu.CoeficientePropiedad.ToString(System.Globalization.CultureInfo.InvariantCulture)" @onchange="@(e => Inline(uu, "coef", e))" />
+                                        break;
+                                    case "habitaciones":
+                                        <input class="dst-cell" type="number" value="@(uu.Habitaciones?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "habitaciones", e))" />
+                                        break;
+                                    case "banos":
+                                        <input class="dst-cell" type="number" value="@(uu.Banos?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "banos", e))" />
+                                        break;
+                                    case "parqueaderos":
+                                        <input class="dst-cell" type="number" value="@(uu.Parqueaderos?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "parqueaderos", e))" />
+                                        break;
+                                    case "pagaadmin":
+                                        <select class="dst-cell" @onchange="@(e => Inline(uu, "pagaadmin", e))">
+                                            <option value="true" selected="@(uu.PagaAdministracion)">Si</option>
+                                            <option value="false" selected="@(!uu.PagaAdministracion)">No</option>
+                                        </select>
+                                        break;
+                                    case "cuota":
+                                        <input class="dst-cell" type="number" step="0.01" value="@(uu.CuotaMensual?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "cuota", e))" />
+                                        break;
+                                    case "observaciones":
+                                        <input class="dst-cell" value="@(uu.Observaciones ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "observaciones", e))" />
                                         break;
                                     case "agrupacion":
                                         <div class="dst-c dst-ro">
@@ -565,11 +610,6 @@ else
                                         </div>
                                         break;
                                 }
-                            }
-                            @foreach (var cd in _camposDef)
-                            {
-                                var vv = ValorCampo(uu.Id, cd.Id);
-                                <div class="dst-td-campo" title="@cd.Label">@(string.IsNullOrWhiteSpace(vv) ? "-" : vv)</div>
                             }
                             <div class="dst-anx-cell">
                                 @if (!esAnexo)
@@ -610,9 +650,41 @@ else
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                             </button>
                         </div>
-                        @foreach (var c in ColsVisibles)
+                        @foreach (var it in ColumnasVisibles)
                         {
-                            switch (c.Key)
+                            if (it.EsCustom)
+                            {
+                                var cdd = it.Campo!;
+                                var val = _nuCampos.GetValueOrDefault(cdd.Id);
+                                switch (cdd.Tipo)
+                                {
+                                    case TipoCampoTablero.Seleccion:
+                                        <select class="dst-nf-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
+                                            <option value="">- elegir -</option>
+                                            @foreach (var op in OpcionesDe(cdd)) { <option value="@op">@op</option> }
+                                        </select>
+                                        break;
+                                    case TipoCampoTablero.Numero:
+                                    case TipoCampoTablero.Moneda:
+                                        <input class="dst-nf-inp" type="number" step="any" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cdd.Label" />
+                                        break;
+                                    case TipoCampoTablero.Fecha:
+                                        <input class="dst-nf-inp" type="date" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" />
+                                        break;
+                                    case TipoCampoTablero.Booleano:
+                                        <select class="dst-nf-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
+                                            <option value="">- elegir -</option>
+                                            <option value="Si">Si</option>
+                                            <option value="No">No</option>
+                                        </select>
+                                        break;
+                                    default:
+                                        <input class="dst-nf-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cdd.Label" />
+                                        break;
+                                }
+                                continue;
+                            }
+                            switch (it.Def!.Key)
                             {
                                 case "num":
                                     <input class="dst-nf-inp" placeholder="A1-202" title="Codigo TORRE-APARTAMENTO (ej. A1-202). La torre sale del codigo y el piso se infiere del numero de apto." @bind="_nuNum" @bind:event="oninput" />
@@ -649,39 +721,8 @@ else
                                 case "refpago":
                                     <input class="dst-nf-inp" placeholder="Ref. pago" @bind="_nuRefPago" @bind:event="oninput" />
                                     break;
-                                case "prop":
-                                    <div class="dst-nf-mut">En la ficha</div>
-                                    break;
-                            }
-                        }
-                        @foreach (var cd in _camposDef)
-                        {
-                            var cdd = cd;
-                            var val = _nuCampos.GetValueOrDefault(cd.Id);
-                            @switch (cd.Tipo)
-                            {
-                                case TipoCampoTablero.Seleccion:
-                                    <select class="dst-nf-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
-                                        <option value="">- elegir -</option>
-                                        @foreach (var op in OpcionesDe(cd)) { <option value="@op">@op</option> }
-                                    </select>
-                                    break;
-                                case TipoCampoTablero.Numero:
-                                case TipoCampoTablero.Moneda:
-                                    <input class="dst-nf-inp" type="number" step="any" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cd.Label" />
-                                    break;
-                                case TipoCampoTablero.Fecha:
-                                    <input class="dst-nf-inp" type="date" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" />
-                                    break;
-                                case TipoCampoTablero.Booleano:
-                                    <select class="dst-nf-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
-                                        <option value="">- elegir -</option>
-                                        <option value="Si">Si</option>
-                                        <option value="No">No</option>
-                                    </select>
-                                    break;
                                 default:
-                                    <input class="dst-nf-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cd.Label" />
+                                    <div class="dst-nf-mut" title="Se define en la ficha de la unidad">En la ficha</div>
                                     break;
                             }
                         }
@@ -1041,43 +1082,81 @@ else
     private Dictionary<string, ColPref> _cols = new();
     private const string ColsKey = "propia_cols_unidades";
     private const string ColOrderKey = "propia_colorder_unidades";
-    private static readonly string[] ColDefaultOrder = { "num", "tipo", "agrupacion", "matricula", "coef", "refpago" };
+    // Orden por defecto: TODOS los campos del sistema (mas 'agrupacion' derivado) pueden ser columnas.
+    // La 'ubicacion' de un campo = su posicion en este orden (que es el orden de columnas de la tabla).
+    private static readonly string[] ColDefaultOrder =
+    {
+        "num", "tipo", "estado", "agrupacion", "coef", "area", "piso", "habitaciones",
+        "banos", "parqueaderos", "matricula", "refpago", "pagaadmin", "cuota", "observaciones"
+    };
+    // Columnas visibles por defecto (las demas quedan disponibles pero ocultas hasta que el usuario las active).
+    private static readonly HashSet<string> ColVisibleDefault = new(StringComparer.Ordinal)
+    { "num", "tipo", "agrupacion", "matricula", "coef", "refpago" };
     private List<string> _colOrderU = ColDefaultOrder.ToList();
 
     public sealed class ColPref { public bool Visible { get; set; } = true; public string? Label { get; set; } }
 
     private sealed record ColDef(string Key, string DefLabel, string Width, bool Hideable);
     // Catalogo dinamico: los labels de agrupacion/piso salen de la identidad de la copropiedad.
+    // TODOS los campos del sistema son columnas potenciales (mostrar/ocultar/reordenar).
     private ColDef[] Catalogo => new[]
     {
         new ColDef("num", "UNIDAD", "130px", false),
         new ColDef("tipo", "TIPO", "1fr", true),
+        new ColDef("estado", "ESTADO", "1fr", true),
         new ColDef("agrupacion", "AGRUPACION", ".9fr", true),
-        new ColDef("matricula", "MATRICULA", "1.1fr", true),
         new ColDef("coef", "COEFICIENTE", ".9fr", true),
+        new ColDef("area", "AREA", ".8fr", true),
+        new ColDef("piso", "PISO", "70px", true),
+        new ColDef("habitaciones", "HABITACIONES", "90px", true),
+        new ColDef("banos", "BANOS", "70px", true),
+        new ColDef("parqueaderos", "PARQUEADEROS", "100px", true),
+        new ColDef("matricula", "MATRICULA", "1.1fr", true),
         new ColDef("refpago", "REF PAGO", "1.1fr", true),
-        // Torre, Piso, Area y Propietario retirados de la vista (torre/piso salen del codigo).
+        new ColDef("pagaadmin", "PAGA ADMIN", "90px", true),
+        new ColDef("cuota", "CUOTA MENSUAL", "1fr", true),
+        new ColDef("observaciones", "OBSERVACIONES", "1.3fr", true),
     };
 
-    private bool EsVisible(ColDef c) => !c.Hideable || !_cols.TryGetValue(c.Key, out var p) || p.Visible;
+    // Item unificado de columna: campo del sistema (Def) o campo personalizado (Campo). El orden y la
+    // visibilidad de ambos viven en el mismo modelo (_colOrderU / _cols), asi todo se arrastra junto.
+    private sealed record ColItem(string Key, bool EsCustom, ColDef? Def, UnidadCampoDefinicionDto? Campo);
+    private static string CampoKey(UnidadCampoDefinicionDto d) => "cd:" + d.Id;
+
+    private bool EsVisible(ColDef c)
+    {
+        if (!c.Hideable) return true;                              // 'num' (identificador) siempre visible
+        if (_cols.TryGetValue(c.Key, out var p)) return p.Visible; // preferencia explicita del usuario
+        return ColVisibleDefault.Contains(c.Key);                 // por defecto: solo las 6 columnas clasicas
+    }
     // Encabezado de columna: alias del tenant (Configurar) > etiqueta por-usuario (localStorage) > default.
     private string Etiqueta(ColDef c)
         => (_camposConfig.TryGetValue(c.Key, out var cc) && !string.IsNullOrWhiteSpace(cc.Alias)) ? cc.Alias!
          : (_cols.TryGetValue(c.Key, out var p) && !string.IsNullOrWhiteSpace(p.Label)) ? p.Label!
          : c.DefLabel;
-    // Catalogo en el orden elegido por el usuario (claves desconocidas van al final, por seguridad).
-    private IEnumerable<ColDef> CatalogoOrdenado
+
+    // Todas las columnas (sistema + personalizados) en el orden elegido; claves nuevas van al final.
+    private IEnumerable<ColItem> ColumnasOrdenadas
     {
         get
         {
-            var byKey = Catalogo.ToDictionary(c => c.Key);
-            foreach (var k in _colOrderU) { if (byKey.TryGetValue(k, out var c)) yield return c; }
-            foreach (var c in Catalogo) { if (!_colOrderU.Contains(c.Key)) yield return c; }
+            var bySys = Catalogo.ToDictionary(c => c.Key, StringComparer.Ordinal);
+            var byCd = _camposDef.ToDictionary(CampoKey, StringComparer.Ordinal);
+            foreach (var k in _colOrderU)
+            {
+                if (bySys.TryGetValue(k, out var c)) yield return new ColItem(c.Key, false, c, null);
+                else if (byCd.TryGetValue(k, out var d)) yield return new ColItem(k, true, null, d);
+            }
+            foreach (var c in Catalogo) if (!_colOrderU.Contains(c.Key)) yield return new ColItem(c.Key, false, c, null);
+            foreach (var d in _camposDef) if (!_colOrderU.Contains(CampoKey(d))) yield return new ColItem(CampoKey(d), true, null, d);
         }
     }
-    private IEnumerable<ColDef> ColsVisibles => CatalogoOrdenado.Where(EsVisible);
-    private string GridCols => "34px " + string.Join(" ", ColsVisibles.Select(c => c.Width))
-        + (_camposDef.Count == 0 ? "" : " " + string.Join(" ", _camposDef.Select(_ => "minmax(140px,170px)"))) + " 120px";
+    private bool EsVisibleItem(ColItem it)
+        => it.EsCustom ? (!_cols.TryGetValue(it.Key, out var p) || p.Visible) : EsVisible(it.Def!);
+    private IEnumerable<ColItem> ColumnasVisibles => ColumnasOrdenadas.Where(EsVisibleItem);
+    private string GridCols => "34px "
+        + string.Join(" ", ColumnasVisibles.Select(it => it.EsCustom ? "minmax(140px,170px)" : it.Def!.Width))
+        + " 120px";
 
     private ColPref PrefDe(string key)
     {
@@ -1095,15 +1174,39 @@ else
     // Overload por clave (para la grilla estilo Airtable): ubica el indice en el orden actual.
     private async Task MoverColU(string key, int dir)
     {
+        NormalizarOrden();
         var idx = _colOrderU.IndexOf(key);
         if (idx < 0) return;
         await MoverColU(idx, dir);
+    }
+
+    // Materializa el orden COMPLETO (sistema + personalizados) en _colOrderU respetando el orden visible actual.
+    private void NormalizarOrden() => _colOrderU = ColumnasOrdenadas.Select(it => it.Key).ToList();
+
+    // ===== Drag & drop del orden de campos (grilla de configuracion). Sin JS: eventos nativos de Blazor. =====
+    private string? _dragColKey;
+    private void OnDragStartCol(string key) => _dragColKey = key;
+    private void OnDragEndCol() => _dragColKey = null;
+    private async Task OnDropCol(string targetKey)
+    {
+        var src = _dragColKey;
+        _dragColKey = null;
+        if (src is null || src == targetKey) return;
+        NormalizarOrden();
+        var from = _colOrderU.IndexOf(src);
+        var to = _colOrderU.IndexOf(targetKey);
+        if (from < 0 || to < 0) return;
+        _colOrderU.RemoveAt(from);
+        if (from < to) to--;                 // al quitar el origen, el destino se corre una posicion
+        _colOrderU.Insert(to, src);
+        await GuardarColsAsync();
     }
 
     // Tipo de dato mostrado por campo fijo (bloqueado en esta fase) + si es FIJA (no cambiable).
     private static (string tipo, bool fija) TipoDato(string clave) => clave switch
     {
         "num" => ("Identificador Unico", true),
+        "agrupacion" => ("Derivado", true),
         "tipo" => ("Lista Desplegable", false),
         "estado" => ("Lista Desplegable", false),
         "coef" => ("Numero Decimal", false),
@@ -1129,6 +1232,7 @@ else
         "matricula" or "refpago" => "Texto",
         "observaciones" => "Texto largo",
         "pagaadmin" => "Si / No",
+        "agrupacion" => "Segun el codigo / anexos",
         "num" => "",
         _ => ""
     };
@@ -1178,6 +1282,9 @@ else
         var coef = u.CoeficientePropiedad; var area = u.AreaM2;
         var matricula = u.MatriculaInmobiliaria; var refpago = u.ReferenciaPago;
         var tipoCustom = u.TipoCustomId;
+        var habitaciones = u.Habitaciones; var banos = u.Banos; var parqueaderos = u.Parqueaderos;
+        var estado = u.Estado; var observaciones = u.Observaciones;
+        var pagaAdmin = u.PagaAdministracion; var cuota = u.CuotaMensual;
         switch (campo)
         {
             case "num": if (string.IsNullOrWhiteSpace(v) || v == u.Numero) return; numero = v; break;
@@ -1188,11 +1295,18 @@ else
             case "area": var ar = string.IsNullOrWhiteSpace(v) ? (decimal?)null : (decimal.TryParse(v, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var aa) ? aa : u.AreaM2); if (ar == u.AreaM2) return; area = ar; break;
             case "matricula": var mt = string.IsNullOrWhiteSpace(v) ? null : v; if (mt == u.MatriculaInmobiliaria) return; matricula = mt; break;
             case "refpago": var rp = v ?? ""; if (rp == (u.ReferenciaPago ?? "")) return; refpago = rp; break;
+            case "estado": var es = string.IsNullOrWhiteSpace(v) ? null : v; if (string.Equals(es, u.Estado, StringComparison.Ordinal)) return; estado = es; break;
+            case "habitaciones": var hb = string.IsNullOrWhiteSpace(v) ? (int?)null : (int.TryParse(v, out var hh) ? hh : u.Habitaciones); if (hb == u.Habitaciones) return; habitaciones = hb; break;
+            case "banos": var bn = string.IsNullOrWhiteSpace(v) ? (int?)null : (int.TryParse(v, out var bb) ? bb : u.Banos); if (bn == u.Banos) return; banos = bn; break;
+            case "parqueaderos": var pq = string.IsNullOrWhiteSpace(v) ? (int?)null : (int.TryParse(v, out var qq) ? qq : u.Parqueaderos); if (pq == u.Parqueaderos) return; parqueaderos = pq; break;
+            case "pagaadmin": var pa = string.Equals(v, "true", StringComparison.OrdinalIgnoreCase); if (pa == u.PagaAdministracion) return; pagaAdmin = pa; break;
+            case "cuota": var cu = string.IsNullOrWhiteSpace(v) ? (decimal?)null : (decimal.TryParse(v, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var cc2) ? cc2 : u.CuotaMensual); if (cu == u.CuotaMensual) return; cuota = cu; break;
+            case "observaciones": var ob = string.IsNullOrWhiteSpace(v) ? null : v; if (string.Equals(ob, u.Observaciones, StringComparison.Ordinal)) return; observaciones = ob; break;
             default: return;
         }
         var req = new ActualizarUnidadRequest(numero, tipo, torreId, piso, coef, area,
-            u.Habitaciones, u.Banos, u.Parqueaderos, u.Estado, u.Observaciones,
-            matricula, u.PagaAdministracion, u.CuotaMensual, refpago, TipoCustomId: tipoCustom);
+            habitaciones, banos, parqueaderos, estado, observaciones,
+            matricula, pagaAdmin, cuota, refpago, TipoCustomId: tipoCustom);
         try
         {
             var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades/{u.Id}", req);
@@ -1201,7 +1315,7 @@ else
                 var nombreTorre = torreId is null ? null : _torres.FirstOrDefault(x => x.Id == torreId)?.Nombre ?? u.TorreNombre;
                 var nombreCustom = tipoCustom is { } cg ? _tiposCustom.FirstOrDefault(x => x.Id == cg)?.Nombre : null;
                 var i = _unidades.FindIndex(x => x.Id == u.Id);
-                if (i >= 0) _unidades[i] = u with { Numero = numero, Tipo = tipo, TipoCustomId = tipoCustom, TipoCustomNombre = nombreCustom, TorreId = torreId, TorreNombre = nombreTorre, Piso = piso, CoeficientePropiedad = coef, AreaM2 = area, MatriculaInmobiliaria = matricula, ReferenciaPago = refpago };
+                if (i >= 0) _unidades[i] = u with { Numero = numero, Tipo = tipo, TipoCustomId = tipoCustom, TipoCustomNombre = nombreCustom, TorreId = torreId, TorreNombre = nombreTorre, Piso = piso, CoeficientePropiedad = coef, AreaM2 = area, Habitaciones = habitaciones, Banos = banos, Parqueaderos = parqueaderos, Estado = estado, Observaciones = observaciones, PagaAdministracion = pagaAdmin, CuotaMensual = cuota, MatriculaInmobiliaria = matricula, ReferenciaPago = refpago };
             }
         }
         catch { }
@@ -1341,6 +1455,7 @@ else
     private static readonly List<CampoSistema> CamposSistema = new()
     {
         new("num", "Unidad", false), new("tipo", "Tipo", true), new("estado", "Estado", true),
+        new("agrupacion", "Agrupacion", false),   // derivado del codigo / anexos (no editable por unidad)
         new("coef", "Coeficiente", false), new("area", "Area", false), new("piso", "Piso", false),
         new("habitaciones", "Habitaciones", false), new("banos", "Banos", false), new("parqueaderos", "Parqueaderos", false),
         new("matricula", "Matricula", false), new("refpago", "Ref. pago", false),
@@ -1886,6 +2001,8 @@ else
     /* ===== Modal de carga por Excel (seleccion + log detallado por hoja) ===== */
     .cg-back { position: fixed; inset: 0; z-index: 1090; background: rgba(15,15,30,.45); display: flex; align-items: flex-start; justify-content: center; padding-top: 8vh; }
     .cg-modal { width: 640px; max-width: calc(100vw - 32px); max-height: 84vh; display: flex; flex-direction: column; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 16px; box-shadow: 0 18px 48px rgba(0,0,0,.28); overflow: hidden; }
+    /* Config avanzada de campos: modal ancho para que quepan drag+visibilidad, label, tipo y config. */
+    .cg-modal--wide { width: 980px; }
     .cg-head { display: flex; align-items: flex-start; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--propia-border-divider); }
     .cg-title { font-weight: 700; color: var(--propia-text-h1); font-size: 15px; }
     .cg-sub { font-size: 12.5px; color: var(--propia-text-muted); margin-top: 2px; }
@@ -2091,6 +2208,7 @@ else
     .dst-colsmenu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; min-width: 300px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 12px; box-shadow: 0 12px 30px rgba(30,40,60,.18); padding: 8px; }
     .dst-colsmenu-h { font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: var(--propia-text-faint); text-transform: uppercase; padding: 4px 6px 8px; }
     .dst-colsmenu-i { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 7px; }
+    .dst-colsmenu-lbl { flex: 1; font-size: 13px; color: var(--propia-text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .dst-colsmenu-i:hover { background: var(--propia-bg-hover); }
     .dst-colsmenu-ord { display: flex; gap: 2px; flex: 0 0 auto; }
     .dst-colsmenu-mv { border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-muted); border-radius: 6px; width: 22px; height: 22px; font-size: 9px; line-height: 1; cursor: pointer; }
@@ -2134,10 +2252,14 @@ else
     .cga-tab--on { color: var(--propia-brand); border-bottom-color: var(--propia-brand); }
     .cga-tab:disabled { color: var(--propia-text-faint); cursor: not-allowed; }
     .cga-tab-soon { font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .3px; background: var(--propia-bg-app); color: var(--propia-text-faint); border-radius: 6px; padding: 1px 5px; margin-left: 4px; vertical-align: middle; }
-    .cga-grid { display: grid; grid-template-columns: 118px minmax(150px, 1.3fr) minmax(150px, 1fr) minmax(160px, 1.4fr) 120px; gap: 10px; align-items: center; }
+    .cga-grid { display: grid; grid-template-columns: 138px minmax(170px, 1.4fr) minmax(150px, 1fr) minmax(180px, 1.5fr) 140px; gap: 10px; align-items: center; }
     .cga-head-row { padding: 6px 10px; font-size: 10.5px; font-weight: 800; letter-spacing: .4px; color: var(--propia-text-faint); text-transform: uppercase; border-bottom: 1px solid var(--propia-border-divider); }
     .cga-row { padding: 8px 10px; border-bottom: 1px solid var(--propia-border-divider); }
+    .cga-row--drag { opacity: .45; background: var(--propia-brand-soft); }
     .cga-ctrl { display: flex; align-items: center; gap: 3px; }
+    .cga-grip { display: inline-flex; align-items: center; justify-content: center; width: 16px; color: var(--propia-text-faint); cursor: grab; flex-shrink: 0; }
+    .cga-grip:hover { color: var(--propia-brand); }
+    .cga-grip:active { cursor: grabbing; }
     .cga-mini { width: 20px; height: 20px; border: 1px solid var(--propia-border-card); border-radius: 6px; background: var(--propia-bg-card); color: var(--propia-text-faint); font-size: 9px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
     .cga-mini:hover { color: var(--propia-brand); border-color: var(--propia-brand); }
     .cga-eye { width: 26px; height: 22px; border: 1px solid var(--propia-border-card); border-radius: 6px; background: var(--propia-bg-card); color: var(--propia-text-faint); cursor: pointer; display: flex; align-items: center; justify-content: center; }
@@ -2172,5 +2294,5 @@ else
     .cga-add-btn { border: 1px solid var(--propia-brand-soft); background: var(--propia-brand-soft); color: var(--propia-brand); border-radius: 7px; font-size: 12.5px; font-weight: 700; padding: 6px 14px; cursor: pointer; font-family: inherit; }
     .cga-add-btn:hover { filter: brightness(.97); }
     .cga-add-btn:disabled { opacity: .5; cursor: default; }
-    @@media (max-width: 900px) { .cg-body { overflow-x: auto; } .cga-grid { min-width: 720px; } }
+    @@media (max-width: 1024px) { .cg-modal--wide { width: calc(100vw - 32px); } .cg-body { overflow-x: auto; } .cga-grid { min-width: 820px; } }
 </style>
