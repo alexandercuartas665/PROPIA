@@ -157,6 +157,14 @@ public class UnidadCampoConfig : TenantEntity
     public string? Alias { get; set; }
     /// <summary>Opciones (una por linea) para los campos fijos tipo lista (ej. estado). Null si no aplica.</summary>
     public string? Opciones { get; set; }
+    /// <summary>Override del tipo de dato; null = usa el tipo del sistema.</summary>
+    public TipoCampoTablero? Tipo { get; set; }
+    /// <summary>Formato de presentacion (JSON simple). Null = el formato por defecto del tipo.</summary>
+    public string? Formato { get; set; }
+    /// <summary>Oculta la columna en la tabla de unidades (configuracion por copropiedad).</summary>
+    public bool Oculto { get; set; }
+    /// <summary>Posicion de la columna en la tabla; null = va al final.</summary>
+    public int? Orden { get; set; }
 }
 
 /// <summary>

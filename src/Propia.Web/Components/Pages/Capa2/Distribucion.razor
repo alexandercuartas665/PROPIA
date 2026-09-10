@@ -216,7 +216,10 @@
                     var key = it.Key;
                     var esCustom = it.EsCustom;
                     var cs = esCustom ? null : CamposSistema.FirstOrDefault(x => x.Clave == key);
-                    var (tdato, fija) = esCustom ? ("", false) : TipoDato(key);
+                    var (tdato, fija) = esCustom ? ("", false) : TipoDatoUi(key);
+                    var permitidos = esCustom ? Array.Empty<TipoCampoTablero>() : TiposPermitidos(key);
+                    var tefe = esCustom ? it.Campo!.Tipo : TipoEfectivo(key);
+                    var fmt = esCustom ? null : FormatoDe(key);
                     var vis = EsVisibleItem(it);
                     var puedeOcultar = esCustom || it.Def!.Hideable;
                     <div class="cga-grid cga-row @(_dragColKey == key ? "cga-row--drag" : "")"
@@ -241,6 +244,13 @@
                             {
                                 <span class="cga-tipo-badge cga-tipo-badge--edit">@TipoLabel(it.Campo!.Tipo)</span>
                             }
+                            else if (permitidos.Length > 0)
+                            {
+                                @* Tipo intercambiable: solo entre tipos compatibles con la columna real. *@
+                                <select class="cga-inp cga-tipo-sel" value="@tefe" @onchange="@(e => SetTipoCampoAsync(key, e.Value?.ToString()))" disabled="@_cfgBusy">
+                                    @foreach (var t in permitidos) { <option value="@t" selected="@(t == tefe)">@TipoLabel(t)</option> }
+                                </select>
+                            }
                             else
                             {
                                 <span class="cga-tipo-badge">@tdato</span>
@@ -261,7 +271,32 @@
                                 <button class="dst-btn-soft" type="button" @onclick="() => ToggleLista(key)">@(_fldExpand == key ? "Ocultar lista" : "Gestionar lista")</button>
                                 <span class="cga-cfg-hint" style="margin-left:6px;">@(key == "tipo" ? TiposUnidadSel.Count() + _tiposCustom.Count : EstadosConfig().Count()) opciones</span>
                             }
-                            else { <span class="cga-cfg-hint">@ConfigHint(key)</span> }
+                            else if (key == "agrupacion") { <span class="cga-cfg-hint">Segun el codigo / anexos</span> }
+                            else if (EsCampoEntero(key)) { <span class="cga-cfg-hint">Entero (sin decimales)</span> }
+                            else if (tefe is TipoCampoTablero.Numero or TipoCampoTablero.Moneda)
+                            {
+                                @* Numero / Moneda: decimales + separador de miles (+ moneda si aplica). *@
+                                <div class="cga-fmt">
+                                    <label class="cga-fmt-lbl">Decimales</label>
+                                    <select class="cga-inp cga-fmt-dec" value="@(fmt!.Dec ?? 2)" @onchange="@(e => SetFormatoDecAsync(key, e.Value?.ToString()))" disabled="@_cfgBusy">
+                                        @foreach (var d in new[] { 0, 1, 2, 3, 4 }) { <option value="@d" selected="@((fmt!.Dec ?? 2) == d)">@d</option> }
+                                    </select>
+                                    <label class="cga-fmt-chk" title="Separador de miles (se aplica en las vistas de solo lectura)">
+                                        <input type="checkbox" checked="@fmt!.Miles" @onchange="@(e => SetFormatoMilesAsync(key, (bool)(e.Value ?? false)))" disabled="@_cfgBusy" />
+                                        <span>Miles</span>
+                                    </label>
+                                    @if (tefe == TipoCampoTablero.Moneda) { <span class="cga-fmt-tag">COP</span> }
+                                </div>
+                            }
+                            else if (tefe is TipoCampoTablero.Texto or TipoCampoTablero.AreaTexto or TipoCampoTablero.Telefono or TipoCampoTablero.Email or TipoCampoTablero.Url)
+                            {
+                                <div class="cga-fmt">
+                                    <label class="cga-fmt-lbl">Max. caracteres</label>
+                                    <input class="cga-inp cga-fmt-max" type="number" min="1" max="4000" placeholder="sin limite"
+                                           value="@(fmt!.Max?.ToString() ?? "")" @onchange="@(e => SetFormatoMaxAsync(key, e.Value?.ToString()))" disabled="@_cfgBusy" />
+                                </div>
+                            }
+                            else if (tefe == TipoCampoTablero.Booleano) { <span class="cga-cfg-hint">Si / No</span> }
                         </div>
                         <div class="cga-row-act">
                             @if (esCustom)
@@ -277,21 +312,25 @@
                         <div class="cga-opts">
                             @if (key == "tipo")
                             {
-                                <div class="cg-sub" style="margin-bottom:8px;">Los tipos base vienen por defecto (semilla, con candado). Agrega o quita los propios de tu copropiedad.</div>
+                                <div class="cg-sub" style="margin-bottom:8px;">Los tipos base vienen por defecto (semilla, con candado). Los propios de tu copropiedad se pueden renombrar, reordenar y quitar.</div>
                                 <div class="cga-opts-list">
                                     @foreach (var t in TiposUnidadSel)
                                     {
                                         <div class="cga-opt-row cga-opt-row--base">
-                                            <svg class="cga-opt-lock" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="Tipo base (no se puede quitar)"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                                            <svg class="cga-opt-lock" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="Tipo base (no se puede renombrar ni quitar)"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
                                             <span class="cga-opt-name">@Etiqueta(t)</span>
                                         </div>
                                     }
-                                    @foreach (var tc in _tiposCustom)
+                                    @for (var i = 0; i < _tiposCustom.Count; i++)
                                     {
-                                        var tcc = tc;
+                                        var idx = i; var tcc = _tiposCustom[i];
                                         <div class="cga-opt-row">
-                                            <span class="cga-opt-dot"></span>
-                                            <span class="cga-opt-name">@tc.Nombre</span>
+                                            <div class="cga-opt-move">
+                                                <button type="button" class="cga-mini" title="Subir" disabled="@(idx == 0)" @onclick="() => MoverTipoCustomAsync(idx, -1)">&#9650;</button>
+                                                <button type="button" class="cga-mini" title="Bajar" disabled="@(idx == _tiposCustom.Count - 1)" @onclick="() => MoverTipoCustomAsync(idx, 1)">&#9660;</button>
+                                            </div>
+                                            <input class="cga-inp cga-opt-inp" value="@tcc.Nombre" title="Renombrar la opcion"
+                                                   @onchange="@(e => RenombrarTipoCustomAsync(tcc, e.Value?.ToString()))" disabled="@_cfgBusy" />
                                             <button type="button" class="cga-opt-x" title="Quitar" @onclick="() => EliminarTipoCustomAsync(tcc)" disabled="@_cfgBusy">&times;</button>
                                         </div>
                                     }
@@ -313,7 +352,8 @@
                                                 <button type="button" class="cga-mini" title="Subir" disabled="@(idx == 0)" @onclick="() => MoverEstadoAsync(idx, -1)">&#9650;</button>
                                                 <button type="button" class="cga-mini" title="Bajar" disabled="@(idx == _estadoOpts.Count - 1)" @onclick="() => MoverEstadoAsync(idx, 1)">&#9660;</button>
                                             </div>
-                                            <span class="cga-opt-name">@op</span>
+                                            <input class="cga-inp cga-opt-inp" value="@op" title="Renombrar la opcion"
+                                                   @onchange="@(e => RenombrarEstadoAsync(idx, e.Value?.ToString()))" disabled="@_cfgBusy" />
                                             <button type="button" class="cga-opt-x" title="Quitar" @onclick="() => QuitarEstadoAsync(op)" disabled="@_cfgBusy">&times;</button>
                                         </div>
                                     }
@@ -561,10 +601,10 @@ else
                                         </select>
                                         break;
                                     case "area":
-                                        <input class="dst-cell" type="number" step="0.01" value="@(uu.AreaM2?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "area", e))" />
+                                        <input class="dst-cell" type="number" step="@PasoDe("area")" value="@NumeroCelda(uu.AreaM2, "area")" placeholder="-" @onchange="@(e => Inline(uu, "area", e))" />
                                         break;
                                     case "coef":
-                                        <input class="dst-cell" type="number" step="0.0001" value="@uu.CoeficientePropiedad.ToString(System.Globalization.CultureInfo.InvariantCulture)" @onchange="@(e => Inline(uu, "coef", e))" />
+                                        <input class="dst-cell" type="number" step="@PasoDe("coef")" value="@NumeroCelda(uu.CoeficientePropiedad, "coef")" @onchange="@(e => Inline(uu, "coef", e))" />
                                         break;
                                     case "habitaciones":
                                         <input class="dst-cell" type="number" value="@(uu.Habitaciones?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "habitaciones", e))" />
@@ -582,10 +622,10 @@ else
                                         </select>
                                         break;
                                     case "cuota":
-                                        <input class="dst-cell" type="number" step="0.01" value="@(uu.CuotaMensual?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "cuota", e))" />
+                                        <input class="dst-cell" type="number" step="@PasoDe("cuota")" value="@NumeroCelda(uu.CuotaMensual, "cuota")" placeholder="-" @onchange="@(e => Inline(uu, "cuota", e))" />
                                         break;
                                     case "observaciones":
-                                        <input class="dst-cell" value="@(uu.Observaciones ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "observaciones", e))" />
+                                        <input class="dst-cell" type="@TipoInput("observaciones")" maxlength="@MaxDe("observaciones")" value="@(uu.Observaciones ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "observaciones", e))" />
                                         break;
                                     case "agrupacion":
                                         <div class="dst-c dst-ro">
@@ -594,10 +634,10 @@ else
                                         </div>
                                         break;
                                     case "matricula":
-                                        <input class="dst-cell" value="@(uu.MatriculaInmobiliaria ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "matricula", e))" />
+                                        <input class="dst-cell" type="@TipoInput("matricula")" maxlength="@MaxDe("matricula")" value="@(uu.MatriculaInmobiliaria ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "matricula", e))" />
                                         break;
                                     case "refpago":
-                                        <input class="dst-cell" value="@(uu.ReferenciaPago ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "refpago", e))" />
+                                        <input class="dst-cell" type="@TipoInput("refpago")" maxlength="@MaxDe("refpago")" value="@(uu.ReferenciaPago ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "refpago", e))" />
                                         break;
                                     case "prop":
                                         <div class="dst-c dst-ro">
@@ -707,19 +747,19 @@ else
                                     </select>
                                     break;
                                 case "area":
-                                    <input class="dst-nf-inp" type="number" step="0.01" placeholder="-" @bind="_nuArea" @bind:event="oninput" />
+                                    <input class="dst-nf-inp" type="number" step="@PasoDe("area")" placeholder="-" @bind="_nuArea" @bind:event="oninput" />
                                     break;
                                 case "coef":
-                                    <input class="dst-nf-inp" type="number" step="0.0001" placeholder="0" @bind="_nuCoef" @bind:event="oninput" />
+                                    <input class="dst-nf-inp" type="number" step="@PasoDe("coef")" placeholder="0" @bind="_nuCoef" @bind:event="oninput" />
                                     break;
                                 case "agrupacion":
                                     <div class="dst-nf-mut" title="Se define al crear anexos (+ anexo)">auto</div>
                                     break;
                                 case "matricula":
-                                    <input class="dst-nf-inp" placeholder="Matricula" @bind="_nuMatricula" @bind:event="oninput" />
+                                    <input class="dst-nf-inp" type="@TipoInput("matricula")" maxlength="@MaxDe("matricula")" placeholder="@AliasCampo("matricula", "Matricula")" @bind="_nuMatricula" @bind:event="oninput" />
                                     break;
                                 case "refpago":
-                                    <input class="dst-nf-inp" placeholder="Ref. pago" @bind="_nuRefPago" @bind:event="oninput" />
+                                    <input class="dst-nf-inp" type="@TipoInput("refpago")" maxlength="@MaxDe("refpago")" placeholder="@AliasCampo("refpago", "Ref. pago")" @bind="_nuRefPago" @bind:event="oninput" />
                                     break;
                                 default:
                                     <div class="dst-nf-mut" title="Se define en la ficha de la unidad">En la ficha</div>
@@ -895,15 +935,18 @@ else
     // Campos filtrables para el boton "Filtros" (reemplazan los selects "Todo tipo"/"Toda torre").
     private List<FiltroDinamico.CampoDef> CamposFiltroU => new()
     {
-        new() { Key = "numero", Label = "Unidad", Kind = "texto" },
-        new() { Key = "tipo", Label = "Tipo", Kind = "sel",
+        new() { Key = "numero", Label = AliasCampo("num", "Unidad"), Kind = "texto" },
+        new() { Key = "tipo", Label = AliasCampo("tipo", "Tipo"), Kind = "sel",
                 Opciones = TiposUnidadSel.Select(t => (Etiqueta(t), Etiqueta(t)))
                     .Concat(_tiposCustom.Select(tc => (tc.Nombre, tc.Nombre))).ToList() },
+        // Estado usa las opciones configuradas por la copropiedad (mismas que la tabla y la ficha).
+        new() { Key = "estado", Label = AliasCampo("estado", "Estado"), Kind = "sel",
+                Opciones = EstadosConfig().Select(e => (e, e)).ToList() },
         new() { Key = "torre", Label = LabelAgrupacionSingular, Kind = "sel",
                 Opciones = _torres.OrderBy(x => x.Nombre).Select(t => (t.Id.ToString(), t.Nombre)).ToList() },
-        new() { Key = "piso", Label = LabelPisoSingular, Kind = "num" },
-        new() { Key = "area", Label = "Area", Kind = "num" },
-        new() { Key = "coef", Label = "Coeficiente", Kind = "num" },
+        new() { Key = "piso", Label = AliasCampo("piso", LabelPisoSingular), Kind = "num" },
+        new() { Key = "area", Label = AliasCampo("area", "Area"), Kind = "num" },
+        new() { Key = "coef", Label = AliasCampo("coef", "Coeficiente"), Kind = "num" },
         new() { Key = "propietario", Label = "Propietario", Kind = "texto" },
     };
 
@@ -945,6 +988,7 @@ else
                 {
                     "numero" => u.Numero,
                     "tipo" => EtiquetaU(u),
+                    "estado" => u.Estado ?? "",
                     "torre" => u.TorreId?.ToString() ?? "",
                     "piso" => u.Piso?.ToString() ?? "",
                     "area" => u.AreaM2?.ToString(ci) ?? "",
@@ -1077,11 +1121,10 @@ else
         finally { _creandoAnexo = false; }
     }
 
-    // ===== Configurar columnas (por usuario, localStorage) =====
+    // ===== Configuracion de columnas (POR COPROPIEDAD, en unidad_campos_config) =====
+    // El orden (Orden) y la visibilidad (Oculto) de cada campo se guardan en la config del tenant,
+    // ya no en localStorage: lo que configura un administrador lo ve toda la copropiedad.
     private bool _cfgColsAbierto;
-    private Dictionary<string, ColPref> _cols = new();
-    private const string ColsKey = "propia_cols_unidades";
-    private const string ColOrderKey = "propia_colorder_unidades";
     // Orden por defecto: TODOS los campos del sistema (mas 'agrupacion' derivado) pueden ser columnas.
     // La 'ubicacion' de un campo = su posicion en este orden (que es el orden de columnas de la tabla).
     private static readonly string[] ColDefaultOrder =
@@ -1089,12 +1132,9 @@ else
         "num", "tipo", "estado", "agrupacion", "coef", "area", "piso", "habitaciones",
         "banos", "parqueaderos", "matricula", "refpago", "pagaadmin", "cuota", "observaciones"
     };
-    // Columnas visibles por defecto (las demas quedan disponibles pero ocultas hasta que el usuario las active).
+    // Columnas visibles por defecto (las demas quedan disponibles pero ocultas hasta que se activen).
     private static readonly HashSet<string> ColVisibleDefault = new(StringComparer.Ordinal)
     { "num", "tipo", "agrupacion", "matricula", "coef", "refpago" };
-    private List<string> _colOrderU = ColDefaultOrder.ToList();
-
-    public sealed class ColPref { public bool Visible { get; set; } = true; public string? Label { get; set; } }
 
     private sealed record ColDef(string Key, string DefLabel, string Width, bool Hideable);
     // Catalogo dinamico: los labels de agrupacion/piso salen de la identidad de la copropiedad.
@@ -1119,69 +1159,65 @@ else
     };
 
     // Item unificado de columna: campo del sistema (Def) o campo personalizado (Campo). El orden y la
-    // visibilidad de ambos viven en el mismo modelo (_colOrderU / _cols), asi todo se arrastra junto.
+    // visibilidad de ambos viven en la MISMA config del tenant, asi todo se arrastra junto.
     private sealed record ColItem(string Key, bool EsCustom, ColDef? Def, UnidadCampoDefinicionDto? Campo);
     private static string CampoKey(UnidadCampoDefinicionDto d) => "cd:" + d.Id;
+    private static bool EsClaveCustom(string clave) => clave.StartsWith("cd:", StringComparison.Ordinal);
 
-    private bool EsVisible(ColDef c)
-    {
-        if (!c.Hideable) return true;                              // 'num' (identificador) siempre visible
-        if (_cols.TryGetValue(c.Key, out var p)) return p.Visible; // preferencia explicita del usuario
-        return ColVisibleDefault.Contains(c.Key);                 // por defecto: solo las 6 columnas clasicas
-    }
-    // Encabezado de columna: alias del tenant (Configurar) > etiqueta por-usuario (localStorage) > default.
-    private string Etiqueta(ColDef c)
-        => (_camposConfig.TryGetValue(c.Key, out var cc) && !string.IsNullOrWhiteSpace(cc.Alias)) ? cc.Alias!
-         : (_cols.TryGetValue(c.Key, out var p) && !string.IsNullOrWhiteSpace(p.Label)) ? p.Label!
-         : c.DefLabel;
+    // Visibilidad: lo guardado por la copropiedad; si el campo no tiene config, su default.
+    private static bool VisiblePorDefecto(string clave) => EsClaveCustom(clave) || ColVisibleDefault.Contains(clave);
+    private bool VisibleDe(string clave)
+        => _camposConfig.TryGetValue(clave, out var c) ? !c.Oculto : VisiblePorDefecto(clave);
+    private bool EsVisible(ColDef c) => !c.Hideable || VisibleDe(c.Key);   // 'num' siempre visible
+    private bool EsVisibleItem(ColItem it) => it.EsCustom ? VisibleDe(it.Key) : EsVisible(it.Def!);
 
-    // Todas las columnas (sistema + personalizados) en el orden elegido; claves nuevas van al final.
+    // Encabezado de columna: alias de la copropiedad (Configurar) > etiqueta por defecto.
+    private string Etiqueta(ColDef c) => AliasCampo(c.Key, c.DefLabel);
+
+    // Orden efectivo: el 'orden' guardado por campo. Los que no lo tienen (todavia nadie los movio)
+    // van despues, conservando el orden por defecto del catalogo.
+    private int OrdenDe(string clave, int fallback)
+        => _camposConfig.TryGetValue(clave, out var c) && c.Orden is { } o ? o : 1000 + fallback;
+
+    // Todas las columnas (sistema + personalizados) en el orden configurado.
     private IEnumerable<ColItem> ColumnasOrdenadas
     {
         get
         {
+            var items = new List<ColItem>();
             var bySys = Catalogo.ToDictionary(c => c.Key, StringComparer.Ordinal);
-            var byCd = _camposDef.ToDictionary(CampoKey, StringComparer.Ordinal);
-            foreach (var k in _colOrderU)
-            {
-                if (bySys.TryGetValue(k, out var c)) yield return new ColItem(c.Key, false, c, null);
-                else if (byCd.TryGetValue(k, out var d)) yield return new ColItem(k, true, null, d);
-            }
-            foreach (var c in Catalogo) if (!_colOrderU.Contains(c.Key)) yield return new ColItem(c.Key, false, c, null);
-            foreach (var d in _camposDef) if (!_colOrderU.Contains(CampoKey(d))) yield return new ColItem(CampoKey(d), true, null, d);
+            foreach (var k in ColDefaultOrder) if (bySys.TryGetValue(k, out var c)) items.Add(new ColItem(c.Key, false, c, null));
+            foreach (var c in Catalogo) if (!ColDefaultOrder.Contains(c.Key)) items.Add(new ColItem(c.Key, false, c, null));
+            foreach (var d in _camposDef) items.Add(new ColItem(CampoKey(d), true, null, d));
+            // OrderBy es estable: los que caen en el fallback conservan el orden por defecto.
+            return items.Select((it, i) => (it, ord: OrdenDe(it.Key, i))).OrderBy(x => x.ord).Select(x => x.it);
         }
     }
-    private bool EsVisibleItem(ColItem it)
-        => it.EsCustom ? (!_cols.TryGetValue(it.Key, out var p) || p.Visible) : EsVisible(it.Def!);
     private IEnumerable<ColItem> ColumnasVisibles => ColumnasOrdenadas.Where(EsVisibleItem);
     private string GridCols => "34px "
         + string.Join(" ", ColumnasVisibles.Select(it => it.EsCustom ? "minmax(140px,170px)" : it.Def!.Width))
         + " 120px";
 
-    private ColPref PrefDe(string key)
+    // Fila COMPLETA de config del campo con su estado actual. El PUT reemplaza la fila entera, asi que
+    // siempre se manda todo y se muta con 'with' solo lo que cambia (no se pisa lo que no se toca).
+    private GuardarUnidadCampoConfigRequest FilaConfig(string clave)
     {
-        if (!_cols.TryGetValue(key, out var p)) { p = new(); _cols[key] = p; }
-        return p;
-    }
-    private async Task SetColVisible(string key, bool v) { PrefDe(key).Visible = v; await GuardarColsAsync(); }
-    private async Task MoverColU(int idx, int dir)
-    {
-        var ni = idx + dir;
-        if (ni < 0 || ni >= _colOrderU.Count) return;
-        (_colOrderU[idx], _colOrderU[ni]) = (_colOrderU[ni], _colOrderU[idx]);
-        await GuardarColsAsync();
-    }
-    // Overload por clave (para la grilla estilo Airtable): ubica el indice en el orden actual.
-    private async Task MoverColU(string key, int dir)
-    {
-        NormalizarOrden();
-        var idx = _colOrderU.IndexOf(key);
-        if (idx < 0) return;
-        await MoverColU(idx, dir);
+        _camposConfig.TryGetValue(clave, out var c);
+        return new GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato,
+            Oculto: c?.Oculto ?? !VisiblePorDefecto(clave), Orden: c?.Orden);
     }
 
-    // Materializa el orden COMPLETO (sistema + personalizados) en _colOrderU respetando el orden visible actual.
-    private void NormalizarOrden() => _colOrderU = ColumnasOrdenadas.Select(it => it.Key).ToList();
+    private Task SetColVisible(string key, bool v) => EnCola(() => GuardarCampoConfigAsync(FilaConfig(key) with { Oculto = !v }));
+
+    private async Task MoverColU(string key, int dir)
+    {
+        var orden = ColumnasOrdenadas.Select(x => x.Key).ToList();
+        var idx = orden.IndexOf(key);
+        var ni = idx + dir;
+        if (idx < 0 || ni < 0 || ni >= orden.Count) return;
+        (orden[idx], orden[ni]) = (orden[ni], orden[idx]);
+        await GuardarOrdenAsync(orden);
+    }
 
     // ===== Drag & drop del orden de campos (grilla de configuracion). Sin JS: eventos nativos de Blazor. =====
     private string? _dragColKey;
@@ -1192,67 +1228,171 @@ else
         var src = _dragColKey;
         _dragColKey = null;
         if (src is null || src == targetKey) return;
-        NormalizarOrden();
-        var from = _colOrderU.IndexOf(src);
-        var to = _colOrderU.IndexOf(targetKey);
+        var orden = ColumnasOrdenadas.Select(x => x.Key).ToList();
+        var from = orden.IndexOf(src);
+        var to = orden.IndexOf(targetKey);
         if (from < 0 || to < 0) return;
-        _colOrderU.RemoveAt(from);
+        orden.RemoveAt(from);
         if (from < to) to--;                 // al quitar el origen, el destino se corre una posicion
-        _colOrderU.Insert(to, src);
-        await GuardarColsAsync();
+        orden.Insert(to, src);
+        await GuardarOrdenAsync(orden);
     }
 
-    // Tipo de dato mostrado por campo fijo (bloqueado en esta fase) + si es FIJA (no cambiable).
-    private static (string tipo, bool fija) TipoDato(string clave) => clave switch
+    // Persiste el orden COMPLETO en un solo PUT (no uno por campo) y refresca la config.
+    // Se manda la FILA ENTERA de cada campo (no solo la clave) porque al crear filas nuevas hay que
+    // fijar tambien su visibilidad: si se dejara el default de la columna, los campos ocultos por
+    // defecto se volverian visibles con el primer arrastre.
+    private async Task GuardarOrdenAsync(List<string> claves)
     {
-        "num" => ("Identificador Unico", true),
-        "agrupacion" => ("Derivado", true),
-        "tipo" => ("Lista Desplegable", false),
-        "estado" => ("Lista Desplegable", false),
-        "coef" => ("Numero Decimal", false),
-        "area" => ("Numero Decimal", false),
-        "piso" => ("Numero", false),
-        "habitaciones" => ("Numero", false),
-        "banos" => ("Numero", false),
-        "parqueaderos" => ("Numero", false),
-        "matricula" => ("Texto", false),
-        "refpago" => ("Texto", false),
-        "pagaadmin" => ("Si / No", false),
-        "cuota" => ("Moneda", false),
-        "observaciones" => ("Texto Largo", false),
-        _ => ("Texto", false)
-    };
-
-    // Texto de "configuracion especifica" para los campos que no son lista (informativo en esta fase).
-    private static string ConfigHint(string clave) => clave switch
-    {
-        "coef" or "area" => "Decimal (.)",
-        "piso" or "habitaciones" or "banos" or "parqueaderos" => "Entero",
-        "cuota" => "Moneda COP",
-        "matricula" or "refpago" => "Texto",
-        "observaciones" => "Texto largo",
-        "pagaadmin" => "Si / No",
-        "agrupacion" => "Segun el codigo / anexos",
-        "num" => "",
-        _ => ""
-    };
-    private async Task SetColLabel(string key, string? label)
-    {
-        var def = Catalogo.First(c => c.Key == key).DefLabel;
-        var l = label?.Trim();
-        PrefDe(key).Label = string.IsNullOrWhiteSpace(l) || string.Equals(l, def, StringComparison.Ordinal) ? null : l;
-        await GuardarColsAsync();
+        _cfgBusy = true;
+        try
+        {
+            var filas = claves.Select((k, i) => FilaConfig(k) with { Orden = i }).ToList();
+            var r = await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config/lote", filas);
+            if (r.IsSuccessStatusCode) await CargarCamposConfigAsync();
+        }
+        catch { }
+        finally { _cfgBusy = false; }
     }
-    private async Task GuardarColsAsync()
+
+    private async Task CargarCamposConfigAsync()
     {
         try
         {
-            await Js.InvokeVoidAsync("localStorage.setItem", ColsKey, System.Text.Json.JsonSerializer.Serialize(_cols));
-            await Js.InvokeVoidAsync("localStorage.setItem", ColOrderKey, System.Text.Json.JsonSerializer.Serialize(_colOrderU));
+            var list = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config");
+            _camposConfig = list?.ToDictionary(x => x.CampoClave, StringComparer.Ordinal) ?? new();
         }
         catch { }
     }
-    private async Task RestablecerCols() { _cols.Clear(); _colOrderU = ColDefaultOrder.ToList(); await GuardarColsAsync(); }
+
+    // ===== Tipo de dato y formato por campo (configurables por copropiedad) =====
+
+    // Tipo que trae de fabrica cada campo del sistema.
+    private static TipoCampoTablero TipoSistema(string clave) => clave switch
+    {
+        "tipo" or "estado" => TipoCampoTablero.Seleccion,
+        "coef" or "area" or "piso" or "habitaciones" or "banos" or "parqueaderos" => TipoCampoTablero.Numero,
+        "cuota" => TipoCampoTablero.Moneda,
+        "pagaadmin" => TipoCampoTablero.Booleano,
+        "observaciones" => TipoCampoTablero.AreaTexto,
+        _ => TipoCampoTablero.Texto
+    };
+
+    private static readonly TipoCampoTablero[] TiposTexto =
+        { TipoCampoTablero.Texto, TipoCampoTablero.AreaTexto, TipoCampoTablero.Telefono, TipoCampoTablero.Email, TipoCampoTablero.Url };
+    private static readonly TipoCampoTablero[] TiposNumericos = { TipoCampoTablero.Numero, TipoCampoTablero.Moneda };
+
+    // A que tipos se PUEDE cambiar un campo del sistema. Vacio = tipo FIJO.
+    // Regla: solo tipos compatibles con la columna real de la base, para no corromper datos.
+    private static TipoCampoTablero[] TiposPermitidos(string clave) => clave switch
+    {
+        "area" or "cuota" => TiposNumericos,                          // ambos decimales en la base
+        "matricula" or "refpago" or "observaciones" => TiposTexto,    // todos texto en la base
+        // FIJOS: num (identificador), agrupacion (derivado), tipo/estado (listas del sistema),
+        // coef (coeficiente de propiedad - Ley 675), los enteros y el Si/No.
+        _ => Array.Empty<TipoCampoTablero>()
+    };
+
+    private TipoCampoTablero TipoEfectivo(string clave)
+        => _camposConfig.TryGetValue(clave, out var c) && c.Tipo is { } t ? t : TipoSistema(clave);
+
+    // Campos que en la base son ENTEROS: no admiten decimales, asi que no se les ofrece ese formato.
+    private static bool EsCampoEntero(string clave)
+        => clave is "piso" or "habitaciones" or "banos" or "parqueaderos";
+
+    // Etiqueta del tipo que se muestra en la grilla + si es FIJA (no se puede cambiar).
+    private (string tipo, bool fija) TipoDatoUi(string clave) => clave switch
+    {
+        "num" => ("Identificador Unico", true),
+        "agrupacion" => ("Derivado", true),
+        _ => (TipoLabel(TipoEfectivo(clave)), TiposPermitidos(clave).Length == 0)
+    };
+
+    private Task SetTipoCampoAsync(string clave, string? v)
+        => EnCola(() => GuardarCampoConfigAsync(FilaConfig(clave) with { Tipo = Enum.TryParse<TipoCampoTablero>(v, out var t) ? t : null }));
+
+    // ===== Formato de presentacion (JSON simple guardado en la config del campo) =====
+    private sealed record FormatoCampo(int? Dec = null, bool Miles = false, string? Moneda = null, int? Max = null);
+
+    private static FormatoCampo FormatoPorDefecto(string clave) => clave switch
+    {
+        "coef" => new FormatoCampo(Dec: 4),
+        "area" => new FormatoCampo(Dec: 2),
+        "cuota" => new FormatoCampo(Dec: 0, Miles: true, Moneda: "COP"),
+        "piso" or "habitaciones" or "banos" or "parqueaderos" => new FormatoCampo(Dec: 0),
+        _ => new FormatoCampo()
+    };
+
+    private FormatoCampo FormatoDe(string clave)
+    {
+        if (_camposConfig.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Formato))
+        {
+            try { return System.Text.Json.JsonSerializer.Deserialize<FormatoCampo>(c.Formato!) ?? FormatoPorDefecto(clave); }
+            catch { }
+        }
+        return FormatoPorDefecto(clave);
+    }
+
+    private Task GuardarFormatoAsync(string clave, FormatoCampo f)
+        => GuardarCampoConfigAsync(FilaConfig(clave) with { Formato = System.Text.Json.JsonSerializer.Serialize(f) });
+
+    // Los setters se encolan y leen FormatoDe/FilaConfig DENTRO de la cola: si no, dos clics seguidos
+    // (cambiar decimales y marcar Miles) partirian del mismo estado y el segundo pisaria al primero.
+    private Task SetFormatoDecAsync(string clave, string? v)
+        => EnCola(() => GuardarFormatoAsync(clave, FormatoDe(clave) with { Dec = int.TryParse(v, out var n) ? Math.Clamp(n, 0, 6) : null }));
+    private Task SetFormatoMilesAsync(string clave, bool v)
+        => EnCola(() => GuardarFormatoAsync(clave, FormatoDe(clave) with { Miles = v }));
+    private Task SetFormatoMaxAsync(string clave, string? v)
+        => EnCola(() => GuardarFormatoAsync(clave, FormatoDe(clave) with { Max = int.TryParse(v, out var n) && n > 0 ? n : null }));
+
+    // Cola de escrituras de configuracion: garantiza que cada cambio parta del estado ya guardado.
+    private Task _cfgCola = Task.CompletedTask;
+    private Task EnCola(Func<Task> accion)
+    {
+        var anterior = _cfgCola;
+        _cfgCola = Ejecutar();
+        return _cfgCola;
+        async Task Ejecutar()
+        {
+            try { await anterior; } catch { }
+            await accion();
+        }
+    }
+
+    // ===== Aplicacion del formato en la tabla =====
+    // 'step' del input numerico segun los decimales configurados.
+    private string PasoDe(string clave)
+    {
+        var d = FormatoDe(clave).Dec ?? 2;
+        return d <= 0 ? "1" : "0." + new string('0', d - 1) + "1";
+    }
+    private int? MaxDe(string clave) => FormatoDe(clave).Max;
+    // Valor numerico redondeado a los decimales configurados. Se emite en cultura invariante porque
+    // es lo que entiende <input type=number> (el separador de miles NO se aplica en celdas editables:
+    // meterlo dentro del input es justo donde se corrompen los datos al re-parsear).
+    private string NumeroCelda(decimal? v, string clave)
+        => v is null ? "" : Math.Round(v.Value, Math.Clamp(FormatoDe(clave).Dec ?? 2, 0, 6))
+            .ToString(System.Globalization.CultureInfo.InvariantCulture);
+    // Tipo de <input> segun el tipo de dato configurado (texto/email/url/telefono).
+    private string TipoInput(string clave) => TipoEfectivo(clave) switch
+    {
+        TipoCampoTablero.Email => "email",
+        TipoCampoTablero.Url => "url",
+        TipoCampoTablero.Telefono => "tel",
+        _ => "text"
+    };
+    // Restablece orden y visibilidad de las columnas PARA TODA LA COPROPIEDAD (borra los overrides
+    // guardados); conserva alias, listas, tipo y formato de cada campo.
+    private async Task RestablecerCols()
+    {
+        bool ok;
+        try { ok = await Js.InvokeAsync<bool>("confirm", "Restablecer el orden y la visibilidad de las columnas para toda la copropiedad?"); }
+        catch { ok = true; }
+        if (!ok) return;
+        foreach (var clave in _camposConfig.Keys.ToList())
+            await GuardarCampoConfigAsync(FilaConfig(clave) with { Oculto = !VisiblePorDefecto(clave), Orden = null });
+        await CargarCamposConfigAsync();
+    }
 
     private async Task RestaurarPrefsAsync()
     {
@@ -1260,15 +1400,6 @@ else
         {
             var ag = await Js.InvokeAsync<string?>("localStorage.getItem", AgruparKey);
             if (ag is "torre" or "propietario" or "estado" or "tipo") _agruparPor = ag;
-            var raw = await Js.InvokeAsync<string?>("localStorage.getItem", ColsKey);
-            if (!string.IsNullOrWhiteSpace(raw))
-                _cols = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, ColPref>>(raw) ?? new();
-            var ord = await Js.InvokeAsync<string?>("localStorage.getItem", ColOrderKey);
-            if (!string.IsNullOrWhiteSpace(ord))
-            {
-                var list = System.Text.Json.JsonSerializer.Deserialize<List<string>>(ord);
-                if (list is { Count: > 0 }) _colOrderU = list;
-            }
         }
         catch { }
     }
@@ -1490,19 +1621,12 @@ else
         return EstadoSemilla;
     }
 
-    private async Task GuardarAliasAsync(string clave, string? valor)
-    {
-        var alias = string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
-        var opciones = _camposConfig.TryGetValue(clave, out var c) ? c.Opciones : null;
-        await GuardarCampoConfigAsync(clave, alias, opciones);
-    }
+    private Task GuardarAliasAsync(string clave, string? valor)
+        => EnCola(() => GuardarCampoConfigAsync(FilaConfig(clave) with { Alias = string.IsNullOrWhiteSpace(valor) ? null : valor.Trim() }));
 
-    // Persiste la lista viva de Estado (una opcion por linea) conservando el alias.
-    private async Task GuardarEstadoOptsAsync()
-    {
-        var alias = _camposConfig.TryGetValue("estado", out var c) ? c.Alias : null;
-        await GuardarCampoConfigAsync("estado", alias, string.Join('\n', _estadoOpts));
-    }
+    // Persiste la lista viva de Estado (una opcion por linea) conservando el resto de la config.
+    private Task GuardarEstadoOptsAsync()
+        => EnCola(() => GuardarCampoConfigAsync(FilaConfig("estado") with { Opciones = string.Join('\n', _estadoOpts) }));
 
     private void OnNuevoEstadoKeyUp(KeyboardEventArgs e) { if (e.Key == "Enter") _ = AgregarEstadoAsync(); }
 
@@ -1537,6 +1661,41 @@ else
         await GuardarEstadoOptsAsync();
     }
 
+    // Renombra una opcion de Estado en sitio. Si la opcion esta en uso, ofrece migrar tambien el valor
+    // de esas unidades (si no, quedarian apuntando a un estado que ya no existe en la lista).
+    private async Task RenombrarEstadoAsync(int idx, string? valor)
+    {
+        if (idx < 0 || idx >= _estadoOpts.Count) return;
+        var anterior = _estadoOpts[idx];
+        var nuevo = valor?.Trim() ?? "";
+        if (nuevo.Length == 0) { _estadoMsg = "El nombre no puede quedar vacio."; return; }
+        if (string.Equals(nuevo, anterior, StringComparison.Ordinal)) return;
+        if (_estadoOpts.Where((_, i) => i != idx).Any(x => string.Equals(x, nuevo, StringComparison.OrdinalIgnoreCase)))
+        { _estadoMsg = $"Ya existe '{nuevo}'."; return; }
+
+        var n = _estadosUso.FirstOrDefault(u => string.Equals(u.Estado, anterior, StringComparison.OrdinalIgnoreCase))?.Unidades ?? 0;
+        var migrar = false;
+        if (n > 0)
+        {
+            migrar = await Js.InvokeAsync<bool>("confirm",
+                $"El estado '{anterior}' lo usan {n} unidad(es). Aceptar para renombrarlo tambien en esas unidades; Cancelar para cambiar solo la lista.");
+        }
+
+        _estadoOpts[idx] = nuevo; _estadoMsg = null;
+        await GuardarEstadoOptsAsync();
+        if (migrar)
+        {
+            try
+            {
+                var r = await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades/estados/renombrar",
+                    new RenombrarEstadoRequest(anterior, nuevo));
+                if (r.IsSuccessStatusCode) { await CargarAsync(); _estadoMsg = $"Renombrado en {n} unidad(es)."; }
+                else _estadoMsg = "Se renombro la lista, pero no se pudo actualizar las unidades.";
+            }
+            catch { _estadoMsg = "Se renombro la lista, pero no se pudo actualizar las unidades."; }
+        }
+    }
+
     private async Task RestaurarEstadoSemillaAsync()
     {
         _estadoOpts = EstadoSemilla.ToList();
@@ -1544,17 +1703,17 @@ else
         _estadoMsg = "Opciones restauradas a la semilla.";
     }
 
-    private async Task GuardarCampoConfigAsync(string clave, string? alias, string? opciones)
+    // Guarda la fila de configuracion COMPLETA del campo (alias, lista, tipo, formato, visibilidad, orden).
+    private async Task GuardarCampoConfigAsync(GuardarUnidadCampoConfigRequest req)
     {
         _cfgBusy = true;
         try
         {
-            var req = new GuardarUnidadCampoConfigRequest(clave, alias, opciones);
             var r = await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req);
             if (r.IsSuccessStatusCode)
             {
                 var dto = await r.Content.ReadFromJsonAsync<UnidadCampoConfigDto>();
-                if (dto is not null) _camposConfig[clave] = dto;
+                if (dto is not null) _camposConfig[req.CampoClave] = dto;
             }
         }
         catch { }
@@ -1583,7 +1742,7 @@ else
             if (r.IsSuccessStatusCode)
             {
                 var creado = await r.Content.ReadFromJsonAsync<TipoUnidadCustomDto>();
-                if (creado is not null) _tiposCustom = _tiposCustom.Append(creado).OrderBy(t => t.Nombre).ToList();
+                if (creado is not null) { _tiposCustom = _tiposCustom.Append(creado).ToList(); AplicarOrdenTiposCustom(); }
                 _nuevoTipoNombre = "";
             }
             else { _tipoMsg = await MensajeError(r, "No se pudo agregar el tipo."); }
@@ -1603,6 +1762,62 @@ else
         }
         catch (Exception ex) { _tipoMsg = ex.Message; }
         finally { _cfgBusy = false; }
+    }
+
+    // Renombra un tipo propio en sitio. Las unidades apuntan al tipo por id, asi que no hay que migrar datos.
+    private async Task RenombrarTipoCustomAsync(TipoUnidadCustomDto tc, string? valor)
+    {
+        var nombre = valor?.Trim() ?? "";
+        if (nombre.Length == 0) { _tipoMsg = "El nombre no puede quedar vacio."; return; }
+        if (string.Equals(nombre, tc.Nombre, StringComparison.Ordinal)) return;
+        if (TiposUnidadSel.Any(t => string.Equals(Etiqueta(t), nombre, StringComparison.OrdinalIgnoreCase))
+            || _tiposCustom.Any(t => t.Id != tc.Id && string.Equals(t.Nombre, nombre, StringComparison.OrdinalIgnoreCase)))
+        { _tipoMsg = $"Ya existe un tipo '{nombre}'."; return; }
+        _cfgBusy = true; _tipoMsg = null;
+        try
+        {
+            var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/tipos-unidad/{tc.Id}", new RenombrarTipoUnidadRequest(nombre));
+            if (r.IsSuccessStatusCode)
+            {
+                var i = _tiposCustom.FindIndex(t => t.Id == tc.Id);
+                if (i >= 0) _tiposCustom[i] = tc with { Nombre = nombre };
+                // Las unidades muestran el nombre cacheado del tipo propio: hay que refrescarlas.
+                await CargarAsync();
+            }
+            else { _tipoMsg = await MensajeError(r, "No se pudo renombrar el tipo."); }
+        }
+        catch (Exception ex) { _tipoMsg = ex.Message; }
+        finally { _cfgBusy = false; }
+    }
+
+    // ===== Orden de los tipos propios. Se guarda como lista de ids en la config del campo 'tipo'
+    // (Opciones), asi el orden elegido se respeta en la tabla, el alta, la ficha y los filtros. =====
+    private List<Guid> OrdenTiposCustom()
+    {
+        var res = new List<Guid>();
+        if (_camposConfig.TryGetValue("tipo", out var c) && !string.IsNullOrWhiteSpace(c.Opciones))
+            foreach (var l in c.Opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                if (Guid.TryParse(l, out var g)) res.Add(g);
+        return res;
+    }
+
+    private void AplicarOrdenTiposCustom()
+    {
+        var ord = OrdenTiposCustom();
+        _tiposCustom = _tiposCustom
+            .Select(t => (t, i: ord.IndexOf(t.Id)))
+            .OrderBy(x => x.i < 0 ? int.MaxValue : x.i)     // los que no estan en el orden van al final
+            .ThenBy(x => x.t.Nombre, StringComparer.OrdinalIgnoreCase)
+            .Select(x => x.t).ToList();
+    }
+
+    private async Task MoverTipoCustomAsync(int idx, int dir)
+    {
+        var ni = idx + dir;
+        if (idx < 0 || ni < 0 || ni >= _tiposCustom.Count) return;
+        (_tiposCustom[idx], _tiposCustom[ni]) = (_tiposCustom[ni], _tiposCustom[idx]);
+        var ids = string.Join('\n', _tiposCustom.Select(t => t.Id));
+        await EnCola(() => GuardarCampoConfigAsync(FilaConfig("tipo") with { Opciones = ids }));
     }
 
     private static async Task<string> MensajeError(HttpResponseMessage resp, string porDefecto)
@@ -1697,6 +1912,10 @@ else
         TipoCampoTablero.Fecha => "Fecha",
         TipoCampoTablero.Seleccion => "Lista",
         TipoCampoTablero.Booleano => "Si / No",
+        TipoCampoTablero.Hora => "Hora",
+        TipoCampoTablero.Telefono => "Telefono",
+        TipoCampoTablero.Email => "Correo",
+        TipoCampoTablero.Url => "Enlace",
         _ => "Texto"
     };
 
@@ -1739,7 +1958,8 @@ else
             _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
             try { _camposDef = await http.GetFromJsonAsync<List<UnidadCampoDefinicionDto>>("/api/mi-copropiedad/unidades-campos") ?? new(); } catch { _camposDef = new(); }
             try { _tiposCustom = await http.GetFromJsonAsync<List<TipoUnidadCustomDto>>("/api/mi-copropiedad/tipos-unidad") ?? new(); } catch { _tiposCustom = new(); }
-            try { _camposConfig = (await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config") ?? new()).ToDictionary(c => c.CampoClave); } catch { _camposConfig = new(); }
+            try { _camposConfig = (await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config") ?? new()).ToDictionary(c => c.CampoClave, StringComparer.Ordinal); } catch { _camposConfig = new(); }
+            AplicarOrdenTiposCustom();   // el orden de los tipos propios sale de la config del campo 'tipo'
             try { _estadosUso = await http.GetFromJsonAsync<List<UnidadEstadoUsoDto>>("/api/mi-copropiedad/unidades/estados-uso") ?? new(); } catch { _estadosUso = new(); }
             try
             {
@@ -2274,6 +2494,15 @@ else
     .cga-tipo-badge--edit { color: var(--propia-brand); background: var(--propia-brand-soft); border-color: var(--propia-brand-soft); }
     .cga-lock { color: var(--propia-text-faint); flex-shrink: 0; }
     .cga-fija { font-size: 9px; font-weight: 800; letter-spacing: .3px; color: var(--propia-warn, #B45309); background: var(--propia-warn-soft, #FEF3C7); border-radius: 5px; padding: 1px 5px; }
+    /* Selector de tipo de dato (solo en los campos intercambiables). */
+    .cga-tipo-sel { border-style: solid; padding: 5px 8px; max-width: 150px; }
+    /* Editor de "configuracion especifica": decimales / miles / moneda / max caracteres. */
+    .cga-fmt { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+    .cga-fmt-lbl { font-size: 11px; font-weight: 700; color: var(--propia-text-faint); text-transform: uppercase; letter-spacing: .3px; }
+    .cga-fmt-dec { border-style: solid; width: 58px; padding: 4px 6px; }
+    .cga-fmt-max { border-style: solid; width: 96px; padding: 4px 7px; }
+    .cga-fmt-chk { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--propia-text-secondary); cursor: pointer; }
+    .cga-fmt-tag { font-size: 10px; font-weight: 800; letter-spacing: .3px; color: var(--propia-brand); background: var(--propia-brand-soft); border-radius: 5px; padding: 2px 6px; }
     .cga-cfg { min-width: 0; }
     .cga-cfg-hint { font-size: 11.5px; color: var(--propia-text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; max-width: 100%; }
     .cga-row-act { display: flex; gap: 4px; justify-content: flex-end; }
@@ -2287,6 +2516,10 @@ else
     .cga-opt-lock { color: var(--propia-text-faint); flex-shrink: 0; }
     .cga-opt-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--propia-brand); flex-shrink: 0; }
     .cga-opt-name { flex: 1; min-width: 0; font-size: 13px; color: var(--propia-text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* Renombrar la opcion en sitio (mismo hueco que el nombre, borde solo al hover/focus). */
+    .cga-opt-inp { flex: 1; min-width: 0; border-color: transparent; background: transparent; padding: 4px 6px; font-size: 13px; }
+    .cga-opt-row:hover .cga-opt-inp { border-color: var(--propia-border-input); }
+    .cga-opt-inp:focus { border-style: solid; border-color: var(--propia-brand); background: var(--propia-bg-card); box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
     .cga-opt-x { width: 24px; height: 24px; border: 1px solid var(--propia-border-card); border-radius: 7px; background: var(--propia-bg-card); color: var(--propia-text-faint); font-size: 15px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .cga-opt-x:hover { color: var(--propia-danger); border-color: var(--propia-danger); }
     .cga-opt-add { display: flex; gap: 6px; align-items: center; margin-top: 3px; }

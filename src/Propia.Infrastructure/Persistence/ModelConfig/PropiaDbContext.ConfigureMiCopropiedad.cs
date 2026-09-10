@@ -120,6 +120,11 @@ public partial class PropiaDbContext
         {
             b.Property(x => x.CampoClave).IsRequired().HasMaxLength(40);
             b.Property(x => x.Alias).HasMaxLength(80);
+            // Etapa B: tipo override + formato + visibilidad/orden por copropiedad.
+            b.Property(x => x.Tipo).HasColumnName("tipo");
+            b.Property(x => x.Formato).HasColumnName("formato");
+            b.Property(x => x.Oculto).HasColumnName("oculto").HasDefaultValue(false);
+            b.Property(x => x.Orden).HasColumnName("orden");
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.TenantId, x.CampoClave }).IsUnique();
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);

@@ -687,9 +687,13 @@ public partial class MiCopropiedadService
     // ---- Configuracion de campos FIJOS del sistema (alias + opciones de lista) ----
     public async Task<IReadOnlyList<UnidadCampoConfigDto>> ListCamposConfigAsync(CancellationToken ct)
         => await _db.UnidadCamposConfig.AsNoTracking()
-            .Select(c => new UnidadCampoConfigDto(c.CampoClave, c.Alias, c.Opciones))
+            .Select(c => new UnidadCampoConfigDto(
+                c.CampoClave, c.Alias, c.Opciones,
+                c.Tipo, c.Formato, c.Oculto, c.Orden))
             .ToListAsync(ct);
 
+    // El request es el ESTADO COMPLETO deseado de la fila (la UI siempre manda la fila entera),
+    // asi que los 6 campos se asignan tal cual vienen.
     public async Task<UnidadCampoConfigDto> GuardarCampoConfigAsync(GuardarUnidadCampoConfigRequest req, CancellationToken ct)
     {
         var clave = (req.CampoClave ?? "").Trim().ToLowerInvariant();
@@ -698,16 +702,68 @@ public partial class MiCopropiedadService
         var opciones = string.IsNullOrWhiteSpace(req.Opciones)
             ? null
             : string.Join('\n', req.Opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        var formato = string.IsNullOrWhiteSpace(req.Formato) ? null : req.Formato.Trim();
 
         var c = await _db.UnidadCamposConfig.FirstOrDefaultAsync(x => x.CampoClave == clave, ct);
         if (c is null)
         {
-            c = new UnidadCampoConfig { CampoClave = clave, Alias = alias, Opciones = opciones };
+            c = new UnidadCampoConfig { CampoClave = clave };
             _db.UnidadCamposConfig.Add(c);
         }
-        else { c.Alias = alias; c.Opciones = opciones; }
+        Aplicar(c, alias, opciones, formato, req);
         await _db.SaveChangesAsync(ct);
-        return new UnidadCampoConfigDto(c.CampoClave, c.Alias, c.Opciones);
+        return new UnidadCampoConfigDto(c.CampoClave, c.Alias, c.Opciones, c.Tipo, c.Formato, c.Oculto, c.Orden);
+    }
+
+    // Guarda VARIAS filas de configuracion en una sola transaccion. Lo usa el reordenamiento por
+    // drag & drop, que manda la fila completa de cada campo (no solo su posicion): de lo contrario
+    // las filas creadas al vuelo tomarian el default de 'oculto' y se harian visibles solas.
+    public async Task<IReadOnlyList<UnidadCampoConfigDto>> GuardarCamposConfigLoteAsync(
+        List<GuardarUnidadCampoConfigRequest> filas, CancellationToken ct)
+    {
+        if (filas is null || filas.Count == 0) return await ListCamposConfigAsync(ct);
+
+        // Normaliza y descarta claves vacias o repetidas (gana la primera aparicion).
+        var pedidos = new List<(string Clave, GuardarUnidadCampoConfigRequest Req)>();
+        foreach (var req in filas)
+        {
+            var clave = (req?.CampoClave ?? "").Trim().ToLowerInvariant();
+            if (clave.Length == 0 || pedidos.Any(p => p.Clave == clave)) continue;
+            pedidos.Add((clave, req!));
+        }
+        if (pedidos.Count == 0) return await ListCamposConfigAsync(ct);
+
+        var claves = pedidos.Select(p => p.Clave).ToList();
+        var existentes = await _db.UnidadCamposConfig.Where(x => claves.Contains(x.CampoClave)).ToListAsync(ct);
+
+        foreach (var (clave, req) in pedidos)
+        {
+            var c = existentes.FirstOrDefault(x => x.CampoClave == clave);
+            if (c is null)
+            {
+                c = new UnidadCampoConfig { CampoClave = clave };
+                _db.UnidadCamposConfig.Add(c);
+            }
+            var alias = string.IsNullOrWhiteSpace(req.Alias) ? null : req.Alias.Trim();
+            var opciones = string.IsNullOrWhiteSpace(req.Opciones)
+                ? null
+                : string.Join('\n', req.Opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+            var formato = string.IsNullOrWhiteSpace(req.Formato) ? null : req.Formato.Trim();
+            Aplicar(c, alias, opciones, formato, req);
+        }
+        await _db.SaveChangesAsync(ct);
+        return await ListCamposConfigAsync(ct);
+    }
+
+    private static void Aplicar(UnidadCampoConfig c, string? alias, string? opciones, string? formato,
+        GuardarUnidadCampoConfigRequest req)
+    {
+        c.Alias = alias;
+        c.Opciones = opciones;
+        c.Tipo = req.Tipo;
+        c.Formato = formato;
+        c.Oculto = req.Oculto;
+        c.Orden = req.Orden;
     }
 
     public async Task<IReadOnlyList<UnidadEstadoUsoDto>> ContarUnidadesPorEstadoAsync(CancellationToken ct)
@@ -716,6 +772,22 @@ public partial class MiCopropiedadService
             .GroupBy(u => u.Estado!)
             .Select(g => new UnidadEstadoUsoDto(g.Key, g.Count()))
             .ToListAsync(ct);
+
+    // Migracion de dato: renombra el valor de Estado en las unidades que lo llevan. La lista de
+    // opciones NO se toca aqui: de eso se encarga GuardarCampoConfigAsync con la lista nueva.
+    public async Task<int> RenombrarEstadoAsync(string anterior, string nuevo, CancellationToken ct)
+    {
+        var destino = (nuevo ?? "").Trim();
+        if (destino.Length == 0) return 0;
+        if (string.Equals(destino, anterior, StringComparison.Ordinal)) return 0;
+
+        // El DbSet lleva HasQueryFilter por tenant, asi que el UPDATE queda acotado al tenant activo.
+        var unidades = await _db.UnidadesPrivadas.Where(u => u.Estado == anterior).ToListAsync(ct);
+        if (unidades.Count == 0) return 0;
+        foreach (var u in unidades) u.Estado = destino;
+        await _db.SaveChangesAsync(ct);
+        return unidades.Count;
+    }
 
     public async Task SetCampoValorUnidadAsync(Guid unidadId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct)
     {

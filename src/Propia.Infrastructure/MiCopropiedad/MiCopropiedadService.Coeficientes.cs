@@ -141,6 +141,26 @@ public partial class MiCopropiedadService
         return new TipoUnidadCustomDto(t.Id, t.Nombre, t.PagaAdministracionPorDefecto, t.Descripcion, t.Activo);
     }
 
+    // Renombra un tipo de unidad personalizado del tenant activo. Mismo criterio antiduplicado que
+    // CrearTipoUnidadCustomAsync, pero ignorando la propia fila y sin distinguir mayusculas.
+    public async Task<bool> RenombrarTipoCustomAsync(Guid id, string nombre, CancellationToken ct)
+    {
+        var limpio = (nombre ?? "").Trim();
+        if (limpio.Length == 0)
+            throw new InvalidOperationException("Nombre del tipo es obligatorio.");
+
+        var t = await _db.TiposUnidadCustom.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (t is null) return false;
+
+        var comparar = limpio.ToLower();
+        if (await _db.TiposUnidadCustom.AnyAsync(x => x.Id != id && x.Nombre.ToLower() == comparar, ct))
+            throw new InvalidOperationException($"Ya existe un tipo de unidad llamado '{limpio}' en esta copropiedad.");
+
+        t.Nombre = limpio;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
     public async Task<bool> EliminarTipoUnidadCustomAsync(Guid tipoId, CancellationToken ct)
     {
         var t = await _db.TiposUnidadCustom.FirstOrDefaultAsync(x => x.Id == tipoId, ct);

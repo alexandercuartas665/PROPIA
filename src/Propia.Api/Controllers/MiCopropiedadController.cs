@@ -304,8 +304,26 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    // Guarda varias filas de config de una vez (lo usa el reordenamiento por drag & drop, que manda
+    // la fila completa de cada campo: posicion + visibilidad + alias + tipo + formato).
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpPut("unidades-config/lote")]
+    public async Task<IActionResult> GuardarCamposConfigLote([FromBody] List<GuardarUnidadCampoConfigRequest> filas, CancellationToken ct)
+    {
+        try { return Ok(await _svc.GuardarCamposConfigLoteAsync(filas ?? new List<GuardarUnidadCampoConfigRequest>(), ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     [HttpGet("unidades/estados-uso")]
     public async Task<IActionResult> ContarUnidadesPorEstado(CancellationToken ct) => Ok(await _svc.ContarUnidadesPorEstadoAsync(ct));
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpPut("unidades/estados/renombrar")]
+    public async Task<IActionResult> RenombrarEstado([FromBody] RenombrarEstadoRequest req, CancellationToken ct)
+    {
+        try { return Ok(new { actualizadas = await _svc.RenombrarEstadoAsync(req.Anterior, req.Nuevo, ct) }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
 
     // ---------- Campos dinamicos tipados de EQUIPOS ----------
     [HttpGet("equipos-campos")]
@@ -523,6 +541,13 @@ public class MiCopropiedadController : ControllerBase
     public async Task<IActionResult> CrearTipoUnidad([FromBody] CrearTipoUnidadCustomRequest req, CancellationToken ct)
     {
         try { return Created("", await _svc.CrearTipoUnidadCustomAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpPut("tipos-unidad/{id:guid}")]
+    public async Task<IActionResult> RenombrarTipoUnidad(Guid id, [FromBody] RenombrarTipoUnidadRequest req, CancellationToken ct)
+    {
+        try { return await _svc.RenombrarTipoCustomAsync(id, req.Nombre, ct) ? NoContent() : NotFound(); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
     [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]

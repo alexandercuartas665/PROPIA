@@ -125,10 +125,22 @@ public record SetCampoValorRequest(string? Valor);
 public record UnidadCampoValorFlatDto(Guid UnidadId, Guid DefinicionId, string? Valor);
 
 // ----- Configuracion de los CAMPOS FIJOS del sistema (alias + opciones de lista, ej. Estado). -----
-public record UnidadCampoConfigDto(string CampoClave, string? Alias, string? Opciones);
-public record GuardarUnidadCampoConfigRequest(string CampoClave, string? Alias, string? Opciones);
+// Etapa B: ademas del alias/opciones, la config guarda el tipo override, el formato y la
+// visibilidad/orden POR COPROPIEDAD. Los parametros nuevos van AL FINAL y con default para no
+// romper a los consumidores que ya construyen estos records posicionalmente.
+public record UnidadCampoConfigDto(
+    string CampoClave, string? Alias, string? Opciones,
+    TipoCampoTablero? Tipo = null, string? Formato = null, bool Oculto = false, int? Orden = null);
+public record GuardarUnidadCampoConfigRequest(
+    string CampoClave, string? Alias, string? Opciones,
+    TipoCampoTablero? Tipo = null, string? Formato = null, bool Oculto = false, int? Orden = null);
+// Orden de las columnas de la tabla de unidades: la lista llega completa y en orden.
 // Conteo de unidades por valor de Estado (para advertir al quitar una opcion en uso).
 public record UnidadEstadoUsoDto(string Estado, int Unidades);
+// Renombrar un valor de Estado: migra el dato de las unidades que lo tienen.
+public record RenombrarEstadoRequest(string Anterior, string Nuevo);
+// Renombrar un tipo de unidad personalizado.
+public record RenombrarTipoUnidadRequest(string Nombre);
 
 // --- Campos dinamicos tipados de Equipos y Zonas (mismo patron que Unidad; requests genericos reutilizados) ---
 public record EquipoCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones);

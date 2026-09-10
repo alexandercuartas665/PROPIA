@@ -1105,6 +1105,7 @@
             _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
             try { _tiposCustom = await http.GetFromJsonAsync<List<TipoUnidadCustomDto>>("/api/mi-copropiedad/tipos-unidad") ?? new(); } catch { _tiposCustom = new(); }
             try { _camposConfig = (await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config") ?? new()).ToDictionary(c => c.CampoClave); } catch { _camposConfig = new(); }
+            AplicarOrdenTiposCustom();   // mismo orden de tipos propios que en la tabla (config del campo 'tipo')
             if (_torres.Count > 0 && _torresAbiertas.Count == 0)
                 _torresAbiertas.Add(_torres[0].Id);
             if (_manTorreId == Guid.Empty && _torres.Count > 0)
@@ -2158,6 +2159,21 @@
 
     // Tipos propios del tenant (catalogo) para los selectores de tipo de unidad.
     private List<TipoUnidadCustomDto> _tiposCustom = new();
+
+    // El orden de los tipos propios lo define la copropiedad en "Configurar" y se guarda como lista
+    // de ids en Opciones del campo 'tipo'. Se replica aqui para que la ficha ofrezca el mismo orden.
+    private void AplicarOrdenTiposCustom()
+    {
+        var ord = new List<Guid>();
+        if (_camposConfig.TryGetValue("tipo", out var c) && !string.IsNullOrWhiteSpace(c.Opciones))
+            foreach (var l in c.Opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                if (Guid.TryParse(l, out var g)) ord.Add(g);
+        _tiposCustom = _tiposCustom
+            .Select(t => (t, i: ord.IndexOf(t.Id)))
+            .OrderBy(x => x.i < 0 ? int.MaxValue : x.i)
+            .ThenBy(x => x.t.Nombre, StringComparer.OrdinalIgnoreCase)
+            .Select(x => x.t).ToList();
+    }
     // Etiqueta de una unidad: nombre del tipo propio si lo tiene, si no el enum.
     private string LabelU(UnidadDto u) => u.TipoCustomNombre ?? TipoLabel(u.Tipo);
 

@@ -49,7 +49,11 @@ public interface IMiCopropiedadService
     // Configuracion de campos FIJOS del sistema (alias + opciones de lista como Estado)
     Task<IReadOnlyList<UnidadCampoConfigDto>> ListCamposConfigAsync(CancellationToken ct);
     Task<UnidadCampoConfigDto> GuardarCampoConfigAsync(GuardarUnidadCampoConfigRequest req, CancellationToken ct);
+    // Orden de las columnas de la tabla de unidades (por copropiedad, no por usuario).
+    Task<IReadOnlyList<UnidadCampoConfigDto>> GuardarCamposConfigLoteAsync(List<GuardarUnidadCampoConfigRequest> filas, CancellationToken ct);
     Task<IReadOnlyList<UnidadEstadoUsoDto>> ContarUnidadesPorEstadoAsync(CancellationToken ct);
+    // Migra el dato: renombra el valor de Estado en las unidades que lo tienen. Devuelve cuantas cambiaron.
+    Task<int> RenombrarEstadoAsync(string anterior, string nuevo, CancellationToken ct);
 
     // Documentos / anexos de una unidad
     Task<IReadOnlyList<UnidadDocumentoDto>> ListDocumentosUnidadAsync(Guid unidadId, CancellationToken ct);
@@ -97,6 +101,7 @@ public interface IMiCopropiedadService
     // Tipos de unidad personalizados
     Task<IReadOnlyList<TipoUnidadCustomDto>> ListTiposUnidadCustomAsync(CancellationToken ct);
     Task<TipoUnidadCustomDto> CrearTipoUnidadCustomAsync(CrearTipoUnidadCustomRequest req, CancellationToken ct);
+    Task<bool> RenombrarTipoCustomAsync(Guid id, string nombre, CancellationToken ct);
     Task<bool> EliminarTipoUnidadCustomAsync(Guid tipoId, CancellationToken ct);
 
     // Tipos de coeficiente PH (spec 2.3 - RN-02)
