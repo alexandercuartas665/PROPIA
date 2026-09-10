@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -276,6 +276,9 @@ public partial class TareasService
     public async Task<TareaDetalleDto> CrearTareaAsync(CrearTareaRequest req, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.Titulo)) throw new InvalidOperationException("Titulo obligatorio.");
+        // T-02: la persona debe ser de esta copropiedad. Se valida ANTES de crear nada.
+        await ValidarPersonaDelTenantAsync(req.AsignadoPersonaId, "asignado", ct);
+        await ValidarPersonaDelTenantAsync(req.SolicitantePersonaId, "solicitante", ct);
         await AsegurarEstadosBaseAsync(ct);
 
         // Tablero destino: el de la tarea padre si se hereda, el indicado, o el "General".
@@ -386,6 +389,9 @@ public partial class TareasService
         var t = await _db.Tareas.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (t is null) return false;
         if (string.IsNullOrWhiteSpace(req.Titulo)) throw new InvalidOperationException("Titulo obligatorio.");
+        // T-02: idem al crear, antes del primer save.
+        await ValidarPersonaDelTenantAsync(req.AsignadoPersonaId, "asignado", ct);
+        await ValidarPersonaDelTenantAsync(req.SolicitantePersonaId, "solicitante", ct);
 
         var prevAsig = t.AsignadoPersonaId;
         var prevFv = t.FechaVencimiento;
@@ -504,6 +510,10 @@ public partial class TareasService
                 break;
             case "asignados":
                 var ids = (req.Guids ?? new List<Guid>()).Where(g => g != Guid.Empty).Distinct().ToList();
+                // T-02: el primero queda de asignado y el resto de colaboradores, asi que se
+                // validan TODOS contra la copropiedad antes de tocar la tarea.
+                foreach (var pid in ids)
+                    await ValidarPersonaDelTenantAsync(pid, "asignados", ct);
                 t.AsignadoPersonaId = ids.Count > 0 ? ids[0] : (Guid?)null;
                 await _db.TareaColaboradores.Where(c => c.TareaId == id).ExecuteDeleteAsync(ct);
                 foreach (var extra in ids.Skip(1))

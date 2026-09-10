@@ -1,6 +1,7 @@
 ﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Propia.Api.Authorization;
 using Propia.Application.Tareas;
 using Propia.Application.UsuariosAccesos;
@@ -95,6 +96,7 @@ public class TareasController : ControllerBase
     {
         try { return Created("", await _svc.CrearTareaAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+        catch (DbUpdateException) { return BadRequest(new { error = "Hay un dato relacionado que no existe o no pertenece a esta copropiedad." }); }
     }
 
     [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Editar)]
@@ -103,6 +105,7 @@ public class TareasController : ControllerBase
     {
         try { return await _svc.ActualizarTareaAsync(id, req, ct) ? NoContent() : NotFound(); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+        catch (DbUpdateException) { return BadRequest(new { error = "Hay un dato relacionado que no existe o no pertenece a esta copropiedad." }); }
     }
 
     // Edicion inline de un solo campo (vista tabla tipo Excel): titulo, descripcion, valor,
@@ -113,6 +116,7 @@ public class TareasController : ControllerBase
     {
         try { return await _svc.ActualizarCampoInlineAsync(id, req, ct) ? NoContent() : NotFound(); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+        catch (DbUpdateException) { return BadRequest(new { error = "Hay un dato relacionado que no existe o no pertenece a esta copropiedad." }); }
     }
 
     // Set del valor de UN campo personalizado (TableroCampo) de la tarea, inline.
@@ -175,6 +179,7 @@ public class TareasController : ControllerBase
     {
         try { return Created("", await _svc.AgregarColaboradorAsync(id, req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+        catch (DbUpdateException) { return BadRequest(new { error = "Hay un dato relacionado que no existe o no pertenece a esta copropiedad." }); }
     }
 
     [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Eliminar)]
@@ -222,7 +227,13 @@ public class TareasController : ControllerBase
     [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
     [HttpPost("bulk/asignado")]
     public async Task<IActionResult> BulkAsignarPersona([FromBody] BulkAsignarPersonaRequest req, CancellationToken ct)
-        => Ok(await _svc.BulkAsignarPersonaAsync(req, ct));
+    {
+        // T-02: si el asignado no es de esta copropiedad, el servicio falla el lote ENTERO antes
+        // de tocar ninguna tarea, y aqui se traduce a 400 legible en vez de 500.
+        try { return Ok(await _svc.BulkAsignarPersonaAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+        catch (DbUpdateException) { return BadRequest(new { error = "Hay un dato relacionado que no existe o no pertenece a esta copropiedad." }); }
+    }
 
     // ----- Tableros de trabajo (2.10) -----
     [HttpGet("tableros")]

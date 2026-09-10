@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -205,6 +205,9 @@ public partial class TareasService
     {
         if (req.TareaIds.Count == 0)
             return new BulkResultDto(0, 0, 0, Array.Empty<string>());
+        // T-02: el asignado es UNO para todo el lote. Si no pertenece a la copropiedad no hay nada
+        // que salvar, asi que falla el lote entero antes de modificar ninguna tarea.
+        await ValidarPersonaDelTenantAsync(req.AsignadoPersonaId, "asignado", ct);
         var tareas = await _db.Tareas
             .Where(t => req.TareaIds.Contains(t.Id)).ToListAsync(ct);
         var personaNombre = req.AsignadoPersonaId is { } pid

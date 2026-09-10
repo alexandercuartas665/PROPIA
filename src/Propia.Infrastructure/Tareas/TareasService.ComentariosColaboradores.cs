@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -96,6 +96,9 @@ public partial class TareasService
             throw new InvalidOperationException("Tarea no encontrada.");
         if (await _db.TareaColaboradores.AnyAsync(c => c.TareaId == tareaId && c.PersonaId == req.PersonaId, ct))
             throw new InvalidOperationException("La persona ya es colaboradora de esta tarea.");
+        // T-02: personas es una tabla GLOBAL, asi que buscarla ahi acepta a cualquiera de
+        // cualquier copropiedad. Primero se exige el vinculo con la copropiedad activa.
+        await ValidarPersonaDelTenantAsync(req.PersonaId, "colaborador", ct);
         var p = await _db.Personas.AsNoTracking().FirstOrDefaultAsync(x => x.Id == req.PersonaId, ct)
             ?? throw new InvalidOperationException("Persona no encontrada.");
         var c = new TareaColaborador { TareaId = tareaId, PersonaId = req.PersonaId };
