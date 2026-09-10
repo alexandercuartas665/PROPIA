@@ -1,7 +1,16 @@
 # PROPIA - Checklist de deploy
 
-> Actualizado 2026-09-09. Version visible: **0.0.80**
+> Actualizado 2026-09-09. Version visible: **0.0.81**
 > (`src/Propia.Web/Propia.Web.csproj` `<Version>`). Bumpear en cada deploy.
+>
+> **Nuevo en 0.0.81 (Unidades: tipos configurables):**
+> - Nuevo tipo base **"Cajeros"** (enum `TipoUnidad`).
+> - El boton **"Configurar"** de Unidades Privadas ahora administra los **tipos de unidad**: los base
+>   vienen como semilla (fijos, no removibles) y el tenant puede AGREGAR/QUITAR tipos propios (reusa
+>   `tipos_unidad_custom` + endpoints GET/POST/DELETE `/api/mi-copropiedad/tipos-unidad`). Los selectores
+>   de tipo (alta inline, edicion inline y ficha) mezclan base + propios; etiqueta/filtros/agrupacion
+>   muestran el nombre propio.
+> - **1 migracion nueva**: `AddUnidadTipoCustom` (`unidades` +`tipo_custom_id` uuid null) -> ver seccion 3.
 >
 > **Nuevo desde 0.0.74 (modulo Mantenimiento reelaborado, 0.0.75 -> 0.0.80):**
 > - **Programacion (tab principal) en tabla, con alta INLINE por columna.** Una fila por
@@ -180,6 +189,7 @@ dotnet ef database update --project ../Propia.Infrastructure --startup-project .
 
 Ultimas migraciones del repo (verificar que esten aplicadas). `ef database update` aplica SOLO las que
 falten en ese entorno, comparando contra `__EFMigrationsHistory`:
+- `20260909222434_AddUnidadTipoCustom`  (Unidades: `unidades` +`tipo_custom_id` uuid null; tipo de unidad propio del tenant)  <-- NUEVA (0.0.81)
 - `20260909203008_AddProgramacionProveedorNombre`  (Programacion: `programacion_tareas` +`proveedor_nombre` text null; snapshot del nombre del tercero)  <-- NUEVA (0.0.78)
 - `20260909195925_AddProgramacionProveedorContrato`  (Programacion: `programacion_tareas` +`proveedor_id` uuid null, +`contrato_id` uuid null; tercero + contrato opcionales)  <-- NUEVA (0.0.77)
 - `20260909013856_AddEquipoZonaCampoDefiniciones`  (Zonas/Equipos: 4 tablas nuevas `equipo_campos_definiciones`, `equipo_campos_valores`, `zona_campos_definiciones`, `zona_campos_valores`, con RLS FORCE + policy tenant + GRANT propia_app; campos dinamicos tipados)  <-- NUEVA (0.0.71)
@@ -208,7 +218,10 @@ falten en ese entorno, comparando contra `__EFMigrationsHistory`:
 
 ## 4. Post-deploy (verificacion)
 
-- [ ] Login OK; el footer muestra `v0.0.80`.
+- [ ] Login OK; el footer muestra `v0.0.81`.
+- [ ] **Unidades > tipos:** el dropdown de tipo de unidad incluye "Cajeros". En "Configurar" hay una seccion
+      "Tipos de unidad" con los base fijos (semilla) + agregar/quitar tipos propios; un tipo propio aparece
+      en el selector (grupo "Tipos propios"), se puede asignar a una unidad y se muestra su nombre.
 - [ ] **Mantenimiento > Programacion:** `/mantenimiento` abre en "Programacion" (tabla) y solo hay 2 tabs:
       Programacion y Calendario (sin Intervenciones ni Planes preventivos; sin botones de header). En la
       fila de alta INLINE: elegir Tipo (Equipo/Zona) filtra el Activo; capturar Titulo; el Tercero busca en
