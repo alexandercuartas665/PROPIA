@@ -1,10 +1,24 @@
 # PROPIA - Checklist de deploy
 
-> Actualizado 2026-09-10. Version visible: **0.0.89**
+> Actualizado 2026-09-10. Version visible: **0.0.90**
 > (`src/Propia.Web/Propia.Web.csproj` `<Version>`). Bumpear en cada deploy.
 >
 > **ATENCION en esta tanda: 7 migraciones nuevas, una de ellas de SEGURIDAD (RLS).**
 > Ver seccion 3. Todas aditivas; ninguna borra datos.
+>
+> **Nuevo en 0.0.90 (un guardado fallido de configuracion ya no se queda mudo):**
+> - `GuardarCampoConfigAsync` se tragaba el error (catch vacio + no-2xx sin aviso). Con eso, un entorno
+>   con las migraciones SIN aplicar -donde el PUT revienta con "column oculto does not exist"- era
+>   **indistinguible de un boton roto**: el ojo y el alias parecian no responder. Ahora el panel muestra
+>   el codigo HTTP y el mensaje del servidor. **Solo codigo, sin migracion.**
+> - Alcance: cubre "el servidor respondio con error". Si lo que se cae es el circuito de Blazor (servidor
+>   reiniciandose), el clic no ejecuta codigo C# y aplica el banner de reconexion propio de Blazor Server.
+>
+> **NO HAY QUE CREAR NI CONFIRMAR NINGUN CAMPO EN PROD.** Los 5 modulos contributivos son **columnas del
+> sistema**: aparecen solos en todas las copropiedades en cuanto corre la migracion, sin seed ni script.
+> Lo unico manual es que **nacen ocultos**, asi que cada copropiedad que los quiera usar debe activarlos
+> en Unidades > Configurar (el ojo). Lo mismo para las 4 pestanas nuevas: los campos del SISTEMA de
+> Personas/Vehiculos/Mascotas/Terceros salen solos; los campos PROPIOS los crea cada copropiedad.
 >
 > **Nuevo en 0.0.89 (5 modulos contributivos + la plantilla solo trae lo visible):**
 > - `unidades_privadas` +`modulo_contributivo_1..5` `numeric(7,4)` NULL (misma precision que
@@ -311,7 +325,9 @@ falten en ese entorno, comparando contra `__EFMigrationsHistory`:
 
 ## 4. Post-deploy (verificacion)
 
-- [ ] Login OK; el footer muestra `v0.0.89`.
+- [ ] Login OK; el footer muestra `v0.0.90`.
+- [ ] **Si algo de "Configurar" no responde:** el panel debe mostrar un aviso rojo con el codigo HTTP.
+      Si aparece un 500 con "column ... does not exist", faltan migraciones -> volver a la seccion 3.
 - [ ] **Modulos contributivos:** en Unidades > Configurar aparecen "Modulo Contributivo 1..5" debajo de
       Coeficiente y **ocultos**; al activar uno sale como columna y guarda decimales (ej. 12.3456).
 - [ ] **Plantilla filtrada:** con un modulo activo, la plantilla trae SOLO ese (no los otros 4); ocultar
