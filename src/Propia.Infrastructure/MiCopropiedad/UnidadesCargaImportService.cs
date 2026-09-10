@@ -155,6 +155,10 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             }
 
             // ---- Anexos (2a pasada: ya existen ambas unidades) ----
+            // IDEMPOTENTE: en una recarga los vinculos de la carga anterior siguen existiendo (las
+            // unidades hacen upsert, no se borran). Si la asociada ya esta vinculada al MISMO principal
+            // se omite sin error; si cambio el principal y el usuario pidio "eliminar y cargar de nuevo"
+            // se re-apunta; si no, se reporta el conflicto real.
             foreach (var (fila, principal, asociada) in anexosPend)
             {
                 try
@@ -163,9 +167,25 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                     var pid = numeroToId.GetValueOrDefault(principal);
                     if (pid == Guid.Empty) idxCodigo.TryGetValue(principal, out pid);
                     var aid = numeroToId.GetValueOrDefault(asociada);
+                    if (aid == Guid.Empty) idxCodigo.TryGetValue(asociada, out aid);
                     if (pid == Guid.Empty || aid == Guid.Empty)
                     {
                         errores.Add(new("UNIDADES PRIVADAS", fila, $"Anexo: no se encontro la principal '{principal}'.")); continue;
+                    }
+                    var existente = await _db.UnidadVinculos.FirstOrDefaultAsync(v => v.UnidadAsociadaId == aid, ct);
+                    if (existente is not null)
+                    {
+                        if (existente.UnidadPrincipalId == pid) { nAnexo++; continue; }   // ya correcto: no re-crea
+                        if (reemplazarDependientes)
+                        {
+                            _db.UnidadVinculos.Remove(existente);
+                            await _db.SaveChangesAsync(ct);
+                            _db.ChangeTracker.Clear();
+                        }
+                        else
+                        {
+                            errores.Add(new("UNIDADES PRIVADAS", fila, $"La unidad {asociada} ya esta asociada a otra unidad.")); continue;
+                        }
                     }
                     await _mi.CrearVinculoAsync(pid, new CrearVinculoUnidadRequest(aid, false), ct);
                     nAnexo++;
