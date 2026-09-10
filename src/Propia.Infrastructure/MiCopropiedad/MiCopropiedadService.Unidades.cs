@@ -685,63 +685,88 @@ public partial class MiCopropiedadService
             .ToListAsync(ct);
 
     // ---- Configuracion de campos FIJOS del sistema (alias + opciones de lista) ----
-    public async Task<IReadOnlyList<UnidadCampoConfigDto>> ListCamposConfigAsync(CancellationToken ct)
-        => await _db.UnidadCamposConfig.AsNoTracking()
+    // La misma tabla guarda la config de la ficha de unidad y la de las fichas vinculadas;
+    // 'entidad' discrimina cual. Sin entidad se asume "unidad" (comportamiento historico).
+    private static readonly string[] EntidadesCampoConfig = { "unidad", "personas", "vehiculos", "mascotas", "terceros" };
+
+    private static string NormalizarEntidadCampoConfig(string? entidad)
+    {
+        var e = (entidad ?? "").Trim().ToLowerInvariant();
+        if (e.Length == 0) e = "unidad";
+        if (!EntidadesCampoConfig.Contains(e))
+            throw new InvalidOperationException(
+                $"Entidad '{entidad}' no valida. Debe ser una de: {string.Join(", ", EntidadesCampoConfig)}.");
+        return e;
+    }
+
+    public async Task<IReadOnlyList<UnidadCampoConfigDto>> ListCamposConfigAsync(string? entidad, CancellationToken ct)
+    {
+        var ent = NormalizarEntidadCampoConfig(entidad);
+        return await _db.UnidadCamposConfig.AsNoTracking()
+            .Where(c => c.Entidad == ent)
             .Select(c => new UnidadCampoConfigDto(
                 c.CampoClave, c.Alias, c.Opciones,
-                c.Tipo, c.Formato, c.Oculto, c.Orden))
+                c.Tipo, c.Formato, c.Oculto, c.Orden, c.Entidad))
             .ToListAsync(ct);
+    }
 
     // El request es el ESTADO COMPLETO deseado de la fila (la UI siempre manda la fila entera),
-    // asi que los 6 campos se asignan tal cual vienen.
+    // asi que los campos se asignan tal cual vienen. La clave del upsert es (entidad, campo_clave).
     public async Task<UnidadCampoConfigDto> GuardarCampoConfigAsync(GuardarUnidadCampoConfigRequest req, CancellationToken ct)
     {
         var clave = (req.CampoClave ?? "").Trim().ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(clave)) throw new InvalidOperationException("CampoClave obligatorio.");
+        var entidad = NormalizarEntidadCampoConfig(req.Entidad);
         var alias = string.IsNullOrWhiteSpace(req.Alias) ? null : req.Alias.Trim();
         var opciones = string.IsNullOrWhiteSpace(req.Opciones)
             ? null
             : string.Join('\n', req.Opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
         var formato = string.IsNullOrWhiteSpace(req.Formato) ? null : req.Formato.Trim();
 
-        var c = await _db.UnidadCamposConfig.FirstOrDefaultAsync(x => x.CampoClave == clave, ct);
+        var c = await _db.UnidadCamposConfig.FirstOrDefaultAsync(x => x.Entidad == entidad && x.CampoClave == clave, ct);
         if (c is null)
         {
-            c = new UnidadCampoConfig { CampoClave = clave };
+            c = new UnidadCampoConfig { Entidad = entidad, CampoClave = clave };
             _db.UnidadCamposConfig.Add(c);
         }
         Aplicar(c, alias, opciones, formato, req);
         await _db.SaveChangesAsync(ct);
-        return new UnidadCampoConfigDto(c.CampoClave, c.Alias, c.Opciones, c.Tipo, c.Formato, c.Oculto, c.Orden);
+        return new UnidadCampoConfigDto(c.CampoClave, c.Alias, c.Opciones, c.Tipo, c.Formato, c.Oculto, c.Orden, c.Entidad);
     }
 
     // Guarda VARIAS filas de configuracion en una sola transaccion. Lo usa el reordenamiento por
     // drag & drop, que manda la fila completa de cada campo (no solo su posicion): de lo contrario
     // las filas creadas al vuelo tomarian el default de 'oculto' y se harian visibles solas.
+    // La deduplicacion y la busqueda van por el par (entidad, campo_clave).
     public async Task<IReadOnlyList<UnidadCampoConfigDto>> GuardarCamposConfigLoteAsync(
         List<GuardarUnidadCampoConfigRequest> filas, CancellationToken ct)
     {
-        if (filas is null || filas.Count == 0) return await ListCamposConfigAsync(ct);
+        if (filas is null || filas.Count == 0) return await ListCamposConfigAsync(null, ct);
 
         // Normaliza y descarta claves vacias o repetidas (gana la primera aparicion).
-        var pedidos = new List<(string Clave, GuardarUnidadCampoConfigRequest Req)>();
+        var pedidos = new List<(string Entidad, string Clave, GuardarUnidadCampoConfigRequest Req)>();
         foreach (var req in filas)
         {
             var clave = (req?.CampoClave ?? "").Trim().ToLowerInvariant();
-            if (clave.Length == 0 || pedidos.Any(p => p.Clave == clave)) continue;
-            pedidos.Add((clave, req!));
+            if (clave.Length == 0) continue;
+            var entidad = NormalizarEntidadCampoConfig(req!.Entidad);
+            if (pedidos.Any(p => p.Entidad == entidad && p.Clave == clave)) continue;
+            pedidos.Add((entidad, clave, req));
         }
-        if (pedidos.Count == 0) return await ListCamposConfigAsync(ct);
+        if (pedidos.Count == 0) return await ListCamposConfigAsync(null, ct);
 
-        var claves = pedidos.Select(p => p.Clave).ToList();
-        var existentes = await _db.UnidadCamposConfig.Where(x => claves.Contains(x.CampoClave)).ToListAsync(ct);
+        var entidades = pedidos.Select(p => p.Entidad).Distinct().ToList();
+        var claves = pedidos.Select(p => p.Clave).Distinct().ToList();
+        var existentes = await _db.UnidadCamposConfig
+            .Where(x => entidades.Contains(x.Entidad) && claves.Contains(x.CampoClave))
+            .ToListAsync(ct);
 
-        foreach (var (clave, req) in pedidos)
+        foreach (var (entidad, clave, req) in pedidos)
         {
-            var c = existentes.FirstOrDefault(x => x.CampoClave == clave);
+            var c = existentes.FirstOrDefault(x => x.Entidad == entidad && x.CampoClave == clave);
             if (c is null)
             {
-                c = new UnidadCampoConfig { CampoClave = clave };
+                c = new UnidadCampoConfig { Entidad = entidad, CampoClave = clave };
                 _db.UnidadCamposConfig.Add(c);
             }
             var alias = string.IsNullOrWhiteSpace(req.Alias) ? null : req.Alias.Trim();
@@ -752,7 +777,16 @@ public partial class MiCopropiedadService
             Aplicar(c, alias, opciones, formato, req);
         }
         await _db.SaveChangesAsync(ct);
-        return await ListCamposConfigAsync(ct);
+
+        // Si el lote toca una sola entidad se devuelve esa ficha completa (comportamiento historico
+        // del caso unidad); si mezcla varias, se devuelven todas las entidades afectadas.
+        if (entidades.Count == 1) return await ListCamposConfigAsync(entidades[0], ct);
+        return await _db.UnidadCamposConfig.AsNoTracking()
+            .Where(c => entidades.Contains(c.Entidad))
+            .Select(c => new UnidadCampoConfigDto(
+                c.CampoClave, c.Alias, c.Opciones,
+                c.Tipo, c.Formato, c.Oculto, c.Orden, c.Entidad))
+            .ToListAsync(ct);
     }
 
     private static void Aplicar(UnidadCampoConfig c, string? alias, string? opciones, string? formato,

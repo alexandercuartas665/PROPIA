@@ -1,0 +1,117 @@
+@* ============================================================================================
+   Editores de los campos dinamicos de UN registro vinculado a la unidad (una persona, un
+   vehiculo, una mascota, un tercero). Las definiciones y los valores los carga la ficha una
+   sola vez para toda la unidad y aqui solo se pinta la porcion de este registro, para no
+   disparar una consulta por fila.
+
+   Guarda cada valor al salir del campo: PUT {prefijo}-campos-valores/{registroId}/{definicionId}
+   ============================================================================================ *@
+@inject IHttpClientFactory HttpFactory
+@using Propia.Domain.Enums
+
+@if (Defs is { Count: > 0 })
+{
+    <div class="cdr-wrap">
+        @foreach (var d in Defs)
+        {
+            var dd = d;
+            var val = Valor(dd.Id);
+            <div class="cdr-item">
+                <label class="cdr-lbl" title="@dd.Label">@dd.Label</label>
+                @switch (dd.Tipo)
+                {
+                    case TipoCampoTablero.Seleccion:
+                        <select class="cdr-inp" value="@val" @onchange="@(e => GuardarAsync(dd, e.Value?.ToString()))" disabled="@_busy">
+                            <option value="">- elegir -</option>
+                            @foreach (var op in dd.OpcionesArray()) { <option value="@op" selected="@(op == val)">@op</option> }
+                        </select>
+                        break;
+                    case TipoCampoTablero.Booleano:
+                        <select class="cdr-inp" value="@val" @onchange="@(e => GuardarAsync(dd, e.Value?.ToString()))" disabled="@_busy">
+                            <option value="">- elegir -</option>
+                            <option value="Si" selected="@(val == "Si")">Si</option>
+                            <option value="No" selected="@(val == "No")">No</option>
+                        </select>
+                        break;
+                    case TipoCampoTablero.Numero:
+                    case TipoCampoTablero.Moneda:
+                        <input class="cdr-inp" type="number" step="any" value="@val" placeholder="-"
+                               @onchange="@(e => GuardarAsync(dd, e.Value?.ToString()))" disabled="@_busy" />
+                        break;
+                    case TipoCampoTablero.Fecha:
+                        <input class="cdr-inp" type="date" value="@val"
+                               @onchange="@(e => GuardarAsync(dd, e.Value?.ToString()))" disabled="@_busy" />
+                        break;
+                    case TipoCampoTablero.AreaTexto:
+                        <textarea class="cdr-inp" rows="2" value="@val" placeholder="-"
+                                  @onchange="@(e => GuardarAsync(dd, e.Value?.ToString()))" disabled="@_busy"></textarea>
+                        break;
+                    default:
+                        <input class="cdr-inp" type="@TipoInput(dd.Tipo)" value="@val" placeholder="-"
+                               @onchange="@(e => GuardarAsync(dd, e.Value?.ToString()))" disabled="@_busy" />
+                        break;
+                }
+            </div>
+        }
+    </div>
+}
+
+<style>
+    .cdr-wrap { display: flex; flex-wrap: wrap; gap: 8px 12px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--propia-border-divider); }
+    .cdr-item { display: flex; flex-direction: column; gap: 3px; min-width: 150px; }
+    .cdr-lbl { font-size: 10px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; color: var(--propia-text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 190px; }
+    .cdr-inp { box-sizing: border-box; width: 100%; max-width: 210px; border: 1px dashed var(--propia-border-input); border-radius: 7px; padding: 5px 8px; font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-bg-card); outline: none; font-family: inherit; }
+    .cdr-inp:focus { border-style: solid; border-color: var(--propia-brand); box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
+    .cdr-inp:disabled { opacity: .6; }
+</style>
+
+@code {
+    /// <summary>Prefijo del catalogo: personas | vehiculos | mascotas | terceros.</summary>
+    [Parameter, EditorRequired] public string Prefijo { get; set; } = "";
+    /// <summary>Id del registro dueno de los valores (la persona/placa/mascota/empleada).</summary>
+    [Parameter, EditorRequired] public Guid RegistroId { get; set; }
+    /// <summary>Definiciones del catalogo, ya ordenadas. Las carga la ficha una vez por unidad.</summary>
+    [Parameter] public List<CampoDinDef>? Defs { get; set; }
+    /// <summary>Valores de ESTE registro por definicion. Se muta en sitio al guardar.</summary>
+    [Parameter] public Dictionary<Guid, string?>? Valores { get; set; }
+    [Parameter] public string? Jwt { get; set; }
+
+    private bool _busy;
+
+    private string TipoInput(TipoCampoTablero t) => t switch
+    {
+        TipoCampoTablero.Email => "email",
+        TipoCampoTablero.Url => "url",
+        TipoCampoTablero.Telefono => "tel",
+        TipoCampoTablero.Hora => "time",
+        _ => "text"
+    };
+
+    private string? Valor(Guid defId)
+        => Valores is not null && Valores.TryGetValue(defId, out var v) ? v : null;
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    private async Task GuardarAsync(CampoDinDef d, string? valor)
+    {
+        var v = string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+        if (Valor(d.Id) == v) return;
+        _busy = true;
+        try
+        {
+            var r = await Auth().PutAsJsonAsync(
+                $"/api/mi-copropiedad/{Prefijo}-campos-valores/{RegistroId}/{d.Id}",
+                new SetCampoValorRequest(v));
+            // Se refleja en memoria solo si el backend lo acepto, para no mostrar un valor que no se guardo.
+            if (r.IsSuccessStatusCode && Valores is not null) Valores[d.Id] = v;
+        }
+        catch { }
+        finally { _busy = false; }
+    }
+}

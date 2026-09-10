@@ -125,8 +125,13 @@ public partial class PropiaDbContext
             b.Property(x => x.Formato).HasColumnName("formato");
             b.Property(x => x.Oculto).HasColumnName("oculto").HasDefaultValue(false);
             b.Property(x => x.Orden).HasColumnName("orden");
+            // Discriminador de ficha: la misma tabla configura los campos fijos de la unidad y de
+            // las entidades vinculadas (personas/vehiculos/mascotas/terceros). Default "unidad"
+            // para que las filas existentes (todas de la unidad) queden correctas.
+            b.Property(x => x.Entidad).HasColumnName("entidad").IsRequired()
+                .HasColumnType("varchar(20)").HasMaxLength(20).HasDefaultValue("unidad");
             b.HasIndex(x => x.TenantId);
-            b.HasIndex(x => new { x.TenantId, x.CampoClave }).IsUnique();
+            b.HasIndex(x => new { x.TenantId, x.Entidad, x.CampoClave }).IsUnique();
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
@@ -167,6 +172,65 @@ public partial class PropiaDbContext
             b.HasOne(x => x.Definicion).WithMany().HasForeignKey(x => x.DefinicionId).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.DefinicionId, x.ZonaComunId }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // Campos dinamicos tipados (catalogo + valor) de las entidades vinculadas a una unidad:
+        // personas, vehiculos (placas), mascotas y terceros (empleadas). Calcado de equipos/zonas.
+        modelBuilder.Entity<PersonaCampoDefinicion>(b =>
+        {
+            b.Property(x => x.Label).IsRequired().HasMaxLength(80);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Label }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<PersonaCampoValor>(b =>
+        {
+            b.HasOne(x => x.Definicion).WithMany().HasForeignKey(x => x.DefinicionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.DefinicionId, x.UnidadPersonaId }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<VehiculoCampoDefinicion>(b =>
+        {
+            b.Property(x => x.Label).IsRequired().HasMaxLength(80);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Label }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<VehiculoCampoValor>(b =>
+        {
+            b.HasOne(x => x.Definicion).WithMany().HasForeignKey(x => x.DefinicionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.DefinicionId, x.UnidadPlacaId }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<MascotaCampoDefinicion>(b =>
+        {
+            b.Property(x => x.Label).IsRequired().HasMaxLength(80);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Label }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<MascotaCampoValor>(b =>
+        {
+            b.HasOne(x => x.Definicion).WithMany().HasForeignKey(x => x.DefinicionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.DefinicionId, x.UnidadMascotaId }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<TerceroCampoDefinicion>(b =>
+        {
+            b.Property(x => x.Label).IsRequired().HasMaxLength(80);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Label }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<TerceroCampoValor>(b =>
+        {
+            b.HasOne(x => x.Definicion).WithMany().HasForeignKey(x => x.DefinicionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.DefinicionId, x.UnidadEmpleadaId }).IsUnique();
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

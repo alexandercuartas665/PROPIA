@@ -190,14 +190,25 @@
                 <button class="cg-x" type="button" @onclick="() => _configCamposAbierto = false" aria-label="Cerrar">&times;</button>
             </div>
             <div class="cg-body">
-                @* Tabs: en esta entrega solo "Unidad" esta activo; el resto llega con su catalogo (Fase 3). *@
+                @* Tabs: el mismo gestor sirve para la unidad y para cada entidad vinculada a ella. *@
                 <div class="cga-tabs">
-                    <button type="button" class="cga-tab cga-tab--on">Unidad</button>
-                    @foreach (var t in new[] { "Personas", "Vehiculos", "Mascotas", "Terceros" })
+                    @foreach (var t in CfgTabs)
                     {
-                        <button type="button" class="cga-tab" disabled title="Proximamente">@t <span class="cga-tab-soon">pronto</span></button>
+                        var tt = t;
+                        <button type="button" class="cga-tab @(_cfgTab == tt.Clave ? "cga-tab--on" : "")"
+                                @onclick="() => _cfgTab = tt.Clave">@tt.Titulo</button>
                     }
                 </div>
+
+                @if (_cfgTab != "unidad")
+                {
+                    @* Entidades vinculadas: catalogo propio de la copropiedad (sin campos del sistema). *@
+                    var tab = CfgTabs.First(x => x.Clave == _cfgTab);
+                    <ConfigCamposEntidad Prefijo="@tab.Clave" TituloSingular="@tab.Singular" TituloPlural="@tab.Titulo"
+                                         Ejemplo="@tab.Ejemplo" Jwt="@_jwt" />
+                }
+                else
+                {
 
                 @* Grilla estilo Airtable: Orden+Visibilidad | Label | Tipo de Dato | Config especifica. *@
                 <div class="cga-grid cga-head-row">
@@ -268,8 +279,13 @@
                             }
                             else if (key is "tipo" or "estado")
                             {
-                                <button class="dst-btn-soft" type="button" @onclick="() => ToggleLista(key)">@(_fldExpand == key ? "Ocultar lista" : "Gestionar lista")</button>
-                                <span class="cga-cfg-hint" style="margin-left:6px;">@(key == "tipo" ? TiposUnidadSel.Count() + _tiposCustom.Count : EstadosConfig().Count()) opciones</span>
+                                @* La lista se administra en un popup aparte: expandirla aqui dentro
+                                   empujaba toda la grilla hacia abajo. *@
+                                var ops = LeerOpciones(key);
+                                <button class="dst-btn-soft" type="button" @onclick="() => AbrirLista(key)">Gestionar lista</button>
+                                <span class="cga-cfg-hint" style="margin-left:6px;">
+                                    @ops.Count(o => !o.Oculta) visibles@(ops.Any(o => o.Oculta) ? $" ({ops.Count(o => o.Oculta)} ocultas)" : "")
+                                </span>
                             }
                             else if (key == "agrupacion") { <span class="cga-cfg-hint">Segun el codigo / anexos</span> }
                             else if (EsCampoEntero(key)) { <span class="cga-cfg-hint">Entero (sin decimales)</span> }
@@ -307,66 +323,6 @@
                             }
                         </div>
                     </div>
-                    @if (!esCustom && key == _fldExpand && key is "tipo" or "estado")
-                    {
-                        <div class="cga-opts">
-                            @if (key == "tipo")
-                            {
-                                <div class="cg-sub" style="margin-bottom:8px;">Los tipos base vienen por defecto (semilla, con candado). Los propios de tu copropiedad se pueden renombrar, reordenar y quitar.</div>
-                                <div class="cga-opts-list">
-                                    @foreach (var t in TiposUnidadSel)
-                                    {
-                                        <div class="cga-opt-row cga-opt-row--base">
-                                            <svg class="cga-opt-lock" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="Tipo base (no se puede renombrar ni quitar)"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
-                                            <span class="cga-opt-name">@Etiqueta(t)</span>
-                                        </div>
-                                    }
-                                    @for (var i = 0; i < _tiposCustom.Count; i++)
-                                    {
-                                        var idx = i; var tcc = _tiposCustom[i];
-                                        <div class="cga-opt-row">
-                                            <div class="cga-opt-move">
-                                                <button type="button" class="cga-mini" title="Subir" disabled="@(idx == 0)" @onclick="() => MoverTipoCustomAsync(idx, -1)">&#9650;</button>
-                                                <button type="button" class="cga-mini" title="Bajar" disabled="@(idx == _tiposCustom.Count - 1)" @onclick="() => MoverTipoCustomAsync(idx, 1)">&#9660;</button>
-                                            </div>
-                                            <input class="cga-inp cga-opt-inp" value="@tcc.Nombre" title="Renombrar la opcion"
-                                                   @onchange="@(e => RenombrarTipoCustomAsync(tcc, e.Value?.ToString()))" disabled="@_cfgBusy" />
-                                            <button type="button" class="cga-opt-x" title="Quitar" @onclick="() => EliminarTipoCustomAsync(tcc)" disabled="@_cfgBusy">&times;</button>
-                                        </div>
-                                    }
-                                    <div class="cga-opt-add">
-                                        <input class="cga-inp" placeholder="Anadir nueva opcion..." @bind="_nuevoTipoNombre" @bind:event="oninput" @onkeyup="OnNuevoTipoKeyUp" />
-                                        <button class="cga-add-btn" type="button" @onclick="AgregarTipoCustomAsync" disabled="@(_cfgBusy || string.IsNullOrWhiteSpace(_nuevoTipoNombre))">Anadir</button>
-                                    </div>
-                                </div>
-                                @if (!string.IsNullOrEmpty(_tipoMsg)) { <div class="dst-cfg-msg">@_tipoMsg</div> }
-                            }
-                            else
-                            {
-                                <div class="cga-opts-list">
-                                    @for (var i = 0; i < _estadoOpts.Count; i++)
-                                    {
-                                        var idx = i; var op = _estadoOpts[i];
-                                        <div class="cga-opt-row">
-                                            <div class="cga-opt-move">
-                                                <button type="button" class="cga-mini" title="Subir" disabled="@(idx == 0)" @onclick="() => MoverEstadoAsync(idx, -1)">&#9650;</button>
-                                                <button type="button" class="cga-mini" title="Bajar" disabled="@(idx == _estadoOpts.Count - 1)" @onclick="() => MoverEstadoAsync(idx, 1)">&#9660;</button>
-                                            </div>
-                                            <input class="cga-inp cga-opt-inp" value="@op" title="Renombrar la opcion"
-                                                   @onchange="@(e => RenombrarEstadoAsync(idx, e.Value?.ToString()))" disabled="@_cfgBusy" />
-                                            <button type="button" class="cga-opt-x" title="Quitar" @onclick="() => QuitarEstadoAsync(op)" disabled="@_cfgBusy">&times;</button>
-                                        </div>
-                                    }
-                                    <div class="cga-opt-add">
-                                        <input class="cga-inp" placeholder="Anadir nueva opcion..." @bind="_nuevoEstado" @bind:event="oninput" @onkeyup="OnNuevoEstadoKeyUp" />
-                                        <button class="cga-add-btn" type="button" @onclick="AgregarEstadoAsync" disabled="@(_cfgBusy || string.IsNullOrWhiteSpace(_nuevoEstado))">Anadir</button>
-                                    </div>
-                                </div>
-                                <div style="margin-top:8px;"><button class="dst-btn-soft" type="button" @onclick="RestaurarEstadoSemillaAsync" disabled="@_cfgBusy">Restaurar semilla</button></div>
-                                @if (!string.IsNullOrEmpty(_estadoMsg)) { <div class="dst-cfg-msg">@_estadoMsg</div> }
-                            }
-                        </div>
-                    }
                 }
 
                 <div class="dst-cfg-sep"></div>
@@ -384,9 +340,14 @@
                                 <option value="@TipoCampoTablero.Texto">Texto</option>
                                 <option value="@TipoCampoTablero.AreaTexto">Texto largo</option>
                                 <option value="@TipoCampoTablero.Numero">Numero</option>
+                                <option value="@TipoCampoTablero.Moneda">Moneda</option>
                                 <option value="@TipoCampoTablero.Fecha">Fecha</option>
+                                <option value="@TipoCampoTablero.Hora">Hora</option>
                                 <option value="@TipoCampoTablero.Seleccion">Lista de opciones</option>
                                 <option value="@TipoCampoTablero.Booleano">Si / No</option>
+                                <option value="@TipoCampoTablero.Telefono">Telefono</option>
+                                <option value="@TipoCampoTablero.Email">Correo</option>
+                                <option value="@TipoCampoTablero.Url">Enlace</option>
                             </select>
                         </div>
                     </div>
@@ -408,8 +369,80 @@
                         </button>
                     </div>
                 </div>
+
+                }
             </div>
         </div>
+
+        @* ===== Popup de opciones de una lista del sistema (Tipo / Estado) =====
+           Va ENCIMA del modal de configuracion: administrarla aqui evita empujar la grilla hacia
+           abajo. Las opciones SEMILLA no se eliminan, se OCULTAN. *@
+        @if (_listaAbierta is not null)
+        {
+            var lk = _listaAbierta;
+            var ops = LeerOpciones(lk);
+            <div class="cgl-back" @onclick="CerrarLista">
+                <div class="cgl-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+                    <div class="cg-head">
+                        <div>
+                            <div class="cg-title">Opciones de @AliasCampo(lk, lk == "tipo" ? "Tipo" : "Estado")</div>
+                            <div class="cg-sub">
+                                Las opciones de fabrica no se pueden eliminar, pero si ocultar: dejan de ofrecerse
+                                sin perder las unidades que ya las usan.
+                            </div>
+                        </div>
+                        <button class="cg-x" type="button" @onclick="CerrarLista" aria-label="Cerrar">&times;</button>
+                    </div>
+                    <div class="cg-body">
+                        <div class="cga-opts-list cgl-list">
+                            @for (var i = 0; i < ops.Count; i++)
+                            {
+                                var idx = i;
+                                var op = ops[i];
+                                var semilla = EsSemilla(lk, op.K);
+                                var usos = UsosDeOpcion(lk, op.K);
+                                <div class="cga-opt-row @(op.Oculta ? "cga-opt-row--oculta" : "")">
+                                    <div class="cga-opt-move">
+                                        <button type="button" class="cga-mini" title="Subir" disabled="@(idx == 0 || _cfgBusy)" @onclick="() => MoverOpcionListaAsync(lk, op.K, -1)">&#9650;</button>
+                                        <button type="button" class="cga-mini" title="Bajar" disabled="@(idx == ops.Count - 1 || _cfgBusy)" @onclick="() => MoverOpcionListaAsync(lk, op.K, 1)">&#9660;</button>
+                                    </div>
+                                    @if (semilla)
+                                    {
+                                        <svg class="cga-opt-lock" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="Opcion de fabrica: se puede ocultar, no eliminar"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                                        <span class="cga-opt-name">@EtiquetaOpcion(lk, op.K)</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="cga-opt-dot"></span>
+                                        <input class="cga-inp cga-opt-inp" value="@EtiquetaOpcion(lk, op.K)" title="Renombrar la opcion"
+                                               @onchange="@(e => RenombrarOpcionListaAsync(lk, op.K, e.Value?.ToString()))" disabled="@_cfgBusy" />
+                                    }
+                                    @if (usos > 0) { <span class="cgl-usos" title="@usos unidad(es) usan esta opcion">@usos</span> }
+                                    <button type="button" class="cga-eye @(op.Oculta ? "" : "on")"
+                                            title="@(op.Oculta ? "Oculta: no se ofrece al elegir" : "Visible")"
+                                            @onclick="() => ToggleOcultaOpcionAsync(lk, op.K)" disabled="@_cfgBusy">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                                    </button>
+                                    @if (!semilla)
+                                    {
+                                        <button type="button" class="cga-opt-x" title="Eliminar la opcion" @onclick="() => QuitarOpcionListaAsync(lk, op.K)" disabled="@_cfgBusy">&times;</button>
+                                    }
+                                </div>
+                            }
+                            <div class="cga-opt-add">
+                                <input class="cga-inp" placeholder="Anadir nueva opcion..." @bind="_nuevaOpcion" @bind:event="oninput" @onkeyup="OnNuevaOpcionKeyUp" />
+                                <button class="cga-add-btn" type="button" @onclick="() => AgregarOpcionListaAsync(lk)" disabled="@(_cfgBusy || string.IsNullOrWhiteSpace(_nuevaOpcion))">Anadir</button>
+                            </div>
+                        </div>
+                        @if (!string.IsNullOrEmpty(_listaMsg)) { <div class="dst-cfg-msg">@_listaMsg</div> }
+                        <div class="cgl-foot">
+                            <button class="dst-btn-soft" type="button" @onclick="() => RestaurarListaSemillaAsync(lk)" disabled="@_cfgBusy">Restaurar semilla</button>
+                            <button class="dst-btn-soft" type="button" @onclick="CerrarLista">Cerrar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
     </div>
 }
 
@@ -579,22 +612,26 @@ else
                                         <input class="dst-cell" type="number" value="@(uu.Piso?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "piso", e))" />
                                         break;
                                     case "tipo":
+                                        @* Si el tipo de la unidad quedo oculto se ofrece igual: si no, el select
+                                           mostraria otra opcion y al tocar la celda se guardaria un valor que
+                                           nadie eligio. *@
                                         <select class="dst-cell" @onchange="@(e => Inline(uu, "tipo", e))">
-                                            @foreach (var t in TiposUnidadSel)
+                                            @foreach (var t in TiposBaseConVigente(uu))
                                             {
                                                 <option value="@($"e:{t}")" selected="@(uu.TipoCustomId is null && uu.Tipo == t)">@Etiqueta(t)</option>
                                             }
-                                            @if (_tiposCustom.Count > 0)
+                                            @{ var tcv = TiposCustomConVigente(uu); }
+                                            @if (tcv.Count > 0)
                                             {
                                                 <optgroup label="Tipos propios">
-                                                    @foreach (var tc in _tiposCustom) { <option value="@($"c:{tc.Id}")" selected="@(uu.TipoCustomId == tc.Id)">@tc.Nombre</option> }
+                                                    @foreach (var tc in tcv) { <option value="@($"c:{tc.Id}")" selected="@(uu.TipoCustomId == tc.Id)">@tc.Nombre</option> }
                                                 </optgroup>
                                             }
                                         </select>
                                         break;
                                     case "estado":
                                         <select class="dst-cell" @onchange="@(e => Inline(uu, "estado", e))">
-                                            @foreach (var es in EstadosConfig())
+                                            @foreach (var es in EstadosConVigente(uu.Estado))
                                             {
                                                 <option value="@es" selected="@(string.Equals(uu.Estado, es, StringComparison.OrdinalIgnoreCase))">@es</option>
                                             }
@@ -737,11 +774,11 @@ else
                                     break;
                                 case "tipo":
                                     <select class="dst-nf-inp" @bind="_nuTipoKey">
-                                        @foreach (var t in TiposUnidadSel) { <option value="@($"e:{t}")">@Etiqueta(t)</option> }
-                                        @if (_tiposCustom.Count > 0)
+                                        @foreach (var t in TiposBaseVisibles) { <option value="@($"e:{t}")">@Etiqueta(t)</option> }
+                                        @if (TiposCustomVisibles.Count > 0)
                                         {
                                             <optgroup label="Tipos propios">
-                                                @foreach (var tc in _tiposCustom) { <option value="@($"c:{tc.Id}")">@tc.Nombre</option> }
+                                                @foreach (var tc in TiposCustomVisibles) { <option value="@($"c:{tc.Id}")">@tc.Nombre</option> }
                                             </optgroup>
                                         }
                                     </select>
@@ -937,8 +974,8 @@ else
     {
         new() { Key = "numero", Label = AliasCampo("num", "Unidad"), Kind = "texto" },
         new() { Key = "tipo", Label = AliasCampo("tipo", "Tipo"), Kind = "sel",
-                Opciones = TiposUnidadSel.Select(t => (Etiqueta(t), Etiqueta(t)))
-                    .Concat(_tiposCustom.Select(tc => (tc.Nombre, tc.Nombre))).ToList() },
+                Opciones = TiposBaseVisibles.Select(t => (Etiqueta(t), Etiqueta(t)))
+                    .Concat(TiposCustomVisibles.Select(tc => (tc.Nombre, tc.Nombre))).ToList() },
         // Estado usa las opciones configuradas por la copropiedad (mismas que la tabla y la ficha).
         new() { Key = "estado", Label = AliasCampo("estado", "Estado"), Kind = "sel",
                 Opciones = EstadosConfig().Select(e => (e, e)).ToList() },
@@ -1595,112 +1632,297 @@ else
     };
     private static readonly string[] EstadoSemilla = { "Habitada", "Desocupada", "Arrendada" };
 
+    // ===== Pestanas del panel de configuracion. "unidad" es la grilla con los campos del sistema;
+    // las otras cuatro son catalogos propios de las entidades vinculadas (mismo componente). =====
+    private sealed record CfgTab(string Clave, string Titulo, string Singular, string Ejemplo);
+    private static readonly CfgTab[] CfgTabs =
+    {
+        new("unidad",    "Unidad",    "unidad",   ""),
+        new("personas",  "Personas",  "persona",  "Ej. Profesion, Contacto de emergencia"),
+        new("vehiculos", "Vehiculos", "vehiculo", "Ej. Color, Numero de SOAT"),
+        new("mascotas",  "Mascotas",  "mascota",  "Ej. Numero de chip, Vacunas al dia"),
+        new("terceros",  "Terceros",  "tercero",  "Ej. ARL, Horario autorizado"),
+    };
+    private string _cfgTab = "unidad";
+
     private Dictionary<string, UnidadCampoConfigDto> _camposConfig = new();
     private List<UnidadEstadoUsoDto> _estadosUso = new();
-    private string _fldExpand = "";
-    private List<string> _estadoOpts = new();   // opciones de Estado editandose como lista viva
-    private string _nuevoEstado = "";
-    private string? _estadoMsg;
-
-    // Abre/cierra la lista de un campo; al abrir Estado carga sus opciones en la lista viva.
-    private void ToggleLista(string clave)
-    {
-        _fldExpand = _fldExpand == clave ? "" : clave;
-        _estadoMsg = null; _tipoMsg = null;
-        if (_fldExpand == "estado") _estadoOpts = EstadosConfig().ToList();
-    }
-
-    // Alias configurado (para el input; "" si no hay). Y alias efectivo (para mostrar; def si no hay).
+    // Alias configurado (para el input; "" si no hay) y alias efectivo (para mostrar; def si no hay).
     private string AliasConfig(string clave) => _camposConfig.TryGetValue(clave, out var c) ? (c.Alias ?? "") : "";
-    private string AliasCampo(string clave, string def) => _camposConfig.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Alias) ? c.Alias! : def;
-
-    private IEnumerable<string> EstadosConfig()
-    {
-        if (_camposConfig.TryGetValue("estado", out var c) && !string.IsNullOrWhiteSpace(c.Opciones))
-            return c.Opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return EstadoSemilla;
-    }
+    private string AliasCampo(string clave, string def)
+        => _camposConfig.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Alias) ? c.Alias! : def;
 
     private Task GuardarAliasAsync(string clave, string? valor)
-        => EnCola(() => GuardarCampoConfigAsync(FilaConfig(clave) with { Alias = string.IsNullOrWhiteSpace(valor) ? null : valor.Trim() }));
+        => EnCola(() => GuardarCampoConfigAsync(
+            FilaConfig(clave) with { Alias = string.IsNullOrWhiteSpace(valor) ? null : valor.Trim() }));
 
-    // Persiste la lista viva de Estado (una opcion por linea) conservando el resto de la config.
-    private Task GuardarEstadoOptsAsync()
-        => EnCola(() => GuardarCampoConfigAsync(FilaConfig("estado") with { Opciones = string.Join('\n', _estadoOpts) }));
+    // ===== Opciones de las listas del SISTEMA (Tipo y Estado) =====
+    // Se guardan en Opciones de la config del campo como JSON: el ORDEN del arreglo es el orden de
+    // la lista y 'Oculta' saca la opcion de los selectores SIN borrarla (las unidades que ya la
+    // usan la conservan). Las opciones SEMILLA -los tipos base del enum y los tres estados de
+    // fabrica- no se pueden eliminar, solo ocultar; las propias de la copropiedad si.
+    //
+    // Claves: en Estado la clave ES el texto de la opcion; en Tipo es "e:<Enum>" para las base y
+    // "c:<guid>" para las propias (que viven en tipos_unidad_custom).
+    private sealed record OpcionLista(string K, bool Oculta = false);
 
-    private void OnNuevoEstadoKeyUp(KeyboardEventArgs e) { if (e.Key == "Enter") _ = AgregarEstadoAsync(); }
+    private string? _listaAbierta;      // clave del campo cuya lista se administra en el popup
+    private string _nuevaOpcion = "";
+    private string? _listaMsg;
+    private string? _estadoMsg;
 
-    private async Task AgregarEstadoAsync()
+    private void AbrirLista(string clave) { _listaAbierta = clave; _nuevaOpcion = ""; _listaMsg = null; }
+    private void CerrarLista() { _listaAbierta = null; _nuevaOpcion = ""; _listaMsg = null; }
+    private void OnNuevaOpcionKeyUp(KeyboardEventArgs e) { if (e.Key == "Enter" && _listaAbierta is { } k) _ = AgregarOpcionListaAsync(k); }
+
+    private static bool EsSemilla(string clave, string k)
+        => clave == "tipo" ? k.StartsWith("e:", StringComparison.Ordinal)
+                           : EstadoSemilla.Contains(k, StringComparer.OrdinalIgnoreCase);
+
+    private string EtiquetaOpcion(string clave, string k)
     {
-        var v = _nuevoEstado.Trim();
-        if (v.Length == 0) return;
-        if (_estadoOpts.Any(x => string.Equals(x, v, StringComparison.OrdinalIgnoreCase))) { _estadoMsg = $"Ya existe '{v}'."; return; }
-        _estadoOpts.Add(v); _nuevoEstado = ""; _estadoMsg = null;
-        await GuardarEstadoOptsAsync();
+        if (clave != "tipo") return k;
+        if (k.StartsWith("e:", StringComparison.Ordinal))
+            return Enum.TryParse<TipoUnidad>(k[2..], out var t) ? Etiqueta(t) : k[2..];
+        return Guid.TryParse(k[2..], out var g) ? (_tiposCustom.FirstOrDefault(x => x.Id == g)?.Nombre ?? k) : k;
     }
 
-    private async Task QuitarEstadoAsync(string op)
+    /// <summary>Cuantas unidades usan esa opcion (para avisar antes de ocultarla o quitarla).</summary>
+    private int UsosDeOpcion(string clave, string k)
     {
-        var n = _estadosUso.FirstOrDefault(u => string.Equals(u.Estado, op, StringComparison.OrdinalIgnoreCase))?.Unidades ?? 0;
+        if (clave == "estado")
+            return _estadosUso.FirstOrDefault(u => string.Equals(u.Estado, k, StringComparison.OrdinalIgnoreCase))?.Unidades ?? 0;
+        if (k.StartsWith("e:", StringComparison.Ordinal))
+            return Enum.TryParse<TipoUnidad>(k[2..], out var t) ? _unidades.Count(u => u.TipoCustomId is null && u.Tipo == t) : 0;
+        return Guid.TryParse(k[2..], out var g) ? _unidades.Count(u => u.TipoCustomId == g) : 0;
+    }
+
+    /// <summary>Universo actual de opciones. En Tipo sale del enum + los tipos propios; en Estado,
+    /// de la semilla mas las que la copropiedad haya agregado (que viven en lo guardado).</summary>
+    private List<string> UniversoOpciones(string clave, List<OpcionLista> guardadas)
+        => clave == "tipo"
+            ? TiposUnidadSel.Select(t => "e:" + t).Concat(_tiposCustom.Select(t => "c:" + t.Id)).ToList()
+            : EstadoSemilla.Concat(guardadas.Select(g => g.K)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+    private List<OpcionLista> LeerOpciones(string clave)
+    {
+        var raw = _camposConfig.TryGetValue(clave, out var c) ? c.Opciones : null;
+        var guardadas = new List<OpcionLista>();
+        var habiaGuardado = !string.IsNullOrWhiteSpace(raw);
+        if (habiaGuardado)
+        {
+            var t = raw!.TrimStart();
+            if (t.StartsWith('['))
+            {
+                try { guardadas = System.Text.Json.JsonSerializer.Deserialize<List<OpcionLista>>(raw!) ?? new(); }
+                catch { guardadas = new(); }
+            }
+            else
+            {
+                // Formato legado (una por linea): Estado guardaba nombres, Tipo guardaba ids propios.
+                foreach (var l in raw!.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    guardadas.Add(new OpcionLista(clave == "tipo" ? "c:" + l : l));
+            }
+        }
+
+        var universo = UniversoOpciones(clave, guardadas);
+        var res = new List<OpcionLista>();
+        // Lo guardado manda el orden y la visibilidad; lo que ya no existe se descarta.
+        foreach (var g in guardadas)
+            if (universo.Contains(g.K, StringComparer.OrdinalIgnoreCase)
+                && !res.Any(x => string.Equals(x.K, g.K, StringComparison.OrdinalIgnoreCase)))
+                res.Add(g);
+        // Lo que no estaba guardado va al final. Si la copropiedad YA habia configurado la lista,
+        // una semilla ausente venia de haberla borrado con la regla vieja: se respeta como oculta.
+        foreach (var k in universo)
+            if (!res.Any(x => string.Equals(x.K, k, StringComparison.OrdinalIgnoreCase)))
+                res.Add(new OpcionLista(k, habiaGuardado && EsSemilla(clave, k)));
+        return res;
+    }
+
+    private Task GuardarOpcionesAsync(string clave, List<OpcionLista> ops)
+        => EnCola(() => GuardarCampoConfigAsync(
+            FilaConfig(clave) with { Opciones = System.Text.Json.JsonSerializer.Serialize(ops) }));
+
+    // Estados ofrecidos al elegir: solo los visibles, en su orden.
+    private IEnumerable<string> EstadosConfig() => LeerOpciones("estado").Where(o => !o.Oculta).Select(o => o.K);
+
+    // Tipos ofrecidos al elegir: los base y los propios que no esten ocultos.
+    private HashSet<string> OcultasTipo()
+        => LeerOpciones("tipo").Where(o => o.Oculta).Select(o => o.K).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    private IEnumerable<TipoUnidad> TiposBaseVisibles
+    {
+        get { var oc = OcultasTipo(); return TiposUnidadSel.Where(t => !oc.Contains("e:" + t)); }
+    }
+    private List<TipoUnidadCustomDto> TiposCustomVisibles
+    {
+        get { var oc = OcultasTipo(); return _tiposCustom.Where(t => !oc.Contains("c:" + t.Id)).ToList(); }
+    }
+
+    // Al ocultar una opcion, las unidades que ya la usan la conservan. Estos helpers la agregan al
+    // selector de ESA fila para que su valor siga visible y no se sobreescriba sin querer.
+    private IEnumerable<string> EstadosConVigente(string? actual)
+    {
+        var vis = EstadosConfig().ToList();
+        if (!string.IsNullOrWhiteSpace(actual) && !vis.Contains(actual!, StringComparer.OrdinalIgnoreCase))
+            vis.Add(actual!);
+        return vis;
+    }
+    private IEnumerable<TipoUnidad> TiposBaseConVigente(UnidadDto u)
+    {
+        var vis = TiposBaseVisibles.ToList();
+        if (u.TipoCustomId is null && !vis.Contains(u.Tipo)) vis.Add(u.Tipo);
+        return vis;
+    }
+    private List<TipoUnidadCustomDto> TiposCustomConVigente(UnidadDto u)
+    {
+        var vis = TiposCustomVisibles;
+        if (u.TipoCustomId is { } g && vis.All(t => t.Id != g))
+        {
+            var tc = _tiposCustom.FirstOrDefault(t => t.Id == g);
+            if (tc is not null) vis = vis.Append(tc).ToList();
+        }
+        return vis;
+    }
+
+    private async Task ToggleOcultaOpcionAsync(string clave, string k)
+    {
+        var ops = LeerOpciones(clave);
+        var i = ops.FindIndex(o => string.Equals(o.K, k, StringComparison.OrdinalIgnoreCase));
+        if (i < 0) return;
+        _listaMsg = null;
+        if (!ops[i].Oculta)
+        {
+            var n = UsosDeOpcion(clave, k);
+            if (n > 0) _listaMsg = $"'{EtiquetaOpcion(clave, k)}' queda oculta, pero {n} unidad(es) la conservan.";
+        }
+        ops[i] = ops[i] with { Oculta = !ops[i].Oculta };
+        await GuardarOpcionesAsync(clave, ops);
+    }
+
+    private async Task MoverOpcionListaAsync(string clave, string k, int dir)
+    {
+        var ops = LeerOpciones(clave);
+        var i = ops.FindIndex(o => string.Equals(o.K, k, StringComparison.OrdinalIgnoreCase));
+        var ni = i + dir;
+        if (i < 0 || ni < 0 || ni >= ops.Count) return;
+        (ops[i], ops[ni]) = (ops[ni], ops[i]);
+        _listaMsg = null;
+        await GuardarOpcionesAsync(clave, ops);
+    }
+
+    private async Task AgregarOpcionListaAsync(string clave)
+    {
+        var v = _nuevaOpcion.Trim();
+        if (v.Length == 0) return;
+        var ops = LeerOpciones(clave);
+        if (ops.Any(o => string.Equals(EtiquetaOpcion(clave, o.K), v, StringComparison.OrdinalIgnoreCase)))
+        { _listaMsg = $"Ya existe '{v}'."; return; }
+        _listaMsg = null;
+        if (clave == "tipo")
+        {
+            // En Tipo, una opcion propia es una fila de tipos_unidad_custom.
+            _nuevoTipoNombre = v;
+            await AgregarTipoCustomAsync();
+            _nuevaOpcion = "";
+            if (!string.IsNullOrEmpty(_tipoMsg)) _listaMsg = _tipoMsg;
+            return;
+        }
+        ops.Add(new OpcionLista(v));
+        _nuevaOpcion = "";
+        await GuardarOpcionesAsync(clave, ops);
+    }
+
+    private async Task QuitarOpcionListaAsync(string clave, string k)
+    {
+        if (EsSemilla(clave, k)) { _listaMsg = "Las opciones de fabrica no se eliminan; se pueden ocultar."; return; }
+        var n = UsosDeOpcion(clave, k);
         if (n > 0)
         {
             var ok = await Js.InvokeAsync<bool>("confirm",
-                $"El estado '{op}' lo usan {n} unidad(es). Si lo quitas, esas unidades quedaran con ese valor hasta reasignarlo. Continuar?");
+                $"'{EtiquetaOpcion(clave, k)}' la usan {n} unidad(es). Si la eliminas, esas unidades quedan con un valor que ya no esta en la lista. Es mejor ocultarla. Eliminar de todas formas?");
             if (!ok) return;
         }
-        _estadoOpts.RemoveAll(x => string.Equals(x, op, StringComparison.OrdinalIgnoreCase));
-        _estadoMsg = null;
-        await GuardarEstadoOptsAsync();
-    }
-
-    private async Task MoverEstadoAsync(int idx, int dir)
-    {
-        var ni = idx + dir;
-        if (ni < 0 || ni >= _estadoOpts.Count) return;
-        (_estadoOpts[idx], _estadoOpts[ni]) = (_estadoOpts[ni], _estadoOpts[idx]);
-        await GuardarEstadoOptsAsync();
-    }
-
-    // Renombra una opcion de Estado en sitio. Si la opcion esta en uso, ofrece migrar tambien el valor
-    // de esas unidades (si no, quedarian apuntando a un estado que ya no existe en la lista).
-    private async Task RenombrarEstadoAsync(int idx, string? valor)
-    {
-        if (idx < 0 || idx >= _estadoOpts.Count) return;
-        var anterior = _estadoOpts[idx];
-        var nuevo = valor?.Trim() ?? "";
-        if (nuevo.Length == 0) { _estadoMsg = "El nombre no puede quedar vacio."; return; }
-        if (string.Equals(nuevo, anterior, StringComparison.Ordinal)) return;
-        if (_estadoOpts.Where((_, i) => i != idx).Any(x => string.Equals(x, nuevo, StringComparison.OrdinalIgnoreCase)))
-        { _estadoMsg = $"Ya existe '{nuevo}'."; return; }
-
-        var n = _estadosUso.FirstOrDefault(u => string.Equals(u.Estado, anterior, StringComparison.OrdinalIgnoreCase))?.Unidades ?? 0;
-        var migrar = false;
-        if (n > 0)
+        _listaMsg = null;
+        if (clave == "tipo")
         {
-            migrar = await Js.InvokeAsync<bool>("confirm",
-                $"El estado '{anterior}' lo usan {n} unidad(es). Aceptar para renombrarlo tambien en esas unidades; Cancelar para cambiar solo la lista.");
+            if (!Guid.TryParse(k[2..], out var g)) return;
+            var tc = _tiposCustom.FirstOrDefault(x => x.Id == g);
+            if (tc is null) return;
+            await EliminarTipoCustomAsync(tc);
+            if (!string.IsNullOrEmpty(_tipoMsg)) _listaMsg = _tipoMsg;
+            return;
+        }
+        var ops = LeerOpciones(clave);
+        ops.RemoveAll(o => string.Equals(o.K, k, StringComparison.OrdinalIgnoreCase));
+        await GuardarOpcionesAsync(clave, ops);
+    }
+
+    // Renombrar: en Tipo es renombrar la fila propia; en Estado es cambiar el texto y, si esta en
+    // uso, ofrecer migrar tambien el valor de esas unidades.
+    private async Task RenombrarOpcionListaAsync(string clave, string k, string? valor)
+    {
+        var nuevo = valor?.Trim() ?? "";
+        if (nuevo.Length == 0) { _listaMsg = "El nombre no puede quedar vacio."; return; }
+        if (string.Equals(nuevo, EtiquetaOpcion(clave, k), StringComparison.Ordinal)) return;
+        var ops = LeerOpciones(clave);
+        if (ops.Any(o => !string.Equals(o.K, k, StringComparison.OrdinalIgnoreCase)
+                         && string.Equals(EtiquetaOpcion(clave, o.K), nuevo, StringComparison.OrdinalIgnoreCase)))
+        { _listaMsg = $"Ya existe '{nuevo}'."; return; }
+        _listaMsg = null;
+
+        if (clave == "tipo")
+        {
+            if (!Guid.TryParse(k[2..], out var g)) return;
+            var tc = _tiposCustom.FirstOrDefault(x => x.Id == g);
+            if (tc is null) return;
+            await RenombrarTipoCustomAsync(tc, nuevo);
+            if (!string.IsNullOrEmpty(_tipoMsg)) _listaMsg = _tipoMsg;
+            return;
         }
 
-        _estadoOpts[idx] = nuevo; _estadoMsg = null;
-        await GuardarEstadoOptsAsync();
+        var n = UsosDeOpcion(clave, k);
+        var migrar = false;
+        if (n > 0)
+            migrar = await Js.InvokeAsync<bool>("confirm",
+                $"El estado '{k}' lo usan {n} unidad(es). Aceptar para renombrarlo tambien en esas unidades; Cancelar para cambiar solo la lista.");
+
+        var i = ops.FindIndex(o => string.Equals(o.K, k, StringComparison.OrdinalIgnoreCase));
+        if (i < 0) return;
+        ops[i] = ops[i] with { K = nuevo };
+        await GuardarOpcionesAsync(clave, ops);
         if (migrar)
         {
             try
             {
                 var r = await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades/estados/renombrar",
-                    new RenombrarEstadoRequest(anterior, nuevo));
-                if (r.IsSuccessStatusCode) { await CargarAsync(); _estadoMsg = $"Renombrado en {n} unidad(es)."; }
-                else _estadoMsg = "Se renombro la lista, pero no se pudo actualizar las unidades.";
+                    new RenombrarEstadoRequest(k, nuevo));
+                if (r.IsSuccessStatusCode) { await CargarAsync(); _listaMsg = $"Renombrado en {n} unidad(es)."; }
+                else _listaMsg = "Se renombro la lista, pero no se pudo actualizar las unidades.";
             }
-            catch { _estadoMsg = "Se renombro la lista, pero no se pudo actualizar las unidades."; }
+            catch { _listaMsg = "Se renombro la lista, pero no se pudo actualizar las unidades."; }
         }
     }
 
-    private async Task RestaurarEstadoSemillaAsync()
+    // Restaurar semilla: en Tipo solo limpia orden/ocultas (las opciones propias son datos y se
+    // conservan); en Estado vuelve a las tres de fabrica, asi que se confirma antes.
+    private async Task RestaurarListaSemillaAsync(string clave)
     {
-        _estadoOpts = EstadoSemilla.ToList();
-        await GuardarEstadoOptsAsync();
-        _estadoMsg = "Opciones restauradas a la semilla.";
+        if (clave == "estado")
+        {
+            var propias = LeerOpciones("estado").Where(o => !EsSemilla("estado", o.K)).ToList();
+            if (propias.Count > 0)
+            {
+                var ok = await Js.InvokeAsync<bool>("confirm",
+                    $"Se van a quitar {propias.Count} opcion(es) propia(s) de Estado y volver a las de fabrica. Continuar?");
+                if (!ok) return;
+            }
+            await GuardarOpcionesAsync("estado", EstadoSemilla.Select(s => new OpcionLista(s)).ToList());
+            _listaMsg = "Opciones restauradas a las de fabrica.";
+            return;
+        }
+        await GuardarOpcionesAsync(clave, new List<OpcionLista>());
+        _listaMsg = "Orden y visibilidad restaurados.";
     }
 
     // Guarda la fila de configuracion COMPLETA del campo (alias, lista, tipo, formato, visibilidad, orden).
@@ -1790,34 +2012,16 @@ else
         finally { _cfgBusy = false; }
     }
 
-    // ===== Orden de los tipos propios. Se guarda como lista de ids en la config del campo 'tipo'
-    // (Opciones), asi el orden elegido se respeta en la tabla, el alta, la ficha y los filtros. =====
-    private List<Guid> OrdenTiposCustom()
-    {
-        var res = new List<Guid>();
-        if (_camposConfig.TryGetValue("tipo", out var c) && !string.IsNullOrWhiteSpace(c.Opciones))
-            foreach (var l in c.Opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                if (Guid.TryParse(l, out var g)) res.Add(g);
-        return res;
-    }
-
+    // El orden de los tipos propios sale del mismo modelo de opciones del campo 'tipo', asi el
+    // orden elegido en el popup se respeta en la tabla, el alta, la ficha y los filtros.
     private void AplicarOrdenTiposCustom()
     {
-        var ord = OrdenTiposCustom();
+        var ord = LeerOpciones("tipo").Select(o => o.K).ToList();
         _tiposCustom = _tiposCustom
-            .Select(t => (t, i: ord.IndexOf(t.Id)))
+            .Select(t => (t, i: ord.IndexOf("c:" + t.Id)))
             .OrderBy(x => x.i < 0 ? int.MaxValue : x.i)     // los que no estan en el orden van al final
             .ThenBy(x => x.t.Nombre, StringComparer.OrdinalIgnoreCase)
             .Select(x => x.t).ToList();
-    }
-
-    private async Task MoverTipoCustomAsync(int idx, int dir)
-    {
-        var ni = idx + dir;
-        if (idx < 0 || ni < 0 || ni >= _tiposCustom.Count) return;
-        (_tiposCustom[idx], _tiposCustom[ni]) = (_tiposCustom[ni], _tiposCustom[idx]);
-        var ids = string.Join('\n', _tiposCustom.Select(t => t.Id));
-        await EnCola(() => GuardarCampoConfigAsync(FilaConfig("tipo") with { Opciones = ids }));
     }
 
     private static async Task<string> MensajeError(HttpResponseMessage resp, string porDefecto)
@@ -1832,7 +2036,8 @@ else
     {
         _cfgMsg = null; _cfgEditId = null; _cfgLabel = ""; _cfgTipo = TipoCampoTablero.Texto; _cfgOpciones = "";
         _tipoMsg = null; _nuevoTipoNombre = "";
-        _fldExpand = ""; _estadoMsg = null; _nuevoEstado = ""; _estadoOpts = EstadosConfig().ToList();
+        _listaAbierta = null; _nuevaOpcion = ""; _listaMsg = null; _estadoMsg = null;
+        _cfgTab = "unidad";
         _configCamposAbierto = true;
     }
 
@@ -2191,6 +2396,10 @@ else
         TipoUnidad.UtilCuarto => "Cuarto util",
         TipoUnidad.ZonaComun => "Zona comun",
         TipoUnidad.ParqueaderoDeposito => "Parqueadero + deposito",
+        // Valor guardado que no corresponde a ningun tipo del enum (dato viejo o importado mal).
+        // Se muestra asi, y NO como el primer tipo de la lista: si se disfrazara, cualquier edicion
+        // de la fila guardaria un tipo que nadie eligio.
+        _ when !Enum.IsDefined(t) => $"(sin definir: {(int)t})",
         // El resto (Apartamento, Local, Casa, Oficina, Bodega, Parqueadero, Deposito, Area, Lote,
         // Piso, Individuo, Consultorio, Habitacion, Empresa, Cabana, Cama) se lee bien con ToString.
         _ => t.ToString()
@@ -2511,6 +2720,15 @@ else
     .cga-opts-list { display: flex; flex-direction: column; gap: 5px; max-width: 460px; }
     .cga-opt-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 8px; }
     .cga-opt-row--base { background: var(--propia-bg-app); }
+    /* Opcion oculta: sigue existiendo (las unidades que la usan la conservan), pero no se ofrece. */
+    .cga-opt-row--oculta { opacity: .55; background: var(--propia-bg-app); }
+
+    /* ===== Popup de opciones de una lista (va ENCIMA del modal de configuracion) ===== */
+    .cgl-back { position: fixed; inset: 0; z-index: 1200; background: rgba(15,15,30,.45); display: flex; align-items: flex-start; justify-content: center; padding-top: 10vh; }
+    .cgl-modal { width: 560px; max-width: calc(100vw - 32px); max-height: 76vh; display: flex; flex-direction: column; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 16px; box-shadow: 0 18px 48px rgba(0,0,0,.32); overflow: hidden; }
+    .cgl-list { max-width: none; }
+    .cgl-usos { font-size: 10px; font-weight: 800; color: var(--propia-text-secondary); background: var(--propia-bg-app); border: 1px solid var(--propia-border-card); border-radius: 20px; padding: 1px 7px; flex-shrink: 0; }
+    .cgl-foot { margin-top: 12px; display: flex; gap: 8px; justify-content: space-between; }
     .cga-opt-move { display: flex; flex-direction: column; gap: 1px; }
     .cga-opt-move .cga-mini { width: 18px; height: 14px; }
     .cga-opt-lock { color: var(--propia-text-faint); flex-shrink: 0; }

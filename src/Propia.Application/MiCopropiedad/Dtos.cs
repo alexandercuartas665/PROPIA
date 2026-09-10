@@ -128,12 +128,15 @@ public record UnidadCampoValorFlatDto(Guid UnidadId, Guid DefinicionId, string? 
 // Etapa B: ademas del alias/opciones, la config guarda el tipo override, el formato y la
 // visibilidad/orden POR COPROPIEDAD. Los parametros nuevos van AL FINAL y con default para no
 // romper a los consumidores que ya construyen estos records posicionalmente.
+// Entidad discrimina a que ficha pertenece el campo: unidad | personas | vehiculos | mascotas | terceros.
 public record UnidadCampoConfigDto(
     string CampoClave, string? Alias, string? Opciones,
-    TipoCampoTablero? Tipo = null, string? Formato = null, bool Oculto = false, int? Orden = null);
+    TipoCampoTablero? Tipo = null, string? Formato = null, bool Oculto = false, int? Orden = null,
+    string Entidad = "unidad");
 public record GuardarUnidadCampoConfigRequest(
     string CampoClave, string? Alias, string? Opciones,
-    TipoCampoTablero? Tipo = null, string? Formato = null, bool Oculto = false, int? Orden = null);
+    TipoCampoTablero? Tipo = null, string? Formato = null, bool Oculto = false, int? Orden = null,
+    string Entidad = "unidad");
 // Orden de las columnas de la tabla de unidades: la lista llega completa y en orden.
 // Conteo de unidades por valor de Estado (para advertir al quitar una opcion en uso).
 public record UnidadEstadoUsoDto(string Estado, int Unidades);
@@ -149,6 +152,19 @@ public record EquipoCampoValorFlatDto(Guid EquipoActivoId, Guid DefinicionId, st
 public record ZonaCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones);
 public record ZonaCampoDinDto(Guid DefinicionId, string Label, int Orden, string? Valor, TipoCampoTablero Tipo, string? Opciones);
 public record ZonaCampoValorFlatDto(Guid ZonaComunId, Guid DefinicionId, string? Valor);
+
+// --- Campos dinamicos tipados de las entidades vinculadas a una unidad (personas, vehiculos,
+//     mascotas, terceros). Mismo patron que equipos/zonas: la DEFINICION es por copropiedad y
+//     el VALOR es por registro. Reusan CrearCampoDefinicionRequest/ActualizarCampoDefinicionRequest/
+//     SetCampoValorRequest. ---
+public record PersonaCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones);
+public record PersonaCampoValorFlatDto(Guid UnidadPersonaId, Guid DefinicionId, string? Valor);
+public record VehiculoCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones);
+public record VehiculoCampoValorFlatDto(Guid UnidadPlacaId, Guid DefinicionId, string? Valor);
+public record MascotaCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones);
+public record MascotaCampoValorFlatDto(Guid UnidadMascotaId, Guid DefinicionId, string? Valor);
+public record TerceroCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones);
+public record TerceroCampoValorFlatDto(Guid UnidadEmpleadaId, Guid DefinicionId, string? Valor);
 
 // ----- Documentos / anexos de una unidad (archivo en blob + nombre) -----
 public record UnidadDocumentoDto(Guid Id, string Nombre, string Url, long Tamano);

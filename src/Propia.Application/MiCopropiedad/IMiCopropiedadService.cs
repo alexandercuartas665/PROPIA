@@ -46,8 +46,9 @@ public interface IMiCopropiedadService
     Task<IReadOnlyList<UnidadCampoValorFlatDto>> ListTodosCamposValoresAsync(CancellationToken ct);
     Task SetCampoValorUnidadAsync(Guid unidadId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct);
 
-    // Configuracion de campos FIJOS del sistema (alias + opciones de lista como Estado)
-    Task<IReadOnlyList<UnidadCampoConfigDto>> ListCamposConfigAsync(CancellationToken ct);
+    // Configuracion de campos FIJOS del sistema (alias + opciones de lista como Estado).
+    // 'entidad' discrimina la ficha: unidad (default) | personas | vehiculos | mascotas | terceros.
+    Task<IReadOnlyList<UnidadCampoConfigDto>> ListCamposConfigAsync(string? entidad, CancellationToken ct);
     Task<UnidadCampoConfigDto> GuardarCampoConfigAsync(GuardarUnidadCampoConfigRequest req, CancellationToken ct);
     // Orden de las columnas de la tabla de unidades (por copropiedad, no por usuario).
     Task<IReadOnlyList<UnidadCampoConfigDto>> GuardarCamposConfigLoteAsync(List<GuardarUnidadCampoConfigRequest> filas, CancellationToken ct);
@@ -225,6 +226,38 @@ public interface IMiCopropiedadService
     Task SetCampoValorZonaDefAsync(Guid zonaId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct);
     Task<IReadOnlyList<ZonaCampoValorFlatDto>> ListTodosCamposValoresZonaAsync(CancellationToken ct);
     Task<IReadOnlyList<ZonaCampoDinDto>> ListCamposDinZonaAsync(Guid zonaId, CancellationToken ct);
+
+    // Campos dinamicos tipados (catalogo) de las PERSONAS de una unidad (analogo a Equipos/Zonas).
+    Task<IReadOnlyList<PersonaCampoDefinicionDto>> ListCamposDefPersonaAsync(CancellationToken ct);
+    Task<PersonaCampoDefinicionDto> CrearCampoDefPersonaAsync(CrearCampoDefinicionRequest req, CancellationToken ct);
+    Task<bool> ActualizarCampoDefPersonaAsync(Guid definicionId, ActualizarCampoDefinicionRequest req, CancellationToken ct);
+    Task<bool> EliminarCampoDefPersonaAsync(Guid definicionId, CancellationToken ct);
+    Task<IReadOnlyList<PersonaCampoValorFlatDto>> ListTodosCamposValoresPersonaAsync(CancellationToken ct);
+    Task SetCampoValorPersonaDefAsync(Guid unidadPersonaId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct);
+
+    // Campos dinamicos tipados (catalogo) de los VEHICULOS (placas) de una unidad.
+    Task<IReadOnlyList<VehiculoCampoDefinicionDto>> ListCamposDefVehiculoAsync(CancellationToken ct);
+    Task<VehiculoCampoDefinicionDto> CrearCampoDefVehiculoAsync(CrearCampoDefinicionRequest req, CancellationToken ct);
+    Task<bool> ActualizarCampoDefVehiculoAsync(Guid definicionId, ActualizarCampoDefinicionRequest req, CancellationToken ct);
+    Task<bool> EliminarCampoDefVehiculoAsync(Guid definicionId, CancellationToken ct);
+    Task<IReadOnlyList<VehiculoCampoValorFlatDto>> ListTodosCamposValoresVehiculoAsync(CancellationToken ct);
+    Task SetCampoValorVehiculoDefAsync(Guid unidadPlacaId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct);
+
+    // Campos dinamicos tipados (catalogo) de las MASCOTAS de una unidad.
+    Task<IReadOnlyList<MascotaCampoDefinicionDto>> ListCamposDefMascotaAsync(CancellationToken ct);
+    Task<MascotaCampoDefinicionDto> CrearCampoDefMascotaAsync(CrearCampoDefinicionRequest req, CancellationToken ct);
+    Task<bool> ActualizarCampoDefMascotaAsync(Guid definicionId, ActualizarCampoDefinicionRequest req, CancellationToken ct);
+    Task<bool> EliminarCampoDefMascotaAsync(Guid definicionId, CancellationToken ct);
+    Task<IReadOnlyList<MascotaCampoValorFlatDto>> ListTodosCamposValoresMascotaAsync(CancellationToken ct);
+    Task SetCampoValorMascotaDefAsync(Guid unidadMascotaId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct);
+
+    // Campos dinamicos tipados (catalogo) de los TERCEROS (empleadas) de una unidad.
+    Task<IReadOnlyList<TerceroCampoDefinicionDto>> ListCamposDefTerceroAsync(CancellationToken ct);
+    Task<TerceroCampoDefinicionDto> CrearCampoDefTerceroAsync(CrearCampoDefinicionRequest req, CancellationToken ct);
+    Task<bool> ActualizarCampoDefTerceroAsync(Guid definicionId, ActualizarCampoDefinicionRequest req, CancellationToken ct);
+    Task<bool> EliminarCampoDefTerceroAsync(Guid definicionId, CancellationToken ct);
+    Task<IReadOnlyList<TerceroCampoValorFlatDto>> ListTodosCamposValoresTerceroAsync(CancellationToken ct);
+    Task SetCampoValorTerceroDefAsync(Guid unidadEmpleadaId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct);
 
     // Seccion 8 - Finanzas (parametros). El resumen en tiempo real lo orquesta el controller
     // combinando 2.6 Presupuesto + 2.7 Cartera.

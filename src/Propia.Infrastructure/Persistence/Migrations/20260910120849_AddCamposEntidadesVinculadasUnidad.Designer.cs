@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Propia.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using Propia.Infrastructure.Persistence;
 namespace Propia.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(PropiaDbContext))]
-    partial class PropiaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260910120849_AddCamposEntidadesVinculadasUnidad")]
+    partial class AddCamposEntidadesVinculadasUnidad
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -17357,14 +17360,6 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("created_by");
 
-                    b.Property<string>("Entidad")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)")
-                        .HasDefaultValue("unidad")
-                        .HasColumnName("entidad");
-
                     b.Property<string>("Formato")
                         .HasColumnType("text")
                         .HasColumnName("formato");
@@ -17403,7 +17398,7 @@ namespace Propia.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TenantId");
 
-                    b.HasIndex("TenantId", "Entidad", "CampoClave")
+                    b.HasIndex("TenantId", "CampoClave")
                         .IsUnique();
 
                     b.ToTable("unidad_campos_config");

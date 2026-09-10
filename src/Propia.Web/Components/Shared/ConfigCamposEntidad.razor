@@ -1,0 +1,597 @@
+@* ============================================================================================
+   Grilla de configuracion de campos de una entidad vinculada a la unidad (Personas, Vehiculos,
+   Mascotas, Terceros). Es el MISMO panel para las cuatro: solo cambia el prefijo.
+
+   Lista, en una sola grilla ordenable, los campos del SISTEMA de esa ficha (los que ya trae de
+   fabrica: nombre, documento, rol, placa, raza...) y los campos PROPIOS de la copropiedad. De
+   cada uno se puede cambiar el alias, la visibilidad, la ubicacion y -donde tiene sentido- el
+   tipo y el formato. Es la misma forma que la pestana "Unidad".
+
+   El alias/visibilidad/orden viven en unidad_campos_config discriminados por 'entidad'; los
+   campos propios ademas tienen su definicion en {prefijo}-campos.
+
+   Reusa las clases cga-* que define la pagina de Unidades (el CSS del proyecto es global).
+   ============================================================================================ *@
+@inject IHttpClientFactory HttpFactory
+@using Propia.Domain.Enums
+
+<div class="cga-grid cga-head-row">
+    <div></div>
+    <div>Label</div>
+    <div>Tipo de Dato</div>
+    <div>Configuracion especifica</div>
+    <div></div>
+</div>
+
+@if (_cargando)
+{
+    <div class="cga-vacio">Cargando campos...</div>
+}
+else if (_errorCarga is not null)
+{
+    @* Un fallo de carga NO puede parecer "no hay campos": se distingue explicitamente. *@
+    <div class="cga-error">
+        No se pudieron cargar los campos de @TituloPlural.ToLowerInvariant(). @_errorCarga
+        <button class="dst-btn-soft" type="button" style="margin-left:8px;" @onclick="CargarAsync">Reintentar</button>
+    </div>
+}
+else
+{
+    @foreach (var it in ItemsOrdenados())
+    {
+        var item = it;
+        var clave = item.Clave;
+        var vis = VisibleDe(clave);
+        var tefe = TipoEfectivo(item);
+        var permitidos = item.EsCustom ? TiposOfrecidos : TiposPermitidos(item);
+        var fmt = FormatoDe(clave);
+
+        <div class="cga-grid cga-row @(_dragClave == clave ? "cga-row--drag" : "")"
+             @ondragover:preventDefault="true" @ondrop="() => OnDrop(clave)">
+            <div class="cga-ctrl">
+                <span class="cga-grip" draggable="true" title="Arrastra para reubicar el campo"
+                      @ondragstart="() => _dragClave = clave" @ondragend="() => _dragClave = null">
+                    <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor"><circle cx="3" cy="3" r="1.4"/><circle cx="9" cy="3" r="1.4"/><circle cx="3" cy="8" r="1.4"/><circle cx="9" cy="8" r="1.4"/><circle cx="3" cy="13" r="1.4"/><circle cx="9" cy="13" r="1.4"/></svg>
+                </span>
+                <button type="button" class="cga-mini" title="Subir" @onclick="() => MoverAsync(clave, -1)" disabled="@_busy">&#9650;</button>
+                <button type="button" class="cga-mini" title="Bajar" @onclick="() => MoverAsync(clave, 1)" disabled="@_busy">&#9660;</button>
+                <button type="button" class="cga-eye @(vis ? "on" : "")" title="@(vis ? "Visible en la ficha" : "Oculto")"
+                        @onclick="() => SetVisibleAsync(clave, !vis)" disabled="@(_busy || !PuedeOcultar(item))">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+            </div>
+            <div>
+                @if (item.EsCustom)
+                {
+                    <input class="cga-inp" value="@item.Campo!.Label" title="Renombrar el campo"
+                           @onchange="@(e => RenombrarCustomAsync(item.Campo!, e.Value?.ToString()))" disabled="@_busy" />
+                }
+                else
+                {
+                    <input class="cga-inp" placeholder="@item.Sis!.DefLabel" value="@AliasConfig(clave)" title="Alias del campo del sistema"
+                           @onchange="@(e => SetAliasAsync(clave, e.Value?.ToString()))" disabled="@_busy" />
+                }
+            </div>
+            <div class="cga-tipo">
+                @if (permitidos.Length > 0)
+                {
+                    <select class="cga-inp cga-tipo-sel" value="@tefe" @onchange="@(e => SetTipoAsync(item, e.Value?.ToString()))" disabled="@_busy">
+                        @foreach (var t in permitidos) { <option value="@t" selected="@(t == tefe)">@TipoLabel(t)</option> }
+                    </select>
+                }
+                else
+                {
+                    <span class="cga-tipo-badge">@TipoLabel(tefe)</span>
+                    <svg class="cga-lock" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="Tipo fijo del sistema"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                    <span class="cga-fija">FIJA</span>
+                }
+            </div>
+            <div class="cga-cfg">
+                @if (!item.EsCustom && tefe == TipoCampoTablero.Seleccion)
+                {
+                    @* Lista del sistema: sus opciones son valores del enum, no se editan. *@
+                    <span class="cga-cfg-hint" title="@string.Join(", ", OpcionesSistema(clave))">
+                        Lista del sistema (@OpcionesSistema(clave).Length opciones)
+                    </span>
+                }
+                else if (item.EsCustom && tefe == TipoCampoTablero.Seleccion)
+                {
+                    <button class="dst-btn-soft" type="button" @onclick="() => ToggleOpciones(item.Campo!.Id)">
+                        @(_opcExpand == item.Campo!.Id ? "Ocultar lista" : "Gestionar lista")
+                    </button>
+                    <span class="cga-cfg-hint" style="margin-left:6px;">@item.Campo!.OpcionesArray().Length opciones</span>
+                }
+                else if (tefe is TipoCampoTablero.Numero or TipoCampoTablero.Moneda)
+                {
+                    <div class="cga-fmt">
+                        <label class="cga-fmt-lbl">Decimales</label>
+                        <select class="cga-inp cga-fmt-dec" value="@(fmt.Dec ?? 2)" @onchange="@(e => SetFormatoDecAsync(clave, e.Value?.ToString()))" disabled="@_busy">
+                            @foreach (var d in new[] { 0, 1, 2, 3, 4 }) { <option value="@d" selected="@((fmt.Dec ?? 2) == d)">@d</option> }
+                        </select>
+                        @if (tefe == TipoCampoTablero.Moneda) { <span class="cga-fmt-tag">COP</span> }
+                    </div>
+                }
+                else if (tefe is TipoCampoTablero.Texto or TipoCampoTablero.AreaTexto or TipoCampoTablero.Telefono or TipoCampoTablero.Email or TipoCampoTablero.Url)
+                {
+                    <div class="cga-fmt">
+                        <label class="cga-fmt-lbl">Max. caracteres</label>
+                        <input class="cga-inp cga-fmt-max" type="number" min="1" max="4000" placeholder="sin limite"
+                               value="@(fmt.Max?.ToString() ?? "")" @onchange="@(e => SetFormatoMaxAsync(clave, e.Value?.ToString()))" disabled="@_busy" />
+                    </div>
+                }
+                else if (tefe == TipoCampoTablero.Booleano) { <span class="cga-cfg-hint">Si / No</span> }
+                else if (tefe == TipoCampoTablero.Fecha) { <span class="cga-cfg-hint">dd/mm/aaaa</span> }
+            </div>
+            <div class="cga-row-act">
+                @if (item.EsCustom)
+                {
+                    var dd = item.Campo!;
+                    <button class="dst-btn-soft" type="button" @onclick="() => EliminarCustomAsync(dd)" disabled="@_busy">Eliminar</button>
+                }
+                else { <span class="cga-cfg-hint">del sistema</span> }
+            </div>
+        </div>
+
+        @if (item.EsCustom && _opcExpand == item.Campo!.Id && tefe == TipoCampoTablero.Seleccion)
+        {
+            var dd2 = item.Campo!;
+            <div class="cga-opts">
+                <div class="cga-opts-list">
+                    @for (var i = 0; i < _opcs.Count; i++)
+                    {
+                        var idx = i;
+                        <div class="cga-opt-row">
+                            <div class="cga-opt-move">
+                                <button type="button" class="cga-mini" title="Subir" disabled="@(idx == 0 || _busy)" @onclick="() => MoverOpcionAsync(dd2, idx, -1)">&#9650;</button>
+                                <button type="button" class="cga-mini" title="Bajar" disabled="@(idx == _opcs.Count - 1 || _busy)" @onclick="() => MoverOpcionAsync(dd2, idx, 1)">&#9660;</button>
+                            </div>
+                            <input class="cga-inp cga-opt-inp" value="@_opcs[idx]" title="Renombrar la opcion"
+                                   @onchange="@(e => RenombrarOpcionAsync(dd2, idx, e.Value?.ToString()))" disabled="@_busy" />
+                            <button type="button" class="cga-opt-x" title="Quitar" @onclick="() => QuitarOpcionAsync(dd2, idx)" disabled="@_busy">&times;</button>
+                        </div>
+                    }
+                    <div class="cga-opt-add">
+                        <input class="cga-inp" placeholder="Anadir nueva opcion..." @bind="_nuevaOpc" @bind:event="oninput" />
+                        <button class="cga-add-btn" type="button" @onclick="() => AgregarOpcionAsync(dd2)" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevaOpc))">Anadir</button>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+
+    <div class="dst-cfg-sep"></div>
+
+    <div class="dst-cfg-form">
+        <div class="dst-cfg-form-title">Nuevo campo de @TituloSingular.ToLowerInvariant()</div>
+        <div class="dst-cfg-form-grid">
+            <div>
+                <label class="dst-nfc-lbl">Nombre</label>
+                <input class="dst-nf-inp" @bind="_nvLabel" @bind:event="oninput" placeholder="@Ejemplo" />
+            </div>
+            <div>
+                <label class="dst-nfc-lbl">Tipo</label>
+                <select class="dst-nf-inp" @bind="_nvTipo">
+                    @foreach (var t in TiposOfrecidos) { <option value="@t">@TipoLabel(t)</option> }
+                </select>
+            </div>
+        </div>
+        @if (_nvTipo == TipoCampoTablero.Seleccion)
+        {
+            <div style="margin-top:8px;">
+                <label class="dst-nfc-lbl">Opciones (una por linea)</label>
+                <textarea class="dst-nf-inp" rows="4" @bind="_nvOpciones" @bind:event="oninput"></textarea>
+            </div>
+        }
+        @if (!string.IsNullOrEmpty(_msg)) { <div class="dst-cfg-msg">@_msg</div> }
+        <div class="dst-cfg-form-foot">
+            <button class="propia-btn-brand" type="button" @onclick="CrearAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_nvLabel))">
+                @(_busy ? "Guardando..." : "Crear campo")
+            </button>
+        </div>
+    </div>
+}
+
+<style>
+    .cga-vacio { padding: 14px 10px; font-size: 12.5px; color: var(--propia-text-faint); }
+    .cga-error { padding: 12px 10px; font-size: 12.5px; color: var(--propia-danger); background: var(--propia-bg-app); border-radius: 9px; margin: 8px 0; }
+</style>
+
+@code {
+    /// <summary>Prefijo/entidad del catalogo: personas | vehiculos | mascotas | terceros.</summary>
+    [Parameter, EditorRequired] public string Prefijo { get; set; } = "";
+    [Parameter] public string TituloSingular { get; set; } = "registro";
+    [Parameter] public string TituloPlural { get; set; } = "registros";
+    [Parameter] public string Ejemplo { get; set; } = "";
+    [Parameter] public string? Jwt { get; set; }
+    [Parameter] public EventCallback Cambiado { get; set; }
+
+    // ===== Campos del SISTEMA de cada ficha (los que la entidad ya trae de fabrica) =====
+    private sealed record CampoSis(string Clave, string DefLabel, TipoCampoTablero Tipo, bool VisibleDefault = true, bool Requerido = false);
+
+    private static readonly Dictionary<string, CampoSis[]> Sistema = new(StringComparer.Ordinal)
+    {
+        ["personas"] = new[]
+        {
+            new CampoSis("nombre", "Nombre", TipoCampoTablero.Texto, true, true),
+            new CampoSis("documento", "Identificacion", TipoCampoTablero.Texto),
+            new CampoSis("telefono", "Telefono", TipoCampoTablero.Telefono),
+            new CampoSis("email", "Email", TipoCampoTablero.Email),
+            new CampoSis("rol", "Rol", TipoCampoTablero.Seleccion, true, true),
+            new CampoSis("habita", "Habita", TipoCampoTablero.Booleano),
+            new CampoSis("parentesco", "Parentesco", TipoCampoTablero.Texto, false),
+        },
+        ["vehiculos"] = new[]
+        {
+            new CampoSis("placa", "Placa", TipoCampoTablero.Texto, true, true),
+            new CampoSis("tipovehiculo", "Tipo de vehiculo", TipoCampoTablero.Seleccion),
+        },
+        ["mascotas"] = new[]
+        {
+            new CampoSis("nombre", "Nombre", TipoCampoTablero.Texto, true, true),
+            new CampoSis("tipo", "Tipo", TipoCampoTablero.Seleccion),
+            new CampoSis("raza", "Raza", TipoCampoTablero.Texto),
+        },
+        ["terceros"] = new[]
+        {
+            new CampoSis("nombre", "Nombre", TipoCampoTablero.Texto, true, true),
+            new CampoSis("documento", "Documento", TipoCampoTablero.Texto),
+            new CampoSis("celular", "Celular", TipoCampoTablero.Telefono),
+            new CampoSis("horario", "Horario", TipoCampoTablero.Texto),
+        },
+    };
+
+    private CampoSis[] CamposSistema => Sistema.TryGetValue(Prefijo, out var c) ? c : Array.Empty<CampoSis>();
+
+    /// <summary>Opciones de las listas del sistema: son valores de enum, no se editan.</summary>
+    private string[] OpcionesSistema(string clave) => (Prefijo, clave) switch
+    {
+        ("personas", "rol") => Enum.GetNames<RolUnidadPersona>(),
+        ("vehiculos", "tipovehiculo") => Enum.GetNames<TipoVehiculo>(),
+        ("mascotas", "tipo") => Enum.GetNames<TipoMascota>(),
+        _ => Array.Empty<string>()
+    };
+
+    private sealed record Item(string Clave, bool EsCustom, CampoSis? Sis, CampoDinDef? Campo);
+    private static string ClaveCustom(CampoDinDef d) => "cd:" + d.Id;
+
+    private List<CampoDinDef> _defs = new();
+    private Dictionary<string, UnidadCampoConfigDto> _cfg = new(StringComparer.Ordinal);
+    private bool _cargando = true;
+    private bool _busy;
+    private string? _msg;
+    private string? _errorCarga;
+    private string? _dragClave;
+
+    private Guid? _opcExpand;
+    private List<string> _opcs = new();
+    private string _nuevaOpc = "";
+
+    private string _nvLabel = "";
+    private TipoCampoTablero _nvTipo = TipoCampoTablero.Texto;
+    private string _nvOpciones = "";
+
+    private static readonly TipoCampoTablero[] TiposOfrecidos =
+    {
+        TipoCampoTablero.Texto, TipoCampoTablero.AreaTexto, TipoCampoTablero.Numero,
+        TipoCampoTablero.Moneda, TipoCampoTablero.Fecha, TipoCampoTablero.Seleccion,
+        TipoCampoTablero.Booleano, TipoCampoTablero.Telefono, TipoCampoTablero.Email, TipoCampoTablero.Url
+    };
+    private static readonly TipoCampoTablero[] TiposTexto =
+        { TipoCampoTablero.Texto, TipoCampoTablero.AreaTexto, TipoCampoTablero.Telefono, TipoCampoTablero.Email, TipoCampoTablero.Url };
+
+    // Igual que en la unidad: un campo del sistema solo cambia entre tipos compatibles con su
+    // columna real. Los enums y los Si/No quedan fijos.
+    private static TipoCampoTablero[] TiposPermitidos(Item it)
+        => it.Sis!.Tipo is TipoCampoTablero.Seleccion or TipoCampoTablero.Booleano
+            ? Array.Empty<TipoCampoTablero>()
+            : TiposTexto;
+
+    // El campo que identifica al registro no se puede ocultar (quedaria una fila sin nombre).
+    private static bool PuedeOcultar(Item it) => it.EsCustom || !it.Sis!.Requerido;
+
+    private static string TipoLabel(TipoCampoTablero t) => t switch
+    {
+        TipoCampoTablero.AreaTexto => "Texto largo",
+        TipoCampoTablero.Numero => "Numero",
+        TipoCampoTablero.Moneda => "Moneda",
+        TipoCampoTablero.Fecha => "Fecha",
+        TipoCampoTablero.Hora => "Hora",
+        TipoCampoTablero.Seleccion => "Lista",
+        TipoCampoTablero.Booleano => "Si / No",
+        TipoCampoTablero.Telefono => "Telefono",
+        TipoCampoTablero.Email => "Correo",
+        TipoCampoTablero.Url => "Enlace",
+        _ => "Texto"
+    };
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    private string? _prefijoCargado;
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_prefijoCargado == Prefijo) return;
+        _prefijoCargado = Prefijo;
+        _opcExpand = null; _msg = null;
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        _cargando = true; _errorCarga = null;
+        try
+        {
+            var http = Auth();
+            var defs = await http.GetFromJsonAsync<List<CampoDinDef>>($"/api/mi-copropiedad/{Prefijo}-campos") ?? new();
+            var cfg = await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>($"/api/mi-copropiedad/unidades-config?entidad={Prefijo}") ?? new();
+            _defs = defs.OrderBy(d => d.Orden).ToList();
+            _cfg = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+        }
+        catch (Exception ex) { _errorCarga = ex.Message; _defs = new(); _cfg = new(StringComparer.Ordinal); }
+        finally { _cargando = false; }
+    }
+
+    // ===== Orden y visibilidad (viven en la config del tenant, discriminada por entidad) =====
+    private bool VisiblePorDefecto(string clave)
+    {
+        if (clave.StartsWith("cd:", StringComparison.Ordinal)) return true;
+        var s = CamposSistema.FirstOrDefault(x => x.Clave == clave);
+        return s?.VisibleDefault ?? true;
+    }
+    private bool VisibleDe(string clave)
+        => _cfg.TryGetValue(clave, out var c) ? !c.Oculto : VisiblePorDefecto(clave);
+    private int OrdenDe(string clave, int fallback)
+        => _cfg.TryGetValue(clave, out var c) && c.Orden is { } o ? o : 1000 + fallback;
+
+    private List<Item> ItemsOrdenados()
+    {
+        var items = new List<Item>();
+        foreach (var s in CamposSistema) items.Add(new Item(s.Clave, false, s, null));
+        foreach (var d in _defs) items.Add(new Item(ClaveCustom(d), true, null, d));
+        return items.Select((it, i) => (it, ord: OrdenDe(it.Clave, i))).OrderBy(x => x.ord).Select(x => x.it).ToList();
+    }
+
+    private string AliasConfig(string clave) => _cfg.TryGetValue(clave, out var c) ? (c.Alias ?? "") : "";
+
+    private TipoCampoTablero TipoEfectivo(Item it)
+    {
+        if (it.EsCustom) return it.Campo!.Tipo;
+        return _cfg.TryGetValue(it.Clave, out var c) && c.Tipo is { } t ? t : it.Sis!.Tipo;
+    }
+
+    private sealed record FormatoCampo(int? Dec = null, bool Miles = false, string? Moneda = null, int? Max = null);
+    private FormatoCampo FormatoDe(string clave)
+    {
+        if (_cfg.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Formato))
+        {
+            try { return System.Text.Json.JsonSerializer.Deserialize<FormatoCampo>(c.Formato!) ?? new FormatoCampo(); }
+            catch { }
+        }
+        return new FormatoCampo();
+    }
+
+    // Fila COMPLETA de config: el PUT reemplaza la fila entera, asi que se manda todo y se muta
+    // con 'with' solo lo que cambia.
+    private GuardarUnidadCampoConfigRequest FilaConfig(string clave)
+    {
+        _cfg.TryGetValue(clave, out var c);
+        return new GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato,
+            Oculto: c?.Oculto ?? !VisiblePorDefecto(clave), Orden: c?.Orden, Entidad: Prefijo);
+    }
+
+    // Cola: dos cambios seguidos no pueden partir del mismo estado (el segundo pisaria al primero).
+    private Task _cola = Task.CompletedTask;
+    private Task EnCola(Func<Task> accion)
+    {
+        var anterior = _cola;
+        _cola = Ejecutar();
+        return _cola;
+        async Task Ejecutar() { try { await anterior; } catch { } await accion(); }
+    }
+
+    private async Task GuardarConfigAsync(GuardarUnidadCampoConfigRequest req)
+    {
+        _busy = true;
+        try
+        {
+            var r = await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req);
+            if (r.IsSuccessStatusCode)
+            {
+                var dto = await r.Content.ReadFromJsonAsync<UnidadCampoConfigDto>();
+                if (dto is not null) _cfg[req.CampoClave] = dto;
+                await Cambiado.InvokeAsync();
+            }
+            else { _msg = "No se pudo guardar la configuracion del campo."; }
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private Task SetAliasAsync(string clave, string? valor)
+        => EnCola(() => GuardarConfigAsync(FilaConfig(clave) with { Alias = string.IsNullOrWhiteSpace(valor) ? null : valor.Trim() }));
+    private Task SetVisibleAsync(string clave, bool v)
+        => EnCola(() => GuardarConfigAsync(FilaConfig(clave) with { Oculto = !v }));
+    private Task SetFormatoDecAsync(string clave, string? v)
+        => EnCola(() => GuardarConfigAsync(FilaConfig(clave) with { Formato = Fmt(FormatoDe(clave) with { Dec = int.TryParse(v, out var n) ? Math.Clamp(n, 0, 6) : null }) }));
+    private Task SetFormatoMaxAsync(string clave, string? v)
+        => EnCola(() => GuardarConfigAsync(FilaConfig(clave) with { Formato = Fmt(FormatoDe(clave) with { Max = int.TryParse(v, out var n) && n > 0 ? n : null }) }));
+    private static string Fmt(FormatoCampo f) => System.Text.Json.JsonSerializer.Serialize(f);
+
+    // El tipo de un campo del sistema es un override en la config; el de uno propio va en su definicion.
+    private Task SetTipoAsync(Item it, string? v)
+    {
+        if (!Enum.TryParse<TipoCampoTablero>(v, out var t)) return Task.CompletedTask;
+        if (it.EsCustom) return CambiarTipoCustomAsync(it.Campo!, t);
+        return EnCola(() => GuardarConfigAsync(FilaConfig(it.Clave) with { Tipo = t }));
+    }
+
+    // ===== Reordenamiento: un solo PUT con la fila completa de cada campo. =====
+    private Task MoverAsync(string clave, int dir)
+    {
+        var orden = ItemsOrdenados().Select(x => x.Clave).ToList();
+        var idx = orden.IndexOf(clave);
+        var ni = idx + dir;
+        if (idx < 0 || ni < 0 || ni >= orden.Count) return Task.CompletedTask;
+        (orden[idx], orden[ni]) = (orden[ni], orden[idx]);
+        return GuardarOrdenAsync(orden);
+    }
+
+    private Task OnDrop(string targetClave)
+    {
+        var src = _dragClave;
+        _dragClave = null;
+        if (src is null || src == targetClave) return Task.CompletedTask;
+        var orden = ItemsOrdenados().Select(x => x.Clave).ToList();
+        var from = orden.IndexOf(src);
+        var to = orden.IndexOf(targetClave);
+        if (from < 0 || to < 0) return Task.CompletedTask;
+        orden.RemoveAt(from);
+        if (from < to) to--;
+        orden.Insert(to, src);
+        return GuardarOrdenAsync(orden);
+    }
+
+    private Task GuardarOrdenAsync(List<string> claves) => EnCola(async () =>
+    {
+        _busy = true;
+        try
+        {
+            // Se manda la fila entera de cada campo: si solo fuera la clave, las filas creadas al
+            // vuelo tomarian el default de 'oculto' y los campos ocultos se harian visibles solos.
+            var filas = claves.Select((k, i) => FilaConfig(k) with { Orden = i }).ToList();
+            var r = await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config/lote", filas);
+            if (r.IsSuccessStatusCode) { await CargarAsync(); await Cambiado.InvokeAsync(); }
+            else { _msg = "No se pudo guardar el orden."; }
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+        finally { _busy = false; }
+    });
+
+    // ===== Campos propios (definicion en {prefijo}-campos) =====
+    private void ToggleOpciones(Guid id)
+    {
+        _opcExpand = _opcExpand == id ? null : id;
+        _nuevaOpc = ""; _msg = null;
+        if (_opcExpand is { } abierto)
+            _opcs = _defs.First(d => d.Id == abierto).OpcionesArray().ToList();
+    }
+
+    private async Task<bool> GuardarDefAsync(CampoDinDef d, string? label = null, TipoCampoTablero? tipo = null, string? opciones = null)
+    {
+        _busy = true;
+        try
+        {
+            var req = new ActualizarCampoDefinicionRequest(label ?? d.Label, tipo ?? d.Tipo, opciones ?? d.Opciones, d.Orden);
+            var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/{Prefijo}-campos/{d.Id}", req);
+            if (!r.IsSuccessStatusCode) { _msg = "No se pudo guardar el campo."; return false; }
+            return true;
+        }
+        catch (Exception ex) { _msg = ex.Message; return false; }
+        finally { _busy = false; }
+    }
+
+    private async Task RenombrarCustomAsync(CampoDinDef d, string? valor)
+    {
+        var label = valor?.Trim() ?? "";
+        if (label.Length == 0) { _msg = "El nombre no puede quedar vacio."; return; }
+        if (string.Equals(label, d.Label, StringComparison.Ordinal)) return;
+        if (_defs.Any(x => x.Id != d.Id && string.Equals(x.Label, label, StringComparison.OrdinalIgnoreCase)))
+        { _msg = $"Ya existe un campo '{label}'."; return; }
+        _msg = null;
+        if (await GuardarDefAsync(d, label: label)) { await CargarAsync(); await Cambiado.InvokeAsync(); }
+    }
+
+    private async Task CambiarTipoCustomAsync(CampoDinDef d, TipoCampoTablero t)
+    {
+        if (t == d.Tipo) return;
+        _msg = null;
+        if (await GuardarDefAsync(d, tipo: t)) { _opcExpand = null; await CargarAsync(); await Cambiado.InvokeAsync(); }
+    }
+
+    private async Task GuardarOpcsAsync(CampoDinDef d)
+    {
+        if (await GuardarDefAsync(d, opciones: string.Join('\n', _opcs))) { await CargarAsync(); await Cambiado.InvokeAsync(); }
+    }
+
+    private async Task AgregarOpcionAsync(CampoDinDef d)
+    {
+        var v = _nuevaOpc.Trim();
+        if (v.Length == 0) return;
+        if (_opcs.Any(x => string.Equals(x, v, StringComparison.OrdinalIgnoreCase))) { _msg = $"Ya existe '{v}'."; return; }
+        _opcs.Add(v); _nuevaOpc = ""; _msg = null;
+        await GuardarOpcsAsync(d);
+    }
+
+    private async Task QuitarOpcionAsync(CampoDinDef d, int idx)
+    {
+        if (idx < 0 || idx >= _opcs.Count) return;
+        _opcs.RemoveAt(idx); _msg = null;
+        await GuardarOpcsAsync(d);
+    }
+
+    private async Task MoverOpcionAsync(CampoDinDef d, int idx, int dir)
+    {
+        var ni = idx + dir;
+        if (ni < 0 || ni >= _opcs.Count) return;
+        (_opcs[idx], _opcs[ni]) = (_opcs[ni], _opcs[idx]);
+        await GuardarOpcsAsync(d);
+    }
+
+    private async Task RenombrarOpcionAsync(CampoDinDef d, int idx, string? valor)
+    {
+        if (idx < 0 || idx >= _opcs.Count) return;
+        var v = valor?.Trim() ?? "";
+        if (v.Length == 0) { _msg = "La opcion no puede quedar vacia."; return; }
+        if (string.Equals(v, _opcs[idx], StringComparison.Ordinal)) return;
+        if (_opcs.Where((_, i) => i != idx).Any(x => string.Equals(x, v, StringComparison.OrdinalIgnoreCase)))
+        { _msg = $"Ya existe '{v}'."; return; }
+        _opcs[idx] = v; _msg = null;
+        await GuardarOpcsAsync(d);
+    }
+
+    private async Task CrearAsync()
+    {
+        var label = _nvLabel.Trim();
+        if (label.Length == 0) return;
+        if (_defs.Any(x => string.Equals(x.Label, label, StringComparison.OrdinalIgnoreCase))
+            || CamposSistema.Any(x => string.Equals(x.DefLabel, label, StringComparison.OrdinalIgnoreCase)))
+        { _msg = $"Ya existe un campo '{label}'."; return; }
+        _busy = true; _msg = null;
+        try
+        {
+            var opciones = _nvTipo == TipoCampoTablero.Seleccion && !string.IsNullOrWhiteSpace(_nvOpciones) ? _nvOpciones : null;
+            var r = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/{Prefijo}-campos",
+                new CrearCampoDefinicionRequest(label, _nvTipo, opciones));
+            if (r.IsSuccessStatusCode)
+            {
+                _nvLabel = ""; _nvOpciones = ""; _nvTipo = TipoCampoTablero.Texto;
+                await CargarAsync(); await Cambiado.InvokeAsync();
+            }
+            else { _msg = "No se pudo crear el campo."; }
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task EliminarCustomAsync(CampoDinDef d)
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/{Prefijo}-campos/{d.Id}");
+            if (r.IsSuccessStatusCode)
+            {
+                if (_opcExpand == d.Id) _opcExpand = null;
+                await CargarAsync(); await Cambiado.InvokeAsync();
+            }
+            else { _msg = "No se pudo eliminar el campo."; }
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+        finally { _busy = false; }
+    }
+}

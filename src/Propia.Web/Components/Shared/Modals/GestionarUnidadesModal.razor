@@ -61,7 +61,7 @@
                     <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">@AliasCampo("tipo", "TIPO")</div>
                         <select class="gum-fmeta-inp" @bind="_edit.TipoKey">
                             @foreach (var t in TiposUnidadSel) { <option value="@($"e:{t}")">@TipoLabel(t)</option> }
-                            @if (_tiposCustom.Count > 0) { <optgroup label="Tipos propios">@foreach (var tc in _tiposCustom) { <option value="@($"c:{tc.Id}")">@tc.Nombre</option> }</optgroup> }
+                            @if (TiposCustomVisibles().Count > 0) { <optgroup label="Tipos propios">@foreach (var tc in TiposCustomVisibles()) { <option value="@($"c:{tc.Id}")">@tc.Nombre</option> }</optgroup> }
                         </select>
                     </div>
                     <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">@AliasCampo("coef", "COEFICIENTE")</div>
@@ -73,7 +73,7 @@
                     <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">@AliasCampo("estado", "ESTADO")</div>
                         <select class="gum-fmeta-inp" @bind="_edit.Estado">
                             <option value="">- Sin definir -</option>
-                            @foreach (var eo in EstadosConfig()) { <option value="@eo">@eo</option> }
+                            @foreach (var eo in EstadosConVigente(_edit.Estado)) { <option value="@eo">@eo</option> }
                         </select>
                     </div>
                     <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">@AliasCampo("matricula", "MATRICULA")</div>
@@ -144,7 +144,7 @@
                 <div class="gum-fmeta">
                     <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">@AliasCampo("num", "ID UNIDAD")</div><div class="gum-fmeta-val">@IdUnidad</div></div>
                     <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">@AliasCampo("tipo", "TIPO")</div>
-                        @if (_editMode) { <select class="gum-fmeta-inp" @bind="_edit.TipoKey">@foreach (var t in TiposUnidadSel) { <option value="@($"e:{t}")">@TipoLabel(t)</option> }@if (_tiposCustom.Count > 0) { <optgroup label="Tipos propios">@foreach (var tc in _tiposCustom) { <option value="@($"c:{tc.Id}")">@tc.Nombre</option> }</optgroup> }</select> } else { <div class="gum-fmeta-val">@LabelU(_selected)</div> }
+                        @if (_editMode) { <select class="gum-fmeta-inp" @bind="_edit.TipoKey">@foreach (var t in TiposUnidadSel) { <option value="@($"e:{t}")">@TipoLabel(t)</option> }@if (TiposCustomVisibles().Count > 0) { <optgroup label="Tipos propios">@foreach (var tc in TiposCustomVisibles()) { <option value="@($"c:{tc.Id}")">@tc.Nombre</option> }</optgroup> }</select> } else { <div class="gum-fmeta-val">@LabelU(_selected)</div> }
                     </div>
                     <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">@AliasCampo("coef", "COEFICIENTE")</div>
                         @if (_editMode) { <input type="number" step="0.0001" class="gum-fmeta-inp" @bind="_edit.CoeficientePropiedad" /> } else { <div class="gum-fmeta-val">@_selected.CoeficientePropiedad.ToString("0.####")%</div> }
@@ -155,7 +155,7 @@
                     <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">@AliasCampo("estado", "ESTADO")</div>
                         @if (_editMode) { <select class="gum-fmeta-inp" @bind="_edit.Estado">
                             <option value="">- Sin definir -</option>
-                            @foreach (var eo in EstadosConfig()) { <option value="@eo">@eo</option> }
+                            @foreach (var eo in EstadosConVigente(_edit.Estado)) { <option value="@eo">@eo</option> }
                         </select> } else { <div class="gum-fmeta-val">@(string.IsNullOrWhiteSpace(_selected.Estado) ? "-" : _selected.Estado)</div> }
                     </div>
                     <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">@AliasCampo("matricula", "MATRICULA")</div>
@@ -243,6 +243,7 @@
                 <button type="button" class="gum-ftab @(_fichaTab == "personas" ? "on" : "")" @onclick='() => _fichaTab = "personas"'>Personas</button>
                 <button type="button" class="gum-ftab @(_fichaTab == "vehiculos" ? "on" : "")" @onclick='() => _fichaTab = "vehiculos"'>Vehiculos</button>
                 <button type="button" class="gum-ftab @(_fichaTab == "mascotas" ? "on" : "")" @onclick='() => _fichaTab = "mascotas"'>Mascotas</button>
+                <button type="button" class="gum-ftab @(_fichaTab == "terceros" ? "on" : "")" @onclick='() => _fichaTab = "terceros"'>Terceros</button>
                 <button type="button" class="gum-ftab @(_fichaTab == "historial" ? "on" : "")" @onclick='() => _fichaTab = "historial"'>Historial relacionado</button>
                 <button type="button" class="gum-ftab @(_fichaTab == "cuenta" ? "on" : "")" @onclick='() => _fichaTab = "cuenta"'>Estado de cuenta</button>
             </div>
@@ -258,7 +259,8 @@
                     </div>
                     <div class="gum-ptbl">
                         <div class="gum-ptbl-head">
-                            <span>Nombre</span><span>Identificacion</span><span>Telefono</span><span>Email</span><span>Rol</span><span>Habita</span><span></span>
+                            @* Los encabezados usan el alias configurado en "Configurar" > Personas. *@
+                            <span>@AliasEnt("personas", "nombre", "Nombre")</span><span>@AliasEnt("personas", "documento", "Identificacion")</span><span>@AliasEnt("personas", "telefono", "Telefono")</span><span>@AliasEnt("personas", "email", "Email")</span><span>@AliasEnt("personas", "rol", "Rol")</span><span>@AliasEnt("personas", "habita", "Habita")</span><span></span>
                         </div>
                         @foreach (var p in _personas)
                         {
@@ -288,6 +290,15 @@
                                     </button>
                                 </div>
                             </div>
+                            @* Campos propios de la copropiedad para esta persona (fila aparte: la de
+                               arriba es una grilla de columnas fijas). *@
+                            @if (_defsPersonas.Count > 0)
+                            {
+                                <div class="gum-ptbl-din">
+                                    <CamposDinamicosRegistro Prefijo="personas" RegistroId="@pp.Id" Defs="_defsPersonas"
+                                                             Valores="@ValoresDe(_valPersonas, pp.Id)" Jwt="@Jwt" />
+                                </div>
+                            }
                         }
                         @* Fila de trabajo (alta inline) *@
                         <div class="gum-ptbl-row gum-ptbl-row--new">
@@ -341,20 +352,25 @@
                         <div class="gum-inm-list">
                             @foreach (var p in _placas)
                             {
-                                <div class="gum-inm">
-                                    <div class="gum-inm-icon">
-                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13l2-5h14l2 5M5 13h14v4H5zM7 17v1M17 17v1"/></svg>
+                                var pp = p;
+                                <div class="gum-inm-block">
+                                    <div class="gum-inm">
+                                        <div class="gum-inm-icon">
+                                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13l2-5h14l2 5M5 13h14v4H5zM7 17v1M17 17v1"/></svg>
+                                        </div>
+                                        <div class="gum-inm-text">
+                                            <div class="gum-inm-name" style="font-family:ui-monospace,monospace;letter-spacing:.5px">@pp.Placa</div>
+                                            <div class="gum-inm-fact" style="color:var(--propia-text-muted)">@PlacaTipoLabel(pp.TipoVehiculo)</div>
+                                        </div>
+                                        @if (_editMode)
+                                        {
+                                            <button class="gum-inm-del" type="button" @onclick="() => EliminarPlaca(pp.Id)" title="Quitar">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                            </button>
+                                        }
                                     </div>
-                                    <div class="gum-inm-text">
-                                        <div class="gum-inm-name" style="font-family:ui-monospace,monospace;letter-spacing:.5px">@p.Placa</div>
-                                        <div class="gum-inm-fact" style="color:var(--propia-text-muted)">@PlacaTipoLabel(p.TipoVehiculo)</div>
-                                    </div>
-                                    @if (_editMode)
-                                    {
-                                        <button class="gum-inm-del" type="button" @onclick="() => EliminarPlaca(p.Id)" title="Quitar">
-                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                                        </button>
-                                    }
+                                    <CamposDinamicosRegistro Prefijo="vehiculos" RegistroId="@pp.Id" Defs="_defsVehiculos"
+                                                             Valores="@ValoresDe(_valVehiculos, pp.Id)" Jwt="@Jwt" />
                                 </div>
                             }
                         </div>
@@ -442,22 +458,28 @@
                         <div class="gum-inm-list">
                             @foreach (var m in _mascotas)
                             {
-                                <div class="gum-inm">
-                                    <div class="gum-inm-icon" style="background:#FEF3DC;color:#B45309">
-                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="4" cy="9" r="2"/><circle cx="8" cy="14" r="2"/><path d="M9 18c-2 0-3 1.5-3 3 1.5 0 2.5.5 4 .5s2.5-.5 4-.5c0-1.5-1-3-3-3z"/></svg>
+                                var mm = m;
+                                <div class="gum-inm-block">
+                                    <div class="gum-inm">
+                                        <div class="gum-inm-icon" style="background:#FEF3DC;color:#B45309">
+                                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="4" cy="9" r="2"/><circle cx="8" cy="14" r="2"/><path d="M9 18c-2 0-3 1.5-3 3 1.5 0 2.5.5 4 .5s2.5-.5 4-.5c0-1.5-1-3-3-3z"/></svg>
+                                        </div>
+                                        <div class="gum-inm-text">
+                                            <div class="gum-inm-name">@mm.Nombre</div>
+                                            <div class="gum-inm-fact" style="color:var(--propia-text-muted)">@mm.Tipo@(string.IsNullOrEmpty(mm.Raza) ? "" : $" - {mm.Raza}")</div>
+                                        </div>
+                                        @if (_editMode)
+                                        {
+                                            <button class="gum-inm-del" type="button" @onclick="() => EliminarMascota(mm.Id)" title="Quitar">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                            </button>
+                                        }
                                     </div>
-                                    <div class="gum-inm-text">
-                                        <div class="gum-inm-name">@m.Nombre</div>
-                                        <div class="gum-inm-fact" style="color:var(--propia-text-muted)">@m.Tipo@(string.IsNullOrEmpty(m.Raza) ? "" : $" - {m.Raza}")</div>
-                                    </div>
-                                    @if (_editMode)
-                                    {
-                                        <button class="gum-inm-del" type="button" @onclick="() => EliminarMascota(m.Id)" title="Quitar">
-                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                                        </button>
-                                    }
+                                    <CamposDinamicosRegistro Prefijo="mascotas" RegistroId="@mm.Id" Defs="_defsMascotas"
+                                                             Valores="@ValoresDe(_valMascotas, mm.Id)" Jwt="@Jwt" />
                                 </div>
                             }
+
                         </div>
                     }
                     @if (_editMode)
@@ -469,6 +491,60 @@
                             </select>
                             <input class="gum-inm-input" style="width:74px" @bind="_nuevaMascRaza" @bind:event="oninput" placeholder="Raza" />
                             <button class="gum-inm-add-btn" type="button" @onclick="AgregarMascota" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevaMascNombre))">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+                            </button>
+                        </div>
+                    }
+                </div>
+                }
+
+                @* Terceros (empleadas de servicio y demas personal autorizado de la unidad). El backend
+                   ya existia (unidades/{id}/empleadas) pero no tenia seccion en la ficha. *@
+                @if (_fichaTab == "terceros") {
+                <div class="gum-unit-card">
+                    <div class="gum-unit-eyebrow">TERCEROS AUTORIZADOS</div>
+                    @if (_empleadas.Count == 0)
+                    {
+                        <div class="gum-people-empty">Sin terceros registrados para esta unidad.</div>
+                    }
+                    else
+                    {
+                        <div class="gum-inm-list">
+                            @foreach (var t in _empleadas)
+                            {
+                                var tt = t;
+                                <div class="gum-inm-block">
+                                    <div class="gum-inm">
+                                        <div class="gum-inm-icon" style="background:#E7F0FF;color:#2563EB">
+                                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="3.2"/><path d="M5 21c0-3.5 3.1-6 7-6s7 2.5 7 6"/></svg>
+                                        </div>
+                                        <div class="gum-inm-text">
+                                            <div class="gum-inm-name">@tt.Nombre</div>
+                                            <div class="gum-inm-fact" style="color:var(--propia-text-muted)">
+                                                @(string.IsNullOrWhiteSpace(tt.Documento) ? "Sin documento" : tt.Documento)@(string.IsNullOrWhiteSpace(tt.Horario) ? "" : $" - {tt.Horario}")
+                                            </div>
+                                        </div>
+                                        @if (_editMode)
+                                        {
+                                            <button class="gum-inm-del" type="button" @onclick="() => EliminarEmpleada(tt.Id)" title="Quitar">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                            </button>
+                                        }
+                                    </div>
+                                    <CamposDinamicosRegistro Prefijo="terceros" RegistroId="@tt.Id" Defs="_defsTerceros"
+                                                             Valores="@ValoresDe(_valTerceros, tt.Id)" Jwt="@Jwt" />
+                                </div>
+                            }
+                        </div>
+                    }
+                    @if (_editMode)
+                    {
+                        <div class="gum-inm-add">
+                            <input class="gum-inm-input" style="flex:1;min-width:0" @bind="_nuevaEmpNombre" @bind:event="oninput" placeholder="@AliasEnt("terceros", "nombre", "Nombre")" />
+                            <input class="gum-inm-input" style="width:96px" @bind="_nuevaEmpDoc" @bind:event="oninput" placeholder="@AliasEnt("terceros", "documento", "Documento")" />
+                            <input class="gum-inm-input" style="width:90px" @bind="_nuevaEmpCel" @bind:event="oninput" placeholder="@AliasEnt("terceros", "celular", "Celular")" />
+                            <input class="gum-inm-input" style="width:96px" @bind="_nuevaEmpHorario" @bind:event="oninput" placeholder="@AliasEnt("terceros", "horario", "Horario")" />
+                            <button class="gum-inm-add-btn" type="button" @onclick="AgregarEmpleada" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevaEmpNombre))">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
                             </button>
                         </div>
@@ -734,6 +810,89 @@
     private string _nuevaMascRaza = "";
 
     private List<UnidadEmpleadaDto> _empleadas = new();
+
+    // ===== Campos dinamicos de las entidades vinculadas (catalogo por copropiedad, configurado en
+    // "Configurar" > pestanas Personas/Vehiculos/Mascotas/Terceros). Se cargan UNA vez por unidad
+    // (definiciones + todos los valores) y cada fila pinta solo su porcion, sin consultas por fila. =====
+    private List<CampoDinDef> _defsPersonas = new(), _defsVehiculos = new(), _defsMascotas = new(), _defsTerceros = new();
+    private Dictionary<Guid, Dictionary<Guid, string?>> _valPersonas = new(), _valVehiculos = new(), _valMascotas = new(), _valTerceros = new();
+
+    /// <summary>Valores de un registro; crea el diccionario si es la primera vez (el componente lo muta).</summary>
+    private static Dictionary<Guid, string?> ValoresDe(Dictionary<Guid, Dictionary<Guid, string?>> mapa, Guid registroId)
+    {
+        if (!mapa.TryGetValue(registroId, out var d)) { d = new(); mapa[registroId] = d; }
+        return d;
+    }
+
+    // Config por entidad (alias / visibilidad / orden de los campos de esa ficha), definida en
+    // "Configurar" > pestanas Personas/Vehiculos/Mascotas/Terceros.
+    private Dictionary<string, Dictionary<string, UnidadCampoConfigDto>> _cfgEnt = new(StringComparer.Ordinal);
+
+    /// <summary>Alias del campo de sistema de una ficha vinculada; el label por defecto si no hay.</summary>
+    private string AliasEnt(string entidad, string clave, string def)
+        => _cfgEnt.TryGetValue(entidad, out var m) && m.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Alias)
+            ? c.Alias! : def;
+
+    /// <summary>Si el campo de sistema de una ficha vinculada esta visible (por defecto, si).</summary>
+    private bool VisibleEnt(string entidad, string clave)
+        => !(_cfgEnt.TryGetValue(entidad, out var m) && m.TryGetValue(clave, out var c) && c.Oculto);
+
+    // Aplica a los campos propios el orden y la visibilidad configurados (se guardan en la config
+    // con la clave "cd:{id}"), para que la ficha muestre lo mismo que el panel de configuracion.
+    private List<CampoDinDef> AplicarCfg(string entidad, List<CampoDinDef> defs)
+    {
+        if (!_cfgEnt.TryGetValue(entidad, out var m)) return defs;
+        return defs
+            .Where(d => !(m.TryGetValue("cd:" + d.Id, out var c) && c.Oculto))
+            .Select((d, i) => (d, ord: m.TryGetValue("cd:" + d.Id, out var c) && c.Orden is { } o ? o : 1000 + i))
+            .OrderBy(x => x.ord).Select(x => x.d).ToList();
+    }
+
+    private async Task CargarCamposVinculadosAsync()
+    {
+        var http = Auth();
+        foreach (var ent in new[] { "personas", "vehiculos", "mascotas", "terceros" })
+        {
+            try
+            {
+                var l = await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>($"/api/mi-copropiedad/unidades-config?entidad={ent}") ?? new();
+                _cfgEnt[ent] = l.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+            }
+            catch { _cfgEnt[ent] = new(StringComparer.Ordinal); }
+        }
+        _defsPersonas = AplicarCfg("personas", await DefsAsync(http, "personas"));
+        _defsVehiculos = AplicarCfg("vehiculos", await DefsAsync(http, "vehiculos"));
+        _defsMascotas = AplicarCfg("mascotas", await DefsAsync(http, "mascotas"));
+        _defsTerceros = AplicarCfg("terceros", await DefsAsync(http, "terceros"));
+        _valPersonas = await ValoresAsync<PersonaCampoValorFlatDto>(http, "personas", v => v.UnidadPersonaId, v => v.DefinicionId, v => v.Valor);
+        _valVehiculos = await ValoresAsync<VehiculoCampoValorFlatDto>(http, "vehiculos", v => v.UnidadPlacaId, v => v.DefinicionId, v => v.Valor);
+        _valMascotas = await ValoresAsync<MascotaCampoValorFlatDto>(http, "mascotas", v => v.UnidadMascotaId, v => v.DefinicionId, v => v.Valor);
+        _valTerceros = await ValoresAsync<TerceroCampoValorFlatDto>(http, "terceros", v => v.UnidadEmpleadaId, v => v.DefinicionId, v => v.Valor);
+    }
+
+    // Las definiciones de los 4 catalogos son identicas en forma, asi que se leen con CampoDinDef.
+    private static async Task<List<CampoDinDef>> DefsAsync(HttpClient http, string prefijo)
+    {
+        try
+        {
+            var l = await http.GetFromJsonAsync<List<CampoDinDef>>($"/api/mi-copropiedad/{prefijo}-campos");
+            return (l ?? new()).OrderBy(d => d.Orden).ToList();
+        }
+        catch { return new(); }
+    }
+
+    // Los 4 DTOs planos solo difieren en el nombre de su FK, asi que se pasan los tres accesores.
+    private static async Task<Dictionary<Guid, Dictionary<Guid, string?>>> ValoresAsync<T>(
+        HttpClient http, string prefijo,
+        Func<T, Guid> registroId, Func<T, Guid> definicionId, Func<T, string?> valor)
+    {
+        try
+        {
+            var l = await http.GetFromJsonAsync<List<T>>($"/api/mi-copropiedad/{prefijo}-campos-valores") ?? new();
+            return l.GroupBy(registroId).ToDictionary(g => g.Key, g => g.ToDictionary(definicionId, valor));
+        }
+        catch { return new(); }
+    }
     // Terceros elegidos del Directorio. Opcionales: el alta por nombre sigue valiendo.
     private Propia.Application.Directorio.PersonaCandidatoDto? _empSel;
     private Propia.Application.Directorio.PersonaCandidatoDto? _titSel;
@@ -1189,6 +1348,7 @@
         catch { _mascotas = new(); }
         try { _empleadas = await Auth().GetFromJsonAsync<List<UnidadEmpleadaDto>>($"/api/mi-copropiedad/unidades/{u.Id}/empleadas") ?? new(); }
         catch { _empleadas = new(); }
+        await CargarCamposVinculadosAsync();
         try { _titularidad = await Auth().GetFromJsonAsync<List<UnidadTitularidadDto>>($"/api/mi-copropiedad/unidades/{u.Id}/titularidad") ?? new(); }
         catch { _titularidad = new(); }
         try { _bitacora = await Auth().GetFromJsonAsync<List<BitacoraEntradaDto>>($"/api/mi-copropiedad/unidades/{u.Id}/bitacora") ?? new(); }
@@ -2181,10 +2341,61 @@
     private Dictionary<string, UnidadCampoConfigDto> _camposConfig = new();
     private string AliasCampo(string clave, string def) => _camposConfig.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Alias) ? c.Alias! : def;
     private static readonly string[] EstadoSemilla = { "Habitada", "Desocupada", "Arrendada" };
-    private IEnumerable<string> EstadosConfig()
-        => _camposConfig.TryGetValue("estado", out var c) && !string.IsNullOrWhiteSpace(c.Opciones)
-            ? c.Opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            : EstadoSemilla;
+
+    // Las opciones de las listas del sistema se guardan como JSON [{K, Oculta}] (el orden del
+    // arreglo es el orden de la lista). Se conserva la lectura del formato legado (una por linea).
+    private sealed record OpcionLista(string K, bool Oculta = false);
+
+    private List<OpcionLista> LeerOpcionesEstado()
+    {
+        var raw = _camposConfig.TryGetValue("estado", out var c) ? c.Opciones : null;
+        if (string.IsNullOrWhiteSpace(raw)) return EstadoSemilla.Select(s => new OpcionLista(s)).ToList();
+        if (raw!.TrimStart().StartsWith('['))
+        {
+            try
+            {
+                var l = System.Text.Json.JsonSerializer.Deserialize<List<OpcionLista>>(raw!);
+                if (l is { Count: > 0 }) return l;
+            }
+            catch { }
+        }
+        return raw!.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(x => new OpcionLista(x)).ToList();
+    }
+
+    private IEnumerable<string> EstadosConfig() => LeerOpcionesEstado().Where(o => !o.Oculta).Select(o => o.K);
+
+    /// <summary>Incluye el estado actual aunque este oculto, para no sobreescribirlo sin querer.</summary>
+    private IEnumerable<string> EstadosConVigente(string? actual)
+    {
+        var vis = EstadosConfig().ToList();
+        if (!string.IsNullOrWhiteSpace(actual) && !vis.Contains(actual!, StringComparer.OrdinalIgnoreCase))
+            vis.Add(actual!);
+        return vis;
+    }
+
+    /// <summary>Tipos propios que no esten ocultos (mas el vigente de la unidad si lo esta).</summary>
+    private List<TipoUnidadCustomDto> TiposCustomVisibles(Guid? vigente = null)
+    {
+        var oc = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (_camposConfig.TryGetValue("tipo", out var c) && !string.IsNullOrWhiteSpace(c.Opciones)
+            && c.Opciones!.TrimStart().StartsWith('['))
+        {
+            try
+            {
+                foreach (var o in System.Text.Json.JsonSerializer.Deserialize<List<OpcionLista>>(c.Opciones!) ?? new())
+                    if (o.Oculta) oc.Add(o.K);
+            }
+            catch { }
+        }
+        var vis = _tiposCustom.Where(t => !oc.Contains("c:" + t.Id)).ToList();
+        if (vigente is { } g && vis.All(t => t.Id != g))
+        {
+            var tc = _tiposCustom.FirstOrDefault(t => t.Id == g);
+            if (tc is not null) vis.Add(tc);
+        }
+        return vis;
+    }
 
     // Etiqueta legible del tipo de unidad (los nombres del enum son ASCII sin espacios).
     // Tipos ofrecidos en los selectores (se excluye ZonaComun; el valor del enum se conserva por datos historicos).

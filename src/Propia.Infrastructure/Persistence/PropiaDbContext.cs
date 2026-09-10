@@ -365,6 +365,17 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<ZonaCampoPersonalizado> ZonaCamposPersonalizados => Set<ZonaCampoPersonalizado>();
     public DbSet<ZonaCampoDefinicion> ZonaCamposDefiniciones => Set<ZonaCampoDefinicion>();
     public DbSet<ZonaCampoValor> ZonaCamposValores => Set<ZonaCampoValor>();
+
+    // Campos dinamicos tipados (catalogo + valor) de las entidades vinculadas a una unidad:
+    // personas, vehiculos (placas), mascotas y terceros (empleadas). Mismo patron que equipos/zonas.
+    public DbSet<PersonaCampoDefinicion> PersonaCamposDefiniciones => Set<PersonaCampoDefinicion>();
+    public DbSet<PersonaCampoValor> PersonaCamposValores => Set<PersonaCampoValor>();
+    public DbSet<VehiculoCampoDefinicion> VehiculoCamposDefiniciones => Set<VehiculoCampoDefinicion>();
+    public DbSet<VehiculoCampoValor> VehiculoCamposValores => Set<VehiculoCampoValor>();
+    public DbSet<MascotaCampoDefinicion> MascotaCamposDefiniciones => Set<MascotaCampoDefinicion>();
+    public DbSet<MascotaCampoValor> MascotaCamposValores => Set<MascotaCampoValor>();
+    public DbSet<TerceroCampoDefinicion> TerceroCamposDefiniciones => Set<TerceroCampoDefinicion>();
+    public DbSet<TerceroCampoValor> TerceroCamposValores => Set<TerceroCampoValor>();
     // Muro de novedades generico: cuelga de cualquier entidad via (EntidadTipo, EntidadId).
     public DbSet<Novedad> Novedades => Set<Novedad>();
     public DbSet<NovedadComentario> NovedadComentarios => Set<NovedadComentario>();

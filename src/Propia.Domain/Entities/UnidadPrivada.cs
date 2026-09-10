@@ -148,10 +148,15 @@ public class UnidadCampoValor : TenantEntity
 /// manejan una lista (ej. "estado"), sus opciones. Los campos personalizados usan UnidadCampoDefinicion.
 /// CampoClave identifica el campo fijo: "numero","tipo","piso","coef","area","habitaciones","banos",
 /// "parqueaderos","estado","matricula","refpago","pagaadmin","cuota","observaciones".
+/// La misma tabla sirve a las fichas vinculadas (personas, vehiculos, mascotas, terceros):
+/// la columna Entidad discrimina a cual pertenece cada fila.
 /// Es TenantEntity - aislada por tenant_id.
 /// </summary>
 public class UnidadCampoConfig : TenantEntity
 {
+    /// <summary>A que ficha pertenece el campo: unidad | personas | vehiculos | mascotas | terceros.</summary>
+    public string Entidad { get; set; } = "unidad";
+
     public string CampoClave { get; set; } = string.Empty;
     /// <summary>Etiqueta personalizada; null = se usa la del sistema.</summary>
     public string? Alias { get; set; }
