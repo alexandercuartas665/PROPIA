@@ -237,7 +237,8 @@
                         <div class="cga-cfg">
                             @if (cs.Clave is "tipo" or "estado")
                             {
-                                <button class="dst-btn-soft" type="button" @onclick='() => _fldExpand = _fldExpand == css.Clave ? "" : css.Clave'>@(_fldExpand == cs.Clave ? "Ocultar lista" : "Gestionar lista")</button>
+                                <button class="dst-btn-soft" type="button" @onclick="() => ToggleLista(css.Clave)">@(_fldExpand == cs.Clave ? "Ocultar lista" : "Gestionar lista")</button>
+                                <span class="cga-cfg-hint" style="margin-left:6px;">@(cs.Clave == "tipo" ? TiposUnidadSel.Count() + _tiposCustom.Count : EstadosConfig().Count()) opciones</span>
                             }
                             else { <span class="cga-cfg-hint">@ConfigHint(cs.Clave)</span> }
                         </div>
@@ -248,25 +249,52 @@
                         <div class="cga-opts">
                             @if (cs.Clave == "tipo")
                             {
-                                <div class="cg-sub" style="margin-bottom:6px;">Los tipos base vienen por defecto (semilla). Agrega o quita los propios de tu copropiedad.</div>
-                                <div class="dst-tipos-wrap">
-                                    @foreach (var t in TiposUnidadSel) { <span class="dst-tipo-chip dst-tipo-chip--base" title="Tipo base (no se puede quitar)">@Etiqueta(t)</span> }
-                                    @foreach (var tc in _tiposCustom) { var tcc = tc; <span class="dst-tipo-chip">@tc.Nombre<button type="button" class="dst-tipo-x" title="Quitar tipo" @onclick="() => EliminarTipoCustomAsync(tcc)" disabled="@_cfgBusy">&times;</button></span> }
-                                </div>
-                                <div class="dst-tipos-add">
-                                    <input class="dst-nf-inp" placeholder="Nuevo tipo (ej. Cajeros, Kiosco...)" @bind="_nuevoTipoNombre" @bind:event="oninput" @onkeyup="OnNuevoTipoKeyUp" />
-                                    <button class="propia-btn-brand" type="button" @onclick="AgregarTipoCustomAsync" disabled="@(_cfgBusy || string.IsNullOrWhiteSpace(_nuevoTipoNombre))">+ Agregar tipo</button>
+                                <div class="cg-sub" style="margin-bottom:8px;">Los tipos base vienen por defecto (semilla, con candado). Agrega o quita los propios de tu copropiedad.</div>
+                                <div class="cga-opts-list">
+                                    @foreach (var t in TiposUnidadSel)
+                                    {
+                                        <div class="cga-opt-row cga-opt-row--base">
+                                            <svg class="cga-opt-lock" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="Tipo base (no se puede quitar)"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                                            <span class="cga-opt-name">@Etiqueta(t)</span>
+                                        </div>
+                                    }
+                                    @foreach (var tc in _tiposCustom)
+                                    {
+                                        var tcc = tc;
+                                        <div class="cga-opt-row">
+                                            <span class="cga-opt-dot"></span>
+                                            <span class="cga-opt-name">@tc.Nombre</span>
+                                            <button type="button" class="cga-opt-x" title="Quitar" @onclick="() => EliminarTipoCustomAsync(tcc)" disabled="@_cfgBusy">&times;</button>
+                                        </div>
+                                    }
+                                    <div class="cga-opt-add">
+                                        <input class="cga-inp" placeholder="Anadir nueva opcion..." @bind="_nuevoTipoNombre" @bind:event="oninput" @onkeyup="OnNuevoTipoKeyUp" />
+                                        <button class="cga-add-btn" type="button" @onclick="AgregarTipoCustomAsync" disabled="@(_cfgBusy || string.IsNullOrWhiteSpace(_nuevoTipoNombre))">Anadir</button>
+                                    </div>
                                 </div>
                                 @if (!string.IsNullOrEmpty(_tipoMsg)) { <div class="dst-cfg-msg">@_tipoMsg</div> }
                             }
                             else
                             {
-                                <label class="dst-nfc-lbl">Opciones (una por linea)</label>
-                                <textarea class="dst-nf-inp" rows="4" @bind="_estadoOpcionesEdit" @bind:event="oninput" placeholder="Habitada&#10;Desocupada&#10;Arrendada"></textarea>
-                                <div class="dst-tipos-add" style="margin-top:8px;">
-                                    <button class="dst-btn-soft" type="button" @onclick="RestaurarEstadoSemilla" disabled="@_cfgBusy">Restaurar semilla</button>
-                                    <button class="propia-btn-brand" type="button" @onclick="GuardarEstadoOpcionesAsync" disabled="@_cfgBusy">Guardar opciones</button>
+                                <div class="cga-opts-list">
+                                    @for (var i = 0; i < _estadoOpts.Count; i++)
+                                    {
+                                        var idx = i; var op = _estadoOpts[i];
+                                        <div class="cga-opt-row">
+                                            <div class="cga-opt-move">
+                                                <button type="button" class="cga-mini" title="Subir" disabled="@(idx == 0)" @onclick="() => MoverEstadoAsync(idx, -1)">&#9650;</button>
+                                                <button type="button" class="cga-mini" title="Bajar" disabled="@(idx == _estadoOpts.Count - 1)" @onclick="() => MoverEstadoAsync(idx, 1)">&#9660;</button>
+                                            </div>
+                                            <span class="cga-opt-name">@op</span>
+                                            <button type="button" class="cga-opt-x" title="Quitar" @onclick="() => QuitarEstadoAsync(op)" disabled="@_cfgBusy">&times;</button>
+                                        </div>
+                                    }
+                                    <div class="cga-opt-add">
+                                        <input class="cga-inp" placeholder="Anadir nueva opcion..." @bind="_nuevoEstado" @bind:event="oninput" @onkeyup="OnNuevoEstadoKeyUp" />
+                                        <button class="cga-add-btn" type="button" @onclick="AgregarEstadoAsync" disabled="@(_cfgBusy || string.IsNullOrWhiteSpace(_nuevoEstado))">Anadir</button>
+                                    </div>
                                 </div>
+                                <div style="margin-top:8px;"><button class="dst-btn-soft" type="button" @onclick="RestaurarEstadoSemillaAsync" disabled="@_cfgBusy">Restaurar semilla</button></div>
                                 @if (!string.IsNullOrEmpty(_estadoMsg)) { <div class="dst-cfg-msg">@_estadoMsg</div> }
                             }
                         </div>
@@ -1324,8 +1352,17 @@ else
     private Dictionary<string, UnidadCampoConfigDto> _camposConfig = new();
     private List<UnidadEstadoUsoDto> _estadosUso = new();
     private string _fldExpand = "";
-    private string _estadoOpcionesEdit = "";
+    private List<string> _estadoOpts = new();   // opciones de Estado editandose como lista viva
+    private string _nuevoEstado = "";
     private string? _estadoMsg;
+
+    // Abre/cierra la lista de un campo; al abrir Estado carga sus opciones en la lista viva.
+    private void ToggleLista(string clave)
+    {
+        _fldExpand = _fldExpand == clave ? "" : clave;
+        _estadoMsg = null; _tipoMsg = null;
+        if (_fldExpand == "estado") _estadoOpts = EstadosConfig().ToList();
+    }
 
     // Alias configurado (para el input; "" si no hay). Y alias efectivo (para mostrar; def si no hay).
     private string AliasConfig(string clave) => _camposConfig.TryGetValue(clave, out var c) ? (c.Alias ?? "") : "";
@@ -1345,27 +1382,51 @@ else
         await GuardarCampoConfigAsync(clave, alias, opciones);
     }
 
-    private void RestaurarEstadoSemilla() => _estadoOpcionesEdit = string.Join('\n', EstadoSemilla);
-
-    private async Task GuardarEstadoOpcionesAsync()
+    // Persiste la lista viva de Estado (una opcion por linea) conservando el alias.
+    private async Task GuardarEstadoOptsAsync()
     {
-        var nuevas = _estadoOpcionesEdit.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-        var actuales = EstadosConfig().ToList();
-        // Advertir si se quita una opcion que ya usan unidades.
-        var quitadasEnUso = actuales
-            .Where(a => !nuevas.Contains(a, StringComparer.OrdinalIgnoreCase))
-            .Select(a => (a, n: _estadosUso.FirstOrDefault(u => string.Equals(u.Estado, a, StringComparison.OrdinalIgnoreCase))?.Unidades ?? 0))
-            .Where(x => x.n > 0).ToList();
-        if (quitadasEnUso.Count > 0)
+        var alias = _camposConfig.TryGetValue("estado", out var c) ? c.Alias : null;
+        await GuardarCampoConfigAsync("estado", alias, string.Join('\n', _estadoOpts));
+    }
+
+    private void OnNuevoEstadoKeyUp(KeyboardEventArgs e) { if (e.Key == "Enter") _ = AgregarEstadoAsync(); }
+
+    private async Task AgregarEstadoAsync()
+    {
+        var v = _nuevoEstado.Trim();
+        if (v.Length == 0) return;
+        if (_estadoOpts.Any(x => string.Equals(x, v, StringComparison.OrdinalIgnoreCase))) { _estadoMsg = $"Ya existe '{v}'."; return; }
+        _estadoOpts.Add(v); _nuevoEstado = ""; _estadoMsg = null;
+        await GuardarEstadoOptsAsync();
+    }
+
+    private async Task QuitarEstadoAsync(string op)
+    {
+        var n = _estadosUso.FirstOrDefault(u => string.Equals(u.Estado, op, StringComparison.OrdinalIgnoreCase))?.Unidades ?? 0;
+        if (n > 0)
         {
-            var detalle = string.Join(", ", quitadasEnUso.Select(x => $"{x.a} ({x.n})"));
             var ok = await Js.InvokeAsync<bool>("confirm",
-                $"Vas a quitar opciones de Estado que ya usan unidades: {detalle}. Esas unidades quedaran con ese valor hasta que las reasignes. Continuar?");
+                $"El estado '{op}' lo usan {n} unidad(es). Si lo quitas, esas unidades quedaran con ese valor hasta reasignarlo. Continuar?");
             if (!ok) return;
         }
-        var alias = _camposConfig.TryGetValue("estado", out var c) ? c.Alias : null;
-        await GuardarCampoConfigAsync("estado", alias, string.Join('\n', nuevas));
-        _estadoMsg = "Opciones de Estado guardadas.";
+        _estadoOpts.RemoveAll(x => string.Equals(x, op, StringComparison.OrdinalIgnoreCase));
+        _estadoMsg = null;
+        await GuardarEstadoOptsAsync();
+    }
+
+    private async Task MoverEstadoAsync(int idx, int dir)
+    {
+        var ni = idx + dir;
+        if (ni < 0 || ni >= _estadoOpts.Count) return;
+        (_estadoOpts[idx], _estadoOpts[ni]) = (_estadoOpts[ni], _estadoOpts[idx]);
+        await GuardarEstadoOptsAsync();
+    }
+
+    private async Task RestaurarEstadoSemillaAsync()
+    {
+        _estadoOpts = EstadoSemilla.ToList();
+        await GuardarEstadoOptsAsync();
+        _estadoMsg = "Opciones restauradas a la semilla.";
     }
 
     private async Task GuardarCampoConfigAsync(string clave, string? alias, string? opciones)
@@ -1441,7 +1502,7 @@ else
     {
         _cfgMsg = null; _cfgEditId = null; _cfgLabel = ""; _cfgTipo = TipoCampoTablero.Texto; _cfgOpciones = "";
         _tipoMsg = null; _nuevoTipoNombre = "";
-        _fldExpand = ""; _estadoMsg = null; _estadoOpcionesEdit = string.Join('\n', EstadosConfig());
+        _fldExpand = ""; _estadoMsg = null; _nuevoEstado = ""; _estadoOpts = EstadosConfig().ToList();
         _configCamposAbierto = true;
     }
 
@@ -2095,5 +2156,21 @@ else
     .cga-cfg-hint { font-size: 11.5px; color: var(--propia-text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; max-width: 100%; }
     .cga-row-act { display: flex; gap: 4px; justify-content: flex-end; }
     .cga-opts { padding: 10px 12px; margin: 0 0 4px; background: var(--propia-bg-app); border: 1px solid var(--propia-border-divider); border-radius: 9px; }
+    /* Lista de opciones unificada (Tipo/Estado): filas + "Anadir nueva opcion". */
+    .cga-opts-list { display: flex; flex-direction: column; gap: 5px; max-width: 460px; }
+    .cga-opt-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 8px; }
+    .cga-opt-row--base { background: var(--propia-bg-app); }
+    .cga-opt-move { display: flex; flex-direction: column; gap: 1px; }
+    .cga-opt-move .cga-mini { width: 18px; height: 14px; }
+    .cga-opt-lock { color: var(--propia-text-faint); flex-shrink: 0; }
+    .cga-opt-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--propia-brand); flex-shrink: 0; }
+    .cga-opt-name { flex: 1; min-width: 0; font-size: 13px; color: var(--propia-text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cga-opt-x { width: 24px; height: 24px; border: 1px solid var(--propia-border-card); border-radius: 7px; background: var(--propia-bg-card); color: var(--propia-text-faint); font-size: 15px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .cga-opt-x:hover { color: var(--propia-danger); border-color: var(--propia-danger); }
+    .cga-opt-add { display: flex; gap: 6px; align-items: center; margin-top: 3px; }
+    .cga-opt-add .cga-inp { flex: 1; border-style: solid; }
+    .cga-add-btn { border: 1px solid var(--propia-brand-soft); background: var(--propia-brand-soft); color: var(--propia-brand); border-radius: 7px; font-size: 12.5px; font-weight: 700; padding: 6px 14px; cursor: pointer; font-family: inherit; }
+    .cga-add-btn:hover { filter: brightness(.97); }
+    .cga-add-btn:disabled { opacity: .5; cursor: default; }
     @@media (max-width: 900px) { .cg-body { overflow-x: auto; } .cga-grid { min-width: 720px; } }
 </style>
