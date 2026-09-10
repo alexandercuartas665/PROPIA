@@ -139,10 +139,19 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                     var coef = ParseDecimal(Val(row, "COEFICIENTE"));
                     var matricula = NullIfEmpty(Val(row, "MATRICULA"));
                     var refPago = NullIfEmpty(Val(row, "REF PAGO"));
+                    // Modulos contributivos: la plantilla solo trae las columnas de los campos
+                    // activos de la copropiedad, asi que una columna ausente se lee como celda
+                    // vacia -> null (y en la actualizacion no pisa el valor existente).
+                    var mod1 = ParseDecimalNull(Val(row, "MODULO CONTRIBUTIVO 1"));
+                    var mod2 = ParseDecimalNull(Val(row, "MODULO CONTRIBUTIVO 2"));
+                    var mod3 = ParseDecimalNull(Val(row, "MODULO CONTRIBUTIVO 3"));
+                    var mod4 = ParseDecimalNull(Val(row, "MODULO CONTRIBUTIVO 4"));
+                    var mod5 = ParseDecimalNull(Val(row, "MODULO CONTRIBUTIVO 5"));
 
                     // Modo MODULO (recarga desde Unidades Privadas): si la unidad ya existe (por su
                     // numero exacto), se ACTUALIZA en vez de crear. Solo se pisan los campos que trae la
-                    // plantilla (tipo, coeficiente, matricula, ref pago); torre, piso, area, etc. se
+                    // plantilla (tipo, coeficiente, matricula, ref pago, modulos contributivos);
+                    // torre, piso, area, etc. se
                     // conservan. Modo ONBOARDING (todas): siempre crea (la copropiedad es nueva).
                     var existente = todas
                         ? null
@@ -154,7 +163,12 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                             coef, existente.AreaM2, existente.Habitaciones, existente.Banos, existente.Parqueaderos,
                             existente.Estado, existente.Observaciones,
                             matricula ?? existente.MatriculaInmobiliaria, existente.PagaAdministracion,
-                            existente.CuotaMensual, refPago ?? existente.ReferenciaPago);
+                            existente.CuotaMensual, refPago ?? existente.ReferenciaPago,
+                            ModuloContributivo1: mod1 ?? existente.ModuloContributivo1,
+                            ModuloContributivo2: mod2 ?? existente.ModuloContributivo2,
+                            ModuloContributivo3: mod3 ?? existente.ModuloContributivo3,
+                            ModuloContributivo4: mod4 ?? existente.ModuloContributivo4,
+                            ModuloContributivo5: mod5 ?? existente.ModuloContributivo5);
                         await _mi.ActualizarUnidadAsync(existente.Id, upd, ct);
                         numeroToId[numero] = existente.Id;
                         nUniAct++;
@@ -164,7 +178,10 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                         var req = new CrearUnidadRequest(
                             numero, tipo, null, null,
                             coef, null, null, null, null, null, null,
-                            matricula, true, null, refPago);
+                            matricula, true, null, refPago,
+                            ModuloContributivo1: mod1, ModuloContributivo2: mod2,
+                            ModuloContributivo3: mod3, ModuloContributivo4: mod4,
+                            ModuloContributivo5: mod5);
                         var creada = await _mi.CrearUnidadAsync(req, ct);
                         numeroToId[numero] = creada.Id;
                         nUni++;

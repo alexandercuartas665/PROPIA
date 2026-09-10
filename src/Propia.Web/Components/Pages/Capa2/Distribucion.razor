@@ -643,6 +643,11 @@ else
                                     case "coef":
                                         <input class="dst-cell" type="number" step="@PasoDe("coef")" value="@NumeroCelda(uu.CoeficientePropiedad, "coef")" @onchange="@(e => Inline(uu, "coef", e))" />
                                         break;
+                                    case { } mc when ModContribNumero(mc) is not null:
+                                        <input class="dst-cell" type="number" step="@PasoDe(mc)" placeholder="-"
+                                               value="@NumeroCelda(ModContribValor(uu, ModContribNumero(mc)!.Value), mc)"
+                                               @onchange="@(e => Inline(uu, mc, e))" />
+                                        break;
                                     case "habitaciones":
                                         <input class="dst-cell" type="number" value="@(uu.Habitaciones?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "habitaciones", e))" />
                                         break;
@@ -1166,9 +1171,16 @@ else
     // La 'ubicacion' de un campo = su posicion en este orden (que es el orden de columnas de la tabla).
     private static readonly string[] ColDefaultOrder =
     {
-        "num", "tipo", "estado", "agrupacion", "coef", "area", "piso", "habitaciones",
+        "num", "tipo", "estado", "agrupacion", "coef",
+        // Modulos contributivos: van justo despues del coeficiente y ocultos por defecto.
+        "modcontrib1", "modcontrib2", "modcontrib3", "modcontrib4", "modcontrib5",
+        "area", "piso", "habitaciones",
         "banos", "parqueaderos", "matricula", "refpago", "pagaadmin", "cuota", "observaciones"
     };
+    // Claves de los 5 modulos contributivos (coeficientes adicionales por unidad).
+    private static readonly string[] ModContribClaves = { "modcontrib1", "modcontrib2", "modcontrib3", "modcontrib4", "modcontrib5" };
+    private static int? ModContribNumero(string clave)
+        => clave.StartsWith("modcontrib", StringComparison.Ordinal) && int.TryParse(clave[10..], out var n) ? n : null;
     // Columnas visibles por defecto (las demas quedan disponibles pero ocultas hasta que se activen).
     private static readonly HashSet<string> ColVisibleDefault = new(StringComparer.Ordinal)
     { "num", "tipo", "agrupacion", "matricula", "coef", "refpago" };
@@ -1183,6 +1195,11 @@ else
         new ColDef("estado", "ESTADO", "1fr", true),
         new ColDef("agrupacion", "AGRUPACION", ".9fr", true),
         new ColDef("coef", "COEFICIENTE", ".9fr", true),
+        new ColDef("modcontrib1", "MODULO CONTRIBUTIVO 1", "1fr", true),
+        new ColDef("modcontrib2", "MODULO CONTRIBUTIVO 2", "1fr", true),
+        new ColDef("modcontrib3", "MODULO CONTRIBUTIVO 3", "1fr", true),
+        new ColDef("modcontrib4", "MODULO CONTRIBUTIVO 4", "1fr", true),
+        new ColDef("modcontrib5", "MODULO CONTRIBUTIVO 5", "1fr", true),
         new ColDef("area", "AREA", ".8fr", true),
         new ColDef("piso", "PISO", "70px", true),
         new ColDef("habitaciones", "HABITACIONES", "90px", true),
@@ -1308,6 +1325,7 @@ else
     private static TipoCampoTablero TipoSistema(string clave) => clave switch
     {
         "tipo" or "estado" => TipoCampoTablero.Seleccion,
+        _ when ModContribNumero(clave) is not null => TipoCampoTablero.Numero,
         "coef" or "area" or "piso" or "habitaciones" or "banos" or "parqueaderos" => TipoCampoTablero.Numero,
         "cuota" => TipoCampoTablero.Moneda,
         "pagaadmin" => TipoCampoTablero.Booleano,
@@ -1353,6 +1371,8 @@ else
 
     private static FormatoCampo FormatoPorDefecto(string clave) => clave switch
     {
+        // Los modulos contributivos son porcentajes como el coeficiente: misma precision.
+        _ when ModContribNumero(clave) is not null => new FormatoCampo(Dec: 4),
         "coef" => new FormatoCampo(Dec: 4),
         "area" => new FormatoCampo(Dec: 2),
         "cuota" => new FormatoCampo(Dec: 0, Miles: true, Moneda: "COP"),
@@ -1453,8 +1473,17 @@ else
         var habitaciones = u.Habitaciones; var banos = u.Banos; var parqueaderos = u.Parqueaderos;
         var estado = u.Estado; var observaciones = u.Observaciones;
         var pagaAdmin = u.PagaAdministracion; var cuota = u.CuotaMensual;
+        var mc1 = u.ModuloContributivo1; var mc2 = u.ModuloContributivo2; var mc3 = u.ModuloContributivo3;
+        var mc4 = u.ModuloContributivo4; var mc5 = u.ModuloContributivo5;
         switch (campo)
         {
+            // Modulos contributivos (1..5): porcentaje decimal, vacio = sin definir.
+            case { } k when ModContribNumero(k) is { } n:
+                var nuevo = string.IsNullOrWhiteSpace(v) ? (decimal?)null
+                    : (decimal.TryParse(v, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var mv) ? mv : ModContribValor(u, n));
+                if (nuevo == ModContribValor(u, n)) return;
+                switch (n) { case 1: mc1 = nuevo; break; case 2: mc2 = nuevo; break; case 3: mc3 = nuevo; break; case 4: mc4 = nuevo; break; default: mc5 = nuevo; break; }
+                break;
             case "num": if (string.IsNullOrWhiteSpace(v) || v == u.Numero) return; numero = v; break;
             case "tipo": var (tp, tc) = ParseTipoKey(v); if (tp == u.Tipo && tc == u.TipoCustomId) return; tipo = tp; tipoCustom = tc; break;
             case "torre": var t = string.IsNullOrEmpty(v) ? (Guid?)null : (Guid.TryParse(v, out var g) ? g : u.TorreId); if (t == u.TorreId) return; torreId = t; break;
@@ -1474,7 +1503,9 @@ else
         }
         var req = new ActualizarUnidadRequest(numero, tipo, torreId, piso, coef, area,
             habitaciones, banos, parqueaderos, estado, observaciones,
-            matricula, pagaAdmin, cuota, refpago, TipoCustomId: tipoCustom);
+            matricula, pagaAdmin, cuota, refpago, TipoCustomId: tipoCustom,
+            ModuloContributivo1: mc1, ModuloContributivo2: mc2, ModuloContributivo3: mc3,
+            ModuloContributivo4: mc4, ModuloContributivo5: mc5);
         try
         {
             var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades/{u.Id}", req);
@@ -1483,13 +1514,20 @@ else
                 var nombreTorre = torreId is null ? null : _torres.FirstOrDefault(x => x.Id == torreId)?.Nombre ?? u.TorreNombre;
                 var nombreCustom = tipoCustom is { } cg ? _tiposCustom.FirstOrDefault(x => x.Id == cg)?.Nombre : null;
                 var i = _unidades.FindIndex(x => x.Id == u.Id);
-                if (i >= 0) _unidades[i] = u with { Numero = numero, Tipo = tipo, TipoCustomId = tipoCustom, TipoCustomNombre = nombreCustom, TorreId = torreId, TorreNombre = nombreTorre, Piso = piso, CoeficientePropiedad = coef, AreaM2 = area, Habitaciones = habitaciones, Banos = banos, Parqueaderos = parqueaderos, Estado = estado, Observaciones = observaciones, PagaAdministracion = pagaAdmin, CuotaMensual = cuota, MatriculaInmobiliaria = matricula, ReferenciaPago = refpago };
+                if (i >= 0) _unidades[i] = u with { Numero = numero, Tipo = tipo, TipoCustomId = tipoCustom, TipoCustomNombre = nombreCustom, TorreId = torreId, TorreNombre = nombreTorre, Piso = piso, CoeficientePropiedad = coef, AreaM2 = area, Habitaciones = habitaciones, Banos = banos, Parqueaderos = parqueaderos, Estado = estado, Observaciones = observaciones, PagaAdministracion = pagaAdmin, CuotaMensual = cuota, MatriculaInmobiliaria = matricula, ReferenciaPago = refpago, ModuloContributivo1 = mc1, ModuloContributivo2 = mc2, ModuloContributivo3 = mc3, ModuloContributivo4 = mc4, ModuloContributivo5 = mc5 };
             }
         }
         catch { }
     }
 
     private Task Inline(UnidadDto u, string campo, ChangeEventArgs e) => GuardarUnidadInline(u, campo, e.Value?.ToString());
+
+    /// <summary>Valor del modulo contributivo N de una unidad (1..5).</summary>
+    private static decimal? ModContribValor(UnidadDto u, int n) => n switch
+    {
+        1 => u.ModuloContributivo1, 2 => u.ModuloContributivo2, 3 => u.ModuloContributivo3,
+        4 => u.ModuloContributivo4, 5 => u.ModuloContributivo5, _ => null
+    };
 
     // ===== Alta inline: crea una unidad desde la fila de alta de la tabla. Si abrir=true, abre la
     // ficha recien creada (para asignar propietario/detalle); si no, la deja resaltada en la lista. =====
@@ -1624,7 +1662,12 @@ else
     {
         new("num", "Unidad", false), new("tipo", "Tipo", true), new("estado", "Estado", true),
         new("agrupacion", "Agrupacion", false),   // derivado del codigo / anexos (no editable por unidad)
-        new("coef", "Coeficiente", false), new("area", "Area", false), new("piso", "Piso", false),
+        new("coef", "Coeficiente", false),
+        // Modulos contributivos: coeficientes adicionales para repartir gastos especificos.
+        new("modcontrib1", "Modulo Contributivo 1", false), new("modcontrib2", "Modulo Contributivo 2", false),
+        new("modcontrib3", "Modulo Contributivo 3", false), new("modcontrib4", "Modulo Contributivo 4", false),
+        new("modcontrib5", "Modulo Contributivo 5", false),
+        new("area", "Area", false), new("piso", "Piso", false),
         new("habitaciones", "Habitaciones", false), new("banos", "Banos", false), new("parqueaderos", "Parqueaderos", false),
         new("matricula", "Matricula", false), new("refpago", "Ref. pago", false),
         new("pagaadmin", "Paga administracion", false), new("cuota", "Cuota mensual", false),

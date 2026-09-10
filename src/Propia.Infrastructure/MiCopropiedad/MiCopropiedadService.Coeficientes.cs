@@ -108,7 +108,11 @@ public partial class MiCopropiedadService
                 (from v in _db.UnidadVinculos where v.UnidadAsociadaId == u.Id select (Guid?)v.UnidadPrincipalId).FirstOrDefault(),
                 u.ReferenciaPago,
                 u.TipoCustomId,
-                u.TipoCustomId != null ? _db.TiposUnidadCustom.Where(t => t.Id == u.TipoCustomId).Select(t => t.Nombre).FirstOrDefault() : null))
+                u.TipoCustomId != null ? _db.TiposUnidadCustom.Where(t => t.Id == u.TipoCustomId).Select(t => t.Nombre).FirstOrDefault() : null,
+                // Dentro de un Select de EF no se pueden omitir parametros opcionales (CS0854):
+                // los modulos contributivos van explicitos.
+                u.ModuloContributivo1, u.ModuloContributivo2, u.ModuloContributivo3,
+                u.ModuloContributivo4, u.ModuloContributivo5))
             .FirstOrDefaultAsync(ct);
     }
 

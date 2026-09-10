@@ -172,7 +172,11 @@ public partial class MiCopropiedadService
                 (from v in _db.UnidadVinculos where v.UnidadAsociadaId == u.Id select (Guid?)v.UnidadPrincipalId).FirstOrDefault(),
                 u.ReferenciaPago,
                 u.TipoCustomId,
-                u.TipoCustomId != null ? _db.TiposUnidadCustom.Where(t => t.Id == u.TipoCustomId).Select(t => t.Nombre).FirstOrDefault() : null))
+                u.TipoCustomId != null ? _db.TiposUnidadCustom.Where(t => t.Id == u.TipoCustomId).Select(t => t.Nombre).FirstOrDefault() : null,
+                // Dentro de un Select de EF no se pueden omitir parametros opcionales (CS0854):
+                // los modulos contributivos van explicitos.
+                u.ModuloContributivo1, u.ModuloContributivo2, u.ModuloContributivo3,
+                u.ModuloContributivo4, u.ModuloContributivo5))
             .ToListAsync(ct);
     }
 
@@ -200,7 +204,12 @@ public partial class MiCopropiedadService
             MatriculaInmobiliaria = req.MatriculaInmobiliaria,
             ReferenciaPago = req.ReferenciaPago,
             PagaAdministracion = req.PagaAdministracion,
-            CuotaMensual = req.CuotaMensual
+            CuotaMensual = req.CuotaMensual,
+            ModuloContributivo1 = req.ModuloContributivo1,
+            ModuloContributivo2 = req.ModuloContributivo2,
+            ModuloContributivo3 = req.ModuloContributivo3,
+            ModuloContributivo4 = req.ModuloContributivo4,
+            ModuloContributivo5 = req.ModuloContributivo5
         };
         _db.UnidadesPrivadas.Add(unidad);
         await _db.SaveChangesAsync(ct);
@@ -213,7 +222,10 @@ public partial class MiCopropiedadService
             unidad.CoeficientePropiedad, unidad.AreaM2,
             unidad.Habitaciones, unidad.Banos, unidad.Parqueaderos,
             unidad.Estado, unidad.Observaciones, unidad.MatriculaInmobiliaria, unidad.PagaAdministracion, unidad.CuotaMensual,
-            TipoCustomId: unidad.TipoCustomId);
+            TipoCustomId: unidad.TipoCustomId,
+            ModuloContributivo1: unidad.ModuloContributivo1, ModuloContributivo2: unidad.ModuloContributivo2,
+            ModuloContributivo3: unidad.ModuloContributivo3, ModuloContributivo4: unidad.ModuloContributivo4,
+            ModuloContributivo5: unidad.ModuloContributivo5);
     }
 
     public async Task<UnidadDto?> ActualizarUnidadAsync(Guid unidadId, ActualizarUnidadRequest req, CancellationToken ct)
@@ -251,6 +263,11 @@ public partial class MiCopropiedadService
         Dif("Matricula", u.MatriculaInmobiliaria, req.MatriculaInmobiliaria);
         if (u.PagaAdministracion != req.PagaAdministracion) Dif("Paga administracion", u.PagaAdministracion ? "Si" : "No", req.PagaAdministracion ? "Si" : "No");
         Dif("Cuota", u.CuotaMensual?.ToString("N0"), req.CuotaMensual?.ToString("N0"));
+        Dif("Modulo contributivo 1", u.ModuloContributivo1?.ToString("0.####"), req.ModuloContributivo1?.ToString("0.####"));
+        Dif("Modulo contributivo 2", u.ModuloContributivo2?.ToString("0.####"), req.ModuloContributivo2?.ToString("0.####"));
+        Dif("Modulo contributivo 3", u.ModuloContributivo3?.ToString("0.####"), req.ModuloContributivo3?.ToString("0.####"));
+        Dif("Modulo contributivo 4", u.ModuloContributivo4?.ToString("0.####"), req.ModuloContributivo4?.ToString("0.####"));
+        Dif("Modulo contributivo 5", u.ModuloContributivo5?.ToString("0.####"), req.ModuloContributivo5?.ToString("0.####"));
 
         u.Numero = numeroTrim;
         u.Tipo = req.Tipo;
@@ -267,6 +284,14 @@ public partial class MiCopropiedadService
         u.MatriculaInmobiliaria = req.MatriculaInmobiliaria;
         u.PagaAdministracion = req.PagaAdministracion;
         u.CuotaMensual = req.CuotaMensual;
+        // Ficha completa: el request manda el estado deseado de los 5 modulos contributivos
+        // (null = sin definir). Quien solo trae algunos campos, como el importador, resuelve
+        // antes el "no pisar con null" pasando el valor existente.
+        u.ModuloContributivo1 = req.ModuloContributivo1;
+        u.ModuloContributivo2 = req.ModuloContributivo2;
+        u.ModuloContributivo3 = req.ModuloContributivo3;
+        u.ModuloContributivo4 = req.ModuloContributivo4;
+        u.ModuloContributivo5 = req.ModuloContributivo5;
         if (req.ReferenciaPago is not null) u.ReferenciaPago = req.ReferenciaPago;
 
         await _db.SaveChangesAsync(ct);
@@ -283,7 +308,10 @@ public partial class MiCopropiedadService
             u.CoeficientePropiedad, u.AreaM2,
             u.Habitaciones, u.Banos, u.Parqueaderos,
             u.Estado, u.Observaciones, u.MatriculaInmobiliaria, u.PagaAdministracion, u.CuotaMensual,
-            TipoCustomId: u.TipoCustomId);
+            TipoCustomId: u.TipoCustomId,
+            ModuloContributivo1: u.ModuloContributivo1, ModuloContributivo2: u.ModuloContributivo2,
+            ModuloContributivo3: u.ModuloContributivo3, ModuloContributivo4: u.ModuloContributivo4,
+            ModuloContributivo5: u.ModuloContributivo5);
     }
 
     // ----------------------------- Vinculos entre unidades (RN-09) -----------------------------

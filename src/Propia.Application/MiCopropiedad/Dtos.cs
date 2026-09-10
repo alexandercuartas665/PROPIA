@@ -51,7 +51,12 @@ public record UnidadDto(
     string? PropietarioNombre = null, int PropietariosCount = 0,
     Guid? PrincipalId = null,     // si es un anexo (parqueadero/cuarto util), la unidad principal a la que pertenece
     string? ReferenciaPago = null,
-    Guid? TipoCustomId = null, string? TipoCustomNombre = null);
+    Guid? TipoCustomId = null, string? TipoCustomNombre = null,
+    // Modulos contributivos (coeficientes adicionales por unidad). Van al final y con default
+    // para no romper a los consumidores posicionales que ya existen.
+    decimal? ModuloContributivo1 = null, decimal? ModuloContributivo2 = null,
+    decimal? ModuloContributivo3 = null, decimal? ModuloContributivo4 = null,
+    decimal? ModuloContributivo5 = null);
 
 public record CrearUnidadRequest(
     string Numero, TipoUnidad Tipo, Guid? TorreId, int? Piso,
@@ -60,7 +65,10 @@ public record CrearUnidadRequest(
     string? Estado, string? Observaciones,
     string? MatriculaInmobiliaria = null, bool PagaAdministracion = true,
     decimal? CuotaMensual = null, string? ReferenciaPago = null,
-    Guid? TipoCustomId = null);
+    Guid? TipoCustomId = null,
+    decimal? ModuloContributivo1 = null, decimal? ModuloContributivo2 = null,
+    decimal? ModuloContributivo3 = null, decimal? ModuloContributivo4 = null,
+    decimal? ModuloContributivo5 = null);
 
 /// <summary>Actualiza la ficha completa de una unidad (todos los campos editables).</summary>
 public record ActualizarUnidadRequest(
@@ -70,7 +78,10 @@ public record ActualizarUnidadRequest(
     string? Estado, string? Observaciones,
     string? MatriculaInmobiliaria, bool PagaAdministracion,
     decimal? CuotaMensual = null, string? ReferenciaPago = null,
-    Guid? TipoCustomId = null);
+    Guid? TipoCustomId = null,
+    decimal? ModuloContributivo1 = null, decimal? ModuloContributivo2 = null,
+    decimal? ModuloContributivo3 = null, decimal? ModuloContributivo4 = null,
+    decimal? ModuloContributivo5 = null);
 
 // ----- Vinculos entre unidades (seccion 2 - RN-09) -----
 public record UnidadVinculoDto(

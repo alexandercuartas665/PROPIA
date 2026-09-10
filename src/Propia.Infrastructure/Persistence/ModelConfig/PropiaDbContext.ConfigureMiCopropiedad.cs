@@ -63,6 +63,14 @@ public partial class PropiaDbContext
             b.Property(x => x.CoeficientePropiedad).HasPrecision(7, 4);
             b.Property(x => x.AreaM2).HasPrecision(10, 2);
             b.Property(x => x.CuotaMensual).HasPrecision(14, 2);
+            // Modulos contributivos: son la misma clase de dato que el coeficiente (porcentaje),
+            // asi que comparten precision/escala. El nombre de columna se fija explicito porque la
+            // convencion snake_case del contexto produciria "modulo_contributivo1" (sin el guion).
+            b.Property(x => x.ModuloContributivo1).HasColumnName("modulo_contributivo_1").HasPrecision(7, 4);
+            b.Property(x => x.ModuloContributivo2).HasColumnName("modulo_contributivo_2").HasPrecision(7, 4);
+            b.Property(x => x.ModuloContributivo3).HasColumnName("modulo_contributivo_3").HasPrecision(7, 4);
+            b.Property(x => x.ModuloContributivo4).HasColumnName("modulo_contributivo_4").HasPrecision(7, 4);
+            b.Property(x => x.ModuloContributivo5).HasColumnName("modulo_contributivo_5").HasPrecision(7, 4);
             b.HasOne(x => x.Torre).WithMany().HasForeignKey(x => x.TorreId).OnDelete(DeleteBehavior.SetNull);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.TenantId, x.Numero }).IsUnique();

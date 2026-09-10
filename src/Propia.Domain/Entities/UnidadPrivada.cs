@@ -51,6 +51,26 @@ public class UnidadPrivada : TenantEntity
     /// <summary>Cuota de administracion mensual fijada manualmente para la unidad (override).
     /// Si es null, la cuota se deriva del coeficiente en 2.6. Prototipo v3, ficha de inmueble.</summary>
     public decimal? CuotaMensual { get; set; }
+
+    /// <summary>Modulos contributivos: coeficientes adicionales para repartir gastos
+    /// especificos (ascensor, vigilancia...). Porcentaje 0..100, null = sin definir.</summary>
+    public decimal? ModuloContributivo1 { get; set; }
+
+    /// <summary>Modulos contributivos: coeficientes adicionales para repartir gastos
+    /// especificos (ascensor, vigilancia...). Porcentaje 0..100, null = sin definir.</summary>
+    public decimal? ModuloContributivo2 { get; set; }
+
+    /// <summary>Modulos contributivos: coeficientes adicionales para repartir gastos
+    /// especificos (ascensor, vigilancia...). Porcentaje 0..100, null = sin definir.</summary>
+    public decimal? ModuloContributivo3 { get; set; }
+
+    /// <summary>Modulos contributivos: coeficientes adicionales para repartir gastos
+    /// especificos (ascensor, vigilancia...). Porcentaje 0..100, null = sin definir.</summary>
+    public decimal? ModuloContributivo4 { get; set; }
+
+    /// <summary>Modulos contributivos: coeficientes adicionales para repartir gastos
+    /// especificos (ascensor, vigilancia...). Porcentaje 0..100, null = sin definir.</summary>
+    public decimal? ModuloContributivo5 { get; set; }
 }
 
 /// <summary>

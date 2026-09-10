@@ -51,8 +51,13 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         // es de las EMPLEADAS de una unidad, y esta hoja carga terceros del DIRECTORIO
         // (empresa/persona global + vinculo), que no crean un registro de empleada al que colgarle
         // el valor. Emitir columnas que nadie puede guardar solo repetiria el descarte silencioso.
-        var camposUnidad = await _db.UnidadCamposDefiniciones.AsNoTracking()
-            .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => c.Label).ToListAsync(ct);
+        // Visibilidad por copropiedad de los campos de la unidad: la hoja UNIDADES PRIVADAS solo
+        // emite las columnas ACTIVAS (los campos ocultos en la tabla de unidades no se piden).
+        var visibleUnidad = await VisibilidadCamposUnidadAsync(ct);
+        var defsUnidad = await _db.UnidadCamposDefiniciones.AsNoTracking()
+            .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => new { c.Id, c.Label }).ToListAsync(ct);
+        // Los campos dinamicos guardan su visibilidad con la clave "cd:{id}" de la definicion.
+        var camposUnidad = defsUnidad.Where(d => visibleUnidad("cd:" + d.Id)).Select(d => d.Label).ToList();
         var camposPersona = await _db.PersonaCamposDefiniciones.AsNoTracking()
             .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => c.Label).ToListAsync(ct);
         var camposVehiculo = await _db.VehiculoCamposDefiniciones.AsNoTracking()
@@ -75,7 +80,7 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         var coproTercerosList = InlineList(new[] { TodasLasCopropiedades }.Concat(copros.Select(c => c.Nombre)));
 
         // ---- Hojas de datos ----
-        HojaUnidades(wb, coproList, camposUnidad);
+        HojaUnidades(wb, coproList, camposUnidad, visibleUnidad);
         HojaPersonas(wb, coproList, rolesList, camposPersona);
         HojaVehiculos(wb, coproList, camposVehiculo);
         HojaMascotas(wb, coproList, camposMascota);
@@ -103,26 +108,43 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     }
 
     // ===================== Hojas de datos =====================
-    private static void HojaUnidades(XLWorkbook wb, string? coproRange, List<string> camposUnidad)
+    // La hoja de unidades solo trae las columnas de los campos ACTIVOS de la copropiedad. Cada
+    // columna declara su clave en unidad_campos_config (entidad 'unidad'); Clave = null marca las
+    // columnas ESTRUCTURALES, que nunca se filtran: COPROPIEDAD y UNIDAD PRIVADA son obligatorias
+    // para el importador y PRINCIPAL es la que vincula un anexo con su unidad principal. Sin ellas
+    // la plantilla quedaria inservible, asi que no dependen de la configuracion.
+    private static void HojaUnidades(XLWorkbook wb, string? coproRange, List<string> camposUnidad,
+        Func<string, bool> visible)
     {
-        var cols = new List<(string H, string Ayuda)>
+        var catalogo = new List<(string? Clave, string H, string Ayuda)>
         {
-            ("COPROPIEDAD", "Elige de la lista"),
-            ("UNIDAD PRIVADA", "Codigo de la unidad con guion TORRE-NUMERO. Ej: Apartamento A1-101 (A1=Torre, 101=Apto); Parqueadero P1-15; Deposito D1-02"),
-            ("TIPO", "Elige de la lista"),
-            ("AGRUPACION", "1=Individual, 2=Principal, 3=Anexo"),
-            ("PRINCIPAL", "Si es Anexo (3): codigo de la unidad principal"),
-            ("MATRICULA", "Matricula inmobiliaria"),
-            ("COEFICIENTE", "Porcentaje. Max 5 decimales (1,25)"),
-            ("REF PAGO", "Referencia de pago (alfanumerica)"),
+            (null, "COPROPIEDAD", "Elige de la lista"),
+            (null, "UNIDAD PRIVADA", "Codigo de la unidad con guion TORRE-NUMERO. Ej: Apartamento A1-101 (A1=Torre, 101=Apto); Parqueadero P1-15; Deposito D1-02"),
+            ("tipo", "TIPO", "Elige de la lista"),
+            ("agrupacion", "AGRUPACION", "1=Individual, 2=Principal, 3=Anexo"),
+            (null, "PRINCIPAL", "Si es Anexo (3): codigo de la unidad principal"),
+            ("matricula", "MATRICULA", "Matricula inmobiliaria"),
+            ("coef", "COEFICIENTE", "Porcentaje. Max 5 decimales (1,25)"),
+            ("modcontrib1", "MODULO CONTRIBUTIVO 1", "Porcentaje. Max 5 decimales"),
+            ("modcontrib2", "MODULO CONTRIBUTIVO 2", "Porcentaje. Max 5 decimales"),
+            ("modcontrib3", "MODULO CONTRIBUTIVO 3", "Porcentaje. Max 5 decimales"),
+            ("modcontrib4", "MODULO CONTRIBUTIVO 4", "Porcentaje. Max 5 decimales"),
+            ("modcontrib5", "MODULO CONTRIBUTIVO 5", "Porcentaje. Max 5 decimales"),
+            ("refpago", "REF PAGO", "Referencia de pago (alfanumerica)"),
         };
-        AgregarColumnasDinamicas(cols, camposUnidad);
+        var cols = catalogo.Where(c => c.Clave is null || visible(c.Clave))
+            .Select(c => (c.H, c.Ayuda)).ToList();
+        AgregarColumnasDinamicas(cols, camposUnidad);   // ya vienen filtrados por visibilidad
 
         var ws = Encabezado(wb, "UNIDADES PRIVADAS", cols);
-        Dropdown(ws, 1, coproRange);
-        DropdownInline(ws, 3, EnumCsv<TipoUnidad>());   // todos los tipos de unidad (auto desde el enum)
-        DropdownInline(ws, 4, "1,2,3");
-        Ejemplo(ws, EjemploCopro, "A1-203", "Apartamento", "2", "", "", "1.25", "");
+        // Dropdowns y ejemplo POR ENCABEZADO (no por posicion): al filtrar columnas los indices se
+        // mueven, y una columna ausente simplemente no recibe nada.
+        Dropdown(ws, Indice(cols, "COPROPIEDAD"), coproRange);
+        DropdownInline(ws, Indice(cols, "TIPO"), EnumCsv<TipoUnidad>());   // todos los tipos de unidad (auto desde el enum)
+        DropdownInline(ws, Indice(cols, "AGRUPACION"), "1,2,3");
+        Ejemplo(ws, cols,
+            ("COPROPIEDAD", EjemploCopro), ("UNIDAD PRIVADA", "A1-203"),
+            ("TIPO", "Apartamento"), ("AGRUPACION", "2"), ("COEFICIENTE", "1.25"));
         Ajustar(ws, cols.Count);
     }
 
@@ -335,8 +357,13 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     private static void DropdownInline(IXLWorksheet ws, int col, string csv)
         => AplicarLista(ws, col, "\"" + csv + "\"");
 
+    // Numero de columna (1-based) de un encabezado; 0 si la columna no se emitio (campo oculto).
+    private static int Indice(List<(string H, string Ayuda)> cols, string encabezado)
+        => cols.FindIndex(c => string.Equals(c.H, encabezado, StringComparison.OrdinalIgnoreCase)) + 1;
+
     private static void AplicarLista(IXLWorksheet ws, int col, string? listFormula)
     {
+        if (col <= 0) return;                            // columna filtrada -> no hay nada que validar
         if (string.IsNullOrEmpty(listFormula)) return;   // sin lista -> columna libre (sin dropdown)
         var dv = ws.Range(DataStart, col, MaxRows, col).CreateDataValidation();
         dv.List(listFormula, true);
@@ -367,16 +394,66 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         for (var i = 0; i < valores.Length; i++)
         {
             if (string.IsNullOrEmpty(valores[i])) continue;
-            var c = ws.Cell(DataStart, i + 1);
-            c.Value = valores[i];
-            c.Style.Font.Italic = true;
-            c.Style.Font.FontColor = muted;
+            EjemploCelda(ws, i + 1, valores[i], muted);
         }
+    }
+
+    // Igual que la anterior pero direccionando POR ENCABEZADO: la usan las hojas cuyas columnas se
+    // filtran por visibilidad, donde la posicion de cada columna no es fija. Un valor de un
+    // encabezado que no se emitio simplemente se descarta (no desplaza al resto).
+    private static void Ejemplo(IXLWorksheet ws, List<(string H, string Ayuda)> cols,
+        params (string H, string V)[] valores)
+    {
+        var muted = XLColor.FromHtml("#9AA7B4");
+        foreach (var (h, v) in valores)
+        {
+            if (string.IsNullOrEmpty(v)) continue;
+            var col = Indice(cols, h);
+            if (col <= 0) continue;
+            EjemploCelda(ws, col, v, muted);
+        }
+    }
+
+    private static void EjemploCelda(IXLWorksheet ws, int col, string valor, XLColor muted)
+    {
+        var c = ws.Cell(DataStart, col);
+        c.Value = valor;
+        c.Style.Font.Italic = true;
+        c.Style.Font.FontColor = muted;
     }
 
     // CSV de los nombres de un enum, para las listas desplegables (coinciden con lo que parsea el importador).
     private static string EnumCsv<TEnum>() where TEnum : struct, Enum
         => string.Join(",", Enum.GetNames<TEnum>());
+
+    // ===================== Visibilidad de campos de la unidad =====================
+
+    // Campos FIJOS de la unidad visibles cuando la copropiedad no tiene fila en unidad_campos_config.
+    // Es el mismo default que usa la tabla de unidades (Distribucion): los 5 modulos contributivos
+    // nacen OCULTOS, asi que por defecto no salen en la plantilla.
+    private static readonly HashSet<string> CamposUnidadVisiblesPorDefecto = new(StringComparer.OrdinalIgnoreCase)
+        { "tipo", "agrupacion", "matricula", "coef", "refpago" };
+
+    // Devuelve un predicado clave-de-campo -> visible, leyendo la configuracion por copropiedad
+    // (unidad_campos_config con entidad 'unidad'). Un campo SIN fila de config usa su default.
+    private async Task<Func<string, bool>> VisibilidadCamposUnidadAsync(CancellationToken ct)
+    {
+        var filas = await _db.UnidadCamposConfig.AsNoTracking()
+            .Where(c => c.Entidad == "unidad")
+            .Select(c => new { c.CampoClave, c.Oculto })
+            .ToListAsync(ct);
+        var config = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        foreach (var f in filas) config[(f.CampoClave ?? "").Trim()] = f.Oculto;
+
+        return clave =>
+        {
+            if (config.TryGetValue(clave, out var oculto)) return !oculto;
+            // Sin config: los campos personalizados ("cd:{id}") entran visibles (igual que en la
+            // tabla de unidades) y de los fijos solo los del set de arriba.
+            return clave.StartsWith("cd:", StringComparison.OrdinalIgnoreCase)
+                || CamposUnidadVisiblesPorDefecto.Contains(clave);
+        };
+    }
 
     // ===================== Referencia: copropiedades del cliente =====================
     private async Task<List<(Guid Id, string Nombre, string? Codigo)>> CopropiedadesDelClienteAsync(CancellationToken ct)
