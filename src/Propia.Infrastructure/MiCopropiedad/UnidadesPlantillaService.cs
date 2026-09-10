@@ -45,7 +45,23 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         var copros = await CopropiedadesDelClienteAsync(ct);
         var roles = await _db.RolesCopropiedad.AsNoTracking()
             .Where(r => r.Activo).OrderBy(r => r.Nombre).Select(r => r.Nombre).ToListAsync(ct);
+        // Catalogos de campos dinamicos (definiciones POR COPROPIEDAD) de cada entidad: se emiten
+        // como columnas [Label] al final de su hoja y el importador los lee y guarda.
+        // TERCEROS no lleva columnas dinamicas a proposito: su catalogo (TerceroCamposDefiniciones)
+        // es de las EMPLEADAS de una unidad, y esta hoja carga terceros del DIRECTORIO
+        // (empresa/persona global + vinculo), que no crean un registro de empleada al que colgarle
+        // el valor. Emitir columnas que nadie puede guardar solo repetiria el descarte silencioso.
         var camposUnidad = await _db.UnidadCamposDefiniciones.AsNoTracking()
+            .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => c.Label).ToListAsync(ct);
+        var camposPersona = await _db.PersonaCamposDefiniciones.AsNoTracking()
+            .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => c.Label).ToListAsync(ct);
+        var camposVehiculo = await _db.VehiculoCamposDefiniciones.AsNoTracking()
+            .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => c.Label).ToListAsync(ct);
+        var camposMascota = await _db.MascotaCamposDefiniciones.AsNoTracking()
+            .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => c.Label).ToListAsync(ct);
+        var camposZona = await _db.ZonaCamposDefiniciones.AsNoTracking()
+            .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => c.Label).ToListAsync(ct);
+        var camposEquipo = await _db.EquipoCamposDefiniciones.AsNoTracking()
             .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => c.Label).ToListAsync(ct);
 
         using var wb = new XLWorkbook();
@@ -60,12 +76,12 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
 
         // ---- Hojas de datos ----
         HojaUnidades(wb, coproList, camposUnidad);
-        HojaPersonas(wb, coproList, rolesList);
-        HojaVehiculos(wb, coproList);
-        HojaMascotas(wb, coproList);
+        HojaPersonas(wb, coproList, rolesList, camposPersona);
+        HojaVehiculos(wb, coproList, camposVehiculo);
+        HojaMascotas(wb, coproList, camposMascota);
         HojaTerceros(wb, coproTercerosList);
-        HojaZonasComunes(wb, coproList);
-        HojaEquipos(wb, coproList);
+        HojaZonasComunes(wb, coproList, camposZona);
+        HojaEquipos(wb, coproList, camposEquipo);
 
         wb.Properties.Author = "PROPIA";
         wb.Properties.Company = "A&D GROUP S.A.S";
@@ -100,7 +116,7 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
             ("COEFICIENTE", "Porcentaje. Max 5 decimales (1,25)"),
             ("REF PAGO", "Referencia de pago (alfanumerica)"),
         };
-        foreach (var lbl in camposUnidad) cols.Add(($"[{lbl}]", "Campo dinamico de la copropiedad"));
+        AgregarColumnasDinamicas(cols, camposUnidad);
 
         var ws = Encabezado(wb, "UNIDADES PRIVADAS", cols);
         Dropdown(ws, 1, coproRange);
@@ -110,7 +126,7 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         Ajustar(ws, cols.Count);
     }
 
-    private static void HojaPersonas(XLWorkbook wb, string? coproRange, string? rolesRange)
+    private static void HojaPersonas(XLWorkbook wb, string? coproRange, string? rolesRange, List<string> camposPersona)
     {
         var cols = new List<(string H, string Ayuda)>
         {
@@ -127,6 +143,8 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
             ("PROFESION", ""),
             ("ROLL", "Rol del sistema (opcional; crea usuario)"),
         };
+        AgregarColumnasDinamicas(cols, camposPersona);
+
         var ws = Encabezado(wb, "PERSONAS", cols);
         Dropdown(ws, 1, coproRange);
         DropdownInline(ws, 3, "Propietario,Residente,Familiar,Arrendatario,Apoderado");
@@ -137,7 +155,7 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         Ajustar(ws, cols.Count);
     }
 
-    private static void HojaVehiculos(XLWorkbook wb, string? coproRange)
+    private static void HojaVehiculos(XLWorkbook wb, string? coproRange, List<string> camposVehiculo)
     {
         var cols = new List<(string H, string Ayuda)>
         {
@@ -146,6 +164,8 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
             ("TIPO DE VEHICULO", "Elige de la lista"),
             ("MARCA", ""), ("MODELO", ""), ("COLOR", ""), ("PLACA", ""),
         };
+        AgregarColumnasDinamicas(cols, camposVehiculo);
+
         var ws = Encabezado(wb, "VEHICULOS", cols);
         Dropdown(ws, 1, coproRange);
         DropdownInline(ws, 3, "Automovil,Moto,Bicicleta,Camioneta,Otro");
@@ -153,7 +173,7 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         Ajustar(ws, cols.Count);
     }
 
-    private static void HojaMascotas(XLWorkbook wb, string? coproRange)
+    private static void HojaMascotas(XLWorkbook wb, string? coproRange, List<string> camposMascota)
     {
         var cols = new List<(string H, string Ayuda)>
         {
@@ -162,6 +182,8 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
             ("TIPO MASCOTA", "Elige de la lista"),
             ("RAZA", ""), ("NOMBRE", ""),
         };
+        AgregarColumnasDinamicas(cols, camposMascota);
+
         var ws = Encabezado(wb, "MASCOTAS", cols);
         Dropdown(ws, 1, coproRange);
         DropdownInline(ws, 3, "Perro,Gato,Ave,Otro");
@@ -191,7 +213,7 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     }
 
     // ===================== Hojas nuevas: Zonas comunes y Equipos =====================
-    private static void HojaZonasComunes(XLWorkbook wb, string? coproRange)
+    private static void HojaZonasComunes(XLWorkbook wb, string? coproRange, List<string> camposZona)
     {
         var cols = new List<(string H, string Ayuda)>
         {
@@ -205,6 +227,8 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
             ("TARIFA RESERVA", "Valor de la reserva (numero)"),
             ("REGLAS DE USO", ""),
         };
+        AgregarColumnasDinamicas(cols, camposZona);
+
         var ws = Encabezado(wb, "ZONAS COMUNES", cols);
         Dropdown(ws, 1, coproRange);
         DropdownInline(ws, 3, EnumCsv<CategoriaZonaComun>());
@@ -214,7 +238,7 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         Ajustar(ws, cols.Count);
     }
 
-    private static void HojaEquipos(XLWorkbook wb, string? coproRange)
+    private static void HojaEquipos(XLWorkbook wb, string? coproRange, List<string> camposEquipo)
     {
         var cols = new List<(string H, string Ayuda)>
         {
@@ -234,6 +258,8 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
             ("PROVEEDOR", ""),
             ("NUMERO FACTURA", ""),
         };
+        AgregarColumnasDinamicas(cols, camposEquipo);
+
         var ws = Encabezado(wb, "EQUIPOS", cols);
         Dropdown(ws, 1, coproRange);
         DropdownInline(ws, 3, EnumCsv<CategoriaEquipo>());
@@ -246,6 +272,18 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     }
 
     // ===================== Helpers de formato =====================
+
+    // Agrega AL FINAL de la hoja una columna por cada campo dinamico del catalogo de la
+    // copropiedad, con el encabezado entre corchetes ("[N de medidor]"). Los corchetes son el
+    // contrato con el importador: UnidadesCargaImportService reconoce ese encabezado, resuelve el
+    // label contra el catalogo de la entidad y guarda el valor. Van al final para no mover los
+    // indices de columna de los dropdowns ni de la fila de ejemplo (Ejemplo escribe solo el prefijo
+    // de valores que recibe, asi que las columnas dinamicas quedan sin muestra).
+    private static void AgregarColumnasDinamicas(List<(string H, string Ayuda)> cols, List<string> campos)
+    {
+        foreach (var lbl in campos) cols.Add(($"[{lbl}]", "Campo dinamico de la copropiedad"));
+    }
+
     private static IXLWorksheet Encabezado(XLWorkbook wb, string nombre, List<(string H, string Ayuda)> cols)
     {
         var ws = wb.AddWorksheet(nombre);

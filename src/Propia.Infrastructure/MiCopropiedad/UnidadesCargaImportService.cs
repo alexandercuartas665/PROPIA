@@ -56,6 +56,21 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
         // copropiedades" o a una sola, y su columna COPROPIEDAD NO debe crear grupos en el loop.
         var terceros = LeerHoja(wb, "TERCEROS");
 
+        // Columnas de campos dinamicos ([Label]) de cada hoja: se calculan UNA vez (los encabezados
+        // son los mismos para todas las filas) y solo si existen se consultan los catalogos.
+        // TERCEROS queda fuera: su catalogo (TerceroCamposDefiniciones) es de las EMPLEADAS de una
+        // unidad, y esta hoja carga terceros del DIRECTORIO (empresa/persona global + vinculo), que
+        // no crean el registro de empleada al que colgarle el valor.
+        var dinUni = LabelsDinamicos(unidades);
+        var dinPer = LabelsDinamicos(personas);
+        var dinVeh = LabelsDinamicos(vehiculos);
+        var dinMas = LabelsDinamicos(mascotas);
+        var dinZon = LabelsDinamicos(zonas);
+        var dinEqu = LabelsDinamicos(equipos);
+        // Avisos ya emitidos ("hoja|label"): una columna [X] desconocida se reporta UNA vez por hoja,
+        // no una por fila (hay cargas de 200+ filas) ni una por copropiedad.
+        var avisados = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         var nombresCopro = unidades.Concat(personas).Concat(vehiculos).Concat(mascotas).Concat(zonas).Concat(equipos)
             .Select(r => Val(r.Row, "COPROPIEDAD"))
             .Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim())
@@ -98,6 +113,15 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             // Predicado de pertenencia de una fila a este grupo (por nombre, todas, o solo vacias).
             bool Coincide(Dictionary<string, string> row) => todas
                 || (soloVacias ? string.IsNullOrWhiteSpace(Val(row, "COPROPIEDAD")) : Eq(Val(row, "COPROPIEDAD"), nombre));
+
+            // Catalogos de campos dinamicos de ESTA copropiedad (las definiciones son por tenant, y
+            // el tenant ya quedo fijado arriba). Solo se consultan si la hoja trae columnas [Label].
+            var defsUni = dinUni.Count == 0 ? SinCampos : Catalogo(await _mi.ListCamposDefinicionAsync(ct), d => d.Id, d => d.Label);
+            var defsPer = dinPer.Count == 0 ? SinCampos : Catalogo(await _mi.ListCamposDefPersonaAsync(ct), d => d.Id, d => d.Label);
+            var defsVeh = dinVeh.Count == 0 ? SinCampos : Catalogo(await _mi.ListCamposDefVehiculoAsync(ct), d => d.Id, d => d.Label);
+            var defsMas = dinMas.Count == 0 ? SinCampos : Catalogo(await _mi.ListCamposDefMascotaAsync(ct), d => d.Id, d => d.Label);
+            var defsZon = dinZon.Count == 0 ? SinCampos : Catalogo(await _mi.ListCamposDefZonaAsync(ct), d => d.Id, d => d.Label);
+            var defsEqu = dinEqu.Count == 0 ? SinCampos : Catalogo(await _mi.ListCamposDefEquipoAsync(ct), d => d.Id, d => d.Label);
 
             var numeroToId = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
             var idxCodigo = await BuildUnidadIndexAsync(ct);   // unidades existentes por Numero y por codigo TORRE-NUMERO
@@ -145,6 +169,13 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                         numeroToId[numero] = creada.Id;
                         nUni++;
                     }
+
+                    // Campos dinamicos [Label] de la unidad: mismo camino al crear y al actualizar
+                    // (numeroToId ya tiene el id en ambos casos).
+                    var unidadId = numeroToId[numero];
+                    await EscribirDinamicosAsync("UNIDADES PRIVADAS", row, defsUni,
+                        (d, v) => _mi.SetCampoValorUnidadAsync(unidadId, d, new SetCampoValorRequest(v), ct),
+                        errores, avisados);
 
                     var agr = Val(row, "AGRUPACION").Trim();
                     var principal = Val(row, "PRINCIPAL").Trim();
@@ -210,8 +241,13 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                     var req = new AgregarPersonaUnidadRequest(
                         doc, nombres, apellidos, NullIfEmpty(Val(row, "EMAIL")), NullIfEmpty(Val(row, "TELEFONO")),
                         ParseEnum(Val(row, "TIPO RESIDENTE"), RolUnidadPersona.Propietario));
-                    await _mi.AgregarPersonaUnidadAsync(uid, req, ct);
+                    // El id de la persona-unidad es la clave de sus campos dinamicos: antes se
+                    // descartaba el DTO devuelto.
+                    var creadaPer = await _mi.AgregarPersonaUnidadAsync(uid, req, ct);
                     nPer++;
+                    await EscribirDinamicosAsync("PERSONAS", row, defsPer,
+                        (d, v) => _mi.SetCampoValorPersonaDefAsync(creadaPer.Id, d, new SetCampoValorRequest(v), ct),
+                        errores, avisados);
                 }
                 catch (Exception ex) { errores.Add(new("PERSONAS", fila, Fallo(ex))); }
             }
@@ -234,9 +270,13 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                     }, errores, ct))
             {
                 // Espejo de las placas ya existentes para no duplicar (no hay unique en unidad+placa).
-                var placasVistas = (await _db.UnidadPlacas.AsNoTracking()
-                        .Select(p => new { p.UnidadId, p.Placa }).ToListAsync(ct))
-                    .Select(p => p.UnidadId + "|" + p.Placa).ToHashSet();
+                // Guarda tambien el Id: es la clave de los campos dinamicos de vehiculo, y en una
+                // recarga sin reemplazo la placa ya existe (no se vuelve a insertar) pero sus campos
+                // dinamicos SI deben actualizarse.
+                var placasVistas = new Dictionary<string, Guid>();
+                foreach (var p in await _db.UnidadPlacas.AsNoTracking()
+                             .Select(p => new { p.Id, p.UnidadId, p.Placa }).ToListAsync(ct))
+                    placasVistas.TryAdd(p.UnidadId + "|" + p.Placa, p.Id);
                 foreach (var (row, fila) in vehiculosGrp)
                 {
                     try
@@ -255,11 +295,19 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                         // agregar a mano en el modal: placa en mayusculas, max 15, mismo enum de tipo.
                         var placaUp = placa.ToUpperInvariant();
                         if (placaUp.Length > 15) placaUp = placaUp[..15];
-                        if (placasVistas.Add(uid + "|" + placaUp))
+                        var clavePlaca = uid + "|" + placaUp;
+                        if (!placasVistas.TryGetValue(clavePlaca, out var placaId))
                         {
-                            _db.UnidadPlacas.Add(new UnidadPlaca { UnidadId = uid, Placa = placaUp, TipoVehiculo = tipoVeh });
+                            var nuevaPlaca = new UnidadPlaca { UnidadId = uid, Placa = placaUp, TipoVehiculo = tipoVeh };
+                            _db.UnidadPlacas.Add(nuevaPlaca);
                             await _db.SaveChangesAsync(ct);
+                            placaId = nuevaPlaca.Id;
+                            placasVistas[clavePlaca] = placaId;
                         }
+                        // Campos dinamicos del vehiculo: cuelgan de la placa habilitada (unidad_placas).
+                        await EscribirDinamicosAsync("VEHICULOS", row, defsVeh,
+                            (d, v) => _mi.SetCampoValorVehiculoDefAsync(placaId, d, new SetCampoValorRequest(v), ct),
+                            errores, avisados);
                     }
                     catch (Exception ex) { errores.Add(new("VEHICULOS", fila, Fallo(ex))); }
                 }
@@ -277,9 +325,14 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                     var uid = ResolverUnidad(Val(row, "UNIDAD PRIVADA"), numeroToId, idxCodigo);
                     if (uid == Guid.Empty) { errores.Add(new("MASCOTAS", fila, $"Unidad '{Val(row, "UNIDAD PRIVADA")}' no encontrada")); continue; }
                     var nom = NullIfEmpty(Val(row, "NOMBRE")) ?? "Mascota";
-                    await _mi.AgregarMascotaUnidadAsync(uid, new CrearUnidadMascotaRequest(
+                    // Antes se descartaba el DTO devuelto; su Id es la clave de los campos dinamicos.
+                    var creadaMas = await _mi.AgregarMascotaUnidadAsync(uid, new CrearUnidadMascotaRequest(
                         nom, ParseEnum(Val(row, "TIPO MASCOTA"), TipoMascota.Perro), NullIfEmpty(Val(row, "RAZA"))), ct);
                     nMas++;
+                    if (creadaMas is not null)
+                        await EscribirDinamicosAsync("MASCOTAS", row, defsMas,
+                            (d, v) => _mi.SetCampoValorMascotaDefAsync(creadaMas.Id, d, new SetCampoValorRequest(v), ct),
+                            errores, avisados);
                 }
                 catch (Exception ex) { errores.Add(new("MASCOTAS", fila, Fallo(ex))); }
             }
@@ -304,6 +357,9 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                     var est = ParseEnum(Val(row, "ESTADO"), EstadoZonaComunMantenimiento.Activa);
                     if (est != EstadoZonaComunMantenimiento.Activa)
                         await _mi.CambiarEstadoZonaAsync(creada.Id, new CambiarEstadoZonaRequest(est), ct);
+                    await EscribirDinamicosAsync("ZONAS COMUNES", row, defsZon,
+                        (d, v) => _mi.SetCampoValorZonaDefAsync(creada.Id, d, new SetCampoValorRequest(v), ct),
+                        errores, avisados);
                     nZon++;
                 }
                 catch (Exception ex) { errores.Add(new("ZONAS COMUNES", fila, Fallo(ex))); }
@@ -342,6 +398,9 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                     var est = ParseEnum(Val(row, "ESTADO"), EstadoEquipoActivo.Operativo);
                     if (est != EstadoEquipoActivo.Operativo)
                         await _mi.CambiarEstadoEquipoAsync(creado.Id, new CambiarEstadoEquipoRequest(est), ct);
+                    await EscribirDinamicosAsync("EQUIPOS", row, defsEqu,
+                        (d, v) => _mi.SetCampoValorEquipoDefAsync(creado.Id, d, new SetCampoValorRequest(v), ct),
+                        errores, avisados);
                     nEqu++;
                 }
                 catch (Exception ex) { errores.Add(new("EQUIPOS", fila, Fallo(ex))); }
@@ -538,6 +597,76 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             idx.TryAdd($"{torreShort}-{n}", u.Id);   // 2a pasada: codigo TORRE-NUMERO, sin pisar
         }
         return idx;
+    }
+
+    // ===================== Campos dinamicos ([Label]) =====================
+    // La plantilla emite una columna por cada campo dinamico del catalogo de la copropiedad, con el
+    // encabezado ENTRE CORCHETES ("[N de medidor]"). LeerHoja normaliza los encabezados a MAYUSCULAS,
+    // asi que esa columna llega como clave "[N DE MEDIDOR]": el label interior se resuelve contra el
+    // catalogo con Trim e ignorando mayusculas/minusculas.
+
+    // Catalogo vacio (la hoja no trae ninguna columna entre corchetes): evita consultar definiciones.
+    private static readonly Dictionary<string, Guid> SinCampos = new(StringComparer.OrdinalIgnoreCase);
+
+    // Devuelve el label interior de un encabezado entre corchetes ("[N DE MEDIDOR]" -> "N DE MEDIDOR")
+    // o null si el encabezado no es una columna de campo dinamico.
+    private static string? LabelEntreCorchetes(string header)
+    {
+        var h = (header ?? "").Trim();
+        if (h.Length < 3 || h[0] != '[' || h[^1] != ']') return null;
+        var label = h[1..^1].Trim();
+        return label.Length == 0 ? null : label;
+    }
+
+    // Labels dinamicos presentes en una hoja. Los encabezados son los MISMOS para todas sus filas
+    // (LeerHoja construye cada diccionario desde el mismo mapa), asi que basta inspeccionar una.
+    private static List<string> LabelsDinamicos(List<(Dictionary<string, string> Row, int Fila)> filas)
+    {
+        var res = new List<string>();
+        if (filas.Count == 0) return res;
+        foreach (var clave in filas[0].Row.Keys)
+        {
+            var lbl = LabelEntreCorchetes(clave);
+            if (lbl is not null) res.Add(lbl);
+        }
+        return res;
+    }
+
+    // Catalogo de definiciones de la copropiedad ACTIVA como label -> definicionId (case-insensitive).
+    // TryAdd para tolerar labels duplicados por mayusculas/minusculas (gana el de menor Orden).
+    private static Dictionary<string, Guid> Catalogo<T>(IReadOnlyList<T> defs, Func<T, Guid> id, Func<T, string> label)
+    {
+        var map = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+        foreach (var d in defs) map.TryAdd((label(d) ?? "").Trim(), id(d));
+        return map;
+    }
+
+    // Guarda los campos dinamicos de UNA fila. Recorre solo las claves entre corchetes, resuelve el
+    // label contra el catalogo de la entidad y delega en el SetCampoValor... correspondiente (upsert
+    // por (definicion, registro), asi que recargar la misma plantilla deja el mismo resultado).
+    // Celda VACIA: no se escribe nada (una recarga conserva el valor anterior, igual que hacen
+    // MATRICULA/REF PAGO en unidades). Columna [X] sin campo configurado en la copropiedad: se
+    // reporta como AVISO una sola vez por hoja+columna (nunca por fila) y el resto de la fila SI se
+    // carga; asi el dato deja de descartarse en silencio.
+    private static async Task EscribirDinamicosAsync(
+        string hoja, Dictionary<string, string> row, Dictionary<string, Guid> defs,
+        Func<Guid, string, Task> set, List<CargaUnidadesError> errores, HashSet<string> avisados)
+    {
+        foreach (var (clave, valor) in row)
+        {
+            var label = LabelEntreCorchetes(clave);
+            if (label is null) continue;
+            if (!defs.TryGetValue(label, out var definicionId))
+            {
+                if (avisados.Add(hoja + "|" + label))
+                    errores.Add(new(hoja, 0, $"Aviso: la columna '[{label}]' no corresponde a ningun campo " +
+                        "configurado de esta hoja en la copropiedad, asi que ese dato se ignoro. " +
+                        "El resto de los datos de las filas SI se cargo."));
+                continue;
+            }
+            if (string.IsNullOrWhiteSpace(valor)) continue;
+            await set(definicionId, valor.Trim());
+        }
     }
 
     private static List<(Dictionary<string, string> Row, int Fila)> LeerHoja(XLWorkbook wb, string nombre)
