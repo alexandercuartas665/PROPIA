@@ -1,6 +1,8 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
+using Propia.Domain.Enums;
 using Propia.Application.TableroCompartido;
 
 namespace Propia.Api.Controllers;
@@ -47,6 +49,7 @@ public class TableroCompartidoController : ControllerBase
             : Ok(dto);
     }
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
     [HttpPost("mover")]
     public async Task<IActionResult> Mover([FromBody] MoverTarjetaCompartidaRequest req, CancellationToken ct)
     {
@@ -74,6 +77,7 @@ public class TableroCompartidoController : ControllerBase
             : Ok(dto);
     }
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
     [HttpPost("invitaciones/mover")]
     public async Task<IActionResult> MoverInvitado([FromBody] MoverTarjetaInvitadoRequest req, CancellationToken ct)
     {

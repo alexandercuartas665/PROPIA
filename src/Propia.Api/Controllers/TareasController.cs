@@ -1,6 +1,7 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Propia.Api.Authorization;
 using Propia.Application.Tareas;
 using Propia.Application.UsuariosAccesos;
 using Propia.Domain.Enums;
@@ -27,6 +28,7 @@ public class TareasController : ControllerBase
     [HttpGet("estados")]
     public async Task<IActionResult> ListarEstados(CancellationToken ct) => Ok(await _svc.ListarEstadosAsync(ct));
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
     [HttpPost("estados")]
     public async Task<IActionResult> CrearEstado([FromBody] CrearEstadoRequest req, CancellationToken ct)
     {
@@ -34,6 +36,7 @@ public class TareasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Editar)]
     [HttpPut("estados/{id:guid}")]
     public async Task<IActionResult> ActualizarEstado(Guid id, [FromBody] ActualizarEstadoRequest req, CancellationToken ct)
     {
@@ -41,6 +44,7 @@ public class TareasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Eliminar)]
     [HttpDelete("estados/{id:guid}")]
     public async Task<IActionResult> EliminarEstado(Guid id, CancellationToken ct)
     {
@@ -52,6 +56,7 @@ public class TareasController : ControllerBase
     [HttpGet("etiquetas")]
     public async Task<IActionResult> ListarEtiquetas([FromQuery] Guid? tableroId, CancellationToken ct) => Ok(await _svc.ListarEtiquetasAsync(tableroId, ct));
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
     [HttpPost("etiquetas")]
     public async Task<IActionResult> CrearEtiqueta([FromBody] CrearEtiquetaRequest req, CancellationToken ct)
     {
@@ -59,10 +64,12 @@ public class TareasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Editar)]
     [HttpPut("etiquetas/{id:guid}")]
     public async Task<IActionResult> ActualizarEtiqueta(Guid id, [FromBody] ActualizarEtiquetaRequest req, CancellationToken ct)
         => await _svc.ActualizarEtiquetaAsync(id, req, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Eliminar)]
     [HttpDelete("etiquetas/{id:guid}")]
     public async Task<IActionResult> EliminarEtiqueta(Guid id, CancellationToken ct)
         => await _svc.EliminarEtiquetaAsync(id, ct) ? NoContent() : NotFound();
@@ -82,6 +89,7 @@ public class TareasController : ControllerBase
         return dto is null ? NotFound() : Ok(dto);
     }
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
     [HttpPost]
     public async Task<IActionResult> Crear([FromBody] CrearTareaRequest req, CancellationToken ct)
     {
@@ -89,6 +97,7 @@ public class TareasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Editar)]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Actualizar(Guid id, [FromBody] ActualizarTareaRequest req, CancellationToken ct)
     {
@@ -98,6 +107,7 @@ public class TareasController : ControllerBase
 
     // Edicion inline de un solo campo (vista tabla tipo Excel): titulo, descripcion, valor,
     // prioridad, fechaVencimiento, fechaInicio, asignados. Preserva el resto de la tarea.
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Editar)]
     [HttpPatch("{id:guid}/inline")]
     public async Task<IActionResult> ActualizarInline(Guid id, [FromBody] InlineUpdateTareaRequest req, CancellationToken ct)
     {
@@ -106,6 +116,7 @@ public class TareasController : ControllerBase
     }
 
     // Set del valor de UN campo personalizado (TableroCampo) de la tarea, inline.
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/campo-valor/{campoId:guid}")]
     public async Task<IActionResult> SetCampoValor(Guid id, Guid campoId, [FromBody] SetCampoValorRequest req, CancellationToken ct)
     {
@@ -114,6 +125,7 @@ public class TareasController : ControllerBase
     }
 
     // Duplicar la tarea como una nueva ("(copia)"), sin subtareas hijas.
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/duplicar")]
     public async Task<IActionResult> Duplicar(Guid id, CancellationToken ct)
     {
@@ -122,6 +134,7 @@ public class TareasController : ControllerBase
     }
 
     // Copiar la tarea N veces con opciones (titulo, etapa, que conservar). Copias independientes con traza.
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/copiar")]
     public async Task<IActionResult> Copiar(Guid id, [FromBody] CopiarTareaRequest req, CancellationToken ct)
     {
@@ -129,6 +142,7 @@ public class TareasController : ControllerBase
         return copias.Count == 0 ? NotFound() : Ok(copias);
     }
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/estado")]
     public async Task<IActionResult> CambiarEstado(Guid id, [FromBody] CambiarEstadoRequest req, CancellationToken ct)
     {
@@ -137,6 +151,7 @@ public class TareasController : ControllerBase
     }
 
     // --- Comentarios / Etiquetas / Colaboradores ---
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/comentarios")]
     public async Task<IActionResult> AgregarComentario(Guid id, [FromBody] CrearComentarioRequest req, CancellationToken ct)
     {
@@ -144,14 +159,17 @@ public class TareasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/etiquetas")]
     public async Task<IActionResult> AsignarEtiqueta(Guid id, [FromBody] AsignarEtiquetaRequest req, CancellationToken ct)
         => await _svc.AsignarEtiquetaAsync(id, req, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Eliminar)]
     [HttpDelete("{id:guid}/etiquetas/{etiquetaId:guid}")]
     public async Task<IActionResult> RemoverEtiqueta(Guid id, Guid etiquetaId, CancellationToken ct)
         => await _svc.RemoverEtiquetaAsync(id, etiquetaId, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/colaboradores")]
     public async Task<IActionResult> AgregarColaborador(Guid id, [FromBody] AgregarColaboradorRequest req, CancellationToken ct)
     {
@@ -159,6 +177,7 @@ public class TareasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Eliminar)]
     [HttpDelete("{id:guid}/colaboradores/{colaboradorId:guid}")]
     public async Task<IActionResult> RemoverColaborador(Guid id, Guid colaboradorId, CancellationToken ct)
         => await _svc.RemoverColaboradorAsync(id, colaboradorId, ct) ? NoContent() : NotFound();
@@ -172,6 +191,7 @@ public class TareasController : ControllerBase
     public async Task<IActionResult> ListarDependencias(Guid id, CancellationToken ct)
         => Ok(await _svc.ListarDependenciasAsync(id, ct));
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/dependencias")]
     public async Task<IActionResult> AgregarDependencia(Guid id, [FromBody] AgregarDependenciaRequest req, CancellationToken ct)
     {
@@ -179,12 +199,14 @@ public class TareasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Eliminar)]
     [HttpDelete("{id:guid}/dependencias/{dependenciaId:guid}")]
     public async Task<IActionResult> RemoverDependencia(Guid id, Guid dependenciaId, CancellationToken ct)
         => await _svc.RemoverDependenciaAsync(id, dependenciaId, ct) ? NoContent() : NotFound();
 
     // --- Bulk actions (Fase 2) ---
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
     [HttpPost("bulk/estado")]
     public async Task<IActionResult> BulkCambiarEstado([FromBody] BulkCambiarEstadoRequest req, CancellationToken ct)
     {
@@ -192,10 +214,12 @@ public class TareasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
     [HttpPost("bulk/prioridad")]
     public async Task<IActionResult> BulkCambiarPrioridad([FromBody] BulkCambiarPrioridadRequest req, CancellationToken ct)
         => Ok(await _svc.BulkCambiarPrioridadAsync(req, ct));
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
     [HttpPost("bulk/asignado")]
     public async Task<IActionResult> BulkAsignarPersona([FromBody] BulkAsignarPersonaRequest req, CancellationToken ct)
         => Ok(await _svc.BulkAsignarPersonaAsync(req, ct));
@@ -211,6 +235,7 @@ public class TareasController : ControllerBase
         return t is null ? NotFound() : Ok(t);
     }
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
     [HttpPost("tableros")]
     public async Task<IActionResult> CrearTablero([FromBody] GuardarTableroRequest req, CancellationToken ct)
     {
@@ -218,6 +243,7 @@ public class TareasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Editar)]
     [HttpPut("tableros/{id:guid}")]
     public async Task<IActionResult> ActualizarTablero(Guid id, [FromBody] GuardarTableroRequest req, CancellationToken ct)
     {
@@ -225,21 +251,25 @@ public class TareasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Eliminar)]
     [HttpDelete("tableros/{id:guid}")]
     public async Task<IActionResult> EliminarTablero(Guid id, CancellationToken ct)
         => await _svc.EliminarTableroAsync(id, ct) ? NoContent() : NotFound();
 
     // Enlazar/desenlazar una persona a un tablero (2.5.D: desde el modulo Usuarios).
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
     [HttpPost("tableros/{id:guid}/usuarios/{personaId:guid}")]
     public async Task<IActionResult> AgregarUsuarioTablero(Guid id, Guid personaId, CancellationToken ct)
         => await _svc.AgregarUsuarioTableroAsync(id, personaId, ct) ? NoContent() : NotFound();
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Eliminar)]
     [HttpDelete("tableros/{id:guid}/usuarios/{personaId:guid}")]
     public async Task<IActionResult> QuitarUsuarioTablero(Guid id, Guid personaId, CancellationToken ct)
         => await _svc.QuitarUsuarioTableroAsync(id, personaId, ct) ? NoContent() : NotFound();
 
     // Invitar al tablero un USUARIO DEL SISTEMA por su correo EXACTO, aunque sea de otro cliente/tenant.
     // Lo agrega de inmediato (el tablero le queda compartido). No expone el directorio de otros clientes.
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
     [HttpPost("tableros/{id:guid}/usuarios/por-correo")]
     public async Task<IActionResult> AgregarUsuarioTableroPorCorreo(Guid id, [FromBody] AgregarPorCorreoBody body, CancellationToken ct)
     {
@@ -251,6 +281,7 @@ public class TareasController : ControllerBase
 
     // Invitar a un externo (por email) a colaborar en el tablero: crea la persona si no existe,
     // genera el link de aceptacion y envia el correo. Devuelve la invitacion (con LinkAceptacion).
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
     [HttpPost("tableros/{id:guid}/invitar-externo")]
     public async Task<IActionResult> InvitarExternoTablero(Guid id, [FromBody] InvitarExternoTableroBody body, CancellationToken ct)
     {
@@ -272,6 +303,7 @@ public class TareasController : ControllerBase
         return b is null ? NotFound() : Ok(b);
     }
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
     [HttpPost("tableros/{id:guid}/campos")]
     public async Task<IActionResult> AgregarCampo(Guid id, [FromBody] GuardarCampoRequest req, CancellationToken ct)
     {
@@ -279,6 +311,7 @@ public class TareasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Editar)]
     [HttpPut("tableros/{id:guid}/campos/{campoId:guid}")]
     public async Task<IActionResult> ActualizarCampo(Guid id, Guid campoId, [FromBody] GuardarCampoRequest req, CancellationToken ct)
     {
@@ -286,16 +319,19 @@ public class TareasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Eliminar)]
     [HttpDelete("tableros/{id:guid}/campos/{campoId:guid}")]
     public async Task<IActionResult> EliminarCampo(Guid id, Guid campoId, CancellationToken ct)
         => await _svc.EliminarCampoAsync(id, campoId, ct) ? NoContent() : NotFound();
 
     // Reordena un campo: direccion < 0 lo sube, direccion >= 0 lo baja (intercambia con el vecino).
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Editar)]
     [HttpPut("tableros/{id:guid}/campos/{campoId:guid}/orden")]
     public async Task<IActionResult> ReordenarCampo(Guid id, Guid campoId, [FromQuery] int direccion, CancellationToken ct)
         => await _svc.ReordenarCampoAsync(id, campoId, direccion, ct) ? NoContent() : NotFound();
 
     // Archiva (archivar=true) o restaura (archivar=false) un campo, conservando sus valores.
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Editar)]
     [HttpPut("tableros/{id:guid}/campos/{campoId:guid}/archivar")]
     public async Task<IActionResult> ArchivarCampo(Guid id, Guid campoId, [FromQuery] bool archivar, CancellationToken ct)
     {
@@ -308,16 +344,19 @@ public class TareasController : ControllerBase
     public async Task<IActionResult> CamposArchivados(Guid id, CancellationToken ct)
         => Ok(await _svc.ListarCamposArchivadosAsync(id, ct));
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/progreso")]
     public async Task<IActionResult> ActualizarProgreso(Guid id, [FromBody] ActualizarProgresoRequest req, CancellationToken ct)
         => await _svc.ActualizarProgresoAsync(id, req.Progreso, ct) ? NoContent() : NotFound();
 
     // --- Eliminar tarjeta (soft-delete) ---
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Eliminar)]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Eliminar(Guid id, CancellationToken ct)
         => await _svc.EliminarTareaAsync(id, ct) ? NoContent() : NotFound();
 
     // --- Adjuntos de la tarjeta ---
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/adjuntos")]
     [RequestSizeLimit(11_000_000)]
     public async Task<IActionResult> SubirAdjunto(Guid id, IFormFile file, [FromForm] string? texto, CancellationToken ct)
@@ -334,6 +373,7 @@ public class TareasController : ControllerBase
         return dto is null ? NotFound() : Ok(dto);
     }
 
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Eliminar)]
     [HttpDelete("{id:guid}/adjuntos/{adjuntoId:guid}")]
     public async Task<IActionResult> EliminarAdjunto(Guid id, Guid adjuntoId, CancellationToken ct)
         => await _svc.EliminarAdjuntoAsync(id, adjuntoId, ct) ? NoContent() : NotFound();

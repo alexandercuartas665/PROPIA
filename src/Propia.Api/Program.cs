@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -90,8 +90,16 @@ builder.Services.AddHealthChecks()
 // via API. El Singleton tipado permite inyectarlo en controllers (admin manual
 // trigger) y tests.
 builder.Services.AddSingleton<Propia.Infrastructure.Jobs.BackgroundJobScheduler>();
-builder.Services.AddHostedService(sp =>
-    sp.GetRequiredService<Propia.Infrastructure.Jobs.BackgroundJobScheduler>());
+// Jobs:Enabled (default true) permite arrancar una API SIN el bucle de jobs. Hace falta cuando
+// varias instancias de desarrollo apuntan a la MISMA base: si todas lo corren, cada job (alertas
+// de PQRSD, cobro recurrente, cierre nocturno, vencimientos...) se ejecuta varias veces y manda
+// correos/WhatsApp duplicados. El Singleton se deja registrado igual, para el disparo manual
+// desde el controller de monitoria y para los tests.
+if (builder.Configuration.GetValue("Jobs:Enabled", true))
+{
+    builder.Services.AddHostedService(sp =>
+        sp.GetRequiredService<Propia.Infrastructure.Jobs.BackgroundJobScheduler>());
+}
 
 // Cola de despacho del agente IA (auto-respuesta a entrantes). El Singleton lo registra
 // AddInfrastructure; aqui lo arrancamos como IHostedService (el bucle que agrupa y despacha).
