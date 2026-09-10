@@ -1,7 +1,63 @@
 # PROPIA - Checklist de deploy
 
-> Actualizado 2026-09-10. Version visible: **0.0.83**
+> Actualizado 2026-09-10. Version visible: **0.0.88**
 > (`src/Propia.Web/Propia.Web.csproj` `<Version>`). Bumpear en cada deploy.
+>
+> **ATENCION en esta tanda: 6 migraciones nuevas, una de ellas de SEGURIDAD (RLS).**
+> Ver seccion 3. Todas aditivas; ninguna borra datos.
+>
+> **Nuevo en 0.0.88 (Carga por Excel: los campos dinamicos ya se guardan):**
+> - **Bug que se corrige:** la plantilla emitia las columnas de campos dinamicos de la hoja UNIDADES
+>   (rotuladas `[Label]`) pero el importador NO las leia. El administrador llenaba `[N de medidor]` para
+>   200 unidades y el dato se descartaba **sin un solo error**.
+> - Ahora el importador resuelve las columnas `[Label]` contra el catalogo de cada entidad y guarda el
+>   valor, en las **6 hojas con catalogo** (UNIDADES, PERSONAS, VEHICULOS, MASCOTAS, ZONAS COMUNES,
+>   EQUIPOS), al crear y al actualizar. La plantilla emite esas columnas en las 6 (antes solo UNIDADES).
+> - Celda vacia no escribe (una recarga conserva el valor anterior). Upsert idempotente.
+> - Una columna `[X]` que no corresponde a ningun campo configurado se reporta **una vez por hoja**.
+> - La hoja **TERCEROS queda fuera a proposito**: carga terceros del Directorio (no crea `UnidadEmpleada`,
+>   ni tiene columna UNIDAD PRIVADA), mientras el catalogo "Terceros" cuelga de `UnidadEmpleada`. Requiere
+>   decision de modelo -> ver seccion 5.
+> - **Solo codigo** (UnidadesPlantillaService + UnidadesCargaImportService), sin migracion.
+>
+> **Nuevo en 0.0.87/0.0.86 (SEGURIDAD: RLS en 18 tablas que no la tenian):**
+> - Un test de cobertura nuevo (`RlsCoverageTests`) descubrio que **26 de las 230 tablas con `tenant_id`
+>   no tenian RLS EN ABSOLUTO** (`relrowsecurity=false` y cero politicas), no que les faltara el FORCE.
+>   El `HasQueryFilter` de EF las seguia filtrando -no habia fuga por la via normal de la app- pero les
+>   faltaba la red de seguridad final: una consulta cruda sin filtro no tenia nada que la detuviera.
+> - **1 migracion**: `AddRlsTablasFaltantes` protege las **18 que son TenantEntity** (contratos, directorio,
+>   etiquetas de usuario, informes, seguros/polizas y las 2 configs de PQRSD). **Las mas sensibles eran
+>   Directorio y Seguros.** Solo SQL, idempotente, con `Down()`.
+> - **Riesgo revisado antes de aplicarla** (FORCE RLS ata tambien al dueno de la tabla: un lector sin
+>   tenant de sesion pasaria de "ve todo" a "ve cero filas" en silencio): ninguna de las 18 se lee con
+>   `IgnoreQueryFilters`, SQL crudo ni Dapper; ningun seeder ni controller de SuperAdmin las toca; y los
+>   dos caminos que corren fuera de un request normal fijan el tenant antes de leer (formulario publico de
+>   PQRSD y job de vencimientos). Suite de integracion sin regresiones.
+> - **El test de cobertura se deja FALLANDO a proposito**, con la lista de exentas vacia, para que nadie
+>   pueda agregar una tabla de tenant sin RLS sin romper la suite. Reporta 8 tablas pendientes -> seccion 5.
+> - **Regla nueva para el futuro:** cualquier migracion que rellene datos en esas 18 debe fijar
+>   `app.tenant_id` primero, o vera cero filas.
+>
+> **Nuevo en 0.0.85/0.0.84 (Gestor de campos: Fase 3 + listas con semilla):**
+> - **Las 4 pestanas del panel "Configurar" ya son funcionales** (Personas, Vehiculos, Mascotas, Terceros):
+>   catalogo de campos propios por entidad + los campos del SISTEMA de cada ficha (alias, visibilidad,
+>   ubicacion y, donde la columna real lo permite, tipo y formato).
+> - **2 migraciones**: `AddCamposEntidadesVinculadasUnidad` (8 tablas nuevas, cada una con RLS FORCE +
+>   policy + GRANT) y `AddEntidadAUnidadCampoConfig` (`unidad_campos_config` +`entidad` varchar(20) default
+>   'unidad'; el indice unico pasa a `(tenant_id, entidad, campo_clave)`).
+> - **La seccion TERCEROS no existia en la ficha**: el backend estaba completo y `_empleadas` se cargaba en
+>   memoria, pero no se renderizaba en ninguna parte. Se le construyo pestana y seccion.
+> - **Listas del sistema:** las opciones pasan a JSON `[{K, Oculta}]` (el orden del arreglo ES el orden;
+>   se sigue leyendo el formato legado de una-por-linea). Los tres estados de fabrica
+>   (Habitada/Desocupada/Arrendada) ya son **semilla de verdad**: con candado, no se eliminan, solo se
+>   ocultan - la misma regla que los tipos base, que ahora tambien se pueden ocultar. Las propias si se
+>   renombran y se eliminan. La lista se administra en un **popup** encima del modal.
+> - **Al ocultar una opcion, las unidades que ya la usan la conservan** y su selector la sigue ofreciendo
+>   solo en esa fila: sin eso, ocultar "Parqueadero" habria hecho que 327 unidades mostraran otro tipo y se
+>   corrompieran al primer clic. El popup muestra cuantas unidades usan cada opcion.
+> - Un `tipo` guardado que no corresponde a ningun valor del enum ya no se disfraza como el primero de la
+>   lista: se muestra `(sin definir: N)` -> ver seccion 5, hay 1 unidad asi en dev.
+> - Alta de campos propios: se agregan Moneda, Hora, Telefono, Correo y Enlace.
 >
 > **Nuevo en 0.0.83 (Carga de unidades: anexos idempotentes):**
 > - En la recarga de la plantilla, los vinculos de anexo de la carga previa hacian fallar cada anexo con
@@ -204,6 +260,9 @@ dotnet ef database update --project ../Propia.Infrastructure --startup-project .
 
 Ultimas migraciones del repo (verificar que esten aplicadas). `ef database update` aplica SOLO las que
 falten en ese entorno, comparando contra `__EFMigrationsHistory`:
+- `20260910140101_AddRlsTablasFaltantes`  (**SEGURIDAD**: activa RLS -ENABLE + FORCE + policy `tenant_isolation` + GRANT `propia_app`- en 18 tablas de tenant que no tenian ninguna: contrato_campos, contrato_campo_valores, contrato_etapas, contrato_expedientes, directorio_contactos, directorio_adjuntos, etiquetas_usuario, usuario_tenant_etiquetas, informes, informe_secciones, informe_plantillas, informe_plantilla_secciones, polizas, poliza_campos, poliza_campo_valores, poliza_reclamaciones, pqrsd_formulario_publico_configs, pqrsd_tareas_configs. **Solo SQL, sin cambios de esquema.** Idempotente. Ver la nota de riesgo del encabezado)  <-- NUEVA (0.0.87)
+- `20260910132959_AddEntidadAUnidadCampoConfig`  (`unidad_campos_config` +`entidad` varchar(20) NOT NULL default `'unidad'`; DROP del unico `(tenant_id, campo_clave)` y CREATE de `(tenant_id, entidad, campo_clave)`. Las filas existentes quedan con `'unidad'`)  <-- NUEVA (0.0.85)
+- `20260910120849_AddCamposEntidadesVinculadasUnidad`  (8 tablas nuevas de catalogo de campos para las entidades vinculadas a la unidad: `persona_campos_definiciones`/`_valores`, `vehiculo_*`, `mascota_*`, `tercero_*`. **Cada una con RLS FORCE + policy tenant_isolation + GRANT propia_app en la propia migracion**)  <-- NUEVA (0.0.84)
 - `20260910005638_AddUnidadCampoConfig`  (Unidades: tabla nueva `unidad_campos_config` -alias + opciones de campos fijos como Estado-, con RLS FORCE + policy tenant + GRANT propia_app)  <-- NUEVA (0.0.82)
 - `20260909222434_AddUnidadTipoCustom`  (Unidades: `unidades_privadas` +`tipo_custom_id` uuid null; tipo de unidad propio del tenant)  <-- NUEVA (0.0.81)
 - `20260909203008_AddProgramacionProveedorNombre`  (Programacion: `programacion_tareas` +`proveedor_nombre` text null; snapshot del nombre del tercero)  <-- NUEVA (0.0.78)
@@ -234,7 +293,26 @@ falten en ese entorno, comparando contra `__EFMigrationsHistory`:
 
 ## 4. Post-deploy (verificacion)
 
-- [ ] Login OK; el footer muestra `v0.0.83`.
+- [ ] Login OK; el footer muestra `v0.0.88`.
+- [ ] **RLS (critico de esta tanda):** despues de aplicar las migraciones, entrar a **Directorio**,
+      **Seguros** y **Contratos** y confirmar que **siguen listando datos**. Si alguno queda vacio, es que
+      un lector corre sin tenant de sesion y el FORCE RLS lo dejo en cero filas: revisar logs por
+      `row-level security` / `42501` y revertir con el `Down()` de `AddRlsTablasFaltantes` si hace falta.
+      (En dev quedo verificado: Directorio 200 filas, Seguros 7, Contratos 21, cero errores en logs.)
+- [ ] **RLS (comprobacion de catalogo):** las 18 tablas quedan con `relrowsecurity` y
+      `relforcerowsecurity` en `true` y >=1 politica. En toda la BD deben quedar solo **8** tablas de
+      tenant sin RLS (las de la seccion 5).
+- [ ] **Configurar > pestanas Personas / Vehiculos / Mascotas / Terceros:** cada una lista sus campos del
+      sistema; crear un campo propio (ej. "Numero de chip" en Mascotas) y comprobar que aparece en esa
+      seccion de la **ficha** de la unidad y que guarda su valor. La ficha debe tener pestana **Terceros**.
+- [ ] **Listas (popup):** "Gestionar lista" abre un popup ENCIMA del modal (no expande la grilla). Los
+      tres estados de fabrica y los tipos base salen con candado y **sin boton de eliminar**, solo el ojo
+      para ocultar. Ocultar una opcion la saca de los selectores, y una unidad que ya la usaba la
+      **sigue mostrando en su fila**. El popup muestra el conteo de unidades por opcion.
+- [ ] **Carga por Excel con campos dinamicos:** con al menos un campo propio configurado, descargar la
+      plantilla y verificar que la hoja correspondiente trae la columna `[Nombre del campo]`; llenarla,
+      cargar el archivo y confirmar **en la ficha** que el valor quedo guardado. Una columna `[X]`
+      inventada debe producir **un** aviso por hoja, no uno por fila.
 - [ ] **Unidades > Configurar (campos):** lista TODOS los campos con candado en los del sistema; un alias
       (ej. Coeficiente -> "Coef. Prop.") cambia el encabezado de la tabla y la ficha; Tipo y Estado tienen
       "Opciones" (Tipo: base + propios con Cajeros; Estado: editar + "Restaurar semilla"); quitar un Estado
@@ -292,6 +370,40 @@ falten en ese entorno, comparando contra `__EFMigrationsHistory`:
 
 ## 5. Pendientes NO bloqueantes (post-deploy)
 
+- **RLS-08 (decision de producto, no plomeria):** quedan **8 tablas de tenant sin RLS** y el test
+  `RlsCoverageTests.Toda_tabla_con_tenant_id_tiene_RLS_FORCE_y_politica` **falla a proposito** listandolas.
+  No se les puede aplicar el patron tal cual:
+  - 6 tienen `tenant_id` **NULLABLE**, asi que una politica `tenant_id = current_tenant_id()` les ocultaria
+    las filas de tenant nulo: `calendario_eventos`, `notificaciones`, `login_audit_events`, `sistema_logs`,
+    `usuario_sesiones`, `document_extraction_logs`.
+  - 2 son de Capa 1 y cruzan copropiedades por diseno: `org_colaborador_copropiedades`,
+    `panel_snapshot_copropiedades`.
+  Hay que decidir por cada una: politica que tolere `NULL`, o exencion **documentada** en la lista
+  `TablasExentas` del test con su justificacion. Mientras no se decida, la suite queda con ese fallo.
+- **TERCEROS: dos conceptos con el mismo nombre.** El catalogo de la pestana "Terceros" cuelga de
+  `UnidadEmpleada` (empleadas de servicio **de una unidad**), pero la hoja TERCEROS de la plantilla carga
+  terceros del **Directorio** (crea Empresa/Persona global + vinculo, sin columna UNIDAD PRIVADA). Por eso
+  esa hoja quedo sin columnas dinamicas. Decidir: renombrar la pestana a "Empleadas/Personal" y darle al
+  Directorio su propio catalogo, o que la hoja TERCEROS cree `UnidadEmpleada`.
+- **Campos de sistema de Personas incompletos en el panel:** la hoja PERSONAS de la plantilla tiene `SEXO`,
+  `FECHA NACIMIENTO` y `PROFESION`, que no aparecen en la pestana de configuracion porque viven en la tabla
+  global `personas`, no en `UnidadPersona`. Es un limite defendible; si se quieren configurar, hay que
+  ampliar el catalogo.
+- **Visibilidad/orden de los campos de SISTEMA de las fichas vinculadas:** se guardan pero todavia **no
+  cambian el render de la ficha** (hay que volver dinamica la grilla de columnas fijas de Personas y
+  recomponer las tarjetas de Vehiculos/Mascotas/Terceros). Los campos **propios** si se ordenan y ocultan.
+- **Separador de miles en celdas editables:** el formato se guarda y se aplican decimales y maximo de
+  caracteres, pero el separador de miles NO se pinta dentro de un input editable (reparsear "1.234" es
+  donde se corrompen coeficientes y cuotas). Si se quiere, la forma segura es formatear al perder el foco.
+- **Dato malo en dev:** 1 unidad (`202` de "Conjunto Altos del Bosque") tiene `tipo = 0`, que no existe en
+  el enum `TipoUnidad` (empieza en 1). Antes se mostraba como "Apartamento" y cualquier edicion de esa fila
+  lo habria guardado asi; ahora se ve `(sin definir: 0)`. Hay que decidir a que tipo corregirla.
+  Vale la pena revisar en **prod** si hay filas con `tipo` fuera de 1..20.
+- **Bug preexistente en `ContratosVencimientoJob`** (hay tarea abierta): el `continue` de la linea 45
+  (`if (contratos.Count == 0) continue;`) salta al siguiente tenant, asi que el bloque de alertas de
+  **polizas** de la linea 83 nunca corre para una copropiedad sin contratos con fecha fin: esa copropiedad
+  **no recibe alertas de vencimiento de seguros**. Ademas la linea 115 (`catch { errores++; }`) se traga
+  toda excepcion por tenant sin log.
 - **R-03** (rendimiento estructural): partir `@code` de TareasKanban (5443), Servicios (3223),
   GestionarUnidadesModal (2110), GestionarPqrsdModal (1897) a <800 lineas extrayendo subcomponentes
   (patron TareaCard), uno a uno con verificacion. No bloquea el deploy.
