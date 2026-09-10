@@ -143,6 +143,23 @@ public class UnidadCampoValor : TenantEntity
 }
 
 /// <summary>
+/// Configuracion por-tenant de un CAMPO FIJO del sistema de la unidad (los que no son personalizados):
+/// permite un alias (etiqueta que reemplaza la del sistema en las vistas) y, para los campos que
+/// manejan una lista (ej. "estado"), sus opciones. Los campos personalizados usan UnidadCampoDefinicion.
+/// CampoClave identifica el campo fijo: "numero","tipo","piso","coef","area","habitaciones","banos",
+/// "parqueaderos","estado","matricula","refpago","pagaadmin","cuota","observaciones".
+/// Es TenantEntity - aislada por tenant_id.
+/// </summary>
+public class UnidadCampoConfig : TenantEntity
+{
+    public string CampoClave { get; set; } = string.Empty;
+    /// <summary>Etiqueta personalizada; null = se usa la del sistema.</summary>
+    public string? Alias { get; set; }
+    /// <summary>Opciones (una por linea) para los campos fijos tipo lista (ej. estado). Null si no aplica.</summary>
+    public string? Opciones { get; set; }
+}
+
+/// <summary>
 /// Documento/anexo adjunto a una unidad (escritura, plano, contrato, etc). El archivo se sube
 /// a blob storage y aqui se guarda el nombre + URL. Es TenantEntity - aislada por tenant_id.
 /// </summary>

@@ -124,6 +124,12 @@ public record SetCampoValorRequest(string? Valor);
 // Valor plano (unidad+definicion) para pintar los campos dinamicos como columnas de la tabla sin N+1.
 public record UnidadCampoValorFlatDto(Guid UnidadId, Guid DefinicionId, string? Valor);
 
+// ----- Configuracion de los CAMPOS FIJOS del sistema (alias + opciones de lista, ej. Estado). -----
+public record UnidadCampoConfigDto(string CampoClave, string? Alias, string? Opciones);
+public record GuardarUnidadCampoConfigRequest(string CampoClave, string? Alias, string? Opciones);
+// Conteo de unidades por valor de Estado (para advertir al quitar una opcion en uso).
+public record UnidadEstadoUsoDto(string Estado, int Unidades);
+
 // --- Campos dinamicos tipados de Equipos y Zonas (mismo patron que Unidad; requests genericos reutilizados) ---
 public record EquipoCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones);
 public record EquipoCampoDinDto(Guid DefinicionId, string Label, int Orden, string? Valor, TipoCampoTablero Tipo, string? Opciones);

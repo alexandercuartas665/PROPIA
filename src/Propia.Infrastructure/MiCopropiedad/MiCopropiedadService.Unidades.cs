@@ -684,6 +684,39 @@ public partial class MiCopropiedadService
             .Select(v => new UnidadCampoValorFlatDto(v.UnidadId, v.DefinicionId, v.Valor))
             .ToListAsync(ct);
 
+    // ---- Configuracion de campos FIJOS del sistema (alias + opciones de lista) ----
+    public async Task<IReadOnlyList<UnidadCampoConfigDto>> ListCamposConfigAsync(CancellationToken ct)
+        => await _db.UnidadCamposConfig.AsNoTracking()
+            .Select(c => new UnidadCampoConfigDto(c.CampoClave, c.Alias, c.Opciones))
+            .ToListAsync(ct);
+
+    public async Task<UnidadCampoConfigDto> GuardarCampoConfigAsync(GuardarUnidadCampoConfigRequest req, CancellationToken ct)
+    {
+        var clave = (req.CampoClave ?? "").Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(clave)) throw new InvalidOperationException("CampoClave obligatorio.");
+        var alias = string.IsNullOrWhiteSpace(req.Alias) ? null : req.Alias.Trim();
+        var opciones = string.IsNullOrWhiteSpace(req.Opciones)
+            ? null
+            : string.Join('\n', req.Opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+        var c = await _db.UnidadCamposConfig.FirstOrDefaultAsync(x => x.CampoClave == clave, ct);
+        if (c is null)
+        {
+            c = new UnidadCampoConfig { CampoClave = clave, Alias = alias, Opciones = opciones };
+            _db.UnidadCamposConfig.Add(c);
+        }
+        else { c.Alias = alias; c.Opciones = opciones; }
+        await _db.SaveChangesAsync(ct);
+        return new UnidadCampoConfigDto(c.CampoClave, c.Alias, c.Opciones);
+    }
+
+    public async Task<IReadOnlyList<UnidadEstadoUsoDto>> ContarUnidadesPorEstadoAsync(CancellationToken ct)
+        => await _db.UnidadesPrivadas.AsNoTracking()
+            .Where(u => u.Estado != null && u.Estado != "")
+            .GroupBy(u => u.Estado!)
+            .Select(g => new UnidadEstadoUsoDto(g.Key, g.Count()))
+            .ToListAsync(ct);
+
     public async Task SetCampoValorUnidadAsync(Guid unidadId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct)
     {
         if (_tenant.CurrentTenantId is not Guid tid) throw new InvalidOperationException("Sin copropiedad activa.");

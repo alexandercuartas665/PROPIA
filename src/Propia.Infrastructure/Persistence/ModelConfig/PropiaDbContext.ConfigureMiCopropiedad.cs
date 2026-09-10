@@ -116,6 +116,15 @@ public partial class PropiaDbContext
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
+        modelBuilder.Entity<UnidadCampoConfig>(b =>
+        {
+            b.Property(x => x.CampoClave).IsRequired().HasMaxLength(40);
+            b.Property(x => x.Alias).HasMaxLength(80);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.CampoClave }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
         modelBuilder.Entity<UnidadDocumento>(b =>
         {
             b.Property(x => x.Nombre).IsRequired().HasMaxLength(255);

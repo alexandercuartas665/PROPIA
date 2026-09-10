@@ -292,6 +292,21 @@ public class MiCopropiedadController : ControllerBase
     [HttpGet("unidades-campos-valores")]
     public async Task<IActionResult> ListTodosCamposValores(CancellationToken ct) => Ok(await _svc.ListTodosCamposValoresAsync(ct));
 
+    // ---- Configuracion de campos FIJOS del sistema (alias + opciones de lista, ej. Estado) ----
+    [HttpGet("unidades-config")]
+    public async Task<IActionResult> ListCamposConfig(CancellationToken ct) => Ok(await _svc.ListCamposConfigAsync(ct));
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpPut("unidades-config")]
+    public async Task<IActionResult> GuardarCampoConfig([FromBody] GuardarUnidadCampoConfigRequest req, CancellationToken ct)
+    {
+        try { return Ok(await _svc.GuardarCampoConfigAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpGet("unidades/estados-uso")]
+    public async Task<IActionResult> ContarUnidadesPorEstado(CancellationToken ct) => Ok(await _svc.ContarUnidadesPorEstadoAsync(ct));
+
     // ---------- Campos dinamicos tipados de EQUIPOS ----------
     [HttpGet("equipos-campos")]
     public async Task<IActionResult> ListCamposDefEquipo(CancellationToken ct) => Ok(await _svc.ListCamposDefEquipoAsync(ct));

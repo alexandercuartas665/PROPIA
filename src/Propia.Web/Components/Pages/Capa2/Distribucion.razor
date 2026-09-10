@@ -190,29 +190,58 @@
                 <button class="cg-x" type="button" @onclick="() => _configCamposAbierto = false" aria-label="Cerrar">&times;</button>
             </div>
             <div class="cg-body">
-                @* --- Tipos de unidad: base (semilla, fijos) + propios del tenant (agregar/quitar) --- *@
-                <div class="dst-cfg-block">
-                    <div class="dst-cfg-form-title">Tipos de unidad</div>
-                    <div class="cg-sub" style="margin:2px 0 8px;">Los tipos base vienen por defecto. Agrega o quita los tipos propios de tu copropiedad.</div>
-                    <div class="dst-tipos-wrap">
-                        @foreach (var t in TiposUnidadSel)
-                        {
-                            <span class="dst-tipo-chip dst-tipo-chip--base" title="Tipo base (no se puede quitar)">@Etiqueta(t)</span>
-                        }
-                        @foreach (var tc in _tiposCustom)
-                        {
-                            var tcc = tc;
-                            <span class="dst-tipo-chip">@tc.Nombre<button type="button" class="dst-tipo-x" title="Quitar tipo" @onclick="() => EliminarTipoCustomAsync(tcc)" disabled="@_cfgBusy">&times;</button></span>
-                        }
-                    </div>
-                    <div class="dst-tipos-add">
-                        <input class="dst-nf-inp" placeholder="Nuevo tipo (ej. Cajeros, Kiosco...)" @bind="_nuevoTipoNombre" @bind:event="oninput" @onkeyup="OnNuevoTipoKeyUp" />
-                        <button class="propia-btn-brand" type="button" @onclick="AgregarTipoCustomAsync" disabled="@(_cfgBusy || string.IsNullOrWhiteSpace(_nuevoTipoNombre))">+ Agregar tipo</button>
-                    </div>
-                    @if (!string.IsNullOrEmpty(_tipoMsg)) { <div class="dst-cfg-msg">@_tipoMsg</div> }
+                @* --- Campos del sistema (fijos): alias + opciones de lista. No se eliminan (candado). --- *@
+                <div class="dst-cfg-form-title" style="margin-bottom:4px;">Campos de la unidad</div>
+                <div class="cg-sub" style="margin:2px 0 10px;">Renombra un campo (alias) y, si maneja una lista, configura sus opciones. Los campos del sistema no se pueden eliminar.</div>
+                <div class="dst-cfg-list">
+                    @foreach (var cs in CamposSistema)
+                    {
+                        var css = cs;
+                        <div class="dst-fld">
+                            <div class="dst-fld-row">
+                                <svg class="dst-fld-lock" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="Campo del sistema (no se elimina)"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                                <span class="dst-fld-name">@cs.DefLabel</span>
+                                <input class="dst-nf-inp dst-fld-alias" placeholder="Alias (opcional)" value="@(AliasConfig(cs.Clave))" @onchange="@(e => GuardarAliasAsync(css.Clave, e.Value?.ToString()))" />
+                                @if (cs.EsLista)
+                                {
+                                    <button class="dst-btn-soft" type="button" @onclick='() => _fldExpand = _fldExpand == css.Clave ? "" : css.Clave'>@(_fldExpand == cs.Clave ? "Ocultar" : "Opciones")</button>
+                                }
+                                else { <span class="dst-fld-spacer"></span> }
+                            </div>
+                            @if (cs.EsLista && _fldExpand == cs.Clave)
+                            {
+                                <div class="dst-fld-opts">
+                                    @if (cs.Clave == "tipo")
+                                    {
+                                        <div class="cg-sub" style="margin-bottom:6px;">Los tipos base vienen por defecto (semilla). Agrega o quita los propios de tu copropiedad.</div>
+                                        <div class="dst-tipos-wrap">
+                                            @foreach (var t in TiposUnidadSel) { <span class="dst-tipo-chip dst-tipo-chip--base" title="Tipo base (no se puede quitar)">@Etiqueta(t)</span> }
+                                            @foreach (var tc in _tiposCustom) { var tcc = tc; <span class="dst-tipo-chip">@tc.Nombre<button type="button" class="dst-tipo-x" title="Quitar tipo" @onclick="() => EliminarTipoCustomAsync(tcc)" disabled="@_cfgBusy">&times;</button></span> }
+                                        </div>
+                                        <div class="dst-tipos-add">
+                                            <input class="dst-nf-inp" placeholder="Nuevo tipo (ej. Cajeros, Kiosco...)" @bind="_nuevoTipoNombre" @bind:event="oninput" @onkeyup="OnNuevoTipoKeyUp" />
+                                            <button class="propia-btn-brand" type="button" @onclick="AgregarTipoCustomAsync" disabled="@(_cfgBusy || string.IsNullOrWhiteSpace(_nuevoTipoNombre))">+ Agregar tipo</button>
+                                        </div>
+                                        @if (!string.IsNullOrEmpty(_tipoMsg)) { <div class="dst-cfg-msg">@_tipoMsg</div> }
+                                    }
+                                    else if (cs.Clave == "estado")
+                                    {
+                                        <label class="dst-nfc-lbl">Opciones (una por linea)</label>
+                                        <textarea class="dst-nf-inp" rows="4" @bind="_estadoOpcionesEdit" @bind:event="oninput" placeholder="Habitada&#10;Desocupada&#10;Arrendada"></textarea>
+                                        <div class="dst-tipos-add" style="margin-top:8px;">
+                                            <button class="dst-btn-soft" type="button" @onclick="RestaurarEstadoSemilla" disabled="@_cfgBusy">Restaurar semilla</button>
+                                            <button class="propia-btn-brand" type="button" @onclick="GuardarEstadoOpcionesAsync" disabled="@_cfgBusy">Guardar opciones</button>
+                                        </div>
+                                        @if (!string.IsNullOrEmpty(_estadoMsg)) { <div class="dst-cfg-msg">@_estadoMsg</div> }
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
                 </div>
+
                 <div class="dst-cfg-sep"></div>
-                <div class="dst-cfg-form-title" style="margin-bottom:6px;">Campos dinamicos</div>
+                <div class="dst-cfg-form-title" style="margin-bottom:6px;">Campos personalizados</div>
                 @if (_camposDef.Count == 0)
                 {
                     <div class="dst-nfc-empty">Aun no hay campos personalizados. Crea el primero abajo.</div>
@@ -977,7 +1006,11 @@ else
     };
 
     private bool EsVisible(ColDef c) => !c.Hideable || !_cols.TryGetValue(c.Key, out var p) || p.Visible;
-    private string Etiqueta(ColDef c) => (_cols.TryGetValue(c.Key, out var p) && !string.IsNullOrWhiteSpace(p.Label)) ? p.Label! : c.DefLabel;
+    // Encabezado de columna: alias del tenant (Configurar) > etiqueta por-usuario (localStorage) > default.
+    private string Etiqueta(ColDef c)
+        => (_camposConfig.TryGetValue(c.Key, out var cc) && !string.IsNullOrWhiteSpace(cc.Alias)) ? cc.Alias!
+         : (_cols.TryGetValue(c.Key, out var p) && !string.IsNullOrWhiteSpace(p.Label)) ? p.Label!
+         : c.DefLabel;
     // Catalogo en el orden elegido por el usuario (claves desconocidas van al final, por seguridad).
     private IEnumerable<ColDef> CatalogoOrdenado
     {
@@ -1208,6 +1241,84 @@ else
         catch { /* prerender */ }
     }
 
+    // ===== Configurar: campos de la unidad (alias + opciones de lista) =====
+    private sealed record CampoSistema(string Clave, string DefLabel, bool EsLista);
+    // Campos FIJOS del sistema. 'num'/'tipo'/'coef'/'matricula'/'refpago' comparten clave con las columnas.
+    private static readonly List<CampoSistema> CamposSistema = new()
+    {
+        new("num", "Unidad", false), new("tipo", "Tipo", true), new("estado", "Estado", true),
+        new("coef", "Coeficiente", false), new("area", "Area", false), new("piso", "Piso", false),
+        new("habitaciones", "Habitaciones", false), new("banos", "Banos", false), new("parqueaderos", "Parqueaderos", false),
+        new("matricula", "Matricula", false), new("refpago", "Ref. pago", false),
+        new("pagaadmin", "Paga administracion", false), new("cuota", "Cuota mensual", false),
+        new("observaciones", "Observaciones", false),
+    };
+    private static readonly string[] EstadoSemilla = { "Habitada", "Desocupada", "Arrendada" };
+
+    private Dictionary<string, UnidadCampoConfigDto> _camposConfig = new();
+    private List<UnidadEstadoUsoDto> _estadosUso = new();
+    private string _fldExpand = "";
+    private string _estadoOpcionesEdit = "";
+    private string? _estadoMsg;
+
+    // Alias configurado (para el input; "" si no hay). Y alias efectivo (para mostrar; def si no hay).
+    private string AliasConfig(string clave) => _camposConfig.TryGetValue(clave, out var c) ? (c.Alias ?? "") : "";
+    private string AliasCampo(string clave, string def) => _camposConfig.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Alias) ? c.Alias! : def;
+
+    private IEnumerable<string> EstadosConfig()
+    {
+        if (_camposConfig.TryGetValue("estado", out var c) && !string.IsNullOrWhiteSpace(c.Opciones))
+            return c.Opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return EstadoSemilla;
+    }
+
+    private async Task GuardarAliasAsync(string clave, string? valor)
+    {
+        var alias = string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+        var opciones = _camposConfig.TryGetValue(clave, out var c) ? c.Opciones : null;
+        await GuardarCampoConfigAsync(clave, alias, opciones);
+    }
+
+    private void RestaurarEstadoSemilla() => _estadoOpcionesEdit = string.Join('\n', EstadoSemilla);
+
+    private async Task GuardarEstadoOpcionesAsync()
+    {
+        var nuevas = _estadoOpcionesEdit.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        var actuales = EstadosConfig().ToList();
+        // Advertir si se quita una opcion que ya usan unidades.
+        var quitadasEnUso = actuales
+            .Where(a => !nuevas.Contains(a, StringComparer.OrdinalIgnoreCase))
+            .Select(a => (a, n: _estadosUso.FirstOrDefault(u => string.Equals(u.Estado, a, StringComparison.OrdinalIgnoreCase))?.Unidades ?? 0))
+            .Where(x => x.n > 0).ToList();
+        if (quitadasEnUso.Count > 0)
+        {
+            var detalle = string.Join(", ", quitadasEnUso.Select(x => $"{x.a} ({x.n})"));
+            var ok = await Js.InvokeAsync<bool>("confirm",
+                $"Vas a quitar opciones de Estado que ya usan unidades: {detalle}. Esas unidades quedaran con ese valor hasta que las reasignes. Continuar?");
+            if (!ok) return;
+        }
+        var alias = _camposConfig.TryGetValue("estado", out var c) ? c.Alias : null;
+        await GuardarCampoConfigAsync("estado", alias, string.Join('\n', nuevas));
+        _estadoMsg = "Opciones de Estado guardadas.";
+    }
+
+    private async Task GuardarCampoConfigAsync(string clave, string? alias, string? opciones)
+    {
+        _cfgBusy = true;
+        try
+        {
+            var req = new GuardarUnidadCampoConfigRequest(clave, alias, opciones);
+            var r = await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req);
+            if (r.IsSuccessStatusCode)
+            {
+                var dto = await r.Content.ReadFromJsonAsync<UnidadCampoConfigDto>();
+                if (dto is not null) _camposConfig[clave] = dto;
+            }
+        }
+        catch { }
+        finally { _cfgBusy = false; }
+    }
+
     // ===== Configurar: tipos de unidad propios (semilla = tipos base del enum) =====
     private string _nuevoTipoNombre = "";
     private string? _tipoMsg;
@@ -1264,6 +1375,7 @@ else
     {
         _cfgMsg = null; _cfgEditId = null; _cfgLabel = ""; _cfgTipo = TipoCampoTablero.Texto; _cfgOpciones = "";
         _tipoMsg = null; _nuevoTipoNombre = "";
+        _fldExpand = ""; _estadoMsg = null; _estadoOpcionesEdit = string.Join('\n', EstadosConfig());
         _configCamposAbierto = true;
     }
 
@@ -1385,6 +1497,8 @@ else
             _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
             try { _camposDef = await http.GetFromJsonAsync<List<UnidadCampoDefinicionDto>>("/api/mi-copropiedad/unidades-campos") ?? new(); } catch { _camposDef = new(); }
             try { _tiposCustom = await http.GetFromJsonAsync<List<TipoUnidadCustomDto>>("/api/mi-copropiedad/tipos-unidad") ?? new(); } catch { _tiposCustom = new(); }
+            try { _camposConfig = (await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config") ?? new()).ToDictionary(c => c.CampoClave); } catch { _camposConfig = new(); }
+            try { _estadosUso = await http.GetFromJsonAsync<List<UnidadEstadoUsoDto>>("/api/mi-copropiedad/unidades/estados-uso") ?? new(); } catch { _estadosUso = new(); }
             try
             {
                 var flat = await http.GetFromJsonAsync<List<UnidadCampoValorFlatDto>>("/api/mi-copropiedad/unidades-campos-valores") ?? new();

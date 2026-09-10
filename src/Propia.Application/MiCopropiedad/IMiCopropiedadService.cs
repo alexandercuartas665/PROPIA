@@ -46,6 +46,11 @@ public interface IMiCopropiedadService
     Task<IReadOnlyList<UnidadCampoValorFlatDto>> ListTodosCamposValoresAsync(CancellationToken ct);
     Task SetCampoValorUnidadAsync(Guid unidadId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct);
 
+    // Configuracion de campos FIJOS del sistema (alias + opciones de lista como Estado)
+    Task<IReadOnlyList<UnidadCampoConfigDto>> ListCamposConfigAsync(CancellationToken ct);
+    Task<UnidadCampoConfigDto> GuardarCampoConfigAsync(GuardarUnidadCampoConfigRequest req, CancellationToken ct);
+    Task<IReadOnlyList<UnidadEstadoUsoDto>> ContarUnidadesPorEstadoAsync(CancellationToken ct);
+
     // Documentos / anexos de una unidad
     Task<IReadOnlyList<UnidadDocumentoDto>> ListDocumentosUnidadAsync(Guid unidadId, CancellationToken ct);
     Task<UnidadDocumentoDto?> AgregarDocumentoUnidadAsync(Guid unidadId, string nombre, string url, long tamano, CancellationToken ct);

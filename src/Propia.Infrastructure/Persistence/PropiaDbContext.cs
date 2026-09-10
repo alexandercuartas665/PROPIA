@@ -72,6 +72,7 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<UnidadPersona> UnidadPersonas => Set<UnidadPersona>();
     public DbSet<UnidadCampoDefinicion> UnidadCamposDefiniciones => Set<UnidadCampoDefinicion>();
     public DbSet<UnidadCampoValor> UnidadCamposValores => Set<UnidadCampoValor>();
+    public DbSet<UnidadCampoConfig> UnidadCamposConfig => Set<UnidadCampoConfig>();
     public DbSet<UnidadDocumento> UnidadDocumentos => Set<UnidadDocumento>();
     public DbSet<UnidadPlaca> UnidadPlacas => Set<UnidadPlaca>();
     public DbSet<UnidadArriendo> UnidadArriendos => Set<UnidadArriendo>();
