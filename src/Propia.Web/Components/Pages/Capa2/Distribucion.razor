@@ -184,94 +184,120 @@
         <div class="cg-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
             <div class="cg-head">
                 <div>
-                    <div class="cg-title">Configurar unidades</div>
-                    <div class="cg-sub">Tipos de unidad y campos dinamicos que apareceran en la fila de alta y en la ficha.</div>
+                    <div class="cg-title">Configuracion avanzada de campos</div>
+                    <div class="cg-sub">Orden, visibilidad, tipo y comportamiento de cada campo de la unidad.</div>
                 </div>
                 <button class="cg-x" type="button" @onclick="() => _configCamposAbierto = false" aria-label="Cerrar">&times;</button>
             </div>
             <div class="cg-body">
-                @* --- Campos del sistema (fijos): alias + opciones de lista. No se eliminan (candado). --- *@
-                <div class="dst-cfg-form-title" style="margin-bottom:4px;">Campos de la unidad</div>
-                <div class="cg-sub" style="margin:2px 0 10px;">Renombra un campo (alias) y, si maneja una lista, configura sus opciones. Los campos del sistema no se pueden eliminar.</div>
-                <div class="dst-cfg-list">
-                    @foreach (var cs in CamposSistema)
+                @* Tabs: en esta entrega solo "Unidad" esta activo; el resto llega con su catalogo (Fase 3). *@
+                <div class="cga-tabs">
+                    <button type="button" class="cga-tab cga-tab--on">Unidad</button>
+                    @foreach (var t in new[] { "Personas", "Vehiculos", "Mascotas", "Terceros" })
                     {
-                        var css = cs;
-                        <div class="dst-fld">
-                            <div class="dst-fld-row">
-                                <svg class="dst-fld-lock" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="Campo del sistema (no se elimina)"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
-                                <span class="dst-fld-name">@cs.DefLabel</span>
-                                <input class="dst-nf-inp dst-fld-alias" placeholder="Alias (opcional)" value="@(AliasConfig(cs.Clave))" @onchange="@(e => GuardarAliasAsync(css.Clave, e.Value?.ToString()))" />
-                                @if (cs.EsLista)
-                                {
-                                    <button class="dst-btn-soft" type="button" @onclick='() => _fldExpand = _fldExpand == css.Clave ? "" : css.Clave'>@(_fldExpand == cs.Clave ? "Ocultar" : "Opciones")</button>
-                                }
-                                else { <span class="dst-fld-spacer"></span> }
-                            </div>
-                            @if (cs.EsLista && _fldExpand == cs.Clave)
-                            {
-                                <div class="dst-fld-opts">
-                                    @if (cs.Clave == "tipo")
-                                    {
-                                        <div class="cg-sub" style="margin-bottom:6px;">Los tipos base vienen por defecto (semilla). Agrega o quita los propios de tu copropiedad.</div>
-                                        <div class="dst-tipos-wrap">
-                                            @foreach (var t in TiposUnidadSel) { <span class="dst-tipo-chip dst-tipo-chip--base" title="Tipo base (no se puede quitar)">@Etiqueta(t)</span> }
-                                            @foreach (var tc in _tiposCustom) { var tcc = tc; <span class="dst-tipo-chip">@tc.Nombre<button type="button" class="dst-tipo-x" title="Quitar tipo" @onclick="() => EliminarTipoCustomAsync(tcc)" disabled="@_cfgBusy">&times;</button></span> }
-                                        </div>
-                                        <div class="dst-tipos-add">
-                                            <input class="dst-nf-inp" placeholder="Nuevo tipo (ej. Cajeros, Kiosco...)" @bind="_nuevoTipoNombre" @bind:event="oninput" @onkeyup="OnNuevoTipoKeyUp" />
-                                            <button class="propia-btn-brand" type="button" @onclick="AgregarTipoCustomAsync" disabled="@(_cfgBusy || string.IsNullOrWhiteSpace(_nuevoTipoNombre))">+ Agregar tipo</button>
-                                        </div>
-                                        @if (!string.IsNullOrEmpty(_tipoMsg)) { <div class="dst-cfg-msg">@_tipoMsg</div> }
-                                    }
-                                    else if (cs.Clave == "estado")
-                                    {
-                                        <label class="dst-nfc-lbl">Opciones (una por linea)</label>
-                                        <textarea class="dst-nf-inp" rows="4" @bind="_estadoOpcionesEdit" @bind:event="oninput" placeholder="Habitada&#10;Desocupada&#10;Arrendada"></textarea>
-                                        <div class="dst-tipos-add" style="margin-top:8px;">
-                                            <button class="dst-btn-soft" type="button" @onclick="RestaurarEstadoSemilla" disabled="@_cfgBusy">Restaurar semilla</button>
-                                            <button class="propia-btn-brand" type="button" @onclick="GuardarEstadoOpcionesAsync" disabled="@_cfgBusy">Guardar opciones</button>
-                                        </div>
-                                        @if (!string.IsNullOrEmpty(_estadoMsg)) { <div class="dst-cfg-msg">@_estadoMsg</div> }
-                                    }
-                                </div>
-                            }
-                        </div>
+                        <button type="button" class="cga-tab" disabled title="Proximamente">@t <span class="cga-tab-soon">pronto</span></button>
                     }
                 </div>
 
-                <div class="dst-cfg-sep"></div>
-                <div class="dst-cfg-form-title" style="margin-bottom:6px;">Campos personalizados</div>
-                @if (_camposDef.Count == 0)
+                @* Grilla estilo Airtable: Orden+Visibilidad | Label | Tipo de Dato | Config especifica. *@
+                <div class="cga-grid cga-head-row">
+                    <div></div>
+                    <div>Label</div>
+                    <div>Tipo de Dato</div>
+                    <div>Configuracion especifica</div>
+                    <div></div>
+                </div>
+
+                @* --- Campos FIJOS del sistema (candado; tipo bloqueado en esta fase) --- *@
+                @foreach (var cs in CamposSistema)
                 {
-                    <div class="dst-nfc-empty">Aun no hay campos personalizados. Crea el primero abajo.</div>
+                    var css = cs;
+                    var (tdato, fija) = TipoDato(cs.Clave);
+                    var col = Catalogo.FirstOrDefault(c => c.Key == cs.Clave);   // si es columna de la tabla, permite orden/visibilidad
+                    <div class="cga-grid cga-row">
+                        <div class="cga-ctrl">
+                            @if (col is not null)
+                            {
+                                <button type="button" class="cga-mini" title="Subir" @onclick="() => MoverColU(col.Key, -1)">&#9650;</button>
+                                <button type="button" class="cga-mini" title="Bajar" @onclick="() => MoverColU(col.Key, 1)">&#9660;</button>
+                                <button type="button" class="cga-eye @(EsVisible(col) ? "on" : "")" title="@(EsVisible(col) ? "Visible" : "Oculta")" @onclick="() => SetColVisible(col.Key, !EsVisible(col))" disabled="@(!col.Hideable)">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                                </button>
+                            }
+                            else { <span class="cga-nocol" title="No es columna de la tabla; se ve en la ficha">ficha</span> }
+                        </div>
+                        <div>
+                            <input class="cga-inp" placeholder="@cs.DefLabel" value="@(AliasConfig(cs.Clave))" @onchange="@(e => GuardarAliasAsync(css.Clave, e.Value?.ToString()))" />
+                        </div>
+                        <div class="cga-tipo">
+                            <span class="cga-tipo-badge">@tdato</span>
+                            <svg class="cga-lock" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="Tipo fijo del sistema"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                            @if (fija) { <span class="cga-fija">FIJA</span> }
+                        </div>
+                        <div class="cga-cfg">
+                            @if (cs.Clave is "tipo" or "estado")
+                            {
+                                <button class="dst-btn-soft" type="button" @onclick='() => _fldExpand = _fldExpand == css.Clave ? "" : css.Clave'>@(_fldExpand == cs.Clave ? "Ocultar lista" : "Gestionar lista")</button>
+                            }
+                            else { <span class="cga-cfg-hint">@ConfigHint(cs.Clave)</span> }
+                        </div>
+                        <div></div>
+                    </div>
+                    @if (cs.Clave == _fldExpand && cs.Clave is "tipo" or "estado")
+                    {
+                        <div class="cga-opts">
+                            @if (cs.Clave == "tipo")
+                            {
+                                <div class="cg-sub" style="margin-bottom:6px;">Los tipos base vienen por defecto (semilla). Agrega o quita los propios de tu copropiedad.</div>
+                                <div class="dst-tipos-wrap">
+                                    @foreach (var t in TiposUnidadSel) { <span class="dst-tipo-chip dst-tipo-chip--base" title="Tipo base (no se puede quitar)">@Etiqueta(t)</span> }
+                                    @foreach (var tc in _tiposCustom) { var tcc = tc; <span class="dst-tipo-chip">@tc.Nombre<button type="button" class="dst-tipo-x" title="Quitar tipo" @onclick="() => EliminarTipoCustomAsync(tcc)" disabled="@_cfgBusy">&times;</button></span> }
+                                </div>
+                                <div class="dst-tipos-add">
+                                    <input class="dst-nf-inp" placeholder="Nuevo tipo (ej. Cajeros, Kiosco...)" @bind="_nuevoTipoNombre" @bind:event="oninput" @onkeyup="OnNuevoTipoKeyUp" />
+                                    <button class="propia-btn-brand" type="button" @onclick="AgregarTipoCustomAsync" disabled="@(_cfgBusy || string.IsNullOrWhiteSpace(_nuevoTipoNombre))">+ Agregar tipo</button>
+                                </div>
+                                @if (!string.IsNullOrEmpty(_tipoMsg)) { <div class="dst-cfg-msg">@_tipoMsg</div> }
+                            }
+                            else
+                            {
+                                <label class="dst-nfc-lbl">Opciones (una por linea)</label>
+                                <textarea class="dst-nf-inp" rows="4" @bind="_estadoOpcionesEdit" @bind:event="oninput" placeholder="Habitada&#10;Desocupada&#10;Arrendada"></textarea>
+                                <div class="dst-tipos-add" style="margin-top:8px;">
+                                    <button class="dst-btn-soft" type="button" @onclick="RestaurarEstadoSemilla" disabled="@_cfgBusy">Restaurar semilla</button>
+                                    <button class="propia-btn-brand" type="button" @onclick="GuardarEstadoOpcionesAsync" disabled="@_cfgBusy">Guardar opciones</button>
+                                </div>
+                                @if (!string.IsNullOrEmpty(_estadoMsg)) { <div class="dst-cfg-msg">@_estadoMsg</div> }
+                            }
+                        </div>
+                    }
                 }
-                else
+
+                @* --- Campos PERSONALIZADos (dinamicos): tipo editable, se pueden eliminar --- *@
+                @foreach (var d in _camposDef)
                 {
-                    <div class="dst-cfg-list">
-                        @foreach (var d in _camposDef)
-                        {
-                            var dd = d;
-                            <div class="dst-cfg-item">
-                                <div class="dst-cfg-item-main">
-                                    <span class="dst-cfg-item-lbl">@d.Label</span>
-                                    <span class="dst-cfg-item-tipo">@TipoLabel(d.Tipo)</span>
-                                    @if (d.Tipo == TipoCampoTablero.Seleccion && !string.IsNullOrWhiteSpace(d.Opciones))
-                                    {
-                                        <span class="dst-cfg-item-op">@string.Join(", ", OpcionesDe(d))</span>
-                                    }
-                                </div>
-                                <div class="dst-cfg-item-act">
-                                    <button class="dst-btn-soft" type="button" @onclick="() => EditarCampoDef(dd)" disabled="@_cfgBusy">Editar</button>
-                                    <button class="dst-btn-soft" type="button" @onclick="() => EliminarCampoDefAsync(dd)" disabled="@_cfgBusy">Eliminar</button>
-                                </div>
-                            </div>
-                        }
+                    var dd = d;
+                    <div class="cga-grid cga-row">
+                        <div class="cga-ctrl"><span class="cga-nocol" title="Se ve en la ficha y como columna">campo</span></div>
+                        <div><span class="cga-custom-lbl">@d.Label</span></div>
+                        <div class="cga-tipo"><span class="cga-tipo-badge cga-tipo-badge--edit">@TipoLabel(d.Tipo)</span></div>
+                        <div class="cga-cfg">
+                            @if (d.Tipo == TipoCampoTablero.Seleccion && !string.IsNullOrWhiteSpace(d.Opciones))
+                            {
+                                <span class="cga-cfg-hint">@string.Join(", ", OpcionesDe(d))</span>
+                            }
+                        </div>
+                        <div class="cga-row-act">
+                            <button class="dst-btn-soft" type="button" @onclick="() => EditarCampoDef(dd)" disabled="@_cfgBusy">Editar</button>
+                            <button class="dst-btn-soft" type="button" @onclick="() => EliminarCampoDefAsync(dd)" disabled="@_cfgBusy">Eliminar</button>
+                        </div>
                     </div>
                 }
 
+                <div class="dst-cfg-sep"></div>
+
                 <div class="dst-cfg-form">
-                    <div class="dst-cfg-form-title">@(_cfgEditId is null ? "Nuevo campo" : "Editar campo")</div>
+                    <div class="dst-cfg-form-title">@(_cfgEditId is null ? "Nuevo campo personalizado" : "Editar campo")</div>
                     <div class="dst-cfg-form-grid">
                         <div>
                             <label class="dst-nfc-lbl">Nombre</label>
@@ -1038,6 +1064,46 @@ else
         (_colOrderU[idx], _colOrderU[ni]) = (_colOrderU[ni], _colOrderU[idx]);
         await GuardarColsAsync();
     }
+    // Overload por clave (para la grilla estilo Airtable): ubica el indice en el orden actual.
+    private async Task MoverColU(string key, int dir)
+    {
+        var idx = _colOrderU.IndexOf(key);
+        if (idx < 0) return;
+        await MoverColU(idx, dir);
+    }
+
+    // Tipo de dato mostrado por campo fijo (bloqueado en esta fase) + si es FIJA (no cambiable).
+    private static (string tipo, bool fija) TipoDato(string clave) => clave switch
+    {
+        "num" => ("Identificador Unico", true),
+        "tipo" => ("Lista Desplegable", false),
+        "estado" => ("Lista Desplegable", false),
+        "coef" => ("Numero Decimal", false),
+        "area" => ("Numero Decimal", false),
+        "piso" => ("Numero", false),
+        "habitaciones" => ("Numero", false),
+        "banos" => ("Numero", false),
+        "parqueaderos" => ("Numero", false),
+        "matricula" => ("Texto", false),
+        "refpago" => ("Texto", false),
+        "pagaadmin" => ("Si / No", false),
+        "cuota" => ("Moneda", false),
+        "observaciones" => ("Texto Largo", false),
+        _ => ("Texto", false)
+    };
+
+    // Texto de "configuracion especifica" para los campos que no son lista (informativo en esta fase).
+    private static string ConfigHint(string clave) => clave switch
+    {
+        "coef" or "area" => "Decimal (.)",
+        "piso" or "habitaciones" or "banos" or "parqueaderos" => "Entero",
+        "cuota" => "Moneda COP",
+        "matricula" or "refpago" => "Texto",
+        "observaciones" => "Texto largo",
+        "pagaadmin" => "Si / No",
+        "num" => "",
+        _ => ""
+    };
     private async Task SetColLabel(string key, string? label)
     {
         var def = Catalogo.First(c => c.Key == key).DefLabel;
@@ -2000,4 +2066,34 @@ else
     .dst-tipo-x:hover { color: var(--propia-danger); }
     .dst-tipos-add { display: flex; gap: 8px; align-items: center; }
     .dst-tipos-add .dst-nf-inp { flex: 1; }
+
+    /* === Configuracion avanzada de campos (grilla estilo Airtable) === */
+    .cga-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--propia-border-divider); margin-bottom: 12px; }
+    .cga-tab { position: relative; padding: 8px 14px; border: 0; border-bottom: 2px solid transparent; background: transparent; font-size: 13px; font-weight: 700; color: var(--propia-text-muted); cursor: pointer; font-family: inherit; }
+    .cga-tab--on { color: var(--propia-brand); border-bottom-color: var(--propia-brand); }
+    .cga-tab:disabled { color: var(--propia-text-faint); cursor: not-allowed; }
+    .cga-tab-soon { font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .3px; background: var(--propia-bg-app); color: var(--propia-text-faint); border-radius: 6px; padding: 1px 5px; margin-left: 4px; vertical-align: middle; }
+    .cga-grid { display: grid; grid-template-columns: 118px minmax(150px, 1.3fr) minmax(150px, 1fr) minmax(160px, 1.4fr) 120px; gap: 10px; align-items: center; }
+    .cga-head-row { padding: 6px 10px; font-size: 10.5px; font-weight: 800; letter-spacing: .4px; color: var(--propia-text-faint); text-transform: uppercase; border-bottom: 1px solid var(--propia-border-divider); }
+    .cga-row { padding: 8px 10px; border-bottom: 1px solid var(--propia-border-divider); }
+    .cga-ctrl { display: flex; align-items: center; gap: 3px; }
+    .cga-mini { width: 20px; height: 20px; border: 1px solid var(--propia-border-card); border-radius: 6px; background: var(--propia-bg-card); color: var(--propia-text-faint); font-size: 9px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .cga-mini:hover { color: var(--propia-brand); border-color: var(--propia-brand); }
+    .cga-eye { width: 26px; height: 22px; border: 1px solid var(--propia-border-card); border-radius: 6px; background: var(--propia-bg-card); color: var(--propia-text-faint); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .cga-eye.on { color: var(--propia-brand); border-color: var(--propia-brand-soft); background: var(--propia-brand-soft); }
+    .cga-eye:disabled { opacity: .45; cursor: default; }
+    .cga-nocol { font-size: 10px; font-weight: 700; color: var(--propia-text-faint); background: var(--propia-bg-app); border-radius: 6px; padding: 2px 7px; }
+    .cga-inp { width: 100%; box-sizing: border-box; border: 1px dashed var(--propia-border-input); border-radius: 7px; padding: 6px 9px; font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-bg-card); outline: none; font-family: inherit; }
+    .cga-inp:focus { border-style: solid; border-color: var(--propia-brand); box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
+    .cga-custom-lbl { font-size: 12.5px; font-weight: 700; color: var(--propia-text-body); }
+    .cga-tipo { display: flex; align-items: center; gap: 6px; }
+    .cga-tipo-badge { font-size: 11.5px; font-weight: 700; color: var(--propia-text-secondary); background: var(--propia-bg-app); border: 1px solid var(--propia-border-card); border-radius: 7px; padding: 4px 9px; white-space: nowrap; }
+    .cga-tipo-badge--edit { color: var(--propia-brand); background: var(--propia-brand-soft); border-color: var(--propia-brand-soft); }
+    .cga-lock { color: var(--propia-text-faint); flex-shrink: 0; }
+    .cga-fija { font-size: 9px; font-weight: 800; letter-spacing: .3px; color: var(--propia-warn, #B45309); background: var(--propia-warn-soft, #FEF3C7); border-radius: 5px; padding: 1px 5px; }
+    .cga-cfg { min-width: 0; }
+    .cga-cfg-hint { font-size: 11.5px; color: var(--propia-text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; max-width: 100%; }
+    .cga-row-act { display: flex; gap: 4px; justify-content: flex-end; }
+    .cga-opts { padding: 10px 12px; margin: 0 0 4px; background: var(--propia-bg-app); border: 1px solid var(--propia-border-divider); border-radius: 9px; }
+    @@media (max-width: 900px) { .cg-body { overflow-x: auto; } .cga-grid { min-width: 720px; } }
 </style>
