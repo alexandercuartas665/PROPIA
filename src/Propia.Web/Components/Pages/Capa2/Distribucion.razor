@@ -200,6 +200,16 @@
                     }
                 </div>
 
+                @* Un guardado fallido no puede quedarse mudo: sin esto, el ojo y el alias parecen
+                   "no hacer nada" y el usuario cree que el boton esta roto. *@
+                @if (!string.IsNullOrEmpty(_cfgErrMsg))
+                {
+                    <div class="cga-error">
+                        @_cfgErrMsg
+                        <button type="button" class="dst-btn-soft" style="margin-left:8px;" @onclick="() => _cfgErrMsg = null">Cerrar</button>
+                    </div>
+                }
+
                 @if (_cfgTab != "unidad")
                 {
                     @* Entidades vinculadas: catalogo propio de la copropiedad (sin campos del sistema). *@
@@ -1969,6 +1979,8 @@ else
     }
 
     // Guarda la fila de configuracion COMPLETA del campo (alias, lista, tipo, formato, visibilidad, orden).
+    // Si el guardado falla NO puede quedarse mudo: sin aviso, el ojo o el alias parecen "no hacer nada"
+    // y el usuario cree que el boton esta roto (paso en un entorno donde faltaban las migraciones).
     private async Task GuardarCampoConfigAsync(GuardarUnidadCampoConfigRequest req)
     {
         _cfgBusy = true;
@@ -1979,11 +1991,20 @@ else
             {
                 var dto = await r.Content.ReadFromJsonAsync<UnidadCampoConfigDto>();
                 if (dto is not null) _camposConfig[req.CampoClave] = dto;
+                _cfgErrMsg = null;
+            }
+            else
+            {
+                _cfgErrMsg = $"No se pudo guardar '{req.CampoClave}' ({(int)r.StatusCode}). "
+                           + await MensajeError(r, "Reintenta; si sigue igual, avisa a soporte.");
             }
         }
-        catch { }
+        catch (Exception ex) { _cfgErrMsg = $"No se pudo guardar '{req.CampoClave}': {ex.Message}"; }
         finally { _cfgBusy = false; }
     }
+
+    /// <summary>Ultimo error al guardar configuracion. Se muestra arriba de la grilla del panel.</summary>
+    private string? _cfgErrMsg;
 
     // ===== Configurar: tipos de unidad propios (semilla = tipos base del enum) =====
     private string _nuevoTipoNombre = "";
@@ -2728,6 +2749,8 @@ else
     .cga-head-row { padding: 6px 10px; font-size: 10.5px; font-weight: 800; letter-spacing: .4px; color: var(--propia-text-faint); text-transform: uppercase; border-bottom: 1px solid var(--propia-border-divider); }
     .cga-row { padding: 8px 10px; border-bottom: 1px solid var(--propia-border-divider); }
     .cga-row--drag { opacity: .45; background: var(--propia-brand-soft); }
+    /* Aviso de guardado fallido: sin esto el panel se queda mudo y parece que el boton no responde. */
+    .cga-error { display: flex; align-items: center; padding: 10px 12px; margin: 0 0 10px; font-size: 12.5px; color: var(--propia-danger); background: var(--propia-bg-app); border: 1px solid var(--propia-danger); border-radius: 9px; }
     .cga-ctrl { display: flex; align-items: center; gap: 3px; }
     .cga-grip { display: inline-flex; align-items: center; justify-content: center; width: 16px; color: var(--propia-text-faint); cursor: grab; flex-shrink: 0; }
     .cga-grip:hover { color: var(--propia-brand); }
