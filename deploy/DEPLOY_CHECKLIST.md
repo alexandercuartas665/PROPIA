@@ -1,7 +1,22 @@
 # PROPIA - Checklist de deploy
 
-> Actualizado 2026-09-09. Version visible: **0.0.81**
+> Actualizado 2026-09-10. Version visible: **0.0.83**
 > (`src/Propia.Web/Propia.Web.csproj` `<Version>`). Bumpear en cada deploy.
+>
+> **Nuevo en 0.0.83 (Carga de unidades: anexos idempotentes):**
+> - En la recarga de la plantilla, los vinculos de anexo de la carga previa hacian fallar cada anexo con
+>   "La unidad X ya esta asociada a otra unidad" (las unidades hacen upsert y "eliminar y cargar de nuevo"
+>   no borraba los vinculos). Ahora la 2a pasada de anexos es idempotente: mismo principal -> se omite;
+>   distinto principal con "eliminar y cargar de nuevo" -> re-apunta; distinto sin reemplazar -> reporta.
+>   **Solo codigo (UnidadesCargaImportService), sin migracion.**
+>
+> **Nuevo en 0.0.82 (Configurar unidades = administrador de campos):**
+> - El boton "Configurar" lista TODOS los campos de la unidad: los del sistema con candado (no se
+>   eliminan) + alias por campo (se aplica en encabezados de tabla y ficha) + opciones de lista para
+>   Tipo y Estado (con "Restaurar semilla"); al quitar una opcion de Estado en uso se advierte con el
+>   conteo. Campos personalizados se siguen creando/editando/eliminando.
+> - **1 migracion nueva**: `AddUnidadCampoConfig` (tabla `unidad_campos_config` con RLS FORCE + policy +
+>   GRANT) -> ver seccion 3.
 >
 > **Nuevo en 0.0.81 (Unidades: tipos configurables):**
 > - Nuevo tipo base **"Cajeros"** (enum `TipoUnidad`).
@@ -189,7 +204,8 @@ dotnet ef database update --project ../Propia.Infrastructure --startup-project .
 
 Ultimas migraciones del repo (verificar que esten aplicadas). `ef database update` aplica SOLO las que
 falten en ese entorno, comparando contra `__EFMigrationsHistory`:
-- `20260909222434_AddUnidadTipoCustom`  (Unidades: `unidades` +`tipo_custom_id` uuid null; tipo de unidad propio del tenant)  <-- NUEVA (0.0.81)
+- `20260910005638_AddUnidadCampoConfig`  (Unidades: tabla nueva `unidad_campos_config` -alias + opciones de campos fijos como Estado-, con RLS FORCE + policy tenant + GRANT propia_app)  <-- NUEVA (0.0.82)
+- `20260909222434_AddUnidadTipoCustom`  (Unidades: `unidades_privadas` +`tipo_custom_id` uuid null; tipo de unidad propio del tenant)  <-- NUEVA (0.0.81)
 - `20260909203008_AddProgramacionProveedorNombre`  (Programacion: `programacion_tareas` +`proveedor_nombre` text null; snapshot del nombre del tercero)  <-- NUEVA (0.0.78)
 - `20260909195925_AddProgramacionProveedorContrato`  (Programacion: `programacion_tareas` +`proveedor_id` uuid null, +`contrato_id` uuid null; tercero + contrato opcionales)  <-- NUEVA (0.0.77)
 - `20260909013856_AddEquipoZonaCampoDefiniciones`  (Zonas/Equipos: 4 tablas nuevas `equipo_campos_definiciones`, `equipo_campos_valores`, `zona_campos_definiciones`, `zona_campos_valores`, con RLS FORCE + policy tenant + GRANT propia_app; campos dinamicos tipados)  <-- NUEVA (0.0.71)
@@ -218,10 +234,15 @@ falten en ese entorno, comparando contra `__EFMigrationsHistory`:
 
 ## 4. Post-deploy (verificacion)
 
-- [ ] Login OK; el footer muestra `v0.0.81`.
-- [ ] **Unidades > tipos:** el dropdown de tipo de unidad incluye "Cajeros". En "Configurar" hay una seccion
-      "Tipos de unidad" con los base fijos (semilla) + agregar/quitar tipos propios; un tipo propio aparece
-      en el selector (grupo "Tipos propios"), se puede asignar a una unidad y se muestra su nombre.
+- [ ] Login OK; el footer muestra `v0.0.83`.
+- [ ] **Unidades > Configurar (campos):** lista TODOS los campos con candado en los del sistema; un alias
+      (ej. Coeficiente -> "Coef. Prop.") cambia el encabezado de la tabla y la ficha; Tipo y Estado tienen
+      "Opciones" (Tipo: base + propios con Cajeros; Estado: editar + "Restaurar semilla"); quitar un Estado
+      en uso advierte con el conteo. Un tipo propio se puede asignar a una unidad y se muestra su nombre.
+- [ ] **Carga de unidades (recarga):** volver a cargar la MISMA plantilla (con o sin "eliminar y cargar de
+      nuevo") NO debe reportar "La unidad X ya esta asociada a otra unidad" para anexos ya vinculados al
+      mismo principal (se omiten). Con "eliminar y cargar de nuevo" un anexo con principal distinto se
+      re-apunta.
 - [ ] **Mantenimiento > Programacion:** `/mantenimiento` abre en "Programacion" (tabla) y solo hay 2 tabs:
       Programacion y Calendario (sin Intervenciones ni Planes preventivos; sin botones de header). En la
       fila de alta INLINE: elegir Tipo (Equipo/Zona) filtra el Activo; capturar Titulo; el Tercero busca en
