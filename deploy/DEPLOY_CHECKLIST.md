@@ -1,10 +1,29 @@
 # PROPIA - Checklist de deploy
 
-> Actualizado 2026-09-10. Version visible: **0.0.90**
+> Actualizado 2026-09-10. Version visible: **0.0.91**
 > (`src/Propia.Web/Propia.Web.csproj` `<Version>`). Bumpear en cada deploy.
 >
 > **ATENCION en esta tanda: 7 migraciones nuevas, una de ellas de SEGURIDAD (RLS).**
 > Ver seccion 3. Todas aditivas; ninguna borra datos.
+>
+> **PERMISOS: quien puede usar el gestor de campos (leer antes de reportar un bug).**
+> Las escrituras de "Configurar" exigen `MI_COPROPIEDAD / Editar`, con bypass solo si el rol es
+> EXACTAMENTE `Administrador`. La matriz `rol_permisos` esta sembrada **escasa**: solo Administrador
+> tiene los 6 permisos de MI_COPROPIEDAD; Consejero y Propietario tienen 1 (ver); el resto (Asistente,
+> Contador, Coordinador, Operario, Residente, Vigilante, Inmobiliaria, Revisor Fiscal) **ninguno**.
+> Es decir, **un 403 al activar un campo es lo esperado para casi cualquier rol**, no una falla.
+> Caso traicionero: un Administrador de la copropiedad A que **cambia a la copropiedad B sin tener
+> vinculo alli** pierde el bypass (`GetRolActorAsync` devuelve null) y todo escribir da 403, aunque la
+> cabecera le siga mostrando "Admin". Comprobar con:
+> `select ut.rol, ut.estado, t.nombre from usuarios_tenant ut join tenants t on t.id=ut.tenant_id join personas p on p.id=ut.persona_id where lower(p.email)='EMAIL';`
+> **Decision pendiente:** si se espera que un Coordinador o Asistente configure campos, hay que
+> habilitarles `MI_COPROPIEDAD / Editar` en la matriz por defecto. Hoy no pueden.
+>
+> **Nuevo en 0.0.91 (el 403 de Configurar ya dice por que y que hacer):**
+> - El aviso mostraba "forbidden" a secas. El backend ya distingue la causa en `reason`
+>   (`permiso_insuficiente`, `rol_insuficiente`, `sin_persona`) y no se estaba leyendo. Ahora el mensaje
+>   es accionable en cada caso, y el 500 sugiere revisar migraciones sin aplicar.
+> - **Solo codigo, sin migracion.**
 >
 > **Nuevo en 0.0.90 (un guardado fallido de configuracion ya no se queda mudo):**
 > - `GuardarCampoConfigAsync` se tragaba el error (catch vacio + no-2xx sin aviso). Con eso, un entorno
@@ -325,9 +344,11 @@ falten en ese entorno, comparando contra `__EFMigrationsHistory`:
 
 ## 4. Post-deploy (verificacion)
 
-- [ ] Login OK; el footer muestra `v0.0.90`.
-- [ ] **Si algo de "Configurar" no responde:** el panel debe mostrar un aviso rojo con el codigo HTTP.
-      Si aparece un 500 con "column ... does not exist", faltan migraciones -> volver a la seccion 3.
+- [ ] Login OK; el footer muestra `v0.0.91`.
+- [ ] **Si algo de "Configurar" no responde:** el panel muestra un aviso rojo que dice la causa.
+      Un **500** con "column ... does not exist" = faltan migraciones (seccion 3). Un **403** = permisos:
+      el mensaje distingue si es el rol, el permiso, o que el usuario no esta vinculado a esa
+      copropiedad. Probar con un usuario con rol EXACTAMENTE `Administrador` en esa copropiedad.
 - [ ] **Modulos contributivos:** en Unidades > Configurar aparecen "Modulo Contributivo 1..5" debajo de
       Coeficiente y **ocultos**; al activar uno sale como columna y guarda decimales (ej. 12.3456).
 - [ ] **Plantilla filtrada:** con un modulo activo, la plantilla trae SOLO ese (no los otros 4); ocultar
