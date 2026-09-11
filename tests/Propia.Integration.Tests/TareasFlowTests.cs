@@ -242,6 +242,57 @@ public class TareasFlowTests : IAsyncLifetime
         await CleanTenant(tenantId);
     }
 
+    /// <summary>
+    /// T-03b. Ningun camino de creacion puede dejar una tarea "nacida cerrada": en una columna terminal
+    /// pero con Cerrada = false, sin motivo y sin fecha de cierre. Esa tarea se ve en el tablero activo
+    /// como si estuviera hecha y no aparece nunca en la pestana "Cerrados".
+    /// </summary>
+    [Fact]
+    public async Task Ningun_camino_de_creacion_deja_una_tarea_nacida_cerrada()
+    {
+        var tenantId = await SeedTenantAsync("Tareas Nace Cerrada");
+        var (svc, db, _) = Build(tenantId);
+        var estados = await svc.ListarEstadosAsync(CancellationToken.None);
+        var completada = estados.First(e => e.EsTerminal && e.Nombre == "Completada");
+        var motivoId = await CrearMotivoTareasAsync(db);
+
+        // 1) Crear directamente en un estado terminal se rechaza.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.CrearTareaAsync(
+            new CrearTareaRequest("Nace cerrada", null, PrioridadTarea.Normal, completada.Id,
+                null, null, null, null, null),
+            CancellationToken.None));
+
+        // 2) Duplicar una tarea CERRADA da una copia ABIERTA (antes heredaba el estado terminal).
+        var t = await svc.CrearTareaAsync(new CrearTareaRequest(
+            "Para cerrar", null, PrioridadTarea.Normal, null, null, null, null, null, null),
+            CancellationToken.None);
+        await svc.CambiarEstadoAsync(t.Id, new CambiarEstadoRequest(completada.Id, null, motivoId),
+            CancellationToken.None);
+
+        var duplicada = await svc.DuplicarTareaAsync(t.Id, CancellationToken.None);
+        Assert.NotNull(duplicada);
+        var duplicadaDb = await db.Tareas.AsNoTracking().FirstAsync(x => x.Id == duplicada!.Id);
+        Assert.False(duplicadaDb.Cerrada);
+        Assert.NotEqual(completada.Id, duplicadaDb.EstadoId);
+
+        // 3) Copiar hereda igual -> tambien arranca abierta...
+        var copias = await svc.CopiarTareaAsync(t.Id, new CopiarTareaRequest(), CancellationToken.None);
+        var copiaDb = await db.Tareas.AsNoTracking().FirstAsync(x => x.Id == copias[0].Id);
+        Assert.False(copiaDb.Cerrada);
+        Assert.NotEqual(completada.Id, copiaDb.EstadoId);
+
+        // ...pero ELEGIR el estado terminal en la copia se rechaza, igual que al crear.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.CopiarTareaAsync(
+            t.Id, new CopiarTareaRequest(EstadoId: completada.Id), CancellationToken.None));
+
+        // Y no quedo ninguna tarea en estado terminal sin cerrar.
+        var fantasmas = await db.Tareas.AsNoTracking()
+            .CountAsync(x => x.EstadoId == completada.Id && !x.Cerrada);
+        Assert.Equal(0, fantasmas);
+
+        await CleanTenant(tenantId);
+    }
+
     // ===================== Bulk actions (Fase 2) =====================
 
     /// <summary>

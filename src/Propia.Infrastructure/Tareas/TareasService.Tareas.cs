@@ -298,14 +298,12 @@ public partial class TareasService
             estadoId = req.EstadoId.Value;
             if (!await _db.TareasEstados.AnyAsync(e => e.Id == estadoId, ct))
                 throw new InvalidOperationException("Estado invalido.");
+            await RechazarEstadoTerminalAlCrearAsync(estadoId, ct);
         }
         else
         {
-            // Primera columna del tablero (orden), o la base Pendiente como respaldo.
-            estadoId = await _db.TareasEstados.Where(e => e.TableroId == tableroId)
-                .OrderBy(e => e.Orden).Select(e => e.Id).FirstOrDefaultAsync(ct);
-            if (estadoId == Guid.Empty)
-                estadoId = await _db.TareasEstados.Where(e => e.Nombre == EstadoTareaBase.Pendiente).Select(e => e.Id).FirstAsync(ct);
+            // Primera columna ABIERTA del tablero, o la base Pendiente como respaldo.
+            estadoId = await PrimerEstadoNoTerminalAsync(tableroId, ct);
         }
 
         // Responsables: el primero es el asignado principal; el resto son colaboradores.
@@ -583,6 +581,12 @@ public partial class TareasService
         var src = await _db.Tareas.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && !x.Eliminada, ct);
         if (src is null) return null;
         var numero = await GenerarNumeroAsync(ct);
+        // T-03b: duplicar una tarea CERRADA heredaba su estado terminal tal cual, con Cerrada = false:
+        // nacia una copia "hecha" que nadie cerro nunca. La copia es trabajo nuevo, asi que arranca en
+        // la primera columna abierta.
+        var estadoCopia = await _db.TareasEstados.AnyAsync(e => e.Id == src.EstadoId && e.EsTerminal, ct)
+            ? await PrimerEstadoNoTerminalAsync(src.TableroId, ct)
+            : src.EstadoId;
         var nueva = new Tarea
         {
             NumeroTarea = numero,
@@ -590,7 +594,7 @@ public partial class TareasService
             Titulo = (src.Titulo + " (copia)").Trim(),
             Descripcion = src.Descripcion,
             Prioridad = src.Prioridad,
-            EstadoId = src.EstadoId,
+            EstadoId = estadoCopia,
             AsignadoPersonaId = src.AsignadoPersonaId,
             FechaInicio = src.FechaInicio,
             FechaVencimiento = src.FechaVencimiento,
@@ -632,6 +636,12 @@ public partial class TareasService
         var estadoId = req.EstadoId ?? src.EstadoId;
         if (req.EstadoId is Guid es && es != src.EstadoId && !await _db.TareasEstados.AnyAsync(e => e.Id == es, ct))
             estadoId = src.EstadoId;
+        // T-03b: si el usuario ELIGE un estado terminal para las copias se rechaza (crear algo ya cerrado
+        // no es un caso del producto). Si solo lo HEREDA de una tarea cerrada, la copia arranca abierta.
+        if (req.EstadoId is Guid elegido && elegido == estadoId)
+            await RechazarEstadoTerminalAlCrearAsync(elegido, ct);
+        if (await _db.TareasEstados.AnyAsync(e => e.Id == estadoId && e.EsTerminal, ct))
+            estadoId = await PrimerEstadoNoTerminalAsync(src.TableroId, ct);
         var baseTitulo = string.IsNullOrWhiteSpace(req.Titulo) ? (src.Titulo + " (copia)").Trim() : req.Titulo.Trim();
 
         // Datos a conservar (leidos una sola vez).
@@ -755,6 +765,29 @@ public partial class TareasService
         await _db.SaveChangesAsync(ct);
         await RecomputarProgresoAncestrosAsync(t.PadreId, ct);
         return true;
+    }
+
+    /// <summary>T-03b: una tarea no puede NACER cerrada. Ningun camino de creacion marca Cerrada,
+    /// CerradaAt ni MotivoCierreId, asi que dejar pasar un estado terminal deja la tarea en una columna
+    /// terminal con Cerrada = false: se ve en el tablero activo como si estuviera hecha y NO aparece en
+    /// la pestana "Cerrados". Cerrar es un acto aparte y con motivo.</summary>
+    private async Task RechazarEstadoTerminalAlCrearAsync(Guid estadoId, CancellationToken ct)
+    {
+        if (await _db.TareasEstados.AnyAsync(e => e.Id == estadoId && e.EsTerminal, ct))
+            throw new InvalidOperationException(
+                "No se puede crear una tarea ya cerrada. Creala y despues cierrala con su motivo de cierre.");
+    }
+
+    /// <summary>Primera columna NO terminal del tablero (respaldo: la base Pendiente). Se usa al duplicar
+    /// o copiar una tarea cerrada: la copia es trabajo nuevo, asi que empieza abierta.</summary>
+    private async Task<Guid> PrimerEstadoNoTerminalAsync(Guid? tableroId, CancellationToken ct)
+    {
+        var id = await _db.TareasEstados.Where(e => e.TableroId == tableroId && !e.EsTerminal)
+            .OrderBy(e => e.Orden).Select(e => e.Id).FirstOrDefaultAsync(ct);
+        if (id == Guid.Empty)
+            id = await _db.TareasEstados.Where(e => e.Nombre == EstadoTareaBase.Pendiente)
+                .Select(e => e.Id).FirstAsync(ct);
+        return id;
     }
 
     /// <summary>T-03/T-04: valida el motivo de cierre UNA sola vez. Devuelve null cuando el estado no
