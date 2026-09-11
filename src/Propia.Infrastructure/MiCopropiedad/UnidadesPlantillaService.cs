@@ -53,11 +53,11 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         // el valor. Emitir columnas que nadie puede guardar solo repetiria el descarte silencioso.
         // Visibilidad por copropiedad de los campos de la unidad: la hoja UNIDADES PRIVADAS solo
         // emite las columnas ACTIVAS (los campos ocultos en la tabla de unidades no se piden).
-        var visibleUnidad = await VisibilidadCamposUnidadAsync(ct);
+        var cfgUnidad = await ConfigCamposUnidadAsync(ct);
         var defsUnidad = await _db.UnidadCamposDefiniciones.AsNoTracking()
             .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => new { c.Id, c.Label }).ToListAsync(ct);
         // Los campos dinamicos guardan su visibilidad con la clave "cd:{id}" de la definicion.
-        var camposUnidad = defsUnidad.Where(d => visibleUnidad("cd:" + d.Id)).Select(d => d.Label).ToList();
+        var camposUnidad = defsUnidad.Where(d => cfgUnidad.Visible("cd:" + d.Id)).Select(d => d.Label).ToList();
         var camposPersona = await _db.PersonaCamposDefiniciones.AsNoTracking()
             .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => c.Label).ToListAsync(ct);
         var camposVehiculo = await _db.VehiculoCamposDefiniciones.AsNoTracking()
@@ -80,7 +80,7 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         var coproTercerosList = InlineList(new[] { TodasLasCopropiedades }.Concat(copros.Select(c => c.Nombre)));
 
         // ---- Hojas de datos ----
-        HojaUnidades(wb, coproList, camposUnidad, visibleUnidad);
+        HojaUnidades(wb, coproList, camposUnidad, cfgUnidad);
         HojaPersonas(wb, coproList, rolesList, camposPersona);
         HojaVehiculos(wb, coproList, camposVehiculo);
         HojaMascotas(wb, coproList, camposMascota);
@@ -114,26 +114,22 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     // para el importador y PRINCIPAL es la que vincula un anexo con su unidad principal. Sin ellas
     // la plantilla quedaria inservible, asi que no dependen de la configuracion.
     private static void HojaUnidades(XLWorkbook wb, string? coproRange, List<string> camposUnidad,
-        Func<string, bool> visible)
+        ConfigCamposUnidad cfg)
     {
-        var catalogo = new List<(string? Clave, string H, string Ayuda)>
+        // Las columnas salen del catalogo UNICO de campos de sistema (UnidadCamposSistema), el mismo
+        // que alimenta la tabla de unidades. Antes esta lista estaba duplicada aqui y se quedo corta:
+        // area, estado, piso, habitaciones, banos, parqueaderos, paga admin, cuota y observaciones se
+        // podian activar en la copropiedad pero NO salian en la plantilla ni se podian importar.
+        var cols = new List<(string H, string Ayuda)> { ("COPROPIEDAD", "Elige de la lista") };
+        foreach (var campo in UnidadCamposSistema.Todos)
         {
-            (null, "COPROPIEDAD", "Elige de la lista"),
-            (null, "UNIDAD PRIVADA", "Codigo de la unidad con guion TORRE-NUMERO. Ej: Apartamento A1-101 (A1=Torre, 101=Apto); Parqueadero P1-15; Deposito D1-02"),
-            ("tipo", "TIPO", "Elige de la lista"),
-            ("agrupacion", "AGRUPACION", "1=Individual, 2=Principal, 3=Anexo"),
-            (null, "PRINCIPAL", "Si es Anexo (3): codigo de la unidad principal"),
-            ("matricula", "MATRICULA", "Matricula inmobiliaria"),
-            ("coef", "COEFICIENTE", "Porcentaje. Max 5 decimales (1,25)"),
-            ("modcontrib1", "MODULO CONTRIBUTIVO 1", "Porcentaje. Max 5 decimales"),
-            ("modcontrib2", "MODULO CONTRIBUTIVO 2", "Porcentaje. Max 5 decimales"),
-            ("modcontrib3", "MODULO CONTRIBUTIVO 3", "Porcentaje. Max 5 decimales"),
-            ("modcontrib4", "MODULO CONTRIBUTIVO 4", "Porcentaje. Max 5 decimales"),
-            ("modcontrib5", "MODULO CONTRIBUTIVO 5", "Porcentaje. Max 5 decimales"),
-            ("refpago", "REF PAGO", "Referencia de pago (alfanumerica)"),
-        };
-        var cols = catalogo.Where(c => c.Clave is null || visible(c.Clave))
-            .Select(c => (c.H, c.Ayuda)).ToList();
+            if (campo.SiempreEnPlantilla || cfg.Visible(campo.Clave))
+                cols.Add((campo.Encabezado, AyudaDe(campo, cfg)));
+            // PRINCIPAL va pegada a AGRUPACION y es estructural: es la que vincula un anexo con su
+            // unidad principal, asi que se emite este oculta o no la agrupacion.
+            if (campo.Clave == "agrupacion")
+                cols.Add(("PRINCIPAL", "Si es Anexo (3): codigo de la unidad principal"));
+        }
         AgregarColumnasDinamicas(cols, camposUnidad);   // ya vienen filtrados por visibilidad
 
         var ws = Encabezado(wb, "UNIDADES PRIVADAS", cols);
@@ -142,10 +138,24 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         Dropdown(ws, Indice(cols, "COPROPIEDAD"), coproRange);
         DropdownInline(ws, Indice(cols, "TIPO"), EnumCsv<TipoUnidad>());   // todos los tipos de unidad (auto desde el enum)
         DropdownInline(ws, Indice(cols, "AGRUPACION"), "1,2,3");
+        // ESTADO: las opciones que tenga configuradas la copropiedad (las ocultas no se ofrecen).
+        Dropdown(ws, Indice(cols, "ESTADO"), InlineList(cfg.OpcionesEstado()));
+        DropdownInline(ws, Indice(cols, "PAGA ADMIN"), "Si,No");
         Ejemplo(ws, cols,
             ("COPROPIEDAD", EjemploCopro), ("UNIDAD PRIVADA", "A1-203"),
             ("TIPO", "Apartamento"), ("AGRUPACION", "2"), ("COEFICIENTE", "1.25"));
         Ajustar(ws, cols.Count);
+    }
+
+    // Ayuda de la columna. Si la copropiedad renombro el campo, se dice en la misma linea: el
+    // ENCABEZADO se mantiene canonico (es el contrato con el importador y hace que un archivo sirva
+    // para varias copropiedades), pero el usuario necesita reconocer su campo por el nombre que le puso.
+    private static string AyudaDe(UnidadCampoSistema campo, ConfigCamposUnidad cfg)
+    {
+        var alias = cfg.Alias(campo.Clave);
+        return string.IsNullOrWhiteSpace(alias) || string.Equals(alias, campo.Encabezado, StringComparison.OrdinalIgnoreCase)
+            ? campo.Ayuda
+            : $"{campo.Ayuda}{(campo.Ayuda.Length > 0 ? " " : "")}(en esta copropiedad: {alias})";
     }
 
     private static void HojaPersonas(XLWorkbook wb, string? coproRange, string? rolesRange, List<string> camposPersona)
@@ -429,30 +439,76 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     // ===================== Visibilidad de campos de la unidad =====================
 
     // Campos FIJOS de la unidad visibles cuando la copropiedad no tiene fila en unidad_campos_config.
-    // Es el mismo default que usa la tabla de unidades (Distribucion): los 5 modulos contributivos
-    // nacen OCULTOS, asi que por defecto no salen en la plantilla.
-    private static readonly HashSet<string> CamposUnidadVisiblesPorDefecto = new(StringComparer.OrdinalIgnoreCase)
-        { "tipo", "agrupacion", "matricula", "coef", "refpago" };
+    // Sale del catalogo unico (los 5 modulos contributivos, area, piso, etc. nacen OCULTOS), asi que
+    // este servicio y la tabla de unidades no pueden discrepar sobre que se ve por defecto.
+    private static readonly HashSet<string> CamposUnidadVisiblesPorDefecto =
+        new(UnidadCamposSistema.ClavesVisiblesPorDefecto, StringComparer.OrdinalIgnoreCase);
 
-    // Devuelve un predicado clave-de-campo -> visible, leyendo la configuracion por copropiedad
-    // (unidad_campos_config con entidad 'unidad'). Un campo SIN fila de config usa su default.
-    private async Task<Func<string, bool>> VisibilidadCamposUnidadAsync(CancellationToken ct)
+    /// <summary>
+    /// Configuracion de los campos de la unidad para ESTA copropiedad (unidad_campos_config,
+    /// entidad 'unidad'): que se ve, como lo renombro el usuario y que opciones tiene una lista.
+    /// Un campo SIN fila de config usa su default del catalogo.
+    /// </summary>
+    private sealed class ConfigCamposUnidad
+    {
+        private readonly Dictionary<string, (bool Oculto, string? Alias, string? Opciones)> _filas;
+
+        public ConfigCamposUnidad(Dictionary<string, (bool, string?, string?)> filas) => _filas = filas;
+
+        public bool Visible(string clave)
+        {
+            if (_filas.TryGetValue(clave, out var f)) return !f.Oculto;
+            // Sin config: los campos personalizados ("cd:{id}") entran visibles (igual que en la
+            // tabla de unidades) y de los fijos solo los que nacen visibles.
+            return clave.StartsWith("cd:", StringComparison.OrdinalIgnoreCase)
+                || CamposUnidadVisiblesPorDefecto.Contains(clave);
+        }
+
+        public string? Alias(string clave)
+            => _filas.TryGetValue(clave, out var f) ? f.Alias : null;
+
+        /// <summary>Opciones VISIBLES del campo ESTADO, en su orden; si no hay config, las de fabrica.</summary>
+        public IEnumerable<string> OpcionesEstado()
+        {
+            var raw = _filas.TryGetValue("estado", out var f) ? f.Opciones : null;
+            var guardadas = LeerOpciones(raw);
+            return guardadas.Count == 0 ? UnidadCamposSistema.EstadosSemilla : guardadas;
+        }
+
+        // Mismo formato que escribe el panel de Configurar: JSON [{"K":"...","Oculta":false}].
+        // Tolera el formato legado (una opcion por linea) para las copropiedades configuradas antes.
+        private static List<string> LeerOpciones(string? raw)
+        {
+            var res = new List<string>();
+            if (string.IsNullOrWhiteSpace(raw)) return res;
+            var t = raw.TrimStart();
+            if (t.StartsWith('['))
+            {
+                try
+                {
+                    var ops = System.Text.Json.JsonSerializer.Deserialize<List<OpcionListaJson>>(raw);
+                    foreach (var o in ops ?? new()) if (!o.Oculta && !string.IsNullOrWhiteSpace(o.K)) res.Add(o.K.Trim());
+                }
+                catch { /* config corrupta: se cae a las opciones de fabrica */ }
+                return res;
+            }
+            foreach (var l in raw.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                res.Add(l);
+            return res;
+        }
+
+        private sealed record OpcionListaJson(string K, bool Oculta = false);
+    }
+
+    private async Task<ConfigCamposUnidad> ConfigCamposUnidadAsync(CancellationToken ct)
     {
         var filas = await _db.UnidadCamposConfig.AsNoTracking()
             .Where(c => c.Entidad == "unidad")
-            .Select(c => new { c.CampoClave, c.Oculto })
+            .Select(c => new { c.CampoClave, c.Oculto, c.Alias, c.Opciones })
             .ToListAsync(ct);
-        var config = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-        foreach (var f in filas) config[(f.CampoClave ?? "").Trim()] = f.Oculto;
-
-        return clave =>
-        {
-            if (config.TryGetValue(clave, out var oculto)) return !oculto;
-            // Sin config: los campos personalizados ("cd:{id}") entran visibles (igual que en la
-            // tabla de unidades) y de los fijos solo los del set de arriba.
-            return clave.StartsWith("cd:", StringComparison.OrdinalIgnoreCase)
-                || CamposUnidadVisiblesPorDefecto.Contains(clave);
-        };
+        var map = new Dictionary<string, (bool, string?, string?)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var f in filas) map[(f.CampoClave ?? "").Trim()] = (f.Oculto, f.Alias, f.Opciones);
+        return new ConfigCamposUnidad(map);
     }
 
     // ===================== Referencia: copropiedades del cliente =====================

@@ -147,23 +147,38 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                     var mod3 = ParseDecimalNull(Val(row, "MODULO CONTRIBUTIVO 3"));
                     var mod4 = ParseDecimalNull(Val(row, "MODULO CONTRIBUTIVO 4"));
                     var mod5 = ParseDecimalNull(Val(row, "MODULO CONTRIBUTIVO 5"));
+                    // Resto de campos de sistema que la copropiedad puede activar. Se leen por el
+                    // encabezado del catalogo unico (UnidadCamposSistema), asi que cualquier campo que
+                    // la plantilla emita por estar visible se puede importar. Todos son opcionales:
+                    // null = la columna no vino o vino vacia -> no pisa lo que ya tiene la unidad.
+                    var estado = NullIfEmpty(Val(row, "ESTADO"));
+                    var area = ParseDecimalNull(Val(row, "AREA"));
+                    var piso = ParseIntNull(Val(row, "PISO"));
+                    var habitaciones = ParseIntNull(Val(row, "HABITACIONES"));
+                    var banos = ParseIntNull(Val(row, "BANOS"));
+                    var parqueaderos = ParseIntNull(Val(row, "PARQUEADEROS"));
+                    var pagaAdmin = ParseSiNoNull(Val(row, "PAGA ADMIN"));
+                    var cuota = ParseDecimalNull(Val(row, "CUOTA MENSUAL"));
+                    var observaciones = NullIfEmpty(Val(row, "OBSERVACIONES"));
 
                     // Modo MODULO (recarga desde Unidades Privadas): si la unidad ya existe (por su
-                    // numero exacto), se ACTUALIZA en vez de crear. Solo se pisan los campos que trae la
-                    // plantilla (tipo, coeficiente, matricula, ref pago, modulos contributivos);
-                    // torre, piso, area, etc. se
-                    // conservan. Modo ONBOARDING (todas): siempre crea (la copropiedad es nueva).
+                    // numero exacto), se ACTUALIZA en vez de crear. Solo se pisa lo que la plantilla
+                    // trae con valor; una columna ausente o vacia conserva el dato actual (la torre
+                    // no se toca nunca: no hay columna para ella).
+                    // Modo ONBOARDING (todas): siempre crea (la copropiedad es nueva).
                     var existente = todas
                         ? null
                         : await _db.UnidadesPrivadas.FirstOrDefaultAsync(x => x.Numero == numero, ct);
                     if (existente is not null)
                     {
                         var upd = new ActualizarUnidadRequest(
-                            existente.Numero, tipo, existente.TorreId, existente.Piso,
-                            coef, existente.AreaM2, existente.Habitaciones, existente.Banos, existente.Parqueaderos,
-                            existente.Estado, existente.Observaciones,
-                            matricula ?? existente.MatriculaInmobiliaria, existente.PagaAdministracion,
-                            existente.CuotaMensual, refPago ?? existente.ReferenciaPago,
+                            existente.Numero, tipo, existente.TorreId, piso ?? existente.Piso,
+                            coef, area ?? existente.AreaM2,
+                            habitaciones ?? existente.Habitaciones, banos ?? existente.Banos,
+                            parqueaderos ?? existente.Parqueaderos,
+                            estado ?? existente.Estado, observaciones ?? existente.Observaciones,
+                            matricula ?? existente.MatriculaInmobiliaria, pagaAdmin ?? existente.PagaAdministracion,
+                            cuota ?? existente.CuotaMensual, refPago ?? existente.ReferenciaPago,
                             ModuloContributivo1: mod1 ?? existente.ModuloContributivo1,
                             ModuloContributivo2: mod2 ?? existente.ModuloContributivo2,
                             ModuloContributivo3: mod3 ?? existente.ModuloContributivo3,
@@ -176,9 +191,10 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                     else
                     {
                         var req = new CrearUnidadRequest(
-                            numero, tipo, null, null,
-                            coef, null, null, null, null, null, null,
-                            matricula, true, null, refPago,
+                            numero, tipo, null, piso,
+                            coef, area, habitaciones, banos, parqueaderos,
+                            estado, observaciones,
+                            matricula, pagaAdmin ?? true, cuota, refPago,
                             ModuloContributivo1: mod1, ModuloContributivo2: mod2,
                             ModuloContributivo3: mod3, ModuloContributivo4: mod4,
                             ModuloContributivo5: mod5);
@@ -744,6 +760,11 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
         s = (s ?? "").Trim().ToLowerInvariant();
         return s is "si" or "sí" or "1" or "true" or "x" or "verdadero";
     }
+
+    // Igual, pero celda VACIA -> null: la columna no vino o el usuario la dejo en blanco, asi que
+    // no se pisa el valor que ya tiene la unidad (PAGA ADMIN nace en true al crear).
+    private static bool? ParseSiNoNull(string s)
+        => string.IsNullOrWhiteSpace(s) ? null : ParseSiNo(s);
 
     private static (string Nombres, string Apellidos) SplitNombre(string nombre)
     {

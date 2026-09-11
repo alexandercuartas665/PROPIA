@@ -1179,48 +1179,40 @@ else
     private bool _cfgColsAbierto;
     // Orden por defecto: TODOS los campos del sistema (mas 'agrupacion' derivado) pueden ser columnas.
     // La 'ubicacion' de un campo = su posicion en este orden (que es el orden de columnas de la tabla).
+    // Sale del catalogo UNICO de campos de sistema (Propia.Application.MiCopropiedad.UnidadCamposSistema),
+    // el mismo que usan la plantilla de carga y el importador. Antes cada uno tenia su lista y se
+    // desalinearon: habia campos activables aqui que la plantilla ni emitia ni sabia importar.
     private static readonly string[] ColDefaultOrder =
-    {
-        "num", "tipo", "estado", "agrupacion", "coef",
-        // Modulos contributivos: van justo despues del coeficiente y ocultos por defecto.
-        "modcontrib1", "modcontrib2", "modcontrib3", "modcontrib4", "modcontrib5",
-        "area", "piso", "habitaciones",
-        "banos", "parqueaderos", "matricula", "refpago", "pagaadmin", "cuota", "observaciones"
-    };
+        UnidadCamposSistema.Todos.Select(c => c.Clave).ToArray();
     // Claves de los 5 modulos contributivos (coeficientes adicionales por unidad).
     private static readonly string[] ModContribClaves = { "modcontrib1", "modcontrib2", "modcontrib3", "modcontrib4", "modcontrib5" };
     private static int? ModContribNumero(string clave)
         => clave.StartsWith("modcontrib", StringComparison.Ordinal) && int.TryParse(clave[10..], out var n) ? n : null;
     // Columnas visibles por defecto (las demas quedan disponibles pero ocultas hasta que se activen).
-    private static readonly HashSet<string> ColVisibleDefault = new(StringComparer.Ordinal)
-    { "num", "tipo", "agrupacion", "matricula", "coef", "refpago" };
+    private static readonly HashSet<string> ColVisibleDefault =
+        new(UnidadCamposSistema.ClavesVisiblesPorDefecto, StringComparer.Ordinal);
 
     private sealed record ColDef(string Key, string DefLabel, string Width, bool Hideable);
-    // Catalogo dinamico: los labels de agrupacion/piso salen de la identidad de la copropiedad.
-    // TODOS los campos del sistema son columnas potenciales (mostrar/ocultar/reordenar).
-    private ColDef[] Catalogo => new[]
+    // Ancho de cada columna (lo unico que es propio de la tabla: el catalogo compartido no sabe de UI).
+    private static readonly Dictionary<string, string> ColAnchos = new(StringComparer.Ordinal)
     {
-        new ColDef("num", "UNIDAD", "130px", false),
-        new ColDef("tipo", "TIPO", "1fr", true),
-        new ColDef("estado", "ESTADO", "1fr", true),
-        new ColDef("agrupacion", "AGRUPACION", ".9fr", true),
-        new ColDef("coef", "COEFICIENTE", ".9fr", true),
-        new ColDef("modcontrib1", "MODULO CONTRIBUTIVO 1", "1fr", true),
-        new ColDef("modcontrib2", "MODULO CONTRIBUTIVO 2", "1fr", true),
-        new ColDef("modcontrib3", "MODULO CONTRIBUTIVO 3", "1fr", true),
-        new ColDef("modcontrib4", "MODULO CONTRIBUTIVO 4", "1fr", true),
-        new ColDef("modcontrib5", "MODULO CONTRIBUTIVO 5", "1fr", true),
-        new ColDef("area", "AREA", ".8fr", true),
-        new ColDef("piso", "PISO", "70px", true),
-        new ColDef("habitaciones", "HABITACIONES", "90px", true),
-        new ColDef("banos", "BANOS", "70px", true),
-        new ColDef("parqueaderos", "PARQUEADEROS", "100px", true),
-        new ColDef("matricula", "MATRICULA", "1.1fr", true),
-        new ColDef("refpago", "REF PAGO", "1.1fr", true),
-        new ColDef("pagaadmin", "PAGA ADMIN", "90px", true),
-        new ColDef("cuota", "CUOTA MENSUAL", "1fr", true),
-        new ColDef("observaciones", "OBSERVACIONES", "1.3fr", true),
+        ["num"] = "130px", ["tipo"] = "1fr", ["estado"] = "1fr", ["agrupacion"] = ".9fr", ["coef"] = ".9fr",
+        ["modcontrib1"] = "1fr", ["modcontrib2"] = "1fr", ["modcontrib3"] = "1fr",
+        ["modcontrib4"] = "1fr", ["modcontrib5"] = "1fr",
+        ["area"] = ".8fr", ["piso"] = "70px", ["habitaciones"] = "90px", ["banos"] = "70px",
+        ["parqueaderos"] = "100px", ["matricula"] = "1.1fr", ["refpago"] = "1.1fr",
+        ["pagaadmin"] = "90px", ["cuota"] = "1fr", ["observaciones"] = "1.3fr",
     };
+    // TODOS los campos del sistema son columnas potenciales (mostrar/ocultar/reordenar). Se derivan
+    // del catalogo compartido: agregar un campo alli lo hace aparecer aqui, en el panel de Configurar
+    // y en la plantilla de carga, sin tres listas que mantener a mano.
+    // 'num' es la unica columna fija (no se puede ocultar: identifica la fila).
+    private ColDef[] Catalogo => UnidadCamposSistema.Todos
+        .Select(c => new ColDef(c.Clave,
+            c.Clave == "num" ? "UNIDAD" : c.Encabezado,
+            ColAnchos.TryGetValue(c.Clave, out var w) ? w : "1fr",
+            Hideable: c.Clave != "num"))
+        .ToArray();
 
     // Item unificado de columna: campo del sistema (Def) o campo personalizado (Campo). El orden y la
     // visibilidad de ambos viven en la MISMA config del tenant, asi todo se arrastra junto.
@@ -1667,23 +1659,11 @@ else
 
     // ===== Configurar: campos de la unidad (alias + opciones de lista) =====
     private sealed record CampoSistema(string Clave, string DefLabel, bool EsLista);
-    // Campos FIJOS del sistema. 'num'/'tipo'/'coef'/'matricula'/'refpago' comparten clave con las columnas.
-    private static readonly List<CampoSistema> CamposSistema = new()
-    {
-        new("num", "Unidad", false), new("tipo", "Tipo", true), new("estado", "Estado", true),
-        new("agrupacion", "Agrupacion", false),   // derivado del codigo / anexos (no editable por unidad)
-        new("coef", "Coeficiente", false),
-        // Modulos contributivos: coeficientes adicionales para repartir gastos especificos.
-        new("modcontrib1", "Modulo Contributivo 1", false), new("modcontrib2", "Modulo Contributivo 2", false),
-        new("modcontrib3", "Modulo Contributivo 3", false), new("modcontrib4", "Modulo Contributivo 4", false),
-        new("modcontrib5", "Modulo Contributivo 5", false),
-        new("area", "Area", false), new("piso", "Piso", false),
-        new("habitaciones", "Habitaciones", false), new("banos", "Banos", false), new("parqueaderos", "Parqueaderos", false),
-        new("matricula", "Matricula", false), new("refpago", "Ref. pago", false),
-        new("pagaadmin", "Paga administracion", false), new("cuota", "Cuota mensual", false),
-        new("observaciones", "Observaciones", false),
-    };
-    private static readonly string[] EstadoSemilla = { "Habitada", "Desocupada", "Arrendada" };
+    // Campos FIJOS del sistema, del catalogo compartido: son exactamente los que el usuario puede
+    // mostrar, ocultar y renombrar aqui, y los que la plantilla de carga emite cuando estan visibles.
+    private static readonly List<CampoSistema> CamposSistema = UnidadCamposSistema.Todos
+        .Select(c => new CampoSistema(c.Clave, c.Label, c.EsLista)).ToList();
+    private static readonly string[] EstadoSemilla = UnidadCamposSistema.EstadosSemilla;
 
     // ===== Pestanas del panel de configuracion. "unidad" es la grilla con los campos del sistema;
     // las otras cuatro son catalogos propios de las entidades vinculadas (mismo componente). =====
