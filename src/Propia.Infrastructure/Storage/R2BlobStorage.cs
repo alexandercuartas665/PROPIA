@@ -111,8 +111,13 @@ public sealed class R2BlobStorage : IBlobStorage, IDisposable
         if (val.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
             || val.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
-            // URL completa (posiblemente con dominio viejo): extraer la key (path) y re-hostear.
             if (!Uri.TryCreate(val, UriKind.Absolute, out var uri)) return val;
+
+            // Solo se re-hostea lo que es NUESTRO (el bucket, su dominio publico, o una ruta
+            // /uploads/ del almacenamiento local). Una imagen EXTERNA se devuelve tal cual: antes
+            // se le extraia el path y se colgaba del endpoint de R2, con lo que daba 404.
+            if (!EsBlobPropio(uri)) return val;
+
             key = Uri.UnescapeDataString(uri.AbsolutePath).TrimStart('/');
             // Forma fallback {endpoint}/{bucket}/{key}: quitar el bucket del path.
             var bucketPrefix = _options.BucketName + "/";
@@ -120,6 +125,23 @@ public sealed class R2BlobStorage : IBlobStorage, IDisposable
                 key = key.Substring(bucketPrefix.Length);
         }
         return GetPublicUrl(key);
+    }
+
+    /// <summary>
+    /// Si la URL absoluta apunta a un blob de esta plataforma: el dominio publico de R2, el endpoint
+    /// del bucket, o una ruta /uploads/ heredada del almacenamiento local. Cualquier otro host es una
+    /// imagen externa y NO debe re-hostearse.
+    /// </summary>
+    private bool EsBlobPropio(Uri uri)
+    {
+        if (uri.AbsolutePath.Contains("/uploads/", StringComparison.OrdinalIgnoreCase)) return true;
+        foreach (var baseUrl in new[] { _options.PublicUrl, _options.Endpoint })
+        {
+            if (string.IsNullOrWhiteSpace(baseUrl)) continue;
+            if (Uri.TryCreate(baseUrl, UriKind.Absolute, out var b)
+                && string.Equals(b.Host, uri.Host, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
     }
 
     public void Dispose() => _client.Dispose();

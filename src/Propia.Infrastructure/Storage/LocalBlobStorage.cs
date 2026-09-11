@@ -59,16 +59,20 @@ public sealed class LocalBlobStorage : IBlobStorage
         var val = storedValueOrKey.Trim();
         // Ya es ruta relativa servida por el app o data URI: dejar igual.
         if (val.StartsWith("data:", StringComparison.OrdinalIgnoreCase) || val.StartsWith("/")) return val;
-        // URL absoluta (dato viejo: se guardaba con el host del request, ej. http://localhost:8080/uploads/...).
-        // El path ya es la ruta servida por el app; devolverla RELATIVA al mismo origen (sin re-prefijar
-        // /uploads/, que la duplicaria). Si el path trae un prefijo raro antes de /uploads/, se recorta.
+        // URL absoluta. Puede ser de DOS clases y hay que distinguirlas:
+        //  a) Un blob NUESTRO guardado con el host del request (dato viejo, ej.
+        //     http://localhost:8080/uploads/...): se devuelve RELATIVO al origen actual, porque el
+        //     host guardado puede ya no ser el correcto.
+        //  b) Una imagen EXTERNA (ej. un logo alojado en otro dominio): se devuelve TAL CUAL.
+        // Distinguirlas por la presencia de /uploads/ en el path. Antes se le arrancaba el host a
+        // todo, asi que una URL externa quedaba como path relativo y daba 404 (imagen rota).
         if (val.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
             || val.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
             if (!Uri.TryCreate(val, UriKind.Absolute, out var uri)) return val;
             var pathQuery = uri.PathAndQuery;
             var idx = pathQuery.IndexOf("/uploads/", StringComparison.OrdinalIgnoreCase);
-            return idx >= 0 ? pathQuery.Substring(idx) : pathQuery;
+            return idx >= 0 ? pathQuery.Substring(idx) : val;   // externa: intacta
         }
         return GetPublicUrl(val);
     }
