@@ -113,9 +113,16 @@ builder.Services.AddHealthChecks()
     .AddDbContextCheck<PropiaDbContext>("postgresql", tags: new[] { "ready" });
 
 // Background jobs (scheduler como IHostedService + Singleton tipado).
+// El bucle automatico se puede apagar por config (Jobs:Enabled=false), igual que en Propia.Api:
+// la Web hostea los mismos jobs, asi que con varias instancias contra la misma BD tambien los
+// duplicaria. Default true: prod y la Web principal no cambian. El AddSingleton queda SIEMPRE
+// (los controllers de monitoria lo inyectan para disparar un job a mano).
 builder.Services.AddSingleton<Propia.Infrastructure.Jobs.BackgroundJobScheduler>();
-builder.Services.AddHostedService(sp =>
-    sp.GetRequiredService<Propia.Infrastructure.Jobs.BackgroundJobScheduler>());
+if (builder.Configuration.GetValue("Jobs:Enabled", true))
+{
+    builder.Services.AddHostedService(sp =>
+        sp.GetRequiredService<Propia.Infrastructure.Jobs.BackgroundJobScheduler>());
+}
 
 // Cola de despacho del agente IA (auto-respuesta a entrantes). El Singleton lo registra
 // AddInfrastructure; aqui lo arrancamos como IHostedService (el bucle que agrupa rafagas y despacha).

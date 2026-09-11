@@ -18,10 +18,15 @@ namespace Propia.Infrastructure.Jobs;
 /// Por que no Hangfire/Quartz:
 ///  - 2 jobs hoy, ~5-10 jobs Fase 2. La complejidad operativa de Hangfire
 ///    (dashboard separado, dependencias adicionales) no se justifica.
-///  - Multi-instancia futura: la UNIQUE de (JobName, IniciadoAt cercano) +
-///    consulta de UltimaExitosa antes de tick evitan duplicados entre dos
-///    procesos del mismo deployment.
 ///  - Cero overhead operacional: solo una tabla mas (job_ejecuciones).
+///
+/// OJO - NO hay exclusion mutua entre procesos. Este comentario prometia una UNIQUE de
+/// (JobName, IniciadoAt cercano) que NUNCA existio: job_ejecuciones solo tiene su PK y dos
+/// indices btree normales. DebeEjecutarAsync LEE si hay algo Ejecutando y EjecutarUnoAsync
+/// INSERTA despues, sin transaccion ni lock, asi que dos procesos que ticken a la vez pueden
+/// correr el mismo job (TOCTOU). Mientras no exista un lock real (advisory lock de Postgres o
+/// una UNIQUE de verdad), la regla operativa es: UNA sola instancia con el scheduler encendido.
+/// Las demas se levantan con Jobs:Enabled=false (ver Program.cs de Api y Web).
 ///
 /// Si en el futuro hay 50+ jobs o necesidad de retries automaticos con backoff,
 /// se cambia a Hangfire sin tocar las implementaciones IBackgroundJob.
@@ -29,6 +34,13 @@ namespace Propia.Infrastructure.Jobs;
 public class BackgroundJobScheduler : BackgroundService
 {
     private const int TickIntervalMinutos = 1;
+
+    /// <summary>
+    /// Una ejecucion que lleva mas de estos minutos en estado Ejecutando se da por COLGADA: el
+    /// proceso murio a mitad del job (pasa en cada recompilacion en dev) y ya nadie va a cerrar
+    /// esa fila. Sin esto, la fila bloquea ese job PARA SIEMPRE y deja de correr sin error visible.
+    /// </summary>
+    private const int EjecucionColgadaMinutos = 30;
 
     private readonly IServiceProvider _services;
     private readonly ILogger<BackgroundJobScheduler> _log;
@@ -85,13 +97,37 @@ public class BackgroundJobScheduler : BackgroundService
         }
     }
 
-    private static async Task<bool> DebeEjecutarAsync(
+    private async Task<bool> DebeEjecutarAsync(
         PropiaDbContext db, IBackgroundJob job, DateTimeOffset ahora, CancellationToken ct)
     {
         // Bloqueo si hay una ejecucion en curso del mismo job (multi-tick / multi-instancia).
-        var enCurso = await db.JobEjecuciones.AsNoTracking()
-            .AnyAsync(e => e.JobName == job.Nombre && e.Estado == EstadoEjecucionJob.Ejecutando, ct);
-        if (enCurso) return false;
+        // Antes se descartaba el job ante CUALQUIER fila Ejecutando, sin mirar la antiguedad: si
+        // el proceso moria a mitad del job, la fila quedaba viva para siempre y ese job no volvia
+        // a correr nunca. Ahora las que pasan de EjecucionColgadaMinutos se cierran como Fallido.
+        var enCurso = await db.JobEjecuciones
+            .Where(e => e.JobName == job.Nombre && e.Estado == EstadoEjecucionJob.Ejecutando)
+            .ToListAsync(ct);
+
+        var limiteColgada = ahora.AddMinutes(-EjecucionColgadaMinutos);
+        var colgadas = enCurso.Where(e => e.IniciadoAt < limiteColgada).ToList();
+        if (colgadas.Count > 0)
+        {
+            foreach (var colgada in colgadas)
+            {
+                colgada.Estado = EstadoEjecucionJob.Fallido;
+                colgada.CompletadoAt = ahora;
+                colgada.Error = $"Marcada como colgada por el scheduler: seguia en Ejecutando tras "
+                    + $"{EjecucionColgadaMinutos} min (host {colgada.EjecutadoPorHost}). Lo normal "
+                    + "es que el proceso muriera a mitad del job.";
+            }
+            await db.SaveChangesAsync(ct);
+            _log.LogWarning(
+                "Scheduler: {N} ejecucion(es) colgada(s) de {Nombre} marcada(s) como Fallido",
+                colgadas.Count, job.Nombre);
+        }
+
+        // Queda alguna viva de verdad: no arrancar otra.
+        if (enCurso.Count > colgadas.Count) return false;
 
         var ultima = await db.JobEjecuciones.AsNoTracking()
             .Where(e => e.JobName == job.Nombre

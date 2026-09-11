@@ -89,9 +89,17 @@ builder.Services.AddHealthChecks()
 // Solo en la API porque Web/SuperAdmin no necesitan ejecutar jobs - los consumen
 // via API. El Singleton tipado permite inyectarlo en controllers (admin manual
 // trigger) y tests.
+// El bucle automatico se puede apagar por config (Jobs:Enabled=false). Necesario cuando varias
+// instancias apuntan a la misma BD (agentes en paralelo contra propia_dev): si todas corren los
+// jobs se duplican cobros, cierres de PQRSD y alertas. Default true: prod y la API principal no
+// cambian. El AddSingleton queda SIEMPRE: MonitoriaController lo inyecta para disparar un job a
+// mano y los tests lo resuelven; lo que desaparece es solo el IHostedService.
 builder.Services.AddSingleton<Propia.Infrastructure.Jobs.BackgroundJobScheduler>();
-builder.Services.AddHostedService(sp =>
-    sp.GetRequiredService<Propia.Infrastructure.Jobs.BackgroundJobScheduler>());
+if (builder.Configuration.GetValue("Jobs:Enabled", true))
+{
+    builder.Services.AddHostedService(sp =>
+        sp.GetRequiredService<Propia.Infrastructure.Jobs.BackgroundJobScheduler>());
+}
 
 // Cola de despacho del agente IA (auto-respuesta a entrantes). El Singleton lo registra
 // AddInfrastructure; aqui lo arrancamos como IHostedService (el bucle que agrupa y despacha).
