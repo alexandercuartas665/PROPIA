@@ -1,6 +1,6 @@
 # PROPIA - Checklist de deploy
 
-> Actualizado 2026-09-10. Version visible: **0.0.91**
+> Actualizado 2026-09-10. Version visible: **0.0.92**
 > (`src/Propia.Web/Propia.Web.csproj` `<Version>`). Bumpear en cada deploy.
 >
 > **ATENCION en esta tanda: 7 migraciones nuevas, una de ellas de SEGURIDAD (RLS).**
@@ -18,6 +18,16 @@
 > `select ut.rol, ut.estado, t.nombre from usuarios_tenant ut join tenants t on t.id=ut.tenant_id join personas p on p.id=ut.persona_id where lower(p.email)='EMAIL';`
 > **Decision pendiente:** si se espera que un Coordinador o Asistente configure campos, hay que
 > habilitarles `MI_COPROPIEDAD / Editar` en la matriz por defecto. Hoy no pueden.
+>
+> **Nuevo en 0.0.92 (una imagen EXTERNA ya no se rompe al resolver su URL):**
+> - `ResolveUrl` asumia que toda URL absoluta era un blob propio con host viejo y la reescribia, asi que
+>   **ningun proveedor podia almacenar una imagen alojada fuera de la plataforma** (Local devolvia solo el
+>   path; R2 la colgaba de su endpoint) -> 404 e imagen rota. Ahora solo se reescribe lo propio.
+> - **Contexto:** las imagenes de copropiedad en prod estaban como rutas `/uploads/...` sobre el disco
+>   EFIMERO de Railway; se perdian en cada redeploy. Se limpiaron y se pusieron URLs externas, que
+>   necesitan este fix para verse. **Pendiente:** confirmar `Storage__Provider=R2` en Railway, o toda
+>   imagen que suba un usuario se volvera a perder.
+> - **Solo codigo, sin migracion.**
 >
 > **Nuevo en 0.0.91 (el 403 de Configurar ya dice por que y que hacer):**
 > - El aviso mostraba "forbidden" a secas. El backend ya distingue la causa en `reason`
@@ -344,7 +354,7 @@ falten en ese entorno, comparando contra `__EFMigrationsHistory`:
 
 ## 4. Post-deploy (verificacion)
 
-- [ ] Login OK; el footer muestra `v0.0.91`.
+- [ ] Login OK; el footer muestra `v0.0.92`.
 - [ ] **Si algo de "Configurar" no responde:** el panel muestra un aviso rojo que dice la causa.
       Un **500** con "column ... does not exist" = faltan migraciones (seccion 3). Un **403** = permisos:
       el mensaje distingue si es el rol, el permiso, o que el usuario no esta vinculado a esa

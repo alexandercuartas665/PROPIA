@@ -1,7 +1,7 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> Generado 2026-09-10. Version a desplegar: **0.0.91**. Prod actual: **0.0.67**.
-> Repo: https://github.com/alexandercuartas665/PROPIA  ·  rama `main`  ·  ultimo commit `782af35`.
+> Generado 2026-09-10. Version a desplegar: **0.0.92**. Prod actual: **0.0.67**.
+> Repo: https://github.com/alexandercuartas665/PROPIA  ·  rama `main`  ·  ultimo commit `82949b6`.
 > Companion: `DEPLOY_CHECKLIST.md` (misma carpeta) con el detalle version por version.
 > Este archivo es el resumen operativo para la sesion de deploy. **Vive en el repo** (`deploy/`) y se
 > copia a la carpeta de trabajo; asi no se pierde.
@@ -83,6 +83,26 @@ Si para esa copropiedad no hay fila, o el rol no es exactamente `Administrador`,
 **Decision pendiente:** si se espera que un Coordinador o un Asistente configure campos, hay que
 habilitarles `MI_COPROPIEDAD / Editar` en la matriz por defecto. Hoy no pueden.
 
+### 0.6 IMAGENES: las de las copropiedades son URLs EXTERNAS
+
+En prod las imagenes de copropiedad estaban guardadas como rutas del almacenamiento LOCAL
+(`/uploads/tenants/...`). En Railway el disco es **efimero**: se borra en cada redeploy, asi que daban 404
+y se veian rotas. Se limpiaron esas 8 URLs muertas (4 logos + 3 fachadas + una cadena vacia) y se pusieron
+**URLs externas** (Unsplash, licencia libre) que no dependen del disco y sobreviven a los redeploys.
+
+**Para que se vean hace falta el fix de 0.0.92** (ver seccion 1): hasta ese deploy siguen rotas, porque el
+bug estaba en el codigo, no en el dato.
+
+**Pendiente de infraestructura:** confirmar `Storage__Provider=R2` y las `R2__*` en Railway. Mientras no
+este, **cualquier imagen que suba un usuario por la app se volvera a perder en el siguiente deploy**.
+
+```bash
+railway variables | grep -iE "Storage__Provider|R2__"
+```
+
+Nota: las fotos actuales son de archivo, genericas. Conviene reemplazarlas por fotos reales de cada
+copropiedad cuando se tengan.
+
 ### 0.5 Si "Configurar" parece no responder
 
 Desde 0.0.91 el panel **avisa y dice la causa**:
@@ -95,8 +115,14 @@ Ese fue justamente el sintoma que costo diagnosticar.)
 
 ---
 
-## 1. Que se despliega (0.0.68 -> 0.0.91, acumulado sobre prod 0.0.67)
+## 1. Que se despliega (0.0.68 -> 0.0.92, acumulado sobre prod 0.0.67)
 
+- **0.0.92 - Una imagen EXTERNA ya no se rompe al resolver su URL.** Ninguno de los dos proveedores de
+  almacenamiento podia guardar una imagen alojada fuera de la plataforma: `ResolveUrl` asumia que toda URL
+  absoluta era un blob propio con host viejo y la reescribia (Local le arrancaba el host y devolvia solo el
+  path; R2 colgaba el path de su propio endpoint). En ambos casos -> 404 e imagen rota. Ahora solo se
+  reescribe lo propio (path con `/uploads/`, o host del bucket/dominio publico en R2); el resto queda
+  intacto. **Es el fix que hace visibles las imagenes de copropiedad (ver 0.6).** Solo codigo.
 - **0.0.91 - El 403 de Configurar ya dice por que y que hacer.** El backend distingue la causa en `reason`
   (`permiso_insuficiente`, `rol_insuficiente`, `sin_persona`) y no se estaba leyendo. Ver 0.4 y 0.5.
 - **0.0.90 - Un guardado fallido de configuracion ya no se queda mudo.** Ver 0.5.
@@ -185,7 +211,10 @@ Recomendadas: `Metrics__ScrapeToken`, `ForwardedHeaders__KnownNetworks__0` (CIDR
 
 ## 5. Post-deploy (verificacion minima)
 
-- [ ] Login OK; el footer muestra `v0.0.91`.
+- [ ] Login OK; el footer muestra `v0.0.92`.
+- [ ] **Imagenes de copropiedad:** el selector "Mis copropiedades" muestra la foto de cada una, no el
+      icono roto. Si sale rota, revisar que el `src` renderizado conserve el host completo (era el bug
+      de 0.0.92).
 - [ ] **PRIMERO (RLS):** entrar a **Directorio**, **Seguros** y **Contratos** y confirmar que **listan
       datos**. Si alguno sale vacio -> revisar logs por `row-level security` / `42501` y revertir el
       `Down()` de `AddRlsTablasFaltantes`. (En dev: Directorio 200 filas, Seguros 7, Contratos 21.)
