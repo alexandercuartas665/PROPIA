@@ -152,26 +152,36 @@ public partial class TareasService
         var nuevoEstado = await _db.TareasEstados.FirstOrDefaultAsync(e => e.Id == req.NuevoEstadoId, ct)
             ?? throw new InvalidOperationException("Estado no encontrado.");
 
+        // T-04: el lote sigue las MISMAS reglas que el cambio individual. El motivo de cierre se
+        // resuelve UNA vez y ANTES del bucle: si el estado destino es terminal y no hay motivo, no se
+        // toca ninguna tarea. Antes el lote cerraba tareas sin motivo, sin marcarlas como cerradas y
+        // poniendole fecha de completada incluso a las canceladas.
+        var motivo = await ResolverMotivoCierreAsync(nuevoEstado, req.MotivoCierreId, ct);
+
         var tareas = await _db.Tareas.Include(t => t.Estado)
             .Where(t => req.TareaIds.Contains(t.Id)).ToListAsync(ct);
 
-        var errores = new List<string>();
+        // Los ids pedidos que no aparecen no existen o son de otra copropiedad (los quita la query
+        // filter). Antes se contaban como "omitidos" sin decir por que: la lista de errores existia
+        // pero nunca se llenaba.
+        var errores = req.TareaIds.Where(x => tareas.All(t => t.Id != x))
+            .Select(x => $"Tarea {x}: no existe en esta copropiedad.").ToList();
+
+        var ancestros = new HashSet<Guid>();
         int aplicados = 0;
         foreach (var t in tareas)
         {
             if (t.EstadoId == req.NuevoEstadoId) { continue; }
-            var estadoAnterior = t.Estado?.Nombre ?? "?";
-            t.EstadoId = req.NuevoEstadoId;
-            t.EstadoDesde = DateTimeOffset.UtcNow;   // reinicia el reloj "tiempo en este estado".
-            t.UpdatedAt = DateTimeOffset.UtcNow;
-            if (nuevoEstado.EsTerminal && t.FechaCompletada is null)
-                t.FechaCompletada = DateTimeOffset.UtcNow;
-            await RegistrarHistorial(t.Id, TipoEventoTarea.EstadoCambiado,
-                $"Bulk: estado cambiado de {estadoAnterior} a {nuevoEstado.Nombre}",
-                new { estadoAnterior }, new { nuevoEstado = nuevoEstado.Nombre, req.Nota }, ct);
+            await AplicarCambioEstadoAsync(t, nuevoEstado, motivo, "Bulk: ", req.Nota, ct);
+            if (t.PadreId is Guid pid) ancestros.Add(pid);
             aplicados++;
         }
         await _db.SaveChangesAsync(ct);
+        // El progreso del padre se deriva del de sus hijas: se recalcula una vez por rama afectada
+        // (antes el lote no lo recalculaba, asi que el padre se quedaba con el progreso viejo).
+        foreach (var pid in ancestros)
+            await RecomputarProgresoAncestrosAsync(pid, ct);
+
         var omitidos = req.TareaIds.Count - aplicados;
         return new BulkResultDto(req.TareaIds.Count, aplicados, omitidos, errores);
     }

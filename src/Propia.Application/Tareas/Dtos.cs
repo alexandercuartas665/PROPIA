@@ -1,4 +1,4 @@
-using Propia.Domain.Enums;
+﻿using Propia.Domain.Enums;
 
 namespace Propia.Application.Tareas;
 
@@ -219,7 +219,10 @@ public record AgregarDependenciaRequest(
 public record BulkCambiarEstadoRequest(
     IReadOnlyList<Guid> TareaIds,
     Guid NuevoEstadoId,
-    string? Nota = null);
+    string? Nota = null,
+    // T-04: cerrar en lote pide motivo igual que cerrar de a una. Va al final para no romper a
+    // quien ya construya el request por posicion.
+    Guid? MotivoCierreId = null);
 
 public record BulkCambiarPrioridadRequest(
     IReadOnlyList<Guid> TareaIds,

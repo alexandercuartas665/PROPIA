@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -244,28 +244,70 @@ public class TareasFlowTests : IAsyncLifetime
 
     // ===================== Bulk actions (Fase 2) =====================
 
+    /// <summary>
+    /// T-04. El lote tiene que cerrar EXACTAMENTE igual que el cambio de estado de a una: pidiendo
+    /// motivo, marcando la tarea como cerrada y distinguiendo "completada" de "cancelada". Antes
+    /// movia la columna y ya: dejaba Cerrada en false, sin motivo, y le ponia fecha de completada
+    /// hasta a las canceladas.
+    /// </summary>
     [Fact]
-    public async Task Bulk_cambiar_estado_aplica_en_lote_y_marca_completada()
+    public async Task Bulk_cambiar_estado_cierra_con_las_mismas_reglas_que_el_cambio_individual()
     {
         var tenantId = await SeedTenantAsync("Tareas Bulk");
         var (svc, db, _) = Build(tenantId);
 
         var estados = await svc.ListarEstadosAsync(CancellationToken.None);
         var completada = estados.First(e => e.EsTerminal && e.Nombre == "Completada");
+        var cancelada = estados.First(e => e.EsTerminal && e.Nombre == "Cancelada");
+        var motivoId = await CrearMotivoTareasAsync(db);
         var t1 = await svc.CrearTareaAsync(new CrearTareaRequest(
             "T1", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
         var t2 = await svc.CrearTareaAsync(new CrearTareaRequest(
             "T2", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
 
-        var res = await svc.BulkCambiarEstadoAsync(
+        // Sin motivo el lote se rechaza entero...
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.BulkCambiarEstadoAsync(
             new BulkCambiarEstadoRequest(new[] { t1.Id, t2.Id }, completada.Id, "Bulk MCP"),
+            CancellationToken.None));
+        // ...y no toca ninguna tarea.
+        var intactas = await db.Tareas.AsNoTracking()
+            .Where(t => t.Id == t1.Id || t.Id == t2.Id).ToListAsync();
+        Assert.All(intactas, t => Assert.False(t.Cerrada));
+        Assert.All(intactas, t => Assert.NotEqual(completada.Id, t.EstadoId));
+
+        // Con motivo cierra de verdad.
+        var res = await svc.BulkCambiarEstadoAsync(
+            new BulkCambiarEstadoRequest(new[] { t1.Id, t2.Id }, completada.Id, "Bulk MCP", motivoId),
             CancellationToken.None);
         Assert.Equal(2, res.Solicitados);
         Assert.Equal(2, res.Aplicados);
+        Assert.Empty(res.Errores);
 
         var actualizadas = await db.Tareas.AsNoTracking()
             .Where(t => t.Id == t1.Id || t.Id == t2.Id).ToListAsync();
-        Assert.All(actualizadas, t => Assert.NotNull(t.FechaCompletada));
+        Assert.All(actualizadas, t =>
+        {
+            Assert.True(t.Cerrada);
+            Assert.NotNull(t.CerradaAt);
+            Assert.Equal(motivoId, t.MotivoCierreId);
+            Assert.NotNull(t.FechaCompletada);
+            Assert.Equal(100, t.Progreso);
+        });
+
+        // Cancelar no es completar: queda cerrada, pero SIN fecha de completada.
+        var t3 = await svc.CrearTareaAsync(new CrearTareaRequest(
+            "T3", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+        await svc.BulkCambiarEstadoAsync(
+            new BulkCambiarEstadoRequest(new[] { t3.Id }, cancelada.Id, null, motivoId), CancellationToken.None);
+        var t3Cerrada = await db.Tareas.AsNoTracking().FirstAsync(t => t.Id == t3.Id);
+        Assert.True(t3Cerrada.Cerrada);
+        Assert.Null(t3Cerrada.FechaCompletada);
+
+        // Un id que no existe se reporta: la lista de errores estaba declarada y nunca se llenaba.
+        var resFantasma = await svc.BulkCambiarEstadoAsync(
+            new BulkCambiarEstadoRequest(new[] { Guid.NewGuid() }, completada.Id, null, motivoId),
+            CancellationToken.None);
+        Assert.Single(resFantasma.Errores);
 
         await CleanTenant(tenantId);
     }
@@ -397,6 +439,7 @@ public class TareasFlowTests : IAsyncLifetime
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tarea_comentarios WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tarea_etiqueta_asignaciones WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tareas WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM motivos_cierre WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tarea_etiquetas WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tarea_estados WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tenants WHERE id = {tenantId}");

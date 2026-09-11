@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Identity;
+﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -182,10 +182,49 @@ public partial class PropiaDbContext
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
+        // T-05: estas seis entidades son TenantEntity pero se quedaron sin HasQueryFilter, asi que
+        // del lado de la aplicacion nada las acotaba a la copropiedad activa: la unica red era la
+        // RLS de PostgreSQL. La RLS no cubre al rol duenno de la base (tiene BYPASSRLS) ni a una
+        // consulta que corra sin app.tenant_id seteado, asi que se les pone el MISMO filtro que ya
+        // tienen tareas, estados y etiquetas. Se les agrega tambien el indice por tenant_id, que
+        // tampoco tenian y que es el que usa el filtro en cada consulta.
+
+        modelBuilder.Entity<Tablero>(b =>
+        {
+            b.HasIndex(x => x.TenantId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<TableroUsuario>(b =>
+        {
+            b.HasIndex(x => x.TenantId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
         // Campo personalizado del tablero: Activo por defecto (los existentes quedan activos).
         modelBuilder.Entity<TableroCampo>(b =>
         {
             b.Property(x => x.Activo).HasDefaultValue(true);
+            b.HasIndex(x => x.TenantId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<TareaCampoValor>(b =>
+        {
+            b.HasIndex(x => x.TenantId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<TareaAdjunto>(b =>
+        {
+            b.HasIndex(x => x.TenantId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<TareaSubtarea>(b =>
+        {
+            b.HasIndex(x => x.TenantId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
         modelBuilder.Entity<Tarea>(b =>

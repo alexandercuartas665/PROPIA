@@ -393,6 +393,26 @@ public partial class TareasService
         await ValidarPersonaDelTenantAsync(req.AsignadoPersonaId, "asignado", ct);
         await ValidarPersonaDelTenantAsync(req.SolicitantePersonaId, "solicitante", ct);
 
+        // T-03: el estado se resuelve y valida ANTES de tocar nada. Este PUT no cierra tareas:
+        // cerrar exige motivo y va por PUT /api/tareas/{id}/estado, que es el camino que ya usa la
+        // UI. Antes se llamaba a CambiarEstadoAsync con motivo null y DESPUES de haber guardado, asi
+        // que mover a un estado terminal reventaba con la edicion ya escrita a medias.
+        TareaEstado? nuevoEstado = null;
+        if (req.EstadoId is { } eid && eid != Guid.Empty && eid != t.EstadoId)
+        {
+            nuevoEstado = await _db.TareasEstados.FirstOrDefaultAsync(e => e.Id == eid, ct)
+                ?? throw new InvalidOperationException("Estado destino invalido.");
+            if (nuevoEstado.EsTerminal)
+                throw new InvalidOperationException(
+                    "Para cerrar una tarea usa el cambio de estado, que pide el motivo de cierre.");
+        }
+
+        // T-03: la existencia del solicitante tambien se comprueba aqui (antes se validaba mas
+        // abajo, cuando ya se habian escrito los demas campos).
+        if (req.SolicitantePersonaId is { } spidChk && spidChk != t.SolicitantePersonaId
+            && !await _db.Personas.AsNoTracking().AnyAsync(p => p.Id == spidChk, ct))
+            throw new InvalidOperationException("La persona solicitante no existe.");
+
         var prevAsig = t.AsignadoPersonaId;
         var prevFv = t.FechaVencimiento;
         var prevPri = t.Prioridad;
@@ -420,13 +440,9 @@ public partial class TareasService
         t.OrigenReferencia = string.IsNullOrWhiteSpace(req.OrigenReferencia) ? null : req.OrigenReferencia;
         // OrigenEntidadId: solo se sobreescribe si el request lo trae (null en edicion = conservar).
         if (req.OrigenEntidadId.HasValue) t.OrigenEntidadId = req.OrigenEntidadId;
-        // Solicitante (opcional): solo se cambia si viene en el request y es distinto; valida que la persona exista.
+        // Solicitante (opcional): solo se cambia si viene en el request y es distinto (validado arriba).
         if (req.SolicitantePersonaId is { } spid && spid != t.SolicitantePersonaId)
-        {
-            if (!await _db.Personas.AsNoTracking().AnyAsync(p => p.Id == spid, ct))
-                throw new InvalidOperationException("La persona solicitante no existe.");
             t.SolicitantePersonaId = spid;
-        }
         t.UpdatedAt = DateTimeOffset.UtcNow;
 
         if (prevPri != req.Prioridad)
@@ -449,17 +465,16 @@ public partial class TareasService
         {
             await RegistrarHistorial(t.Id, TipoEventoTarea.Actualizada, "Marcada como proyecto", null, null, ct);
         }
+        // T-03: de aqui al commit todo es UNA sola unidad. Antes eran cuatro SaveChanges sueltos,
+        // asi que un fallo a mitad (estado invalido, checklist mala) dejaba la tarea con unos campos
+        // nuevos y otros viejos. Ahora o se guarda todo o no se guarda nada.
+        await using var tx = await _db.Database.BeginTransactionAsync(ct);
+
+        // Estado: mismas reglas que CambiarEstado, porque es la misma funcion.
+        if (nuevoEstado is not null)
+            await AplicarCambioEstadoAsync(t, nuevoEstado, null, null, null, ct);
+
         await _db.SaveChangesAsync(ct);
-
-        // Notificar al nuevo responsable si cambio la asignacion (todos sus canales).
-        if (prevAsig != asignado && asignado is { } nuevoAsig)
-            await _noti.EnviarEventoUsuarioAsync(nuevoAsig, $"Tarea asignada: {t.NumeroTarea}",
-                $"Te asignaron la tarea {t.NumeroTarea} - {t.Titulo}", "2.10", t.Id,
-                _tenantContext.CurrentTenantId, PrioridadNotificacion.Normal, ct);
-
-        // Estado (mismo flujo de historial que CambiarEstado).
-        if (req.EstadoId.HasValue && req.EstadoId.Value != Guid.Empty && req.EstadoId.Value != t.EstadoId)
-            await CambiarEstadoAsync(id, new CambiarEstadoRequest(req.EstadoId.Value, null), ct);
 
         // Colaboradores (reemplazo total) cuando se envian responsables.
         if (responsables is not null)
@@ -477,6 +492,20 @@ public partial class TareasService
         // Valores de campos personalizados (upsert) cuando se envian.
         if (req.CamposValores is not null)
             await ReemplazarCamposValoresAsync(id, req.CamposValores, ct);
+
+        // El progreso del padre se deriva del de sus hijas; solo hace falta si el estado cambio.
+        if (nuevoEstado is not null)
+            await RecomputarProgresoAncestrosAsync(t.PadreId, ct);
+
+        await tx.CommitAsync(ct);
+
+        // Notificar al nuevo responsable si cambio la asignacion (todos sus canales). Va DESPUES del
+        // commit a proposito: antes se enviaba en medio de la escritura, asi que se podia avisar de
+        // una asignacion que luego no quedaba guardada.
+        if (prevAsig != asignado && asignado is { } nuevoAsig)
+            await _noti.EnviarEventoUsuarioAsync(nuevoAsig, $"Tarea asignada: {t.NumeroTarea}",
+                $"Te asignaron la tarea {t.NumeroTarea} - {t.Titulo}", "2.10", t.Id,
+                _tenantContext.CurrentTenantId, PrioridadNotificacion.Normal, ct);
 
         return true;
     }
@@ -721,34 +750,62 @@ public partial class TareasService
         if (nuevo is null) throw new InvalidOperationException("Estado destino invalido.");
         if (t.EstadoId == nuevo.Id) return true;
 
+        var motivo = await ResolverMotivoCierreAsync(nuevo, req.MotivoCierreId, ct);
+        await AplicarCambioEstadoAsync(t, nuevo, motivo, null, null, ct);
+        await _db.SaveChangesAsync(ct);
+        await RecomputarProgresoAncestrosAsync(t.PadreId, ct);
+        return true;
+    }
+
+    /// <summary>T-03/T-04: valida el motivo de cierre UNA sola vez. Devuelve null cuando el estado no
+    /// es terminal (no hay cierre que motivar) y lanza cuando es terminal y el motivo falta o no
+    /// sirve. Se llama ANTES de tocar ninguna tarea, para que un lote no quede a medias.</summary>
+    private async Task<MotivoCierre?> ResolverMotivoCierreAsync(
+        TareaEstado nuevo, Guid? motivoCierreId, CancellationToken ct)
+    {
+        if (!nuevo.EsTerminal) return null;
+        if (motivoCierreId is not Guid mcid)
+            throw new InvalidOperationException("Debes elegir un motivo de cierre.");
+        return await _db.MotivosCierre.AsNoTracking()
+            .FirstOrDefaultAsync(m => m.Id == mcid && m.Modulo == "tareas", ct)
+            ?? throw new InvalidOperationException("Motivo de cierre invalido.");
+    }
+
+    /// <summary>T-03/T-04: UNICO sitio donde viven las reglas de cambio de estado (cierre, reapertura,
+    /// fecha de completada, progreso e historial). NO guarda: quien llama decide la transaccion.
+    /// Lo usan CambiarEstadoAsync, ActualizarTareaAsync y BulkCambiarEstadoAsync, para que los tres
+    /// caminos dejen la tarea EXACTAMENTE igual.</summary>
+    private async Task AplicarCambioEstadoAsync(
+        Tarea t, TareaEstado nuevo, MotivoCierre? motivo, string? prefijoHistorial, string? nota,
+        CancellationToken ct)
+    {
         var anterior = await _db.TareasEstados.AsNoTracking().FirstOrDefaultAsync(e => e.Id == t.EstadoId, ct);
 
-        // Cierre: al mover a un estado TERMINAL se pide un motivo de cierre y la tarea se CIERRA
-        // (se archiva y desaparece del tablero activo, queda en la pestana "Cerrados").
-        string? motivoNombre = null;
+        // Cierre: al mover a un estado TERMINAL la tarea se CIERRA (se archiva y desaparece del
+        // tablero activo, queda en la pestana "Cerrados"). El motivo ya viene validado.
         if (nuevo.EsTerminal)
         {
-            if (req.MotivoCierreId is not Guid mcid)
-                throw new InvalidOperationException("Debes elegir un motivo de cierre.");
-            var motivo = await _db.MotivosCierre.AsNoTracking()
-                .FirstOrDefaultAsync(m => m.Id == mcid && m.Modulo == "tareas", ct)
-                ?? throw new InvalidOperationException("Motivo de cierre invalido.");
-            motivoNombre = motivo.Nombre;
             t.Cerrada = true;
             t.CerradaAt = DateTimeOffset.UtcNow;
-            t.MotivoCierreId = mcid;
+            t.MotivoCierreId = motivo!.Id;
             t.MotivoCancelacion = motivo.Nombre;   // compat: la ficha muestra el motivo
         }
         else if (t.Cerrada)
         {
-            // Reabrir: vuelve de un estado terminal a uno activo -> reaparece en el tablero.
+            // Reabrir: vuelve de un estado terminal a uno activo -> reaparece en el tablero. Se
+            // limpia TODO el rastro del cierre: una tarea abierta no puede quedar con fecha de
+            // completada ni con el motivo del cierre anterior colgado en la ficha.
             t.Cerrada = false;
             t.CerradaAt = null;
             t.MotivoCierreId = null;
+            t.MotivoCancelacion = null;
+            t.FechaCompletada = null;
         }
 
         t.EstadoId = nuevo.Id;
         t.EstadoDesde = DateTimeOffset.UtcNow;   // reinicia el reloj "tiempo en este estado".
+        // Solo "Completada" da el trabajo por terminado: una tarea Cancelada NO lleva fecha de
+        // completada (antes el lote se la ponia a cualquier estado terminal, Cancelada incluida).
         if (nuevo.EsTerminal && nuevo.Nombre == EstadoTareaBase.Completada)
         {
             t.FechaCompletada = DateTimeOffset.UtcNow;
@@ -758,13 +815,12 @@ public partial class TareasService
 
         await RegistrarHistorial(t.Id,
             nuevo.Nombre == EstadoTareaBase.Cancelada ? TipoEventoTarea.Cancelada : TipoEventoTarea.EstadoCambiado,
-            nuevo.EsTerminal ? $"Cerrada ({nuevo.Nombre}) - motivo: {motivoNombre}" : $"Estado cambiado de {anterior?.Nombre ?? "?"} a {nuevo.Nombre}",
+            nuevo.EsTerminal
+                ? $"{prefijoHistorial}Cerrada ({nuevo.Nombre}) - motivo: {motivo!.Nombre}"
+                : $"{prefijoHistorial}Estado cambiado de {anterior?.Nombre ?? "?"} a {nuevo.Nombre}",
             new { prev = anterior?.Nombre },
-            new { nuevo = nuevo.Nombre, motivo = motivoNombre },
+            new { nuevo = nuevo.Nombre, motivo = motivo?.Nombre, nota },
             ct);
-        await _db.SaveChangesAsync(ct);
-        await RecomputarProgresoAncestrosAsync(t.PadreId, ct);
-        return true;
     }
 
 }
