@@ -1995,8 +1995,7 @@ else
             }
             else
             {
-                _cfgErrMsg = $"No se pudo guardar '{req.CampoClave}' ({(int)r.StatusCode}). "
-                           + await MensajeError(r, "Reintenta; si sigue igual, avisa a soporte.");
+                _cfgErrMsg = await MensajeGuardadoFallidoAsync(r, req.CampoClave);
             }
         }
         catch (Exception ex) { _cfgErrMsg = $"No se pudo guardar '{req.CampoClave}': {ex.Message}"; }
@@ -2005,6 +2004,43 @@ else
 
     /// <summary>Ultimo error al guardar configuracion. Se muestra arriba de la grilla del panel.</summary>
     private string? _cfgErrMsg;
+
+    /// <summary>
+    /// Mensaje accionable segun por que fallo el guardado. Un 403 puede venir de tres causas muy
+    /// distintas y el backend las distingue en 'reason'; sin eso, "forbidden" no dice que hacer.
+    /// </summary>
+    private static async Task<string> MensajeGuardadoFallidoAsync(HttpResponseMessage r, string clave)
+    {
+        string? reason = null, error = null;
+        try
+        {
+            var body = await r.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+            body?.TryGetValue("reason", out reason);
+            body?.TryGetValue("error", out error);
+        }
+        catch { }
+
+        if (r.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            return reason switch
+            {
+                "permiso_insuficiente" =>
+                    $"No se pudo guardar '{clave}': tu rol no tiene permiso de EDITAR en Mi Copropiedad. "
+                    + "Pidele a un Administrador que lo habilite en Usuarios y Accesos > Roles y permisos.",
+                "rol_insuficiente" =>
+                    $"No se pudo guardar '{clave}': tu rol no puede configurar campos. Se necesita un Administrador.",
+                "sin_persona" =>
+                    $"No se pudo guardar '{clave}': tu usuario no esta vinculado a esta copropiedad. "
+                    + "Vuelve a iniciar sesion; si sigue igual, revisa el vinculo en Usuarios y Accesos.",
+                _ => $"No se pudo guardar '{clave}': acceso denegado (403{(reason is null ? "" : ", " + reason)})."
+            };
+        }
+        if (r.StatusCode == System.Net.HttpStatusCode.InternalServerError)
+            return $"No se pudo guardar '{clave}': error del servidor (500). "
+                 + "Si es un entorno recien desplegado, revisa que las migraciones esten aplicadas.";
+
+        return $"No se pudo guardar '{clave}' ({(int)r.StatusCode}). {error ?? "Reintenta; si sigue igual, avisa a soporte."}";
+    }
 
     // ===== Configurar: tipos de unidad propios (semilla = tipos base del enum) =====
     private string _nuevoTipoNombre = "";
