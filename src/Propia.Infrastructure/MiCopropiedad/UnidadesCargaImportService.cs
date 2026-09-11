@@ -123,6 +123,13 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             var defsZon = dinZon.Count == 0 ? SinCampos : Catalogo(await _mi.ListCamposDefZonaAsync(ct), d => d.Id, d => d.Label);
             var defsEqu = dinEqu.Count == 0 ? SinCampos : Catalogo(await _mi.ListCamposDefEquipoAsync(ct), d => d.Id, d => d.Label);
 
+            // Tipos de unidad PROPIOS de ESTA copropiedad (nombre -> id), para resolver la columna TIPO.
+            // Son por tenant, igual que los campos dinamicos, y el tenant ya quedo fijado arriba.
+            var tiposPropios = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+            foreach (var tp in await _db.TiposUnidadCustom.AsNoTracking()
+                         .Select(t => new { t.Id, t.Nombre }).ToListAsync(ct))
+                tiposPropios.TryAdd((tp.Nombre ?? "").Trim(), tp.Id);
+
             var numeroToId = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
             var idxCodigo = await BuildUnidadIndexAsync(ct);   // unidades existentes por Numero y por codigo TORRE-NUMERO
             var anexosPend = new List<(int Fila, string Principal, string Asociada)>();
@@ -135,7 +142,26 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                     _db.ChangeTracker.Clear();   // evita que el tracker crezca (DetectChanges O(n^2))
                     var numero = Val(row, "UNIDAD PRIVADA").Trim();
                     if (numero.Length == 0) { errores.Add(new("UNIDADES PRIVADAS", fila, "Falta UNIDAD PRIVADA")); continue; }
-                    var tipo = ParseEnum(Val(row, "TIPO"), TipoUnidad.Apartamento);
+                    // TIPO puede ser del sistema (por nombre de enum o por su etiqueta, "Cuarto util")
+                    // o PROPIO de la copropiedad. null = la columna no vino o vino vacia -> no se toca
+                    // el tipo que ya tiene la unidad. Un texto que no resuelve es un ERROR de la fila:
+                    // antes caia en Apartamento sin avisar, y quedaba mal clasificada para siempre.
+                    var tipoTexto = Val(row, "TIPO").Trim();
+                    (TipoUnidad Tipo, Guid? Custom)? tipoRes = null;
+                    if (tipoTexto.Length > 0)
+                    {
+                        if (TiposUnidadCatalogo.TryResolver(tipoTexto, out var tSis))
+                            tipoRes = (tSis, null);
+                        else if (tiposPropios.TryGetValue(tipoTexto, out var propioId))
+                            tipoRes = (TipoUnidad.Apartamento, propioId);   // el propio se guarda en TipoCustomId
+                        else
+                        {
+                            errores.Add(new("UNIDADES PRIVADAS", fila,
+                                $"TIPO '{tipoTexto}' no existe en esta copropiedad (ni del sistema ni propio). "
+                                + "Revisa la lista desplegable de la columna TIPO."));
+                            continue;
+                        }
+                    }
                     var coef = ParseDecimal(Val(row, "COEFICIENTE"));
                     var matricula = NullIfEmpty(Val(row, "MATRICULA"));
                     var refPago = NullIfEmpty(Val(row, "REF PAGO"));
@@ -172,13 +198,17 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                     if (existente is not null)
                     {
                         var upd = new ActualizarUnidadRequest(
-                            existente.Numero, tipo, existente.TorreId, piso ?? existente.Piso,
+                            existente.Numero, tipoRes?.Tipo ?? existente.Tipo, existente.TorreId, piso ?? existente.Piso,
                             coef, area ?? existente.AreaM2,
                             habitaciones ?? existente.Habitaciones, banos ?? existente.Banos,
                             parqueaderos ?? existente.Parqueaderos,
                             estado ?? existente.Estado, observaciones ?? existente.Observaciones,
                             matricula ?? existente.MatriculaInmobiliaria, pagaAdmin ?? existente.PagaAdministracion,
                             cuota ?? existente.CuotaMensual, refPago ?? existente.ReferenciaPago,
+                            // Si la fila trae TIPO manda ese (y limpia el propio cuando eligio uno del
+                            // sistema); si no trae, se conserva el que tenia. Antes no se enviaba nunca,
+                            // asi que cada recarga borraba el tipo propio de la unidad.
+                            TipoCustomId: tipoRes is { } tr ? tr.Custom : existente.TipoCustomId,
                             ModuloContributivo1: mod1 ?? existente.ModuloContributivo1,
                             ModuloContributivo2: mod2 ?? existente.ModuloContributivo2,
                             ModuloContributivo3: mod3 ?? existente.ModuloContributivo3,
@@ -191,10 +221,11 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                     else
                     {
                         var req = new CrearUnidadRequest(
-                            numero, tipo, null, piso,
+                            numero, tipoRes?.Tipo ?? TipoUnidad.Apartamento, null, piso,
                             coef, area, habitaciones, banos, parqueaderos,
                             estado, observaciones,
                             matricula, pagaAdmin ?? true, cuota, refPago,
+                            TipoCustomId: tipoRes?.Custom,
                             ModuloContributivo1: mod1, ModuloContributivo2: mod2,
                             ModuloContributivo3: mod3, ModuloContributivo4: mod4,
                             ModuloContributivo5: mod5);

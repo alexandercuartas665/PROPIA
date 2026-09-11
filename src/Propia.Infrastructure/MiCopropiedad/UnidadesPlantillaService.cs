@@ -58,6 +58,10 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
             .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => new { c.Id, c.Label }).ToListAsync(ct);
         // Los campos dinamicos guardan su visibilidad con la clave "cd:{id}" de la definicion.
         var camposUnidad = defsUnidad.Where(d => cfgUnidad.Visible("cd:" + d.Id)).Select(d => d.Label).ToList();
+        // Tipos de unidad PROPIOS de la copropiedad: van en el desplegable de TIPO junto a los del sistema.
+        var tiposPropios = (await _db.TiposUnidadCustom.AsNoTracking()
+                .OrderBy(t => t.Nombre).Select(t => new { t.Id, t.Nombre }).ToListAsync(ct))
+            .Select(t => (t.Id, t.Nombre)).ToList();
         var camposPersona = await _db.PersonaCamposDefiniciones.AsNoTracking()
             .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => c.Label).ToListAsync(ct);
         var camposVehiculo = await _db.VehiculoCamposDefiniciones.AsNoTracking()
@@ -80,7 +84,7 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         var coproTercerosList = InlineList(new[] { TodasLasCopropiedades }.Concat(copros.Select(c => c.Nombre)));
 
         // ---- Hojas de datos ----
-        HojaUnidades(wb, coproList, camposUnidad, cfgUnidad);
+        HojaUnidades(wb, coproList, camposUnidad, cfgUnidad, tiposPropios);
         HojaPersonas(wb, coproList, rolesList, camposPersona);
         HojaVehiculos(wb, coproList, camposVehiculo);
         HojaMascotas(wb, coproList, camposMascota);
@@ -114,7 +118,7 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     // para el importador y PRINCIPAL es la que vincula un anexo con su unidad principal. Sin ellas
     // la plantilla quedaria inservible, asi que no dependen de la configuracion.
     private static void HojaUnidades(XLWorkbook wb, string? coproRange, List<string> camposUnidad,
-        ConfigCamposUnidad cfg)
+        ConfigCamposUnidad cfg, List<(Guid Id, string Nombre)> tiposPropios)
     {
         // Las columnas salen del catalogo UNICO de campos de sistema (UnidadCamposSistema), el mismo
         // que alimenta la tabla de unidades. Antes esta lista estaba duplicada aqui y se quedo corta:
@@ -136,7 +140,10 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         // Dropdowns y ejemplo POR ENCABEZADO (no por posicion): al filtrar columnas los indices se
         // mueven, y una columna ausente simplemente no recibe nada.
         Dropdown(ws, Indice(cols, "COPROPIEDAD"), coproRange);
-        DropdownInline(ws, Indice(cols, "TIPO"), EnumCsv<TipoUnidad>());   // todos los tipos de unidad (auto desde el enum)
+        // TIPO: los tipos que ofrece ESTA copropiedad (del sistema que no oculto + los propios), con
+        // la misma etiqueta que muestra la app. Antes se volcaba el enum crudo: los tipos propios no
+        // aparecian y, si el usuario los escribia a mano, se guardaban como Apartamento en silencio.
+        Dropdown(ws, Indice(cols, "TIPO"), InlineList(cfg.OpcionesTipo(tiposPropios)));
         DropdownInline(ws, Indice(cols, "AGRUPACION"), "1,2,3");
         // ESTADO: las opciones que tenga configuradas la copropiedad (las ocultas no se ofrecen).
         Dropdown(ws, Indice(cols, "ESTADO"), InlineList(cfg.OpcionesEstado()));
@@ -473,6 +480,37 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
             var raw = _filas.TryGetValue("estado", out var f) ? f.Opciones : null;
             var guardadas = LeerOpciones(raw);
             return guardadas.Count == 0 ? UnidadCamposSistema.EstadosSemilla : guardadas;
+        }
+
+        /// <summary>
+        /// Opciones del campo TIPO para esta copropiedad: los tipos del sistema que no haya ocultado
+        /// mas sus tipos PROPIOS. Se emiten con la ETIQUETA que ve el usuario en la app (no el nombre
+        /// crudo del enum), que es lo que el importador sabe resolver.
+        /// La configuracion guarda las ocultas con clave "e:{Enum}" (del sistema) y "c:{guid}" (propio).
+        /// </summary>
+        public IEnumerable<string> OpcionesTipo(IEnumerable<(Guid Id, string Nombre)> propios)
+        {
+            var raw = _filas.TryGetValue("tipo", out var f) ? f.Opciones : null;
+            var ocultas = OpcionesOcultas(raw);
+            foreach (var (tipo, etiqueta) in TiposUnidadCatalogo.Todos)
+                if (!ocultas.Contains("e:" + tipo)) yield return etiqueta;
+            foreach (var (id, nombre) in propios)
+                if (!ocultas.Contains("c:" + id) && !string.IsNullOrWhiteSpace(nombre)) yield return nombre.Trim();
+        }
+
+        // Claves de opciones marcadas como OCULTAS (para las listas cuyo universo no vive en la
+        // config, como TIPO: ahi lo guardado solo dice que se oculto y en que orden).
+        private static HashSet<string> OpcionesOcultas(string? raw)
+        {
+            var res = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(raw) || !raw.TrimStart().StartsWith('[')) return res;
+            try
+            {
+                var ops = System.Text.Json.JsonSerializer.Deserialize<List<OpcionListaJson>>(raw);
+                foreach (var o in ops ?? new()) if (o.Oculta && !string.IsNullOrWhiteSpace(o.K)) res.Add(o.K.Trim());
+            }
+            catch { /* config corrupta: no se oculta nada */ }
+            return res;
         }
 
         // Mismo formato que escribe el panel de Configurar: JSON [{"K":"...","Oculta":false}].

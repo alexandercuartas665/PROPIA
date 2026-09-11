@@ -140,7 +140,140 @@ public class UnidadesPlantillaRoundTripTests
         finally { await CleanupTenantAsync(tenantId); }
     }
 
+    [Fact]
+    public async Task Tipo_propio_de_la_copropiedad_se_ofrece_se_importa_y_sobrevive_a_la_recarga()
+    {
+        var tenantId = await SeedTenantAsync("CP Tipos Propios");
+        try
+        {
+            var tipoId = await SeedTipoPropioAsync(tenantId, "Duplex");
+
+            // 1. El desplegable de TIPO lo ofrece (antes solo volcaba el enum del sistema).
+            var ws = await GenerarHojaUnidadesAsync(tenantId);
+            Assert.Contains("Duplex", ListaDeValidacion(ws, "TIPO"));
+
+            // 2. Se importa como tipo PROPIO, no como Apartamento.
+            LlenarFila(ws, 5, "CP Tipos Propios", new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["UNIDAD PRIVADA"] = "T1-770", ["TIPO"] = "Duplex", ["COEFICIENTE"] = "1.00",
+            });
+            var alta = await ImportarAsync(tenantId, ws.Workbook);
+            Assert.Empty(alta.Errores);
+            var u = await GetUnidadAsync(tenantId, "T1-770");
+            Assert.Equal(tipoId, u.TipoCustomId);
+
+            // 3. El usuario oculta TIPO y vuelve a cargar: la plantilla ya no trae la columna y el
+            //    tipo propio NO se pierde. Antes el importador nunca enviaba TipoCustomId, asi que
+            //    cada recarga lo borraba y la unidad quedaba como Apartamento.
+            await OcultarCampoAsync(tenantId, "tipo");
+            var ws2 = await GenerarHojaUnidadesAsync(tenantId);
+            Assert.DoesNotContain("TIPO", Encabezados(ws2));
+            LlenarFila(ws2, 5, "CP Tipos Propios", new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["UNIDAD PRIVADA"] = "T1-770", ["COEFICIENTE"] = "2.00",
+            });
+            var recarga = await ImportarAsync(tenantId, ws2.Workbook);
+            Assert.Empty(recarga.Errores);
+            var u2 = await GetUnidadAsync(tenantId, "T1-770");
+            Assert.Equal(tipoId, u2.TipoCustomId);
+            Assert.Equal(2.00m, u2.CoeficientePropiedad);
+        }
+        finally { await CleanupTenantAsync(tenantId); }
+    }
+
+    [Fact]
+    public async Task Tipo_del_sistema_se_acepta_por_su_etiqueta_y_limpia_el_tipo_propio()
+    {
+        var tenantId = await SeedTenantAsync("CP Tipos Etiqueta");
+        try
+        {
+            var tipoId = await SeedTipoPropioAsync(tenantId, "Duplex");
+            var ws = await GenerarHojaUnidadesAsync(tenantId);
+            LlenarFila(ws, 5, "CP Tipos Etiqueta", new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["UNIDAD PRIVADA"] = "T1-771", ["TIPO"] = "Duplex", ["COEFICIENTE"] = "1.00",
+            });
+            Assert.Empty((await ImportarAsync(tenantId, ws.Workbook)).Errores);
+            Assert.Equal(tipoId, (await GetUnidadAsync(tenantId, "T1-771")).TipoCustomId);
+
+            // "Cuarto util" es la ETIQUETA de UtilCuarto: la app la muestra asi y la plantilla la
+            // ofrece asi, de modo que el importador tiene que aceptarla (antes -> Apartamento mudo).
+            var ws2 = await GenerarHojaUnidadesAsync(tenantId);
+            LlenarFila(ws2, 5, "CP Tipos Etiqueta", new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["UNIDAD PRIVADA"] = "T1-771", ["TIPO"] = "Cuarto util", ["COEFICIENTE"] = "1.00",
+            });
+            Assert.Empty((await ImportarAsync(tenantId, ws2.Workbook)).Errores);
+
+            var u = await GetUnidadAsync(tenantId, "T1-771");
+            Assert.Equal(TipoUnidad.UtilCuarto, u.Tipo);
+            Assert.Null(u.TipoCustomId);   // al elegir uno del sistema se limpia el propio
+        }
+        finally { await CleanupTenantAsync(tenantId); }
+    }
+
+    [Fact]
+    public async Task Tipo_desconocido_se_reporta_como_error_y_no_entra_como_Apartamento()
+    {
+        var tenantId = await SeedTenantAsync("CP Tipos Desconocido");
+        try
+        {
+            var ws = await GenerarHojaUnidadesAsync(tenantId);
+            LlenarFila(ws, 5, "CP Tipos Desconocido", new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["UNIDAD PRIVADA"] = "T1-772", ["TIPO"] = "Penthouse inventado", ["COEFICIENTE"] = "1.00",
+            });
+            var res = await ImportarAsync(tenantId, ws.Workbook);
+
+            Assert.Single(res.Errores);
+            Assert.Contains("Penthouse inventado", res.Errores[0].Motivo);
+            Assert.Equal(0, res.Unidades);
+            await using var ctx = OwnerCtx();
+            Assert.False(await ctx.UnidadesPrivadas.IgnoreQueryFilters()
+                .AnyAsync(x => x.TenantId == tenantId && x.Numero == "T1-772"),
+                "una unidad con TIPO desconocido no debe entrar clasificada como Apartamento");
+        }
+        finally { await CleanupTenantAsync(tenantId); }
+    }
+
     // ===================== helpers =====================
+
+    // Formula de la lista desplegable de una columna (para comprobar que ofrece lo que debe).
+    private static string ListaDeValidacion(IXLWorksheet ws, string encabezado)
+    {
+        var col = ColumnaDe(ws, encabezado);
+        foreach (var dv in ws.DataValidations)
+            foreach (var r in dv.Ranges)
+                if (r.RangeAddress.FirstAddress.ColumnNumber == col)
+                    return dv.Value ?? "";
+        return "";
+    }
+
+    // Oculta un campo en la config de la copropiedad (lo que hace el panel de Configurar).
+    private async Task OcultarCampoAsync(Guid tenantId, string clave)
+    {
+        await using var ctx = OwnerCtx();
+        var fila = await ctx.UnidadCamposConfig.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(c => c.TenantId == tenantId && c.Entidad == "unidad" && c.CampoClave == clave);
+        if (fila is null)
+        {
+            ctx.UnidadCamposConfig.Add(new UnidadCampoConfig
+            {
+                TenantId = tenantId, Entidad = "unidad", CampoClave = clave, Oculto = true
+            });
+        }
+        else { fila.Oculto = true; }
+        await ctx.SaveChangesAsync();
+    }
+
+    private async Task<Guid> SeedTipoPropioAsync(Guid tenantId, string nombre)
+    {
+        await using var ctx = OwnerCtx();
+        var t = new TipoUnidadCustom { TenantId = tenantId, Nombre = nombre, Activo = true };
+        ctx.TiposUnidadCustom.Add(t);
+        await ctx.SaveChangesAsync();
+        return t.Id;
+    }
 
     private async Task<IXLWorksheet> GenerarHojaUnidadesAsync(Guid tenantId)
     {
@@ -254,6 +387,7 @@ public class UnidadesPlantillaRoundTripTests
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidad_coeficientes WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tipos_coeficiente WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidades_privadas WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM tipos_unidad_custom WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM torres WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tenants WHERE id = {tenantId}");
     }
