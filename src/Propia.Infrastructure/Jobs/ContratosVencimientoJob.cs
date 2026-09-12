@@ -4,6 +4,7 @@ using Propia.Domain.Entities;
 using Propia.Domain.Enums;
 using Propia.Infrastructure.MiCopropiedad;
 using Propia.Infrastructure.Persistence;
+using Propia.Infrastructure.Seguros;
 
 namespace Propia.Infrastructure.Jobs;
 
@@ -83,7 +84,10 @@ public class ContratosVencimientoJob : IBackgroundJob
                 var polizas = await _db.Polizas.Where(p => p.FechaFin != null).ToListAsync(ct);
                 foreach (var p in polizas)
                 {
-                    var sem = MiCopropiedadService.CalcularSemaforoContrato(p.FechaInicio ?? p.FechaFin!.Value, p.FechaFin, hoy);
+                    // K-07: el semaforo de una poliza lo define SegurosService y nadie mas. Aqui se
+                    // pasaba (FechaInicio ?? FechaFin) -> total 0 dias -> rojo critico, mientras la
+                    // pagina /seguros la pintaba verde.
+                    var sem = SegurosService.SemaforoPoliza(p.FechaInicio, p.FechaFin, hoy);
                     if (sem is SemaforoContrato.Verde or SemaforoContrato.Ninguno)
                     {
                         if (p.AlertaVencimientoPctNotificado != null) { p.AlertaVencimientoPctNotificado = null; cambios = true; }

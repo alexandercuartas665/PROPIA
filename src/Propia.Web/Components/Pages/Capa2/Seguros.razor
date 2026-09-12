@@ -260,7 +260,7 @@
                         @foreach (var cm in CamposActivos) { <div class="seg-c seg-c--auto">-</div> }
                     </div>
                 </div>
-                @if (!string.IsNullOrEmpty(_inlineMsg)) { <div class="seg-toast" @onclick="() => _inlineMsg = null">@_inlineMsg</div> }
+                @if (!string.IsNullOrEmpty(_inlineMsg)) { <div class="seg-toast @(_inlineMsgEsError ? "seg-toast--error" : "")" @onclick="() => _inlineMsg = null">@_inlineMsg</div> }
                 @* Footer canonico SIEMPRE salvo con agrupacion activa (canon regla 14): con 0 filas "Mostrando 0 de 0". *@
                 @if (_agruparPor == "")
                 {
@@ -550,6 +550,8 @@
     .seg-row-add:disabled { opacity: .5; cursor: default; }
     .seg-row-nuevo { background: var(--propia-ok-soft) !important; box-shadow: inset 3px 0 0 #34C759; }
     .seg-toast { position: sticky; bottom: 10px; margin: 10px auto 0; width: fit-content; background: #15703F; color: var(--propia-text-inverse); font-size: 12.5px; font-weight: 600; padding: 8px 16px; border-radius: 9px; cursor: pointer; box-shadow: 0 6px 18px rgba(21,112,63,.28); }
+    /* la variante de error va DESPUES de .seg-toast: misma especificidad, gana la ultima */
+    .seg-toast--error { background: var(--propia-danger); box-shadow: 0 6px 18px rgba(215,38,61,.28); }
 
     .seg-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
     .seg-card { text-align: left; border: 1px solid var(--propia-border-card); border-radius: 12px; padding: 14px; background: var(--propia-bg-card); cursor: pointer; display: flex; flex-direction: column; gap: 6px; }
@@ -1043,15 +1045,31 @@
         return http;
     }
 
+    // K-09: el API responde {"error":"..."} en los 400 de validacion. Sin esto el usuario veia
+    // el JSON crudo en el modal, o directamente nada en el alta inline y en las reclamaciones.
+    private static async Task<string> MensajeErrorAsync(HttpResponseMessage resp)
+    {
+        var cuerpo = await resp.Content.ReadAsStringAsync();
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(cuerpo);
+            if (doc.RootElement.TryGetProperty("error", out var e) && e.GetString() is { Length: > 0 } m) return m;
+        }
+        catch { }
+        return string.IsNullOrWhiteSpace(cuerpo) ? "No se pudo guardar la poliza." : cuerpo;
+    }
+
     // ---- Alta inline (crear poliza desde la tabla) ----
     private string _npNumero = "", _npAseguradora = "", _npCorredor = "", _npValor = "", _npInicio = "", _npFin = "";
     private bool _creandoInline;
     private string? _inlineMsg;
+    // K-09: el mismo toast avisa de exito y de error; en verde un error se lee como confirmacion.
+    private bool _inlineMsgEsError;
     private readonly List<Guid> _segRecienCreados = new();
 
     private async Task CrearPolizaDesdeAltaAsync()
     {
-        if (string.IsNullOrWhiteSpace(_npAseguradora)) { _inlineMsg = "Indica la aseguradora para crear la poliza."; return; }
+        if (string.IsNullOrWhiteSpace(_npAseguradora)) { _inlineMsg = "Indica la aseguradora para crear la poliza."; _inlineMsgEsError = true; return; }
         _creandoInline = true;
         try
         {
@@ -1067,12 +1085,12 @@
             {
                 try { var creada = await resp.Content.ReadFromJsonAsync<PolizaDto>(); if (creada is not null) _segRecienCreados.Add(creada.Id); } catch { }
                 _npNumero = ""; _npAseguradora = ""; _npCorredor = ""; _npValor = ""; _npInicio = ""; _npFin = "";
-                _inlineMsg = "Poliza creada.";
+                _inlineMsg = "Poliza creada."; _inlineMsgEsError = false;
                 await CargarAsync();
             }
-            else { _inlineMsg = "No se pudo crear la poliza."; }
+            else { _inlineMsg = await MensajeErrorAsync(resp); _inlineMsgEsError = true; }
         }
-        catch (Exception ex) { _inlineMsg = ex.Message; }
+        catch (Exception ex) { _inlineMsg = ex.Message; _inlineMsgEsError = true; }
         finally { _creandoInline = false; }
     }
 
@@ -1189,7 +1207,7 @@
                     _f.ValorPoliza, _f.FormaPagoCuotas, _f.PagoMensual, _f.Cobertura, _f.IncluyeZonasUnidades,
                     _f.ValoresAgregados, _f.Observaciones, exp, LimpiarExpediente: exp is null, PdfOrigenKey: _f.PdfOrigenKey));
             }
-            if (!resp.IsSuccessStatusCode) { _modalError = await resp.Content.ReadAsStringAsync(); return; }
+            if (!resp.IsSuccessStatusCode) { _modalError = await MensajeErrorAsync(resp); return; }
 
             // Resolver el id de la poliza (creada o editada) para persistir los valores de campos.
             Guid? polizaId = _editId;
@@ -1333,10 +1351,13 @@
                 new CrearReclamacionRequest(fecha, _nrMonto ?? 0, _nrDesc.Trim()));
             if (resp.IsSuccessStatusCode)
             {
+                _modalError = null;
                 _nrDesc = ""; _nrMonto = null; _nrFecha = DateTime.Today;
                 _reclamaciones = await Auth().GetFromJsonAsync<List<ReclamacionDto>>($"/api/seguros/polizas/{id}/reclamaciones") ?? _reclamaciones;
                 await CargarAsync();
             }
+            // K-09: antes un 400 no dejaba rastro y la reclamacion parecia creada.
+            else { _modalError = await MensajeErrorAsync(resp); }
         }
         finally { _busy = false; }
     }
@@ -1352,9 +1373,11 @@
             var resp = await Auth().PutAsJsonAsync($"/api/seguros/reclamaciones/{rid}/cerrar", new CerrarReclamacionRequest(_montoReconocido ?? 0));
             if (resp.IsSuccessStatusCode)
             {
+                _modalError = null;
                 _cerrarId = null; _montoReconocido = null;
                 _reclamaciones = await Auth().GetFromJsonAsync<List<ReclamacionDto>>($"/api/seguros/polizas/{id}/reclamaciones") ?? _reclamaciones;
             }
+            else { _modalError = await MensajeErrorAsync(resp); }
         }
         finally { _busy = false; }
     }
