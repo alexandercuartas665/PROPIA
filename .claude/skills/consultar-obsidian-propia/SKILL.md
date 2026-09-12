@@ -19,7 +19,7 @@ Siempre que haya una duda sobre **que** o **por que**, la respuesta esta en el v
 ## Ubicacion del vault
 
 ```
-C:\Users\acuartas\Documents\Personal\OneDrive\Clientes\05. Propia\02. Obsidian\PROPIA\PROPIA\
+D:\Obsidian\Propia\
 ```
 
 ## Documentos clave (leer en este orden cuando hay duda macro)
