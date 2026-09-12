@@ -225,6 +225,19 @@ public class ReservasService : IReservasService
                        && b.FechaInicio <= hasta && b.FechaFin >= desde)
             .ToListAsync(ct);
 
+        // RN-08: si la zona no esta operativa, ninguna franja esta disponible. Se calcula aqui y
+        // no en el front (RN-10). Sin esto el residente veia el calendario en verde y solo se
+        // enteraba al confirmar, cuando CrearReservaAsync lo rechazaba.
+        var estadoZona = await _db.ZonasComunes.AsNoTracking()
+            .Where(z => z.Id == zonaComunId)
+            .Select(z => (EstadoZonaComunMantenimiento?)z.Estado)
+            .FirstOrDefaultAsync(ct);
+        var zonaFueraDeServicio = estadoZona is EstadoZonaComunMantenimiento.EnMantenimiento
+                                              or EstadoZonaComunMantenimiento.Inactiva;
+        var motivoZona = estadoZona == EstadoZonaComunMantenimiento.EnMantenimiento
+            ? "Zona en mantenimiento"
+            : "Zona inactiva";
+
         var slots = new List<SlotDisponibilidadDto>();
         for (var d = desde; d <= hasta; d = d.AddDays(1))
         {
@@ -239,6 +252,15 @@ public class ReservasService : IReservasService
                     var horaFin = h.Add(paso);
                     var estado = "DISPONIBLE";
                     string? motivo = null;
+
+                    // estado operativo de la zona (RN-08): manda sobre todo lo demas
+                    if (zonaFueraDeServicio)
+                    {
+                        estado = "BLOQUEADO";
+                        if (cfg.MotivoBloqueoVisible) motivo = motivoZona;
+                        slots.Add(new SlotDisponibilidadDto(d, horaIni, horaFin, estado, motivo));
+                        continue;
+                    }
 
                     // bloqueo manual
                     var bloq = bloqueos.FirstOrDefault(b =>
@@ -316,6 +338,21 @@ public class ReservasService : IReservasService
     {
         if (req.HoraFin <= req.HoraInicio) throw new InvalidOperationException("HoraFin debe ser posterior a HoraInicio.");
         var tenantId = RequireTenantId();
+
+        // Estado operativo de la zona (RN-08 de 2.11, RN-01/RN-02 de 2.13). No se validaba: una
+        // zona marcada EnMantenimiento en 2.3 se seguia reservando con normalidad, que es justo
+        // lo que la regla prohibe. Va primero porque es la validacion mas fuerte: si la zona no
+        // esta operativa, el horario, la tarifa y el cupo son irrelevantes.
+        var estadoZona = await _db.ZonasComunes.AsNoTracking()
+            .Where(z => z.Id == req.ZonaComunId)
+            .Select(z => (EstadoZonaComunMantenimiento?)z.Estado)
+            .FirstOrDefaultAsync(ct)
+            ?? throw new InvalidOperationException("Zona no encontrada.");
+        if (estadoZona == EstadoZonaComunMantenimiento.EnMantenimiento)
+            throw new InvalidOperationException("RN-08: la zona esta en mantenimiento y no admite reservas.");
+        if (estadoZona == EstadoZonaComunMantenimiento.Inactiva)
+            throw new InvalidOperationException("RN-01: la zona esta inactiva y no admite reservas.");
+
         var cfg = await _db.ZonaConfigReservas.AsNoTracking().Include(c => c.Franjas)
             .FirstOrDefaultAsync(c => c.ZonaComunId == req.ZonaComunId, ct)
             ?? throw new InvalidOperationException("La zona no tiene configuracion de reservas.");
