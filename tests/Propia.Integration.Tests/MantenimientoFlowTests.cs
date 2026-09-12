@@ -55,6 +55,19 @@ public class MantenimientoFlowTests : IAsyncLifetime
     // Tests
     // =======================================================================
 
+    [Theory]
+    // Instante UTC -> dia esperado en Colombia (UTC-5). Es la prueba de M-09.
+    [InlineData("2026-01-15T03:00:00Z", "2026-01-14")]  // 22:00 del 14 en Colombia: sigue siendo el 14, no el 15
+    [InlineData("2026-01-15T04:59:00Z", "2026-01-14")]  // 23:59 del 14: aun el 14 (con UtcNow crudo seria el 15: el bug)
+    [InlineData("2026-01-15T05:00:00Z", "2026-01-15")]  // 00:00 del 15 en Colombia: ya es el 15
+    [InlineData("2026-01-15T12:00:00Z", "2026-01-15")]  // 07:00 del 15: mismo dia en ambas zonas
+    public void HoyEnColombia_usa_hora_local_no_UTC(string instanteUtc, string diaEsperado)
+    {
+        var utc = DateTime.Parse(instanteUtc, null, System.Globalization.DateTimeStyles.AdjustToUniversal);
+        var hoy = Propia.Infrastructure.Jobs.MantenimientoPreventivoJob.HoyEnColombia(utc);
+        Assert.Equal(DateOnly.Parse(diaEsperado), hoy);
+    }
+
     [Fact]
     public async Task Crear_plan_preventivo_inicializa_proxima_ejecucion_en_fecha_inicio()
     {
