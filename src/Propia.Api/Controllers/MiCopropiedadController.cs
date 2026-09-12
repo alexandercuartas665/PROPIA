@@ -183,6 +183,10 @@ public class MiCopropiedadController : ControllerBase
     [HttpGet("unidades")] public async Task<IActionResult> ListUnidades(CancellationToken ct) => Ok(await _svc.ListUnidadesAsync(ct));
     // Modulo Residentes: todas las personas/empresas de las unidades del tenant.
     [HttpGet("residentes")] public async Task<IActionResult> ListResidentes(CancellationToken ct) => Ok(await _svc.ListResidentesAsync(ct));
+    /// <summary>Todos los vehiculos de la copropiedad con su unidad (modulo /vehiculos).</summary>
+    [HttpGet("vehiculos")] public async Task<IActionResult> ListVehiculos(CancellationToken ct) => Ok(await _svc.ListVehiculosAsync(ct));
+    /// <summary>Todas las mascotas de la copropiedad con su unidad (modulo /mascotas).</summary>
+    [HttpGet("mascotas")] public async Task<IActionResult> ListMascotas(CancellationToken ct) => Ok(await _svc.ListMascotasAsync(ct));
     [HttpGet("unidades/{id:guid}")]
     public async Task<IActionResult> ObtenerUnidad(Guid id, CancellationToken ct)
     {
@@ -548,6 +552,14 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpPut("unidades-placas/{placaId:guid}")]
+    public async Task<IActionResult> ActualizarPlacaUnidad(Guid placaId, [FromBody] ActualizarUnidadPlacaRequest req, CancellationToken ct)
+    {
+        try { var dto = await _svc.ActualizarPlacaUnidadAsync(placaId, req, ct); return dto is null ? NotFound() : Ok(dto); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("unidades-placas/{placaId:guid}")]
     public async Task<IActionResult> EliminarPlacaUnidad(Guid placaId, CancellationToken ct)
@@ -579,6 +591,14 @@ public class MiCopropiedadController : ControllerBase
     public async Task<IActionResult> AgregarMascotaUnidad(Guid id, [FromBody] CrearUnidadMascotaRequest req, CancellationToken ct)
     {
         try { var dto = await _svc.AgregarMascotaUnidadAsync(id, req, ct); return dto is null ? NotFound() : Created("", dto); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpPut("unidades-mascotas/{mascotaId:guid}")]
+    public async Task<IActionResult> ActualizarMascotaUnidad(Guid mascotaId, [FromBody] ActualizarUnidadMascotaRequest req, CancellationToken ct)
+    {
+        try { var dto = await _svc.ActualizarMascotaUnidadAsync(mascotaId, req, ct); return dto is null ? NotFound() : Ok(dto); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 

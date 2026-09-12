@@ -184,7 +184,17 @@ public record UnidadDocumentoDto(Guid Id, string Nombre, string Url, long Tamano
 
 // Placas habilitadas para ingreso (control de acceso de Porteria 2.12).
 public record UnidadPlacaDto(Guid Id, string Placa, TipoVehiculo TipoVehiculo);
+
+// Vista agregada de TODOS los vehiculos de la copropiedad (modulo /vehiculos), con la unidad a la
+// que pertenecen. Mismo patron que ResidenteResumenDto: la ficha de la unidad sigue trabajando con
+// UnidadPlacaDto; esto es solo para la tabla transversal.
+public record VehiculoResumenDto(
+    Guid PlacaId, Guid UnidadId, string UnidadNumero, string UnidadCodigo, string? TorreNombre,
+    string Placa, TipoVehiculo TipoVehiculo,
+    string? PropietarioNombre);
 public record CrearUnidadPlacaRequest(string Placa, TipoVehiculo TipoVehiculo);
+// PUT es MERGE: lo que llega null no se toca.
+public record ActualizarUnidadPlacaRequest(string? Placa = null, TipoVehiculo? TipoVehiculo = null);
 
 // Arriendos y cobros mensuales de la unidad.
 public record UnidadArriendoDto(Guid Id, string Concepto, decimal ValorMensual, string? Referencia);
@@ -192,7 +202,14 @@ public record CrearUnidadArriendoRequest(string Concepto, decimal ValorMensual, 
 
 // Mascotas registradas en la unidad.
 public record UnidadMascotaDto(Guid Id, string Nombre, TipoMascota Tipo, string? Raza);
+
+// Vista agregada de TODAS las mascotas de la copropiedad (modulo /mascotas). Ver VehiculoResumenDto.
+public record MascotaResumenDto(
+    Guid MascotaId, Guid UnidadId, string UnidadNumero, string UnidadCodigo, string? TorreNombre,
+    string Nombre, TipoMascota Tipo, string? Raza,
+    string? PropietarioNombre);
 public record CrearUnidadMascotaRequest(string Nombre, TipoMascota Tipo, string? Raza);
+public record ActualizarUnidadMascotaRequest(string? Nombre = null, TipoMascota? Tipo = null, string? Raza = null);
 
 // Empleada(s) de servicio de la unidad.
 public record UnidadEmpleadaDto(Guid Id, string Nombre, string? Documento, string? Celular, string? Horario, Guid? PersonaId = null);

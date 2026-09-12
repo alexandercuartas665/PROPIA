@@ -41,11 +41,15 @@ public static class MenuCatalog
         new MenuItemDef("mi-copropiedad", "tabMiPH", "Mi copropiedad", "/mi-copropiedad", "fi-rr-building", 1),
         new MenuItemDef("mi-distribucion", "tabMiPH", "Unidades Privadas", "/distribucion", "fi-rr-apps", 2),
         new MenuItemDef("mi-residentes", "tabMiPH", "Residentes", "/residentes", "fi-rr-users", 3),
+        // Vehiculos y Mascotas: hermanos de Residentes. Antes solo se llegaba a ellos abriendo la
+        // ficha de cada unidad y su configuracion de campos vivia en el panel de Unidades Privadas.
+        new MenuItemDef("mi-vehiculos", "tabMiPH", "Vehiculos", "/vehiculos", "fi-rr-car", 4),
+        new MenuItemDef("mi-mascotas", "tabMiPH", "Mascotas", "/mascotas", "fi-rr-paw", 5),
         // Union de Zonas Comunes + Equipos y Activos en una sola pagina con dos tabs (/espacios).
         // Las rutas /zonas-comunes y /equipos-activos siguen existiendo (sus wrappers) pero salen del menu.
-        new MenuItemDef("mi-espacios", "tabMiPH", "Equipos y Zonas Comunes", "/espacios", "fi-rr-trees", 4),
-        new MenuItemDef("mi-directorio", "tabMiPH", "Directorio", "/directorio", "fi-rr-address-book", 6),
-        new MenuItemDef("mi-usuarios", "tabMiPH", "Usuarios y roles", "/usuarios", "fi-rr-users-alt", 7),
+        new MenuItemDef("mi-espacios", "tabMiPH", "Equipos y Zonas Comunes", "/espacios", "fi-rr-trees", 6),
+        new MenuItemDef("mi-directorio", "tabMiPH", "Directorio", "/directorio", "fi-rr-address-book", 7),
+        new MenuItemDef("mi-usuarios", "tabMiPH", "Usuarios y roles", "/usuarios", "fi-rr-users-alt", 8),
 
         // Finanzas
         new MenuItemDef("fin-presupuesto", "tabFinanzas", "Presupuesto y cuotas", "/presupuesto", "fi-rr-money-bill-wave", 1),

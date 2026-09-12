@@ -385,6 +385,84 @@ public partial class MiCopropiedadService
 
     // Modulo Residentes: TODAS las personas/empresas de TODAS las unidades del tenant (RLS ya
     // acota al tenant activo), cada una con el codigo de su unidad (TORRE-NUMERO, ej. A1-101).
+    // ===================== Vistas agregadas: vehiculos y mascotas =====================
+    // Los modulos /vehiculos y /mascotas necesitan TODOS los registros de la copropiedad; hasta
+    // ahora solo existian los endpoints por unidad (unidades/{id}/placas y .../mascotas), que
+    // obligaban a abrir la ficha de cada unidad para ver o editar uno. Mismo patron que residentes.
+
+    public async Task<IReadOnlyList<VehiculoResumenDto>> ListVehiculosAsync(CancellationToken ct)
+    {
+        var rows = await _db.UnidadPlacas.AsNoTracking()
+            .Select(v => new { v.Id, v.UnidadId, v.Placa, v.TipoVehiculo }).ToListAsync(ct);
+        if (rows.Count == 0) return Array.Empty<VehiculoResumenDto>();
+
+        var datos = await DatosDeUnidadesAsync(rows.Select(r => r.UnidadId), ct);
+        return rows
+            .Select(v =>
+            {
+                var (numero, codigo, torre, propietario) = datos.GetValueOrDefault(v.UnidadId);
+                return new VehiculoResumenDto(v.Id, v.UnidadId, numero, codigo, torre,
+                    v.Placa, v.TipoVehiculo, propietario);
+            })
+            .OrderBy(v => v.UnidadCodigo, StringComparer.CurrentCultureIgnoreCase).ThenBy(v => v.Placa)
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<MascotaResumenDto>> ListMascotasAsync(CancellationToken ct)
+    {
+        var rows = await _db.UnidadMascotas.AsNoTracking()
+            .Select(m => new { m.Id, m.UnidadId, m.Nombre, m.Tipo, m.Raza }).ToListAsync(ct);
+        if (rows.Count == 0) return Array.Empty<MascotaResumenDto>();
+
+        var datos = await DatosDeUnidadesAsync(rows.Select(r => r.UnidadId), ct);
+        return rows
+            .Select(m =>
+            {
+                var (numero, codigo, torre, propietario) = datos.GetValueOrDefault(m.UnidadId);
+                return new MascotaResumenDto(m.Id, m.UnidadId, numero, codigo, torre,
+                    m.Nombre, m.Tipo, m.Raza, propietario);
+            })
+            .OrderBy(m => m.UnidadCodigo, StringComparer.CurrentCultureIgnoreCase).ThenBy(m => m.Nombre)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Numero, codigo TORRE-NUMERO, torre y primer propietario de cada unidad pedida, en UNA consulta.
+    /// Lo comparten las vistas agregadas para no repetir el join por fila (hay copropiedades de 500+
+    /// unidades). El propietario contempla dueno persona O empresa, igual que ListUnidadesAsync.
+    /// </summary>
+    private async Task<Dictionary<Guid, (string Numero, string Codigo, string? Torre, string? Propietario)>>
+        DatosDeUnidadesAsync(IEnumerable<Guid> unidadIds, CancellationToken ct)
+    {
+        var ids = unidadIds.Distinct().ToList();
+        var filas = await _db.UnidadesPrivadas.AsNoTracking()
+            .Where(u => ids.Contains(u.Id))
+            .Select(u => new
+            {
+                u.Id,
+                u.Numero,
+                TorreNombre = u.Torre != null ? u.Torre.Nombre : null,
+                Propietario = (from up in _db.UnidadPersonas
+                               where up.UnidadId == u.Id && up.Rol == RolUnidadPersona.Propietario
+                               orderby up.EntidadTipo, up.Id
+                               select up.EntidadTipo == EntidadDirectorio.Empresa
+                                   ? _db.Empresas.Where(e => e.Id == up.EmpresaId).Select(e => e.RazonSocial).FirstOrDefault()
+                                   : _db.Personas.Where(p => p.Id == up.PersonaId).Select(p => (p.Nombres + " " + p.Apellidos).Trim()).FirstOrDefault()
+                              ).FirstOrDefault()
+            })
+            .ToListAsync(ct);
+
+        var res = new Dictionary<Guid, (string, string, string?, string?)>(filas.Count);
+        foreach (var u in filas)
+        {
+            // Mismo codigo TORRE-NUMERO que arma ListResidentesAsync: ultima palabra de la torre.
+            var torreShort = string.IsNullOrWhiteSpace(u.TorreNombre) ? "" : u.TorreNombre!.Split(' ').Last();
+            var codigo = torreShort.Length > 0 ? $"{torreShort}-{u.Numero}" : u.Numero;
+            res[u.Id] = (u.Numero, codigo, u.TorreNombre, u.Propietario);
+        }
+        return res;
+    }
+
     public async Task<IReadOnlyList<ResidenteResumenDto>> ListResidentesAsync(CancellationToken ct)
     {
         var rows = await _db.UnidadPersonas.AsNoTracking().ToListAsync(ct);

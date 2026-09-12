@@ -33,6 +33,10 @@ public interface IMiCopropiedadService
     Task<IReadOnlyList<UnidadPersonaDto>> ListPersonasUnidadAsync(Guid unidadId, CancellationToken ct);
     // Modulo Residentes: TODAS las personas/empresas de las unidades del tenant (con el codigo de unidad).
     Task<IReadOnlyList<ResidenteResumenDto>> ListResidentesAsync(CancellationToken ct);
+    /// <summary>Todos los vehiculos de la copropiedad con su unidad (modulo /vehiculos).</summary>
+    Task<IReadOnlyList<VehiculoResumenDto>> ListVehiculosAsync(CancellationToken ct);
+    /// <summary>Todas las mascotas de la copropiedad con su unidad (modulo /mascotas).</summary>
+    Task<IReadOnlyList<MascotaResumenDto>> ListMascotasAsync(CancellationToken ct);
     Task<UnidadPersonaDto> AgregarPersonaUnidadAsync(Guid unidadId, AgregarPersonaUnidadRequest req, CancellationToken ct);
     Task<UnidadPersonaDto?> EditarPersonaUnidadAsync(Guid unidadPersonaId, AgregarPersonaUnidadRequest req, CancellationToken ct);
     Task<bool> EliminarPersonaUnidadAsync(Guid unidadPersonaId, CancellationToken ct);
@@ -65,6 +69,7 @@ public interface IMiCopropiedadService
     // Placas habilitadas para ingreso
     Task<IReadOnlyList<UnidadPlacaDto>> ListPlacasUnidadAsync(Guid unidadId, CancellationToken ct);
     Task<UnidadPlacaDto?> AgregarPlacaUnidadAsync(Guid unidadId, CrearUnidadPlacaRequest req, CancellationToken ct);
+    Task<UnidadPlacaDto?> ActualizarPlacaUnidadAsync(Guid placaId, ActualizarUnidadPlacaRequest req, CancellationToken ct);
     Task<bool> EliminarPlacaUnidadAsync(Guid placaId, CancellationToken ct);
 
     // Arriendos y cobros mensuales
@@ -75,6 +80,7 @@ public interface IMiCopropiedadService
     // Mascotas
     Task<IReadOnlyList<UnidadMascotaDto>> ListMascotasUnidadAsync(Guid unidadId, CancellationToken ct);
     Task<UnidadMascotaDto?> AgregarMascotaUnidadAsync(Guid unidadId, CrearUnidadMascotaRequest req, CancellationToken ct);
+    Task<UnidadMascotaDto?> ActualizarMascotaUnidadAsync(Guid mascotaId, ActualizarUnidadMascotaRequest req, CancellationToken ct);
     Task<bool> EliminarMascotaUnidadAsync(Guid mascotaId, CancellationToken ct);
 
     // Empleada(s) de servicio

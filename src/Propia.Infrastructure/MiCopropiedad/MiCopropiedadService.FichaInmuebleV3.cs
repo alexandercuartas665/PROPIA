@@ -36,6 +36,25 @@ public partial class MiCopropiedadService
         return new UnidadPlacaDto(e.Id, e.Placa, e.TipoVehiculo);
     }
 
+    // Los modulos /vehiculos y /mascotas editan en linea sobre la tabla (patron de vista tabla del
+    // sistema), y hasta ahora estas entidades solo tenian alta y baja: cambiar una placa mal escrita
+    // obligaba a borrar y volver a crear. PUT es MERGE: lo que llega null no se toca.
+    public async Task<UnidadPlacaDto?> ActualizarPlacaUnidadAsync(Guid placaId, ActualizarUnidadPlacaRequest req, CancellationToken ct)
+    {
+        var e = await _db.UnidadPlacas.FirstOrDefaultAsync(x => x.Id == placaId, ct);
+        if (e is null) return null;
+        if (req.Placa is not null)
+        {
+            var placa = req.Placa.Trim().ToUpperInvariant();
+            if (placa.Length == 0) throw new InvalidOperationException("La placa es obligatoria.");
+            e.Placa = placa.Length > 15 ? placa[..15] : placa;
+        }
+        if (req.TipoVehiculo is { } tv) e.TipoVehiculo = tv;
+        await _db.SaveChangesAsync(ct);
+        await RegistrarBitacoraAsync("Unidad", $"Placa '{e.Placa}' actualizada.", ct, e.UnidadId);
+        return new UnidadPlacaDto(e.Id, e.Placa, e.TipoVehiculo);
+    }
+
     public async Task<bool> EliminarPlacaUnidadAsync(Guid placaId, CancellationToken ct)
     {
         var e = await _db.UnidadPlacas.FirstOrDefaultAsync(x => x.Id == placaId, ct);
@@ -98,6 +117,23 @@ public partial class MiCopropiedadService
         _db.UnidadMascotas.Add(e);
         await _db.SaveChangesAsync(ct);
         await RegistrarBitacoraAsync("Unidad", $"Mascota '{nombre}' registrada en la unidad.", ct, unidadId);
+        return new UnidadMascotaDto(e.Id, e.Nombre, e.Tipo, e.Raza);
+    }
+
+    public async Task<UnidadMascotaDto?> ActualizarMascotaUnidadAsync(Guid mascotaId, ActualizarUnidadMascotaRequest req, CancellationToken ct)
+    {
+        var e = await _db.UnidadMascotas.FirstOrDefaultAsync(x => x.Id == mascotaId, ct);
+        if (e is null) return null;
+        if (req.Nombre is not null)
+        {
+            var nombre = req.Nombre.Trim();
+            if (nombre.Length == 0) throw new InvalidOperationException("El nombre de la mascota es obligatorio.");
+            e.Nombre = nombre;
+        }
+        if (req.Tipo is { } t) e.Tipo = t;
+        if (req.Raza is not null) e.Raza = string.IsNullOrWhiteSpace(req.Raza) ? null : req.Raza.Trim();
+        await _db.SaveChangesAsync(ct);
+        await RegistrarBitacoraAsync("Unidad", $"Mascota '{e.Nombre}' actualizada.", ct, e.UnidadId);
         return new UnidadMascotaDto(e.Id, e.Nombre, e.Tipo, e.Raza);
     }
 
