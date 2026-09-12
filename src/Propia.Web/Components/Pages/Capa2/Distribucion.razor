@@ -35,10 +35,6 @@
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21V9m0 0l-4 4m4-4l4 4M4 3h16"/></svg>
                 Cargar plantilla (Excel)
             </button>
-            <button class="dst-btn-soft" type="button" @onclick="AbrirConfigCampos" title="Configurar los campos dinamicos de las unidades (aparecen en la fila de alta y en la ficha)">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                Configurar
-            </button>
         </div>
     }
 </div>
@@ -219,6 +215,16 @@
                 }
                 else
                 {
+
+                @* "Restablecer" vivia en el menu chico de Campos, que se elimino al unificar la
+                   entrada aqui. Se conserva para no perder la funcion: devuelve todas las columnas
+                   del sistema a su orden y visibilidad de fabrica. *@
+                <div class="cga-toolbar">
+                    <button type="button" class="dst-btn-soft" @onclick="RestablecerCols" disabled="@_cfgBusy"
+                            title="Devuelve orden y visibilidad de los campos del sistema a como vienen de fabrica">
+                        Restablecer columnas
+                    </button>
+                </div>
 
                 @* Grilla estilo Airtable: Orden+Visibilidad | Label | Tipo de Dato | Config especifica. *@
                 <div class="cga-grid cga-head-row">
@@ -498,43 +504,16 @@ else
                     </div>
                 }
             </div>
-            @if (_vista == "tabla")
-            {
-                <div class="dst-menu-wrap">
-                    <button type="button" class="dst-fbtn @(_cfgColsAbierto ? "on" : "")" @onclick="() => _cfgColsAbierto = !_cfgColsAbierto" title="Campos y columnas de la tabla">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
-                        <span>Campos</span>
-                    </button>
-                    @if (_cfgColsAbierto)
-                    {
-                        <div class="dst-menu-bd" @onclick="() => _cfgColsAbierto = false"></div>
-                        <div class="dst-colsmenu">
-                            <div class="dst-colsmenu-h">COLUMNAS (orden y visibilidad)</div>
-                            @{ var itemsSys = ColumnasOrdenadas.Where(x => !x.EsCustom).ToList(); }
-                            @for (int i = 0; i < itemsSys.Count; i++)
-                            {
-                                var col = itemsSys[i].Def!;
-                                var key = col.Key;
-                                var vis = EsVisible(col);
-                                <div class="dst-colsmenu-i">
-                                    <div class="dst-colsmenu-ord">
-                                        <button class="dst-colsmenu-mv" @onclick="() => MoverColU(key, -1)" title="Subir">&#9650;</button>
-                                        <button class="dst-colsmenu-mv" @onclick="() => MoverColU(key, 1)" title="Bajar">&#9660;</button>
-                                    </div>
-                                    <label class="dst-cfg-vis" title="@(col.Hideable ? "Mostrar u ocultar" : "Columna requerida, siempre visible")">
-                                        <input type="checkbox" checked="@vis" disabled="@(!col.Hideable)" @onchange="@(e => SetColVisible(key, (bool)(e.Value ?? false)))" />
-                                    </label>
-                                    <span class="dst-colsmenu-lbl">@Etiqueta(col)</span>
-                                    @if (!col.Hideable) { <span class="dst-cfg-req">fija</span> }
-                                </div>
-                            }
-                            <div class="dst-colsmenu-acts">
-                                <button type="button" class="dst-colsmenu-act" @onclick="RestablecerCols">Restablecer</button>
-                            </div>
-                        </div>
-                    }
-                </div>
-            }
+            @* Campos: unica entrada a la configuracion. Antes habia dos que se pisaban (este menu,
+               que solo hacia orden y visibilidad, y un boton "Configurar" en la cabecera con el
+               panel completo). No se limita a la vista tabla porque configura CAMPOS, no solo
+               columnas: en Tarjetas tambien hace falta. *@
+            <div class="dst-menu-wrap">
+                <button type="button" class="dst-fbtn @(_configCamposAbierto ? "on" : "")" @onclick="AbrirConfigCampos" title="Campos de la unidad: orden, visibilidad, nombre, tipo y listas">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
+                    <span>Campos</span>
+                </button>
+            </div>
             @* Toggle Lista/Tabla, igual que en los demas modulos: la seleccion se recuerda por
                modulo (propia_view_unidades) y sobrevive al cierre de sesion. *@
             <div class="dst-viewtoggle">
@@ -1176,7 +1155,6 @@ else
     // ===== Configuracion de columnas (POR COPROPIEDAD, en unidad_campos_config) =====
     // El orden (Orden) y la visibilidad (Oculto) de cada campo se guardan en la config del tenant,
     // ya no en localStorage: lo que configura un administrador lo ve toda la copropiedad.
-    private bool _cfgColsAbierto;
     // Orden por defecto: TODOS los campos del sistema (mas 'agrupacion' derivado) pueden ser columnas.
     // La 'ubicacion' de un campo = su posicion en este orden (que es el orden de columnas de la tabla).
     // Sale del catalogo UNICO de campos de sistema (Propia.Application.MiCopropiedad.UnidadCamposSistema),
@@ -1674,7 +1652,6 @@ else
         new("personas",  "Personas",  "persona",  "Ej. Profesion, Contacto de emergencia"),
         new("vehiculos", "Vehiculos", "vehiculo", "Ej. Color, Numero de SOAT"),
         new("mascotas",  "Mascotas",  "mascota",  "Ej. Numero de chip, Vacunas al dia"),
-        new("terceros",  "Terceros",  "tercero",  "Ej. ARL, Horario autorizado"),
     };
     private string _cfgTab = "unidad";
 
@@ -2697,24 +2674,10 @@ else
     .dst-cfg-x:hover { background: var(--propia-bg-app); color: var(--propia-text-body); }
     .dst-cfg-sub { font-size: 12.5px; color: var(--propia-text-muted); margin: 2px 0 12px; }
     .dst-cfg-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
-    .dst-cfg-vis input { width: 16px; height: 16px; accent-color: var(--propia-brand, var(--propia-brand)); cursor: pointer; }
-    .dst-cfg-vis input:disabled { cursor: not-allowed; }
     .dst-cfg-inp { flex: 1; border: 1px solid var(--propia-border-card); border-radius: 8px; padding: 7px 10px; font-size: 13px; color: var(--propia-text-body); font-family: inherit; outline: none; }
     .dst-cfg-inp:focus { border-color: var(--propia-brand, var(--propia-brand)); }
-    .dst-cfg-req { font-size: 10.5px; font-weight: 700; color: var(--propia-text-muted); text-transform: uppercase; letter-spacing: .3px; }
     .dst-cfg-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
     /* Menu "Campos" (antes modal): popover anclado al boton, patron Tareas. */
-    .dst-colsmenu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; min-width: 300px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 12px; box-shadow: 0 12px 30px rgba(30,40,60,.18); padding: 8px; }
-    .dst-colsmenu-h { font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: var(--propia-text-faint); text-transform: uppercase; padding: 4px 6px 8px; }
-    .dst-colsmenu-i { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 7px; }
-    .dst-colsmenu-lbl { flex: 1; font-size: 13px; color: var(--propia-text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .dst-colsmenu-i:hover { background: var(--propia-bg-hover); }
-    .dst-colsmenu-ord { display: flex; gap: 2px; flex: 0 0 auto; }
-    .dst-colsmenu-mv { border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-muted); border-radius: 6px; width: 22px; height: 22px; font-size: 9px; line-height: 1; cursor: pointer; }
-    .dst-colsmenu-mv:disabled { opacity: .35; cursor: default; }
-    .dst-colsmenu-acts { display: flex; gap: 8px; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--propia-border-divider); }
-    .dst-colsmenu-act { flex: 1; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 7px; padding: 6px 8px; font-size: 11.5px; font-weight: 700; color: var(--propia-text-secondary); cursor: pointer; font-family: inherit; }
-    .dst-colsmenu-act:hover { border-color: var(--propia-brand, var(--propia-brand)); color: var(--propia-brand, var(--propia-brand)); }
 
     /* Campos dinamicos: celda de valor en la tabla + modal Configurar */
     .dst-td-campo { font-size: 13px; color: var(--propia-text-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2814,6 +2777,7 @@ else
     .cga-opt-x:hover { color: var(--propia-danger); border-color: var(--propia-danger); }
     .cga-opt-add { display: flex; gap: 6px; align-items: center; margin-top: 3px; }
     .cga-opt-add .cga-inp { flex: 1; border-style: solid; }
+    .cga-toolbar { display: flex; justify-content: flex-end; margin-bottom: 10px; }
     .cga-add-btn { border: 1px solid var(--propia-brand-soft); background: var(--propia-brand-soft); color: var(--propia-brand); border-radius: 7px; font-size: 12.5px; font-weight: 700; padding: 6px 14px; cursor: pointer; font-family: inherit; }
     .cga-add-btn:hover { filter: brightness(.97); }
     .cga-add-btn:disabled { opacity: .5; cursor: default; }
