@@ -1,6 +1,6 @@
 # PROPIA - Checklist de deploy
 
-> Actualizado 2026-09-10. Version visible: **0.0.92**
+> Actualizado 2026-09-12. Version visible: **0.0.93**
 > (`src/Propia.Web/Propia.Web.csproj` `<Version>`). Bumpear en cada deploy.
 >
 > **ATENCION en esta tanda: 7 migraciones nuevas, una de ellas de SEGURIDAD (RLS).**
@@ -18,6 +18,18 @@
 > `select ut.rol, ut.estado, t.nombre from usuarios_tenant ut join tenants t on t.id=ut.tenant_id join personas p on p.id=ut.persona_id where lower(p.email)='EMAIL';`
 > **Decision pendiente:** si se espera que un Coordinador o Asistente configure campos, hay que
 > habilitarles `MI_COPROPIEDAD / Editar` en la matriz por defecto. Hoy no pueden.
+>
+> **Nuevo en 0.0.93 (modulos Vehiculos/Mascotas, panel Campos solo-unidad, lote del equipo):**
+> - Vehiculos (`/vehiculos`) y Mascotas (`/mascotas`) pasan a modulos propios (sin migracion; reusan
+>   `unidad_placas`/`unidad_mascotas`). +PUT de placa/mascota (edicion en linea), gateado con Editar.
+> - Panel "Campos" de Unidades queda solo con la unidad (Personas/Vehiculos/Mascotas/Terceros salieron).
+> - Carga por Excel afinada (campo visible sale como columna y se importa; TIPO propio; listas en hoja
+>   oculta). Sin migracion.
+> - 2 migraciones nuevas: `EquipoAtlas_AddIndicesTenantIdTareas` (indices) y `AddPermisoCrearTareasOperario`
+>   (seed permiso). Aditivas. Total pendiente vs prod 0.0.67: **16**.
+> - **MENU LATERAL: es DATA, no codigo.** Reorganizacion (grupo Configuracion) se importa en
+>   Super Admin > Configuracion de menu > Importar JSON > Guardar, DESPUES del deploy del codigo. No
+>   viaja por git. Ver HANDOFF seccion 0.7.
 >
 > **Nuevo en 0.0.92 (una imagen EXTERNA ya no se rompe al resolver su URL):**
 > - `ResolveUrl` asumia que toda URL absoluta era un blob propio con host viejo y la reescribia, asi que

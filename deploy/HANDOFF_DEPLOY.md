@@ -1,7 +1,7 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> Generado 2026-09-10. Version a desplegar: **0.0.92**. Prod actual: **0.0.67**.
-> Repo: https://github.com/alexandercuartas665/PROPIA  ·  rama `main`  ·  ultimo commit `82949b6`.
+> Generado 2026-09-10, actualizado 2026-09-12. Version a desplegar: **0.0.93**. Prod actual: **0.0.67**.
+> Repo: https://github.com/alexandercuartas665/PROPIA  ·  rama `main` (HEAD al desplegar).
 > Companion: `DEPLOY_CHECKLIST.md` (misma carpeta) con el detalle version por version.
 > Este archivo es el resumen operativo para la sesion de deploy. **Vive en el repo** (`deploy/`) y se
 > copia a la carpeta de trabajo; asi no se pierde.
@@ -83,6 +83,26 @@ Si para esa copropiedad no hay fila, o el rol no es exactamente `Administrador`,
 **Decision pendiente:** si se espera que un Coordinador o un Asistente configure campos, hay que
 habilitarles `MI_COPROPIEDAD / Editar` en la matriz por defecto. Hoy no pueden.
 
+### 0.7 EL MENU LATERAL ES DATA, NO CODIGO (paso manual post-deploy)
+
+La reorganizacion del menu (grupo **Configuracion** con Unidades Privadas, Residentes, Mascotas,
+Vehiculos, Equipos y Zonas, Usuarios, Directorio, Lineas WhatsApp, Lista negra; y **Mi Copropiedad**
+reducido a "Mi copropiedad") **NO viaja por git**. Vive en la tabla global `menu_overrides` y se
+gestiona desde **Super Admin > Configuracion de menu**. Un `git push` NO la lleva a prod.
+
+**Paso post-deploy (una sola vez):**
+1. Desplegar el codigo PRIMERO (para que existan en el catalogo las rutas nuevas `/vehiculos` y
+   `/mascotas`; si se importa antes, esas dos entradas se descartan en silencio al guardar).
+2. En prod: **Super Admin > Configuracion de menu > Importar JSON** (el `menu-propia.json` que exporta
+   Alex desde dev) **> Guardar cambios**.
+3. El import **reemplaza** TODO el menu de prod (borra los overrides viejos y reinserta los del JSON):
+   asi desaparece el "Residentes" dummy (`/proximamente`) y queda el modulo real, sin pasos extra.
+
+**Sin este import, el deploy NO falla:** los modulos `/vehiculos` y `/mascotas` son alcanzables igual
+(salen en su ubicacion por defecto, Mi Copropiedad, desde el catalogo del codigo). Lo que el import
+cambia es solo la ORGANIZACION del menu. El cache del menu es en memoria (TTL 10 min) y se invalida
+solo al Guardar, asi que el cambio se ve al instante tras importar.
+
 ### 0.6 IMAGENES: las de las copropiedades son URLs EXTERNAS
 
 En prod las imagenes de copropiedad estaban guardadas como rutas del almacenamiento LOCAL
@@ -115,8 +135,28 @@ Ese fue justamente el sintoma que costo diagnosticar.)
 
 ---
 
-## 1. Que se despliega (0.0.68 -> 0.0.92, acumulado sobre prod 0.0.67)
+## 1. Que se despliega (0.0.68 -> 0.0.93, acumulado sobre prod 0.0.67)
 
+- **0.0.93 - Vehiculos y Mascotas son modulos propios; el panel Campos de Unidades queda solo con la
+  unidad; y llega el lote del equipo (Tareas + Mantenimiento).** Detalle:
+  - **Vehiculos (`/vehiculos`) y Mascotas (`/mascotas`)** salen de la ficha de la unidad a modulos
+    independientes con la vista tabla estandar y su propio panel de Campos. **Sin migracion**: reusan
+    `unidad_placas` y `unidad_mascotas` y sus catalogos de campos, que ya existian. Backend nuevo: GET
+    agregado por copropiedad y **PUT** de placa/mascota (antes solo habia alta y baja; la edicion en
+    linea los necesita), gateado con `MI_COPROPIEDAD/Editar`.
+  - **Panel "Campos" de Unidades = solo la unidad.** Se unifico la entrada (se fue el boton "Configurar"
+    duplicado) y salieron las pestanas Personas/Vehiculos/Mascotas/Terceros. Personas se configura en su
+    modulo (`/residentes`); Vehiculos/Mascotas en los suyos. Terceros configuraba las empleadas de la
+    unidad (no el Directorio) y quedaba confuso: se quito.
+  - **Carga por Excel (afinada sobre 0.0.88):** un campo VISIBLE ahora si sale como columna en la
+    plantilla y se importa (faltaban 9 de sistema); TIPO propio de la copropiedad se ofrece y se importa,
+    y ya no se reescribe a "Apartamento" en silencio; las listas de los desplegables pasaron a una hoja
+    oculta (sin tope de longitud). **Sin migracion.**
+  - **Lote del equipo (con migracion, ver seccion 2):** Tareas T-01..T-05 (permisos en 41 endpoints,
+    validacion de pertenencia al tenant, un solo camino de cambio de estado, aislamiento), permiso
+    Operario-crear-tareas, e indices `tenant_id` en las tablas de tableros; Mantenimiento M-01 (job
+    diario del preventivo, idempotente, sin columna nueva).
+  - **Menu lateral reorganizado -> es DATA, ver 0.7.** No viaja por git; se importa en Super Admin.
 - **0.0.92 - Una imagen EXTERNA ya no se rompe al resolver su URL.** Ninguno de los dos proveedores de
   almacenamiento podia guardar una imagen alojada fuera de la plataforma: `ResolveUrl` asumia que toda URL
   absoluta era un blob propio con host viejo y la reescribia (Local le arrancaba el host y devolvia solo el
@@ -158,14 +198,14 @@ Ese fue justamente el sintoma que costo diagnosticar.)
 - **0.0.64 - PQRSD alertas de plazo.**
 - Incluye lo de 0.0.63-0.0.67 que no haya llegado a prod (Contratos IA, hotfix 403 OCR, etc.).
 
-## 2. Migraciones a aplicar (14 pendientes vs prod, todas ADITIVAS)
+## 2. Migraciones a aplicar (16 pendientes vs prod, todas ADITIVAS)
 
 ```bash
 cd src/Propia.Api
 dotnet ef database update --project ../Propia.Infrastructure --startup-project .
 ```
 
-`ef database update` aplica SOLO las que falten (compara `__EFMigrationsHistory`). Las **6 nuevas de esta
+`ef database update` aplica SOLO las que falten (compara `__EFMigrationsHistory`). Las **8 nuevas de esta
 tanda**, en orden:
 
 1. `20260910005638_AddUnidadCampoConfig` - tabla nueva `unidad_campos_config` con RLS FORCE + policy + GRANT.
@@ -178,6 +218,12 @@ tanda**, en orden:
 5. `20260910140101_AddRlsTablasFaltantes` - **SEGURIDAD**, ver 0.1. Solo SQL, sin cambios de esquema.
 6. `20260910202226_AddModulosContributivosUnidad` - `unidades_privadas` +`modulo_contributivo_1..5`
    numeric(7,4) NULL.
+
+7. `20260910235018_EquipoAtlas_AddIndicesTenantIdTareas` - **solo indices**: 6 CREATE INDEX de
+   `tenant_id` en `tableros`, `tablero_usuarios`, `tablero_campos`, `tarea_campo_valores`,
+   `tarea_adjuntos`, `tarea_subtareas`. No cambia esquema ni datos.
+8. `20260912205405_AddPermisoCrearTareasOperario` - seed en la tabla global `rol_permisos`: da al rol
+   Operario el permiso Crear sobre TAREAS. Solo datos (idempotente).
 
 (Las anteriores 0.0.68-0.0.83 estan listadas en `DEPLOY_CHECKLIST.md`.)
 
@@ -211,7 +257,10 @@ Recomendadas: `Metrics__ScrapeToken`, `ForwardedHeaders__KnownNetworks__0` (CIDR
 
 ## 5. Post-deploy (verificacion minima)
 
-- [ ] Login OK; el footer muestra `v0.0.92`.
+- [ ] Login OK; el footer muestra `v0.0.93`.
+- [ ] **Menu (ver 0.7):** tras importar el JSON en Super Admin y Guardar, el grupo **Configuracion**
+      muestra Unidades Privadas, Residentes, Mascotas, Vehiculos, Equipos y Zonas...; y **Mi Copropiedad**
+      queda solo con "Mi copropiedad". Entrar a `/vehiculos` y `/mascotas` y confirmar que listan.
 - [ ] **Imagenes de copropiedad:** el selector "Mis copropiedades" muestra la foto de cada una, no el
       icono roto. Si sale rota, revisar que el `src` renderizado conserve el host completo (era el bug
       de 0.0.92).
