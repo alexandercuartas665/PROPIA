@@ -18,11 +18,38 @@ public class TareasController : ControllerBase
     private readonly ITareasService _svc;
     private readonly IBlobStorage _storage;
     private readonly IUsuariosService _usuarios;
-    public TareasController(ITareasService svc, IBlobStorage storage, IUsuariosService usuarios)
+    private readonly IRolesService _roles;
+    public TareasController(ITareasService svc, IBlobStorage storage, IUsuariosService usuarios, IRolesService roles)
     {
         _svc = svc;
         _storage = storage;
         _usuarios = usuarios;
+        _roles = roles;
+    }
+
+    /// <summary>
+    /// Permisos del usuario actual SOBRE ESTE MODULO. La UI lo usa para no ofrecer botones que el
+    /// backend va a rechazar con 403: configurar el tablero (estados, etiquetas, tableros y campos)
+    /// exige Aprobar, no basta con poder crear o editar tareas. Es un GET de solo lectura sobre el
+    /// propio usuario, asi que no lleva RequierePermiso: preguntar "que puedo hacer yo" no filtra nada.
+    /// </summary>
+    [HttpGet("permisos")]
+    public async Task<IActionResult> MisPermisos(CancellationToken ct)
+    {
+        if (!Guid.TryParse(User.FindFirstValue("persona_id"), out var personaId))
+            return Ok(new PermisosTareasDto(false, false, false, false, false));
+
+        // Mismo criterio que RequierePermisoFilter, para que la UI y el backend no se contradigan.
+        var rol = await _roles.GetRolActorAsync(personaId, ct);
+        if (string.Equals(rol, "Administrador", StringComparison.OrdinalIgnoreCase))
+            return Ok(new PermisosTareasDto(true, true, true, true, true));
+
+        var permisos = await _roles.GetPermisosEfectivosAsync(personaId, ct);
+        bool Tiene(AccionPermiso a) =>
+            permisos.Any(p => p.ModuloCodigo == ModuloCodigo.Tareas && p.Accion == a && p.Habilitado);
+        return Ok(new PermisosTareasDto(
+            Tiene(AccionPermiso.Ver), Tiene(AccionPermiso.Crear), Tiene(AccionPermiso.Editar),
+            Tiene(AccionPermiso.Eliminar), Tiene(AccionPermiso.Aprobar)));
     }
 
     // --- Estados ---

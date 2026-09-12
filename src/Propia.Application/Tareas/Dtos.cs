@@ -168,6 +168,10 @@ public record ActualizarTareaRequest(
     Guid? OrigenEntidadId = null);
 
 public record CambiarEstadoRequest(Guid EstadoId, string? MotivoCancelacion, Guid? MotivoCierreId = null);
+
+/// <summary>Lo que el usuario actual puede hacer en el modulo Tareas. La UI lo consulta para no
+/// ofrecer acciones que el backend va a rechazar con 403 (configurar el tablero exige Aprobar).</summary>
+public record PermisosTareasDto(bool Ver, bool Crear, bool Editar, bool Eliminar, bool Aprobar);
 public record CrearComentarioRequest(string Texto);
 public record AsignarEtiquetaRequest(Guid EtiquetaId);
 public record AgregarColaboradorRequest(Guid PersonaId);
