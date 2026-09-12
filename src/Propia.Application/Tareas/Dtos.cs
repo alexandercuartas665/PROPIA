@@ -1,4 +1,4 @@
-using Propia.Domain.Enums;
+﻿using Propia.Domain.Enums;
 
 namespace Propia.Application.Tareas;
 
@@ -168,6 +168,10 @@ public record ActualizarTareaRequest(
     Guid? OrigenEntidadId = null);
 
 public record CambiarEstadoRequest(Guid EstadoId, string? MotivoCancelacion, Guid? MotivoCierreId = null);
+
+/// <summary>Lo que el usuario actual puede hacer en el modulo Tareas. La UI lo consulta para no
+/// ofrecer acciones que el backend va a rechazar con 403 (configurar el tablero exige Aprobar).</summary>
+public record PermisosTareasDto(bool Ver, bool Crear, bool Editar, bool Eliminar, bool Aprobar);
 public record CrearComentarioRequest(string Texto);
 public record AsignarEtiquetaRequest(Guid EtiquetaId);
 public record AgregarColaboradorRequest(Guid PersonaId);
@@ -219,7 +223,10 @@ public record AgregarDependenciaRequest(
 public record BulkCambiarEstadoRequest(
     IReadOnlyList<Guid> TareaIds,
     Guid NuevoEstadoId,
-    string? Nota = null);
+    string? Nota = null,
+    // T-04: cerrar en lote pide motivo igual que cerrar de a una. Va al final para no romper a
+    // quien ya construya el request por posicion.
+    Guid? MotivoCierreId = null);
 
 public record BulkCambiarPrioridadRequest(
     IReadOnlyList<Guid> TareaIds,

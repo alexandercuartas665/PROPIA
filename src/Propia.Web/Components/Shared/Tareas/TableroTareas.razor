@@ -1,4 +1,4 @@
-@* Tablero de Tareas reutilizable (extraido de la pagina /tareas). Hospedado por TareasKanban (pagina)
+﻿@* Tablero de Tareas reutilizable (extraido de la pagina /tareas). Hospedado por TareasKanban (pagina)
    y por el modal de PQRSD. Hereda el rendermode interactivo del host. *@
 @using System.Globalization
 @using Propia.Application.Tareas
@@ -41,7 +41,10 @@ else
             </div>
             <div class="tb-head-actions">
                 @SelectorCopropiedad
-                <button class="tb-btn tb-btn-primary" @onclick="() => AbrirTableroDraft(null)"><i class="fi fi-rr-plus"></i>Nuevo tablero</button>
+                @if (PuedeConfigurar)
+                {
+                    <button class="tb-btn tb-btn-primary" @onclick="() => AbrirTableroDraft(null)"><i class="fi fi-rr-plus"></i>Nuevo tablero</button>
+                }
             </div>
         </div>
 
@@ -82,9 +85,12 @@ else
                                     <div class="tb-card-nom">@b.Nombre</div>
                                     <div class="tb-card-desc">@b.Descripcion</div>
                                 </div>
-                                <button class="tb-card-edit" title="Editar tablero" @onclick="() => AbrirTableroDraft(board)">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                                </button>
+                                @if (PuedeConfigurar)
+                                {
+                                    <button class="tb-card-edit" title="Editar tablero" @onclick="() => AbrirTableroDraft(board)">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                    </button>
+                                }
                             </div>
                             <div class="tb-card-foot">
                                 <div class="tb-avatars">
@@ -118,10 +124,13 @@ else
                         </div>
                     </div>
                 }
-                <button class="tb-card-new" @onclick="() => AbrirTableroDraft(null)">
-                    <div class="tb-card-new-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg></div>
-                    <span>Crear tablero</span>
-                </button>
+                @if (PuedeConfigurar)
+                {
+                    <button class="tb-card-new" @onclick="() => AbrirTableroDraft(null)">
+                        <div class="tb-card-new-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg></div>
+                        <span>Crear tablero</span>
+                    </button>
+                }
             </div>
         }
     }
@@ -167,12 +176,13 @@ else
                     @if (!Compacto) { @SelectorCopropiedad }
                     @* T-02: en modo Compacto (dentro del modal de un expediente) se oculta "Configurar":
                        las columnas del tablero PQRSD compartido se administran desde /tareas, no por expediente. *@
-                    @if (!_verCerradas && !EsBoardForaneo && !Compacto)
+                    @* Configurar el tablero exige el permiso Aprobar (no basta con trabajar en el). *@
+                    @if (!_verCerradas && !EsBoardForaneo && !Compacto && PuedeConfigurar)
                     {
                         <button class="tb-btn tb-btn-soft" @onclick="AbrirConfigBoard"><i class="fi fi-rr-settings"></i>Configurar</button>
                     }
                 </div>
-                @if (!_verCerradas && !EsBoardForaneo)
+                @if (!_verCerradas && !EsBoardForaneo && PuedeCrear)
                 {
                     <button class="tb-cta-brand" @onclick="() => AbrirCardDraft(null, _board.Estados.FirstOrDefault()?.Id)">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
@@ -430,7 +440,7 @@ else
                             }
                             else
                             {
-                                @if (!EsBoardForaneo)
+                                @if (!EsBoardForaneo && PuedeCrear)
                                 {
                                     <button class="tb-col-add" @onclick="() => AbrirComposer(estado.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Agregar</button>
                                 }
@@ -591,6 +601,10 @@ else
                        @@key=nf usa la identidad del draft (se reemplaza por uno nuevo al crear/Esc)
                        para limpiar la fila; los inputs de texto usan @@oninput SIN value= para no
                        perder pulsaciones (value= se reafirma en cada re-render en Blazor Server). *@
+                    @* Sin permiso de crear no se muestra la fila de alta: escribir en ella solo
+                       llevaria a un 403 al pulsar Enter. *@
+                    if (PuedeCrear)
+                    {
                     var nf = NuevaFilaDe(estado.Id);
                     <div class="tb-newrow" @key="nf">
                         @* Expansor de la fila de alta: crea la tarea y abre su modal (se ve al escribir). *@
@@ -681,6 +695,7 @@ else
                             <button class="tb-nf-crear" title="Crear tarea (Enter)" @onclick="() => CrearDesdeNuevaFila(estado.Id)" disabled="@string.IsNullOrWhiteSpace(nf.Titulo)">+ Agregar</button>
                         </div>
                     </div>
+                    }
                 }
                 }
                 else
@@ -1455,9 +1470,19 @@ else
                                 var eid = et.Id; var on = d.EtiquetaIds.Contains(et.Id);
                                 <button class="tbc-tag @(on ? "on" : "")" style="@(on ? $"background:{et.Color ?? "#6D4FE3"};border-color:{et.Color ?? "#6D4FE3"};color:#fff" : "")" @onclick="() => ToggleEtiquetaDraft(eid)">@et.Nombre</button>
                             }
-                            @if (_etiquetasCat.Count == 0) { <span class="tbc-mut">Aun no hay etiquetas. Se crean en "Configurar tablero".</span> }
+                            @if (_etiquetasCat.Count == 0)
+                            {
+                                <span class="tbc-mut">
+                                    @(PuedeConfigurar
+                                        ? "Aun no hay etiquetas. Se crean en \"Configurar tablero\"."
+                                        : "Aun no hay etiquetas. Las crea quien administra el tablero.")
+                                </span>
+                            }
                         </div>
-                        <div class="tbc-tag-hint">Las etiquetas se crean y colorean en <button type="button" class="tbc-linkbtn" @onclick="AbrirConfigBoard">Configurar tablero</button>.</div>
+                        @if (PuedeConfigurar)
+                        {
+                            <div class="tbc-tag-hint">Las etiquetas se crean y colorean en <button type="button" class="tbc-linkbtn" @onclick="AbrirConfigBoard">Configurar tablero</button>.</div>
+                        }
                     </div>
 
                     @* Solicitante: quien pide la tarea (registro del directorio). Por defecto el usuario actual; editable con el selector que busca/crea terceros. *@
@@ -1581,8 +1606,12 @@ else
                     <div class="tbc-fld">
                         <div class="tbc-campos-h">
                             <label>Campos personalizados</label>
-                            @* Misma potencia de configuracion que "Configurar tablero", pero desde la tarjeta. *@
-                            <button type="button" class="tbc-addcampo" @onclick="AbrirEditorCampo" title="Agregar y configurar un campo del tablero"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Agregar campo</button>
+                            @* Misma potencia de configuracion que "Configurar tablero", pero desde la tarjeta:
+                               por eso pide el mismo permiso. *@
+                            @if (PuedeConfigurar)
+                            {
+                                <button type="button" class="tbc-addcampo" @onclick="AbrirEditorCampo" title="Agregar y configurar un campo del tablero"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Agregar campo</button>
+                            }
                         </div>
                         @if (_board.Tablero.Campos is { Count: > 0 })
                         {
@@ -2079,6 +2108,7 @@ else
         _jwt = Jwt;
         _authChecked = true;
         _miUsuarioId = LeerUsuarioIdDeJwt(Jwt);
+        await CargarPermisosAsync();
         await AbrirBoardAsync(tid);
         _boardMode = VistaInicial == "lista" ? "lista" : "tablero";   // VistaInicial manda sobre la guardada
         StateHasChanged();
@@ -2778,6 +2808,35 @@ else
     private string _respPick = "";
     private bool _subiendo;
     private bool _cfgOpen;
+
+    // Permisos del usuario sobre el modulo, traidos de GET /api/tareas/permisos. Se usa para NO
+    // ofrecer lo que el backend va a rechazar con 403. No es seguridad: la seguridad esta en el
+    // backend; esto es para que el usuario no descubra por un error lo que no puede hacer.
+    private PermisosTareasVm _permisos = new();
+    private bool PuedeConfigurar => _permisos.Aprobar;
+    private bool PuedeCrear => _permisos.Crear;
+
+    private class PermisosTareasVm
+    {
+        public bool Ver { get; set; } = true;
+        public bool Crear { get; set; } = true;
+        public bool Editar { get; set; } = true;
+        public bool Eliminar { get; set; } = true;
+        // Por defecto false: si la consulta falla, se esconde la configuracion en vez de ofrecerla
+        // y que reviente con un 403.
+        public bool Aprobar { get; set; }
+    }
+
+    private async Task CargarPermisosAsync()
+    {
+        try
+        {
+            var r = await Auth().GetAsync("/api/tareas/permisos");
+            if (r.IsSuccessStatusCode)
+                _permisos = await r.Content.ReadFromJsonAsync<PermisosTareasVm>() ?? new PermisosTareasVm();
+        }
+        catch { /* sin permisos conocidos se esconde la configuracion; el backend sigue mandando */ }
+    }
     private string _cfgEstadoNew = "";
     private string _cfgCampoNew = "";
     private CampoDraft _campoDraft = new();
@@ -2948,6 +3007,7 @@ else
             {
                 _jwt = stored;
                 _miUsuarioId = LeerUsuarioIdDeJwt(stored);
+                await CargarPermisosAsync();
                 await CargarAsync();
                 // ?abrir={tareaId}: llega desde otros modulos (ej. tab Tareas de un PQR) para
                 // abrir directamente el modal completo de esa tarea (en su tablero).

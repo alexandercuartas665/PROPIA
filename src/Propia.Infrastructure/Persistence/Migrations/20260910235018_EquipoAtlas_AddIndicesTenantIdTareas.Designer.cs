@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Propia.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using Propia.Infrastructure.Persistence;
 namespace Propia.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(PropiaDbContext))]
-    partial class PropiaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260910235018_EquipoAtlas_AddIndicesTenantIdTareas")]
+    partial class EquipoAtlas_AddIndicesTenantIdTareas
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -17972,31 +17975,6 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("matricula_inmobiliaria");
-
-                    b.Property<decimal?>("ModuloContributivo1")
-                        .HasPrecision(7, 4)
-                        .HasColumnType("numeric(7,4)")
-                        .HasColumnName("modulo_contributivo_1");
-
-                    b.Property<decimal?>("ModuloContributivo2")
-                        .HasPrecision(7, 4)
-                        .HasColumnType("numeric(7,4)")
-                        .HasColumnName("modulo_contributivo_2");
-
-                    b.Property<decimal?>("ModuloContributivo3")
-                        .HasPrecision(7, 4)
-                        .HasColumnType("numeric(7,4)")
-                        .HasColumnName("modulo_contributivo_3");
-
-                    b.Property<decimal?>("ModuloContributivo4")
-                        .HasPrecision(7, 4)
-                        .HasColumnType("numeric(7,4)")
-                        .HasColumnName("modulo_contributivo_4");
-
-                    b.Property<decimal?>("ModuloContributivo5")
-                        .HasPrecision(7, 4)
-                        .HasColumnType("numeric(7,4)")
-                        .HasColumnName("modulo_contributivo_5");
 
                     b.Property<string>("Numero")
                         .IsRequired()
