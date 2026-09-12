@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.DataProtection;
+﻿using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -291,6 +291,7 @@ public static class DependencyInjection
         services.AddScoped<Jobs.IBackgroundJob, Jobs.AutomacionesJob>();
         services.AddScoped<Jobs.IBackgroundJob, Jobs.ContratosVencimientoJob>();
         services.AddScoped<Jobs.IBackgroundJob, Jobs.PurgaRegistrosNoConfirmadosJob>();  // S-04b
+        services.AddScoped<Jobs.IBackgroundJob, Jobs.MantenimientoPreventivoJob>();  // M-01: preventivo 2.11
 
         // Storage de blobs (logos, fachadas, portadas, futuros adjuntos).
         // Provider seleccionado por config: "R2" en produccion, cualquier otro valor (o ausente)

@@ -345,6 +345,127 @@ public class MantenimientoFlowTests : IAsyncLifetime
         await CleanTenant(tenantId);
     }
 
+
+    // =======================================================================
+    // M-01: job diario del preventivo (MantenimientoPreventivoJob)
+    // =======================================================================
+
+    [Fact]
+    public async Task Job_plan_automatico_vencido_crea_intervencion_y_avanza_proxima_ejecucion()
+    {
+        var tenantId = await SeedTenantAsync("Mant Job Auto");
+        await SeedPersonaConApplicationUser(tenantId);
+        var equipoId = await SeedEquipoAsync(tenantId, "Planta electrica");
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        var planId = await SeedPlanAsync(tenantId, equipoId, "Revision mensual planta",
+            FrecuenciaMantenimiento.Mensual, hoy.AddDays(-3), DisparoPlanMantenimiento.Automatico, 7);
+
+        var (job, db, scope) = BuildJob();
+        using (scope)
+        {
+            await job.EjecutarAsync(CancellationToken.None);
+
+            var intervenciones = await LeerIntervencionesAsync(tenantId);
+            var i = Assert.Single(intervenciones);
+            Assert.Equal(planId, i.PlanId);
+            Assert.Equal(OrigenIntervencion.Automatico, i.Origen);
+            Assert.Equal(TipoIntervencionMantenimiento.Preventivo, i.Tipo);
+            // RN-03: la intervencion arrastra su tarea en 2.10
+            Assert.NotNull(i.TareaId);
+
+            // Avanza una frecuencia desde la fecha que vencia (-3 + 30 = +27), no desde hoy
+            var plan = await LeerPlanAsync(planId);
+            Assert.Equal(hoy.AddDays(27), plan.ProximaEjecucion);
+            Assert.True(plan.ProximaEjecucion > hoy);
+        }
+
+        await CleanTenant(tenantId);
+    }
+
+    [Fact]
+    public async Task Job_plan_con_confirmacion_vencido_no_crea_intervencion_y_deja_alerta()
+    {
+        var tenantId = await SeedTenantAsync("Mant Job Confirm");
+        await SeedPersonaConApplicationUser(tenantId);
+        var equipoId = await SeedEquipoAsync(tenantId, "Ascensor");
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        var planId = await SeedPlanAsync(tenantId, equipoId, "Revision ascensor",
+            FrecuenciaMantenimiento.Mensual, hoy.AddDays(-1), DisparoPlanMantenimiento.ConConfirmacion, 7);
+
+        var (job, db, scope) = BuildJob();
+        using (scope)
+        {
+            await job.EjecutarAsync(CancellationToken.None);
+
+            Assert.Empty(await LeerIntervencionesAsync(tenantId));
+
+            var alertas = await LeerAlertasAsync(tenantId);
+            var a = Assert.Single(alertas);
+            Assert.Equal(planId, a.EntidadId);
+            Assert.Equal(SeveridadAlerta.Critica, a.Severidad);
+            Assert.True(a.Activa);
+
+            // La fecha NO se toca: sigue vencido hasta que alguien confirme
+            var plan = await LeerPlanAsync(planId);
+            Assert.Equal(hoy.AddDays(-1), plan.ProximaEjecucion);
+        }
+
+        await CleanTenant(tenantId);
+    }
+
+    [Fact]
+    public async Task Job_plan_proximo_a_vencer_deja_alerta_de_advertencia_sin_intervencion()
+    {
+        var tenantId = await SeedTenantAsync("Mant Job Amarillo");
+        await SeedPersonaConApplicationUser(tenantId);
+        var equipoId = await SeedEquipoAsync(tenantId, "Motobomba");
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        // Vence en 3 dias y avisa con 7: cae dentro de la ventana de alerta previa
+        var planId = await SeedPlanAsync(tenantId, equipoId, "Revision motobomba",
+            FrecuenciaMantenimiento.Mensual, hoy.AddDays(3), DisparoPlanMantenimiento.Automatico, 7);
+
+        var (job, db, scope) = BuildJob();
+        using (scope)
+        {
+            await job.EjecutarAsync(CancellationToken.None);
+
+            Assert.Empty(await LeerIntervencionesAsync(tenantId));
+            var a = Assert.Single(await LeerAlertasAsync(tenantId));
+            Assert.Equal(SeveridadAlerta.Advertencia, a.Severidad);
+            Assert.Equal(planId, a.EntidadId);
+        }
+
+        await CleanTenant(tenantId);
+    }
+
+    [Fact]
+    public async Task Job_dos_corridas_no_duplican_intervencion_ni_alerta()
+    {
+        var tenantId = await SeedTenantAsync("Mant Job Idem");
+        await SeedPersonaConApplicationUser(tenantId);
+        var eqAuto = await SeedEquipoAsync(tenantId, "Tanque");
+        var eqConfirm = await SeedEquipoAsync(tenantId, "Puerta garaje");
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        await SeedPlanAsync(tenantId, eqAuto, "Lavado tanque",
+            FrecuenciaMantenimiento.Mensual, hoy.AddDays(-2), DisparoPlanMantenimiento.Automatico, 7);
+        await SeedPlanAsync(tenantId, eqConfirm, "Engrase puerta",
+            FrecuenciaMantenimiento.Mensual, hoy.AddDays(-2), DisparoPlanMantenimiento.ConConfirmacion, 7);
+
+        var (job, db, scope) = BuildJob();
+        using (scope)
+        {
+            await job.EjecutarAsync(CancellationToken.None);
+            await job.EjecutarAsync(CancellationToken.None);
+
+            // El automatico genero UNA sola intervencion (la 2a corrida ya no lo ve vencido)
+            Assert.Single(await LeerIntervencionesAsync(tenantId));
+            // El de confirmacion sigue vencido pero no acumula una alerta por corrida
+            Assert.Single(await LeerAlertasAsync(tenantId));
+        }
+
+        await CleanTenant(tenantId);
+    }
+
     // =======================================================================
     // Helpers
     // =======================================================================
@@ -456,6 +577,69 @@ public class MantenimientoFlowTests : IAsyncLifetime
 
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM asp_net_users WHERE id = {_userId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM personas WHERE id = {_personaId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM alertas_copropiedad WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tenants WHERE id = {tenantId}");
     }
+
+    // ---- Helpers de M-01 (job del preventivo) ----
+
+    private (Propia.Infrastructure.Jobs.MantenimientoPreventivoJob job, PropiaDbContext db, IServiceScope scope) BuildJob()
+    {
+        var scope = _services.CreateScope();
+        var ctx = scope.ServiceProvider.GetRequiredService<ITenantContext>();
+        var db = scope.ServiceProvider.GetRequiredService<PropiaDbContext>();
+        var http = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
+        var noti = scope.ServiceProvider.GetRequiredService<Propia.Application.Notificaciones.INotificacionDispatcher>();
+        var svc = new MantenimientoService(db, ctx, http, noti);
+        return (new Propia.Infrastructure.Jobs.MantenimientoPreventivoJob(db, ctx, svc), db, scope);
+    }
+
+    private async Task<Guid> SeedPlanAsync(
+        Guid tenantId, Guid activoId, string nombre, FrecuenciaMantenimiento frecuencia,
+        DateOnly proximaEjecucion, DisparoPlanMantenimiento disparo, int diasAlertaPrevio)
+    {
+        var opts = new DbContextOptionsBuilder<PropiaDbContext>().UseNpgsql(_fx.OwnerConnectionString).Options;
+        await using var ctx = new PropiaDbContext(opts, new TenantContext());
+        var p = new MantenimientoPlan
+        {
+            TenantId = tenantId,
+            ActivoTipo = TipoActivoMantenimiento.Equipo,
+            ActivoId = activoId,
+            Nombre = nombre,
+            Frecuencia = frecuencia,
+            FechaInicio = proximaEjecucion,
+            ProximaEjecucion = proximaEjecucion,
+            Disparo = disparo,
+            DiasAlertaPrevio = diasAlertaPrevio,
+            Activo = true,
+            CreadoPorUsuarioId = _userId
+        };
+        ctx.MantenimientoPlanes.Add(p);
+        await ctx.SaveChangesAsync();
+        return p.Id;
+    }
+
+    private async Task<List<MantenimientoIntervencion>> LeerIntervencionesAsync(Guid tenantId)
+    {
+        var opts = new DbContextOptionsBuilder<PropiaDbContext>().UseNpgsql(_fx.OwnerConnectionString).Options;
+        await using var ctx = new PropiaDbContext(opts, new TenantContext());
+        return await ctx.MantenimientoIntervenciones.IgnoreQueryFilters()
+            .Where(i => i.TenantId == tenantId).ToListAsync();
+    }
+
+    private async Task<List<AlertaCopropiedad>> LeerAlertasAsync(Guid tenantId)
+    {
+        var opts = new DbContextOptionsBuilder<PropiaDbContext>().UseNpgsql(_fx.OwnerConnectionString).Options;
+        await using var ctx = new PropiaDbContext(opts, new TenantContext());
+        return await ctx.AlertasCopropiedad.IgnoreQueryFilters()
+            .Where(a => a.TenantId == tenantId).ToListAsync();
+    }
+
+    private async Task<MantenimientoPlan> LeerPlanAsync(Guid planId)
+    {
+        var opts = new DbContextOptionsBuilder<PropiaDbContext>().UseNpgsql(_fx.OwnerConnectionString).Options;
+        await using var ctx = new PropiaDbContext(opts, new TenantContext());
+        return await ctx.MantenimientoPlanes.IgnoreQueryFilters().FirstAsync(p => p.Id == planId);
+    }
+
 }
