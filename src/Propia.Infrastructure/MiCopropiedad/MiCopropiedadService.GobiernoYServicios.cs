@@ -190,7 +190,11 @@ public partial class MiCopropiedadService
         };
         _db.ContratosServicio.Add(c);
         await _db.SaveChangesAsync(ct);
-        await RegistrarBitacoraAsync("Contrato", $"Contrato con '{c.Proveedor}' creado.", ct, c.Id);
+        // K-04: bitacora con los datos clave del alta, no solo "creado".
+        var altaNum = string.IsNullOrWhiteSpace(c.NumeroContrato) ? "" : $" (numero {c.NumeroContrato})";
+        var altaFin = c.FechaFin.HasValue ? $" a {FfFecha(c.FechaFin)}" : "";
+        await RegistrarBitacoraAsync("Contrato",
+            $"Contrato con '{c.Proveedor}'{altaNum} creado, vigencia {FfFecha(c.FechaInicio)}{altaFin}.", ct, c.Id);
         return ToContratoDto(c);
     }
 
@@ -199,9 +203,25 @@ public partial class MiCopropiedadService
         var c = await _db.ContratosServicio.FirstOrDefaultAsync(x => x.Id == contratoId, ct);
         if (c is null) return false;
 
-        // K-08: vigencia antes del MERGE, para detectar una prorroga mas abajo.
+        // K-08/K-04: snapshot antes del MERGE, para detectar una prorroga (K-08) y registrar el
+        // diff campo -> antes -> despues en la bitacora (K-04).
         var fechaInicioAntes = c.FechaInicio;
         var fechaFinAntes = c.FechaFin;
+        var provAntes = c.Proveedor;
+        var numAntes = c.NumeroContrato;
+        var nitAntes = c.NitProveedor;
+        var vmAntes = c.ValorMensual;
+        var vtAntes = c.ValorTotal;
+        var cuotasAntes = c.FormaPagoCuotas;
+        var pagoAntes = c.PagoMensual;
+        var estadoAntes = c.Estado;
+        var catAntes = c.Categoria;
+        var tcAntes = c.TipoContrato;
+        var tipoAntes = c.Tipo;
+        var renovAntes = c.RenovacionAutomatica;
+        var obsAntes = c.Observaciones;
+        var asocTipoAntes = c.AsociadoTipo;
+        var asocIdAntes = c.AsociadoId;
 
         // K-01: el PUT es un MERGE, asi que se valida el ESTADO RESULTANTE (lo que llega o, si no
         // llega, lo que ya estaba guardado). Validar solo el request dejaria pasar, por ejemplo,
@@ -258,8 +278,31 @@ public partial class MiCopropiedadService
         // resetea el contador al pasar a verde). Las polizas ya lo hacian (SegurosService.cs).
         if (c.FechaInicio != fechaInicioAntes || c.FechaFin != fechaFinAntes)
             c.AlertaVencimientoPctNotificado = null;
+
+        // K-04: diff campo -> antes -> despues comparando el estado post-MERGE con el snapshot.
+        var cambios = new List<string>();
+        if (c.Proveedor != provAntes) cambios.Add($"proveedor: '{provAntes}' -> '{c.Proveedor}'");
+        if (c.NumeroContrato != numAntes) cambios.Add($"numero: {FfTxt(numAntes)} -> {FfTxt(c.NumeroContrato)}");
+        if (c.NitProveedor != nitAntes) cambios.Add($"NIT: {FfTxt(nitAntes)} -> {FfTxt(c.NitProveedor)}");
+        if (c.FechaInicio != fechaInicioAntes) cambios.Add($"inicio: {FfFecha(fechaInicioAntes)} -> {FfFecha(c.FechaInicio)}");
+        if (c.FechaFin != fechaFinAntes) cambios.Add($"fin: {FfFecha(fechaFinAntes)} -> {FfFecha(c.FechaFin)}");
+        if (c.ValorMensual != vmAntes) cambios.Add($"valor mensual: {FfVal(vmAntes)} -> {FfVal(c.ValorMensual)}");
+        if (c.ValorTotal != vtAntes) cambios.Add($"valor total: {FfVal(vtAntes)} -> {FfVal(c.ValorTotal)}");
+        if (c.FormaPagoCuotas != cuotasAntes) cambios.Add($"cuotas: {FfEnum(cuotasAntes)} -> {FfEnum(c.FormaPagoCuotas)}");
+        if (c.PagoMensual != pagoAntes) cambios.Add($"pago mensual: {FfBool(pagoAntes)} -> {FfBool(c.PagoMensual)}");
+        if (c.Estado != estadoAntes) cambios.Add($"estado: {estadoAntes} -> {c.Estado}");
+        if (!Equals(c.Categoria, catAntes)) cambios.Add($"categoria: {FfEnum(catAntes)} -> {FfEnum(c.Categoria)}");
+        if (!Equals(c.TipoContrato, tcAntes)) cambios.Add($"tipo de contrato: {FfEnum(tcAntes)} -> {FfEnum(c.TipoContrato)}");
+        if (c.Tipo != tipoAntes) cambios.Add($"tipo de servicio: {tipoAntes} -> {c.Tipo}");
+        if (c.RenovacionAutomatica != renovAntes) cambios.Add($"renovacion automatica: {FfBool(renovAntes)} -> {FfBool(c.RenovacionAutomatica)}");
+        if (c.AsociadoTipo != asocTipoAntes || c.AsociadoId != asocIdAntes) cambios.Add("asociado actualizado");
+        if (c.Observaciones != obsAntes) cambios.Add("observaciones actualizadas");
+
         await _db.SaveChangesAsync(ct);
-        await RegistrarBitacoraAsync("Contrato", $"Contrato con '{c.Proveedor}' actualizado.", ct, c.Id);
+        var detalle = cambios.Count == 0
+            ? $"Contrato con '{c.Proveedor}' actualizado (sin cambios de datos)."
+            : $"Contrato con '{c.Proveedor}' actualizado: {string.Join("; ", cambios)}.";
+        await RegistrarBitacoraAsync("Contrato", detalle, ct, c.Id);
         return true;
     }
 
@@ -277,6 +320,13 @@ public partial class MiCopropiedadService
              : pct <= 0.20 ? SemaforoContrato.Amarillo
              : SemaforoContrato.Verde;
     }
+
+    // K-04: helpers de formato para las lineas de bitacora (ASCII, cultura invariante).
+    private static string FfFecha(DateOnly? d) => d.HasValue ? d.Value.ToString("dd/MM/yyyy") : "(sin fecha)";
+    private static string FfVal(decimal? v) => v.HasValue ? v.Value.ToString("#,0", System.Globalization.CultureInfo.InvariantCulture) : "(vacio)";
+    private static string FfTxt(string? t) => string.IsNullOrWhiteSpace(t) ? "(vacio)" : t;
+    private static string FfBool(bool b) => b ? "si" : "no";
+    private static string FfEnum(object? e) => e?.ToString() ?? "(vacio)";
 
     private static ContratoServicioDto ToContratoDto(ContratoServicio c, IReadOnlyList<ContratoCampoValorDto>? valores = null, string? asociadoNombre = null)
     {
@@ -305,8 +355,14 @@ public partial class MiCopropiedadService
         if (valores.Count > 0) _db.ContratoCampoValores.RemoveRange(valores);
         var vincs = await _db.ContratoExpedientes.Where(v => v.ContratoId == contratoId).ToListAsync(ct);
         if (vincs.Count > 0) _db.ContratoExpedientes.RemoveRange(vincs);
+        var provElim = c.Proveedor;
+        var numElim = c.NumeroContrato;
+        var idElim = c.Id;
         _db.ContratosServicio.Remove(c);
         await _db.SaveChangesAsync(ct);
+        // K-04: dejar rastro del borrado (antes no registraba nada).
+        var elimNum = string.IsNullOrWhiteSpace(numElim) ? "" : $" (numero {numElim})";
+        await RegistrarBitacoraAsync("Contrato", $"Contrato con '{provElim}'{elimNum} eliminado.", ct, idElim);
         return true;
     }
 
@@ -517,9 +573,20 @@ public partial class MiCopropiedadService
         var c = await _db.ContratosServicio.FirstOrDefaultAsync(x => x.Id == contratoId, ct);
         if (c is null) return false;
         if (req.EtapaId is { } eid && !await _db.ContratoEtapas.AnyAsync(e => e.Id == eid, ct)) return false;
+        var etapaAntesId = c.EtapaId;
         c.EtapaId = req.EtapaId;
         await _db.SaveChangesAsync(ct);
+        // K-04: el cambio de etapa (drag & drop del kanban) antes no dejaba rastro.
+        if (etapaAntesId != c.EtapaId)
+            await RegistrarBitacoraAsync("Contrato",
+                $"Contrato con '{c.Proveedor}' movido de etapa: {await NombreEtapaAsync(etapaAntesId, ct)} -> {await NombreEtapaAsync(c.EtapaId, ct)}.",
+                ct, c.Id);
         return true;
     }
+
+    private async Task<string> NombreEtapaAsync(Guid? etapaId, CancellationToken ct)
+        => etapaId is { } id
+            ? (await _db.ContratoEtapas.AsNoTracking().Where(e => e.Id == id).Select(e => e.Nombre).FirstOrDefaultAsync(ct)) ?? "(desconocida)"
+            : "(ninguna)";
 
 }
