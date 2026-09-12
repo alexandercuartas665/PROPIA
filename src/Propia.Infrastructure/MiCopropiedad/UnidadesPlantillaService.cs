@@ -75,22 +75,24 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
 
         using var wb = new XLWorkbook();
 
-        // Listas para los desplegables, INLINE (sin hoja de referencia "DATOS DE CARGA").
-        // Si una lista no cabe inline (demasiados valores o con comas), esa columna queda
-        // libre (sin dropdown) en vez de romper la validacion.
-        var coproList = InlineList(copros.Select(c => c.Nombre));
-        var rolesList = InlineList(roles);
+        // Todas las listas de los desplegables viven en una hoja OCULTA y se referencian por nombre
+        // definido: asi no hay tope de longitud ni problema con valores que traigan comas.
+        var listas = new HojaListas(wb);
+        var coproList = listas.Definir("COPROPIEDAD", copros.Select(c => c.Nombre));
+        var rolesList = listas.Definir("ROL", roles);
         // Terceros: la lista arranca con "Todas las copropiedades" (visible en todas) + las del cliente.
-        var coproTercerosList = InlineList(new[] { TodasLasCopropiedades }.Concat(copros.Select(c => c.Nombre)));
+        var coproTercerosList = listas.Definir("COPROPIEDAD_TERCEROS",
+            new[] { TodasLasCopropiedades }.Concat(copros.Select(c => c.Nombre)));
 
         // ---- Hojas de datos ----
-        HojaUnidades(wb, coproList, camposUnidad, cfgUnidad, tiposPropios);
-        HojaPersonas(wb, coproList, rolesList, camposPersona);
-        HojaVehiculos(wb, coproList, camposVehiculo);
-        HojaMascotas(wb, coproList, camposMascota);
-        HojaTerceros(wb, coproTercerosList);
-        HojaZonasComunes(wb, coproList, camposZona);
-        HojaEquipos(wb, coproList, camposEquipo);
+        HojaUnidades(wb, listas, coproList, camposUnidad, cfgUnidad, tiposPropios);
+        HojaPersonas(wb, listas, coproList, rolesList, camposPersona);
+        HojaVehiculos(wb, listas, coproList, camposVehiculo);
+        HojaMascotas(wb, listas, coproList, camposMascota);
+        HojaTerceros(wb, listas, coproTercerosList);
+        HojaZonasComunes(wb, listas, coproList, camposZona);
+        HojaEquipos(wb, listas, coproList, camposEquipo);
+        listas.Cerrar();
 
         wb.Properties.Author = "PROPIA";
         wb.Properties.Company = "A&D GROUP S.A.S";
@@ -100,15 +102,81 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         return (ms.ToArray(), "Plantilla carga unidades privadas.xlsx");
     }
 
-    // Lista de validacion INLINE (formula "a,b,c") si cabe en Excel y no hay comas en los
-    // valores; de lo contrario null (esa columna queda sin dropdown). Sin hoja de referencia.
-    private static string? InlineList(IEnumerable<string> valores)
+    /// <summary>
+    /// Hoja OCULTA con las listas de los desplegables. Cada lista ocupa una columna y se expone
+    /// como NOMBRE DEFINIDO, que es lo que referencia la validacion de datos.
+    ///
+    /// Reemplaza a las listas "inline" (la formula "a,b,c" dentro de la propia validacion), que
+    /// tienen dos limites de Excel: no admiten valores con coma y el texto completo no puede pasar
+    /// de 255 caracteres. Al superarlos, la columna se quedaba SIN desplegable y el usuario tenia
+    /// que adivinar los valores validos. Con la hoja de referencia no hay tope practico.
+    ///
+    /// Se referencia por nombre definido y no por "HOJA!$A$1:$A$9" porque la referencia directa a
+    /// otra hoja en una validacion de datos no funciona en Excel 2007; el nombre si.
+    /// </summary>
+    private sealed class HojaListas
     {
-        var vals = valores.Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => v.Trim()).ToList();
-        if (vals.Count == 0) return null;
-        var inline = string.Join(",", vals);
-        if (vals.Any(v => v.Contains(',')) || inline.Length > 250) return null;
-        return "\"" + inline + "\"";
+        private const string NombreHoja = "PROPIA_LISTAS";
+
+        private readonly XLWorkbook _wb;
+        private readonly IXLWorksheet _ws;
+        private readonly Dictionary<string, string?> _definidas = new(StringComparer.OrdinalIgnoreCase);
+        private int _col;
+
+        public HojaListas(XLWorkbook wb)
+        {
+            _wb = wb;
+            _ws = wb.AddWorksheet(NombreHoja);
+        }
+
+        /// <summary>
+        /// Escribe una lista en la hoja y devuelve la formula para la validacion ("=LISTA_TIPO").
+        /// Null si la lista queda vacia: esa columna se deja libre en vez de poner un desplegable
+        /// sin opciones, que bloquearia la captura.
+        /// </summary>
+        public string? Definir(string clave, IEnumerable<string> valores)
+        {
+            // Una misma clave se pide desde varias hojas (SI_NO, TIPO_ID): se escribe UNA vez y todas
+            // apuntan al mismo nombre. Definirla dos veces reventaria por nombre duplicado.
+            if (_definidas.TryGetValue(clave, out var ya)) return ya;
+
+            var vals = valores.Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => v.Trim()).ToList();
+            if (vals.Count == 0)
+            {
+                _definidas[clave] = null;
+                return null;
+            }
+
+            _col++;
+            _ws.Cell(1, _col).Value = clave;                 // encabezado, solo para poder leer la hoja
+            _ws.Cell(1, _col).Style.Font.Bold = true;
+            for (var i = 0; i < vals.Count; i++) _ws.Cell(i + 2, _col).Value = vals[i];
+
+            var nombre = "LISTA_" + Sanear(clave);
+            _wb.DefinedNames.Add(nombre, _ws.Range(2, _col, vals.Count + 1, _col));
+            var formula = "=" + nombre;
+            _definidas[clave] = formula;
+            return formula;
+        }
+
+        /// <summary>Manda la hoja al final y la oculta. Se llama cuando ya se definieron todas.</summary>
+        public void Cerrar()
+        {
+            _ws.Columns().AdjustToContents();
+            _ws.Position = _wb.Worksheets.Count;
+            _ws.Hide();
+        }
+
+        // Un nombre definido de Excel solo admite letras, digitos y guion bajo, y no puede empezar
+        // por digito. Las claves las damos nosotras, pero se sanean igual por si entra un alias.
+        private static string Sanear(string clave)
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var c in clave.ToUpperInvariant())
+                sb.Append(char.IsLetterOrDigit(c) ? c : '_');
+            var s = sb.ToString();
+            return s.Length > 0 && char.IsDigit(s[0]) ? "L" + s : s;
+        }
     }
 
     // ===================== Hojas de datos =====================
@@ -117,8 +185,8 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     // columnas ESTRUCTURALES, que nunca se filtran: COPROPIEDAD y UNIDAD PRIVADA son obligatorias
     // para el importador y PRINCIPAL es la que vincula un anexo con su unidad principal. Sin ellas
     // la plantilla quedaria inservible, asi que no dependen de la configuracion.
-    private static void HojaUnidades(XLWorkbook wb, string? coproRange, List<string> camposUnidad,
-        ConfigCamposUnidad cfg, List<(Guid Id, string Nombre)> tiposPropios)
+    private static void HojaUnidades(XLWorkbook wb, HojaListas listas, string? coproRange,
+        List<string> camposUnidad, ConfigCamposUnidad cfg, List<(Guid Id, string Nombre)> tiposPropios)
     {
         // Las columnas salen del catalogo UNICO de campos de sistema (UnidadCamposSistema), el mismo
         // que alimenta la tabla de unidades. Antes esta lista estaba duplicada aqui y se quedo corta:
@@ -143,11 +211,11 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         // TIPO: los tipos que ofrece ESTA copropiedad (del sistema que no oculto + los propios), con
         // la misma etiqueta que muestra la app. Antes se volcaba el enum crudo: los tipos propios no
         // aparecian y, si el usuario los escribia a mano, se guardaban como Apartamento en silencio.
-        Dropdown(ws, Indice(cols, "TIPO"), InlineList(cfg.OpcionesTipo(tiposPropios)));
-        DropdownInline(ws, Indice(cols, "AGRUPACION"), "1,2,3");
+        Dropdown(ws, Indice(cols, "TIPO"), listas.Definir("TIPO_UNIDAD", cfg.OpcionesTipo(tiposPropios)));
+        Dropdown(ws, Indice(cols, "AGRUPACION"), listas.Definir("AGRUPACION", new[] { "1", "2", "3" }));
         // ESTADO: las opciones que tenga configuradas la copropiedad (las ocultas no se ofrecen).
-        Dropdown(ws, Indice(cols, "ESTADO"), InlineList(cfg.OpcionesEstado()));
-        DropdownInline(ws, Indice(cols, "PAGA ADMIN"), "Si,No");
+        Dropdown(ws, Indice(cols, "ESTADO"), listas.Definir("ESTADO_UNIDAD", cfg.OpcionesEstado()));
+        Dropdown(ws, Indice(cols, "PAGA ADMIN"), listas.Definir("SI_NO", SiNo));
         Ejemplo(ws, cols,
             ("COPROPIEDAD", EjemploCopro), ("UNIDAD PRIVADA", "A1-203"),
             ("TIPO", "Apartamento"), ("AGRUPACION", "2"), ("COEFICIENTE", "1.25"));
@@ -165,7 +233,7 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
             : $"{campo.Ayuda}{(campo.Ayuda.Length > 0 ? " " : "")}(en esta copropiedad: {alias})";
     }
 
-    private static void HojaPersonas(XLWorkbook wb, string? coproRange, string? rolesRange, List<string> camposPersona)
+    private static void HojaPersonas(XLWorkbook wb, HojaListas listas, string? coproRange, string? rolesRange, List<string> camposPersona)
     {
         var cols = new List<(string H, string Ayuda)>
         {
@@ -186,15 +254,16 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
 
         var ws = Encabezado(wb, "PERSONAS", cols);
         Dropdown(ws, 1, coproRange);
-        DropdownInline(ws, 3, "Propietario,Residente,Familiar,Arrendatario,Apoderado");
-        DropdownInline(ws, 4, "CC,CE,Pasaporte,NIT,Otro");
-        DropdownInline(ws, 9, "M,F");
+        Dropdown(ws, 3, listas.Definir("TIPO_RESIDENTE",
+            new[] { "Propietario", "Residente", "Familiar", "Arrendatario", "Apoderado" }));
+        Dropdown(ws, 4, listas.Definir("TIPO_ID", TiposId));
+        Dropdown(ws, 9, listas.Definir("SEXO", new[] { "M", "F" }));
         Dropdown(ws, 12, rolesRange);
         Ejemplo(ws, EjemploCopro, "A1-203", "Propietario", "CC", "Juan Perez", "123456789", "juan@correo.com", "3001234567", "M", "1985-04-12", "Ingeniero", "");
         Ajustar(ws, cols.Count);
     }
 
-    private static void HojaVehiculos(XLWorkbook wb, string? coproRange, List<string> camposVehiculo)
+    private static void HojaVehiculos(XLWorkbook wb, HojaListas listas, string? coproRange, List<string> camposVehiculo)
     {
         var cols = new List<(string H, string Ayuda)>
         {
@@ -207,12 +276,13 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
 
         var ws = Encabezado(wb, "VEHICULOS", cols);
         Dropdown(ws, 1, coproRange);
-        DropdownInline(ws, 3, "Automovil,Moto,Bicicleta,Camioneta,Otro");
+        Dropdown(ws, 3, listas.Definir("TIPO_VEHICULO",
+            new[] { "Automovil", "Moto", "Bicicleta", "Camioneta", "Otro" }));
         Ejemplo(ws, EjemploCopro, "A1-203", "Automovil", "Mazda", "2022", "Gris", "ABC123");
         Ajustar(ws, cols.Count);
     }
 
-    private static void HojaMascotas(XLWorkbook wb, string? coproRange, List<string> camposMascota)
+    private static void HojaMascotas(XLWorkbook wb, HojaListas listas, string? coproRange, List<string> camposMascota)
     {
         var cols = new List<(string H, string Ayuda)>
         {
@@ -225,7 +295,7 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
 
         var ws = Encabezado(wb, "MASCOTAS", cols);
         Dropdown(ws, 1, coproRange);
-        DropdownInline(ws, 3, "Perro,Gato,Ave,Otro");
+        Dropdown(ws, 3, listas.Definir("TIPO_MASCOTA", new[] { "Perro", "Gato", "Ave", "Otro" }));
         Ejemplo(ws, EjemploCopro, "A1-203", "Perro", "Labrador", "Rocky");
         Ajustar(ws, cols.Count);
     }
@@ -233,7 +303,7 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     // Un tercero NO se relaciona con una unidad; solo con la copropiedad. Con "Todas las copropiedades"
     // el tercero queda visible en TODAS las copropiedades del cliente (se crea global + un vinculo en cada
     // una). Por eso no hay columnas ALCANCE ni UNIDAD PRIVADA.
-    private static void HojaTerceros(XLWorkbook wb, string? coproTercerosRange)
+    private static void HojaTerceros(XLWorkbook wb, HojaListas listas, string? coproTercerosRange)
     {
         var cols = new List<(string H, string Ayuda)>
         {
@@ -245,14 +315,14 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         };
         var ws = Encabezado(wb, "TERCEROS", cols);
         Dropdown(ws, 1, coproTercerosRange);
-        DropdownInline(ws, 2, "CC,CE,Pasaporte,NIT,Otro");
+        Dropdown(ws, 2, listas.Definir("TIPO_ID", TiposId));
         // El ejemplo usa EjemploCopro para que el importador lo omita; la ayuda ya explica "Todas...".
         Ejemplo(ws, EjemploCopro, "CC", "Maria Lopez", "987654321", "maria@correo.com", "3009876543");
         Ajustar(ws, cols.Count);
     }
 
     // ===================== Hojas nuevas: Zonas comunes y Equipos =====================
-    private static void HojaZonasComunes(XLWorkbook wb, string? coproRange, List<string> camposZona)
+    private static void HojaZonasComunes(XLWorkbook wb, HojaListas listas, string? coproRange, List<string> camposZona)
     {
         var cols = new List<(string H, string Ayuda)>
         {
@@ -270,14 +340,14 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
 
         var ws = Encabezado(wb, "ZONAS COMUNES", cols);
         Dropdown(ws, 1, coproRange);
-        DropdownInline(ws, 3, EnumCsv<CategoriaZonaComun>());
-        DropdownInline(ws, 4, "Si,No");
-        DropdownInline(ws, 6, EnumCsv<EstadoZonaComunMantenimiento>());
+        Dropdown(ws, 3, listas.Definir("CATEGORIA_ZONA", EnumNombres<CategoriaZonaComun>()));
+        Dropdown(ws, 4, listas.Definir("SI_NO", SiNo));
+        Dropdown(ws, 6, listas.Definir("ESTADO_ZONA", EnumNombres<EstadoZonaComunMantenimiento>()));
         Ejemplo(ws, EjemploCopro, "Salon Social", "Social", "Si", "80", "Activa", "Salon para eventos", "50000", "Reservar con 3 dias");
         Ajustar(ws, cols.Count);
     }
 
-    private static void HojaEquipos(XLWorkbook wb, string? coproRange, List<string> camposEquipo)
+    private static void HojaEquipos(XLWorkbook wb, HojaListas listas, string? coproRange, List<string> camposEquipo)
     {
         var cols = new List<(string H, string Ayuda)>
         {
@@ -301,10 +371,10 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
 
         var ws = Encabezado(wb, "EQUIPOS", cols);
         Dropdown(ws, 1, coproRange);
-        DropdownInline(ws, 3, EnumCsv<CategoriaEquipo>());
-        DropdownInline(ws, 4, EnumCsv<TipoElemento>());
-        DropdownInline(ws, 6, "Si,No");
-        DropdownInline(ws, 10, EnumCsv<EstadoEquipoActivo>());
+        Dropdown(ws, 3, listas.Definir("CATEGORIA_EQUIPO", EnumNombres<CategoriaEquipo>()));
+        Dropdown(ws, 4, listas.Definir("TIPO_ELEMENTO", EnumNombres<TipoElemento>()));
+        Dropdown(ws, 6, listas.Definir("SI_NO", SiNo));
+        Dropdown(ws, 10, listas.Definir("ESTADO_EQUIPO", EnumNombres<EstadoEquipoActivo>()));
         Ejemplo(ws, EjemploCopro, "Bomba de agua principal", "Bombeo", "Equipo", "1", "No", "BX-200", "SER-123",
             "Cuarto de bombas", "Operativo", "Revision mensual", "10", "5000000", "HidroServicios", "FAC-001");
         Ajustar(ws, cols.Count);
@@ -371,8 +441,10 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     private static void Dropdown(IXLWorksheet ws, int col, string? listFormula)
         => AplicarLista(ws, col, listFormula);
 
-    private static void DropdownInline(IXLWorksheet ws, int col, string csv)
-        => AplicarLista(ws, col, "\"" + csv + "\"");
+    // Listas cortas que se repiten entre hojas. Se definen una vez en la hoja de listas y todas las
+    // columnas apuntan al mismo nombre.
+    private static readonly string[] SiNo = { "Si", "No" };
+    private static readonly string[] TiposId = { "CC", "CE", "Pasaporte", "NIT", "Otro" };
 
     // Numero de columna (1-based) de un encabezado; 0 si la columna no se emitio (campo oculto).
     private static int Indice(List<(string H, string Ayuda)> cols, string encabezado)
@@ -439,9 +511,9 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         c.Style.Font.FontColor = muted;
     }
 
-    // CSV de los nombres de un enum, para las listas desplegables (coinciden con lo que parsea el importador).
-    private static string EnumCsv<TEnum>() where TEnum : struct, Enum
-        => string.Join(",", Enum.GetNames<TEnum>());
+    // Nombres de un enum, para las listas desplegables (coinciden con lo que parsea el importador).
+    private static IEnumerable<string> EnumNombres<TEnum>() where TEnum : struct, Enum
+        => Enum.GetNames<TEnum>();
 
     // ===================== Visibilidad de campos de la unidad =====================
 

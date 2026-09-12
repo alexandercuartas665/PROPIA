@@ -150,7 +150,7 @@ public class UnidadesPlantillaRoundTripTests
 
             // 1. El desplegable de TIPO lo ofrece (antes solo volcaba el enum del sistema).
             var ws = await GenerarHojaUnidadesAsync(tenantId);
-            Assert.Contains("Duplex", ListaDeValidacion(ws, "TIPO"));
+            Assert.Contains("Duplex", OpcionesDe(ws, "TIPO"));
 
             // 2. Se importa como tipo PROPIO, no como Apartamento.
             LlenarFila(ws, 5, "CP Tipos Propios", new(StringComparer.OrdinalIgnoreCase)
@@ -236,9 +236,53 @@ public class UnidadesPlantillaRoundTripTests
         finally { await CleanupTenantAsync(tenantId); }
     }
 
+    [Fact]
+    public async Task Una_lista_larga_o_con_comas_conserva_el_desplegable_en_la_hoja_oculta()
+    {
+        var tenantId = await SeedTenantAsync("CP Listas Largas");
+        try
+        {
+            // 40 tipos propios de nombre largo: la lista pasa de sobra los 255 caracteres que admite
+            // una lista "inline". Antes, al pasarse, la columna se quedaba SIN desplegable y el
+            // usuario tenia que adivinar los valores validos.
+            var esperados = new List<string>();
+            for (var i = 1; i <= 40; i++)
+            {
+                var nombre = $"Tipo propio numero {i:00} de nombre largo";
+                await SeedTipoPropioAsync(tenantId, nombre);
+                esperados.Add(nombre);
+            }
+            // Y uno con COMA, que una lista inline tampoco admite (la coma separa opciones).
+            await SeedTipoPropioAsync(tenantId, "Duplex, esquinero");
+            esperados.Add("Duplex, esquinero");
+
+            var ws = await GenerarHojaUnidadesAsync(tenantId);
+            var opciones = OpcionesDe(ws, "TIPO");
+            Assert.True(string.Join(",", opciones).Length > 255,
+                "el caso de prueba deberia superar el limite de una lista inline");
+            foreach (var e in esperados) Assert.Contains(e, opciones);
+            Assert.Contains("Cuarto util", opciones);   // los del sistema siguen ahi
+
+            // La hoja de listas existe, esta OCULTA y no estorba al usuario.
+            var listas = ws.Workbook.Worksheet("PROPIA_LISTAS");
+            Assert.NotEqual(XLWorksheetVisibility.Visible, listas.Visibility);
+            Assert.Equal(ws.Workbook.Worksheets.Count, listas.Position);
+
+            // Y el valor con coma se importa bien (es un solo tipo, no dos opciones).
+            LlenarFila(ws, 5, "CP Listas Largas", new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["UNIDAD PRIVADA"] = "T1-880", ["TIPO"] = "Duplex, esquinero", ["COEFICIENTE"] = "1.00",
+            });
+            Assert.Empty((await ImportarAsync(tenantId, ws.Workbook)).Errores);
+            Assert.NotNull((await GetUnidadAsync(tenantId, "T1-880")).TipoCustomId);
+        }
+        finally { await CleanupTenantAsync(tenantId); }
+    }
+
     // ===================== helpers =====================
 
-    // Formula de la lista desplegable de una columna (para comprobar que ofrece lo que debe).
+    // Formula de la lista desplegable de una columna: un nombre definido ("=LISTA_TIPO_UNIDAD")
+    // que apunta a la hoja oculta de listas.
     private static string ListaDeValidacion(IXLWorksheet ws, string encabezado)
     {
         var col = ColumnaDe(ws, encabezado);
@@ -247,6 +291,21 @@ public class UnidadesPlantillaRoundTripTests
                 if (r.RangeAddress.FirstAddress.ColumnNumber == col)
                     return dv.Value ?? "";
         return "";
+    }
+
+    /// <summary>Valores que ofrece el desplegable de una columna, resolviendo el nombre definido.</summary>
+    private static List<string> OpcionesDe(IXLWorksheet ws, string encabezado)
+    {
+        var formula = ListaDeValidacion(ws, encabezado);
+        if (string.IsNullOrWhiteSpace(formula)) return new List<string>();
+        var nombre = formula.TrimStart('=').Trim();
+        var rango = ws.Workbook.DefinedNames.FirstOrDefault(n =>
+            string.Equals(n.Name, nombre, StringComparison.OrdinalIgnoreCase));
+        Assert.True(rango is not null, $"La validacion de '{encabezado}' apunta a '{nombre}', que no existe.");
+        return rango!.Ranges.Cells()
+            .Select(c => c.GetString().Trim())
+            .Where(v => v.Length > 0)
+            .ToList();
     }
 
     // Oculta un campo en la config de la copropiedad (lo que hace el panel de Configurar).
