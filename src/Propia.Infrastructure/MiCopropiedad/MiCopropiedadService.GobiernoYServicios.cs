@@ -95,10 +95,71 @@ public partial class MiCopropiedadService
         return contratos.Select(c => ToContratoDto(c, porContrato.GetValueOrDefault(c.Id), AsocNombre(c))).ToList();
     }
 
+    // ----------------------------- K-01: validacion de contrato -----------------------------
+
+    /// <summary>
+    /// K-01: reglas de negocio de un contrato, compartidas por crear y actualizar. Antes la unica
+    /// validacion era "proveedor obligatorio", asi que el API aceptaba y guardaba contratos
+    /// imposibles: fecha fin anterior al inicio, valores negativos, NIT con letras, cuotas en cero.
+    ///
+    /// Se valida el ESTADO RESULTANTE (no el request suelto): al actualizar, el PUT es un MERGE, asi
+    /// que una fecha fin que llega sola tiene que compararse contra la fecha inicio YA guardada.
+    /// Lanza InvalidOperationException con mensaje en espanol; el controller lo mapea a 400.
+    /// </summary>
+    private async Task ValidarContratoAsync(
+        string? proveedor, DateOnly fechaInicio, DateOnly? fechaFin,
+        decimal? valorMensual, decimal? valorTotal, int? formaPagoCuotas, bool pagoMensual,
+        int diasAnticipacionAlerta, string? nitProveedor, string? numeroContrato,
+        Guid? contratoIdActual, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(proveedor))
+            throw new InvalidOperationException("El proveedor es obligatorio.");
+
+        if (fechaFin is { } fin && fin < fechaInicio)
+            throw new InvalidOperationException(
+                $"La fecha de fin ({fin:dd/MM/yyyy}) no puede ser anterior a la de inicio ({fechaInicio:dd/MM/yyyy}).");
+
+        if (valorMensual is { } vm && vm < 0)
+            throw new InvalidOperationException("El valor mensual no puede ser negativo.");
+
+        if (valorTotal is { } vt && vt < 0)
+            throw new InvalidOperationException("El valor total no puede ser negativo.");
+
+        // Si no se paga mes a mes, el contrato se reparte en cuotas: al menos una.
+        if (!pagoMensual && formaPagoCuotas is { } cuotas && cuotas < 1)
+            throw new InvalidOperationException("El numero de cuotas debe ser al menos 1.");
+
+        if (diasAnticipacionAlerta < 1 || diasAnticipacionAlerta > 365)
+            throw new InvalidOperationException("Los dias de anticipacion de la alerta deben estar entre 1 y 365.");
+
+        // Misma regla que el Directorio para el NIT de una empresa: se admiten puntos y guiones
+        // como separadores, pero el resto tienen que ser digitos. Aqui es opcional.
+        if (!string.IsNullOrWhiteSpace(nitProveedor))
+        {
+            var nitN = nitProveedor.Trim().Replace(".", "").Replace("-", "").Replace(" ", "");
+            if (nitN.Length == 0 || !nitN.All(char.IsDigit))
+                throw new InvalidOperationException("El NIT del proveedor debe contener solo digitos.");
+        }
+
+        // El numero de contrato, si se usa, identifica al contrato dentro de la copropiedad.
+        // El filtro de tenant de EF ya acota la consulta a la copropiedad activa.
+        var numero = string.IsNullOrWhiteSpace(numeroContrato) ? null : numeroContrato.Trim();
+        if (numero is not null)
+        {
+            var repetido = await _db.ContratosServicio
+                .AnyAsync(x => x.NumeroContrato == numero
+                               && (contratoIdActual == null || x.Id != contratoIdActual), ct);
+            if (repetido)
+                throw new InvalidOperationException($"Ya existe un contrato con el numero '{numero}' en esta copropiedad.");
+        }
+    }
+
     public async Task<ContratoServicioDto> CrearContratoAsync(CrearContratoServicioRequest req, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Proveedor))
-            throw new InvalidOperationException("Proveedor obligatorio.");
+        await ValidarContratoAsync(
+            req.Proveedor, req.FechaInicio, req.FechaFin, req.ValorMensual, req.ValorTotal,
+            req.FormaPagoCuotas, req.PagoMensual, req.DiasAnticipacionAlerta <= 0 ? 30 : req.DiasAnticipacionAlerta,
+            req.NitProveedor, req.NumeroContrato, null, ct);
         var c = new ContratoServicio
         {
             Tipo = req.Tipo,
@@ -137,6 +198,24 @@ public partial class MiCopropiedadService
     {
         var c = await _db.ContratosServicio.FirstOrDefaultAsync(x => x.Id == contratoId, ct);
         if (c is null) return false;
+
+        // K-01: el PUT es un MERGE, asi que se valida el ESTADO RESULTANTE (lo que llega o, si no
+        // llega, lo que ya estaba guardado). Validar solo el request dejaria pasar, por ejemplo,
+        // una fecha fin suelta anterior a la fecha inicio que ya tiene el contrato.
+        var diasResultante = req.DiasAnticipacionAlerta <= 0 ? 30 : req.DiasAnticipacionAlerta;
+        await ValidarContratoAsync(
+            string.IsNullOrWhiteSpace(req.Proveedor) ? c.Proveedor : req.Proveedor,
+            req.FechaInicio ?? c.FechaInicio,
+            req.FechaFin ?? c.FechaFin,
+            req.ValorMensual ?? c.ValorMensual,
+            req.ValorTotal ?? c.ValorTotal,
+            req.FormaPagoCuotas ?? c.FormaPagoCuotas,
+            req.PagoMensual ?? c.PagoMensual,
+            diasResultante,
+            req.NitProveedor is null ? c.NitProveedor : req.NitProveedor,
+            req.NumeroContrato is null ? c.NumeroContrato : req.NumeroContrato,
+            c.Id, ct);
+
         // "Vencido" se deriva por fecha; el admin solo declara Vigente o EnRenovacion.
         c.Estado = req.Estado == EstadoContrato.Vencido ? EstadoContrato.Vigente : req.Estado;
         c.DiasAnticipacionAlerta = req.DiasAnticipacionAlerta <= 0 ? 30 : req.DiasAnticipacionAlerta;

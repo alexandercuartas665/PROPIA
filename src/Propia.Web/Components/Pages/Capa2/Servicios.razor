@@ -614,7 +614,7 @@ else
                                 PorPaginaChanged="n => { _cPageSize = n; _cPage = 0; }" />
                 }
                 </div>
-                @if (!string.IsNullOrEmpty(_msg)) { <div class="ctr-toast" @onclick="() => _msg = null">@_msg</div> }
+                @if (!string.IsNullOrEmpty(_msg)) { <div class="ctr-toast @(_msgEsError ? "ctr-toast--error" : "")" @onclick='() => { _msg = null; _msgEsError = false; }'>@_msg</div> }
             }
         }
 
@@ -2634,6 +2634,22 @@ else
         _ => c.ToString()
     };
 
+    /// <summary>
+    /// K-01: el backend devuelve {"error":"..."} en los 400 de validacion. Sin esto la pantalla
+    /// mostraba el JSON crudo al usuario.
+    /// </summary>
+    private static async Task<string> MensajeErrorAsync(HttpResponseMessage resp)
+    {
+        var cuerpo = await resp.Content.ReadAsStringAsync();
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(cuerpo);
+            if (doc.RootElement.TryGetProperty("error", out var e) && e.GetString() is { Length: > 0 } m) return m;
+        }
+        catch { }
+        return string.IsNullOrWhiteSpace(cuerpo) ? "No se pudo guardar el contrato." : cuerpo;
+    }
+
     private async Task GuardarAsync()
     {
         _modalError = null;
@@ -2669,7 +2685,7 @@ else
                         AsociadoTipo: asocTipo, AsociadoId: asocId, LimpiarAsociado: asocId is null,
                         ProveedorPersonaId: _f.ProveedorPersonaId, ProveedorEmpresaId: _f.ProveedorEmpresaId));
             }
-            if (!resp.IsSuccessStatusCode) { _modalError = await resp.Content.ReadAsStringAsync(); return; }
+            if (!resp.IsSuccessStatusCode) { _modalError = await MensajeErrorAsync(resp); return; }
             _showModal = false;
             await CargarAsync();
         }
@@ -2702,6 +2718,7 @@ else
     private string? _cEditKey;      // "{id}:{campo}" de la celda en edicion
     private string _cEditVal = "";  // valor temporal
     private bool _cEditBusy;
+    private bool _msgEsError;   // K-01: pinta el toast en rojo cuando lo que se muestra es un error
 
     private bool CEnEd(Guid id, string campo) => _cEditKey == id + ":" + campo;
     private void IniciarCEd(Guid id, string campo, string? actual) { _cEditKey = id + ":" + campo; _cEditVal = actual ?? ""; }
@@ -2782,7 +2799,10 @@ else
                 Contacto: contacto, FechaInicio: ini, FechaFin: fin,
                 ValorMensual: valor, Observaciones: obs,
                 NumeroContrato: numero, TipoContrato: tipoC, Categoria: cat);
-            await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/{c.Id}", req);
+            var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/{c.Id}", req);
+            // K-01: antes se ignoraba la respuesta, asi que un 400 de validacion dejaba la celda
+            // con el valor tecleado como si se hubiera guardado. Ahora avisa y la recarga lo revierte.
+            if (!resp.IsSuccessStatusCode) { _msg = await MensajeErrorAsync(resp); _msgEsError = true; }
             await CargarAsync();   // estado/alerta se derivan de FechaFin -> recargar
             StateHasChanged();
         }
