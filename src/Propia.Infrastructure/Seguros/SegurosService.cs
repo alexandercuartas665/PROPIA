@@ -237,13 +237,24 @@ public class SegurosService : ISegurosService
     public async Task<bool> GuardarCampoValorAsync(Guid polizaId, Guid campoId, GuardarPolizaCampoValorRequest req, CancellationToken ct)
     {
         if (!await _db.Polizas.AnyAsync(p => p.Id == polizaId, ct)) return false;
+        // K-11: antes no se validaba el campo (se creaba un valor colgando de un campoId inexistente o
+        // inactivo) y se guardaba "" en vez de borrar. Mismo patron que los campos de contrato.
+        if (!await _db.PolizaCampos.AnyAsync(c => c.Id == campoId && c.Activo, ct)) return false;
+        var val = string.IsNullOrWhiteSpace(req.Valor) ? null : req.Valor.Trim();
         var v = await _db.PolizaCampoValores.FirstOrDefaultAsync(x => x.PolizaId == polizaId && x.PolizaCampoId == campoId, ct);
         if (v is null)
         {
-            v = new PolizaCampoValor { PolizaId = polizaId, PolizaCampoId = campoId, Valor = req.Valor };
-            _db.PolizaCampoValores.Add(v);
+            if (val is null) return true;   // nada que guardar
+            _db.PolizaCampoValores.Add(new PolizaCampoValor { PolizaId = polizaId, PolizaCampoId = campoId, Valor = val });
         }
-        else v.Valor = req.Valor;
+        else if (val is null)
+        {
+            _db.PolizaCampoValores.Remove(v);
+        }
+        else
+        {
+            v.Valor = val;
+        }
         await _db.SaveChangesAsync(ct);
         return true;
     }

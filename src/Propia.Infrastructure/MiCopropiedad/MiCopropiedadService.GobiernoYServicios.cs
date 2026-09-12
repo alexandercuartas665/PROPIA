@@ -199,6 +199,10 @@ public partial class MiCopropiedadService
         var c = await _db.ContratosServicio.FirstOrDefaultAsync(x => x.Id == contratoId, ct);
         if (c is null) return false;
 
+        // K-08: vigencia antes del MERGE, para detectar una prorroga mas abajo.
+        var fechaInicioAntes = c.FechaInicio;
+        var fechaFinAntes = c.FechaFin;
+
         // K-01: el PUT es un MERGE, asi que se valida el ESTADO RESULTANTE (lo que llega o, si no
         // llega, lo que ya estaba guardado). Validar solo el request dejaria pasar, por ejemplo,
         // una fecha fin suelta anterior a la fecha inicio que ya tiene el contrato.
@@ -249,6 +253,11 @@ public partial class MiCopropiedadService
             c.ProveedorEmpresaId = req.ProveedorEmpresaId;
             c.ContactoPersonaId = req.ContactoPersonaId;
         }
+        // K-08: si cambia la vigencia, reinicia el control de alerta para que el job vuelva a evaluar.
+        // Sin esto un contrato en rojo que se prorroga a amarillo nunca vuelve a avisar (el job solo
+        // resetea el contador al pasar a verde). Las polizas ya lo hacian (SegurosService.cs).
+        if (c.FechaInicio != fechaInicioAntes || c.FechaFin != fechaFinAntes)
+            c.AlertaVencimientoPctNotificado = null;
         await _db.SaveChangesAsync(ct);
         await RegistrarBitacoraAsync("Contrato", $"Contrato con '{c.Proveedor}' actualizado.", ct, c.Id);
         return true;

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Propia.Application.Common;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
@@ -22,10 +23,12 @@ public class ContratosVencimientoJob : IBackgroundJob
 
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenant;
-    public ContratosVencimientoJob(PropiaDbContext db, ITenantContext tenant)
+    private readonly ILogger<ContratosVencimientoJob> _log;
+    public ContratosVencimientoJob(PropiaDbContext db, ITenantContext tenant, ILogger<ContratosVencimientoJob> log)
     {
         _db = db;
         _tenant = tenant;
+        _log = log;
     }
 
     public async Task<object?> EjecutarAsync(CancellationToken ct)
@@ -71,7 +74,7 @@ public class ContratosVencimientoJob : IBackgroundJob
                             ? $"El contrato con '{c.Proveedor}' esta vencido."
                             : $"Faltan {dias} dias para finalizar el contrato con '{c.Proveedor}'.",
                         UrlAccion = "/contratos",
-                        ModuloOrigenCodigo = "2.5",
+                        ModuloOrigenCodigo = "2.3",
                         EntidadId = c.Id,
                         Activa = true
                     });
@@ -106,7 +109,7 @@ public class ContratosVencimientoJob : IBackgroundJob
                             ? $"La poliza de '{p.Aseguradora}' esta vencida."
                             : $"Faltan {dias} dias para el vencimiento de la poliza de '{p.Aseguradora}'.",
                         UrlAccion = "/seguros",
-                        ModuloOrigenCodigo = "seguros",
+                        ModuloOrigenCodigo = "2.3",
                         EntidadId = p.Id,
                         Activa = true
                     });
@@ -116,7 +119,13 @@ public class ContratosVencimientoJob : IBackgroundJob
 
                 if (cambios) { await _db.SaveChangesAsync(ct); tenantsConTrabajo++; }
             }
-            catch { errores++; /* no romper el resto de tenants */ }
+            catch (Exception ex)
+            {
+                // K-12: antes este catch se comia el error en silencio; un tenant que fallaba no dejaba
+                // rastro. No se corta el resto de tenants, pero queda en el log.
+                errores++;
+                _log.LogError(ex, "ContratosVencimiento fallo en el tenant {TenantId}", tid);
+            }
         }
 
         return new { alertas, tenantsConTrabajo, errores, tenants = tenantIds.Count };

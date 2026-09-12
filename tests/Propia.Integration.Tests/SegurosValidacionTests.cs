@@ -289,6 +289,71 @@ public class SegurosValidacionTests
         await CleanupTenantAsync(tenantId);
     }
 
+    // ----------------------------- K-11: campos personalizados de polizas -----------------------------
+
+    [Fact]
+    public async Task Guardar_valor_de_un_campo_inexistente_devuelve_false()
+    {
+        // K-11: antes se creaba un valor colgando de un campoId que no existe.
+        var tenantId = await SeedTenantAsync("[SELLO] SG campo inexistente");
+        var svc = BuildService(tenantId);
+        var p = await svc.CrearPolizaAsync(PolizaValida(), CancellationToken.None);
+
+        var ok = await svc.GuardarCampoValorAsync(p.Id, Guid.NewGuid(),
+            new GuardarPolizaCampoValorRequest("algo"), CancellationToken.None);
+
+        Assert.False(ok);
+        Assert.Equal(0, await ContarValoresAsync(p.Id));
+        await CleanupTenantAsync(tenantId);
+    }
+
+    [Fact]
+    public async Task Guardar_valor_de_un_campo_inactivo_devuelve_false()
+    {
+        // Un campo dado de baja (soft-delete) no debe aceptar valores nuevos.
+        var tenantId = await SeedTenantAsync("[SELLO] SG campo inactivo");
+        var svc = BuildService(tenantId);
+        var p = await svc.CrearPolizaAsync(PolizaValida(), CancellationToken.None);
+        var campo = await svc.CrearCampoAsync(
+            new CrearPolizaCampoRequest("[SELLO] Deducible", TipoCampoTablero.Texto, null, null), CancellationToken.None);
+        await svc.EliminarCampoAsync(campo.Id, CancellationToken.None);
+
+        var ok = await svc.GuardarCampoValorAsync(p.Id, campo.Id,
+            new GuardarPolizaCampoValorRequest("5%"), CancellationToken.None);
+
+        Assert.False(ok);
+        Assert.Equal(0, await ContarValoresAsync(p.Id));
+        await CleanupTenantAsync(tenantId);
+    }
+
+    [Fact]
+    public async Task Guardar_valor_en_blanco_borra_el_valor_en_vez_de_guardar_vacio()
+    {
+        // K-11: antes se guardaba "" (basura). Ahora un valor en blanco borra la fila.
+        var tenantId = await SeedTenantAsync("[SELLO] SG campo blanco");
+        var svc = BuildService(tenantId);
+        var p = await svc.CrearPolizaAsync(PolizaValida(), CancellationToken.None);
+        var campo = await svc.CrearCampoAsync(
+            new CrearPolizaCampoRequest("[SELLO] Deducible", TipoCampoTablero.Texto, null, null), CancellationToken.None);
+
+        Assert.True(await svc.GuardarCampoValorAsync(p.Id, campo.Id,
+            new GuardarPolizaCampoValorRequest("5%"), CancellationToken.None));
+        Assert.Equal(1, await ContarValoresAsync(p.Id));
+
+        Assert.True(await svc.GuardarCampoValorAsync(p.Id, campo.Id,
+            new GuardarPolizaCampoValorRequest("   "), CancellationToken.None));
+        Assert.Equal(0, await ContarValoresAsync(p.Id));
+        await CleanupTenantAsync(tenantId);
+    }
+
+    private async Task<int> ContarValoresAsync(Guid polizaId)
+    {
+        await using var ctx = OwnerDb();
+        return await ctx.Database
+            .SqlQuery<int>($"SELECT count(*)::int AS \"Value\" FROM poliza_campo_valores WHERE poliza_id = {polizaId}")
+            .SingleAsync();
+    }
+
     // ----------------------------- infraestructura de los tests -----------------------------
 
     private ISegurosService BuildService(Guid tenantId) => new SegurosService(AppDb(tenantId), new NoopBlobStorage());
