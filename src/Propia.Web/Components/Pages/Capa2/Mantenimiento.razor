@@ -128,6 +128,7 @@
                                 case "titulo": <div>@p.Titulo</div> break;
                                 case "tercero": <div class="mtp-muted" title="@(p.ProveedorNombre ?? NombreTercero(p.ProveedorId))">@(p.ProveedorId is null ? "-" : (p.ProveedorNombre ?? NombreTercero(p.ProveedorId)))</div> break;
                                 case "contrato": <div class="mtp-muted" title="@NombreContrato(p.ContratoId)">@(p.ContratoId is null ? "-" : NombreContrato(p.ContratoId))</div> break;
+                                case "costo": <div class="mtp-num">@(p.CostoEstimado is { } ce ? ce.ToString("C0", _cultura) : "-")</div> break;
                                 case "tablero": <div>@(string.IsNullOrWhiteSpace(p.TableroNombre) ? "General" : p.TableroNombre)</div> break;
                                 case "prioridad": <div>@p.Prioridad</div> break;
                                 case "periodicidad": <div>@(p.Tipo == TipoProgramacion.Cron ? $"Cron: {p.CronExpresion}" : PeriodicidadProgLabel(p.Periodicidad))</div> break;
@@ -194,6 +195,12 @@
                                     <option value="">Sin contrato</option>
                                     @foreach (var co in ContratosParaTercero()) { <option value="@co.Id">@co.Nombre</option> }
                                 </select>
+                            </div>
+                            break;
+                        case "costo":
+                            <div>
+                                <input type="number" min="0" step="1000" class="mtp-nf-inp mtp-nf-num"
+                                       placeholder="Costo estimado" @bind="_altaCosto" />
                             </div>
                             break;
                         case "tablero":
@@ -910,6 +917,8 @@ else if (_tab == "calendario")
     .mtp-newrow { display: grid; padding: 9px 14px; border-top: 1px solid var(--propia-border-divider); background: var(--propia-bg-app); }
     .mtp-nf-inp { width: 100%; box-sizing: border-box; border: 1px dashed var(--propia-border-input); border-radius: 7px; padding: 6px 9px; font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-bg-card); outline: none; font-family: inherit; }
     .mtp-nf-inp:focus { border-style: solid; border-color: var(--propia-brand); box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
+    .mtp-nf-num { text-align: right; }
+    .mtp-num { text-align: right; font-variant-numeric: tabular-nums; }
     .mtp-add { border: 1px solid var(--propia-brand-soft); background: var(--propia-brand-soft); color: var(--propia-brand); border-radius: 7px; font-size: 11.5px; font-weight: 700; padding: 6px 12px; cursor: pointer; font-family: inherit; white-space: nowrap; }
     .mtp-add:hover { filter: brightness(.97); }
     .mtp-add:disabled { opacity: .5; cursor: default; }
@@ -967,6 +976,8 @@ else if (_tab == "calendario")
     private Guid? _altaProveedorId;
     private string? _altaProveedorNombre;
     private string _altaContratoKey = "";
+    private decimal? _altaCosto;                   // costo estimado del mantenimiento (opcional)
+    private static readonly System.Globalization.CultureInfo _cultura = new("es-CO");
     private PrioridadTarea _altaPrioridad = PrioridadTarea.Normal;
     private PeriodicidadProgramacion _altaPeriodicidad = PeriodicidadProgramacion.Mensual;
     private DateOnly? _altaFecha = DateOnly.FromDateTime(DateTime.Today);
@@ -995,6 +1006,7 @@ else if (_tab == "calendario")
     private static readonly List<ProgCol> _progColsAll = new()
     {
         new("tipo", "Tipo"), new("activo", "Activo"), new("titulo", "Titulo"), new("tercero", "Tercero"), new("contrato", "Contrato"),
+        new("costo", "Costo estimado"),
         new("tablero", "Tablero"), new("prioridad", "Prioridad"), new("periodicidad", "Periodicidad"),
         new("proxima", "Proxima ejecucion"), new("responsables", "Responsables"), new("activa", "Activa"),
     };
@@ -1142,12 +1154,13 @@ else if (_tab == "calendario")
             var req = new CrearProgramacionRequest(
                 _altaTitulo!, null, _altaPrioridad, tableroId, _altaPeriodicidad,
                 _altaFecha.Value, null, null, modulo, activoId, referencia,
-                ProveedorId: _altaProveedorId, ContratoId: contratoId, ProveedorNombre: _altaProveedorNombre);
+                ProveedorId: _altaProveedorId, ContratoId: contratoId, ProveedorNombre: _altaProveedorNombre,
+                CostoEstimado: _altaCosto);
             var r = await Auth().PostAsJsonAsync("/api/programaciones", req);
             if (!r.IsSuccessStatusCode) { _msg = await r.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
             _msg = "Programacion creada."; _msgClass = "alert-success";
-            // Limpiar activo/titulo/tercero/contrato; se conservan tipo/prioridad/periodicidad/fecha para altas seguidas.
-            _altaTitulo = ""; _altaActivoId = ""; _altaTableroKey = ""; _altaContratoKey = "";
+            // Limpiar activo/titulo/tercero/contrato/costo; se conservan tipo/prioridad/periodicidad/fecha para altas seguidas.
+            _altaTitulo = ""; _altaActivoId = ""; _altaTableroKey = ""; _altaContratoKey = ""; _altaCosto = null;
             _altaProveedorSel = null; _altaProveedorId = null; _altaProveedorNombre = null;
             await CargarAsync();
         }
@@ -1219,7 +1232,9 @@ else if (_tab == "calendario")
             req.Titulo, req.Descripcion, req.Prioridad, req.TableroId, req.Periodicidad,
             req.FechaProximaEjecucion, req.FechaFin, p.Activa, req.Responsables,
             req.Tipo, req.CronExpresion, req.ZonaHoraria, req.NotificarPorCorreo, req.HorizonteDias,
-            req.ProveedorId, req.ContratoId, req.ProveedorNombre);
+            req.ProveedorId, req.ContratoId, req.ProveedorNombre,
+            // El modal completo aun no edita el costo; se conserva el que ya tenia la programacion.
+            req.CostoEstimado ?? p.CostoEstimado);
         try
         {
             var r = await Auth().PutAsJsonAsync($"/api/programaciones/{p.Id}", upd);

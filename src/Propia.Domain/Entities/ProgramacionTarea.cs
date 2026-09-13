@@ -68,6 +68,10 @@ public class ProgramacionTarea : TenantEntity
     /// <summary>Contrato (ContratoServicio) al que se ata el mantenimiento. Opcional.</summary>
     public Guid? ContratoId { get; set; }
 
+    /// <summary>Costo estimado del mantenimiento programado (moneda local). Opcional. Solo lo usa el
+    /// modulo de Mantenimiento (2.11) para presupuestar; el ProgramacionTareasJob (2.10) lo ignora.</summary>
+    public decimal? CostoEstimado { get; set; }
+
     public Guid CreadoPorUsuarioId { get; set; }
     public int TareasGeneradas { get; set; }
     public DateTimeOffset? UltimaEjecucion { get; set; }
