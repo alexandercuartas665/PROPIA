@@ -171,6 +171,20 @@ public record CerrarIntervencionRequest(
 
 public record CancelarIntervencionRequest(string MotivoCancelacion);
 
+/// <summary>
+/// Registrar la EJECUCION de un mantenimiento desde el calendario (2.11, Etapa A). Crea una
+/// intervencion ya Completada, ligada a una tarea (RN-03 / opcion B), con el detalle de lo realizado
+/// como bitacora. Costo real, fotos y factura llegan en etapas posteriores.
+/// </summary>
+public record RegistrarEjecucionRequest(
+    TipoActivoMantenimiento ActivoTipo,
+    Guid ActivoId,
+    TipoIntervencionMantenimiento Tipo,
+    string Titulo,
+    string? Detalle,
+    DateOnly FechaEjecucion,
+    Guid? PlanId = null);
+
 // ===========================================================================
 // Bitacora
 // ===========================================================================

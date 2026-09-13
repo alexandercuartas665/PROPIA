@@ -51,6 +51,10 @@ public interface IMantenimientoService
     /// <summary>Crea la intervencion + tarea vinculada en 2.10 (RN-03). Atomico.</summary>
     Task<IntervencionDetalleDto> CrearIntervencionAsync(CrearIntervencionRequest req, CancellationToken ct);
 
+    /// <summary>Registrar la ejecucion de un mantenimiento desde el calendario (Etapa A): crea una
+    /// intervencion ya Completada, ligada a una tarea, con el detalle como bitacora.</summary>
+    Task<IntervencionDetalleDto> RegistrarEjecucionAsync(RegistrarEjecucionRequest req, CancellationToken ct);
+
     Task<bool> ActualizarIntervencionAsync(Guid id, ActualizarIntervencionRequest req, CancellationToken ct);
 
     /// <summary>Cambia estado simple (no es cierre). Valida transiciones permitidas.</summary>

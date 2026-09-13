@@ -123,6 +123,18 @@ public class MantenimientoController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Mantenimiento, AccionPermiso.Crear)]
+    [HttpPost("intervenciones/registrar-ejecucion")]
+    public async Task<IActionResult> RegistrarEjecucion([FromBody] RegistrarEjecucionRequest req, CancellationToken ct)
+    {
+        try
+        {
+            var i = await _svc.RegistrarEjecucionAsync(req, ct);
+            return CreatedAtAction(nameof(GetIntervencion), new { id = i.Id }, i);
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     [RequierePermiso(ModuloCodigo.Mantenimiento, AccionPermiso.Editar)]
     [HttpPut("intervenciones/{id:guid}")]
     public async Task<IActionResult> ActualizarIntervencion(Guid id, [FromBody] ActualizarIntervencionRequest req, CancellationToken ct)

@@ -69,6 +69,35 @@ public class MantenimientoFlowTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task RegistrarEjecucion_crea_intervencion_completada_ligada_a_tarea()
+    {
+        var tenantId = await SeedTenantAsync("Mant Ejecucion");
+        await SeedPersonaConApplicationUser(tenantId);
+        var eqId = await SeedEquipoAsync(tenantId, "Planta electrica");
+        var (svc, db, _) = Build(tenantId);
+
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        var det = await svc.RegistrarEjecucionAsync(new RegistrarEjecucionRequest(
+            TipoActivoMantenimiento.Equipo, eqId, TipoIntervencionMantenimiento.Preventivo,
+            "Mantenimiento planta electrica", "Cambio de aceite y filtros. Todo OK.", hoy), CancellationToken.None);
+
+        // Nace Completada, con fecha de cierre y ligada a una tarea (opcion B).
+        var inter = await db.MantenimientoIntervenciones.AsNoTracking().FirstAsync(x => x.Id == det.Id);
+        Assert.Equal(EstadoIntervencion.Completada, inter.Estado);
+        Assert.Equal(hoy, inter.FechaCierre);
+        Assert.NotNull(inter.TareaId);
+
+        // La tarea vinculada existe de verdad en 2.10 (RN-03).
+        Assert.True(await db.Tareas.AsNoTracking().AnyAsync(t => t.Id == inter.TareaId));
+
+        // El detalle quedo en la bitacora.
+        Assert.True(await db.MantenimientoBitacora.AsNoTracking()
+            .AnyAsync(b => b.IntervencionId == det.Id && b.Contenido.Contains("Cambio de aceite")));
+
+        await CleanTenant(tenantId);
+    }
+
+    [Fact]
     public async Task Crear_plan_preventivo_inicializa_proxima_ejecucion_en_fecha_inicio()
     {
         var tenantId = await SeedTenantAsync("Mant Plan");

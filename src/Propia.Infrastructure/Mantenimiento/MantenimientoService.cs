@@ -499,6 +499,76 @@ public class MantenimientoService : IMantenimientoService
         return (await GetIntervencionAsync(intervencion.Id, ct))!;
     }
 
+    public async Task<IntervencionDetalleDto> RegistrarEjecucionAsync(RegistrarEjecucionRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Titulo)) throw new InvalidOperationException("Titulo obligatorio.");
+        await ValidarActivoAsync(req.ActivoTipo, req.ActivoId, ct);
+
+        MantenimientoPlan? plan = null;
+        if (req.PlanId is not null)
+        {
+            plan = await _db.MantenimientoPlanes.FirstOrDefaultAsync(p => p.Id == req.PlanId, ct);
+            if (plan is null) throw new InvalidOperationException("Plan no encontrado.");
+            if (plan.ActivoTipo != req.ActivoTipo || plan.ActivoId != req.ActivoId)
+                throw new InvalidOperationException("El plan no corresponde al activo indicado.");
+        }
+
+        var codigo = await GenerarCodigoIntervencionAsync(ct);
+
+        // Nace ya Completada: es el registro de algo que YA se hizo, no una tarea pendiente.
+        var intervencion = new MantenimientoIntervencion
+        {
+            Codigo = codigo,
+            Tipo = req.Tipo,
+            ActivoTipo = req.ActivoTipo,
+            ActivoId = req.ActivoId,
+            PlanId = req.PlanId,
+            Origen = OrigenIntervencion.Manual,
+            Titulo = req.Titulo.Trim(),
+            Descripcion = req.Detalle?.Trim(),
+            Estado = EstadoIntervencion.Completada,
+            Prioridad = PrioridadIntervencion.Normal,
+            FechaProgramada = req.FechaEjecucion,
+            FechaInicioReal = req.FechaEjecucion,
+            FechaCierre = req.FechaEjecucion,
+            NotificarResidentes = false,
+            CreadoPorUsuarioId = GetUsuarioActualId()
+        };
+        _db.MantenimientoIntervenciones.Add(intervencion);
+        await _db.SaveChangesAsync(ct);
+
+        // Opcion B de Alex: el mantenimiento queda ligado a una tarea (misma via que RN-03), para que
+        // se vea tanto en el calendario de Mantenimiento como en el tablero de Tareas.
+        intervencion.TareaId = await CrearTareaVinculadaAsync(intervencion, ct);
+
+        _db.MantenimientoBitacora.Add(new MantenimientoBitacora
+        {
+            IntervencionId = intervencion.Id,
+            AutorUsuarioId = GetUsuarioActualId(),
+            TipoAutor = TipoAutorBitacoraMantenimiento.Administrador,
+            Contenido = string.IsNullOrWhiteSpace(req.Detalle)
+                ? $"Ejecucion registrada el {req.FechaEjecucion:yyyy-MM-dd}."
+                : req.Detalle.Trim()
+        });
+
+        // Preventivo con plan: la ejecucion adelanta la proxima_ejecucion desde la fecha ejecutada.
+        if (req.Tipo == TipoIntervencionMantenimiento.Preventivo && plan is not null && plan.Activo)
+        {
+            var dias = FrecuenciaEnDias(plan.Frecuencia, plan.FrecuenciaDias);
+            plan.ProximaEjecucion = req.FechaEjecucion.AddDays(dias);
+            plan.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+
+        await _db.SaveChangesAsync(ct);
+
+        await NotificarAdminsAsync("2.11", intervencion.Id,
+            $"Mantenimiento ejecutado: {codigo}",
+            $"Se registro la ejecucion de un mantenimiento {req.Tipo} el {req.FechaEjecucion:yyyy-MM-dd}.",
+            Domain.Enums.PrioridadNotificacion.Normal, ct);
+
+        return (await GetIntervencionAsync(intervencion.Id, ct))!;
+    }
+
     public async Task<bool> ActualizarIntervencionAsync(Guid id, ActualizarIntervencionRequest req, CancellationToken ct)
     {
         var i = await _db.MantenimientoIntervenciones.FirstOrDefaultAsync(x => x.Id == id, ct);

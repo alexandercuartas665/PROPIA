@@ -433,7 +433,7 @@ else if (_tab == "calendario")
                         @foreach (var ev in celda.Items.Take(_calVista == "semana" ? 20 : 3))
                         {
                             var evLocal = ev;
-                            <div class="mt-cal-ev @ev.Clase" title="@ev.Titulo" @onclick="() => AbrirEditarProgPorIdAsync(evLocal.ProgId)">
+                            <div class="mt-cal-ev @ev.Clase" title="Registrar ejecucion de: @ev.Titulo" @onclick="() => AbrirRegistrarEjecucion(evLocal.ProgId, evLocal.Fecha)">
                                 @ev.Texto
                             </div>
                         }
@@ -443,6 +443,47 @@ else if (_tab == "calendario")
             </div>
         </div>
     }
+}
+
+@* ===== Modal Registrar ejecucion (Etapa A) ===== *@
+@if (_showRegistrarEjec)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Registrar ejecucion del mantenimiento</h5>
+                    <button type="button" class="btn-close" @onclick="CerrarRegistrarEjec"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-2">
+                        <label class="form-label small">Mantenimiento</label>
+                        <input class="form-control form-control-sm" value="@_ejecTitulo" disabled />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Fecha de ejecucion</label>
+                        <input type="date" class="form-control form-control-sm" value="@(_ejecFecha?.ToString("yyyy-MM-dd"))"
+                               @onchange="(e) => _ejecFecha = string.IsNullOrEmpty(e.Value?.ToString()) ? null : DateOnly.Parse(e.Value!.ToString()!)" />
+                    </div>
+                    <div class="mb-1">
+                        <label class="form-label small">Que se hizo (detalle)</label>
+                        <textarea class="form-control form-control-sm" rows="4" placeholder="Describe el trabajo realizado..."
+                                  @bind="_ejecDetalle" @bind:event="oninput"></textarea>
+                    </div>
+                    <p class="text-muted small mb-0">Las fotos y la factura se agregan en la siguiente etapa.</p>
+                    @if (!string.IsNullOrEmpty(_ejecMsg)) { <div class="alert @_ejecMsgClass py-1 px-2 mt-2 mb-0 small">@_ejecMsg</div> }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="CerrarRegistrarEjec">Cancelar</button>
+                    <button class="btn btn-sm" style="background: var(--propia-brand); color: white;"
+                            @onclick="ConfirmarRegistrarEjec"
+                            disabled="@(_busy || _ejecFecha is null || string.IsNullOrWhiteSpace(_ejecDetalle))">
+                        Registrar ejecucion
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 }
 
 @* ===== Modal Crear Intervencion ===== *@
@@ -1282,6 +1323,17 @@ else if (_tab == "calendario")
     // Busqueda server-side de activos (se conserva: la usan los selectores de activo de los modales/alta).
     private string _query = "";
 
+    // Registrar ejecucion (Etapa A): modal abierto desde el calendario.
+    private bool _showRegistrarEjec;
+    private Guid _ejecProgId;
+    private TipoActivoMantenimiento _ejecActivoTipo;
+    private Guid _ejecActivoId;
+    private string? _ejecTitulo;
+    private DateOnly? _ejecFecha;
+    private string? _ejecDetalle;
+    private string? _ejecMsg;
+    private string _ejecMsgClass = "alert-danger";
+
     private bool _showCrearIntervencion;
     private string _crearTipo = "Correctivo";
     private string _crearActivoTipo = "Equipo";
@@ -1366,7 +1418,7 @@ else if (_tab == "calendario")
         return (ini, ini.AddDays(6));
     }
 
-    private sealed record MtCalItem(Guid ProgId, string Texto, string Clase, string Titulo);
+    private sealed record MtCalItem(Guid ProgId, string Texto, string Clase, string Titulo, DateOnly Fecha);
     private sealed record MtCalCelda(int Dia, bool EsMes, bool EsHoy, List<MtCalItem> Items);
 
     // Avanza una fecha un paso segun la periodicidad (para proyectar recurrencias en la vista).
@@ -1412,7 +1464,7 @@ else if (_tab == "calendario")
             while (f <= winFin && guard++ < 400)
             {
                 if (p.FechaFin is { } ff && f > ff) break;
-                if (f >= winIni) Add(f, new MtCalItem(p.Id, texto, clase, titulo));
+                if (f >= winIni) Add(f, new MtCalItem(p.Id, texto, clase, titulo, f));
                 var next = PasoPeriodicidad(f, p.Periodicidad);
                 if (next == DateOnly.MaxValue || next <= f) break; // Unica o sin avance
                 f = next;
@@ -1434,6 +1486,54 @@ else if (_tab == "calendario")
     {
         var p = _progs?.FirstOrDefault(x => x.Id == id);
         if (p is not null) await AbrirEditarProgAsync(p);
+    }
+
+    // Etapa A: abrir el modal de "registrar ejecucion" desde una ocurrencia del calendario.
+    private void AbrirRegistrarEjecucion(Guid progId, DateOnly fecha)
+    {
+        var p = _progs?.FirstOrDefault(x => x.Id == progId);
+        if (p is null) return;
+        if (p.EntidadOrigenId is not { } aid)
+        {
+            _msg = "Esta programacion no esta ligada a un equipo o zona; no se puede registrar la ejecucion.";
+            _msgClass = "alert-warning";
+            return;
+        }
+        _ejecProgId = progId;
+        _ejecActivoTipo = string.Equals(p.ModuloOrigenCodigo, "zona", StringComparison.OrdinalIgnoreCase)
+            ? TipoActivoMantenimiento.ZonaComun : TipoActivoMantenimiento.Equipo;
+        _ejecActivoId = aid;
+        _ejecTitulo = p.Titulo;
+        _ejecFecha = fecha;
+        _ejecDetalle = null;
+        _ejecMsg = null;
+        _showRegistrarEjec = true;
+    }
+
+    private void CerrarRegistrarEjec()
+    {
+        _showRegistrarEjec = false;
+        _ejecDetalle = null;
+        _ejecMsg = null;
+    }
+
+    private async Task ConfirmarRegistrarEjec()
+    {
+        if (_ejecFecha is null) return;
+        _busy = true; _ejecMsg = null;
+        try
+        {
+            var req = new RegistrarEjecucionRequest(
+                _ejecActivoTipo, _ejecActivoId, TipoIntervencionMantenimiento.Preventivo,
+                _ejecTitulo ?? "Mantenimiento", _ejecDetalle, _ejecFecha.Value, null);
+            var r = await Auth().PostAsJsonAsync("/api/mantenimiento/intervenciones/registrar-ejecucion", req);
+            if (!r.IsSuccessStatusCode) { _ejecMsg = await r.Content.ReadAsStringAsync(); _ejecMsgClass = "alert-danger"; return; }
+            _showRegistrarEjec = false;
+            _msg = "Ejecucion registrada y ligada a una tarea."; _msgClass = "alert-success";
+            await CargarAsync();
+        }
+        catch (Exception ex) { _ejecMsg = ex.Message; _ejecMsgClass = "alert-danger"; }
+        finally { _busy = false; }
     }
 
     private async Task CargarAsync()
