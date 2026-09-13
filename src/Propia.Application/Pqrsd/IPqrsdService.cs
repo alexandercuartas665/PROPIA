@@ -87,6 +87,11 @@ public interface IPqrsdService
     // Ciclo de gestion
     Task<bool> TomarExpedienteAsync(Guid id, TomarExpedienteRequest req, CancellationToken ct);
     Task<bool> ResponderAsync(Guid id, ResponderExpedienteRequest req, CancellationToken ct);
+    // G-07: al ENVIAR la respuesta oficial (correo/WhatsApp) el expediente debe pasar a Respondida (o
+    // cerrarse si ya hubo inconformidad), fijar RespuestaAdminAt e historial. Reusa la transicion de
+    // ResponderAsync pero NO reenvia al radicador: el envio ya lo hizo el endpoint. Idempotente: reenviar
+    // una respuesta ya registrada no vuelve a transicionar.
+    Task<bool> MarcarRespondidaAsync(Guid id, string texto, CancellationToken ct);
     Task<bool> ManifestarInconformidadAsync(Guid id, ManifestarInconformidadRequest req, CancellationToken ct);
     Task<bool> CerrarDefinitivoAsync(Guid id, CerrarDefinitivoRequest req, CancellationToken ct);
 

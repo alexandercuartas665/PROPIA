@@ -82,50 +82,8 @@ public partial class PqrsdService
         if (x.Estado == EstadoPqrsd.Cerrada || x.Estado == EstadoPqrsd.ViaInternaAgotada)
             throw new InvalidOperationException("No se puede responder un expediente cerrado.");
 
-        var anterior = x.Estado;
         var esRespuestaDefinitiva = x.InconformidadTexto != null;
-
-        if (esRespuestaDefinitiva)
-        {
-            // Segunda respuesta tras inconformidad -> cierra definitivamente (y archiva: desaparece del tablero)
-            x.RespuestaDefinitiva = req.Texto.Trim();
-            x.RespuestaDefinitivaAt = DateTimeOffset.UtcNow;
-            x.Estado = EstadoPqrsd.Cerrada;
-            x.FechaCierre = DateTimeOffset.UtcNow;
-            x.CerradoPorUsuarioId = GetUsuarioActualId();
-            x.Archivado = true;
-            x.ArchivadoAt = DateTimeOffset.UtcNow;
-            x.ArchivadoPorUsuarioId = GetUsuarioActualId();
-        }
-        else
-        {
-            x.RespuestaAdmin = req.Texto.Trim();
-            x.RespuestaAdminAt = DateTimeOffset.UtcNow;
-            x.RespuestaAdminPorUsuarioId = GetUsuarioActualId();
-            x.Estado = EstadoPqrsd.Respondida;
-        }
-        await SincronizarColumnaLegalAsync(x, x.Estado, ct);
-        x.UpdatedAt = DateTimeOffset.UtcNow;
-
-        _db.PqrsdHistorialEstados.Add(new PqrsdHistorialEstado
-        {
-            ExpedienteId = id,
-            EstadoAnterior = anterior,
-            EstadoNuevo = x.Estado,
-            ActorUsuarioId = GetUsuarioActualId(),
-            Origen = OrigenCambioEstado.Manual,
-            Nota = esRespuestaDefinitiva ? "Respuesta definitiva - cierre" : "Respuesta del admin"
-        });
-        await _db.SaveChangesAsync(ct);
-
-        var asunto = esRespuestaDefinitiva
-            ? $"PQRSD cerrado: {x.NumeroRadicado}"
-            : $"PQRSD respondido: {x.NumeroRadicado}";
-        await NotificarAdminsTenantAsync("2.9", id, asunto,
-            esRespuestaDefinitiva
-                ? "El expediente quedo cerrado tras la respuesta definitiva."
-                : "El admin respondio el expediente. Si el ciudadano queda inconforme tiene una oportunidad de inconformidad (RN-06).",
-            Domain.Enums.PrioridadNotificacion.Normal, ct);
+        await AplicarRespuestaOficialAsync(x, req.Texto.Trim(), esRespuestaDefinitiva, ct);
 
         // Enviar la respuesta al radicador por los canales elegidos (correo / celular).
         var canales = new List<Domain.Enums.CanalNotificacion>();
@@ -148,6 +106,97 @@ public partial class PqrsdService
         }
 
         return true;
+    }
+
+    // G-07: nucleo compartido de la respuesta oficial (transicion de estado + columna legal + historial +
+    // aviso a la administracion). NO reenvia al radicador: cada caller decide como se entrega la respuesta
+    // (ResponderAsync por el motor de notificaciones; el envio real de correo/WhatsApp lo hace el endpoint).
+    private async Task AplicarRespuestaOficialAsync(
+        PqrsdExpediente x, string texto, bool esRespuestaDefinitiva, CancellationToken ct)
+    {
+        var anterior = x.Estado;
+        if (esRespuestaDefinitiva)
+        {
+            // Segunda respuesta tras inconformidad -> cierra definitivamente (y archiva: desaparece del tablero)
+            x.RespuestaDefinitiva = texto;
+            x.RespuestaDefinitivaAt = DateTimeOffset.UtcNow;
+            x.Estado = EstadoPqrsd.Cerrada;
+            x.FechaCierre = DateTimeOffset.UtcNow;
+            x.CerradoPorUsuarioId = GetUsuarioActualId();
+            x.Archivado = true;
+            x.ArchivadoAt = DateTimeOffset.UtcNow;
+            x.ArchivadoPorUsuarioId = GetUsuarioActualId();
+        }
+        else
+        {
+            x.RespuestaAdmin = texto;
+            x.RespuestaAdminAt = DateTimeOffset.UtcNow;
+            x.RespuestaAdminPorUsuarioId = GetUsuarioActualId();
+            x.Estado = EstadoPqrsd.Respondida;
+        }
+        await SincronizarColumnaLegalAsync(x, x.Estado, ct);
+        x.UpdatedAt = DateTimeOffset.UtcNow;
+
+        _db.PqrsdHistorialEstados.Add(new PqrsdHistorialEstado
+        {
+            ExpedienteId = x.Id,
+            EstadoAnterior = anterior,
+            EstadoNuevo = x.Estado,
+            ActorUsuarioId = GetUsuarioActualId(),
+            Origen = OrigenCambioEstado.Manual,
+            Nota = esRespuestaDefinitiva ? "Respuesta definitiva - cierre" : "Respuesta del admin"
+        });
+        await _db.SaveChangesAsync(ct);
+
+        var asunto = esRespuestaDefinitiva
+            ? $"PQRSD cerrado: {x.NumeroRadicado}"
+            : $"PQRSD respondido: {x.NumeroRadicado}";
+        await NotificarAdminsTenantAsync("2.9", x.Id, asunto,
+            esRespuestaDefinitiva
+                ? "El expediente quedo cerrado tras la respuesta definitiva."
+                : "El admin respondio el expediente. Si el ciudadano queda inconforme tiene una oportunidad de inconformidad (RN-06).",
+            Domain.Enums.PrioridadNotificacion.Normal, ct);
+    }
+
+    // G-07: la invoca el endpoint de ENVIAR respuesta. Antes, enviar solo marcaba la respuesta como Enviada
+    // y el expediente se quedaba En gestion: la ventana de inconformidad nunca arrancaba y el cierre nocturno
+    // (que exige Estado==Respondida && RespuestaAdminAt != null) no veia el caso. Aqui se hace la transicion.
+    public async Task<bool> MarcarRespondidaAsync(Guid id, string texto, CancellationToken ct)
+    {
+        var x = await _db.PqrsdExpedientes.FirstOrDefaultAsync(e => e.Id == id, ct);
+        if (x is null) return false;
+        // Reenvio de un expediente ya cerrado: no hay transicion que hacer.
+        if (x.Estado == EstadoPqrsd.Cerrada || x.Estado == EstadoPqrsd.ViaInternaAgotada) return true;
+
+        var esRespuestaDefinitiva = x.InconformidadTexto != null;
+        // Idempotente: si ya esta Respondida (sin inconformidad de por medio), reenviar la respuesta no
+        // vuelve a transicionar ni duplica historial/aviso.
+        if (!esRespuestaDefinitiva && x.Estado == EstadoPqrsd.Respondida && x.RespuestaAdminAt != null)
+            return true;
+
+        // H-1: RespuestaAdmin/RespuestaDefinitiva son varchar(4000) y el cuerpo llega como HTML de TinyMCE
+        // (sin tope). Se guarda solo el texto plano recortado; el HTML oficial completo vive en
+        // pqrsd_respuestas y en el PDF.
+        await AplicarRespuestaOficialAsync(x, ResumenPlano(texto), esRespuestaDefinitiva, ct);
+        return true;
+    }
+
+    // H-1: convierte el HTML de la respuesta a texto plano (sin etiquetas, entidades decodificadas, espacios
+    // colapsados) y lo recorta a 4000 CARACTERES, el ancho de RespuestaAdmin/RespuestaDefinitiva. Sin esto,
+    // una respuesta larga desbordaba la columna (PostgreSQL 22001) y reventaba el envio con un 500 despues de
+    // que el correo ya habia salido. varchar(4000) cuenta caracteres, no bytes.
+    private static string ResumenPlano(string? html, int maxChars = 4000)
+    {
+        if (string.IsNullOrEmpty(html)) return string.Empty;
+        var texto = System.Text.RegularExpressions.Regex.Replace(html, "<[^>]+>", " ");
+        texto = System.Net.WebUtility.HtmlDecode(texto);
+        texto = System.Text.RegularExpressions.Regex.Replace(texto, "\\s+", " ").Trim();
+        if (texto.Length <= maxChars) return texto;
+        // No cortar en medio de un par sustituto: un emoji justo en la frontera dejaria una mitad alta
+        // suelta (UTF-16 invalido) que Npgsql rechaza al codificar. Si el ultimo char es mitad alta, se
+        // retrocede uno.
+        if (char.IsHighSurrogate(texto[maxChars - 1])) maxChars--;
+        return texto.Substring(0, maxChars);
     }
 
     public async Task<bool> ManifestarInconformidadAsync(Guid id, ManifestarInconformidadRequest req, CancellationToken ct)
