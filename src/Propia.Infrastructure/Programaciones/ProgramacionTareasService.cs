@@ -124,7 +124,10 @@ public class ProgramacionTareasService : IProgramacionTareasService
         p.ProveedorId = req.ProveedorId;
         p.ProveedorNombre = string.IsNullOrWhiteSpace(req.ProveedorNombre) ? null : req.ProveedorNombre.Trim();
         p.ContratoId = req.ContratoId;
-        p.CostoEstimado = req.CostoEstimado;
+        // PUT es MERGE: si el request no trae costo (null), se conserva el actual. La ficha de
+        // equipo/zona (ProgramacionesPanel) edita la programacion sin enviar el costo, y sin este
+        // resguardo cualquier edicion desde ahi lo borraba.
+        p.CostoEstimado = req.CostoEstimado ?? p.CostoEstimado;
 
         if (req.Tipo != TipoProgramacion.Cron) p.ProximaEjecucionUtc = null;
         else if (reglaCambio || p.ProximaEjecucionUtc is null)
