@@ -437,6 +437,42 @@ public class TareasFlowTests : IAsyncLifetime
         await CleanTenant(tenantId);
     }
 
+    /// <summary>
+    /// H-1 (T-02): el modal de tarjeta manda los responsables por ResponsablePersonaIds (con
+    /// AsignadoPersonaId=null). Ese camino NO pasaba por la validacion de tenant, asi que se podia
+    /// asignar/colaborar con personas de otra copropiedad. Debe rechazarse en crear y en actualizar;
+    /// con un responsable vinculado, debe crear y quedar de asignado.
+    /// </summary>
+    [Fact]
+    public async Task Crear_y_actualizar_validan_los_responsables_contra_el_tenant()
+    {
+        var tenantId = await SeedTenantAsync("Tareas Responsables");
+        var (svc, db, _) = Build(tenantId);
+
+        var ajeno = Guid.NewGuid();                              // persona NO vinculada a esta copropiedad
+        var propio = await SeedPersonaVinculadaAsync(tenantId);  // persona vinculada en el Directorio
+
+        // Crear con un responsable ajeno -> rechazado, y no queda ninguna tarea (transaccion).
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.CrearTareaAsync(new CrearTareaRequest(
+            "T resp ajeno", null, PrioridadTarea.Normal, null, null, null, null, null, null,
+            ResponsablePersonaIds: new[] { propio, ajeno }), CancellationToken.None));
+        Assert.Empty(await db.Tareas.AsNoTracking().Where(t => t.Titulo == "T resp ajeno").ToListAsync());
+
+        // Crear con responsable vinculado -> ok; el primero queda de asignado.
+        var ok = await svc.CrearTareaAsync(new CrearTareaRequest(
+            "T resp propio", null, PrioridadTarea.Normal, null, null, null, null, null, null,
+            ResponsablePersonaIds: new[] { propio }), CancellationToken.None);
+        var creada = await db.Tareas.AsNoTracking().FirstAsync(t => t.Id == ok.Id);
+        Assert.Equal(propio, creada.AsignadoPersonaId);
+
+        // Actualizar con un responsable ajeno -> rechazado (mismo hueco por el otro camino).
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.ActualizarTareaAsync(ok.Id,
+            new ActualizarTareaRequest("T resp propio", null, PrioridadTarea.Normal, null, null, null,
+                ResponsablePersonaIds: new[] { ajeno }), CancellationToken.None));
+
+        await CleanTenant(tenantId);
+    }
+
     // ===================== Helpers =====================
 
     private (ITareasService svc, PropiaDbContext db, IServiceScope scope) Build(Guid tenantId)
@@ -480,6 +516,32 @@ public class TareasFlowTests : IAsyncLifetime
         return t.Id;
     }
 
+    // Crea una Persona (global) y su vinculo con la copropiedad, como exige ValidarPersonaDelTenantAsync.
+    private async Task<Guid> SeedPersonaVinculadaAsync(Guid tenantId)
+    {
+        var opts = new DbContextOptionsBuilder<PropiaDbContext>().UseNpgsql(_fx.OwnerConnectionString).Options;
+        await using var ctx = new PropiaDbContext(opts, new TenantContext());
+        var p = new Persona
+        {
+            TipoDocumento = TipoDocumento.CC,
+            Documento = $"D{Guid.NewGuid():N}".Substring(0, 18),
+            Nombres = "Resp",
+            Apellidos = "Test"
+        };
+        ctx.Personas.Add(p);
+        // TenantId explicito: el vinculo es TenantEntity y este contexto no tiene tenant activo.
+        ctx.DirectorioVinculos.Add(new DirectorioVinculo
+        {
+            TenantId = tenantId,
+            EntidadTipo = EntidadDirectorio.Persona,
+            EntidadId = p.Id,
+            FechaDesde = DateOnly.FromDateTime(DateTime.UtcNow),
+            Estado = EstadoVinculo.Activo
+        });
+        await ctx.SaveChangesAsync();
+        return p.Id;
+    }
+
     private async Task CleanTenant(Guid tenantId)
     {
         var opts = new DbContextOptionsBuilder<PropiaDbContext>().UseNpgsql(_fx.OwnerConnectionString).Options;
@@ -490,6 +552,8 @@ public class TareasFlowTests : IAsyncLifetime
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tarea_comentarios WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tarea_etiqueta_asignaciones WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tareas WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM personas WHERE id IN (SELECT entidad_id FROM directorio_vinculos WHERE tenant_id = {tenantId})");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM directorio_vinculos WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM motivos_cierre WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tarea_etiquetas WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tarea_estados WHERE tenant_id = {tenantId}");

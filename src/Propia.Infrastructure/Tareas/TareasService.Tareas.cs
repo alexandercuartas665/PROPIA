@@ -279,6 +279,12 @@ public partial class TareasService
         // T-02: la persona debe ser de esta copropiedad. Se valida ANTES de crear nada.
         await ValidarPersonaDelTenantAsync(req.AsignadoPersonaId, "asignado", ct);
         await ValidarPersonaDelTenantAsync(req.SolicitantePersonaId, "solicitante", ct);
+        // H-1 (T-02): el modal de tarjeta manda los responsables por ResponsablePersonaIds (con
+        // AsignadoPersonaId=null). El primero queda de asignado y el resto de colaboradores, asi que
+        // TODOS deben ser de la copropiedad. Se validan ANTES de tocar nada.
+        if (req.ResponsablePersonaIds is not null)
+            foreach (var pid in req.ResponsablePersonaIds)
+                await ValidarPersonaDelTenantAsync(pid, "responsables", ct);
         await AsegurarEstadosBaseAsync(ct);
 
         // Tablero destino: el de la tarea padre si se hereda, el indicado, o el "General".
@@ -344,6 +350,10 @@ public partial class TareasService
             ModuloOrigenEntidadId = req.ModuloOrigenEntidadId,
             CreadoPorUsuarioId = GetUsuarioActualId()
         };
+        // H-1 (T-02): la tarea y todo lo suyo (etiquetas, colaboradores, checklist, campos, historial)
+        // van en UNA transaccion. Antes eran saves sueltos: si fallaba un colaborador, la tarea quedaba
+        // igual insertada. La notificacion al asignado se manda DESPUES del commit.
+        await using var tx = await _db.Database.BeginTransactionAsync(ct);
         _db.Tareas.Add(t);
         await _db.SaveChangesAsync(ct);
 
@@ -373,7 +383,9 @@ public partial class TareasService
         // Si es subtarea, el padre ahora se vuelve derivado: recalcular su progreso.
         if (req.PadreId.HasValue) await RecomputarProgresoAncestrosAsync(req.PadreId, ct);
 
-        // Notificar al responsable asignado (todos sus canales configurados).
+        await tx.CommitAsync(ct);
+
+        // Notificar al responsable asignado (todos sus canales configurados). Va tras el commit.
         if (asignado is { } asigNuevo)
             await _noti.EnviarEventoUsuarioAsync(asigNuevo, $"Tarea asignada: {t.NumeroTarea}",
                 $"Te asignaron la tarea {t.NumeroTarea} - {t.Titulo}", "2.10", t.Id,
@@ -421,6 +433,12 @@ public partial class TareasService
         var asignado = responsables is not null
             ? (responsables.Count > 0 ? responsables[0] : (Guid?)null)
             : req.AsignadoPersonaId;
+
+        // H-1 (T-02): el modal manda responsables por ResponsablePersonaIds; el primero queda de
+        // asignado y el resto de colaboradores. Se validan TODOS antes del primer save.
+        if (responsables is not null)
+            foreach (var pid in responsables)
+                await ValidarPersonaDelTenantAsync(pid, "responsables", ct);
 
         t.Titulo = req.Titulo.Trim();
         t.Descripcion = req.Descripcion?.Trim();
