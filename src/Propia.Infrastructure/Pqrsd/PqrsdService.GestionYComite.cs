@@ -174,8 +174,24 @@ public partial class PqrsdService
         if (!esRespuestaDefinitiva && x.Estado == EstadoPqrsd.Respondida && x.RespuestaAdminAt != null)
             return true;
 
-        await AplicarRespuestaOficialAsync(x, texto, esRespuestaDefinitiva, ct);
+        // H-1: RespuestaAdmin/RespuestaDefinitiva son varchar(4000) y el cuerpo llega como HTML de TinyMCE
+        // (sin tope). Se guarda solo el texto plano recortado; el HTML oficial completo vive en
+        // pqrsd_respuestas y en el PDF.
+        await AplicarRespuestaOficialAsync(x, ResumenPlano(texto), esRespuestaDefinitiva, ct);
         return true;
+    }
+
+    // H-1: convierte el HTML de la respuesta a texto plano (sin etiquetas, entidades decodificadas, espacios
+    // colapsados) y lo recorta a 4000 CARACTERES, el ancho de RespuestaAdmin/RespuestaDefinitiva. Sin esto,
+    // una respuesta larga desbordaba la columna (PostgreSQL 22001) y reventaba el envio con un 500 despues de
+    // que el correo ya habia salido. varchar(4000) cuenta caracteres, no bytes.
+    private static string ResumenPlano(string? html, int maxChars = 4000)
+    {
+        if (string.IsNullOrEmpty(html)) return string.Empty;
+        var texto = System.Text.RegularExpressions.Regex.Replace(html, "<[^>]+>", " ");
+        texto = System.Net.WebUtility.HtmlDecode(texto);
+        texto = System.Text.RegularExpressions.Regex.Replace(texto, "\\s+", " ").Trim();
+        return texto.Length <= maxChars ? texto : texto.Substring(0, maxChars);
     }
 
     public async Task<bool> ManifestarInconformidadAsync(Guid id, ManifestarInconformidadRequest req, CancellationToken ct)

@@ -755,14 +755,33 @@ public class PqrsdController : ControllerBase
         if (enviadosCorreo == 0 && enviadosWa == 0)
             return BadRequest(new { error = string.Join(" | ", errores.DefaultIfEmpty("No se pudo enviar la respuesta.")) });
 
-        r.Enviada = true;
-        r.EnviadaAt = DateTimeOffset.UtcNow;
-        await _db.SaveChangesAsync(ct);
-
         // G-07: enviar la respuesta oficial pasa el expediente a Respondida (o lo cierra si ya hubo
         // inconformidad), fija RespuestaAdminAt y registra historial. Sin esto el expediente se quedaba
         // En gestion: la ventana de inconformidad nunca arrancaba y el cierre nocturno no veia el caso.
-        await _svc.MarcarRespondidaAsync(id, r.CuerpoHtml, ct);
+        // H-2: el envio (correo/WhatsApp) ya ocurrio arriba y no se puede deshacer; estas dos escrituras
+        // en BD -marcar Enviada y la transicion a Respondida- van en UNA transaccion: o las dos, o ninguna.
+        // Si la transicion fallara, revertimos ambas (no dejamos "Enviada + En gestion") y avisamos que el
+        // correo si salio pero el estado no cambio, para que no se reenvie a ciegas.
+        try
+        {
+            await using var tx = await _db.Database.BeginTransactionAsync(ct);
+            r.Enviada = true;
+            r.EnviadaAt = DateTimeOffset.UtcNow;
+            await _db.SaveChangesAsync(ct);
+            await _svc.MarcarRespondidaAsync(id, r.CuerpoHtml, ct);
+            await tx.CommitAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new
+            {
+                error = "La respuesta SE ENVIO a los destinatarios, pero no se pudo actualizar el estado del " +
+                        "expediente. No la reenvies: el estado quedo sin cambiar; avisa a soporte para completarlo.",
+                detalle = ex.Message,
+                enviadosCorreo,
+                enviadosWhatsapp = enviadosWa
+            });
+        }
 
         return Ok(new { enviadosCorreo, enviadosWhatsapp = enviadosWa, errores });
     }

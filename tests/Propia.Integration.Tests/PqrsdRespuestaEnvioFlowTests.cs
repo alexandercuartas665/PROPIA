@@ -205,6 +205,39 @@ public class PqrsdRespuestaEnvioFlowTests : IAsyncLifetime
         await CleanTenant(tenantId);
     }
 
+    [Fact]
+    public async Task Enviar_respuesta_HTML_larga_no_desborda_la_columna_varchar4000()
+    {
+        var tenantId = await SeedTenantAsync("G07 Larga");
+        await SeedPersonaAsync(tenantId);
+        var (svc, _, scope) = Build(tenantId);
+        using (scope)
+        {
+            var cats = await svc.ListarCategoriasAsync(CancellationToken.None);
+            var x = await svc.RadicarAsync(new RadicarPqrsdRequest(
+                TipoPqrsd.Peticion, cats[0].Id,
+                "Solicito el detalle completo del presupuesto anual y su ejecucion por cada rubro.",
+                false, null), CancellationToken.None);
+            await svc.TomarExpedienteAsync(x.Id, new TomarExpedienteRequest(null), CancellationToken.None);
+
+            // H-1: cuerpo de TinyMCE muy por encima de 4000 caracteres, con etiquetas.
+            var htmlLargo = "<p>" +
+                string.Concat(Enumerable.Repeat("Detalle del rubro con su justificacion y soportes. ", 300)) + "</p>";
+            Assert.True(htmlLargo.Length > 4000);
+
+            var ok = await svc.MarcarRespondidaAsync(x.Id, htmlLargo, CancellationToken.None);
+            Assert.True(ok);   // antes: PostgreSQL 22001 (varchar(4000) desbordado)
+        }
+
+        var exp = await LoadAsync(tenantId, e => true);
+        Assert.Equal(EstadoPqrsd.Respondida, exp.Estado);
+        Assert.NotNull(exp.RespuestaAdmin);
+        Assert.True(exp.RespuestaAdmin!.Length <= 4000);          // recortado al ancho de la columna
+        Assert.DoesNotContain("<", exp.RespuestaAdmin);           // texto plano, sin etiquetas
+
+        await CleanTenant(tenantId);
+    }
+
     // =======================================================================
     // Helpers (mismo patron que PqrsdFlowTests)
     // =======================================================================
