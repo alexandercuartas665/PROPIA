@@ -221,6 +221,13 @@
     /// </summary>
     private int _horizonteDias;
 
+    // M-10: el modal es solo-Periodicidad; al editar conserva el tipo/cron/zona/proveedorNombre de la regla
+    // existente para no borrarlos al guardar. En alta quedan en los valores neutros (Periodicidad, null...).
+    private TipoProgramacion _tipoConservar = TipoProgramacion.Periodicidad;
+    private string? _cronConservar;
+    private string? _zonaConservar;
+    private string? _proveedorNombreConservar;
+
     private static readonly (int Dias, string Label)[] Horizontes =
     {
         (0,   "Al llegar la fecha"),
@@ -263,6 +270,11 @@
             _notificarCorreo = ex.NotificarPorCorreo;
             _horizonteDias = ex.HorizonteDias;
             foreach (var r in ex.Responsables) _responsables.Add(r.PersonaId);
+            // M-10: conservar lo que el modal no edita (tipo/cron/zona/proveedorNombre).
+            _tipoConservar = ex.Tipo;
+            _cronConservar = ex.CronExpresion;
+            _zonaConservar = ex.ZonaHoraria;
+            _proveedorNombreConservar = ex.ProveedorNombre;
         }
     }
 
@@ -286,7 +298,10 @@
         Guid? tablero = Guid.TryParse(_tableroId, out var g) ? g : null;
         Guid? proveedor = Guid.TryParse(_proveedorId, out var pv) ? pv : null;
         Guid? contrato = Guid.TryParse(_contratoId, out var ct) ? ct : null;
-        var proveedorNombre = proveedor is { } ppid ? Personas.FirstOrDefault(x => x.Id == ppid)?.Nombre : null;
+        // Si el proveedor no cambio (o no esta en la lista de Personas, ej. empresa), conserva el nombre
+        // que traia la regla existente en vez de perderlo (M-10).
+        var proveedorNombre = (proveedor is { } ppid ? Personas.FirstOrDefault(x => x.Id == ppid)?.Nombre : null)
+            ?? _proveedorNombreConservar;
         var req = new CrearProgramacionRequest(
             _titulo.Trim(),
             string.IsNullOrWhiteSpace(_descripcion) ? null : _descripcion!.Trim(),
@@ -299,9 +314,9 @@
             ModuloOrigenCodigo,
             EntidadOrigenId,
             OrigenReferencia,
-            TipoProgramacion.Periodicidad,
-            null,
-            null,
+            _tipoConservar,
+            _cronConservar,
+            _zonaConservar,
             _notificarCorreo,
             _horizonteDias,
             proveedor,
