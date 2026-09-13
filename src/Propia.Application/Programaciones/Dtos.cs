@@ -20,7 +20,8 @@ public record ProgramacionTareaDto(
     int HorizonteDias = 0,
     Guid? ProveedorId = null,
     Guid? ContratoId = null,
-    string? ProveedorNombre = null);
+    string? ProveedorNombre = null,
+    decimal? CostoEstimado = null);
 
 public record CrearProgramacionRequest(
     string Titulo, string? Descripcion, PrioridadTarea Prioridad,
@@ -35,7 +36,8 @@ public record CrearProgramacionRequest(
     int HorizonteDias = 0,
     Guid? ProveedorId = null,
     Guid? ContratoId = null,
-    string? ProveedorNombre = null);
+    string? ProveedorNombre = null,
+    decimal? CostoEstimado = null);
 
 public record ActualizarProgramacionRequest(
     string Titulo, string? Descripcion, PrioridadTarea Prioridad,
@@ -49,7 +51,8 @@ public record ActualizarProgramacionRequest(
     int HorizonteDias = 0,
     Guid? ProveedorId = null,
     Guid? ContratoId = null,
-    string? ProveedorNombre = null);
+    string? ProveedorNombre = null,
+    decimal? CostoEstimado = null);
 
 /// <summary>Previsualizacion de una expresion cron: si es valida y cuando correria.</summary>
 public record CronPreviewRequest(string CronExpresion, string? ZonaHoraria = null, int Cuantas = 5);
