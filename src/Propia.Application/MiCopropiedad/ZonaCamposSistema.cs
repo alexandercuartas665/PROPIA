@@ -15,7 +15,10 @@ public sealed record ZonaCampoSistema(
     bool Fija = false,
     bool SiempreEnPlantilla = false,
     string? Encabezado = null,
-    string? Ayuda = null);
+    string? Ayuda = null,
+    // Solo Tipo=Seleccion: true = opciones configurables por copropiedad; false = enum fijo, read-only.
+    // categoria y estado de zona salen de enums (CategoriaZonaComun / EstadoZonaComunMantenimiento): false.
+    bool OpcionesEditables = false);
 
 /// <summary>
 /// Catalogo UNICO de los campos de sistema de la ZONA COMUN (preparacion Fase 1, doc 5.4/5.5). Los
