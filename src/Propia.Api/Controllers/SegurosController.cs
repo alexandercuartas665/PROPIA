@@ -95,5 +95,10 @@ public class SegurosController : ControllerBase
     [HttpPut("reclamaciones/{reclamacionId:guid}/cerrar")]
     [RequiereRol("Administrador")]  // S-06: escritura sensible
     public async Task<IActionResult> CerrarReclamacion(Guid reclamacionId, [FromBody] CerrarReclamacionRequest req, CancellationToken ct)
-        => await _svc.CerrarReclamacionAsync(reclamacionId, req, ct) ? NoContent() : NotFound();
+    {
+        // K-09: sin este catch la validacion del monto reconocido saldria como 500 en vez de 400
+        // (el resto de escrituras de polizas si lo mapeaban).
+        try { return await _svc.CerrarReclamacionAsync(reclamacionId, req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
 }

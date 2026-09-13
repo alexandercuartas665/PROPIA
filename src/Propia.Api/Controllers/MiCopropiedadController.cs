@@ -833,7 +833,12 @@ public class MiCopropiedadController : ControllerBase
     [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
     [HttpPut("contratos/{id:guid}")]
     public async Task<IActionResult> ActualizarContrato(Guid id, [FromBody] ActualizarContratoRequest req, CancellationToken ct)
-        => await _svc.ActualizarContratoAsync(id, req, ct) ? NoContent() : NotFound();
+    {
+        // K-01: sin este catch una validacion de contrato salia como 500 en vez de 400 (el POST si
+        // lo mapeaba, el PUT no).
+        try { return await _svc.ActualizarContratoAsync(id, req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
     [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("contratos/{id:guid}")]
     public async Task<IActionResult> EliminarContrato(Guid id, CancellationToken ct)
