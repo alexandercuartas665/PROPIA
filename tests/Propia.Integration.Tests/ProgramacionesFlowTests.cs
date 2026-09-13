@@ -68,6 +68,50 @@ public class ProgramacionesFlowTests : IAsyncLifetime
         await CleanTenant(tenantId);
     }
 
+    [Fact]
+    public async Task Actualizar_conserva_tipo_cron_zona_proveedor_cuando_el_request_no_los_trae()
+    {
+        var tenantId = await SeedTenantAsync("Prog M-10");
+        var (svc, _, scope) = Build(tenantId);
+        using var _ = scope;
+        var uid = Guid.NewGuid();
+        var provId = Guid.NewGuid();
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        // Regla CRON con zona y proveedor.
+        var creada = await svc.CrearAsync(new CrearProgramacionRequest(
+            "Aseo lunes", null, PrioridadTarea.Normal, null, PeriodicidadProgramacion.Unica,
+            hoy.AddDays(1), null, null,
+            Tipo: TipoProgramacion.Cron, CronExpresion: "0 8 * * 1", ZonaHoraria: "America/Bogota",
+            ProveedorId: provId, ProveedorNombre: "Aseo Total SAS"), uid, CancellationToken.None);
+        Assert.Equal(TipoProgramacion.Cron, creada.Tipo);
+        Assert.Equal("0 8 * * 1", creada.CronExpresion);
+        Assert.Equal("Aseo Total SAS", creada.ProveedorNombre);
+
+        // Ruta SERVICIO: PUT que NO reenvia cron/zona/proveedor (Tipo se mantiene Cron): se conservan.
+        await svc.ActualizarAsync(creada.Id, new ActualizarProgramacionRequest(
+            "Aseo lunes (editado)", null, PrioridadTarea.Alta, null, PeriodicidadProgramacion.Unica,
+            hoy.AddDays(1), null, true, null,
+            Tipo: TipoProgramacion.Cron), CancellationToken.None);
+        var tras1 = await svc.GetAsync(creada.Id, CancellationToken.None);
+        Assert.Equal(TipoProgramacion.Cron, tras1!.Tipo);
+        Assert.Equal("0 8 * * 1", tras1.CronExpresion);
+        Assert.Equal("America/Bogota", tras1.ZonaHoraria);
+        Assert.Equal(provId, tras1.ProveedorId);
+        Assert.Equal("Aseo Total SAS", tras1.ProveedorNombre);
+
+        // Ruta MODAL: PUT que SI reenvia una cron nueva -> cambia.
+        await svc.ActualizarAsync(creada.Id, new ActualizarProgramacionRequest(
+            "Aseo lunes (editado)", null, PrioridadTarea.Alta, null, PeriodicidadProgramacion.Unica,
+            hoy.AddDays(1), null, true, null,
+            Tipo: TipoProgramacion.Cron, CronExpresion: "0 9 * * 2", ZonaHoraria: "America/Bogota",
+            ProveedorNombre: "Aseo Total SAS"), CancellationToken.None);
+        var tras2 = await svc.GetAsync(creada.Id, CancellationToken.None);
+        Assert.Equal("0 9 * * 2", tras2!.CronExpresion);
+
+        await CleanTenant(tenantId);
+    }
+
     private (IProgramacionTareasService svc, PropiaDbContext db, IServiceScope scope) Build(Guid tenantId)
     {
         var scope = _services.CreateScope();
