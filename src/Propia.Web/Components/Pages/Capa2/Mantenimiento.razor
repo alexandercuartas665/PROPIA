@@ -1019,9 +1019,14 @@ else if (_tab == "calendario")
     private string _altaContratoKey = "";
     private decimal? _altaCosto;                   // costo estimado del mantenimiento (opcional)
     private static readonly System.Globalization.CultureInfo _cultura = new("es-CO");
+    // M-09: fechas por defecto y ancla del calendario en hora local de Colombia, no del reloj del servidor
+    // (mismo criterio que el job: America/Bogota via CronHelper.Zona, sin tocar Common/).
+    private static readonly TimeZoneInfo _zonaLocalMt = Propia.Infrastructure.Programaciones.CronHelper.Zona(null);
+    private static DateOnly HoyLocalMt() => DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, _zonaLocalMt));
+    private static DateTime AnclaLocalMt() => TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, _zonaLocalMt).Date;
     private PrioridadTarea _altaPrioridad = PrioridadTarea.Normal;
     private PeriodicidadProgramacion _altaPeriodicidad = PeriodicidadProgramacion.Mensual;
-    private DateOnly? _altaFecha = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly? _altaFecha = HoyLocalMt();
 
     // Contratos con sus ids de proveedor, para filtrar por el tercero elegido en la fila de alta.
     private List<ContratoFull> _contratosFull = new();
@@ -1357,7 +1362,7 @@ else if (_tab == "calendario")
 
     private bool _mostrarCerrar;
     private bool _mostrarCancelar;
-    private DateOnly? _cerrarFecha = DateOnly.FromDateTime(DateTime.UtcNow);
+    private DateOnly? _cerrarFecha = HoyLocalMt();
     private string? _cerrarNota;
     private bool _cerrarCambiaEstado;
     private string _cerrarEstadoNuevo = "";
@@ -1390,7 +1395,7 @@ else if (_tab == "calendario")
 
     // ---------- Calendario de programaciones (vista Mes / Semana) ----------
     private string _calVista = "mes";                 // "mes" | "semana"
-    private DateTime _calAnchor = DateTime.Today;      // fecha de referencia de la vista
+    private DateTime _calAnchor = AnclaLocalMt();      // fecha de referencia de la vista
 
     private string MtCalTitulo
     {
@@ -1408,7 +1413,7 @@ else if (_tab == "calendario")
     }
 
     private void MtCalMover(int d) => _calAnchor = _calVista == "semana" ? _calAnchor.AddDays(7 * d) : _calAnchor.AddMonths(d);
-    private void MtCalHoy() => _calAnchor = DateTime.Today;
+    private void MtCalHoy() => _calAnchor = AnclaLocalMt();
 
     // El lunes de la semana que contiene 'd', y el domingo.
     private static (DateTime ini, DateTime fin) SemanaRango(DateTime d)
@@ -1448,7 +1453,7 @@ else if (_tab == "calendario")
         }
         var winIni = DateOnly.FromDateTime(inicio);
         var winFin = DateOnly.FromDateTime(inicio.AddDays(celdas - 1));
-        var hoy = DateOnly.FromDateTime(DateTime.Today);
+        var hoy = HoyLocalMt();
 
         var porDia = new Dictionary<DateOnly, List<MtCalItem>>();
         void Add(DateOnly f, MtCalItem it) { if (!porDia.TryGetValue(f, out var l)) porDia[f] = l = new(); l.Add(it); }
@@ -1629,7 +1634,7 @@ else if (_tab == "calendario")
         {
             _fichaIntervencion = await Auth().GetFromJsonAsync<IntervencionDetalleDto>($"/api/mantenimiento/intervenciones/{id}");
             _mostrarCerrar = _mostrarCancelar = false;
-            _cerrarFecha = DateOnly.FromDateTime(DateTime.UtcNow);
+            _cerrarFecha = HoyLocalMt();
             _cerrarNota = _cancelarMotivo = _nuevaEntrada = null;
             _cerrarCambiaEstado = false;
             _cerrarEstadoNuevo = "";
