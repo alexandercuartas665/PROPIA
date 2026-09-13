@@ -44,10 +44,23 @@ public class TareasCamposSistemaTests
     }
 
     [Fact]
-    public void Solo_titulo_etapa_y_progreso_son_estructurales()
+    public void Solo_titulo_etapa_y_progreso_son_fijas()
     {
-        var estructurales = TareaCamposSistema.Todos.Where(c => c.SiempreEnPlantilla).Select(c => c.Clave).OrderBy(c => c);
-        Assert.Equal(Estructurales.OrderBy(c => c), estructurales);
+        var fijas = TareaCamposSistema.Todos.Where(c => c.Fija).Select(c => c.Clave).OrderBy(c => c);
+        Assert.Equal(Estructurales.OrderBy(c => c), fijas);
+    }
+
+    [Fact]
+    public void Tareas_no_usa_los_campos_de_plantilla_excel()
+    {
+        // Forma canonica: SiempreEnPlantilla/Encabezado/Ayuda son de entidades con plantilla (Unidades).
+        // Tareas no tiene plantilla, asi que quedan en false/null; "fija" va por el flag Fija.
+        Assert.All(TareaCamposSistema.Todos, c =>
+        {
+            Assert.False(c.SiempreEnPlantilla, $"'{c.Clave}': Tareas no tiene plantilla; usa Fija");
+            Assert.Null(c.Encabezado);
+            Assert.Null(c.Ayuda);
+        });
     }
 
     [Fact]

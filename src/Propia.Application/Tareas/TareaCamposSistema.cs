@@ -8,23 +8,30 @@ namespace Propia.Application.Tareas;
 /// de campos compartido (Fase 1 del Selector de Campos). Los personalizados viven en <c>tablero_campos</c>
 /// (por TABLERO, no por copropiedad) y NO entran aqui.
 ///
-/// Espejo de <see cref="Propia.Application.MiCopropiedad.UnidadCamposSistema"/>. Diferencias de dominio,
-/// deliberadas: (1) Tareas no tiene plantilla Excel, asi que no hay Encabezado/Ayuda; en su lugar el flag
-/// <see cref="SiempreEnPlantilla"/> se reusa con el sentido "columna estructural que NO se puede ocultar"
-/// (titulo, etapa, progreso). (2) el tipo se declara con <see cref="TipoCampoTablero"/> (el enum ya existe;
-/// aqui solo se REFERENCIA, no se modifica).
+/// Usa la forma CANONICA de campo del sistema fijada por VIGIA para los cuatro modulos y la Fase 0
+/// (record &lt;Entidad&gt;CampoSistema). En Tareas: <see cref="Fija"/> = true para las columnas estructurales
+/// (titulo, etapa, progreso); <see cref="SiempreEnPlantilla"/>, <see cref="Encabezado"/> y <see cref="Ayuda"/>
+/// son de entidades con plantilla Excel (Unidades) y aqui quedan en false/null. El tipo se declara con
+/// <see cref="TipoCampoTablero"/> (el enum ya existe; aqui solo se REFERENCIA, no se modifica); "es lista" se
+/// deriva de <c>Tipo == Seleccion</c>.
 /// </summary>
 /// <param name="Clave">Identificador estable del campo del sistema (clave de configuracion futura).</param>
 /// <param name="Label">Como se llama de fabrica la columna (antes del alias del tenant).</param>
 /// <param name="Tipo">Tipo de captura/render, con el enum existente. Ver notas de tipos aun no soportados.</param>
 /// <param name="VisiblePorDefecto">Si la columna se muestra cuando la copropiedad no ha configurado nada.</param>
-/// <param name="SiempreEnPlantilla">Columna estructural: se muestra siempre y no se puede ocultar.</param>
+/// <param name="Fija">Columna estructural: se muestra siempre y no se puede ocultar.</param>
+/// <param name="SiempreEnPlantilla">Solo entidades con plantilla Excel: la plantilla la emite aunque este oculta. En Tareas siempre false.</param>
+/// <param name="Encabezado">Solo plantilla Excel: encabezado de la columna. En Tareas null.</param>
+/// <param name="Ayuda">Solo plantilla Excel: fila de ayuda. En Tareas null.</param>
 public sealed record TareaCampoSistema(
     string Clave,
     string Label,
     TipoCampoTablero Tipo,
     bool VisiblePorDefecto,
-    bool SiempreEnPlantilla = false);
+    bool Fija = false,
+    bool SiempreEnPlantilla = false,
+    string? Encabezado = null,
+    string? Ayuda = null);
 
 /// <summary>
 /// Catalogo UNICO de los campos de sistema de una tarea. El ORDEN es el orden por defecto de las columnas
@@ -39,20 +46,20 @@ public static class TareaCamposSistema
 {
     public static readonly IReadOnlyList<TareaCampoSistema> Todos = new[]
     {
-        // Estructurales: siempre visibles, sin toggle.
-        new TareaCampoSistema("titulo", "Titulo", TipoCampoTablero.Texto, VisiblePorDefecto: true, SiempreEnPlantilla: true),
+        // Estructurales: siempre visibles, sin toggle (Fija).
+        new TareaCampoSistema("titulo", "Titulo", TipoCampoTablero.Texto, VisiblePorDefecto: true, Fija: true),
         // Toggle _colDesc (default true).
         new TareaCampoSistema("descripcion", "Descripcion", TipoCampoTablero.AreaTexto, VisiblePorDefecto: true),
         // Toggle _colCodigo (default true). Consecutivo autogenerado "T-AAAA-NNNN", solo lectura.
         new TareaCampoSistema("codigo", "Codigo", TipoCampoTablero.Texto, VisiblePorDefecto: true),
         // Estructural (columna "ETAPA"). Respaldado por tarea_estados (columnas del tablero), no por una
         // lista de opciones simple; el tipo mas cercano hoy es Seleccion.
-        new TareaCampoSistema("estado", "Etapa", TipoCampoTablero.Seleccion, VisiblePorDefecto: true, SiempreEnPlantilla: true),
+        new TareaCampoSistema("estado", "Etapa", TipoCampoTablero.Seleccion, VisiblePorDefecto: true, Fija: true),
         // Toggle _colResp (default true). NOTA Fase 2 (gap J): necesitaria tipo Usuario (persona del
         // directorio); hoy no existe en el enum, se declara como Texto de forma provisional.
         new TareaCampoSistema("asignado", "Asignado", TipoCampoTablero.Texto, VisiblePorDefecto: true),
         // Estructural. Avance 0-100. NOTA Fase 0 (gap C): idealmente Porcentaje; hoy Numero.
-        new TareaCampoSistema("progreso", "Progreso", TipoCampoTablero.Numero, VisiblePorDefecto: true, SiempreEnPlantilla: true),
+        new TareaCampoSistema("progreso", "Progreso", TipoCampoTablero.Numero, VisiblePorDefecto: true, Fija: true),
         // Toggle _colEtiq (default true). Multi-seleccion respaldada por tarea_etiquetas; el tipo mas cercano
         // hoy es Seleccion (el enum no distingue multiple).
         new TareaCampoSistema("etiquetas", "Etiquetas", TipoCampoTablero.Seleccion, VisiblePorDefecto: true),
