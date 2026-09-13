@@ -80,6 +80,41 @@ public class SegurosController : ControllerBase
     public async Task<IActionResult> GuardarCampoValor(Guid id, Guid campoId, [FromBody] GuardarPolizaCampoValorRequest req, CancellationToken ct)
         => await _svc.GuardarCampoValorAsync(id, campoId, req, ct) ? NoContent() : NotFound();
 
+    // ---- Selector de Campos (Fase 1): rutas estandar {prefijo}-campos como las demas entidades, ADITIVAS
+    // (las rutas /campos de arriba siguen vivas para no romper la UI actual). Adaptadores finos: delegan en
+    // los mismos servicios, sin logica nueva. prefijo = "polizas". ----
+    [HttpGet("polizas-campos")]
+    public async Task<IActionResult> ListPolizaCamposStd(CancellationToken ct) => Ok(await _svc.ListCamposAsync(ct));
+
+    [HttpPost("polizas-campos")]
+    [RequiereRol("Administrador")]  // S-06: escritura sensible
+    public async Task<IActionResult> CrearPolizaCampoStd([FromBody] CrearPolizaCampoRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.CrearCampoAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpPut("polizas-campos/{definicionId:guid}")]
+    [RequiereRol("Administrador")]  // S-06: escritura sensible
+    public async Task<IActionResult> ActualizarPolizaCampoStd(Guid definicionId, [FromBody] ActualizarPolizaCampoRequest req, CancellationToken ct)
+        => await _svc.ActualizarCampoAsync(definicionId, req, ct) ? NoContent() : NotFound();
+
+    [HttpDelete("polizas-campos/{definicionId:guid}")]
+    [RequiereRol("Administrador")]  // S-06: escritura sensible
+    public async Task<IActionResult> EliminarPolizaCampoStd(Guid definicionId, CancellationToken ct)
+        => await _svc.EliminarCampoAsync(definicionId, ct) ? NoContent() : NotFound();
+
+    [HttpGet("polizas-campos-valores")]
+    public async Task<IActionResult> ListTodosCamposValoresPoliza(CancellationToken ct) => Ok(await _svc.ListTodosCamposValoresPolizaAsync(ct));
+
+    [HttpGet("polizas/{id:guid}/campos-din")]
+    public async Task<IActionResult> ListCamposDinPoliza(Guid id, CancellationToken ct) => Ok(await _svc.ListCamposDinPolizaAsync(id, ct));
+
+    [HttpPut("polizas/{id:guid}/campos/{definicionId:guid}")]
+    [RequiereRol("Administrador")]  // S-06: escritura sensible
+    public async Task<IActionResult> SetPolizaCampoValorStd(Guid id, Guid definicionId, [FromBody] GuardarPolizaCampoValorRequest req, CancellationToken ct)
+        => await _svc.GuardarCampoValorAsync(id, definicionId, req, ct) ? NoContent() : NotFound();
+
     // ---- Reclamaciones (Ola 5) ----
     [HttpGet("polizas/{id:guid}/reclamaciones")]
     public async Task<IActionResult> ListReclamaciones(Guid id, CancellationToken ct) => Ok(await _svc.ListReclamacionesAsync(id, ct));

@@ -19,6 +19,9 @@ public interface ISegurosService
     Task<bool> ActualizarCampoAsync(Guid campoId, ActualizarPolizaCampoRequest req, CancellationToken ct);
     Task<bool> EliminarCampoAsync(Guid campoId, CancellationToken ct);
     Task<bool> GuardarCampoValorAsync(Guid polizaId, Guid campoId, GuardarPolizaCampoValorRequest req, CancellationToken ct);
+    // Selector de Campos (Fase 1): valores en la forma estandar de las demas entidades.
+    Task<IReadOnlyList<PolizaCampoValorFlatDto>> ListTodosCamposValoresPolizaAsync(CancellationToken ct);
+    Task<IReadOnlyList<PolizaCampoDinDto>> ListCamposDinPolizaAsync(Guid polizaId, CancellationToken ct);
 
     // Reclamaciones (Ola 5)
     Task<IReadOnlyList<ReclamacionDto>> ListReclamacionesAsync(Guid polizaId, CancellationToken ct);

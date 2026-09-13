@@ -50,6 +50,9 @@ public record PolizaCampoValorDto(Guid CampoId, string? Valor);
 public record CrearPolizaCampoRequest(string Label, TipoCampoTablero Tipo, string? Opciones, string? Descripcion);
 public record ActualizarPolizaCampoRequest(string Label, TipoCampoTablero Tipo, string? Opciones, string? Descripcion, int Orden, bool Activo);
 public record GuardarPolizaCampoValorRequest(string? Valor);
+// Selector de Campos (Fase 1): forma estandar de los valores (espejo de UnidadCampoValorFlatDto / EquipoCampoDinDto).
+public record PolizaCampoValorFlatDto(Guid PolizaId, Guid DefinicionId, string? Valor);
+public record PolizaCampoDinDto(Guid DefinicionId, string Label, int Orden, string? Valor, TipoCampoTablero Tipo, string? Opciones);
 
 // ----- Reclamaciones (Ola 5) -----
 public record ReclamacionDto(

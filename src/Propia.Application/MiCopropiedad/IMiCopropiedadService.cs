@@ -167,6 +167,9 @@ public interface IMiCopropiedadService
     Task<bool> ActualizarContratoCampoAsync(Guid campoId, ActualizarContratoCampoRequest req, CancellationToken ct);
     Task<bool> EliminarContratoCampoAsync(Guid campoId, CancellationToken ct);
     Task<bool> GuardarContratoCampoValorAsync(Guid contratoId, Guid campoId, GuardarContratoCampoValorRequest req, CancellationToken ct);
+    // Selector de Campos (Fase 1): valores en la forma estandar de las demas entidades.
+    Task<IReadOnlyList<ContratoCampoValorFlatDto>> ListTodosCamposValoresContratoAsync(CancellationToken ct);
+    Task<IReadOnlyList<ContratoCampoDinDto>> ListCamposDinContratoAsync(Guid contratoId, CancellationToken ct);
     // Etapas de flujo (Kanban) de contratos
     Task<IReadOnlyList<ContratoEtapaDto>> ListContratoEtapasAsync(CancellationToken ct);
     Task<ContratoEtapaDto> CrearContratoEtapaAsync(CrearContratoEtapaRequest req, CancellationToken ct);

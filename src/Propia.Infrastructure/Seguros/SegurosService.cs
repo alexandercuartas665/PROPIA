@@ -259,6 +259,20 @@ public class SegurosService : ISegurosService
         return true;
     }
 
+    // Selector de Campos (Fase 1): valores en la forma estandar (espejo de ListTodosCamposValoresEquipoAsync
+    // / ListCamposDinEquipoAsync). Proyecciones finas; la logica de campos no se duplica.
+    public async Task<IReadOnlyList<PolizaCampoValorFlatDto>> ListTodosCamposValoresPolizaAsync(CancellationToken ct)
+        => await _db.PolizaCampoValores.AsNoTracking().Where(v => v.Valor != null && v.Valor != "")
+            .Select(v => new PolizaCampoValorFlatDto(v.PolizaId, v.PolizaCampoId, v.Valor)).ToListAsync(ct);
+
+    public async Task<IReadOnlyList<PolizaCampoDinDto>> ListCamposDinPolizaAsync(Guid polizaId, CancellationToken ct)
+    {
+        var defs = await _db.PolizaCampos.AsNoTracking().Where(c => c.Activo).OrderBy(d => d.Orden).ThenBy(d => d.Label).ToListAsync(ct);
+        var vals = await _db.PolizaCampoValores.AsNoTracking().Where(v => v.PolizaId == polizaId).ToListAsync(ct);
+        return defs.Select(d => new PolizaCampoDinDto(d.Id, d.Label, d.Orden,
+            vals.FirstOrDefault(v => v.PolizaCampoId == d.Id)?.Valor, d.Tipo, d.Opciones)).ToList();
+    }
+
     // ----------------------------- Reclamaciones (Ola 5) -----------------------------
     public async Task<IReadOnlyList<ReclamacionDto>> ListReclamacionesAsync(Guid polizaId, CancellationToken ct)
         => await _db.PolizaReclamaciones.AsNoTracking().Where(r => r.PolizaId == polizaId)

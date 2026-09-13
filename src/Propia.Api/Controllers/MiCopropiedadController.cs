@@ -884,6 +884,41 @@ public class MiCopropiedadController : ControllerBase
     public async Task<IActionResult> GuardarContratoCampoValor(Guid id, Guid campoId, [FromBody] GuardarContratoCampoValorRequest req, CancellationToken ct)
         => await _svc.GuardarContratoCampoValorAsync(id, campoId, req, ct) ? NoContent() : NotFound();
 
+    // ---- Selector de Campos (Fase 1): rutas estandar {prefijo}-campos como las demas entidades, ADITIVAS
+    // (las rutas contratos/campos de arriba siguen vivas para no romper la UI actual). Adaptadores finos:
+    // delegan en los mismos servicios, sin logica nueva. prefijo = "contratos". ----
+    [HttpGet("contratos-campos")]
+    public async Task<IActionResult> ListContratoCamposStd(CancellationToken ct) => Ok(await _svc.ListContratoCamposAsync(ct));
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
+    [HttpPost("contratos-campos")]
+    public async Task<IActionResult> CrearContratoCampoStd([FromBody] CrearContratoCampoRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.CrearContratoCampoAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpPut("contratos-campos/{definicionId:guid}")]
+    public async Task<IActionResult> ActualizarContratoCampoStd(Guid definicionId, [FromBody] ActualizarContratoCampoRequest req, CancellationToken ct)
+        => await _svc.ActualizarContratoCampoAsync(definicionId, req, ct) ? NoContent() : NotFound();
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
+    [HttpDelete("contratos-campos/{definicionId:guid}")]
+    public async Task<IActionResult> EliminarContratoCampoStd(Guid definicionId, CancellationToken ct)
+        => await _svc.EliminarContratoCampoAsync(definicionId, ct) ? NoContent() : NotFound();
+
+    [HttpGet("contratos-campos-valores")]
+    public async Task<IActionResult> ListTodosCamposValoresContrato(CancellationToken ct) => Ok(await _svc.ListTodosCamposValoresContratoAsync(ct));
+
+    [HttpGet("contratos/{id:guid}/campos-din")]
+    public async Task<IActionResult> ListCamposDinContrato(Guid id, CancellationToken ct) => Ok(await _svc.ListCamposDinContratoAsync(id, ct));
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpPut("contratos/{id:guid}/campos/{definicionId:guid}")]
+    public async Task<IActionResult> SetContratoCampoValorStd(Guid id, Guid definicionId, [FromBody] GuardarContratoCampoValorRequest req, CancellationToken ct)
+        => await _svc.GuardarContratoCampoValorAsync(id, definicionId, req, ct) ? NoContent() : NotFound();
+
     // Etapas de flujo (Kanban) de contratos
     [HttpGet("contratos/etapas")] public async Task<IActionResult> ListContratoEtapas(CancellationToken ct) => Ok(await _svc.ListContratoEtapasAsync(ct));
     [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
