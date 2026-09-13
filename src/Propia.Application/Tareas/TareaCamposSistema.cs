@@ -23,6 +23,10 @@ namespace Propia.Application.Tareas;
 /// <param name="SiempreEnPlantilla">Solo entidades con plantilla Excel: la plantilla la emite aunque este oculta. En Tareas siempre false.</param>
 /// <param name="Encabezado">Solo plantilla Excel: encabezado de la columna. En Tareas null.</param>
 /// <param name="Ayuda">Solo plantilla Excel: fila de ayuda. En Tareas null.</param>
+/// <param name="OpcionesEditables">Solo aplica a Tipo=Seleccion: true = opciones/semilla/color configurables
+/// por copropiedad; false = lista fija del sistema (enum u otra tabla), de solo lectura en el gestor. En
+/// Tareas todos los Seleccion del sistema son false: estado (tarea_estados), etiquetas (tarea_etiquetas) y
+/// prioridad (enum) los administra el sistema, no el gestor de campos.</param>
 public sealed record TareaCampoSistema(
     string Clave,
     string Label,
@@ -31,7 +35,8 @@ public sealed record TareaCampoSistema(
     bool Fija = false,
     bool SiempreEnPlantilla = false,
     string? Encabezado = null,
-    string? Ayuda = null);
+    string? Ayuda = null,
+    bool OpcionesEditables = false);
 
 /// <summary>
 /// Catalogo UNICO de los campos de sistema de una tarea. El ORDEN es el orden por defecto de las columnas

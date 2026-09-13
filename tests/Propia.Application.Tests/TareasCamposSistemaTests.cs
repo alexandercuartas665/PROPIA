@@ -74,6 +74,14 @@ public class TareasCamposSistemaTests
     }
 
     [Fact]
+    public void Ningun_campo_del_sistema_tiene_opciones_editables()
+    {
+        // estado (tarea_estados), etiquetas (tarea_etiquetas) y prioridad (enum) son Seleccion pero
+        // los administra el sistema, no el gestor de campos: OpcionesEditables = false en todos.
+        Assert.All(TareaCamposSistema.Todos, c => Assert.False(c.OpcionesEditables, $"'{c.Clave}' no deberia tener opciones editables"));
+    }
+
+    [Fact]
     public void Por_encuentra_por_clave_sin_distinguir_mayusculas()
     {
         Assert.NotNull(TareaCamposSistema.Por("ESTADO"));
