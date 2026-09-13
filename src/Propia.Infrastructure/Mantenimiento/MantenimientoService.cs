@@ -33,6 +33,13 @@ public class MantenimientoService : IMantenimientoService
         _noti = noti;
     }
 
+    // M-09: "hoy" en hora local de Colombia, no UTC. Mismo criterio que MantenimientoPreventivoJob
+    // (America/Bogota via CronHelper.Zona, sin tocar Common/). El servicio compara y estampa dias
+    // calendario (RN-02, semaforo) y arma los codigos MNT-{ANO}/T-{ANO}; con UtcNow, de noche en Colombia
+    // (UTC-5) el dia/anio ya era el siguiente en UTC.
+    private static readonly TimeZoneInfo _zonaLocal = Propia.Infrastructure.Programaciones.CronHelper.Zona(null);
+    private static DateOnly HoyLocal() => DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, _zonaLocal));
+
     private async Task NotificarAdminsAsync(
         string codigoModulo, Guid? entidadOrigen, string asunto, string cuerpo,
         Domain.Enums.PrioridadNotificacion prioridad, CancellationToken ct)
@@ -105,7 +112,7 @@ public class MantenimientoService : IMantenimientoService
         string? query,
         CancellationToken ct)
     {
-        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        var hoy = HoyLocal();
         var resultado = new List<ActivoPanelDto>();
 
         var equipos = activoTipo is not null && activoTipo != TipoActivoMantenimiento.Equipo
@@ -191,7 +198,7 @@ public class MantenimientoService : IMantenimientoService
     public async Task<ResumenMantenimientoDto> GetResumenAsync(CancellationToken ct)
     {
         var panel = await ListarActivosPanelAsync(null, null, null, ct);
-        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        var hoy = HoyLocal();
         var inicioMes = new DateOnly(hoy.Year, hoy.Month, 1);
 
         var verde = panel.Count(a => a.Semaforo == SemaforoMantenimiento.Verde);
@@ -237,7 +244,7 @@ public class MantenimientoService : IMantenimientoService
         if (activos is not null) q = q.Where(p => p.Activo == activos);
 
         var lista = await q.OrderByDescending(p => p.Activo).ThenBy(p => p.ProximaEjecucion).ToListAsync(ct);
-        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        var hoy = HoyLocal();
         var equiposNombres = await _db.EquiposActivos.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Nombre, ct);
         var zonasNombres = await _db.ZonasComunes.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Nombre, ct);
 
@@ -264,7 +271,7 @@ public class MantenimientoService : IMantenimientoService
     public async Task<PlanDto> CrearPlanAsync(CrearPlanRequest req, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.Nombre)) throw new InvalidOperationException("Nombre obligatorio.");
-        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        var hoy = HoyLocal();
         if (req.FechaInicio < hoy) throw new InvalidOperationException("RN-02: La fecha de inicio no puede estar en el pasado.");
 
         await ValidarActivoAsync(req.ActivoTipo, req.ActivoId, ct);
@@ -386,7 +393,7 @@ public class MantenimientoService : IMantenimientoService
         }
 
         var lista = await q.OrderByDescending(i => i.CreatedAt).ToListAsync(ct);
-        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        var hoy = HoyLocal();
         var equiposNombres = await _db.EquiposActivos.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Nombre, ct);
         var zonasNombres = await _db.ZonasComunes.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Nombre, ct);
 
@@ -533,7 +540,7 @@ public class MantenimientoService : IMantenimientoService
         var anterior = i.Estado;
         i.Estado = req.NuevoEstado;
         if (req.NuevoEstado == EstadoIntervencion.EnEjecucion && i.FechaInicioReal is null)
-            i.FechaInicioReal = DateOnly.FromDateTime(DateTime.UtcNow);
+            i.FechaInicioReal = HoyLocal();
         i.UpdatedAt = DateTimeOffset.UtcNow;
 
         _db.MantenimientoBitacora.Add(new MantenimientoBitacora
@@ -631,7 +638,7 @@ public class MantenimientoService : IMantenimientoService
 
     private async Task<string> GenerarCodigoIntervencionAsync(CancellationToken ct)
     {
-        var year = DateTime.UtcNow.Year;
+        var year = HoyLocal().Year;
         var prefijo = $"MNT-{year}-";
         var ultimos = await _db.MantenimientoIntervenciones.AsNoTracking()
             .Where(x => x.Codigo.StartsWith(prefijo))
@@ -677,7 +684,7 @@ public class MantenimientoService : IMantenimientoService
             .Select(e => e.Id).FirstAsync(ct);
 
         // Numero secuencial T-{ANO}-{SEQ}
-        var year = DateTime.UtcNow.Year;
+        var year = HoyLocal().Year;
         var prefijo = $"T-{year}-";
         var ultimos = await _db.Tareas.AsNoTracking()
             .Where(t => t.NumeroTarea.StartsWith(prefijo))
