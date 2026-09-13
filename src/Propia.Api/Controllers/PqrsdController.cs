@@ -759,6 +759,11 @@ public class PqrsdController : ControllerBase
         r.EnviadaAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
 
+        // G-07: enviar la respuesta oficial pasa el expediente a Respondida (o lo cierra si ya hubo
+        // inconformidad), fija RespuestaAdminAt y registra historial. Sin esto el expediente se quedaba
+        // En gestion: la ventana de inconformidad nunca arrancaba y el cierre nocturno no veia el caso.
+        await _svc.MarcarRespondidaAsync(id, r.CuerpoHtml, ct);
+
         return Ok(new { enviadosCorreo, enviadosWhatsapp = enviadosWa, errores });
     }
 
