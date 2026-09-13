@@ -15,6 +15,9 @@ namespace Propia.Application.Mantenimiento;
 /// <param name="SiempreEnPlantilla">Columna estructural de plantilla (la programacion no tiene plantilla hoy).</param>
 /// <param name="Encabezado">Encabezado de plantilla. Null en Mantenimiento (no tiene plantilla Excel).</param>
 /// <param name="Ayuda">Ayuda de plantilla. Null en Mantenimiento.</param>
+/// <param name="OpcionesEditables">Solo para Tipo=Seleccion: true = opciones/semilla/color configurables por
+/// copropiedad; false = lista fija del sistema (enum), read-only. En la programacion todas las listas salen
+/// de enums (tipo, prioridad, periodicidad, tablero), asi que es false en todas.</param>
 public sealed record MantenimientoCampoSistema(
     string Clave,
     string Label,
@@ -23,7 +26,8 @@ public sealed record MantenimientoCampoSistema(
     bool Fija = false,
     bool SiempreEnPlantilla = false,
     string? Encabezado = null,
-    string? Ayuda = null);
+    string? Ayuda = null,
+    bool OpcionesEditables = false);
 
 /// <summary>
 /// Catalogo UNICO de los campos de sistema de la PROGRAMACION de mantenimiento. Preparacion de la Fase 1

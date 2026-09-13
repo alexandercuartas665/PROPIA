@@ -15,7 +15,10 @@ public sealed record EquipoCampoSistema(
     bool Fija = false,
     bool SiempreEnPlantilla = false,
     string? Encabezado = null,
-    string? Ayuda = null);
+    string? Ayuda = null,
+    // Solo Tipo=Seleccion: true = opciones configurables por copropiedad; false = enum fijo, read-only.
+    // categoria, tipo y estado de equipo salen de enums: false en todas.
+    bool OpcionesEditables = false);
 
 /// <summary>
 /// Catalogo UNICO de los campos de sistema del EQUIPO / ACTIVO (preparacion Fase 1, doc 5.4/5.5). Los
