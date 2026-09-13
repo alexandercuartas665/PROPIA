@@ -21,6 +21,12 @@
                 @switch (dd.Tipo)
                 {
                     case TipoCampoTablero.Seleccion:
+                        @* Chip de color de la opcion elegida (0.2): se ve igual que en la tabla. *@
+                        @if (!string.IsNullOrWhiteSpace(val))
+                        {
+                            var col = ColorDe(dd, val);
+                            <span class="cdr-chip" style="background:@(col ?? PaletaChips.Neutro);color:@PaletaChips.TextoSobre(col)">@val</span>
+                        }
                         <select class="cdr-inp" value="@val" @onchange="@(e => GuardarAsync(dd, e.Value?.ToString()))" disabled="@_busy">
                             <option value="">- elegir -</option>
                             @foreach (var op in dd.OpcionesArray()) { <option value="@op" selected="@(op == val)">@op</option> }
@@ -38,8 +44,19 @@
                         <input class="cdr-inp" type="number" step="any" value="@val" placeholder="-"
                                @onchange="@(e => GuardarAsync(dd, e.Value?.ToString()))" disabled="@_busy" />
                         break;
+                    case TipoCampoTablero.Porcentaje:
+                        <span class="cdr-pct">
+                            <input class="cdr-inp" type="number" step="any" value="@val" placeholder="-"
+                                   @onchange="@(e => GuardarAsync(dd, e.Value?.ToString()))" disabled="@_busy" />
+                            <span class="cdr-pct-tag">%</span>
+                        </span>
+                        break;
                     case TipoCampoTablero.Fecha:
                         <input class="cdr-inp" type="date" value="@val"
+                               @onchange="@(e => GuardarAsync(dd, e.Value?.ToString()))" disabled="@_busy" />
+                        break;
+                    case TipoCampoTablero.FechaHora:
+                        <input class="cdr-inp" type="datetime-local" value="@val"
                                @onchange="@(e => GuardarAsync(dd, e.Value?.ToString()))" disabled="@_busy" />
                         break;
                     case TipoCampoTablero.AreaTexto:
@@ -63,6 +80,9 @@
     .cdr-inp { box-sizing: border-box; width: 100%; max-width: 210px; border: 1px dashed var(--propia-border-input); border-radius: 7px; padding: 5px 8px; font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-bg-card); outline: none; font-family: inherit; }
     .cdr-inp:focus { border-style: solid; border-color: var(--propia-brand); box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
     .cdr-inp:disabled { opacity: .6; }
+    .cdr-chip { display: inline-block; align-self: flex-start; padding: 1px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; line-height: 1.5; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 3px; }
+    .cdr-pct { display: inline-flex; align-items: center; gap: 4px; }
+    .cdr-pct-tag { font-size: 12px; font-weight: 700; color: var(--propia-text-faint); }
 </style>
 
 @code {
@@ -89,6 +109,10 @@
 
     private string? Valor(Guid defId)
         => Valores is not null && Valores.TryGetValue(defId, out var v) ? v : null;
+
+    // Color de la opcion cuyo texto == val (para el chip). null si no tiene color o no se encuentra.
+    private static string? ColorDe(CampoDinDef d, string? val)
+        => d.OpcionesDetalle().FirstOrDefault(o => string.Equals(o.K, val, StringComparison.Ordinal))?.Color;
 
     private HttpClient Auth()
     {

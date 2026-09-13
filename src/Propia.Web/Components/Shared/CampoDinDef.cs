@@ -13,9 +13,10 @@ namespace Propia.Web.Components.Shared;
 /// </summary>
 public record CampoDinDef(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones)
 {
-    /// <summary>Opciones de una lista de seleccion (una por linea). Vacio si el tipo no es lista.</summary>
-    public string[] OpcionesArray()
-        => string.IsNullOrWhiteSpace(Opciones)
-            ? Array.Empty<string>()
-            : Opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    /// <summary>Opciones VISIBLES de una lista de seleccion (texto). Tolera el formato legado
+    /// (una por linea) y el nuevo (JSON con color/oculta). Vacio si el tipo no es lista.</summary>
+    public string[] OpcionesArray() => OpcionCampo.VisiblesK(Opciones);
+
+    /// <summary>Opciones completas (texto + oculta + color) para el gestor y el render de chips.</summary>
+    public List<OpcionCampo> OpcionesDetalle() => OpcionCampo.Parse(Opciones);
 }

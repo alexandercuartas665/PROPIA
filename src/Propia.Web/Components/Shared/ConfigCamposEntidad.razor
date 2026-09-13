@@ -140,13 +140,30 @@ else
                     @for (var i = 0; i < _opcs.Count; i++)
                     {
                         var idx = i;
+                        var op = _opcs[idx];
                         <div class="cga-opt-row">
                             <div class="cga-opt-move">
                                 <button type="button" class="cga-mini" title="Subir" disabled="@(idx == 0 || _busy)" @onclick="() => MoverOpcionAsync(dd2, idx, -1)">&#9650;</button>
                                 <button type="button" class="cga-mini" title="Bajar" disabled="@(idx == _opcs.Count - 1 || _busy)" @onclick="() => MoverOpcionAsync(dd2, idx, 1)">&#9660;</button>
                             </div>
-                            <input class="cga-inp cga-opt-inp" value="@_opcs[idx]" title="Renombrar la opcion"
+                            @* Chip: muestra la opcion con su color (asi se ve igual que en la tabla/ficha). *@
+                            <span class="cga-chip" style="background:@(op.Color ?? PaletaChips.Neutro);color:@PaletaChips.TextoSobre(op.Color)">@(string.IsNullOrWhiteSpace(op.K) ? "-" : op.K)</span>
+                            <input class="cga-inp cga-opt-inp" value="@op.K" title="Renombrar la opcion"
                                    @onchange="@(e => RenombrarOpcionAsync(dd2, idx, e.Value?.ToString()))" disabled="@_busy" />
+                            <div class="cga-opt-colors">
+                                @foreach (var c in PaletaChips.Colores)
+                                {
+                                    var cc = c;
+                                    <button type="button" class="cga-sw @(string.Equals(op.Color, cc, StringComparison.OrdinalIgnoreCase) ? "on" : "")"
+                                            style="background:@cc" title="Color" disabled="@_busy" @onclick="() => SetColorOpcionAsync(dd2, idx, cc)"></button>
+                                }
+                                <button type="button" class="cga-sw cga-sw-none @(op.Color is null ? "on" : "")" title="Sin color"
+                                        disabled="@_busy" @onclick="() => SetColorOpcionAsync(dd2, idx, null)">&times;</button>
+                            </div>
+                            <button type="button" class="cga-eye @(op.Oculta ? "" : "on")" title="@(op.Oculta ? "Oculta (no se ofrece)" : "Visible")"
+                                    @onclick="() => ToggleOcultaOpcionAsync(dd2, idx)" disabled="@_busy">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                            </button>
                             <button type="button" class="cga-opt-x" title="Quitar" @onclick="() => QuitarOpcionAsync(dd2, idx)" disabled="@_busy">&times;</button>
                         </div>
                     }
@@ -170,8 +187,16 @@ else
             </div>
             <div>
                 <label class="dst-nfc-lbl">Tipo</label>
+                @* 0.3: tipos agrupados por categoria. El <select> nativo no admite iconos SVG en las
+                   opciones; se agrupa con optgroup (accesible). El icono por categoria queda para un
+                   dropdown custom si se decide despues. *@
                 <select class="dst-nf-inp" @bind="_nvTipo">
-                    @foreach (var t in TiposOfrecidos) { <option value="@t">@TipoLabel(t)</option> }
+                    @foreach (var (cat, tipos) in TiposPorCategoria)
+                    {
+                        <optgroup label="@cat">
+                            @foreach (var t in tipos) { <option value="@t">@TipoLabel(t)</option> }
+                        </optgroup>
+                    }
                 </select>
             </div>
         </div>
@@ -194,6 +219,14 @@ else
 <style>
     .cga-vacio { padding: 14px 10px; font-size: 12.5px; color: var(--propia-text-faint); }
     .cga-error { padding: 12px 10px; font-size: 12.5px; color: var(--propia-danger); background: var(--propia-bg-app); border-radius: 9px; margin: 8px 0; }
+    /* Chip de opcion: color de DATO (inline desde la paleta), no color de diseno. */
+    .cga-chip { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; line-height: 1.5; white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; flex: 0 0 auto; }
+    .cga-opt-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .cga-opt-colors { display: inline-flex; gap: 3px; align-items: center; }
+    .cga-sw { width: 15px; height: 15px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; outline: none; }
+    .cga-sw.on { border-color: var(--propia-text-body); }
+    .cga-sw:disabled { opacity: .5; cursor: default; }
+    .cga-sw-none { background: var(--propia-bg-card); border: 1px solid var(--propia-border-input); color: var(--propia-text-faint); font-size: 10px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
 </style>
 
 @code {
@@ -263,19 +296,23 @@ else
     private string? _dragClave;
 
     private Guid? _opcExpand;
-    private List<string> _opcs = new();
+    private List<OpcionCampo> _opcs = new();
     private string _nuevaOpc = "";
 
     private string _nvLabel = "";
     private TipoCampoTablero _nvTipo = TipoCampoTablero.Texto;
     private string _nvOpciones = "";
 
-    private static readonly TipoCampoTablero[] TiposOfrecidos =
+    // Tipos ofrecidos al crear un campo propio, AGRUPADOS por categoria (0.3). Usuario y Funcion
+    // calculada quedan para Fase 2; Archivo/Imagen quedan fuera del plan (decision de Alex 2026-09-13).
+    private static readonly (string Categoria, TipoCampoTablero[] Tipos)[] TiposPorCategoria =
     {
-        TipoCampoTablero.Texto, TipoCampoTablero.AreaTexto, TipoCampoTablero.Numero,
-        TipoCampoTablero.Moneda, TipoCampoTablero.Fecha, TipoCampoTablero.Seleccion,
-        TipoCampoTablero.Booleano, TipoCampoTablero.Telefono, TipoCampoTablero.Email, TipoCampoTablero.Url
+        ("Basicos", new[] { TipoCampoTablero.Texto, TipoCampoTablero.AreaTexto, TipoCampoTablero.Numero, TipoCampoTablero.Moneda, TipoCampoTablero.Porcentaje }),
+        ("Fecha y hora", new[] { TipoCampoTablero.Fecha, TipoCampoTablero.FechaHora }),
+        ("Seleccion", new[] { TipoCampoTablero.Seleccion, TipoCampoTablero.Booleano }),
+        ("Contacto", new[] { TipoCampoTablero.Telefono, TipoCampoTablero.Email, TipoCampoTablero.Url }),
     };
+    private static readonly TipoCampoTablero[] TiposOfrecidos = TiposPorCategoria.SelectMany(c => c.Tipos).ToArray();
     private static readonly TipoCampoTablero[] TiposTexto =
         { TipoCampoTablero.Texto, TipoCampoTablero.AreaTexto, TipoCampoTablero.Telefono, TipoCampoTablero.Email, TipoCampoTablero.Url };
 
@@ -294,7 +331,9 @@ else
         TipoCampoTablero.AreaTexto => "Texto largo",
         TipoCampoTablero.Numero => "Numero",
         TipoCampoTablero.Moneda => "Moneda",
+        TipoCampoTablero.Porcentaje => "Porcentaje",
         TipoCampoTablero.Fecha => "Fecha",
+        TipoCampoTablero.FechaHora => "Fecha y hora",
         TipoCampoTablero.Hora => "Hora",
         TipoCampoTablero.Seleccion => "Lista",
         TipoCampoTablero.Booleano => "Si / No",
@@ -478,7 +517,7 @@ else
         _opcExpand = _opcExpand == id ? null : id;
         _nuevaOpc = ""; _msg = null;
         if (_opcExpand is { } abierto)
-            _opcs = _defs.First(d => d.Id == abierto).OpcionesArray().ToList();
+            _opcs = _defs.First(d => d.Id == abierto).OpcionesDetalle();
     }
 
     private async Task<bool> GuardarDefAsync(CampoDinDef d, string? label = null, TipoCampoTablero? tipo = null, string? opciones = null)
@@ -513,17 +552,18 @@ else
         if (await GuardarDefAsync(d, tipo: t)) { _opcExpand = null; await CargarAsync(); await Cambiado.InvokeAsync(); }
     }
 
+    // Se guarda como JSON [{"K","Oculta","Color"}] (formato compartido, ver OpcionCampo).
     private async Task GuardarOpcsAsync(CampoDinDef d)
     {
-        if (await GuardarDefAsync(d, opciones: string.Join('\n', _opcs))) { await CargarAsync(); await Cambiado.InvokeAsync(); }
+        if (await GuardarDefAsync(d, opciones: OpcionCampo.Serializar(_opcs))) { await CargarAsync(); await Cambiado.InvokeAsync(); }
     }
 
     private async Task AgregarOpcionAsync(CampoDinDef d)
     {
         var v = _nuevaOpc.Trim();
         if (v.Length == 0) return;
-        if (_opcs.Any(x => string.Equals(x, v, StringComparison.OrdinalIgnoreCase))) { _msg = $"Ya existe '{v}'."; return; }
-        _opcs.Add(v); _nuevaOpc = ""; _msg = null;
+        if (_opcs.Any(x => string.Equals(x.K, v, StringComparison.OrdinalIgnoreCase))) { _msg = $"Ya existe '{v}'."; return; }
+        _opcs.Add(new OpcionCampo(v)); _nuevaOpc = ""; _msg = null;
         await GuardarOpcsAsync(d);
     }
 
@@ -547,10 +587,27 @@ else
         if (idx < 0 || idx >= _opcs.Count) return;
         var v = valor?.Trim() ?? "";
         if (v.Length == 0) { _msg = "La opcion no puede quedar vacia."; return; }
-        if (string.Equals(v, _opcs[idx], StringComparison.Ordinal)) return;
-        if (_opcs.Where((_, i) => i != idx).Any(x => string.Equals(x, v, StringComparison.OrdinalIgnoreCase)))
+        if (string.Equals(v, _opcs[idx].K, StringComparison.Ordinal)) return;
+        if (_opcs.Where((_, i) => i != idx).Any(x => string.Equals(x.K, v, StringComparison.OrdinalIgnoreCase)))
         { _msg = $"Ya existe '{v}'."; return; }
-        _opcs[idx] = v; _msg = null;
+        _opcs[idx] = _opcs[idx] with { K = v }; _msg = null;
+        await GuardarOpcsAsync(d);
+    }
+
+    // Color de una opcion (0.2): valor de la paleta compartida, o null = chip neutro.
+    private async Task SetColorOpcionAsync(CampoDinDef d, int idx, string? color)
+    {
+        if (idx < 0 || idx >= _opcs.Count) return;
+        if (string.Equals(_opcs[idx].Color, color, StringComparison.OrdinalIgnoreCase)) return;
+        _opcs[idx] = _opcs[idx] with { Color = color }; _msg = null;
+        await GuardarOpcsAsync(d);
+    }
+
+    // Ocultar una opcion: no se ofrece, pero las filas que ya la usan la conservan.
+    private async Task ToggleOcultaOpcionAsync(CampoDinDef d, int idx)
+    {
+        if (idx < 0 || idx >= _opcs.Count) return;
+        _opcs[idx] = _opcs[idx] with { Oculta = !_opcs[idx].Oculta }; _msg = null;
         await GuardarOpcsAsync(d);
     }
 
