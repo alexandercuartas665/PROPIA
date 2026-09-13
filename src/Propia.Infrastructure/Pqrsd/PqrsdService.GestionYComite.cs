@@ -191,7 +191,12 @@ public partial class PqrsdService
         var texto = System.Text.RegularExpressions.Regex.Replace(html, "<[^>]+>", " ");
         texto = System.Net.WebUtility.HtmlDecode(texto);
         texto = System.Text.RegularExpressions.Regex.Replace(texto, "\\s+", " ").Trim();
-        return texto.Length <= maxChars ? texto : texto.Substring(0, maxChars);
+        if (texto.Length <= maxChars) return texto;
+        // No cortar en medio de un par sustituto: un emoji justo en la frontera dejaria una mitad alta
+        // suelta (UTF-16 invalido) que Npgsql rechaza al codificar. Si el ultimo char es mitad alta, se
+        // retrocede uno.
+        if (char.IsHighSurrogate(texto[maxChars - 1])) maxChars--;
+        return texto.Substring(0, maxChars);
     }
 
     public async Task<bool> ManifestarInconformidadAsync(Guid id, ManifestarInconformidadRequest req, CancellationToken ct)
