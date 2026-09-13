@@ -273,9 +273,35 @@ public partial class TareasService
         return $"{prefijo}{(max + 1):D4}";
     }
 
+    // T-06 (spec 2.10 seccion 21): validaciones basicas del titulo. Empty -> obligatorio; 3..200 caracteres
+    // (la columna es HasMaxLength(200): un titulo mas largo reventaba en 500). Se usa en todos los caminos.
+    private static void ValidarTitulo(string? titulo)
+    {
+        if (string.IsNullOrWhiteSpace(titulo)) throw new InvalidOperationException("Titulo obligatorio.");
+        var t = titulo.Trim();
+        if (t.Length < 3) throw new InvalidOperationException("El titulo debe tener al menos 3 caracteres.");
+        if (t.Length > 200) throw new InvalidOperationException("El titulo no puede superar 200 caracteres.");
+    }
+
+    // T-06: validaciones de una tarea. Se aplican en crear, actualizar, inline y copiar; el job de
+    // programaciones (archivo de YUNQUE) las hereda al llamar CrearTareaAsync. Antes solo se validaba
+    // que el titulo no fuera vacio: un titulo largo, una descripcion > 4000, una fecha de vencimiento
+    // anterior a la de inicio o una prioridad fuera de rango terminaban en DbUpdateException -> 500.
+    private static void ValidarTarea(string? titulo, string? descripcion, DateOnly? fechaInicio,
+        DateOnly? fechaVencimiento, PrioridadTarea prioridad)
+    {
+        ValidarTitulo(titulo);
+        if (descripcion is { Length: > 4000 })
+            throw new InvalidOperationException("La descripcion no puede superar 4000 caracteres.");
+        if (fechaInicio is { } fi && fechaVencimiento is { } fv && fv < fi)
+            throw new InvalidOperationException("La fecha de vencimiento no puede ser anterior a la de inicio.");
+        if (!Enum.IsDefined(typeof(PrioridadTarea), prioridad))
+            throw new InvalidOperationException("Prioridad invalida.");
+    }
+
     public async Task<TareaDetalleDto> CrearTareaAsync(CrearTareaRequest req, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Titulo)) throw new InvalidOperationException("Titulo obligatorio.");
+        ValidarTarea(req.Titulo, req.Descripcion, req.FechaInicio, req.FechaVencimiento, req.Prioridad);
         // T-02: la persona debe ser de esta copropiedad. Se valida ANTES de crear nada.
         await ValidarPersonaDelTenantAsync(req.AsignadoPersonaId, "asignado", ct);
         await ValidarPersonaDelTenantAsync(req.SolicitantePersonaId, "solicitante", ct);
@@ -398,7 +424,8 @@ public partial class TareasService
     {
         var t = await _db.Tareas.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (t is null) return false;
-        if (string.IsNullOrWhiteSpace(req.Titulo)) throw new InvalidOperationException("Titulo obligatorio.");
+        // T-06: mismas validaciones que al crear.
+        ValidarTarea(req.Titulo, req.Descripcion, req.FechaInicio, req.FechaVencimiento, req.Prioridad);
         // T-02: idem al crear, antes del primer save.
         await ValidarPersonaDelTenantAsync(req.AsignadoPersonaId, "asignado", ct);
         await ValidarPersonaDelTenantAsync(req.SolicitantePersonaId, "solicitante", ct);
@@ -533,10 +560,11 @@ public partial class TareasService
         switch ((req.Campo ?? "").Trim().ToLowerInvariant())
         {
             case "titulo":
-                if (string.IsNullOrWhiteSpace(req.Texto)) throw new InvalidOperationException("Titulo obligatorio.");
-                t.Titulo = req.Texto.Trim();
+                ValidarTitulo(req.Texto);   // T-06: 3..200
+                t.Titulo = req.Texto!.Trim();
                 break;
             case "descripcion":
+                if (req.Texto is { Length: > 4000 }) throw new InvalidOperationException("La descripcion no puede superar 4000 caracteres.");
                 t.Descripcion = string.IsNullOrWhiteSpace(req.Texto) ? null : req.Texto.Trim();
                 break;
             case "valor":
@@ -549,9 +577,13 @@ public partial class TareasService
                 break;
             case "fechavencimiento":
                 t.FechaVencimiento = req.Fecha;
+                if (t.FechaInicio is { } fiv && t.FechaVencimiento is { } fvv && fvv < fiv)
+                    throw new InvalidOperationException("La fecha de vencimiento no puede ser anterior a la de inicio.");
                 break;
             case "fechainicio":
                 t.FechaInicio = req.Fecha;
+                if (t.FechaInicio is { } fii && t.FechaVencimiento is { } fvi && fvi < fii)
+                    throw new InvalidOperationException("La fecha de inicio no puede ser posterior a la de vencimiento.");
                 break;
             case "asignados":
                 var ids = (req.Guids ?? new List<Guid>()).Where(g => g != Guid.Empty).Distinct().ToList();
@@ -661,6 +693,8 @@ public partial class TareasService
         if (await _db.TareasEstados.AnyAsync(e => e.Id == estadoId && e.EsTerminal, ct))
             estadoId = await PrimerEstadoNoTerminalAsync(src.TableroId, ct);
         var baseTitulo = string.IsNullOrWhiteSpace(req.Titulo) ? (src.Titulo + " (copia)").Trim() : req.Titulo.Trim();
+        // T-06: minimo 3 caracteres (el maximo se resuelve truncando a 200 mas abajo, comportamiento existente).
+        if (baseTitulo.Length < 3) throw new InvalidOperationException("El titulo debe tener al menos 3 caracteres.");
 
         // Datos a conservar (leidos una sola vez).
         List<Guid> colabIds = new();
