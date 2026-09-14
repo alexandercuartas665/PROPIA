@@ -123,6 +123,15 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             var defsZon = dinZon.Count == 0 ? SinCampos : Catalogo(await _mi.ListCamposDefZonaAsync(ct), d => d.Id, d => d.Label);
             var defsEqu = dinEqu.Count == 0 ? SinCampos : Catalogo(await _mi.ListCamposDefEquipoAsync(ct), d => d.Id, d => d.Label);
 
+            // Importador ALIAS-AWARE: mapa {encabezado-alias del tenant -> encabezado canonico} por hoja.
+            // Si la copropiedad renombro un campo, el usuario puede haber escrito el encabezado con SU nombre;
+            // se traduce a la clave canonica que el resto del importador espera. Guarda de colision incluida
+            // (un alias que choca con el canonico de otro campo NO se mapea: gana el canonico). Se cargan por
+            // grupo porque los alias son por tenant (ya fijado arriba).
+            var aliasPer = await MapaAliasAsync("personas", ClavesCanonicasPersona, ct);
+            var aliasVeh = await MapaAliasAsync("vehiculos", ClavesCanonicasVehiculo, ct);
+            var aliasMas = await MapaAliasAsync("mascotas", ClavesCanonicasMascota, ct);
+
             // Tipos de unidad PROPIOS de ESTA copropiedad (nombre -> id), para resolver la columna TIPO.
             // Son por tenant, igual que los campos dinamicos, y el tenant ya quedo fijado arriba.
             var tiposPropios = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
@@ -289,7 +298,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             }
 
             // ---- Personas (reemplazo si aplica) ----
-            var personasGrp = personas.Where(r => Coincide(r.Row)).ToList();
+            var personasGrp = Traducir(personas.Where(r => Coincide(r.Row)), aliasPer);
             if (await ReemplazarSiAplicaAsync("PERSONAS", personasGrp.Count > 0, reemplazarDependientes,
                     c => _db.UnidadPersonas.ExecuteDeleteAsync(c), errores, ct))
             foreach (var (row, fila) in personasGrp)
@@ -309,6 +318,22 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                     // descartaba el DTO devuelto.
                     var creadaPer = await _mi.AgregarPersonaUnidadAsync(uid, req, ct);
                     nPer++;
+                    // SEXO -> Persona.Genero y FECHA NACIMIENTO -> Persona.FechaNacimiento. La Persona es
+                    // GLOBAL (compartida entre copropiedades): se escribe como MERGE, celda VACIA NO pisa el
+                    // dato que otra copropiedad pudo haber puesto (guarda pedida en la revision).
+                    var gen = ParseGenero(Val(row, "SEXO"));
+                    var fnac = ParseFechaNac(Val(row, "FECHA NACIMIENTO"));
+                    if ((gen is not null || fnac is not null) && creadaPer.PersonaId != Guid.Empty)
+                    {
+                        var persona = await _db.Personas.FirstOrDefaultAsync(p => p.Id == creadaPer.PersonaId, ct);
+                        if (persona is not null)
+                        {
+                            if (gen is not null) persona.Genero = gen;
+                            if (fnac is not null) persona.FechaNacimiento = fnac;
+                            await _db.SaveChangesAsync(ct);
+                            _db.ChangeTracker.Clear();
+                        }
+                    }
                     await EscribirDinamicosAsync("PERSONAS", row, defsPer,
                         (d, v) => _mi.SetCampoValorPersonaDefAsync(creadaPer.Id, d, new SetCampoValorRequest(v), ct),
                         errores, avisados);
@@ -323,7 +348,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             // En la recarga (reemplazar) se DESACTIVAN los vehiculos de porteria (soft-delete, RN-10) y
             // ADEMAS se limpian las placas habilitadas de la unidad (unidad_placas), que es lo que muestra
             // el modal de consulta de la unidad; asi la recarga las repone sin duplicar.
-            var vehiculosGrp = vehiculos.Where(r => Coincide(r.Row)).ToList();
+            var vehiculosGrp = Traducir(vehiculos.Where(r => Coincide(r.Row)), aliasVeh);
             if (await ReemplazarSiAplicaAsync("VEHICULOS", vehiculosGrp.Count > 0, reemplazarDependientes,
                     async c =>
                     {
@@ -378,7 +403,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             }
 
             // ---- Mascotas (reemplazo si aplica) ----
-            var mascotasGrp = mascotas.Where(r => Coincide(r.Row)).ToList();
+            var mascotasGrp = Traducir(mascotas.Where(r => Coincide(r.Row)), aliasMas);
             if (await ReemplazarSiAplicaAsync("MASCOTAS", mascotasGrp.Count > 0, reemplazarDependientes,
                     c => _db.UnidadMascotas.ExecuteDeleteAsync(c), errores, ct))
             foreach (var (row, fila) in mascotasGrp)
@@ -731,6 +756,89 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             if (string.IsNullOrWhiteSpace(valor)) continue;
             await set(definicionId, valor.Trim());
         }
+    }
+
+    // ===================== Importador alias-aware =====================
+    // clave del catalogo -> encabezado CANONICO de la plantilla, por entidad. Fuente unica: los catalogos
+    // <Entidad>CamposSistema (los mismos que generan la plantilla), asi generacion e importacion no discrepan.
+    private static readonly Dictionary<string, string> ClavesCanonicasPersona =
+        PersonaCamposSistema.Todos.ToDictionary(c => c.Clave, c => c.Encabezado, StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, string> ClavesCanonicasVehiculo =
+        VehiculoCamposSistema.Todos.ToDictionary(c => c.Clave, c => c.EncabezadoPlantilla, StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, string> ClavesCanonicasMascota =
+        MascotaCamposSistema.Todos.ToDictionary(c => c.Clave, c => c.EncabezadoPlantilla, StringComparer.OrdinalIgnoreCase);
+
+    // Mapa {encabezado-alias del tenant (MAYUS) -> encabezado canonico (MAYUS)} para una entidad. Lee los
+    // alias de unidad_campos_config del tenant activo. Guarda (a): un alias que coincide con el encabezado
+    // CANONICO de otro campo NO se mapea (gana el canonico); un alias repartido entre dos campos (ambiguo)
+    // tampoco se mapea.
+    private async Task<Dictionary<string, string>> MapaAliasAsync(string entidad,
+        IReadOnlyDictionary<string, string> claveToCanonical, CancellationToken ct)
+    {
+        var canonicos = new HashSet<string>(claveToCanonical.Values.Select(v => v.Trim().ToUpperInvariant()),
+            StringComparer.OrdinalIgnoreCase);
+        var filas = await _db.UnidadCamposConfig.AsNoTracking()
+            .Where(c => c.Entidad == entidad && c.Alias != null)
+            .Select(c => new { c.CampoClave, c.Alias }).ToListAsync(ct);
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var ambiguos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var f in filas)
+        {
+            if (!claveToCanonical.TryGetValue((f.CampoClave ?? "").Trim(), out var canonical)) continue;
+            var alias = (f.Alias ?? "").Trim().ToUpperInvariant();
+            if (alias.Length == 0) continue;
+            var canonUp = canonical.Trim().ToUpperInvariant();
+            if (alias == canonUp) continue;             // el alias ES su propio canonico: nada que traducir
+            if (canonicos.Contains(alias)) continue;    // choca con el canonico de OTRO campo -> gana el canonico
+            if (!map.TryAdd(alias, canonUp)) ambiguos.Add(alias);   // mismo alias en dos campos -> ambiguo
+        }
+        foreach (var a in ambiguos) map.Remove(a);
+        return map;
+    }
+
+    // Agrega a cada fila la clave CANONICA tomada de su columna-alias, SOLO si la fila no trae ya la
+    // canonica (asi, si el archivo tiene ambas, gana la canonica). El resto del importador sigue leyendo
+    // por encabezado canonico con Val(), sin cambios.
+    private static List<(Dictionary<string, string> Row, int Fila)> Traducir(
+        IEnumerable<(Dictionary<string, string> Row, int Fila)> filas, Dictionary<string, string> aliasToCanonical)
+    {
+        if (aliasToCanonical.Count == 0) return filas.ToList();
+        var res = new List<(Dictionary<string, string>, int)>();
+        foreach (var (row, fila) in filas)
+        {
+            var copia = new Dictionary<string, string>(row, StringComparer.OrdinalIgnoreCase);
+            foreach (var (alias, canonical) in aliasToCanonical)
+                if (!copia.ContainsKey(canonical) && copia.TryGetValue(alias, out var v))
+                    copia[canonical] = v;
+            res.Add((copia, fila));
+        }
+        return res;
+    }
+
+    // SEXO de la plantilla (M/F o el nombre del enum) -> GeneroPersona. null = vacio o no reconocido
+    // (no se toca el genero de la persona global).
+    private static GeneroPersona? ParseGenero(string s)
+    {
+        s = (s ?? "").Trim();
+        if (s.Length == 0) return null;
+        switch (s.ToUpperInvariant())
+        {
+            case "M": case "MASCULINO": return GeneroPersona.Masculino;
+            case "F": case "FEMENINO": return GeneroPersona.Femenino;
+        }
+        foreach (var n in Enum.GetNames<GeneroPersona>())
+            if (string.Equals(n, s, StringComparison.OrdinalIgnoreCase)) return Enum.Parse<GeneroPersona>(n);
+        return null;
+    }
+
+    // FECHA NACIMIENTO (AAAA-MM-DD, tolerante) -> DateOnly. null = vacio o ilegible (no pisa el dato global).
+    private static DateOnly? ParseFechaNac(string s)
+    {
+        s = (s ?? "").Trim();
+        if (s.Length == 0) return null;
+        if (DateOnly.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.None, out var d)) return d;
+        if (DateTime.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt)) return DateOnly.FromDateTime(dt);
+        return null;
     }
 
     private static List<(Dictionary<string, string> Row, int Fila)> LeerHoja(XLWorkbook wb, string nombre)

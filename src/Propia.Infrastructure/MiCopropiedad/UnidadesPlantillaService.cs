@@ -43,8 +43,6 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     public async Task<(byte[] Contenido, string NombreArchivo)> GenerarPlantillaCargaAsync(CancellationToken ct)
     {
         var copros = await CopropiedadesDelClienteAsync(ct);
-        var roles = await _db.RolesCopropiedad.AsNoTracking()
-            .Where(r => r.Activo).OrderBy(r => r.Nombre).Select(r => r.Nombre).ToListAsync(ct);
         // Catalogos de campos dinamicos (definiciones POR COPROPIEDAD) de cada entidad: se emiten
         // como columnas [Label] al final de su hoja y el importador los lee y guarda.
         // TERCEROS no lleva columnas dinamicas a proposito: su catalogo (TerceroCamposDefiniciones)
@@ -62,12 +60,21 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         var tiposPropios = (await _db.TiposUnidadCustom.AsNoTracking()
                 .OrderBy(t => t.Nombre).Select(t => new { t.Id, t.Nombre }).ToListAsync(ct))
             .Select(t => (t.Id, t.Nombre)).ToList();
-        var camposPersona = await _db.PersonaCamposDefiniciones.AsNoTracking()
-            .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => c.Label).ToListAsync(ct);
-        var camposVehiculo = await _db.VehiculoCamposDefiniciones.AsNoTracking()
-            .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => c.Label).ToListAsync(ct);
-        var camposMascota = await _db.MascotaCamposDefiniciones.AsNoTracking()
-            .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => c.Label).ToListAsync(ct);
+        // PERSONAS/VEHICULOS/MASCOTAS: config-driven como UNIDADES. La config (alias/oculto por copropiedad)
+        // vive en unidad_campos_config discriminada por entidad. Los campos propios se filtran por su
+        // visibilidad "cd:{id}" (los ocultos en el panel no salen en la plantilla).
+        var cfgPersona = await ConfigCamposAsync("personas", ct);
+        var cfgVehiculo = await ConfigCamposAsync("vehiculos", ct);
+        var cfgMascota = await ConfigCamposAsync("mascotas", ct);
+        var defsPersona = await _db.PersonaCamposDefiniciones.AsNoTracking()
+            .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => new { c.Id, c.Label }).ToListAsync(ct);
+        var camposPersona = defsPersona.Where(d => cfgPersona.VisibleConDefault("cd:" + d.Id, true)).Select(d => d.Label).ToList();
+        var defsVehiculo = await _db.VehiculoCamposDefiniciones.AsNoTracking()
+            .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => new { c.Id, c.Label }).ToListAsync(ct);
+        var camposVehiculo = defsVehiculo.Where(d => cfgVehiculo.VisibleConDefault("cd:" + d.Id, true)).Select(d => d.Label).ToList();
+        var defsMascota = await _db.MascotaCamposDefiniciones.AsNoTracking()
+            .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => new { c.Id, c.Label }).ToListAsync(ct);
+        var camposMascota = defsMascota.Where(d => cfgMascota.VisibleConDefault("cd:" + d.Id, true)).Select(d => d.Label).ToList();
         var camposZona = await _db.ZonaCamposDefiniciones.AsNoTracking()
             .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => c.Label).ToListAsync(ct);
         var camposEquipo = await _db.EquipoCamposDefiniciones.AsNoTracking()
@@ -79,16 +86,15 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         // definido: asi no hay tope de longitud ni problema con valores que traigan comas.
         var listas = new HojaListas(wb);
         var coproList = listas.Definir("COPROPIEDAD", copros.Select(c => c.Nombre));
-        var rolesList = listas.Definir("ROL", roles);
         // Terceros: la lista arranca con "Todas las copropiedades" (visible en todas) + las del cliente.
         var coproTercerosList = listas.Definir("COPROPIEDAD_TERCEROS",
             new[] { TodasLasCopropiedades }.Concat(copros.Select(c => c.Nombre)));
 
         // ---- Hojas de datos ----
         HojaUnidades(wb, listas, coproList, camposUnidad, cfgUnidad, tiposPropios);
-        HojaPersonas(wb, listas, coproList, rolesList, camposPersona);
-        HojaVehiculos(wb, listas, coproList, camposVehiculo);
-        HojaMascotas(wb, listas, coproList, camposMascota);
+        HojaPersonas(wb, listas, coproList, camposPersona, cfgPersona);
+        HojaVehiculos(wb, listas, coproList, camposVehiculo, cfgVehiculo);
+        HojaMascotas(wb, listas, coproList, camposMascota, cfgMascota);
         HojaTerceros(wb, listas, coproTercerosList);
         HojaZonasComunes(wb, listas, coproList, camposZona);
         HojaEquipos(wb, listas, coproList, camposEquipo);
@@ -226,77 +232,85 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     // ENCABEZADO se mantiene canonico (es el contrato con el importador y hace que un archivo sirva
     // para varias copropiedades), pero el usuario necesita reconocer su campo por el nombre que le puso.
     private static string AyudaDe(UnidadCampoSistema campo, ConfigCamposUnidad cfg)
-    {
-        var alias = cfg.Alias(campo.Clave);
-        return string.IsNullOrWhiteSpace(alias) || string.Equals(alias, campo.Encabezado, StringComparison.OrdinalIgnoreCase)
-            ? campo.Ayuda
-            : $"{campo.Ayuda}{(campo.Ayuda.Length > 0 ? " " : "")}(en esta copropiedad: {alias})";
-    }
+        => AyudaConAlias(campo.Encabezado, campo.Ayuda, cfg.Alias(campo.Clave));
 
-    private static void HojaPersonas(XLWorkbook wb, HojaListas listas, string? coproRange, string? rolesRange, List<string> camposPersona)
+    // Ayuda de una columna con el renombre del tenant en la misma linea (el ENCABEZADO se mantiene
+    // canonico; el alias solo se muestra en la ayuda). Contrato comun a las 4 hojas config-driven.
+    private static string AyudaConAlias(string encabezado, string ayudaBase, string? alias)
+        => string.IsNullOrWhiteSpace(alias) || string.Equals(alias, encabezado, StringComparison.OrdinalIgnoreCase)
+            ? ayudaBase
+            : $"{ayudaBase}{(ayudaBase.Length > 0 ? " " : "")}(en esta copropiedad: {alias})";
+
+    // PERSONAS: config-driven como UNIDADES. Columnas del catalogo unico (PersonaCamposSistema), con el
+    // encabezado CANONICO en la fila 2 y el alias del tenant en la ayuda. PROFESION y ROLL EXCLUIDOS a
+    // proposito (Persona no tiene columna Profesion; el rol/RBAC no se setea por carga de Excel = seguridad).
+    // COPROPIEDAD y UNIDAD PRIVADA son estructurales (el importador las necesita), no dependen de config.
+    private static void HojaPersonas(XLWorkbook wb, HojaListas listas, string? coproRange,
+        List<string> camposPersona, ConfigCamposUnidad cfg)
     {
         var cols = new List<(string H, string Ayuda)>
         {
             ("COPROPIEDAD", "Elige de la lista"),
             ("UNIDAD PRIVADA", "Codigo de la unidad (debe existir en la hoja UNIDADES)"),
-            ("TIPO RESIDENTE", "Elige de la lista"),
-            ("TIPO ID", "Elige de la lista"),
-            ("NOMBRE", "Nombre completo (o razon social si NIT)"),
-            ("IDENTIFICACION", "Documento/NIT"),
-            ("EMAIL", ""),
-            ("TELEFONO", ""),
-            ("SEXO", "M o F"),
-            ("FECHA NACIMIENTO", "AAAA-MM-DD"),
-            ("PROFESION", ""),
-            ("ROLL", "Rol del sistema (opcional; crea usuario)"),
         };
+        foreach (var campo in PersonaCamposSistema.Todos)
+            if (campo.SiempreEnPlantilla || cfg.VisibleConDefault(campo.Clave, campo.VisiblePorDefecto))
+                cols.Add((campo.Encabezado, AyudaConAlias(campo.Encabezado, campo.Ayuda, cfg.Alias(campo.Clave))));
         AgregarColumnasDinamicas(cols, camposPersona);
 
         var ws = Encabezado(wb, "PERSONAS", cols);
-        Dropdown(ws, 1, coproRange);
-        Dropdown(ws, 3, listas.Definir("TIPO_RESIDENTE",
-            new[] { "Propietario", "Residente", "Familiar", "Arrendatario", "Apoderado" }));
-        Dropdown(ws, 4, listas.Definir("TIPO_ID", TiposId));
-        Dropdown(ws, 9, listas.Definir("SEXO", new[] { "M", "F" }));
-        Dropdown(ws, 12, rolesRange);
-        Ejemplo(ws, EjemploCopro, "A1-203", "Propietario", "CC", "Juan Perez", "123456789", "juan@correo.com", "3001234567", "M", "1985-04-12", "Ingeniero", "");
+        Dropdown(ws, Indice(cols, "COPROPIEDAD"), coproRange);
+        Dropdown(ws, Indice(cols, "TIPO RESIDENTE"), listas.Definir("TIPO_RESIDENTE", PersonaCamposSistema.TiposResidenteSemilla));
+        Dropdown(ws, Indice(cols, "TIPO ID"), listas.Definir("TIPO_ID", TiposId));
+        Dropdown(ws, Indice(cols, "SEXO"), listas.Definir("SEXO", new[] { "M", "F" }));
+        Ejemplo(ws, cols,
+            ("COPROPIEDAD", EjemploCopro), ("UNIDAD PRIVADA", "A1-203"), ("TIPO RESIDENTE", "Propietario"),
+            ("TIPO ID", "CC"), ("NOMBRE", "Juan Perez"), ("IDENTIFICACION", "123456789"),
+            ("EMAIL", "juan@correo.com"), ("TELEFONO", "3001234567"), ("SEXO", "M"), ("FECHA NACIMIENTO", "1985-04-12"));
         Ajustar(ws, cols.Count);
     }
 
-    private static void HojaVehiculos(XLWorkbook wb, HojaListas listas, string? coproRange, List<string> camposVehiculo)
+    private static void HojaVehiculos(XLWorkbook wb, HojaListas listas, string? coproRange,
+        List<string> camposVehiculo, ConfigCamposUnidad cfg)
     {
         var cols = new List<(string H, string Ayuda)>
         {
             ("COPROPIEDAD", "Elige de la lista"),
             ("UNIDAD PRIVADA", "Codigo de la unidad"),
-            ("TIPO DE VEHICULO", "Elige de la lista"),
-            ("MARCA", ""), ("MODELO", ""), ("COLOR", ""), ("PLACA", ""),
         };
+        foreach (var campo in VehiculoCamposSistema.Todos)
+            if (campo.SiempreEnPlantilla || cfg.VisibleConDefault(campo.Clave, campo.VisiblePorDefecto))
+                cols.Add((campo.EncabezadoPlantilla, AyudaConAlias(campo.EncabezadoPlantilla, campo.Ayuda, cfg.Alias(campo.Clave))));
         AgregarColumnasDinamicas(cols, camposVehiculo);
 
         var ws = Encabezado(wb, "VEHICULOS", cols);
-        Dropdown(ws, 1, coproRange);
-        Dropdown(ws, 3, listas.Definir("TIPO_VEHICULO",
-            new[] { "Automovil", "Moto", "Bicicleta", "Camioneta", "Otro" }));
-        Ejemplo(ws, EjemploCopro, "A1-203", "Automovil", "Mazda", "2022", "Gris", "ABC123");
+        Dropdown(ws, Indice(cols, "COPROPIEDAD"), coproRange);
+        Dropdown(ws, Indice(cols, "TIPO DE VEHICULO"), listas.Definir("TIPO_VEHICULO", EnumNombres<Domain.Enums.TipoVehiculo>()));
+        Ejemplo(ws, cols,
+            ("COPROPIEDAD", EjemploCopro), ("UNIDAD PRIVADA", "A1-203"), ("PLACA", "ABC123"),
+            ("TIPO DE VEHICULO", "Automovil"), ("MARCA", "Mazda"), ("MODELO", "2022"), ("COLOR", "Gris"));
         Ajustar(ws, cols.Count);
     }
 
-    private static void HojaMascotas(XLWorkbook wb, HojaListas listas, string? coproRange, List<string> camposMascota)
+    private static void HojaMascotas(XLWorkbook wb, HojaListas listas, string? coproRange,
+        List<string> camposMascota, ConfigCamposUnidad cfg)
     {
         var cols = new List<(string H, string Ayuda)>
         {
             ("COPROPIEDAD", "Elige de la lista"),
             ("UNIDAD PRIVADA", "Codigo de la unidad"),
-            ("TIPO MASCOTA", "Elige de la lista"),
-            ("RAZA", ""), ("NOMBRE", ""),
         };
+        foreach (var campo in MascotaCamposSistema.Todos)
+            if (campo.SiempreEnPlantilla || cfg.VisibleConDefault(campo.Clave, campo.VisiblePorDefecto))
+                cols.Add((campo.EncabezadoPlantilla, AyudaConAlias(campo.EncabezadoPlantilla, campo.Ayuda, cfg.Alias(campo.Clave))));
         AgregarColumnasDinamicas(cols, camposMascota);
 
         var ws = Encabezado(wb, "MASCOTAS", cols);
-        Dropdown(ws, 1, coproRange);
-        Dropdown(ws, 3, listas.Definir("TIPO_MASCOTA", new[] { "Perro", "Gato", "Ave", "Otro" }));
-        Ejemplo(ws, EjemploCopro, "A1-203", "Perro", "Labrador", "Rocky");
+        Dropdown(ws, Indice(cols, "COPROPIEDAD"), coproRange);
+        Dropdown(ws, Indice(cols, "TIPO MASCOTA"), listas.Definir("TIPO_MASCOTA", EnumNombres<Domain.Enums.TipoMascota>()));
+        Ejemplo(ws, cols,
+            ("COPROPIEDAD", EjemploCopro), ("UNIDAD PRIVADA", "A1-203"), ("NOMBRE", "Rocky"),
+            ("TIPO MASCOTA", "Perro"), ("RAZA", "Labrador"));
         Ajustar(ws, cols.Count);
     }
 
@@ -546,6 +560,15 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         public string? Alias(string clave)
             => _filas.TryGetValue(clave, out var f) ? f.Alias : null;
 
+        /// <summary>Visibilidad generica para entidades cuyos defaults NO son los de la unidad
+        /// (personas/vehiculos/mascotas): sin fila de config, los campos propios ("cd:{id}") entran
+        /// visibles y los de sistema segun su default del catalogo.</summary>
+        public bool VisibleConDefault(string clave, bool defaultVisible)
+        {
+            if (_filas.TryGetValue(clave, out var f)) return !f.Oculto;
+            return clave.StartsWith("cd:", StringComparison.OrdinalIgnoreCase) || defaultVisible;
+        }
+
         /// <summary>Opciones VISIBLES del campo ESTADO, en su orden; si no hay config, las de fabrica.</summary>
         public IEnumerable<string> OpcionesEstado()
         {
@@ -610,10 +633,15 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         private sealed record OpcionListaJson(string K, bool Oculta = false);
     }
 
-    private async Task<ConfigCamposUnidad> ConfigCamposUnidadAsync(CancellationToken ct)
+    private Task<ConfigCamposUnidad> ConfigCamposUnidadAsync(CancellationToken ct)
+        => ConfigCamposAsync("unidad", ct);
+
+    // Config de campos de una entidad cualquiera (unidad_campos_config es generica por (Entidad, CampoClave)):
+    // alias/oculto/opciones por copropiedad. La usan tanto la hoja UNIDADES como PERSONAS/VEHICULOS/MASCOTAS.
+    private async Task<ConfigCamposUnidad> ConfigCamposAsync(string entidad, CancellationToken ct)
     {
         var filas = await _db.UnidadCamposConfig.AsNoTracking()
-            .Where(c => c.Entidad == "unidad")
+            .Where(c => c.Entidad == entidad)
             .Select(c => new { c.CampoClave, c.Oculto, c.Alias, c.Opciones })
             .ToListAsync(ct);
         var map = new Dictionary<string, (bool, string?, string?)>(StringComparer.OrdinalIgnoreCase);
