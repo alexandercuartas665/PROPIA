@@ -103,8 +103,26 @@ else
                     @foreach (var d in _defs)
                     {
                         var def = d;
-                        <input class="veh-editcell" value="@ValorDe(v.PlacaId, def.Id)" placeholder="-"
-                               @onchange="e => GuardarDinamicoAsync(v.PlacaId, def.Id, e.Value?.ToString())" />
+                        var val = ValorDe(v.PlacaId, def.Id);
+                        if (def.Tipo == TipoCampoTablero.Seleccion)
+                        {
+                            <div class="veh-selcell">
+                                @if (!string.IsNullOrWhiteSpace(val))
+                                {
+                                    var col = ColorOpcion(def, val);
+                                    <span class="veh-chip" style="background:@(col ?? PaletaChips.Neutro);color:@PaletaChips.TextoSobre(col)">@val</span>
+                                }
+                                <select class="veh-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(v.PlacaId, def.Id, e.Value?.ToString())">
+                                    <option value="">-</option>
+                                    @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == val)">@op</option> }
+                                </select>
+                            </div>
+                        }
+                        else
+                        {
+                            <input class="veh-editcell" value="@val" placeholder="-"
+                                   @onchange="e => GuardarDinamicoAsync(v.PlacaId, def.Id, e.Value?.ToString())" />
+                        }
                     }
                     <div class="veh-acts">
                         <button type="button" class="veh-del" title="Quitar el vehiculo" @onclick="() => EliminarAsync(v)">
@@ -130,9 +148,19 @@ else
                 @foreach (var d in _defs)
                 {
                     var def = d;
-                    <input class="veh-nf-inp" placeholder="@def.Label"
-                           value="@(_nuDinamicos.TryGetValue(def.Id, out var dv) ? dv : null)"
-                           @oninput="e => SetDinamicoNuevo(def.Id, e.Value?.ToString())" />
+                    var dv = _nuDinamicos.TryGetValue(def.Id, out var _dv) ? _dv : "";
+                    if (def.Tipo == TipoCampoTablero.Seleccion)
+                    {
+                        <select class="veh-nf-inp" value="@dv" @onchange="e => SetDinamicoNuevo(def.Id, e.Value?.ToString())">
+                            <option value="">@def.Label</option>
+                            @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == dv)">@op</option> }
+                        </select>
+                    }
+                    else
+                    {
+                        <input class="veh-nf-inp" placeholder="@def.Label" value="@dv"
+                               @oninput="e => SetDinamicoNuevo(def.Id, e.Value?.ToString())" />
+                    }
                 }
                 <div class="veh-acts">
                     <button type="button" class="veh-row-add" @onclick="AgregarAsync" disabled="@_busy">+ Agregar</button>
@@ -161,8 +189,11 @@ else
                 <button class="veh-cg-x" type="button" @onclick="CerrarConfig" aria-label="Cerrar">&times;</button>
             </div>
             <div class="veh-cg-body">
-                <ConfigCamposEntidad Prefijo="vehiculos" TituloSingular="vehiculo" TituloPlural="Vehiculos"
-                                     Ejemplo="Ej. Color, Numero de SOAT" Jwt="@_jwt" />
+                <ConfigCamposEntidad Prefijo="vehiculos"
+                                     Catalogo="@VehiculoCatalogo"
+                                     TituloSingular="vehiculo" TituloPlural="Vehiculos"
+                                     Ejemplo="Ej. Color, Numero de SOAT" Jwt="@_jwt"
+                                     Cambiado="RecargarCamposAsync" />
             </div>
         </div>
     </div>
@@ -319,6 +350,29 @@ else
         }
         catch (Exception ex) { Mensaje("No se pudieron cargar los vehiculos: " + ex.Message, true); }
     }
+
+    // Catalogo de campos del SISTEMA del vehiculo para el gestor compartido (Fase 1): mapea
+    // VehiculoCamposSistema.Todos a la forma neutra que consume ConfigCamposEntidad. tipovehiculo es una
+    // lista de solo lectura (enum TipoVehiculo), asi que OpcionesEditables queda en false.
+    private static readonly IReadOnlyList<CampoSistemaDef> VehiculoCatalogo =
+        VehiculoCamposSistema.Todos.Select(c => new CampoSistemaDef(
+            Clave: c.Clave,
+            Label: c.Label,
+            Tipo: c.Tipo,
+            VisibleDefault: c.VisiblePorDefecto,
+            Fija: c.Fija,
+            OpcionesEditables: c.OpcionesEditables)).ToList();
+
+    // El gestor compartido cambio algo (alias/orden/visibilidad/campo propio): refresca columnas + valores.
+    private async Task RecargarCamposAsync()
+    {
+        try { await CargarCamposAsync(Auth()); } catch { }
+        StateHasChanged();
+    }
+
+    // Color de la opcion elegida en un campo propio de tipo Lista (para el chip). null = chip neutro.
+    private static string? ColorOpcion(CampoDinDef d, string? val)
+        => d.OpcionesDetalle().FirstOrDefault(o => string.Equals(o.K, val, StringComparison.Ordinal))?.Color;
 
     // Catalogo de campos del modulo + valores de todos los registros, en dos llamadas (no una por fila).
     private async Task CargarCamposAsync(HttpClient http)
@@ -491,6 +545,10 @@ else
     .veh-editcell { border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 4px 7px; font-size: 12.5px; color: var(--propia-text-body); font-family: inherit; width: 100%; box-sizing: border-box; }
     .veh-editcell:hover { border-color: var(--propia-border-card); }
     .veh-editcell:focus { outline: 0; border: 1px solid var(--propia-brand); box-shadow: 0 0 0 2px var(--propia-glow-brand); background: var(--propia-bg-card); }
+    /* Campo propio de tipo Lista: chip de color (valor) + dropdown en la misma celda. */
+    .veh-selcell { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .veh-selcell .veh-editcell { width: auto; flex: 1 1 auto; min-width: 0; }
+    .veh-chip { flex: 0 0 auto; padding: 1px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; line-height: 1.5; white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
 
     /* Alta: input "fantasma" punteado en reposo, violeta al foco (canon del sistema). */
     .veh-newrow { background: var(--propia-bg-table-head); border-top: 1px solid var(--propia-border-divider); }
