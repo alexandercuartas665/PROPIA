@@ -73,31 +73,48 @@ public class SegurosService : ISegurosService
     {
         var p = await _db.Polizas.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (p is null) return false;
-        // Este PUT reemplaza los campos con lo que llega (no es un MERGE como el de contratos),
-        // asi que el request ES el estado resultante y se valida tal cual.
-        await ValidarPolizaAsync(req.Aseguradora, req.FechaInicio, req.FechaFin, req.ValorPoliza,
-            req.FormaPagoCuotas, req.PagoMensual, req.NumeroPoliza, p.Id, ct);
-        p.Aseguradora = req.Aseguradora.Trim();
-        p.NumeroPoliza = Limpio(req.NumeroPoliza);
-        p.AseguradoraPersonaId = req.AseguradoraPersonaId;
-        p.AseguradoraEmpresaId = req.AseguradoraEmpresaId;
-        p.Corredor = Limpio(req.Corredor);
-        p.CorredorPersonaId = req.CorredorPersonaId;
-        p.CorredorEmpresaId = req.CorredorEmpresaId;
-        p.FechaInicio = req.FechaInicio;
-        p.FechaFin = req.FechaFin;
-        p.ValorPoliza = req.ValorPoliza;
-        p.FormaPagoCuotas = req.FormaPagoCuotas;
-        p.PagoMensual = req.PagoMensual;
-        p.Cobertura = Limpio(req.Cobertura);
-        p.IncluyeZonasUnidades = req.IncluyeZonasUnidades;
-        p.ValoresAgregados = Limpio(req.ValoresAgregados);
-        p.Observaciones = Limpio(req.Observaciones);
+
+        // N-02: snapshot de la vigencia antes del MERGE, para reiniciar la alerta SOLO si cambia (K-08).
+        var fechaInicioAntes = p.FechaInicio;
+        var fechaFinAntes = p.FechaFin;
+
+        // N-02: el PUT es un MERGE (mismo criterio que contratos): un campo en null = "no enviado" y se
+        // conserva. Se valida el ESTADO RESULTANTE (lo que llega o, si no, lo que ya estaba).
+        var aseguradoraRes = string.IsNullOrWhiteSpace(req.Aseguradora) ? p.Aseguradora : req.Aseguradora.Trim();
+        var numeroRes = req.NumeroPoliza is null ? p.NumeroPoliza : Limpio(req.NumeroPoliza);
+        await ValidarPolizaAsync(
+            aseguradoraRes,
+            req.FechaInicio ?? p.FechaInicio,
+            req.FechaFin ?? p.FechaFin,
+            req.ValorPoliza ?? p.ValorPoliza,
+            req.FormaPagoCuotas ?? p.FormaPagoCuotas,
+            req.PagoMensual ?? p.PagoMensual,
+            numeroRes, p.Id, ct);
+
+        // MERGE campo a campo: solo se toca lo que vino (null = no enviado). Los textos se vacian con "".
+        p.Aseguradora = aseguradoraRes;
+        if (req.NumeroPoliza is not null) p.NumeroPoliza = Limpio(req.NumeroPoliza);
+        if (req.AseguradoraPersonaId.HasValue) p.AseguradoraPersonaId = req.AseguradoraPersonaId;
+        if (req.AseguradoraEmpresaId.HasValue) p.AseguradoraEmpresaId = req.AseguradoraEmpresaId;
+        if (req.Corredor is not null) p.Corredor = Limpio(req.Corredor);
+        if (req.CorredorPersonaId.HasValue) p.CorredorPersonaId = req.CorredorPersonaId;
+        if (req.CorredorEmpresaId.HasValue) p.CorredorEmpresaId = req.CorredorEmpresaId;
+        if (req.FechaInicio.HasValue) p.FechaInicio = req.FechaInicio;
+        if (req.FechaFin.HasValue) p.FechaFin = req.FechaFin;
+        if (req.ValorPoliza.HasValue) p.ValorPoliza = req.ValorPoliza;
+        if (req.FormaPagoCuotas.HasValue) p.FormaPagoCuotas = req.FormaPagoCuotas;
+        if (req.PagoMensual.HasValue) p.PagoMensual = req.PagoMensual.Value;
+        if (req.Cobertura is not null) p.Cobertura = Limpio(req.Cobertura);
+        if (req.IncluyeZonasUnidades.HasValue) p.IncluyeZonasUnidades = req.IncluyeZonasUnidades.Value;
+        if (req.ValoresAgregados is not null) p.ValoresAgregados = Limpio(req.ValoresAgregados);
+        if (req.Observaciones is not null) p.Observaciones = Limpio(req.Observaciones);
         if (req.LimpiarExpediente) p.ExpedienteId = null;
         else if (req.ExpedienteId.HasValue) p.ExpedienteId = req.ExpedienteId;
-        if (!string.IsNullOrWhiteSpace(req.PdfOrigenKey)) p.PdfOrigenKey = req.PdfOrigenKey;  // MERGE: no borrar si no viene
-        // Vigencia cambiada: reinicia el control de alerta para que el job reevalue.
-        p.AlertaVencimientoPctNotificado = null;
+        if (!string.IsNullOrWhiteSpace(req.PdfOrigenKey)) p.PdfOrigenKey = req.PdfOrigenKey;
+
+        // N-02: reinicia el control de alerta SOLO si cambio la vigencia (antes lo hacia en cada PUT).
+        if (p.FechaInicio != fechaInicioAntes || p.FechaFin != fechaFinAntes)
+            p.AlertaVencimientoPctNotificado = null;
         await _db.SaveChangesAsync(ct);
         return true;
     }
