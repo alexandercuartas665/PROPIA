@@ -559,6 +559,75 @@ public class TareasFlowTests : IAsyncLifetime
         }
     }
 
+    [Fact]
+    public async Task H2_enlazar_persona_ajena_al_tablero_se_rechaza_pero_miembro_previo_sobrevive()
+    {
+        // H-2: enlazar a un tablero una persona que no pertenece a esta copropiedad debe fallar
+        // (AgregarUsuario y crear/actualizar tablero), pero un miembro que YA estaba (p.ej. invitado
+        // externo por correo, cross-tenant deliberado) debe sobrevivir al reenviar la lista en un
+        // ActualizarTablero (se valida solo el delta nuevo).
+        var tenantId = await SeedTenantAsync("Tareas H-2");
+        var (svc, db, _) = Build(tenantId);
+
+        var vinculada = await SeedPersonaVinculadaAsync(tenantId);   // persona de esta copropiedad
+        var ajena = await SeedPersonaGlobalSinVinculoAsync();        // persona real, NO vinculada aqui
+
+        // Crear tablero con una persona vinculada -> ok.
+        var tab = await svc.CrearTableroAsync(
+            new GuardarTableroRequest("Tablero H2", null, "#6D4FE3", new[] { vinculada }), CancellationToken.None);
+        Assert.NotNull(tab);
+
+        // Enlazar directo una persona ajena -> excepcion y sin fila.
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            svc.AgregarUsuarioTableroAsync(tab.Id, ajena, CancellationToken.None));
+        Assert.False(await db.TableroUsuarios.AsNoTracking().AnyAsync(u => u.TableroId == tab.Id && u.PersonaId == ajena));
+
+        // Actualizar el tablero metiendo a la ajena como miembro NUEVO -> excepcion.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.ActualizarTableroAsync(tab.Id,
+            new GuardarTableroRequest("Tablero H2", null, "#6D4FE3", new[] { vinculada, ajena }), CancellationToken.None));
+
+        // La ajena ya es miembro (simula el invite por-correo cross-tenant: se inserta directo).
+        db.TableroUsuarios.Add(new TableroUsuario { TableroId = tab.Id, PersonaId = ajena });
+        await db.SaveChangesAsync(CancellationToken.None);
+
+        // Reenviar la lista completa con la ajena ya-miembro -> NO lanza y NO la expulsa (delta vacio para ella).
+        var ok = await svc.ActualizarTableroAsync(tab.Id,
+            new GuardarTableroRequest("Tablero H2b", null, "#6D4FE3", new[] { vinculada, ajena }), CancellationToken.None);
+        Assert.True(ok);
+        Assert.True(await db.TableroUsuarios.AsNoTracking().AnyAsync(u => u.TableroId == tab.Id && u.PersonaId == ajena));
+
+        await CleanTenant(tenantId);
+        await BorrarPersonaGlobalAsync(ajena);
+    }
+
+    [Fact]
+    public async Task Listar_campos_activos_del_tablero_devuelve_solo_activos_y_respeta_tenant()
+    {
+        // Prep adopcion Selector de Campos: GET tableros/{id}/campos lista las definiciones PROPIAS
+        // ACTIVAS del tablero (las archivadas no) y RLS acota por copropiedad (otro tenant no las ve).
+        var tA = await SeedTenantAsync("Tareas CamposActivos A");
+        var (svcA, _, _) = Build(tA);
+
+        var tab = await svcA.CrearTableroAsync(
+            new GuardarTableroRequest("Tab campos", null, "#6D4FE3", Array.Empty<Guid>()), CancellationToken.None);
+        var c1 = await svcA.AgregarCampoAsync(tab.Id, new GuardarCampoRequest("Costo"), CancellationToken.None);
+        var c2 = await svcA.AgregarCampoAsync(tab.Id, new GuardarCampoRequest("Zona"), CancellationToken.None);
+        await svcA.SetCampoActivoAsync(tab.Id, c1.Id, false, CancellationToken.None);   // archiva c1
+
+        var activos = await svcA.ListarCamposActivosAsync(tab.Id, CancellationToken.None);
+        Assert.Single(activos);                       // solo el activo
+        Assert.Equal(c2.Id, activos[0].Id);
+        Assert.Equal("Zona", activos[0].Label);
+
+        // Otro tenant NO ve los campos del tablero de A (RLS).
+        var tB = await SeedTenantAsync("Tareas CamposActivos B");
+        var (svcB, _, _) = Build(tB);
+        Assert.Empty(await svcB.ListarCamposActivosAsync(tab.Id, CancellationToken.None));
+
+        await CleanTenant(tA);
+        await CleanTenant(tB);
+    }
+
     // ===================== Helpers =====================
 
     private (ITareasService svc, PropiaDbContext db, IServiceScope scope) Build(Guid tenantId)
@@ -626,6 +695,30 @@ public class TareasFlowTests : IAsyncLifetime
         });
         await ctx.SaveChangesAsync();
         return p.Id;
+    }
+
+    // Persona GLOBAL sin vinculo en ningun tenant de prueba: simula "de otra copropiedad" (no vinculada aqui).
+    private async Task<Guid> SeedPersonaGlobalSinVinculoAsync()
+    {
+        var opts = new DbContextOptionsBuilder<PropiaDbContext>().UseNpgsql(_fx.OwnerConnectionString).Options;
+        await using var ctx = new PropiaDbContext(opts, new TenantContext());
+        var p = new Persona
+        {
+            TipoDocumento = TipoDocumento.CC,
+            Documento = $"D{Guid.NewGuid():N}".Substring(0, 18),
+            Nombres = "Ajena",
+            Apellidos = "Test"
+        };
+        ctx.Personas.Add(p);
+        await ctx.SaveChangesAsync();
+        return p.Id;
+    }
+
+    private async Task BorrarPersonaGlobalAsync(Guid personaId)
+    {
+        var opts = new DbContextOptionsBuilder<PropiaDbContext>().UseNpgsql(_fx.OwnerConnectionString).Options;
+        await using var ctx = new PropiaDbContext(opts, new TenantContext());
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM personas WHERE id = {personaId}");
     }
 
     private async Task CleanTenant(Guid tenantId)
