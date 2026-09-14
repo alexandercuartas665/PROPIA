@@ -35,9 +35,9 @@ public class SegurosCamposTests
         Assert.All(todos, c => Assert.Null(c.Encabezado));
         Assert.All(todos, c => Assert.False(c.SiempreEnPlantilla));
         // El numero de poliza es fijo (no se puede ocultar).
-        Assert.True(PolizaCamposSistema.Por("numeroPoliza")!.Fija);
+        Assert.True(PolizaCamposSistema.Por("numeropoliza")!.Fija);
         Assert.Contains("aseguradora", PolizaCamposSistema.ClavesVisiblesPorDefecto);
-        Assert.Equal(TipoCampoTablero.Moneda, PolizaCamposSistema.Por("valorPoliza")!.Tipo);
+        Assert.Equal(TipoCampoTablero.Moneda, PolizaCamposSistema.Por("valorpoliza")!.Tipo);
     }
 
     [Fact]

@@ -144,57 +144,19 @@
                 {
                     <div class="seg-menu-bd" @onclick="() => _showCampos = false"></div>
                     <div class="seg-campospop" @onclick:stopPropagation="true">
-                        <div class="seg-campospop-h">CAMPOS (orden y visibilidad)</div>
-                        @if (_campos.Count == 0)
-                        {
-                            <div class="seg-cm-empty">Aun no hay campos personalizados. Crea el primero abajo (ej. "Deducible", "Renovada el").</div>
-                        }
-                        else
-                        {
-                            <div class="seg-cm-list">
-                                @{ var ordenados = _campos.OrderBy(c => c.Orden).ToList(); }
-                                @for (int i = 0; i < ordenados.Count; i++)
-                                {
-                                    var idx = i; var cm = ordenados[idx];
-                                    <div class="seg-cm-row @(cm.Activo ? "" : "off")">
-                                        <div class="seg-cm-ord">
-                                            <button class="seg-cm-mv" disabled="@(idx == 0)" @onclick="() => MoverCampoAsync(ordenados, idx, -1)" title="Subir">&#9650;</button>
-                                            <button class="seg-cm-mv" disabled="@(idx == ordenados.Count - 1)" @onclick="() => MoverCampoAsync(ordenados, idx, 1)" title="Bajar">&#9660;</button>
-                                        </div>
-                                        <input class="seg-cm-nom" value="@cm.Label" @onchange="e => RenombrarCampoAsync(cm, e)" />
-                                        <span class="seg-cm-tipo">@TipoCampoLabel(cm.Tipo)</span>
-                                        <label class="seg-cm-sw" title="Mostrar como columna">
-                                            <input type="checkbox" checked="@cm.Activo" @onchange="() => ToggleCampoActivoAsync(cm)" />
-                                            <span>@(cm.Activo ? "Visible" : "Oculto")</span>
-                                        </label>
-                                        <button class="seg-cm-del" @onclick="() => EliminarCampoAsync(cm.Id)" title="Eliminar campo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
-                                    </div>
-                                }
-                            </div>
-                        }
-                        <div class="seg-cm-new">
-                            <div class="seg-campospop-h" style="margin-top:6px;">NUEVO CAMPO</div>
-                            <div class="seg-grid-form">
-                                <div><label class="seg-lbl">Nombre del campo</label><input class="seg-input" placeholder="Ej. Deducible" @bind="_nuevoCampoLabel" @bind:event="oninput" /></div>
-                                <div>
-                                    <label class="seg-lbl">Tipo</label>
-                                    <select class="seg-input" @bind="_nuevoCampoTipo">
-                                        @foreach (var t in new[] { TipoCampoTablero.Texto, TipoCampoTablero.AreaTexto, TipoCampoTablero.Numero, TipoCampoTablero.Moneda, TipoCampoTablero.Fecha, TipoCampoTablero.Seleccion, TipoCampoTablero.Booleano, TipoCampoTablero.Telefono, TipoCampoTablero.Url, TipoCampoTablero.Email })
-                                        {
-                                            <option value="@t">@TipoCampoLabel(t)</option>
-                                        }
-                                    </select>
-                                </div>
-                                @if (_nuevoCampoTipo == TipoCampoTablero.Seleccion)
-                                {
-                                    <div class="seg-col-full"><label class="seg-lbl">Opciones (una por linea)</label><textarea class="seg-input" rows="3" @bind="_nuevoCampoOpciones" @bind:event="oninput"></textarea></div>
-                                }
-                            </div>
-                            @if (_camposError is not null) { <div class="seg-banner err">@_camposError</div> }
-                            <button class="seg-btn-brand" style="margin-top:10px;" @onclick="CrearCampoAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoCampoLabel))">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:4px;"><path d="M12 5v14M5 12h14"/></svg>Agregar campo
-                            </button>
-                        </div>
+                        <div class="seg-campospop-h">CAMPOS DE LA POLIZA (orden, visibilidad y campos propios)</div>
+                        @* Selector de Campos (Fase 1): el gestor propio se reemplaza por el componente compartido.
+                           El orden/visibilidad/alias (de sistema y propios) viven en unidades-config (entidad 'poliza'),
+                           compartidos por copropiedad; los campos propios en /api/seguros/polizas-campos. *@
+                        <ConfigCamposEntidad Prefijo="polizas"
+                                             RutaCatalogo="/api/seguros/polizas-campos"
+                                             EntidadConfig="poliza"
+                                             Catalogo="@PolizaCatalogo"
+                                             TituloSingular="poliza"
+                                             TituloPlural="Polizas"
+                                             Ejemplo="Ej. Deducible, Renovada el"
+                                             Jwt="@_jwt"
+                                             Cambiado="RecargarCamposYConfigAsync" />
                     </div>
                 }
             </div>
@@ -213,8 +175,8 @@
             <div class="seg-table">
                 <div class="seg-scroll">
                     <div class="seg-head seg-grid" style="@GridStyle()">
-                        <div></div><div>N POLIZA</div><div>ASEGURADORA</div><div>CORREDOR</div><div>INICIO</div><div>FINALIZACION</div><div>VENCIMIENTO</div><div>VALOR</div><div>RECLAM.</div>
-                        @foreach (var cm in CamposActivos) { <div>@cm.Label.ToUpperInvariant()</div> }
+                        <div></div>
+                        @foreach (var clave in ColsVisibles()) { <div>@ColLabel(clave).ToUpperInvariant()</div> }
                     </div>
                     @foreach (var item in FilasRender())
                     {
@@ -231,15 +193,14 @@
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                                 </button>
                             </div>
-                            <div class="seg-c seg-c--num">@(string.IsNullOrWhiteSpace(p.NumeroPoliza) ? "-" : p.NumeroPoliza)</div>
-                            <div class="seg-c seg-c--aseg">@p.Aseguradora</div>
-                            <div class="seg-c">@(string.IsNullOrWhiteSpace(p.Corredor) ? "-" : p.Corredor)</div>
-                            <div class="seg-c">@(p.FechaInicio?.ToString("dd MMM yyyy") ?? "-")</div>
-                            <div class="seg-c">@(p.FechaFin?.ToString("dd MMM yyyy") ?? "-")</div>
-                            <div class="seg-c">@SemaforoBadge(p)</div>
-                            <div class="seg-c">@(p.ValorPoliza is { } v ? "$" + v.ToString("N0") : "-")</div>
-                            <div class="seg-c">@(p.ReclamacionesCount > 0 ? p.ReclamacionesCount.ToString() : "-")</div>
-                            @foreach (var cm in CamposActivos) { <div class="seg-c" title="@cm.Label">@(ValorCampoTexto(p, cm) is { Length: > 0 } vv ? vv : "-")</div> }
+                            @foreach (var clave in ColsVisibles())
+                            {
+                                var col = clave;
+                                <div class="@ColCeldaClass(col)" title="@ColLabel(col)">
+                                    @if (col == "vencimiento") { @SemaforoBadge(p) }
+                                    else { @CeldaTextoP(p, col) }
+                                </div>
+                            }
                         </div>
                     }
                     @* Fila de alta inline: crear poliza desde la tabla (como Zonas Comunes). *@
@@ -249,15 +210,23 @@
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                             </button>
                         </div>
-                        <div class="seg-c"><input class="seg-nf-inp" @bind="_npNumero" @bind:event="oninput" placeholder="N poliza" /></div>
-                        <div class="seg-c"><input class="seg-nf-inp" @bind="_npAseguradora" @bind:event="oninput" placeholder="Aseguradora *" /></div>
-                        <div class="seg-c"><input class="seg-nf-inp" @bind="_npCorredor" @bind:event="oninput" placeholder="Corredor" /></div>
-                        <div class="seg-c"><input type="date" class="seg-nf-inp" value="@_npInicio" @oninput="e => _npInicio = e.Value?.ToString() ?? string.Empty" /></div>
-                        <div class="seg-c"><input type="date" class="seg-nf-inp" value="@_npFin" @oninput="e => _npFin = e.Value?.ToString() ?? string.Empty" /></div>
-                        <div class="seg-c seg-c--auto">(auto)</div>
-                        <div class="seg-c"><input type="number" step="1000" class="seg-nf-inp" @bind="_npValor" @bind:event="oninput" placeholder="Valor" /></div>
-                        <div class="seg-c"><button type="button" class="seg-row-add" @onclick="CrearPolizaDesdeAltaAsync" disabled="@_creandoInline">+ Agregar</button></div>
-                        @foreach (var cm in CamposActivos) { <div class="seg-c seg-c--auto">-</div> }
+                        @foreach (var clave in ColsVisibles())
+                        {
+                            var col = clave;
+                            <div class="@AltaCeldaClass(col)">
+                                @switch (col)
+                                {
+                                    case "numeropoliza": <input class="seg-nf-inp" value="@_npNumero" @oninput="e => _npNumero = e.Value?.ToString() ?? string.Empty" placeholder="N poliza" /> break;
+                                    case "aseguradora": <input class="seg-nf-inp" value="@_npAseguradora" @oninput="e => _npAseguradora = e.Value?.ToString() ?? string.Empty" placeholder="Aseguradora *" /> break;
+                                    case "corredor": <input class="seg-nf-inp" value="@_npCorredor" @oninput="e => _npCorredor = e.Value?.ToString() ?? string.Empty" placeholder="Corredor" /> break;
+                                    case "fechainicio": <input type="date" class="seg-nf-inp" value="@_npInicio" @oninput="e => _npInicio = e.Value?.ToString() ?? string.Empty" /> break;
+                                    case "fechafin": <input type="date" class="seg-nf-inp" value="@_npFin" @oninput="e => _npFin = e.Value?.ToString() ?? string.Empty" /> break;
+                                    case "valorpoliza": <input type="number" step="1000" class="seg-nf-inp" value="@_npValor" @oninput="e => _npValor = e.Value?.ToString() ?? string.Empty" placeholder="Valor" /> break;
+                                    case "vencimiento": <span>(auto)</span> break;
+                                    default: <span>-</span> break;
+                                }
+                            </div>
+                        }
                     </div>
                 </div>
                 @if (!string.IsNullOrEmpty(_inlineMsg)) { <div class="seg-toast @(_inlineMsgEsError ? "seg-toast--error" : "")" @onclick="() => _inlineMsg = null">@_inlineMsg</div> }
@@ -675,10 +644,75 @@
     private IReadOnlyList<PolizaCampoDto> CamposActivos => _campos.Where(c => c.Activo).OrderBy(c => c.Orden).ToList();
     private readonly Dictionary<Guid, string?> _campoValores = new();  // valores del form actual
     private bool _showCampos;
-    private string _nuevoCampoLabel = "";
-    private TipoCampoTablero _nuevoCampoTipo = TipoCampoTablero.Texto;
-    private string? _nuevoCampoOpciones;
-    private string? _camposError;
+
+    // ---- Selector de Campos (Fase 1): columnas dirigidas por unidades-config (entidad 'poliza') ----
+    // Reemplaza el gestor propio: orden/visibilidad/alias de las columnas (de sistema y propias) viven en la
+    // config compartida por copropiedad, igual que en Unidades/Vehiculos; el componente compartido
+    // ConfigCamposEntidad las escribe y aqui las leemos para pintar la tabla.
+    private Dictionary<string, UnidadCampoConfigDto> _cfgPoliza = new(StringComparer.Ordinal);
+
+    // Catalogo de campos de SISTEMA de la poliza mapeado a la forma neutra del componente. Los campos de
+    // sistema se pueden mostrar/ocultar/reordenar/renombrar pero no cambiar de tipo ni de formato (la tabla
+    // los renderiza por clave con formato fijo): TiposIntercambiables vacio (tipo fijo) + SinFormato.
+    private static readonly IReadOnlyList<CampoSistemaDef> PolizaCatalogo =
+        PolizaCamposSistema.Todos.Select(c => new CampoSistemaDef(
+            c.Clave, c.Label, c.Tipo, c.VisiblePorDefecto, c.Fija,
+            OpcionesEditables: false, Semilla: null, Entero: false, Ayuda: null,
+            TiposIntercambiables: Array.Empty<TipoCampoTablero>(), ListaExterna: false, SinFormato: true)).ToList();
+
+    // Clave de config de un campo propio (misma convencion que el componente: "cd:{id}").
+    private static string ClaveCustom(PolizaCampoDto c) => "cd:" + c.Id;
+    private PolizaCampoDto? CampoCustom(string clave)
+        => clave.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(clave[3..], out var g)
+            ? CamposActivos.FirstOrDefault(c => c.Id == g) : null;
+
+    // Claves candidatas: sistema (orden del catalogo) + propias activas. Se ordenan y filtran por config.
+    private IEnumerable<string> ClavesCandidatas()
+        => PolizaCamposSistema.Todos.Select(c => c.Clave).Concat(CamposActivos.Select(ClaveCustom));
+    private bool VisibleColDefault(string clave)
+        => clave.StartsWith("cd:", StringComparison.Ordinal) || (PolizaCamposSistema.Por(clave)?.VisiblePorDefecto ?? true);
+    private bool VisibleCol(string clave)
+        => _cfgPoliza.TryGetValue(clave, out var c) ? !c.Oculto : VisibleColDefault(clave);
+    private int OrdenCol(string clave, int fallback)
+        => _cfgPoliza.TryGetValue(clave, out var c) && c.Orden is { } o ? o : 1000 + fallback;
+    private IEnumerable<string> ClavesOrdenadas()
+        => ClavesCandidatas().Select((k, i) => (k, ord: OrdenCol(k, i))).OrderBy(x => x.ord).Select(x => x.k);
+    private IEnumerable<string> ColsVisibles() => ClavesOrdenadas().Where(VisibleCol);
+
+    private string ColLabel(string clave)
+    {
+        if (_cfgPoliza.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Alias)) return c.Alias!;
+        return CampoCustom(clave)?.Label ?? PolizaCamposSistema.Por(clave)?.Label ?? clave;
+    }
+    private static string ColCeldaClass(string clave) => clave switch
+    {
+        "numeropoliza" => "seg-c seg-c--num",
+        "aseguradora" => "seg-c seg-c--aseg",
+        _ => "seg-c"
+    };
+    private static readonly HashSet<string> _altaEditables = new(StringComparer.Ordinal)
+        { "numeropoliza", "aseguradora", "corredor", "fechainicio", "fechafin", "valorpoliza" };
+    private static string AltaCeldaClass(string clave) => _altaEditables.Contains(clave) ? "seg-c" : "seg-c seg-c--auto";
+
+    // Texto de una celda de sistema/propia (el vencimiento se pinta como badge aparte).
+    private string CeldaTextoP(PolizaDto p, string clave) => clave switch
+    {
+        "numeropoliza" => string.IsNullOrWhiteSpace(p.NumeroPoliza) ? "-" : p.NumeroPoliza!,
+        "aseguradora" => string.IsNullOrWhiteSpace(p.Aseguradora) ? "-" : p.Aseguradora,
+        "corredor" => string.IsNullOrWhiteSpace(p.Corredor) ? "-" : p.Corredor!,
+        "fechainicio" => p.FechaInicio?.ToString("dd MMM yyyy") ?? "-",
+        "fechafin" => p.FechaFin?.ToString("dd MMM yyyy") ?? "-",
+        "vencimiento" => SemaforoTexto(p.Semaforo),
+        "valorpoliza" => p.ValorPoliza is { } v ? "$" + v.ToString("N0") : "-",
+        "reclamaciones" => p.ReclamacionesCount > 0 ? p.ReclamacionesCount.ToString() : "-",
+        "formapagocuotas" => p.FormaPagoCuotas is { } fc ? fc.ToString() : "-",
+        "pagomensual" => p.PagoMensual ? "Si" : "No",
+        "cobertura" => string.IsNullOrWhiteSpace(p.Cobertura) ? "-" : p.Cobertura!,
+        "incluyezonasunidades" => p.IncluyeZonasUnidades ? "Si" : "No",
+        "valoresagregados" => string.IsNullOrWhiteSpace(p.ValoresAgregados) ? "-" : p.ValoresAgregados!,
+        "observaciones" => string.IsNullOrWhiteSpace(p.Observaciones) ? "-" : p.Observaciones!,
+        _ => CampoCustom(clave) is { } cm && ValorCampoTexto(p, cm) is { Length: > 0 } vv ? vv : "-"
+    };
 
     private string? Val(Guid campoId) => _campoValores.TryGetValue(campoId, out var v) ? v : null;
     private void SetVal(Guid campoId, string? v) => _campoValores[campoId] = v;
@@ -696,28 +730,23 @@
         };
     }
 
-    // grid-template dinamico: base 9 columnas + 1fr por cada campo activo.
+    // grid-template dinamico: 34px (expander) + una pista por columna visible (ancho por clave).
     private string GridStyle()
     {
-        var extra = CamposActivos.Count;
-        var cols = "34px 1.1fr 1.6fr 1.3fr 1fr 1fr 1.1fr 1fr .7fr" + string.Concat(Enumerable.Repeat(" 1fr", extra));
-        var min = 1000 + extra * 140;
+        var visibles = ColsVisibles().ToList();
+        var cols = "34px" + string.Concat(visibles.Select(k => " " + ColWidth(k)));
+        var min = 200 + visibles.Count * 130;
         return $"grid-template-columns:{cols};min-width:{min}px";
     }
-
-    private static string TipoCampoLabel(TipoCampoTablero t) => t switch
+    private static string ColWidth(string clave) => clave switch
     {
-        TipoCampoTablero.Texto => "Texto",
-        TipoCampoTablero.AreaTexto => "Texto largo",
-        TipoCampoTablero.Numero => "Numero",
-        TipoCampoTablero.Moneda => "Moneda",
-        TipoCampoTablero.Fecha => "Fecha",
-        TipoCampoTablero.Telefono => "Telefono",
-        TipoCampoTablero.Seleccion => "Seleccion",
-        TipoCampoTablero.Booleano => "Si / No",
-        TipoCampoTablero.Url => "URL",
-        TipoCampoTablero.Email => "Email",
-        _ => t.ToString()
+        "numeropoliza" => "1.1fr",
+        "aseguradora" => "1.6fr",
+        "corredor" => "1.3fr",
+        "vencimiento" => "1.1fr",
+        "reclamaciones" => ".7fr",
+        "cobertura" or "valoresagregados" or "observaciones" => "1.4fr",
+        _ => "1fr"
     };
 
     private sealed class Form
@@ -1101,8 +1130,20 @@
             _loadError = null;
             _polizas = await Auth().GetFromJsonAsync<List<PolizaDto>>("/api/seguros/polizas") ?? new();
             try { _campos = await Auth().GetFromJsonAsync<List<PolizaCampoDto>>("/api/seguros/campos") ?? new(); } catch { }
+            await CargarConfigAsync();
         }
         catch (Exception ex) { _loadError = ex.Message; }
+    }
+
+    // Config de columnas (alias/oculto/orden) compartida por copropiedad, discriminada por entidad 'poliza'.
+    private async Task CargarConfigAsync()
+    {
+        try
+        {
+            var cfg = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=poliza") ?? new();
+            _cfgPoliza = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+        }
+        catch { _cfgPoliza = new(StringComparer.Ordinal); }
     }
 
     private void OnBuscar(ChangeEventArgs e) { _q = e.Value?.ToString() ?? ""; _pagina = 1; }
@@ -1382,62 +1423,12 @@
         finally { _busy = false; }
     }
 
-    // ---- Gestionar campos personalizados (EAV) ----
-    private async Task RecargarCamposAsync()
+    // ---- Selector de Campos (Fase 1): el componente compartido ConfigCamposEntidad gestiona los campos ----
+    // Se dispara (Cambiado) al crear/editar/ocultar/reordenar un campo de sistema o propio; recargamos las
+    // definiciones propias + la config compartida para repintar las columnas de la tabla.
+    private async Task RecargarCamposYConfigAsync()
     {
         try { _campos = await Auth().GetFromJsonAsync<List<PolizaCampoDto>>("/api/seguros/campos") ?? new(); } catch { }
-    }
-
-    private async Task CrearCampoAsync()
-    {
-        _camposError = null;
-        if (string.IsNullOrWhiteSpace(_nuevoCampoLabel)) return;
-        _busy = true;
-        try
-        {
-            var opciones = _nuevoCampoTipo == TipoCampoTablero.Seleccion ? _nuevoCampoOpciones : null;
-            var resp = await Auth().PostAsJsonAsync("/api/seguros/campos",
-                new CrearPolizaCampoRequest(_nuevoCampoLabel.Trim(), _nuevoCampoTipo, opciones, null));
-            if (!resp.IsSuccessStatusCode) { _camposError = await resp.Content.ReadAsStringAsync(); return; }
-            _nuevoCampoLabel = ""; _nuevoCampoTipo = TipoCampoTablero.Texto; _nuevoCampoOpciones = null;
-            await RecargarCamposAsync();
-        }
-        catch (Exception ex) { _camposError = ex.Message; }
-        finally { _busy = false; }
-    }
-
-    private async Task ToggleCampoActivoAsync(PolizaCampoDto cm)
-    {
-        await Auth().PutAsJsonAsync($"/api/seguros/campos/{cm.Id}",
-            new ActualizarPolizaCampoRequest(cm.Label, cm.Tipo, cm.Opciones, cm.Descripcion, cm.Orden, !cm.Activo));
-        await RecargarCamposAsync();
-    }
-
-    private async Task EliminarCampoAsync(Guid campoId)
-    {
-        await Auth().DeleteAsync($"/api/seguros/campos/{campoId}");
-        await RecargarCamposAsync();
-    }
-
-    private async Task RenombrarCampoAsync(PolizaCampoDto cm, ChangeEventArgs e)
-    {
-        var nombre = e.Value?.ToString()?.Trim();
-        if (string.IsNullOrWhiteSpace(nombre) || nombre == cm.Label) return;
-        await Auth().PutAsJsonAsync($"/api/seguros/campos/{cm.Id}",
-            new ActualizarPolizaCampoRequest(nombre, cm.Tipo, cm.Opciones, cm.Descripcion, cm.Orden, cm.Activo));
-        await RecargarCamposAsync();
-    }
-
-    // Reordenar: intercambia el Orden de dos campos y persiste ambos.
-    private async Task MoverCampoAsync(List<PolizaCampoDto> ordenados, int idx, int dir)
-    {
-        var j = idx + dir;
-        if (j < 0 || j >= ordenados.Count) return;
-        var a = ordenados[idx]; var b = ordenados[j];
-        await Auth().PutAsJsonAsync($"/api/seguros/campos/{a.Id}",
-            new ActualizarPolizaCampoRequest(a.Label, a.Tipo, a.Opciones, a.Descripcion, b.Orden, a.Activo));
-        await Auth().PutAsJsonAsync($"/api/seguros/campos/{b.Id}",
-            new ActualizarPolizaCampoRequest(b.Label, b.Tipo, b.Opciones, b.Descripcion, a.Orden, b.Activo));
-        await RecargarCamposAsync();
+        await CargarConfigAsync();
     }
 }
