@@ -87,9 +87,21 @@ else
                 }
             </div>
             <div class="cga-cfg">
-                @if (!item.EsCustom && tefe == TipoCampoTablero.Seleccion && item.Sis!.OpcionesEditables)
+                @if (!item.EsCustom && tefe == TipoCampoTablero.Seleccion && item.Sis!.OpcionesEditables && item.Sis!.ListaExterna)
                 {
-                    @* Lista de sistema EDITABLE (Estado, Tipo de unidad...): se administra por copropiedad. *@
+                    @* Lista administrada por la PAGINA (p.ej. Tipo de unidad: enum + tipos propios). *@
+                    <button class="dst-btn-soft" type="button" @onclick="() => OnGestionarLista.InvokeAsync(clave)">Gestionar lista</button>
+                    @if (ContarOpcionesExterna is { } contar)
+                    {
+                        var cnt = contar(clave);
+                        <span class="cga-cfg-hint" style="margin-left:6px;">
+                            @cnt.Visibles opciones@(cnt.Ocultas > 0 ? $" ({cnt.Ocultas} ocultas)" : "")
+                        </span>
+                    }
+                }
+                else if (!item.EsCustom && tefe == TipoCampoTablero.Seleccion && item.Sis!.OpcionesEditables)
+                {
+                    @* Lista de sistema EDITABLE con el editor interno (Estado): opciones/semilla/color. *@
                     var opsis = OpcionesSistemaDetalle(item.Sis!);
                     <button class="dst-btn-soft" type="button" @onclick="() => ToggleOpcionesSistema(clave)">
                         @(_opcSisClave == clave ? "Ocultar lista" : "Gestionar lista")
@@ -111,6 +123,11 @@ else
                         @(_opcExpand == item.Campo!.Id ? "Ocultar lista" : "Gestionar lista")
                     </button>
                     <span class="cga-cfg-hint" style="margin-left:6px;">@item.Campo!.OpcionesArray().Length opciones</span>
+                }
+                else if (!item.EsCustom && item.Sis!.SinFormato)
+                {
+                    @* Campo estructural (identificador, derivado...): sin editor de formato; solo la pista. *@
+                    @if (!string.IsNullOrWhiteSpace(item.Sis!.Ayuda)) { <span class="cga-cfg-hint">@item.Sis!.Ayuda</span> }
                 }
                 else if (!item.EsCustom && item.Sis!.Entero)
                 {
@@ -198,7 +215,7 @@ else
 
         @* Lista de sistema EDITABLE abierta (Estado, Tipo de unidad...): mismas acciones que un campo
            propio, salvo que las opciones SEMILLA no se pueden renombrar ni eliminar (solo ocultar). *@
-        @if (!item.EsCustom && _opcSisClave == clave && tefe == TipoCampoTablero.Seleccion && item.Sis!.OpcionesEditables)
+        @if (!item.EsCustom && _opcSisClave == clave && tefe == TipoCampoTablero.Seleccion && item.Sis!.OpcionesEditables && !item.Sis!.ListaExterna)
         {
             var semillas = item.Sis!.Semilla ?? Array.Empty<string>();
             <div class="cga-opts">
@@ -328,16 +345,28 @@ else
     [Parameter] public string? RutaCatalogo { get; set; }
     /// <summary>Ruta base del endpoint de config de campos del sistema. Por defecto "unidades-config".</summary>
     [Parameter] public string RutaConfig { get; set; } = "unidades-config";
+    /// <summary>Valor del discriminador 'entidad' en la config del tenant. Por defecto = Prefijo, pero la
+    /// unidad usa "unidad" (singular, historico) aunque su catalogo viva en "unidades-campos".</summary>
+    [Parameter] public string? EntidadConfig { get; set; }
     /// <summary>Catalogo de campos del sistema inyectado por la pagina (P-3). Si es null, se usa el
     /// diccionario interno por prefijo (personas/vehiculos/mascotas/terceros).</summary>
     [Parameter] public IReadOnlyList<CampoSistemaDef>? Catalogo { get; set; }
+    /// <summary>Se dispara con la clave cuando el usuario pulsa "Gestionar lista" en un campo de sistema
+    /// marcado como ListaExterna (la pagina abre su propio editor; p.ej. Tipo de unidad).</summary>
+    [Parameter] public EventCallback<string> OnGestionarLista { get; set; }
+    /// <summary>Para campos con ListaExterna: cuenta de opciones (visibles, ocultas) que provee la pagina
+    /// para la pista de la grilla. Si es null, no se muestra conteo.</summary>
+    [Parameter] public Func<string, (int Visibles, int Ocultas)>? ContarOpcionesExterna { get; set; }
 
     /// <summary>Ruta efectiva del catalogo (RutaCatalogo o el derivado del prefijo).</summary>
     private string CatBase => string.IsNullOrWhiteSpace(RutaCatalogo) ? $"{Prefijo}-campos" : RutaCatalogo;
+    /// <summary>Valor efectivo del discriminador 'entidad' (EntidadConfig o el prefijo).</summary>
+    private string EntCfg => string.IsNullOrWhiteSpace(EntidadConfig) ? Prefijo : EntidadConfig;
 
     // ===== Campos del SISTEMA de cada ficha (los que la entidad ya trae de fabrica) =====
     private sealed record CampoSis(string Clave, string DefLabel, TipoCampoTablero Tipo, bool VisibleDefault = true,
-        bool Requerido = false, bool OpcionesEditables = false, string[]? Semilla = null, bool Entero = false, string? Ayuda = null);
+        bool Requerido = false, bool OpcionesEditables = false, string[]? Semilla = null, bool Entero = false, string? Ayuda = null,
+        TipoCampoTablero[]? TiposIntercambiables = null, bool ListaExterna = false, bool SinFormato = false);
 
     private static readonly Dictionary<string, CampoSis[]> Sistema = new(StringComparer.Ordinal)
     {
@@ -375,7 +404,7 @@ else
     // interno por prefijo (entidades vinculadas a la unidad).
     private CampoSis[] CamposSistema => Catalogo is { Count: > 0 }
         ? Catalogo.Select(c => new CampoSis(c.Clave, c.Label, c.Tipo, c.VisibleDefault, c.Fija,
-              c.OpcionesEditables, c.Semilla, c.Entero, c.Ayuda)).ToArray()
+              c.OpcionesEditables, c.Semilla, c.Entero, c.Ayuda, c.TiposIntercambiables, c.ListaExterna, c.SinFormato)).ToArray()
         : (Sistema.TryGetValue(Prefijo, out var c2) ? c2 : Array.Empty<CampoSis>());
 
     /// <summary>Opciones de las listas del sistema de SOLO LECTURA: son valores de enum, no se editan.</summary>
@@ -432,9 +461,11 @@ else
     // Igual que en la unidad: un campo del sistema solo cambia entre tipos compatibles con su
     // columna real. Los enums y los Si/No quedan fijos.
     private static TipoCampoTablero[] TiposPermitidos(Item it)
-        => it.Sis!.Tipo is TipoCampoTablero.Seleccion or TipoCampoTablero.Booleano
-            ? Array.Empty<TipoCampoTablero>()
-            : TiposTexto;
+        => it.Sis!.TiposIntercambiables is { } ti   // catalogo inyectado: control por campo
+            ? ti
+            : it.Sis!.Tipo is TipoCampoTablero.Seleccion or TipoCampoTablero.Booleano
+                ? Array.Empty<TipoCampoTablero>()
+                : TiposTexto;
 
     // El campo que identifica al registro no se puede ocultar (quedaria una fila sin nombre).
     private static bool PuedeOcultar(Item it) => it.EsCustom || !it.Sis!.Requerido;
@@ -480,7 +511,7 @@ else
         {
             var http = Auth();
             var defs = await http.GetFromJsonAsync<List<CampoDinDef>>($"/api/mi-copropiedad/{CatBase}") ?? new();
-            var cfg = await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>($"/api/mi-copropiedad/{RutaConfig}?entidad={Prefijo}") ?? new();
+            var cfg = await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>($"/api/mi-copropiedad/{RutaConfig}?entidad={EntCfg}") ?? new();
             _defs = defs.OrderBy(d => d.Orden).ToList();
             _cfg = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
         }
@@ -533,7 +564,7 @@ else
     {
         _cfg.TryGetValue(clave, out var c);
         return new GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato,
-            Oculto: c?.Oculto ?? !VisiblePorDefecto(clave), Orden: c?.Orden, Entidad: Prefijo);
+            Oculto: c?.Oculto ?? !VisiblePorDefecto(clave), Orden: c?.Orden, Entidad: EntCfg);
     }
 
     // Cola: dos cambios seguidos no pueden partir del mismo estado (el segundo pisaria al primero).

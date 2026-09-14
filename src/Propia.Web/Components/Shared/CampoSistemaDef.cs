@@ -22,6 +22,12 @@ namespace Propia.Web.Components.Shared;
 /// edito). Se pueden ocultar pero no eliminar.</param>
 /// <param name="Entero">El numero no admite decimales (piso, banos, habitaciones...).</param>
 /// <param name="Ayuda">Texto de ayuda; se muestra como pista cuando el campo no tiene editor propio.</param>
+/// <param name="TiposIntercambiables">Tipos a los que la copropiedad puede cambiar este campo del
+/// sistema. null = usar la heuristica interna del componente; arreglo vacio = tipo FIJO (no cambiable);
+/// con valores = solo esos tipos (p.ej. Numero/Moneda para 'area').</param>
+/// <param name="ListaExterna">Solo para listas de sistema: true = la administracion de opciones la hace
+/// la PAGINA (no el editor interno). El componente muestra "Gestionar lista" y dispara OnGestionarLista.
+/// Se usa para "Tipo de unidad", cuyas opciones salen de un enum + una tabla de tipos propios.</param>
 public sealed record CampoSistemaDef(
     string Clave,
     string Label,
@@ -31,4 +37,7 @@ public sealed record CampoSistemaDef(
     bool OpcionesEditables = false,
     string[]? Semilla = null,
     bool Entero = false,
-    string? Ayuda = null);
+    string? Ayuda = null,
+    TipoCampoTablero[]? TiposIntercambiables = null,
+    bool ListaExterna = false,
+    bool SinFormato = false);
