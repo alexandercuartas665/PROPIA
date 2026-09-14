@@ -87,9 +87,20 @@ else
                 }
             </div>
             <div class="cga-cfg">
-                @if (!item.EsCustom && tefe == TipoCampoTablero.Seleccion)
+                @if (!item.EsCustom && tefe == TipoCampoTablero.Seleccion && item.Sis!.OpcionesEditables)
                 {
-                    @* Lista del sistema: sus opciones son valores del enum, no se editan. *@
+                    @* Lista de sistema EDITABLE (Estado, Tipo de unidad...): se administra por copropiedad. *@
+                    var opsis = OpcionesSistemaDetalle(item.Sis!);
+                    <button class="dst-btn-soft" type="button" @onclick="() => ToggleOpcionesSistema(clave)">
+                        @(_opcSisClave == clave ? "Ocultar lista" : "Gestionar lista")
+                    </button>
+                    <span class="cga-cfg-hint" style="margin-left:6px;">
+                        @opsis.Count(o => !o.Oculta) opciones@(opsis.Any(o => o.Oculta) ? $" ({opsis.Count(o => o.Oculta)} ocultas)" : "")
+                    </span>
+                }
+                else if (!item.EsCustom && tefe == TipoCampoTablero.Seleccion)
+                {
+                    @* Lista de solo lectura: sus opciones son valores de un enum del sistema. *@
                     <span class="cga-cfg-hint" title="@string.Join(", ", OpcionesSistema(clave))">
                         Lista del sistema (@OpcionesSistema(clave).Length opciones)
                     </span>
@@ -101,14 +112,23 @@ else
                     </button>
                     <span class="cga-cfg-hint" style="margin-left:6px;">@item.Campo!.OpcionesArray().Length opciones</span>
                 }
-                else if (tefe is TipoCampoTablero.Numero or TipoCampoTablero.Moneda)
+                else if (!item.EsCustom && item.Sis!.Entero)
+                {
+                    <span class="cga-cfg-hint">Entero (sin decimales)</span>
+                }
+                else if (tefe is TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje)
                 {
                     <div class="cga-fmt">
                         <label class="cga-fmt-lbl">Decimales</label>
                         <select class="cga-inp cga-fmt-dec" value="@(fmt.Dec ?? 2)" @onchange="@(e => SetFormatoDecAsync(clave, e.Value?.ToString()))" disabled="@_busy">
                             @foreach (var d in new[] { 0, 1, 2, 3, 4 }) { <option value="@d" selected="@((fmt.Dec ?? 2) == d)">@d</option> }
                         </select>
+                        <label class="cga-fmt-chk" title="Separador de miles (se aplica en las vistas de solo lectura)">
+                            <input type="checkbox" checked="@fmt.Miles" @onchange="@(e => SetFormatoMilesAsync(clave, (bool)(e.Value ?? false)))" disabled="@_busy" />
+                            <span>Miles</span>
+                        </label>
                         @if (tefe == TipoCampoTablero.Moneda) { <span class="cga-fmt-tag">COP</span> }
+                        else if (tefe == TipoCampoTablero.Porcentaje) { <span class="cga-fmt-tag">%</span> }
                     </div>
                 }
                 else if (tefe is TipoCampoTablero.Texto or TipoCampoTablero.AreaTexto or TipoCampoTablero.Telefono or TipoCampoTablero.Email or TipoCampoTablero.Url)
@@ -121,6 +141,7 @@ else
                 }
                 else if (tefe == TipoCampoTablero.Booleano) { <span class="cga-cfg-hint">Si / No</span> }
                 else if (tefe == TipoCampoTablero.Fecha) { <span class="cga-cfg-hint">dd/mm/aaaa</span> }
+                else if (!item.EsCustom && !string.IsNullOrWhiteSpace(item.Sis!.Ayuda)) { <span class="cga-cfg-hint">@item.Sis!.Ayuda</span> }
             </div>
             <div class="cga-row-act">
                 @if (item.EsCustom)
@@ -170,6 +191,62 @@ else
                     <div class="cga-opt-add">
                         <input class="cga-inp" placeholder="Anadir nueva opcion..." @bind="_nuevaOpc" @bind:event="oninput" />
                         <button class="cga-add-btn" type="button" @onclick="() => AgregarOpcionAsync(dd2)" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevaOpc))">Anadir</button>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @* Lista de sistema EDITABLE abierta (Estado, Tipo de unidad...): mismas acciones que un campo
+           propio, salvo que las opciones SEMILLA no se pueden renombrar ni eliminar (solo ocultar). *@
+        @if (!item.EsCustom && _opcSisClave == clave && tefe == TipoCampoTablero.Seleccion && item.Sis!.OpcionesEditables)
+        {
+            var semillas = item.Sis!.Semilla ?? Array.Empty<string>();
+            <div class="cga-opts">
+                <div class="cga-opts-list">
+                    @for (var i = 0; i < _opcs.Count; i++)
+                    {
+                        var idx = i;
+                        var op = _opcs[idx];
+                        var esSemilla = semillas.Contains(op.K, StringComparer.OrdinalIgnoreCase);
+                        <div class="cga-opt-row @(op.Oculta ? "cga-opt-row--oculta" : "")">
+                            <div class="cga-opt-move">
+                                <button type="button" class="cga-mini" title="Subir" disabled="@(idx == 0 || _busy)" @onclick="() => MoverOpcionAsync(null, idx, -1)">&#9650;</button>
+                                <button type="button" class="cga-mini" title="Bajar" disabled="@(idx == _opcs.Count - 1 || _busy)" @onclick="() => MoverOpcionAsync(null, idx, 1)">&#9660;</button>
+                            </div>
+                            <span class="cga-chip" style="background:@(op.Color ?? PaletaChips.Neutro);color:@PaletaChips.TextoSobre(op.Color)">@(string.IsNullOrWhiteSpace(op.K) ? "-" : op.K)</span>
+                            @if (esSemilla)
+                            {
+                                <svg class="cga-lock" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="Opcion de fabrica: se puede ocultar, no eliminar"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                                <span class="cga-opt-name">@op.K</span>
+                            }
+                            else
+                            {
+                                <input class="cga-inp cga-opt-inp" value="@op.K" title="Renombrar la opcion"
+                                       @onchange="@(e => RenombrarOpcionAsync(null, idx, e.Value?.ToString()))" disabled="@_busy" />
+                            }
+                            <div class="cga-opt-colors">
+                                @foreach (var c in PaletaChips.Colores)
+                                {
+                                    var cc = c;
+                                    <button type="button" class="cga-sw @(string.Equals(op.Color, cc, StringComparison.OrdinalIgnoreCase) ? "on" : "")"
+                                            style="background:@cc" title="Color" disabled="@_busy" @onclick="() => SetColorOpcionAsync(null, idx, cc)"></button>
+                                }
+                                <button type="button" class="cga-sw cga-sw-none @(op.Color is null ? "on" : "")" title="Sin color"
+                                        disabled="@_busy" @onclick="() => SetColorOpcionAsync(null, idx, null)">&times;</button>
+                            </div>
+                            <button type="button" class="cga-eye @(op.Oculta ? "" : "on")" title="@(op.Oculta ? "Oculta (no se ofrece)" : "Visible")"
+                                    @onclick="() => ToggleOcultaOpcionAsync(null, idx)" disabled="@_busy">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                            </button>
+                            @if (!esSemilla)
+                            {
+                                <button type="button" class="cga-opt-x" title="Quitar" @onclick="() => QuitarOpcionAsync(null, idx)" disabled="@_busy">&times;</button>
+                            }
+                        </div>
+                    }
+                    <div class="cga-opt-add">
+                        <input class="cga-inp" placeholder="Anadir nueva opcion..." @bind="_nuevaOpc" @bind:event="oninput" />
+                        <button class="cga-add-btn" type="button" @onclick="() => AgregarOpcionAsync(null)" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevaOpc))">Anadir</button>
                     </div>
                 </div>
             </div>
@@ -227,6 +304,9 @@ else
     .cga-sw.on { border-color: var(--propia-text-body); }
     .cga-sw:disabled { opacity: .5; cursor: default; }
     .cga-sw-none { background: var(--propia-bg-card); border: 1px solid var(--propia-border-input); color: var(--propia-text-faint); font-size: 10px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+    .cga-opt-name { font-size: 12.5px; font-weight: 600; color: var(--propia-text-body); }
+    .cga-opt-row--oculta { opacity: .55; }
+    .cga-fmt-chk { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--propia-text-muted); white-space: nowrap; }
 </style>
 
 @code {
@@ -248,12 +328,16 @@ else
     [Parameter] public string? RutaCatalogo { get; set; }
     /// <summary>Ruta base del endpoint de config de campos del sistema. Por defecto "unidades-config".</summary>
     [Parameter] public string RutaConfig { get; set; } = "unidades-config";
+    /// <summary>Catalogo de campos del sistema inyectado por la pagina (P-3). Si es null, se usa el
+    /// diccionario interno por prefijo (personas/vehiculos/mascotas/terceros).</summary>
+    [Parameter] public IReadOnlyList<CampoSistemaDef>? Catalogo { get; set; }
 
     /// <summary>Ruta efectiva del catalogo (RutaCatalogo o el derivado del prefijo).</summary>
     private string CatBase => string.IsNullOrWhiteSpace(RutaCatalogo) ? $"{Prefijo}-campos" : RutaCatalogo;
 
     // ===== Campos del SISTEMA de cada ficha (los que la entidad ya trae de fabrica) =====
-    private sealed record CampoSis(string Clave, string DefLabel, TipoCampoTablero Tipo, bool VisibleDefault = true, bool Requerido = false);
+    private sealed record CampoSis(string Clave, string DefLabel, TipoCampoTablero Tipo, bool VisibleDefault = true,
+        bool Requerido = false, bool OpcionesEditables = false, string[]? Semilla = null, bool Entero = false, string? Ayuda = null);
 
     private static readonly Dictionary<string, CampoSis[]> Sistema = new(StringComparer.Ordinal)
     {
@@ -287,9 +371,14 @@ else
         },
     };
 
-    private CampoSis[] CamposSistema => Sistema.TryGetValue(Prefijo, out var c) ? c : Array.Empty<CampoSis>();
+    // Si la pagina inyecto un catalogo (Unidades/Seguros/PQRSD) se usa ese; si no, el diccionario
+    // interno por prefijo (entidades vinculadas a la unidad).
+    private CampoSis[] CamposSistema => Catalogo is { Count: > 0 }
+        ? Catalogo.Select(c => new CampoSis(c.Clave, c.Label, c.Tipo, c.VisibleDefault, c.Fija,
+              c.OpcionesEditables, c.Semilla, c.Entero, c.Ayuda)).ToArray()
+        : (Sistema.TryGetValue(Prefijo, out var c2) ? c2 : Array.Empty<CampoSis>());
 
-    /// <summary>Opciones de las listas del sistema: son valores de enum, no se editan.</summary>
+    /// <summary>Opciones de las listas del sistema de SOLO LECTURA: son valores de enum, no se editan.</summary>
     private string[] OpcionesSistema(string clave) => (Prefijo, clave) switch
     {
         ("personas", "rol") => Enum.GetNames<RolUnidadPersona>(),
@@ -297,6 +386,15 @@ else
         ("mascotas", "tipo") => Enum.GetNames<TipoMascota>(),
         _ => Array.Empty<string>()
     };
+
+    /// <summary>Opciones EFECTIVAS de una lista de sistema EDITABLE (OpcionesEditables): las que edito
+    /// la copropiedad (en la config) o, si aun no, la semilla de fabrica. Incluyen color y 'oculta'.</summary>
+    private List<OpcionCampo> OpcionesSistemaDetalle(CampoSis s)
+    {
+        if (_cfg.TryGetValue(s.Clave, out var c) && !string.IsNullOrWhiteSpace(c.Opciones))
+            return OpcionCampo.Parse(c.Opciones);
+        return (s.Semilla ?? Array.Empty<string>()).Select(x => new OpcionCampo(x)).ToList();
+    }
 
     private sealed record Item(string Clave, bool EsCustom, CampoSis? Sis, CampoDinDef? Campo);
     private static string ClaveCustom(CampoDinDef d) => "cd:" + d.Id;
@@ -309,7 +407,8 @@ else
     private string? _errorCarga;
     private string? _dragClave;
 
-    private Guid? _opcExpand;
+    private Guid? _opcExpand;       // campo propio con su lista abierta
+    private string? _opcSisClave;   // campo de sistema editable con su lista abierta
     private List<OpcionCampo> _opcs = new();
     private string _nuevaOpc = "";
 
@@ -370,7 +469,7 @@ else
     {
         if (_prefijoCargado == Prefijo) return;
         _prefijoCargado = Prefijo;
-        _opcExpand = null; _msg = null;
+        _opcExpand = null; _opcSisClave = null; _msg = null;
         await CargarAsync();
     }
 
@@ -473,6 +572,8 @@ else
         => EnCola(() => GuardarConfigAsync(FilaConfig(clave) with { Formato = Fmt(FormatoDe(clave) with { Dec = int.TryParse(v, out var n) ? Math.Clamp(n, 0, 6) : null }) }));
     private Task SetFormatoMaxAsync(string clave, string? v)
         => EnCola(() => GuardarConfigAsync(FilaConfig(clave) with { Formato = Fmt(FormatoDe(clave) with { Max = int.TryParse(v, out var n) && n > 0 ? n : null }) }));
+    private Task SetFormatoMilesAsync(string clave, bool v)
+        => EnCola(() => GuardarConfigAsync(FilaConfig(clave) with { Formato = Fmt(FormatoDe(clave) with { Miles = v }) }));
     private static string Fmt(FormatoCampo f) => System.Text.Json.JsonSerializer.Serialize(f);
 
     // El tipo de un campo del sistema es un override en la config; el de uno propio va en su definicion.
@@ -525,14 +626,40 @@ else
         finally { _busy = false; }
     });
 
-    // ===== Campos propios (definicion en {prefijo}-campos) =====
+    // ===== Gestor de opciones (compartido: campo propio -> catalogo; lista de sistema editable -> config) =====
+    // Solo uno de los dos esta abierto a la vez. _opcs es el buffer que edita la UI; se persiste en el
+    // destino segun cual este abierto.
     private void ToggleOpciones(Guid id)
     {
         _opcExpand = _opcExpand == id ? null : id;
+        _opcSisClave = null;
         _nuevaOpc = ""; _msg = null;
         if (_opcExpand is { } abierto)
             _opcs = _defs.First(d => d.Id == abierto).OpcionesDetalle();
     }
+
+    // Abre la lista de un campo de SISTEMA editable (Estado / Tipo de unidad...). Sus opciones se
+    // guardan en la config del tenant (columna Opciones), no en el catalogo de campos propios.
+    private void ToggleOpcionesSistema(string clave)
+    {
+        _opcSisClave = _opcSisClave == clave ? null : clave;
+        _opcExpand = null;
+        _nuevaOpc = ""; _msg = null;
+        if (_opcSisClave is { } c)
+        {
+            var s = CamposSistema.FirstOrDefault(x => x.Clave == c);
+            if (s is not null) _opcs = OpcionesSistemaDetalle(s);
+        }
+    }
+
+    // Persiste el buffer en el destino que este abierto (campo propio o lista de sistema).
+    private Task PersistirOpcsAsync(CampoDinDef? d)
+        => d is not null ? GuardarOpcsAsync(d)
+         : _opcSisClave is { } clave ? GuardarOpcsSistemaAsync(clave)
+         : Task.CompletedTask;
+
+    private Task GuardarOpcsSistemaAsync(string clave)
+        => GuardarConfigAsync(FilaConfig(clave) with { Opciones = OpcionCampo.Serializar(_opcs) });
 
     private async Task<bool> GuardarDefAsync(CampoDinDef d, string? label = null, TipoCampoTablero? tipo = null, string? opciones = null)
     {
@@ -572,31 +699,31 @@ else
         if (await GuardarDefAsync(d, opciones: OpcionCampo.Serializar(_opcs))) { await CargarAsync(); await Cambiado.InvokeAsync(); }
     }
 
-    private async Task AgregarOpcionAsync(CampoDinDef d)
+    private async Task AgregarOpcionAsync(CampoDinDef? d)
     {
         var v = _nuevaOpc.Trim();
         if (v.Length == 0) return;
         if (_opcs.Any(x => string.Equals(x.K, v, StringComparison.OrdinalIgnoreCase))) { _msg = $"Ya existe '{v}'."; return; }
         _opcs.Add(new OpcionCampo(v)); _nuevaOpc = ""; _msg = null;
-        await GuardarOpcsAsync(d);
+        await PersistirOpcsAsync(d);
     }
 
-    private async Task QuitarOpcionAsync(CampoDinDef d, int idx)
+    private async Task QuitarOpcionAsync(CampoDinDef? d, int idx)
     {
         if (idx < 0 || idx >= _opcs.Count) return;
         _opcs.RemoveAt(idx); _msg = null;
-        await GuardarOpcsAsync(d);
+        await PersistirOpcsAsync(d);
     }
 
-    private async Task MoverOpcionAsync(CampoDinDef d, int idx, int dir)
+    private async Task MoverOpcionAsync(CampoDinDef? d, int idx, int dir)
     {
         var ni = idx + dir;
         if (ni < 0 || ni >= _opcs.Count) return;
         (_opcs[idx], _opcs[ni]) = (_opcs[ni], _opcs[idx]);
-        await GuardarOpcsAsync(d);
+        await PersistirOpcsAsync(d);
     }
 
-    private async Task RenombrarOpcionAsync(CampoDinDef d, int idx, string? valor)
+    private async Task RenombrarOpcionAsync(CampoDinDef? d, int idx, string? valor)
     {
         if (idx < 0 || idx >= _opcs.Count) return;
         var v = valor?.Trim() ?? "";
@@ -605,24 +732,24 @@ else
         if (_opcs.Where((_, i) => i != idx).Any(x => string.Equals(x.K, v, StringComparison.OrdinalIgnoreCase)))
         { _msg = $"Ya existe '{v}'."; return; }
         _opcs[idx] = _opcs[idx] with { K = v }; _msg = null;
-        await GuardarOpcsAsync(d);
+        await PersistirOpcsAsync(d);
     }
 
     // Color de una opcion (0.2): valor de la paleta compartida, o null = chip neutro.
-    private async Task SetColorOpcionAsync(CampoDinDef d, int idx, string? color)
+    private async Task SetColorOpcionAsync(CampoDinDef? d, int idx, string? color)
     {
         if (idx < 0 || idx >= _opcs.Count) return;
         if (string.Equals(_opcs[idx].Color, color, StringComparison.OrdinalIgnoreCase)) return;
         _opcs[idx] = _opcs[idx] with { Color = color }; _msg = null;
-        await GuardarOpcsAsync(d);
+        await PersistirOpcsAsync(d);
     }
 
     // Ocultar una opcion: no se ofrece, pero las filas que ya la usan la conservan.
-    private async Task ToggleOcultaOpcionAsync(CampoDinDef d, int idx)
+    private async Task ToggleOcultaOpcionAsync(CampoDinDef? d, int idx)
     {
         if (idx < 0 || idx >= _opcs.Count) return;
         _opcs[idx] = _opcs[idx] with { Oculta = !_opcs[idx].Oculta }; _msg = null;
-        await GuardarOpcsAsync(d);
+        await PersistirOpcsAsync(d);
     }
 
     private async Task CrearAsync()
