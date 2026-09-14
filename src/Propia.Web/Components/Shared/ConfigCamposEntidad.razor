@@ -363,6 +363,14 @@ else
     /// <summary>Valor efectivo del discriminador 'entidad' (EntidadConfig o el prefijo).</summary>
     private string EntCfg => string.IsNullOrWhiteSpace(EntidadConfig) ? Prefijo : EntidadConfig;
 
+    // Resuelve una ruta base: si ya es absoluta (/api/...) se usa tal cual (modulos fuera de
+    // mi-copropiedad, p.ej. /api/pqrsd/pqrsd-campos, /api/seguros/polizas-campos); si no, se antepone
+    // /api/mi-copropiedad/ como siempre (retrocompatible con Unidades/Vehiculos/Mascotas/Terceros).
+    private static string ResolverRuta(string baseRuta)
+        => baseRuta.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) ? baseRuta : $"/api/mi-copropiedad/{baseRuta}";
+    private string CatUrl => ResolverRuta(CatBase);
+    private string CfgUrl => ResolverRuta(RutaConfig);
+
     // ===== Campos del SISTEMA de cada ficha (los que la entidad ya trae de fabrica) =====
     private sealed record CampoSis(string Clave, string DefLabel, TipoCampoTablero Tipo, bool VisibleDefault = true,
         bool Requerido = false, bool OpcionesEditables = false, string[]? Semilla = null, bool Entero = false, string? Ayuda = null,
@@ -510,8 +518,8 @@ else
         try
         {
             var http = Auth();
-            var defs = await http.GetFromJsonAsync<List<CampoDinDef>>($"/api/mi-copropiedad/{CatBase}") ?? new();
-            var cfg = await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>($"/api/mi-copropiedad/{RutaConfig}?entidad={EntCfg}") ?? new();
+            var defs = await http.GetFromJsonAsync<List<CampoDinDef>>(CatUrl) ?? new();
+            var cfg = await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>($"{CfgUrl}?entidad={EntCfg}") ?? new();
             _defs = defs.OrderBy(d => d.Orden).ToList();
             _cfg = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
         }
@@ -582,7 +590,7 @@ else
         _busy = true;
         try
         {
-            var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/{RutaConfig}", req);
+            var r = await Auth().PutAsJsonAsync(CfgUrl, req);
             if (r.IsSuccessStatusCode)
             {
                 var dto = await r.Content.ReadFromJsonAsync<UnidadCampoConfigDto>();
@@ -649,7 +657,7 @@ else
             // Se manda la fila entera de cada campo: si solo fuera la clave, las filas creadas al
             // vuelo tomarian el default de 'oculto' y los campos ocultos se harian visibles solos.
             var filas = claves.Select((k, i) => FilaConfig(k) with { Orden = i }).ToList();
-            var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/{RutaConfig}/lote", filas);
+            var r = await Auth().PutAsJsonAsync($"{CfgUrl}/lote", filas);
             if (r.IsSuccessStatusCode) { await CargarAsync(); await Cambiado.InvokeAsync(); }
             else { _msg = "No se pudo guardar el orden."; }
         }
@@ -698,7 +706,7 @@ else
         try
         {
             var req = new ActualizarCampoDefinicionRequest(label ?? d.Label, tipo ?? d.Tipo, opciones ?? d.Opciones, d.Orden);
-            var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/{CatBase}/{d.Id}", req);
+            var r = await Auth().PutAsJsonAsync($"{CatUrl}/{d.Id}", req);
             if (!r.IsSuccessStatusCode) { _msg = "No se pudo guardar el campo."; return false; }
             return true;
         }
@@ -794,7 +802,7 @@ else
         try
         {
             var opciones = _nvTipo == TipoCampoTablero.Seleccion && !string.IsNullOrWhiteSpace(_nvOpciones) ? _nvOpciones : null;
-            var r = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/{CatBase}",
+            var r = await Auth().PostAsJsonAsync(CatUrl,
                 new CrearCampoDefinicionRequest(label, _nvTipo, opciones));
             if (r.IsSuccessStatusCode)
             {
@@ -812,7 +820,7 @@ else
         _busy = true; _msg = null;
         try
         {
-            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/{CatBase}/{d.Id}");
+            var r = await Auth().DeleteAsync($"{CatUrl}/{d.Id}");
             if (r.IsSuccessStatusCode)
             {
                 if (_opcExpand == d.Id) _opcExpand = null;
