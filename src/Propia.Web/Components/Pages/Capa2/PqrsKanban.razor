@@ -12,6 +12,7 @@
 @inject IJSRuntime Js
 @inject IModalService Modals
 @using Propia.Web.Components.Shared.Modals
+@using Propia.Web.Components.Shared
 
 <PageTitle>PQRSD - PROPIA</PageTitle>
 
@@ -175,48 +176,13 @@
 
             @if (VistaEfectiva == "tabla")
             {
-                <div class="pk-menu-wrap">
-                    <button class="pk-input-btn" @onclick='() => TogglePop("cols")'>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
-                        Campos
-                    </button>
-                    @if (_pop == "cols")
-                    {
-                        <div class="pk-pop pk-pop--wide">
-                            <div class="pk-pop-h">Columnas fijas</div>
-                            @{ var _ord = ColsFijasOrd().ToList(); }
-                            @for (int i = 0; i < _ord.Count; i++)
-                            {
-                                var idx = i; var col = _ord[idx];
-                                <div class="pk-pop-row">
-                                    <span class="pk-pop-ord">
-                                        <button type="button" class="pk-pop-mv" disabled="@(idx == 0)" @onclick="() => MoverColPqr(idx, -1)" title="Subir">&#9650;</button>
-                                        <button type="button" class="pk-pop-mv" disabled="@(idx == _ord.Count - 1)" @onclick="() => MoverColPqr(idx, 1)" title="Bajar">&#9660;</button>
-                                    </span>
-                                    <label class="pk-pop-chk">
-                                        <input type="checkbox" checked="@(!_colsOcultas.Contains(col.Key))" @onchange="() => ToggleCol(col.Key)" />
-                                        <span>@col.Label</span>
-                                    </label>
-                                </div>
-                            }
-                            @if (_campos.Count > 0)
-                            {
-                                <div class="pk-pop-h">Campos del tablero</div>
-                                @foreach (var c in _campos.OrderBy(c => c.Orden))
-                                {
-                                    <label class="pk-pop-chk">
-                                        <input type="checkbox" checked="@(!_camposOcultos.Contains(c.Id))" @onchange="() => ToggleCampoCol(c.Id)" />
-                                        <span>@c.Label</span>
-                                    </label>
-                                }
-                            }
-                            <div class="pk-pop-acts">
-                                <button type="button" class="pk-pop-act" @onclick="MostrarTodoCols">Mostrar todo</button>
-                                <button type="button" class="pk-pop-act" @onclick="OcultarTodoCols">Ocultar todo</button>
-                            </div>
-                        </div>
-                    }
-                </div>
+                @* Selector de Campos estandar (opcion B): el mismo gestor de Unidades. Abre el panel
+                   ConfigCamposEntidad para los campos del expediente (sistema + propios), con alias,
+                   visibilidad, orden, tipo/formato y listas propias con color. *@
+                <button class="pk-input-btn" @onclick="() => _cfgCamposOpen = true" title="Configurar los campos del expediente">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
+                    Campos
+                </button>
             }
 
         </div>
@@ -340,7 +306,6 @@
         else
         {
             @* ===================== VISTA TABLA ===================== *@
-            @ColumnColorCss
             @* Doble scroll horizontal: barra superior espejo, sincronizada por JS con la tabla (igual que Tareas). *@
             <div class="pk-topscroll" id="pkTopScroll"><div id="pkTopScrollInner"></div></div>
             <div class="pk-tablebox">
@@ -349,18 +314,13 @@
                     <thead>
                         <tr>
                             <th class="pk-th-exp"></th>
-                            @foreach (var col in ColsFijasOrd().Where(c => !_colsOcultas.Contains(c.Key)))
+                            @foreach (var col in ColumnasVisibles)
                             {
                                 var ck = col.Key;
-                                <th class="pk-th-sort pk-col-@ck @(ck == "radicado" ? "pk-th-pin" : "")" @onclick="() => SortByPqr(ck)">
-                                    <span class="pk-th-lbl">@col.Label@SortIndPqr(ck)</span>@ColorDot(ck)
-                                </th>
-                            }
-                            @foreach (var c in _campos.Where(c => !_camposOcultos.Contains(c.Id)).OrderBy(c => c.Orden))
-                            {
-                                var cid = c.Id.ToString();
-                                <th class="pk-th-sort pk-col-c@(c.Id)" @onclick="() => SortByPqr(cid)">
-                                    <span class="pk-th-lbl">@c.Label@SortIndPqr(cid)</span>@ColorDot(cid)
+                                var sk = col.EsCustom ? col.CampoId.ToString() : ck;
+                                var cls = col.EsCustom ? $"pk-col-c{col.CampoId}" : $"pk-col-{ck}";
+                                <th class="pk-th-sort @cls @(ck == "radicado" ? "pk-th-pin" : "")" @onclick="() => SortByPqr(sk)">
+                                    <span class="pk-th-lbl">@col.Label@SortIndPqr(sk)</span>
                                 </th>
                             }
                             <th class="pk-th-actions"></th>
@@ -381,8 +341,10 @@
                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                                         </button>
                                     </td>
-                                    @foreach (var col in ColsFijasOrd().Where(c => !_colsOcultas.Contains(c.Key)))
+                                    @foreach (var col in ColumnasVisibles)
                                     {
+                                        @if (!col.EsCustom)
+                                        {
                                         <td class="pk-col-@col.Key @(col.Key == "radicado" ? "pk-td-pin" : "")">
                                             @switch (col.Key)
                                             {
@@ -410,10 +372,25 @@
                                                     break;
                                             }
                                         </td>
-                                    }
-                                    @foreach (var c in _campos.Where(c => !_camposOcultos.Contains(c.Id)).OrderBy(c => c.Orden))
-                                    {
-                                        <td class="pk-td-muted pk-col-c@(c.Id)">@(it.Campos?.FirstOrDefault(v => v.CampoId == c.Id)?.Valor)</td>
+                                        }
+                                        else
+                                        {
+                                            var cd = _campos.FirstOrDefault(c => c.Id == col.CampoId);
+                                            var val = it.Campos?.FirstOrDefault(v => v.CampoId == col.CampoId)?.Valor;
+                                        <td class="pk-td-muted pk-col-c@(col.CampoId)">
+                                            @if (cd is { Tipo: TipoCampoTablero.Seleccion } && !string.IsNullOrWhiteSpace(val))
+                                            {
+                                                @* Chip de color de la lista propia: mismo formato que el gestor y la ficha. *@
+                                                var op = OpcionCampo.Parse(cd.Opciones).FirstOrDefault(o => string.Equals(o.K, val, StringComparison.OrdinalIgnoreCase));
+                                                var chipColor = op?.Color ?? PaletaChips.Neutro;
+                                                <span class="pk-lchip" style="background:@chipColor;color:@PaletaChips.TextoSobre(chipColor)">@val</span>
+                                            }
+                                            else
+                                            {
+                                                @val
+                                            }
+                                        </td>
+                                        }
                                     }
                                     <td class="pk-td-actions" @onclick:stopPropagation="true">
                                         @if (_verArchivados)
@@ -443,6 +420,31 @@
         {
             <div class="pk-toast @(_msgError ? "pk-toast--err" : "pk-toast--ok")">@_msg</div>
         }
+    }
+
+    @* ===================== SELECTOR DE CAMPOS (gestor estandar) ===================== *@
+    @if (_cfgCamposOpen)
+    {
+        <div class="pk-cfg-backdrop" @onclick="() => _cfgCamposOpen = false">
+            <div class="pk-cfg pk-cfg--campos" @onclick:stopPropagation="true">
+                <div class="pk-cfg-head">
+                    <h3>Campos del expediente</h3>
+                    <button class="npq-close" @onclick="() => _cfgCamposOpen = false">&times;</button>
+                </div>
+                <div class="pk-cfg-body">
+                    <ConfigCamposEntidad Prefijo="pqrsd"
+                                         TituloSingular="campo"
+                                         TituloPlural="campos"
+                                         Ejemplo="Ej. Sancion aplicada, Area responsable"
+                                         Catalogo="@PqrsdCatalogo"
+                                         RutaCatalogo="/api/pqrsd/pqrsd-campos"
+                                         RutaConfig="unidades-config"
+                                         EntidadConfig="pqrsd"
+                                         Jwt="@_jwt"
+                                         Cambiado="CargarAsync" />
+                </div>
+            </div>
+        </div>
     }
 
     @* ===================== COMPARTIR FORMULARIO PUBLICO ===================== *@
@@ -863,26 +865,6 @@
     private int _porPagina = 25;
     private bool _pin = true;  // primera columna SIEMPRE fija (sin boton)
     private string? _pop;
-    private readonly HashSet<string> _colsOcultas = new();
-    private readonly HashSet<Guid> _camposOcultos = new();
-    private List<string> _colsOrden = new();
-    private IEnumerable<ColFija> ColsFijasOrd()
-        => _colsOrden.Count == 0 ? _colsFijas
-           : _colsFijas.OrderBy(c => { var i = _colsOrden.IndexOf(c.Key); return i < 0 ? 999 : i; });
-    private void MoverColPqr(int idx, int dir)
-    {
-        var ord = ColsFijasOrd().Select(c => c.Key).ToList();
-        var j = idx + dir;
-        if (j < 0 || j >= ord.Count) return;
-        (ord[idx], ord[j]) = (ord[j], ord[idx]);
-        _colsOrden = ord;
-    }
-    private void MostrarTodoCols() { _colsOcultas.Clear(); _camposOcultos.Clear(); }
-    private void OcultarTodoCols()
-    {
-        foreach (var c in _colsFijas) if (c.Key != "radicado") _colsOcultas.Add(c.Key);
-        foreach (var c in _campos) _camposOcultos.Add(c.Id);
-    }
 
     private Guid? _draggingId;
 
@@ -943,23 +925,58 @@
 
     // Compartir formulario publico
     private bool _shareOpen;
+    private bool _cfgCamposOpen;
     private string? _shareLink;
     private string? _shareIframe;
     private string? _shareMsg;
 
-    private record ColFija(string Key, string Label);
-    private readonly ColFija[] _colsFijas = new[]
+    // Fase 1 Selector de Campos: catalogo de los campos del SISTEMA del expediente (PqrsdCamposSistema)
+    // mapeado a la forma neutra que consume ConfigCamposEntidad. Opcion (b): los de Seleccion
+    // (tipo/categoria/etapa) NO tienen opciones editables aqui (viven en pqrsd_tipos/categorias/estados);
+    // por eso OpcionesEditables=false y ListaExterna=false, y sus tipos son fijos (TiposIntercambiables vacio).
+    private IReadOnlyList<CampoSistemaDef> PqrsdCatalogo => PqrsdCamposSistema.Todos.Select(c =>
+        new CampoSistemaDef(
+            Clave: c.Clave,
+            Label: c.Label,
+            Tipo: c.Tipo,
+            VisibleDefault: c.VisiblePorDefecto,
+            Fija: c.Fija,
+            OpcionesEditables: false,
+            Semilla: null,
+            Entero: false,
+            Ayuda: c.Ayuda,
+            TiposIntercambiables: Array.Empty<TipoCampoTablero>(),
+            ListaExterna: false))
+        .ToList();
+
+    // ===== Config por copropiedad de las columnas del sistema (unidades-config?entidad=pqrsd) =====
+    private Dictionary<string, UnidadCampoConfigDto> _camposConfig = new(StringComparer.Ordinal);
+    private bool VisibleDeCol(string clave)
+        => _camposConfig.TryGetValue(clave, out var c) ? !c.Oculto
+           : (PqrsdCamposSistema.Por(clave)?.VisiblePorDefecto ?? true);
+    private int OrdenDeCol(string clave, int fallback)
+        => _camposConfig.TryGetValue(clave, out var c) && c.Orden is { } o ? o : 1000 + fallback;
+    private string AliasDeCol(string clave, string def)
+        => _camposConfig.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Alias) ? c.Alias! : def;
+
+    // Columna unificada (campo del sistema o campo propio), ordenada por la config; radicado (Fija) no se oculta.
+    private sealed record ColItem(string Key, string Label, bool EsCustom, Guid CampoId);
+    private static string CampoColKey(Guid id) => "cd:" + id;
+    private IEnumerable<ColItem> ColumnasVisibles
     {
-        new ColFija("radicado", "Radicado"),
-        new ColFija("asunto", "Asunto"),
-        new ColFija("tipo", "Tipo"),
-        new ColFija("categoria", "Categoria"),
-        new ColFija("estado", "Etapa"),
-        new ColFija("semaforo", "Estado"),
-        new ColFija("radicador", "Solicitante"),
-        new ColFija("unidad", "Unidad"),
-        new ColFija("vence", "Vence"),
-    };
+        get
+        {
+            var items = new List<ColItem>();
+            foreach (var c in PqrsdCamposSistema.Todos)
+                items.Add(new ColItem(c.Clave, AliasDeCol(c.Clave, c.Label), false, Guid.Empty));
+            foreach (var d in _campos)
+                items.Add(new ColItem(CampoColKey(d.Id), d.Label, true, d.Id));
+            return items
+                .Where(it => it.Key == "radicado" || VisibleDeCol(it.Key))
+                .Select((it, idx) => (it, ord: OrdenDeCol(it.Key, idx)))
+                .OrderBy(x => x.ord).Select(x => x.it);
+        }
+    }
 
     private void TogglePop(string p) { _pop = _pop == p ? null : p; }
 
@@ -1024,68 +1041,6 @@
         if (_recienCreados.Count > 0)
             seq = seq.OrderBy(x => _recienCreados.Contains(x.Id) ? 1 : 0);
         return seq;
-    }
-
-    // ===================== Color por columna (vista Tabla), persistido en localStorage =====================
-    // Como la vista Tabla es un <table> real, colorear el <th>/<td> llena la celda completa (no solo la caja interna).
-    private Dictionary<string, string> _colColor = new();
-    private string? _colColorMenu;
-    private static readonly string[] PastelCols = { "#FDE2E4", "#FCE8D5", "#FFF3C4", "#E4F4D4", "#D4F0EC", "#D6E6FB", "#E7DFFB", "#FBE0F0", "#ECEFF3" };
-    private string? ColBg(string key) => _colColor.TryGetValue(key, out var c) && !string.IsNullOrEmpty(c) ? c : null;
-    private void ToggleColColorMenu(string key) { _colColorMenu = _colColorMenu == key ? null : key; }
-    private async Task SetColColor(string key, string? color)
-    {
-        if (string.IsNullOrEmpty(color)) _colColor.Remove(key); else _colColor[key] = color;
-        _colColorMenu = null;
-        await PersistColColorAsync();
-    }
-    private async Task SetColColorInput(string key, ChangeEventArgs e)
-    {
-        var color = e.Value?.ToString();
-        if (!string.IsNullOrEmpty(color)) { _colColor[key] = color; await PersistColColorAsync(); }
-    }
-    private async Task PersistColColorAsync()
-    {
-        try { await Js.InvokeVoidAsync("localStorage.setItem", "propia_pqrs_colcolor", System.Text.Json.JsonSerializer.Serialize(_colColor)); } catch { }
-    }
-    private static string CssKey(string key) => Guid.TryParse(key, out _) ? "c" + key : key;
-    private MarkupString ColumnColorCss
-    {
-        get
-        {
-            if (_colColor.Count == 0) return (MarkupString)"";
-            var sb = new System.Text.StringBuilder("<style>");
-            foreach (var kv in _colColor)
-            {
-                if (string.IsNullOrEmpty(kv.Value)) continue;
-                sb.Append(".pk-table .pk-col-").Append(CssKey(kv.Key))
-                  .Append("{background:").Append(kv.Value).Append(" !important;}");
-            }
-            sb.Append("</style>");
-            return (MarkupString)sb.ToString();
-        }
-    }
-    private RenderFragment ColorDot(string key)
-    {
-        return
-    @<span class="pk-colcolor-wrap" @onclick:stopPropagation="true">
-        <button type="button" class="pk-colcolor-btn" style="background:@(ColBg(key) ?? "transparent")" title="Color de columna" @onclick="() => ToggleColColorMenu(key)"></button>
-        @if (_colColorMenu == key)
-        {
-            <div class="pk-colorpop-bd" @onclick="() => _colColorMenu = null"></div>
-            <div class="pk-colorpop" @onclick:stopPropagation="true">
-                @foreach (var c in PastelCols)
-                {
-                    var cc = c;
-                    <button type="button" class="pk-coloropt @(string.Equals(ColBg(key), cc, StringComparison.OrdinalIgnoreCase) ? "on" : "")" style="background:@cc" @onclick="() => SetColColor(key, cc)"></button>
-                }
-                <label class="pk-coloropt pk-coloropt-custom" title="Elegir color personalizado">
-                    <input type="color" value="@(ColBg(key) ?? "#6D4FE3")" @onchange="(e) => SetColColorInput(key, e)" />
-                </label>
-                <button type="button" class="pk-coloropt pk-coloropt-none" title="Sin color" @onclick="() => SetColColor(key, null)"></button>
-            </div>
-        }
-    </span>;
     }
 
     // ===================== Constructor de filtros (multi-regla Y/O, estilo Tareas) =====================
@@ -1268,9 +1223,9 @@
     };
     private IEnumerable<string> UnidadesDistintas() =>
         (_bandeja?.Items ?? new List<PqrsdBandejaItemDto>()).Where(x => !string.IsNullOrEmpty(x.UnidadNumero)).Select(x => x.UnidadNumero!).Distinct().OrderBy(x => x);
-    private static string[] CampoOpciones(PqrsdCampoDto c) => string.IsNullOrWhiteSpace(c.Opciones)
-        ? Array.Empty<string>()
-        : c.Opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    // Opciones visibles de un campo propio de Seleccion. Usa OpcionCampo para tolerar tanto el JSON nuevo
+    // (con color/oculta, que escribe ConfigCamposEntidad) como el formato legado (una por linea).
+    private static string[] CampoOpciones(PqrsdCampoDto c) => OpcionCampo.VisiblesK(c.Opciones);
 
     private const string FiltrosKey = "propia_pqrs_filtros";
     private sealed class FiltrosGuardados { public string Logica { get; set; } = "and"; public List<PqrRegla> Reglas { get; set; } = new(); }
@@ -1344,7 +1299,6 @@
         {
             _boardMode = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_pqrs_view") ?? "tablero";
             _group = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_pqrs_group") ?? "ninguno";
-            try { var raw = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_pqrs_colcolor"); _colColor = string.IsNullOrEmpty(raw) ? new() : (System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(raw) ?? new()); } catch { _colColor = new(); }
             await RestaurarFiltrosAsync();
         }
         catch { }
@@ -1373,6 +1327,16 @@
             _bandeja = await http.GetFromJsonAsync<PqrsdBandejaDto>($"/api/pqrsd/bandeja?archivados={(_verArchivados ? "true" : "false")}");
             _estados = (await http.GetFromJsonAsync<List<PqrsdEstadoDto>>("/api/pqrsd/estados")) ?? new();
             _campos = (await http.GetFromJsonAsync<List<PqrsdCampoDto>>("/api/pqrsd/campos")) ?? new();
+            // Fase 1 Selector de Campos: la config (alias/visibilidad/orden) de las columnas del sistema es
+            // COMPARTIDA por copropiedad, en unidades-config con entidad='pqrsd' (misma tabla generalizada).
+            // Es OPCIONAL y aislada: si el endpoint compartido aun no acepta 'pqrsd' (whitelist) o falla, la
+            // tabla usa el orden/visibilidad por defecto; nunca debe tumbar el resto del tablero.
+            try
+            {
+                _camposConfig = ((await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=pqrsd")) ?? new())
+                    .ToDictionary(x => x.CampoClave, StringComparer.Ordinal);
+            }
+            catch { _camposConfig = new(StringComparer.Ordinal); }
             _categorias = (await http.GetFromJsonAsync<List<PqrsdCategoriaDto>>("/api/pqrsd/categorias")) ?? new();
             _unidades = (await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades")) ?? new();
             if (string.IsNullOrEmpty(_compCategoria)) _compCategoria = _categorias.FirstOrDefault(c => c.Activa)?.Id.ToString() ?? "";
@@ -1399,8 +1363,6 @@
         _group = g; _pop = null; _pagina = 1;
         try { await Js.InvokeVoidAsync("localStorage.setItem", "propia_pqrs_group", g); } catch { }
     }
-    private void ToggleCol(string key) { if (!_colsOcultas.Remove(key)) _colsOcultas.Add(key); }
-    private void ToggleCampoCol(Guid id) { if (!_camposOcultos.Remove(id)) _camposOcultos.Add(id); }
 
     // ---------- Kanban drag ----------
     private void OnDragStart(Guid id) { _draggingId = id; }

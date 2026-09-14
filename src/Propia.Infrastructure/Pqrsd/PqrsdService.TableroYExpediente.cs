@@ -215,6 +215,33 @@ public partial class PqrsdService
         return true;
     }
 
+    // ===== Adaptadores del Selector de Campos estandar (ConfigCamposEntidad) =====
+    // El gestor compartido crea/edita con Crear/ActualizarCampoDefinicionRequest (label, tipo, opciones):
+    // no conoce los campos propios de PQRSD (MostrarEnFiltro, Columna, Descripcion, ...). Por eso:
+    //  - Crear: valores por defecto sanos (los mismos que tomaria una alta minima).
+    //  - Actualizar: MERGE. Solo label/tipo/opciones; el resto de la definicion se conserva intacto.
+    public Task<PqrsdCampoDto> CrearCampoDefAsync(Propia.Application.MiCopropiedad.CrearCampoDefinicionRequest req, CancellationToken ct)
+        => CrearCampoAsync(
+            new GuardarCampoPqrsdRequest(req.Label, req.Tipo, req.Opciones, MostrarEnFiltro: false, Columna: 1,
+                Descripcion: null, Requerido: false, ValorPorDefecto: null, PermiteVarios: false, CamposSuma: null),
+            ct);
+
+    public async Task<bool> ActualizarCampoDefAsync(Guid id, Propia.Application.MiCopropiedad.ActualizarCampoDefinicionRequest req, CancellationToken ct)
+    {
+        var c = await _db.PqrsdCampos.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (c is null) return false;
+        if (string.IsNullOrWhiteSpace(req.Label)) throw new InvalidOperationException("La etiqueta del campo es obligatoria.");
+        var label = req.Label.Trim();
+        if (await _db.PqrsdCampos.AnyAsync(x => x.Id != id && x.Activo && x.Label == label, ct))
+            throw new InvalidOperationException("Ya existe un campo activo con esta etiqueta.");
+        c.Label = label;
+        c.Tipo = req.Tipo;
+        c.Opciones = req.Opciones;
+        c.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
     public async Task<bool> EliminarCampoAsync(Guid id, CancellationToken ct)
     {
         var c = await _db.PqrsdCampos.FirstOrDefaultAsync(x => x.Id == id, ct);

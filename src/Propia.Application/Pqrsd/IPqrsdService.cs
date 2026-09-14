@@ -1,3 +1,4 @@
+using Propia.Application.MiCopropiedad;
 using Propia.Domain.Enums;
 
 namespace Propia.Application.Pqrsd;
@@ -18,6 +19,11 @@ public interface IPqrsdService
     Task<IReadOnlyList<PqrsdCampoDto>> ListarCamposArchivadosAsync(CancellationToken ct);
     Task<PqrsdCampoDto> CrearCampoAsync(GuardarCampoPqrsdRequest req, CancellationToken ct);
     Task<bool> ActualizarCampoAsync(Guid id, GuardarCampoPqrsdRequest req, CancellationToken ct);
+    // Adaptadores del Selector de Campos estandar (forma {prefijo}-campos): el gestor compartido
+    // (ConfigCamposEntidad) envia Crear/ActualizarCampoDefinicionRequest (label, tipo, opciones). El
+    // ActualizarCampoDef es MERGE: solo toca label/tipo/opciones y conserva el resto de la definicion.
+    Task<PqrsdCampoDto> CrearCampoDefAsync(CrearCampoDefinicionRequest req, CancellationToken ct);
+    Task<bool> ActualizarCampoDefAsync(Guid id, ActualizarCampoDefinicionRequest req, CancellationToken ct);
     Task<bool> EliminarCampoAsync(Guid id, CancellationToken ct);
     Task<bool> SetCampoActivoAsync(Guid id, bool activo, CancellationToken ct);
     Task<bool> ReordenarCampoAsync(Guid id, string direccion, CancellationToken ct);
