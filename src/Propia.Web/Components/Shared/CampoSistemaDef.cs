@@ -18,8 +18,10 @@ namespace Propia.Web.Components.Shared;
 /// <param name="OpcionesEditables">Solo para <see cref="TipoCampoTablero.Seleccion"/>: true = la lista
 /// se administra por copropiedad (opciones/semilla/color, se guardan en la config); false = lista de
 /// solo lectura cuyos valores salen de un enum del sistema.</param>
-/// <param name="Semilla">Opciones de fabrica de una lista editable (cuando la copropiedad aun no la
-/// edito). Se pueden ocultar pero no eliminar.</param>
+/// <param name="Semilla">Opciones de fabrica de una lista de Seleccion. Si OpcionesEditables=true, es la
+/// semilla que la copropiedad puede editar/ocultar (no eliminar). Si OpcionesEditables=false (lista de
+/// SOLO LECTURA), son los valores fijos del sistema que el componente muestra y cuenta sin conocer el
+/// enum del dominio (SOLICITUD_SELLO_05). null = el componente cae a su enum interno por (prefijo, clave).</param>
 /// <param name="Entero">El numero no admite decimales (piso, banos, habitaciones...).</param>
 /// <param name="Ayuda">Texto de ayuda; se muestra como pista cuando el campo no tiene editor propio.</param>
 /// <param name="TiposIntercambiables">Tipos a los que la copropiedad puede cambiar este campo del

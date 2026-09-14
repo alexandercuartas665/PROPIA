@@ -422,14 +422,24 @@ else
               c.OpcionesEditables, c.Semilla, c.Entero, c.Ayuda, c.TiposIntercambiables, c.ListaExterna, c.SinFormato)).ToArray()
         : (Sistema.TryGetValue(Prefijo, out var c2) ? c2 : Array.Empty<CampoSis>());
 
-    /// <summary>Opciones de las listas del sistema de SOLO LECTURA: son valores de enum, no se editan.</summary>
-    private string[] OpcionesSistema(string clave) => (Prefijo, clave) switch
+    /// <summary>Opciones de las listas del sistema de SOLO LECTURA (valores fijos, no se editan).
+    /// SOLICITUD_SELLO_05: cuando la pagina inyecta el catalogo, las opciones salen de la Semilla del
+    /// CampoSistemaDef, de modo que el componente NO necesita conocer el enum del dominio de cada modulo
+    /// (antes un switch hardcodeado dejaba en "0 opciones" toda lista de solo lectura de un catalogo
+    /// inyectado, p.ej. Contratos). Fallback (diccionario interno de entidades vinculadas a la unidad):
+    /// los valores del enum del dominio.</summary>
+    private string[] OpcionesSistema(string clave)
     {
-        ("personas", "rol") => Enum.GetNames<RolUnidadPersona>(),
-        ("vehiculos", "tipovehiculo") => Enum.GetNames<TipoVehiculo>(),
-        ("mascotas", "tipo") => Enum.GetNames<TipoMascota>(),
-        _ => Array.Empty<string>()
-    };
+        var s = CamposSistema.FirstOrDefault(x => x.Clave == clave);
+        if (s?.Semilla is { Length: > 0 }) return s.Semilla;
+        return (Prefijo, clave) switch
+        {
+            ("personas", "rol") => Enum.GetNames<RolUnidadPersona>(),
+            ("vehiculos", "tipovehiculo") => Enum.GetNames<TipoVehiculo>(),
+            ("mascotas", "tipo") => Enum.GetNames<TipoMascota>(),
+            _ => Array.Empty<string>()
+        };
+    }
 
     /// <summary>Opciones EFECTIVAS de una lista de sistema EDITABLE (OpcionesEditables): las que edito
     /// la copropiedad (en la config) o, si aun no, la semilla de fabrica. Incluyen color y 'oculta'.</summary>
