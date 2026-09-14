@@ -414,6 +414,20 @@ public partial class MiCopropiedadService
             .ToListAsync(ct);
     }
 
+    // Selector de Campos (Fase 1): valores en la forma estandar (espejo de ListTodosCamposValoresEquipoAsync
+    // / ListCamposDinEquipoAsync). Proyecciones finas; la logica de campos no se duplica.
+    public async Task<IReadOnlyList<ContratoCampoValorFlatDto>> ListTodosCamposValoresContratoAsync(CancellationToken ct)
+        => await _db.ContratoCampoValores.AsNoTracking().Where(v => v.Valor != null && v.Valor != "")
+            .Select(v => new ContratoCampoValorFlatDto(v.ContratoId, v.ContratoCampoId, v.Valor)).ToListAsync(ct);
+
+    public async Task<IReadOnlyList<ContratoCampoDinDto>> ListCamposDinContratoAsync(Guid contratoId, CancellationToken ct)
+    {
+        var defs = await _db.ContratoCampos.AsNoTracking().Where(c => c.Activo).OrderBy(d => d.Orden).ThenBy(d => d.Label).ToListAsync(ct);
+        var vals = await _db.ContratoCampoValores.AsNoTracking().Where(v => v.ContratoId == contratoId).ToListAsync(ct);
+        return defs.Select(d => new ContratoCampoDinDto(d.Id, d.Label, d.Orden,
+            vals.FirstOrDefault(v => v.ContratoCampoId == d.Id)?.Valor, d.Tipo, d.Opciones)).ToList();
+    }
+
     public async Task<ContratoCampoDto> CrearContratoCampoAsync(CrearContratoCampoRequest req, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.Label))
