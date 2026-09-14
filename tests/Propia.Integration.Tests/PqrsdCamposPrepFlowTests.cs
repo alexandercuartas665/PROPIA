@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Propia.Application.Common;
+using Propia.Application.MiCopropiedad;
 using Propia.Application.Pqrsd;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
@@ -105,6 +106,54 @@ public class PqrsdCamposPrepFlowTests : IAsyncLifetime
 
         await CleanTenant(tenantA);
         await CleanTenant(tenantB);
+    }
+
+    [Fact]
+    public async Task Pqrsd_campos_estandar_alta_con_defaults_y_PUT_es_MERGE()
+    {
+        var tenant = await SeedTenantAsync("PQRSD Campos Std");
+        var (svc, _, scope) = Build(tenant);
+        using (scope)
+        {
+            // 1. Alta con flags NO-default por la forma propia (como la pestana "Campos dinamicos"):
+            //    MostrarEnFiltro=true, Requerido=true, Columna=2; ademas Publico=true.
+            var baseCampo = await svc.CrearCampoAsync(new GuardarCampoPqrsdRequest(
+                Label: "Prioridad", Tipo: TipoCampoTablero.Seleccion, Opciones: "Alta\nBaja",
+                MostrarEnFiltro: true, Columna: 2, Descripcion: "desc", Requerido: true,
+                ValorPorDefecto: null, PermiteVarios: false, CamposSuma: null), CancellationToken.None);
+            await svc.SetCampoPublicoAsync(baseCampo.Id, true, CancellationToken.None);
+
+            // 2. El gestor estandar (ConfigCamposEntidad) EDITA con ActualizarCampoDefinicionRequest: solo
+            //    label/tipo/opciones (estas como JSON con color). Debe ser MERGE: no pisa el resto.
+            var jsonOpciones = "[{\"K\":\"Alta\",\"Oculta\":false,\"Color\":\"#EF4444\"},{\"K\":\"Baja\",\"Oculta\":false,\"Color\":null}]";
+            var ok = await svc.ActualizarCampoDefAsync(baseCampo.Id,
+                new ActualizarCampoDefinicionRequest("Prioridad interna", TipoCampoTablero.Seleccion, jsonOpciones, 0),
+                CancellationToken.None);
+            Assert.True(ok);
+
+            var tras = (await svc.ListarCamposAsync(CancellationToken.None)).Single(c => c.Id == baseCampo.Id);
+            // label/tipo/opciones cambiaron; el color de la opcion persiste como dato.
+            Assert.Equal("Prioridad interna", tras.Label);
+            Assert.Equal(TipoCampoTablero.Seleccion, tras.Tipo);
+            Assert.Equal(jsonOpciones, tras.Opciones);
+            Assert.Contains("#EF4444", tras.Opciones);
+            // MERGE: los flags que el gestor NO envia se conservan (punto de re-revision de VIGIA).
+            Assert.True(tras.MostrarEnFiltro);
+            Assert.True(tras.Requerido);
+            Assert.Equal(2, tras.Columna);
+            Assert.True(tras.MostrarEnPublico);
+
+            // 3. Alta por la forma estandar (POST del gestor) toma defaults sanos (Columna 0 -> clamp 1).
+            var std = await svc.CrearCampoDefAsync(
+                new CrearCampoDefinicionRequest("Area responsable", TipoCampoTablero.Texto, null),
+                CancellationToken.None);
+            var creadoStd = (await svc.ListarCamposAsync(CancellationToken.None)).Single(c => c.Id == std.Id);
+            Assert.Equal("Area responsable", creadoStd.Label);
+            Assert.False(creadoStd.MostrarEnFiltro);
+            Assert.False(creadoStd.Requerido);
+            Assert.Equal(1, creadoStd.Columna);
+        }
+        await CleanTenant(tenant);
     }
 
     // ===================== Helpers (mismo patron que PqrsdFlowTests) =====================

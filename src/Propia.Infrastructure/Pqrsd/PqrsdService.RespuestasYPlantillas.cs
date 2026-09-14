@@ -126,6 +126,9 @@ public partial class PqrsdService
         if (exp is null) return null;
         var (uid, _) = ActorActual();
         var nombre = await ResolverNombreActorAsync(ct);
+        // G-13: el consecutivo de la respuesta se serializa por (tenant, anio) con un advisory lock
+        // transaccional que toma GenerarNumeroRadicadoRespuestaAsync; exige esta transaccion abierta.
+        await using var tx = await _db.Database.BeginTransactionAsync(ct);
         var numeroRadicado = await GenerarNumeroRadicadoRespuestaAsync(ct);   // consecutivo propio de la respuesta
         var r = new PqrsdRespuesta
         {
@@ -148,6 +151,7 @@ public partial class PqrsdService
         foreach (var dst in MapDestinatarios(req.Destinatarios)) r.Destinatarios.Add(dst);
         _db.PqrsdRespuestas.Add(r);
         await _db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);   // G-13: libera el advisory lock del consecutivo
         return new PqrsdRespuestaDto(r.Id, r.Asunto, r.CuerpoHtml, r.AutorNombre, r.CreatedAt,
             r.Enviada, r.EnviadaAt, new List<PqrsdAdjuntoDto>(), false, null, 1,
             r.Destinatarios.Select(d => new DestinatarioRespuestaDto(d.PersonaId, d.Nombre, d.Email, d.Telefono, d.EnviarCorreo, d.EnviarWhatsApp)).ToList(),
@@ -653,10 +657,26 @@ public partial class PqrsdService
         return max;
     }
 
+    // G-13: classids fijos de los advisory locks de los consecutivos de PQRSD, para que
+    // pg_advisory_xact_lock por (tenant, anio) no colisione con otros advisory locks del sistema
+    // (ej. Tareas T-10 usa 21000010). Expediente y respuesta llevan lock distinto: no se serializan
+    // entre si (tocan columnas distintas de la misma fila de config).
+    private const int LockClassRadicadoExpediente = 29000010;
+    private const int LockClassRadicadoRespuesta = 29000011;
+
+    // G-13: serializa leer-incrementar-guardar un consecutivo por (tenant, anio). El lock es TRANSACCIONAL
+    // (se libera solo al COMMIT/ROLLBACK): EXIGE que el llamador tenga una transaccion abierta; sin ella el
+    // lock se soltaria de inmediato y no protegeria nada. Mismo patron que ATLAS T-10.
+    private Task TomarLockConsecutivoAsync(int classId, int year, CancellationToken ct)
+        => _db.Database.ExecuteSqlRawAsync(
+            "SELECT pg_advisory_xact_lock({0}, hashtext(COALESCE(current_setting('app.tenant_id', true), '') || ':' || {1}))",
+            new object[] { classId, year.ToString() }, ct);
+
     private async Task<string> GenerarNumeroRadicadoAsync(CancellationToken ct)
     {
-        var cfg = await EnsureConsecutivoConfigAsync(ct);
         var year = DateTime.UtcNow.Year;
+        await TomarLockConsecutivoAsync(LockClassRadicadoExpediente, year, ct);   // G-13: antes de leer/incrementar
+        var cfg = await EnsureConsecutivoConfigAsync(ct);
         if (cfg.ExpedienteReinicioAnual && cfg.ExpedienteAnio != year)
         {
             cfg.ExpedienteAnio = year;
@@ -669,8 +689,9 @@ public partial class PqrsdService
 
     private async Task<string> GenerarNumeroRadicadoRespuestaAsync(CancellationToken ct)
     {
-        var cfg = await EnsureConsecutivoConfigAsync(ct);
         var year = DateTime.UtcNow.Year;
+        await TomarLockConsecutivoAsync(LockClassRadicadoRespuesta, year, ct);   // G-13: antes de leer/incrementar
+        var cfg = await EnsureConsecutivoConfigAsync(ct);
         if (cfg.RespuestaReinicioAnual && cfg.RespuestaAnio != year)
         {
             cfg.RespuestaAnio = year;

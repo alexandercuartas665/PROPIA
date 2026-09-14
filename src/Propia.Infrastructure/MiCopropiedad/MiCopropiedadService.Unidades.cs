@@ -798,7 +798,8 @@ public partial class MiCopropiedadService
     // CampoClave), asi que admitir mas entidades no requiere migracion. (Mantenimiento/zona/equipo
     // entraran cuando YUNQUE adopte.)
     private static readonly string[] EntidadesCampoConfig =
-        { "unidad", "personas", "vehiculos", "mascotas", "terceros", "pqrsd", "contrato", "poliza" };
+        { "unidad", "personas", "vehiculos", "mascotas", "terceros", "pqrsd", "contrato", "poliza",
+          "programacion", "zona", "equipo" };
 
     private static string NormalizarEntidadCampoConfig(string? entidad)
     {

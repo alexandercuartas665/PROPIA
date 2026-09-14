@@ -36,24 +36,27 @@ public sealed record PolizaCampoSistema(
 /// </summary>
 public static class PolizaCamposSistema
 {
+    // Las CLAVES van en MINUSCULA a proposito: el endpoint compartido unidades-config normaliza la clave con
+    // ToLowerInvariant() al guardar (GuardarCampoConfigAsync), asi que una clave camelCase no round-tripea y
+    // la config (orden/visibilidad/alias) no se encontraria. Misma convencion que unidad/vehiculos.
     public static readonly IReadOnlyList<PolizaCampoSistema> Todos = new[]
     {
-        new PolizaCampoSistema("numeroPoliza", "N poliza", TipoCampoTablero.Texto, VisiblePorDefecto: true, Fija: true),
+        new PolizaCampoSistema("numeropoliza", "N poliza", TipoCampoTablero.Texto, VisiblePorDefecto: true, Fija: true),
         new PolizaCampoSistema("aseguradora", "Aseguradora", TipoCampoTablero.Texto, VisiblePorDefecto: true),
         new PolizaCampoSistema("corredor", "Corredor", TipoCampoTablero.Texto, VisiblePorDefecto: true),
-        new PolizaCampoSistema("fechaInicio", "Inicio", TipoCampoTablero.Fecha, VisiblePorDefecto: true),
-        new PolizaCampoSistema("fechaFin", "Finalizacion", TipoCampoTablero.Fecha, VisiblePorDefecto: true),
+        new PolizaCampoSistema("fechainicio", "Inicio", TipoCampoTablero.Fecha, VisiblePorDefecto: true),
+        new PolizaCampoSistema("fechafin", "Finalizacion", TipoCampoTablero.Fecha, VisiblePorDefecto: true),
         // Semaforo de vencimiento: derivado por fecha, solo lectura.
         new PolizaCampoSistema("vencimiento", "Vencimiento", TipoCampoTablero.Texto, VisiblePorDefecto: true),
-        new PolizaCampoSistema("valorPoliza", "Valor", TipoCampoTablero.Moneda, VisiblePorDefecto: true),
+        new PolizaCampoSistema("valorpoliza", "Valor", TipoCampoTablero.Moneda, VisiblePorDefecto: true),
         // Numero de reclamaciones: derivado (conteo), solo lectura.
         new PolizaCampoSistema("reclamaciones", "Reclamaciones", TipoCampoTablero.Numero, VisiblePorDefecto: true),
         // No visibles por defecto:
-        new PolizaCampoSistema("formaPagoCuotas", "Forma de pago", TipoCampoTablero.Numero, VisiblePorDefecto: false),
-        new PolizaCampoSistema("pagoMensual", "Pago mensual", TipoCampoTablero.Booleano, VisiblePorDefecto: false),
+        new PolizaCampoSistema("formapagocuotas", "Forma de pago", TipoCampoTablero.Numero, VisiblePorDefecto: false),
+        new PolizaCampoSistema("pagomensual", "Pago mensual", TipoCampoTablero.Booleano, VisiblePorDefecto: false),
         new PolizaCampoSistema("cobertura", "Cobertura", TipoCampoTablero.AreaTexto, VisiblePorDefecto: false),
-        new PolizaCampoSistema("incluyeZonasUnidades", "Incluye zonas y unidades", TipoCampoTablero.Booleano, VisiblePorDefecto: false),
-        new PolizaCampoSistema("valoresAgregados", "Valores agregados", TipoCampoTablero.AreaTexto, VisiblePorDefecto: false),
+        new PolizaCampoSistema("incluyezonasunidades", "Incluye zonas y unidades", TipoCampoTablero.Booleano, VisiblePorDefecto: false),
+        new PolizaCampoSistema("valoresagregados", "Valores agregados", TipoCampoTablero.AreaTexto, VisiblePorDefecto: false),
         new PolizaCampoSistema("observaciones", "Observaciones", TipoCampoTablero.AreaTexto, VisiblePorDefecto: false),
     };
 

@@ -44,7 +44,7 @@ public static class ContratoCamposSistema
     /// <summary>Etiquetas del enum EstadoContrato (campo "estado").</summary>
     public static readonly string[] EstadosSemilla = { "Vigente", "En renovacion", "Vencido" };
 
-    /// <summary>Etiquetas del enum TipoContrato (campo "tipoContrato").</summary>
+    /// <summary>Etiquetas del enum TipoContrato (campo "tipocontrato").</summary>
     public static readonly string[] TiposContratoSemilla =
         { "Prestacion de servicios", "Obra", "Mantenimiento", "Compra y venta", "Arrendamiento", "Seguro", "Licenciamiento" };
 
@@ -52,29 +52,36 @@ public static class ContratoCamposSistema
     public static readonly string[] CategoriasSemilla =
         { "Administracion", "Contabilidad", "Asesoria", "Aseo", "Seguridad", "Mantenimiento", "Jardineria", "Servicios publicos", "Seguros" };
 
+    // Las CLAVES son las que usa la tabla de /contratos (Servicios.razor, switch de columnas), en MINUSCULA:
+    // el endpoint compartido unidades-config normaliza la clave con ToLowerInvariant() al guardar, asi que una
+    // clave camelCase no round-tripearia y la config (orden/visibilidad/alias) no se encontraria. Config
+    // compartida (unidades-config, entidad 'contrato') + render por clave del switch = un unico vocabulario
+    // (adopcion Fase 1, decision VIGIA 2026-09-14). El ORDEN y VisiblePorDefecto espejan las columnas actuales.
+    // No hay 'vencimiento' ni 'nitProveedor' aparte: el semaforo va en 'estado' (label "Vencimiento") y no hay
+    // columna NIT. 'etapa' es la etapa del kanban.
     public static readonly IReadOnlyList<ContratoCampoSistema> Todos = new[]
     {
-        new ContratoCampoSistema("proveedor", "Contratista", TipoCampoTablero.Texto, VisiblePorDefecto: true, Fija: true),
-        new ContratoCampoSistema("tipoContrato", "Tipo de contrato", TipoCampoTablero.Seleccion, VisiblePorDefecto: true),
-        new ContratoCampoSistema("numeroContrato", "N contrato", TipoCampoTablero.Texto, VisiblePorDefecto: true),
+        new ContratoCampoSistema("tercero", "Contratista", TipoCampoTablero.Texto, VisiblePorDefecto: true, Fija: true),
+        new ContratoCampoSistema("tipocontrato", "Tipo de contrato", TipoCampoTablero.Seleccion, VisiblePorDefecto: true),
+        new ContratoCampoSistema("numero", "N contrato", TipoCampoTablero.Texto, VisiblePorDefecto: true),
         new ContratoCampoSistema("categoria", "Categoria", TipoCampoTablero.Seleccion, VisiblePorDefecto: true),
         new ContratoCampoSistema("asociado", "Asociado a", TipoCampoTablero.Texto, VisiblePorDefecto: true),
-        new ContratoCampoSistema("fechaInicio", "Inicio", TipoCampoTablero.Fecha, VisiblePorDefecto: true),
-        new ContratoCampoSistema("fechaFin", "Finalizacion", TipoCampoTablero.Fecha, VisiblePorDefecto: true),
-        // Semaforo de vencimiento: derivado por fecha, solo lectura.
-        new ContratoCampoSistema("vencimiento", "Vencimiento", TipoCampoTablero.Texto, VisiblePorDefecto: true),
-        new ContratoCampoSistema("valorMensual", "Valor", TipoCampoTablero.Moneda, VisiblePorDefecto: true),
-        new ContratoCampoSistema("formaPagoCuotas", "Forma de pago", TipoCampoTablero.Numero, VisiblePorDefecto: true),
-        new ContratoCampoSistema("pagoMensual", "Pago mensual", TipoCampoTablero.Booleano, VisiblePorDefecto: true),
-        new ContratoCampoSistema("observaciones", "Observaciones", TipoCampoTablero.AreaTexto, VisiblePorDefecto: true),
-        // No visibles por defecto:
+        new ContratoCampoSistema("inicio", "Inicio", TipoCampoTablero.Fecha, VisiblePorDefecto: true),
+        new ContratoCampoSistema("fin", "Finalizacion", TipoCampoTablero.Fecha, VisiblePorDefecto: true),
+        // 'estado' muestra el semaforo/estado del contrato (label historico "Vencimiento"); lista de sistema
+        // (EstadosSemilla) de solo lectura, derivada por fecha para el semaforo.
+        new ContratoCampoSistema("estado", "Vencimiento", TipoCampoTablero.Seleccion, VisiblePorDefecto: true),
+        new ContratoCampoSistema("valortotal", "Valor", TipoCampoTablero.Moneda, VisiblePorDefecto: true),
+        new ContratoCampoSistema("formapago", "Forma de pago", TipoCampoTablero.Numero, VisiblePorDefecto: true),
+        new ContratoCampoSistema("pagomensual", "Pago mensual", TipoCampoTablero.Booleano, VisiblePorDefecto: true),
+        new ContratoCampoSistema("obs", "Observaciones", TipoCampoTablero.AreaTexto, VisiblePorDefecto: true),
+        // No visibles por defecto (legacy / avanzadas):
         new ContratoCampoSistema("tipo", "Tipo de servicio", TipoCampoTablero.Seleccion, VisiblePorDefecto: false),
-        new ContratoCampoSistema("estado", "Estado", TipoCampoTablero.Seleccion, VisiblePorDefecto: false),
-        new ContratoCampoSistema("nitProveedor", "NIT", TipoCampoTablero.Texto, VisiblePorDefecto: false),
+        new ContratoCampoSistema("valor", "$/mes", TipoCampoTablero.Moneda, VisiblePorDefecto: false),
+        new ContratoCampoSistema("etapa", "Etapa", TipoCampoTablero.Texto, VisiblePorDefecto: false),
         new ContratoCampoSistema("contacto", "Contacto", TipoCampoTablero.Texto, VisiblePorDefecto: false),
-        new ContratoCampoSistema("valorTotal", "Valor total", TipoCampoTablero.Moneda, VisiblePorDefecto: false),
-        new ContratoCampoSistema("renovacionAutomatica", "Renovacion automatica", TipoCampoTablero.Booleano, VisiblePorDefecto: false),
-        new ContratoCampoSistema("diasAnticipacionAlerta", "Dias de anticipacion de alerta", TipoCampoTablero.Numero, VisiblePorDefecto: false),
+        new ContratoCampoSistema("renov", "Renov.", TipoCampoTablero.Booleano, VisiblePorDefecto: false),
+        new ContratoCampoSistema("dias", "Dias alerta", TipoCampoTablero.Numero, VisiblePorDefecto: false),
     };
 
     /// <summary>Claves visibles cuando la copropiedad no tiene configuracion propia.</summary>

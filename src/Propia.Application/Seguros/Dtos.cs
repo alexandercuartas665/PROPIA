@@ -51,7 +51,11 @@ public record ActualizarPolizaRequest(
 public record PolizaCampoDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones, string? Descripcion, bool Activo);
 public record PolizaCampoValorDto(Guid CampoId, string? Valor);
 public record CrearPolizaCampoRequest(string Label, TipoCampoTablero Tipo, string? Opciones, string? Descripcion);
-public record ActualizarPolizaCampoRequest(string Label, TipoCampoTablero Tipo, string? Opciones, string? Descripcion, int Orden, bool Activo);
+// PUT MERGE (adopcion del Selector de Campos): el componente compartido ConfigCamposEntidad edita con la
+// forma estandar ActualizarCampoDefinicionRequest(Label, Tipo, Opciones, Orden) y NO envia Descripcion ni
+// Activo. Por eso ambos son nullable = "no enviado": el servicio los conserva (no borra la descripcion ni
+// oculta el campo). Label tambien nullable por robustez. El gestor propio manda la forma completa y sigue igual.
+public record ActualizarPolizaCampoRequest(string? Label, TipoCampoTablero Tipo, string? Opciones, string? Descripcion, int Orden, bool? Activo);
 public record GuardarPolizaCampoValorRequest(string? Valor);
 // Selector de Campos (Fase 1): forma estandar de los valores (espejo de UnidadCampoValorFlatDto / EquipoCampoDinDto).
 public record PolizaCampoValorFlatDto(Guid PolizaId, Guid DefinicionId, string? Valor);

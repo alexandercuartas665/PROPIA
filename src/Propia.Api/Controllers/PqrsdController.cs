@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Propia.Api.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Propia.Application.MiCopropiedad;
 using Propia.Application.Pqrsd;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
@@ -209,19 +210,21 @@ public class PqrsdController : ControllerBase
     [HttpGet("pqrsd-campos-archivados")]
     public async Task<IActionResult> ListarCamposArchivadosStd(CancellationToken ct) => Ok(await _svc.ListarCamposArchivadosAsync(ct));
 
+    // El gestor compartido (ConfigCamposEntidad) envia la forma estandar Crear/ActualizarCampoDefinicionRequest
+    // (label, tipo, opciones), NO GuardarCampoPqrsdRequest. El PUT es MERGE: solo label/tipo/opciones.
     [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
     [HttpPost("pqrsd-campos")]
-    public async Task<IActionResult> CrearCampoStd([FromBody] GuardarCampoPqrsdRequest req, CancellationToken ct)
+    public async Task<IActionResult> CrearCampoStd([FromBody] CrearCampoDefinicionRequest req, CancellationToken ct)
     {
-        try { return Created("", await _svc.CrearCampoAsync(req, ct)); }
+        try { return Created("", await _svc.CrearCampoDefAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
     [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
     [HttpPut("pqrsd-campos/{id:guid}")]
-    public async Task<IActionResult> ActualizarCampoStd(Guid id, [FromBody] GuardarCampoPqrsdRequest req, CancellationToken ct)
+    public async Task<IActionResult> ActualizarCampoStd(Guid id, [FromBody] ActualizarCampoDefinicionRequest req, CancellationToken ct)
     {
-        try { return await _svc.ActualizarCampoAsync(id, req, ct) ? NoContent() : NotFound(); }
+        try { return await _svc.ActualizarCampoDefAsync(id, req, ct) ? NoContent() : NotFound(); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 

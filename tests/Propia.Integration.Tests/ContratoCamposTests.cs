@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Propia.Application.MiCopropiedad;
 using Propia.Domain.Entities;
@@ -34,14 +35,15 @@ public class ContratoCamposTests
         Assert.All(todos, c => Assert.IsType<ContratoCampoSistema>(c));
         Assert.All(todos, c => Assert.Null(c.Encabezado));
         Assert.All(todos, c => Assert.False(c.SiempreEnPlantilla));
-        // El contratista es fijo (no se puede ocultar); las listas son Tipo Seleccion.
-        Assert.True(ContratoCamposSistema.Por("proveedor")!.Fija);
-        Assert.Equal(TipoCampoTablero.Seleccion, ContratoCamposSistema.Por("tipoContrato")!.Tipo);
+        // El contratista es fijo (no se puede ocultar); las listas son Tipo Seleccion. Las claves = las de la
+        // tabla de /contratos (adopcion Fase 1): el contratista es "tercero", el valor visible "valorTotal".
+        Assert.True(ContratoCamposSistema.Por("tercero")!.Fija);
+        Assert.Equal(TipoCampoTablero.Seleccion, ContratoCamposSistema.Por("tipocontrato")!.Tipo);
         // Las Seleccion de contrato salen de enums del dominio: lista fija, no editable.
         Assert.All(todos.Where(c => c.Tipo == TipoCampoTablero.Seleccion), c => Assert.False(c.OpcionesEditables));
         // Hay columnas visibles por defecto (las de la tabla de /contratos).
-        Assert.Contains("proveedor", ContratoCamposSistema.ClavesVisiblesPorDefecto);
-        Assert.Equal(TipoCampoTablero.Moneda, ContratoCamposSistema.Por("valorMensual")!.Tipo);
+        Assert.Contains("tercero", ContratoCamposSistema.ClavesVisiblesPorDefecto);
+        Assert.Equal(TipoCampoTablero.Moneda, ContratoCamposSistema.Por("valortotal")!.Tipo);
         // Los campos de lista traen su semilla de etiquetas.
         Assert.NotEmpty(ContratoCamposSistema.TiposContratoSemilla);
         Assert.NotEmpty(ContratoCamposSistema.CategoriasSemilla);
@@ -73,7 +75,78 @@ public class ContratoCamposTests
         await CleanupTenantAsync(tenantId);
     }
 
+    // ----- Selector de Campos (Fase 1): PUT de contrato-campo como MERGE frente al componente compartido -----
+
+    [Fact]
+    public async Task Editar_como_el_componente_conserva_Activo_y_Descripcion_MERGE()
+    {
+        var tenantId = await SeedTenantAsync("[SELLO] MERGE contrato campo");
+        var svc = BuildService(tenantId);
+        var campo = await svc.CrearContratoCampoAsync(
+            new CrearContratoCampoRequest("[SELLO] Placa", TipoCampoTablero.Texto, null, "Nota interna del contrato"),
+            CancellationToken.None);
+
+        // Simula EXACTAMENTE el body que manda el componente (ConfigCamposEntidad) al renombrar:
+        // ActualizarCampoDefinicionRequest(Label, Tipo, Opciones, Orden) via PutAsJsonAsync (Web defaults).
+        // Al deserializarlo en mi DTO, Descripcion y Activo quedan sin enviar (null): eso PRUEBA que los
+        // nombres calzan (el body bindea) y que el MERGE sabe distinguir "no enviado".
+        var web = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var bodyComponente = new ActualizarCampoDefinicionRequest("[SELLO] Placa (editado)", campo.Tipo, campo.Opciones, campo.Orden);
+        var req = JsonSerializer.Deserialize<ActualizarContratoCampoRequest>(
+            JsonSerializer.Serialize(bodyComponente, web), web)!;
+        Assert.Null(req.Activo);
+        Assert.Null(req.Descripcion);
+        Assert.Equal("[SELLO] Placa (editado)", req.Label);
+
+        Assert.True(await svc.ActualizarContratoCampoAsync(campo.Id, req, CancellationToken.None));
+
+        await using var db = AppDb(tenantId);
+        var raw = await db.ContratoCampos.AsNoTracking().FirstAsync(x => x.Id == campo.Id);
+        Assert.Equal("[SELLO] Placa (editado)", raw.Label);         // el rename se aplico
+        Assert.True(raw.Activo);                                    // NO se oculto (Activo conservado)
+        Assert.Equal("Nota interna del contrato", raw.Descripcion); // la descripcion se conservo
+        await CleanupTenantAsync(tenantId);
+    }
+
+    [Fact]
+    public async Task El_gestor_oculta_y_el_edit_del_componente_no_reactiva_MERGE()
+    {
+        var tenantId = await SeedTenantAsync("[SELLO] MERGE contrato oculto");
+        var svc = BuildService(tenantId);
+        var campo = await svc.CrearContratoCampoAsync(
+            new CrearContratoCampoRequest("[SELLO] Placa", TipoCampoTablero.Texto, null, null), CancellationToken.None);
+
+        // El gestor propio manda la forma COMPLETA con Activo=false (ocultar como columna) -> se aplica.
+        await svc.ActualizarContratoCampoAsync(campo.Id,
+            new ActualizarContratoCampoRequest("[SELLO] Placa", TipoCampoTablero.Texto, null, null, campo.Orden, false),
+            CancellationToken.None);
+        await using (var db1 = AppDb(tenantId))
+            Assert.False((await db1.ContratoCampos.AsNoTracking().FirstAsync(x => x.Id == campo.Id)).Activo);
+
+        // El componente edita (rename) SIN Activo -> el campo sigue oculto (el MERGE no lo reactiva).
+        var req = new ActualizarContratoCampoRequest("[SELLO] Placa contratista", TipoCampoTablero.Texto, null, null, campo.Orden, null);
+        await svc.ActualizarContratoCampoAsync(campo.Id, req, CancellationToken.None);
+
+        await using var db2 = AppDb(tenantId);
+        var raw = await db2.ContratoCampos.AsNoTracking().FirstAsync(x => x.Id == campo.Id);
+        Assert.Equal("[SELLO] Placa contratista", raw.Label);   // el rename se aplico
+        Assert.False(raw.Activo);                               // pero sigue oculto (Activo=false conservado)
+        await CleanupTenantAsync(tenantId);
+    }
+
     // ----------------------------- infraestructura -----------------------------
+
+    // Contexto de aplicacion (respeta RLS/tenant) para leer el estado crudo del campo en las aserciones.
+    private PropiaDbContext AppDb(Guid tenantId)
+    {
+        var tenantCtx = new TenantContext();
+        tenantCtx.SetTenant(tenantId);
+        var options = new DbContextOptionsBuilder<PropiaDbContext>()
+            .UseNpgsql(_fx.AppConnectionString)
+            .AddInterceptors(new TenantConnectionInterceptor(tenantCtx))
+            .Options;
+        return new PropiaDbContext(options, tenantCtx);
+    }
 
     private IMiCopropiedadService BuildService(Guid tenantId)
     {

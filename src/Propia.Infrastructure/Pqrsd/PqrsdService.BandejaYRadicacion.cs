@@ -263,6 +263,10 @@ public partial class PqrsdService
         // El plazo legal cuenta desde la FECHA DE RECIBIDO real si se informa (bitacora legal); si no, desde hoy.
         var fechaBasePlazo = req.FechaRecibido ?? hoy;
         var fechaVencimiento = SumarDiasHabiles(fechaBasePlazo, diasHabiles);
+        // G-13: la radicacion va en UNA transaccion que abarca generar-el-numero e insertar el expediente,
+        // para que el advisory lock del consecutivo (dentro de GenerarNumeroRadicadoAsync) serialice por
+        // (tenant, anio) y dos radicaciones concurrentes no choquen con el UNIQUE (tenant_id, numero_radicado).
+        await using var tx = await _db.Database.BeginTransactionAsync(ct);
         var numero = await GenerarNumeroRadicadoAsync(ct);
 
         var columnaRecibida = await _db.PqrsdEstados.AsNoTracking()
@@ -330,7 +334,9 @@ public partial class PqrsdService
         });
 
         await _db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);   // G-13: libera el advisory lock del consecutivo
 
+        // La notificacion va DESPUES del commit (no debe formar parte de la transaccion del radicado).
         await NotificarAdminsTenantAsync("2.9", exp.Id,
             $"PQRSD radicado: {numero}",
             $"Se radico un expediente {exp.Tipo} con plazo legal. Asignar y responder dentro del SLA.",

@@ -48,6 +48,10 @@ public class CamposConfigWhitelistTests
     [InlineData("pqrsd")]
     [InlineData("contrato")]
     [InlineData("poliza")]
+    // Mantenimiento (YUNQUE) tambien adopta la config compartida (whitelist-yunque):
+    [InlineData("programacion")]
+    [InlineData("zona")]
+    [InlineData("equipo")]
     public async Task Config_admite_entidades_de_modulos_admin_y_hace_round_trip(string entidad)
     {
         var tenantId = await SeedTenantAsync($"[cfg] {entidad}");
