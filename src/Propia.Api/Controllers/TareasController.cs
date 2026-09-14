@@ -253,8 +253,10 @@ public class TareasController : ControllerBase
         => await _svc.RemoverDependenciaAsync(id, dependenciaId, ct) ? NoContent() : NotFound();
 
     // --- Bulk actions (Fase 2) ---
+    // H-4: los lotes gatean con Editar (no Crear), igual que su equivalente individual (PUT {id}/estado
+    // y el inline). Cambiar estado/prioridad/asignado de tarjetas existentes es editar, no crear.
 
-    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Editar)]
     [HttpPost("bulk/estado")]
     public async Task<IActionResult> BulkCambiarEstado([FromBody] BulkCambiarEstadoRequest req, CancellationToken ct)
     {
@@ -262,12 +264,12 @@ public class TareasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
-    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Editar)]
     [HttpPost("bulk/prioridad")]
     public async Task<IActionResult> BulkCambiarPrioridad([FromBody] BulkCambiarPrioridadRequest req, CancellationToken ct)
         => Ok(await _svc.BulkCambiarPrioridadAsync(req, ct));
 
-    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Editar)]
     [HttpPost("bulk/asignado")]
     public async Task<IActionResult> BulkAsignarPersona([FromBody] BulkAsignarPersonaRequest req, CancellationToken ct)
     {
