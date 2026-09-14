@@ -219,27 +219,20 @@ else
                         @if (_showColsMenu)
                         {
                             <div class="ctr-fpop-bd" @onclick="() => _showColsMenu = false"></div>
-                            <div class="ctr-colspop" @onclick:stopPropagation="true">
-                                <div class="ctr-cm-sec">Columnas de la lista</div>
-                                @{ var ord = ColsOrdenadas(); }
-                                @for (int i = 0; i < ord.Count; i++)
-                                {
-                                    var cidx = i; var ck = ord[cidx];
-                                    <div class="ctr-colrow">
-                                        <div class="ctr-et-ord">
-                                            <button class="ctr-et-mv" disabled="@(cidx == 0)" @onclick="() => MoverColAsync(cidx, -1)" title="Subir">&#9650;</button>
-                                            <button class="ctr-et-mv" disabled="@(cidx == ord.Count - 1)" @onclick="() => MoverColAsync(cidx, 1)" title="Bajar">&#9660;</button>
-                                        </div>
-                                        <label class="ctr-colchk">
-                                            <input type="checkbox" checked="@ColVisible(ck)" disabled="@(ck == "tercero")" @onchange="() => ToggleColVisible(ck)" />
-                                            <span>@ColLabel(ck)</span>
-                                        </label>
-                                    </div>
-                                }
-                                <div class="ctr-cm-acts">
-                                    <button type="button" class="ctr-cm-act" @onclick="MostrarTodasCols">Mostrar todo</button>
-                                    <button type="button" class="ctr-cm-act" @onclick="OcultarTodasCols">Ocultar todo</button>
-                                </div>
+                            <div class="ctr-colspop" @onclick:stopPropagation="true" style="min-width:560px;max-width:92vw;max-height:72vh;overflow:auto;">
+                                <div class="ctr-cm-sec">Columnas y campos de la lista</div>
+                                @* Selector de Campos (Fase 1): el menu propio de columnas + el gestor de campos propios se
+                                   reemplazan por el componente compartido. Orden/visibilidad/alias (sistema y propios) viven
+                                   en unidades-config (entidad 'contrato', compartida por copropiedad); los campos propios en
+                                   /api/mi-copropiedad/contratos-campos. *@
+                                <ConfigCamposEntidad Prefijo="contratos"
+                                                     EntidadConfig="contrato"
+                                                     Catalogo="@ContratoCatalogo"
+                                                     TituloSingular="contrato"
+                                                     TituloPlural="Contratos"
+                                                     Ejemplo="Ej. N de poliza, Responsable"
+                                                     Jwt="@_jwt"
+                                                     Cambiado="RecargarCamposYConfigContratoAsync" />
                             </div>
                         }
                     </div>
@@ -435,7 +428,7 @@ else
                                                         }
                                                         else { <span class="ctr-ed ctr-cval" @onclick='() => IniciarCEd(cc.Id, "numero", cc.NumeroContrato)'>@(string.IsNullOrWhiteSpace(c.NumeroContrato) ? "-" : c.NumeroContrato)</span> }
                                                         break;
-                                                    case "tipoContrato":
+                                                    case "tipocontrato":
                                                         @if (CEnEd(c.Id, "tipocontrato"))
                                                         {
                                                             <select class="ctr-inp" value="@_cEditVal" @onchange='(e) => CSelChange(cc, "tipocontrato", e)' @onblur="CancelarCEd">
@@ -470,13 +463,13 @@ else
                                                         }
                                                         else { <span class="ctr-ed ctr-cval" @onclick='() => IniciarCEd(cc.Id, "asociado", "")'>@(string.IsNullOrWhiteSpace(c.AsociadoNombre) ? "-" : c.AsociadoNombre)</span> }
                                                         break;
-                                                    case "valorTotal":
+                                                    case "valortotal":
                                                         <span class="ctr-cval">@(c.ValorTotal is { } vt ? "$" + vt.ToString("N0") : "-")</span>
                                                         break;
-                                                    case "formaPago":
+                                                    case "formapago":
                                                         <span class="ctr-cval">@(c.FormaPagoCuotas is { } fp ? fp + " cuotas" : "-")</span>
                                                         break;
-                                                    case "pagoMensual":
+                                                    case "pagomensual":
                                                         <span class="ctr-cval">@(c.PagoMensual ? "Si" : "No")</span>
                                                         break;
                                                     default:
@@ -547,7 +540,7 @@ else
                                                     <SelectorPersona Jwt="@_jwt" PermiteEmpresa="true" @bind-Seleccionada="_ncProveedor" Placeholder="Contratista (buscar o crear)..." Flotante="true" />
                                                 </div>
                                                 break;
-                                            case "tipoContrato":
+                                            case "tipocontrato":
                                                 <select class="ctr-inp" @bind="_ncTipoContrato">
                                                     <option value="">- Tipo -</option>
                                                     @foreach (var t in Enum.GetValues<TipoContrato>()) { <option value="@((int)t)">@TipoContratoLabel(t)</option> }
@@ -654,51 +647,7 @@ else
                     </div>
 
                     <div class="ctr-cm-sec">Campos personalizados</div>
-                    <div class="ctr-cm-help">Define campos tipados que apareceran como columnas de la lista, en los filtros y en las tarjetas.</div>
-                    @if (_cCampos.Count == 0)
-                    {
-                        <div class="ctr-cm-empty">Aun no hay campos. Crea el primero abajo (ej. "Numero de poliza", "Responsable", "Renovado el").</div>
-                    }
-                    else
-                    {
-                        <div class="ctr-cm-list">
-                            @{ var ordenados = _cCampos.OrderBy(c => c.Orden).ToList(); }
-                            @for (int i = 0; i < ordenados.Count; i++)
-                            {
-                                var idx = i; var cm = ordenados[idx];
-                                <div class="ctr-cm-row @(cm.Activo ? "" : "off")">
-                                    <div class="ctr-et-ord">
-                                        <button class="ctr-et-mv" disabled="@(idx == 0)" @onclick="() => MoverCampoAsync(ordenados, idx, -1)" title="Subir">&#9650;</button>
-                                        <button class="ctr-et-mv" disabled="@(idx == ordenados.Count - 1)" @onclick="() => MoverCampoAsync(ordenados, idx, 1)" title="Bajar">&#9660;</button>
-                                    </div>
-                                    <input class="ctr-et-nom" value="@cm.Label" @onchange="(e) => RenombrarCampoAsync(cm, e)" />
-                                    <span class="ctr-cm-tipo">@TipoCampoLabel(cm.Tipo)</span>
-                                    <label class="ctr-cm-sw" title="Mostrar como columna">
-                                        <input type="checkbox" checked="@cm.Activo" @onchange="() => ToggleCampoActivoAsync(cm)" />
-                                        <span>@(cm.Activo ? "Visible" : "Oculto")</span>
-                                    </label>
-                                    <button class="ctr-cm-del" @onclick="() => EliminarCampoAsync(cm.Id)" title="Eliminar campo"><i class="fi fi-rr-trash"></i></button>
-                                </div>
-                            }
-                        </div>
-                    }
-                    <div class="ctr-cm-new">
-                        <div class="ctr-cm-new-t">Nuevo campo</div>
-                        <div class="ctr-cm-new-grid">
-                            <input class="srv-input" placeholder="Nombre del campo" @bind="_nuevoCampoLabel" @bind:event="oninput" @onkeydown='(e) => { if (e.Key == "Enter") return CrearCampoAsync(); return Task.CompletedTask; }' />
-                            <select class="srv-input" @bind="_nuevoCampoTipo">
-                                @foreach (var t in new[] { TipoCampoTablero.Texto, TipoCampoTablero.Numero, TipoCampoTablero.Moneda, TipoCampoTablero.Fecha, TipoCampoTablero.Seleccion, TipoCampoTablero.Booleano, TipoCampoTablero.Telefono, TipoCampoTablero.Url, TipoCampoTablero.Email })
-                                {
-                                    <option value="@t">@TipoCampoLabel(t)</option>
-                                }
-                            </select>
-                        </div>
-                        @if (_nuevoCampoTipo == TipoCampoTablero.Seleccion)
-                        {
-                            <textarea class="srv-input" rows="3" placeholder="Una opcion por linea" @bind="_nuevoCampoOpciones" @bind:event="oninput"></textarea>
-                        }
-                        <button class="srv-btn-primary sm" @onclick="CrearCampoAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoCampoLabel))"><i class="fi fi-rr-plus"></i> Agregar campo</button>
-                    </div>
+                    <div class="ctr-cm-help">Los campos propios y las columnas de la lista (mostrar/ocultar, ordenar, renombrar y crear) se gestionan en el boton <strong>Campos</strong> de la barra de herramientas.</div>
                 </div>
             </div>
         </div>
@@ -1763,7 +1712,6 @@ else
             try
             {
                 try { var v = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_view_contratos"); if (v == "tarjetas" || v == "tabla") _vistaC = v; } catch { }
-                await CargarColsAsync();
                 var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
                 _authChecked = true;
                 if (!string.IsNullOrWhiteSpace(stored)) { _jwt = stored; await CargarAsync(); StateHasChanged(); }
@@ -1785,6 +1733,7 @@ else
         try { _cCampos = await GetAuthAsync<List<ContratoCampoDto>>("/api/mi-copropiedad/contratos/campos") ?? new(); }
         catch (SesionRedirigidaException) { return; }
         catch { _cCampos = new(); }
+        await CargarConfigContratoAsync();
         try { _etapas = await GetAuthAsync<List<ContratoEtapaDto>>("/api/mi-copropiedad/contratos/etapas") ?? new(); }
         catch (SesionRedirigidaException) { return; }
         catch { _etapas = new(); }
@@ -1795,76 +1744,14 @@ else
         await CargarDropdownsAsync();
     }
 
-    // ---- Campos personalizados (EAV) de contratos (Fase C) ----
+    // ---- Campos personalizados (EAV) de contratos: las DEFINICIONES las gestiona el componente compartido
+    // (ConfigCamposEntidad); aqui solo se leen (_cCampos) para pintar columnas y editar VALORES inline. ----
     private List<ContratoCampoDto> _cCampos = new();
     private IEnumerable<ContratoCampoDto> CamposActivos => _cCampos.Where(c => c.Activo);
-    private bool _showConfigModal;   // modal unificado "Configurar" (estados + campos, estilo Tareas)
-    private string _nuevoCampoLabel = "";
-    private TipoCampoTablero _nuevoCampoTipo = TipoCampoTablero.Texto;
-    private string _nuevoCampoOpciones = "";
+    private bool _showConfigModal;   // modal "Configurar" (estados del flujo / kanban)
 
     private string? ValorCampo(ContratoServicioDto c, Guid campoId)
         => c.CamposValores?.FirstOrDefault(v => v.CampoId == campoId)?.Valor;
-
-    private async Task RecargarCamposAsync()
-    {
-        try { _cCampos = await GetAuthAsync<List<ContratoCampoDto>>("/api/mi-copropiedad/contratos/campos") ?? new(); }
-        catch { }
-        StateHasChanged();
-    }
-
-    private async Task CrearCampoAsync()
-    {
-        if (string.IsNullOrWhiteSpace(_nuevoCampoLabel)) return;
-        _busy = true;
-        try
-        {
-            var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/contratos/campos",
-                new CrearContratoCampoRequest(_nuevoCampoLabel.Trim(), _nuevoCampoTipo,
-                    _nuevoCampoTipo == TipoCampoTablero.Seleccion && !string.IsNullOrWhiteSpace(_nuevoCampoOpciones) ? _nuevoCampoOpciones.Trim() : null, null));
-            if (resp.IsSuccessStatusCode) { _nuevoCampoLabel = ""; _nuevoCampoOpciones = ""; _nuevoCampoTipo = TipoCampoTablero.Texto; await RecargarCamposAsync(); }
-        }
-        finally { _busy = false; }
-    }
-
-    private async Task ToggleCampoActivoAsync(ContratoCampoDto campo)
-    {
-        await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/campos/{campo.Id}",
-            new ActualizarContratoCampoRequest(campo.Label, campo.Tipo, campo.Opciones, campo.Descripcion, campo.Orden, !campo.Activo));
-        await RecargarCamposAsync();
-    }
-
-    private async Task EliminarCampoAsync(Guid campoId)
-    {
-        if (!await Js.InvokeAsync<bool>("confirm", "Eliminar este campo y todos sus valores? No se puede deshacer.")) return;
-        await Auth().DeleteAsync($"/api/mi-copropiedad/contratos/campos/{campoId}");
-        await RecargarCamposAsync();
-        await CargarAsync();
-        StateHasChanged();
-    }
-
-    // Renombrar un campo desde el modal Configurar (input inline, estilo Tareas).
-    private async Task RenombrarCampoAsync(ContratoCampoDto cm, ChangeEventArgs e)
-    {
-        var nombre = e.Value?.ToString()?.Trim();
-        if (string.IsNullOrWhiteSpace(nombre) || nombre == cm.Label) return;
-        await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/campos/{cm.Id}",
-            new ActualizarContratoCampoRequest(nombre, cm.Tipo, cm.Opciones, cm.Descripcion, cm.Orden, cm.Activo));
-        await RecargarCamposAsync();
-    }
-
-    // Reordenar columnas personalizadas: intercambia el Orden de dos campos y persiste ambos.
-    private async Task MoverCampoAsync(List<ContratoCampoDto> ordenados, int idx, int dir)
-    {
-        var j = idx + dir;
-        if (idx < 0 || idx >= ordenados.Count || j < 0 || j >= ordenados.Count) return;
-        var a = ordenados[idx]; var b = ordenados[j];
-        await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/campos/{a.Id}",
-            new ActualizarContratoCampoRequest(a.Label, a.Tipo, a.Opciones, a.Descripcion, b.Orden, a.Activo));
-        await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/campos/{b.Id}",
-            new ActualizarContratoCampoRequest(b.Label, b.Tipo, b.Opciones, b.Descripcion, a.Orden, b.Activo));
-        await RecargarCamposAsync();
-    }
 
     // Guardar el valor de un campo dinamico de un contrato (inline).
     private async Task GuardarCVal(ContratoServicioDto c, ContratoCampoDto campo)
@@ -1892,21 +1779,6 @@ else
         if (e.Key == "Enter") await GuardarCVal(c, campo);
         else if (e.Key == "Escape") { CancelarCEd(); StateHasChanged(); }
     }
-    private static string TipoCampoLabel(TipoCampoTablero t) => t switch
-    {
-        TipoCampoTablero.Texto => "Texto",
-        TipoCampoTablero.AreaTexto => "Texto largo",
-        TipoCampoTablero.Numero => "Numero",
-        TipoCampoTablero.Moneda => "Moneda",
-        TipoCampoTablero.Fecha => "Fecha",
-        TipoCampoTablero.Hora => "Hora",
-        TipoCampoTablero.Telefono => "Telefono",
-        TipoCampoTablero.Seleccion => "Seleccion",
-        TipoCampoTablero.Booleano => "Si / No",
-        TipoCampoTablero.Url => "URL",
-        TipoCampoTablero.Email => "Email",
-        _ => t.ToString()
-    };
     private static IEnumerable<string> OpcionesDe(ContratoCampoDto c)
         => (c.Opciones ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
@@ -2008,92 +1880,71 @@ else
     private int _cPage = 0;
     private int _cPageSize = 25;
 
-    // ---- Columnas de la lista: seleccionar (mostrar/ocultar) y ordenar (persistido en localStorage) ----
-    private static readonly (string Key, string Label)[] _colsFijas = new[]
-    {
-        // Orden por defecto del pedido de Contratos (Ola 1). Las legacy quedan disponibles pero
-        // ocultas por defecto (_colsOcultas) para no saturar; el usuario las reactiva en Configurar.
-        ("tercero", "Contratista"), ("tipoContrato", "Tipo de contrato"), ("numero", "N contrato"),
-        ("categoria", "Categoria"), ("asociado", "Asociado a"), ("inicio", "Inicio"),
-        ("fin", "Finalizacion"), ("estado", "Vencimiento"), ("valorTotal", "Valor"),
-        ("formaPago", "Forma de pago"), ("pagoMensual", "Pago mensual"), ("obs", "Observaciones"),
-        // ---- Legacy (ocultas por defecto) ----
-        ("tipo", "Tipo de servicio"), ("valor", "$/mes"), ("etapa", "Etapa"),
-        ("contacto", "Contacto"), ("renov", "Renov."), ("dias", "Dias alerta")
-    };
-    // Por defecto se ocultan las columnas legacy que no estan en el pedido (si no hay config guardada).
-    private HashSet<string> _colsOcultas = new() { "tipo", "valor", "etapa", "contacto", "renov", "dias" };
-    private List<string> _colsOrden = new();
+    // ---- Columnas de la lista: visibilidad/orden/alias leidos de unidades-config (entidad 'contrato') ----
+    // Adopcion Fase 1: el gestor propio (menu "Columnas de la lista" + seccion "Campos personalizados") se
+    // reemplaza por el componente compartido ConfigCamposEntidad, que escribe la config compartida por
+    // copropiedad; aqui la leemos para pintar las columnas. Claves de sistema = ContratoCamposSistema (= las
+    // del switch de la tabla); los campos propios usan el guid como key de columna y "cd:{guid}" como clave
+    // de config (convencion del componente).
+    private Dictionary<string, UnidadCampoConfigDto> _cfgContrato = new(StringComparer.Ordinal);
     private bool _showColsMenu;
     private bool _showAgruparMenu;
     private static string AgruparLabelC(string v) => v switch { "etapa" => "Etapa", "tipo" => "Tipo", "tercero" => "Tercero", "estado" => "Estado", _ => "" };
     private void SetCAgrupar(string v) { _cAgrupar = v; _showAgruparMenu = false; _cPage = 0; }
 
+    // Catalogo de campos de SISTEMA del contrato para el componente (forma neutra). La tabla los pinta por
+    // clave con formato fijo, asi que van sin cambio de tipo ni formato (TiposIntercambiables vacio + SinFormato).
+    private static readonly IReadOnlyList<CampoSistemaDef> ContratoCatalogo =
+        ContratoCamposSistema.Todos.Select(c => new CampoSistemaDef(
+            c.Clave, c.Label, c.Tipo, c.VisiblePorDefecto, c.Fija,
+            OpcionesEditables: false, Semilla: null, Entero: false, Ayuda: null,
+            TiposIntercambiables: Array.Empty<TipoCampoTablero>(), ListaExterna: false, SinFormato: true)).ToList();
+
+    // Clave de config: campo de sistema -> su clave; campo propio (guid) -> "cd:{guid}".
+    private static string ConfigClave(string k) => Guid.TryParse(k, out _) ? "cd:" + k : k;
+
     private IEnumerable<(string Key, string Label)> ColsCatalogo()
-        => _colsFijas.Concat(CamposActivos.Select(c => (c.Id.ToString(), c.Label)));
+        => ContratoCamposSistema.Todos.Select(c => (Key: c.Clave, Label: c.Label))
+            .Concat(CamposActivos.Select(c => (Key: c.Id.ToString(), Label: c.Label)));
+    private int OrdenColC(string k, int fallback)
+        => _cfgContrato.TryGetValue(ConfigClave(k), out var c) && c.Orden is { } o ? o : 1000 + fallback;
     private List<string> ColsOrdenadas()
+        => ColsCatalogo().Select((c, i) => (c.Key, ord: OrdenColC(c.Key, i))).OrderBy(x => x.ord).Select(x => x.Key).ToList();
+    private bool ColVisible(string k)
     {
-        var todas = ColsCatalogo().Select(c => c.Key).ToList();
-        var ord = _colsOrden.Where(todas.Contains).ToList();
-        ord.AddRange(todas.Where(k => !ord.Contains(k)));
-        return ord;
+        if (k == "tercero") return true;   // el contratista (columna del ojo) no se oculta
+        if (_cfgContrato.TryGetValue(ConfigClave(k), out var c)) return !c.Oculto;
+        return ContratoCamposSistema.Por(k)?.VisiblePorDefecto ?? true;   // propio (Por == null) -> visible
     }
-    private bool ColVisible(string k) => k == "tercero" || !_colsOcultas.Contains(k);
     private IEnumerable<string> ColsVisibles() => ColsOrdenadas().Where(ColVisible);
     private string ColLabel(string k)
     {
-        var f = _colsFijas.FirstOrDefault(c => c.Key == k);
-        if (f.Key is not null) return f.Label;
-        return _cCampos.FirstOrDefault(c => c.Id.ToString() == k)?.Label ?? k;
+        if (_cfgContrato.TryGetValue(ConfigClave(k), out var c) && !string.IsNullOrWhiteSpace(c.Alias)) return c.Alias!;
+        return ContratoCamposSistema.Por(k)?.Label ?? _cCampos.FirstOrDefault(x => x.Id.ToString() == k)?.Label ?? k;
     }
     private string ColDesc(string k) => _cCampos.FirstOrDefault(c => c.Id.ToString() == k)?.Descripcion ?? "";
     private string ColThClass(string k) => (k == "valor" || k == "dias") ? "ctr-r" : "";
     private string ColTdClass(string k) => k == "tercero" ? "ctr-ct" : ((k == "valor" || k == "dias") ? "ctr-r" : "");
 
-    private async Task ToggleColVisible(string k)
-    {
-        if (k == "tercero") return;   // la columna principal (con el ojo) no se oculta
-        if (!_colsOcultas.Remove(k)) _colsOcultas.Add(k);
-        await PersistColsAsync();
-    }
-    private async Task MostrarTodasCols() { _colsOcultas.Clear(); await PersistColsAsync(); }
-    private async Task OcultarTodasCols()
-    {
-        foreach (var (Key, _) in _colsFijas) if (Key != "tercero") _colsOcultas.Add(Key);
-        foreach (var c in CamposActivos) _colsOcultas.Add(c.Id.ToString());
-        await PersistColsAsync();
-    }
-    private async Task MoverColAsync(int idx, int dir)
-    {
-        var vis = ColsOrdenadas();
-        var j = idx + dir;
-        if (idx < 0 || idx >= vis.Count || j < 0 || j >= vis.Count) return;
-        (vis[idx], vis[j]) = (vis[j], vis[idx]);
-        _colsOrden = vis;
-        await PersistColsAsync();
-    }
-    private async Task PersistColsAsync()
+    private async Task CargarConfigContratoAsync()
     {
         try
         {
-            var payload = System.Text.Json.JsonSerializer.Serialize(new { orden = ColsOrdenadas(), ocultas = _colsOcultas.ToList() });
-            await Js.InvokeVoidAsync("localStorage.setItem", "propia_contratos_cols", payload);
+            var cfg = await GetAuthAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=contrato") ?? new();
+            _cfgContrato = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
         }
-        catch { }
+        catch (SesionRedirigidaException) { }
+        catch { _cfgContrato = new(StringComparer.Ordinal); }
     }
-    private async Task CargarColsAsync()
+
+    // Cambiado del componente compartido: recarga definiciones propias + config para repintar columnas.
+    private async Task RecargarCamposYConfigContratoAsync()
     {
-        try
-        {
-            var raw = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_contratos_cols");
-            if (string.IsNullOrWhiteSpace(raw)) return;
-            using var doc = System.Text.Json.JsonDocument.Parse(raw);
-            if (doc.RootElement.TryGetProperty("orden", out var o) && o.ValueKind == System.Text.Json.JsonValueKind.Array)
-                _colsOrden = o.EnumerateArray().Select(x => x.GetString()).Where(x => x is not null).Select(x => x!).ToList();
-            if (doc.RootElement.TryGetProperty("ocultas", out var h) && h.ValueKind == System.Text.Json.JsonValueKind.Array)
-                _colsOcultas = h.EnumerateArray().Select(x => x.GetString()).Where(x => x is not null).Select(x => x!).ToHashSet();
-        }
+        try { _cCampos = await GetAuthAsync<List<ContratoCampoDto>>("/api/mi-copropiedad/contratos/campos") ?? new(); }
+        catch (SesionRedirigidaException) { return; }
         catch { }
+        await CargarConfigContratoAsync();
+        StateHasChanged();
     }
 
     // Carga perezosa de expedientes + proyectos para los desplegables del contrato.

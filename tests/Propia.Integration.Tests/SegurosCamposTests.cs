@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Propia.Application.MiCopropiedad;   // ActualizarCampoDefinicionRequest (forma estandar del componente)
 using Propia.Application.Seguros;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
@@ -33,9 +35,9 @@ public class SegurosCamposTests
         Assert.All(todos, c => Assert.Null(c.Encabezado));
         Assert.All(todos, c => Assert.False(c.SiempreEnPlantilla));
         // El numero de poliza es fijo (no se puede ocultar).
-        Assert.True(PolizaCamposSistema.Por("numeroPoliza")!.Fija);
+        Assert.True(PolizaCamposSistema.Por("numeropoliza")!.Fija);
         Assert.Contains("aseguradora", PolizaCamposSistema.ClavesVisiblesPorDefecto);
-        Assert.Equal(TipoCampoTablero.Moneda, PolizaCamposSistema.Por("valorPoliza")!.Tipo);
+        Assert.Equal(TipoCampoTablero.Moneda, PolizaCamposSistema.Por("valorpoliza")!.Tipo);
     }
 
     [Fact]
@@ -62,7 +64,80 @@ public class SegurosCamposTests
         await CleanupTenantAsync(tenantId);
     }
 
+    // ----- Selector de Campos (Fase 1): PUT de poliza-campo como MERGE frente al componente compartido -----
+
+    [Fact]
+    public async Task Editar_como_el_componente_conserva_Activo_y_Descripcion_MERGE()
+    {
+        var tenantId = await SeedTenantAsync("[SELLO] MERGE poliza campo");
+        var svc = BuildService(tenantId);
+        // Campo propio con descripcion; Activo=true por defecto al crear.
+        var campo = await svc.CrearCampoAsync(
+            new CrearPolizaCampoRequest("[SELLO] Deducible", TipoCampoTablero.Texto, null, "Nota interna del corredor"),
+            CancellationToken.None);
+
+        // Simula EXACTAMENTE el body que manda el componente (ConfigCamposEntidad) al renombrar:
+        // ActualizarCampoDefinicionRequest(Label, Tipo, Opciones, Orden) via PutAsJsonAsync (Web defaults).
+        // Al deserializarlo en mi DTO, Descripcion y Activo quedan sin enviar (null): eso PRUEBA que los
+        // nombres calzan (el body bindea) y que el MERGE sabe distinguir "no enviado".
+        var web = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var bodyComponente = new ActualizarCampoDefinicionRequest("[SELLO] Deducible (editado)", campo.Tipo, campo.Opciones, campo.Orden);
+        var req = JsonSerializer.Deserialize<ActualizarPolizaCampoRequest>(
+            JsonSerializer.Serialize(bodyComponente, web), web)!;
+        Assert.Null(req.Activo);
+        Assert.Null(req.Descripcion);
+        Assert.Equal("[SELLO] Deducible (editado)", req.Label);
+
+        Assert.True(await svc.ActualizarCampoAsync(campo.Id, req, CancellationToken.None));
+
+        await using var db = AppDb(tenantId);
+        var raw = await db.PolizaCampos.AsNoTracking().FirstAsync(x => x.Id == campo.Id);
+        Assert.Equal("[SELLO] Deducible (editado)", raw.Label);      // el rename se aplico
+        Assert.True(raw.Activo);                                     // NO se oculto (Activo conservado)
+        Assert.Equal("Nota interna del corredor", raw.Descripcion);  // la descripcion se conservo
+        await CleanupTenantAsync(tenantId);
+    }
+
+    [Fact]
+    public async Task El_gestor_oculta_y_el_edit_del_componente_no_reactiva_MERGE()
+    {
+        var tenantId = await SeedTenantAsync("[SELLO] MERGE poliza oculto");
+        var svc = BuildService(tenantId);
+        var campo = await svc.CrearCampoAsync(
+            new CrearPolizaCampoRequest("[SELLO] Placa", TipoCampoTablero.Texto, null, null), CancellationToken.None);
+
+        // El gestor propio manda la forma COMPLETA con Activo=false (ocultar como columna) -> se aplica.
+        await svc.ActualizarCampoAsync(campo.Id,
+            new ActualizarPolizaCampoRequest("[SELLO] Placa", TipoCampoTablero.Texto, null, null, campo.Orden, false),
+            CancellationToken.None);
+        await using (var db1 = AppDb(tenantId))
+            Assert.False((await db1.PolizaCampos.AsNoTracking().FirstAsync(x => x.Id == campo.Id)).Activo);
+
+        // El componente edita (rename) SIN Activo -> el campo sigue oculto (el MERGE no lo reactiva).
+        var req = new ActualizarPolizaCampoRequest("[SELLO] Placa vehiculo", TipoCampoTablero.Texto, null, null, campo.Orden, null);
+        await svc.ActualizarCampoAsync(campo.Id, req, CancellationToken.None);
+
+        await using var db2 = AppDb(tenantId);
+        var raw = await db2.PolizaCampos.AsNoTracking().FirstAsync(x => x.Id == campo.Id);
+        Assert.Equal("[SELLO] Placa vehiculo", raw.Label);   // el rename se aplico
+        Assert.False(raw.Activo);                            // pero sigue oculto (Activo=false conservado)
+        await CleanupTenantAsync(tenantId);
+    }
+
     // ----------------------------- infraestructura -----------------------------
+
+    // Contexto de aplicacion (respeta RLS/tenant) para leer el estado crudo del campo en las aserciones,
+    // incluidos los inactivos (ListCamposAsync filtra Activo, aqui necesitamos ver el que se oculto).
+    private PropiaDbContext AppDb(Guid tenantId)
+    {
+        var tenantCtx = new TenantContext();
+        tenantCtx.SetTenant(tenantId);
+        var options = new DbContextOptionsBuilder<PropiaDbContext>()
+            .UseNpgsql(_fx.AppConnectionString)
+            .AddInterceptors(new TenantConnectionInterceptor(tenantCtx))
+            .Options;
+        return new PropiaDbContext(options, tenantCtx);
+    }
 
     private ISegurosService BuildService(Guid tenantId)
     {

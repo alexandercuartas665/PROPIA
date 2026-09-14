@@ -236,8 +236,15 @@ public class SegurosService : ISegurosService
     {
         var c = await _db.PolizaCampos.FirstOrDefaultAsync(x => x.Id == campoId, ct);
         if (c is null) return false;
-        c.Label = req.Label.Trim(); c.Tipo = req.Tipo; c.Opciones = Limpio(req.Opciones);
-        c.Descripcion = Limpio(req.Descripcion); c.Orden = req.Orden; c.Activo = req.Activo;
+        // MERGE (PUT es MERGE, CLAUDE.md): el gestor propio manda la forma completa; el componente compartido
+        // solo manda Label/Tipo/Opciones/Orden. Descripcion y Activo en null = "no enviado" -> se conservan
+        // (asi el edit del componente no borra la descripcion ni oculta el campo con Activo=false).
+        if (!string.IsNullOrWhiteSpace(req.Label)) c.Label = req.Label.Trim();
+        c.Tipo = req.Tipo;
+        c.Opciones = Limpio(req.Opciones);
+        c.Orden = req.Orden;
+        if (req.Descripcion is not null) c.Descripcion = Limpio(req.Descripcion);
+        if (req.Activo is not null) c.Activo = req.Activo.Value;
         await _db.SaveChangesAsync(ct);
         return true;
     }
