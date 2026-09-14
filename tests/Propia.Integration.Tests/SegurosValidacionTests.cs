@@ -147,21 +147,76 @@ public class SegurosValidacionTests
     }
 
     [Fact]
-    public async Task Actualizar_quitando_la_fecha_de_inicio_falla_y_no_persiste()
+    public async Task Actualizar_con_solo_fechaFin_conserva_la_fechaInicio_MERGE()
     {
+        // N-02: el PUT es MERGE. Un update que no manda fechaInicio la CONSERVA (no la borra), asi que
+        // el estado resultante sigue teniendo inicio valido y la actualizacion pasa. (Antes, con el
+        // reemplazo total, omitir la fecha de inicio la ponia en null y fallaba.)
         var tenantId = await SeedTenantAsync("[SELLO] SG upd inicio");
         var svc = BuildService(tenantId);
         var p = await svc.CrearPolizaAsync(PolizaValida(), CancellationToken.None);
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            svc.ActualizarPolizaAsync(p.Id,
-                new ActualizarPolizaRequest("[SELLO] Aseguradora de prueba", FechaFin: new DateOnly(2026, 12, 31)),
-                CancellationToken.None));
+        var ok = await svc.ActualizarPolizaAsync(p.Id,
+            new ActualizarPolizaRequest(FechaFin: new DateOnly(2027, 6, 30)), CancellationToken.None);
 
-        Assert.Contains("fecha de inicio", ex.Message, StringComparison.OrdinalIgnoreCase);
-
+        Assert.True(ok);
         var actual = (await svc.ListPolizasAsync(CancellationToken.None)).Single();
-        Assert.Equal(new DateOnly(2026, 1, 1), actual.FechaInicio);
+        Assert.Equal(new DateOnly(2026, 1, 1), actual.FechaInicio);   // conservada
+        Assert.Equal(new DateOnly(2027, 6, 30), actual.FechaFin);      // aplicada
+        await CleanupTenantAsync(tenantId);
+    }
+
+    [Fact]
+    public async Task Actualizar_solo_un_campo_no_pisa_el_resto_MERGE()
+    {
+        // N-02: un PUT que solo cambia el valor no borra corredor, numero, cobertura, etc.
+        var tenantId = await SeedTenantAsync("[SELLO] SG merge");
+        var svc = BuildService(tenantId);
+        var p = await svc.CrearPolizaAsync(
+            new CrearPolizaRequest("[SELLO] Aseguradora de prueba",
+                NumeroPoliza: "[SELLO]-POL-M", Corredor: "[SELLO] Corredor X",
+                FechaInicio: new DateOnly(2026, 1, 1), FechaFin: new DateOnly(2026, 12, 31),
+                ValorPoliza: 100m, Cobertura: "[SELLO] Todo riesgo"),
+            CancellationToken.None);
+
+        await svc.ActualizarPolizaAsync(p.Id,
+            new ActualizarPolizaRequest(ValorPoliza: 999m), CancellationToken.None);
+
+        var a = (await svc.ListPolizasAsync(CancellationToken.None)).Single();
+        Assert.Equal(999m, a.ValorPoliza);                 // aplicado
+        Assert.Equal("[SELLO] Corredor X", a.Corredor);    // conservado
+        Assert.Equal("[SELLO]-POL-M", a.NumeroPoliza);     // conservado
+        Assert.Equal("[SELLO] Todo riesgo", a.Cobertura);  // conservado
+        await CleanupTenantAsync(tenantId);
+    }
+
+    [Fact]
+    public async Task PUT_sin_cambiar_la_vigencia_NO_resetea_la_alerta()
+    {
+        // N-02 (como K-08): el contador de alerta solo se reinicia si cambia la vigencia.
+        var tenantId = await SeedTenantAsync("[SELLO] SG alerta conserva");
+        var p = await BuildService(tenantId).CrearPolizaAsync(PolizaValida(), CancellationToken.None);
+        await SetPctNotificadoAsync(p.Id, 10);
+
+        // Servicio nuevo (contexto nuevo) para que vea el pct=10 y no el valor trackeado por la creacion.
+        await BuildService(tenantId).ActualizarPolizaAsync(p.Id,
+            new ActualizarPolizaRequest(ValorPoliza: 123m), CancellationToken.None);
+
+        Assert.Equal(10, await GetPctNotificadoAsync(p.Id));
+        await CleanupTenantAsync(tenantId);
+    }
+
+    [Fact]
+    public async Task PUT_que_cambia_la_vigencia_SI_resetea_la_alerta()
+    {
+        var tenantId = await SeedTenantAsync("[SELLO] SG alerta reset");
+        var p = await BuildService(tenantId).CrearPolizaAsync(PolizaValida(), CancellationToken.None);
+        await SetPctNotificadoAsync(p.Id, 10);
+
+        await BuildService(tenantId).ActualizarPolizaAsync(p.Id,
+            new ActualizarPolizaRequest(FechaFin: new DateOnly(2027, 6, 30)), CancellationToken.None);
+
+        Assert.Null(await GetPctNotificadoAsync(p.Id));
         await CleanupTenantAsync(tenantId);
     }
 
@@ -377,6 +432,19 @@ public class SegurosValidacionTests
             .UseNpgsql(_fx.OwnerConnectionString)
             .Options;
         return new PropiaDbContext(options, tenantCtx);
+    }
+
+    private async Task SetPctNotificadoAsync(Guid polizaId, int pct)
+    {
+        await using var ctx = OwnerDb();
+        await ctx.Database.ExecuteSqlAsync($"UPDATE polizas SET alerta_vencimiento_pct_notificado = {pct} WHERE id = {polizaId}");
+    }
+
+    private async Task<int?> GetPctNotificadoAsync(Guid polizaId)
+    {
+        await using var ctx = OwnerDb();
+        var p = await ctx.Polizas.IgnoreQueryFilters().AsNoTracking().FirstAsync(x => x.Id == polizaId);
+        return p.AlertaVencimientoPctNotificado;
     }
 
     private async Task<Guid> SeedTenantAsync(string nombre)
