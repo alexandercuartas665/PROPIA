@@ -283,7 +283,7 @@ public static class DependencyInjection
         // Cada job se inyecta como IBackgroundJob (multiples implementaciones).
         // El BackgroundJobScheduler es Singleton (BackgroundService) que cada tick
         // abre un scope nuevo para resolver los jobs scoped.
-        services.AddScoped<Jobs.IBackgroundJob, Jobs.PqrsdCierreNocturnoJob>();
+        // (PqrsdCierreNocturnoJob eliminado: el PQRSD nunca se cierra automatico; el cierre es manual - SOLICITUD_FARO_01)
         services.AddScoped<Jobs.IBackgroundJob, Jobs.PqrsdAlertaPlazoJob>();  // G-01: alertas de plazo
         services.AddScoped<Jobs.IBackgroundJob, Jobs.MetricasDiariasJob>();
         services.AddScoped<Jobs.IBackgroundJob, Jobs.CobroRecurrenteJob>();

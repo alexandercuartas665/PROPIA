@@ -54,7 +54,6 @@ public class BackgroundJobsFlowTests : IAsyncLifetime
         sc.AddScoped<PqrsdMantenimientoService>();
 
         // Jobs concretos
-        sc.AddScoped<IBackgroundJob, PqrsdCierreNocturnoJob>();
         sc.AddScoped<IBackgroundJob, MetricasDiariasJob>();
 
         // Scheduler como singleton (accesible para invocar TickAsync manualmente)

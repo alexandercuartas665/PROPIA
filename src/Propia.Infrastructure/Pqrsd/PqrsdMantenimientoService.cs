@@ -16,8 +16,8 @@ namespace Propia.Infrastructure.Pqrsd;
 ///  - AlertarPlazosAsync (G-01): alertas de plazo legal (80% / vencido). AVISA, no cierra.
 ///
 /// NOTA: el cierre automatico tras la ventana de inconformidad se ELIMINO (decision de Alex 2026-09-13): un
-/// PQRSD nunca se cierra solo; el cierre es siempre manual. El job PqrsdCierreNocturnoJob quedo desactivado y
-/// se elimina via SOLICITUD_FARO_01.
+/// PQRSD nunca se cierra solo; el cierre es siempre manual. El job de cierre nocturno se elimino por completo
+/// (SOLICITUD_FARO_01).
 /// </summary>
 public class PqrsdMantenimientoService
 {
