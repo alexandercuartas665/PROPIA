@@ -275,6 +275,9 @@ else
         }
     }
 
+    @* Alta de campos PROPIOS: se oculta cuando la entidad no tiene EAV (SinCamposPropios). *@
+    @if (!SinCamposPropios)
+    {
     <div class="dst-cfg-sep"></div>
 
     <div class="dst-cfg-form">
@@ -313,6 +316,7 @@ else
             </button>
         </div>
     </div>
+    }
 }
 
 @* Los estilos del gestor (.cga-*) viven en wwwroot/css/modules/config-campos.css (global), para que
@@ -354,6 +358,12 @@ else
     /// alias/visibilidad/orden/tipo/formato de sistema, y oculta los controles de orden y visibilidad
     /// (que persistirian en config). Lo usa Tareas (opcion A: columnas per-usuario, no por copropiedad).</summary>
     [Parameter] public bool SinConfigSistema { get; set; }
+
+    /// <summary>true = la entidad NO tiene campos PROPIOS (EAV): no expone {Prefijo}-campos. El componente
+    /// omite el GET al catalogo (evita el 404 que dejaria la grilla en error) y oculta el alta "Crear campo";
+    /// solo gestiona campos de SISTEMA. Aditivo (default false = comportamiento actual). Lo usa PROGRAMACION
+    /// (Mantenimiento). Es el inverso de <see cref="SinConfigSistema"/>: aquel quita config, este quita EAV.</summary>
+    [Parameter] public bool SinCamposPropios { get; set; }
 
     /// <summary>Ruta efectiva del catalogo (RutaCatalogo o el derivado del prefijo).</summary>
     private string CatBase => string.IsNullOrWhiteSpace(RutaCatalogo) ? $"{Prefijo}-campos" : RutaCatalogo;
@@ -515,8 +525,18 @@ else
         try
         {
             var http = Auth();
-            var defs = await http.GetFromJsonAsync<List<CampoDinDef>>(CatUrl) ?? new();
-            _defs = defs.OrderBy(d => d.Orden).ToList();
+            // Modo sin campos propios (p.ej. PROGRAMACION de Mantenimiento, que no tiene EAV): la entidad
+            // no expone {Prefijo}-campos y el GET daria 404 dejando la grilla en error. Se omite: solo se
+            // gestionan los campos de SISTEMA.
+            if (SinCamposPropios)
+            {
+                _defs = new();
+            }
+            else
+            {
+                var defs = await http.GetFromJsonAsync<List<CampoDinDef>>(CatUrl) ?? new();
+                _defs = defs.OrderBy(d => d.Orden).ToList();
+            }
             // Modo sin config de sistema (p.ej. Tareas, opcion A): no hay tabla *-config; el componente
             // solo gestiona las DEFINICIONES de campos propios. No se pide ni se escribe config.
             if (SinConfigSistema)
