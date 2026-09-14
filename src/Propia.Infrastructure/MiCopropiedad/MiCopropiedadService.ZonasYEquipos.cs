@@ -157,6 +157,9 @@ public partial class MiCopropiedadService
         e.ValorAdquisicion = req.ValorAdquisicion;
         e.Proveedor = req.Proveedor;
         e.NumeroFactura = req.NumeroFactura;
+        // MERGE: la marca solo se toca si el cliente la envia (null = conservar, "" = limpiar).
+        if (req.Marca is not null)
+            e.Marca = string.IsNullOrWhiteSpace(req.Marca) ? null : req.Marca.Trim();
         await _db.SaveChangesAsync(ct);
         await RegistrarBitacoraAsync("Equipos", $"Ficha tecnica de '{e.Nombre}' actualizada.", ct);
         return ToEquipoActivoDto(e);

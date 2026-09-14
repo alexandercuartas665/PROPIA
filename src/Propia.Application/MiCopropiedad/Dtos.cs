@@ -460,7 +460,9 @@ public record ActualizarEquipoActivoRequest(
     string? Ubicacion, string? Observaciones,
     int? VidaUtilAnios, DateOnly? FechaAdquisicion, decimal? ValorAdquisicion,
     string? Proveedor, string? NumeroFactura,
-    string? CodigoBarra = null, string? CondicionesUso = null);
+    string? CodigoBarra = null, string? CondicionesUso = null,
+    // MERGE: null = no tocar (clientes que no la envian conservan la marca); "" = limpiar.
+    string? Marca = null);
 
 // ----- Ventanas de disponibilidad (reservas: zonas comunes y equipos reservables) -----
 public record VentanaDisponibilidadDto(
