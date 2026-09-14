@@ -49,16 +49,21 @@ else
         <div class="cga-grid cga-row @(_dragClave == clave ? "cga-row--drag" : "")"
              @ondragover:preventDefault="true" @ondrop="() => OnDrop(clave)">
             <div class="cga-ctrl">
-                <span class="cga-grip" draggable="true" title="Arrastra para reubicar el campo"
-                      @ondragstart="() => _dragClave = clave" @ondragend="() => _dragClave = null">
-                    <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor"><circle cx="3" cy="3" r="1.4"/><circle cx="9" cy="3" r="1.4"/><circle cx="3" cy="8" r="1.4"/><circle cx="9" cy="8" r="1.4"/><circle cx="3" cy="13" r="1.4"/><circle cx="9" cy="13" r="1.4"/></svg>
-                </span>
-                <button type="button" class="cga-mini" title="Subir" @onclick="() => MoverAsync(clave, -1)" disabled="@_busy">&#9650;</button>
-                <button type="button" class="cga-mini" title="Bajar" @onclick="() => MoverAsync(clave, 1)" disabled="@_busy">&#9660;</button>
-                <button type="button" class="cga-eye @(vis ? "on" : "")" title="@(vis ? "Visible en la ficha" : "Oculto")"
-                        @onclick="() => SetVisibleAsync(clave, !vis)" disabled="@(_busy || !PuedeOcultar(item))">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
-                </button>
+                @* Orden y visibilidad persisten en la config del tenant; en SinConfigSistema (Tareas) no
+                   existe esa config -el orden es per-usuario desde el tablero-, asi que se ocultan. *@
+                @if (!SinConfigSistema)
+                {
+                    <span class="cga-grip" draggable="true" title="Arrastra para reubicar el campo"
+                          @ondragstart="() => _dragClave = clave" @ondragend="() => _dragClave = null">
+                        <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor"><circle cx="3" cy="3" r="1.4"/><circle cx="9" cy="3" r="1.4"/><circle cx="3" cy="8" r="1.4"/><circle cx="9" cy="8" r="1.4"/><circle cx="3" cy="13" r="1.4"/><circle cx="9" cy="13" r="1.4"/></svg>
+                    </span>
+                    <button type="button" class="cga-mini" title="Subir" @onclick="() => MoverAsync(clave, -1)" disabled="@_busy">&#9650;</button>
+                    <button type="button" class="cga-mini" title="Bajar" @onclick="() => MoverAsync(clave, 1)" disabled="@_busy">&#9660;</button>
+                    <button type="button" class="cga-eye @(vis ? "on" : "")" title="@(vis ? "Visible en la ficha" : "Oculto")"
+                            @onclick="() => SetVisibleAsync(clave, !vis)" disabled="@(_busy || !PuedeOcultar(item))">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                }
             </div>
             <div>
                 @if (item.EsCustom)
@@ -357,6 +362,11 @@ else
     /// <summary>Para campos con ListaExterna: cuenta de opciones (visibles, ocultas) que provee la pagina
     /// para la pista de la grilla. Si es null, no se muestra conteo.</summary>
     [Parameter] public Func<string, (int Visibles, int Ocultas)>? ContarOpcionesExterna { get; set; }
+    /// <summary>true = la entidad NO tiene config de sistema en BD (no hay tabla *-config). El componente
+    /// solo gestiona DEFINICIONES de campos propios (crear/editar/eliminar/listar); no lee ni escribe
+    /// alias/visibilidad/orden/tipo/formato de sistema, y oculta los controles de orden y visibilidad
+    /// (que persistirian en config). Lo usa Tareas (opcion A: columnas per-usuario, no por copropiedad).</summary>
+    [Parameter] public bool SinConfigSistema { get; set; }
 
     /// <summary>Ruta efectiva del catalogo (RutaCatalogo o el derivado del prefijo).</summary>
     private string CatBase => string.IsNullOrWhiteSpace(RutaCatalogo) ? $"{Prefijo}-campos" : RutaCatalogo;
@@ -519,9 +529,18 @@ else
         {
             var http = Auth();
             var defs = await http.GetFromJsonAsync<List<CampoDinDef>>(CatUrl) ?? new();
-            var cfg = await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>($"{CfgUrl}?entidad={EntCfg}") ?? new();
             _defs = defs.OrderBy(d => d.Orden).ToList();
-            _cfg = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+            // Modo sin config de sistema (p.ej. Tareas, opcion A): no hay tabla *-config; el componente
+            // solo gestiona las DEFINICIONES de campos propios. No se pide ni se escribe config.
+            if (SinConfigSistema)
+            {
+                _cfg = new(StringComparer.Ordinal);
+            }
+            else
+            {
+                var cfg = await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>($"{CfgUrl}?entidad={EntCfg}") ?? new();
+                _cfg = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+            }
         }
         catch (Exception ex) { _errorCarga = ex.Message; _defs = new(); _cfg = new(StringComparer.Ordinal); }
         finally { _cargando = false; }
