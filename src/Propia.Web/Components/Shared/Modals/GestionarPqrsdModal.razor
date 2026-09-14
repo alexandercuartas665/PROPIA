@@ -3,6 +3,7 @@
 
 @inherits ModalBase<bool>
 @using Propia.Web.Components.Shared.Modals
+@using Propia.Web.Components.Shared
 @using Propia.Application.Pqrsd
 @using Propia.Application.MiCopropiedad
 @using Propia.Application.Directorio
@@ -386,11 +387,16 @@
                         {
                             <select class="gpq-input" value="@_campoValores.GetValueOrDefault(c.Id, "")" @onchange="(e) => SetCampo(c.Id, e.Value?.ToString())">
                                 <option value="">- elegir -</option>
-                                @foreach (var op in (c.Opciones ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                                @foreach (var op in OpcionCampo.VisiblesK(c.Opciones))
                                 {
                                     <option value="@op">@op</option>
                                 }
                             </select>
+                            @if (!string.IsNullOrWhiteSpace(_campoValores.GetValueOrDefault(c.Id, "")))
+                            {
+                                @* Chip de color del valor elegido (el <select> nativo no colorea sus opciones). *@
+                                <span class="gpq-lchip" style="background:@ChipColorDe(c);color:@PaletaChips.TextoSobre(ChipColorDe(c))">@_campoValores.GetValueOrDefault(c.Id, "")</span>
+                            }
                         }
                         else if (c.Tipo == TipoCampoTablero.AreaTexto)
                         {
@@ -1299,6 +1305,14 @@
     {
         _campoValores[id] = valor ?? "";
         await GuardarDatos(recargar: false);  // auto-guardado al salir del campo
+    }
+
+    // Color del chip del valor elegido en una lista propia (segun la opcion, o neutro si no tiene color).
+    private string ChipColorDe(PqrsdCampoDto c)
+    {
+        var selv = _campoValores.GetValueOrDefault(c.Id, "");
+        var opv = OpcionCampo.Parse(c.Opciones).FirstOrDefault(o => string.Equals(o.K, selv, StringComparison.OrdinalIgnoreCase));
+        return opv?.Color ?? PaletaChips.Neutro;
     }
 
     // Ancho del campo dinamico en el modal: 1 = media (50%), 2 = completo (100%), 3 = un tercio (33%).
