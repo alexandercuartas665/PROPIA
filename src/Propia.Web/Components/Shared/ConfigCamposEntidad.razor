@@ -238,6 +238,20 @@ else
     [Parameter] public string? Jwt { get; set; }
     [Parameter] public EventCallback Cambiado { get; set; }
 
+    // ===== Rutas base parametrizables (P-1) =====
+    // El catalogo de campos propios vive en {prefijo}-campos por defecto; RutaCatalogo lo sobreescribe
+    // cuando el nombre del controlador no coincide con el prefijo. La CONFIG de campos del sistema
+    // (alias/oculto/orden/tipo/formato) vive por defecto en 'unidades-config' (config COMPARTIDA del
+    // ecosistema de la unidad: unidad + personas + vehiculos + mascotas + terceros, discriminada por
+    // 'entidad'). Seguros/PQRSD pasaran su propia RutaConfig para reusar este mismo componente.
+    /// <summary>Ruta base del catalogo de campos propios (sin /api/mi-copropiedad/). Null = "{Prefijo}-campos".</summary>
+    [Parameter] public string? RutaCatalogo { get; set; }
+    /// <summary>Ruta base del endpoint de config de campos del sistema. Por defecto "unidades-config".</summary>
+    [Parameter] public string RutaConfig { get; set; } = "unidades-config";
+
+    /// <summary>Ruta efectiva del catalogo (RutaCatalogo o el derivado del prefijo).</summary>
+    private string CatBase => string.IsNullOrWhiteSpace(RutaCatalogo) ? $"{Prefijo}-campos" : RutaCatalogo;
+
     // ===== Campos del SISTEMA de cada ficha (los que la entidad ya trae de fabrica) =====
     private sealed record CampoSis(string Clave, string DefLabel, TipoCampoTablero Tipo, bool VisibleDefault = true, bool Requerido = false);
 
@@ -366,8 +380,8 @@ else
         try
         {
             var http = Auth();
-            var defs = await http.GetFromJsonAsync<List<CampoDinDef>>($"/api/mi-copropiedad/{Prefijo}-campos") ?? new();
-            var cfg = await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>($"/api/mi-copropiedad/unidades-config?entidad={Prefijo}") ?? new();
+            var defs = await http.GetFromJsonAsync<List<CampoDinDef>>($"/api/mi-copropiedad/{CatBase}") ?? new();
+            var cfg = await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>($"/api/mi-copropiedad/{RutaConfig}?entidad={Prefijo}") ?? new();
             _defs = defs.OrderBy(d => d.Orden).ToList();
             _cfg = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
         }
@@ -438,7 +452,7 @@ else
         _busy = true;
         try
         {
-            var r = await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req);
+            var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/{RutaConfig}", req);
             if (r.IsSuccessStatusCode)
             {
                 var dto = await r.Content.ReadFromJsonAsync<UnidadCampoConfigDto>();
@@ -503,7 +517,7 @@ else
             // Se manda la fila entera de cada campo: si solo fuera la clave, las filas creadas al
             // vuelo tomarian el default de 'oculto' y los campos ocultos se harian visibles solos.
             var filas = claves.Select((k, i) => FilaConfig(k) with { Orden = i }).ToList();
-            var r = await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config/lote", filas);
+            var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/{RutaConfig}/lote", filas);
             if (r.IsSuccessStatusCode) { await CargarAsync(); await Cambiado.InvokeAsync(); }
             else { _msg = "No se pudo guardar el orden."; }
         }
@@ -526,7 +540,7 @@ else
         try
         {
             var req = new ActualizarCampoDefinicionRequest(label ?? d.Label, tipo ?? d.Tipo, opciones ?? d.Opciones, d.Orden);
-            var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/{Prefijo}-campos/{d.Id}", req);
+            var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/{CatBase}/{d.Id}", req);
             if (!r.IsSuccessStatusCode) { _msg = "No se pudo guardar el campo."; return false; }
             return true;
         }
@@ -622,7 +636,7 @@ else
         try
         {
             var opciones = _nvTipo == TipoCampoTablero.Seleccion && !string.IsNullOrWhiteSpace(_nvOpciones) ? _nvOpciones : null;
-            var r = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/{Prefijo}-campos",
+            var r = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/{CatBase}",
                 new CrearCampoDefinicionRequest(label, _nvTipo, opciones));
             if (r.IsSuccessStatusCode)
             {
@@ -640,7 +654,7 @@ else
         _busy = true; _msg = null;
         try
         {
-            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/{Prefijo}-campos/{d.Id}");
+            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/{CatBase}/{d.Id}");
             if (r.IsSuccessStatusCode)
             {
                 if (_opcExpand == d.Id) _opcExpand = null;
