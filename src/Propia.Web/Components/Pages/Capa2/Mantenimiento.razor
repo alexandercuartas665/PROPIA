@@ -70,21 +70,11 @@
             }
         </div>
         <div class="mtp-menuwrap">
-            <button type="button" class="mtp-fbtn @(_progMenu == "cols" ? "on" : "")" @onclick='() => _progMenu = _progMenu == "cols" ? "" : "cols"'>
+            @* Campos: abre el Selector de Campos compartido (reemplaza el menu de checkboxes en memoria). *@
+            <button type="button" class="mtp-fbtn @(_selProgAbierto ? "on" : "")" @onclick="() => _selProgAbierto = true" title="Campos de la programacion: orden, visibilidad y nombre">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
                 <span>Campos</span>
             </button>
-            @if (_progMenu == "cols")
-            {
-                <div class="mtp-menu-bd" @onclick='() => _progMenu = ""'></div>
-                <div class="mtp-menu">
-                    @foreach (var c in _progColsAll)
-                    {
-                        var ck = c.Key;
-                        <label class="mtp-menu-chk"><input type="checkbox" checked="@(!_progColsOcultas.Contains(ck))" @onchange="@(e => ToggleColProg(ck, (bool)(e.Value ?? false)))" /> @c.Label</label>
-                    }
-                </div>
-            }
         </div>
     </div>
 
@@ -805,6 +795,33 @@ else if (_tab == "calendario")
     </div>
 }
 
+@* Selector de Campos (Fase 1) de la PROGRAMACION: solo campos de SISTEMA (la programacion no tiene
+   EAV -> SinCamposPropios). Orden/visibilidad/alias viven en unidades-config (entidad 'programacion'). *@
+@if (_selProgAbierto)
+{
+    <div class="mtp-selcfg-back" @onclick="() => _selProgAbierto = false">
+        <div class="mtp-selcfg-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+            <div class="mtp-selcfg-head">
+                <div>
+                    <div class="mtp-selcfg-title">Campos de la programacion</div>
+                    <div class="mtp-selcfg-sub">Orden, visibilidad y nombre de las columnas del cronograma.</div>
+                </div>
+                <button class="mtp-selcfg-x" type="button" @onclick="() => _selProgAbierto = false" aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="mtp-selcfg-body">
+                <ConfigCamposEntidad Prefijo="programacion"
+                                     EntidadConfig="programacion"
+                                     SinCamposPropios="true"
+                                     Catalogo="@ProgramacionCatalogo"
+                                     TituloSingular="programacion"
+                                     TituloPlural="Programaciones"
+                                     Jwt="@_jwt"
+                                     Cambiado="RecargarConfigProgAsync" />
+            </div>
+        </div>
+    </div>
+}
+
 @* ModalHost DEBE vivir en la pagina (no en MainLayout): comparte instancia Scoped del IModalService. *@
 <ModalHost />
 
@@ -987,6 +1004,15 @@ else if (_tab == "calendario")
     @@media (max-width: 640px) {
         .mt-kpis { grid-template-columns: repeat(2, 1fr); }
     }
+
+    /* === Modal del Selector de Campos de la programacion (mismo patron que zc-cfg-*) === */
+    .mtp-selcfg-back { position: fixed; inset: 0; background: rgba(20,26,38,.45); display: flex; align-items: center; justify-content: center; z-index: 3000; padding: 20px; }
+    .mtp-selcfg-modal { background: var(--propia-bg-card); border-radius: 14px; width: min(680px, 96vw); max-height: 88vh; overflow: auto; box-shadow: 0 20px 60px rgba(20,30,50,.3); }
+    .mtp-selcfg-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 20px 12px; border-bottom: 1px solid var(--propia-border-divider); }
+    .mtp-selcfg-title { font-size: 16px; font-weight: 700; color: var(--propia-text-h1); }
+    .mtp-selcfg-sub { font-size: 12.5px; color: var(--propia-text-muted); margin-top: 2px; }
+    .mtp-selcfg-x { border: none; background: none; font-size: 24px; line-height: 1; color: var(--propia-text-faint); cursor: pointer; }
+    .mtp-selcfg-body { padding: 16px 20px 20px; }
 </style>
 
 @code {
@@ -1007,7 +1033,6 @@ else if (_tab == "calendario")
     private string _progQuery = "";
     private string _progAgrupar = "";
     private string _progMenu = "";
-    private readonly HashSet<string> _progColsOcultas = new();
     // Fila de alta inline de Programacion: un campo por columna (canon regla 8).
     private string _altaTipo = "Equipo";          // Equipo | ZonaComun (selector antes del activo)
     private string _altaActivoId = "";            // Guid del activo (filtrado por _altaTipo)
@@ -1048,15 +1073,52 @@ else if (_tab == "calendario")
             && ContratosParaTercero().All(c => c.Id != cid)) _altaContratoKey = "";
     }
 
+    // ---- Selector de Campos (Fase 1): columnas dirigidas por unidades-config (entidad 'programacion') ----
+    // Reemplaza el menu de checkboxes en memoria: orden/visibilidad/alias viven en la config compartida
+    // por copropiedad (el componente ConfigCamposEntidad las escribe; aqui se leen para pintar la tabla).
+    // La programacion NO tiene EAV: solo campos de SISTEMA del catalogo canonico.
     private sealed record ProgCol(string Key, string Label);
-    private static readonly List<ProgCol> _progColsAll = new()
+    private bool _selProgAbierto;
+    private Dictionary<string, Propia.Application.MiCopropiedad.UnidadCampoConfigDto> _cfgProg = new(StringComparer.Ordinal);
+
+    private static readonly IReadOnlyList<CampoSistemaDef> ProgramacionCatalogo =
+        MantenimientoCamposSistema.Todos.Select(c => new CampoSistemaDef(
+            c.Clave, c.Label, c.Tipo, c.VisiblePorDefecto, c.Fija,
+            OpcionesEditables: false, Semilla: null, Entero: false, Ayuda: null,
+            TiposIntercambiables: Array.Empty<TipoCampoTablero>(), ListaExterna: false, SinFormato: true)).ToList();
+
+    private bool VisibleColProg(string clave)
+        => _cfgProg.TryGetValue(clave, out var c) ? !c.Oculto
+            : (MantenimientoCamposSistema.Por(clave)?.VisiblePorDefecto ?? true);
+    private int OrdenColProg(string clave, int fallback)
+        => _cfgProg.TryGetValue(clave, out var c) && c.Orden is { } o ? o : 1000 + fallback;
+    private string LabelColProg(string clave)
+        => _cfgProg.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Alias)
+            ? c.Alias! : (MantenimientoCamposSistema.Por(clave)?.Label ?? clave);
+    private IEnumerable<ProgCol> ProgColsVis
+        => MantenimientoCamposSistema.Todos
+            .Select((c, i) => (c.Clave, ord: OrdenColProg(c.Clave, i)))
+            .OrderBy(x => x.ord)
+            .Where(x => VisibleColProg(x.Clave))
+            .Select(x => new ProgCol(x.Clave, LabelColProg(x.Clave)));
+
+    private async Task CargarConfigProgAsync()
     {
-        new("tipo", "Tipo"), new("activo", "Activo"), new("titulo", "Titulo"), new("tercero", "Tercero"), new("contrato", "Contrato"),
-        new("costo", "Costo estimado"),
-        new("tablero", "Tablero"), new("prioridad", "Prioridad"), new("periodicidad", "Periodicidad"),
-        new("proxima", "Proxima ejecucion"), new("responsables", "Responsables"), new("activa", "Activa"),
-    };
-    private IEnumerable<ProgCol> ProgColsVis => _progColsAll.Where(c => !_progColsOcultas.Contains(c.Key));
+        try
+        {
+            var cfg = await Auth().GetFromJsonAsync<List<Propia.Application.MiCopropiedad.UnidadCampoConfigDto>>(
+                "/api/mi-copropiedad/unidades-config?entidad=programacion") ?? new();
+            _cfgProg = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+        }
+        catch { _cfgProg = new(StringComparer.Ordinal); }
+    }
+
+    // El gestor compartido cambio algo (alias/orden/visibilidad): refresca la config de columnas.
+    private async Task RecargarConfigProgAsync()
+    {
+        await CargarConfigProgAsync();
+        StateHasChanged();
+    }
 
     private string ProgGrid
     {
@@ -1139,12 +1201,6 @@ else if (_tab == "calendario")
         "periodicidad" => "Periodicidad", "prioridad" => "Prioridad", _ => ""
     };
     private static string PeriodicidadProgLabel(PeriodicidadProgramacion p) => p.ToString();
-
-    private void ToggleColProg(string key, bool visible)
-    {
-        if (visible) _progColsOcultas.Remove(key);
-        else _progColsOcultas.Add(key);
-    }
 
     // Tableros/personas solo se piden una vez y al abrir el primer modal (igual que ProgramacionesPanel).
     private async Task CargarOpcionesProgAsync()
@@ -1565,6 +1621,8 @@ else if (_tab == "calendario")
             {
                 // Tableros/personas/contratos para los dropdowns inline y el modal (se cargan una vez).
                 await CargarOpcionesProgAsync();
+                // Config de columnas del Selector de Campos (alias/orden/visibilidad por copropiedad).
+                await CargarConfigProgAsync();
                 var eq = await http.GetFromJsonAsync<List<ProgramacionTareaDto>>("/api/programaciones?moduloOrigen=equipo") ?? new();
                 var zn = await http.GetFromJsonAsync<List<ProgramacionTareaDto>>("/api/programaciones?moduloOrigen=zona") ?? new();
                 _progs = eq.Concat(zn)

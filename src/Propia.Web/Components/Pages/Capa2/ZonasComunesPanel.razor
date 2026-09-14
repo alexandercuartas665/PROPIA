@@ -33,9 +33,10 @@
                 @(_impBusy ? "Cargando..." : "Cargar plantilla")
                 <InputFile OnChange="OnPlantillaImport" accept=".xlsx" style="display:none" disabled="@_impBusy" />
             </label>
-            <button type="button" class="zc-btn-ghost" @onclick="() => _cfgAbierto = true" title="Configurar campos dinamicos de las zonas comunes">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                Configurar
+            @* Campos: unica entrada a la configuracion de este modulo (Selector de Campos compartido). *@
+            <button type="button" class="zc-btn-ghost" @onclick="() => _selAbierto = true" title="Campos de las zonas: orden, visibilidad, nombre y campos propios">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
+                Campos
             </button>
         </div>
     }
@@ -90,39 +91,6 @@ else
                             var gk = g.Item1;
                             <button class="zc-menu-it @(_agruparZ == gk ? "on" : "")" @onclick="() => SetAgruparZ(gk)">@g.Item2</button>
                         }
-                    </div>
-                }
-            </div>
-            <div class="zc-menu-wrap">
-                <button type="button" class="zc-fbtn" @onclick="() => _showCamposZ = !_showCamposZ" title="Campos y columnas de la tabla">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
-                    <span>Campos</span>
-                </button>
-                @if (_showCamposZ)
-                {
-                    <div class="zc-menu-bd" @onclick="() => _showCamposZ = false"></div>
-                    <div class="zc-colsmenu">
-                        <div class="zc-colsmenu-h">COLUMNAS (orden y visibilidad)</div>
-                        @for (int i = 0; i < _colOrderZ.Count; i++)
-                        {
-                            var idx = i; var col = CatalogoZ.First(c => c.Key == _colOrderZ[idx]);
-                            <div class="zc-colsmenu-i @(ColVisibleZ(col.Key) ? "" : "off")">
-                                <button class="zc-colsmenu-mv" disabled="@(idx == 0)" @onclick="() => MoverColZ(idx, -1)" title="Subir">&#9650;</button>
-                                <button class="zc-colsmenu-mv" disabled="@(idx == _colOrderZ.Count - 1)" @onclick="() => MoverColZ(idx, 1)" title="Bajar">&#9660;</button>
-                                <span class="zc-colsmenu-lbl">@col.DefLabel</span>
-                                @if (col.Hideable)
-                                {
-                                    <label class="zc-colsmenu-sw" title="Mostrar columna">
-                                        <input type="checkbox" checked="@ColVisibleZ(col.Key)" @onchange="() => ToggleColZ(col.Key)" />
-                                    </label>
-                                }
-                                else { <span class="zc-colsmenu-fija">fija</span> }
-                            </div>
-                        }
-                        <div class="zc-colsmenu-acts">
-                            <button class="zc-colsmenu-act" @onclick="ColsTodasZ">Mostrar todas</button>
-                            <button class="zc-colsmenu-act" @onclick="ColsNingunaZ">Ocultar todas</button>
-                        </div>
                     </div>
                 }
             </div>
@@ -216,10 +184,11 @@ else
         <div class="zc-list">
             @* El expansor tiene su PROPIA columna (la primera, siempre visible): abre la ficha
                del registro para editarlo; en la fila de alta crea la zona y abre su ficha. *@
+            @* Columnas dirigidas por la config compartida (unidades-config, entidad 'zona'): sistema y
+               propias en UNA sola secuencia, con el orden/visibilidad/alias del Selector de Campos. *@
             <div class="zc-list-head zc-grid" style="@ZcGridStyle">
                 <div></div>
-                @foreach (var col in ColsVisiblesZ) { <div>@col.DefLabel</div> }
-                @foreach (var cd in _camposDef) { <div title="Campo personalizado">@cd.Label</div> }
+                @foreach (var k in ColsVisibles()) { <div title="@(EsCustom(k) ? "Campo personalizado" : null)">@ColLabel(k).ToUpperInvariant()</div> }
                 <div></div>
             </div>
             @foreach (var grupo in AgruparZonas(Filtradas()))
@@ -237,10 +206,43 @@ else
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                             </button>
                         </div>
-                        @* Datos editables inline (value= + @onchange guarda al salir del campo). *@
-                        @foreach (var col in ColsVisiblesZ)
+                        @* Datos editables inline (value= + @onchange guarda al salir del campo). Una sola
+                           secuencia de columnas: las de sistema por clave, las propias via CampoCustom. *@
+                        @foreach (var k in ColsVisibles())
                         {
-                            switch (col.Key)
+                            if (CampoCustom(k) is ZonaCampoDefinicionDto cd)
+                            {
+                                var cdd = cd;
+                                var vv = ValorCampo(zona.Id, cd.Id);
+                                switch (cd.Tipo)
+                                {
+                                    case TipoCampoTablero.Seleccion:
+                                        <select class="zc-cell" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())">
+                                            <option value="">-</option>
+                                            @foreach (var op in OpcionesDe(cd)) { <option value="@op" selected="@(vv == op)">@op</option> }
+                                        </select>
+                                        break;
+                                    case TipoCampoTablero.Numero:
+                                    case TipoCampoTablero.Moneda:
+                                        <input class="zc-cell" type="number" step="any" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())" />
+                                        break;
+                                    case TipoCampoTablero.Fecha:
+                                        <input class="zc-cell" type="date" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())" />
+                                        break;
+                                    case TipoCampoTablero.Booleano:
+                                        <select class="zc-cell" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())">
+                                            <option value="">-</option>
+                                            <option value="Si" selected="@(vv == "Si")">Si</option>
+                                            <option value="No" selected="@(vv == "No")">No</option>
+                                        </select>
+                                        break;
+                                    default:
+                                        <input class="zc-cell" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())" title="@cd.Label" />
+                                        break;
+                                }
+                                continue;
+                            }
+                            switch (k)
                             {
                                 case "nombre":
                                     <input class="zc-cell zc-cell-nom" value="@z.Nombre" @onchange="@(e => GuardarZonaInline(zona, "nombre", e))" />
@@ -250,7 +252,7 @@ else
                                         @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c" selected="@(z.Categoria == c)">@c</option> }
                                     </select>
                                     break;
-                                case "reserva":
+                                case "reservable":
                                     <select class="zc-cell" @onchange="@(e => GuardarZonaInline(zona, "reservable", e))">
                                         <option value="false" selected="@(!z.EsReservable)">No</option>
                                         <option value="true" selected="@z.EsReservable">Si</option>
@@ -264,36 +266,14 @@ else
                                         @foreach (var s in Enum.GetValues<EstadoZonaComunMantenimiento>()) { <option value="@s" selected="@(z.Estado == s)">@s</option> }
                                     </select>
                                     break;
-                            }
-                        }
-                        @foreach (var cd in _camposDef)
-                        {
-                            var cdd = cd;
-                            var vv = ValorCampo(zona.Id, cd.Id);
-                            @switch (cd.Tipo)
-                            {
-                                case TipoCampoTablero.Seleccion:
-                                    <select class="zc-cell" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())">
-                                        <option value="">-</option>
-                                        @foreach (var op in OpcionesDe(cd)) { <option value="@op" selected="@(vv == op)">@op</option> }
-                                    </select>
+                                case "descripcion":
+                                    <input class="zc-cell" value="@z.Descripcion" placeholder="-" @onchange="@(e => GuardarZonaInline(zona, "descripcion", e))" />
                                     break;
-                                case TipoCampoTablero.Numero:
-                                case TipoCampoTablero.Moneda:
-                                    <input class="zc-cell" type="number" step="any" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())" />
+                                case "tarifa":
+                                    <input type="number" step="any" min="0" class="zc-cell zc-num" value="@z.TarifaReserva" placeholder="-" @onchange="@(e => GuardarZonaInline(zona, "tarifa", e))" />
                                     break;
-                                case TipoCampoTablero.Fecha:
-                                    <input class="zc-cell" type="date" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())" />
-                                    break;
-                                case TipoCampoTablero.Booleano:
-                                    <select class="zc-cell" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())">
-                                        <option value="">-</option>
-                                        <option value="Si" selected="@(vv == "Si")">Si</option>
-                                        <option value="No" selected="@(vv == "No")">No</option>
-                                    </select>
-                                    break;
-                                default:
-                                    <input class="zc-cell" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())" title="@cd.Label" />
+                                case "reglas":
+                                    <input class="zc-cell" value="@z.ReglasUso" placeholder="-" @onchange="@(e => GuardarZonaInline(zona, "reglas", e))" />
                                     break;
                             }
                         }
@@ -315,9 +295,39 @@ else
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                     </button>
                 </div>
-                @foreach (var col in ColsVisiblesZ)
+                @foreach (var k in ColsVisibles())
                 {
-                    switch (col.Key)
+                    if (CampoCustom(k) is ZonaCampoDefinicionDto cd)
+                    {
+                        var cdd = cd;
+                        var val = _nuCampos.GetValueOrDefault(cd.Id);
+                        switch (cd.Tipo)
+                        {
+                            case TipoCampoTablero.Seleccion:
+                                <select class="zc-row-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
+                                    <option value="">- elegir -</option>
+                                    @foreach (var op in OpcionesDe(cd)) { <option value="@op">@op</option> }
+                                </select>
+                                break;
+                            case TipoCampoTablero.Numero:
+                            case TipoCampoTablero.Moneda:
+                                <input class="zc-row-inp" type="number" step="any" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cd.Label" />
+                                break;
+                            case TipoCampoTablero.Fecha:
+                                <input class="zc-row-inp" type="date" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" />
+                                break;
+                            case TipoCampoTablero.Booleano:
+                                <select class="zc-row-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
+                                    <option value="">- elegir -</option><option value="Si">Si</option><option value="No">No</option>
+                                </select>
+                                break;
+                            default:
+                                <input class="zc-row-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cd.Label" />
+                                break;
+                        }
+                        continue;
+                    }
+                    switch (k)
                     {
                         case "nombre":
                             <input class="zc-row-inp" @ref="_nombreRef" placeholder="Nueva zona comun..."
@@ -328,7 +338,7 @@ else
                                 @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c">@c</option> }
                             </select>
                             break;
-                        case "reserva":
+                        case "reservable":
                             <select class="zc-row-inp" @onchange="@(e => _draft.EsReservable = e.Value?.ToString() == "true")">
                                 <option value="false" selected="@(!_draft.EsReservable)">No</option>
                                 <option value="true" selected="@_draft.EsReservable">Si</option>
@@ -340,34 +350,9 @@ else
                         case "estado":
                             <div class="zc-list-c">Activa</div>
                             break;
-                    }
-                }
-                @foreach (var cd in _camposDef)
-                {
-                    var cdd = cd;
-                    var val = _nuCampos.GetValueOrDefault(cd.Id);
-                    @switch (cd.Tipo)
-                    {
-                        case TipoCampoTablero.Seleccion:
-                            <select class="zc-row-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
-                                <option value="">- elegir -</option>
-                                @foreach (var op in OpcionesDe(cd)) { <option value="@op">@op</option> }
-                            </select>
-                            break;
-                        case TipoCampoTablero.Numero:
-                        case TipoCampoTablero.Moneda:
-                            <input class="zc-row-inp" type="number" step="any" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cd.Label" />
-                            break;
-                        case TipoCampoTablero.Fecha:
-                            <input class="zc-row-inp" type="date" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" />
-                            break;
-                        case TipoCampoTablero.Booleano:
-                            <select class="zc-row-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
-                                <option value="">- elegir -</option><option value="Si">Si</option><option value="No">No</option>
-                            </select>
-                            break;
                         default:
-                            <input class="zc-row-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cd.Label" />
+                            @* descripcion/tarifa/reglas se completan en la ficha tras crear. *@
+                            <div class="zc-list-c">-</div>
                             break;
                     }
                 }
@@ -400,71 +385,29 @@ else
     @if (!string.IsNullOrEmpty(_msg)) { <div class="zc-msg @(_msgOk ? "ok" : "bad")">@_msg</div> }
 }
 
-@if (_cfgAbierto)
+@* Selector de Campos (Fase 1): el gestor propio (columnas en memoria + modal de campos dinamicos)
+   se reemplaza por el componente compartido. Orden/visibilidad/alias viven en unidades-config
+   (entidad 'zona'); los campos propios en zonas-campos. *@
+@if (_selAbierto)
 {
-    <div class="zc-cfg-back" @onclick="() => _cfgAbierto = false">
+    <div class="zc-cfg-back" @onclick="() => _selAbierto = false">
         <div class="zc-cfg-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
             <div class="zc-cfg-head">
                 <div>
-                    <div class="zc-cfg-title">Configurar campos de zonas comunes</div>
-                    <div class="zc-cfg-sub">Campos dinamicos que apareceran como columnas en la tabla de zonas.</div>
+                    <div class="zc-cfg-title">Campos de zonas comunes</div>
+                    <div class="zc-cfg-sub">Orden, visibilidad, nombre y campos propios de la tabla y la ficha.</div>
                 </div>
-                <button class="zc-cfg-x" type="button" @onclick="() => _cfgAbierto = false" aria-label="Cerrar">&times;</button>
+                <button class="zc-cfg-x" type="button" @onclick="() => _selAbierto = false" aria-label="Cerrar">&times;</button>
             </div>
             <div class="zc-cfg-body">
-                @if (_camposDef.Count == 0) { <div class="zc-cfg-empty">Aun no hay campos. Crea el primero abajo.</div> }
-                else
-                {
-                    <div class="zc-cfg-list">
-                        @foreach (var d in _camposDef)
-                        {
-                            var dd = d;
-                            <div class="zc-cfg-item">
-                                <div class="zc-cfg-item-main">
-                                    <span class="zc-cfg-item-lbl">@d.Label</span>
-                                    <span class="zc-cfg-item-tipo">@TipoLabelCampo(d.Tipo)</span>
-                                    @if (d.Tipo == TipoCampoTablero.Seleccion && !string.IsNullOrWhiteSpace(d.Opciones)) { <span class="zc-cfg-item-op">@string.Join(", ", OpcionesDe(d))</span> }
-                                </div>
-                                <div class="zc-cfg-item-act">
-                                    <button class="zc-btn-ghost" type="button" @onclick="() => CfgEditar(dd)" disabled="@_cfgBusy">Editar</button>
-                                    <button class="zc-btn-ghost" type="button" @onclick="() => CfgEliminarAsync(dd)" disabled="@_cfgBusy">Eliminar</button>
-                                </div>
-                            </div>
-                        }
-                    </div>
-                }
-                <div class="zc-cfg-form">
-                    <div class="zc-cfg-form-title">@(_cfgEditId is null ? "Nuevo campo" : "Editar campo")</div>
-                    <div class="zc-cfg-form-grid">
-                        <div>
-                            <label class="zc-cfg-flbl">Nombre</label>
-                            <input class="zc-row-inp" @bind="_cfgLabel" @bind:event="oninput" placeholder="Ej. Aforo COVID, Piso" />
-                        </div>
-                        <div>
-                            <label class="zc-cfg-flbl">Tipo</label>
-                            <select class="zc-row-inp" @bind="_cfgTipo">
-                                <option value="@TipoCampoTablero.Texto">Texto</option>
-                                <option value="@TipoCampoTablero.AreaTexto">Texto largo</option>
-                                <option value="@TipoCampoTablero.Numero">Numero</option>
-                                <option value="@TipoCampoTablero.Fecha">Fecha</option>
-                                <option value="@TipoCampoTablero.Seleccion">Lista de opciones</option>
-                                <option value="@TipoCampoTablero.Booleano">Si / No</option>
-                            </select>
-                        </div>
-                    </div>
-                    @if (_cfgTipo == TipoCampoTablero.Seleccion)
-                    {
-                        <div style="margin-top:8px;">
-                            <label class="zc-cfg-flbl">Opciones (una por linea)</label>
-                            <textarea class="zc-row-inp" rows="4" @bind="_cfgOpciones" @bind:event="oninput"></textarea>
-                        </div>
-                    }
-                    @if (!string.IsNullOrEmpty(_cfgMsg)) { <div class="zc-cfg-msg">@_cfgMsg</div> }
-                    <div class="zc-cfg-form-foot">
-                        @if (_cfgEditId is not null) { <button class="zc-btn-ghost" type="button" @onclick="CfgReset" disabled="@_cfgBusy">Cancelar</button> }
-                        <button class="propia-btn-brand" type="button" @onclick="CfgGuardarAsync" disabled="@(_cfgBusy || string.IsNullOrWhiteSpace(_cfgLabel))">@(_cfgBusy ? "Guardando..." : (_cfgEditId is null ? "Crear campo" : "Guardar"))</button>
-                    </div>
-                </div>
+                <ConfigCamposEntidad Prefijo="zonas"
+                                     EntidadConfig="zona"
+                                     Catalogo="@ZonaCatalogo"
+                                     TituloSingular="zona"
+                                     TituloPlural="Zonas comunes"
+                                     Ejemplo="Ej. Aforo COVID, Piso"
+                                     Jwt="@_jwt"
+                                     Cambiado="RecargarCamposYConfigAsync" />
             </div>
         </div>
     </div>
@@ -495,27 +438,64 @@ else
     private string _msg = "";
     private bool _msgOk = true;
 
-    // ===== Columnas (boton "Campos"): orden + visibilidad, patron Directorio/Unidades. =====
-    private sealed record ColDefZ(string Key, string DefLabel, string Width, bool Hideable);
-    private static readonly ColDefZ[] CatalogoZ =
+    // ---- Selector de Campos (Fase 1): columnas dirigidas por unidades-config (entidad 'zona') ----
+    // Reemplaza el gestor propio: orden/visibilidad/alias de las columnas (de sistema y propias) viven
+    // en la config compartida por copropiedad; el componente ConfigCamposEntidad las escribe y aqui se
+    // leen para pintar la tabla (mismo patron que Unidades/Seguros).
+    private bool _selAbierto;
+    private Dictionary<string, UnidadCampoConfigDto> _cfgZona = new(StringComparer.Ordinal);
+
+    // Catalogo de campos de SISTEMA mapeado a la forma neutra del componente. Las columnas se renderizan
+    // por clave con editor fijo: TiposIntercambiables vacio (tipo fijo) + SinFormato.
+    private static readonly IReadOnlyList<CampoSistemaDef> ZonaCatalogo =
+        ZonaCamposSistema.Todos.Select(c => new CampoSistemaDef(
+            c.Clave, c.Label, c.Tipo, c.VisiblePorDefecto, c.Fija,
+            OpcionesEditables: false, Semilla: null, Entero: false, Ayuda: null,
+            TiposIntercambiables: Array.Empty<TipoCampoTablero>(), ListaExterna: false, SinFormato: true)).ToList();
+
+    // Clave de config de un campo propio (misma convencion que el componente: "cd:{id}").
+    private static string ClaveCustom(ZonaCampoDefinicionDto c) => "cd:" + c.Id;
+    private static bool EsCustom(string clave) => clave.StartsWith("cd:", StringComparison.Ordinal);
+    private ZonaCampoDefinicionDto? CampoCustom(string clave)
+        => EsCustom(clave) && Guid.TryParse(clave[3..], out var g) ? _camposDef.FirstOrDefault(c => c.Id == g) : null;
+
+    // Claves candidatas: sistema (orden del catalogo) + propias. Se ordenan y filtran por config.
+    private IEnumerable<string> ClavesCandidatas()
+        => ZonaCamposSistema.Todos.Select(c => c.Clave).Concat(_camposDef.OrderBy(d => d.Orden).Select(ClaveCustom));
+    private bool VisibleColDefault(string clave)
+        => EsCustom(clave) || (ZonaCamposSistema.Por(clave)?.VisiblePorDefecto ?? true);
+    private bool VisibleCol(string clave)
+        => _cfgZona.TryGetValue(clave, out var c) ? !c.Oculto : VisibleColDefault(clave);
+    private int OrdenCol(string clave, int fallback)
+        => _cfgZona.TryGetValue(clave, out var c) && c.Orden is { } o ? o : 1000 + fallback;
+    private IEnumerable<string> ClavesOrdenadas()
+        => ClavesCandidatas().Select((k, i) => (k, ord: OrdenCol(k, i))).OrderBy(x => x.ord).Select(x => x.k);
+    private IEnumerable<string> ColsVisibles() => ClavesOrdenadas().Where(VisibleCol);
+
+    private string ColLabel(string clave)
     {
-        new("nombre", "NOMBRE", "2fr", false),
-        new("categoria", "CATEGORIA", "1.2fr", true),
-        new("reserva", "RESERVA", ".8fr", true),
-        new("aforo", "AFORO", ".8fr", true),
-        new("estado", "ESTADO", "1fr", true),
+        if (_cfgZona.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Alias)) return c.Alias!;
+        return CampoCustom(clave)?.Label ?? ZonaCamposSistema.Por(clave)?.Label ?? clave;
+    }
+    private static string ColWidth(string clave) => clave switch
+    {
+        "nombre" => "2fr",
+        "categoria" => "1.2fr",
+        "reservable" => ".8fr",
+        "aforo" => ".8fr",
+        "estado" => "1fr",
+        "tarifa" => ".9fr",
+        "descripcion" or "reglas" => "minmax(140px,1.4fr)",
+        _ => "minmax(120px,150px)"   // campos propios
     };
-    private List<string> _colOrderZ = CatalogoZ.Select(c => c.Key).ToList();
-    private readonly HashSet<string> _colHiddenZ = new();
-    private bool _showCamposZ;
-    private bool ColVisibleZ(string key) { var c = CatalogoZ.First(x => x.Key == key); return !c.Hideable || !_colHiddenZ.Contains(key); }
-    private IEnumerable<ColDefZ> ColsVisiblesZ => _colOrderZ.Select(k => CatalogoZ.First(c => c.Key == k)).Where(c => ColVisibleZ(c.Key));
-    private string ZcGridStyle => "grid-template-columns: 34px " + string.Join(" ", ColsVisiblesZ.Select(c => c.Width))
-        + (_camposDef.Count == 0 ? "" : " " + string.Join(" ", _camposDef.Select(_ => "minmax(120px,150px)"))) + " 60px";
-    private void ToggleColZ(string key) { if (!_colHiddenZ.Remove(key)) _colHiddenZ.Add(key); }
-    private void MoverColZ(int idx, int dir) { var ni = idx + dir; if (ni < 0 || ni >= _colOrderZ.Count) return; (_colOrderZ[idx], _colOrderZ[ni]) = (_colOrderZ[ni], _colOrderZ[idx]); }
-    private void ColsTodasZ() { _colHiddenZ.Clear(); }
-    private void ColsNingunaZ() { foreach (var c in CatalogoZ) { if (c.Hideable) _colHiddenZ.Add(c.Key); } }
+    private string ZcGridStyle => "grid-template-columns: 34px " + string.Join(" ", ColsVisibles().Select(ColWidth)) + " 60px";
+
+    // El gestor compartido cambio algo (alias/orden/visibilidad/campo propio): refresca todo.
+    private async Task RecargarCamposYConfigAsync()
+    {
+        try { await CargarCamposYConfigAsync(); } catch { }
+        StateHasChanged();
+    }
 
     // ===== Paginacion (footer canonico, solo en modo tabla). =====
     private int _paginaZ = 1;
@@ -659,16 +639,27 @@ else
             }
             resp.EnsureSuccessStatusCode();
             _zonas = await resp.Content.ReadFromJsonAsync<List<ZonaComunDto>>() ?? new();
-            try { _camposDef = await Auth().GetFromJsonAsync<List<ZonaCampoDefinicionDto>>("/api/mi-copropiedad/zonas-campos") ?? new(); } catch { _camposDef = new(); }
-            try
-            {
-                var flat = await Auth().GetFromJsonAsync<List<ZonaCampoValorFlatDto>>("/api/mi-copropiedad/zonas-campos-valores") ?? new();
-                _camposValores = flat.GroupBy(v => v.ZonaComunId).ToDictionary(g => g.Key, g => g.ToDictionary(x => x.DefinicionId, x => x.Valor));
-            }
-            catch { _camposValores = new(); }
+            await CargarCamposYConfigAsync();
             _loadError = null;
         }
         catch (Exception ex) { _loadError = ex.Message; }
+    }
+
+    private async Task CargarCamposYConfigAsync()
+    {
+        try { _camposDef = await Auth().GetFromJsonAsync<List<ZonaCampoDefinicionDto>>("/api/mi-copropiedad/zonas-campos") ?? new(); } catch { _camposDef = new(); }
+        try
+        {
+            var flat = await Auth().GetFromJsonAsync<List<ZonaCampoValorFlatDto>>("/api/mi-copropiedad/zonas-campos-valores") ?? new();
+            _camposValores = flat.GroupBy(v => v.ZonaComunId).ToDictionary(g => g.Key, g => g.ToDictionary(x => x.DefinicionId, x => x.Valor));
+        }
+        catch { _camposValores = new(); }
+        try
+        {
+            var cfg = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=zona") ?? new();
+            _cfgZona = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+        }
+        catch { _cfgZona = new(StringComparer.Ordinal); }
     }
 
     // ===== Campos dinamicos (columnas + config) =====
@@ -678,9 +669,6 @@ else
     private string? ValorCampo(Guid zonaId, Guid defId) => _camposValores.TryGetValue(zonaId, out var m) && m.TryGetValue(defId, out var v) ? v : null;
     private static string[] OpcionesDe(ZonaCampoDefinicionDto d) => string.IsNullOrWhiteSpace(d.Opciones)
         ? System.Array.Empty<string>() : d.Opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-    private static string TipoLabelCampo(TipoCampoTablero t) => t switch
-    { TipoCampoTablero.AreaTexto => "Texto largo", TipoCampoTablero.Numero => "Numero", TipoCampoTablero.Fecha => "Fecha",
-      TipoCampoTablero.Seleccion => "Lista", TipoCampoTablero.Booleano => "Si / No", _ => "Texto" };
 
     private async Task GuardarCampoValorZona(ZonaComunDto zona, ZonaCampoDefinicionDto cd, string? valor)
     {
@@ -694,57 +682,6 @@ else
             }
         }
         catch { }
-    }
-
-    // Config modal state
-    private bool _cfgAbierto;
-    private bool _cfgBusy;
-    private string? _cfgMsg;
-    private Guid? _cfgEditId;
-    private string _cfgLabel = "";
-    private TipoCampoTablero _cfgTipo = TipoCampoTablero.Texto;
-    private string _cfgOpciones = "";
-
-    private void CfgReset() { _cfgEditId = null; _cfgLabel = ""; _cfgTipo = TipoCampoTablero.Texto; _cfgOpciones = ""; _cfgMsg = null; }
-    private void CfgEditar(ZonaCampoDefinicionDto d) { _cfgEditId = d.Id; _cfgLabel = d.Label; _cfgTipo = d.Tipo; _cfgOpciones = d.Opciones ?? ""; _cfgMsg = null; }
-
-    private async Task CfgGuardarAsync()
-    {
-        if (_cfgBusy) return;
-        if (string.IsNullOrWhiteSpace(_cfgLabel)) { _cfgMsg = "El nombre del campo es obligatorio."; return; }
-        if (_cfgTipo == TipoCampoTablero.Seleccion && string.IsNullOrWhiteSpace(_cfgOpciones)) { _cfgMsg = "Un campo Lista necesita al menos una opcion (una por linea)."; return; }
-        _cfgBusy = true; _cfgMsg = null;
-        try
-        {
-            var opciones = _cfgTipo == TipoCampoTablero.Seleccion ? _cfgOpciones : null;
-            HttpResponseMessage resp;
-            if (_cfgEditId is Guid id)
-            {
-                var orden = _camposDef.FirstOrDefault(c => c.Id == id)?.Orden ?? 0;
-                resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/zonas-campos/{id}", new ActualizarCampoDefinicionRequest(_cfgLabel.Trim(), _cfgTipo, opciones, orden));
-            }
-            else resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/zonas-campos", new CrearCampoDefinicionRequest(_cfgLabel.Trim(), _cfgTipo, opciones));
-            if (!resp.IsSuccessStatusCode) { _cfgMsg = "No se pudo guardar el campo."; return; }
-            _camposDef = await Auth().GetFromJsonAsync<List<ZonaCampoDefinicionDto>>("/api/mi-copropiedad/zonas-campos") ?? new();
-            CfgReset();
-        }
-        catch (Exception ex) { _cfgMsg = "Error: " + ex.Message; }
-        finally { _cfgBusy = false; }
-    }
-
-    private async Task CfgEliminarAsync(ZonaCampoDefinicionDto d)
-    {
-        if (_cfgBusy) return;
-        _cfgBusy = true; _cfgMsg = null;
-        try
-        {
-            var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/zonas-campos/{d.Id}");
-            if (!resp.IsSuccessStatusCode) { _cfgMsg = "No se pudo eliminar."; return; }
-            if (_cfgEditId == d.Id) CfgReset();
-            _camposDef = await Auth().GetFromJsonAsync<List<ZonaCampoDefinicionDto>>("/api/mi-copropiedad/zonas-campos") ?? new();
-        }
-        catch (Exception ex) { _cfgMsg = "Error: " + ex.Message; }
-        finally { _cfgBusy = false; }
     }
 
     // ---- Plantilla Excel (descargar / cargar con upsert + campos dinamicos) ----
@@ -819,6 +756,7 @@ else
     {
         var val = e.Value?.ToString() ?? "";
         var nombre = z.Nombre; var categoria = z.Categoria; var estado = z.Estado;
+        var descripcion = z.Descripcion; var tarifa = z.TarifaReserva; var reglas = z.ReglasUso;
         bool? reservable = null; int? aforo = null;
         switch (campo)
         {
@@ -839,10 +777,22 @@ else
                 aforo = int.TryParse(val, out var a) ? a : (int?)null;
                 if (aforo == z.CapacidadPersonas) return;
                 break;
+            case "descripcion":
+                descripcion = string.IsNullOrWhiteSpace(val) ? null : val.Trim();
+                if (descripcion == z.Descripcion) return;
+                break;
+            case "tarifa":
+                tarifa = decimal.TryParse(val, out var t) ? t : (decimal?)null;
+                if (tarifa == z.TarifaReserva) return;
+                break;
+            case "reglas":
+                reglas = string.IsNullOrWhiteSpace(val) ? null : val.Trim();
+                if (reglas == z.ReglasUso) return;
+                break;
         }
         try
         {
-            var req = new ActualizarZonaComunRequest(nombre, categoria, z.Descripcion, z.TarifaReserva, z.ReglasUso, estado, reservable, aforo);
+            var req = new ActualizarZonaComunRequest(nombre, categoria, descripcion, tarifa, reglas, estado, reservable, aforo);
             var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/zonas/{z.Id}", req);
             if (resp.IsSuccessStatusCode)
             {
