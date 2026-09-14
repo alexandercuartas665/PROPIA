@@ -1,0 +1,105 @@
+@page "/dev/login"
+@layout AuthLayout
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using System.Net.Http.Json
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+@inject IWebHostEnvironment Env
+
+<PageTitle>Dev login - PROPIA</PageTitle>
+
+@* SOLO DEVELOPMENT: atajo para que las sesiones del equipo entren en su puerto sin escribir
+   credenciales (la verificacion runtime del equipo lo necesita). El JWT lo emite el servidor con
+   las credenciales seed que ya conoce (POST /connect/dev-login), gateado a Development tambien en
+   el API (404 fuera de Development). Aqui, ademas, si el entorno no es Development se redirige a
+   /login (fail-closed en la pagina). NO usar en produccion; no hay ruta equivalente en prod. *@
+
+@if (Env.IsDevelopment())
+{
+    <h2 class="h4 mb-1 text-center fw-semibold">Acceso de desarrollo</h2>
+    <p class="text-muted text-center mb-4">Solo Development. Entra como admin demo sin escribir credenciales.</p>
+
+    @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger py-2 mb-3">@_error</div> }
+    @if (!string.IsNullOrEmpty(_ok)) { <div class="alert alert-success py-2 mb-3">@_ok</div> }
+
+    <button type="button" class="btn btn-auth-primary w-100 text-white mb-2" disabled="@_busy" @onclick="EntrarAsync">
+        @if (_busy) { <span class="spinner-border spinner-border-sm me-2"></span><span>Entrando...</span> }
+        else { <span>Entrar como admin demo</span> }
+    </button>
+    <p class="text-center small mb-0 text-muted">@DemoEmail &middot; Conjunto Altos del Bosque</p>
+}
+
+@code {
+    private const string DemoEmail = "admin@demo.propia";
+    private const string TenantPreferido = "Conjunto Altos del Bosque";
+
+    private bool _busy;
+    private string? _error;
+    private string? _ok;
+
+    protected override void OnInitialized()
+    {
+        // Gate fail-closed en la pagina: fuera de Development ni se muestra ni se ejecuta nada.
+        if (!Env.IsDevelopment())
+            Nav.NavigateTo("/login", forceLoad: true);
+    }
+
+    private async Task EntrarAsync()
+    {
+        if (!Env.IsDevelopment()) { Nav.NavigateTo("/login", forceLoad: true); return; }
+        _error = null; _ok = null; _busy = true;
+        try
+        {
+            var http = HttpClientFactory.CreateClient("PropiaApi");
+            // El servidor pone las credenciales seed; el cliente no las conoce ni las envia.
+            var resp = await http.PostAsync("/connect/dev-login", content: null);
+            if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                _error = "Dev-login no disponible (solo Development y con datos demo seedeados).";
+                return;
+            }
+            if (!resp.IsSuccessStatusCode) { _error = $"Error inesperado: {(int)resp.StatusCode}."; return; }
+
+            var login = await resp.Content.ReadFromJsonAsync<LoginResp>();
+            if (login?.AccessToken is null || login.AvailableTenants.Count == 0)
+            { _error = "El admin demo no tiene copropiedades."; return; }
+
+            var tenant = login.AvailableTenants.FirstOrDefault(t => t.Nombre == TenantPreferido)
+                         ?? login.AvailableTenants.First();
+
+            var accessToken = login.AccessToken;
+            // El JWT llega sin tenant si hay varios: se pide uno scopeado al tenant elegido (RLS).
+            if (login.ActiveTenantId != tenant.TenantId)
+            {
+                try
+                {
+                    var sw = HttpClientFactory.CreateClient("PropiaApi");
+                    sw.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+                    var swResp = await sw.PostAsJsonAsync("/connect/switch-tenant", new { tenantId = tenant.TenantId });
+                    if (swResp.IsSuccessStatusCode)
+                    {
+                        var scoped = await swResp.Content.ReadFromJsonAsync<SwitchResp>();
+                        if (!string.IsNullOrWhiteSpace(scoped?.AccessToken)) accessToken = scoped!.AccessToken!;
+                    }
+                }
+                catch { /* si falla, se guarda el token tal cual; el selector permite reintentar */ }
+            }
+
+            await Js.InvokeVoidAsync("propiaAuth.save", accessToken, tenant.TenantId.ToString(), tenant.Nombre);
+            try { await Js.InvokeVoidAsync("propiaAuth.startAutoRefresh"); } catch { }
+            try { await Js.InvokeVoidAsync("propiaUI.refreshAuthCta"); } catch { }
+
+            _ok = $"Entrando a {tenant.Nombre}...";
+            StateHasChanged();
+            await Task.Delay(300);
+            Nav.NavigateTo("/mi-copropiedad", forceLoad: true);
+        }
+        catch (HttpRequestException ex) { _error = $"No se pudo conectar al API: {ex.Message}"; }
+        finally { _busy = false; }
+    }
+
+    private sealed record LoginResp(string? AccessToken, Guid? ActiveTenantId, List<TenantInfo> AvailableTenants);
+    private sealed record TenantInfo(Guid TenantId, string Nombre, string Rol);
+    private sealed record SwitchResp(string? AccessToken);
+}

@@ -144,7 +144,7 @@
      * se puede refrescar), redirige a /login con returnUrl. Evita que las paginas de Capa 2
      * muestren modulos vacios o el banner "Sesion expirada" cuando la sesion ya no sirve. */
     function rutaEsPublica(path) {
-        var publics = ['/', '/login', '/registro', '/signin-google', '/operador/info', '/_probe'];
+        var publics = ['/', '/login', '/registro', '/signin-google', '/operador/info', '/_probe', '/dev/login'];
         // /onboarding y /onboarding/continuar requieren JWT temporal del registro: NO publicas.
         if (publics.indexOf(path) !== -1) return true;
         if (path.indexOf('/invitacion/') === 0) return true; // links de invitacion publicos

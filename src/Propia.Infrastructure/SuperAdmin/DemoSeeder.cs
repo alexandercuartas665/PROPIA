@@ -20,6 +20,9 @@ public static class DemoSeeder
     /// <summary>Clave comun de los 3 usuarios demo de cliente (cumple la politica: >=10, mayus, digito).</summary>
     public const string DemoUserPassword = "PropiaDemo2026!";
 
+    /// <summary>Correo del admin demo (lo usa el dev-login de Development).</summary>
+    public const string DemoAdminEmail = "admin@demo.propia";
+
     public static async Task EnsureDemoDataAsync(IServiceProvider services)
     {
         await using var scope = services.CreateAsyncScope();
@@ -136,7 +139,7 @@ public static class DemoSeeder
     /// </summary>
     private static async Task EnsureDemoUsersAsync(PropiaDbContext db, UserManager<ApplicationUser> userManager, ILogger logger)
     {
-        const string adminEmail = "admin@demo.propia";
+        const string adminEmail = DemoAdminEmail;
         if (await db.Users.AnyAsync(u => u.Email == adminEmail)) return;
 
         // Primera copropiedad (la de codigo PROPIA-0001) como contexto de los usuarios demo.
