@@ -104,8 +104,26 @@ else
                     @foreach (var d in _defs)
                     {
                         var def = d;
-                        <input class="mas-editcell" value="@ValorDe(v.MascotaId, def.Id)" placeholder="-"
-                               @onchange="e => GuardarDinamicoAsync(v.MascotaId, def.Id, e.Value?.ToString())" />
+                        var val = ValorDe(v.MascotaId, def.Id);
+                        if (def.Tipo == TipoCampoTablero.Seleccion)
+                        {
+                            <div class="mas-selcell">
+                                @if (!string.IsNullOrWhiteSpace(val))
+                                {
+                                    var col = ColorOpcion(def, val);
+                                    <span class="mas-chip" style="background:@(col ?? PaletaChips.Neutro);color:@PaletaChips.TextoSobre(col)">@val</span>
+                                }
+                                <select class="mas-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(v.MascotaId, def.Id, e.Value?.ToString())">
+                                    <option value="">-</option>
+                                    @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == val)">@op</option> }
+                                </select>
+                            </div>
+                        }
+                        else
+                        {
+                            <input class="mas-editcell" value="@val" placeholder="-"
+                                   @onchange="e => GuardarDinamicoAsync(v.MascotaId, def.Id, e.Value?.ToString())" />
+                        }
                     }
                     <div class="mas-acts">
                         <button type="button" class="mas-del" title="Quitar la mascota" @onclick="() => EliminarAsync(v)">
@@ -132,9 +150,19 @@ else
                 @foreach (var d in _defs)
                 {
                     var def = d;
-                    <input class="mas-nf-inp" placeholder="@def.Label"
-                           value="@(_nuDinamicos.TryGetValue(def.Id, out var dv) ? dv : null)"
-                           @oninput="e => SetDinamicoNuevo(def.Id, e.Value?.ToString())" />
+                    var dv = _nuDinamicos.TryGetValue(def.Id, out var _dv) ? _dv : "";
+                    if (def.Tipo == TipoCampoTablero.Seleccion)
+                    {
+                        <select class="mas-nf-inp" value="@dv" @onchange="e => SetDinamicoNuevo(def.Id, e.Value?.ToString())">
+                            <option value="">@def.Label</option>
+                            @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == dv)">@op</option> }
+                        </select>
+                    }
+                    else
+                    {
+                        <input class="mas-nf-inp" placeholder="@def.Label" value="@dv"
+                               @oninput="e => SetDinamicoNuevo(def.Id, e.Value?.ToString())" />
+                    }
                 }
                 <div class="mas-acts">
                     <button type="button" class="mas-row-add" @onclick="AgregarAsync" disabled="@_busy">+ Agregar</button>
@@ -163,8 +191,11 @@ else
                 <button class="mas-cg-x" type="button" @onclick="CerrarConfig" aria-label="Cerrar">&times;</button>
             </div>
             <div class="mas-cg-body">
-                <ConfigCamposEntidad Prefijo="mascotas" TituloSingular="mascota" TituloPlural="Mascotas"
-                                     Ejemplo="Ej. Numero de chip, Vacunas al dia" Jwt="@_jwt" />
+                <ConfigCamposEntidad Prefijo="mascotas"
+                                     Catalogo="@MascotaCatalogo"
+                                     TituloSingular="mascota" TituloPlural="Mascotas"
+                                     Ejemplo="Ej. Numero de chip, Vacunas al dia" Jwt="@_jwt"
+                                     Cambiado="RecargarCamposAsync" />
             </div>
         </div>
     </div>
@@ -321,6 +352,29 @@ else
         }
         catch (Exception ex) { Mensaje("No se pudieron cargar las mascotas: " + ex.Message, true); }
     }
+
+    // Catalogo de campos del SISTEMA de la mascota para el gestor compartido (Fase 1): mapea
+    // MascotaCamposSistema.Todos a la forma neutra CampoSistemaDef. 'tipo' es enum TipoMascota
+    // (lista de solo lectura), asi que OpcionesEditables queda en false.
+    private static readonly IReadOnlyList<CampoSistemaDef> MascotaCatalogo =
+        MascotaCamposSistema.Todos.Select(c => new CampoSistemaDef(
+            Clave: c.Clave,
+            Label: c.Label,
+            Tipo: c.Tipo,
+            VisibleDefault: c.VisiblePorDefecto,
+            Fija: c.Fija,
+            OpcionesEditables: c.OpcionesEditables)).ToList();
+
+    // El gestor compartido cambio algo: refresca columnas + valores de la tabla.
+    private async Task RecargarCamposAsync()
+    {
+        try { await CargarCamposAsync(Auth()); } catch { }
+        StateHasChanged();
+    }
+
+    // Color de la opcion elegida en un campo propio de tipo Lista (para el chip). null = chip neutro.
+    private static string? ColorOpcion(CampoDinDef d, string? val)
+        => d.OpcionesDetalle().FirstOrDefault(o => string.Equals(o.K, val, StringComparison.Ordinal))?.Color;
 
     // Catalogo de campos del modulo + valores de todos los registros, en dos llamadas (no una por fila).
     private async Task CargarCamposAsync(HttpClient http)
@@ -500,6 +554,10 @@ else
     .mas-editcell { border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 4px 7px; font-size: 12.5px; color: var(--propia-text-body); font-family: inherit; width: 100%; box-sizing: border-box; }
     .mas-editcell:hover { border-color: var(--propia-border-card); }
     .mas-editcell:focus { outline: 0; border: 1px solid var(--propia-brand); box-shadow: 0 0 0 2px var(--propia-glow-brand); background: var(--propia-bg-card); }
+    /* Campo propio de tipo Lista: chip de color (valor) + dropdown en la misma celda. */
+    .mas-selcell { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .mas-selcell .mas-editcell { width: auto; flex: 1 1 auto; min-width: 0; }
+    .mas-chip { flex: 0 0 auto; padding: 1px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; line-height: 1.5; white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
 
     /* Alta: input "fantasma" punteado en reposo, violeta al foco (canon del sistema). */
     .mas-newrow { background: var(--propia-bg-table-head); border-top: 1px solid var(--propia-border-divider); }
