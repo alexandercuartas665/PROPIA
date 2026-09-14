@@ -257,10 +257,23 @@ public partial class TareasService
             t.SolicitantePersonaId, string.IsNullOrWhiteSpace(solNombre) ? null : solNombre);
     }
 
+    // T-10 (RN-01): namespace (classid) fijo del advisory lock del consecutivo de Tareas, para que
+    // pg_advisory_xact_lock por (tenant, anio) no colisione con otros advisory locks del sistema.
+    private const int LockClassNumeroTarea = 21000010;
+
     private async Task<string> GenerarNumeroAsync(CancellationToken ct)
     {
         var year = DateTime.UtcNow.Year;
         var prefijo = $"T-{year}-";
+        // T-10 (RN-01): sin serializar, dos creaciones concurrentes leen el mismo max y calculan el mismo
+        // max+1; la segunda choca con el UNIQUE (tenant_id, numero_tarea) y revienta con 500. Un lock
+        // transaccional por (tenant, anio) serializa leer-el-max e insertar dentro de la MISMA transaccion
+        // (se libera solo al COMMIT/ROLLBACK). Usa las dos partes int de pg_advisory_xact_lock(int, int):
+        // classid fijo del modulo + objid = hashtext(tenant actual + anio). EXIGE que el llamador tenga una
+        // transaccion abierta (crear/duplicar/copiar la abren); sin ella el lock se liberaria de inmediato.
+        await _db.Database.ExecuteSqlRawAsync(
+            "SELECT pg_advisory_xact_lock({0}, hashtext(COALESCE(current_setting('app.tenant_id', true), '') || ':' || {1}))",
+            new object[] { LockClassNumeroTarea, year.ToString() }, ct);
         var ultimos = await _db.Tareas.AsNoTracking()
             .Where(t => t.NumeroTarea.StartsWith(prefijo))
             .Select(t => t.NumeroTarea)
@@ -348,6 +361,12 @@ public partial class TareasService
         if (solicitante is null && uidActual != Guid.Empty)
             solicitante = await _db.Users.AsNoTracking().Where(u => u.Id == uidActual).Select(u => u.PersonaId).FirstOrDefaultAsync(ct);
 
+        // H-1 (T-02): la tarea y todo lo suyo (etiquetas, colaboradores, checklist, campos, historial)
+        // van en UNA transaccion. Antes eran saves sueltos: si fallaba un colaborador, la tarea quedaba
+        // igual insertada. La notificacion al asignado se manda DESPUES del commit.
+        // T-10: la transaccion tambien envuelve GenerarNumeroAsync (toma el advisory lock del consecutivo),
+        // asi generar el numero e insertar la tarea quedan serializados por (tenant, anio).
+        await using var tx = await _db.Database.BeginTransactionAsync(ct);
         var numero = await GenerarNumeroAsync(ct);
         var t = new Tarea
         {
@@ -376,10 +395,6 @@ public partial class TareasService
             ModuloOrigenEntidadId = req.ModuloOrigenEntidadId,
             CreadoPorUsuarioId = GetUsuarioActualId()
         };
-        // H-1 (T-02): la tarea y todo lo suyo (etiquetas, colaboradores, checklist, campos, historial)
-        // van en UNA transaccion. Antes eran saves sueltos: si fallaba un colaborador, la tarea quedaba
-        // igual insertada. La notificacion al asignado se manda DESPUES del commit.
-        await using var tx = await _db.Database.BeginTransactionAsync(ct);
         _db.Tareas.Add(t);
         await _db.SaveChangesAsync(ct);
 
@@ -630,6 +645,9 @@ public partial class TareasService
     {
         var src = await _db.Tareas.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && !x.Eliminada, ct);
         if (src is null) return null;
+        // T-10: numero e insert dentro de una transaccion para que GenerarNumeroAsync serialice el
+        // consecutivo con su advisory lock (se libera al commit).
+        await using var tx = await _db.Database.BeginTransactionAsync(ct);
         var numero = await GenerarNumeroAsync(ct);
         // T-03b: duplicar una tarea CERRADA heredaba su estado terminal tal cual, con Cerrada = false:
         // nacia una copia "hecha" que nadie cerro nunca. La copia es trabajo nuevo, asi que arranca en
@@ -673,6 +691,8 @@ public partial class TareasService
         await RegistrarHistorial(nueva.Id, TipoEventoTarea.Creada, $"Tarea duplicada de {src.NumeroTarea}", null, new { origen = src.NumeroTarea }, ct);
         await _db.SaveChangesAsync(ct);
 
+        await tx.CommitAsync(ct);
+
         var lista = await ListarTareasAsync(null, null, null, null, null, null, ct, nueva.TableroId);
         return lista.FirstOrDefault(x => x.Id == nueva.Id);
     }
@@ -705,6 +725,9 @@ public partial class TareasService
         if (req.ConservarEtiquetas) etiquetaIds = await _db.TareaEtiquetaAsignaciones.AsNoTracking().Where(e => e.TareaId == id).Select(e => e.EtiquetaId).ToListAsync(ct);
 
         var nuevasIds = new List<Guid>();
+        // T-10: todas las copias en UNA transaccion; el advisory lock que toma GenerarNumeroAsync se
+        // mantiene por todo el bucle (es reentrante) y se libera al commit, serializando el consecutivo.
+        await using var tx = await _db.Database.BeginTransactionAsync(ct);
         for (int i = 0; i < cantidad; i++)
         {
             var numero = await GenerarNumeroAsync(ct);
@@ -746,6 +769,8 @@ public partial class TareasService
             await _db.SaveChangesAsync(ct);
             nuevasIds.Add(nueva.Id);
         }
+
+        await tx.CommitAsync(ct);
 
         var lista = await ListarTareasAsync(null, null, null, null, null, null, ct, src.TableroId);
         return lista.Where(x => nuevasIds.Contains(x.Id)).ToList();

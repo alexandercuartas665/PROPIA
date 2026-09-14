@@ -517,6 +517,48 @@ public class TareasFlowTests : IAsyncLifetime
         await CleanTenant(tenantId);
     }
 
+    [Fact]
+    public async Task T10_crear_en_paralelo_da_numeros_unicos_y_consecutivos_sin_excepcion()
+    {
+        // T-10 (RN-01): 10 creaciones concurrentes contra el MISMO tenant, cada una con su propio
+        // DbContext/servicio (DbContext no es thread-safe). Sin el advisory lock dos calcularian el mismo
+        // T-{anio}-NNNN y la segunda reventaria contra el UNIQUE (tenant_id, numero_tarea). Con el lock:
+        // numeros unicos, consecutivos sin huecos y CERO excepciones (ni por UNIQUE ni por deadlock).
+        var tenantId = await SeedTenantAsync("Tareas Concurrencia");
+        const int n = 10;
+
+        // Pre-calienta el seed perezoso (tablero por defecto + 6 estados) con una creacion previa, para
+        // que las concurrentes solo compitan por el consecutivo, no por ese seed compartido.
+        var (warm, _, warmScope) = Build(tenantId);
+        await warm.CrearTareaAsync(new CrearTareaRequest(
+            "Warmup", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+        warmScope.Dispose();
+
+        var builds = Enumerable.Range(0, n).Select(_ => Build(tenantId)).ToList();
+        try
+        {
+            var tareas = builds.Select((b, i) => b.svc.CrearTareaAsync(new CrearTareaRequest(
+                $"Concurrente {i + 1}", null, PrioridadTarea.Normal, null, null, null, null, null, null),
+                CancellationToken.None)).ToList();
+
+            // Task.WhenAll propaga la primera excepcion: si alguna revienta, el test falla aqui.
+            var creadas = await Task.WhenAll(tareas);
+
+            var prefijo = $"T-{DateTime.UtcNow.Year}-";
+            var numeros = creadas.Select(t => t.NumeroTarea).ToList();
+            Assert.All(numeros, x => Assert.StartsWith(prefijo, x));
+            var seq = numeros.Select(x => int.Parse(x[prefijo.Length..])).OrderBy(x => x).ToList();
+            Assert.Equal(n, seq.Distinct().Count());                          // unicos
+            Assert.Equal(Enumerable.Range(seq[0], n).ToList(), seq);          // consecutivos sin huecos
+            Assert.Equal(2, seq[0]);                                          // arrancan justo tras el warmup (0001)
+        }
+        finally
+        {
+            foreach (var b in builds) b.scope.Dispose();
+            await CleanTenant(tenantId);
+        }
+    }
+
     // ===================== Helpers =====================
 
     private (ITareasService svc, PropiaDbContext db, IServiceScope scope) Build(Guid tenantId)
