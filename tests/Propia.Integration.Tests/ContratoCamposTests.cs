@@ -35,14 +35,15 @@ public class ContratoCamposTests
         Assert.All(todos, c => Assert.IsType<ContratoCampoSistema>(c));
         Assert.All(todos, c => Assert.Null(c.Encabezado));
         Assert.All(todos, c => Assert.False(c.SiempreEnPlantilla));
-        // El contratista es fijo (no se puede ocultar); las listas son Tipo Seleccion.
-        Assert.True(ContratoCamposSistema.Por("proveedor")!.Fija);
-        Assert.Equal(TipoCampoTablero.Seleccion, ContratoCamposSistema.Por("tipoContrato")!.Tipo);
+        // El contratista es fijo (no se puede ocultar); las listas son Tipo Seleccion. Las claves = las de la
+        // tabla de /contratos (adopcion Fase 1): el contratista es "tercero", el valor visible "valorTotal".
+        Assert.True(ContratoCamposSistema.Por("tercero")!.Fija);
+        Assert.Equal(TipoCampoTablero.Seleccion, ContratoCamposSistema.Por("tipocontrato")!.Tipo);
         // Las Seleccion de contrato salen de enums del dominio: lista fija, no editable.
         Assert.All(todos.Where(c => c.Tipo == TipoCampoTablero.Seleccion), c => Assert.False(c.OpcionesEditables));
         // Hay columnas visibles por defecto (las de la tabla de /contratos).
-        Assert.Contains("proveedor", ContratoCamposSistema.ClavesVisiblesPorDefecto);
-        Assert.Equal(TipoCampoTablero.Moneda, ContratoCamposSistema.Por("valorMensual")!.Tipo);
+        Assert.Contains("tercero", ContratoCamposSistema.ClavesVisiblesPorDefecto);
+        Assert.Equal(TipoCampoTablero.Moneda, ContratoCamposSistema.Por("valortotal")!.Tipo);
         // Los campos de lista traen su semilla de etiquetas.
         Assert.NotEmpty(ContratoCamposSistema.TiposContratoSemilla);
         Assert.NotEmpty(ContratoCamposSistema.CategoriasSemilla);

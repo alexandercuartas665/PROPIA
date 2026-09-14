@@ -408,7 +408,10 @@ public partial class MiCopropiedadService
     // ---- Campos personalizados (EAV) de contratos ----
     public async Task<IReadOnlyList<ContratoCampoDto>> ListContratoCamposAsync(CancellationToken ct)
     {
+        // Selector de Campos (Fase 1): solo definiciones ACTIVAS, igual que polizas (ListCamposAsync). El
+        // componente compartido no distingue Activo; un campo soft-borrado (Activo=false) no debe reaparecer.
         return await _db.ContratoCampos.AsNoTracking()
+            .Where(c => c.Activo)
             .OrderBy(c => c.Orden).ThenBy(c => c.Label)
             .Select(c => new ContratoCampoDto(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones, c.Descripcion, c.Activo))
             .ToListAsync(ct);
@@ -469,9 +472,10 @@ public partial class MiCopropiedadService
     {
         var campo = await _db.ContratoCampos.FirstOrDefaultAsync(c => c.Id == campoId, ct);
         if (campo is null) return false;
-        var valores = await _db.ContratoCampoValores.Where(v => v.ContratoCampoId == campoId).ToListAsync(ct);
-        if (valores.Count > 0) _db.ContratoCampoValores.RemoveRange(valores);
-        _db.ContratoCampos.Remove(campo);
+        // Selector de Campos (Fase 1): soft-delete (Activo=false) como polizas, conservando los valores. El
+        // componente compartido llama DELETE igual; el borrado logico es mas seguro y consistente, y el GET
+        // del catalogo ya filtra Activo, asi que el campo desaparece de la lista.
+        campo.Activo = false;
         await _db.SaveChangesAsync(ct);
         return true;
     }
