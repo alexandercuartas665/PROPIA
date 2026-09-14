@@ -315,9 +315,11 @@ public partial class PqrsdService
         });
         await _db.SaveChangesAsync(ct);
 
+        // G-11 (privacidad): la justificacion literal NO va en el cuerpo del aviso; queda en la traza del
+        // historial (arriba) para auditoria.
         await NotificarAdminsTenantAsync("2.9", id,
             $"TUTELA marcada: {x.NumeroRadicado}",
-            $"Se marco tutela activa sobre el expediente. Atender con prioridad maxima. Justificacion: {req.Justificacion}",
+            "Se marco tutela activa sobre el expediente. Atender con prioridad maxima; el detalle esta en la traza del expediente.",
             Domain.Enums.PrioridadNotificacion.Critica, ct);
 
         return true;
@@ -355,9 +357,11 @@ public partial class PqrsdService
         });
         await _db.SaveChangesAsync(ct);
 
+        // G-11 (privacidad): el motivo literal NO va en el cuerpo del aviso; queda en la traza del historial
+        // (arriba). Los datos operativos (dias, nueva fecha) si son utiles en el aviso.
         await NotificarAdminsTenantAsync("2.9", id,
             $"Prorroga PQRSD: {x.NumeroRadicado}",
-            $"Se amplio el plazo en {req.Dias} dia(s) habil(es). Nueva fecha de vencimiento: {x.FechaVencimiento:yyyy-MM-dd}. Motivo: {motivo}",
+            $"Se amplio el plazo en {req.Dias} dia(s) habil(es). Nueva fecha de vencimiento: {x.FechaVencimiento:yyyy-MM-dd}. El motivo queda en la traza del expediente.",
             Domain.Enums.PrioridadNotificacion.Normal, ct);
 
         return true;

@@ -76,8 +76,11 @@ public partial class PqrsdService : IPqrsdService
     {
         var tenantId = _tenantContext.CurrentTenantId;
         if (tenantId is null) return;
+        // G-11 (privacidad): solo la ADMINISTRACION recibe estos avisos, no todos los usuarios del tenant
+        // (antes iban tambien a residentes). Mismo filtro por rol que usa el job (PqrsdMantenimientoService).
         var personaIds = await _db.UsuariosTenant.AsNoTracking()
-            .Where(u => u.TenantId == tenantId && u.Estado == Domain.Enums.EstadoUsuarioTenant.Activo)
+            .Where(u => u.TenantId == tenantId && u.Estado == Domain.Enums.EstadoUsuarioTenant.Activo
+                        && u.Rol == "Administrador")
             .Select(u => u.PersonaId).Distinct().Take(20).ToListAsync(ct);
         if (personaIds.Count == 0) return;
         var lote = personaIds.Select(pid =>
