@@ -198,6 +198,15 @@ public partial class TareasService
             .Select(c => new TableroCampoDto(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones, c.MostrarEnFiltro, c.Columna, c.Descripcion, c.Requerido, c.ValorPorDefecto, c.PermiteVarios, c.CamposSuma, c.Activo))
             .ToListAsync(ct);
 
+    /// <summary>Definiciones de campos PROPIOS ACTIVOS de un tablero, en orden canonico. El gestor de campos
+    /// compartido (Selector de Campos) hace GET a esta ruta para listarlas; hoy salen embebidas en el board,
+    /// aqui se exponen como endpoint estandar. RLS acota por tenant (solo campos del tablero de esta copropiedad).</summary>
+    public async Task<IReadOnlyList<TableroCampoDto>> ListarCamposActivosAsync(Guid tableroId, CancellationToken ct) =>
+        await _db.TableroCampos.AsNoTracking().Where(c => c.TableroId == tableroId && c.Activo)
+            .OrderBy(c => c.Orden)
+            .Select(c => new TableroCampoDto(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones, c.MostrarEnFiltro, c.Columna, c.Descripcion, c.Requerido, c.ValorPorDefecto, c.PermiteVarios, c.CamposSuma, c.Activo))
+            .ToListAsync(ct);
+
     /// <summary>Sube (direccion &lt; 0) o baja (direccion &gt;= 0) un campo, intercambiando el
     /// Orden con el campo vecino. Normaliza los ordenes a 0..n-1 para tolerar huecos/empates.</summary>
     public async Task<bool> ReordenarCampoAsync(Guid tableroId, Guid campoId, int direccion, CancellationToken ct)

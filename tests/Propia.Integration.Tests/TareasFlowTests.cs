@@ -600,6 +600,34 @@ public class TareasFlowTests : IAsyncLifetime
         await BorrarPersonaGlobalAsync(ajena);
     }
 
+    [Fact]
+    public async Task Listar_campos_activos_del_tablero_devuelve_solo_activos_y_respeta_tenant()
+    {
+        // Prep adopcion Selector de Campos: GET tableros/{id}/campos lista las definiciones PROPIAS
+        // ACTIVAS del tablero (las archivadas no) y RLS acota por copropiedad (otro tenant no las ve).
+        var tA = await SeedTenantAsync("Tareas CamposActivos A");
+        var (svcA, _, _) = Build(tA);
+
+        var tab = await svcA.CrearTableroAsync(
+            new GuardarTableroRequest("Tab campos", null, "#6D4FE3", Array.Empty<Guid>()), CancellationToken.None);
+        var c1 = await svcA.AgregarCampoAsync(tab.Id, new GuardarCampoRequest("Costo"), CancellationToken.None);
+        var c2 = await svcA.AgregarCampoAsync(tab.Id, new GuardarCampoRequest("Zona"), CancellationToken.None);
+        await svcA.SetCampoActivoAsync(tab.Id, c1.Id, false, CancellationToken.None);   // archiva c1
+
+        var activos = await svcA.ListarCamposActivosAsync(tab.Id, CancellationToken.None);
+        Assert.Single(activos);                       // solo el activo
+        Assert.Equal(c2.Id, activos[0].Id);
+        Assert.Equal("Zona", activos[0].Label);
+
+        // Otro tenant NO ve los campos del tablero de A (RLS).
+        var tB = await SeedTenantAsync("Tareas CamposActivos B");
+        var (svcB, _, _) = Build(tB);
+        Assert.Empty(await svcB.ListarCamposActivosAsync(tab.Id, CancellationToken.None));
+
+        await CleanTenant(tA);
+        await CleanTenant(tB);
+    }
+
     // ===================== Helpers =====================
 
     private (ITareasService svc, PropiaDbContext db, IServiceScope scope) Build(Guid tenantId)

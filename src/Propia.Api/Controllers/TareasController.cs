@@ -400,6 +400,12 @@ public class TareasController : ControllerBase
     public async Task<IActionResult> CamposArchivados(Guid id, CancellationToken ct)
         => Ok(await _svc.ListarCamposArchivadosAsync(id, ct));
 
+    // Definiciones de campos propios ACTIVOS de un tablero, en orden canonico. Es la ruta base que el
+    // gestor de campos compartido (Selector de Campos) lista con un GET. Abierto al tenant; RLS acota.
+    [HttpGet("tableros/{id:guid}/campos")]
+    public async Task<IActionResult> CamposActivos(Guid id, CancellationToken ct)
+        => Ok(await _svc.ListarCamposActivosAsync(id, ct));
+
     [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/progreso")]
     public async Task<IActionResult> ActualizarProgreso(Guid id, [FromBody] ActualizarProgresoRequest req, CancellationToken ct)
