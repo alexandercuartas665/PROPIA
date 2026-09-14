@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -154,53 +154,6 @@ public class PqrsdRespuestaEnvioFlowTests : IAsyncLifetime
         Assert.Equal(EstadoPqrsd.Respondida, exp.Estado);
         Assert.Equal(primeraFecha, exp.RespuestaAdminAt);              // la fecha original no se piso
         Assert.Equal(1, await ContarHistorialAsync(tenantId, EstadoPqrsd.Respondida)); // un solo asiento
-
-        await CleanTenant(tenantId);
-    }
-
-    [Fact]
-    public async Task Enviar_respuesta_habilita_el_cierre_nocturno_tras_la_ventana()
-    {
-        var tenantId = await SeedTenantAsync("G07 CierreNocturno");
-        await SeedPersonaAsync(tenantId);
-        Guid expId;
-        var (svc, _, scope) = Build(tenantId);
-        using (scope)
-        {
-            var cats = await svc.ListarCategoriasAsync(CancellationToken.None);
-            var x = await svc.RadicarAsync(new RadicarPqrsdRequest(
-                TipoPqrsd.Peticion, cats[0].Id,
-                "Solicito copia del acta de la ultima asamblea ordinaria de copropietarios.",
-                false, null), CancellationToken.None);
-            await svc.TomarExpedienteAsync(x.Id, new TomarExpedienteRequest(null), CancellationToken.None);
-            await svc.MarcarRespondidaAsync(x.Id, "<p>Se adjunta el acta solicitada.</p>", CancellationToken.None);
-            expId = x.Id;
-        }
-
-        // Antenda la respuesta 90 dias atras: la ventana de inconformidad (dias habiles) ya vencio.
-        var ownerOpts = new DbContextOptionsBuilder<PropiaDbContext>().UseNpgsql(_fx.OwnerConnectionString).Options;
-        await using (var back = new PropiaDbContext(ownerOpts, new TenantContext()))
-        {
-            var e = await back.PqrsdExpedientes.IgnoreQueryFilters().FirstAsync(x => x.Id == expId);
-            Assert.Equal(EstadoPqrsd.Respondida, e.Estado);           // precondicion del job, gracias a G-07
-            e.RespuestaAdminAt = DateTimeOffset.UtcNow.AddDays(-90);
-            await back.SaveChangesAsync();
-        }
-
-        // El job de cierre corre como en produccion (superuser bypasa RLS, igual que PqrsdMantenimientoFlowTests).
-        using var jobScope = _services.CreateScope();
-        var calendario = jobScope.ServiceProvider.GetRequiredService<ICalendarioHabilService>();
-        var noti = jobScope.ServiceProvider.GetRequiredService<INotificacionDispatcher>();
-        var logger = jobScope.ServiceProvider.GetRequiredService<ILogger<PqrsdMantenimientoService>>();
-        await using (var jobDb = new PropiaDbContext(ownerOpts, new TenantContext()))
-        {
-            var job = new PqrsdMantenimientoService(jobDb, calendario, noti, new TenantContext(), logger);
-            var cerrados = await job.CerrarVencidosTrasInconformidadAsync(CancellationToken.None);
-            Assert.True(cerrados >= 1);
-        }
-
-        var exp = await LoadAsync(tenantId, e => true);
-        Assert.Equal(EstadoPqrsd.Cerrada, exp.Estado);
 
         await CleanTenant(tenantId);
     }

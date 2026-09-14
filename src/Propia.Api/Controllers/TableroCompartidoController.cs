@@ -49,7 +49,9 @@ public class TableroCompartidoController : ControllerBase
             : Ok(dto);
     }
 
-    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
+    // H-4: mover una tarjeta (cambiar su estado) es editar, no crear: gatea con Editar, igual que el
+    // cambio de estado individual (PUT tareas/{id}/estado).
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Editar)]
     [HttpPost("mover")]
     public async Task<IActionResult> Mover([FromBody] MoverTarjetaCompartidaRequest req, CancellationToken ct)
     {
@@ -77,7 +79,9 @@ public class TableroCompartidoController : ControllerBase
             : Ok(dto);
     }
 
-    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Crear)]
+    // H-4: mover como invitado es la misma accion (mover una tarjeta) -> Editar; el invitado ya esta
+    // acotado por la validacion de pertenencia del tablero compartido.
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Editar)]
     [HttpPost("invitaciones/mover")]
     public async Task<IActionResult> MoverInvitado([FromBody] MoverTarjetaInvitadoRequest req, CancellationToken ct)
     {

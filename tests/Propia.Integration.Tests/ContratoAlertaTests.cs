@@ -89,6 +89,43 @@ public class ContratoAlertaTests
         await CleanupTenantAsync(tenantId);
     }
 
+    [Fact]
+    public async Task El_job_no_duplica_la_alerta_en_corridas_repetidas()
+    {
+        // K-06: cada umbral avisa UNA sola vez (AlertaVencimientoPctNotificado). Correr el job dos veces
+        // sobre el mismo contrato amarillo deja una sola alerta.
+        var tenantId = await SeedTenantAsync("[SELLO] CP job una vez");
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        await BuildService(tenantId).CrearContratoAsync(Contrato(hoy.AddDays(-85), hoy.AddDays(15)), CancellationToken.None);
+
+        await RunJobAsync();
+        await RunJobAsync();
+
+        Assert.Equal(1, await CountAlertasAsync(tenantId, TipoAlertaDashboard.ContratoPorVencer));
+        await CleanupTenantAsync(tenantId);
+    }
+
+    [Fact]
+    public async Task Tras_extender_la_vigencia_el_job_vuelve_a_avisar()
+    {
+        // K-06 (K-08 + job): contrato en rojo (ya avisado) que se prorroga a amarillo. El reset del
+        // contador (K-08 en ActualizarContrato) hace que el job vuelva a avisar en el nuevo umbral.
+        var tenantId = await SeedTenantAsync("[SELLO] CP job reextiende");
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        var c = await BuildService(tenantId).CrearContratoAsync(Contrato(hoy.AddDays(-95), hoy.AddDays(5)), CancellationToken.None);
+
+        await RunJobAsync();
+        Assert.Equal(1, await CountAlertasAsync(tenantId, TipoAlertaDashboard.ContratoPorVencer));  // rojo
+
+        // Prorroga a amarillo (servicio nuevo = contexto nuevo, para no arrastrar el trackeo de la creacion).
+        await BuildService(tenantId).ActualizarContratoAsync(c.Id,
+            new ActualizarContratoRequest(EstadoContrato.Vigente, 30, FechaFin: hoy.AddDays(18)), CancellationToken.None);
+        await RunJobAsync();
+
+        Assert.Equal(2, await CountAlertasAsync(tenantId, TipoAlertaDashboard.ContratoPorVencer));  // vuelve a avisar
+        await CleanupTenantAsync(tenantId);
+    }
+
     // ----------------------------- infraestructura -----------------------------
 
     private IMiCopropiedadService BuildService(Guid tenantId)
@@ -158,6 +195,13 @@ public class ContratoAlertaTests
         await using var ctx = OwnerDb();
         return await ctx.AlertasCopropiedad.IgnoreQueryFilters().AsNoTracking()
             .FirstOrDefaultAsync(a => a.TenantId == tenantId && a.Tipo == tipo);
+    }
+
+    private async Task<int> CountAlertasAsync(Guid tenantId, TipoAlertaDashboard tipo)
+    {
+        await using var ctx = OwnerDb();
+        return await ctx.AlertasCopropiedad.IgnoreQueryFilters().AsNoTracking()
+            .CountAsync(a => a.TenantId == tenantId && a.Tipo == tipo);
     }
 
     private async Task<Guid> SeedTenantAsync(string nombre)

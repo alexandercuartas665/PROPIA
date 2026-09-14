@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Propia.Application.Auth;
 using Propia.Application.SuperAdmin;
+using Propia.Infrastructure.SuperAdmin;
 
 namespace Propia.Api.Controllers;
 
@@ -33,6 +34,23 @@ public class AuthController : ControllerBase
     {
         var result = await _auth.LoginAsync(request, ct, Ip(), UserAgent());
         if (result is null) return Unauthorized(new { error = "credenciales_invalidas" });
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// SOLO DEVELOPMENT: emite el JWT del admin demo (admin@demo.propia) usando las credenciales seed
+    /// que ya conoce el servidor, para que las sesiones del equipo entren sin escribir credenciales.
+    /// GATE fail-closed: fuera de Development el endpoint devuelve 404 (nunca emite token). No expone
+    /// ninguna clave al cliente; la pagina /dev/login solo consume el JWT resultante.
+    /// </summary>
+    [HttpPost("dev-login")]
+    [AllowAnonymous]
+    public async Task<IActionResult> DevLogin([FromServices] IWebHostEnvironment env, CancellationToken ct)
+    {
+        if (!env.IsDevelopment()) return NotFound();
+        var result = await _auth.LoginAsync(
+            new LoginRequest(DemoSeeder.DemoAdminEmail, DemoSeeder.DemoUserPassword), ct, Ip(), UserAgent());
+        if (result is null) return NotFound(new { error = "demo_no_seedeado" });
         return Ok(result);
     }
 

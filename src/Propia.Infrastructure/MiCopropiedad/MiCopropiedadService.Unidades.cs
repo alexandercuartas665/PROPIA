@@ -793,7 +793,12 @@ public partial class MiCopropiedadService
     // ---- Configuracion de campos FIJOS del sistema (alias + opciones de lista) ----
     // La misma tabla guarda la config de la ficha de unidad y la de las fichas vinculadas;
     // 'entidad' discrimina cual. Sin entidad se asume "unidad" (comportamiento historico).
-    private static readonly string[] EntidadesCampoConfig = { "unidad", "personas", "vehiculos", "mascotas", "terceros" };
+    // Ecosistema de la unidad + modulos de administracion que adoptan la config compartida por
+    // copropiedad (decision de Alex 2026-09-14). La tabla UnidadCamposConfig es generica (Entidad,
+    // CampoClave), asi que admitir mas entidades no requiere migracion. (Mantenimiento/zona/equipo
+    // entraran cuando YUNQUE adopte.)
+    private static readonly string[] EntidadesCampoConfig =
+        { "unidad", "personas", "vehiculos", "mascotas", "terceros", "pqrsd", "contrato", "poliza" };
 
     private static string NormalizarEntidadCampoConfig(string? entidad)
     {

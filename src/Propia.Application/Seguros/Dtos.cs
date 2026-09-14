@@ -32,14 +32,17 @@ public record CrearPolizaRequest(
     string? PdfOrigenKey = null);
 
 /// <summary>Actualiza la poliza (MERGE: se aplica lo provisto). LimpiarExpediente desconecta el expediente.</summary>
+/// <summary>Actualiza la poliza. N-02: es un MERGE (mismo criterio que contratos): un campo en null =
+/// "no enviado" y se conserva; PagoMensual/IncluyeZonasUnidades pasan a nullable para poder distinguir
+/// "no enviado" de false. Los campos de texto se vacian enviando "" explicito.</summary>
 public record ActualizarPolizaRequest(
-    string Aseguradora,
+    string? Aseguradora = null,
     string? NumeroPoliza = null,
     Guid? AseguradoraPersonaId = null, Guid? AseguradoraEmpresaId = null,
     string? Corredor = null, Guid? CorredorPersonaId = null, Guid? CorredorEmpresaId = null,
     DateOnly? FechaInicio = null, DateOnly? FechaFin = null,
-    decimal? ValorPoliza = null, int? FormaPagoCuotas = null, bool PagoMensual = false,
-    string? Cobertura = null, bool IncluyeZonasUnidades = false,
+    decimal? ValorPoliza = null, int? FormaPagoCuotas = null, bool? PagoMensual = null,
+    string? Cobertura = null, bool? IncluyeZonasUnidades = null,
     string? ValoresAgregados = null, string? Observaciones = null,
     Guid? ExpedienteId = null, bool LimpiarExpediente = false,
     string? PdfOrigenKey = null);
@@ -50,6 +53,9 @@ public record PolizaCampoValorDto(Guid CampoId, string? Valor);
 public record CrearPolizaCampoRequest(string Label, TipoCampoTablero Tipo, string? Opciones, string? Descripcion);
 public record ActualizarPolizaCampoRequest(string Label, TipoCampoTablero Tipo, string? Opciones, string? Descripcion, int Orden, bool Activo);
 public record GuardarPolizaCampoValorRequest(string? Valor);
+// Selector de Campos (Fase 1): forma estandar de los valores (espejo de UnidadCampoValorFlatDto / EquipoCampoDinDto).
+public record PolizaCampoValorFlatDto(Guid PolizaId, Guid DefinicionId, string? Valor);
+public record PolizaCampoDinDto(Guid DefinicionId, string Label, int Orden, string? Valor, TipoCampoTablero Tipo, string? Opciones);
 
 // ----- Reclamaciones (Ola 5) -----
 public record ReclamacionDto(

@@ -88,4 +88,7 @@ public interface ITareasService
     Task<bool> SetCampoActivoAsync(Guid tableroId, Guid campoId, bool activo, CancellationToken ct);
     /// <summary>Campos archivados de un tablero (para restaurar).</summary>
     Task<IReadOnlyList<TableroCampoDto>> ListarCamposArchivadosAsync(Guid tableroId, CancellationToken ct);
+    /// <summary>Definiciones de campos PROPIOS ACTIVOS de un tablero, en orden canonico (para el gestor
+    /// de campos compartido, que hace GET a la ruta base para listarlas).</summary>
+    Task<IReadOnlyList<TableroCampoDto>> ListarCamposActivosAsync(Guid tableroId, CancellationToken ct);
 }

@@ -1981,8 +1981,9 @@ else
                 <div class="tbcopy-row">
                     <div class="tbc-fld tbcopy-grow">
                         <label>Etapa destino</label>
+                        @* H-6: no se ofrecen estados terminales: una copia es trabajo nuevo, nace abierta (T-03b). *@
                         <select @bind="_copiaDlg.EstadoId">
-                            @if (_board is not null) { @foreach (var es in _board.Estados) { <option value="@es.Id">@es.Nombre</option> } }
+                            @if (_board is not null) { @foreach (var es in _board.Estados.Where(e => !e.EsTerminal)) { <option value="@es.Id">@es.Nombre</option> } }
                         </select>
                     </div>
                     <div class="tbc-fld tbcopy-cant">
@@ -5094,7 +5095,15 @@ else
     private CopiaDialog? _copiaDlg;
     private bool _copiaBusy;
     private void AbrirCopiaDialog(Guid id, string titulo, Guid estadoId)
-        => _copiaDlg = new CopiaDialog { TareaId = id, TareaTitulo = titulo, Titulo = (titulo + " (copia)").Trim(), EstadoId = estadoId, Cantidad = 1 };
+    {
+        // H-6: si la tarjeta origen esta cerrada (estado terminal), la copia es trabajo nuevo y nace en el
+        // primer estado NO terminal; asi el modal no queda preseleccionado en un terminal, que el backend
+        // rechaza al crear (T-03b). El select de "Etapa destino" ademas solo ofrece estados no terminales.
+        var estados = _board?.Estados;
+        var esTerminal = estados?.FirstOrDefault(e => e.Id == estadoId)?.EsTerminal == true;
+        var inicial = esTerminal ? (estados?.FirstOrDefault(e => !e.EsTerminal)?.Id ?? estadoId) : estadoId;
+        _copiaDlg = new CopiaDialog { TareaId = id, TareaTitulo = titulo, Titulo = (titulo + " (copia)").Trim(), EstadoId = inicial, Cantidad = 1 };
+    }
     private void CerrarCopiaDialog() { _copiaDlg = null; }
     private async Task ConfirmarCopia()
     {

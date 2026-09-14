@@ -257,10 +257,23 @@ public partial class TareasService
             t.SolicitantePersonaId, string.IsNullOrWhiteSpace(solNombre) ? null : solNombre);
     }
 
+    // T-10 (RN-01): namespace (classid) fijo del advisory lock del consecutivo de Tareas, para que
+    // pg_advisory_xact_lock por (tenant, anio) no colisione con otros advisory locks del sistema.
+    private const int LockClassNumeroTarea = 21000010;
+
     private async Task<string> GenerarNumeroAsync(CancellationToken ct)
     {
         var year = DateTime.UtcNow.Year;
         var prefijo = $"T-{year}-";
+        // T-10 (RN-01): sin serializar, dos creaciones concurrentes leen el mismo max y calculan el mismo
+        // max+1; la segunda choca con el UNIQUE (tenant_id, numero_tarea) y revienta con 500. Un lock
+        // transaccional por (tenant, anio) serializa leer-el-max e insertar dentro de la MISMA transaccion
+        // (se libera solo al COMMIT/ROLLBACK). Usa las dos partes int de pg_advisory_xact_lock(int, int):
+        // classid fijo del modulo + objid = hashtext(tenant actual + anio). EXIGE que el llamador tenga una
+        // transaccion abierta (crear/duplicar/copiar la abren); sin ella el lock se liberaria de inmediato.
+        await _db.Database.ExecuteSqlRawAsync(
+            "SELECT pg_advisory_xact_lock({0}, hashtext(COALESCE(current_setting('app.tenant_id', true), '') || ':' || {1}))",
+            new object[] { LockClassNumeroTarea, year.ToString() }, ct);
         var ultimos = await _db.Tareas.AsNoTracking()
             .Where(t => t.NumeroTarea.StartsWith(prefijo))
             .Select(t => t.NumeroTarea)
@@ -273,9 +286,35 @@ public partial class TareasService
         return $"{prefijo}{(max + 1):D4}";
     }
 
+    // T-06 (spec 2.10 seccion 21): validaciones basicas del titulo. Empty -> obligatorio; 3..200 caracteres
+    // (la columna es HasMaxLength(200): un titulo mas largo reventaba en 500). Se usa en todos los caminos.
+    private static void ValidarTitulo(string? titulo)
+    {
+        if (string.IsNullOrWhiteSpace(titulo)) throw new InvalidOperationException("Titulo obligatorio.");
+        var t = titulo.Trim();
+        if (t.Length < 3) throw new InvalidOperationException("El titulo debe tener al menos 3 caracteres.");
+        if (t.Length > 200) throw new InvalidOperationException("El titulo no puede superar 200 caracteres.");
+    }
+
+    // T-06: validaciones de una tarea. Se aplican en crear, actualizar, inline y copiar; el job de
+    // programaciones (archivo de YUNQUE) las hereda al llamar CrearTareaAsync. Antes solo se validaba
+    // que el titulo no fuera vacio: un titulo largo, una descripcion > 4000, una fecha de vencimiento
+    // anterior a la de inicio o una prioridad fuera de rango terminaban en DbUpdateException -> 500.
+    private static void ValidarTarea(string? titulo, string? descripcion, DateOnly? fechaInicio,
+        DateOnly? fechaVencimiento, PrioridadTarea prioridad)
+    {
+        ValidarTitulo(titulo);
+        if (descripcion is { Length: > 4000 })
+            throw new InvalidOperationException("La descripcion no puede superar 4000 caracteres.");
+        if (fechaInicio is { } fi && fechaVencimiento is { } fv && fv < fi)
+            throw new InvalidOperationException("La fecha de vencimiento no puede ser anterior a la de inicio.");
+        if (!Enum.IsDefined(typeof(PrioridadTarea), prioridad))
+            throw new InvalidOperationException("Prioridad invalida.");
+    }
+
     public async Task<TareaDetalleDto> CrearTareaAsync(CrearTareaRequest req, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Titulo)) throw new InvalidOperationException("Titulo obligatorio.");
+        ValidarTarea(req.Titulo, req.Descripcion, req.FechaInicio, req.FechaVencimiento, req.Prioridad);
         // T-02: la persona debe ser de esta copropiedad. Se valida ANTES de crear nada.
         await ValidarPersonaDelTenantAsync(req.AsignadoPersonaId, "asignado", ct);
         await ValidarPersonaDelTenantAsync(req.SolicitantePersonaId, "solicitante", ct);
@@ -322,6 +361,12 @@ public partial class TareasService
         if (solicitante is null && uidActual != Guid.Empty)
             solicitante = await _db.Users.AsNoTracking().Where(u => u.Id == uidActual).Select(u => u.PersonaId).FirstOrDefaultAsync(ct);
 
+        // H-1 (T-02): la tarea y todo lo suyo (etiquetas, colaboradores, checklist, campos, historial)
+        // van en UNA transaccion. Antes eran saves sueltos: si fallaba un colaborador, la tarea quedaba
+        // igual insertada. La notificacion al asignado se manda DESPUES del commit.
+        // T-10: la transaccion tambien envuelve GenerarNumeroAsync (toma el advisory lock del consecutivo),
+        // asi generar el numero e insertar la tarea quedan serializados por (tenant, anio).
+        await using var tx = await _db.Database.BeginTransactionAsync(ct);
         var numero = await GenerarNumeroAsync(ct);
         var t = new Tarea
         {
@@ -350,10 +395,6 @@ public partial class TareasService
             ModuloOrigenEntidadId = req.ModuloOrigenEntidadId,
             CreadoPorUsuarioId = GetUsuarioActualId()
         };
-        // H-1 (T-02): la tarea y todo lo suyo (etiquetas, colaboradores, checklist, campos, historial)
-        // van en UNA transaccion. Antes eran saves sueltos: si fallaba un colaborador, la tarea quedaba
-        // igual insertada. La notificacion al asignado se manda DESPUES del commit.
-        await using var tx = await _db.Database.BeginTransactionAsync(ct);
         _db.Tareas.Add(t);
         await _db.SaveChangesAsync(ct);
 
@@ -398,7 +439,8 @@ public partial class TareasService
     {
         var t = await _db.Tareas.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (t is null) return false;
-        if (string.IsNullOrWhiteSpace(req.Titulo)) throw new InvalidOperationException("Titulo obligatorio.");
+        // T-06: mismas validaciones que al crear.
+        ValidarTarea(req.Titulo, req.Descripcion, req.FechaInicio, req.FechaVencimiento, req.Prioridad);
         // T-02: idem al crear, antes del primer save.
         await ValidarPersonaDelTenantAsync(req.AsignadoPersonaId, "asignado", ct);
         await ValidarPersonaDelTenantAsync(req.SolicitantePersonaId, "solicitante", ct);
@@ -533,10 +575,11 @@ public partial class TareasService
         switch ((req.Campo ?? "").Trim().ToLowerInvariant())
         {
             case "titulo":
-                if (string.IsNullOrWhiteSpace(req.Texto)) throw new InvalidOperationException("Titulo obligatorio.");
-                t.Titulo = req.Texto.Trim();
+                ValidarTitulo(req.Texto);   // T-06: 3..200
+                t.Titulo = req.Texto!.Trim();
                 break;
             case "descripcion":
+                if (req.Texto is { Length: > 4000 }) throw new InvalidOperationException("La descripcion no puede superar 4000 caracteres.");
                 t.Descripcion = string.IsNullOrWhiteSpace(req.Texto) ? null : req.Texto.Trim();
                 break;
             case "valor":
@@ -549,9 +592,13 @@ public partial class TareasService
                 break;
             case "fechavencimiento":
                 t.FechaVencimiento = req.Fecha;
+                if (t.FechaInicio is { } fiv && t.FechaVencimiento is { } fvv && fvv < fiv)
+                    throw new InvalidOperationException("La fecha de vencimiento no puede ser anterior a la de inicio.");
                 break;
             case "fechainicio":
                 t.FechaInicio = req.Fecha;
+                if (t.FechaInicio is { } fii && t.FechaVencimiento is { } fvi && fvi < fii)
+                    throw new InvalidOperationException("La fecha de inicio no puede ser posterior a la de vencimiento.");
                 break;
             case "asignados":
                 var ids = (req.Guids ?? new List<Guid>()).Where(g => g != Guid.Empty).Distinct().ToList();
@@ -598,6 +645,9 @@ public partial class TareasService
     {
         var src = await _db.Tareas.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && !x.Eliminada, ct);
         if (src is null) return null;
+        // T-10: numero e insert dentro de una transaccion para que GenerarNumeroAsync serialice el
+        // consecutivo con su advisory lock (se libera al commit).
+        await using var tx = await _db.Database.BeginTransactionAsync(ct);
         var numero = await GenerarNumeroAsync(ct);
         // T-03b: duplicar una tarea CERRADA heredaba su estado terminal tal cual, con Cerrada = false:
         // nacia una copia "hecha" que nadie cerro nunca. La copia es trabajo nuevo, asi que arranca en
@@ -641,6 +691,8 @@ public partial class TareasService
         await RegistrarHistorial(nueva.Id, TipoEventoTarea.Creada, $"Tarea duplicada de {src.NumeroTarea}", null, new { origen = src.NumeroTarea }, ct);
         await _db.SaveChangesAsync(ct);
 
+        await tx.CommitAsync(ct);
+
         var lista = await ListarTareasAsync(null, null, null, null, null, null, ct, nueva.TableroId);
         return lista.FirstOrDefault(x => x.Id == nueva.Id);
     }
@@ -661,6 +713,8 @@ public partial class TareasService
         if (await _db.TareasEstados.AnyAsync(e => e.Id == estadoId && e.EsTerminal, ct))
             estadoId = await PrimerEstadoNoTerminalAsync(src.TableroId, ct);
         var baseTitulo = string.IsNullOrWhiteSpace(req.Titulo) ? (src.Titulo + " (copia)").Trim() : req.Titulo.Trim();
+        // T-06: minimo 3 caracteres (el maximo se resuelve truncando a 200 mas abajo, comportamiento existente).
+        if (baseTitulo.Length < 3) throw new InvalidOperationException("El titulo debe tener al menos 3 caracteres.");
 
         // Datos a conservar (leidos una sola vez).
         List<Guid> colabIds = new();
@@ -671,6 +725,9 @@ public partial class TareasService
         if (req.ConservarEtiquetas) etiquetaIds = await _db.TareaEtiquetaAsignaciones.AsNoTracking().Where(e => e.TareaId == id).Select(e => e.EtiquetaId).ToListAsync(ct);
 
         var nuevasIds = new List<Guid>();
+        // T-10: todas las copias en UNA transaccion; el advisory lock que toma GenerarNumeroAsync se
+        // mantiene por todo el bucle (es reentrante) y se libera al commit, serializando el consecutivo.
+        await using var tx = await _db.Database.BeginTransactionAsync(ct);
         for (int i = 0; i < cantidad; i++)
         {
             var numero = await GenerarNumeroAsync(ct);
@@ -712,6 +769,8 @@ public partial class TareasService
             await _db.SaveChangesAsync(ct);
             nuevasIds.Add(nueva.Id);
         }
+
+        await tx.CommitAsync(ct);
 
         var lista = await ListarTareasAsync(null, null, null, null, null, null, ct, src.TableroId);
         return lista.Where(x => nuevasIds.Contains(x.Id)).ToList();

@@ -101,6 +101,7 @@ public class PqrsdController : ControllerBase
     }
 
     // --- Bandeja + ficha ---
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Ver)]
     [HttpGet("bandeja")]
     public async Task<IActionResult> Bandeja(
         [FromQuery] EstadoPqrsd? estado, [FromQuery] TipoPqrsd? tipo,
@@ -195,6 +196,69 @@ public class PqrsdController : ControllerBase
     public async Task<IActionResult> SetCampoPublico(Guid id, [FromQuery] bool mostrar, CancellationToken ct)
         => await _svc.SetCampoPublicoAsync(id, mostrar, ct) ? NoContent() : NotFound();
 
+    // --- Endpoints ESTANDAR del selector de campos (prefijo 'pqrsd') ---
+    // Preparacion Fase 1 del Selector de Campos: el gestor compartido espera la forma {prefijo}-campos /
+    // {prefijo}-campos-valores / {id}/campos (patron de MiCopropiedadController). PQRSD ya tiene sus campos
+    // propios en 'campos/*' con otra forma; estos son ADAPTADORES FINOS que delegan en los MISMOS servicios,
+    // sin logica nueva. Los 'campos/*' de arriba siguen vivos hasta que la adopcion los retire (sera solo
+    // borrar rutas). Los valores por expediente se leen del propio expediente; aqui se exponen en la forma
+    // estandar para el render de valores del gestor.
+    [HttpGet("pqrsd-campos")]
+    public async Task<IActionResult> ListarCamposStd(CancellationToken ct) => Ok(await _svc.ListarCamposAsync(ct));
+
+    [HttpGet("pqrsd-campos-archivados")]
+    public async Task<IActionResult> ListarCamposArchivadosStd(CancellationToken ct) => Ok(await _svc.ListarCamposArchivadosAsync(ct));
+
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
+    [HttpPost("pqrsd-campos")]
+    public async Task<IActionResult> CrearCampoStd([FromBody] GuardarCampoPqrsdRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.CrearCampoAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
+    [HttpPut("pqrsd-campos/{id:guid}")]
+    public async Task<IActionResult> ActualizarCampoStd(Guid id, [FromBody] GuardarCampoPqrsdRequest req, CancellationToken ct)
+    {
+        try { return await _svc.ActualizarCampoAsync(id, req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Eliminar)]
+    [HttpDelete("pqrsd-campos/{id:guid}")]
+    public async Task<IActionResult> EliminarCampoStd(Guid id, CancellationToken ct)
+        => await _svc.EliminarCampoAsync(id, ct) ? NoContent() : NotFound();
+
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
+    [HttpPut("pqrsd-campos/{id:guid}/archivar")]
+    public async Task<IActionResult> ArchivarCampoStd(Guid id, [FromQuery] bool archivar, CancellationToken ct)
+    {
+        try { return await _svc.SetCampoActivoAsync(id, !archivar, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
+    [HttpPut("pqrsd-campos/{id:guid}/orden")]
+    public async Task<IActionResult> ReordenarCampoStd(Guid id, [FromQuery] string direccion, CancellationToken ct)
+        => await _svc.ReordenarCampoAsync(id, direccion, ct) ? NoContent() : NotFound();
+
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
+    [HttpPut("pqrsd-campos/{id:guid}/publico")]
+    public async Task<IActionResult> SetCampoPublicoStd(Guid id, [FromQuery] bool mostrar, CancellationToken ct)
+        => await _svc.SetCampoPublicoAsync(id, mostrar, ct) ? NoContent() : NotFound();
+
+    // Valores de los campos propios de UN expediente (forma estandar {id}/campos). Delega en el detalle del
+    // expediente, que ya los trae; devuelve solo la lista de valores.
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Ver)]
+    [HttpGet("{id:guid}/campos")]
+    public async Task<IActionResult> ListarCamposValoresExpediente(Guid id, CancellationToken ct)
+    {
+        var det = await _svc.GetExpedienteAsync(id, ct);
+        if (det is null) return NotFound();
+        return Ok(det.Campos ?? new List<PqrsdCampoValorDto>());
+    }
+
     // --- Config del formulario publico (campos opcionales visibles) ---
     [HttpGet("formulario-config")]
     public async Task<IActionResult> GetFormularioConfig(CancellationToken ct) => Ok(await _svc.GetFormularioPublicoConfigAsync(ct));
@@ -239,6 +303,7 @@ public class PqrsdController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Ver)]
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetExpediente(Guid id, CancellationToken ct)
     {
@@ -413,11 +478,22 @@ public class PqrsdController : ControllerBase
     }
 
     // --- Contexto humano del expediente: unidad asignada + propietario/residente/etc con contacto ---
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Ver)]
     [HttpGet("{id:guid}/contexto")]
     public async Task<IActionResult> GetContexto(Guid id, CancellationToken ct)
     {
         var exp = await _db.PqrsdExpedientes.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
         if (exp is null) return NotFound();
+
+        // G-10: este contexto se deriva ENTERO del radicador (su unidad y las personas de esa unidad), asi que
+        // revelarlo de-anonimizaria una denuncia con identidad reservada. Cuando hay reserva se devuelve contexto
+        // VACIO, para TODOS (misma regla de presentacion que GetExpedienteAsync, que oculta nombre/id del
+        // radicador sin excepcion de rol: PqrsdService.BandejaYRadicacion.cs). El Admin/gestor sigue gestionando
+        // el caso por los endpoints de contenido (detalle, respuestas, adjuntos), que no dependen de la identidad.
+        if (exp.IdentidadReservada)
+            return Ok(new PqrsdContextoDto(
+                new PqrsdContextoUnidadDto(null, null, null, null, null, null),
+                new List<PqrsdContextoPersonaDto>()));
 
         // Buscar UnidadPersona donde PersonaId = RadicadorPersonaId. Tomo la primera asociacion como "unidad del expediente".
         var unidadPersona = await (from up in _db.UnidadPersonas.AsNoTracking()
@@ -571,6 +647,7 @@ public class PqrsdController : ControllerBase
     }
 
     // --- Respuestas tipo correo (borradores con editor enriquecido) ---
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Ver)]
     [HttpGet("{id:guid}/respuestas")]
     public async Task<IActionResult> ListarRespuestas(Guid id, CancellationToken ct)
         => Ok(await _svc.ListarRespuestasAsync(id, ct));
@@ -598,6 +675,7 @@ public class PqrsdController : ControllerBase
         => await _svc.ArchivarRespuestaAsync(id, respuestaId, req.Archivar, ct) ? NoContent() : NotFound();
 
     // Historial de versiones del documento de una respuesta.
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Ver)]
     [HttpGet("{id:guid}/respuestas/{respuestaId:guid}/versiones")]
     public async Task<IActionResult> ListarVersionesRespuesta(Guid id, Guid respuestaId, CancellationToken ct)
         => Ok(await _svc.ListarVersionesRespuestaAsync(id, respuestaId, ct));
@@ -809,6 +887,7 @@ public class PqrsdController : ControllerBase
         => await _svc.EliminarPlantillaAsync(plantillaId, ct) ? NoContent() : NotFound();
 
     // Devuelve el cuerpo de la plantilla con los tokens ya reemplazados por los datos del expediente.
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Ver)]
     [HttpGet("{id:guid}/plantillas/{plantillaId:guid}/resuelta")]
     public async Task<IActionResult> ResolverPlantilla(Guid id, Guid plantillaId, CancellationToken ct)
     {

@@ -318,6 +318,9 @@ public record ContratoCampoValorDto(Guid CampoId, string? Valor);
 public record CrearContratoCampoRequest(string Label, TipoCampoTablero Tipo, string? Opciones, string? Descripcion);
 public record ActualizarContratoCampoRequest(string Label, TipoCampoTablero Tipo, string? Opciones, string? Descripcion, int Orden, bool Activo);
 public record GuardarContratoCampoValorRequest(string? Valor);
+// Selector de Campos (Fase 1): forma estandar de los valores (espejo de UnidadCampoValorFlatDto / EquipoCampoDinDto).
+public record ContratoCampoValorFlatDto(Guid ContratoId, Guid DefinicionId, string? Valor);
+public record ContratoCampoDinDto(Guid DefinicionId, string Label, int Orden, string? Valor, TipoCampoTablero Tipo, string? Opciones);
 
 // Directriz: el proveedor de un contrato es un tercero del Directorio (Persona o Empresa).
 // Los campos de texto quedan como snapshot para los contratos ya cargados a mano.
