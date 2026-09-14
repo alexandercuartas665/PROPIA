@@ -85,7 +85,7 @@ public class TareasFlowTests : IAsyncLifetime
         var (svc, db, _) = Build(tenantId);
 
         var t = await svc.CrearTareaAsync(new CrearTareaRequest(
-            "T", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+            "Tarea T", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
         var estados = await svc.ListarEstadosAsync(CancellationToken.None);
         var completada = estados.First(e => e.Nombre == EstadoTareaBase.Completada);
 
@@ -108,7 +108,7 @@ public class TareasFlowTests : IAsyncLifetime
         var (svc, db, _) = Build(tenantId);
 
         var t = await svc.CrearTareaAsync(new CrearTareaRequest(
-            "T", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+            "Tarea T", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
         var cancelada = (await svc.ListarEstadosAsync(CancellationToken.None)).First(e => e.Nombre == EstadoTareaBase.Cancelada);
 
         // Sin motivo de cierre -> error
@@ -130,9 +130,9 @@ public class TareasFlowTests : IAsyncLifetime
         var tenantId = await SeedTenantAsync("Tareas Numero");
         var (svc, _, _) = Build(tenantId);
 
-        var t1 = await svc.CrearTareaAsync(new CrearTareaRequest("A", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
-        var t2 = await svc.CrearTareaAsync(new CrearTareaRequest("B", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
-        var t3 = await svc.CrearTareaAsync(new CrearTareaRequest("C", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+        var t1 = await svc.CrearTareaAsync(new CrearTareaRequest("Tarea A", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+        var t2 = await svc.CrearTareaAsync(new CrearTareaRequest("Tarea B", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+        var t3 = await svc.CrearTareaAsync(new CrearTareaRequest("Tarea C", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
 
         Assert.Equal(3, new[] { t1.NumeroTarea, t2.NumeroTarea, t3.NumeroTarea }.Distinct().Count());
         Assert.EndsWith("0003", t3.NumeroTarea);
@@ -168,7 +168,7 @@ public class TareasFlowTests : IAsyncLifetime
         var (svc, db, _) = Build(tenantId);
 
         var t = await svc.CrearTareaAsync(new CrearTareaRequest(
-            "T", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+            "Tarea T", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
         var h = await db.TareaHistorial.AsNoTracking().FirstAsync(x => x.TareaId == t.Id);
 
         await Assert.ThrowsAnyAsync<Exception>(() =>
@@ -217,9 +217,9 @@ public class TareasFlowTests : IAsyncLifetime
         var (svc, _, _) = Build(tenantId);
 
         var a = await svc.CrearTareaAsync(new CrearTareaRequest(
-            "A", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+            "Tarea A", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
         var b = await svc.CrearTareaAsync(new CrearTareaRequest(
-            "B", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+            "Tarea B", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
 
         // A depende de B
         await svc.AgregarDependenciaAsync(a.Id, new AgregarDependenciaRequest(b.Id), CancellationToken.None);
@@ -236,7 +236,7 @@ public class TareasFlowTests : IAsyncLifetime
         var tenantId = await SeedTenantAsync("Tareas Self");
         var (svc, _, _) = Build(tenantId);
         var t = await svc.CrearTareaAsync(new CrearTareaRequest(
-            "T", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+            "Tarea T", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             svc.AgregarDependenciaAsync(t.Id, new AgregarDependenciaRequest(t.Id), CancellationToken.None));
         await CleanTenant(tenantId);
@@ -312,9 +312,9 @@ public class TareasFlowTests : IAsyncLifetime
         var cancelada = estados.First(e => e.EsTerminal && e.Nombre == "Cancelada");
         var motivoId = await CrearMotivoTareasAsync(db);
         var t1 = await svc.CrearTareaAsync(new CrearTareaRequest(
-            "T1", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+            "Tarea T1", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
         var t2 = await svc.CrearTareaAsync(new CrearTareaRequest(
-            "T2", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+            "Tarea T2", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
 
         // Sin motivo el lote se rechaza entero...
         await Assert.ThrowsAsync<InvalidOperationException>(() => svc.BulkCambiarEstadoAsync(
@@ -347,7 +347,7 @@ public class TareasFlowTests : IAsyncLifetime
 
         // Cancelar no es completar: queda cerrada, pero SIN fecha de completada.
         var t3 = await svc.CrearTareaAsync(new CrearTareaRequest(
-            "T3", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+            "Tarea T3", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
         await svc.BulkCambiarEstadoAsync(
             new BulkCambiarEstadoRequest(new[] { t3.Id }, cancelada.Id, null, motivoId), CancellationToken.None);
         var t3Cerrada = await db.Tareas.AsNoTracking().FirstAsync(t => t.Id == t3.Id);
@@ -369,9 +369,9 @@ public class TareasFlowTests : IAsyncLifetime
         var tenantId = await SeedTenantAsync("Tareas Bulk Prio");
         var (svc, db, _) = Build(tenantId);
         var t1 = await svc.CrearTareaAsync(new CrearTareaRequest(
-            "T1", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+            "Tarea T1", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
         var t2 = await svc.CrearTareaAsync(new CrearTareaRequest(
-            "T2", null, PrioridadTarea.Baja, null, null, null, null, null, null), CancellationToken.None);
+            "Tarea T2", null, PrioridadTarea.Baja, null, null, null, null, null, null), CancellationToken.None);
 
         var res = await svc.BulkCambiarPrioridadAsync(
             new BulkCambiarPrioridadRequest(new[] { t1.Id, t2.Id }, PrioridadTarea.Urgente),
@@ -469,6 +469,50 @@ public class TareasFlowTests : IAsyncLifetime
         await Assert.ThrowsAsync<InvalidOperationException>(() => svc.ActualizarTareaAsync(ok.Id,
             new ActualizarTareaRequest("T resp propio", null, PrioridadTarea.Normal, null, null, null,
                 ResponsablePersonaIds: new[] { ajeno }), CancellationToken.None));
+
+        await CleanTenant(tenantId);
+    }
+
+    /// <summary>
+    /// T-06 (spec 2.10 seccion 21): validaciones de la tarea. Titulo 3..200, descripcion &lt;= 4000, fecha de
+    /// vencimiento &gt;= inicio, prioridad valida. Antes solo se validaba titulo no vacio y lo demas reventaba
+    /// en 500 (DbUpdateException) o pasaba silencioso.
+    /// </summary>
+    [Fact]
+    public async Task Crear_valida_titulo_descripcion_fechas_y_prioridad()
+    {
+        var tenantId = await SeedTenantAsync("Tareas Validaciones");
+        var (svc, db, _) = Build(tenantId);
+
+        CrearTareaRequest Req(string titulo, string? desc = null, DateOnly? ini = null, DateOnly? ven = null,
+            PrioridadTarea prio = PrioridadTarea.Normal)
+            => new(titulo, desc, prio, null, null, ini, ven, null, null);
+
+        // Titulo muy corto (< 3).
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.CrearTareaAsync(Req("ab"), CancellationToken.None));
+        // Titulo muy largo (> 200).
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.CrearTareaAsync(Req(new string('x', 201)), CancellationToken.None));
+        // Descripcion > 4000.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.CrearTareaAsync(Req("Titulo ok", new string('d', 4001)), CancellationToken.None));
+        // Fecha de vencimiento anterior a la de inicio.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.CrearTareaAsync(
+            Req("Titulo ok", ini: new DateOnly(2026, 1, 10), ven: new DateOnly(2026, 1, 5)), CancellationToken.None));
+        // Prioridad fuera de rango del enum.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.CrearTareaAsync(Req("Titulo ok", prio: (PrioridadTarea)99), CancellationToken.None));
+
+        // Ninguna de las anteriores dejo tarea (crear va en transaccion).
+        Assert.Empty(await db.Tareas.AsNoTracking().Where(t => t.TableroId != null && t.Titulo.StartsWith("Titulo ok")).ToListAsync());
+
+        // Caso valido: titulo 3..200, fechas coherentes, prioridad valida -> crea.
+        var ok = await svc.CrearTareaAsync(
+            Req("Tarea valida", "descripcion corta", new DateOnly(2026, 1, 5), new DateOnly(2026, 1, 10), PrioridadTarea.Alta),
+            CancellationToken.None);
+        Assert.NotEqual(Guid.Empty, ok.Id);
+
+        // Actualizar con fecha invertida tambien se rechaza.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.ActualizarTareaAsync(ok.Id,
+            new ActualizarTareaRequest("Tarea valida", null, PrioridadTarea.Normal, null,
+                new DateOnly(2026, 2, 10), new DateOnly(2026, 2, 1)), CancellationToken.None));
 
         await CleanTenant(tenantId);
     }
