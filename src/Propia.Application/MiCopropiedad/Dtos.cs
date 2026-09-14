@@ -316,7 +316,12 @@ public record ContratoCampoDto(
     Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones, string? Descripcion, bool Activo);
 public record ContratoCampoValorDto(Guid CampoId, string? Valor);
 public record CrearContratoCampoRequest(string Label, TipoCampoTablero Tipo, string? Opciones, string? Descripcion);
-public record ActualizarContratoCampoRequest(string Label, TipoCampoTablero Tipo, string? Opciones, string? Descripcion, int Orden, bool Activo);
+// PUT MERGE (adopcion del Selector de Campos): el componente compartido ConfigCamposEntidad edita con la
+// forma estandar ActualizarCampoDefinicionRequest(Label, Tipo, Opciones, Orden) y NO envia Descripcion ni
+// Activo. Por eso ambos son nullable = "no enviado": el servicio los conserva (no borra la descripcion ni
+// oculta el campo). Label tambien nullable por robustez (si no viene, se conserva). El gestor propio manda
+// la forma completa (con Activo/Descripcion explicitos) y sigue funcionando igual.
+public record ActualizarContratoCampoRequest(string? Label, TipoCampoTablero Tipo, string? Opciones, string? Descripcion, int Orden, bool? Activo);
 public record GuardarContratoCampoValorRequest(string? Valor);
 // Selector de Campos (Fase 1): forma estandar de los valores (espejo de UnidadCampoValorFlatDto / EquipoCampoDinDto).
 public record ContratoCampoValorFlatDto(Guid ContratoId, Guid DefinicionId, string? Valor);

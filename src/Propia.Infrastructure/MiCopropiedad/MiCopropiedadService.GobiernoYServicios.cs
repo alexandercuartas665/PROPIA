@@ -451,12 +451,16 @@ public partial class MiCopropiedadService
     {
         var campo = await _db.ContratoCampos.FirstOrDefaultAsync(c => c.Id == campoId, ct);
         if (campo is null) return false;
+        // MERGE (PUT es MERGE, CLAUDE.md): el gestor propio manda la forma completa; el componente compartido
+        // solo manda Label/Tipo/Opciones/Orden. Descripcion y Activo en null = "no enviado" -> se conservan
+        // (asi el edit del componente no borra la descripcion ni oculta el campo con Activo=false).
         if (!string.IsNullOrWhiteSpace(req.Label)) campo.Label = req.Label.Trim();
         campo.Tipo = req.Tipo;
         campo.Opciones = string.IsNullOrWhiteSpace(req.Opciones) ? null : req.Opciones.Trim();
-        campo.Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim();
         campo.Orden = req.Orden;
-        campo.Activo = req.Activo;
+        if (req.Descripcion is not null)
+            campo.Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim();
+        if (req.Activo is not null) campo.Activo = req.Activo.Value;
         await _db.SaveChangesAsync(ct);
         return true;
     }
