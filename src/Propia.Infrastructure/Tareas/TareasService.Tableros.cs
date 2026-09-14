@@ -233,8 +233,20 @@ public partial class TareasService
 
     private async Task SetTableroUsuariosAsync(Guid tableroId, IReadOnlyList<Guid>? personaIds, CancellationToken ct)
     {
+        var nuevos = (personaIds ?? Array.Empty<Guid>()).Distinct().ToList();
+        // H-2: valida contra el tenant SOLO los PersonaId que no eran ya miembros del tablero. Los ya
+        // miembros se preservan (incluye invitados externos agregados por correo, cross-tenant deliberado:
+        // ver S-20 en AgregarUsuarioTableroPorCorreoAsync); reenviar la lista completa en un "Actualizar
+        // tablero" no debe expulsarlos. Solo bloquea meter por la lista una persona nueva de otra copropiedad.
+        var yaMiembros = (await _db.TableroUsuarios.AsNoTracking()
+            .Where(u => u.TableroId == tableroId)
+            .Select(u => u.PersonaId)
+            .ToListAsync(ct)).ToHashSet();
+        foreach (var pid in nuevos.Where(p => !yaMiembros.Contains(p)))
+            await ValidarPersonaDelTenantAsync(pid, "usuarios del tablero", ct);
+
         await _db.TableroUsuarios.Where(u => u.TableroId == tableroId).ExecuteDeleteAsync(ct);
-        foreach (var pid in (personaIds ?? Array.Empty<Guid>()).Distinct())
+        foreach (var pid in nuevos)
             _db.TableroUsuarios.Add(new TableroUsuario { TableroId = tableroId, PersonaId = pid });
         await _db.SaveChangesAsync(ct);
     }
@@ -277,6 +289,9 @@ public partial class TareasService
     {
         var existe = await _db.Tableros.AnyAsync(t => t.Id == tableroId, ct);
         if (!existe) return false;
+        // H-2: enlazar directo exige que la persona sea de esta copropiedad (el invite cross-tenant va por
+        // AgregarUsuarioTableroPorCorreoAsync, otro flujo).
+        await ValidarPersonaDelTenantAsync(personaId, "usuario del tablero", ct);
         var ya = await _db.TableroUsuarios.AnyAsync(u => u.TableroId == tableroId && u.PersonaId == personaId, ct);
         if (!ya)
         {
