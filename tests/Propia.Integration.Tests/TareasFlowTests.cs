@@ -10,6 +10,8 @@ using Propia.Infrastructure.Persistence;
 using Propia.Infrastructure.Tareas;
 using System.Security.Claims;
 using Xunit;
+// Contrato de config de columnas reusado (alias puntual: mismo nombre simple existe en Tareas y MiCopropiedad).
+using GuardarUnidadCampoConfigRequest = Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest;
 
 namespace Propia.Integration.Tests;
 
@@ -676,6 +678,65 @@ public class TareasFlowTests : IAsyncLifetime
         Assert.False(d2.PermiteVarios);
 
         await CleanTenant(tenantId);
+    }
+
+    [Fact]
+    public async Task Config_de_columnas_del_tablero_persiste_por_tablero_y_respeta_tenant()
+    {
+        // Adopcion Selector (opcion A): la config de presentacion de columnas (alias/oculto/orden) se guarda
+        // per-tenant + per-TABLERO en tablero_campos_config. Upsert por (tablero, campo_clave); no se comparte
+        // entre tableros ni entre copropiedades (RLS). Reusa el contrato de DTOs de unidad_campos_config.
+        var tA = await SeedTenantAsync("Tareas ColsCfg A");
+        var (svcA, _, _) = Build(tA);
+        var tab1 = await svcA.CrearTableroAsync(new GuardarTableroRequest("Tab1", null, "#6D4FE3", Array.Empty<Guid>()), CancellationToken.None);
+        var tab2 = await svcA.CrearTableroAsync(new GuardarTableroRequest("Tab2", null, "#6D4FE3", Array.Empty<Guid>()), CancellationToken.None);
+
+        // Guardar alias + oculto + orden en tab1 (columnas de sistema).
+        await svcA.GuardarColumnaConfigAsync(tab1.Id, new GuardarUnidadCampoConfigRequest("titulo", "Asunto", null, Orden: 0), CancellationToken.None);
+        await svcA.GuardarColumnaConfigAsync(tab1.Id, new GuardarUnidadCampoConfigRequest("desc", null, null, Oculto: true, Orden: 3), CancellationToken.None);
+
+        var cfg1 = await svcA.ListarColumnasConfigAsync(tab1.Id, CancellationToken.None);
+        Assert.Equal(2, cfg1.Count);
+        var titulo = cfg1.Single(x => x.CampoClave == "titulo");
+        Assert.Equal("Asunto", titulo.Alias);
+        Assert.False(titulo.Oculto);
+        Assert.Equal(0, titulo.Orden);
+        var desc = cfg1.Single(x => x.CampoClave == "desc");
+        Assert.True(desc.Oculto);
+        Assert.Equal(3, desc.Orden);
+
+        // Per-tablero: tab2 no ve la config de tab1.
+        Assert.Empty(await svcA.ListarColumnasConfigAsync(tab2.Id, CancellationToken.None));
+
+        // Upsert: re-guardar "titulo" cambia el alias SIN duplicar la fila (clave = tablero+campo_clave).
+        await svcA.GuardarColumnaConfigAsync(tab1.Id, new GuardarUnidadCampoConfigRequest("titulo", "Tema", null, Orden: 0), CancellationToken.None);
+        var cfg1b = await svcA.ListarColumnasConfigAsync(tab1.Id, CancellationToken.None);
+        Assert.Equal(2, cfg1b.Count);
+        Assert.Equal("Tema", cfg1b.Single(x => x.CampoClave == "titulo").Alias);
+
+        // Lote (reordenamiento): varias filas completas en una transaccion; upsert por clave.
+        await svcA.GuardarColumnasConfigLoteAsync(tab1.Id, new List<GuardarUnidadCampoConfigRequest>
+        {
+            new("titulo", "Tema", null, Orden: 0),
+            new("est", null, null, Orden: 1),
+            new("resp", null, null, Oculto: true, Orden: 2),
+        }, CancellationToken.None);
+        var cfg1c = await svcA.ListarColumnasConfigAsync(tab1.Id, CancellationToken.None);
+        Assert.Equal(1, cfg1c.Single(x => x.CampoClave == "est").Orden);
+        Assert.True(cfg1c.Single(x => x.CampoClave == "resp").Oculto);
+        Assert.Equal(4, cfg1c.Count);   // titulo, desc, est, resp (sin duplicar titulo)
+
+        // Tablero inexistente -> excepcion (no crea config huerfana).
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            svcA.GuardarColumnaConfigAsync(Guid.NewGuid(), new GuardarUnidadCampoConfigRequest("titulo", "x", null), CancellationToken.None));
+
+        // Otro tenant NO ve la config del tablero de A (RLS).
+        var tB = await SeedTenantAsync("Tareas ColsCfg B");
+        var (svcB, _, _) = Build(tB);
+        Assert.Empty(await svcB.ListarColumnasConfigAsync(tab1.Id, CancellationToken.None));
+
+        await CleanTenant(tA);
+        await CleanTenant(tB);
     }
 
     // ===================== Helpers =====================

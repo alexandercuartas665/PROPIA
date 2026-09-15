@@ -5,6 +5,9 @@ using Microsoft.EntityFrameworkCore;
 using Propia.Api.Authorization;
 using Propia.Application.Tareas;
 using Propia.Application.UsuariosAccesos;
+// Contrato de config de columnas reusado (per-tablero). Alias puntual para no chocar con
+// Propia.Application.Tareas.SetCampoValorRequest (mismo nombre simple en ambos namespaces).
+using GuardarUnidadCampoConfigRequest = Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest;
 using Propia.Domain.Enums;
 using Propia.Infrastructure.Storage;
 
@@ -417,6 +420,31 @@ public class TareasController : ControllerBase
     [HttpGet("tableros/{id:guid}/campos")]
     public async Task<IActionResult> CamposActivos(Guid id, CancellationToken ct)
         => Ok(await _svc.ListarCamposActivosAsync(id, ct));
+
+    // ---- Config de presentacion de COLUMNAS del tablero (alias/oculto/orden/tipo/formato) ----
+    // Per-tenant + per-tablero: compartida por la copropiedad (como Unidades/Directorio). La consume el gestor
+    // de campos compartido via RutaConfig="/api/tareas/tableros/{id}/columnas-config". El GET esta abierto al
+    // tenant (todos ven la config del tablero; RLS acota); las escrituras exigen Aprobar, igual que configurar
+    // el tablero. El query 'entidad' del componente se ignora (el scope es el tablero de la ruta).
+    [HttpGet("tableros/{id:guid}/columnas-config")]
+    public async Task<IActionResult> ColumnasConfig(Guid id, [FromQuery] string? entidad, CancellationToken ct)
+        => Ok(await _svc.ListarColumnasConfigAsync(id, ct));
+
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Aprobar)]
+    [HttpPut("tableros/{id:guid}/columnas-config")]
+    public async Task<IActionResult> GuardarColumnaConfig(Guid id, [FromBody] GuardarUnidadCampoConfigRequest req, CancellationToken ct)
+    {
+        try { return Ok(await _svc.GuardarColumnaConfigAsync(id, req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Aprobar)]
+    [HttpPut("tableros/{id:guid}/columnas-config/lote")]
+    public async Task<IActionResult> GuardarColumnasConfigLote(Guid id, [FromBody] List<GuardarUnidadCampoConfigRequest> filas, CancellationToken ct)
+    {
+        try { return Ok(await _svc.GuardarColumnasConfigLoteAsync(id, filas, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
 
     [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/progreso")]

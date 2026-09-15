@@ -514,40 +514,10 @@ else
                         </div>
                     }
                 </div>
-                <button class="tb-filter-btn" @onclick="() => _colsMenu = !_colsMenu" title="Columnas visibles">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>Campos
-                </button>
-                @if (_colsMenu)
-                {
-                    <div class="tb-colsmenu">
-                        <div class="tb-colsmenu-h">COLUMNAS (orden y visibilidad)</div>
-                        @* Cada fila: flechas para reordenar + casilla para mostrar/ocultar + nombre. El orden real
-                           de la tabla se aplica por CSS (order) segun _colOrden, sin tocar el markup de las filas. *@
-                        @for (int i = 0; i < _colOrden.Count; i++)
-                        {
-                            var idx = i; var key = _colOrden[idx];
-                            <div class="tb-colsmenu-i @(ColKeyVisible(key) ? "" : "tb-colsmenu-off")">
-                                <span class="tb-colord">
-                                    <button type="button" class="tb-colord-b" title="Subir" disabled="@(idx == 0)" @onclick="() => MoverColumna(idx, -1)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 15l6-6 6 6"/></svg></button>
-                                    <button type="button" class="tb-colord-b" title="Bajar" disabled="@(idx == _colOrden.Count - 1)" @onclick="() => MoverColumna(idx, 1)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg></button>
-                                </span>
-                                @if (ColKeyBloqueada(key))
-                                {
-                                    <span class="tb-chk tb-chk-lock" title="Columna fija (no se puede ocultar)"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#90A4B7" stroke-width="2.4"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
-                                }
-                                else
-                                {
-                                    <button type="button" class="tb-chk-btn" @onclick="() => ToggleColKey(key)"><span class="tb-chk @(ColKeyVisible(key) ? "on" : "")">@if (ColKeyVisible(key)){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span></button>
-                                }
-                                <span class="tb-colsmenu-lbl">@ColKeyLabel(key)</span>
-                            </div>
-                        }
-                        <div class="tb-colsmenu-acts">
-                            <button class="tb-colsmenu-act" @onclick="ColsTodos">Mostrar todas</button>
-                            <button class="tb-colsmenu-act" @onclick="ColsNinguno">Ocultar todas</button>
-                        </div>
-                    </div>
-                }
+                @* El orden/visibilidad/renombre de columnas se administra ahora en el gestor unificado
+                   (boton "Campos" junto a "Configurar", gateado por PuedeConfigurar): un solo boton que
+                   lista columnas de sistema + campos propios (adopcion Selector, per-tablero). Antes habia
+                   aqui un 2o menu "Campos" per-usuario en localStorage; se elimino para no duplicar. *@
             </div>
 
             @ColumnColorCss
@@ -560,17 +530,19 @@ else
                 <div class="tb-list-hdr">
                     @* Columna del expansor (primera, fija): abre el modal; se ve al pasar el mouse. *@
                     <div class="tb-lc tb-lc-exp"></div>
-                    <div class="tb-lc tb-lc-tit tb-lc-sort @(_pinTitulo ? "tb-pin tb-pin-h" : "")" @onclick='() => SortBy("titulo")'><span>TITULO</span>@SortInd("titulo")</div>
-                    @if (_colDesc) { <div class="tb-lc tb-lc-desc tb-lc-sort" @onclick='() => SortBy("descripcion")'><span>DESCRIPCION</span>@ColorDot("desc")</div> }
-                    @if (_colCodigo) { <div class="tb-lc tb-lc-cod tb-lc-sort" @onclick='() => SortBy("numero")'><span>CODIGO</span>@SortInd("numero")@ColorDot("cod")</div> }
-                    <div class="tb-lc tb-lc-est"><span>ETAPA</span>@ColorDot("est")</div>
-                    @if (_colResp) { <div class="tb-lc tb-lc-resp tb-lc-sort" @onclick='() => SortBy("asignado")'><span>ASIGNADO</span>@SortInd("asignado")@ColorDot("resp")</div> }
-                    <div class="tb-lc tb-lc-prog tb-lc-sort" @onclick='() => SortBy("progreso")'><span>PROGRESO</span>@SortInd("progreso")@ColorDot("prog")</div>
-                    @if (_colEtiq) { <div class="tb-lc tb-lc-etiq"><span>ETIQUETAS</span>@ColorDot("etiq")</div> }
-                    @if (_colPrio) { <div class="tb-lc tb-lc-prio tb-lc-sort" @onclick='() => SortBy("prioridad")'><span>PRIORIDAD</span>@SortInd("prioridad")@ColorDot("prio")</div> }
-                    @if (_colDue) { <div class="tb-lc tb-lc-due tb-lc-sort" @onclick='() => SortBy("vence")'><span>VENCE</span>@SortInd("vence")@ColorDot("due")</div> }
-                    @if (_colValor) { <div class="tb-lc tb-lc-valor tb-lc-sort tb-num" @onclick='() => SortBy("valor")'><span>VALOR</span>@SortInd("valor")@ColorDot("valor")</div> }
-                    @if (_colOrigen) { <div class="tb-lc tb-lc-orig tb-lc-sort" @onclick='() => SortBy("origen")'><span>RELACIONADO CON</span>@SortInd("origen")@ColorDot("orig")</div> }
+                    @* Los <span> usan ColLabel(clave, DEFECTO): si la copropiedad renombro la columna en el
+                       gestor (alias en columnas-config), se muestra el alias; si no, la etiqueta de fabrica. *@
+                    <div class="tb-lc tb-lc-tit tb-lc-sort @(_pinTitulo ? "tb-pin tb-pin-h" : "")" @onclick='() => SortBy("titulo")'><span>@ColLabel("titulo", "TITULO")</span>@SortInd("titulo")</div>
+                    @if (_colDesc) { <div class="tb-lc tb-lc-desc tb-lc-sort" @onclick='() => SortBy("descripcion")'><span>@ColLabel("desc", "DESCRIPCION")</span>@ColorDot("desc")</div> }
+                    @if (_colCodigo) { <div class="tb-lc tb-lc-cod tb-lc-sort" @onclick='() => SortBy("numero")'><span>@ColLabel("cod", "CODIGO")</span>@SortInd("numero")@ColorDot("cod")</div> }
+                    <div class="tb-lc tb-lc-est"><span>@ColLabel("est", "ETAPA")</span>@ColorDot("est")</div>
+                    @if (_colResp) { <div class="tb-lc tb-lc-resp tb-lc-sort" @onclick='() => SortBy("asignado")'><span>@ColLabel("resp", "ASIGNADO")</span>@SortInd("asignado")@ColorDot("resp")</div> }
+                    <div class="tb-lc tb-lc-prog tb-lc-sort" @onclick='() => SortBy("progreso")'><span>@ColLabel("prog", "PROGRESO")</span>@SortInd("progreso")@ColorDot("prog")</div>
+                    @if (_colEtiq) { <div class="tb-lc tb-lc-etiq"><span>@ColLabel("etiq", "ETIQUETAS")</span>@ColorDot("etiq")</div> }
+                    @if (_colPrio) { <div class="tb-lc tb-lc-prio tb-lc-sort" @onclick='() => SortBy("prioridad")'><span>@ColLabel("prio", "PRIORIDAD")</span>@SortInd("prioridad")@ColorDot("prio")</div> }
+                    @if (_colDue) { <div class="tb-lc tb-lc-due tb-lc-sort" @onclick='() => SortBy("vence")'><span>@ColLabel("due", "VENCE")</span>@SortInd("vence")@ColorDot("due")</div> }
+                    @if (_colValor) { <div class="tb-lc tb-lc-valor tb-lc-sort tb-num" @onclick='() => SortBy("valor")'><span>@ColLabel("valor", "VALOR")</span>@SortInd("valor")@ColorDot("valor")</div> }
+                    @if (_colOrigen) { <div class="tb-lc tb-lc-orig tb-lc-sort" @onclick='() => SortBy("origen")'><span>@ColLabel("orig", "RELACIONADO CON")</span>@SortInd("origen")@ColorDot("orig")</div> }
                     @foreach (var c in CamposVisibles) { var cid = c.Id.ToString(); var campo = c; <div class="tb-lc tb-lc-campo tb-cc-@c.Id tb-lc-sort @(CampoEsNumerico(c) ? "tb-num" : "")" @onclick="() => SortBy(cid)"><span>@c.Label.ToUpperInvariant()</span>@SortInd(cid)<button type="button" class="tb-lc-ed" title="Editar campo" @onclick:stopPropagation="true" @onclick="(e) => EditarCampoPop(e, campo)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>@ColorDot(cid)</div> }
                     <div class="tb-lc tb-lc-acc"><button type="button" class="tb-hdr-addcampo" @onclick="AbrirEditorCampo" title="Agregar campo (columna)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>Campo</button></div>
                 </div>
@@ -1041,10 +1013,12 @@ else
 }
 
 @* ===================== Modal Campos del tablero (Selector de Campos, opcion A) ===================== *@
-@* El gestor compartido ConfigCamposEntidad administra las definiciones de campos PROPIOS del tablero
-   (label/tipo/opciones) contra /api/tareas/tableros/{id}/campos. SinConfigSistema: no toca visibilidad/orden/
-   color de columnas del sistema (siguen per-usuario en localStorage). Los flags avanzados + Total/Suma se
-   editan en el editor retenido. @key por tablero para recargar al cambiar. *@
+@* Gestor UNIFICADO (como Unidades/Directorio): una sola grilla lista las columnas del SISTEMA (titulo,
+   etapa, asignado, vence...) inyectadas por Catalogo y los campos PROPIOS del tablero. Alias (renombre),
+   visibilidad y orden de columnas persisten en la config PER-TENANT + PER-TABLERO via RutaConfig
+   (/columnas-config); las definiciones de campos propios (label/tipo/opciones) van por RutaCatalogo
+   (/campos). Reemplaza al 2o menu "Campos" per-usuario (localStorage) que habia en la barra. Los flags
+   avanzados + Total/Suma siguen en el editor retenido. @key por tablero para recargar al cambiar. *@
 @if (_gestorCamposOpen && _board is not null)
 {
     <div class="tb-modal-bd" @onclick="CerrarGestorCampos">
@@ -1052,18 +1026,20 @@ else
             <div class="tb-modal-head">
                 <div class="tb-modal-tt">
                     <div class="tb-modal-h">Campos del tablero</div>
-                    <div class="tb-modal-s">@_board.Tablero.Nombre · campos propios (tipo, opciones, orden)</div>
+                    <div class="tb-modal-s">@_board.Tablero.Nombre · columnas y campos propios (renombre, tipo, visibilidad, orden)</div>
                 </div>
                 <button class="tb-modal-x" @onclick="CerrarGestorCampos"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
             </div>
             <div class="tb-modal-body">
                 <ConfigCamposEntidad Prefijo="tareas"
                                      RutaCatalogo="@($"/api/tareas/tableros/{_board.Tablero.Id}/campos")"
-                                     SinConfigSistema="true"
+                                     RutaConfig="@($"/api/tareas/tableros/{_board.Tablero.Id}/columnas-config")"
+                                     EntidadConfig="tablero"
+                                     Catalogo="ColumnasSistemaCatalogo"
                                      TituloSingular="tarjeta" TituloPlural="Campos del tablero"
                                      Ejemplo="Ej. Costo estimado, Proveedor"
                                      Jwt="@_jwt"
-                                     Cambiado="RecargarBoard"
+                                     Cambiado="RecargarTrasCambioCampos"
                                      @key="_board.Tablero.Id" />
             </div>
         </div>
@@ -2583,7 +2559,7 @@ else
         return $"En \"{t.EstadoNombre}\" {frase}";
     }
 
-    private bool _pinTitulo = true; private bool _colsMenu;  // columna Titulo SIEMPRE fija (sin boton)
+    private bool _pinTitulo = true;  // columna Titulo SIEMPRE fija (sin boton)
     private bool _colResp = true; private bool _colEtiq = true; private bool _colPrio = true; private bool _colDue = true;
     private bool _colValor = true; private bool _colDesc = true; private bool _colOrigen = true; private bool _colCodigo = true;
 
@@ -2593,40 +2569,41 @@ else
     private IEnumerable<TableroCampoDto> CamposDelTablero => _board?.Tablero.Campos ?? new List<TableroCampoDto>();
     private IEnumerable<TableroCampoDto> CamposVisibles => CamposDelTablero.Where(c => c.Tipo != TipoCampoTablero.Separador && CampoColVisible(c.Id));
     private bool CampoColVisible(Guid id) => !_colsCampoOcultos.Contains(id);
-    private async Task ToggleCampoCol(Guid id) { if (!_colsCampoOcultos.Remove(id)) _colsCampoOcultos.Add(id); await PersistColsAsync(); }
-    private async Task ToggleColFijo(string key)
-    {
-        switch (key)
-        {
-            case "resp": _colResp = !_colResp; break;
-            case "etiq": _colEtiq = !_colEtiq; break;
-            case "prio": _colPrio = !_colPrio; break;
-            case "due": _colDue = !_colDue; break;
-            case "desc": _colDesc = !_colDesc; break;
-            case "cod": _colCodigo = !_colCodigo; break;
-            case "valor": _colValor = !_colValor; break;
-            case "orig": _colOrigen = !_colOrigen; break;
-        }
-        await PersistColsAsync();
-    }
-    private async Task ColsTodos()
-    {
-        _colResp = _colEtiq = _colPrio = _colDue = _colDesc = _colValor = _colOrigen = _colCodigo = true;
-        _colsCampoOcultos.Clear();
-        await PersistColsAsync();
-    }
-    private async Task ColsNinguno()
-    {
-        _colResp = _colEtiq = _colPrio = _colDue = _colDesc = _colValor = _colOrigen = _colCodigo = false;
-        _colsCampoOcultos = CamposDelTablero.Select(c => c.Id).ToHashSet();
-        await PersistColsAsync();
-    }
+    // ===== Config de columnas del tablero (per-tenant + per-tablero, servida por el gestor unificado) =====
+    // Antes el orden/visibilidad vivia en localStorage per-usuario; ahora lo administra el gestor compartido
+    // (boton "Campos") y se guarda en /api/tareas/tableros/{id}/columnas-config, COMPARTIDO por la copropiedad
+    // (como Unidades/Directorio). La tabla solo LEE de aqui alias (renombre), visibilidad y orden; el gestor
+    // ESCRIBE. Las claves son las del catalogo de sistema (titulo/desc/cod/est/resp/prog/etiq/prio/due/valor/
+    // orig) y "cd:{id}" para campos propios; en la tabla el orden usa el guid crudo, de ahi ConfigClaveDe.
+    private Dictionary<string, UnidadCampoConfigDto> _colCfg = new(StringComparer.Ordinal);
+    private static string ConfigClaveDe(string colKey) => Guid.TryParse(colKey, out _) ? "cd:" + colKey : colKey;
+    private bool CfgOculto(string clave) => _colCfg.TryGetValue(clave, out var c) && c.Oculto;
+    private int CfgOrden(string clave, int fallback) => _colCfg.TryGetValue(clave, out var c) && c.Orden is { } o ? o : 1000 + fallback;
+    // Alias (renombre) de una columna para la cabecera; null/vacio = el label de fabrica que pasa el markup.
+    private string ColLabel(string clave, string porDefecto)
+        => _colCfg.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Alias) ? c.Alias!.ToUpperInvariant() : porDefecto;
 
-    // Persistencia de la config de columnas POR TABLERO en localStorage. Cada tablero tiene sus
-    // propios campos dinamicos, asi que la config va llaveada por su Id (propia_tb_cols_<id>).
-    // Sobrevive recarga y cierre de sesion (el logout solo borra llaves puntuales).
-    private sealed record ColsCfg(bool Resp, bool Etiq, bool Prio, bool Due, bool Desc, bool Valor, bool Orig, bool Pin, List<Guid> Ocultos, List<string>? Orden = null, bool Cod = true);
-    private static string ColsKey(Guid tableroId) => $"propia_tb_cols_{tableroId}";
+    // Catalogo de columnas de SISTEMA del tablero, inyectado al gestor unificado (Catalogo). Mismas claves
+    // que usa la tabla. Tipo FIJO (TiposIntercambiables vacio) + SinFormato: en el gestor cada columna solo
+    // admite renombre (alias) + mostrar/ocultar + reordenar; el tipo real no se cambia aqui y no hay editor
+    // de formato. titulo/est/prog van Fija=true (no ocultables: coincide con el markup, que las fuerza
+    // visibles). Las opciones de estados/etiquetas/prioridad se administran en su sitio (Configurar), no aqui.
+    private static readonly TipoCampoTablero[] TipoFijo = Array.Empty<TipoCampoTablero>();
+    private static readonly List<CampoSistemaDef> ColumnasSistemaCatalogo = new()
+    {
+        new("titulo", "Titulo", TipoCampoTablero.Texto, VisibleDefault: true, Fija: true, TiposIntercambiables: TipoFijo, SinFormato: true, Ayuda: "Identifica la tarjeta"),
+        new("desc", "Descripcion", TipoCampoTablero.Texto, TiposIntercambiables: TipoFijo, SinFormato: true),
+        new("cod", "Codigo", TipoCampoTablero.Texto, TiposIntercambiables: TipoFijo, SinFormato: true, Ayuda: "Consecutivo de la tarea"),
+        new("est", "Etapa", TipoCampoTablero.Texto, VisibleDefault: true, Fija: true, TiposIntercambiables: TipoFijo, SinFormato: true, Ayuda: "Columnas del tablero; se editan en Configurar"),
+        new("resp", "Asignado", TipoCampoTablero.Texto, TiposIntercambiables: TipoFijo, SinFormato: true),
+        new("prog", "Progreso", TipoCampoTablero.Texto, VisibleDefault: true, Fija: true, TiposIntercambiables: TipoFijo, SinFormato: true, Ayuda: "Porcentaje calculado"),
+        new("etiq", "Etiquetas", TipoCampoTablero.Texto, TiposIntercambiables: TipoFijo, SinFormato: true),
+        new("prio", "Prioridad", TipoCampoTablero.Texto, TiposIntercambiables: TipoFijo, SinFormato: true),
+        new("due", "Vence", TipoCampoTablero.Fecha, TiposIntercambiables: TipoFijo, SinFormato: true),
+        new("valor", "Valor", TipoCampoTablero.Moneda, TiposIntercambiables: TipoFijo, SinFormato: true),
+        new("orig", "Relacionado con", TipoCampoTablero.Texto, TiposIntercambiables: TipoFijo, SinFormato: true),
+    };
+
     private void ColsReset()   // defaults: todo visible, titulo SIEMPRE fijo
     {
         _colResp = _colEtiq = _colPrio = _colDue = _colDesc = _colValor = _colOrigen = _colCodigo = true;
@@ -2634,26 +2611,33 @@ else
         _colsCampoOcultos = new();
         _colOrden = new();
     }
-    private async Task PersistColsAsync()
-    {
-        if (_board is null) return;
-        var cfg = new ColsCfg(_colResp, _colEtiq, _colPrio, _colDue, _colDesc, _colValor, _colOrigen, _pinTitulo, _colsCampoOcultos.ToList(), _colOrden.ToList(), _colCodigo);
-        try { await Js.InvokeVoidAsync("localStorage.setItem", ColsKey(_board.Tablero.Id), System.Text.Json.JsonSerializer.Serialize(cfg)); } catch { }
-    }
+
+    // Carga la config de columnas del tablero desde el servidor y la proyecta al estado de render de la tabla
+    // (booleans de visibilidad, ocultos de campos propios y orden). Sin config guardada -> defaults. Conserva
+    // el nombre historico RestaurarColsAsync para no tocar los puntos de llamada del ciclo de vida del board.
     private async Task RestaurarColsAsync()
     {
         if (_board is null) return;
+        ColsReset();
         try
         {
-            var raw = await Js.InvokeAsync<string?>("localStorage.getItem", ColsKey(_board.Tablero.Id));
-            var cfg = string.IsNullOrEmpty(raw) ? null : System.Text.Json.JsonSerializer.Deserialize<ColsCfg>(raw);
-            if (cfg is null) { ColsReset(); return; }   // sin config guardada: defaults del tablero
-            _colResp = cfg.Resp; _colEtiq = cfg.Etiq; _colPrio = cfg.Prio; _colDue = cfg.Due;
-            _colDesc = cfg.Desc; _colValor = cfg.Valor; _colOrigen = cfg.Orig; _pinTitulo = true; _colCodigo = cfg.Cod;
-            _colsCampoOcultos = cfg.Ocultos?.ToHashSet() ?? new();
-            _colOrden = cfg.Orden?.ToList() ?? new();
+            var lista = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>(
+                $"/api/tareas/tableros/{_board.Tablero.Id}/columnas-config") ?? new();
+            _colCfg = lista.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+
+            // est/prog no se pueden ocultar (se fuerzan visibles en el markup); titulo va siempre fijo.
+            _colDesc = !CfgOculto("desc"); _colCodigo = !CfgOculto("cod"); _colResp = !CfgOculto("resp");
+            _colEtiq = !CfgOculto("etiq"); _colPrio = !CfgOculto("prio"); _colDue = !CfgOculto("due");
+            _colValor = !CfgOculto("valor"); _colOrigen = !CfgOculto("orig");
+            _colsCampoOcultos = CamposDelTablero.Where(c => CfgOculto("cd:" + c.Id)).Select(c => c.Id).ToHashSet();
+
+            // Orden: ordena las claves reordenables por su Orden en config (fallback = posicion canonica).
+            var claves = ClavesReordenables();
+            _colOrden = claves
+                .Select((k, i) => (k, ord: CfgOrden(ConfigClaveDe(k), i)))
+                .OrderBy(x => x.ord).Select(x => x.k).ToList();
         }
-        catch { ColsReset(); }
+        catch { _colCfg = new(StringComparer.Ordinal); ColsReset(); }
     }
 
     // ---- Orden de columnas (vista Lista): reordenable via flechas; se aplica por CSS `order`, sin tocar el markup ----
@@ -2688,30 +2672,23 @@ else
         }
         _colOrden = res;
     }
-    private void MoverColumna(int idx, int dir)
+    // Selector de la CABECERA de una columna (.tb-lc-*), para reordenarla junto con sus celdas. ColSelectores
+    // solo apunta a las celdas de fila (.tb-row-*) y ademas lo comparte el coloreado de columnas; por eso el
+    // orden de la cabecera va por aparte (antes las cabeceras del medio quedaban en orden DOM y se desalineaban
+    // de los datos al reordenar). exp/titulo/acc ya se manejan explicitamente abajo.
+    private static string? ColHeaderSel(string key) => key switch
     {
-        int j = idx + dir;
-        if (idx < 0 || idx >= _colOrden.Count || j < 0 || j >= _colOrden.Count) return;
-        (_colOrden[idx], _colOrden[j]) = (_colOrden[j], _colOrden[idx]);
-        _ = PersistColsAsync();
-    }
-    private static bool ColKeyBloqueada(string key) => key is "est" or "prog";  // Etapa y Progreso no se pueden ocultar
-    private bool ColKeyVisible(string key) => key switch
-    {
-        "desc" => _colDesc, "cod" => _colCodigo, "est" => true, "resp" => _colResp, "prog" => true,
-        "etiq" => _colEtiq, "prio" => _colPrio, "due" => _colDue, "valor" => _colValor, "orig" => _colOrigen,
-        _ => Guid.TryParse(key, out var g) && CampoColVisible(g)
-    };
-    private async Task ToggleColKey(string key)
-    {
-        if (Guid.TryParse(key, out var g)) await ToggleCampoCol(g);
-        else await ToggleColFijo(key);
-    }
-    private string ColKeyLabel(string key) => key switch
-    {
-        "desc" => "Descripcion", "cod" => "Codigo", "est" => "Etapa", "resp" => "Asignado", "prog" => "Progreso",
-        "etiq" => "Etiquetas", "prio" => "Prioridad", "due" => "Vence", "valor" => "Valor", "orig" => "Relacionado con",
-        _ => (Guid.TryParse(key, out var g) ? CamposDelTablero.FirstOrDefault(c => c.Id == g)?.Label : null) ?? key
+        "desc" => ".tb-list .tb-lc-desc",
+        "cod" => ".tb-list .tb-lc-cod",
+        "est" => ".tb-list .tb-lc-est",
+        "resp" => ".tb-list .tb-lc-resp",
+        "prog" => ".tb-list .tb-lc-prog",
+        "etiq" => ".tb-list .tb-lc-etiq",
+        "prio" => ".tb-list .tb-lc-prio",
+        "due" => ".tb-list .tb-lc-due",
+        "valor" => ".tb-list .tb-lc-valor",
+        "orig" => ".tb-list .tb-lc-orig",
+        _ => Guid.TryParse(key, out _) ? $".tb-list .tb-lc-campo.tb-cc-{key}" : null
     };
     // <style> con el `order` de flexbox de cada columna (encabezado + filas + totales) segun _colOrden.
     private MarkupString ColumnOrderCss
@@ -2726,7 +2703,8 @@ else
             {
                 var sel = ColSelectores(key);
                 if (sel is null) continue;
-                sb.Append(sel).Append("{order:").Append(i).Append(" !important;}");
+                var hsel = ColHeaderSel(key);   // reordena tambien la cabecera, no solo la celda
+                sb.Append(hsel is null ? sel : $"{sel},{hsel}").Append("{order:").Append(i).Append(" !important;}");
                 i++;
             }
             sb.Append(".tb-list .tb-lc-acc,.tb-list .tb-row-acc{order:9999 !important;}");
@@ -3421,7 +3399,7 @@ else
     private void ToggleFiltros()
     {
         _filtrosMenu = !_filtrosMenu;
-        _cardGroupMenu = false; _colsMenu = false;
+        _cardGroupMenu = false;
         if (_filtrosMenu && _reglas.Count == 0) AgregarRegla();
     }
     private void AgregarRegla() { _reglas.Add(new FiltroRegla { Campo = "estado", Op = "es", Valor = "" }); }
@@ -4901,7 +4879,11 @@ else
     private void CerrarConfigBoard() { _cfgOpen = false; }
     // Selector de Campos (opcion A): abre/cierra el modal del gestor compartido de campos propios del tablero.
     private void AbrirGestorCampos() { _gestorCamposOpen = true; }
-    private async Task CerrarGestorCampos() { _gestorCamposOpen = false; await RecargarBoard(); }
+    private async Task CerrarGestorCampos() { _gestorCamposOpen = false; await RecargarTrasCambioCampos(); }
+    // Tras un cambio del gestor unificado (definicion de campo propio O config de columna): recarga el board
+    // Y re-lee la config de columnas, para que el alias/visibilidad/orden se reflejen en la tabla sin F5.
+    // RecargarBoard por si solo no re-lee columnas-config (para no pagar ese GET en cada edicion de tarea).
+    private async Task RecargarTrasCambioCampos() { await RecargarBoard(); await RestaurarColsAsync(); }
 
     // ---- Config de motivos de cierre (modulo tareas) ----
     private string _nuevoMotivoTareaNombre = "";

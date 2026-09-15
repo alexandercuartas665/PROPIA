@@ -180,6 +180,7 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<Tablero> Tableros => Set<Tablero>();
     public DbSet<TableroUsuario> TableroUsuarios => Set<TableroUsuario>();
     public DbSet<TableroCampo> TableroCampos => Set<TableroCampo>();
+    public DbSet<TableroCampoConfig> TableroCamposConfig => Set<TableroCampoConfig>();
     public DbSet<TareaCampoValor> TareaCampoValores => Set<TareaCampoValor>();
     public DbSet<TareaAdjunto> TareaAdjuntos => Set<TareaAdjunto>();
     public DbSet<TareaSubtarea> TareaSubtareas => Set<TareaSubtarea>();
