@@ -1,0 +1,636 @@
+@using Propia.Application.MiCopropiedad
+@using Propia.Domain.Enums
+@using Propia.Web.Components.Shared
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+@if (!Embedded) { <PageTitle>Vehiculos - PROPIA</PageTitle> }
+
+@* Vehiculos: vista agregada de TODOS los vehiculos de las unidades. Antes solo se llegaba a ellos
+   abriendo la ficha de cada unidad, y sus campos se configuraban desde el panel de Unidades
+   Privadas; ahora el modulo es independiente, con su propio catalogo de campos. Misma vista tabla
+   estandar del sistema (barra, agrupacion, columnas, alta inline al pie y footer con paginacion). *@
+
+@if (!Embedded)
+{
+    <div class="veh-pagehead">
+        <h1 class="veh-pagetitle">Vehiculos</h1>
+        <p class="veh-pagesub">Todos los vehiculos registrados en las unidades de @(_copNombre ?? "la copropiedad").</p>
+    </div>
+}
+
+@if (!_authChecked || _jwt is null)
+{
+    <div class="veh-loading"><div class="spinner-border" style="color: var(--propia-brand);"></div></div>
+}
+else
+{
+    <div class="veh-bar">
+        <FiltroDinamico @ref="_fd" Campos="CamposFiltro" OnChanged="@(() => { _pagina = 1; StateHasChanged(); })" />
+        <div class="veh-search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input placeholder="Buscar placa, unidad o propietario..." value="@_q" @oninput="OnBuscar" />
+        </div>
+        <div class="veh-spacer"></div>
+
+        @* Agrupar *@
+        <div class="veh-menu-wrap">
+            <button type="button" class="veh-fbtn @(_agruparPor != "" ? "on" : "")" @onclick="() => _showAgrupar = !_showAgrupar" title="Agrupar filas">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+                <span>@(_agruparPor == "" ? "Agrupar" : AgruparLabel(_agruparPor))</span>
+            </button>
+            @if (_showAgrupar)
+            {
+                <div class="veh-menu-bd" @onclick="() => _showAgrupar = false"></div>
+                <div class="veh-menu">
+                    @foreach (var g in new[] { ("", "Sin agrupar"), ("tipo", "Tipo de vehiculo"), ("unidad", "Unidad"), ("propietario", "Propietario") })
+                    {
+                        var gk = g.Item1;
+                        <button class="veh-menu-it @(_agruparPor == gk ? "on" : "")" @onclick="() => SetAgrupar(gk)">@g.Item2</button>
+                    }
+                </div>
+            }
+        </div>
+
+        @* Campos: unica entrada a la configuracion de este modulo (igual que en Unidades). *@
+        <button type="button" class="veh-fbtn @(_configAbierto ? "on" : "")" @onclick="() => _configAbierto = true" title="Campos del vehiculo: crear, renombrar, ordenar y ocultar">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
+            <span>Campos</span>
+        </button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_msg)) { <div class="veh-msg @(_msgError ? "err" : "ok")">@_msg</div> }
+
+    @* ===== Tabla ===== *@
+    <div class="veh-table">
+        <div class="veh-scroll">
+            <div class="veh-head veh-grid" style="grid-template-columns:@GridCols">
+                <div></div>
+                <div>UNIDAD</div>
+                <div>PLACA</div>
+                <div>TIPO</div>
+                <div>PROPIETARIO</div>
+                @foreach (var d in _defs) { <div>@d.Label.ToUpperInvariant()</div> }
+                <div></div>
+            </div>
+
+            @foreach (var item in FilasRender())
+            {
+                if (item.EsGrupo)
+                {
+                    <div class="veh-group">
+                        <span class="veh-group-chip">@item.GrupoTitulo</span>
+                        <span class="veh-group-n">@item.GrupoCount</span>
+                    </div>
+                    continue;
+                }
+                var v = item.Fila!;
+                <div class="veh-row veh-grid @(_recienCreados.Contains(v.PlacaId) ? "veh-row-nuevo" : "")" style="grid-template-columns:@GridCols">
+                    <div class="veh-exp-col">
+                        <button type="button" class="veh-exp" title="Abrir la unidad de este vehiculo" @onclick="() => AbrirUnidad(v)">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                        </button>
+                    </div>
+                    <div class="veh-cell"><span class="veh-cod">@v.UnidadCodigo</span></div>
+                    <input class="veh-editcell" value="@v.Placa" placeholder="-" @onchange="e => GuardarPlacaAsync(v, e.Value?.ToString())" />
+                    <select class="veh-editcell" @onchange="e => GuardarTipoAsync(v, e.Value?.ToString())">
+                        @foreach (var t in TiposVehiculo)
+                        {
+                            <option value="@t" selected="@(v.TipoVehiculo == t)">@TipoLabel(t)</option>
+                        }
+                    </select>
+                    <div class="veh-cell veh-prop">@(string.IsNullOrWhiteSpace(v.PropietarioNombre) ? "-" : v.PropietarioNombre)</div>
+                    @foreach (var d in _defs)
+                    {
+                        var def = d;
+                        var val = ValorDe(v.PlacaId, def.Id);
+                        if (def.Tipo == TipoCampoTablero.Seleccion)
+                        {
+                            <div class="veh-selcell">
+                                @if (!string.IsNullOrWhiteSpace(val))
+                                {
+                                    var col = ColorOpcion(def, val);
+                                    <span class="veh-chip" style="background:@(col ?? PaletaChips.Neutro);color:@PaletaChips.TextoSobre(col)">@val</span>
+                                }
+                                <select class="veh-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(v.PlacaId, def.Id, e.Value?.ToString())">
+                                    <option value="">-</option>
+                                    @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == val)">@op</option> }
+                                </select>
+                            </div>
+                        }
+                        else if (def.Tipo == TipoCampoTablero.Formula)
+                        {
+                            <div class="veh-cell veh-auto" title="Se calcula automaticamente">@(string.IsNullOrWhiteSpace(val) ? "-" : val)</div>
+                        }
+                        else if (def.Tipo == TipoCampoTablero.Usuario)
+                        {
+                            <select class="veh-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(v.PlacaId, def.Id, e.Value?.ToString())">
+                                <option value="">-</option>
+                                @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == val)">@u.NombreCompleto</option> }
+                            </select>
+                        }
+                        else if (def.Tipo == TipoCampoTablero.Directorio)
+                        {
+                            <div class="veh-cell veh-prop">@(NombrePersona(val) ?? "-")</div>
+                        }
+                        else
+                        {
+                            <input class="veh-editcell" value="@val" placeholder="-"
+                                   @onchange="e => GuardarDinamicoAsync(v.PlacaId, def.Id, e.Value?.ToString())" />
+                        }
+                    }
+                    <div class="veh-acts">
+                        <button type="button" class="veh-del" title="Quitar el vehiculo" @onclick="() => EliminarAsync(v)">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+                        </button>
+                    </div>
+                </div>
+            }
+
+            @* Alta inline al pie, alineada a las columnas. "+ Agregar" va al final y nunca deshabilitado:
+               si falta algo se avisa con un mensaje, no bloqueando el boton. *@
+            <div class="veh-newrow veh-grid" style="grid-template-columns:@GridCols">
+                <div class="veh-exp-col"></div>
+                <div class="veh-nf-unidad">
+                    <SelectorUnidadCodigo Unidades="_unidades" UnidadId="_nuUnidadId" UnidadIdChanged="OnUnidadSel"
+                                          Class="veh-nf-inp" Placeholder="Unidad (ej. A1-101)" />
+                </div>
+                <input class="veh-nf-inp" placeholder="Placa" value="@_nuPlaca" @oninput="OnPlacaNueva" />
+                <select class="veh-nf-inp" @bind="_nuTipo">
+                    @foreach (var t in TiposVehiculo) { <option value="@t">@TipoLabel(t)</option> }
+                </select>
+                <div class="veh-cell veh-auto">(segun la unidad)</div>
+                @foreach (var d in _defs)
+                {
+                    var def = d;
+                    var dv = _nuDinamicos.TryGetValue(def.Id, out var _dv) ? _dv : "";
+                    if (def.Tipo == TipoCampoTablero.Seleccion)
+                    {
+                        <select class="veh-nf-inp" value="@dv" @onchange="e => SetDinamicoNuevo(def.Id, e.Value?.ToString())">
+                            <option value="">@def.Label</option>
+                            @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == dv)">@op</option> }
+                        </select>
+                    }
+                    else if (def.Tipo == TipoCampoTablero.Formula)
+                    {
+                        <div class="veh-cell veh-auto">(se calcula)</div>
+                    }
+                    else if (def.Tipo == TipoCampoTablero.Usuario)
+                    {
+                        <select class="veh-nf-inp" value="@dv" @onchange="e => SetDinamicoNuevo(def.Id, e.Value?.ToString())">
+                            <option value="">@def.Label</option>
+                            @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == dv)">@u.NombreCompleto</option> }
+                        </select>
+                    }
+                    else if (def.Tipo == TipoCampoTablero.Directorio)
+                    {
+                        <SelectorPersona Flotante="true" Jwt="@_jwt" Placeholder="@def.Label"
+                                         SeleccionadaChanged="c => OnDirectorioNuevo(def.Id, c)" />
+                    }
+                    else
+                    {
+                        <input class="veh-nf-inp" placeholder="@def.Label" value="@dv"
+                               @oninput="e => SetDinamicoNuevo(def.Id, e.Value?.ToString())" />
+                    }
+                }
+                <div class="veh-acts">
+                    <button type="button" class="veh-row-add" @onclick="AgregarAsync" disabled="@_busy">+ Agregar</button>
+                </div>
+            </div>
+        </div>
+
+        @if (Grupos() is null)
+        {
+            <TablaPager Total="Filtradas.Count" Pagina="_pagina" PorPagina="_porPagina" Entidad="vehiculos"
+                        PaginaChanged="p => { _pagina = p; }" PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
+        }
+    </div>
+}
+
+@* Panel de campos del modulo (catalogo propio de la copropiedad). *@
+@if (_configAbierto)
+{
+    <div class="veh-cg-back" @onclick="CerrarConfig">
+        <div class="veh-cg-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+            <div class="veh-cg-head">
+                <div>
+                    <div class="veh-cg-title">Campos del vehiculo</div>
+                    <div class="veh-cg-sub">Se muestran como columnas de esta tabla y en la ficha de la unidad.</div>
+                </div>
+                <button class="veh-cg-x" type="button" @onclick="CerrarConfig" aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="veh-cg-body">
+                <ConfigCamposEntidad Prefijo="vehiculos"
+                                     Catalogo="@VehiculoCatalogo"
+                                     TiposAvanzados="true"
+                                     TituloSingular="vehiculo" TituloPlural="Vehiculos"
+                                     Ejemplo="Ej. Color, Numero de SOAT" Jwt="@_jwt"
+                                     Cambiado="RecargarCamposAsync" />
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // Embebido en el hub de Configuracion: oculta su page-head/PageTitle.
+    [Parameter] public bool Embedded { get; set; }
+
+    private string? _jwt;
+    private bool _authChecked;
+    private string? _copNombre;
+    private bool _busy, _msgError, _configAbierto;
+    private string? _msg;
+
+    private List<VehiculoResumenDto> _vehiculos = new();
+    private List<UnidadDto> _unidades = new();
+    private List<CampoDinDef> _defs = new();
+    private Dictionary<Guid, Dictionary<Guid, string?>> _valores = new();
+    private readonly HashSet<Guid> _recienCreados = new();
+
+    // Alta inline.
+    private Guid? _nuUnidadId;
+    private string _nuPlaca = "";
+    private TipoVehiculo _nuTipo = TipoVehiculo.Automovil;
+    private readonly Dictionary<Guid, string> _nuDinamicos = new();
+
+    private string _q = "";
+    private FiltroDinamico? _fd;
+    private string _agruparPor = "";
+    private bool _showAgrupar;
+    private int _pagina = 1, _porPagina = 25;
+
+    // Tipos ofrecidos: los mismos que la ficha de la unidad (enum compartido con Porteria).
+    private static readonly TipoVehiculo[] TiposVehiculo =
+        { TipoVehiculo.Automovil, TipoVehiculo.Moto, TipoVehiculo.Bicicleta, TipoVehiculo.Camioneta, TipoVehiculo.Otro };
+    private static string TipoLabel(TipoVehiculo t) => t switch
+    {
+        TipoVehiculo.Automovil => "Carro",
+        _ => t.ToString()
+    };
+
+    private string GridCols => "34px 150px 130px 120px minmax(170px,1.2fr)"
+        + string.Concat(_defs.Select(_ => " minmax(140px,1fr)")) + " 60px";
+
+    private List<FiltroDinamico.CampoDef> CamposFiltro => new()
+    {
+        new() { Key = "placa", Label = "Placa", Kind = "texto" },
+        new() { Key = "tipo", Label = "Tipo", Kind = "sel",
+                Opciones = TiposVehiculo.Select(t => (t.ToString(), TipoLabel(t))).ToList() },
+        new() { Key = "unidad", Label = "Unidad", Kind = "texto" },
+        new() { Key = "propietario", Label = "Propietario", Kind = "texto" },
+    };
+
+    private List<VehiculoResumenDto> Filtradas
+    {
+        get
+        {
+            var q = (_q ?? "").Trim();
+            return _vehiculos
+                .Where(v => q == ""
+                    || v.Placa.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || v.UnidadCodigo.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || (v.PropietarioNombre ?? "").Contains(q, StringComparison.OrdinalIgnoreCase))
+                .Where(v => _fd?.Pasa(campo => campo switch
+                {
+                    "placa" => v.Placa,
+                    "tipo" => v.TipoVehiculo.ToString(),
+                    "unidad" => v.UnidadCodigo,
+                    "propietario" => v.PropietarioNombre ?? "",
+                    _ => ""
+                }) ?? true)
+                .ToList();
+        }
+    }
+
+    private sealed record GrupoVeh(string Titulo, List<VehiculoResumenDto> Items);
+
+    private List<GrupoVeh>? Grupos()
+    {
+        if (_agruparPor == "") return null;
+        var items = Filtradas;
+        var gs = _agruparPor switch
+        {
+            "tipo" => items.GroupBy(v => TipoLabel(v.TipoVehiculo)),
+            "unidad" => items.GroupBy(v => v.UnidadCodigo),
+            "propietario" => items.GroupBy(v => string.IsNullOrWhiteSpace(v.PropietarioNombre) ? "Sin propietario" : v.PropietarioNombre!),
+            _ => null
+        };
+        if (gs is null) return null;
+        return gs.Select(g => new GrupoVeh(g.Key, g.ToList()))
+                 .OrderBy(g => g.Titulo.StartsWith("Sin ", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
+                 .ThenBy(g => g.Titulo, StringComparer.CurrentCultureIgnoreCase)
+                 .ToList();
+    }
+
+    private sealed record FilaRender(bool EsGrupo, VehiculoResumenDto? Fila, string GrupoTitulo = "", int GrupoCount = 0);
+
+    // Con agrupacion se muestran los grupos completos (sin paginar), igual que en el resto del sistema.
+    private IEnumerable<FilaRender> FilasRender()
+    {
+        var grupos = Grupos();
+        if (grupos is not null)
+        {
+            foreach (var g in grupos)
+            {
+                yield return new FilaRender(true, null, g.Titulo, g.Items.Count);
+                foreach (var v in g.Items) yield return new FilaRender(false, v);
+            }
+            yield break;
+        }
+        var desde = (_pagina - 1) * _porPagina;
+        foreach (var v in Filtradas.Skip(desde).Take(_porPagina)) yield return new FilaRender(false, v);
+    }
+
+    private string AgruparLabel(string v) => v switch
+    {
+        "tipo" => "Tipo de vehiculo", "unidad" => "Unidad", "propietario" => "Propietario", _ => ""
+    };
+
+    private void SetAgrupar(string v) { _agruparPor = v; _pagina = 1; _showAgrupar = false; }
+    private void OnBuscar(ChangeEventArgs e) { _q = e.Value?.ToString() ?? ""; _pagina = 1; }
+    private void OnUnidadSel(Guid? id) => _nuUnidadId = id;
+    private void AbrirUnidad(VehiculoResumenDto v) => Nav.NavigateTo($"/distribucion?unidad={v.UnidadId}");
+    private void OnPlacaNueva(ChangeEventArgs e) => _nuPlaca = e.Value?.ToString() ?? string.Empty;
+    private void SetDinamicoNuevo(Guid defId, string? valor) => _nuDinamicos[defId] = valor ?? string.Empty;
+
+    private string? ValorDe(Guid placaId, Guid defId)
+        => _valores.TryGetValue(placaId, out var d) && d.TryGetValue(defId, out var v) ? v : null;
+
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        if (!first) return;
+        try { _jwt = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_jwt"); } catch { }
+        if (string.IsNullOrWhiteSpace(_jwt)) { Nav.NavigateTo("/login?returnUrl=%2Fvehiculos", true); return; }
+        _authChecked = true;
+        await CargarAsync();
+        StateHasChanged();
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
+        return http;
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = Auth();
+            _vehiculos = await http.GetFromJsonAsync<List<VehiculoResumenDto>>("/api/mi-copropiedad/vehiculos") ?? new();
+            _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
+            try { _copNombre = (await http.GetFromJsonAsync<ResumenMiCopropiedadDto>("/api/mi-copropiedad/resumen"))?.Identidad?.Nombre; } catch { }
+            await CargarCamposAsync(http);
+        }
+        catch (Exception ex) { Mensaje("No se pudieron cargar los vehiculos: " + ex.Message, true); }
+    }
+
+    // Catalogo de campos del SISTEMA del vehiculo para el gestor compartido (Fase 1): mapea
+    // VehiculoCamposSistema.Todos a la forma neutra que consume ConfigCamposEntidad. tipovehiculo es una
+    // lista de solo lectura (enum TipoVehiculo), asi que OpcionesEditables queda en false.
+    private static readonly IReadOnlyList<CampoSistemaDef> VehiculoCatalogo =
+        VehiculoCamposSistema.Todos.Select(c => new CampoSistemaDef(
+            Clave: c.Clave,
+            Label: c.Label,
+            Tipo: c.Tipo,
+            VisibleDefault: c.VisiblePorDefecto,
+            Fija: c.Fija,
+            OpcionesEditables: c.OpcionesEditables)).ToList();
+
+    // El gestor compartido cambio algo (alias/orden/visibilidad/campo propio): refresca columnas + valores.
+    private async Task RecargarCamposAsync()
+    {
+        try { await CargarCamposAsync(Auth()); } catch { }
+        StateHasChanged();
+    }
+
+    // Color de la opcion elegida en un campo propio de tipo Lista (para el chip). null = chip neutro.
+    private static string? ColorOpcion(CampoDinDef d, string? val)
+        => d.OpcionesDetalle().FirstOrDefault(o => string.Equals(o.K, val, StringComparison.Ordinal))?.Color;
+
+    // Catalogo de campos del modulo + valores de todos los registros, en dos llamadas (no una por fila).
+    private async Task CargarCamposAsync(HttpClient http)
+    {
+        var defs = await http.GetFromJsonAsync<List<VehiculoCampoDefinicionDto>>("/api/mi-copropiedad/vehiculos-campos") ?? new();
+        _defs = defs.OrderBy(d => d.Orden).ThenBy(d => d.Label)
+                    .Select(d => new CampoDinDef(d.Id, d.Label, d.Orden, d.Tipo, d.Opciones)).ToList();
+
+        var vals = await http.GetFromJsonAsync<List<VehiculoCampoValorFlatDto>>("/api/mi-copropiedad/vehiculos-campos-valores") ?? new();
+        _valores = vals.GroupBy(v => v.UnidadPlacaId)
+                       .ToDictionary(g => g.Key, g => g.ToDictionary(x => x.DefinicionId, x => x.Valor));
+
+        // Fase 2: usuarios del tenant (campo Usuario) + mapa id->nombre (Usuario y Directorio), ambos
+        // tenant-scoped por RLS -> no ofrecen ni resuelven datos de otras copropiedades.
+        try { _usuariosTenant = await http.GetFromJsonAsync<List<UsuarioOpc>>("/api/usuarios") ?? new(); } catch { _usuariosTenant = new(); }
+        try
+        {
+            var vinc = await http.GetFromJsonAsync<List<UsuarioOpc>>("/api/mi-copropiedad/personas-vinculadas") ?? new();
+            _usuarioNombre = vinc.GroupBy(x => x.PersonaId).ToDictionary(g => g.Key, g => g.First().NombreCompleto);
+        }
+        catch { _usuarioNombre = new(); }
+    }
+
+    // ---- Fase 2: campos Usuario/Directorio ----
+    private List<UsuarioOpc> _usuariosTenant = new();
+    private Dictionary<Guid, string> _usuarioNombre = new();
+    private sealed record UsuarioOpc(Guid PersonaId, string NombreCompleto, string? Email);
+
+    private string? NombrePersona(string? val)
+        => !string.IsNullOrWhiteSpace(val) && Guid.TryParse(val, out var g) && _usuarioNombre.TryGetValue(g, out var n) ? n : val;
+
+    // Directorio en la fila de alta: guarda el id y cachea el nombre para el render inmediato.
+    private void OnDirectorioNuevo(Guid defId, Propia.Application.Directorio.PersonaCandidatoDto? c)
+    {
+        if (c is null) { _nuDinamicos.Remove(defId); return; }
+        SetDinamicoNuevo(defId, c.PersonaId.ToString());
+        _usuarioNombre[c.PersonaId] = c.NombreCompleto;
+    }
+
+    private async Task AgregarAsync()
+    {
+        if (_nuUnidadId is not Guid uid) { Mensaje("Elige la unidad del vehiculo.", true); return; }
+        if (string.IsNullOrWhiteSpace(_nuPlaca)) { Mensaje("Escribe la placa.", true); return; }
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{uid}/placas",
+                new CrearUnidadPlacaRequest(_nuPlaca.Trim(), _nuTipo));
+            if (!resp.IsSuccessStatusCode) { Mensaje(await MotivoAsync(resp), true); return; }
+
+            var creada = await resp.Content.ReadFromJsonAsync<UnidadPlacaDto>();
+            // Los campos dinamicos se guardan despues del alta: necesitan el id del registro.
+            if (creada is not null)
+            {
+                foreach (var (defId, valor) in _nuDinamicos.Where(x => !string.IsNullOrWhiteSpace(x.Value)))
+                    await Auth().PutAsJsonAsync($"/api/mi-copropiedad/vehiculos-campos-valores/{creada.Id}/{defId}",
+                        new SetCampoValorRequest(valor));
+                _recienCreados.Add(creada.Id);
+            }
+
+            _nuPlaca = ""; _nuTipo = TipoVehiculo.Automovil; _nuDinamicos.Clear();
+            await CargarAsync();
+            Mensaje("Vehiculo agregado.", false);
+        }
+        catch (Exception ex) { Mensaje("No se pudo agregar: " + ex.Message, true); }
+        finally { _busy = false; }
+    }
+
+    private async Task GuardarPlacaAsync(VehiculoResumenDto v, string? valor)
+    {
+        var nueva = (valor ?? "").Trim();
+        if (nueva.Length == 0 || string.Equals(nueva, v.Placa, StringComparison.OrdinalIgnoreCase)) return;
+        await GuardarAsync(v.PlacaId, new ActualizarUnidadPlacaRequest(Placa: nueva));
+    }
+
+    private async Task GuardarTipoAsync(VehiculoResumenDto v, string? valor)
+    {
+        if (!Enum.TryParse<TipoVehiculo>(valor, out var t) || t == v.TipoVehiculo) return;
+        await GuardarAsync(v.PlacaId, new ActualizarUnidadPlacaRequest(TipoVehiculo: t));
+    }
+
+    private async Task GuardarAsync(Guid placaId, ActualizarUnidadPlacaRequest req)
+    {
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades-placas/{placaId}", req);
+            if (!resp.IsSuccessStatusCode) { Mensaje(await MotivoAsync(resp), true); }
+            await CargarAsync();
+        }
+        catch (Exception ex) { Mensaje("No se pudo guardar: " + ex.Message, true); }
+    }
+
+    private async Task GuardarDinamicoAsync(Guid placaId, Guid defId, string? valor)
+    {
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/vehiculos-campos-valores/{placaId}/{defId}",
+                new SetCampoValorRequest(valor));
+            if (!resp.IsSuccessStatusCode) { Mensaje(await MotivoAsync(resp), true); return; }
+            if (!_valores.TryGetValue(placaId, out var d)) _valores[placaId] = d = new();
+            d[defId] = valor;
+        }
+        catch (Exception ex) { Mensaje("No se pudo guardar el campo: " + ex.Message, true); }
+    }
+
+    private async Task EliminarAsync(VehiculoResumenDto v)
+    {
+        bool ok;
+        try { ok = await Js.InvokeAsync<bool>("confirm", $"Quitar el vehiculo {v.Placa} de la unidad {v.UnidadCodigo}?"); }
+        catch { ok = true; }
+        if (!ok) return;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades-placas/{v.PlacaId}");
+            if (!resp.IsSuccessStatusCode) { Mensaje(await MotivoAsync(resp), true); return; }
+            await CargarAsync();
+            Mensaje("Vehiculo eliminado.", false);
+        }
+        catch (Exception ex) { Mensaje("No se pudo eliminar: " + ex.Message, true); }
+    }
+
+    // Al cerrar el panel de campos se recarga el catalogo: pudo cambiar el orden, el nombre o
+    // haberse creado un campo, y eso son columnas de esta tabla.
+    private async Task CerrarConfig()
+    {
+        _configAbierto = false;
+        try { await CargarCamposAsync(Auth()); } catch { }
+    }
+
+    // Un fallo no puede quedarse mudo: el 403 de permisos es el caso frecuente.
+    private static async Task<string> MotivoAsync(HttpResponseMessage r)
+    {
+        if (r.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            return "No tienes permiso para esta accion en Mi Copropiedad. Pidele a un Administrador que lo habilite.";
+        try
+        {
+            var body = await r.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+            if (body is not null && body.TryGetValue("error", out var e) && !string.IsNullOrWhiteSpace(e)) return e;
+        }
+        catch { }
+        return $"El servidor respondio {(int)r.StatusCode}.";
+    }
+
+    private void Mensaje(string texto, bool error)
+    {
+        _msg = texto; _msgError = error;
+        StateHasChanged();
+    }
+}
+
+<style>
+    .veh-pagehead { margin-bottom: 14px; }
+    .veh-pagetitle { font-size: 26px; font-weight: 800; color: var(--propia-text-h1); margin: 0; }
+    .veh-pagesub { font-size: 13.5px; color: var(--propia-text-muted); margin: 4px 0 0; }
+    .veh-loading { display: flex; justify-content: center; padding: 60px 0; }
+
+    .veh-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+    .veh-spacer { flex: 1; }
+    .veh-search { display: flex; align-items: center; gap: 6px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 9px; padding: 0 10px; height: 36px; color: var(--propia-text-muted); }
+    .veh-search input { border: 0; outline: 0; background: transparent; font-size: 13px; color: var(--propia-text-body); width: 230px; font-family: inherit; }
+    .veh-fbtn { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 8px 12px; border-radius: 9px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-muted); font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .veh-fbtn.on { background: var(--propia-brand-soft); border-color: var(--propia-brand-soft); color: var(--propia-brand); }
+    .veh-menu-wrap { position: relative; }
+    .veh-menu-bd { position: fixed; inset: 0; z-index: 40; }
+    .veh-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; min-width: 200px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 12px; box-shadow: 0 12px 30px rgba(30,40,60,.18); padding: 6px; }
+    .veh-menu-it { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 7px 10px; border-radius: 7px; font-size: 13px; color: var(--propia-text-body); cursor: pointer; font-family: inherit; }
+    .veh-menu-it:hover { background: var(--propia-bg-hover); }
+    .veh-menu-it.on { background: var(--propia-brand-soft); color: var(--propia-brand); font-weight: 700; }
+
+    .veh-msg { border-radius: 9px; padding: 9px 12px; font-size: 13px; margin-bottom: 10px; }
+    .veh-msg.ok { background: var(--propia-ok-soft); color: var(--propia-ok); }
+    .veh-msg.err { background: var(--propia-danger-soft); color: var(--propia-danger); }
+
+    /* El footer va DENTRO de la caja de la tabla, como en Unidades. */
+    .veh-table { border: 1px solid var(--propia-border-card); border-radius: 12px; overflow: hidden; background: var(--propia-bg-card); }
+    .veh-scroll { overflow: auto; max-height: calc(100vh - 260px); }
+    .veh-grid { display: grid; align-items: center; gap: 12px; padding: 10px 18px; min-width: max-content; }
+    .veh-head { position: sticky; top: 0; z-index: 8; background: var(--propia-bg-table-head); border-bottom: 1px solid var(--propia-border-divider); font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: var(--propia-text-faint); text-transform: uppercase; }
+    .veh-row { border-bottom: 1px solid var(--propia-border-divider); font-size: 13px; color: var(--propia-text-body); }
+    .veh-row:hover { background: var(--propia-bg-hover); }
+    .veh-row-nuevo { background: var(--propia-ok-soft); box-shadow: inset 3px 0 0 var(--propia-ok); }
+    .veh-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .veh-cod { font-weight: 700; color: var(--propia-text-h1); }
+    .veh-prop { color: var(--propia-text-muted); }
+    .veh-auto { color: var(--propia-text-faint); font-style: italic; font-size: 12px; }
+    .veh-exp-col { width: 34px; flex: 0 0 34px; text-align: center; padding: 0 4px; }
+    .veh-exp { border: 0; background: transparent; color: var(--propia-text-faint); cursor: pointer; padding: 2px; border-radius: 6px; opacity: 0; }
+    .veh-row:hover .veh-exp { opacity: 1; }
+    .veh-exp:hover { color: var(--propia-brand); background: var(--propia-brand-soft); }
+    .veh-acts { display: flex; justify-content: flex-end; }
+    .veh-del { border: 0; background: transparent; color: var(--propia-text-faint); cursor: pointer; padding: 3px; border-radius: 6px; opacity: 0; }
+    .veh-row:hover .veh-del { opacity: 1; }
+    .veh-del:hover { color: var(--propia-danger); background: var(--propia-danger-soft); }
+
+    /* Edicion de celda existente: violeta = edicion activa (canon del sistema). */
+    .veh-editcell { border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 4px 7px; font-size: 12.5px; color: var(--propia-text-body); font-family: inherit; width: 100%; box-sizing: border-box; }
+    .veh-editcell:hover { border-color: var(--propia-border-card); }
+    .veh-editcell:focus { outline: 0; border: 1px solid var(--propia-brand); box-shadow: 0 0 0 2px var(--propia-glow-brand); background: var(--propia-bg-card); }
+    /* Campo propio de tipo Lista: chip de color (valor) + dropdown en la misma celda. */
+    .veh-selcell { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .veh-selcell .veh-editcell { width: auto; flex: 1 1 auto; min-width: 0; }
+    .veh-chip { flex: 0 0 auto; padding: 1px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; line-height: 1.5; white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Alta: input "fantasma" punteado en reposo, violeta al foco (canon del sistema). */
+    .veh-newrow { background: var(--propia-bg-table-head); border-top: 1px solid var(--propia-border-divider); }
+    .veh-nf-inp { border: 1px dashed var(--propia-border-input); border-radius: 7px; padding: 5px 8px; font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-bg-card); width: 100%; box-sizing: border-box; font-family: inherit; }
+    .veh-nf-inp:focus { outline: 0; border-style: solid; border-color: var(--propia-brand); box-shadow: 0 0 0 2px var(--propia-glow-brand); }
+    .veh-nf-unidad { position: relative; }
+    .veh-row-add { background: var(--propia-brand-soft); color: var(--propia-brand); border: 1px solid var(--propia-brand-border); border-radius: 7px; font-size: 11.5px; font-weight: 700; padding: 6px 10px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+    .veh-row-add:hover { filter: brightness(.97); }
+    .veh-row-add:disabled { opacity: .5; cursor: default; }
+
+    .veh-group { display: flex; align-items: center; gap: 8px; padding: 8px 18px; background: var(--propia-bg-table-head); border-bottom: 1px solid var(--propia-border-divider); }
+    .veh-group-chip { font-size: 12px; font-weight: 700; color: var(--propia-text-h1); }
+    .veh-group-n { font-size: 11px; color: var(--propia-text-faint); }
+
+    /* Panel de campos */
+    .veh-cg-back { position: fixed; inset: 0; background: rgba(20,26,38,.45); display: flex; align-items: center; justify-content: center; z-index: 1200; padding: 16px; }
+    .veh-cg-modal { width: 980px; max-width: calc(100vw - 32px); max-height: 84vh; display: flex; flex-direction: column; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 16px; box-shadow: 0 18px 48px rgba(0,0,0,.28); overflow: hidden; }
+    .veh-cg-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--propia-border-divider); }
+    .veh-cg-title { font-size: 16px; font-weight: 800; color: var(--propia-text-h1); }
+    .veh-cg-sub { font-size: 12.5px; color: var(--propia-text-muted); margin-top: 2px; }
+    .veh-cg-x { border: 0; background: transparent; font-size: 22px; line-height: 1; color: var(--propia-text-faint); cursor: pointer; }
+    .veh-cg-body { padding: 16px 20px; overflow: auto; }
+</style>

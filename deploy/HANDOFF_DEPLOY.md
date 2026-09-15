@@ -1,10 +1,60 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> Generado 2026-09-10, actualizado 2026-09-12. Version a desplegar: **0.0.93**. Prod actual: **0.0.67**.
+> Generado 2026-09-10, actualizado **2026-09-15**. Version a desplegar: **0.0.93** (`origin/main` @ `ab595f6`).
+> Prod actual (segun ultimo registro): **0.0.67** - CONFIRMAR contra el footer de prod antes de aplicar.
 > Repo: https://github.com/alexandercuartas665/PROPIA  ·  rama `main` (HEAD al desplegar).
 > Companion: `DEPLOY_CHECKLIST.md` (misma carpeta) con el detalle version por version.
 > Este archivo es el resumen operativo para la sesion de deploy. **Vive en el repo** (`deploy/`) y se
 > copia a la carpeta de trabajo; asi no se pierde.
+
+---
+
+## ESTADO 2026-09-15 (LEER PRIMERO - refresca este handoff)
+
+**Desplegable HOY = `origin/main` @ `ab595f6`, version `0.0.93`.** Las secciones 0-7 de abajo siguen
+vigentes TAL CUAL; esta seccion solo dice que cambio desde que se escribieron y, sobre todo, **que NO va**.
+
+### Delta desde el handoff 0.0.93 original (solo-codigo, SIN migracion)
+`main` sumo, despues de escribir este doc, tres cosas que **NO cambian esquema ni config**:
+- **Fase 2 REFERENCIA en Unidades**: 3 tipos de campo nuevos (Formula, Usuario, Directorio) disponibles
+  SOLO en el gestor de campos de Unidades (Distribucion). Es enum-only (`TipoCampoTablero` 15/16/17 +
+  `OperacionFormula`); la columna `opciones` ya existia -> **cero cambios de esquema**. Verificado: 7/7
+  tests de integracion de Unidades + runtime (Formula computa en lectura, Usuario/Directorio validan
+  pertenencia al tenant, F5 resuelve nombres).
+- **Factorizacion de helpers** (`CampoFormulaConfig.ComputarTexto`, `CamposAvanzados.ValidarValorAsync`).
+  Refactor interno para reusar Fase 2; sin efecto en datos.
+- **Homogeneidad YUNQUE**: boton "Campos" en la barra canonica de Zonas/Equipos + modales a 980px. Solo UI.
+
+La version en `Propia.Web.csproj` sigue en `0.0.93` (no se subio por estos cambios migration-free).
+
+### Migraciones: SIN NOVEDAD vs el handoff 0.0.93
+La ultima migracion en `main` sigue siendo `20260913005909_AddCostoEstimadoProgramacionTarea`. **No hay
+migraciones nuevas.** El set pendiente vs prod 0.0.67 es EXACTAMENTE el de la **seccion 2** (9 aditivas).
+Si prod ya recibio 0.0.93, **no queda ninguna migracion pendiente** y este deploy seria solo-codigo.
+
+### CRITICO - LO QUE **NO** ESTA EN MAIN (no desplegar a medias)
+Vive en ramas y **NO** entra en un deploy de `main` hoy. Si alguien lo espera en prod, NO esta:
+- **Hub "Configuracion Copropiedad"** (9 pestañas) - rama `feature/hub-config`. Verificado en dev, sin push. Sin migracion.
+- **Fase 2 replicada a Vehiculos / Mascotas / Residentes** - ramas `fase2-vehmas`, `fase2-residentes`/`demo-fase2`. Migration-free. Sin push.
+- **Fase 2 en Seguros/Contratos (SELLO)** y **Mantenimiento (YUNQUE)** - en curso, sin mergear.
+- **Ronda ATLAS (Tareas) + su migracion `tablero_campos_config`** - rama `equipo/atlas-tareas`. **CON migracion**, no aplicada, NO en main.
+- **FARO (PQRSD)** ronda de ajustes - sin mergear.
+- **Directorio / Usuarios con campos propios (EAV nuevo, CON migracion)** - solo planificado, sin codigo.
+
+=> Un deploy de `main` HOY lleva **Fase 1 completa + Fase 2 solo como REFERENCIA en Unidades + homogeneidad**.
+NO lleva el hub, ni la replicacion Fase 2 a otras superficies, ni la ronda del equipo (ATLAS/FARO/SELLO/YUNQUE nueva).
+
+### Verificacion de lo que SI va
+- Build Release del Web: **0 errores** (medido 2026-09-15 sobre el arbol de main + trabajo derivado).
+- Baseline de integracion: **224 verdes / 8-9 rojos PREEXISTENTES** (Billing, RlsCoverage por las 8 tablas
+  sin RLS de la seccion 6, SuperAdmin, Usuarios) - deuda conocida, NO regresiones. Correr `dotnet test`
+  en el commit exacto antes de desplegar para reconfirmar el baseline.
+- RLS: la migracion de seguridad `AddRlsTablasFaltantes` ya esta en el set (seccion 2/0.1).
+
+**DECISION para Alex:** desplegar `main` (ab595f6) tal cual - Fase 2 visible SOLO en Unidades como
+referencia - o **esperar** e integrar en una tanda mayor el hub + la replicacion Fase 2 + la ronda del
+equipo (varias con migracion, notablemente `tablero_campos_config` de ATLAS). Este handoff cubre el
+primer caso; para el segundo hace falta linealizar migraciones y un handoff nuevo.
 
 ---
 
