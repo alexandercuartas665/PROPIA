@@ -193,6 +193,7 @@
                 <ConfigCamposEntidad Prefijo="unidades"
                                      EntidadConfig="unidad"
                                      Catalogo="@UnidadCatalogo"
+                                     TiposAvanzados="true"
                                      TituloSingular="unidad"
                                      TituloPlural="unidades"
                                      Ejemplo="Ej. N de medidor, Color de fachada"
@@ -389,8 +390,7 @@ else
                             {
                                 if (it.EsCustom)
                                 {
-                                    var vv = ValorCampo(uu.Id, it.Campo!.Id);
-                                    <div class="dst-td-campo" title="@it.Campo!.Label">@(string.IsNullOrWhiteSpace(vv) ? "-" : vv)</div>
+                                    <div class="dst-td-campo" title="@it.Campo!.Label">@MostrarCampoCelda(uu.Id, it.Campo!)</div>
                                     continue;
                                 }
                                 switch (it.Def!.Key)
@@ -561,6 +561,20 @@ else
                                             <option value="Si">Si</option>
                                             <option value="No">No</option>
                                         </select>
+                                        break;
+                                    case TipoCampoTablero.Formula:
+                                        @* Calculado y de solo lectura: no se captura, se computa al guardar/leer. *@
+                                        <div class="dst-td-campo" style="font-style:italic;color:var(--propia-text-faint)" title="Se calcula automaticamente">(se calcula)</div>
+                                        break;
+                                    case TipoCampoTablero.Usuario:
+                                        <select class="dst-nf-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
+                                            <option value="">- elegir -</option>
+                                            @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId">@u.NombreCompleto</option> }
+                                        </select>
+                                        break;
+                                    case TipoCampoTablero.Directorio:
+                                        <SelectorPersona Flotante="true" Jwt="@_jwt" Placeholder="Buscar persona..."
+                                                         SeleccionadaChanged="(c) => OnDirectorioSel(cdd.Id, c)" />
                                         break;
                                     default:
                                         <input class="dst-nf-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cdd.Label" />
@@ -741,6 +755,31 @@ else
     private Dictionary<Guid, Dictionary<Guid, string?>> _camposValores = new();
     private string? ValorCampo(Guid unidadId, Guid defId)
         => _camposValores.TryGetValue(unidadId, out var m) && m.TryGetValue(defId, out var v) ? v : null;
+
+    // Fase 2: usuarios del tenant (para el campo tipo Usuario) + mapa id->nombre para el render.
+    private List<UsuarioOpc> _usuariosTenant = new();
+    private Dictionary<Guid, string> _usuarioNombre = new();
+    private sealed record UsuarioOpc(Guid PersonaId, string NombreCompleto, string? Email);
+
+    // Texto a mostrar en la celda de un campo propio: Formula/Numero/... = el valor tal cual (la Formula
+    // ya viene computada del backend); Usuario/Directorio = el nombre resuelto por id (no el Guid crudo).
+    private string MostrarCampoCelda(Guid unidadId, UnidadCampoDefinicionDto def)
+    {
+        var v = ValorCampo(unidadId, def.Id);
+        if (string.IsNullOrWhiteSpace(v)) return "-";
+        if ((def.Tipo == TipoCampoTablero.Usuario || def.Tipo == TipoCampoTablero.Directorio)
+            && Guid.TryParse(v, out var g) && _usuarioNombre.TryGetValue(g, out var n))
+            return n;
+        return v;
+    }
+
+    // Campo Directorio en la fila de alta: guarda el id de la persona y cachea su nombre para el render.
+    private void OnDirectorioSel(Guid defId, Propia.Application.Directorio.PersonaCandidatoDto? c)
+    {
+        if (c is null) { _nuCampos[defId] = null; return; }
+        _nuCampos[defId] = c.PersonaId.ToString();
+        _usuarioNombre[c.PersonaId] = c.NombreCompleto;
+    }
     // Config de campos dinamicos (modal "Configurar", ahora renderizado por ConfigCamposEntidad).
     private bool _configCamposAbierto;
     private bool _cfgBusy;   // lo comparten el guardado de config y el popup de listas (Tipo)
@@ -1911,6 +1950,14 @@ else
                 _camposValores = flat.GroupBy(v => v.UnidadId).ToDictionary(g => g.Key, g => g.ToDictionary(x => x.DefinicionId, x => x.Valor));
             }
             catch { _camposValores = new(); }
+            // Fase 2: usuarios del tenant (para el picker/render de los campos tipo Usuario). Solo del
+            // tenant activo (el endpoint ya acota por RLS) -> un usuario de otra copropiedad no aparece.
+            try
+            {
+                _usuariosTenant = await http.GetFromJsonAsync<List<UsuarioOpc>>("/api/usuarios") ?? new();
+                _usuarioNombre = _usuariosTenant.GroupBy(u => u.PersonaId).ToDictionary(g => g.Key, g => g.First().NombreCompleto);
+            }
+            catch { _usuariosTenant = new(); _usuarioNombre = new(); }
             // Si en el modal se borraron unidades, la pagina en la que estabamos puede ya no existir.
             if (_pagina > TotalPaginas) _pagina = TotalPaginas;
         }

@@ -293,7 +293,7 @@ else
                    opciones; se agrupa con optgroup (accesible). El icono por categoria queda para un
                    dropdown custom si se decide despues. *@
                 <select class="dst-nf-inp" @bind="_nvTipo">
-                    @foreach (var (cat, tipos) in TiposPorCategoria)
+                    @foreach (var (cat, tipos) in CategoriasTipos)
                     {
                         <optgroup label="@cat">
                             @foreach (var t in tipos) { <option value="@t">@TipoLabel(t)</option> }
@@ -307,6 +307,40 @@ else
             <div style="margin-top:8px;">
                 <label class="dst-nfc-lbl">Opciones (una por linea)</label>
                 <textarea class="dst-nf-inp" rows="4" @bind="_nvOpciones" @bind:event="oninput"></textarea>
+            </div>
+        }
+        else if (_nvTipo == TipoCampoTablero.Formula)
+        {
+            @* Formula (Fase 2): operacion + campos fuente Numero/Moneda. El valor se calcula en lectura. *@
+            <div style="margin-top:8px;">
+                <label class="dst-nfc-lbl">Operacion</label>
+                <select class="dst-nf-inp" @bind="_nvOperacion">
+                    @foreach (var op in Enum.GetValues<OperacionFormula>())
+                    {
+                        <option value="@op">@OperacionLabel(op)</option>
+                    }
+                </select>
+            </div>
+            <div style="margin-top:8px;">
+                <label class="dst-nfc-lbl">Campos a calcular (Numero / Moneda)</label>
+                @{ var fuentes = FuentesFormula().ToList(); }
+                @if (fuentes.Count == 0)
+                {
+                    <div class="cga-cfg-hint">No hay campos Numero o Moneda para calcular. Crea primero un campo numerico.</div>
+                }
+                else
+                {
+                    <div class="cga-formula-fuentes">
+                        @foreach (var f in fuentes)
+                        {
+                            <label class="cga-formula-fuente">
+                                <input type="checkbox" checked="@_nvFuentes.Contains(f.Key)"
+                                       @onchange="e => ToggleFuenteNueva(f.Key, (bool)(e.Value ?? false))" />
+                                <span>@f.Label</span>
+                            </label>
+                        }
+                    </div>
+                }
             </div>
         }
         @if (!string.IsNullOrEmpty(_msg)) { <div class="dst-cfg-msg">@_msg</div> }
@@ -364,6 +398,11 @@ else
     /// solo gestiona campos de SISTEMA. Aditivo (default false = comportamiento actual). Lo usa PROGRAMACION
     /// (Mantenimiento). Es el inverso de <see cref="SinConfigSistema"/>: aquel quita config, este quita EAV.</summary>
     [Parameter] public bool SinCamposPropios { get; set; }
+
+    /// <summary>true = ofrece los tipos AVANZADOS (Fase 2): Formula, Usuario y Directorio. Default false,
+    /// asi que los consumidores que NO lo pasan (las otras superficies) siguen viendo EXACTAMENTE los tipos
+    /// de antes (sin regresion). Unidades lo pasa true (superficie de referencia); replicar = pasar el flag.</summary>
+    [Parameter] public bool TiposAvanzados { get; set; }
 
     /// <summary>Ruta efectiva del catalogo (RutaCatalogo o el derivado del prefijo).</summary>
     private string CatBase => string.IsNullOrWhiteSpace(RutaCatalogo) ? $"{Prefijo}-campos" : RutaCatalogo;
@@ -469,6 +508,9 @@ else
     private string _nvLabel = "";
     private TipoCampoTablero _nvTipo = TipoCampoTablero.Texto;
     private string _nvOpciones = "";
+    // Editor del tipo Formula (Fase 2): operacion + claves de campos fuente (Numero/Moneda).
+    private OperacionFormula _nvOperacion = OperacionFormula.Suma;
+    private readonly HashSet<string> _nvFuentes = new(StringComparer.Ordinal);
 
     // Tipos ofrecidos al crear un campo propio, AGRUPADOS por categoria (0.3). Usuario y Funcion
     // calculada quedan para Fase 2; Archivo/Imagen quedan fuera del plan (decision de Alex 2026-09-13).
@@ -480,6 +522,26 @@ else
         ("Contacto", new[] { TipoCampoTablero.Telefono, TipoCampoTablero.Email, TipoCampoTablero.Url }),
     };
     private static readonly TipoCampoTablero[] TiposOfrecidos = TiposPorCategoria.SelectMany(c => c.Tipos).ToArray();
+
+    // Categorias del picker: agrega "Avanzados" (Formula/Usuario/Directorio) SOLO si TiposAvanzados.
+    // Con el gate OFF devuelve exactamente TiposPorCategoria -> los demas consumidores no ven cambios.
+    private IEnumerable<(string Categoria, TipoCampoTablero[] Tipos)> CategoriasTipos
+        => TiposAvanzados
+            ? TiposPorCategoria.Append(("Avanzados", new[] { TipoCampoTablero.Formula, TipoCampoTablero.Usuario, TipoCampoTablero.Directorio }))
+            : TiposPorCategoria;
+
+    // Candidatos a FUENTE de una formula: campos Numero/Moneda del catalogo de sistema + campos propios
+    // Numero/Moneda. Key = clave de sistema o "cd:{id}"; Label = alias/etiqueta. Excluye por tipo cualquier
+    // Formula/Usuario/Directorio (sin anidamiento). Generico -> sirve en las 8 superficies.
+    private IEnumerable<(string Key, string Label)> FuentesFormula()
+    {
+        foreach (var s in CamposSistema)
+            if (CampoFormulaConfig.EsFuenteValida(s.Tipo))
+                yield return (s.Clave, string.IsNullOrWhiteSpace(AliasConfig(s.Clave)) ? s.DefLabel : AliasConfig(s.Clave));
+        foreach (var d in _defs)
+            if (CampoFormulaConfig.EsFuenteValida(d.Tipo))
+                yield return ("cd:" + d.Id, d.Label);
+    }
     private static readonly TipoCampoTablero[] TiposTexto =
         { TipoCampoTablero.Texto, TipoCampoTablero.AreaTexto, TipoCampoTablero.Telefono, TipoCampoTablero.Email, TipoCampoTablero.Url };
 
@@ -509,7 +571,20 @@ else
         TipoCampoTablero.Telefono => "Telefono",
         TipoCampoTablero.Email => "Correo",
         TipoCampoTablero.Url => "Enlace",
+        TipoCampoTablero.Formula => "Formula",
+        TipoCampoTablero.Usuario => "Usuario",
+        TipoCampoTablero.Directorio => "Directorio",
         _ => "Texto"
+    };
+
+    private static string OperacionLabel(OperacionFormula op) => op switch
+    {
+        OperacionFormula.Suma => "Suma",
+        OperacionFormula.Promedio => "Promedio",
+        OperacionFormula.Conteo => "Conteo (campos con valor)",
+        OperacionFormula.Minimo => "Minimo",
+        OperacionFormula.Maximo => "Maximo",
+        _ => op.ToString()
     };
 
     private HttpClient Auth()
@@ -834,21 +909,39 @@ else
         if (_defs.Any(x => string.Equals(x.Label, label, StringComparison.OrdinalIgnoreCase))
             || CamposSistema.Any(x => string.Equals(x.DefLabel, label, StringComparison.OrdinalIgnoreCase)))
         { _msg = $"Ya existe un campo '{label}'."; return; }
+        // Opciones es polimorfica segun el tipo: lineas (Seleccion) o JSON de formula (Formula).
+        string? opciones = null;
+        if (_nvTipo == TipoCampoTablero.Seleccion)
+        {
+            opciones = string.IsNullOrWhiteSpace(_nvOpciones) ? null : _nvOpciones;
+        }
+        else if (_nvTipo == TipoCampoTablero.Formula)
+        {
+            if (_nvFuentes.Count == 0) { _msg = "Elige al menos un campo Numero/Moneda para la formula."; return; }
+            // Se emiten las fuentes en el orden del picker (estable), no en el del HashSet.
+            var claves = FuentesFormula().Select(f => f.Key).Where(_nvFuentes.Contains).ToList();
+            opciones = new CampoFormulaConfig(_nvOperacion, claves).Serializar();
+        }
         _busy = true; _msg = null;
         try
         {
-            var opciones = _nvTipo == TipoCampoTablero.Seleccion && !string.IsNullOrWhiteSpace(_nvOpciones) ? _nvOpciones : null;
             var r = await Auth().PostAsJsonAsync(CatUrl,
                 new CrearCampoDefinicionRequest(label, _nvTipo, opciones));
             if (r.IsSuccessStatusCode)
             {
                 _nvLabel = ""; _nvOpciones = ""; _nvTipo = TipoCampoTablero.Texto;
+                _nvOperacion = OperacionFormula.Suma; _nvFuentes.Clear();
                 await CargarAsync(); await Cambiado.InvokeAsync();
             }
             else { _msg = "No se pudo crear el campo."; }
         }
         catch (Exception ex) { _msg = ex.Message; }
         finally { _busy = false; }
+    }
+
+    private void ToggleFuenteNueva(string key, bool on)
+    {
+        if (on) _nvFuentes.Add(key); else _nvFuentes.Remove(key);
     }
 
     private async Task EliminarCustomAsync(CampoDinDef d)
