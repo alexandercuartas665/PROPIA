@@ -135,6 +135,11 @@ public record SetCampoValorRequest(string? Valor);
 // Valor plano (unidad+definicion) para pintar los campos dinamicos como columnas de la tabla sin N+1.
 public record UnidadCampoValorFlatDto(Guid UnidadId, Guid DefinicionId, string? Valor);
 
+// Fase 2: resuelve id -> nombre de las personas VINCULADAS al tenant (usuarios del tenant + personas del
+// directorio), para que los campos Usuario/Directorio muestren el NOMBRE y no el Guid. Tenant-scoped: no
+// expone personas de otros tenants.
+public record PersonaVinculadaDto(Guid PersonaId, string NombreCompleto);
+
 // ----- Configuracion de los CAMPOS FIJOS del sistema (alias + opciones de lista, ej. Estado). -----
 // Etapa B: ademas del alias/opciones, la config guarda el tipo override, el formato y la
 // visibilidad/orden POR COPROPIEDAD. Los parametros nuevos van AL FINAL y con default para no

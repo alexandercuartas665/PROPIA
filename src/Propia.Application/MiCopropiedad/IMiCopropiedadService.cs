@@ -48,6 +48,8 @@ public interface IMiCopropiedadService
     Task<bool> EliminarCampoDefinicionAsync(Guid definicionId, CancellationToken ct);
     Task<IReadOnlyList<UnidadCampoDto>> ListCamposUnidadAsync(Guid unidadId, CancellationToken ct);
     Task<IReadOnlyList<UnidadCampoValorFlatDto>> ListTodosCamposValoresAsync(CancellationToken ct);
+    // Fase 2: id -> nombre de personas vinculadas al tenant (usuarios + directorio), para los campos Usuario/Directorio.
+    Task<IReadOnlyList<PersonaVinculadaDto>> ListPersonasVinculadasAsync(CancellationToken ct);
     Task SetCampoValorUnidadAsync(Guid unidadId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct);
 
     // Configuracion de campos FIJOS del sistema (alias + opciones de lista como Estado).

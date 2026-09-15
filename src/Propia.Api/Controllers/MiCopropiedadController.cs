@@ -296,6 +296,10 @@ public class MiCopropiedadController : ControllerBase
     [HttpGet("unidades-campos-valores")]
     public async Task<IActionResult> ListTodosCamposValores(CancellationToken ct) => Ok(await _svc.ListTodosCamposValoresAsync(ct));
 
+    // Fase 2: id -> nombre de personas vinculadas al tenant (para render de campos Usuario/Directorio).
+    [HttpGet("personas-vinculadas")]
+    public async Task<IActionResult> ListPersonasVinculadas(CancellationToken ct) => Ok(await _svc.ListPersonasVinculadasAsync(ct));
+
     // ---- Configuracion de campos FIJOS del sistema (alias + opciones de lista, ej. Estado) ----
     // 'entidad' elige la ficha: unidad (default, comportamiento historico) | personas | vehiculos
     // | mascotas | terceros. En los PUT la entidad viaja dentro del request.

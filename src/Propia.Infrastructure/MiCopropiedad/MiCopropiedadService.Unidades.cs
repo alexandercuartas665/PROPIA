@@ -854,6 +854,25 @@ public partial class MiCopropiedadService
         return res;
     }
 
+    // Fase 2: id -> nombre de las personas VINCULADAS al tenant (usuarios del tenant + personas del
+    // directorio). Lo usan los campos Usuario/Directorio para mostrar el NOMBRE en vez del Guid, tambien
+    // tras recargar. Tenant-scoped: los ids salen de usuarios_tenant y directorio_vinculos (ambas RLS),
+    // asi que solo se resuelven personas ligadas a ESTE tenant (no expone personas de otros).
+    public async Task<IReadOnlyList<PersonaVinculadaDto>> ListPersonasVinculadasAsync(CancellationToken ct)
+    {
+        var idsUsuarios = await _db.UsuariosTenant.AsNoTracking().Select(u => u.PersonaId).ToListAsync(ct);
+        var idsDir = await _db.DirectorioVinculos.AsNoTracking()
+            .Where(v => v.EntidadTipo == EntidadDirectorio.Persona && v.Estado == EstadoVinculo.Activo)
+            .Select(v => v.EntidadId).ToListAsync(ct);
+        var ids = idsUsuarios.Concat(idsDir).Distinct().ToList();
+        if (ids.Count == 0) return Array.Empty<PersonaVinculadaDto>();
+        var personas = await _db.Personas.AsNoTracking()
+            .Where(p => ids.Contains(p.Id))
+            .Select(p => new { p.Id, p.Nombres, p.Apellidos })
+            .ToListAsync(ct);
+        return personas.Select(p => new PersonaVinculadaDto(p.Id, $"{p.Nombres} {p.Apellidos}".Trim())).ToList();
+    }
+
     // Computa el texto de un campo Formula para una unidad. Fuentes: campos PROPIOS Numero/Moneda
     // (cd:{guid}, via el mapa {definicionId -> valor}) y campos de SISTEMA Numero/Moneda (via los numeros
     // de la unidad). Solo lectura; devuelve null si la config no es valida o el agregado es vacio.
