@@ -1,7 +1,7 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> Generado 2026-09-10, actualizado **2026-09-15**. Version a desplegar: **0.0.93** (`origin/main` @ `ab595f6`).
-> Prod actual (segun ultimo registro): **0.0.67** - CONFIRMAR contra el footer de prod antes de aplicar.
+> Generado 2026-09-10, actualizado **2026-09-15 (post-integracion B)**. Version a desplegar: **0.0.95** (`origin/main` @ `40ab5da`).
+> Prod actual (segun ultimo registro): **0.0.67** - CONFIRMAR contra el footer de prod antes de aplicar (nota: hubo un bump 0.0.93->0.0.94 "para deploy"; confirmar que llego a prod).
 > Repo: https://github.com/alexandercuartas665/PROPIA  ·  rama `main` (HEAD al desplegar).
 > Companion: `DEPLOY_CHECKLIST.md` (misma carpeta) con el detalle version por version.
 > Este archivo es el resumen operativo para la sesion de deploy. **Vive en el repo** (`deploy/`) y se
@@ -9,52 +9,58 @@
 
 ---
 
-## ESTADO 2026-09-15 (LEER PRIMERO - refresca este handoff)
+## ESTADO 2026-09-15 (POST-INTEGRACION B - LEER PRIMERO)
 
-**Desplegable HOY = `origin/main` @ `ab595f6`, version `0.0.93`.** Las secciones 0-7 de abajo siguen
-vigentes TAL CUAL; esta seccion solo dice que cambio desde que se escribieron y, sobre todo, **que NO va**.
+**Desplegable HOY = `origin/main` @ `40ab5da`, version `0.0.95`.** Se integro el paquete B
+(`feature/hub-config`) a main. Las secciones 0-7 de abajo siguen vigentes TAL CUAL (migraciones, config,
+permisos, RLS); esta seccion dice QUE sumo B y que sigue faltando. **B es 100% migration-free.**
 
-### Delta desde el handoff 0.0.93 original (solo-codigo, SIN migracion)
-`main` sumo, despues de escribir este doc, tres cosas que **NO cambian esquema ni config**:
-- **Fase 2 REFERENCIA en Unidades**: 3 tipos de campo nuevos (Formula, Usuario, Directorio) disponibles
-  SOLO en el gestor de campos de Unidades (Distribucion). Es enum-only (`TipoCampoTablero` 15/16/17 +
-  `OperacionFormula`); la columna `opciones` ya existia -> **cero cambios de esquema**. Verificado: 7/7
-  tests de integracion de Unidades + runtime (Formula computa en lectura, Usuario/Directorio validan
-  pertenencia al tenant, F5 resuelve nombres).
-- **Factorizacion de helpers** (`CampoFormulaConfig.ComputarTexto`, `CamposAvanzados.ValidarValorAsync`).
-  Refactor interno para reusar Fase 2; sin efecto en datos.
-- **Homogeneidad YUNQUE**: boton "Campos" en la barra canonica de Zonas/Equipos + modales a 980px. Solo UI.
+### Lo que ENTRO en main con B (todo SIN migracion, reusa columnas/config existentes)
+- **Hub "Configuracion Copropiedad"** (`/configuracion-copropiedad`): 9 pestañas (General, Unidades,
+  Residentes, Mascotas, Vehiculos, Zonas, Equipos, Usuarios, Directorio) que reusan cada modulo COMPLETO
+  via patron *Panel + parametro Embedded. Item de sidebar nuevo (MenuCatalog, en codigo). Rutas sueltas
+  y accesos previos INTACTOS. Verificado runtime (las 9 pestañas rinden el modulo completo).
+- **Fase 2 replicada a Vehiculos, Mascotas y Residentes**: los 3 tipos (Formula/Usuario/Directorio) ahora
+  tambien en esos modulos (antes solo en Unidades). Reusan los catalogos EAV existentes (unidad_placas /
+  unidad_mascotas / unidad_personas + sus campos). Residentes ademas: toggle Tabla/Tarjetas.
+- **Gestor de campos (ConfigCamposEntidad, componente COMPARTIDO -> lo heredan las 9 superficies):**
+  - **Formula MULTI-PASO**: la formula pasa de 1 operacion a una lista de PASOS (op + operandos: campo
+    Numero/Moneda, constante, o resultado de un paso anterior) + operaciones binarias Resta/Division/
+    Multiplicacion. Retrocompatible: las formulas de 1-op ya guardadas computan IDENTICO. Test de
+    regresion 11/11 verde. Verificado runtime (formula de 2 pasos = Coef-10, F5 persiste).
+  - **Selector de tipo amigable**: dropdown con categorias + descripcion por tipo.
+  - **Crear == Editar**: al editar, el tipo se agrupa igual que al crear; los avanzados salen bloqueados
+    (candado + tooltip) porque no se convierten sin recrear.
+- **Fix del modal del gestor**: el CSS `.cg-*` del modal se movio a `config-campos.css` (global) para que
+  el gestor FLOTE en cualquier superficie/pestaña (antes vivia inline en Distribucion y caia inline fuera).
+- **Deploy docs** (este handoff + checklists) actualizados.
 
-La version en `Propia.Web.csproj` sigue en `0.0.93` (no se subio por estos cambios migration-free).
+Pendiente #4 (ortografia de nombres/valores) DIFERIDO por decision de Alex (revision por-modulo despues).
 
-### Migraciones: SIN NOVEDAD vs el handoff 0.0.93
-La ultima migracion en `main` sigue siendo `20260913005909_AddCostoEstimadoProgramacionTarea`. **No hay
-migraciones nuevas.** El set pendiente vs prod 0.0.67 es EXACTAMENTE el de la **seccion 2** (9 aditivas).
-Si prod ya recibio 0.0.93, **no queda ninguna migracion pendiente** y este deploy seria solo-codigo.
+### Migraciones: SIN NOVEDAD (B no agrega ninguna)
+La ultima migracion en `main` sigue siendo `20260913005909_AddCostoEstimadoProgramacionTarea`. B es
+migration-free. El set pendiente vs prod 0.0.67 es EXACTAMENTE el de la **seccion 2** (9 aditivas). Si
+prod ya recibio 0.0.93/0.0.94, **no queda ninguna migracion pendiente** y 0.0.95 seria solo-codigo.
+(Nota: entre 0.0.93 y 0.0.95 hubo un bump intermedio 0.0.94 "para deploy"; ni ese ni B tocaron el esquema.)
 
-### CRITICO - LO QUE **NO** ESTA EN MAIN (no desplegar a medias)
-Vive en ramas y **NO** entra en un deploy de `main` hoy. Si alguien lo espera en prod, NO esta:
-- **Hub "Configuracion Copropiedad"** (9 pestañas) - rama `feature/hub-config`. Verificado en dev, sin push. Sin migracion.
-- **Fase 2 replicada a Vehiculos / Mascotas / Residentes** - ramas `fase2-vehmas`, `fase2-residentes`/`demo-fase2`. Migration-free. Sin push.
-- **Fase 2 en Seguros/Contratos (SELLO)** y **Mantenimiento (YUNQUE)** - en curso, sin mergear.
-- **Ronda ATLAS (Tareas) + su migracion `tablero_campos_config`** - rama `equipo/atlas-tareas`. **CON migracion**, no aplicada, NO en main.
-- **FARO (PQRSD)** ronda de ajustes - sin mergear.
+### CRITICO - LO QUE **NO** ESTA EN MAIN (aun en ramas)
+- **Fase 2 en Seguros/Contratos (SELLO)** y **Mantenimiento (YUNQUE)** - en curso; rebasean sobre este
+  main (heredan el gestor corregido) y luego se integran. Migration-free (reusan el componente).
+- **Ronda de ajustes de homogeneidad**: ATLAS (Tareas, orden + T-11 + T-09) **CON migracion
+  `tablero_campos_config`** (rama `equipo/atlas-tareas`, no aplicada), FARO (PQRSD), YUNQUE (color/forma).
 - **Directorio / Usuarios con campos propios (EAV nuevo, CON migracion)** - solo planificado, sin codigo.
 
-=> Un deploy de `main` HOY lleva **Fase 1 completa + Fase 2 solo como REFERENCIA en Unidades + homogeneidad**.
-NO lleva el hub, ni la replicacion Fase 2 a otras superficies, ni la ronda del equipo (ATLAS/FARO/SELLO/YUNQUE nueva).
+### Verificacion de lo que SI va (B)
+- Build Release del Web sobre el main mergeado: **0 errores**.
+- Runtime (5105): hub 9 pestañas OK; Fase 2 en Veh/Mas/Residentes OK (columnas, captura, F5, cross-tenant);
+  formula multi-paso OK (2 pasos, computo correcto, F5); modal del gestor FLOTA en todas. Datos de prueba borrados.
+- Tests: gestor de formula 11/11 (unit); Fase 2 integracion (Unidades 7/7, Veh/Mas 10/10, Residentes 5/5 Release).
+- Baseline de integracion: **224 verdes / 8-9 rojos PREEXISTENTES** (deuda conocida). Correr `dotnet test`
+  en el commit exacto antes de desplegar para reconfirmar.
 
-### Verificacion de lo que SI va
-- Build Release del Web: **0 errores** (medido 2026-09-15 sobre el arbol de main + trabajo derivado).
-- Baseline de integracion: **224 verdes / 8-9 rojos PREEXISTENTES** (Billing, RlsCoverage por las 8 tablas
-  sin RLS de la seccion 6, SuperAdmin, Usuarios) - deuda conocida, NO regresiones. Correr `dotnet test`
-  en el commit exacto antes de desplegar para reconfirmar el baseline.
-- RLS: la migracion de seguridad `AddRlsTablasFaltantes` ya esta en el set (seccion 2/0.1).
-
-**DECISION para Alex:** desplegar `main` (ab595f6) tal cual - Fase 2 visible SOLO en Unidades como
-referencia - o **esperar** e integrar en una tanda mayor el hub + la replicacion Fase 2 + la ronda del
-equipo (varias con migracion, notablemente `tablero_campos_config` de ATLAS). Este handoff cubre el
-primer caso; para el segundo hace falta linealizar migraciones y un handoff nuevo.
+**Paso post-deploy del MENU (ver 0.7): el hub agrega el item "Configuracion Copropiedad" desde el catalogo
+del CODIGO (no requiere import), pero la ORGANIZACION del menu sigue siendo data (menu_overrides). Importar
+el JSON como siempre si se quiere la organizacion afinada.**
 
 ---
 
