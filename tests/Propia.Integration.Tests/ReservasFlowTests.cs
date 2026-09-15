@@ -24,6 +24,8 @@ namespace Propia.Integration.Tests;
 ///  - RN-12: reglamento aceptado obligatorio si configurado.
 ///  - RN-13: admin puede cancelar cualquier reserva activa.
 ///  - RN-15: bloqueo manual impide reservar en el mismo periodo.
+///  - RN-08 (2.11) / RN-01-RN-02 (2.13): zona EnMantenimiento o Inactiva no admite reservas,
+///    ni al crear ni en el calculo de disponibilidad.
 ///  - Codigo unico RSV-YYYY-NNNNN secuencial.
 ///  - Tarifa: crea ReservaPago Pendiente cuando TieneTarifa=true.
 /// </summary>
@@ -274,6 +276,85 @@ public class ReservasFlowTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task RN08_zona_en_mantenimiento_no_admite_reservas()
+    {
+        var tenantId = await SeedTenantAsync("Res RN08");
+        await SeedPersonaConApplicationUser();
+        var unidadId = await SeedUnidadAsync(tenantId);
+        var (zonaId, _) = await SeedZonaAsync(tenantId, "Salon social", reservable: true);
+        var (svc, _, scope) = Build(tenantId);
+        using var _ = scope;
+        await ConfigurarZonaConFranjasAsync(svc, zonaId);
+
+        // Control: con la zona Activa la reserva pasa. Asi el fallo posterior se atribuye al
+        // estado de la zona y no a otra validacion (franja, anticipacion, reglamento...).
+        var manana = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1));
+        var ok = await svc.CrearReservaAsync(new CrearReservaRequest(
+            zonaId, _personaId, unidadId, manana,
+            new TimeOnly(10, 0), new TimeOnly(12, 0), true), CancellationToken.None);
+        Assert.Equal(EstadoReserva.Confirmada, ok.Estado);
+
+        await SetEstadoZonaAsync(zonaId, EstadoZonaComunMantenimiento.EnMantenimiento);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            svc.CrearReservaAsync(new CrearReservaRequest(
+                zonaId, _personaId, unidadId, manana,
+                new TimeOnly(14, 0), new TimeOnly(16, 0), true), CancellationToken.None));
+        Assert.Contains("RN-08", ex.Message);
+
+        await CleanTenant(tenantId);
+    }
+
+    [Fact]
+    public async Task RN01_zona_inactiva_no_admite_reservas()
+    {
+        var tenantId = await SeedTenantAsync("Res RN01e");
+        await SeedPersonaConApplicationUser();
+        var unidadId = await SeedUnidadAsync(tenantId);
+        var (zonaId, _) = await SeedZonaAsync(tenantId, "Terraza", reservable: true);
+        var (svc, _, scope) = Build(tenantId);
+        using var _ = scope;
+        await ConfigurarZonaConFranjasAsync(svc, zonaId);
+        await SetEstadoZonaAsync(zonaId, EstadoZonaComunMantenimiento.Inactiva);
+
+        var manana = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1));
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            svc.CrearReservaAsync(new CrearReservaRequest(
+                zonaId, _personaId, unidadId, manana,
+                new TimeOnly(10, 0), new TimeOnly(12, 0), true), CancellationToken.None));
+        Assert.Contains("RN-01", ex.Message);
+
+        await CleanTenant(tenantId);
+    }
+
+    [Fact]
+    public async Task RN08_zona_en_mantenimiento_deja_el_calendario_sin_disponibilidad()
+    {
+        var tenantId = await SeedTenantAsync("Res RN08 disp");
+        await SeedPersonaConApplicationUser();
+        var (zonaId, _) = await SeedZonaAsync(tenantId, "Gimnasio", reservable: true);
+        var (svc, _, scope) = Build(tenantId);
+        using var _ = scope;
+        await ConfigurarZonaConFranjasAsync(svc, zonaId);
+
+        var desde = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1));
+        var hasta = desde.AddDays(2);
+
+        // Antes: hay franjas disponibles.
+        var antes = await svc.CalcularDisponibilidadAsync(zonaId, desde, hasta, CancellationToken.None);
+        Assert.Contains(antes.Slots, s => s.Estado == "DISPONIBLE");
+
+        await SetEstadoZonaAsync(zonaId, EstadoZonaComunMantenimiento.EnMantenimiento);
+
+        // Despues: ninguna. El residente no ve verde algo que al confirmar seria rechazado.
+        var despues = await svc.CalcularDisponibilidadAsync(zonaId, desde, hasta, CancellationToken.None);
+        Assert.NotEmpty(despues.Slots);
+        Assert.All(despues.Slots, s => Assert.Equal("BLOQUEADO", s.Estado));
+
+        await CleanTenant(tenantId);
+    }
+
+    [Fact]
     public async Task Cancelar_admin_cambia_estado_a_CanceladaAdmin()
     {
         var tenantId = await SeedTenantAsync("Res Canc");
@@ -404,6 +485,15 @@ public class ReservasFlowTests : IAsyncLifetime
         ctx.UnidadesPrivadas.Add(u);
         await ctx.SaveChangesAsync();
         return u.Id;
+    }
+
+    private async Task SetEstadoZonaAsync(Guid zonaId, EstadoZonaComunMantenimiento estado)
+    {
+        var opts = new DbContextOptionsBuilder<PropiaDbContext>().UseNpgsql(_fx.OwnerConnectionString).Options;
+        await using var ctx = new PropiaDbContext(opts, new TenantContext());
+        var z = await ctx.ZonasComunes.IgnoreQueryFilters().FirstAsync(x => x.Id == zonaId);
+        z.Estado = estado;
+        await ctx.SaveChangesAsync();
     }
 
     private async Task<(Guid id, string nombre)> SeedZonaAsync(Guid tenantId, string nombre, bool reservable)

@@ -55,6 +55,49 @@ public class MantenimientoFlowTests : IAsyncLifetime
     // Tests
     // =======================================================================
 
+    [Theory]
+    // Instante UTC -> dia esperado en Colombia (UTC-5). Es la prueba de M-09.
+    [InlineData("2026-01-15T03:00:00Z", "2026-01-14")]  // 22:00 del 14 en Colombia: sigue siendo el 14, no el 15
+    [InlineData("2026-01-15T04:59:00Z", "2026-01-14")]  // 23:59 del 14: aun el 14 (con UtcNow crudo seria el 15: el bug)
+    [InlineData("2026-01-15T05:00:00Z", "2026-01-15")]  // 00:00 del 15 en Colombia: ya es el 15
+    [InlineData("2026-01-15T12:00:00Z", "2026-01-15")]  // 07:00 del 15: mismo dia en ambas zonas
+    [InlineData("2027-01-01T04:00:00Z", "2026-12-31")]  // 23:00 del 31-dic en Colombia: aun 2026 (codigo MNT/T usa 2026, no 2027)
+    public void HoyEnColombia_usa_hora_local_no_UTC(string instanteUtc, string diaEsperado)
+    {
+        var utc = DateTime.Parse(instanteUtc, null, System.Globalization.DateTimeStyles.AdjustToUniversal);
+        var hoy = Propia.Infrastructure.Jobs.MantenimientoPreventivoJob.HoyEnColombia(utc);
+        Assert.Equal(DateOnly.Parse(diaEsperado), hoy);
+    }
+
+    [Fact]
+    public async Task RegistrarEjecucion_crea_intervencion_completada_ligada_a_tarea()
+    {
+        var tenantId = await SeedTenantAsync("Mant Ejecucion");
+        await SeedPersonaConApplicationUser(tenantId);
+        var eqId = await SeedEquipoAsync(tenantId, "Planta electrica");
+        var (svc, db, _) = Build(tenantId);
+
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        var det = await svc.RegistrarEjecucionAsync(new RegistrarEjecucionRequest(
+            TipoActivoMantenimiento.Equipo, eqId, TipoIntervencionMantenimiento.Preventivo,
+            "Mantenimiento planta electrica", "Cambio de aceite y filtros. Todo OK.", hoy), CancellationToken.None);
+
+        // Nace Completada, con fecha de cierre y ligada a una tarea (opcion B).
+        var inter = await db.MantenimientoIntervenciones.AsNoTracking().FirstAsync(x => x.Id == det.Id);
+        Assert.Equal(EstadoIntervencion.Completada, inter.Estado);
+        Assert.Equal(hoy, inter.FechaCierre);
+        Assert.NotNull(inter.TareaId);
+
+        // La tarea vinculada existe de verdad en 2.10 (RN-03).
+        Assert.True(await db.Tareas.AsNoTracking().AnyAsync(t => t.Id == inter.TareaId));
+
+        // El detalle quedo en la bitacora.
+        Assert.True(await db.MantenimientoBitacora.AsNoTracking()
+            .AnyAsync(b => b.IntervencionId == det.Id && b.Contenido.Contains("Cambio de aceite")));
+
+        await CleanTenant(tenantId);
+    }
+
     [Fact]
     public async Task Crear_plan_preventivo_inicializa_proxima_ejecucion_en_fecha_inicio()
     {
@@ -85,7 +128,10 @@ public class MantenimientoFlowTests : IAsyncLifetime
         var equipoId = await SeedEquipoAsync(tenantId, "Bomba");
         var (svc, _, _) = Build(tenantId);
 
-        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        // RN-02 se valida contra el "hoy" LOCAL de Colombia (MantenimientoService.HoyLocal): con UtcNow
+        // crudo, de 00:00 a 05:00 UTC "ayer UTC" == "hoy Colombia" y el servicio (correctamente) no lanza.
+        var hoy = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(
+            DateTime.UtcNow, Propia.Infrastructure.Programaciones.CronHelper.Zona(null)));
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             svc.CrearPlanAsync(new CrearPlanRequest(
                 TipoActivoMantenimiento.Equipo, equipoId,

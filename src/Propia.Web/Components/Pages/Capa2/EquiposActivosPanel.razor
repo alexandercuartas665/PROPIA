@@ -33,9 +33,10 @@
                 @(_impBusy ? "Cargando..." : "Cargar plantilla")
                 <InputFile OnChange="OnPlantillaImport" accept=".xlsx" style="display:none" disabled="@_impBusy" />
             </label>
-            <button type="button" class="ea-btn-ghost" @onclick="() => _cfgAbierto = true" title="Configurar campos dinamicos de los equipos">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                Configurar
+            @* Campos: unica entrada a la configuracion de este modulo (Selector de Campos compartido). *@
+            <button type="button" class="ea-btn-ghost" @onclick="() => _selAbierto = true" title="Campos de los equipos: orden, visibilidad, nombre y campos propios">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
+                Campos
             </button>
         </div>
     }
@@ -177,9 +178,11 @@ else
         var pagE = Math.Clamp(_pagina, 1, totalPagE);
         var pageE = listaE.Skip((pagE - 1) * _porPagina).Take(_porPagina);
         <div class="ea-list">
+            @* Columnas dirigidas por la config compartida (unidades-config, entidad 'equipo'): sistema y
+               propias en UNA sola secuencia, con el orden/visibilidad/alias del Selector de Campos. *@
             <div class="ea-list-head ea-listgrid" style="@EaGridStyle">
-                <div></div><div>NOMBRE</div><div>CATEGORIA</div><div>TIPO</div><div>CANT</div><div>ESTADO</div>
-                @foreach (var cd in _camposDef) { <div title="Campo personalizado">@cd.Label</div> }
+                <div></div>
+                @foreach (var k in ColsVisibles()) { <div title="@(EsCustom(k) ? "Campo personalizado" : null)">@ColLabel(k).ToUpperInvariant()</div> }
                 <div></div>
             </div>
             @foreach (var e in pageE)
@@ -192,46 +195,108 @@ else
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                         </button>
                     </div>
-                    <input class="ea-cell ea-cell-nom" value="@e.Nombre" @onchange="@(ev => GuardarEquipoInline(eq, "nombre", ev))" />
-                    <select class="ea-cell" @onchange="@(ev => GuardarEquipoInline(eq, "categoria", ev))">
-                        @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c" selected="@(e.Categoria == c)">@c</option> }
-                    </select>
-                    <select class="ea-cell" @onchange="@(ev => GuardarEquipoInline(eq, "tipo", ev))">
-                        <option value="@TipoElemento.Equipo" selected="@(e.Tipo == TipoElemento.Equipo)">Equipo</option>
-                        <option value="@TipoElemento.Activo" selected="@(e.Tipo == TipoElemento.Activo)">Activo</option>
-                    </select>
-                    <input type="number" min="1" class="ea-cell ea-num" value="@e.Cantidad" @onchange="@(ev => GuardarEquipoInline(eq, "cantidad", ev))" />
-                    <select class="ea-cell ea-cell-est" @onchange="@(ev => GuardarEquipoInline(eq, "estado", ev))">
-                        @foreach (var s in Enum.GetValues<EstadoEquipoActivo>()) { <option value="@s" selected="@(e.Estado == s)">@EstadoTextoCorto(s)</option> }
-                    </select>
-                    @foreach (var cd in _camposDef)
+                    @foreach (var k in ColsVisibles())
                     {
-                        var cdd = cd;
-                        var vv = ValorCampo(eq.Id, cd.Id);
-                        @switch (cd.Tipo)
+                        if (CampoCustom(k) is EquipoCampoDefinicionDto cd)
                         {
-                            case TipoCampoTablero.Seleccion:
-                                <select class="ea-cell" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())">
-                                    <option value="">-</option>
-                                    @foreach (var op in OpcionesDe(cd)) { <option value="@op" selected="@(vv == op)">@op</option> }
+                            var cdd = cd;
+                            var vv = ValorCampo(eq.Id, cd.Id);
+                            switch (cd.Tipo)
+                            {
+                                case TipoCampoTablero.Seleccion:
+                                    <select class="ea-cell" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())">
+                                        <option value="">-</option>
+                                        @foreach (var op in OpcionesDe(cd)) { <option value="@op" selected="@(vv == op)">@op</option> }
+                                    </select>
+                                    break;
+                                case TipoCampoTablero.Numero:
+                                case TipoCampoTablero.Moneda:
+                                    <input class="ea-cell" type="number" step="any" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())" />
+                                    break;
+                                case TipoCampoTablero.Fecha:
+                                    <input class="ea-cell" type="date" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())" />
+                                    break;
+                                case TipoCampoTablero.Booleano:
+                                    <select class="ea-cell" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())">
+                                        <option value="">-</option>
+                                        <option value="Si" selected="@(vv == "Si")">Si</option>
+                                        <option value="No" selected="@(vv == "No")">No</option>
+                                    </select>
+                                    break;
+                                default:
+                                    <input class="ea-cell" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())" title="@cd.Label" />
+                                    break;
+                            }
+                            continue;
+                        }
+                        switch (k)
+                        {
+                            case "nombre":
+                                <input class="ea-cell ea-cell-nom" value="@e.Nombre" @onchange="@(ev => GuardarEquipoInline(eq, "nombre", ev))" />
+                                break;
+                            case "categoria":
+                                <select class="ea-cell" @onchange="@(ev => GuardarEquipoInline(eq, "categoria", ev))">
+                                    @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c" selected="@(e.Categoria == c)">@c</option> }
                                 </select>
                                 break;
-                            case TipoCampoTablero.Numero:
-                            case TipoCampoTablero.Moneda:
-                                <input class="ea-cell" type="number" step="any" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())" />
-                                break;
-                            case TipoCampoTablero.Fecha:
-                                <input class="ea-cell" type="date" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())" />
-                                break;
-                            case TipoCampoTablero.Booleano:
-                                <select class="ea-cell" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())">
-                                    <option value="">-</option>
-                                    <option value="Si" selected="@(vv == "Si")">Si</option>
-                                    <option value="No" selected="@(vv == "No")">No</option>
+                            case "tipo":
+                                <select class="ea-cell" @onchange="@(ev => GuardarEquipoInline(eq, "tipo", ev))">
+                                    <option value="@TipoElemento.Equipo" selected="@(e.Tipo == TipoElemento.Equipo)">Equipo</option>
+                                    <option value="@TipoElemento.Activo" selected="@(e.Tipo == TipoElemento.Activo)">Activo</option>
                                 </select>
                                 break;
-                            default:
-                                <input class="ea-cell" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())" title="@cd.Label" />
+                            case "cantidad":
+                                <input type="number" min="1" class="ea-cell ea-num" value="@e.Cantidad" @onchange="@(ev => GuardarEquipoInline(eq, "cantidad", ev))" />
+                                break;
+                            case "estado":
+                                <select class="ea-cell ea-cell-est" @onchange="@(ev => GuardarEquipoInline(eq, "estado", ev))">
+                                    @foreach (var s in Enum.GetValues<EstadoEquipoActivo>()) { <option value="@s" selected="@(e.Estado == s)">@EstadoTextoCorto(s)</option> }
+                                </select>
+                                break;
+                            case "reservable":
+                                <select class="ea-cell" @onchange="@(ev => GuardarEquipoInline(eq, "reservable", ev))">
+                                    <option value="false" selected="@(!e.EsReservable)">No</option>
+                                    <option value="true" selected="@e.EsReservable">Si</option>
+                                </select>
+                                break;
+                            case "modelo":
+                                <input class="ea-cell" value="@e.Modelo" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "modelo", ev))" />
+                                break;
+                            case "serie":
+                                <input class="ea-cell" value="@e.NumeroSerie" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "serie", ev))" />
+                                break;
+                            case "ubicacion":
+                                <input class="ea-cell" value="@e.Ubicacion" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "ubicacion", ev))" />
+                                break;
+                            case "observaciones":
+                                <input class="ea-cell" value="@e.Observaciones" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "observaciones", ev))" />
+                                break;
+                            case "vidautil":
+                                <input type="number" min="0" class="ea-cell ea-num" value="@e.VidaUtilAnios" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "vidautil", ev))" />
+                                break;
+                            case "valoradq":
+                                <input type="number" step="any" min="0" class="ea-cell ea-num" value="@e.ValorAdquisicion" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "valoradq", ev))" />
+                                break;
+                            case "proveedor":
+                                <input class="ea-cell" value="@e.Proveedor" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "proveedor", ev))" />
+                                break;
+                            case "numfactura":
+                                <input class="ea-cell" value="@e.NumeroFactura" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "numfactura", ev))" />
+                                break;
+                            case "marca":
+                                <input class="ea-cell" value="@e.Marca" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "marca", ev))" />
+                                break;
+                            case "codigobarra":
+                                <input class="ea-cell" value="@e.CodigoBarra" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "codigobarra", ev))" />
+                                break;
+                            case "fechainstalacion":
+                                <input type="date" class="ea-cell" value="@(e.FechaInstalacion?.ToString("yyyy-MM-dd"))" @onchange="@(ev => GuardarEquipoInline(eq, "fechainstalacion", ev))" />
+                                break;
+                            case "garantiahasta":
+                                <input type="date" class="ea-cell" value="@(e.GarantiaHasta?.ToString("yyyy-MM-dd"))" @onchange="@(ev => GuardarEquipoInline(eq, "garantiahasta", ev))" />
+                                break;
+                            case "fechaadquisicion":
+                                <input type="date" class="ea-cell" value="@(e.FechaAdquisicion?.ToString("yyyy-MM-dd"))" @onchange="@(ev => GuardarEquipoInline(eq, "fechaadquisicion", ev))" />
                                 break;
                         }
                     }
@@ -250,43 +315,70 @@ else
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                     </button>
                 </div>
-                <input class="ea-row-inp" @ref="_nombreRef" placeholder="Nuevo equipo o activo..."
-                       @oninput="@(e => _draft.Nombre = e.Value?.ToString() ?? string.Empty)" @onkeydown="Keydown" />
-                <select class="ea-row-inp" @bind="_draft.Categoria">
-                    @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c">@c</option> }
-                </select>
-                <select class="ea-row-inp" @bind="_draft.Tipo">
-                    <option value="@TipoElemento.Equipo">Equipo</option>
-                    <option value="@TipoElemento.Activo">Activo</option>
-                </select>
-                <input type="number" min="1" class="ea-row-inp" @bind="_draft.Cantidad" disabled="@(_draft.Tipo == TipoElemento.Equipo)" />
-                <div class="ea-list-c">Operativo</div>
-                @foreach (var cd in _camposDef)
+                @foreach (var k in ColsVisibles())
                 {
-                    var cdd = cd;
-                    var val = _nuCampos.GetValueOrDefault(cd.Id);
-                    @switch (cd.Tipo)
+                    if (CampoCustom(k) is EquipoCampoDefinicionDto cd)
                     {
-                        case TipoCampoTablero.Seleccion:
-                            <select class="ea-row-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
-                                <option value="">- elegir -</option>
-                                @foreach (var op in OpcionesDe(cd)) { <option value="@op">@op</option> }
+                        var cdd = cd;
+                        var val = _nuCampos.GetValueOrDefault(cd.Id);
+                        switch (cd.Tipo)
+                        {
+                            case TipoCampoTablero.Seleccion:
+                                <select class="ea-row-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
+                                    <option value="">- elegir -</option>
+                                    @foreach (var op in OpcionesDe(cd)) { <option value="@op">@op</option> }
+                                </select>
+                                break;
+                            case TipoCampoTablero.Numero:
+                            case TipoCampoTablero.Moneda:
+                                <input class="ea-row-inp" type="number" step="any" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cd.Label" />
+                                break;
+                            case TipoCampoTablero.Fecha:
+                                <input class="ea-row-inp" type="date" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" />
+                                break;
+                            case TipoCampoTablero.Booleano:
+                                <select class="ea-row-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
+                                    <option value="">- elegir -</option><option value="Si">Si</option><option value="No">No</option>
+                                </select>
+                                break;
+                            default:
+                                <input class="ea-row-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cd.Label" />
+                                break;
+                        }
+                        continue;
+                    }
+                    switch (k)
+                    {
+                        case "nombre":
+                            <input class="ea-row-inp" @ref="_nombreRef" placeholder="Nuevo equipo o activo..."
+                                   @oninput="@(e => _draft.Nombre = e.Value?.ToString() ?? string.Empty)" @onkeydown="Keydown" />
+                            break;
+                        case "categoria":
+                            <select class="ea-row-inp" @bind="_draft.Categoria">
+                                @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c">@c</option> }
                             </select>
                             break;
-                        case TipoCampoTablero.Numero:
-                        case TipoCampoTablero.Moneda:
-                            <input class="ea-row-inp" type="number" step="any" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cd.Label" />
-                            break;
-                        case TipoCampoTablero.Fecha:
-                            <input class="ea-row-inp" type="date" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" />
-                            break;
-                        case TipoCampoTablero.Booleano:
-                            <select class="ea-row-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
-                                <option value="">- elegir -</option><option value="Si">Si</option><option value="No">No</option>
+                        case "tipo":
+                            <select class="ea-row-inp" @bind="_draft.Tipo">
+                                <option value="@TipoElemento.Equipo">Equipo</option>
+                                <option value="@TipoElemento.Activo">Activo</option>
                             </select>
+                            break;
+                        case "cantidad":
+                            <input type="number" min="1" class="ea-row-inp" @bind="_draft.Cantidad" disabled="@(_draft.Tipo == TipoElemento.Equipo)" />
+                            break;
+                        case "reservable":
+                            <select class="ea-row-inp" @onchange="@(e => _draft.EsReservable = e.Value?.ToString() == "true")">
+                                <option value="false" selected="@(!_draft.EsReservable)">No</option>
+                                <option value="true" selected="@_draft.EsReservable">Si</option>
+                            </select>
+                            break;
+                        case "estado":
+                            <div class="ea-list-c">Operativo</div>
                             break;
                         default:
-                            <input class="ea-row-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cd.Label" />
+                            @* Ficha tecnica (modelo, serie, fechas...): se completa en la ficha tras crear. *@
+                            <div class="ea-list-c">-</div>
                             break;
                     }
                 }
@@ -313,71 +405,29 @@ else
     @if (!string.IsNullOrEmpty(_msg)) { <div class="ea-msg @(_msgOk ? "ok" : "bad")">@_msg</div> }
 }
 
-@if (_cfgAbierto)
+@* Selector de Campos (Fase 1): el gestor propio de campos dinamicos se reemplaza por el componente
+   compartido. Orden/visibilidad/alias viven en unidades-config (entidad 'equipo'); los campos
+   propios en equipos-campos. *@
+@if (_selAbierto)
 {
-    <div class="ea-cfg-back" @onclick="() => _cfgAbierto = false">
+    <div class="ea-cfg-back" @onclick="() => _selAbierto = false">
         <div class="ea-cfg-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
             <div class="ea-cfg-head">
                 <div>
-                    <div class="ea-cfg-title">Configurar campos de equipos</div>
-                    <div class="ea-cfg-sub">Campos dinamicos que apareceran como columnas en la tabla y en la ficha de cada equipo.</div>
+                    <div class="ea-cfg-title">Campos de equipos y activos</div>
+                    <div class="ea-cfg-sub">Orden, visibilidad, nombre y campos propios de la tabla y la ficha.</div>
                 </div>
-                <button class="ea-cfg-x" type="button" @onclick="() => _cfgAbierto = false" aria-label="Cerrar">&times;</button>
+                <button class="ea-cfg-x" type="button" @onclick="() => _selAbierto = false" aria-label="Cerrar">&times;</button>
             </div>
             <div class="ea-cfg-body">
-                @if (_camposDef.Count == 0) { <div class="ea-cfg-empty">Aun no hay campos. Crea el primero abajo.</div> }
-                else
-                {
-                    <div class="ea-cfg-list">
-                        @foreach (var d in _camposDef)
-                        {
-                            var dd = d;
-                            <div class="ea-cfg-item">
-                                <div class="ea-cfg-item-main">
-                                    <span class="ea-cfg-item-lbl">@d.Label</span>
-                                    <span class="ea-cfg-item-tipo">@TipoLabelCampo(d.Tipo)</span>
-                                    @if (d.Tipo == TipoCampoTablero.Seleccion && !string.IsNullOrWhiteSpace(d.Opciones)) { <span class="ea-cfg-item-op">@string.Join(", ", OpcionesDe(d))</span> }
-                                </div>
-                                <div class="ea-cfg-item-act">
-                                    <button class="ea-btn-ghost" type="button" @onclick="() => CfgEditar(dd)" disabled="@_cfgBusy">Editar</button>
-                                    <button class="ea-btn-ghost" type="button" @onclick="() => CfgEliminarAsync(dd)" disabled="@_cfgBusy">Eliminar</button>
-                                </div>
-                            </div>
-                        }
-                    </div>
-                }
-                <div class="ea-cfg-form">
-                    <div class="ea-cfg-form-title">@(_cfgEditId is null ? "Nuevo campo" : "Editar campo")</div>
-                    <div class="ea-cfg-form-grid">
-                        <div>
-                            <label class="ea-cfg-flbl">Nombre</label>
-                            <input class="ea-row-inp" @bind="_cfgLabel" @bind:event="oninput" placeholder="Ej. N de serie, Marca" />
-                        </div>
-                        <div>
-                            <label class="ea-cfg-flbl">Tipo</label>
-                            <select class="ea-row-inp" @bind="_cfgTipo">
-                                <option value="@TipoCampoTablero.Texto">Texto</option>
-                                <option value="@TipoCampoTablero.AreaTexto">Texto largo</option>
-                                <option value="@TipoCampoTablero.Numero">Numero</option>
-                                <option value="@TipoCampoTablero.Fecha">Fecha</option>
-                                <option value="@TipoCampoTablero.Seleccion">Lista de opciones</option>
-                                <option value="@TipoCampoTablero.Booleano">Si / No</option>
-                            </select>
-                        </div>
-                    </div>
-                    @if (_cfgTipo == TipoCampoTablero.Seleccion)
-                    {
-                        <div style="margin-top:8px;">
-                            <label class="ea-cfg-flbl">Opciones (una por linea)</label>
-                            <textarea class="ea-row-inp" rows="4" @bind="_cfgOpciones" @bind:event="oninput"></textarea>
-                        </div>
-                    }
-                    @if (!string.IsNullOrEmpty(_cfgMsg)) { <div class="ea-cfg-msg">@_cfgMsg</div> }
-                    <div class="ea-cfg-form-foot">
-                        @if (_cfgEditId is not null) { <button class="ea-btn-ghost" type="button" @onclick="CfgReset" disabled="@_cfgBusy">Cancelar</button> }
-                        <button class="propia-btn-brand" type="button" @onclick="CfgGuardarAsync" disabled="@(_cfgBusy || string.IsNullOrWhiteSpace(_cfgLabel))">@(_cfgBusy ? "Guardando..." : (_cfgEditId is null ? "Crear campo" : "Guardar"))</button>
-                    </div>
-                </div>
+                <ConfigCamposEntidad Prefijo="equipos"
+                                     EntidadConfig="equipo"
+                                     Catalogo="@EquipoCatalogo"
+                                     TituloSingular="equipo"
+                                     TituloPlural="Equipos"
+                                     Ejemplo="Ej. Aseguradora, Responsable"
+                                     Jwt="@_jwt"
+                                     Cambiado="RecargarCamposYConfigAsync" />
             </div>
         </div>
     </div>
@@ -530,16 +580,27 @@ else
             }
             resp.EnsureSuccessStatusCode();
             _equipos = await resp.Content.ReadFromJsonAsync<List<EquipoActivoDto>>() ?? new();
-            try { _camposDef = await Auth().GetFromJsonAsync<List<EquipoCampoDefinicionDto>>("/api/mi-copropiedad/equipos-campos") ?? new(); } catch { _camposDef = new(); }
-            try
-            {
-                var flat = await Auth().GetFromJsonAsync<List<EquipoCampoValorFlatDto>>("/api/mi-copropiedad/equipos-campos-valores") ?? new();
-                _camposValores = flat.GroupBy(v => v.EquipoActivoId).ToDictionary(g => g.Key, g => g.ToDictionary(x => x.DefinicionId, x => x.Valor));
-            }
-            catch { _camposValores = new(); }
+            await CargarCamposYConfigAsync();
             _loadError = null;
         }
         catch (Exception ex) { _loadError = ex.Message; }
+    }
+
+    private async Task CargarCamposYConfigAsync()
+    {
+        try { _camposDef = await Auth().GetFromJsonAsync<List<EquipoCampoDefinicionDto>>("/api/mi-copropiedad/equipos-campos") ?? new(); } catch { _camposDef = new(); }
+        try
+        {
+            var flat = await Auth().GetFromJsonAsync<List<EquipoCampoValorFlatDto>>("/api/mi-copropiedad/equipos-campos-valores") ?? new();
+            _camposValores = flat.GroupBy(v => v.EquipoActivoId).ToDictionary(g => g.Key, g => g.ToDictionary(x => x.DefinicionId, x => x.Valor));
+        }
+        catch { _camposValores = new(); }
+        try
+        {
+            var cfg = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=equipo") ?? new();
+            _cfgEquipo = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+        }
+        catch { _cfgEquipo = new(StringComparer.Ordinal); }
     }
 
     // ===== Campos dinamicos (columnas + config) =====
@@ -561,63 +622,69 @@ else
         }
         catch { }
     }
-    private string EaGridStyle => "grid-template-columns: 34px 2fr 1.2fr 1fr .6fr 1.1fr"
-        + (_camposDef.Count == 0 ? "" : " " + string.Join(" ", _camposDef.Select(_ => "minmax(120px,150px)"))) + " 60px";
+    // ---- Selector de Campos (Fase 1): columnas dirigidas por unidades-config (entidad 'equipo') ----
+    // Reemplaza el gestor propio: orden/visibilidad/alias de las columnas (de sistema y propias) viven
+    // en la config compartida por copropiedad; el componente ConfigCamposEntidad las escribe y aqui se
+    // leen para pintar la tabla (mismo patron que Unidades/Seguros).
+    private bool _selAbierto;
+    private Dictionary<string, UnidadCampoConfigDto> _cfgEquipo = new(StringComparer.Ordinal);
+
+    // Catalogo de campos de SISTEMA mapeado a la forma neutra del componente. Las columnas se renderizan
+    // por clave con editor fijo: TiposIntercambiables vacio (tipo fijo) + SinFormato.
+    private static readonly IReadOnlyList<CampoSistemaDef> EquipoCatalogo =
+        EquipoCamposSistema.Todos.Select(c => new CampoSistemaDef(
+            c.Clave, c.Label, c.Tipo, c.VisiblePorDefecto, c.Fija,
+            OpcionesEditables: false, Semilla: null, Entero: false, Ayuda: null,
+            TiposIntercambiables: Array.Empty<TipoCampoTablero>(), ListaExterna: false, SinFormato: true)).ToList();
+
+    // Clave de config de un campo propio (misma convencion que el componente: "cd:{id}").
+    private static string ClaveCustom(EquipoCampoDefinicionDto c) => "cd:" + c.Id;
+    private static bool EsCustom(string clave) => clave.StartsWith("cd:", StringComparison.Ordinal);
+    private EquipoCampoDefinicionDto? CampoCustom(string clave)
+        => EsCustom(clave) && Guid.TryParse(clave[3..], out var g) ? _camposDef.FirstOrDefault(c => c.Id == g) : null;
+
+    // Claves candidatas: sistema (orden del catalogo) + propias. Se ordenan y filtran por config.
+    private IEnumerable<string> ClavesCandidatas()
+        => EquipoCamposSistema.Todos.Select(c => c.Clave).Concat(_camposDef.OrderBy(d => d.Orden).Select(ClaveCustom));
+    private bool VisibleColDefault(string clave)
+        => EsCustom(clave) || (EquipoCamposSistema.Por(clave)?.VisiblePorDefecto ?? true);
+    private bool VisibleCol(string clave)
+        => _cfgEquipo.TryGetValue(clave, out var c) ? !c.Oculto : VisibleColDefault(clave);
+    private int OrdenCol(string clave, int fallback)
+        => _cfgEquipo.TryGetValue(clave, out var c) && c.Orden is { } o ? o : 1000 + fallback;
+    private IEnumerable<string> ClavesOrdenadas()
+        => ClavesCandidatas().Select((k, i) => (k, ord: OrdenCol(k, i))).OrderBy(x => x.ord).Select(x => x.k);
+    private IEnumerable<string> ColsVisibles() => ClavesOrdenadas().Where(VisibleCol);
+
+    private string ColLabel(string clave)
+    {
+        if (_cfgEquipo.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Alias)) return c.Alias!;
+        return CampoCustom(clave)?.Label ?? EquipoCamposSistema.Por(clave)?.Label ?? clave;
+    }
+    private static string ColWidth(string clave) => clave switch
+    {
+        "nombre" => "2fr",
+        "categoria" => "1.2fr",
+        "tipo" => "1fr",
+        "cantidad" or "vidautil" => ".6fr",
+        "estado" => "1.1fr",
+        "reservable" => ".7fr",
+        "valoradq" => ".9fr",
+        "observaciones" => "minmax(140px,1.4fr)",
+        "fechainstalacion" or "garantiahasta" or "fechaadquisicion" => "minmax(115px,.9fr)",
+        _ when !EsCustom(clave) => "minmax(110px,1fr)",   // modelo, serie, ubicacion, proveedor, ...
+        _ => "minmax(120px,150px)"                        // campos propios
+    };
+    private string EaGridStyle => "grid-template-columns: 34px " + string.Join(" ", ColsVisibles().Select(ColWidth)) + " 60px";
+
     private static string[] OpcionesDe(EquipoCampoDefinicionDto d) => string.IsNullOrWhiteSpace(d.Opciones)
         ? System.Array.Empty<string>() : d.Opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-    private static string TipoLabelCampo(TipoCampoTablero t) => t switch
-    { TipoCampoTablero.AreaTexto => "Texto largo", TipoCampoTablero.Numero => "Numero", TipoCampoTablero.Fecha => "Fecha",
-      TipoCampoTablero.Seleccion => "Lista", TipoCampoTablero.Booleano => "Si / No", _ => "Texto" };
 
-    // Config modal state
-    private bool _cfgAbierto;
-    private bool _cfgBusy;
-    private string? _cfgMsg;
-    private Guid? _cfgEditId;
-    private string _cfgLabel = "";
-    private TipoCampoTablero _cfgTipo = TipoCampoTablero.Texto;
-    private string _cfgOpciones = "";
-
-    private void CfgReset() { _cfgEditId = null; _cfgLabel = ""; _cfgTipo = TipoCampoTablero.Texto; _cfgOpciones = ""; _cfgMsg = null; }
-    private void CfgEditar(EquipoCampoDefinicionDto d) { _cfgEditId = d.Id; _cfgLabel = d.Label; _cfgTipo = d.Tipo; _cfgOpciones = d.Opciones ?? ""; _cfgMsg = null; }
-
-    private async Task CfgGuardarAsync()
+    // El gestor compartido cambio algo (alias/orden/visibilidad/campo propio): refresca todo.
+    private async Task RecargarCamposYConfigAsync()
     {
-        if (_cfgBusy) return;
-        if (string.IsNullOrWhiteSpace(_cfgLabel)) { _cfgMsg = "El nombre del campo es obligatorio."; return; }
-        if (_cfgTipo == TipoCampoTablero.Seleccion && string.IsNullOrWhiteSpace(_cfgOpciones)) { _cfgMsg = "Un campo Lista necesita al menos una opcion (una por linea)."; return; }
-        _cfgBusy = true; _cfgMsg = null;
-        try
-        {
-            var opciones = _cfgTipo == TipoCampoTablero.Seleccion ? _cfgOpciones : null;
-            HttpResponseMessage resp;
-            if (_cfgEditId is Guid id)
-            {
-                var orden = _camposDef.FirstOrDefault(c => c.Id == id)?.Orden ?? 0;
-                resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos-campos/{id}", new ActualizarCampoDefinicionRequest(_cfgLabel.Trim(), _cfgTipo, opciones, orden));
-            }
-            else resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/equipos-campos", new CrearCampoDefinicionRequest(_cfgLabel.Trim(), _cfgTipo, opciones));
-            if (!resp.IsSuccessStatusCode) { _cfgMsg = "No se pudo guardar el campo."; return; }
-            _camposDef = await Auth().GetFromJsonAsync<List<EquipoCampoDefinicionDto>>("/api/mi-copropiedad/equipos-campos") ?? new();
-            CfgReset();
-        }
-        catch (Exception ex) { _cfgMsg = "Error: " + ex.Message; }
-        finally { _cfgBusy = false; }
-    }
-
-    private async Task CfgEliminarAsync(EquipoCampoDefinicionDto d)
-    {
-        if (_cfgBusy) return;
-        _cfgBusy = true; _cfgMsg = null;
-        try
-        {
-            var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/equipos-campos/{d.Id}");
-            if (!resp.IsSuccessStatusCode) { _cfgMsg = "No se pudo eliminar."; return; }
-            if (_cfgEditId == d.Id) CfgReset();
-            _camposDef = await Auth().GetFromJsonAsync<List<EquipoCampoDefinicionDto>>("/api/mi-copropiedad/equipos-campos") ?? new();
-        }
-        catch (Exception ex) { _cfgMsg = "Error: " + ex.Message; }
-        finally { _cfgBusy = false; }
+        try { await CargarCamposYConfigAsync(); } catch { }
+        StateHasChanged();
     }
 
     // ---- Plantilla Excel (descargar / cargar con upsert + campos dinamicos) ----
@@ -702,16 +769,39 @@ else
                 return;
             }
             var nombre = e.Nombre; var categoria = e.Categoria; var tipo = e.Tipo; var cantidad = e.Cantidad;
+            var reservable = e.EsReservable; var modelo = e.Modelo; var serie = e.NumeroSerie;
+            var fInst = e.FechaInstalacion; var garantia = e.GarantiaHasta; var ubicacion = e.Ubicacion;
+            var obs = e.Observaciones; var vidaUtil = e.VidaUtilAnios; var fAdq = e.FechaAdquisicion;
+            var valorAdq = e.ValorAdquisicion; var proveedor = e.Proveedor; var numFactura = e.NumeroFactura;
+            var codBarra = e.CodigoBarra;
+            // Marca es MERGE en el PUT: null = no tocar; solo se envia cuando ESTA celda cambio.
+            string? marcaReq = null;
+            static string? Txt(string v) => string.IsNullOrWhiteSpace(v) ? null : v.Trim();
+            static DateOnly? Fecha(string v) => DateOnly.TryParse(v, out var f) ? f : (DateOnly?)null;
             switch (campo)
             {
                 case "nombre": if (string.IsNullOrWhiteSpace(val) || val.Trim() == e.Nombre) return; nombre = val.Trim(); break;
                 case "categoria": if (!Enum.TryParse<CategoriaEquipo>(val, out categoria) || categoria == e.Categoria) return; break;
                 case "tipo": if (!Enum.TryParse<TipoElemento>(val, out tipo) || tipo == e.Tipo) return; if (tipo == TipoElemento.Equipo) cantidad = 1; break;
                 case "cantidad": cantidad = int.TryParse(val, out var c) ? Math.Max(1, c) : e.Cantidad; if (cantidad == e.Cantidad) return; break;
+                case "reservable": reservable = val == "true"; if (reservable == e.EsReservable) return; break;
+                case "modelo": modelo = Txt(val); if (modelo == e.Modelo) return; break;
+                case "serie": serie = Txt(val); if (serie == e.NumeroSerie) return; break;
+                case "ubicacion": ubicacion = Txt(val); if (ubicacion == e.Ubicacion) return; break;
+                case "observaciones": obs = Txt(val); if (obs == e.Observaciones) return; break;
+                case "vidautil": vidaUtil = int.TryParse(val, out var vu) ? vu : (int?)null; if (vidaUtil == e.VidaUtilAnios) return; break;
+                case "valoradq": valorAdq = decimal.TryParse(val, out var va) ? va : (decimal?)null; if (valorAdq == e.ValorAdquisicion) return; break;
+                case "proveedor": proveedor = Txt(val); if (proveedor == e.Proveedor) return; break;
+                case "numfactura": numFactura = Txt(val); if (numFactura == e.NumeroFactura) return; break;
+                case "marca": if (Txt(val) == e.Marca) return; marcaReq = val.Trim(); break;
+                case "codigobarra": codBarra = Txt(val); if (codBarra == e.CodigoBarra) return; break;
+                case "fechainstalacion": fInst = Fecha(val); if (fInst == e.FechaInstalacion) return; break;
+                case "garantiahasta": garantia = Fecha(val); if (garantia == e.GarantiaHasta) return; break;
+                case "fechaadquisicion": fAdq = Fecha(val); if (fAdq == e.FechaAdquisicion) return; break;
             }
-            var req = new ActualizarEquipoActivoRequest(nombre, categoria, tipo, cantidad, e.EsReservable,
-                e.Modelo, e.NumeroSerie, e.FechaInstalacion, e.GarantiaHasta, e.Ubicacion, e.Observaciones,
-                e.VidaUtilAnios, e.FechaAdquisicion, e.ValorAdquisicion, e.Proveedor, e.NumeroFactura, e.CodigoBarra, e.CondicionesUso);
+            var req = new ActualizarEquipoActivoRequest(nombre, categoria, tipo, cantidad, reservable,
+                modelo, serie, fInst, garantia, ubicacion, obs,
+                vidaUtil, fAdq, valorAdq, proveedor, numFactura, codBarra, e.CondicionesUso, marcaReq);
             var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos/{e.Id}", req);
             if (resp.IsSuccessStatusCode)
             {

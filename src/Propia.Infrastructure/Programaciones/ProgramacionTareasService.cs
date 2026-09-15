@@ -63,6 +63,7 @@ public class ProgramacionTareasService : IProgramacionTareasService
             ProveedorId = req.ProveedorId,
             ProveedorNombre = string.IsNullOrWhiteSpace(req.ProveedorNombre) ? null : req.ProveedorNombre.Trim(),
             ContratoId = req.ContratoId,
+            CostoEstimado = req.CostoEstimado,
             CreadoPorUsuarioId = usuarioId,
             HorizonteDias = Math.Clamp(req.HorizonteDias, 0, MaxHorizonteDias)
         };
@@ -84,8 +85,13 @@ public class ProgramacionTareasService : IProgramacionTareasService
         if (string.IsNullOrWhiteSpace(req.Titulo))
             throw new InvalidOperationException("El titulo de la programacion es obligatorio.");
 
-        var zona = NormalizarZona(req.ZonaHoraria);
-        var cron = NormalizarCron(req.Tipo, req.CronExpresion);
+        // M-10: PUT es MERGE. Si el request no trae zona/cron (null/blank), se conservan los actuales; sin
+        // esto, editar una programacion desde el expansor (que no reenviaba estos campos) borraba la zona y
+        // la expresion cron. Tipo es enum no-nullable: no se puede mergear aqui, lo conserva el modal.
+        var zona = string.IsNullOrWhiteSpace(req.ZonaHoraria) ? p.ZonaHoraria : NormalizarZona(req.ZonaHoraria);
+        var cron = (req.Tipo == TipoProgramacion.Cron && string.IsNullOrWhiteSpace(req.CronExpresion))
+            ? p.CronExpresion
+            : NormalizarCron(req.Tipo, req.CronExpresion);
         // Si cambio la regla de disparo (o la zona), hay que recalcular la proxima corrida:
         // dejar la vieja haria que el cron nuevo no se respete hasta pasada una ejecucion.
         var reglaCambio = p.Tipo != req.Tipo || p.CronExpresion != cron || p.ZonaHoraria != zona;
@@ -120,9 +126,12 @@ public class ProgramacionTareasService : IProgramacionTareasService
         p.FechaProximaEjecucion = req.FechaProximaEjecucion;
         p.FechaFin = req.FechaFin;
         p.Activa = req.Activa;
-        p.ProveedorId = req.ProveedorId;
-        p.ProveedorNombre = string.IsNullOrWhiteSpace(req.ProveedorNombre) ? null : req.ProveedorNombre.Trim();
-        p.ContratoId = req.ContratoId;
+        // M-10: mismo criterio de MERGE que el costo. null/blank = "no enviado" -> conservar el actual, para
+        // que editar desde el expansor no borre proveedor/contrato.
+        p.ProveedorId = req.ProveedorId ?? p.ProveedorId;
+        p.ProveedorNombre = string.IsNullOrWhiteSpace(req.ProveedorNombre) ? p.ProveedorNombre : req.ProveedorNombre.Trim();
+        p.ContratoId = req.ContratoId ?? p.ContratoId;
+        p.CostoEstimado = req.CostoEstimado ?? p.CostoEstimado;
 
         if (req.Tipo != TipoProgramacion.Cron) p.ProximaEjecucionUtc = null;
         else if (reglaCambio || p.ProximaEjecucionUtc is null)
@@ -283,7 +292,7 @@ public class ProgramacionTareasService : IProgramacionTareasService
             p.TareasGeneradas, p.UltimaEjecucion,
             p.Responsables.Select(r => new ResponsableProgramacionDto(r.PersonaId, r.NombreSnapshot)).ToList(),
             p.Tipo, p.CronExpresion, p.ZonaHoraria, p.ProximaEjecucionUtc, p.NotificarPorCorreo,
-            p.HorizonteDias, p.ProveedorId, p.ContratoId, p.ProveedorNombre);
+            p.HorizonteDias, p.ProveedorId, p.ContratoId, p.ProveedorNombre, p.CostoEstimado);
 
     /// <summary>
     /// Tope del horizonte de generacion anticipada: 2 anios. Evita que un dedo de mas convierta

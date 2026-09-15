@@ -70,21 +70,11 @@
             }
         </div>
         <div class="mtp-menuwrap">
-            <button type="button" class="mtp-fbtn @(_progMenu == "cols" ? "on" : "")" @onclick='() => _progMenu = _progMenu == "cols" ? "" : "cols"'>
+            @* Campos: abre el Selector de Campos compartido (reemplaza el menu de checkboxes en memoria). *@
+            <button type="button" class="mtp-fbtn @(_selProgAbierto ? "on" : "")" @onclick="() => _selProgAbierto = true" title="Campos de la programacion: orden, visibilidad y nombre">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
                 <span>Campos</span>
             </button>
-            @if (_progMenu == "cols")
-            {
-                <div class="mtp-menu-bd" @onclick='() => _progMenu = ""'></div>
-                <div class="mtp-menu">
-                    @foreach (var c in _progColsAll)
-                    {
-                        var ck = c.Key;
-                        <label class="mtp-menu-chk"><input type="checkbox" checked="@(!_progColsOcultas.Contains(ck))" @onchange="@(e => ToggleColProg(ck, (bool)(e.Value ?? false)))" /> @c.Label</label>
-                    }
-                </div>
-            }
         </div>
     </div>
 
@@ -128,6 +118,7 @@
                                 case "titulo": <div>@p.Titulo</div> break;
                                 case "tercero": <div class="mtp-muted" title="@(p.ProveedorNombre ?? NombreTercero(p.ProveedorId))">@(p.ProveedorId is null ? "-" : (p.ProveedorNombre ?? NombreTercero(p.ProveedorId)))</div> break;
                                 case "contrato": <div class="mtp-muted" title="@NombreContrato(p.ContratoId)">@(p.ContratoId is null ? "-" : NombreContrato(p.ContratoId))</div> break;
+                                case "costo": <div class="mtp-num">@(p.CostoEstimado is { } ce ? ce.ToString("C0", _cultura) : "-")</div> break;
                                 case "tablero": <div>@(string.IsNullOrWhiteSpace(p.TableroNombre) ? "General" : p.TableroNombre)</div> break;
                                 case "prioridad": <div>@p.Prioridad</div> break;
                                 case "periodicidad": <div>@(p.Tipo == TipoProgramacion.Cron ? $"Cron: {p.CronExpresion}" : PeriodicidadProgLabel(p.Periodicidad))</div> break;
@@ -194,6 +185,12 @@
                                     <option value="">Sin contrato</option>
                                     @foreach (var co in ContratosParaTercero()) { <option value="@co.Id">@co.Nombre</option> }
                                 </select>
+                            </div>
+                            break;
+                        case "costo":
+                            <div>
+                                <input type="number" min="0" step="1000" class="mtp-nf-inp mtp-nf-num"
+                                       placeholder="Costo estimado" @bind="_altaCosto" />
                             </div>
                             break;
                         case "tablero":
@@ -426,7 +423,7 @@ else if (_tab == "calendario")
                         @foreach (var ev in celda.Items.Take(_calVista == "semana" ? 20 : 3))
                         {
                             var evLocal = ev;
-                            <div class="mt-cal-ev @ev.Clase" title="@ev.Titulo" @onclick="() => AbrirEditarProgPorIdAsync(evLocal.ProgId)">
+                            <div class="mt-cal-ev @ev.Clase" title="Registrar ejecucion de: @ev.Titulo" @onclick="() => AbrirRegistrarEjecucion(evLocal.ProgId, evLocal.Fecha)">
                                 @ev.Texto
                             </div>
                         }
@@ -436,6 +433,47 @@ else if (_tab == "calendario")
             </div>
         </div>
     }
+}
+
+@* ===== Modal Registrar ejecucion (Etapa A) ===== *@
+@if (_showRegistrarEjec)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Registrar ejecucion del mantenimiento</h5>
+                    <button type="button" class="btn-close" @onclick="CerrarRegistrarEjec"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-2">
+                        <label class="form-label small">Mantenimiento</label>
+                        <input class="form-control form-control-sm" value="@_ejecTitulo" disabled />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Fecha de ejecucion</label>
+                        <input type="date" class="form-control form-control-sm" value="@(_ejecFecha?.ToString("yyyy-MM-dd"))"
+                               @onchange="(e) => _ejecFecha = string.IsNullOrEmpty(e.Value?.ToString()) ? null : DateOnly.Parse(e.Value!.ToString()!)" />
+                    </div>
+                    <div class="mb-1">
+                        <label class="form-label small">Que se hizo (detalle)</label>
+                        <textarea class="form-control form-control-sm" rows="4" placeholder="Describe el trabajo realizado..."
+                                  @bind="_ejecDetalle" @bind:event="oninput"></textarea>
+                    </div>
+                    <p class="text-muted small mb-0">Las fotos y la factura se agregan en la siguiente etapa.</p>
+                    @if (!string.IsNullOrEmpty(_ejecMsg)) { <div class="alert @_ejecMsgClass py-1 px-2 mt-2 mb-0 small">@_ejecMsg</div> }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="CerrarRegistrarEjec">Cancelar</button>
+                    <button class="btn btn-sm" style="background: var(--propia-brand); color: var(--propia-text-inverse);"
+                            @onclick="ConfirmarRegistrarEjec"
+                            disabled="@(_busy || _ejecFecha is null || string.IsNullOrWhiteSpace(_ejecDetalle))">
+                        Registrar ejecucion
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 }
 
 @* ===== Modal Crear Intervencion ===== *@
@@ -757,6 +795,33 @@ else if (_tab == "calendario")
     </div>
 }
 
+@* Selector de Campos (Fase 1) de la PROGRAMACION: solo campos de SISTEMA (la programacion no tiene
+   EAV -> SinCamposPropios). Orden/visibilidad/alias viven en unidades-config (entidad 'programacion'). *@
+@if (_selProgAbierto)
+{
+    <div class="mtp-selcfg-back" @onclick="() => _selProgAbierto = false">
+        <div class="mtp-selcfg-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+            <div class="mtp-selcfg-head">
+                <div>
+                    <div class="mtp-selcfg-title">Campos de la programacion</div>
+                    <div class="mtp-selcfg-sub">Orden, visibilidad y nombre de las columnas del cronograma.</div>
+                </div>
+                <button class="mtp-selcfg-x" type="button" @onclick="() => _selProgAbierto = false" aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="mtp-selcfg-body">
+                <ConfigCamposEntidad Prefijo="programacion"
+                                     EntidadConfig="programacion"
+                                     SinCamposPropios="true"
+                                     Catalogo="@ProgramacionCatalogo"
+                                     TituloSingular="programacion"
+                                     TituloPlural="Programaciones"
+                                     Jwt="@_jwt"
+                                     Cambiado="RecargarConfigProgAsync" />
+            </div>
+        </div>
+    </div>
+}
+
 @* ModalHost DEBE vivir en la pagina (no en MainLayout): comparte instancia Scoped del IModalService. *@
 <ModalHost />
 
@@ -910,6 +975,8 @@ else if (_tab == "calendario")
     .mtp-newrow { display: grid; padding: 9px 14px; border-top: 1px solid var(--propia-border-divider); background: var(--propia-bg-app); }
     .mtp-nf-inp { width: 100%; box-sizing: border-box; border: 1px dashed var(--propia-border-input); border-radius: 7px; padding: 6px 9px; font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-bg-card); outline: none; font-family: inherit; }
     .mtp-nf-inp:focus { border-style: solid; border-color: var(--propia-brand); box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
+    .mtp-nf-num { text-align: right; }
+    .mtp-num { text-align: right; font-variant-numeric: tabular-nums; }
     .mtp-add { border: 1px solid var(--propia-brand-soft); background: var(--propia-brand-soft); color: var(--propia-brand); border-radius: 7px; font-size: 11.5px; font-weight: 700; padding: 6px 12px; cursor: pointer; font-family: inherit; white-space: nowrap; }
     .mtp-add:hover { filter: brightness(.97); }
     .mtp-add:disabled { opacity: .5; cursor: default; }
@@ -937,6 +1004,15 @@ else if (_tab == "calendario")
     @@media (max-width: 640px) {
         .mt-kpis { grid-template-columns: repeat(2, 1fr); }
     }
+
+    /* === Modal del Selector de Campos de la programacion (mismo patron que zc-cfg-*) === */
+    .mtp-selcfg-back { position: fixed; inset: 0; background: rgba(20,26,38,.45); display: flex; align-items: center; justify-content: center; z-index: 3000; padding: 20px; }
+    .mtp-selcfg-modal { background: var(--propia-bg-card); border-radius: 14px; width: min(680px, 96vw); max-height: 88vh; overflow: auto; box-shadow: 0 20px 60px rgba(20,30,50,.3); }
+    .mtp-selcfg-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 20px 12px; border-bottom: 1px solid var(--propia-border-divider); }
+    .mtp-selcfg-title { font-size: 16px; font-weight: 700; color: var(--propia-text-h1); }
+    .mtp-selcfg-sub { font-size: 12.5px; color: var(--propia-text-muted); margin-top: 2px; }
+    .mtp-selcfg-x { border: none; background: none; font-size: 24px; line-height: 1; color: var(--propia-text-faint); cursor: pointer; }
+    .mtp-selcfg-body { padding: 16px 20px 20px; }
 </style>
 
 @code {
@@ -957,7 +1033,6 @@ else if (_tab == "calendario")
     private string _progQuery = "";
     private string _progAgrupar = "";
     private string _progMenu = "";
-    private readonly HashSet<string> _progColsOcultas = new();
     // Fila de alta inline de Programacion: un campo por columna (canon regla 8).
     private string _altaTipo = "Equipo";          // Equipo | ZonaComun (selector antes del activo)
     private string _altaActivoId = "";            // Guid del activo (filtrado por _altaTipo)
@@ -967,9 +1042,16 @@ else if (_tab == "calendario")
     private Guid? _altaProveedorId;
     private string? _altaProveedorNombre;
     private string _altaContratoKey = "";
+    private decimal? _altaCosto;                   // costo estimado del mantenimiento (opcional)
+    private static readonly System.Globalization.CultureInfo _cultura = new("es-CO");
+    // M-09: fechas por defecto y ancla del calendario en hora local de Colombia, no del reloj del servidor
+    // (mismo criterio que el job: America/Bogota via CronHelper.Zona, sin tocar Common/).
+    private static readonly TimeZoneInfo _zonaLocalMt = Propia.Infrastructure.Programaciones.CronHelper.Zona(null);
+    private static DateOnly HoyLocalMt() => DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, _zonaLocalMt));
+    private static DateTime AnclaLocalMt() => TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, _zonaLocalMt).Date;
     private PrioridadTarea _altaPrioridad = PrioridadTarea.Normal;
     private PeriodicidadProgramacion _altaPeriodicidad = PeriodicidadProgramacion.Mensual;
-    private DateOnly? _altaFecha = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly? _altaFecha = HoyLocalMt();
 
     // Contratos con sus ids de proveedor, para filtrar por el tercero elegido en la fila de alta.
     private List<ContratoFull> _contratosFull = new();
@@ -991,14 +1073,52 @@ else if (_tab == "calendario")
             && ContratosParaTercero().All(c => c.Id != cid)) _altaContratoKey = "";
     }
 
+    // ---- Selector de Campos (Fase 1): columnas dirigidas por unidades-config (entidad 'programacion') ----
+    // Reemplaza el menu de checkboxes en memoria: orden/visibilidad/alias viven en la config compartida
+    // por copropiedad (el componente ConfigCamposEntidad las escribe; aqui se leen para pintar la tabla).
+    // La programacion NO tiene EAV: solo campos de SISTEMA del catalogo canonico.
     private sealed record ProgCol(string Key, string Label);
-    private static readonly List<ProgCol> _progColsAll = new()
+    private bool _selProgAbierto;
+    private Dictionary<string, Propia.Application.MiCopropiedad.UnidadCampoConfigDto> _cfgProg = new(StringComparer.Ordinal);
+
+    private static readonly IReadOnlyList<CampoSistemaDef> ProgramacionCatalogo =
+        MantenimientoCamposSistema.Todos.Select(c => new CampoSistemaDef(
+            c.Clave, c.Label, c.Tipo, c.VisiblePorDefecto, c.Fija,
+            OpcionesEditables: false, Semilla: null, Entero: false, Ayuda: null,
+            TiposIntercambiables: Array.Empty<TipoCampoTablero>(), ListaExterna: false, SinFormato: true)).ToList();
+
+    private bool VisibleColProg(string clave)
+        => _cfgProg.TryGetValue(clave, out var c) ? !c.Oculto
+            : (MantenimientoCamposSistema.Por(clave)?.VisiblePorDefecto ?? true);
+    private int OrdenColProg(string clave, int fallback)
+        => _cfgProg.TryGetValue(clave, out var c) && c.Orden is { } o ? o : 1000 + fallback;
+    private string LabelColProg(string clave)
+        => _cfgProg.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Alias)
+            ? c.Alias! : (MantenimientoCamposSistema.Por(clave)?.Label ?? clave);
+    private IEnumerable<ProgCol> ProgColsVis
+        => MantenimientoCamposSistema.Todos
+            .Select((c, i) => (c.Clave, ord: OrdenColProg(c.Clave, i)))
+            .OrderBy(x => x.ord)
+            .Where(x => VisibleColProg(x.Clave))
+            .Select(x => new ProgCol(x.Clave, LabelColProg(x.Clave)));
+
+    private async Task CargarConfigProgAsync()
     {
-        new("tipo", "Tipo"), new("activo", "Activo"), new("titulo", "Titulo"), new("tercero", "Tercero"), new("contrato", "Contrato"),
-        new("tablero", "Tablero"), new("prioridad", "Prioridad"), new("periodicidad", "Periodicidad"),
-        new("proxima", "Proxima ejecucion"), new("responsables", "Responsables"), new("activa", "Activa"),
-    };
-    private IEnumerable<ProgCol> ProgColsVis => _progColsAll.Where(c => !_progColsOcultas.Contains(c.Key));
+        try
+        {
+            var cfg = await Auth().GetFromJsonAsync<List<Propia.Application.MiCopropiedad.UnidadCampoConfigDto>>(
+                "/api/mi-copropiedad/unidades-config?entidad=programacion") ?? new();
+            _cfgProg = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+        }
+        catch { _cfgProg = new(StringComparer.Ordinal); }
+    }
+
+    // El gestor compartido cambio algo (alias/orden/visibilidad): refresca la config de columnas.
+    private async Task RecargarConfigProgAsync()
+    {
+        await CargarConfigProgAsync();
+        StateHasChanged();
+    }
 
     private string ProgGrid
     {
@@ -1082,12 +1202,6 @@ else if (_tab == "calendario")
     };
     private static string PeriodicidadProgLabel(PeriodicidadProgramacion p) => p.ToString();
 
-    private void ToggleColProg(string key, bool visible)
-    {
-        if (visible) _progColsOcultas.Remove(key);
-        else _progColsOcultas.Add(key);
-    }
-
     // Tableros/personas solo se piden una vez y al abrir el primer modal (igual que ProgramacionesPanel).
     private async Task CargarOpcionesProgAsync()
     {
@@ -1142,12 +1256,13 @@ else if (_tab == "calendario")
             var req = new CrearProgramacionRequest(
                 _altaTitulo!, null, _altaPrioridad, tableroId, _altaPeriodicidad,
                 _altaFecha.Value, null, null, modulo, activoId, referencia,
-                ProveedorId: _altaProveedorId, ContratoId: contratoId, ProveedorNombre: _altaProveedorNombre);
+                ProveedorId: _altaProveedorId, ContratoId: contratoId, ProveedorNombre: _altaProveedorNombre,
+                CostoEstimado: _altaCosto);
             var r = await Auth().PostAsJsonAsync("/api/programaciones", req);
             if (!r.IsSuccessStatusCode) { _msg = await r.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
             _msg = "Programacion creada."; _msgClass = "alert-success";
-            // Limpiar activo/titulo/tercero/contrato; se conservan tipo/prioridad/periodicidad/fecha para altas seguidas.
-            _altaTitulo = ""; _altaActivoId = ""; _altaTableroKey = ""; _altaContratoKey = "";
+            // Limpiar activo/titulo/tercero/contrato/costo; se conservan tipo/prioridad/periodicidad/fecha para altas seguidas.
+            _altaTitulo = ""; _altaActivoId = ""; _altaTableroKey = ""; _altaContratoKey = ""; _altaCosto = null;
             _altaProveedorSel = null; _altaProveedorId = null; _altaProveedorNombre = null;
             await CargarAsync();
         }
@@ -1219,7 +1334,9 @@ else if (_tab == "calendario")
             req.Titulo, req.Descripcion, req.Prioridad, req.TableroId, req.Periodicidad,
             req.FechaProximaEjecucion, req.FechaFin, p.Activa, req.Responsables,
             req.Tipo, req.CronExpresion, req.ZonaHoraria, req.NotificarPorCorreo, req.HorizonteDias,
-            req.ProveedorId, req.ContratoId, req.ProveedorNombre);
+            req.ProveedorId, req.ContratoId, req.ProveedorNombre,
+            // El modal completo aun no edita el costo; se conserva el que ya tenia la programacion.
+            req.CostoEstimado ?? p.CostoEstimado);
         try
         {
             var r = await Auth().PutAsJsonAsync($"/api/programaciones/{p.Id}", upd);
@@ -1267,6 +1384,17 @@ else if (_tab == "calendario")
     // Busqueda server-side de activos (se conserva: la usan los selectores de activo de los modales/alta).
     private string _query = "";
 
+    // Registrar ejecucion (Etapa A): modal abierto desde el calendario.
+    private bool _showRegistrarEjec;
+    private Guid _ejecProgId;
+    private TipoActivoMantenimiento _ejecActivoTipo;
+    private Guid _ejecActivoId;
+    private string? _ejecTitulo;
+    private DateOnly? _ejecFecha;
+    private string? _ejecDetalle;
+    private string? _ejecMsg;
+    private string _ejecMsgClass = "alert-danger";
+
     private bool _showCrearIntervencion;
     private string _crearTipo = "Correctivo";
     private string _crearActivoTipo = "Equipo";
@@ -1290,7 +1418,7 @@ else if (_tab == "calendario")
 
     private bool _mostrarCerrar;
     private bool _mostrarCancelar;
-    private DateOnly? _cerrarFecha = DateOnly.FromDateTime(DateTime.UtcNow);
+    private DateOnly? _cerrarFecha = HoyLocalMt();
     private string? _cerrarNota;
     private bool _cerrarCambiaEstado;
     private string _cerrarEstadoNuevo = "";
@@ -1323,7 +1451,7 @@ else if (_tab == "calendario")
 
     // ---------- Calendario de programaciones (vista Mes / Semana) ----------
     private string _calVista = "mes";                 // "mes" | "semana"
-    private DateTime _calAnchor = DateTime.Today;      // fecha de referencia de la vista
+    private DateTime _calAnchor = AnclaLocalMt();      // fecha de referencia de la vista
 
     private string MtCalTitulo
     {
@@ -1341,7 +1469,7 @@ else if (_tab == "calendario")
     }
 
     private void MtCalMover(int d) => _calAnchor = _calVista == "semana" ? _calAnchor.AddDays(7 * d) : _calAnchor.AddMonths(d);
-    private void MtCalHoy() => _calAnchor = DateTime.Today;
+    private void MtCalHoy() => _calAnchor = AnclaLocalMt();
 
     // El lunes de la semana que contiene 'd', y el domingo.
     private static (DateTime ini, DateTime fin) SemanaRango(DateTime d)
@@ -1351,7 +1479,7 @@ else if (_tab == "calendario")
         return (ini, ini.AddDays(6));
     }
 
-    private sealed record MtCalItem(Guid ProgId, string Texto, string Clase, string Titulo);
+    private sealed record MtCalItem(Guid ProgId, string Texto, string Clase, string Titulo, DateOnly Fecha);
     private sealed record MtCalCelda(int Dia, bool EsMes, bool EsHoy, List<MtCalItem> Items);
 
     // Avanza una fecha un paso segun la periodicidad (para proyectar recurrencias en la vista).
@@ -1381,7 +1509,7 @@ else if (_tab == "calendario")
         }
         var winIni = DateOnly.FromDateTime(inicio);
         var winFin = DateOnly.FromDateTime(inicio.AddDays(celdas - 1));
-        var hoy = DateOnly.FromDateTime(DateTime.Today);
+        var hoy = HoyLocalMt();
 
         var porDia = new Dictionary<DateOnly, List<MtCalItem>>();
         void Add(DateOnly f, MtCalItem it) { if (!porDia.TryGetValue(f, out var l)) porDia[f] = l = new(); l.Add(it); }
@@ -1397,7 +1525,7 @@ else if (_tab == "calendario")
             while (f <= winFin && guard++ < 400)
             {
                 if (p.FechaFin is { } ff && f > ff) break;
-                if (f >= winIni) Add(f, new MtCalItem(p.Id, texto, clase, titulo));
+                if (f >= winIni) Add(f, new MtCalItem(p.Id, texto, clase, titulo, f));
                 var next = PasoPeriodicidad(f, p.Periodicidad);
                 if (next == DateOnly.MaxValue || next <= f) break; // Unica o sin avance
                 f = next;
@@ -1419,6 +1547,54 @@ else if (_tab == "calendario")
     {
         var p = _progs?.FirstOrDefault(x => x.Id == id);
         if (p is not null) await AbrirEditarProgAsync(p);
+    }
+
+    // Etapa A: abrir el modal de "registrar ejecucion" desde una ocurrencia del calendario.
+    private void AbrirRegistrarEjecucion(Guid progId, DateOnly fecha)
+    {
+        var p = _progs?.FirstOrDefault(x => x.Id == progId);
+        if (p is null) return;
+        if (p.EntidadOrigenId is not { } aid)
+        {
+            _msg = "Esta programacion no esta ligada a un equipo o zona; no se puede registrar la ejecucion.";
+            _msgClass = "alert-warning";
+            return;
+        }
+        _ejecProgId = progId;
+        _ejecActivoTipo = string.Equals(p.ModuloOrigenCodigo, "zona", StringComparison.OrdinalIgnoreCase)
+            ? TipoActivoMantenimiento.ZonaComun : TipoActivoMantenimiento.Equipo;
+        _ejecActivoId = aid;
+        _ejecTitulo = p.Titulo;
+        _ejecFecha = fecha;
+        _ejecDetalle = null;
+        _ejecMsg = null;
+        _showRegistrarEjec = true;
+    }
+
+    private void CerrarRegistrarEjec()
+    {
+        _showRegistrarEjec = false;
+        _ejecDetalle = null;
+        _ejecMsg = null;
+    }
+
+    private async Task ConfirmarRegistrarEjec()
+    {
+        if (_ejecFecha is null) return;
+        _busy = true; _ejecMsg = null;
+        try
+        {
+            var req = new RegistrarEjecucionRequest(
+                _ejecActivoTipo, _ejecActivoId, TipoIntervencionMantenimiento.Preventivo,
+                _ejecTitulo ?? "Mantenimiento", _ejecDetalle, _ejecFecha.Value, null);
+            var r = await Auth().PostAsJsonAsync("/api/mantenimiento/intervenciones/registrar-ejecucion", req);
+            if (!r.IsSuccessStatusCode) { _ejecMsg = await r.Content.ReadAsStringAsync(); _ejecMsgClass = "alert-danger"; return; }
+            _showRegistrarEjec = false;
+            _msg = "Ejecucion registrada y ligada a una tarea."; _msgClass = "alert-success";
+            await CargarAsync();
+        }
+        catch (Exception ex) { _ejecMsg = ex.Message; _ejecMsgClass = "alert-danger"; }
+        finally { _busy = false; }
     }
 
     private async Task CargarAsync()
@@ -1445,6 +1621,8 @@ else if (_tab == "calendario")
             {
                 // Tableros/personas/contratos para los dropdowns inline y el modal (se cargan una vez).
                 await CargarOpcionesProgAsync();
+                // Config de columnas del Selector de Campos (alias/orden/visibilidad por copropiedad).
+                await CargarConfigProgAsync();
                 var eq = await http.GetFromJsonAsync<List<ProgramacionTareaDto>>("/api/programaciones?moduloOrigen=equipo") ?? new();
                 var zn = await http.GetFromJsonAsync<List<ProgramacionTareaDto>>("/api/programaciones?moduloOrigen=zona") ?? new();
                 _progs = eq.Concat(zn)
@@ -1514,7 +1692,7 @@ else if (_tab == "calendario")
         {
             _fichaIntervencion = await Auth().GetFromJsonAsync<IntervencionDetalleDto>($"/api/mantenimiento/intervenciones/{id}");
             _mostrarCerrar = _mostrarCancelar = false;
-            _cerrarFecha = DateOnly.FromDateTime(DateTime.UtcNow);
+            _cerrarFecha = HoyLocalMt();
             _cerrarNota = _cancelarMotivo = _nuevaEntrada = null;
             _cerrarCambiaEstado = false;
             _cerrarEstadoNuevo = "";

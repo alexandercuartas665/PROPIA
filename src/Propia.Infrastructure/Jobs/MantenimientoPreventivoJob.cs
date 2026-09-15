@@ -51,9 +51,24 @@ public class MantenimientoPreventivoJob : IBackgroundJob
         _mantenimiento = mantenimiento;
     }
 
+    /// <summary>
+    /// El dia calendario "hoy" en hora local de la copropiedad (Colombia, UTC-5), a partir de un
+    /// instante UTC. El job compara <see cref="MantenimientoPlan.ProximaEjecucion"/> (un DateOnly,
+    /// dia calendario) contra este valor. Con UtcNow crudo, entre las 19:00 y las 24:00 hora local
+    /// "hoy" ya era el dia siguiente en UTC, asi que un plan podia dispararse hasta 5 horas antes de
+    /// tiempo, la vispera (M-09). Se usa el mismo helper de zona que Reservas.
+    /// </summary>
+    public static DateOnly HoyEnColombia(DateTime utcNow)
+    {
+        var zonaLocal = Propia.Infrastructure.Programaciones.CronHelper.Zona(null);
+        var utc = utcNow.Kind == DateTimeKind.Utc ? utcNow : DateTime.SpecifyKind(utcNow, DateTimeKind.Utc);
+        return DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(utc, zonaLocal));
+    }
+
     public async Task<object?> EjecutarAsync(CancellationToken ct)
     {
-        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        // "Hoy" en hora local de Colombia, no en UTC (M-09). Ver HoyEnColombia.
+        var hoy = HoyEnColombia(DateTime.UtcNow);
 
         // Tenants es global (sin RLS); nos da la lista para iterar.
         var tenantIds = await _db.Tenants.AsNoTracking().Select(t => t.Id).ToListAsync(ct);
