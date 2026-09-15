@@ -152,6 +152,7 @@
                                              RutaCatalogo="/api/seguros/polizas-campos"
                                              EntidadConfig="poliza"
                                              Catalogo="@PolizaCatalogo"
+                                             TiposAvanzados="true"
                                              TituloSingular="poliza"
                                              TituloPlural="Polizas"
                                              Ejemplo="Ej. Deducible, Renovada el"
@@ -364,6 +365,23 @@
                                                 <option value="@op">@op</option>
                                             }
                                         </select>
+                                        break;
+                                    case TipoCampoTablero.Formula:
+                                        @* Fase 2: calculado y de solo lectura; el valor se computa en lectura. *@
+                                        <div class="seg-input" style="font-style:italic;color:var(--propia-text-faint)" title="Se calcula automaticamente">(se calcula)</div>
+                                        break;
+                                    case TipoCampoTablero.Usuario:
+                                        <select class="seg-input" value="@Val(cid)" @onchange="e => SetVal(cid, e.Value?.ToString())">
+                                            <option value="">- elegir -</option>
+                                            @foreach (var u in _usuariosTenant)
+                                            {
+                                                <option value="@u.PersonaId">@u.NombreCompleto</option>
+                                            }
+                                        </select>
+                                        break;
+                                    case TipoCampoTablero.Directorio:
+                                        <SelectorPersona Flotante="true" Jwt="@_jwt" Placeholder="Buscar persona del directorio..."
+                                                         SeleccionadaChanged="(c) => OnDirectorioSelCampo(cid, c)" />
                                         break;
                                     default:
                                         <input class="seg-input" value="@Val(cid)" @oninput="e => SetVal(cid, e.Value?.ToString())" />
@@ -645,6 +663,20 @@
     private readonly Dictionary<Guid, string?> _campoValores = new();  // valores del form actual
     private bool _showCampos;
 
+    // Tipos avanzados (Fase 2): usuarios del tenant para el campo Usuario, y mapa id->nombre para mostrar
+    // el nombre de un valor Usuario/Directorio (que persiste el Guid). Se cargan una sola vez.
+    private List<UsuarioOpc> _usuariosTenant = new();
+    private Dictionary<Guid, string> _usuarioNombre = new();
+    private sealed record UsuarioOpc(Guid PersonaId, string NombreCompleto, string? Email);
+
+    // Campo Directorio elegido con el SelectorPersona: guarda el PersonaId y cachea el nombre para el render.
+    private void OnDirectorioSelCampo(Guid campoId, PersonaCandidatoDto? c)
+    {
+        if (c is null) { SetVal(campoId, null); return; }
+        SetVal(campoId, c.PersonaId.ToString());
+        _usuarioNombre[c.PersonaId] = c.NombreCompleto;
+    }
+
     // ---- Selector de Campos (Fase 1): columnas dirigidas por unidades-config (entidad 'poliza') ----
     // Reemplaza el gestor propio: orden/visibilidad/alias de las columnas (de sistema y propias) viven en la
     // config compartida por copropiedad, igual que en Unidades/Vehiculos; el componente compartido
@@ -726,6 +758,8 @@
         {
             TipoCampoTablero.Booleano => raw == "true" ? "Si" : "No",
             TipoCampoTablero.Moneda => decimal.TryParse(raw, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var m) ? "$" + m.ToString("N0") : raw,
+            // Fase 2: Usuario/Directorio persisten el Guid; se muestra el nombre (Formula ya llega computada).
+            TipoCampoTablero.Usuario or TipoCampoTablero.Directorio => Guid.TryParse(raw, out var g) && _usuarioNombre.TryGetValue(g, out var n) ? n : raw,
             _ => raw
         };
     }
@@ -1130,6 +1164,16 @@
             _loadError = null;
             _polizas = await Auth().GetFromJsonAsync<List<PolizaDto>>("/api/seguros/polizas") ?? new();
             try { _campos = await Auth().GetFromJsonAsync<List<PolizaCampoDto>>("/api/seguros/campos") ?? new(); } catch { }
+            // Tipos avanzados (Fase 2): usuarios del tenant (campo Usuario) + mapa id->nombre para mostrar el
+            // nombre de un valor Usuario/Directorio (personas globales del tenant, acotadas por RLS).
+            try { _usuariosTenant = await Auth().GetFromJsonAsync<List<UsuarioOpc>>("/api/usuarios") ?? new(); } catch { _usuariosTenant = new(); }
+            try
+            {
+                var vinc = await Auth().GetFromJsonAsync<List<UsuarioOpc>>("/api/mi-copropiedad/personas-vinculadas") ?? new();
+                _usuarioNombre = vinc.GroupBy(v => v.PersonaId).ToDictionary(g => g.Key, g => g.First().NombreCompleto);
+            }
+            catch { _usuarioNombre = new(); }
+            foreach (var u in _usuariosTenant) _usuarioNombre.TryAdd(u.PersonaId, u.NombreCompleto);
             await CargarConfigAsync();
         }
         catch (Exception ex) { _loadError = ex.Message; }
@@ -1260,6 +1304,8 @@
             {
                 foreach (var cm in CamposActivos)
                 {
+                    // Formula (Fase 2) es de solo lectura (se computa en lectura); no se envia su valor.
+                    if (cm.Tipo == TipoCampoTablero.Formula) continue;
                     var val = _campoValores.TryGetValue(cm.Id, out var vv) ? vv : null;
                     try { await Auth().PutAsJsonAsync($"/api/seguros/polizas/{pid}/campo-valor/{cm.Id}", new GuardarPolizaCampoValorRequest(val)); } catch { }
                 }

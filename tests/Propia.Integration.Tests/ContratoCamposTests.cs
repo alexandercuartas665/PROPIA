@@ -134,6 +134,75 @@ public class ContratoCamposTests
         await CleanupTenantAsync(tenantId);
     }
 
+    // ----- Fase 2: tipos avanzados (Formula / Usuario / Directorio) en contratos -----
+
+    [Fact]
+    public async Task Formula_en_contrato_computa_sobre_campo_propio_y_de_sistema()
+    {
+        var tenantId = await SeedTenantAsync("[SELLO] Formula contrato");
+        var svc = BuildService(tenantId);
+        var c = await svc.CrearContratoAsync(new CrearContratoServicioRequest(
+            TipoServicio.Aseo, "[SELLO] Prov formula", null, null, new DateOnly(2026, 1, 1), null, 1_000_000m, null),
+            CancellationToken.None);
+        // Campo propio Numero con valor 40; formula = Suma(valor sistema + cd:propio) = 1000000 + 40 = 1000040.
+        var num = await svc.CrearContratoCampoAsync(new CrearContratoCampoRequest("[SELLO] Extra", TipoCampoTablero.Numero, null, null), CancellationToken.None);
+        await svc.GuardarContratoCampoValorAsync(c.Id, num.Id, new GuardarContratoCampoValorRequest("40"), CancellationToken.None);
+        var f = await svc.CrearContratoCampoAsync(new CrearContratoCampoRequest("[SELLO] Total", TipoCampoTablero.Formula,
+            new CampoFormulaConfig(new[] { new PasoFormula(OperacionFormula.Suma, new[] { OperandoFormula.DeCampo("valor"), OperandoFormula.DeCampo("cd:" + num.Id) }) }).Serializar(), null), CancellationToken.None);
+
+        var din = await svc.ListCamposDinContratoAsync(c.Id, CancellationToken.None);
+        Assert.Equal("1000040", din.First(d => d.DefinicionId == f.Id).Valor);
+        var flat = await svc.ListTodosCamposValoresContratoAsync(CancellationToken.None);
+        Assert.Contains(flat, v => v.ContratoId == c.Id && v.DefinicionId == f.Id && v.Valor == "1000040");
+        await CleanupTenantAsync(tenantId);
+    }
+
+    [Fact]
+    public async Task Formula_en_contrato_es_solo_lectura_y_rechaza_fuente_no_numerica()
+    {
+        var tenantId = await SeedTenantAsync("[SELLO] Formula RO contrato");
+        var svc = BuildService(tenantId);
+        var texto = await svc.CrearContratoCampoAsync(new CrearContratoCampoRequest("[SELLO] Texto", TipoCampoTablero.Texto, null, null), CancellationToken.None);
+        await Assert.ThrowsAnyAsync<Exception>(() => svc.CrearContratoCampoAsync(new CrearContratoCampoRequest("[SELLO] Mala", TipoCampoTablero.Formula,
+            new CampoFormulaConfig(new[] { new PasoFormula(OperacionFormula.Suma, new[] { OperandoFormula.DeCampo("cd:" + texto.Id) }) }).Serializar(), null), CancellationToken.None));
+        var num = await svc.CrearContratoCampoAsync(new CrearContratoCampoRequest("[SELLO] N", TipoCampoTablero.Numero, null, null), CancellationToken.None);
+        var f = await svc.CrearContratoCampoAsync(new CrearContratoCampoRequest("[SELLO] Suma", TipoCampoTablero.Formula,
+            new CampoFormulaConfig(new[] { new PasoFormula(OperacionFormula.Suma, new[] { OperandoFormula.DeCampo("cd:" + num.Id) }) }).Serializar(), null), CancellationToken.None);
+        var c = await svc.CrearContratoAsync(new CrearContratoServicioRequest(
+            TipoServicio.Aseo, "[SELLO] Prov RO", null, null, new DateOnly(2026, 1, 1), null, 100m, null), CancellationToken.None);
+        await Assert.ThrowsAnyAsync<Exception>(() => svc.GuardarContratoCampoValorAsync(c.Id, f.Id, new GuardarContratoCampoValorRequest("5"), CancellationToken.None));
+        await CleanupTenantAsync(tenantId);
+    }
+
+    [Fact]
+    public async Task Usuario_y_Directorio_en_contrato_rechazan_ids_de_otro_tenant()
+    {
+        var tA = await SeedTenantAsync("[SELLO] Adv contrato A");
+        var tB = await SeedTenantAsync("[SELLO] Adv contrato B");
+        var usuarioA = await SeedUsuarioTenantAsync(tA);
+        var personaDirA = await SeedPersonaGlobalAsync();
+        await SeedDirectorioVinculoAsync(tA, personaDirA);
+
+        var svcA = BuildService(tA);
+        var cA = await svcA.CrearContratoAsync(new CrearContratoServicioRequest(
+            TipoServicio.Aseo, "[SELLO] Prov A", null, null, new DateOnly(2026, 1, 1), null, 100m, null), CancellationToken.None);
+        var campoU = await svcA.CrearContratoCampoAsync(new CrearContratoCampoRequest("[SELLO] Resp", TipoCampoTablero.Usuario, null, null), CancellationToken.None);
+        var campoD = await svcA.CrearContratoCampoAsync(new CrearContratoCampoRequest("[SELLO] Contacto", TipoCampoTablero.Directorio, null, null), CancellationToken.None);
+        await svcA.GuardarContratoCampoValorAsync(cA.Id, campoU.Id, new GuardarContratoCampoValorRequest(usuarioA.ToString()), CancellationToken.None);
+        await svcA.GuardarContratoCampoValorAsync(cA.Id, campoD.Id, new GuardarContratoCampoValorRequest(personaDirA.ToString()), CancellationToken.None);
+
+        var svcB = BuildService(tB);
+        var cB = await svcB.CrearContratoAsync(new CrearContratoServicioRequest(
+            TipoServicio.Aseo, "[SELLO] Prov B", null, null, new DateOnly(2026, 1, 1), null, 100m, null), CancellationToken.None);
+        var campoUB = await svcB.CrearContratoCampoAsync(new CrearContratoCampoRequest("[SELLO] Resp", TipoCampoTablero.Usuario, null, null), CancellationToken.None);
+        var campoDB = await svcB.CrearContratoCampoAsync(new CrearContratoCampoRequest("[SELLO] Contacto", TipoCampoTablero.Directorio, null, null), CancellationToken.None);
+        // El mismo id NO pertenece a B (personas es global) -> rechazo CROSS-TENANT.
+        await Assert.ThrowsAnyAsync<Exception>(() => svcB.GuardarContratoCampoValorAsync(cB.Id, campoUB.Id, new GuardarContratoCampoValorRequest(usuarioA.ToString()), CancellationToken.None));
+        await Assert.ThrowsAnyAsync<Exception>(() => svcB.GuardarContratoCampoValorAsync(cB.Id, campoDB.Id, new GuardarContratoCampoValorRequest(personaDirA.ToString()), CancellationToken.None));
+        await CleanupTenantAsync(tA);
+        await CleanupTenantAsync(tB);
+    }
+
     // ----------------------------- infraestructura -----------------------------
 
     // Contexto de aplicacion (respeta RLS/tenant) para leer el estado crudo del campo en las aserciones.
@@ -176,6 +245,37 @@ public class ContratoCamposTests
         return t.Id;
     }
 
+    // Fase 2: seeders de usuario/directorio del tenant para el rechazo cross-tenant (personas es GLOBAL).
+    private async Task<Guid> SeedUsuarioTenantAsync(Guid tenantId)
+    {
+        var personaId = await SeedPersonaGlobalAsync();
+        await using var ctx = OwnerDb();
+        ctx.UsuariosTenant.Add(new UsuarioTenant
+        { TenantId = tenantId, PersonaId = personaId, Rol = "Residente", Estado = EstadoUsuarioTenant.Activo });
+        await ctx.SaveChangesAsync();
+        return personaId;
+    }
+
+    private async Task<Guid> SeedPersonaGlobalAsync()
+    {
+        await using var ctx = OwnerDb();
+        var p = new Persona { TipoDocumento = TipoDocumento.CC, Documento = "D" + Guid.NewGuid().ToString("N")[..10], Nombres = "Sello", Apellidos = "Test" };
+        ctx.Personas.Add(p);
+        await ctx.SaveChangesAsync();
+        return p.Id;
+    }
+
+    private async Task SeedDirectorioVinculoAsync(Guid tenantId, Guid personaId)
+    {
+        await using var ctx = OwnerDb();
+        ctx.DirectorioVinculos.Add(new DirectorioVinculo
+        {
+            TenantId = tenantId, EntidadTipo = EntidadDirectorio.Persona, EntidadId = personaId,
+            FechaDesde = DateOnly.FromDateTime(DateTime.UtcNow), Estado = EstadoVinculo.Activo
+        });
+        await ctx.SaveChangesAsync();
+    }
+
     private async Task CleanupTenantAsync(Guid tenantId)
     {
         await using var ctx = OwnerDb();
@@ -183,6 +283,8 @@ public class ContratoCamposTests
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM contrato_campo_valores WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM contrato_campos WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM contratos_servicio WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM directorio_vinculos WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM usuarios_tenant WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tenants WHERE id = {tenantId}");
     }
 

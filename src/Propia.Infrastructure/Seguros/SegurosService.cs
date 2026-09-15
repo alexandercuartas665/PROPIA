@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Propia.Application.MiCopropiedad;
 using Propia.Application.Seguros;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
@@ -25,8 +26,32 @@ public class SegurosService : ISegurosService
             .GroupBy(r => r.PolizaId).Select(g => new { g.Key, N = g.Count() }).ToListAsync(ct);
         var reclCount = recl.ToDictionary(x => x.Key, x => x.N);
         var porPoliza = valores.GroupBy(v => v.PolizaId)
-            .ToDictionary(g => g.Key, g => (IReadOnlyList<PolizaCampoValorDto>)g.Select(v => new PolizaCampoValorDto(v.PolizaCampoId, v.Valor)).ToList());
-        return polizas.Select(p => ToDto(p, porPoliza.GetValueOrDefault(p.Id), reclCount.GetValueOrDefault(p.Id))).ToList();
+            .ToDictionary(g => g.Key, g => g.Select(v => new PolizaCampoValorDto(v.PolizaCampoId, v.Valor)).ToList());
+
+        // Formula (Fase 2): valor calculado en lectura (no persiste); se inyecta a los campos-valores para que
+        // la columna aparezca en la tabla como cualquier otra. Usuario/Directorio guardan el Guid y su nombre
+        // lo resuelve la pagina con /api/usuarios + /api/mi-copropiedad/personas-vinculadas.
+        var formulaDefs = await _db.PolizaCampos.AsNoTracking()
+            .Where(d => d.Activo && d.Tipo == TipoCampoTablero.Formula)
+            .Select(d => new { d.Id, d.Opciones }).ToListAsync(ct);
+        if (formulaDefs.Count > 0 && polizas.Count > 0)
+        {
+            foreach (var p in polizas)
+            {
+                var eav = (IReadOnlyDictionary<Guid, string?>)valores.Where(v => v.PolizaId == p.Id)
+                    .ToDictionary(v => v.PolizaCampoId, v => v.Valor);
+                var nums = new NumerosPoliza(p.ValorPoliza, reclCount.GetValueOrDefault(p.Id), p.FormaPagoCuotas);
+                if (!porPoliza.TryGetValue(p.Id, out var lst)) { lst = new(); porPoliza[p.Id] = lst; }
+                foreach (var fd in formulaDefs)
+                {
+                    var txt = ComputarFormulaTextoPoliza(fd.Opciones, eav, nums);
+                    if (txt is not null) lst.Add(new PolizaCampoValorDto(fd.Id, txt));
+                }
+            }
+        }
+        return polizas.Select(p => ToDto(p,
+            porPoliza.TryGetValue(p.Id, out var vv) ? (IReadOnlyList<PolizaCampoValorDto>)vv : null,
+            reclCount.GetValueOrDefault(p.Id))).ToList();
     }
 
     public async Task<PolizaDto?> ObtenerPolizaAsync(Guid id, CancellationToken ct)
@@ -226,7 +251,7 @@ public class SegurosService : ISegurosService
     {
         if (string.IsNullOrWhiteSpace(req.Label)) throw new InvalidOperationException("El nombre del campo es obligatorio.");
         var orden = (await _db.PolizaCampos.MaxAsync(c => (int?)c.Orden, ct) ?? 0) + 1;
-        var c = new PolizaCampo { Label = req.Label.Trim(), Tipo = req.Tipo, Opciones = Limpio(req.Opciones), Descripcion = Limpio(req.Descripcion), Orden = orden };
+        var c = new PolizaCampo { Label = req.Label.Trim(), Tipo = req.Tipo, Opciones = await PrepararOpcionesPolizaAsync(req.Tipo, req.Opciones, null, ct), Descripcion = Limpio(req.Descripcion), Orden = orden };
         _db.PolizaCampos.Add(c);
         await _db.SaveChangesAsync(ct);
         return new PolizaCampoDto(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones, c.Descripcion, c.Activo);
@@ -241,7 +266,7 @@ public class SegurosService : ISegurosService
         // (asi el edit del componente no borra la descripcion ni oculta el campo con Activo=false).
         if (!string.IsNullOrWhiteSpace(req.Label)) c.Label = req.Label.Trim();
         c.Tipo = req.Tipo;
-        c.Opciones = Limpio(req.Opciones);
+        c.Opciones = await PrepararOpcionesPolizaAsync(req.Tipo, req.Opciones, campoId, ct);
         c.Orden = req.Orden;
         if (req.Descripcion is not null) c.Descripcion = Limpio(req.Descripcion);
         if (req.Activo is not null) c.Activo = req.Activo.Value;
@@ -263,8 +288,12 @@ public class SegurosService : ISegurosService
         if (!await _db.Polizas.AnyAsync(p => p.Id == polizaId, ct)) return false;
         // K-11: antes no se validaba el campo (se creaba un valor colgando de un campoId inexistente o
         // inactivo) y se guardaba "" en vez de borrar. Mismo patron que los campos de contrato.
-        if (!await _db.PolizaCampos.AnyAsync(c => c.Id == campoId && c.Activo, ct)) return false;
+        var campo = await _db.PolizaCampos.FirstOrDefaultAsync(c => c.Id == campoId && c.Activo, ct);
+        if (campo is null) return false;
         var val = string.IsNullOrWhiteSpace(req.Valor) ? null : req.Valor.Trim();
+        // Type-gate del valor por el Tipo del campo (Fase 2): Formula solo lectura, Usuario/Directorio con
+        // pertenencia al tenant (rechazo cross-tenant via RLS). Helper COMPARTIDO por las superficies del Selector.
+        await CamposAvanzados.ValidarValorAsync(_db, campo.Tipo, val, ct);
         var v = await _db.PolizaCampoValores.FirstOrDefaultAsync(x => x.PolizaId == polizaId && x.PolizaCampoId == campoId, ct);
         if (v is null)
         {
@@ -286,16 +315,107 @@ public class SegurosService : ISegurosService
     // Selector de Campos (Fase 1): valores en la forma estandar (espejo de ListTodosCamposValoresEquipoAsync
     // / ListCamposDinEquipoAsync). Proyecciones finas; la logica de campos no se duplica.
     public async Task<IReadOnlyList<PolizaCampoValorFlatDto>> ListTodosCamposValoresPolizaAsync(CancellationToken ct)
-        => await _db.PolizaCampoValores.AsNoTracking().Where(v => v.Valor != null && v.Valor != "")
-            .Select(v => new PolizaCampoValorFlatDto(v.PolizaId, v.PolizaCampoId, v.Valor)).ToListAsync(ct);
+    {
+        var valores = await _db.PolizaCampoValores.AsNoTracking().Where(v => v.Valor != null && v.Valor != "")
+            .Select(v => new { v.PolizaId, v.PolizaCampoId, v.Valor }).ToListAsync(ct);
+        var res = valores.Select(v => new PolizaCampoValorFlatDto(v.PolizaId, v.PolizaCampoId, v.Valor)).ToList();
+
+        // Formula (Fase 2): se COMPUTA en lectura (no persiste). Se emite el valor por poliza para la tabla.
+        var formulaDefs = await _db.PolizaCampos.AsNoTracking()
+            .Where(d => d.Activo && d.Tipo == TipoCampoTablero.Formula)
+            .Select(d => new { d.Id, d.Opciones }).ToListAsync(ct);
+        if (formulaDefs.Count > 0)
+        {
+            var polizas = await _db.Polizas.AsNoTracking()
+                .Select(p => new { p.Id, N = new NumerosPoliza(p.ValorPoliza, p.Reclamaciones.Count, p.FormaPagoCuotas) })
+                .ToListAsync(ct);
+            var porPoliza = valores.GroupBy(v => v.PolizaId)
+                .ToDictionary(g => g.Key, g => (IReadOnlyDictionary<Guid, string?>)g.ToDictionary(x => x.PolizaCampoId, x => x.Valor));
+            IReadOnlyDictionary<Guid, string?> vacio = new Dictionary<Guid, string?>();
+            foreach (var p in polizas)
+            {
+                var dict = porPoliza.TryGetValue(p.Id, out var d0) ? d0 : vacio;
+                foreach (var fd in formulaDefs)
+                {
+                    var txt = ComputarFormulaTextoPoliza(fd.Opciones, dict, p.N);
+                    if (txt is not null) res.Add(new PolizaCampoValorFlatDto(p.Id, fd.Id, txt));
+                }
+            }
+        }
+        return res;
+    }
 
     public async Task<IReadOnlyList<PolizaCampoDinDto>> ListCamposDinPolizaAsync(Guid polizaId, CancellationToken ct)
     {
         var defs = await _db.PolizaCampos.AsNoTracking().Where(c => c.Activo).OrderBy(d => d.Orden).ThenBy(d => d.Label).ToListAsync(ct);
         var vals = await _db.PolizaCampoValores.AsNoTracking().Where(v => v.PolizaId == polizaId).ToListAsync(ct);
+        var porDef = vals.ToDictionary(v => v.PolizaCampoId, v => v.Valor);
+        var nums = await _db.Polizas.AsNoTracking().Where(p => p.Id == polizaId)
+            .Select(p => new NumerosPoliza(p.ValorPoliza, p.Reclamaciones.Count, p.FormaPagoCuotas)).FirstOrDefaultAsync(ct);
         return defs.Select(d => new PolizaCampoDinDto(d.Id, d.Label, d.Orden,
-            vals.FirstOrDefault(v => v.PolizaCampoId == d.Id)?.Valor, d.Tipo, d.Opciones)).ToList();
+            d.Tipo == TipoCampoTablero.Formula ? ComputarFormulaTextoPoliza(d.Opciones, porDef, nums) : porDef.GetValueOrDefault(d.Id),
+            d.Tipo, d.Opciones)).ToList();
     }
+
+    // ---- Tipos avanzados del Selector de Campos (Fase 2) en polizas: Formula/Usuario/Directorio ----
+    // Prepara la columna POLIMORFICA Opciones: para Formula valida (fuentes existentes y Numero/Moneda) y
+    // serializa el JSON de CampoFormulaConfig; para el resto conserva el texto. El computo/validacion son
+    // helpers COMPARTIDOS; aqui solo se aporta el resolver de sistema de la poliza.
+    private async Task<string?> PrepararOpcionesPolizaAsync(TipoCampoTablero tipo, string? opciones, Guid? excluirId, CancellationToken ct)
+    {
+        if (tipo == TipoCampoTablero.Formula)
+        {
+            var cfg = CampoFormulaConfig.Parse(opciones)
+                ?? throw new InvalidOperationException("La formula necesita una operacion y al menos un campo fuente.");
+            var defs = await _db.PolizaCampos.AsNoTracking()
+                .Where(d => excluirId == null || d.Id != excluirId)
+                .Select(d => new { d.Id, d.Tipo }).ToListAsync(ct);
+            var porGuid = defs.ToDictionary(d => d.Id, d => d.Tipo);
+            TipoCampoTablero? TipoDe(string clave)
+            {
+                if (clave.StartsWith("cd:", StringComparison.Ordinal))
+                    return Guid.TryParse(clave[3..], out var g) && porGuid.TryGetValue(g, out var t) ? t : (TipoCampoTablero?)null;
+                return FuentesSistemaPoliza.TryGetValue(clave, out var ts) ? ts : (TipoCampoTablero?)null;
+            }
+            var err = CampoFormulaConfig.Validar(cfg, TipoDe);
+            if (err is not null) throw new InvalidOperationException(err);
+            return cfg.Serializar();
+        }
+        return Limpio(opciones);
+    }
+
+    // Computa el texto de un campo Formula para una poliza. Fuentes: campos PROPIOS Numero/Moneda (cd:{guid})
+    // via el mapa {campoId -> valor} + campos de SISTEMA Numero/Moneda de la poliza. Solo lectura.
+    private static string? ComputarFormulaTextoPoliza(string? opciones, IReadOnlyDictionary<Guid, string?> valoresPorDef, NumerosPoliza? nums)
+        => CampoFormulaConfig.ComputarTexto(opciones, clave =>
+        {
+            if (clave.StartsWith("cd:", StringComparison.Ordinal))
+                return Guid.TryParse(clave[3..], out var g) && valoresPorDef.TryGetValue(g, out var v) ? ParseDecimalInv(v) : null;
+            return nums is not null ? ValorSistemaPoliza(clave, nums) : null;
+        });
+
+    private static decimal? ParseDecimalInv(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return null;
+        s = s.Trim().Replace(",", ".");
+        return decimal.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : (decimal?)null;
+    }
+
+    // Resolver de SISTEMA de la poliza (claves del catalogo PolizaCamposSistema con Tipo Numero/Moneda).
+    private static readonly IReadOnlyDictionary<string, TipoCampoTablero> FuentesSistemaPoliza =
+        new Dictionary<string, TipoCampoTablero>(StringComparer.Ordinal)
+        {
+            ["valorpoliza"] = TipoCampoTablero.Moneda, ["reclamaciones"] = TipoCampoTablero.Numero,
+            ["formapagocuotas"] = TipoCampoTablero.Numero,
+        };
+
+    private sealed record NumerosPoliza(decimal? ValorPoliza, int Reclamaciones, int? FormaPagoCuotas);
+
+    private static decimal? ValorSistemaPoliza(string clave, NumerosPoliza n) => clave switch
+    {
+        "valorpoliza" => n.ValorPoliza, "reclamaciones" => n.Reclamaciones, "formapagocuotas" => n.FormaPagoCuotas,
+        _ => (decimal?)null
+    };
 
     // ----------------------------- Reclamaciones (Ola 5) -----------------------------
     public async Task<IReadOnlyList<ReclamacionDto>> ListReclamacionesAsync(Guid polizaId, CancellationToken ct)
