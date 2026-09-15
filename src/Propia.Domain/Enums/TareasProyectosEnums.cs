@@ -96,7 +96,32 @@ public enum TipoCampoTablero
     /// <summary>Numero mostrado como porcentaje (sufijo %). Se agrega al FINAL para no renumerar.</summary>
     Porcentaje = 13,
     /// <summary>Fecha + hora combinadas (un solo valor). Se agrega al FINAL para no renumerar.</summary>
-    FechaHora = 14
+    FechaHora = 14,
+    /// <summary>Calculado y de solo lectura (Fase 2, Unidades): aplica una <see cref="OperacionFormula"/>
+    /// (Suma/Promedio/Conteo/Minimo/Maximo) sobre otros campos Numero/Moneda de la misma fila. Generaliza
+    /// a Total=12 (que se conserva para Tareas/PQRSD). La config (operacion + campos fuente) va como JSON
+    /// en la columna polimorfica Opciones. Se computa en LECTURA; NO persiste resultado. Se agrega al FINAL.</summary>
+    Formula = 15,
+    /// <summary>Vincula a UNA cuenta de usuario del tenant (Fase 2, Unidades). El valor guarda el Guid del
+    /// usuario; se valida pertenencia al tenant. Se agrega al FINAL para no renumerar.</summary>
+    Usuario = 16,
+    /// <summary>Vincula a UNA persona/empresa del Directorio (Fase 2, Unidades). El valor guarda el Guid;
+    /// personas es GLOBAL, se valida pertenencia al tenant. Se agrega al FINAL para no renumerar.</summary>
+    Directorio = 17
+}
+
+/// <summary>
+/// Operacion de un campo <see cref="TipoCampoTablero.Formula"/> (Fase 2). Se aplica sobre los valores no
+/// vacios de los campos fuente (Numero/Moneda) de la misma fila. Conteo = numero de campos fuente CON
+/// valor; el resto opera sobre los valores numericos de esos campos.
+/// </summary>
+public enum OperacionFormula
+{
+    Suma = 0,
+    Promedio = 1,
+    Conteo = 2,
+    Minimo = 3,
+    Maximo = 4
 }
 
 /// <summary>Tipo de dependencia entre dos tareas. Spec 2.10 v1.0 Fase 2.</summary>

@@ -723,7 +723,7 @@ public partial class MiCopropiedadService
         var label = (req.Label ?? "").Trim();
         if (string.IsNullOrWhiteSpace(label)) throw new InvalidOperationException("El nombre del campo es obligatorio.");
         if (label.Length > 80) label = label[..80];
-        var opciones = NormalizarOpciones(req.Tipo, req.Opciones);
+        var opciones = await PrepararOpcionesAsync(req.Tipo, req.Opciones, null, ct);
 
         var existente = await _db.UnidadCamposDefiniciones.FirstOrDefaultAsync(d => d.Label.ToLower() == label.ToLower(), ct);
         if (existente is not null)
@@ -747,16 +747,44 @@ public partial class MiCopropiedadService
         if (label.Length > 80) label = label[..80];
         def.Label = label;
         def.Tipo = req.Tipo;
-        def.Opciones = NormalizarOpciones(req.Tipo, req.Opciones);
+        def.Opciones = await PrepararOpcionesAsync(req.Tipo, req.Opciones, def.Id, ct);
         def.Orden = req.Orden;
         await _db.SaveChangesAsync(ct);
         return true;
     }
 
-    // Deja Opciones solo para el tipo Seleccion; para el resto va null.
-    private static string? NormalizarOpciones(TipoCampoTablero tipo, string? opciones)
+    // La columna Opciones es POLIMORFICA segun Tipo: para Seleccion guarda las opciones (una por linea);
+    // para Formula (Fase 2) guarda el JSON de CampoFormulaConfig (operacion + campos fuente); para el resto
+    // va null. Cada tipo parsea SOLO su formato (no colisionan). Aqui se valida y normaliza segun el tipo.
+    private async Task<string?> PrepararOpcionesAsync(TipoCampoTablero tipo, string? opciones, Guid? excluirId, CancellationToken ct)
     {
-        if (tipo != TipoCampoTablero.Seleccion) return null;
+        if (tipo == TipoCampoTablero.Seleccion) return NormalizarOpciones(opciones);
+        if (tipo == TipoCampoTablero.Formula)
+        {
+            var cfg = CampoFormulaConfig.Parse(opciones)
+                ?? throw new InvalidOperationException("La formula necesita una operacion y al menos un campo fuente.");
+            // Fuentes = solo campos PROPIOS Numero/Moneda (cd:{guid}) en esta version (replicable). El
+            // resolver de Tipo puede extenderse a campos de sistema por superficie si Alex lo aprueba.
+            var defs = await _db.UnidadCamposDefiniciones.AsNoTracking()
+                .Where(d => excluirId == null || d.Id != excluirId)
+                .Select(d => new { d.Id, d.Tipo }).ToListAsync(ct);
+            var porGuid = defs.ToDictionary(d => d.Id, d => d.Tipo);
+            TipoCampoTablero? TipoDe(string clave)
+            {
+                if (clave.StartsWith("cd:", StringComparison.Ordinal))
+                    return Guid.TryParse(clave[3..], out var g) && porGuid.TryGetValue(g, out var t) ? t : (TipoCampoTablero?)null;
+                return FuentesSistemaUnidad.TryGetValue(clave, out var ts) ? ts : (TipoCampoTablero?)null;   // fuente de sistema
+            }
+            var err = CampoFormulaConfig.Validar(cfg, TipoDe);
+            if (err is not null) throw new InvalidOperationException(err);
+            return cfg.Serializar();
+        }
+        return null;
+    }
+
+    // Normaliza las opciones del tipo Seleccion (una por linea; vacio -> null).
+    private static string? NormalizarOpciones(string? opciones)
+    {
         if (string.IsNullOrWhiteSpace(opciones)) return null;
         var limpias = opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         return limpias.Length == 0 ? null : string.Join('\n', limpias);
@@ -778,17 +806,108 @@ public partial class MiCopropiedadService
             .OrderBy(d => d.Orden).ThenBy(d => d.Label).ToListAsync(ct);
         var valores = await _db.UnidadCamposValores.AsNoTracking()
             .Where(v => v.UnidadId == unidadId).ToListAsync(ct);
+        var porDef = valores.GroupBy(v => v.DefinicionId).ToDictionary(g => g.Key, g => g.First().Valor);
+        var nums = await _db.UnidadesPrivadas.AsNoTracking().Where(u => u.Id == unidadId)
+            .Select(u => new NumerosUnidad(u.CoeficientePropiedad, u.AreaM2, u.Piso, u.Habitaciones, u.Banos,
+                u.Parqueaderos, u.CuotaMensual, u.ModuloContributivo1, u.ModuloContributivo2, u.ModuloContributivo3,
+                u.ModuloContributivo4, u.ModuloContributivo5)).FirstOrDefaultAsync(ct);
+        // Formula: se COMPUTA en lectura (no persiste); el resto toma su valor almacenado.
         return defs.Select(d => new UnidadCampoDto(
             d.Id, d.Label, d.Orden,
-            valores.FirstOrDefault(v => v.DefinicionId == d.Id)?.Valor,
+            d.Tipo == TipoCampoTablero.Formula ? ComputarFormulaTexto(d.Opciones, porDef, nums) : porDef.GetValueOrDefault(d.Id),
             d.Tipo, d.Opciones)).ToList();
     }
 
     public async Task<IReadOnlyList<UnidadCampoValorFlatDto>> ListTodosCamposValoresAsync(CancellationToken ct)
-        => await _db.UnidadCamposValores.AsNoTracking()
+    {
+        var valores = await _db.UnidadCamposValores.AsNoTracking()
             .Where(v => v.Valor != null && v.Valor != "")
-            .Select(v => new UnidadCampoValorFlatDto(v.UnidadId, v.DefinicionId, v.Valor))
+            .Select(v => new { v.UnidadId, v.DefinicionId, v.Valor })
             .ToListAsync(ct);
+        var res = valores.Select(v => new UnidadCampoValorFlatDto(v.UnidadId, v.DefinicionId, v.Valor)).ToList();
+
+        // Campos Formula: valor calculado en lectura por unidad (no hay fila almacenada). Se emite para
+        // TODAS las unidades (asi Conteo=0 y agregados vacios se ven correctamente en la tabla).
+        var formulaDefs = await _db.UnidadCamposDefiniciones.AsNoTracking()
+            .Where(d => d.Tipo == TipoCampoTablero.Formula)
+            .Select(d => new { d.Id, d.Opciones }).ToListAsync(ct);
+        if (formulaDefs.Count > 0)
+        {
+            var unidades = await _db.UnidadesPrivadas.AsNoTracking()
+                .Select(u => new { u.Id, N = new NumerosUnidad(u.CoeficientePropiedad, u.AreaM2, u.Piso, u.Habitaciones,
+                    u.Banos, u.Parqueaderos, u.CuotaMensual, u.ModuloContributivo1, u.ModuloContributivo2,
+                    u.ModuloContributivo3, u.ModuloContributivo4, u.ModuloContributivo5) })
+                .ToListAsync(ct);
+            var porUnidad = valores.GroupBy(v => v.UnidadId)
+                .ToDictionary(g => g.Key, g => (IReadOnlyDictionary<Guid, string?>)g.ToDictionary(x => x.DefinicionId, x => x.Valor));
+            IReadOnlyDictionary<Guid, string?> vacio = new Dictionary<Guid, string?>();
+            foreach (var u in unidades)
+            {
+                var dict = porUnidad.TryGetValue(u.Id, out var d0) ? d0 : vacio;
+                foreach (var fd in formulaDefs)
+                {
+                    var txt = ComputarFormulaTexto(fd.Opciones, dict, u.N);
+                    if (txt is not null) res.Add(new UnidadCampoValorFlatDto(u.Id, fd.Id, txt));
+                }
+            }
+        }
+        return res;
+    }
+
+    // Computa el texto de un campo Formula para una unidad. Fuentes: campos PROPIOS Numero/Moneda
+    // (cd:{guid}, via el mapa {definicionId -> valor}) y campos de SISTEMA Numero/Moneda (via los numeros
+    // de la unidad). Solo lectura; devuelve null si la config no es valida o el agregado es vacio.
+    private static string? ComputarFormulaTexto(string? opciones, IReadOnlyDictionary<Guid, string?> valoresPorDef, NumerosUnidad? nums)
+    {
+        var cfg = CampoFormulaConfig.Parse(opciones);
+        if (cfg is null) return null;
+        decimal? ValorDe(string clave)
+        {
+            if (clave.StartsWith("cd:", StringComparison.Ordinal))
+                return Guid.TryParse(clave[3..], out var g) && valoresPorDef.TryGetValue(g, out var v) ? ParseDecimalInv(v) : null;
+            return nums is not null ? ValorSistemaUnidad(clave, nums) : null;
+        }
+        var r = cfg.Computar(ValorDe);
+        if (r is null) return null;
+        // Formato limpio: los campos de sistema son numeric con escala (2.0000), asi que se recortan los
+        // ceros de cola para no mostrar "10.0000" (InvariantCulture -> separador '.').
+        var s = r.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        if (s.Contains('.')) s = s.TrimEnd('0').TrimEnd('.');
+        return s;
+    }
+
+    private static decimal? ParseDecimalInv(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return null;
+        s = s.Trim().Replace(",", ".");
+        return decimal.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : (decimal?)null;
+    }
+
+    // ---- Fuentes de SISTEMA para las Formulas (per-surface: propio de la ficha de Unidad) ----
+    // El picker de fuentes (componente compartido) ofrece los campos del Catalogo con Tipo Numero/Moneda;
+    // el helper de operacion es compartido; SOLO este resolver (clave -> Tipo y clave -> valor de la fila)
+    // es especifico de cada superficie, porque las columnas del sistema difieren. En Unidades: coeficiente,
+    // area, piso, habitaciones, banos, parqueaderos, los 5 modulos contributivos y la cuota.
+    private static readonly IReadOnlyDictionary<string, TipoCampoTablero> FuentesSistemaUnidad =
+        new Dictionary<string, TipoCampoTablero>(StringComparer.Ordinal)
+        {
+            ["coef"] = TipoCampoTablero.Numero, ["area"] = TipoCampoTablero.Numero, ["piso"] = TipoCampoTablero.Numero,
+            ["habitaciones"] = TipoCampoTablero.Numero, ["banos"] = TipoCampoTablero.Numero, ["parqueaderos"] = TipoCampoTablero.Numero,
+            ["modcontrib1"] = TipoCampoTablero.Numero, ["modcontrib2"] = TipoCampoTablero.Numero, ["modcontrib3"] = TipoCampoTablero.Numero,
+            ["modcontrib4"] = TipoCampoTablero.Numero, ["modcontrib5"] = TipoCampoTablero.Numero, ["cuota"] = TipoCampoTablero.Moneda,
+        };
+
+    // Numeros de una unidad relevantes para las formulas (los campos de sistema Numero/Moneda).
+    private sealed record NumerosUnidad(
+        decimal Coef, decimal? Area, int? Piso, int? Hab, int? Banos, int? Parq, decimal? Cuota,
+        decimal? M1, decimal? M2, decimal? M3, decimal? M4, decimal? M5);
+
+    private static decimal? ValorSistemaUnidad(string clave, NumerosUnidad n) => clave switch
+    {
+        "coef" => n.Coef, "area" => n.Area, "piso" => n.Piso, "habitaciones" => n.Hab, "banos" => n.Banos,
+        "parqueaderos" => n.Parq, "cuota" => n.Cuota, "modcontrib1" => n.M1, "modcontrib2" => n.M2,
+        "modcontrib3" => n.M3, "modcontrib4" => n.M4, "modcontrib5" => n.M5, _ => (decimal?)null
+    };
 
     // ---- Configuracion de campos FIJOS del sistema (alias + opciones de lista) ----
     // La misma tabla guarda la config de la ficha de unidad y la de las fichas vinculadas;
@@ -938,11 +1057,35 @@ public partial class MiCopropiedadService
     public async Task SetCampoValorUnidadAsync(Guid unidadId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct)
     {
         if (_tenant.CurrentTenantId is not Guid tid) throw new InvalidOperationException("Sin copropiedad activa.");
-        _ = await _db.UnidadCamposDefiniciones.AnyAsync(d => d.Id == definicionId, ct)
-            ? true : throw new InvalidOperationException("Campo no encontrado.");
+        var def = await _db.UnidadCamposDefiniciones.FirstOrDefaultAsync(d => d.Id == definicionId, ct)
+            ?? throw new InvalidOperationException("Campo no encontrado.");
         _ = await _db.UnidadesPrivadas.AnyAsync(u => u.Id == unidadId, ct)
             ? true : throw new InvalidOperationException("Unidad no encontrada.");
         var valor = string.IsNullOrWhiteSpace(req.Valor) ? null : req.Valor.Trim();
+
+        // Type-gate del valor por el Tipo del campo (Fase 2):
+        // - Formula es calculado y de SOLO LECTURA: no admite valor.
+        // - Usuario/Directorio guardan un Guid y se valida pertenencia al tenant (personas es GLOBAL).
+        //   Las consultas van acotadas por RLS al tenant activo, asi que un id de OTRO tenant no valida.
+        if (def.Tipo == TipoCampoTablero.Formula)
+            throw new InvalidOperationException("Un campo Formula es calculado y de solo lectura; no admite valor.");
+        if (valor is not null && def.Tipo == TipoCampoTablero.Usuario)
+        {
+            if (!Guid.TryParse(valor, out var personaId))
+                throw new InvalidOperationException("El valor de un campo Usuario debe ser el id de un usuario del tenant.");
+            var esUsuarioDelTenant = await _db.UsuariosTenant.AnyAsync(u => u.PersonaId == personaId, ct);
+            if (!esUsuarioDelTenant)
+                throw new InvalidOperationException("El usuario seleccionado no pertenece a esta copropiedad.");
+        }
+        if (valor is not null && def.Tipo == TipoCampoTablero.Directorio)
+        {
+            if (!Guid.TryParse(valor, out var entidadId))
+                throw new InvalidOperationException("El valor de un campo Directorio debe ser el id de una persona del directorio.");
+            var enDirectorio = await _db.DirectorioVinculos.AnyAsync(v =>
+                v.EntidadTipo == EntidadDirectorio.Persona && v.EntidadId == entidadId && v.Estado == EstadoVinculo.Activo, ct);
+            if (!enDirectorio)
+                throw new InvalidOperationException("La persona seleccionada no esta en el directorio de esta copropiedad.");
+        }
 
         var existente = await _db.UnidadCamposValores
             .FirstOrDefaultAsync(v => v.DefinicionId == definicionId && v.UnidadId == unidadId, ct);
