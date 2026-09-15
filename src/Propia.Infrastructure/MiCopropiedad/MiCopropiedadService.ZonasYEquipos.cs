@@ -420,7 +420,7 @@ public partial class MiCopropiedadService
         var existente = await _db.EquipoCamposDefiniciones.FirstOrDefaultAsync(d => d.Label.ToLower() == label.ToLower(), ct);
         if (existente is not null) return new EquipoCampoDefinicionDto(existente.Id, existente.Label, existente.Orden, existente.Tipo, existente.Opciones);
         var maxOrden = await _db.EquipoCamposDefiniciones.AnyAsync(ct) ? await _db.EquipoCamposDefiniciones.MaxAsync(d => d.Orden, ct) : 0;
-        var def = new EquipoCampoDefinicion { TenantId = tid, Label = label, Orden = maxOrden + 1, Tipo = req.Tipo, Opciones = NormalizarOpcionesCampo(req.Tipo, req.Opciones) };
+        var def = new EquipoCampoDefinicion { TenantId = tid, Label = label, Orden = maxOrden + 1, Tipo = req.Tipo, Opciones = await PrepararOpcionesEquipoAsync(req.Tipo, req.Opciones, null, ct) };
         _db.EquipoCamposDefiniciones.Add(def);
         await _db.SaveChangesAsync(ct);
         return new EquipoCampoDefinicionDto(def.Id, def.Label, def.Orden, def.Tipo, def.Opciones);
@@ -433,7 +433,7 @@ public partial class MiCopropiedadService
         var label = (req.Label ?? "").Trim();
         if (string.IsNullOrWhiteSpace(label)) throw new InvalidOperationException("El nombre del campo es obligatorio.");
         if (label.Length > 80) label = label[..80];
-        def.Label = label; def.Tipo = req.Tipo; def.Opciones = NormalizarOpcionesCampo(req.Tipo, req.Opciones); def.Orden = req.Orden;
+        def.Label = label; def.Tipo = req.Tipo; def.Opciones = await PrepararOpcionesEquipoAsync(req.Tipo, req.Opciones, definicionId, ct); def.Orden = req.Orden;
         await _db.SaveChangesAsync(ct);
         return true;
     }
@@ -451,6 +451,11 @@ public partial class MiCopropiedadService
     {
         if (_tenant.CurrentTenantId is not Guid tid) throw new InvalidOperationException("Sin copropiedad activa.");
         var valor = string.IsNullOrWhiteSpace(req.Valor) ? null : req.Valor.Trim();
+        var def = await _db.EquipoCamposDefiniciones.AsNoTracking().FirstOrDefaultAsync(d => d.Id == definicionId, ct)
+            ?? throw new InvalidOperationException("El campo no existe.");
+        // Type-gate del valor por el Tipo del campo (Fase 2): Formula solo lectura, Usuario/Directorio con
+        // pertenencia al tenant (rechazo cross-tenant). Helper COMPARTIDO por las 8 superficies.
+        await CamposAvanzados.ValidarValorAsync(_db, def.Tipo, valor, ct);
         var existente = await _db.EquipoCamposValores.FirstOrDefaultAsync(v => v.DefinicionId == definicionId && v.EquipoActivoId == equipoId, ct);
         if (existente is null)
             _db.EquipoCamposValores.Add(new EquipoCampoValor { TenantId = tid, DefinicionId = definicionId, EquipoActivoId = equipoId, Valor = valor });
@@ -459,14 +464,48 @@ public partial class MiCopropiedadService
     }
 
     public async Task<IReadOnlyList<EquipoCampoValorFlatDto>> ListTodosCamposValoresEquipoAsync(CancellationToken ct)
-        => await _db.EquipoCamposValores.AsNoTracking().Where(v => v.Valor != null && v.Valor != "")
-            .Select(v => new EquipoCampoValorFlatDto(v.EquipoActivoId, v.DefinicionId, v.Valor)).ToListAsync(ct);
+    {
+        var valores = await _db.EquipoCamposValores.AsNoTracking().Where(v => v.Valor != null && v.Valor != "")
+            .Select(v => new { v.EquipoActivoId, v.DefinicionId, v.Valor }).ToListAsync(ct);
+        var res = valores.Select(v => new EquipoCampoValorFlatDto(v.EquipoActivoId, v.DefinicionId, v.Valor)).ToList();
+
+        // Campos Formula (Fase 2): valor calculado en lectura por equipo (no hay fila almacenada). Se emite
+        // para TODOS los equipos (asi Conteo=0 y agregados vacios se ven correctamente en la tabla).
+        var formulaDefs = await _db.EquipoCamposDefiniciones.AsNoTracking()
+            .Where(d => d.Tipo == TipoCampoTablero.Formula)
+            .Select(d => new { d.Id, d.Opciones }).ToListAsync(ct);
+        if (formulaDefs.Count > 0)
+        {
+            var equipos = await _db.EquiposActivos.AsNoTracking()
+                .Select(e => new { e.Id, N = new NumerosEquipo(e.Cantidad, e.VidaUtilAnios, e.ValorAdquisicion) })
+                .ToListAsync(ct);
+            var porEquipo = valores.GroupBy(v => v.EquipoActivoId)
+                .ToDictionary(g => g.Key, g => (IReadOnlyDictionary<Guid, string?>)g.ToDictionary(x => x.DefinicionId, x => x.Valor));
+            IReadOnlyDictionary<Guid, string?> vacio = new Dictionary<Guid, string?>();
+            foreach (var e in equipos)
+            {
+                var dict = porEquipo.TryGetValue(e.Id, out var d0) ? d0 : vacio;
+                foreach (var fd in formulaDefs)
+                {
+                    var txt = ComputarFormulaTextoEquipo(fd.Opciones, dict, e.N);
+                    if (txt is not null) res.Add(new EquipoCampoValorFlatDto(e.Id, fd.Id, txt));
+                }
+            }
+        }
+        return res;
+    }
 
     public async Task<IReadOnlyList<EquipoCampoDinDto>> ListCamposDinEquipoAsync(Guid equipoId, CancellationToken ct)
     {
         var defs = await _db.EquipoCamposDefiniciones.AsNoTracking().OrderBy(d => d.Orden).ThenBy(d => d.Label).ToListAsync(ct);
         var vals = await _db.EquipoCamposValores.AsNoTracking().Where(v => v.EquipoActivoId == equipoId).ToListAsync(ct);
-        return defs.Select(d => new EquipoCampoDinDto(d.Id, d.Label, d.Orden, vals.FirstOrDefault(v => v.DefinicionId == d.Id)?.Valor, d.Tipo, d.Opciones)).ToList();
+        var porDef = vals.GroupBy(v => v.DefinicionId).ToDictionary(g => g.Key, g => g.First().Valor);
+        var nums = await _db.EquiposActivos.AsNoTracking().Where(e => e.Id == equipoId)
+            .Select(e => new NumerosEquipo(e.Cantidad, e.VidaUtilAnios, e.ValorAdquisicion)).FirstOrDefaultAsync(ct);
+        // Formula: se COMPUTA en lectura (no persiste); el resto toma su valor almacenado.
+        return defs.Select(d => new EquipoCampoDinDto(d.Id, d.Label, d.Orden,
+            d.Tipo == TipoCampoTablero.Formula ? ComputarFormulaTextoEquipo(d.Opciones, porDef, nums) : porDef.GetValueOrDefault(d.Id),
+            d.Tipo, d.Opciones)).ToList();
     }
 
     // ===================== Campos dinamicos tipados (catalogo) - ZONAS =====================
@@ -483,7 +522,7 @@ public partial class MiCopropiedadService
         var existente = await _db.ZonaCamposDefiniciones.FirstOrDefaultAsync(d => d.Label.ToLower() == label.ToLower(), ct);
         if (existente is not null) return new ZonaCampoDefinicionDto(existente.Id, existente.Label, existente.Orden, existente.Tipo, existente.Opciones);
         var maxOrden = await _db.ZonaCamposDefiniciones.AnyAsync(ct) ? await _db.ZonaCamposDefiniciones.MaxAsync(d => d.Orden, ct) : 0;
-        var def = new ZonaCampoDefinicion { TenantId = tid, Label = label, Orden = maxOrden + 1, Tipo = req.Tipo, Opciones = NormalizarOpcionesCampo(req.Tipo, req.Opciones) };
+        var def = new ZonaCampoDefinicion { TenantId = tid, Label = label, Orden = maxOrden + 1, Tipo = req.Tipo, Opciones = await PrepararOpcionesZonaAsync(req.Tipo, req.Opciones, null, ct) };
         _db.ZonaCamposDefiniciones.Add(def);
         await _db.SaveChangesAsync(ct);
         return new ZonaCampoDefinicionDto(def.Id, def.Label, def.Orden, def.Tipo, def.Opciones);
@@ -496,7 +535,7 @@ public partial class MiCopropiedadService
         var label = (req.Label ?? "").Trim();
         if (string.IsNullOrWhiteSpace(label)) throw new InvalidOperationException("El nombre del campo es obligatorio.");
         if (label.Length > 80) label = label[..80];
-        def.Label = label; def.Tipo = req.Tipo; def.Opciones = NormalizarOpcionesCampo(req.Tipo, req.Opciones); def.Orden = req.Orden;
+        def.Label = label; def.Tipo = req.Tipo; def.Opciones = await PrepararOpcionesZonaAsync(req.Tipo, req.Opciones, definicionId, ct); def.Orden = req.Orden;
         await _db.SaveChangesAsync(ct);
         return true;
     }
@@ -514,6 +553,11 @@ public partial class MiCopropiedadService
     {
         if (_tenant.CurrentTenantId is not Guid tid) throw new InvalidOperationException("Sin copropiedad activa.");
         var valor = string.IsNullOrWhiteSpace(req.Valor) ? null : req.Valor.Trim();
+        var def = await _db.ZonaCamposDefiniciones.AsNoTracking().FirstOrDefaultAsync(d => d.Id == definicionId, ct)
+            ?? throw new InvalidOperationException("El campo no existe.");
+        // Type-gate del valor por el Tipo del campo (Fase 2): Formula solo lectura, Usuario/Directorio con
+        // pertenencia al tenant (rechazo cross-tenant). Helper COMPARTIDO por las 8 superficies.
+        await CamposAvanzados.ValidarValorAsync(_db, def.Tipo, valor, ct);
         var existente = await _db.ZonaCamposValores.FirstOrDefaultAsync(v => v.DefinicionId == definicionId && v.ZonaComunId == zonaId, ct);
         if (existente is null)
             _db.ZonaCamposValores.Add(new ZonaCampoValor { TenantId = tid, DefinicionId = definicionId, ZonaComunId = zonaId, Valor = valor });
@@ -522,14 +566,131 @@ public partial class MiCopropiedadService
     }
 
     public async Task<IReadOnlyList<ZonaCampoValorFlatDto>> ListTodosCamposValoresZonaAsync(CancellationToken ct)
-        => await _db.ZonaCamposValores.AsNoTracking().Where(v => v.Valor != null && v.Valor != "")
-            .Select(v => new ZonaCampoValorFlatDto(v.ZonaComunId, v.DefinicionId, v.Valor)).ToListAsync(ct);
+    {
+        var valores = await _db.ZonaCamposValores.AsNoTracking().Where(v => v.Valor != null && v.Valor != "")
+            .Select(v => new { v.ZonaComunId, v.DefinicionId, v.Valor }).ToListAsync(ct);
+        var res = valores.Select(v => new ZonaCampoValorFlatDto(v.ZonaComunId, v.DefinicionId, v.Valor)).ToList();
+
+        // Campos Formula (Fase 2): valor calculado en lectura por zona (no hay fila almacenada). Se emite
+        // para TODAS las zonas (asi Conteo=0 y agregados vacios se ven correctamente en la tabla).
+        var formulaDefs = await _db.ZonaCamposDefiniciones.AsNoTracking()
+            .Where(d => d.Tipo == TipoCampoTablero.Formula)
+            .Select(d => new { d.Id, d.Opciones }).ToListAsync(ct);
+        if (formulaDefs.Count > 0)
+        {
+            var zonas = await _db.ZonasComunes.AsNoTracking()
+                .Select(z => new { z.Id, N = new NumerosZona(z.CapacidadPersonas, z.TarifaReserva) })
+                .ToListAsync(ct);
+            var porZona = valores.GroupBy(v => v.ZonaComunId)
+                .ToDictionary(g => g.Key, g => (IReadOnlyDictionary<Guid, string?>)g.ToDictionary(x => x.DefinicionId, x => x.Valor));
+            IReadOnlyDictionary<Guid, string?> vacio = new Dictionary<Guid, string?>();
+            foreach (var z in zonas)
+            {
+                var dict = porZona.TryGetValue(z.Id, out var d0) ? d0 : vacio;
+                foreach (var fd in formulaDefs)
+                {
+                    var txt = ComputarFormulaTextoZona(fd.Opciones, dict, z.N);
+                    if (txt is not null) res.Add(new ZonaCampoValorFlatDto(z.Id, fd.Id, txt));
+                }
+            }
+        }
+        return res;
+    }
 
     public async Task<IReadOnlyList<ZonaCampoDinDto>> ListCamposDinZonaAsync(Guid zonaId, CancellationToken ct)
     {
         var defs = await _db.ZonaCamposDefiniciones.AsNoTracking().OrderBy(d => d.Orden).ThenBy(d => d.Label).ToListAsync(ct);
         var vals = await _db.ZonaCamposValores.AsNoTracking().Where(v => v.ZonaComunId == zonaId).ToListAsync(ct);
-        return defs.Select(d => new ZonaCampoDinDto(d.Id, d.Label, d.Orden, vals.FirstOrDefault(v => v.DefinicionId == d.Id)?.Valor, d.Tipo, d.Opciones)).ToList();
+        var porDef = vals.GroupBy(v => v.DefinicionId).ToDictionary(g => g.Key, g => g.First().Valor);
+        var nums = await _db.ZonasComunes.AsNoTracking().Where(z => z.Id == zonaId)
+            .Select(z => new NumerosZona(z.CapacidadPersonas, z.TarifaReserva)).FirstOrDefaultAsync(ct);
+        // Formula: se COMPUTA en lectura (no persiste); el resto toma su valor almacenado.
+        return defs.Select(d => new ZonaCampoDinDto(d.Id, d.Label, d.Orden,
+            d.Tipo == TipoCampoTablero.Formula ? ComputarFormulaTextoZona(d.Opciones, porDef, nums) : porDef.GetValueOrDefault(d.Id),
+            d.Tipo, d.Opciones)).ToList();
+    }
+
+    // ===================== Fase 2 (Formula/Usuario/Directorio) - helpers por superficie =====================
+    // El shape/computo/validacion de la Formula es COMPARTIDO (CampoFormulaConfig); aqui SOLO vive lo propio
+    // de cada superficie: el resolver de campos de SISTEMA Numero/Moneda (clave -> Tipo y clave -> valor).
+    // Zona: aforo (capacidad de personas) y tarifa de reserva. Equipo: cantidad, vida util y valor de
+    // adquisicion. Las claves son las del catalogo canonico (ZonaCamposSistema / EquipoCamposSistema).
+    private static readonly IReadOnlyDictionary<string, TipoCampoTablero> FuentesSistemaZona =
+        new Dictionary<string, TipoCampoTablero>(StringComparer.Ordinal)
+        { ["aforo"] = TipoCampoTablero.Numero, ["tarifa"] = TipoCampoTablero.Moneda };
+
+    private static readonly IReadOnlyDictionary<string, TipoCampoTablero> FuentesSistemaEquipo =
+        new Dictionary<string, TipoCampoTablero>(StringComparer.Ordinal)
+        { ["cantidad"] = TipoCampoTablero.Numero, ["vidautil"] = TipoCampoTablero.Numero, ["valoradq"] = TipoCampoTablero.Moneda };
+
+    private sealed record NumerosZona(int? Aforo, decimal? Tarifa);
+    private sealed record NumerosEquipo(int Cantidad, int? VidaUtil, decimal? ValorAdq);
+
+    private static decimal? ValorSistemaZona(string clave, NumerosZona n) => clave switch
+    { "aforo" => n.Aforo, "tarifa" => n.Tarifa, _ => (decimal?)null };
+
+    private static decimal? ValorSistemaEquipo(string clave, NumerosEquipo n) => clave switch
+    { "cantidad" => n.Cantidad, "vidautil" => n.VidaUtil, "valoradq" => n.ValorAdq, _ => (decimal?)null };
+
+    private static string? ComputarFormulaTextoZona(string? opciones, IReadOnlyDictionary<Guid, string?> valoresPorDef, NumerosZona? nums)
+        => CampoFormulaConfig.ComputarTexto(opciones, clave =>
+        {
+            if (clave.StartsWith("cd:", StringComparison.Ordinal))
+                return Guid.TryParse(clave[3..], out var g) && valoresPorDef.TryGetValue(g, out var v) ? ParseDecimalInv(v) : null;
+            return nums is not null ? ValorSistemaZona(clave, nums) : null;
+        });
+
+    private static string? ComputarFormulaTextoEquipo(string? opciones, IReadOnlyDictionary<Guid, string?> valoresPorDef, NumerosEquipo? nums)
+        => CampoFormulaConfig.ComputarTexto(opciones, clave =>
+        {
+            if (clave.StartsWith("cd:", StringComparison.Ordinal))
+                return Guid.TryParse(clave[3..], out var g) && valoresPorDef.TryGetValue(g, out var v) ? ParseDecimalInv(v) : null;
+            return nums is not null ? ValorSistemaEquipo(clave, nums) : null;
+        });
+
+    // La columna Opciones es POLIMORFICA segun Tipo: para Seleccion guarda las opciones (una por linea);
+    // para Formula (Fase 2) guarda el JSON de CampoFormulaConfig; para el resto va null. Se valida que las
+    // fuentes existan y sean Numero/Moneda (propias cd:{guid} + las de sistema de la superficie).
+    private async Task<string?> PrepararOpcionesZonaAsync(TipoCampoTablero tipo, string? opciones, Guid? excluirId, CancellationToken ct)
+    {
+        if (tipo == TipoCampoTablero.Seleccion) return NormalizarOpcionesCampo(tipo, opciones);
+        if (tipo != TipoCampoTablero.Formula) return null;
+        var cfg = CampoFormulaConfig.Parse(opciones)
+            ?? throw new InvalidOperationException("La formula necesita una operacion y al menos un campo fuente.");
+        var defs = await _db.ZonaCamposDefiniciones.AsNoTracking()
+            .Where(d => excluirId == null || d.Id != excluirId)
+            .Select(d => new { d.Id, d.Tipo }).ToListAsync(ct);
+        var porGuid = defs.ToDictionary(d => d.Id, d => d.Tipo);
+        TipoCampoTablero? TipoDe(string clave)
+        {
+            if (clave.StartsWith("cd:", StringComparison.Ordinal))
+                return Guid.TryParse(clave[3..], out var g) && porGuid.TryGetValue(g, out var t) ? t : (TipoCampoTablero?)null;
+            return FuentesSistemaZona.TryGetValue(clave, out var ts) ? ts : (TipoCampoTablero?)null;
+        }
+        var err = CampoFormulaConfig.Validar(cfg, TipoDe);
+        if (err is not null) throw new InvalidOperationException(err);
+        return cfg.Serializar();
+    }
+
+    private async Task<string?> PrepararOpcionesEquipoAsync(TipoCampoTablero tipo, string? opciones, Guid? excluirId, CancellationToken ct)
+    {
+        if (tipo == TipoCampoTablero.Seleccion) return NormalizarOpcionesCampo(tipo, opciones);
+        if (tipo != TipoCampoTablero.Formula) return null;
+        var cfg = CampoFormulaConfig.Parse(opciones)
+            ?? throw new InvalidOperationException("La formula necesita una operacion y al menos un campo fuente.");
+        var defs = await _db.EquipoCamposDefiniciones.AsNoTracking()
+            .Where(d => excluirId == null || d.Id != excluirId)
+            .Select(d => new { d.Id, d.Tipo }).ToListAsync(ct);
+        var porGuid = defs.ToDictionary(d => d.Id, d => d.Tipo);
+        TipoCampoTablero? TipoDe(string clave)
+        {
+            if (clave.StartsWith("cd:", StringComparison.Ordinal))
+                return Guid.TryParse(clave[3..], out var g) && porGuid.TryGetValue(g, out var t) ? t : (TipoCampoTablero?)null;
+            return FuentesSistemaEquipo.TryGetValue(clave, out var ts) ? ts : (TipoCampoTablero?)null;
+        }
+        var err = CampoFormulaConfig.Validar(cfg, TipoDe);
+        if (err is not null) throw new InvalidOperationException(err);
+        return cfg.Serializar();
     }
 
 }
